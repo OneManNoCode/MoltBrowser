@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MoltBrowser AI</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 360px;
+      padding: 16px;
+      margin: 0;
+      background: #1a1a2e;
+      color: #e0e0e0;
+    }
+    h2 {
+      color: #00d4ff;
+      margin: 0 0 12px 0;
+      font-size: 16px;
+    }
+    .section {
+      margin-bottom: 16px;
+    }
+    textarea {
+      width: 100%;
+      height: 60px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 8px;
+      background: #16213e;
+      color: #e0e0e0;
+      font-size: 13px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    button {
+      background: #00d4ff;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin: 4px 4px 4px 0;
+    }
+    button:hover {
+      background: #00b8d9;
+    }
+    button.secondary {
+      background: #333;
+      color: #e0e0e0;
+    }
+    #result {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 10px;
+      margin-top: 12px;
+      font-size: 13px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .status {
+      font-size: 11px;
+      color: #666;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h2>MoltBrowser AI</h2>
+
+  <div class="section">
+    <textarea id="prompt" placeholder="Ask AI anything about this page..."></textarea>
+  </div>
+
+  <div class="section">
+    <button id="askBtn">Ask AI</button>
+    <button id="summarizeBtn" class="secondary">Summarize Page</button>
+    <button id="modelsBtn" class="secondary">Models</button>
+  </div>
+
+  <div id="result"></div>
+  <div class="status" id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
