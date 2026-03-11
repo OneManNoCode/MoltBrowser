@@ -6,9 +6,9 @@
 
 ## Session State
 
-**Last Updated**: 2025-03-11 01:30 UTC
+**Last Updated**: 2025-03-11 02:50 UTC
 **Current Phase**: Day 1 — Chromium Fork + Initial Build
-**Overall Status**: 🟡 IN PROGRESS (Metal toolchain fix needed, then rebuild)
+**Overall Status**: 🟢 BUILD RUNNING (~7,800/70,000 targets compiled, ~11%)
 
 ---
 
@@ -85,14 +85,13 @@
 
 ## In Progress
 
-- [ ] **Metal toolchain download**: `xcodebuild -downloadComponent MetalToolchain`
-  - Build failed on ANGLE Metal shader compilation
-  - Error: `cannot execute tool 'metal' due to missing Metal Toolchain`
-  - Fix: Download Metal toolchain, then restart build
-- [ ] **Chromium build**: First attempt got to 2,362/73,423 targets (3.2%) before Metal failure
+- [ ] **Chromium build**: Running incrementally, ~7,800/70,000 targets compiled (~11%)
+  - Metal toolchain issue FIXED (downloaded via `xcodebuild -downloadComponent MetalToolchain`)
+  - Build is incremental — restarts pick up from compiled objects
   - Command: `autoninja -C out/MoltBrowser chrome`
   - Working dir: `/Users/raj/Desktop/MoltBrowser/repo/chromium/src`
   - Requires: `export PATH="/Users/raj/Desktop/MoltBrowser/repo/depot_tools:$PATH"`
+  - Estimated completion: ~60-90 minutes remaining on M4 Pro
 
 ## Pending Tasks (Day 2+)
 
