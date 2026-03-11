@@ -1,0 +1,103 @@
+# Copyright 2025 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# BUILD.gn for MoltBrowser AI modules
+# This file defines the build targets for all AI components
+# that integrate into the Chromium browser build.
+
+source_set("molt_ai_runtime") {
+  sources = [
+    "runtime/browser_ai_runtime.cc",
+    "runtime/browser_ai_runtime.h",
+    "runtime/prompt_router.cc",
+    "runtime/prompt_router.h",
+  ]
+
+  deps = [
+    "//third_party/llama_cpp",
+  ]
+}
+
+source_set("molt_ai_dom") {
+  sources = [
+    "dom/dom_interpreter.cc",
+    "dom/dom_interpreter.h",
+  ]
+}
+
+source_set("molt_ai_agents") {
+  sources = [
+    "agents/agent_engine.cc",
+    "agents/agent_engine.h",
+  ]
+
+  deps = [
+    ":molt_ai_dom",
+    ":molt_ai_runtime",
+  ]
+}
+
+source_set("molt_ai_security") {
+  sources = [
+    "security/action_validator.cc",
+    "security/action_validator.h",
+  ]
+
+  deps = [
+    ":molt_ai_agents",
+  ]
+}
+
+source_set("molt_ai_memory") {
+  sources = [
+    "memory/memory_engine.cc",
+    "memory/memory_engine.h",
+  ]
+
+  # deps = [
+  #   "//third_party/sqlite",
+  # ]
+}
+
+source_set("molt_ai_personas") {
+  sources = [
+    "personas/persona_system.cc",
+    "personas/persona_system.h",
+  ]
+}
+
+source_set("molt_ai_models") {
+  sources = [
+    "models/model_manager.cc",
+    "models/model_manager.h",
+  ]
+
+  deps = [
+    ":molt_ai_runtime",
+  ]
+}
+
+source_set("molt_ai_api") {
+  sources = [
+    "api/browser_ai_api.cc",
+    "api/browser_ai_api.h",
+  ]
+
+  deps = [
+    ":molt_ai_runtime",
+  ]
+}
+
+# Combined target for all AI modules
+group("molt_ai") {
+  deps = [
+    ":molt_ai_runtime",
+    ":molt_ai_dom",
+    ":molt_ai_agents",
+    ":molt_ai_security",
+    ":molt_ai_memory",
+    ":molt_ai_personas",
+    ":molt_ai_models",
+    ":molt_ai_api",
+  ]
+}

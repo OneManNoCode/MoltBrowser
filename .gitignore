@@ -1,0 +1,43 @@
+# MoltBrowser .gitignore
+
+# Chromium source (too large for git, fetched by setup.sh)
+chromium/
+depot_tools/
+
+# Build artifacts
+out/
+build/
+
+# Model files (large binary files)
+*.gguf
+*.bin
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build system
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Python
+__pycache__/
+*.pyc
+
+# Temporary files
+*.tmp
+*.log

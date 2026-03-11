@@ -1,0 +1,11 @@
+# Copyright 2025 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# BUILD.gn for MoltShield privacy protection system
+
+source_set("moltshield") {
+  sources = [
+    "moltshield.cc",
+    "moltshield.h",
+  ]
+}

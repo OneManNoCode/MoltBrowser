@@ -1,0 +1,11 @@
+# Copyright 2025 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# BUILD.gn for MoltNet privacy network layer
+
+source_set("moltnet") {
+  sources = [
+    "moltnet.cc",
+    "moltnet.h",
+  ]
+}
