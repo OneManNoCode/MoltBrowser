@@ -6,9 +6,9 @@
 
 ## Session State
 
-**Last Updated**: 2025-03-11 02:50 UTC
+**Last Updated**: 2025-03-11 04:20 UTC
 **Current Phase**: Day 1 — Chromium Fork + Initial Build
-**Overall Status**: 🟢 BUILD RUNNING (~7,800/70,000 targets compiled, ~11%)
+**Overall Status**: 🟢 BUILD RUNNING (~29,500/70,000 targets compiled, ~42%) via nohup
 
 ---
 
@@ -85,13 +85,16 @@
 
 ## In Progress
 
-- [ ] **Chromium build**: Running incrementally, ~7,800/70,000 targets compiled (~11%)
+- [ ] **Chromium build**: Running via nohup, ~29,500/70,000 targets compiled (~42%)
   - Metal toolchain issue FIXED (downloaded via `xcodebuild -downloadComponent MetalToolchain`)
   - Build is incremental — restarts pick up from compiled objects
+  - **Now running via nohup** (survives session disconnects)
+  - Build log: `/Users/raj/Desktop/MoltBrowser/build.log`
+  - PID: check with `ps aux | grep autoninja`
   - Command: `autoninja -C out/MoltBrowser chrome`
   - Working dir: `/Users/raj/Desktop/MoltBrowser/repo/chromium/src`
   - Requires: `export PATH="/Users/raj/Desktop/MoltBrowser/repo/depot_tools:$PATH"`
-  - Estimated completion: ~60-90 minutes remaining on M4 Pro
+  - Estimated completion: ~75 minutes remaining at ~9 targets/sec
 
 ## Pending Tasks (Day 2+)
 
