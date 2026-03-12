@@ -7,7 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "src/molt_ai/runtime/browser_ai_runtime.h"
+#include "base/memory/raw_ptr.h"
+#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 
 namespace molt_ai {
 
@@ -95,7 +96,7 @@ class BrowserAIAPI {
   bool CheckRateLimit(const std::string& extension_id) const;
 
  private:
-  BrowserAIRuntime* runtime_;  // Not owned
+  raw_ptr<BrowserAIRuntime> runtime_;  // Not owned
 
   // Extension rate limiting: max requests per minute
   static constexpr int kMaxRequestsPerMinute = 60;

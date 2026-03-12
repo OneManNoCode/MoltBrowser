@@ -1,7 +1,7 @@
 // Copyright 2025 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "src/molt_ai/memory/memory_engine.h"
+#include "chrome/browser/molt_ai/memory/memory_engine.h"
 
 #include <algorithm>
 #include <chrono>

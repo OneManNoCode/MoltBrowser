@@ -8,7 +8,7 @@
 #include <vector>
 #include <unordered_set>
 
-#include "src/molt_ai/agents/agent_engine.h"
+#include "chrome/browser/molt_ai/agents/agent_engine.h"
 
 namespace molt_ai {
 

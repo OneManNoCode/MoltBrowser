@@ -1,0 +1,290 @@
+# Copyright 2025 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# BUILD.gn wrapper for llama.cpp (MIT License)
+# Source: https://github.com/ggerganov/llama.cpp
+#
+# This wraps the llama.cpp C/C++ sources into Chromium's GN build system.
+# llama.cpp provides the core LLM inference engine for MoltBrowser.
+#
+# Note: Some source files share the same basename (e.g. ggml.c / ggml.cpp,
+# ggml-cpu.c / ggml-cpu.cpp, multiple quants.c). These are split into
+# separate source_sets to avoid GN duplicate .o file errors.
+
+config("llama_cpp_config") {
+  include_dirs = [
+    ".",
+    "include",
+    "ggml/include",
+    "ggml/src",
+    "ggml/src/ggml-cpu",
+    "common",
+    "src",
+  ]
+
+  defines = [
+    "GGML_USE_CPU",
+    "NDEBUG",
+    "GGML_VERSION=\"0.9.7\"",
+    "GGML_COMMIT=\"00de615\"",
+  ]
+
+  if (is_mac) {
+    defines += [
+      "GGML_USE_METAL",
+      "GGML_METAL_NDEBUG",
+    ]
+    frameworks = [
+      "Foundation.framework",
+      "Metal.framework",
+      "MetalKit.framework",
+      "Accelerate.framework",
+    ]
+  }
+}
+
+# llama.cpp uses C++ exceptions which Chromium disables by default.
+# Remove the global no_exceptions config and enable exceptions.
+config("llama_exceptions") {
+  cflags_cc = [ "-fexceptions" ]
+  cflags_objcc = [ "-fexceptions" ]
+}
+
+# ---- GGML split into sub-targets to avoid duplicate .o names ----
+
+# C-only core GGML sources
+source_set("ggml_c") {
+  sources = [
+    "ggml/src/ggml.c",
+    "ggml/src/ggml-alloc.c",
+    "ggml/src/ggml-quants.c",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_c = [
+    "-std=c11",
+    "-w",
+  ]
+}
+
+# C++-only core GGML sources
+source_set("ggml_cpp") {
+  sources = [
+    "ggml/src/ggml.cpp",
+    "ggml/src/ggml-backend.cpp",
+    "ggml/src/ggml-backend-reg.cpp",
+    "ggml/src/ggml-opt.cpp",
+    "ggml/src/ggml-threading.cpp",
+    "ggml/src/gguf.cpp",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  # ggml-backend-reg.cpp uses try/catch
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ ":llama_exceptions" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}
+
+# CPU backend — C sources (separated to avoid quants.c / ggml-cpu.c collisions)
+source_set("ggml_cpu_c") {
+  sources = [
+    "ggml/src/ggml-cpu/ggml-cpu.c",
+    "ggml/src/ggml-cpu/quants.c",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_c = [
+    "-std=c11",
+    "-w",
+  ]
+}
+
+# CPU backend — C++ sources
+source_set("ggml_cpu_cpp") {
+  sources = [
+    "ggml/src/ggml-cpu/ggml-cpu.cpp",
+    "ggml/src/ggml-cpu/binary-ops.cpp",
+    "ggml/src/ggml-cpu/unary-ops.cpp",
+    "ggml/src/ggml-cpu/ops.cpp",
+    "ggml/src/ggml-cpu/vec.cpp",
+    "ggml/src/ggml-cpu/repack.cpp",
+    "ggml/src/ggml-cpu/traits.cpp",
+    "ggml/src/ggml-cpu/hbm.cpp",
+    "ggml/src/ggml-cpu/llamafile/sgemm.cpp",
+    "ggml/src/ggml-cpu/amx/amx.cpp",
+    "ggml/src/ggml-cpu/amx/mmq.cpp",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}
+
+# Architecture-specific CPU sources — ARM (Apple Silicon)
+source_set("ggml_cpu_arch_arm") {
+  sources = [
+    "ggml/src/ggml-cpu/arch/arm/cpu-feats.cpp",
+    "ggml/src/ggml-cpu/arch/arm/repack.cpp",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}
+
+# ARM C sources (quants.c would conflict with cpu quants.c)
+source_set("ggml_cpu_arch_arm_c") {
+  sources = [
+    "ggml/src/ggml-cpu/arch/arm/quants.c",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_c = [
+    "-std=c11",
+    "-w",
+  ]
+}
+
+# Metal backend for macOS
+source_set("ggml_metal") {
+  sources = [
+    "ggml/src/ggml-metal/ggml-metal.cpp",
+    "ggml/src/ggml-metal/ggml-metal-common.cpp",
+    "ggml/src/ggml-metal/ggml-metal-device.cpp",
+    "ggml/src/ggml-metal/ggml-metal-ops.cpp",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}
+
+# Metal Objective-C sources (separated due to different compiler flags)
+# llama.cpp uses manual retain/release — disable Chromium's default ARC.
+source_set("ggml_metal_objc") {
+  sources = [
+    "ggml/src/ggml-metal/ggml-metal-device.m",
+    "ggml/src/ggml-metal/ggml-metal-context.m",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  # Disable ARC for this third-party code that uses manual retain/release
+  configs -= [ "//build/config/compiler:enable_arc" ]
+
+  cflags_objc = [
+    "-w",
+    "-fno-objc-arc",
+  ]
+}
+
+# Combined GGML target
+group("ggml") {
+  public_deps = [
+    ":ggml_c",
+    ":ggml_cpp",
+    ":ggml_cpu_c",
+    ":ggml_cpu_cpp",
+  ]
+
+  if (current_cpu == "arm64") {
+    public_deps += [
+      ":ggml_cpu_arch_arm",
+      ":ggml_cpu_arch_arm_c",
+    ]
+  }
+
+  if (is_mac) {
+    public_deps += [
+      ":ggml_metal",
+      ":ggml_metal_objc",
+    ]
+  }
+}
+
+# Main llama.cpp library
+# Note: llama.cpp uses C++ exceptions (throw/catch) which Chromium
+# disables by default (-fno-exceptions). We enable exceptions for
+# this third-party code with -fexceptions.
+source_set("llama_cpp") {
+  sources = [
+    "src/llama.cpp",
+    "src/llama-adapter.cpp",
+    "src/llama-arch.cpp",
+    "src/llama-batch.cpp",
+    "src/llama-chat.cpp",
+    "src/llama-context.cpp",
+    "src/llama-cparams.cpp",
+    "src/llama-grammar.cpp",
+    "src/llama-graph.cpp",
+    "src/llama-hparams.cpp",
+    "src/llama-impl.cpp",
+    "src/llama-io.cpp",
+    "src/llama-kv-cache.cpp",
+    "src/llama-kv-cache-iswa.cpp",
+    "src/llama-memory.cpp",
+    "src/llama-memory-hybrid.cpp",
+    "src/llama-memory-hybrid-iswa.cpp",
+    "src/llama-memory-recurrent.cpp",
+    "src/llama-mmap.cpp",
+    "src/llama-model.cpp",
+    "src/llama-model-loader.cpp",
+    "src/llama-model-saver.cpp",
+    "src/llama-quant.cpp",
+    "src/llama-sampler.cpp",
+    "src/llama-vocab.cpp",
+    "src/unicode.cpp",
+    "src/unicode-data.cpp",
+  ]
+
+  public_deps = [ ":ggml" ]
+  public_configs = [ ":llama_cpp_config" ]
+
+  # Remove Chromium's global no_exceptions config and enable exceptions
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ ":llama_exceptions" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}
+
+# Common utilities (sampling, CLI helpers, etc.)
+source_set("llama_common") {
+  sources = [
+    "common/common.cpp",
+    "common/chat.cpp",
+    "common/arg.cpp",
+    "common/log.cpp",
+    "common/json-schema-to-grammar.cpp",
+  ]
+
+  public_deps = [ ":llama_cpp" ]
+  public_configs = [ ":llama_cpp_config" ]
+
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ ":llama_exceptions" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}

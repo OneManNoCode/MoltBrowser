@@ -9,8 +9,9 @@
 #include <string>
 #include <vector>
 
-#include "src/molt_ai/dom/dom_interpreter.h"
-#include "src/molt_ai/runtime/browser_ai_runtime.h"
+#include "base/memory/raw_ptr.h"
+#include "chrome/browser/molt_ai/dom/dom_interpreter.h"
+#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 
 namespace molt_ai {
 
@@ -144,8 +145,8 @@ class AgentEngine {
                                 const StructuredPage& current_page);
 
  private:
-  BrowserAIRuntime* runtime_;       // Not owned
-  DOMInterpreter* dom_interpreter_; // Not owned
+  raw_ptr<BrowserAIRuntime> runtime_;       // Not owned
+  raw_ptr<DOMInterpreter> dom_interpreter_; // Not owned
   TaskStatus current_status_;
   bool cancel_requested_;
 

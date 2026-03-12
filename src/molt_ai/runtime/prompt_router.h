@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "src/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 
 namespace molt_ai {
 

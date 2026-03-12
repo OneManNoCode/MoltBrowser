@@ -14,6 +14,7 @@ source_set("molt_ai_runtime") {
   ]
 
   deps = [
+    "//base",
     "//third_party/llama_cpp",
   ]
 }
@@ -22,6 +23,14 @@ source_set("molt_ai_dom") {
   sources = [
     "dom/dom_interpreter.cc",
     "dom/dom_interpreter.h",
+    "dom/dom_content_bridge.cc",
+    "dom/dom_content_bridge.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+    "//url",
   ]
 }
 
@@ -34,6 +43,7 @@ source_set("molt_ai_agents") {
   deps = [
     ":molt_ai_dom",
     ":molt_ai_runtime",
+    "//base",
   ]
 }
 
@@ -45,6 +55,7 @@ source_set("molt_ai_security") {
 
   deps = [
     ":molt_ai_agents",
+    "//base",
   ]
 }
 
@@ -54,9 +65,9 @@ source_set("molt_ai_memory") {
     "memory/memory_engine.h",
   ]
 
-  # deps = [
-  #   "//third_party/sqlite",
-  # ]
+  deps = [
+    "//base",
+  ]
 }
 
 source_set("molt_ai_personas") {
@@ -64,16 +75,25 @@ source_set("molt_ai_personas") {
     "personas/persona_system.cc",
     "personas/persona_system.h",
   ]
+
+  deps = [
+    "//base",
+  ]
 }
 
 source_set("molt_ai_models") {
   sources = [
     "models/model_manager.cc",
     "models/model_manager.h",
+    "models/model_downloader.cc",
+    "models/model_downloader.h",
   ]
 
   deps = [
     ":molt_ai_runtime",
+    "//base",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
   ]
 }
 
@@ -85,6 +105,42 @@ source_set("molt_ai_api") {
 
   deps = [
     ":molt_ai_runtime",
+    "//base",
+  ]
+}
+
+# AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
+# (registered directly in autocomplete_controller.cc)
+
+# AI Side Panel — chat interface in the browser sidebar
+source_set("molt_ai_side_panel") {
+  sources = [
+    "side_panel/ai_chat_side_panel_coordinator.cc",
+    "side_panel/ai_chat_side_panel_coordinator.h",
+    "side_panel/ai_chat_side_panel_web_view.cc",
+    "side_panel/ai_chat_side_panel_web_view.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/views",
+    "//url",
+  ]
+}
+
+# MoltShield — Privacy & ad/tracker blocking engine
+source_set("molt_shield") {
+  sources = [
+    "shield/molt_shield.cc",
+    "shield/molt_shield.h",
+  ]
+
+  deps = [
+    "//base",
   ]
 }
 
@@ -99,5 +155,7 @@ group("molt_ai") {
     ":molt_ai_personas",
     ":molt_ai_models",
     ":molt_ai_api",
+    ":molt_ai_side_panel",
+    ":molt_shield",
   ]
 }

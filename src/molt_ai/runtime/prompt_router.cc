@@ -1,7 +1,7 @@
 // Copyright 2025 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "src/molt_ai/runtime/prompt_router.h"
+#include "chrome/browser/molt_ai/runtime/prompt_router.h"
 
 #include <algorithm>
 #include <regex>
@@ -147,14 +147,17 @@ bool PromptRouter::ContainsPII(const std::string& prompt) const {
   std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
   for (const auto& pattern : pii_patterns_) {
-    try {
-      std::regex re(pattern, std::regex::icase);
+    // First try simple string match (handles keyword patterns)
+    if (lower.find(pattern) != std::string::npos) {
+      return true;
+    }
+    // For regex patterns (containing special chars), use std::regex
+    // std::regex constructor is noexcept(false), so only use for
+    // patterns that look like regexes (contain backslash or brackets)
+    if (pattern.find('\\') != std::string::npos ||
+        pattern.find('[') != std::string::npos) {
+      std::regex re(pattern, std::regex::icase | std::regex::nosubs);
       if (std::regex_search(lower, re)) {
-        return true;
-      }
-    } catch (const std::regex_error&) {
-      // Simple string match fallback
-      if (lower.find(pattern) != std::string::npos) {
         return true;
       }
     }

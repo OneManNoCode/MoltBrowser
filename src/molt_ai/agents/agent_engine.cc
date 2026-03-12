@@ -1,9 +1,10 @@
 // Copyright 2025 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "src/molt_ai/agents/agent_engine.h"
+#include "chrome/browser/molt_ai/agents/agent_engine.h"
 
 #include <chrono>
+#include <ratio>
 #include <sstream>
 #include <thread>
 
@@ -330,8 +331,11 @@ AgentAction AgentEngine::ParseActionFromLLM(
   else if (action_str == "close_tab") action.type = ActionType::CLOSE_TAB;
   else if (action_str == "wait") {
     action.type = ActionType::WAIT;
-    try { action.wait_ms = std::stoi(action.value); }
-    catch (...) { action.wait_ms = 1000; }
+    // Parse wait_ms without exceptions (Chromium uses -fno-exceptions)
+    char* end_ptr = nullptr;
+    long val = std::strtol(action.value.c_str(), &end_ptr, 10);
+    action.wait_ms = (end_ptr != action.value.c_str() && val > 0)
+                         ? static_cast<int>(val) : 1000;
   }
   else if (action_str == "type_text") action.type = ActionType::TYPE_TEXT;
   else if (action_str == "done") action.type = ActionType::DONE;
