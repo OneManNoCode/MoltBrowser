@@ -1,0 +1,10 @@
+COMPANY_FULLNAME=GenEye AI Labs Inc.
+COMPANY_SHORTNAME=GenEye AI Labs
+PRODUCT_FULLNAME=MoltBrowser
+PRODUCT_SHORTNAME=MoltBrowser
+PRODUCT_INSTALLER_FULLNAME=MoltBrowser Installer
+PRODUCT_INSTALLER_SHORTNAME=MoltBrowser Installer
+COPYRIGHT=Copyright @LASTCHANGE_YEAR@ GenEye AI Labs Inc. All rights reserved.
+MAC_BUNDLE_ID=com.geneyeailabs.MoltBrowser
+MAC_CREATOR_CODE=Molt
+MAC_TEAM_ID=

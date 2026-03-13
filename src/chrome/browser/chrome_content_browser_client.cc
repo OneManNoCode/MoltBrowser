@@ -837,10 +837,13 @@ bool HandleNewTabPageLocationOverride(
     return false;
   }
 
+  // MoltBrowser: Always redirect chrome://newtab to our custom homepage.
+  // This is the primary NTP override — it runs first in the URL handler chain,
+  // ensuring MoltBrowser's homepage is always used regardless of profile prefs.
   std::string ntp_location =
       profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
   if (ntp_location.empty()) {
-    return false;
+    ntp_location = "https://homepage.moltsearch.ai";
   }
   url::Component scheme;
   if (!url::ExtractScheme(ntp_location, &scheme)) {
