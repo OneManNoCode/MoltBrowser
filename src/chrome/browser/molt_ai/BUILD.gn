@@ -1,0 +1,172 @@
+# Copyright 2025 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# BUILD.gn for MoltBrowser AI modules
+# This file defines the build targets for all AI components
+# that integrate into the Chromium browser build.
+
+source_set("molt_ai_runtime") {
+  sources = [
+    "runtime/browser_ai_runtime.cc",
+    "runtime/browser_ai_runtime.h",
+    "runtime/prompt_router.cc",
+    "runtime/prompt_router.h",
+  ]
+
+  deps = [
+    "//base",
+    "//third_party/llama_cpp",
+  ]
+}
+
+source_set("molt_ai_dom") {
+  sources = [
+    "dom/dom_interpreter.cc",
+    "dom/dom_interpreter.h",
+    "dom/dom_content_bridge.cc",
+    "dom/dom_content_bridge.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+    "//url",
+  ]
+}
+
+source_set("molt_ai_agents") {
+  sources = [
+    "agents/agent_engine.cc",
+    "agents/agent_engine.h",
+  ]
+
+  deps = [
+    ":molt_ai_dom",
+    ":molt_ai_runtime",
+    "//base",
+  ]
+}
+
+source_set("molt_ai_security") {
+  sources = [
+    "security/action_validator.cc",
+    "security/action_validator.h",
+  ]
+
+  deps = [
+    ":molt_ai_agents",
+    "//base",
+  ]
+}
+
+source_set("molt_ai_memory") {
+  sources = [
+    "memory/memory_engine.cc",
+    "memory/memory_engine.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}
+
+source_set("molt_ai_personas") {
+  sources = [
+    "personas/persona_system.cc",
+    "personas/persona_system.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}
+
+source_set("molt_ai_models") {
+  sources = [
+    "models/model_manager.cc",
+    "models/model_manager.h",
+    "models/model_downloader.cc",
+    "models/model_downloader.h",
+  ]
+
+  deps = [
+    ":molt_ai_runtime",
+    "//base",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+  ]
+}
+
+source_set("molt_ai_api") {
+  sources = [
+    "api/browser_ai_api.cc",
+    "api/browser_ai_api.h",
+  ]
+
+  deps = [
+    ":molt_ai_runtime",
+    "//base",
+  ]
+}
+
+# AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
+# (registered directly in autocomplete_controller.cc)
+
+# AI Side Panel — chat interface in the browser sidebar
+source_set("molt_ai_side_panel") {
+  sources = [
+    "side_panel/ai_chat_side_panel_coordinator.cc",
+    "side_panel/ai_chat_side_panel_coordinator.h",
+    "side_panel/ai_chat_side_panel_web_view.cc",
+    "side_panel/ai_chat_side_panel_web_view.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/views",
+    "//url",
+  ]
+}
+
+# MoltShield — Ad blocker + privacy engine (ABP filter syntax, EasyList/uBlock)
+source_set("molt_shield") {
+  sources = [
+    "shield/molt_shield.cc",
+    "shield/molt_shield.h",
+    "shield/filter_list_manager.cc",
+    "shield/filter_list_manager.h",
+    "shield/molt_shield_service.cc",
+    "shield/molt_shield_service.h",
+    "shield/molt_shield_throttle.cc",
+    "shield/molt_shield_throttle.h",
+  ]
+
+  deps = [
+    "//base",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
+
+# Combined target for all AI modules
+group("molt_ai") {
+  deps = [
+    ":molt_ai_runtime",
+    ":molt_ai_dom",
+    ":molt_ai_agents",
+    ":molt_ai_security",
+    ":molt_ai_memory",
+    ":molt_ai_personas",
+    ":molt_ai_models",
+    ":molt_ai_api",
+    ":molt_ai_side_panel",
+    ":molt_shield",
+  ]
+}
