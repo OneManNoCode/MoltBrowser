@@ -286,9 +286,16 @@ function sendMessage() {
     }
   }
 
-  sendWithPromise('sendPrompt', text, historyForPrompt).then(function(result) {
+  // Fetch page context (active tab URL/title) then send prompt
+  sendWithPromise('getPageContext').then(function(ctx) {
+    var pageCtx = '';
+    if (ctx && ctx.has_context) {
+      pageCtx = ctx.title + ' (' + ctx.url + ')';
+    }
+    return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx);
+  }).then(function(result) {
     // Record AI response in history (strip </s> if present)
-    var aiText = currentAiText.replace(/<\/s>$/, '').trim();
+    var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();
     if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMessage();
     setGenerating(false);

@@ -219,7 +219,7 @@ function doSend() {
   }
 
   sendWithPromise('sendPrompt', t, prevHistory).then(function(r) {
-    var aiText = currentAiText.replace(/<\/s>$/, '').trim();
+    var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();
     if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMsg(); setGen(false);
     if (!r.success && r.error) addErr(r.error);

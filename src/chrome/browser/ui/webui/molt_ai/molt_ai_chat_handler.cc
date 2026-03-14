@@ -12,11 +12,16 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
 MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
@@ -49,6 +54,10 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getModelStatus",
       base::BindRepeating(&MoltAIChatHandler::HandleGetModelStatus,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getPageContext",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetPageContext,
                           base::Unretained(this)));
 }
 
@@ -197,6 +206,12 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
     history_text = args[2].GetString();
   }
 
+  // Optional: page context (URL + title) for context-aware responses
+  std::string page_context;
+  if (args.size() >= 4u && args[3].is_string()) {
+    page_context = args[3].GetString();
+  }
+
   if (prompt_text.empty()) {
     base::DictValue err;
     err.Set("success", false);
@@ -223,22 +238,23 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
-             const std::string& history, bool needs_load,
+             const std::string& history, const std::string& page_ctx,
+             bool needs_load,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
             // Auto-load model on background thread if needed
             if (needs_load) {
               LOG(INFO) << "[MoltAI] Auto-loading TinyLlama on background thread...";
-              // Notify UI that we're loading
+              // Notify UI that we're loading (via model-status, not ai-token)
               content::GetUIThreadTaskRunner({})->PostTask(
                   FROM_HERE,
                   base::BindOnce(
                       [](base::WeakPtr<MoltAIChatHandler> self) {
                         if (self && self->IsJavascriptAllowed()) {
                           self->FireWebUIListener(
-                              "ai-token",
-                              base::Value("[Loading TinyLlama model... please wait]\n"),
-                              base::Value(false));
+                              "model-status",
+                              base::Value("loading"),
+                              base::Value("Loading TinyLlama model..."));
                         }
                       },
                       weak_self));
@@ -274,11 +290,16 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             opts.stream = true;
 
             // Format as TinyLlama chat prompt with optional history
-            std::string formatted_prompt =
-                "<|system|>\nYou are MoltBrowser AI, a helpful local AI "
+            std::string system_msg =
+                "You are MoltBrowser AI, a helpful local AI "
                 "assistant built into the MoltBrowser web browser. You run "
                 "entirely on the user's device for privacy. Be concise and "
-                "helpful.</s>\n";
+                "helpful.";
+            if (!page_ctx.empty()) {
+              system_msg += " The user is currently viewing: " + page_ctx;
+            }
+            std::string formatted_prompt =
+                "<|system|>\n" + system_msg + "</s>\n";
 
             // Include conversation history if provided
             if (!history.empty()) {
@@ -298,6 +319,11 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                 [&full_text, weak_self](const std::string& token,
                                         bool is_done) {
                   full_text += token;
+                  // Skip sending EOS token to JS — it's not user-visible
+                  std::string display_tok = token;
+                  if (display_tok == "</s>" || display_tok == "</s>\n") {
+                    display_tok = "";
+                  }
                   // Post token back to UI thread for FireWebUIListener
                   content::GetUIThreadTaskRunner({})->PostTask(
                       FROM_HERE,
@@ -310,7 +336,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                                   base::Value(done));
                             }
                           },
-                          weak_self, token, is_done));
+                          weak_self, display_tok, is_done));
                 },
                 opts);
 
@@ -324,7 +350,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          !model_loaded_, weak_ptr_factory_.GetWeakPtr()),
+          page_context, !model_loaded_, weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
              molt_ai::GenerationResult result) {
@@ -404,6 +430,35 @@ void MoltAIChatHandler::HandleGetModelStatus(
   result.Set("models", std::move(model_list));
   result.Set("model_loaded", model_loaded_);
   result.Set("loaded_model_name", loaded_model);
+
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(result)));
+}
+
+void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue result;
+
+  // Find the browser that owns this WebUI and get the active tab
+  content::WebContents* webui_contents = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
+  if (browser && browser->tab_strip_model()) {
+    content::WebContents* active_tab =
+        browser->tab_strip_model()->GetActiveWebContents();
+    if (active_tab && active_tab != webui_contents) {
+      result.Set("url", active_tab->GetLastCommittedURL().spec());
+      result.Set("title", base::UTF16ToUTF8(active_tab->GetTitle()));
+      result.Set("has_context", true);
+    } else {
+      result.Set("has_context", false);
+    }
+  } else {
+    result.Set("has_context", false);
+  }
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));

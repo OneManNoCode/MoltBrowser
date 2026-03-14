@@ -49,6 +49,7 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleLoadModel(const base::ListValue& args);
   void HandleCancelGeneration(const base::ListValue& args);
   void HandleGetModelStatus(const base::ListValue& args);
+  void HandleGetPageContext(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void OnModelLoaded(std::string callback_id, bool success,
