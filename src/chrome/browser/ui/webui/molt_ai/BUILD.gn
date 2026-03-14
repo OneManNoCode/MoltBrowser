@@ -3,15 +3,20 @@
 
 source_set("molt_ai") {
   sources = [
-    "molt_ai_ui.cc",
-    "molt_ai_ui.h",
+    "molt_ai_chat_handler.cc",
+    "molt_ai_chat_handler.h",
     "molt_ai_chat_ui.cc",
     "molt_ai_chat_ui.h",
+    "molt_ai_ui.cc",
+    "molt_ai_ui.h",
   ]
 
   deps = [
     "//base",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//content/public/browser",
+    "//services/network/public/mojom",
   ]
 }
