@@ -159,6 +159,19 @@ source_set("ggml_cpu_arch_arm_c") {
   ]
 }
 
+# Metal shader resources — bundle into the macOS .app framework so
+# ggml_metal_library_init() can find ggml-metal.metal at runtime.
+if (is_mac) {
+  bundle_data("llama_cpp_metal_resources") {
+    sources = [
+      "ggml/src/ggml-metal/ggml-metal.metal",
+      "ggml/src/ggml-common.h",
+      "ggml/src/ggml-metal/ggml-metal-impl.h",
+    ]
+    outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+  }
+}
+
 # Metal backend for macOS
 # Note: -fno-modules is needed because ggml-metal-ops.cpp uses std::swap
 # on a custom struct, and Chromium's C++ modules don't instantiate it

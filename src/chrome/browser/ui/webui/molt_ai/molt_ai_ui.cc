@@ -123,6 +123,7 @@ var currentAiEl = null;
 var currentAiText = '';
 var idCounter = 0;
 var pendingCbs = {};
+var conversationHistory = [];
 
 function sendWithPromise(method) {
   var args = Array.prototype.slice.call(arguments, 1);
@@ -189,13 +190,37 @@ function setGen(v) {
   document.getElementById('cancelBtn').className = 'cancel' + (v ? ' active' : '');
 }
 
+function buildHistory() {
+  var s = '';
+  for (var i = 0; i < conversationHistory.length; i++) {
+    var m = conversationHistory[i];
+    s += (m.role === 'user' ? '<|user|>\n' : '<|assistant|>\n') + m.content + '</s>\n';
+  }
+  return s;
+}
+
 function doSend() {
   if (isGenerating) return;
   var inp = document.getElementById('prompt');
   var t = inp.value.trim(); if (!t) return;
-  addUserMsg(t); inp.value = '';
+  addUserMsg(t);
+  conversationHistory.push({role: 'user', content: t});
+  inp.value = '';
   setGen(true); startAiMsg();
-  sendWithPromise('sendPrompt', t).then(function(r) {
+
+  // Build history from all messages except the last user message
+  var prevHistory = '';
+  if (conversationHistory.length > 1) {
+    var prev = conversationHistory.slice(0, conversationHistory.length - 1);
+    for (var i = 0; i < prev.length; i++) {
+      var m = prev[i];
+      prevHistory += (m.role === 'user' ? '<|user|>\n' : '<|assistant|>\n') + m.content + '</s>\n';
+    }
+  }
+
+  sendWithPromise('sendPrompt', t, prevHistory).then(function(r) {
+    var aiText = currentAiText.replace(/<\/s>$/, '').trim();
+    if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMsg(); setGen(false);
     if (!r.success && r.error) addErr(r.error);
   }).catch(function(e) { finishAiMsg(); setGen(false); addErr('Error: ' + e); });

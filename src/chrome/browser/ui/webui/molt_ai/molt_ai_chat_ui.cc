@@ -135,6 +135,24 @@ var currentAiMessageEl = null;
 var currentAiText = '';
 var promptIdCounter = 0;
 
+// Conversation history for multi-turn chat
+// Each entry: {role: 'user'|'assistant', content: 'text'}
+var conversationHistory = [];
+
+// Build TinyLlama chat template from history
+function buildHistoryString() {
+  var s = '';
+  for (var i = 0; i < conversationHistory.length; i++) {
+    var msg = conversationHistory[i];
+    if (msg.role === 'user') {
+      s += '<|user|>\n' + msg.content + '</s>\n';
+    } else {
+      s += '<|assistant|>\n' + msg.content + '</s>\n';
+    }
+  }
+  return s;
+}
+
 // cr.sendWithPromise polyfill for chrome:// pages
 // Maps callback IDs to promise resolvers
 var pendingCallbacks = {};
@@ -249,11 +267,29 @@ function sendMessage() {
   if (!text) return;
 
   addUserMessage(text);
+  conversationHistory.push({role: 'user', content: text});
   input.value = '';
   setGenerating(true);
   startAiMessage();
 
-  sendWithPromise('sendPrompt', text).then(function(result) {
+  var history = buildHistoryString();
+  // Send last user message separately; history is everything before it
+  var historyForPrompt = '';
+  if (conversationHistory.length > 1) {
+    // Build history from all but the last user message
+    var prev = conversationHistory.slice(0, conversationHistory.length - 1);
+    historyForPrompt = '';
+    for (var i = 0; i < prev.length; i++) {
+      var m = prev[i];
+      if (m.role === 'user') historyForPrompt += '<|user|>\n' + m.content + '</s>\n';
+      else historyForPrompt += '<|assistant|>\n' + m.content + '</s>\n';
+    }
+  }
+
+  sendWithPromise('sendPrompt', text, historyForPrompt).then(function(result) {
+    // Record AI response in history (strip </s> if present)
+    var aiText = currentAiText.replace(/<\/s>$/, '').trim();
+    if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMessage();
     setGenerating(false);
     if (!result.success && result.error) {

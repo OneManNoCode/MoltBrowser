@@ -179,7 +179,8 @@ void MoltAIChatHandler::OnModelLoaded(std::string callback_id, bool success,
 
 // ------------------------------------------------------------------
 // HandleSendPrompt: Run inference (streaming on background thread)
-// JS: chrome.send('sendPrompt', [callback_id, prompt_text])
+// JS: chrome.send('sendPrompt', [callback_id, prompt_text, history_json])
+// history_json is an optional JSON array of {role, content} objects.
 // Streams tokens via FireWebUIListener('ai-token', ...)
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
@@ -189,6 +190,12 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
   const std::string prompt_text = args[1].GetString();
+
+  // Optional: conversation history as pre-formatted string
+  std::string history_text;
+  if (args.size() >= 3u && args[2].is_string()) {
+    history_text = args[2].GetString();
+  }
 
   if (prompt_text.empty()) {
     base::DictValue err;
@@ -216,7 +223,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
-             bool needs_load,
+             const std::string& history, bool needs_load,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
             // Auto-load model on background thread if needed
@@ -266,13 +273,20 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             opts.temperature = 0.7f;
             opts.stream = true;
 
-            // Format as TinyLlama chat prompt
+            // Format as TinyLlama chat prompt with optional history
             std::string formatted_prompt =
                 "<|system|>\nYou are MoltBrowser AI, a helpful local AI "
                 "assistant built into the MoltBrowser web browser. You run "
                 "entirely on the user's device for privacy. Be concise and "
-                "helpful.</s>\n<|user|>\n" +
-                prompt + "</s>\n<|assistant|>\n";
+                "helpful.</s>\n";
+
+            // Include conversation history if provided
+            if (!history.empty()) {
+              formatted_prompt += history;
+            }
+
+            formatted_prompt +=
+                "<|user|>\n" + prompt + "</s>\n<|assistant|>\n";
 
             LOG(INFO) << "[MoltAI] Starting inference...";
 
@@ -309,8 +323,8 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             result.was_cancelled = false;
             return result;
           },
-          base::Unretained(runtime), prompt_text, !model_loaded_,
-          weak_ptr_factory_.GetWeakPtr()),
+          base::Unretained(runtime), prompt_text, history_text,
+          !model_loaded_, weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
              molt_ai::GenerationResult result) {
