@@ -82,6 +82,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   std::string download_callback_id_;
   std::string downloading_model_id_;
   uint64_t download_total_bytes_ = 0;
+  uint64_t download_resume_bytes_ = 0;
+  base::FilePath download_final_path_;
 
   base::WeakPtrFactory<MoltAIChatHandler> weak_ptr_factory_{this};
 };

@@ -131,6 +131,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="top-actions">
     <button class="top-btn" onclick="newChat()">New Chat</button>
     <button class="top-btn" onclick="toggleModelPanel()">Models</button>
+    <button class="top-btn" onclick="window.location='chrome://molt-ai-settings/'">Settings</button>
   </div>
   <div class="context-info" id="contextInfo"></div>
 </div>
@@ -195,6 +196,24 @@ cr.webUIListenerCallback = function(ev) {
 
 function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 
+// ---- Markdown Rendering ----
+function renderMarkdown(text) {
+  var s = esc(text);
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
+    return '<pre style="background:#1a1a2e;padding:12px;border-radius:8px;overflow-x:auto;margin:10px 0;font-size:13px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre>';
+  });
+  s = s.replace(/`([^`\n]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:13px;color:#a78bfa">$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e0e0e0">$1</strong>');
+  s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+  s = s.replace(/^### (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:#a78bfa">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div style="font-size:17px;font-weight:700;margin:14px 0 6px;color:#8b5cf6">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div style="font-size:19px;font-weight:700;margin:16px 0 8px;color:#6366f1">$1</div>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:6px;color:#6366f1">\u2022</span>$1</div>');
+  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:24px;position:relative"><span style="position:absolute;left:0;color:#6366f1;font-size:13px">$1.</span>$2</div>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
 function setStatus(cls, text) {
   document.getElementById('statusDot').className = 'status-dot ' + cls;
   document.getElementById('statusText').textContent = text;
@@ -222,12 +241,12 @@ function startAiMsg() {
 function appendTok(tok) {
   if (!currentAiEl) return;
   currentAiText += tok;
-  currentAiEl.innerHTML = esc(currentAiText) + '<span class="cursor"></span>';
+  currentAiEl.innerHTML = renderMarkdown(currentAiText) + '<span class="cursor"></span>';
   document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
 }
 
 function finishAiMsg() {
-  if (currentAiEl) currentAiEl.innerHTML = esc(currentAiText);
+  if (currentAiEl) currentAiEl.innerHTML = renderMarkdown(currentAiText);
   currentAiEl = null; currentAiText = '';
 }
 

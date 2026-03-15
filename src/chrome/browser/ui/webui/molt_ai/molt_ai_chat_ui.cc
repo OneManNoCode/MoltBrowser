@@ -132,6 +132,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="header-actions">
     <button class="icon-btn" onclick="newChat()" title="New Chat">New</button>
     <button class="icon-btn" onclick="toggleModelPanel()" title="Models">Models</button>
+    <button class="icon-btn" onclick="window.open('chrome://molt-ai-settings/')" title="Settings">&#9881;</button>
   </div>
 </div>
 <div class="hw-bar" id="hwBar">
@@ -227,6 +228,33 @@ function esc(t) {
   return d.innerHTML;
 }
 
+// ---- Markdown Rendering ----
+function renderMarkdown(text) {
+  // Escape HTML first
+  var s = esc(text);
+  // Code blocks (``` ... ```)
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
+    return '<pre style="background:#1a1a2e;padding:10px;border-radius:6px;overflow-x:auto;margin:8px 0;font-size:12px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre>';
+  });
+  // Inline code (`...`)
+  s = s.replace(/`([^`\n]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:12px;color:#a78bfa">$1</code>');
+  // Bold (**...**)
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e0e0e0">$1</strong>');
+  // Italic (*...*)
+  s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+  // Headers (### ... , ## ... , # ...)
+  s = s.replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:700;margin:10px 0 4px;color:#a78bfa">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:#8b5cf6">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:14px 0 6px;color:#6366f1">$1</div>');
+  // Unordered lists (- item or * item)
+  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:#6366f1">\u2022</span>$1</div>');
+  // Ordered lists (1. item)
+  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:#6366f1;font-size:12px">$1.</span>$2</div>');
+  // Line breaks
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
 function setStatus(state, text) {
   var el = document.getElementById('statusIndicator');
   el.className = 'status ' + state;
@@ -257,14 +285,14 @@ function startAiMessage() {
 function appendToken(token) {
   if (!currentAiMessageEl) return;
   currentAiText += token;
-  currentAiMessageEl.innerHTML = esc(currentAiText) + '<span class="cursor"></span>';
+  currentAiMessageEl.innerHTML = renderMarkdown(currentAiText) + '<span class="cursor"></span>';
   var m = document.getElementById('messages');
   m.scrollTop = m.scrollHeight;
 }
 
 function finishAiMessage() {
   if (currentAiMessageEl) {
-    currentAiMessageEl.innerHTML = esc(currentAiText);
+    currentAiMessageEl.innerHTML = renderMarkdown(currentAiText);
   }
   currentAiMessageEl = null;
   currentAiText = '';

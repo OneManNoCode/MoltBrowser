@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
@@ -311,12 +312,18 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
 
             // Format as TinyLlama chat prompt with optional history
             std::string system_msg =
-                "You are MoltBrowser AI, a helpful local AI "
-                "assistant built into the MoltBrowser web browser. You run "
-                "entirely on the user's device for privacy. Be concise and "
-                "helpful.";
+                "You are MoltBrowser AI, a helpful local AI assistant "
+                "built into MoltBrowser. You run entirely on-device for "
+                "privacy. Instructions:\n"
+                "- Be concise, accurate, and directly helpful\n"
+                "- Use markdown formatting: **bold**, `code`, ```code blocks```, "
+                "bullet lists, and numbered lists\n"
+                "- For code questions, provide working examples\n"
+                "- For summarization, use bullet points\n"
+                "- Never fabricate URLs, citations, or facts\n"
+                "- If unsure, say so honestly";
             if (!page_ctx.empty()) {
-              system_msg += " The user is currently viewing: " + page_ctx;
+              system_msg += "\nThe user is currently viewing: " + page_ctx;
             }
             std::string formatted_prompt =
                 "<|system|>\n" + system_msg + "</s>\n";
@@ -532,12 +539,29 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   std::string url = "https://huggingface.co/" + info.huggingface_id +
                     "/resolve/main/" + filename;
 
+  // Check for partial download (resume support)
+  base::FilePath partial_path(info.file_path + ".partial");
+  int64_t existing_bytes = 0;
+  auto file_size = base::GetFileSize(partial_path);
+  if (file_size.has_value()) {
+    existing_bytes = file_size.value();
+    LOG(INFO) << "[MoltAI] Found partial download: " << existing_bytes
+              << " bytes, resuming...";
+  }
+
   LOG(INFO) << "[MoltAI] Starting download: " << url
-            << " -> " << info.file_path;
+            << " -> " << info.file_path
+            << " (resume from " << existing_bytes << " bytes)";
 
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->url = GURL(url);
   resource_request->method = "GET";
+
+  // Add Range header for download resume
+  if (existing_bytes > 0) {
+    resource_request->headers.SetHeader(
+        "Range", "bytes=" + std::to_string(existing_bytes) + "-");
+  }
 
   net::NetworkTrafficAnnotationTag traffic_annotation =
       net::DefineNetworkTrafficAnnotation("molt_ai_model_download", R"(
@@ -569,11 +593,13 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   download_callback_id_ = callback_id;
   downloading_model_id_ = model_id;
   download_total_bytes_ = info.file_size_bytes;
+  download_resume_bytes_ = existing_bytes;
+  download_final_path_ = file_path;
 
-  // Notify UI that download started
+  // Notify UI of starting progress (including any resumed bytes)
   FireWebUIListener("download-progress",
                     base::Value(model_id),
-                    base::Value(0.0),
+                    base::Value(static_cast<double>(existing_bytes)),
                     base::Value(static_cast<double>(info.file_size_bytes)));
 
   // Get URL loader factory from profile
@@ -581,21 +607,23 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
       profile_->GetDefaultStoragePartition()
           ->GetURLLoaderFactoryForBrowserProcess();
 
-  // Download to the model file path
+  // Download to .partial file, rename to final on completion
   url_loader_->DownloadToFile(
       url_loader_factory.get(),
       base::BindOnce(&MoltAIChatHandler::OnDownloadComplete,
                      weak_ptr_factory_.GetWeakPtr()),
-      file_path);
+      partial_path);
 }
 
 void MoltAIChatHandler::OnDownloadProgress(uint64_t current) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!IsJavascriptAllowed()) return;
 
+  // Add resume offset to show total progress
+  uint64_t total_current = current + download_resume_bytes_;
   FireWebUIListener("download-progress",
                     base::Value(downloading_model_id_),
-                    base::Value(static_cast<double>(current)),
+                    base::Value(static_cast<double>(total_current)),
                     base::Value(static_cast<double>(download_total_bytes_)));
 }
 
@@ -607,9 +635,23 @@ void MoltAIChatHandler::OnDownloadComplete(base::FilePath path) {
             << " path=" << path.value();
 
   if (success) {
+    // Rename .partial file to final destination
+    if (!download_final_path_.value().empty()) {
+      base::FilePath final_path = download_final_path_;
+      base::File::Error error;
+      if (base::ReplaceFile(path, final_path, &error)) {
+        LOG(INFO) << "[MoltAI] Renamed partial to: " << final_path.value();
+      } else {
+        LOG(ERROR) << "[MoltAI] Failed to rename partial file, error: "
+                   << error;
+        success = false;
+      }
+    }
     // Refresh model registry to detect the new file
-    auto* runtime = GetOrCreateRuntime();
-    runtime->RefreshModelStatus();
+    if (success) {
+      auto* runtime = GetOrCreateRuntime();
+      runtime->RefreshModelStatus();
+    }
   }
 
   if (IsJavascriptAllowed()) {
@@ -633,6 +675,8 @@ void MoltAIChatHandler::OnDownloadComplete(base::FilePath path) {
   download_callback_id_.clear();
   downloading_model_id_.clear();
   download_total_bytes_ = 0;
+  download_resume_bytes_ = 0;
+  download_final_path_ = base::FilePath();
 }
 
 // ------------------------------------------------------------------

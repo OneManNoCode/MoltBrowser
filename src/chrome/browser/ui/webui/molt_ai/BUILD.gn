@@ -7,6 +7,8 @@ source_set("molt_ai") {
     "molt_ai_chat_handler.h",
     "molt_ai_chat_ui.cc",
     "molt_ai_chat_ui.h",
+    "molt_ai_settings_ui.cc",
+    "molt_ai_settings_ui.h",
     "molt_ai_ui.cc",
     "molt_ai_ui.h",
   ]
