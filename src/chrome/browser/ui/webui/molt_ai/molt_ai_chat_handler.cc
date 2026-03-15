@@ -13,8 +13,11 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -104,6 +107,72 @@ molt_ai::BrowserAIRuntime* MoltAIChatHandler::GetOrCreateRuntime() {
 }
 
 // ------------------------------------------------------------------
+// LoadUserSettings: Read settings.json for inference parameters
+// ------------------------------------------------------------------
+namespace {
+struct MoltAISettings {
+  int max_tokens = 512;
+  float temperature = 0.7f;
+  float top_p = 0.9f;
+  int top_k = 40;
+  int max_history_messages = 16;
+  int max_page_content_chars = 4000;
+  bool auto_load_model = true;
+  std::string default_model = "tinyllama-1.1b";
+  std::string system_prompt =
+      "You are MoltBrowser AI, a helpful local AI assistant "
+      "built into MoltBrowser. You run entirely on-device for "
+      "privacy. Instructions:\n"
+      "- Be concise, accurate, and directly helpful\n"
+      "- Use markdown formatting: **bold**, `code`, ```code blocks```, "
+      "bullet lists, and numbered lists\n"
+      "- For code questions, provide working examples\n"
+      "- For summarization, use bullet points\n"
+      "- Never fabricate URLs, citations, or facts\n"
+      "- If unsure, say so honestly";
+};
+
+MoltAISettings LoadUserSettings() {
+  MoltAISettings settings;
+  base::FilePath home_dir;
+  base::PathService::Get(base::DIR_HOME, &home_dir);
+  base::FilePath path =
+      home_dir.Append(".moltbrowser").Append("settings.json");
+  std::string contents;
+  if (base::ReadFileToString(path, &contents)) {
+    auto parsed = base::JSONReader::Read(
+        contents, base::JSON_ALLOW_TRAILING_COMMAS);
+    if (parsed && parsed->is_dict()) {
+      const auto& d = parsed->GetDict();
+      if (auto v = d.FindInt("max_tokens"))
+        settings.max_tokens = *v;
+      if (auto v = d.FindDouble("temperature"))
+        settings.temperature = static_cast<float>(*v);
+      if (auto v = d.FindDouble("top_p"))
+        settings.top_p = static_cast<float>(*v);
+      if (auto v = d.FindInt("top_k"))
+        settings.top_k = *v;
+      if (auto v = d.FindInt("max_history_messages"))
+        settings.max_history_messages = *v;
+      if (auto v = d.FindInt("max_page_content_chars"))
+        settings.max_page_content_chars = *v;
+      if (auto v = d.FindBool("auto_load_model"))
+        settings.auto_load_model = *v;
+      if (auto* v = d.FindString("default_model"))
+        settings.default_model = *v;
+      if (auto* v = d.FindString("system_prompt"))
+        settings.system_prompt = *v;
+      LOG(INFO) << "[MoltAI] Loaded user settings: max_tokens="
+                << settings.max_tokens
+                << " temperature=" << settings.temperature
+                << " model=" << settings.default_model;
+    }
+  }
+  return settings;
+}
+}  // namespace
+
+// ------------------------------------------------------------------
 // HandleInitChat: Called when the chat UI loads.
 // JS: chrome.send('initChat', [callback_id])
 // Returns model status and hardware info.
@@ -143,6 +212,22 @@ void MoltAIChatHandler::HandleInitChat(const base::ListValue& args) {
   result.Set("gpu_backend", hw.gpu_backend);
   result.Set("cpu_cores", hw.cpu_cores);
   result.Set("has_gpu", hw.has_gpu_acceleration);
+
+  // Include user settings so JS can apply them
+  MoltAISettings settings = LoadUserSettings();
+  result.Set("max_history_messages", settings.max_history_messages);
+  result.Set("max_page_content_chars", settings.max_page_content_chars);
+  result.Set("default_model", settings.default_model);
+
+  // Check if this is a first-run (no models downloaded)
+  bool any_downloaded = false;
+  for (const auto& m : models) {
+    if (m.is_downloaded) {
+      any_downloaded = true;
+      break;
+    }
+  }
+  result.Set("is_first_run", !any_downloaded);
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));
@@ -245,10 +330,13 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   auto* runtime = GetOrCreateRuntime();
   active_prompt_callback_id_ = callback_id;
 
+  // Load user settings from ~/.moltbrowser/settings.json
+  MoltAISettings user_settings = LoadUserSettings();
+
   // Notify UI that we're loading if model isn't ready
   if (!model_loaded_) {
     FireWebUIListener("model-status", base::Value("loading"),
-                      base::Value("tinyllama-1.1b"));
+                      base::Value(user_settings.default_model));
   }
 
   // Run model loading + streaming inference on a background thread.
@@ -260,68 +348,85 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
-             bool needs_load,
+             bool needs_load, MoltAISettings settings,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
             // Auto-load model on background thread if needed
-            if (needs_load) {
-              LOG(INFO) << "[MoltAI] Auto-loading TinyLlama on background thread...";
-              // Notify UI that we're loading (via model-status, not ai-token)
+            if (needs_load && settings.auto_load_model) {
+              LOG(INFO) << "[MoltAI] Auto-loading " << settings.default_model
+                        << " on background thread...";
               content::GetUIThreadTaskRunner({})->PostTask(
                   FROM_HERE,
                   base::BindOnce(
-                      [](base::WeakPtr<MoltAIChatHandler> self) {
+                      [](base::WeakPtr<MoltAIChatHandler> self,
+                         std::string model_name) {
                         if (self && self->IsJavascriptAllowed()) {
                           self->FireWebUIListener(
                               "model-status",
                               base::Value("loading"),
-                              base::Value("Loading TinyLlama model..."));
+                              base::Value("Loading " + model_name +
+                                          " model..."));
                         }
                       },
-                      weak_self));
+                      weak_self, settings.default_model));
 
-              bool loaded = rt->LoadModel("tinyllama-1.1b");
+              bool loaded = rt->LoadModel(settings.default_model);
               if (!loaded) {
-                LOG(ERROR) << "[MoltAI] Failed to load TinyLlama model";
+                LOG(ERROR) << "[MoltAI] Failed to load model: "
+                           << settings.default_model;
                 molt_ai::GenerationResult fail;
                 fail.success = false;
                 fail.error_message =
-                    "Failed to load model. Check ~/.moltbrowser/models/";
+                    "Failed to load model '" + settings.default_model +
+                    "'. Please download it from the Models panel or check "
+                    "~/.moltbrowser/models/";
+                // Notify UI of error
+                content::GetUIThreadTaskRunner({})->PostTask(
+                    FROM_HERE,
+                    base::BindOnce(
+                        [](base::WeakPtr<MoltAIChatHandler> self,
+                           std::string err) {
+                          if (self && self->IsJavascriptAllowed()) {
+                            self->FireWebUIListener(
+                                "model-status", base::Value("error"),
+                                base::Value(err));
+                          }
+                        },
+                        weak_self, fail.error_message));
                 return fail;
               }
-              LOG(INFO) << "[MoltAI] TinyLlama loaded successfully";
+              LOG(INFO) << "[MoltAI] " << settings.default_model
+                        << " loaded successfully";
 
-              // Notify UI that model is ready
               content::GetUIThreadTaskRunner({})->PostTask(
                   FROM_HERE,
                   base::BindOnce(
-                      [](base::WeakPtr<MoltAIChatHandler> self) {
+                      [](base::WeakPtr<MoltAIChatHandler> self,
+                         std::string model_name) {
                         if (self && self->IsJavascriptAllowed()) {
                           self->FireWebUIListener(
                               "model-status", base::Value("ready"),
-                              base::Value("tinyllama-1.1b"));
+                              base::Value(model_name));
                         }
                       },
-                      weak_self));
+                      weak_self, settings.default_model));
+            } else if (needs_load && !settings.auto_load_model) {
+              molt_ai::GenerationResult fail;
+              fail.success = false;
+              fail.error_message =
+                  "No model loaded. Open the Models panel to load a model.";
+              return fail;
             }
 
             molt_ai::PromptOptions opts;
-            opts.max_tokens = 512;
-            opts.temperature = 0.7f;
+            opts.max_tokens = settings.max_tokens;
+            opts.temperature = settings.temperature;
+            opts.top_p = settings.top_p;
+            opts.top_k = settings.top_k;
             opts.stream = true;
 
-            // Format as TinyLlama chat prompt with optional history
-            std::string system_msg =
-                "You are MoltBrowser AI, a helpful local AI assistant "
-                "built into MoltBrowser. You run entirely on-device for "
-                "privacy. Instructions:\n"
-                "- Be concise, accurate, and directly helpful\n"
-                "- Use markdown formatting: **bold**, `code`, ```code blocks```, "
-                "bullet lists, and numbered lists\n"
-                "- For code questions, provide working examples\n"
-                "- For summarization, use bullet points\n"
-                "- Never fabricate URLs, citations, or facts\n"
-                "- If unsure, say so honestly";
+            // Format prompt with user's custom system prompt
+            std::string system_msg = settings.system_prompt;
             if (!page_ctx.empty()) {
               system_msg += "\nThe user is currently viewing: " + page_ctx;
             }
@@ -377,7 +482,8 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, !model_loaded_, weak_ptr_factory_.GetWeakPtr()),
+          page_context, !model_loaded_, user_settings,
+          weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
              molt_ai::GenerationResult result) {
@@ -528,6 +634,28 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
     base::DictValue result;
     result.Set("success", false);
     result.Set("error", "Another download is already in progress");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  // Check available disk space before download
+  base::FilePath model_dir(info.file_path);
+  base::FilePath parent_dir = model_dir.DirName();
+  if (!base::DirectoryExists(parent_dir)) {
+    base::CreateDirectory(parent_dir);
+  }
+  auto disk_space_opt = base::SysInfo::AmountOfFreeDiskSpace(parent_dir);
+  int64_t disk_space = disk_space_opt.value_or(-1);
+  int64_t required_bytes = static_cast<int64_t>(info.file_size_bytes);
+  if (disk_space >= 0 && disk_space < required_bytes) {
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("error",
+        "Not enough disk space. Need " +
+        std::to_string(required_bytes / (1024 * 1024)) +
+        " MB but only " +
+        std::to_string(disk_space / (1024 * 1024)) + " MB available.");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
     return;

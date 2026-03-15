@@ -117,6 +117,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card .progress-bar{height:6px;border-radius:3px;background:#222;overflow:hidden}
 .model-card .progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
 .model-card .progress-text{font-size:11px;color:#888;margin-top:4px}
+/* First-Run Welcome */
+.welcome-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:#0a0a0a;z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center}
+.welcome-overlay.open{display:flex}
+.welcome-title{font-size:32px;font-weight:700;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px}
+.welcome-desc{color:#888;font-size:15px;max-width:480px;line-height:1.7;margin-bottom:24px}
+.welcome-features{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:440px;margin-bottom:28px}
+.welcome-feat{text-align:left;padding:12px 16px;background:#111;border:1px solid #222;border-radius:10px}
+.welcome-feat .fi{font-size:18px;margin-bottom:4px}
+.welcome-feat .ft{font-size:13px;font-weight:600;color:#e0e0e0}
+.welcome-feat .fd{font-size:11px;color:#666;margin-top:2px}
+.welcome-btn{padding:14px 40px;border-radius:12px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;font-size:16px;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-bottom:10px}
+.welcome-btn:hover{opacity:0.85}
+.welcome-btn:disabled{opacity:0.5;cursor:not-allowed}
+.welcome-skip{color:#666;font-size:12px;cursor:pointer;border:none;background:none;padding:6px}
+.welcome-skip:hover{color:#aaa}
+.welcome-progress{width:100%;max-width:400px;margin-top:16px;display:none}
+.welcome-progress.active{display:block}
+.welcome-pbar{height:8px;border-radius:4px;background:#222;overflow:hidden}
+.welcome-pfill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
+.welcome-ptext{font-size:12px;color:#888;margin-top:6px}
 </style>
 </head>
 <body>
@@ -158,6 +178,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div style="margin-top:16px;text-align:right">
       <button class="top-btn" onclick="toggleModelPanel()">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- First-Run Welcome -->
+<div class="welcome-overlay" id="welcomeOverlay">
+  <div class="welcome-title">Welcome to MoltBrowser AI</div>
+  <div class="welcome-desc">Your AI assistant runs 100% locally on your device. No cloud servers, no data collection, complete privacy. Let's get started by downloading a model.</div>
+  <div class="welcome-features">
+    <div class="welcome-feat"><div class="fi">&#9889;</div><div class="ft">Metal GPU Accelerated</div><div class="fd">Fast inference on Apple Silicon</div></div>
+    <div class="welcome-feat"><div class="fi">&#128274;</div><div class="ft">Fully Private</div><div class="fd">Nothing leaves your device</div></div>
+    <div class="welcome-feat"><div class="fi">&#128172;</div><div class="ft">Smart Chat</div><div class="fd">Summarize, explain, write code</div></div>
+    <div class="welcome-feat"><div class="fi">&#127760;</div><div class="ft">Page-Aware</div><div class="fd">AI sees what you're browsing</div></div>
+  </div>
+  <button class="welcome-btn" id="welcomeDownloadBtn" onclick="startFirstRunDownload()">Download TinyLlama 1.1B (638 MB)</button>
+  <button class="welcome-skip" onclick="skipFirstRun()">I'll set up later</button>
+  <div class="welcome-progress" id="welcomeProgress">
+    <div class="welcome-pbar"><div class="welcome-pfill" id="welcomePfill"></div></div>
+    <div class="welcome-ptext" id="welcomePtext">Starting download...</div>
   </div>
 </div>
 
@@ -421,12 +459,45 @@ cr.addWebUiListener('download-progress', function(modelId, current, total) {
 cr.addWebUiListener('download-complete', function(modelId, success) {
   var pw = document.getElementById('pw-' + modelId);
   if (pw) pw.classList.remove('active');
-  if (success) refreshModelList();
+  if (success) {
+    refreshModelList();
+    // Close welcome overlay if it was open
+    var wo = document.getElementById('welcomeOverlay');
+    if (wo && wo.classList.contains('open')) {
+      wo.classList.remove('open');
+      setStatus('offline', 'Model ready \u2014 type to start');
+    }
+  }
 });
 
 // Keyboard
 document.getElementById('prompt').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+});
+
+// ---- First-Run ----
+function startFirstRunDownload() {
+  var btn = document.getElementById('welcomeDownloadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Downloading...';
+  document.getElementById('welcomeProgress').classList.add('active');
+  downloadModel('tinyllama-1.1b');
+}
+
+function skipFirstRun() {
+  document.getElementById('welcomeOverlay').classList.remove('open');
+}
+
+// Hook welcome overlay into download progress
+cr.addWebUiListener('download-progress', function(modelId, current, total) {
+  var wo = document.getElementById('welcomeOverlay');
+  if (wo && wo.classList.contains('open') && total > 0) {
+    var pct = Math.round((current / total) * 100);
+    document.getElementById('welcomePfill').style.width = pct + '%';
+    document.getElementById('welcomePtext').textContent =
+      pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
+      Math.round(total / 1048576) + ' MB';
+  }
 });
 
 // Handle ?q= parameter from omnibox @ai prefix
@@ -437,6 +508,9 @@ var iq = params.get('q');
 (function() {
   setStatus('loading', 'Initializing...');
   sendWithPromise('initChat').then(function(info) {
+    // Apply settings
+    if (info.max_history_messages) MAX_HISTORY = info.max_history_messages;
+
     var hw = [];
     if (info.has_gpu) hw.push(info.gpu_backend.toUpperCase());
     hw.push(info.total_ram_gb + 'GB RAM');
@@ -444,13 +518,19 @@ var iq = params.get('q');
     document.getElementById('hwInfo').textContent = hw.join(' \u00b7 ');
     if (info.model_loaded) {
       setStatus('ready', 'Model Ready');
+    } else if (info.is_first_run) {
+      setStatus('offline', 'Setup required');
+      document.getElementById('welcomeOverlay').classList.add('open');
     } else {
       var dl = (info.models || []).filter(function(m) { return m.is_downloaded; });
       if (dl.length > 0) setStatus('offline', 'Model available \u2014 type to start');
       else setStatus('error', 'No models \u2014 click Models to download');
     }
-    // Auto-send if we got a query from omnibox
-    if (iq) { document.getElementById('prompt').value = decodeURIComponent(iq); doSend(); }
+    // Auto-send if we got a query from omnibox (and not first run)
+    if (iq && !info.is_first_run) {
+      document.getElementById('prompt').value = decodeURIComponent(iq);
+      doSend();
+    }
   }).catch(function() { setStatus('error', 'Failed to initialize'); });
 })();
 </script>
