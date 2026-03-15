@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,13 +22,19 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 
 MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
     : profile_(profile) {}
 
 MoltAIChatHandler::~MoltAIChatHandler() {
+  url_loader_.reset();
   if (runtime_) {
     runtime_->CancelGeneration();
     runtime_->Shutdown();
@@ -59,6 +66,18 @@ void MoltAIChatHandler::RegisterMessages() {
       "getPageContext",
       base::BindRepeating(&MoltAIChatHandler::HandleGetPageContext,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "downloadModel",
+      base::BindRepeating(&MoltAIChatHandler::HandleDownloadModel,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "deleteModel",
+      base::BindRepeating(&MoltAIChatHandler::HandleDeleteModel,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getPageContent",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetPageContent,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -67,6 +86,7 @@ void MoltAIChatHandler::OnJavascriptAllowed() {
 
 void MoltAIChatHandler::OnJavascriptDisallowed() {
   weak_ptr_factory_.InvalidateWeakPtrs();
+  url_loader_.reset();
   if (runtime_) {
     runtime_->CancelGeneration();
   }
@@ -462,4 +482,268 @@ void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));
+}
+
+// ------------------------------------------------------------------
+// HandleDownloadModel: Download a model from HuggingFace
+// JS: chrome.send('downloadModel', [callback_id, model_id])
+// Streams progress via FireWebUIListener('download-progress', ...)
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string model_id = args[1].GetString();
+
+  auto* runtime = GetOrCreateRuntime();
+  auto info = runtime->GetModelInfo(model_id);
+
+  if (info.model_id.empty()) {
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("error", "Unknown model: " + model_id);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  if (info.is_downloaded) {
+    base::DictValue result;
+    result.Set("success", true);
+    result.Set("already_downloaded", true);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  if (url_loader_) {
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("error", "Another download is already in progress");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  // Build HuggingFace download URL
+  base::FilePath file_path(info.file_path);
+  std::string filename = file_path.BaseName().value();
+  std::string url = "https://huggingface.co/" + info.huggingface_id +
+                    "/resolve/main/" + filename;
+
+  LOG(INFO) << "[MoltAI] Starting download: " << url
+            << " -> " << info.file_path;
+
+  auto resource_request = std::make_unique<network::ResourceRequest>();
+  resource_request->url = GURL(url);
+  resource_request->method = "GET";
+
+  net::NetworkTrafficAnnotationTag traffic_annotation =
+      net::DefineNetworkTrafficAnnotation("molt_ai_model_download", R"(
+        semantics {
+          sender: "MoltBrowser AI"
+          description: "Downloads AI model files from HuggingFace Hub"
+          trigger: "User clicks Download button in AI model manager"
+          data: "HTTP GET request for model file"
+          destination: WEBSITE
+        }
+        policy {
+          cookies_allowed: NO
+          setting: "User-initiated model download in MoltBrowser AI settings"
+        }
+      )");
+
+  url_loader_ = network::SimpleURLLoader::Create(
+      std::move(resource_request), traffic_annotation);
+
+  // Allow redirects (HuggingFace redirects to CDN)
+  url_loader_->SetAllowHttpErrorResults(false);
+
+  // Progress callback
+  url_loader_->SetOnDownloadProgressCallback(
+      base::BindRepeating(&MoltAIChatHandler::OnDownloadProgress,
+                          weak_ptr_factory_.GetWeakPtr()));
+
+  // Store state for callbacks
+  download_callback_id_ = callback_id;
+  downloading_model_id_ = model_id;
+  download_total_bytes_ = info.file_size_bytes;
+
+  // Notify UI that download started
+  FireWebUIListener("download-progress",
+                    base::Value(model_id),
+                    base::Value(0.0),
+                    base::Value(static_cast<double>(info.file_size_bytes)));
+
+  // Get URL loader factory from profile
+  auto url_loader_factory =
+      profile_->GetDefaultStoragePartition()
+          ->GetURLLoaderFactoryForBrowserProcess();
+
+  // Download to the model file path
+  url_loader_->DownloadToFile(
+      url_loader_factory.get(),
+      base::BindOnce(&MoltAIChatHandler::OnDownloadComplete,
+                     weak_ptr_factory_.GetWeakPtr()),
+      file_path);
+}
+
+void MoltAIChatHandler::OnDownloadProgress(uint64_t current) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
+
+  FireWebUIListener("download-progress",
+                    base::Value(downloading_model_id_),
+                    base::Value(static_cast<double>(current)),
+                    base::Value(static_cast<double>(download_total_bytes_)));
+}
+
+void MoltAIChatHandler::OnDownloadComplete(base::FilePath path) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  bool success = !path.empty();
+  LOG(INFO) << "[MoltAI] Download complete: success=" << success
+            << " path=" << path.value();
+
+  if (success) {
+    // Refresh model registry to detect the new file
+    auto* runtime = GetOrCreateRuntime();
+    runtime->RefreshModelStatus();
+  }
+
+  if (IsJavascriptAllowed()) {
+    FireWebUIListener("download-complete",
+                      base::Value(downloading_model_id_),
+                      base::Value(success));
+
+    base::DictValue result;
+    result.Set("success", success);
+    result.Set("model_id", downloading_model_id_);
+    if (!success) {
+      int net_error = url_loader_->NetError();
+      result.Set("error", "Download failed (net error: " +
+                              std::to_string(net_error) + ")");
+    }
+    ResolveJavascriptCallback(base::Value(download_callback_id_),
+                              base::Value(std::move(result)));
+  }
+
+  url_loader_.reset();
+  download_callback_id_.clear();
+  downloading_model_id_.clear();
+  download_total_bytes_ = 0;
+}
+
+// ------------------------------------------------------------------
+// HandleDeleteModel: Delete a downloaded model file
+// JS: chrome.send('deleteModel', [callback_id, model_id])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string model_id = args[1].GetString();
+
+  auto* runtime = GetOrCreateRuntime();
+  bool success = runtime->DeleteModel(model_id);
+
+  if (success) {
+    model_loaded_ = false;
+  }
+
+  base::DictValue result;
+  result.Set("success", success);
+  result.Set("model_id", model_id);
+
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(result)));
+}
+
+// ------------------------------------------------------------------
+// HandleGetPageContent: Extract text content from the active tab
+// JS: chrome.send('getPageContent', [callback_id])
+// Uses JS injection to get document.body.innerText
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  content::WebContents* webui_contents = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
+
+  if (!browser || !browser->tab_strip_model()) {
+    base::DictValue result;
+    result.Set("has_content", false);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  content::WebContents* active_tab =
+      browser->tab_strip_model()->GetActiveWebContents();
+
+  if (!active_tab || active_tab == webui_contents) {
+    base::DictValue result;
+    result.Set("has_content", false);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  // Store tab info before async JS call
+  std::string url = active_tab->GetLastCommittedURL().spec();
+  std::string title = base::UTF16ToUTF8(active_tab->GetTitle());
+
+  // Inject JS to extract page text (limited to 4000 chars for context window)
+  content::RenderFrameHost* rfh = active_tab->GetPrimaryMainFrame();
+  if (!rfh) {
+    base::DictValue result;
+    result.Set("has_content", false);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  rfh->ExecuteJavaScriptForTests(
+      u"(function(){"
+      u"var text = document.body ? document.body.innerText : '';"
+      u"return text.substring(0, 4000);"
+      u"})()",
+      base::BindOnce(&MoltAIChatHandler::OnPageContentExtracted,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id),
+      content::ISOLATED_WORLD_ID_CONTENT_END);
+}
+
+void MoltAIChatHandler::OnPageContentExtracted(std::string callback_id,
+                                                base::Value result) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
+
+  base::DictValue response;
+
+  // Get the page URL/title from the active tab again
+  content::WebContents* webui_contents = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
+  if (browser && browser->tab_strip_model()) {
+    content::WebContents* active_tab =
+        browser->tab_strip_model()->GetActiveWebContents();
+    if (active_tab && active_tab != webui_contents) {
+      response.Set("url", active_tab->GetLastCommittedURL().spec());
+      response.Set("title", base::UTF16ToUTF8(active_tab->GetTitle()));
+    }
+  }
+
+  if (result.is_string() && !result.GetString().empty()) {
+    response.Set("has_content", true);
+    response.Set("content", result.GetString());
+  } else {
+    response.Set("has_content", false);
+  }
+
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(response)));
 }

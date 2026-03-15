@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 
+#include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -28,6 +29,10 @@ class Profile;
 namespace molt_ai {
 class BrowserAIRuntime;
 }  // namespace molt_ai
+
+namespace network {
+class SimpleURLLoader;
+}  // namespace network
 
 class MoltAIChatHandler : public content::WebUIMessageHandler {
  public:
@@ -50,6 +55,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleCancelGeneration(const base::ListValue& args);
   void HandleGetModelStatus(const base::ListValue& args);
   void HandleGetPageContext(const base::ListValue& args);
+  void HandleDownloadModel(const base::ListValue& args);
+  void HandleDeleteModel(const base::ListValue& args);
+  void HandleGetPageContent(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void OnModelLoaded(std::string callback_id, bool success,
@@ -57,6 +65,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void OnPromptComplete(std::string callback_id, bool success,
                         const std::string& full_text,
                         const std::string& error);
+  void OnDownloadProgress(uint64_t current);
+  void OnDownloadComplete(base::FilePath path);
+  void OnPageContentExtracted(std::string callback_id, base::Value result);
 
   // Ensure BrowserAIRuntime is created and initialized
   molt_ai::BrowserAIRuntime* GetOrCreateRuntime();
@@ -65,6 +76,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   std::unique_ptr<molt_ai::BrowserAIRuntime> runtime_;
   bool model_loaded_ = false;
   std::string active_prompt_callback_id_;
+
+  // Model download state
+  std::unique_ptr<network::SimpleURLLoader> url_loader_;
+  std::string download_callback_id_;
+  std::string downloading_model_id_;
+  uint64_t download_total_bytes_ = 0;
 
   base::WeakPtrFactory<MoltAIChatHandler> weak_ptr_factory_{this};
 };

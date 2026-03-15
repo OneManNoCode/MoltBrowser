@@ -186,6 +186,9 @@ class BrowserAIRuntime {
   // Get current memory usage of all loaded models
   size_t GetModelMemoryUsage() const;
 
+  // Refresh model download status (re-check file existence on disk)
+  void RefreshModelStatus();
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

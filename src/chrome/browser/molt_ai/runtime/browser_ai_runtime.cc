@@ -855,4 +855,10 @@ size_t BrowserAIRuntime::GetModelMemoryUsage() const {
   return total;
 }
 
+void BrowserAIRuntime::RefreshModelStatus() {
+  for (auto& [id, info] : impl_->models) {
+    info.is_downloaded = std::filesystem::exists(info.file_path);
+  }
+}
+
 }  // namespace molt_ai

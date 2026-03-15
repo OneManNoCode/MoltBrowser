@@ -18,6 +18,8 @@ source_set("molt_ai") {
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//content/public/browser",
+    "//net",
+    "//services/network/public/cpp",
     "//services/network/public/mojom",
   ]
 }
