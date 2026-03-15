@@ -140,6 +140,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .welcome-pbar{height:6px;border-radius:3px;background:#222;overflow:hidden}
 .welcome-pfill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
 .welcome-ptext{font-size:11px;color:#888;margin-top:4px}
+/* Code block copy button */
+.code-wrap{position:relative;margin:8px 0}
+.code-wrap pre{margin:0}
+.code-copy{position:absolute;top:4px;right:4px;padding:2px 8px;border-radius:4px;border:1px solid #444;background:#222;color:#888;font-size:10px;cursor:pointer;opacity:0;transition:opacity 0.2s}
+.code-wrap:hover .code-copy{opacity:1}
+.code-copy:hover{color:#e0e0e0;border-color:#6366f1}
+.code-copy.copied{color:#4ade80;border-color:#4ade80}
+/* Message actions */
+.msg-actions{display:flex;gap:4px;margin-top:6px;opacity:0;transition:opacity 0.2s}
+.message:hover .msg-actions{opacity:1}
+.msg-action{padding:2px 8px;border-radius:4px;border:1px solid #333;background:none;color:#666;font-size:10px;cursor:pointer}
+.msg-action:hover{color:#e0e0e0;border-color:#6366f1}
+/* Search bar */
+.search-bar{padding:6px 16px;border-bottom:1px solid #1a1a1a;display:none}
+.search-bar.open{display:flex}
+.search-bar input{flex:1;padding:6px 10px;border-radius:6px;border:1px solid #333;background:#111;color:#e0e0e0;font-size:12px;outline:none}
+.search-bar input:focus{border-color:#6366f1}
+.search-bar .search-count{font-size:10px;color:#888;padding:6px 8px}
+.search-bar .search-close{background:none;border:none;color:#888;cursor:pointer;font-size:14px;padding:4px}
+.highlight{background:#6366f1;color:#fff;border-radius:2px;padding:0 2px}
 </style>
 </head>
 <body>
@@ -148,10 +168,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="status offline" id="statusIndicator">Initializing...</div>
   <div class="header-actions">
     <button class="icon-btn" onclick="newChat()" title="New Chat">New</button>
+    <button class="icon-btn" onclick="toggleSearch()" title="Search (Cmd+F)">&#128269;</button>
     <button class="icon-btn" onclick="exportChat()" title="Export Chat">&#128190;</button>
+    <button class="icon-btn" onclick="importChat()" title="Import Chat">&#128194;</button>
     <button class="icon-btn" onclick="toggleModelPanel()" title="Models">Models</button>
     <button class="icon-btn" onclick="window.open('chrome://molt-ai-settings/')" title="Settings">&#9881;</button>
   </div>
+</div>
+<div class="search-bar" id="searchBar">
+  <input type="text" id="searchInput" placeholder="Search messages..." oninput="doSearch()">
+  <span class="search-count" id="searchCount"></span>
+  <button class="search-close" onclick="toggleSearch()">&times;</button>
 </div>
 <div class="hw-bar" id="hwBar">
   <span id="hwGpu"></span>
@@ -265,12 +292,17 @@ function esc(t) {
 }
 
 // ---- Markdown Rendering ----
+var codeBlockId = 0;
 function renderMarkdown(text) {
   // Escape HTML first
   var s = esc(text);
-  // Code blocks (``` ... ```)
+  // Code blocks (``` ... ```) with copy button
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
-    return '<pre style="background:#1a1a2e;padding:10px;border-radius:6px;overflow-x:auto;margin:8px 0;font-size:12px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre>';
+    var id = 'cb-' + (++codeBlockId);
+    var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:9px;color:#666;text-transform:uppercase">' + lang + '</span>' : '';
+    return '<div class="code-wrap">' + langLabel +
+      '<button class="code-copy" onclick="copyCode(\'' + id + '\',this)">Copy</button>' +
+      '<pre id="' + id + '" style="background:#1a1a2e;padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:6px;overflow-x:auto;font-size:12px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre></div>';
   });
   // Inline code (`...`)
   s = s.replace(/`([^`\n]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:12px;color:#a78bfa">$1</code>');
@@ -329,6 +361,11 @@ function appendToken(token) {
 function finishAiMessage() {
   if (currentAiMessageEl) {
     currentAiMessageEl.innerHTML = renderMarkdown(currentAiText);
+    // Add copy response button
+    var actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    actions.innerHTML = '<button class="msg-action" onclick="copyResponse(this)">Copy response</button>';
+    currentAiMessageEl.parentNode.appendChild(actions);
   }
   currentAiMessageEl = null;
   currentAiText = '';
@@ -724,6 +761,117 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
   }
 });
 
+// ---- Copy Code / Response ----
+
+function copyCode(id, btn) {
+  var pre = document.getElementById(id);
+  if (!pre) return;
+  var text = pre.textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+function copyResponse(btn) {
+  var msg = btn.closest('.message');
+  if (!msg) return;
+  var textEl = msg.querySelector('.text');
+  if (!textEl) return;
+  navigator.clipboard.writeText(textEl.innerText).then(function() {
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy response'; }, 1500);
+  });
+}
+
+// ---- Search Conversation ----
+
+function toggleSearch() {
+  var bar = document.getElementById('searchBar');
+  if (bar.classList.contains('open')) {
+    bar.classList.remove('open');
+    clearSearch();
+  } else {
+    bar.classList.add('open');
+    document.getElementById('searchInput').focus();
+  }
+}
+
+function doSearch() {
+  clearSearch();
+  var query = document.getElementById('searchInput').value.trim().toLowerCase();
+  if (!query) { document.getElementById('searchCount').textContent = ''; return; }
+  var msgs = document.querySelectorAll('#messages .message .text');
+  var count = 0;
+  for (var i = 0; i < msgs.length; i++) {
+    var el = msgs[i];
+    var html = el.innerHTML;
+    var text = el.textContent.toLowerCase();
+    if (text.indexOf(query) >= 0) {
+      count++;
+      // Highlight matches
+      var re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      el.innerHTML = el.innerHTML.replace(re, '<span class="highlight">$1</span>');
+      if (count === 1) el.scrollIntoView({behavior:'smooth', block:'center'});
+    }
+  }
+  document.getElementById('searchCount').textContent = count + ' match' + (count !== 1 ? 'es' : '');
+}
+
+function clearSearch() {
+  var highlights = document.querySelectorAll('.highlight');
+  for (var i = 0; i < highlights.length; i++) {
+    var span = highlights[i];
+    span.replaceWith(span.textContent);
+  }
+}
+
+// ---- Import Chat History ----
+
+function importChat() {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        if (data.messages && Array.isArray(data.messages)) {
+          conversationHistory = data.messages;
+          // Rebuild message display
+          var m = document.getElementById('messages');
+          m.innerHTML = '';
+          for (var i = 0; i < data.messages.length; i++) {
+            var msg = data.messages[i];
+            if (msg.role === 'user') {
+              addUserMessage(msg.content);
+            } else {
+              var d = document.createElement('div');
+              d.className = 'message ai';
+              d.innerHTML = '<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(msg.content) + '</div>' +
+                '<div class="msg-actions"><button class="msg-action" onclick="copyResponse(this)">Copy response</button></div>';
+              m.appendChild(d);
+            }
+          }
+          m.scrollTop = m.scrollHeight;
+          updateContextBar();
+          addSystemMessage('Imported ' + data.messages.length + ' messages from ' + file.name);
+        } else {
+          addErrorMessage('Invalid chat export file');
+        }
+      } catch (err) {
+        addErrorMessage('Failed to parse file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
 // ---- Export Chat History ----
 
 function exportChat() {
@@ -774,6 +922,18 @@ document.addEventListener('keydown', function(e) {
   } else if (e.key === 'N' || e.key === 'n') {
     e.preventDefault();
     newChat();
+  }
+});
+
+// Cmd/Ctrl+F for search
+document.addEventListener('keydown', function(e) {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && !e.shiftKey) {
+    e.preventDefault();
+    toggleSearch();
+  }
+  if (e.key === 'Escape') {
+    var bar = document.getElementById('searchBar');
+    if (bar.classList.contains('open')) toggleSearch();
   }
 });
 
