@@ -82,6 +82,14 @@ void MoltAIChatHandler::RegisterMessages() {
       "getPageContent",
       base::BindRepeating(&MoltAIChatHandler::HandleGetPageContent,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "cancelDownload",
+      base::BindRepeating(&MoltAIChatHandler::HandleCancelDownload,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "exportHistory",
+      base::BindRepeating(&MoltAIChatHandler::HandleExportHistory,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -723,6 +731,9 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   download_total_bytes_ = info.file_size_bytes;
   download_resume_bytes_ = existing_bytes;
   download_final_path_ = file_path;
+  download_start_time_ = base::TimeTicks::Now();
+  download_last_time_ = download_start_time_;
+  download_last_bytes_ = existing_bytes;
 
   // Notify UI of starting progress (including any resumed bytes)
   FireWebUIListener("download-progress",
@@ -749,10 +760,29 @@ void MoltAIChatHandler::OnDownloadProgress(uint64_t current) {
 
   // Add resume offset to show total progress
   uint64_t total_current = current + download_resume_bytes_;
+
+  // Calculate download speed (bytes/sec) and ETA
+  base::TimeTicks now = base::TimeTicks::Now();
+  double elapsed_sec = (now - download_last_time_).InSecondsF();
+  double speed_bps = 0;
+  double eta_sec = -1;
+  if (elapsed_sec > 0.5) {
+    uint64_t bytes_delta = total_current - download_last_bytes_;
+    speed_bps = static_cast<double>(bytes_delta) / elapsed_sec;
+    download_last_bytes_ = total_current;
+    download_last_time_ = now;
+    if (speed_bps > 0 && download_total_bytes_ > total_current) {
+      eta_sec = static_cast<double>(download_total_bytes_ - total_current) /
+                speed_bps;
+    }
+  }
+
   FireWebUIListener("download-progress",
                     base::Value(downloading_model_id_),
                     base::Value(static_cast<double>(total_current)),
-                    base::Value(static_cast<double>(download_total_bytes_)));
+                    base::Value(static_cast<double>(download_total_bytes_)),
+                    base::Value(speed_bps),
+                    base::Value(eta_sec));
 }
 
 void MoltAIChatHandler::OnDownloadComplete(base::FilePath path) {
@@ -918,4 +948,88 @@ void MoltAIChatHandler::OnPageContentExtracted(std::string callback_id,
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(response)));
+}
+
+// ------------------------------------------------------------------
+// HandleCancelDownload: Cancel an in-progress model download
+// JS: chrome.send('cancelDownload', [])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
+  AllowJavascript();
+  if (url_loader_) {
+    LOG(INFO) << "[MoltAI] Cancelling download of " << downloading_model_id_;
+    std::string cancelled_model = downloading_model_id_;
+    url_loader_.reset();
+
+    // Clean up partial file
+    if (!download_final_path_.value().empty()) {
+      base::FilePath partial_path(download_final_path_.value() + ".partial");
+      base::DeleteFile(partial_path);
+    }
+
+    FireWebUIListener("download-complete",
+                      base::Value(cancelled_model),
+                      base::Value(false));
+
+    if (!download_callback_id_.empty()) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error", "Download cancelled by user");
+      result.Set("model_id", cancelled_model);
+      ResolveJavascriptCallback(base::Value(download_callback_id_),
+                                base::Value(std::move(result)));
+    }
+
+    download_callback_id_.clear();
+    downloading_model_id_.clear();
+    download_total_bytes_ = 0;
+    download_resume_bytes_ = 0;
+    download_final_path_ = base::FilePath();
+  }
+}
+
+// ------------------------------------------------------------------
+// HandleExportHistory: Export chat history as JSON
+// JS: chrome.send('exportHistory', [callback_id, history_json])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleExportHistory(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string history_json = args[1].GetString();
+
+  // Save history to ~/.moltbrowser/chat_exports/ with timestamp filename
+  base::FilePath home_dir;
+  base::PathService::Get(base::DIR_HOME, &home_dir);
+  base::FilePath export_dir =
+      home_dir.Append(".moltbrowser").Append("chat_exports");
+  if (!base::DirectoryExists(export_dir)) {
+    base::CreateDirectory(export_dir);
+  }
+
+  // Generate timestamp-based filename
+  base::Time now = base::Time::Now();
+  base::Time::Exploded exploded;
+  now.LocalExplode(&exploded);
+  std::string filename = "chat-" +
+      std::to_string(exploded.year) + "-" +
+      (exploded.month < 10 ? "0" : "") + std::to_string(exploded.month) + "-" +
+      (exploded.day_of_month < 10 ? "0" : "") +
+      std::to_string(exploded.day_of_month) + "-" +
+      (exploded.hour < 10 ? "0" : "") + std::to_string(exploded.hour) +
+      (exploded.minute < 10 ? "0" : "") + std::to_string(exploded.minute) +
+      (exploded.second < 10 ? "0" : "") + std::to_string(exploded.second) +
+      ".json";
+
+  base::FilePath file_path = export_dir.Append(filename);
+  bool success = base::WriteFile(file_path, history_json);
+
+  base::DictValue result;
+  result.Set("success", success);
+  result.Set("path", file_path.value());
+  result.Set("filename", filename);
+
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(result)));
 }

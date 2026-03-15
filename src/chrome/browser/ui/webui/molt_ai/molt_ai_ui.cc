@@ -150,6 +150,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
   <div class="top-actions">
     <button class="top-btn" onclick="newChat()">New Chat</button>
+    <button class="top-btn" onclick="exportChat()">Export</button>
     <button class="top-btn" onclick="toggleModelPanel()">Models</button>
     <button class="top-btn" onclick="window.location='chrome://molt-ai-settings/'">Settings</button>
   </div>
@@ -415,10 +416,27 @@ function refreshModelList() {
 function downloadModel(modelId) {
   var pw = document.getElementById('pw-' + modelId);
   if (pw) pw.classList.add('active');
+
+  // Show cancel button
+  var card = document.getElementById('model-' + modelId);
+  if (card) {
+    var btns = card.querySelectorAll('.card-actions .btn');
+    for (var i = 0; i < btns.length; i++) btns[i].style.display = 'none';
+    var cancelDiv = document.createElement('div');
+    cancelDiv.className = 'card-actions';
+    cancelDiv.id = 'cancel-wrap-' + modelId;
+    cancelDiv.innerHTML = '<button class="btn danger" onclick="cancelDownload()">Cancel Download</button>';
+    card.querySelector('.card-actions').parentNode.appendChild(cancelDiv);
+  }
+
   sendWithPromise('downloadModel', modelId).then(function(r) {
     if (r.success) refreshModelList();
     else { addErr('Download failed: ' + (r.error || 'Unknown')); refreshModelList(); }
   }).catch(function(e) { addErr('Download error: ' + e); refreshModelList(); });
+}
+
+function cancelDownload() {
+  chrome.send('cancelDownload', []);
 }
 
 function loadModel(modelId) {
@@ -444,7 +462,7 @@ cr.addWebUiListener('model-status', function(st, detail) {
   else if (st === 'error') setStatus('error', detail || 'Error');
 });
 
-cr.addWebUiListener('download-progress', function(modelId, current, total) {
+cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
   var fill = document.getElementById('pf-' + modelId);
   var ptext = document.getElementById('pt-' + modelId);
   var pw = document.getElementById('pw-' + modelId);
@@ -452,7 +470,16 @@ cr.addWebUiListener('download-progress', function(modelId, current, total) {
     var pct = Math.round((current / total) * 100);
     fill.style.width = pct + '%';
     if (pw) pw.classList.add('active');
-    if (ptext) ptext.textContent = pct + '% (' + Math.round(current / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB)';
+    var info = pct + '% (' + Math.round(current / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB)';
+    if (speed > 0) {
+      info += ' \u00b7 ' + (speed / 1048576).toFixed(1) + ' MB/s';
+      if (eta > 0) {
+        var mins = Math.floor(eta / 60);
+        var secs = Math.round(eta % 60);
+        info += ' \u00b7 ' + (mins > 0 ? mins + 'm ' : '') + secs + 's left';
+      }
+    }
+    if (ptext) ptext.textContent = info;
   }
 });
 
@@ -489,16 +516,87 @@ function skipFirstRun() {
 }
 
 // Hook welcome overlay into download progress
-cr.addWebUiListener('download-progress', function(modelId, current, total) {
+cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
   var wo = document.getElementById('welcomeOverlay');
   if (wo && wo.classList.contains('open') && total > 0) {
     var pct = Math.round((current / total) * 100);
     document.getElementById('welcomePfill').style.width = pct + '%';
-    document.getElementById('welcomePtext').textContent =
-      pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
+    var info = pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
       Math.round(total / 1048576) + ' MB';
+    if (speed > 0) {
+      info += ' \u00b7 ' + (speed / 1048576).toFixed(1) + ' MB/s';
+      if (eta > 0) {
+        var mins = Math.floor(eta / 60);
+        var secs = Math.round(eta % 60);
+        info += ' \u00b7 ' + (mins > 0 ? mins + 'm ' : '') + secs + 's left';
+      }
+    }
+    document.getElementById('welcomePtext').textContent = info;
   }
 });
+
+// ---- Export Chat History ----
+
+function exportChat() {
+  if (conversationHistory.length === 0) {
+    addErr('No conversation to export');
+    return;
+  }
+  var data = JSON.stringify({
+    exported_at: new Date().toISOString(),
+    messages: conversationHistory
+  }, null, 2);
+  sendWithPromise('exportHistory', data).then(function(r) {
+    if (r.success) {
+      addSysMsg('Chat exported to: ' + r.filename);
+    } else {
+      addErr('Export failed');
+    }
+  });
+}
+
+function addSysMsg(text) {
+  var m = document.getElementById('messages');
+  var d = document.createElement('div');
+  d.className = 'message ai';
+  d.innerHTML = '<div class="label" style="color:#4ade80">System</div><div class="text" style="border-color:#1a2e1a;color:#4ade80;font-size:13px">' + esc(text) + '</div>';
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+}
+
+// ---- Keyboard Shortcuts ----
+// Cmd/Ctrl+Shift+S = Summarize page
+// Cmd/Ctrl+Shift+E = Explain page
+// Cmd/Ctrl+Shift+X = Export chat
+// Cmd/Ctrl+Shift+N = New chat
+
+document.addEventListener('keydown', function(e) {
+  var mod = e.metaKey || e.ctrlKey;
+  if (!mod || !e.shiftKey) return;
+  if (e.key === 'S' || e.key === 's') {
+    e.preventDefault();
+    doQuickAction('summarize');
+  } else if (e.key === 'E' || e.key === 'e') {
+    e.preventDefault();
+    doQuickAction('explain');
+  } else if (e.key === 'X' || e.key === 'x') {
+    e.preventDefault();
+    exportChat();
+  } else if (e.key === 'N' || e.key === 'n') {
+    e.preventDefault();
+    newChat();
+  }
+});
+
+function doQuickAction(action) {
+  if (isGenerating) return;
+  if (action === 'summarize') {
+    document.getElementById('prompt').value = 'Summarize this page';
+    doSend();
+  } else if (action === 'explain') {
+    document.getElementById('prompt').value = 'Explain this page in simple terms';
+    doSend();
+  }
+}
 
 // Handle ?q= parameter from omnibox @ai prefix
 var params = new URLSearchParams(window.location.search);

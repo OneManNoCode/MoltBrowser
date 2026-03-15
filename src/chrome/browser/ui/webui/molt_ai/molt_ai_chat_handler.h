@@ -21,6 +21,7 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
@@ -58,6 +59,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleDownloadModel(const base::ListValue& args);
   void HandleDeleteModel(const base::ListValue& args);
   void HandleGetPageContent(const base::ListValue& args);
+  void HandleCancelDownload(const base::ListValue& args);
+  void HandleExportHistory(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void OnModelLoaded(std::string callback_id, bool success,
@@ -84,6 +87,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   uint64_t download_total_bytes_ = 0;
   uint64_t download_resume_bytes_ = 0;
   base::FilePath download_final_path_;
+  base::TimeTicks download_start_time_;
+  uint64_t download_last_bytes_ = 0;
+  base::TimeTicks download_last_time_;
 
   base::WeakPtrFactory<MoltAIChatHandler> weak_ptr_factory_{this};
 };
