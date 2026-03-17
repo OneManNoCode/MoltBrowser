@@ -159,6 +159,72 @@ source_set("ggml_cpu_arch_arm_c") {
   ]
 }
 
+# CoreML backend for iOS (Neural Engine + GPU via CoreML)
+if (is_ios) {
+  source_set("ggml_coreml") {
+    sources = [
+      "ggml/src/ggml-coreml/ggml-coreml.mm",
+    ]
+
+    public_configs = [ ":llama_cpp_config" ]
+
+    defines = [ "GGML_USE_COREML" ]
+
+    frameworks = [
+      "CoreML.framework",
+      "Foundation.framework",
+    ]
+
+    cflags_objcc = [
+      "-w",
+      "-fobjc-arc",
+    ]
+  }
+
+  # Metal on iOS — same compute shaders, different framework linking
+  source_set("ggml_metal_ios") {
+    sources = [
+      "ggml/src/ggml-metal/ggml-metal.cpp",
+      "ggml/src/ggml-metal/ggml-metal-common.cpp",
+      "ggml/src/ggml-metal/ggml-metal-device.cpp",
+      "ggml/src/ggml-metal/ggml-metal-ops.cpp",
+    ]
+
+    public_configs = [ ":llama_cpp_config" ]
+
+    defines = [ "GGML_USE_METAL" ]
+
+    frameworks = [
+      "Metal.framework",
+      "MetalKit.framework",
+      "Foundation.framework",
+      "Accelerate.framework",
+    ]
+
+    cflags_cc = [
+      "-std=c++17",
+      "-w",
+      "-fno-modules",
+    ]
+  }
+
+  source_set("ggml_metal_ios_objc") {
+    sources = [
+      "ggml/src/ggml-metal/ggml-metal-device.m",
+      "ggml/src/ggml-metal/ggml-metal-context.m",
+    ]
+
+    public_configs = [ ":llama_cpp_config" ]
+
+    configs -= [ "//build/config/compiler:enable_arc" ]
+
+    cflags_objc = [
+      "-w",
+      "-fno-objc-arc",
+    ]
+  }
+}
+
 # Metal shader resources — bundle into the macOS .app framework so
 # ggml_metal_library_init() can find ggml-metal.metal at runtime.
 if (is_mac) {
@@ -212,6 +278,35 @@ source_set("ggml_metal_objc") {
   ]
 }
 
+# Vulkan backend for Linux/Windows/Android GPU acceleration
+# Requires Vulkan SDK headers and runtime
+if (is_linux || is_win || is_android) {
+  source_set("ggml_vulkan") {
+    sources = [
+      "ggml/src/ggml-vulkan/ggml-vulkan.cpp",
+    ]
+
+    public_configs = [ ":llama_cpp_config" ]
+
+    defines = [ "GGML_USE_VULKAN" ]
+
+    cflags_cc = [
+      "-std=c++17",
+      "-w",
+    ]
+
+    if (is_linux) {
+      libs = [ "vulkan" ]
+    }
+    if (is_win) {
+      libs = [ "vulkan-1.lib" ]
+    }
+    if (is_android) {
+      libs = [ "vulkan" ]
+    }
+  }
+}
+
 # Combined GGML target
 group("ggml") {
   public_deps = [
@@ -233,6 +328,20 @@ group("ggml") {
       ":ggml_metal",
       ":ggml_metal_objc",
     ]
+  }
+
+  # iOS: CoreML (Neural Engine) + Metal GPU
+  if (is_ios) {
+    public_deps += [
+      ":ggml_coreml",
+      ":ggml_metal_ios",
+      ":ggml_metal_ios_objc",
+    ]
+  }
+
+  # Vulkan GPU acceleration on Linux, Windows, and Android
+  if (is_linux || is_win || is_android) {
+    public_deps += [ ":ggml_vulkan" ]
   }
 }
 

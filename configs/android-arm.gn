@@ -1,0 +1,43 @@
+# MoltBrowser Build Configuration — Android arm (32-bit)
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# For older Android devices (ARMv7). Minimum API level 24 (Android 7.0).
+#
+# Usage: gn gen out/MoltBrowser --args="import(\"//configs/android-arm.gn\")"
+# Or:    ./scripts/configure.sh --platform android --arch arm
+
+# Target platform
+target_os = "android"
+target_cpu = "arm"
+
+# Build type
+is_official_build = true
+is_debug = false
+
+# De-Google
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# Disable Google-specific features
+safe_browsing_mode = 0
+enable_reporting = false
+enable_supervised_users = false
+
+# Branding
+is_chrome_branded = false
+
+# Performance
+is_component_build = false
+symbol_level = 0
+enable_nacl = false
+
+# Android-specific
+android_channel = "stable"
+
+# CPU-only LLM inference on 32-bit (Vulkan requires 64-bit)
+# Smaller model recommendations for memory-constrained devices
+
+enable_extensions = true
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false

@@ -1,0 +1,53 @@
+# MoltBrowser Build Configuration — iOS arm64 (Device)
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# Usage: gn gen out/MoltBrowser --args="import(\"//configs/ios-arm64.gn\")"
+# Or:    ./scripts/configure.sh --platform ios --arch arm64
+#
+# Prerequisites:
+#   - macOS with Xcode 15+ and iOS SDK
+#   - Apple Developer account for device deployment
+#
+# IMPORTANT: Apple requires all iOS browsers to use WKWebView (WebKit).
+# Chromium's Blink engine cannot be used on iOS. MoltBrowser on iOS
+# uses Chromium's iOS shell (//ios/chrome) which wraps WKWebView.
+
+# Target platform
+target_os = "ios"
+target_cpu = "arm64"
+
+# Build type
+is_official_build = true
+is_debug = false
+
+# De-Google
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# Branding
+is_chrome_branded = false
+
+# Performance
+is_component_build = false
+symbol_level = 0
+
+# iOS-specific
+use_system_xcode = true
+ios_deployment_target = "16.0"
+ios_enable_code_signing = false  # Enable for device builds with signing identity
+
+# Code signing (uncomment and set for device/App Store builds):
+# ios_code_signing_identity = "iPhone Developer: GenEye AI Labs (TEAM_ID)"
+# ios_code_signing_identity_description = "GenEye AI Labs Inc."
+
+# On-device AI inference via CoreML + Metal
+# CoreML provides Neural Engine access on A14+ / M1+ chips
+# Metal provides GPU compute for older devices
+# (configured in llama.cpp BUILD.gn via is_ios checks)
+
+# Bitcode disabled (Apple deprecated it in Xcode 14)
+enable_ios_bitcode = false
+
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false

@@ -1,0 +1,39 @@
+# MoltBrowser Build Configuration — iOS Simulator (Apple Silicon Mac)
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# For development and testing on the iOS Simulator running on Apple Silicon.
+#
+# Usage: gn gen out/MoltBrowser --args="import(\"//configs/ios-sim-arm64.gn\")"
+# Or:    ./scripts/configure.sh --platform ios --arch sim-arm64
+
+# Target platform
+target_os = "ios"
+target_cpu = "arm64"
+
+# Build type — debug for simulator development
+is_official_build = false
+is_debug = true
+
+# De-Google
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# Branding
+is_chrome_branded = false
+
+# Performance — component build for faster iteration
+is_component_build = true
+symbol_level = 1
+
+# iOS Simulator specific
+use_system_xcode = true
+target_environment = "simulator"
+ios_deployment_target = "16.0"
+ios_enable_code_signing = false
+
+# CPU-only inference on simulator (no Metal compute / Neural Engine)
+
+enable_ios_bitcode = false
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false

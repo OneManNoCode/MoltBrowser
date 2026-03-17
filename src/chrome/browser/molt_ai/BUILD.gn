@@ -155,6 +155,75 @@ source_set("molt_shield") {
   ]
 }
 
+# Auto-update — platform-specific implementations
+if (is_mac) {
+  source_set("molt_update_mac") {
+    sources = [
+      "update/sparkle_integration.h",
+      "update/sparkle_integration.mm",
+    ]
+
+    configs -= [ "//build/config/compiler:enable_arc" ]
+    configs += [ "//build/config/compiler:enable_arc" ]
+
+    deps = [
+      "//base",
+    ]
+
+    frameworks = [
+      "Foundation.framework",
+    ]
+  }
+}
+
+if (is_win) {
+  source_set("molt_update_win") {
+    sources = [
+      "update/winsparkle_integration.h",
+      "update/winsparkle_integration.cc",
+    ]
+
+    deps = [
+      "//base",
+    ]
+  }
+}
+
+if (is_linux) {
+  source_set("molt_update_linux") {
+    sources = [
+      "update/linux_update_integration.h",
+      "update/linux_update_integration.cc",
+    ]
+
+    deps = [
+      "//base",
+    ]
+  }
+}
+
+# Cross-platform update manager facade
+source_set("molt_update") {
+  sources = [
+    "update/update_manager.h",
+    "update/update_manager.cc",
+  ]
+
+  deps = [
+    "//base",
+  ]
+
+  if (is_mac) {
+    deps += [ ":molt_update_mac" ]
+  }
+  if (is_win) {
+    deps += [ ":molt_update_win" ]
+  }
+  if (is_linux) {
+    deps += [ ":molt_update_linux" ]
+  }
+}
+
 # Combined target for all AI modules
 group("molt_ai") {
   deps = [
@@ -166,7 +235,14 @@ group("molt_ai") {
     ":molt_ai_personas",
     ":molt_ai_models",
     ":molt_ai_api",
-    ":molt_ai_side_panel",
     ":molt_shield",
+    ":molt_update",
   ]
+
+  # Desktop-only UI targets (side panel requires views framework)
+  if (!is_android && !is_ios) {
+    deps += [
+      ":molt_ai_side_panel",
+    ]
+  }
 }

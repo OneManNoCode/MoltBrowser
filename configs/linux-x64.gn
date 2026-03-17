@@ -1,0 +1,56 @@
+# MoltBrowser Build Configuration — Linux x64
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# Usage: gn gen out/MoltBrowser --args="import(\"//configs/linux-x64.gn\")"
+# Or:    ./scripts/configure.sh --platform linux --arch x64
+#
+# Prerequisites:
+#   sudo apt install libgtk-3-dev libglib2.0-dev libnss3-dev \
+#     libatk1.0-dev libatk-bridge2.0-dev libcups2-dev libdrm-dev \
+#     libxkbcommon-dev libxcomposite-dev libxdamage-dev libxrandr-dev \
+#     libgbm-dev libpango1.0-dev libasound2-dev
+
+# Target platform
+target_os = "linux"
+target_cpu = "x64"
+
+# Build type
+is_official_build = true
+is_debug = false
+
+# De-Google: Remove Google API dependencies
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# Disable Google-specific features
+safe_browsing_mode = 0
+enable_reporting = false
+enable_supervised_users = false
+
+# Branding
+is_chrome_branded = false
+
+# Performance
+is_component_build = false
+symbol_level = 0
+enable_nacl = false
+
+# Chrome extension compatibility
+enable_extensions = true
+
+# Linux-specific: Ozone platform abstraction (Wayland + X11)
+use_ozone = true
+ozone_auto_platforms = true
+
+# Use system libraries where available
+use_sysroot = true
+is_clang = true
+use_lld = true
+
+# Vulkan GPU acceleration for LLM inference
+# (configured in llama.cpp BUILD.gn via is_linux checks)
+
+# PGO disabled for dev builds
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false

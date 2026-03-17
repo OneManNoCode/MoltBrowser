@@ -1,0 +1,57 @@
+# MoltBrowser Build Configuration — Android arm64
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# Usage: gn gen out/MoltBrowser --args="import(\"//configs/android-arm64.gn\")"
+# Or:    ./scripts/configure.sh --platform android --arch arm64
+#
+# Prerequisites:
+#   - Android NDK (r26+) installed via sdkmanager
+#   - ANDROID_NDK_HOME or ANDROID_NDK_ROOT set
+#   - Android SDK with build-tools 34.0.0+
+
+# Target platform
+target_os = "android"
+target_cpu = "arm64"
+
+# Build type
+is_official_build = true
+is_debug = false
+
+# De-Google: Remove Google API dependencies
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# Disable Google-specific features
+safe_browsing_mode = 0
+enable_reporting = false
+enable_supervised_users = false
+
+# Branding
+is_chrome_branded = false
+
+# Performance
+is_component_build = false
+symbol_level = 0
+enable_nacl = false
+
+# Android-specific
+android_channel = "stable"
+
+# Use bundled Android NDK/SDK from Chromium's third_party
+# Set these to use locally installed SDK/NDK instead:
+# android_sdk_root = "/path/to/Android/Sdk"
+# android_ndk_root = "/path/to/Android/Sdk/ndk/26.1.10909125"
+
+# Vulkan GPU acceleration for LLM inference on supported devices
+# (configured in llama.cpp BUILD.gn via is_android checks)
+# CPU fallback always available
+
+# Enable Chrome extension support on Android (experimental)
+# Note: Full extension support on Android is limited in Chromium;
+# MoltBrowser enables it for compatible extensions.
+enable_extensions = true
+
+# PGO disabled for dev builds
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false

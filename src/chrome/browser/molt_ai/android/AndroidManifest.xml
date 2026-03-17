@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright 2025 GenEye AI Labs Inc. Licensed under GPLv3. -->
+<!--
+  MoltBrowser Android Manifest Overlay.
+  Merged with Chromium's base AndroidManifest.xml during the build.
+  Declares AI-specific activities, services, and permissions.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.geneye.moltbrowser">
+
+    <!-- MoltBrowser AI requires storage for model files (~1-4 GB) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Download models over network -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Foreground service for long-running model downloads -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Vulkan GPU compute for LLM inference -->
+    <uses-feature android:name="android.hardware.vulkan.compute" android:required="false" />
+    <!-- Keep device awake during inference -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application>
+        <!-- AI Chat — full-screen activity for on-device AI interaction -->
+        <activity
+            android:name="com.geneye.moltbrowser.ai.MoltAIChatActivity"
+            android:label="MoltBrowser AI"
+            android:theme="@style/Theme.MoltBrowser.AI"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false" />
+
+        <!-- Model Download Service — background download with notification -->
+        <service
+            android:name="com.geneye.moltbrowser.ai.ModelDownloadService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
+        <!-- AI Inference Service — runs LLM on a separate process for stability -->
+        <service
+            android:name="com.geneye.moltbrowser.ai.AIInferenceService"
+            android:process=":ai_inference"
+            android:exported="false" />
+
+        <!-- Content provider for sharing AI chat exports -->
+        <provider
+            android:name="com.geneye.moltbrowser.ai.ChatExportProvider"
+            android:authorities="${applicationId}.chatexport"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

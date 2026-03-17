@@ -1,0 +1,31 @@
+# Copyright 2025 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# BUILD.gn for MoltBrowser Android-specific AI components.
+# This target is only included when building for Android (is_android).
+
+import("//build/config/android/rules.gni")
+
+android_library("molt_ai_android_java") {
+  sources = [
+    "MoltAIChatActivity.java",
+  ]
+
+  deps = [
+    "//base:base_java",
+    "//content/public/android:content_java",
+    "//ui/android:ui_java",
+  ]
+}
+
+# Android manifest overlay — merged with chrome's base manifest
+android_resources("molt_ai_android_resources") {
+  sources = []
+  android_manifest = "AndroidManifest.xml"
+  android_manifest_dep = ":molt_ai_android_manifest"
+}
+
+android_manifest("molt_ai_android_manifest") {
+  android_manifest = "AndroidManifest.xml"
+  package_name = "com.geneye.moltbrowser"
+}
