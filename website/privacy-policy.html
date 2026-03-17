@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — MoltBrowser</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      max-width: 800px; margin: 0 auto; padding: 2rem;
+      line-height: 1.7; color: #222;
+    }
+    h1 { margin-bottom: 0.5rem; }
+    .date { color: #666; margin-bottom: 2rem; display: block; }
+    h2 { margin-top: 2rem; color: #333; }
+    ul { padding-left: 1.5rem; }
+    a { color: #6c63ff; }
+  </style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<span class="date">Effective: March 17, 2026</span>
+
+<p>GenEye AI Labs Inc. ("we", "us") builds MoltBrowser with privacy as a core architectural principle, not just a policy. This document explains what data MoltBrowser collects (almost nothing) and how it handles your information.</p>
+
+<h2>1. Data We Do NOT Collect</h2>
+<ul>
+  <li><strong>AI conversations</strong> — All LLM inference runs 100% on your device. We never see your prompts, responses, or chat history.</li>
+  <li><strong>Browsing history</strong> — We have no access to any pages you visit.</li>
+  <li><strong>Telemetry</strong> — MoltBrowser sends no usage analytics, crash reports, or diagnostic data to our servers.</li>
+  <li><strong>Keystrokes or form data</strong> — Nothing you type is transmitted to us.</li>
+  <li><strong>Google services</strong> — MoltBrowser is de-Googled. No Google API keys, no Safe Browsing calls, no sync.</li>
+</ul>
+
+<h2>2. Data That Stays On Your Device</h2>
+<ul>
+  <li>AI model files (downloaded from public model repositories)</li>
+  <li>Chat history and conversation exports</li>
+  <li>MoltBrowser settings and preferences</li>
+  <li>MoltShield filter lists (updated from public sources like EasyList)</li>
+</ul>
+
+<h2>3. Network Requests MoltBrowser Makes</h2>
+<p>MoltBrowser makes the following network requests, all to public infrastructure:</p>
+<ul>
+  <li><strong>Model downloads</strong> — When you choose to download an AI model, MoltBrowser fetches it from Hugging Face or the model's public CDN.</li>
+  <li><strong>Auto-update checks</strong> — MoltBrowser periodically checks <code>moltbrowser.com/updates/appcast.xml</code> for new versions. This request contains only your current version number and OS. No personally identifiable information is sent.</li>
+  <li><strong>Filter list updates</strong> — MoltShield downloads public ad-blocking filter lists (EasyList, EasyPrivacy) from their official sources.</li>
+  <li><strong>Chrome extensions</strong> — If you install extensions, they may make their own network requests per their own privacy policies.</li>
+</ul>
+
+<h2>4. Third-Party Extensions</h2>
+<p>Chrome extensions you install may collect data according to their own privacy policies. MoltBrowser does not control third-party extension behavior. We recommend reviewing extension permissions before installing.</p>
+
+<h2>5. Children's Privacy</h2>
+<p>MoltBrowser does not knowingly collect any personal information from anyone, including children under 13.</p>
+
+<h2>6. Changes to This Policy</h2>
+<p>We may update this policy if MoltBrowser adds features that affect data handling. Changes will be posted on this page with an updated effective date.</p>
+
+<h2>7. Contact</h2>
+<p>Questions about this privacy policy? Contact us at <a href="mailto:privacy@geneye.ai">privacy@geneye.ai</a>.</p>
+
+<p style="margin-top: 3rem; color: #666; font-size: 0.9rem;">
+  GenEye AI Labs Inc.<br>
+  MoltBrowser is open source under GPLv3. <a href="https://github.com/OneManNoCode/MoltBrowser">View the source code</a>.
+</p>
+
+</body>
+</html>

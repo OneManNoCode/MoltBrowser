@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoltBrowser — AI-Native Privacy Browser</title>
+  <meta name="description" content="MoltBrowser is a privacy-first browser with built-in AI. Run LLMs locally on your device. No cloud, no tracking, no compromises.">
+  <meta property="og:title" content="MoltBrowser — AI-Native Privacy Browser">
+  <meta property="og:description" content="Run AI locally on your device. No cloud, no tracking.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://moltbrowser.com">
+  <link rel="icon" type="image/svg+xml" href="/assets/icon.svg">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg2: #12121a;
+      --surface: #1a1a2e;
+      --accent: #6c63ff;
+      --accent-glow: rgba(108, 99, 255, 0.3);
+      --text: #e8e8f0;
+      --text2: #9898b0;
+      --green: #4ade80;
+      --border: #2a2a3e;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Nav */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10, 10, 15, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+    }
+    nav .inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    nav .logo { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+    nav .logo img { width: 28px; height: 28px; border-radius: 6px; }
+    nav .links { display: flex; gap: 2rem; align-items: center; }
+    nav .links a { color: var(--text2); font-size: 0.9rem; }
+    nav .links a:hover { color: var(--text); text-decoration: none; }
+    .btn-nav {
+      background: var(--accent); color: #fff !important; padding: 0.5rem 1.25rem;
+      border-radius: 8px; font-weight: 600; font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .btn-nav:hover { background: #5a52e0; text-decoration: none; }
+
+    /* Hero */
+    .hero {
+      padding: 10rem 2rem 6rem; text-align: center;
+      background: radial-gradient(ellipse at 50% 0%, var(--accent-glow) 0%, transparent 60%);
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem); font-weight: 800;
+      letter-spacing: -0.03em; line-height: 1.1;
+      background: linear-gradient(135deg, #fff 0%, #c0c0ff 50%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 1.5rem;
+    }
+    .hero p {
+      font-size: 1.25rem; color: var(--text2); max-width: 640px; margin: 0 auto 2.5rem;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--accent); color: #fff; padding: 0.875rem 2rem;
+      border-radius: 12px; font-size: 1.1rem; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      transition: all 0.2s; border: none; cursor: pointer;
+    }
+    .btn-primary:hover { background: #5a52e0; transform: translateY(-1px); text-decoration: none; }
+    .btn-secondary {
+      background: var(--surface); color: var(--text); padding: 0.875rem 2rem;
+      border-radius: 12px; font-size: 1.1rem; font-weight: 600;
+      border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 0.5rem;
+      transition: all 0.2s;
+    }
+    .btn-secondary:hover { border-color: var(--accent); text-decoration: none; }
+    .version-tag {
+      display: inline-block; background: var(--surface); border: 1px solid var(--border);
+      padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.8rem;
+      color: var(--text2); margin-bottom: 1.5rem;
+    }
+
+    /* Features */
+    .features {
+      padding: 6rem 2rem; max-width: 1200px; margin: 0 auto;
+    }
+    .features h2 {
+      text-align: center; font-size: 2.5rem; font-weight: 700;
+      margin-bottom: 1rem;
+    }
+    .features .subtitle {
+      text-align: center; color: var(--text2); font-size: 1.1rem;
+      margin-bottom: 4rem; max-width: 600px; margin-left: auto; margin-right: auto;
+    }
+    .feature-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+    .feature-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 2rem;
+      transition: border-color 0.2s;
+    }
+    .feature-card:hover { border-color: var(--accent); }
+    .feature-icon { font-size: 2rem; margin-bottom: 1rem; }
+    .feature-card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .feature-card p { color: var(--text2); font-size: 0.95rem; }
+
+    /* Download section */
+    .download {
+      padding: 6rem 2rem; text-align: center;
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .download h2 { font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem; }
+    .download .subtitle { color: var(--text2); margin-bottom: 3rem; font-size: 1.1rem; }
+    .download-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem; max-width: 1000px; margin: 0 auto;
+    }
+    .download-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 2rem; text-align: left;
+    }
+    .download-card.available { border-color: var(--green); }
+    .download-card h3 { font-size: 1.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .download-card p { color: var(--text2); font-size: 0.9rem; margin-bottom: 1rem; }
+    .badge {
+      display: inline-block; padding: 0.2rem 0.6rem; border-radius: 6px;
+      font-size: 0.75rem; font-weight: 600;
+    }
+    .badge-green { background: rgba(74, 222, 128, 0.15); color: var(--green); }
+    .badge-yellow { background: rgba(250, 204, 21, 0.15); color: #facc15; }
+    .badge-gray { background: rgba(152, 152, 176, 0.15); color: var(--text2); }
+    .download-btn {
+      display: inline-block; width: 100%; text-align: center;
+      background: var(--accent); color: #fff; padding: 0.75rem;
+      border-radius: 10px; font-weight: 600; margin-top: 0.5rem;
+      transition: all 0.2s;
+    }
+    .download-btn:hover { background: #5a52e0; text-decoration: none; }
+    .download-btn.disabled {
+      background: var(--border); color: var(--text2); cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* Privacy */
+    .privacy {
+      padding: 6rem 2rem; max-width: 900px; margin: 0 auto; text-align: center;
+    }
+    .privacy h2 { font-size: 2.5rem; font-weight: 700; margin-bottom: 1.5rem; }
+    .privacy p { color: var(--text2); font-size: 1.1rem; margin-bottom: 1rem; }
+    .privacy-points {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem; margin-top: 3rem; text-align: left;
+    }
+    .privacy-point { display: flex; gap: 0.75rem; align-items: flex-start; }
+    .privacy-point .icon { font-size: 1.5rem; flex-shrink: 0; }
+    .privacy-point h4 { font-size: 1rem; margin-bottom: 0.25rem; }
+    .privacy-point p { font-size: 0.9rem; }
+
+    /* Footer */
+    footer {
+      padding: 3rem 2rem; text-align: center;
+      border-top: 1px solid var(--border);
+      color: var(--text2); font-size: 0.9rem;
+    }
+    footer .links { display: flex; gap: 2rem; justify-content: center; margin-bottom: 1rem; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      nav .links { display: none; }
+      .hero { padding: 8rem 1.5rem 4rem; }
+      .hero-actions { flex-direction: column; align-items: center; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .download-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="inner">
+    <div class="logo">
+      <img src="/assets/icon.svg" alt="MoltBrowser">
+      MoltBrowser
+    </div>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/OneManNoCode/MoltBrowser">GitHub</a>
+      <a href="#download" class="btn-nav">Download</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <span class="version-tag" id="version-tag">v0.1.0 — Now Available</span>
+  <h1>AI in Your Browser.<br>On Your Device.</h1>
+  <p>MoltBrowser is a privacy-first browser with built-in AI. Run large language models locally — no cloud, no tracking, no compromises.</p>
+  <div class="hero-actions">
+    <a href="#download" class="btn-primary">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download for Mac
+    </a>
+    <a href="https://github.com/OneManNoCode/MoltBrowser" class="btn-secondary">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <h2>Built Different</h2>
+  <p class="subtitle">A browser designed from the ground up with AI and privacy as first-class citizens.</p>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">&#129302;</div>
+      <h3>On-Device AI</h3>
+      <p>Run Llama, Mistral, Phi, Qwen, and more locally with Metal GPU acceleration. Your conversations never leave your machine.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128274;</div>
+      <h3>MoltShield</h3>
+      <p>Built-in ad and tracker blocker using EasyList and uBlock filter syntax. No extensions needed — protection is native.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128196;</div>
+      <h3>Page-Aware Context</h3>
+      <p>AI understands the page you're on. Summarize articles, explain code, extract data, translate — all with one click.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#129513;</div>
+      <h3>Chrome Extensions</h3>
+      <p>Full Chrome extension compatibility. Use your favorite extensions alongside native AI features.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#9889;</div>
+      <h3>Metal GPU Acceleration</h3>
+      <p>Hardware-accelerated inference on Apple Silicon. Run 7B models at 30+ tokens/sec, 3B models at 60+ tokens/sec.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128172;</div>
+      <h3>Chat History & Export</h3>
+      <p>Full conversation history with search, export to JSON, and import. Your AI interactions are always accessible.</p>
+    </div>
+  </div>
+</section>
+
+<section class="download" id="download">
+  <h2>Download MoltBrowser</h2>
+  <p class="subtitle">Choose your platform. Your data stays on your device.</p>
+  <div class="download-grid">
+    <div class="download-card available">
+      <h3>&#63743; macOS <span class="badge badge-green">Available</span></h3>
+      <p>Apple Silicon &amp; Intel. macOS 12.0+. Metal GPU acceleration for fast inference.</p>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest" class="download-btn" id="mac-download">
+        Download DMG
+      </a>
+    </div>
+    <div class="download-card">
+      <h3>&#128039; Linux <span class="badge badge-yellow">Coming Soon</span></h3>
+      <p>Ubuntu, Fedora, Arch. Available as .deb, .rpm, AppImage, and Flatpak.</p>
+      <span class="download-btn disabled">Coming Q2 2026</span>
+    </div>
+    <div class="download-card">
+      <h3>&#128187; Windows <span class="badge badge-yellow">Coming Soon</span></h3>
+      <p>Windows 10/11 x64. Vulkan GPU acceleration on supported hardware.</p>
+      <span class="download-btn disabled">Coming Q2 2026</span>
+    </div>
+    <div class="download-card">
+      <h3>&#128241; Android <span class="badge badge-gray">In Development</span></h3>
+      <p>Android 7.0+. On-device AI with Vulkan GPU support.</p>
+      <span class="download-btn disabled">Coming Q3 2026</span>
+    </div>
+    <div class="download-card">
+      <h3>&#63743; iOS <span class="badge badge-gray">In Development</span></h3>
+      <p>iOS 16+. CoreML Neural Engine for fast on-device inference.</p>
+      <span class="download-btn disabled">Coming Q4 2026</span>
+    </div>
+  </div>
+</section>
+
+<section class="privacy" id="privacy">
+  <h2>Privacy by Architecture</h2>
+  <p>MoltBrowser isn't just privacy-focused — it's architecturally incapable of leaking your AI data. All inference runs on your device.</p>
+  <div class="privacy-points">
+    <div class="privacy-point">
+      <div class="icon">&#127968;</div>
+      <div>
+        <h4>100% Local Inference</h4>
+        <p>LLMs run entirely on your CPU/GPU. Zero cloud calls for AI features.</p>
+      </div>
+    </div>
+    <div class="privacy-point">
+      <div class="icon">&#128683;</div>
+      <div>
+        <h4>No Telemetry</h4>
+        <p>No usage analytics, no crash reporting to third parties. De-Googled Chromium base.</p>
+      </div>
+    </div>
+    <div class="privacy-point">
+      <div class="icon">&#128737;</div>
+      <div>
+        <h4>Native Ad Blocking</h4>
+        <p>MoltShield blocks ads and trackers at the network level before they load.</p>
+      </div>
+    </div>
+    <div class="privacy-point">
+      <div class="icon">&#128272;</div>
+      <div>
+        <h4>Open Source</h4>
+        <p>GPLv3 licensed. Audit the code yourself. No hidden data collection.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="links">
+    <a href="https://github.com/OneManNoCode/MoltBrowser">GitHub</a>
+    <a href="https://github.com/OneManNoCode/MoltBrowser/issues">Issues</a>
+    <a href="/privacy-policy.html">Privacy Policy</a>
+    <a href="/terms.html">Terms</a>
+  </div>
+  <p>&copy; 2025 GenEye AI Labs Inc. All rights reserved.</p>
+</footer>
+
+<script>
+// Auto-detect platform and highlight the right download
+(function() {
+  var ua = navigator.userAgent;
+  var macBtn = document.getElementById('mac-download');
+  if (ua.indexOf('Mac') !== -1 && macBtn) {
+    macBtn.textContent = 'Download for Mac';
+  }
+})();
+</script>
+
+</body>
+</html>

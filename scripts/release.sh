@@ -16,6 +16,10 @@
 #   ./scripts/release.sh --version 0.1.0 --build 1 \
 #     --identity "..." --team-id TEAM_ID --notarize --upload
 #
+#   # Universal binary (arm64 + x64)
+#   ./scripts/release.sh --version 0.1.0 --build 1 --universal \
+#     --identity "..." --notarize --upload
+#
 # Copyright 2025 GenEye AI Labs Inc. Licensed under GPLv3.
 
 set -euo pipefail
@@ -31,6 +35,8 @@ TEAM_ID=""
 DO_NOTARIZE=false
 DO_UPLOAD=false
 SKIP_BUILD=false
+UNIVERSAL=false
+BUNDLE_SPARKLE=true
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -41,19 +47,23 @@ while [[ $# -gt 0 ]]; do
     --notarize) DO_NOTARIZE=true; shift ;;
     --upload) DO_UPLOAD=true; shift ;;
     --skip-build) SKIP_BUILD=true; shift ;;
+    --universal) UNIVERSAL=true; shift ;;
+    --no-sparkle) BUNDLE_SPARKLE=false; shift ;;
     --help|-h)
       echo "MoltBrowser Release Pipeline"
       echo ""
       echo "Usage: $0 --version VERSION --build BUILD_NUM [options]"
       echo ""
       echo "Options:"
-      echo "  --version      Version string (e.g., 0.1.0-alpha)"
+      echo "  --version      Version string (e.g., 0.1.0)"
       echo "  --build        Build number (integer)"
       echo "  --identity     Code signing identity"
       echo "  --team-id      Apple Developer Team ID"
       echo "  --notarize     Submit for Apple notarization"
       echo "  --upload       Upload to GitHub Releases"
       echo "  --skip-build   Skip the Chromium build step"
+      echo "  --universal    Build universal binary (arm64 + x64)"
+      echo "  --no-sparkle   Skip bundling Sparkle.framework"
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -66,9 +76,14 @@ if [ -z "$VERSION" ] || [ -z "$BUILD_NUM" ]; then
   exit 1
 fi
 
-DMG_NAME="MoltBrowser-${VERSION}-macOS-arm64"
+if [ "$UNIVERSAL" = true ]; then
+  DMG_NAME="MoltBrowser-${VERSION}-macOS-universal"
+  BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser-universal"
+else
+  DMG_NAME="MoltBrowser-${VERSION}-macOS-arm64"
+  BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser"
+fi
 DMG_PATH="$REPO_DIR/dist/${DMG_NAME}.dmg"
-BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser"
 APP_PATH="$BUILD_DIR/MoltBrowser.app"
 
 echo "╔══════════════════════════════════════════╗"
@@ -76,36 +91,45 @@ echo "║    MoltBrowser Release Pipeline          ║"
 echo "╠══════════════════════════════════════════╣"
 echo "║  Version:    $VERSION"
 echo "║  Build:      $BUILD_NUM"
+echo "║  Universal:  $UNIVERSAL"
+echo "║  Sparkle:    $BUNDLE_SPARKLE"
 echo "║  Signed:     $([ -n "$SIGN_IDENTITY" ] && echo "Yes" || echo "No")"
 echo "║  Notarize:   $DO_NOTARIZE"
 echo "║  Upload:     $DO_UPLOAD"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-STEPS_TOTAL=6
+STEPS_TOTAL=8
 STEP=0
 
 # ---- Step 1: Build ----
 STEP=$((STEP + 1))
 if [ "$SKIP_BUILD" = false ]; then
-  echo "[$STEP/$STEPS_TOTAL] Building MoltBrowser..."
   export PATH="$REPO_DIR/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH"
 
-  # Copy source files to Chromium tree
-  if [ -d "$REPO_DIR/src/chrome/browser/ui/webui/molt_ai" ]; then
-    cp "$REPO_DIR"/src/chrome/browser/ui/webui/molt_ai/*.cc \
-       "$REPO_DIR/chromium/src/chrome/browser/ui/webui/molt_ai/" 2>/dev/null || true
-    cp "$REPO_DIR"/src/chrome/browser/ui/webui/molt_ai/*.h \
-       "$REPO_DIR/chromium/src/chrome/browser/ui/webui/molt_ai/" 2>/dev/null || true
-  fi
+  if [ "$UNIVERSAL" = true ]; then
+    echo "[$STEP/$STEPS_TOTAL] Building Universal Binary (arm64 + x64)..."
+    bash "$SCRIPT_DIR/build-universal.sh" --version "$VERSION" --skip-build false \
+      ${SIGN_IDENTITY:+--sign "$SIGN_IDENTITY"}
+  else
+    echo "[$STEP/$STEPS_TOTAL] Building MoltBrowser (arm64)..."
 
-  # Apply icon
-  if [ -f "$REPO_DIR/branding/MoltBrowser.icns" ]; then
-    cp "$REPO_DIR/branding/MoltBrowser.icns" \
-       "$REPO_DIR/chromium/src/chrome/app/theme/chromium/mac/app.icns"
-  fi
+    # Copy source files to Chromium tree
+    if [ -d "$REPO_DIR/src/chrome/browser/ui/webui/molt_ai" ]; then
+      cp "$REPO_DIR"/src/chrome/browser/ui/webui/molt_ai/*.cc \
+         "$REPO_DIR/chromium/src/chrome/browser/ui/webui/molt_ai/" 2>/dev/null || true
+      cp "$REPO_DIR"/src/chrome/browser/ui/webui/molt_ai/*.h \
+         "$REPO_DIR/chromium/src/chrome/browser/ui/webui/molt_ai/" 2>/dev/null || true
+    fi
 
-  autoninja -C "$BUILD_DIR" chrome
+    # Apply icon
+    if [ -f "$REPO_DIR/branding/MoltBrowser.icns" ]; then
+      cp "$REPO_DIR/branding/MoltBrowser.icns" \
+         "$REPO_DIR/chromium/src/chrome/app/theme/chromium/mac/app.icns"
+    fi
+
+    autoninja -C "$BUILD_DIR" chrome
+  fi
   echo "  Build complete"
 else
   echo "[$STEP/$STEPS_TOTAL] Skipping build (--skip-build)"
@@ -117,7 +141,17 @@ echo ""
 echo "[$STEP/$STEPS_TOTAL] Patching Info.plist..."
 bash "$SCRIPT_DIR/patch-info-plist.sh" "$VERSION" "$BUILD_NUM"
 
-# ---- Step 3: Code Sign ----
+# ---- Step 3: Bundle Sparkle.framework ----
+STEP=$((STEP + 1))
+echo ""
+if [ "$BUNDLE_SPARKLE" = true ]; then
+  echo "[$STEP/$STEPS_TOTAL] Bundling Sparkle.framework..."
+  bash "$SCRIPT_DIR/bundle-sparkle.sh" --app "$APP_PATH"
+else
+  echo "[$STEP/$STEPS_TOTAL] Skipping Sparkle bundling (--no-sparkle)"
+fi
+
+# ---- Step 4: Code Sign ----
 STEP=$((STEP + 1))
 echo ""
 if [ -n "$SIGN_IDENTITY" ]; then
@@ -141,7 +175,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping code signing (no --identity)"
 fi
 
-# ---- Step 4: Package DMG ----
+# ---- Step 5: Package DMG ----
 STEP=$((STEP + 1))
 echo ""
 echo "[$STEP/$STEPS_TOTAL] Creating DMG..."
@@ -172,7 +206,7 @@ fi
 DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 echo "  DMG created: $DMG_PATH ($DMG_SIZE)"
 
-# ---- Step 5: Notarize ----
+# ---- Step 6: Notarize ----
 STEP=$((STEP + 1))
 echo ""
 if [ "$DO_NOTARIZE" = true ] && [ -n "$SIGN_IDENTITY" ]; then
@@ -188,34 +222,59 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping notarization"
 fi
 
-# ---- Step 6: Upload ----
+# ---- Step 7: Upload to GitHub Releases ----
 STEP=$((STEP + 1))
 echo ""
 if [ "$DO_UPLOAD" = true ]; then
   echo "[$STEP/$STEPS_TOTAL] Uploading to GitHub Releases..."
   if command -v gh &> /dev/null; then
+    cd "$REPO_DIR"
+
     # Create release tag
     git tag -f "v${VERSION}" HEAD
+
+    # Determine if this is a prerelease
+    PRERELEASE_FLAG=""
+    if [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"rc"* ]]; then
+      PRERELEASE_FLAG="--prerelease"
+    fi
 
     # Create GitHub release
     gh release create "v${VERSION}" \
       --title "MoltBrowser v${VERSION}" \
-      --notes "MoltBrowser v${VERSION} — AI-native browser with local LLM inference.
+      $PRERELEASE_FLAG \
+      --notes "$(cat <<RELEASE_EOF
+# MoltBrowser v${VERSION}
 
-## Features
-- Local AI chat powered by llama.cpp + Metal GPU
-- Page-aware context (summarize, explain, extract)
-- Multi-model support with one-click download
-- First-run guided setup
-- Keyboard shortcuts for AI actions
-- Chat export/import
-- Conversation search
+AI-native privacy browser with on-device LLM inference.
+
+## Highlights
+- 🤖 Local AI chat powered by llama.cpp + Metal GPU acceleration
+- 🔒 MoltShield ad/tracker blocking built-in
+- 📄 Page-aware context (summarize, explain, extract, translate)
+- 📦 Multi-model support with one-click download (Llama, Mistral, Phi, Qwen)
+- ⌨️ Keyboard shortcuts for all AI actions
+- 💬 Chat history, export/import, conversation search
+- 🧩 Chrome extension compatibility
+
+## System Requirements
+- macOS 12.0 (Monterey) or later
+- $([ "$UNIVERSAL" = true ] && echo "Apple Silicon or Intel Mac (universal binary)" || echo "Apple Silicon Mac (arm64)")
+- 8 GB RAM minimum (16 GB recommended for larger models)
+- 4-8 GB free disk space for model files
 
 ## Install
-Download the DMG, open it, and drag MoltBrowser to Applications." \
+1. Download the DMG below
+2. Open it and drag MoltBrowser to Applications
+3. Launch MoltBrowser — the first-run wizard will guide you through model setup
+
+## Downloads
+- **macOS**: \`${DMG_NAME}.dmg\` ($(du -sh "$DMG_PATH" 2>/dev/null | cut -f1 || echo "N/A"))
+RELEASE_EOF
+)" \
       "$DMG_PATH"
 
-    echo "  Release created: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
+    echo "  Release: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
 
     # Update appcast
     bash "$SCRIPT_DIR/generate-appcast.sh" --version "$VERSION" --build "$BUILD_NUM" --dmg "$DMG_PATH"
@@ -226,15 +285,54 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping upload"
 fi
 
+# ---- Step 8: Generate landing page assets ----
+STEP=$((STEP + 1))
+echo ""
+echo "[$STEP/$STEPS_TOTAL] Generating landing page download metadata..."
+DOWNLOADS_JSON="$REPO_DIR/website/downloads.json"
+mkdir -p "$(dirname "$DOWNLOADS_JSON")"
+DMG_SIZE_BYTES=$(stat -f%z "$DMG_PATH" 2>/dev/null || echo "0")
+cat > "$DOWNLOADS_JSON" << DLJSON
+{
+  "version": "$VERSION",
+  "build": "$BUILD_NUM",
+  "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "platforms": {
+    "macos": {
+      "universal": $UNIVERSAL,
+      "dmg": {
+        "filename": "${DMG_NAME}.dmg",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/v${VERSION}/${DMG_NAME}.dmg",
+        "size_bytes": $DMG_SIZE_BYTES
+      },
+      "min_os": "12.0",
+      "architectures": $([ "$UNIVERSAL" = true ] && echo '["arm64", "x86_64"]' || echo '["arm64"]')
+    }
+  }
+}
+DLJSON
+echo "  Download metadata: $DOWNLOADS_JSON"
+
 # ---- Summary ----
 echo ""
-echo "╔══════════════════════════════════════════╗"
-echo "║    Release Complete!                     ║"
-echo "╠══════════════════════════════════════════╣"
+echo "╔══════════════════════════════════════════════╗"
+echo "║    Release Complete!                         ║"
+echo "╠══════════════════════════════════════════════╣"
 echo "║  Version:    $VERSION (build $BUILD_NUM)"
 echo "║  DMG:        $DMG_PATH"
 echo "║  Size:       $DMG_SIZE"
+echo "║  Universal:  $UNIVERSAL"
+echo "║  Sparkle:    $BUNDLE_SPARKLE"
 echo "║  Signed:     $([ -n "$SIGN_IDENTITY" ] && echo "Yes" || echo "No")"
 echo "║  Notarized:  $([ "$DO_NOTARIZE" = true ] && echo "Yes" || echo "No")"
 echo "║  Uploaded:   $([ "$DO_UPLOAD" = true ] && echo "Yes" || echo "No")"
-echo "╚══════════════════════════════════════════╝"
+echo "╚══════════════════════════════════════════════╝"
+echo ""
+if [ -z "$SIGN_IDENTITY" ]; then
+  echo "⚠️  This release is UNSIGNED. For public GA release, run:"
+  echo ""
+  echo "  $0 --version $VERSION --build $BUILD_NUM \\"
+  echo "    --identity \"Developer ID Application: GenEye AI Labs Inc (TEAM_ID)\" \\"
+  echo "    --team-id TEAM_ID --notarize --upload --universal"
+  echo ""
+fi

@@ -1,0 +1,45 @@
+# MoltBrowser Build Configuration — macOS Universal Binary
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# Builds a universal binary (arm64 + x64) for all Macs.
+# This config is used by the lipo-based universal binary script,
+# NOT directly by GN. GN builds each arch separately, then
+# scripts/build-universal.sh merges them with lipo.
+#
+# See: scripts/build-universal.sh
+#
+# Usage:
+#   ./scripts/build-universal.sh --version 0.1.0
+
+# Shared args for both architectures (imported by the build script)
+
+# Build type
+is_official_build = true
+is_debug = false
+
+# De-Google
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+
+# Disable Google-specific features
+safe_browsing_mode = 0
+enable_reporting = false
+enable_supervised_users = false
+
+# Branding
+is_chrome_branded = false
+
+# Performance
+is_component_build = false
+symbol_level = 0
+enable_nacl = false
+
+# Chrome extension compatibility
+enable_extensions = true
+
+# macOS-specific
+use_system_xcode = true
+
+chrome_pgo_phase = 0
+treat_warnings_as_errors = false

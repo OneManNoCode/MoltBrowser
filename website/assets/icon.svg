@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4338ca"/>
+      <stop offset="50%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#a855f7"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#c084fc;stop-opacity:0.1"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <!-- Inner glow -->
+  <rect x="40" y="40" width="944" height="944" rx="190" fill="url(#glow)"/>
+  <!-- Brain/Circuit motif - stylized M -->
+  <g transform="translate(512,480)" fill="none" stroke="white" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
+    <!-- M shape -->
+    <path d="M-240,160 L-240,-160 L-80,80 L80,-160 L80,80" opacity="0.95"/>
+    <!-- Neural connections -->
+    <circle cx="-240" cy="-160" r="20" fill="white" stroke="none" opacity="0.9"/>
+    <circle cx="-80" cy="80" r="20" fill="white" stroke="none" opacity="0.9"/>
+    <circle cx="80" cy="-160" r="20" fill="white" stroke="none" opacity="0.9"/>
+    <circle cx="80" cy="80" r="20" fill="white" stroke="none" opacity="0.9"/>
+    <!-- AI sparkle dots -->
+    <circle cx="200" cy="-120" r="14" fill="white" opacity="0.6"/>
+    <circle cx="240" cy="0" r="10" fill="white" opacity="0.4"/>
+    <circle cx="200" cy="120" r="12" fill="white" opacity="0.5"/>
+    <circle cx="-280" cy="40" r="10" fill="white" opacity="0.3"/>
+  </g>
+  <!-- "AI" text badge -->
+  <g transform="translate(512,720)">
+    <rect x="-60" y="-28" width="120" height="56" rx="28" fill="rgba(255,255,255,0.2)"/>
+    <text x="0" y="10" font-family="system-ui,-apple-system,sans-serif" font-size="36" font-weight="700" fill="white" text-anchor="middle">AI</text>
+  </g>
+</svg>
