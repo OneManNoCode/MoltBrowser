@@ -7,6 +7,13 @@
 #include <fstream>
 #include <sstream>
 
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+#include "base/logging.h"
+#include "base/values.h"
+
 namespace molt_ai {
 
 PersonaSystem::PersonaSystem() = default;
@@ -155,11 +162,81 @@ void PersonaSystem::InitializeBuiltinPersonas() {
 }
 
 void PersonaSystem::LoadCustomPersonas() {
-  // TODO: Load custom personas from JSON file in storage_path
+  if (storage_path_.empty())
+    return;
+
+  base::FilePath json_path =
+      base::FilePath(storage_path_).Append(FILE_PATH_LITERAL("personas.json"));
+
+  std::string json_content;
+  if (!base::ReadFileToString(json_path, &json_content))
+    return;
+
+  auto parsed = base::JSONReader::Read(json_content,
+                                        base::JSON_ALLOW_TRAILING_COMMAS);
+  if (!parsed || !parsed->is_list()) {
+    LOG(WARNING) << "[MoltAI] Invalid personas.json format";
+    return;
+  }
+
+  for (const auto& item : parsed->GetList()) {
+    if (!item.is_dict())
+      continue;
+    const auto& dict = item.GetDict();
+
+    Persona p;
+    if (auto* v = dict.FindString("id")) p.id = *v;
+    if (auto* v = dict.FindString("name")) p.name = *v;
+    if (auto* v = dict.FindString("description")) p.description = *v;
+    if (auto* v = dict.FindString("focus")) p.focus = *v;
+    if (auto* v = dict.FindString("tone")) p.tone = *v;
+    if (auto* v = dict.FindString("risk_tolerance")) p.risk_tolerance = *v;
+    if (auto* v = dict.FindString("domain_expertise")) p.domain_expertise = *v;
+    if (auto* v = dict.FindString("system_prompt")) p.system_prompt = *v;
+    p.is_builtin = false;
+    p.is_active = false;
+
+    if (!p.id.empty() && !p.name.empty()) {
+      personas_[p.id] = p;
+      LOG(INFO) << "[MoltAI] Loaded custom persona: " << p.name;
+    }
+  }
 }
 
 void PersonaSystem::SaveCustomPersonas() const {
-  // TODO: Save custom personas to JSON file
+  if (storage_path_.empty())
+    return;
+
+  base::Value::List personas_list;
+  for (const auto& [id, persona] : personas_) {
+    if (persona.is_builtin)
+      continue;
+
+    base::Value::Dict dict;
+    dict.Set("id", persona.id);
+    dict.Set("name", persona.name);
+    dict.Set("description", persona.description);
+    dict.Set("focus", persona.focus);
+    dict.Set("tone", persona.tone);
+    dict.Set("risk_tolerance", persona.risk_tolerance);
+    dict.Set("domain_expertise", persona.domain_expertise);
+    dict.Set("system_prompt", persona.system_prompt);
+    personas_list.Append(std::move(dict));
+  }
+
+  std::string json_output;
+  base::JSONWriter::WriteWithOptions(
+      base::Value(std::move(personas_list)),
+      base::JSONWriter::OPTIONS_PRETTY_PRINT, &json_output);
+
+  base::FilePath dir_path(storage_path_);
+  base::CreateDirectory(dir_path);
+
+  base::FilePath json_path =
+      dir_path.Append(FILE_PATH_LITERAL("personas.json"));
+  base::WriteFile(json_path, json_output);
+
+  LOG(INFO) << "[MoltAI] Saved custom personas to " << json_path.value();
 }
 
 std::vector<Persona> PersonaSystem::GetAllPersonas() const {
@@ -190,7 +267,6 @@ bool PersonaSystem::SetActivePersona(const std::string& id) {
     return false;
   }
 
-  // Deactivate current
   if (!active_persona_id_.empty()) {
     personas_[active_persona_id_].is_active = false;
   }
@@ -212,10 +288,21 @@ std::string PersonaSystem::CreatePersona(const Persona& persona) {
   p.is_builtin = false;
 
   if (p.id.empty()) {
-    // Generate ID from name
     p.id = p.name;
     std::transform(p.id.begin(), p.id.end(), p.id.begin(), ::tolower);
     std::replace(p.id.begin(), p.id.end(), ' ', '_');
+  }
+
+  // Generate system prompt if not provided
+  if (p.system_prompt.empty()) {
+    p.system_prompt =
+        "You are acting as persona: " + p.name + ".\n" +
+        (!p.focus.empty() ? "Focus on: " + p.focus + ".\n" : "") +
+        (!p.tone.empty() ? "Communication style: " + p.tone + ".\n" : "") +
+        (!p.domain_expertise.empty()
+             ? "Domain expertise: " + p.domain_expertise + ".\n"
+             : "") +
+        (!p.description.empty() ? p.description + "\n" : "");
   }
 
   personas_[p.id] = p;
@@ -227,11 +314,11 @@ bool PersonaSystem::UpdatePersona(const std::string& id,
                                    const Persona& persona) {
   auto it = personas_.find(id);
   if (it == personas_.end() || it->second.is_builtin) {
-    return false;  // Can't update non-existent or builtin personas
+    return false;
   }
 
   personas_[id] = persona;
-  personas_[id].id = id;  // Ensure ID doesn't change
+  personas_[id].id = id;
   personas_[id].is_builtin = false;
   SaveCustomPersonas();
   return true;

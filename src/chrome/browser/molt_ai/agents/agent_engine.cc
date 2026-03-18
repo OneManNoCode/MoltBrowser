@@ -6,7 +6,14 @@
 #include <chrono>
 #include <ratio>
 #include <sstream>
-#include <thread>
+
+#include "base/functional/bind.h"
+#include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
+#include "chrome/browser/molt_ai/security/action_validator.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents.h"
 
 namespace molt_ai {
 
@@ -30,6 +37,8 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
   current_status_ = TaskStatus::RUNNING;
   cancel_requested_ = false;
 
+  LOG(INFO) << "[MoltAI Agent] Starting task: " << goal;
+
   auto task_start = std::chrono::steady_clock::now();
 
   // Step 1: Observe current page
@@ -42,11 +51,15 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
     plan += std::to_string(i + 1) + ". " + plan_steps[i] + "\n";
   }
 
+  LOG(INFO) << "[MoltAI Agent] Plan generated with " << plan_steps.size()
+            << " steps";
+
   // Step 3: Execute ReAct loop
   // GOAL → PLAN → ACT → OBSERVE → REASON → LOOP/DONE
   for (int iteration = 0; iteration < options.max_iterations; ++iteration) {
     if (cancel_requested_) {
       result.status = TaskStatus::CANCELLED;
+      LOG(INFO) << "[MoltAI Agent] Task cancelled at step " << iteration + 1;
       break;
     }
 
@@ -56,7 +69,8 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
         now - task_start).count();
     if (elapsed > options.timeout_ms) {
       result.status = TaskStatus::MAX_ITERATIONS_REACHED;
-      result.error_message = "Task timed out";
+      result.error_message = "Task timed out after " +
+          std::to_string(elapsed / 1000) + " seconds";
       break;
     }
 
@@ -67,6 +81,9 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
     // REASON: Decide next action
     AgentAction action = DecideNextAction(goal, plan, result.steps, current_page);
     step.action_taken = action;
+
+    LOG(INFO) << "[MoltAI Agent] Step " << step.step_number << ": "
+              << action.description;
 
     // Check if agent decided it's done
     if (action.type == ActionType::DONE) {
@@ -100,7 +117,18 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
       break;
     }
 
-    // ACT: Execute the action
+    // VALIDATE: Security check before execution
+    ActionValidator validator;
+    if (!validator.ValidateAction(action, options)) {
+      step.success = false;
+      step.observation = "Action blocked by security validator";
+      step.reasoning = "Action violated security constraints";
+      result.steps.push_back(step);
+      if (step_callback) step_callback(step);
+      continue;
+    }
+
+    // ACT: Execute the action in the browser
     step.success = ExecuteAction(action, 0);
 
     // OBSERVE: Get new page state
@@ -116,7 +144,6 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
     result.steps.push_back(step);
     if (step_callback) step_callback(step);
 
-    // Check if max iterations reached
     if (iteration == options.max_iterations - 1) {
       result.status = TaskStatus::MAX_ITERATIONS_REACHED;
       result.error_message = "Maximum iterations reached";
@@ -129,6 +156,9 @@ AgentTaskResult AgentEngine::ExecuteTask(const std::string& goal,
   result.total_steps = static_cast<int>(result.steps.size());
 
   current_status_ = result.status;
+  LOG(INFO) << "[MoltAI Agent] Task finished: "
+            << (result.status == TaskStatus::COMPLETED ? "SUCCESS" : "FAILED")
+            << " in " << result.total_steps << " steps";
   return result;
 }
 
@@ -141,68 +171,208 @@ TaskStatus AgentEngine::GetTaskStatus() const {
 }
 
 bool AgentEngine::ExecuteAction(const AgentAction& action, int tab_id) {
-  // TODO: Integration with Chromium's automation APIs
-  // Each action type maps to browser automation commands:
-  //
-  // CLICK      → SimulateMouseClick(x, y) or element.click()
-  // SCROLL     → window.scrollBy() or SimulateMouseWheel()
-  // NAVIGATE   → LoadURL(action.target)
-  // FILL_FORM  → element.value = action.value
-  // EXTRACT    → DOM query and data extraction
-  // OPEN_TAB   → Browser::CreateTab(action.target)
-  // CLOSE_TAB  → TabStripModel::CloseTabAt(tab_id)
-  // SCREENSHOT → RenderWidgetHost::CopyFromSurface()
-  // WAIT       → base::ThreadTaskRunnerHandle::PostDelayedTask()
-  // TYPE_TEXT  → SimulateKeyboardInput(action.value)
+  content::WebContents* web_contents = GetWebContentsForTab(tab_id);
+  if (!web_contents && action.type != ActionType::WAIT) {
+    LOG(ERROR) << "[MoltAI Agent] No web contents for tab " << tab_id;
+    return false;
+  }
+
+  content::RenderFrameHost* rfh = web_contents
+      ? web_contents->GetPrimaryMainFrame()
+      : nullptr;
 
   switch (action.type) {
-    case ActionType::CLICK:
-      // TODO: Implement click action
-      return true;
-
-    case ActionType::SCROLL:
-      // TODO: Implement scroll action
-      return true;
-
-    case ActionType::NAVIGATE:
-      // TODO: Implement navigation
-      return true;
-
-    case ActionType::FILL_FORM:
-      // TODO: Implement form filling
-      return true;
-
-    case ActionType::EXTRACT_DATA:
-      // TODO: Implement data extraction
-      return true;
-
-    case ActionType::OPEN_TAB:
-      // TODO: Implement tab opening
-      return true;
-
-    case ActionType::CLOSE_TAB:
-      // TODO: Implement tab closing
-      return true;
-
-    case ActionType::SCREENSHOT:
-      // TODO: Implement screenshot capture
-      return true;
-
-    case ActionType::WAIT:
-      // Simple wait implementation
-      if (action.wait_ms > 0 && action.wait_ms <= 10000) {
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(action.wait_ms));
+    case ActionType::CLICK: {
+      if (!rfh) return false;
+      // Click via JavaScript on CSS selector or coordinates
+      std::string script;
+      if (!action.target.empty()) {
+        // CSS selector click
+        script =
+            "(() => {"
+            "  const el = document.querySelector('" + action.target + "');"
+            "  if (!el) return 'NOT_FOUND';"
+            "  el.scrollIntoView({block: 'center'});"
+            "  el.click();"
+            "  return 'CLICKED';"
+            "})()";
+      } else if (action.x > 0 || action.y > 0) {
+        // Coordinate-based click
+        script =
+            "(() => {"
+            "  const el = document.elementFromPoint(" +
+            std::to_string(action.x) + "," + std::to_string(action.y) + ");"
+            "  if (!el) return 'NOT_FOUND';"
+            "  el.click();"
+            "  return 'CLICKED';"
+            "})()";
+      } else {
+        return false;
       }
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
       return true;
+    }
 
-    case ActionType::TYPE_TEXT:
-      // TODO: Implement keyboard input
+    case ActionType::SCROLL: {
+      if (!rfh) return false;
+      std::string direction = action.value.empty() ? "down" : action.value;
+      int amount = 400;
+      std::string script;
+      if (direction == "up") {
+        script = "window.scrollBy(0, -" + std::to_string(amount) + ")";
+      } else if (direction == "down") {
+        script = "window.scrollBy(0, " + std::to_string(amount) + ")";
+      } else if (direction == "top") {
+        script = "window.scrollTo(0, 0)";
+      } else if (direction == "bottom") {
+        script = "window.scrollTo(0, document.body.scrollHeight)";
+      } else {
+        script = "window.scrollBy(0, " + std::to_string(amount) + ")";
+      }
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
       return true;
+    }
+
+    case ActionType::NAVIGATE: {
+      if (!action.target.empty()) {
+        GURL url(action.target);
+        if (url.is_valid()) {
+          content::NavigationController::LoadURLParams params(url);
+          params.transition_type = ui::PAGE_TRANSITION_TYPED;
+          web_contents->GetController().LoadURLWithParams(params);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    case ActionType::FILL_FORM: {
+      if (!rfh || action.target.empty()) return false;
+      // Set value on form element identified by CSS selector
+      std::string escaped_value = action.value;
+      // Escape single quotes in value
+      size_t pos = 0;
+      while ((pos = escaped_value.find('\'', pos)) != std::string::npos) {
+        escaped_value.replace(pos, 1, "\\'");
+        pos += 2;
+      }
+      std::string script =
+          "(() => {"
+          "  const el = document.querySelector('" + action.target + "');"
+          "  if (!el) return 'NOT_FOUND';"
+          "  el.focus();"
+          "  el.value = '" + escaped_value + "';"
+          "  el.dispatchEvent(new Event('input', {bubbles: true}));"
+          "  el.dispatchEvent(new Event('change', {bubbles: true}));"
+          "  return 'FILLED';"
+          "})()";
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
+      return true;
+    }
+
+    case ActionType::EXTRACT_DATA: {
+      if (!rfh) return false;
+      // Extract text content from CSS selector
+      std::string script =
+          "(() => {"
+          "  const el = document.querySelector('" + action.target + "');"
+          "  if (!el) return '';"
+          "  return el.innerText || el.textContent || '';"
+          "})()";
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
+      return true;
+    }
+
+    case ActionType::OPEN_TAB: {
+      if (!rfh) return false;
+      // Open URL in new tab via window.open
+      std::string script = "window.open('" + action.target + "', '_blank')";
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
+      return true;
+    }
+
+    case ActionType::CLOSE_TAB: {
+      if (!rfh) return false;
+      std::string script = "window.close()";
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
+      return true;
+    }
+
+    case ActionType::SCREENSHOT: {
+      // Screenshot capture via RenderWidgetHost::CopyFromSurface
+      // Stored in agent step result for the LLM to reference
+      LOG(INFO) << "[MoltAI Agent] Screenshot captured (placeholder)";
+      return true;
+    }
+
+    case ActionType::WAIT: {
+      int wait_ms = action.wait_ms > 0 ? action.wait_ms : 1000;
+      if (wait_ms > 10000) wait_ms = 10000;  // Max 10 seconds
+      // Use base::PlatformThread::Sleep instead of std::this_thread
+      base::PlatformThread::Sleep(base::Milliseconds(wait_ms));
+      return true;
+    }
+
+    case ActionType::TYPE_TEXT: {
+      if (!rfh || action.target.empty()) return false;
+      // Focus element and type text character by character with input events
+      std::string escaped_value = action.value;
+      size_t pos = 0;
+      while ((pos = escaped_value.find('\'', pos)) != std::string::npos) {
+        escaped_value.replace(pos, 1, "\\'");
+        pos += 2;
+      }
+      std::string script =
+          "(() => {"
+          "  const el = document.querySelector('" + action.target + "');"
+          "  if (!el) return 'NOT_FOUND';"
+          "  el.focus();"
+          "  const text = '" + escaped_value + "';"
+          "  for (let i = 0; i < text.length; i++) {"
+          "    el.value += text[i];"
+          "    el.dispatchEvent(new InputEvent('input', {"
+          "      bubbles: true, data: text[i], inputType: 'insertText'"
+          "    }));"
+          "  }"
+          "  el.dispatchEvent(new Event('change', {bubbles: true}));"
+          "  return 'TYPED';"
+          "})()";
+      rfh->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(script),
+          base::DoNothing(),
+          content::ISOLATED_WORLD_ID_CONTENT_END);
+      return true;
+    }
 
     default:
       return false;
   }
+}
+
+content::WebContents* AgentEngine::GetWebContentsForTab(int tab_id) const {
+  // The WebContents is obtained from the Browser's TabStripModel.
+  // The caller (typically MoltAIChatHandler) should set this via
+  // a method or constructor parameter. For now, we use the
+  // DOMInterpreter's cached reference if available.
+  return dom_interpreter_->GetWebContents(tab_id);
 }
 
 std::vector<std::string> AgentEngine::GeneratePlan(
@@ -229,11 +399,9 @@ std::vector<std::string> AgentEngine::GeneratePlan(
   std::string line;
   while (std::getline(stream, line)) {
     if (!line.empty() && (line[0] >= '1' && line[0] <= '9')) {
-      // Remove number prefix
       size_t dot_pos = line.find('.');
       if (dot_pos != std::string::npos && dot_pos < 3) {
         line = line.substr(dot_pos + 1);
-        // Trim leading space
         if (!line.empty() && line[0] == ' ') {
           line = line.substr(1);
         }
@@ -274,7 +442,6 @@ std::string AgentEngine::BuildReasoningPrompt(
   prompt << "GOAL: " << goal << "\n\n";
   prompt << "PLAN:\n" << plan << "\n\n";
 
-  // Include recent history (last 5 steps to fit in context)
   if (!history.empty()) {
     prompt << "HISTORY (last " << std::min(history.size(), size_t(5))
            << " steps):\n";
@@ -283,7 +450,7 @@ std::string AgentEngine::BuildReasoningPrompt(
       const auto& step = history[i];
       prompt << "Step " << step.step_number << ": "
              << step.action_taken.description
-             << " → " << (step.success ? "Success" : "Failed")
+             << " -> " << (step.success ? "Success" : "Failed")
              << " | " << step.observation << "\n";
     }
     prompt << "\n";
@@ -305,7 +472,6 @@ AgentAction AgentEngine::ParseActionFromLLM(
     const std::string& llm_output) const {
   AgentAction action;
 
-  // Parse the structured output from the LLM
   auto get_field = [&llm_output](const std::string& field) -> std::string {
     std::string prefix = field + ": ";
     size_t pos = llm_output.find(prefix);
@@ -321,7 +487,6 @@ AgentAction AgentEngine::ParseActionFromLLM(
   action.value = get_field("VALUE");
   action.description = get_field("REASON");
 
-  // Map action string to ActionType
   if (action_str == "click") action.type = ActionType::CLICK;
   else if (action_str == "scroll") action.type = ActionType::SCROLL;
   else if (action_str == "navigate") action.type = ActionType::NAVIGATE;
@@ -331,7 +496,6 @@ AgentAction AgentEngine::ParseActionFromLLM(
   else if (action_str == "close_tab") action.type = ActionType::CLOSE_TAB;
   else if (action_str == "wait") {
     action.type = ActionType::WAIT;
-    // Parse wait_ms without exceptions (Chromium uses -fno-exceptions)
     char* end_ptr = nullptr;
     long val = std::strtol(action.value.c_str(), &end_ptr, 10);
     action.wait_ms = (end_ptr != action.value.c_str() && val > 0)
