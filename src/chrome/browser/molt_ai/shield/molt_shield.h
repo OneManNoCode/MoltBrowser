@@ -182,6 +182,11 @@ class MoltShield {
   // Get YouTube-specific blocking scripts
   std::string GetYouTubeAdBlockJS() const;
 
+  // Get cookie consent auto-decline script
+  // Automatically clicks "Decline All" / "Reject All" buttons on consent
+  // popups that require user interaction (can't be hidden with CSS alone)
+  std::string GetCookieConsentDeclineJS() const;
+
   // ---- URL Param Stripping ----
 
   std::string StripTrackingParams(const std::string& url) const;

@@ -151,6 +151,12 @@ std::vector<FilterListInfo> FilterListManager::GetDefaultLists() {
       {"peter_lowe", "Peter Lowe's Ad Server List",
        "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=1&mimetype=plaintext",
        "", 0, true, true, 0},
+      {"fanboy_cookie", "Fanboy's Cookie Monster List",
+       "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
+       "", 0, true, true, 0},
+      {"idcac", "I Don't Care About Cookies",
+       "https://www.i-dont-care-about-cookies.eu/abp/",
+       "", 0, true, true, 0},
   };
 }
 

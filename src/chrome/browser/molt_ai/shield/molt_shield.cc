@@ -333,6 +333,115 @@ youtube.com##+js(set, yt.config_.EXPERIMENT_FLAGS.html5_enable_ads, false)
 ##.native-ad
 )";
   LoadFilterList("molt_essential", essential_rules);
+
+  // ---- Cookie Consent Popup Blocking ----
+  // Blocks cookie consent banners, GDPR popups, and consent management
+  // platforms. This protects user privacy by preventing tracking consent
+  // dialogs from appearing and auto-declining when interaction is required.
+  const char* cookie_consent_rules = R"(
+! === OneTrust (Nike, ESPN, many Fortune 500 sites) ===
+##onetrust-consent-sdk
+###onetrust-consent-sdk
+###onetrust-banner-sdk
+##.onetrust-pc-dark-filter
+###onetrust-pc-sdk
+##.ot-fade-in
+||cdn.cookielaw.org/consent$third-party
+||cdn.cookielaw.org/scripttemplates$third-party
+||geolocation.onetrust.com^
+||optanon.blob.core.windows.net^
+
+! === CookieBot ===
+###CybotCookiebotDialog
+###CybotCookiebotDialogBodyUnderlay
+##.CybotCookiebotDialogActive
+||consent.cookiebot.com^$third-party
+||consentcdn.cookiebot.com^$third-party
+
+! === Quantcast / CMP2 ===
+###qc-cmp2-container
+##.qc-cmp2-summary-buttons
+###qc-cmp-ui-container
+||quantcast.mgr.consensu.org^
+||cmp.quantcast.com^
+
+! === TrustArc ===
+##.truste_overlay
+##.truste_box_overlay
+###truste-consent-track
+###truste-consent-content
+||consent-pref.trustarc.com^$third-party
+||consent.trustarc.com^$third-party
+
+! === Didomi ===
+###didomi-host
+###didomi-popup
+###didomi-notice
+##.didomi-popup-backdrop
+||sdk.privacy-center.org^$third-party
+
+! === CookieYes ===
+##.cky-consent-container
+##.cky-consent-bar
+###cky-consent
+||cdn-cookieyes.com^$third-party
+
+! === Klaro ===
+##.klaro .cookie-modal
+##.klaro .cookie-notice
+##.klaro .cm-modal
+
+! === Generic cookie banners ===
+##.cookie-banner
+##.cookie-notice
+##.cookie-consent
+##.cookie-popup
+##.cookie-wall
+##.cookie-bar
+##.cookie-disclaimer
+##.cc-window
+##.cc-banner
+##.cc-revoke
+###cookie-law-info-bar
+##.cookie-law-info-bar
+###cookie-notice
+###cookieNotice
+###cookie-consent-banner
+##.gdpr-banner
+##.gdpr-consent
+##.gdpr-popup
+##.privacy-banner
+##.privacy-notice
+##.consent-banner
+##.consent-popup
+##.consent-modal
+##.consent-overlay
+##[class*="cookie-banner"]
+##[class*="cookie-consent"]
+##[class*="CookieConsent"]
+##[id*="cookie-banner"]
+##[id*="cookie-consent"]
+##[id*="cookieconsent"]
+
+! === Osano ===
+##.osano-cm-dialog
+##.osano-cm-window
+||cmp.osano.com^$third-party
+
+! === Sourcepoint ===
+##.sp-message-container
+###sp_message_container
+||sourcepoint.mgr.consensu.org^
+
+! === Usercentrics ===
+###usercentrics-root
+||app.usercentrics.eu^$third-party
+
+! === Complianz ===
+###cmplz-cookiebanner-container
+##.cmplz-cookiebanner
+)";
+  LoadFilterList("molt_cookie_consent", cookie_consent_rules);
 }
 
 // ============================================================
@@ -827,6 +936,73 @@ setInterval(skipAd,500);setInterval(removeAds,1000);
 new MutationObserver(function(){skipAd();removeAds();})
   .observe(document.documentElement,{childList:true,subtree:true});
 console.log('[MoltShield] YouTube ad protection active');
+})();
+)JS";
+}
+
+std::string MoltShield::GetCookieConsentDeclineJS() const {
+  return R"JS(
+(function(){'use strict';
+// MoltShield Cookie Consent Auto-Decline
+// Automatically clicks "Decline All" / "Reject All" buttons
+// on consent popups that require user interaction.
+
+function declineConsent(){
+  // OneTrust "Reject All" button
+  var b=document.querySelector('#onetrust-reject-all-handler');
+  if(b){b.click();console.log('[MoltShield] OneTrust declined');return true;}
+  // CookieBot decline
+  b=document.querySelector('#CybotCookiebotDialogBodyButtonDecline');
+  if(b){b.click();console.log('[MoltShield] CookieBot declined');return true;}
+  // Quantcast "Disagree"
+  b=document.querySelector('.qc-cmp2-summary-buttons button:first-child');
+  if(b&&/disagree|reject|decline/i.test(b.textContent)){b.click();return true;}
+  // Didomi disagree
+  b=document.querySelector('#didomi-notice-disagree-button');
+  if(b){b.click();console.log('[MoltShield] Didomi declined');return true;}
+  // CookieYes reject
+  b=document.querySelector('.cky-btn-reject');
+  if(b){b.click();console.log('[MoltShield] CookieYes declined');return true;}
+  // Klaro decline
+  b=document.querySelector('.klaro .cm-btn-decline');
+  if(b){b.click();console.log('[MoltShield] Klaro declined');return true;}
+  // Osano deny
+  b=document.querySelector('.osano-cm-deny');
+  if(b){b.click();console.log('[MoltShield] Osano declined');return true;}
+  // Complianz deny
+  b=document.querySelector('.cmplz-deny');
+  if(b){b.click();console.log('[MoltShield] Complianz declined');return true;}
+  // Usercentrics deny
+  var uc=document.querySelector('#usercentrics-root');
+  if(uc&&uc.shadowRoot){
+    b=uc.shadowRoot.querySelector('[data-testid="uc-deny-all-button"]');
+    if(b){b.click();console.log('[MoltShield] Usercentrics declined');return true;}
+  }
+  // Generic: find buttons with decline/reject text
+  var btns=document.querySelectorAll(
+    'button, [role="button"], a.btn, .consent-modal button');
+  for(var i=0;i<btns.length;i++){
+    var t=(btns[i].textContent||'').trim().toLowerCase();
+    if(/^(decline|reject|deny|refuse|ablehnen|refuser)(\s+all)?$/i.test(t)){
+      btns[i].click();
+      console.log('[MoltShield] Generic consent declined: '+t);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Try immediately, then watch for dynamically injected consent dialogs
+if(!declineConsent()){
+  var attempts=0;
+  var timer=setInterval(function(){
+    if(declineConsent()||++attempts>20){clearInterval(timer);}
+  },500);
+  // Also observe DOM for consent dialogs appearing later
+  new MutationObserver(function(mutations,observer){
+    if(declineConsent()){observer.disconnect();}
+  }).observe(document.documentElement,{childList:true,subtree:true});
+}
 })();
 )JS";
 }

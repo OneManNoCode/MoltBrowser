@@ -331,6 +331,62 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
   </div>
 
+  <div class="section">
+    <h2><span class="icon">&#128274;</span> Privacy Network (MoltNet)</h2>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="moltnetEnabled" onchange="toggleMoltNet(this.checked)">
+        <span class="track"></span>
+        <span class="label">Enable MoltNet Privacy Routing</span>
+      </label>
+      <div class="desc">Route traffic through encrypted relay nodes to hide your IP address</div>
+    </div>
+    <div class="field">
+      <label>Routing Mode</label>
+      <select id="routingMode" onchange="setRoutingMode(this.value)">
+        <option value="direct">Direct (No Privacy Routing)</option>
+        <option value="proxy">Single Proxy</option>
+        <option value="multi_hop" selected>Multi-Hop (Tor)</option>
+      </select>
+    </div>
+    <div id="moltnetStatus" style="display:none">
+      <div class="field">
+        <label>Connection Status</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <span id="moltnetStatusBadge" style="background:#1a3a1a;color:#4ade80;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600">Disconnected</span>
+          <span id="moltnetIP" style="font-family:monospace;font-size:12px;color:#888"></span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Circuit (Relay Chain)</label>
+        <div id="circuitDisplay" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:14px">
+          <span style="color:#555">Not connected</span>
+        </div>
+      </div>
+      <div class="field" style="display:flex;gap:10px">
+        <button class="btn secondary" onclick="newCircuit()" style="font-size:12px;padding:6px 16px">New Circuit</button>
+        <select id="exitCountry" onchange="setExitCountry(this.value)" style="background:#111;border:1px solid #333;color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px">
+          <option value="">Auto (Any Exit)</option>
+          <option value="US">Exit: United States</option>
+          <option value="DE">Exit: Germany</option>
+          <option value="NL">Exit: Netherlands</option>
+          <option value="SE">Exit: Sweden</option>
+          <option value="CH">Exit: Switzerland</option>
+          <option value="JP">Exit: Japan</option>
+          <option value="SG">Exit: Singapore</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2><span class="icon">&#128736;</span> Tools</h2>
+    <div class="field">
+      <a href="chrome://molt-ai-agent/" style="color:#8b5cf6;text-decoration:none;font-weight:600">Open Agent Testing UI &#8594;</a>
+      <div class="desc">Test autonomous browser automation (CLICK, SCROLL, NAVIGATE, TYPE)</div>
+    </div>
+  </div>
+
   <div class="actions">
     <button class="btn primary" onclick="saveSettings()">Save Settings</button>
     <button class="btn danger" onclick="resetSettings()">Reset to Defaults</button>
@@ -410,6 +466,78 @@ function resetSettings() {
     showToast('Settings reset to defaults');
   });
 }
+
+// ---- MoltNet Privacy Controls ----
+var countryFlags = {DE:'&#127465;&#127466;',NL:'&#127475;&#127473;',SE:'&#127480;&#127466;',
+  CH:'&#127464;&#127469;',US:'&#127482;&#127480;',JP:'&#127471;&#127477;',SG:'&#127480;&#127468;',
+  FR:'&#127467;&#127479;',GB:'&#127468;&#127463;',CA:'&#127464;&#127462;','??':'&#127760;'};
+
+function toggleMoltNet(enabled) {
+  var status = document.getElementById('moltnetStatus');
+  status.style.display = enabled ? 'block' : 'none';
+  if (enabled) {
+    chrome.send('moltnetConnect', [document.getElementById('routingMode').value]);
+  } else {
+    chrome.send('moltnetDisconnect');
+    updateMoltNetUI({status: 'disconnected', relays: []});
+  }
+}
+
+function setRoutingMode(mode) {
+  if (document.getElementById('moltnetEnabled').checked) {
+    chrome.send('moltnetConnect', [mode]);
+  }
+}
+
+function newCircuit() {
+  chrome.send('moltnetNewCircuit');
+}
+
+function setExitCountry(cc) {
+  chrome.send('moltnetSetExitCountry', [cc]);
+}
+
+function updateMoltNetUI(data) {
+  var badge = document.getElementById('moltnetStatusBadge');
+  var ip = document.getElementById('moltnetIP');
+  var circuit = document.getElementById('circuitDisplay');
+
+  if (data.status === 'connected') {
+    badge.style.background = '#1a3a1a';
+    badge.style.color = '#4ade80';
+    badge.textContent = 'Connected';
+    ip.textContent = data.apparent_ip || '';
+  } else if (data.status === 'connecting') {
+    badge.style.background = '#3a3a1a';
+    badge.style.color = '#fbbf24';
+    badge.textContent = 'Connecting...';
+  } else {
+    badge.style.background = '#2a1a1a';
+    badge.style.color = '#f87171';
+    badge.textContent = 'Disconnected';
+    ip.textContent = '';
+  }
+
+  if (data.relays && data.relays.length > 0) {
+    var html = '<span style="color:#4ade80">You</span>';
+    data.relays.forEach(function(r) {
+      var flag = countryFlags[r.country] || countryFlags['??'];
+      html += ' <span style="color:#555">&#8594;</span> <span title="' +
+        r.relay_id + ' (' + r.latency_ms + 'ms)">' + flag + '</span>';
+    });
+    html += ' <span style="color:#555">&#8594;</span> <span style="color:#8b5cf6">&#127760; Internet</span>';
+    circuit.innerHTML = html;
+  } else {
+    circuit.innerHTML = '<span style="color:#555">Not connected</span>';
+  }
+}
+
+// Listen for MoltNet status updates
+window.cr = window.cr || {};
+cr.addWebUIListener = cr.addWebUIListener || function(event, fn) {
+  document.addEventListener(event, function(e) { fn(e.detail); });
+};
+cr.addWebUIListener('moltnet-status', updateMoltNetUI);
 
 // Init
 sendWithPromise('getSettings').then(function(s) {
