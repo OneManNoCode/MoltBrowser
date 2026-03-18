@@ -1,0 +1,66 @@
+.TH MOLTBROWSER 1 "March 2026" "MoltBrowser 0.1.0" "User Commands"
+.SH NAME
+moltbrowser \- AI-native privacy web browser
+.SH SYNOPSIS
+.B moltbrowser
+[\fIOPTIONS\fR] [\fIURL\fR]
+.SH DESCRIPTION
+.B MoltBrowser
+is a Chromium-based web browser with built-in AI capabilities.
+It runs large language models locally on your device for private,
+on-device AI chat, page summarization, code explanation, and more.
+.PP
+All AI inference is performed locally using llama.cpp with GPU
+acceleration (Metal on macOS, Vulkan on Linux). No data is sent
+to any cloud service.
+.SH OPTIONS
+.TP
+.B \-\-new\-window
+Open a new browser window.
+.TP
+.B \-\-incognito
+Open a new private (incognito) window.
+.TP
+.B \-\-ai\-chat
+Open the AI chat interface directly.
+.TP
+.B \-\-version
+Display version information and exit.
+.TP
+.B \-\-help
+Display help information and exit.
+.SH AI FEATURES
+.TP
+.B chrome://molt\-ai\-chat
+Full-page AI chat interface.
+.TP
+.B Ctrl+Shift+A
+Open AI chat sidebar.
+.TP
+.B ai: \fIquery\fR
+Type in the address bar with "ai:" prefix for quick AI queries.
+.SH FILES
+.TP
+.I ~/.moltbrowser/settings.json
+User settings and AI model configuration.
+.TP
+.I ~/.moltbrowser/models/
+Downloaded AI model files (GGUF format).
+.TP
+.I ~/.moltbrowser/chat_exports/
+Exported chat history files (JSON format).
+.SH ENVIRONMENT
+.TP
+.B MOLTBROWSER_AI_MODEL
+Override the default AI model path.
+.TP
+.B MOLTBROWSER_DISABLE_GPU
+Set to 1 to disable GPU acceleration for inference.
+.SH BUGS
+Report bugs at https://github.com/OneManNoCode/MoltBrowser/issues
+.SH AUTHOR
+GenEye AI Labs Inc. <support@geneye.ai>
+.SH SEE ALSO
+.BR chromium (1)
+.SH COPYRIGHT
+Copyright 2025 GenEye AI Labs Inc. Licensed under GPLv3.

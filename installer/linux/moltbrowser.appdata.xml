@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for MoltBrowser — used by GNOME Software, KDE Discover, Flathub -->
+<component type="desktop-application">
+  <id>com.geneye.MoltBrowser</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>MoltBrowser</name>
+  <summary>AI-Native Privacy Browser</summary>
+  <description>
+    <p>
+      MoltBrowser is a Chromium-based web browser with built-in AI capabilities.
+      Run large language models locally on your device for private, on-device
+      AI chat, page summarization, code explanation, and more.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>On-device LLM inference (Llama, Mistral, Phi, Qwen) with GPU acceleration</li>
+      <li>MoltShield built-in ad and tracker blocking</li>
+      <li>Page-aware AI context — summarize, explain, extract from any page</li>
+      <li>Full Chrome extension compatibility</li>
+      <li>Zero telemetry, zero cloud data — everything stays on your machine</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">moltbrowser.desktop</launchable>
+  <url type="homepage">https://moltbrowser.com</url>
+  <url type="bugtracker">https://github.com/OneManNoCode/MoltBrowser/issues</url>
+  <url type="help">https://github.com/OneManNoCode/MoltBrowser/wiki</url>
+  <developer_name>GenEye AI Labs Inc.</developer_name>
+  <provides>
+    <binary>moltbrowser</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">768</display_length>
+    <internet>always</internet>
+  </requires>
+  <recommends>
+    <memory>8192</memory>
+  </recommends>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-03-17">
+      <description>
+        <p>First public release of MoltBrowser.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,99 @@
+# MoltBrowser Linux Build Environment
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# Docker image for building MoltBrowser on Linux x64.
+# Based on Ubuntu 22.04 LTS with all Chromium build dependencies.
+#
+# Build:
+#   docker build -t moltbrowser-linux -f build/docker/Dockerfile.linux .
+#
+# Run (mount repo as volume):
+#   docker run --rm -v $(pwd):/moltbrowser -w /moltbrowser moltbrowser-linux \
+#     ./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh
+#
+# Full release:
+#   docker run --rm -v $(pwd):/moltbrowser -w /moltbrowser moltbrowser-linux \
+#     ./scripts/release-linux.sh --version 0.1.0 --build 1
+
+FROM ubuntu:22.04
+
+LABEL maintainer="GenEye AI Labs Inc. <build@geneye.ai>"
+LABEL description="MoltBrowser Linux build environment"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Chromium build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build essentials
+    build-essential \
+    clang \
+    lld \
+    cmake \
+    ninja-build \
+    python3 \
+    python3-pip \
+    git \
+    curl \
+    wget \
+    pkg-config \
+    # Chromium library dependencies
+    libgtk-3-dev \
+    libglib2.0-dev \
+    libnss3-dev \
+    libatk1.0-dev \
+    libatk-bridge2.0-dev \
+    libcups2-dev \
+    libdrm-dev \
+    libxkbcommon-dev \
+    libxcomposite-dev \
+    libxdamage-dev \
+    libxrandr-dev \
+    libgbm-dev \
+    libpango1.0-dev \
+    libasound2-dev \
+    libdbus-1-dev \
+    libexpat1-dev \
+    libfontconfig1-dev \
+    libfreetype-dev \
+    libnspr4-dev \
+    libpulse-dev \
+    libx11-xcb-dev \
+    libxcb-dri3-dev \
+    libxext-dev \
+    libxfixes-dev \
+    libxi-dev \
+    libxrender-dev \
+    libxtst-dev \
+    # Vulkan SDK for GPU-accelerated LLM inference
+    libvulkan-dev \
+    vulkan-tools \
+    # Packaging tools
+    dpkg-dev \
+    rpm \
+    fakeroot \
+    zip \
+    # Fonts (needed for rendering tests)
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install depot_tools (Chromium build toolchain)
+RUN git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools
+ENV PATH="/opt/depot_tools:${PATH}"
+
+# Disable depot_tools auto-update in Docker
+ENV DEPOT_TOOLS_UPDATE=0
+
+# Create build user (matching host UID for volume mounts)
+ARG BUILD_UID=1000
+ARG BUILD_GID=1000
+RUN groupadd -g ${BUILD_GID} builder && \
+    useradd -m -u ${BUILD_UID} -g ${BUILD_GID} builder
+USER builder
+
+WORKDIR /moltbrowser
+
+# Default: run the build
+CMD ["bash", "-c", "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh"]

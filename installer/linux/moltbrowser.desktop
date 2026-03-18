@@ -1,0 +1,26 @@
+[Desktop Entry]
+Version=1.0
+Name=MoltBrowser
+GenericName=Web Browser
+Comment=AI-Native Privacy Browser with on-device LLM inference
+Exec=/opt/moltbrowser/moltbrowser %U
+Terminal=false
+Icon=moltbrowser
+Type=Application
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;image/gif;image/jpeg;image/png;image/webp;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/ftp;
+StartupNotify=true
+StartupWMClass=MoltBrowser
+Actions=new-window;new-private-window;ai-chat;
+
+[Desktop Action new-window]
+Name=Open a New Window
+Exec=/opt/moltbrowser/moltbrowser --new-window
+
+[Desktop Action new-private-window]
+Name=Open a New Private Window
+Exec=/opt/moltbrowser/moltbrowser --incognito
+
+[Desktop Action ai-chat]
+Name=Open AI Chat
+Exec=/opt/moltbrowser/moltbrowser chrome://molt-ai-chat
