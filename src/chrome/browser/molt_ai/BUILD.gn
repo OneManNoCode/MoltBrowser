@@ -67,6 +67,7 @@ source_set("molt_ai_memory") {
 
   deps = [
     "//base",
+    "//sql",
   ]
 }
 
@@ -92,6 +93,7 @@ source_set("molt_ai_models") {
   deps = [
     ":molt_ai_runtime",
     "//base",
+    "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
   ]
