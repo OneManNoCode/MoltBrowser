@@ -142,6 +142,40 @@ const data = await browser.ai.extractData("table.pricing");
 const models = await browser.ai.getModels();
 ```
 
+## Current Status (v0.1.0)
+
+| Feature | Status |
+|---------|--------|
+| On-device LLM inference (6 models, Metal/Vulkan GPU) | ✅ Complete |
+| AI Chat (full page + side panel + omnibox) | ✅ Complete |
+| MoltShield ad/tracker blocking (ABP filter engine) | ✅ Complete |
+| Cookie consent popup auto-blocking | ✅ Complete |
+| YouTube ad blocking (network + scriptlet) | ✅ Complete |
+| Fingerprint protection (Canvas, WebGL, Audio) | ✅ Complete |
+| Agent browser automation (CLICK, SCROLL, NAVIGATE) | ✅ Complete |
+| Agent testing UI (`chrome://molt-ai-agent/`) | ✅ Complete |
+| MoltNet privacy routing UI | ✅ Complete |
+| Persona system (5 built-in + custom) | ✅ Complete |
+| Memory engine (SQLite + embeddings) | ✅ Complete |
+| Chat export/import, search, keyboard shortcuts | ✅ Complete |
+| Model downloading from HuggingFace | ✅ Complete |
+| Sparkle/WinSparkle auto-update | ✅ Complete |
+| macOS DMG + notarization pipeline | ✅ Ready |
+| Windows NSIS installer | ✅ Ready |
+| Linux deb/rpm/AppImage/Flatpak | ✅ Ready |
+| Android APK scaffolding | ✅ Scaffolding |
+| iOS IPA scaffolding | ✅ Scaffolding |
+| CI/CD GitHub Actions (5-platform matrix) | ✅ Complete |
+
+### Testing Pages
+
+| URL | Purpose |
+|-----|---------|
+| `chrome://molt-ai/` | Full-page AI chat with model switching |
+| `chrome://molt-ai-chat/` | Side panel AI chat |
+| `chrome://molt-ai-settings/` | Settings + MoltNet privacy controls |
+| `chrome://molt-ai-agent/` | Agent testing & automation |
+
 ## Privacy
 
 MoltBrowser is built privacy-first:
