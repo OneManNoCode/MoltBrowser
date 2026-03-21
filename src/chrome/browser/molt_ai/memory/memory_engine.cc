@@ -32,11 +32,11 @@ struct MemoryEngine::Impl {
   int64_t next_id = 1;
 
   bool InitDatabase(const std::string& db_path) {
-    db = std::make_unique<sql::Database>(sql::DatabaseOptions{
-        .exclusive_locking = false,
-        .page_size = 4096,
-        .cache_size = 128,
-    });
+    sql::DatabaseOptions options;
+    options.exclusive_locking = false;
+    options.page_size = 4096;
+    options.cache_size = 128;
+    db = std::make_unique<sql::Database>(options);
 
     base::FilePath path(db_path);
     if (!db->Open(path)) {
@@ -275,7 +275,7 @@ std::vector<MemoryEntry> MemoryEngine::Search(
   std::sort(results.begin(), results.end(),
             [](const MemoryEntry& a, const MemoryEntry& b) {
               return a.relevance_score > b.relevance_score;
-            });
+            db = std::make_unique<sql::Database>(options);
 
   if (static_cast<int>(results.size()) > query.max_results) {
     results.resize(query.max_results);
@@ -296,7 +296,7 @@ std::vector<MemoryEntry> MemoryEngine::GetRecent(MemoryType type,
   std::sort(results.begin(), results.end(),
             [](const MemoryEntry& a, const MemoryEntry& b) {
               return a.timestamp > b.timestamp;
-            });
+            db = std::make_unique<sql::Database>(options);
 
   if (static_cast<int>(results.size()) > limit) {
     results.resize(limit);
