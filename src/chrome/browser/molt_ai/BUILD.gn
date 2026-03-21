@@ -82,7 +82,6 @@ source_set("molt_ai_memory") {
   deps = [
     ":molt_ai_embeddings",
     "//base",
-    "//sql",
   ]
 }
 
