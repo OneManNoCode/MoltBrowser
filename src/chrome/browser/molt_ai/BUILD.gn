@@ -58,7 +58,6 @@ source_set("molt_ai_security") {
   ]
 
   deps = [
-    ":molt_ai_agents",
     "//base",
   ]
 }
