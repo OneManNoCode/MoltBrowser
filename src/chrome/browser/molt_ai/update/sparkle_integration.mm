@@ -10,7 +10,7 @@
 #include <dlfcn.h>
 
 #include "base/logging.h"
-#include "base/mac/bundle_locations.h"
+#include "base/apple/bundle_locations.h"
 
 // Sparkle SPUUpdater / SPUStandardUpdaterController interfaces.
 // We load dynamically to gracefully degrade when Sparkle isn't bundled.
