@@ -27,17 +27,17 @@ struct MemoryEngine::Impl {
 
   void SaveToFile() {
     if (storage_path.empty()) return;
-    base::Value::List list;
+    base::ListValue list;
     for (const auto& entry : entries) {
-      base::Value::Dict d;
-      d.Set("id", static_cast<int>(entry.id));
-      d.Set("type", static_cast<int>(entry.type));
-      d.Set("content", entry.content);
-      d.Set("source_url", entry.source_url);
-      d.Set("context", entry.context);
-      d.Set("persona_id", entry.persona_id);
-      d.Set("timestamp", static_cast<double>(entry.timestamp));
-      list.Append(std::move(d));
+      base::DictValue d;
+      d.Set("id", base::Value(static_cast<int>(entry.id)));
+      d.Set("type", base::Value(static_cast<int>(entry.type)));
+      d.Set("content", base::Value(entry.content));
+      d.Set("source_url", base::Value(entry.source_url));
+      d.Set("context", base::Value(entry.context));
+      d.Set("persona_id", base::Value(entry.persona_id));
+      d.Set("timestamp", base::Value(static_cast<double>(entry.timestamp)));
+      list.Append(base::Value(std::move(d)));
     }
     std::string json;
     base::JSONWriter::WriteWithOptions(
@@ -50,15 +50,20 @@ struct MemoryEngine::Impl {
     base::FilePath path(storage_path + "/memory.json");
     std::string json;
     if (!base::ReadFileToString(path, &json)) return;
-    auto parsed = base::JSONReader::Read(json);
+    auto parsed = base::JSONReader::Read(json,
+        base::JSON_ALLOW_TRAILING_COMMAS);
     if (!parsed || !parsed->is_list()) return;
     entries.clear();
-    for (const auto& item : parsed->GetList()) {
+    const auto& list = *parsed->GetIfList();
+    for (const auto& item : list) {
       if (!item.is_dict()) continue;
-      const auto& d = item.GetDict();
+      const auto& d = *item.GetIfDict();
       MemoryEntry entry;
       if (auto v = d.FindInt("id")) entry.id = *v;
-      entry.type = static_cast<MemoryType>(d.FindInt("type").value_or(1));
+      if (auto v = d.FindInt("type"))
+        entry.type = static_cast<MemoryType>(*v);
+      else
+        entry.type = MemoryType::LONG_TERM;
       if (auto* v = d.FindString("content")) entry.content = *v;
       if (auto* v = d.FindString("source_url")) entry.source_url = *v;
       if (auto* v = d.FindString("context")) entry.context = *v;

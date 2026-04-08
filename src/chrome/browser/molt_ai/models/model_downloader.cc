@@ -130,7 +130,7 @@ void ModelDownloader::StartDownload(
   resource_request->url = GURL(url);
   resource_request->method = "GET";
   resource_request->load_flags =
-      net::LOAD_DO_NOT_SAVE_COOKIES | net::LOAD_DO_NOT_SEND_COOKIES;
+      net::LOAD_DO_NOT_SAVE_COOKIES;
   // HuggingFace CDN uses 302 redirects — follow them
   resource_request->redirect_mode = network::mojom::RedirectMode::kFollow;
 
@@ -203,7 +203,10 @@ void ModelDownloader::OnDownloadProgress(
   int64_t total = -1;
   if (url_loader_ && url_loader_->ResponseInfo() &&
       url_loader_->ResponseInfo()->headers) {
-    total = url_loader_->ResponseInfo()->headers->GetContentLength();
+    auto content_length =
+        url_loader_->ResponseInfo()->headers->GetContentLength();
+    if (content_length.has_value())
+      total = content_length.value().InBytes();
   }
 
   int eta_sec = -1;

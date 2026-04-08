@@ -3,6 +3,8 @@
 
 source_set("molt_ai") {
   sources = [
+    "molt_ai_agent_ui.cc",
+    "molt_ai_agent_ui.h",
     "molt_ai_chat_handler.cc",
     "molt_ai_chat_handler.h",
     "molt_ai_chat_ui.cc",

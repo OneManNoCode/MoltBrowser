@@ -10,7 +10,9 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.h"
 
+#include "base/memory/ref_counted_memory.h"
 #include "content/public/browser/url_data_source.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 
