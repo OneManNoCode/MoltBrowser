@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
 
+// MoltBrowser: NTP redirect includes
+#include "base/task/sequenced_task_runner.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/referrer.h"
@@ -172,19 +174,6 @@ NewTabPageUIConfig::CreateWebUIController(content::WebUI* web_ui,
   if (profile->IsGuestSession()) {
     return std::make_unique<PageNotAvailableForGuestUI>(
         web_ui, chrome::kChromeUINewTabPageHost);
-  }
-
-  // MoltBrowser: Redirect NTP to MoltSearch homepage.
-  // Instead of loading Google's NTP, navigate to our homepage.
-  if (!profile->IsOffTheRecord()) {
-    content::WebContents* contents = web_ui->GetWebContents();
-    if (contents) {
-      contents->GetController().LoadURL(
-          GURL("https://homepage.moltsearch.ai"),
-          content::Referrer(),
-          ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
-          std::string());
-    }
   }
 
   return std::make_unique<NewTabPageUI>(web_ui);
