@@ -366,24 +366,24 @@ std::optional<GURL> GetEffectiveURLForInstant(const GURL& url,
 
 bool HandleNewTabURLRewrite(GURL* url,
                             content::BrowserContext* browser_context) {
-  if (!IsInstantExtendedAPIEnabled()) {
-    return false;
-  }
-
+  // MoltBrowser: Do not gate on IsInstantExtendedAPIEnabled() — we always
+  // want to rewrite chrome://newtab to MoltSearch, regardless of Instant API.
   if (!(url->SchemeIs(content::kChromeUIScheme) &&
         url->GetHost() == chrome::kChromeUINewTabHost)) {
     return false;
   }
 
   Profile* profile = Profile::FromBrowserContext(browser_context);
-  NewTabURLDetails details(NewTabURLDetails::ForProfile(profile));
-  UMA_HISTOGRAM_ENUMERATION("NewTabPage.URLState", details.state,
-                            NEW_TAB_URL_MAX);
-  if (details.url.is_valid()) {
-    *url = details.url;
-    return true;
+  // MoltBrowser: Don't rewrite for incognito
+  if (profile->IsOffTheRecord()) {
+    return false;
   }
-  return false;
+
+  // MoltBrowser: Force rewrite to MoltSearch homepage
+  LOG(INFO) << "[MoltBrowser] HandleNewTabURLRewrite: " << *url
+            << " -> https://homepage.moltsearch.ai";
+  *url = GURL("https://homepage.moltsearch.ai");
+  return true;
 }
 
 bool HandleNewTabURLReverseRewrite(GURL* url,

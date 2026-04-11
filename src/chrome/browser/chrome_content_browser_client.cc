@@ -822,11 +822,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
 }
 
 // Handles the rewriting of the new tab page URL based on group policy.
+// MoltBrowser: Aggressively redirects all NTP variants to MoltSearch.
 bool HandleNewTabPageLocationOverride(
     GURL* url,
     content::BrowserContext* browser_context) {
-  if (!url->SchemeIs(content::kChromeUIScheme) ||
-      url->GetHost() != chrome::kChromeUINewTabHost) {
+  if (!url->SchemeIs(content::kChromeUIScheme)) {
+    return false;
+  }
+
+  // Intercept all NTP hosts: chrome://newtab, chrome://new-tab-page,
+  // chrome://new-tab-page-third-party
+  auto host = url->host();
+  if (host != std::string_view(chrome::kChromeUINewTabHost) &&
+      host != std::string_view(chrome::kChromeUINewTabPageHost) &&
+      host != std::string_view(chrome::kChromeUINewTabPageThirdPartyHost)) {
     return false;
   }
 
@@ -837,21 +846,11 @@ bool HandleNewTabPageLocationOverride(
     return false;
   }
 
-  // MoltBrowser: Always redirect chrome://newtab to our custom homepage.
-  // This is the primary NTP override — it runs first in the URL handler chain,
-  // ensuring MoltBrowser's homepage is always used regardless of profile prefs.
-  std::string ntp_location =
-      profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
-  if (ntp_location.empty()) {
-    ntp_location = "https://homepage.moltsearch.ai";
-  }
-  url::Component scheme;
-  if (!url::ExtractScheme(ntp_location, &scheme)) {
-    ntp_location = base::StrCat(
-        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
-  }
-
-  *url = GURL(ntp_location);
+  // MoltBrowser: Force redirect to MoltSearch homepage, bypassing any
+  // enterprise policy or cached prefs.
+  LOG(INFO) << "[MoltBrowser] Redirecting NTP from " << *url
+            << " to https://homepage.moltsearch.ai";
+  *url = GURL("https://homepage.moltsearch.ai");
   return true;
 }
 
