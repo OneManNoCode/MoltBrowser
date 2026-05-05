@@ -584,7 +584,8 @@ void ToolbarView::Init() {
                                         ui::PAGE_TRANSITION_AUTO_BOOKMARK);
         },
         browser_));
-    molt_ai_button->SetTooltipText(u"Open MoltAI Chat (⌘⇧A)");
+    molt_ai_button->SetTooltipText(
+        u"Open MoltAI Chat (⌘⇧L for side panel)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     molt_ai_button->SetVectorIcon(vector_icons::kChatSparkIcon);
     AddChildView(std::move(molt_ai_button));
