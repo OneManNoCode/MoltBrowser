@@ -120,6 +120,7 @@
 #include "components/send_tab_to_self/features.h"
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "third_party/skia/include/core/SkPath.h"
@@ -571,6 +572,22 @@ void ToolbarView::Init() {
 
   if (media_button) {
     media_button_ = AddChildView(std::move(media_button));
+  }
+
+  // MoltBrowser: AI chat quick-access button. Opens chrome://molt-ai/ in a
+  // new tab. Placed where the Google avatar button used to live so the
+  // primary on-device AI feature is one click away.
+  {
+    auto molt_ai_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+        [](Browser* browser) {
+          chrome::AddSelectedTabWithURL(browser, GURL("chrome://molt-ai/"),
+                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+        },
+        browser_));
+    molt_ai_button->SetTooltipText(u"Open MoltAI Chat (⌘⇧A)");
+    molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    molt_ai_button->SetVectorIcon(vector_icons::kChatSparkIcon);
+    AddChildView(std::move(molt_ai_button));
   }
 
   avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));

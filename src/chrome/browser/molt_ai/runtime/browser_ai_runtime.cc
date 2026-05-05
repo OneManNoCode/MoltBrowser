@@ -205,10 +205,12 @@ struct BrowserAIRuntime::Impl {
       info.parameter_count_billions = entry.param_billions;
       info.quantization = entry.quantization;
 
-      // Check if model file exists locally
+      // Set local file path. is_downloaded is left false here and updated
+      // by RefreshModelStatus() on a worker thread to keep Initialize()
+      // non-blocking on the UI thread.
       std::string model_path = model_directory + "/" + entry.filename;
       info.file_path = model_path;
-      info.is_downloaded = std::filesystem::exists(model_path);
+      info.is_downloaded = false;
       info.is_loaded = false;
 
       models[entry.model_id] = info;
@@ -242,10 +244,26 @@ BrowserAIRuntime::~BrowserAIRuntime() {
 bool BrowserAIRuntime::Initialize() {
   if (impl_->initialized) return true;
 
-  // Detect hardware capabilities
+  // Initialize() is invoked from the UI thread by the chat WebUI handler.
+  // Keep this method non-blocking — Chromium's hang watchdog DCHECKs any
+  // filesystem I/O on the UI thread. Filesystem work (mkdir, stat()s) is
+  // deferred to RefreshModelStatus(), which runs on a worker thread before
+  // any model is loaded or downloaded.
+
+  // llama.cpp requires a one-time global backend init before any model load.
+  // Registers compiled-in backends (Metal on Apple Silicon, CPU elsewhere).
+  // This does NOT do filesystem I/O — Metal device probing only.
+  static std::once_flag llama_backend_once;
+  std::call_once(llama_backend_once, []() {
+    llama_backend_init();
+    std::cerr << "[MoltAI] llama.cpp backend initialized" << std::endl;
+  });
+
+  // Detect hardware capabilities (sysctl/sysfs reads — non-blocking)
   impl_->DetectHardware();
 
-  // Set up model directory
+  // Set up model directory string. Directory creation deferred to first
+  // download (see HandleDownloadModel) or RefreshModelStatus() on worker.
   const char* home = getenv("HOME");
   if (home) {
     impl_->model_directory = std::string(home) + "/.moltbrowser/models";
@@ -253,10 +271,8 @@ bool BrowserAIRuntime::Initialize() {
     impl_->model_directory = "/tmp/moltbrowser/models";
   }
 
-  // Create model directory if it doesn't exist
-  std::filesystem::create_directories(impl_->model_directory);
-
-  // Initialize model registry
+  // Initialize model registry without checking disk. is_downloaded starts
+  // false; RefreshModelStatus() updates it from a worker thread.
   impl_->InitializeModelRegistry();
 
   impl_->initialized = true;

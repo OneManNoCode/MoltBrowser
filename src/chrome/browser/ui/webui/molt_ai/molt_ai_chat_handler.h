@@ -23,13 +23,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 class Profile;
-
-namespace molt_ai {
-class BrowserAIRuntime;
-}  // namespace molt_ai
 
 namespace network {
 class SimpleURLLoader;
@@ -63,6 +60,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleExportHistory(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
+  void FinishInitChat(std::string callback_id,
+                      base::DictValue settings_dict);
   void OnModelLoaded(std::string callback_id, bool success,
                      const std::string& error);
   void OnPromptComplete(std::string callback_id, bool success,
@@ -70,6 +69,17 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
                         const std::string& error);
   void OnDownloadProgress(uint64_t current);
   void OnDownloadComplete(base::FilePath path);
+  void OnDownloadPrecheckComplete(std::string callback_id,
+                                  std::string model_id,
+                                  molt_ai::ModelInfo info,
+                                  base::DictValue precheck);
+  void FinishDownload(bool success, int net_error);
+  void OnModelDeleted(std::string callback_id, std::string model_id,
+                      bool success);
+  void OnHistoryExported(std::string callback_id,
+                         base::FilePath file_path,
+                         std::string filename,
+                         bool success);
   void OnPageContentExtracted(std::string callback_id, base::Value result);
 
   // Ensure BrowserAIRuntime is created and initialized

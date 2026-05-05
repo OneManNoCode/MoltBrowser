@@ -194,7 +194,35 @@ void MoltAIChatHandler::HandleInitChat(const base::ListValue& args) {
 
   auto* runtime = GetOrCreateRuntime();
 
-  // Gather model info
+  // All blocking I/O (model file stat()s + reading ~/.moltbrowser/settings.json)
+  // runs on a ThreadPool worker. The reply on the UI thread receives a
+  // pre-built settings dict and just assembles the JS result.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+      base::BindOnce(
+          [](molt_ai::BrowserAIRuntime* rt) -> base::DictValue {
+            rt->RefreshModelStatus();
+            MoltAISettings s = LoadUserSettings();
+            base::DictValue d;
+            d.Set("max_history_messages", s.max_history_messages);
+            d.Set("max_page_content_chars", s.max_page_content_chars);
+            d.Set("default_model", s.default_model);
+            return d;
+          },
+          base::Unretained(runtime)),
+      base::BindOnce(&MoltAIChatHandler::FinishInitChat,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltAIChatHandler::FinishInitChat(std::string callback_id,
+                                       base::DictValue settings_dict) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
+
+  auto* runtime = GetOrCreateRuntime();
+
+  // Gather model info (now reflects on-disk reality via RefreshModelStatus)
   auto models = runtime->GetAvailableModels();
   auto hw = runtime->GetHardwareCapability();
 
@@ -221,11 +249,13 @@ void MoltAIChatHandler::HandleInitChat(const base::ListValue& args) {
   result.Set("cpu_cores", hw.cpu_cores);
   result.Set("has_gpu", hw.has_gpu_acceleration);
 
-  // Include user settings so JS can apply them
-  MoltAISettings settings = LoadUserSettings();
-  result.Set("max_history_messages", settings.max_history_messages);
-  result.Set("max_page_content_chars", settings.max_page_content_chars);
-  result.Set("default_model", settings.default_model);
+  // Settings were loaded off-thread; merge into result.
+  if (auto v = settings_dict.FindInt("max_history_messages"))
+    result.Set("max_history_messages", *v);
+  if (auto v = settings_dict.FindInt("max_page_content_chars"))
+    result.Set("max_page_content_chars", *v);
+  if (auto* v = settings_dict.FindString("default_model"))
+    result.Set("default_model", *v);
 
   // Check if this is a first-run (no models downloaded)
   bool any_downloaded = false;
@@ -338,17 +368,12 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   auto* runtime = GetOrCreateRuntime();
   active_prompt_callback_id_ = callback_id;
 
-  // Load user settings from ~/.moltbrowser/settings.json
-  MoltAISettings user_settings = LoadUserSettings();
+  // settings.json is read inside the worker — UI thread cannot do file I/O
+  // (Chromium's hang watchdog DCHECKs blocking calls).
 
-  // Notify UI that we're loading if model isn't ready
-  if (!model_loaded_) {
-    FireWebUIListener("model-status", base::Value("loading"),
-                      base::Value(user_settings.default_model));
-  }
-
-  // Run model loading + streaming inference on a background thread.
-  // Both LoadModel and StreamPrompt block, so they must run off the UI thread.
+  // Run settings load + model loading + streaming inference on a background
+  // thread. All blocking ops (file read, model file load, llama_decode) must
+  // run off the UI thread.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::TaskPriority::USER_BLOCKING, base::MayBlock(),
@@ -356,9 +381,11 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
-             bool needs_load, MoltAISettings settings,
+             bool needs_load,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
+            // Load settings on worker thread — file I/O is allowed here.
+            MoltAISettings settings = LoadUserSettings();
             // Auto-load model on background thread if needed
             if (needs_load && settings.auto_load_model) {
               LOG(INFO) << "[MoltAI] Auto-loading " << settings.default_model
@@ -490,7 +517,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, !model_loaded_, user_settings,
+          page_context, !model_loaded_,
           weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -647,26 +674,78 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
     return;
   }
 
-  // Check available disk space before download
-  base::FilePath model_dir(info.file_path);
-  base::FilePath parent_dir = model_dir.DirName();
-  if (!base::DirectoryExists(parent_dir)) {
-    base::CreateDirectory(parent_dir);
-  }
-  auto disk_space_opt = base::SysInfo::AmountOfFreeDiskSpace(parent_dir);
-  int64_t disk_space = disk_space_opt.value_or(-1);
-  int64_t required_bytes = static_cast<int64_t>(info.file_size_bytes);
-  if (disk_space >= 0 && disk_space < required_bytes) {
+  // All filesystem checks (DirectoryExists/CreateDirectory/AmountOfFreeDiskSpace
+  // /GetFileSize for partial-resume) run on a ThreadPool worker. The network
+  // wiring continues on the UI thread once the precheck returns.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+      base::BindOnce(
+          [](molt_ai::ModelInfo info) -> base::DictValue {
+            base::DictValue r;
+            base::FilePath model_dir(info.file_path);
+            base::FilePath parent_dir = model_dir.DirName();
+            if (!base::DirectoryExists(parent_dir)) {
+              base::CreateDirectory(parent_dir);
+            }
+            auto disk_space_opt =
+                base::SysInfo::AmountOfFreeDiskSpace(parent_dir);
+            int64_t disk_space = disk_space_opt.value_or(-1);
+            int64_t required_bytes =
+                static_cast<int64_t>(info.file_size_bytes);
+            if (disk_space >= 0 && disk_space < required_bytes) {
+              r.Set("ok", false);
+              r.Set("error",
+                    "Not enough disk space. Need " +
+                        std::to_string(required_bytes / (1024 * 1024)) +
+                        " MB but only " +
+                        std::to_string(disk_space / (1024 * 1024)) +
+                        " MB available.");
+              return r;
+            }
+            base::FilePath partial_path(info.file_path + ".partial");
+            int64_t existing_bytes = 0;
+            auto file_size = base::GetFileSize(partial_path);
+            if (file_size.has_value()) {
+              existing_bytes = file_size.value();
+            }
+            r.Set("ok", true);
+            r.Set("existing_bytes", static_cast<double>(existing_bytes));
+            return r;
+          },
+          info),
+      base::BindOnce(&MoltAIChatHandler::OnDownloadPrecheckComplete,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id, model_id,
+                     info));
+}
+
+void MoltAIChatHandler::OnDownloadPrecheckComplete(
+    std::string callback_id,
+    std::string model_id,
+    molt_ai::ModelInfo info,
+    base::DictValue precheck) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
+
+  bool ok = precheck.FindBool("ok").value_or(false);
+  if (!ok) {
     base::DictValue result;
     result.Set("success", false);
-    result.Set("error",
-        "Not enough disk space. Need " +
-        std::to_string(required_bytes / (1024 * 1024)) +
-        " MB but only " +
-        std::to_string(disk_space / (1024 * 1024)) + " MB available.");
+    if (auto* err = precheck.FindString("error")) {
+      result.Set("error", *err);
+    } else {
+      result.Set("error", "Download precheck failed");
+    }
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
     return;
+  }
+
+  int64_t existing_bytes = static_cast<int64_t>(
+      precheck.FindDouble("existing_bytes").value_or(0));
+  if (existing_bytes > 0) {
+    LOG(INFO) << "[MoltAI] Found partial download: " << existing_bytes
+              << " bytes, resuming...";
   }
 
   // Build HuggingFace download URL
@@ -674,16 +753,7 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   std::string filename = file_path.BaseName().value();
   std::string url = "https://huggingface.co/" + info.huggingface_id +
                     "/resolve/main/" + filename;
-
-  // Check for partial download (resume support)
   base::FilePath partial_path(info.file_path + ".partial");
-  int64_t existing_bytes = 0;
-  auto file_size = base::GetFileSize(partial_path);
-  if (file_size.has_value()) {
-    existing_bytes = file_size.value();
-    LOG(INFO) << "[MoltAI] Found partial download: " << existing_bytes
-              << " bytes, resuming...";
-  }
 
   LOG(INFO) << "[MoltAI] Starting download: " << url
             << " -> " << info.file_path
@@ -788,29 +858,50 @@ void MoltAIChatHandler::OnDownloadProgress(uint64_t current) {
 void MoltAIChatHandler::OnDownloadComplete(base::FilePath path) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  bool success = !path.empty();
-  LOG(INFO) << "[MoltAI] Download complete: success=" << success
+  bool network_success = !path.empty();
+  LOG(INFO) << "[MoltAI] Download complete: network_success=" << network_success
             << " path=" << path.value();
 
-  if (success) {
-    // Rename .partial file to final destination
-    if (!download_final_path_.value().empty()) {
-      base::FilePath final_path = download_final_path_;
-      base::File::Error error;
-      if (base::ReplaceFile(path, final_path, &error)) {
-        LOG(INFO) << "[MoltAI] Renamed partial to: " << final_path.value();
-      } else {
-        LOG(ERROR) << "[MoltAI] Failed to rename partial file, error: "
-                   << error;
-        success = false;
-      }
-    }
-    // Refresh model registry to detect the new file
-    if (success) {
-      auto* runtime = GetOrCreateRuntime();
-      runtime->RefreshModelStatus();
-    }
+  // Capture net error before we drop url_loader_.
+  int net_error = url_loader_ ? url_loader_->NetError() : 0;
+
+  if (!network_success) {
+    FinishDownload(false, net_error);
+    return;
   }
+
+  // Rename .partial → final and refresh model registry on a worker thread
+  // (both touch the filesystem and would DCHECK on the UI thread).
+  base::FilePath final_path = download_final_path_;
+  auto* runtime = GetOrCreateRuntime();
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+      base::BindOnce(
+          [](base::FilePath partial, base::FilePath final,
+             molt_ai::BrowserAIRuntime* rt) -> bool {
+            if (final.value().empty()) return false;
+            base::File::Error error;
+            if (!base::ReplaceFile(partial, final, &error)) {
+              LOG(ERROR)
+                  << "[MoltAI] Failed to rename partial file, error: " << error;
+              return false;
+            }
+            LOG(INFO) << "[MoltAI] Renamed partial to: " << final.value();
+            rt->RefreshModelStatus();
+            return true;
+          },
+          path, final_path, base::Unretained(runtime)),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, int err,
+             bool rename_ok) {
+            if (self) self->FinishDownload(rename_ok, err);
+          },
+          weak_ptr_factory_.GetWeakPtr(), net_error));
+}
+
+void MoltAIChatHandler::FinishDownload(bool success, int net_error) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (IsJavascriptAllowed()) {
     FireWebUIListener("download-complete",
@@ -821,7 +912,6 @@ void MoltAIChatHandler::OnDownloadComplete(base::FilePath path) {
     result.Set("success", success);
     result.Set("model_id", downloading_model_id_);
     if (!success) {
-      int net_error = url_loader_->NetError();
       result.Set("error", "Download failed (net error: " +
                               std::to_string(net_error) + ")");
     }
@@ -849,7 +939,26 @@ void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
   const std::string model_id = args[1].GetString();
 
   auto* runtime = GetOrCreateRuntime();
-  bool success = runtime->DeleteModel(model_id);
+
+  // DeleteModel touches the filesystem (std::filesystem::remove + GGUF unload).
+  // Run on a worker, reply on UI thread.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+      base::BindOnce(
+          [](molt_ai::BrowserAIRuntime* rt, std::string mid) {
+            return rt->DeleteModel(mid);
+          },
+          base::Unretained(runtime), model_id),
+      base::BindOnce(&MoltAIChatHandler::OnModelDeleted,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id, model_id));
+}
+
+void MoltAIChatHandler::OnModelDeleted(std::string callback_id,
+                                       std::string model_id,
+                                       bool success) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
 
   if (success) {
     model_loaded_ = false;
@@ -961,10 +1070,13 @@ void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
     std::string cancelled_model = downloading_model_id_;
     url_loader_.reset();
 
-    // Clean up partial file
+    // Clean up partial file on a worker thread (DeleteFile blocks on I/O).
     if (!download_final_path_.value().empty()) {
       base::FilePath partial_path(download_final_path_.value() + ".partial");
-      base::DeleteFile(partial_path);
+      base::ThreadPool::PostTask(
+          FROM_HERE, {base::MayBlock()},
+          base::BindOnce(
+              [](base::FilePath p) { base::DeleteFile(p); }, partial_path));
     }
 
     FireWebUIListener("download-complete",
@@ -999,16 +1111,7 @@ void MoltAIChatHandler::HandleExportHistory(const base::ListValue& args) {
   const std::string callback_id = args[0].GetString();
   const std::string history_json = args[1].GetString();
 
-  // Save history to ~/.moltbrowser/chat_exports/ with timestamp filename
-  base::FilePath home_dir;
-  base::PathService::Get(base::DIR_HOME, &home_dir);
-  base::FilePath export_dir =
-      home_dir.Append(".moltbrowser").Append("chat_exports");
-  if (!base::DirectoryExists(export_dir)) {
-    base::CreateDirectory(export_dir);
-  }
-
-  // Generate timestamp-based filename
+  // Generate timestamp-based filename on UI thread (no I/O).
   base::Time now = base::Time::Now();
   base::Time::Exploded exploded;
   now.LocalExplode(&exploded);
@@ -1022,8 +1125,35 @@ void MoltAIChatHandler::HandleExportHistory(const base::ListValue& args) {
       (exploded.second < 10 ? "0" : "") + std::to_string(exploded.second) +
       ".json";
 
-  base::FilePath file_path = export_dir.Append(filename);
-  bool success = base::WriteFile(file_path, history_json);
+  base::FilePath home_dir;
+  base::PathService::Get(base::DIR_HOME, &home_dir);
+  base::FilePath file_path =
+      home_dir.Append(".moltbrowser").Append("chat_exports").Append(filename);
+
+  // mkdir + WriteFile on a ThreadPool worker; reply with success bool.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+      base::BindOnce(
+          [](base::FilePath path, std::string contents) {
+            base::FilePath dir = path.DirName();
+            if (!base::DirectoryExists(dir)) {
+              base::CreateDirectory(dir);
+            }
+            return base::WriteFile(path, contents);
+          },
+          file_path, history_json),
+      base::BindOnce(&MoltAIChatHandler::OnHistoryExported,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id, file_path,
+                     filename));
+}
+
+void MoltAIChatHandler::OnHistoryExported(std::string callback_id,
+                                          base::FilePath file_path,
+                                          std::string filename,
+                                          bool success) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
 
   base::DictValue result;
   result.Set("success", success);
