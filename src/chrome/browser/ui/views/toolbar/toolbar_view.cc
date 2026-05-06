@@ -585,7 +585,10 @@ void ToolbarView::Init() {
                                         ui::PAGE_TRANSITION_AUTO_BOOKMARK);
         },
         browser_));
-    molt_ai_button->SetText(u"Local AI");
+    // SetHighlight is the public API for showing a label on a ToolbarButton
+    // (SetText is intentionally private). Pass nullopt for the color to use
+    // the default theme color.
+    molt_ai_button->SetHighlight(u"Local AI", std::nullopt);
     molt_ai_button->SetTooltipText(
         u"Open MoltBrowser AI Chat — runs locally on your device (⌘⇧L)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
