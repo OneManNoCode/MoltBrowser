@@ -527,7 +527,7 @@ function loadModel(modelId) {
       setStatus('ready', 'Model Ready');
       refreshModelList();
       // Refresh chip with new active model
-      sendWithPromise('getModels').then(function(rr) {
+      sendWithPromise('getModelStatus').then(function(rr) {
         allModels = rr.models || [];
         refreshModelChip();
       });
@@ -551,14 +551,14 @@ function refreshModelChip() {
   var chip = document.getElementById('modelChip');
   var nameEl = document.getElementById('modelChipName');
   if (!chip || !nameEl) return;
-  var active = allModels.find(function(m){ return m.is_loaded || m.is_active; });
+  var active = allModels.find(function(m){ return m.is_loaded; });
   if (active) {
     activeModelId = active.model_id;
-    nameEl.textContent = active.name || active.model_id;
+    nameEl.textContent = active.display_name || active.model_id;
   } else {
     var firstDownloaded = allModels.find(function(m){ return m.is_downloaded; });
     if (firstDownloaded) {
-      nameEl.textContent = firstDownloaded.name + ' (click to load)';
+      nameEl.textContent = (firstDownloaded.display_name || firstDownloaded.model_id) + ' (click to load)';
     } else {
       nameEl.textContent = 'Choose Model';
     }
@@ -583,7 +583,7 @@ function renderModelChipDropdown() {
   if (!dd) return;
   if (allModels.length === 0) {
     dd.innerHTML = '<div style="padding:14px;color:#666;font-size:12px;text-align:center">Loading models...</div>';
-    sendWithPromise('getModels').then(function(r) {
+    sendWithPromise('getModelStatus').then(function(r) {
       allModels = r.models || [];
       renderModelChipDropdown();
       refreshModelChip();
@@ -594,18 +594,18 @@ function renderModelChipDropdown() {
   allModels.forEach(function(m) {
     var item = document.createElement('div');
     item.className = 'model-chip-item';
-    var isActive = (m.is_loaded || m.is_active);
+    var isActive = !!m.is_loaded;
     if (isActive) item.className += ' active';
     var statusClass, statusText;
     if (isActive) { statusClass = 'active'; statusText = 'Active'; }
     else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = 'Downloading'; }
     else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
     else { statusClass = 'available'; statusText = 'Download'; }
-    var sizeMB = Math.round((m.file_size_bytes || 0) / 1048576);
+    var sizeMB = m.file_size_mb || 0;
     item.innerHTML =
       '<div style="flex:1">' +
-        '<div class="mname">' + (m.name || m.model_id) + '</div>' +
-        '<div class="msize">' + sizeMB + ' MB \u00b7 ' + (m.parameters || m.model_id) + '</div>' +
+        '<div class="mname">' + (m.display_name || m.model_id) + '</div>' +
+        '<div class="msize">' + sizeMB + ' MB</div>' +
       '</div>' +
       '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
     item.onclick = function() {
@@ -647,7 +647,7 @@ document.addEventListener('click', function(e) {
 });
 
 // Initialize chip on page load
-sendWithPromise('getModels').then(function(r) {
+sendWithPromise('getModelStatus').then(function(r) {
   allModels = r.models || [];
   refreshModelChip();
 });
@@ -687,7 +687,7 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
     var nameEl = document.getElementById('modelChipName');
     var modelInfo = allModels.find(function(m){ return m.model_id === modelId; });
     if (nameEl && modelInfo) {
-      nameEl.textContent = 'Downloading ' + (modelInfo.name || modelId) + '\u2026';
+      nameEl.textContent = 'Downloading ' + (modelInfo.display_name || modelId) + '\u2026';
     }
   }
 });
@@ -702,7 +702,7 @@ cr.addWebUiListener('download-complete', function(modelId, success) {
     if (chip) chip.classList.remove('downloading');
     if (success) {
       // Refresh model list and load it as active
-      sendWithPromise('getModels').then(function(r) {
+      sendWithPromise('getModelStatus').then(function(r) {
         allModels = r.models || [];
         loadModel(modelId);
         refreshModelChip();

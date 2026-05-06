@@ -687,7 +687,7 @@ function loadModel(modelId) {
     if (r.success) {
       setStatus('ready', 'Model Ready');
       refreshModelList();
-      sendWithPromise('getModels').then(function(rr) {
+      sendWithPromise('getModelStatus').then(function(rr) {
         allModels = rr.models || [];
         refreshModelChip();
       });
@@ -713,13 +713,13 @@ var downloadingModelId = null;
 function refreshModelChip() {
   var nameEl = document.getElementById('modelChipName');
   if (!nameEl) return;
-  var active = allModels.find(function(m){ return m.is_loaded || m.is_active; });
+  var active = allModels.find(function(m){ return m.is_loaded; });
   if (active) {
     activeModelId = active.model_id;
-    nameEl.textContent = active.name || active.model_id;
+    nameEl.textContent = active.display_name || active.model_id;
   } else {
     var first = allModels.find(function(m){ return m.is_downloaded; });
-    nameEl.textContent = first ? (first.name + ' (tap to load)') : 'Choose Model';
+    nameEl.textContent = first ? ((first.display_name || first.model_id) + ' (tap to load)') : 'Choose Model';
   }
 }
 
@@ -739,7 +739,7 @@ function renderModelChipDropdown() {
   if (!dd) return;
   if (allModels.length === 0) {
     dd.innerHTML = '<div style="padding:12px;color:#666;font-size:11px;text-align:center">Loading...</div>';
-    sendWithPromise('getModels').then(function(r){
+    sendWithPromise('getModelStatus').then(function(r){
       allModels = r.models || [];
       renderModelChipDropdown();
       refreshModelChip();
@@ -750,17 +750,17 @@ function renderModelChipDropdown() {
   allModels.forEach(function(m) {
     var item = document.createElement('div');
     item.className = 'model-chip-item';
-    var isActive = (m.is_loaded || m.is_active);
+    var isActive = !!m.is_loaded;
     if (isActive) item.className += ' active';
     var statusClass, statusText;
     if (isActive) { statusClass = 'active'; statusText = 'Active'; }
     else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = '\u2026'; }
     else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
     else { statusClass = 'available'; statusText = 'Get'; }
-    var sizeMB = Math.round((m.file_size_bytes || 0) / 1048576);
+    var sizeMB = m.file_size_mb || 0;
     item.innerHTML =
       '<div style="flex:1;min-width:0">' +
-        '<div class="mname">' + (m.name || m.model_id) + '</div>' +
+        '<div class="mname">' + (m.display_name || m.model_id) + '</div>' +
         '<div class="msize">' + sizeMB + ' MB</div>' +
       '</div>' +
       '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
@@ -803,7 +803,7 @@ document.addEventListener('click', function(e) {
 });
 
 // Init chip
-sendWithPromise('getModels').then(function(r){
+sendWithPromise('getModelStatus').then(function(r){
   allModels = r.models || [];
   refreshModelChip();
 });
@@ -855,7 +855,7 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
     updateModelChipProgress(pct2);
     var nameEl = document.getElementById('modelChipName');
     var info2 = allModels.find(function(m){return m.model_id === modelId;});
-    if (nameEl && info2) nameEl.textContent = 'Downloading ' + (info2.name || modelId);
+    if (nameEl && info2) nameEl.textContent = 'Downloading ' + (info2.display_name || modelId);
   }
 });
 
@@ -869,7 +869,7 @@ cr.addWebUiListener('download-complete', function(modelId, success) {
     var chip = document.getElementById('modelChip');
     if (chip) chip.classList.remove('downloading');
     if (success) {
-      sendWithPromise('getModels').then(function(r){
+      sendWithPromise('getModelStatus').then(function(r){
         allModels = r.models || [];
         loadModel(modelId);
         refreshModelChip();
