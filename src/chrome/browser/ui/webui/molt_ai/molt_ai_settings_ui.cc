@@ -240,8 +240,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="logo">AI Settings</div>
   <div class="subtitle">Configure MoltBrowser's local AI assistant</div>
   <div class="nav">
-    <a href="chrome://molt-ai/">AI Chat</a>
-    <a href="chrome://molt-ai-chat/">Side Panel</a>
+    <a href="molt://ai/">AI Chat</a>
+    <a href="molt://ai-chat/">Side Panel</a>
   </div>
 
   <div class="section">
@@ -382,7 +382,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="section">
     <h2><span class="icon">&#128736;</span> Tools</h2>
     <div class="field">
-      <a href="chrome://molt-ai-agent/" style="color:#8b5cf6;text-decoration:none;font-weight:600">Open Agent Testing UI &#8594;</a>
+      <a href="molt://ai-agent/" style="color:#8b5cf6;text-decoration:none;font-weight:600">Open Agent Testing UI &#8594;</a>
       <div class="desc">Test autonomous browser automation (CLICK, SCROLL, NAVIGATE, TYPE)</div>
     </div>
   </div>

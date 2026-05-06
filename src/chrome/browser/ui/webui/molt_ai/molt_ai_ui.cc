@@ -117,6 +117,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card .progress-bar{height:6px;border-radius:3px;background:#222;overflow:hidden}
 .model-card .progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
 .model-card .progress-text{font-size:11px;color:#888;margin-top:4px}
+/* Model chip — always-visible model selector at top of AI page */
+.model-chip-wrap{position:relative;display:inline-block}
+.model-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:20px;background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s;min-width:200px}
+.model-chip:hover{border-color:#6366f1;background:#202036}
+.model-chip .icon{font-size:14px}
+.model-chip .name{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-chip .chevron{font-size:10px;color:#888;transition:transform 0.2s}
+.model-chip.open .chevron{transform:rotate(180deg)}
+.model-chip-progress{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:20px;height:20px;display:none}
+.model-chip.downloading .icon{display:none}
+.model-chip.downloading .model-chip-progress{display:block}
+.model-chip-progress svg{transform:rotate(-90deg)}
+.model-chip-progress circle{fill:none;stroke:#222;stroke-width:2}
+.model-chip-progress .fg{stroke:#8b5cf6;stroke-dasharray:50.27;stroke-dashoffset:50.27;transition:stroke-dashoffset 0.3s}
+.model-chip-progress .pct{position:absolute;top:0;left:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#a855f7}
+.model-chip-dropdown{position:absolute;top:calc(100% + 6px);left:0;background:#0d0d18;border:1px solid #2a2a3e;border-radius:12px;padding:6px;min-width:280px;max-height:380px;overflow-y:auto;z-index:50;display:none;box-shadow:0 10px 40px rgba(0,0,0,0.5)}
+.model-chip-dropdown.open{display:block}
+.model-chip-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 0.15s}
+.model-chip-item:hover{background:#1a1a2e}
+.model-chip-item.active{background:#1a2e1a}
+.model-chip-item .mname{flex:1;font-size:13px;color:#e0e0e0}
+.model-chip-item .msize{font-size:11px;color:#666}
+.model-chip-item .mstatus{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+.model-chip-item .mstatus.active{background:#1a3a1a;color:#4ade80}
+.model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#8b5cf6}
+.model-chip-item .mstatus.available{background:#1a1a1a;color:#666}
+.model-chip-item .mstatus.downloading{background:#3a2e1a;color:#fbbf24}
 /* First-Run Welcome */
 .welcome-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:#0a0a0a;z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center}
 .welcome-overlay.open{display:flex}
@@ -169,12 +196,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="status-text" id="statusText">Initializing...</div>
   </div>
   <div class="top-actions">
+    <!-- Always-visible model selector chip -->
+    <div class="model-chip-wrap">
+      <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
+        <span class="icon">&#129302;</span>
+        <span class="model-chip-progress" id="modelChipProgress">
+          <svg width="20" height="20" viewBox="0 0 20 20">
+            <circle cx="10" cy="10" r="8"></circle>
+            <circle class="fg" id="modelChipProgressFg" cx="10" cy="10" r="8"></circle>
+          </svg>
+          <span class="pct" id="modelChipPct">0%</span>
+        </span>
+        <span class="name" id="modelChipName">No Model</span>
+        <span class="chevron">&#9662;</span>
+      </button>
+      <div class="model-chip-dropdown" id="modelChipDropdown"></div>
+    </div>
     <button class="top-btn" onclick="newChat()">New Chat</button>
     <button class="top-btn" onclick="toggleSearch()">Search</button>
     <button class="top-btn" onclick="exportChat()">Export</button>
     <button class="top-btn" onclick="importChat()">Import</button>
-    <button class="top-btn" onclick="toggleModelPanel()">Models</button>
-    <button class="top-btn" onclick="window.location='chrome://molt-ai-settings/'">Settings</button>
+    <button class="top-btn" onclick="toggleModelPanel()">Manage</button>
+    <button class="top-btn" onclick="window.location='molt://ai-settings/'">Settings</button>
   </div>
   <div class="context-info" id="contextInfo"></div>
 </div>
@@ -480,7 +523,15 @@ function cancelDownload() {
 function loadModel(modelId) {
   setStatus('loading', 'Loading ' + modelId + '...');
   sendWithPromise('loadModel', modelId).then(function(r) {
-    if (r.success) { setStatus('ready', 'Model Ready'); refreshModelList(); }
+    if (r.success) {
+      setStatus('ready', 'Model Ready');
+      refreshModelList();
+      // Refresh chip with new active model
+      sendWithPromise('getModels').then(function(rr) {
+        allModels = rr.models || [];
+        refreshModelChip();
+      });
+    }
     else setStatus('error', 'Load failed');
   });
 }
@@ -490,6 +541,116 @@ function deleteModel(modelId) {
     if (r.success) refreshModelList();
   });
 }
+
+// ---- Model Chip (always-visible top selector) ----
+var allModels = [];
+var activeModelId = null;
+var downloadingModelId = null;
+
+function refreshModelChip() {
+  var chip = document.getElementById('modelChip');
+  var nameEl = document.getElementById('modelChipName');
+  if (!chip || !nameEl) return;
+  var active = allModels.find(function(m){ return m.is_loaded || m.is_active; });
+  if (active) {
+    activeModelId = active.model_id;
+    nameEl.textContent = active.name || active.model_id;
+  } else {
+    var firstDownloaded = allModels.find(function(m){ return m.is_downloaded; });
+    if (firstDownloaded) {
+      nameEl.textContent = firstDownloaded.name + ' (click to load)';
+    } else {
+      nameEl.textContent = 'Choose Model';
+    }
+  }
+}
+
+function toggleModelDropdown(ev) {
+  if (ev) ev.stopPropagation();
+  var chip = document.getElementById('modelChip');
+  var dd = document.getElementById('modelChipDropdown');
+  if (!chip || !dd) return;
+  var willOpen = !dd.classList.contains('open');
+  dd.classList.toggle('open');
+  chip.classList.toggle('open');
+  if (willOpen) {
+    renderModelChipDropdown();
+  }
+}
+
+function renderModelChipDropdown() {
+  var dd = document.getElementById('modelChipDropdown');
+  if (!dd) return;
+  if (allModels.length === 0) {
+    dd.innerHTML = '<div style="padding:14px;color:#666;font-size:12px;text-align:center">Loading models...</div>';
+    sendWithPromise('getModels').then(function(r) {
+      allModels = r.models || [];
+      renderModelChipDropdown();
+      refreshModelChip();
+    });
+    return;
+  }
+  dd.innerHTML = '';
+  allModels.forEach(function(m) {
+    var item = document.createElement('div');
+    item.className = 'model-chip-item';
+    var isActive = (m.is_loaded || m.is_active);
+    if (isActive) item.className += ' active';
+    var statusClass, statusText;
+    if (isActive) { statusClass = 'active'; statusText = 'Active'; }
+    else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = 'Downloading'; }
+    else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
+    else { statusClass = 'available'; statusText = 'Download'; }
+    var sizeMB = Math.round((m.file_size_bytes || 0) / 1048576);
+    item.innerHTML =
+      '<div style="flex:1">' +
+        '<div class="mname">' + (m.name || m.model_id) + '</div>' +
+        '<div class="msize">' + sizeMB + ' MB \u00b7 ' + (m.parameters || m.model_id) + '</div>' +
+      '</div>' +
+      '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
+    item.onclick = function() {
+      if (isActive) { toggleModelDropdown(); return; }
+      if (m.is_downloaded) {
+        loadModel(m.model_id);
+      } else {
+        downloadingModelId = m.model_id;
+        downloadModel(m.model_id);
+        document.getElementById('modelChip').classList.add('downloading');
+      }
+      toggleModelDropdown();
+    };
+    dd.appendChild(item);
+  });
+}
+
+function updateModelChipProgress(percent) {
+  var fg = document.getElementById('modelChipProgressFg');
+  var pct = document.getElementById('modelChipPct');
+  if (fg) {
+    var circumference = 2 * Math.PI * 8; // r=8
+    var offset = circumference - (percent / 100) * circumference;
+    fg.style.strokeDashoffset = offset;
+    fg.style.strokeDasharray = circumference;
+  }
+  if (pct) pct.textContent = Math.round(percent) + '%';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  var wrap = document.querySelector('.model-chip-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    var dd = document.getElementById('modelChipDropdown');
+    var chip = document.getElementById('modelChip');
+    if (dd) dd.classList.remove('open');
+    if (chip) chip.classList.remove('open');
+  }
+});
+
+// Initialize chip on page load
+sendWithPromise('getModels').then(function(r) {
+  allModels = r.models || [];
+  refreshModelChip();
+});
 
 // ---- Event Listeners ----
 
@@ -519,11 +680,35 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
     }
     if (ptext) ptext.textContent = info;
   }
+  // Update chip if this is the model we're downloading
+  if (downloadingModelId === modelId && total > 0) {
+    var pct = (current / total) * 100;
+    updateModelChipProgress(pct);
+    var nameEl = document.getElementById('modelChipName');
+    var modelInfo = allModels.find(function(m){ return m.model_id === modelId; });
+    if (nameEl && modelInfo) {
+      nameEl.textContent = 'Downloading ' + (modelInfo.name || modelId) + '\u2026';
+    }
+  }
 });
 
 cr.addWebUiListener('download-complete', function(modelId, success) {
   var pw = document.getElementById('pw-' + modelId);
   if (pw) pw.classList.remove('active');
+  // Reset chip download state
+  if (downloadingModelId === modelId) {
+    downloadingModelId = null;
+    var chip = document.getElementById('modelChip');
+    if (chip) chip.classList.remove('downloading');
+    if (success) {
+      // Refresh model list and load it as active
+      sendWithPromise('getModels').then(function(r) {
+        allModels = r.models || [];
+        loadModel(modelId);
+        refreshModelChip();
+      });
+    }
+  }
   if (success) {
     refreshModelList();
     // Close welcome overlay if it was open

@@ -854,6 +854,72 @@ bool HandleNewTabPageLocationOverride(
   return true;
 }
 
+// MoltBrowser: Rewrite user-facing molt:// URLs to internal chrome://molt-ai*
+// URLs. This lets us hide the chrome:// scheme from the user (Google
+// trademark concern) while keeping Chromium's WebUI factory working.
+//
+// Mapping:
+//   molt://ai/          -> chrome://molt-ai/
+//   molt://ai-chat/     -> chrome://molt-ai-chat/
+//   molt://ai-settings/ -> chrome://molt-ai-settings/
+//   molt://ai-agent/    -> chrome://molt-ai-agent/
+bool HandleMoltSchemeRewrite(GURL* url,
+                              content::BrowserContext* browser_context) {
+  if (!url->SchemeIs(chrome::kMoltScheme)) {
+    return false;
+  }
+
+  auto host = url->host();
+  std::string new_host;
+  if (host == std::string_view(chrome::kMoltAIHost)) {
+    new_host = chrome::kChromeUIMoltAIHost;
+  } else if (host == std::string_view(chrome::kMoltAIChatHost)) {
+    new_host = chrome::kChromeUIMoltAIChatHost;
+  } else if (host == std::string_view(chrome::kMoltAISettingsHost)) {
+    new_host = chrome::kChromeUIMoltAISettingsHost;
+  } else if (host == std::string_view(chrome::kMoltAIAgentHost)) {
+    new_host = chrome::kChromeUIMoltAIAgentHost;
+  } else {
+    return false;
+  }
+
+  GURL::Replacements replacements;
+  replacements.SetSchemeStr(content::kChromeUIScheme);
+  replacements.SetHostStr(new_host);
+  *url = url->ReplaceComponents(replacements);
+  LOG(INFO) << "[MoltBrowser] molt:// rewrite -> " << *url;
+  return true;
+}
+
+// Reverse rewrite — when displaying a chrome://molt-ai* URL in the omnibox,
+// show it to the user as molt://ai*.
+bool HandleMoltSchemeReverseRewrite(GURL* url,
+                                     content::BrowserContext* browser_context) {
+  if (!url->SchemeIs(content::kChromeUIScheme)) {
+    return false;
+  }
+
+  auto host = url->host();
+  std::string new_host;
+  if (host == std::string_view(chrome::kChromeUIMoltAIHost)) {
+    new_host = chrome::kMoltAIHost;
+  } else if (host == std::string_view(chrome::kChromeUIMoltAIChatHost)) {
+    new_host = chrome::kMoltAIChatHost;
+  } else if (host == std::string_view(chrome::kChromeUIMoltAISettingsHost)) {
+    new_host = chrome::kMoltAISettingsHost;
+  } else if (host == std::string_view(chrome::kChromeUIMoltAIAgentHost)) {
+    new_host = chrome::kMoltAIAgentHost;
+  } else {
+    return false;
+  }
+
+  GURL::Replacements replacements;
+  replacements.SetSchemeStr(chrome::kMoltScheme);
+  replacements.SetHostStr(new_host);
+  *url = url->ReplaceComponents(replacements);
+  return true;
+}
+
 #if !BUILDFLAG(IS_ANDROID)
 bool IsFileOrDirectoryPickerWithoutGestureAllowed(
     content::WebContents* contents) {
@@ -5034,6 +5100,12 @@ bool ChromeContentBrowserClient::
 
 void ChromeContentBrowserClient::BrowserURLHandlerCreated(
     BrowserURLHandler* handler) {
+  // MoltBrowser: Register molt:// scheme rewriters FIRST so molt://ai/
+  // gets translated to chrome://molt-ai/ before any other URL handler runs.
+  // The reverse rewriter shows molt://ai/ in the omnibox to the user.
+  handler->AddHandlerPair(&HandleMoltSchemeRewrite,
+                          &HandleMoltSchemeReverseRewrite);
+
   // The group policy NTP URL handler must be registered before the other NTP
   // URL handlers below. Also register it before the "parts" handlers, so the
   // NTP policy takes precedence over extensions that override the NTP.

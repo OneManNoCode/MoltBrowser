@@ -135,8 +135,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <h1><span>Molt</span>Agent</h1>
   <span class="badge">Beta</span>
   <div style="flex:1"></div>
-  <a href="chrome://molt-ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
-  <a href="chrome://molt-ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
+  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
+  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
 </div>
 
 <div class="main">

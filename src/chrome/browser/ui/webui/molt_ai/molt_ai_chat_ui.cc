@@ -123,6 +123,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card .progress-bar{height:4px;border-radius:2px;background:#222;overflow:hidden}
 .model-card .progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
 .model-card .progress-text{font-size:10px;color:#888;margin-top:2px}
+/* Model chip — compact side panel variant */
+.model-chip-wrap{position:relative;padding:6px 10px;border-bottom:1px solid #1a1a1a}
+.model-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:16px;background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;width:100%}
+.model-chip:hover{border-color:#6366f1;background:#202036}
+.model-chip .icon{font-size:13px}
+.model-chip .name{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-chip .chevron{font-size:9px;color:#888;transition:transform 0.2s}
+.model-chip.open .chevron{transform:rotate(180deg)}
+.model-chip-progress{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;display:none}
+.model-chip.downloading .icon{display:none}
+.model-chip.downloading .model-chip-progress{display:block}
+.model-chip-progress svg{transform:rotate(-90deg)}
+.model-chip-progress circle{fill:none;stroke:#222;stroke-width:2}
+.model-chip-progress .fg{stroke:#8b5cf6;stroke-dasharray:43.98;stroke-dashoffset:43.98;transition:stroke-dashoffset 0.3s}
+.model-chip-progress .pct{position:absolute;top:0;left:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:#a855f7}
+.model-chip-dropdown{position:absolute;top:calc(100% + 4px);left:10px;right:10px;background:#0d0d18;border:1px solid #2a2a3e;border-radius:10px;padding:4px;max-height:340px;overflow-y:auto;z-index:50;display:none;box-shadow:0 6px 30px rgba(0,0,0,0.5)}
+.model-chip-dropdown.open{display:block}
+.model-chip-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.15s}
+.model-chip-item:hover{background:#1a1a2e}
+.model-chip-item.active{background:#1a2e1a}
+.model-chip-item .mname{flex:1;font-size:12px;color:#e0e0e0}
+.model-chip-item .msize{font-size:10px;color:#666}
+.model-chip-item .mstatus{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:600;text-transform:uppercase}
+.model-chip-item .mstatus.active{background:#1a3a1a;color:#4ade80}
+.model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#8b5cf6}
+.model-chip-item .mstatus.available{background:#1a1a1a;color:#666}
+.model-chip-item .mstatus.downloading{background:#3a2e1a;color:#fbbf24}
 /* First-Run Welcome */
 .welcome-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#0d0d0d;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
 .welcome-overlay.open{display:flex}
@@ -171,9 +198,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <button class="icon-btn" onclick="toggleSearch()" title="Search (Cmd+F)">&#128269;</button>
     <button class="icon-btn" onclick="exportChat()" title="Export Chat">&#128190;</button>
     <button class="icon-btn" onclick="importChat()" title="Import Chat">&#128194;</button>
-    <button class="icon-btn" onclick="toggleModelPanel()" title="Models">Models</button>
-    <button class="icon-btn" onclick="window.open('chrome://molt-ai-settings/')" title="Settings">&#9881;</button>
+    <button class="icon-btn" onclick="toggleModelPanel()" title="Manage Models">Manage</button>
+    <button class="icon-btn" onclick="window.open('molt://ai-settings/')" title="Settings">&#9881;</button>
   </div>
+</div>
+<!-- Always-visible model selector chip -->
+<div class="model-chip-wrap">
+  <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
+    <span class="icon">&#129302;</span>
+    <span class="model-chip-progress" id="modelChipProgress">
+      <svg width="18" height="18" viewBox="0 0 18 18">
+        <circle cx="9" cy="9" r="7"></circle>
+        <circle class="fg" id="modelChipProgressFg" cx="9" cy="9" r="7"></circle>
+      </svg>
+      <span class="pct" id="modelChipPct">0%</span>
+    </span>
+    <span class="name" id="modelChipName">No Model</span>
+    <span class="chevron">&#9662;</span>
+  </button>
+  <div class="model-chip-dropdown" id="modelChipDropdown"></div>
 </div>
 <div class="search-bar" id="searchBar">
   <input type="text" id="searchInput" placeholder="Search messages..." oninput="doSearch()">
@@ -644,6 +687,10 @@ function loadModel(modelId) {
     if (r.success) {
       setStatus('ready', 'Model Ready');
       refreshModelList();
+      sendWithPromise('getModels').then(function(rr) {
+        allModels = rr.models || [];
+        refreshModelChip();
+      });
     } else {
       setStatus('error', 'Load failed');
     }
@@ -657,6 +704,109 @@ function deleteModel(modelId) {
     }
   });
 }
+
+// ---- Model Chip (compact side panel selector) ----
+var allModels = [];
+var activeModelId = null;
+var downloadingModelId = null;
+
+function refreshModelChip() {
+  var nameEl = document.getElementById('modelChipName');
+  if (!nameEl) return;
+  var active = allModels.find(function(m){ return m.is_loaded || m.is_active; });
+  if (active) {
+    activeModelId = active.model_id;
+    nameEl.textContent = active.name || active.model_id;
+  } else {
+    var first = allModels.find(function(m){ return m.is_downloaded; });
+    nameEl.textContent = first ? (first.name + ' (tap to load)') : 'Choose Model';
+  }
+}
+
+function toggleModelDropdown(ev) {
+  if (ev) ev.stopPropagation();
+  var chip = document.getElementById('modelChip');
+  var dd = document.getElementById('modelChipDropdown');
+  if (!chip || !dd) return;
+  var willOpen = !dd.classList.contains('open');
+  dd.classList.toggle('open');
+  chip.classList.toggle('open');
+  if (willOpen) renderModelChipDropdown();
+}
+
+function renderModelChipDropdown() {
+  var dd = document.getElementById('modelChipDropdown');
+  if (!dd) return;
+  if (allModels.length === 0) {
+    dd.innerHTML = '<div style="padding:12px;color:#666;font-size:11px;text-align:center">Loading...</div>';
+    sendWithPromise('getModels').then(function(r){
+      allModels = r.models || [];
+      renderModelChipDropdown();
+      refreshModelChip();
+    });
+    return;
+  }
+  dd.innerHTML = '';
+  allModels.forEach(function(m) {
+    var item = document.createElement('div');
+    item.className = 'model-chip-item';
+    var isActive = (m.is_loaded || m.is_active);
+    if (isActive) item.className += ' active';
+    var statusClass, statusText;
+    if (isActive) { statusClass = 'active'; statusText = 'Active'; }
+    else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = '\u2026'; }
+    else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
+    else { statusClass = 'available'; statusText = 'Get'; }
+    var sizeMB = Math.round((m.file_size_bytes || 0) / 1048576);
+    item.innerHTML =
+      '<div style="flex:1;min-width:0">' +
+        '<div class="mname">' + (m.name || m.model_id) + '</div>' +
+        '<div class="msize">' + sizeMB + ' MB</div>' +
+      '</div>' +
+      '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
+    item.onclick = function() {
+      if (isActive) { toggleModelDropdown(); return; }
+      if (m.is_downloaded) {
+        loadModel(m.model_id);
+      } else {
+        downloadingModelId = m.model_id;
+        downloadModel(m.model_id);
+        document.getElementById('modelChip').classList.add('downloading');
+      }
+      toggleModelDropdown();
+    };
+    dd.appendChild(item);
+  });
+}
+
+function updateModelChipProgress(percent) {
+  var fg = document.getElementById('modelChipProgressFg');
+  var pct = document.getElementById('modelChipPct');
+  if (fg) {
+    var circumference = 2 * Math.PI * 7; // r=7 in side panel
+    var offset = circumference - (percent / 100) * circumference;
+    fg.style.strokeDasharray = circumference;
+    fg.style.strokeDashoffset = offset;
+  }
+  if (pct) pct.textContent = Math.round(percent) + '%';
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  var wrap = document.querySelector('.model-chip-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    var dd = document.getElementById('modelChipDropdown');
+    var chip = document.getElementById('modelChip');
+    if (dd) dd.classList.remove('open');
+    if (chip) chip.classList.remove('open');
+  }
+});
+
+// Init chip
+sendWithPromise('getModels').then(function(r){
+  allModels = r.models || [];
+  refreshModelChip();
+});
 
 // ---- Event Listeners ----
 
@@ -699,12 +849,33 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
     }
     if (ptext) ptext.textContent = info;
   }
+  // Update model chip progress
+  if (downloadingModelId === modelId && total > 0) {
+    var pct2 = (current / total) * 100;
+    updateModelChipProgress(pct2);
+    var nameEl = document.getElementById('modelChipName');
+    var info2 = allModels.find(function(m){return m.model_id === modelId;});
+    if (nameEl && info2) nameEl.textContent = 'Downloading ' + (info2.name || modelId);
+  }
 });
 
 // Download complete
 cr.addWebUiListener('download-complete', function(modelId, success) {
   var pw = document.getElementById('pw-' + modelId);
   if (pw) pw.classList.remove('active');
+  // Reset chip download state
+  if (downloadingModelId === modelId) {
+    downloadingModelId = null;
+    var chip = document.getElementById('modelChip');
+    if (chip) chip.classList.remove('downloading');
+    if (success) {
+      sendWithPromise('getModels').then(function(r){
+        allModels = r.models || [];
+        loadModel(modelId);
+        refreshModelChip();
+      });
+    }
+  }
   if (success) {
     refreshModelList();
     // Close welcome overlay if it was open

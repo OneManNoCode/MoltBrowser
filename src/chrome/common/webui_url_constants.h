@@ -202,6 +202,9 @@ inline constexpr char kChromeUIMediaRouterInternalsHost[] =
 inline constexpr char kChromeUIMemoryInternalsHost[] = "memory-internals";
 
 // MoltBrowser AI WebUI pages
+// Internal Chromium WebUI URLs (chrome:// scheme is required by the WebUI
+// factory and cannot be removed). User-facing URLs use the molt:// alias
+// scheme below — see HandleMoltSchemeRewrite in chrome_content_browser_client.cc
 inline constexpr char kChromeUIMoltAIHost[] = "molt-ai";
 inline constexpr char kChromeUIMoltAIURL[] = "chrome://molt-ai/";
 inline constexpr char kChromeUIMoltAIChatHost[] = "molt-ai-chat";
@@ -210,6 +213,18 @@ inline constexpr char kChromeUIMoltAISettingsHost[] = "molt-ai-settings";
 inline constexpr char kChromeUIMoltAISettingsURL[] = "chrome://molt-ai-settings/";
 inline constexpr char kChromeUIMoltAIAgentHost[] = "molt-ai-agent";
 inline constexpr char kChromeUIMoltAIAgentURL[] = "chrome://molt-ai-agent/";
+
+// MoltBrowser molt:// scheme — user-facing alias for chrome://molt-ai*
+// These are what users see in the omnibox and what they should type.
+inline constexpr char kMoltScheme[] = "molt";
+inline constexpr char kMoltAIURL[] = "molt://ai/";
+inline constexpr char kMoltAIChatURL[] = "molt://ai-chat/";
+inline constexpr char kMoltAISettingsURL[] = "molt://ai-settings/";
+inline constexpr char kMoltAIAgentURL[] = "molt://ai-agent/";
+inline constexpr char kMoltAIHost[] = "ai";
+inline constexpr char kMoltAIChatHost[] = "ai-chat";
+inline constexpr char kMoltAISettingsHost[] = "ai-settings";
+inline constexpr char kMoltAIAgentHost[] = "ai-agent";
 inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
 inline constexpr char kChromeUINetExportHost[] = "net-export";
 inline constexpr char kChromeUINetInternalsHost[] = "net-internals";

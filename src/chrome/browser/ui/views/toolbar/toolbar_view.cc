@@ -574,18 +574,20 @@ void ToolbarView::Init() {
     media_button_ = AddChildView(std::move(media_button));
   }
 
-  // MoltBrowser: AI chat quick-access button. Opens chrome://molt-ai/ in a
-  // new tab. Placed where the Google avatar button used to live so the
-  // primary on-device AI feature is one click away.
+  // MoltBrowser: AI chat quick-access button with explicit "Local AI" label.
+  // Opens molt://ai/ (which rewrites internally to chrome://molt-ai/).
+  // Placed where the Google avatar button used to live so the primary
+  // on-device AI feature is one click away.
   {
     auto molt_ai_button = std::make_unique<ToolbarButton>(base::BindRepeating(
         [](Browser* browser) {
-          chrome::AddSelectedTabWithURL(browser, GURL("chrome://molt-ai/"),
+          chrome::AddSelectedTabWithURL(browser, GURL("molt://ai/"),
                                         ui::PAGE_TRANSITION_AUTO_BOOKMARK);
         },
         browser_));
+    molt_ai_button->SetText(u"Local AI");
     molt_ai_button->SetTooltipText(
-        u"Open MoltAI Chat (⌘⇧L for side panel)");
+        u"Open MoltBrowser AI Chat — runs locally on your device (⌘⇧L)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     molt_ai_button->SetVectorIcon(vector_icons::kChatSparkIcon);
     AddChildView(std::move(molt_ai_button));
