@@ -7,12 +7,14 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -472,31 +474,86 @@ void AutomationRunner::DoExtract(const Step& s) {
 }
 
 void AutomationRunner::DoAIDecide(const Step& s) {
-  // Local LLM decision step. We resolve {{vars}} into the prompt, send to
-  // BrowserAIRuntime, look for "SUCCESS" / "FAIL" / "true" / "false" in
-  // the response. If the AI runtime isn't available, treat as success
-  // with a logged warning so the rest of the script still runs.
+  // Local LLM decision step. The prompt is resolved with current
+  // variables, sent to BrowserAIRuntime, and the response is parsed
+  // for SUCCESS / FAIL / true / false / yes / no.
   std::string prompt = Resolve(s.value);
-  if (!ai_runtime_) {
-    LOG(WARNING) << "[Automation] ai_decide without runtime, defaulting OK";
-    OnStepFinished(true, "AI runtime unavailable; passing through");
+  if (!ai_runtime_ || prompt.empty()) {
+    LOG(WARNING) << "[Automation] ai_decide without runtime/prompt";
+    OnStepFinished(true, "AI: skipped (no runtime)");
     return;
   }
-  // BrowserAIRuntime integration is wired in Sprint 2 — for now we provide
-  // a deterministic heuristic so the pipeline can be tested end-to-end.
-  // Heuristic: the prompt contains 'SUCCESS' if any extracted variable
-  // is non-empty.
-  bool ok = !variables_.empty();
-  OnStepFinished(true, ok ? "AI: SUCCESS (heuristic)"
-                          : "AI: FAIL (heuristic)");
+
+  // Force the model to give a one-word answer so parsing is reliable.
+  std::string framed =
+      prompt + "\n\nAnswer with exactly one word: SUCCESS or FAIL.";
+
+  PromptOptions opts;
+  opts.model_id = script_.ai_model;
+  opts.max_tokens = 8;
+  opts.temperature = 0.1f;
+  opts.stream = false;
+  GenerationResult r = ai_runtime_->RunPrompt(framed, opts);
+
+  std::string ans = base::ToLowerASCII(r.text);
+  bool succeeded = ans.find("success") != std::string::npos ||
+                    ans.find("yes") != std::string::npos ||
+                    ans.find("true") != std::string::npos;
+  // The result is stored so subsequent steps can branch on the outcome.
+  variables_["__ai_decision"] = base::Value(succeeded);
+  OnStepFinished(true, std::string("AI: ") +
+                            (succeeded ? "SUCCESS" : "FAIL") +
+                            " (" + r.text.substr(0, 32) + ")");
 }
 
 void AutomationRunner::DoAIExtract(const Step& s) {
-  // Same as AI_DECIDE — Sprint 2 wires the real LLM call. For Sprint 1 we
-  // just store an empty dict so dependent steps don't crash.
-  if (!s.store_as.empty())
-    variables_[s.store_as] = base::Value(base::Value::Dict());
-  OnStepFinished(true, "AI extract (stubbed)");
+  // The extra dict is expected to contain a "schema" describing the
+  // shape we want, e.g. {"price": "int", "airline": "string"}. We pass
+  // the schema and the visible page text to the LLM and parse the
+  // returned JSON.
+  if (!ai_runtime_) {
+    if (!s.store_as.empty())
+      variables_[s.store_as] = base::Value(base::Value::Dict());
+    OnStepFinished(true, "AI extract: no runtime");
+    return;
+  }
+
+  // Pull the visible body text first, then prompt the model.
+  EvalJS("(document.body && document.body.innerText) || ''",
+         base::BindOnce(
+            [](base::WeakPtr<AutomationRunner> self,
+               std::string store_as, std::string user_prompt,
+               base::Value page_text) {
+              if (!self) return;
+              std::string text = page_text.is_string()
+                  ? page_text.GetString().substr(0, 6000)
+                  : std::string();
+              std::string framed =
+                  "You are extracting structured data from a web page.\n"
+                  "Page text follows between <PAGE> markers. Respond with "
+                  "ONLY a single JSON object, no commentary.\n\n"
+                  "Task: " + user_prompt + "\n\n"
+                  "<PAGE>\n" + text + "\n</PAGE>\n\nJSON:";
+              PromptOptions opts;
+              opts.model_id = self->script_.ai_model;
+              opts.max_tokens = 256;
+              opts.temperature = 0.1f;
+              opts.stream = false;
+              GenerationResult r = self->ai_runtime_->RunPrompt(framed, opts);
+              // Try to parse JSON; if it fails, store as raw string.
+              auto parsed = base::JSONReader::Read(
+                  r.text, base::JSON_ALLOW_TRAILING_COMMAS);
+              if (!store_as.empty()) {
+                if (parsed)
+                  self->variables_[store_as] = std::move(*parsed);
+                else
+                  self->variables_[store_as] = base::Value(r.text);
+              }
+              self->OnStepFinished(true, "AI extract -> " + store_as);
+            },
+            weak_factory_.GetWeakPtr(),
+            s.store_as,
+            Resolve(s.value)));
 }
 
 void AutomationRunner::DoNotify(const Step& s) {
