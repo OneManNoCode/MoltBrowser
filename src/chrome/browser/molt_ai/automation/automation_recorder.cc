@@ -202,7 +202,7 @@ void AutomationRecorder::InjectRecorderJS() {
 }
 
 void AutomationRecorder::OnStepFromInjectedJS(
-    const base::Value::Dict& step_json) {
+    const base::DictValue& step_json) {
   if (!is_recording_)
     return;
   // Track host for whitelist.
@@ -217,7 +217,7 @@ void AutomationRecorder::OnStepFromInjectedJS(
     s.type = StepTypeFromString(*t);
   if (auto* t = step_json.FindString("target"))
     s.target = *t;
-  if (const base::Value::List* fbs =
+  if (const base::ListValue* fbs =
           step_json.FindList("selector_fallbacks")) {
     for (const auto& v : *fbs)
       if (v.is_string()) s.selector_fallbacks.push_back(v.GetString());

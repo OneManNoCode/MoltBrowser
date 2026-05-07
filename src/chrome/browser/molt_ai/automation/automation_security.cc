@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 
 #include <algorithm>
+#include <string_view>
 
 #include "base/strings/string_util.h"
 #include "url/gurl.h"
@@ -45,7 +46,7 @@ bool LooksLikePaymentCardValue(const std::string& value) {
 }
 
 bool DomainMatchesWhitelist(const std::vector<std::string>& whitelist,
-                             const std::string& host) {
+                             std::string_view host) {
   std::string h = base::ToLowerASCII(host);
   for (const auto& entry : whitelist) {
     std::string e = base::ToLowerASCII(entry);

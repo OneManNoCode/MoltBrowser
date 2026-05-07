@@ -180,8 +180,8 @@ struct Script {
   bool enabled = true;
 
   // -------- Serialization --------
-  base::Value::Dict ToJSON() const;
-  static std::optional<Script> FromJSON(const base::Value::Dict& d);
+  base::DictValue ToJSON() const;
+  static std::optional<Script> FromJSON(const base::DictValue& d);
 
   // Pretty-printed JSON suitable for writing to disk.
   std::string ToJSONString() const;

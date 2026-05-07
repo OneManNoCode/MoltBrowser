@@ -15,13 +15,13 @@ namespace automation {
 namespace {
 
 // Read an optional int field from a Dict, falling back to the default.
-int GetInt(const base::Value::Dict& d, const std::string& key, int fallback) {
+int GetInt(const base::DictValue& d, const std::string& key, int fallback) {
   if (auto v = d.FindInt(key))
     return *v;
   return fallback;
 }
 
-int64_t GetInt64(const base::Value::Dict& d,
+int64_t GetInt64(const base::DictValue& d,
                  const std::string& key,
                  int64_t fallback) {
   // base::Value JSON ints round-trip as `int` for values that fit in 32 bits;
@@ -33,7 +33,7 @@ int64_t GetInt64(const base::Value::Dict& d,
   return fallback;
 }
 
-std::string GetString(const base::Value::Dict& d,
+std::string GetString(const base::DictValue& d,
                       const std::string& key,
                       const std::string& fallback) {
   if (auto* s = d.FindString(key))
@@ -41,7 +41,7 @@ std::string GetString(const base::Value::Dict& d,
   return fallback;
 }
 
-bool GetBool(const base::Value::Dict& d,
+bool GetBool(const base::DictValue& d,
              const std::string& key,
              bool fallback) {
   if (auto v = d.FindBool(key))
@@ -49,10 +49,10 @@ bool GetBool(const base::Value::Dict& d,
   return fallback;
 }
 
-std::vector<std::string> GetStringList(const base::Value::Dict& d,
+std::vector<std::string> GetStringList(const base::DictValue& d,
                                         const std::string& key) {
   std::vector<std::string> out;
-  if (const base::Value::List* l = d.FindList(key)) {
+  if (const base::ListValue* l = d.FindList(key)) {
     for (const auto& v : *l) {
       if (v.is_string())
         out.push_back(v.GetString());
@@ -158,13 +158,13 @@ TrustLevel TrustLevelFromString(const std::string& s) {
 
 namespace {
 
-base::Value::Dict StepToDict(const Step& s) {
-  base::Value::Dict d;
+base::DictValue StepToDict(const Step& s) {
+  base::DictValue d;
   d.Set("type", StepTypeToString(s.type));
   if (!s.target.empty())
     d.Set("target", s.target);
   if (!s.selector_fallbacks.empty()) {
-    base::Value::List l;
+    base::ListValue l;
     for (const auto& sel : s.selector_fallbacks) l.Append(sel);
     d.Set("selector_fallbacks", std::move(l));
   }
@@ -185,7 +185,7 @@ base::Value::Dict StepToDict(const Step& s) {
   return d;
 }
 
-Step StepFromDict(const base::Value::Dict& d) {
+Step StepFromDict(const base::DictValue& d) {
   Step s;
   s.type = StepTypeFromString(GetString(d, "type", "unknown"));
   s.target = GetString(d, "target", "");
@@ -209,8 +209,8 @@ Step StepFromDict(const base::Value::Dict& d) {
 
 namespace {
 
-base::Value::Dict TriggerToDict(const Trigger& t) {
-  base::Value::Dict d;
+base::DictValue TriggerToDict(const Trigger& t) {
+  base::DictValue d;
   d.Set("type", TriggerTypeToString(t.type));
   if (!t.expression.empty())
     d.Set("expression", t.expression);
@@ -223,7 +223,7 @@ base::Value::Dict TriggerToDict(const Trigger& t) {
   return d;
 }
 
-Trigger TriggerFromDict(const base::Value::Dict& d) {
+Trigger TriggerFromDict(const base::DictValue& d) {
   Trigger t;
   t.type = TriggerTypeFromString(GetString(d, "type", "manual"));
   t.expression = GetString(d, "expression", "");
@@ -241,15 +241,15 @@ Trigger TriggerFromDict(const base::Value::Dict& d) {
 
 namespace {
 
-base::Value::Dict SecurityToDict(const SecurityPolicy& p) {
-  base::Value::Dict d;
+base::DictValue SecurityToDict(const SecurityPolicy& p) {
+  base::DictValue d;
   if (!p.domain_whitelist.empty()) {
-    base::Value::List l;
+    base::ListValue l;
     for (const auto& dom : p.domain_whitelist) l.Append(dom);
     d.Set("domain_whitelist", std::move(l));
   }
   if (!p.require_approval_for.empty()) {
-    base::Value::List l;
+    base::ListValue l;
     for (const auto& a : p.require_approval_for) l.Append(a);
     d.Set("require_approval_for", std::move(l));
   }
@@ -260,7 +260,7 @@ base::Value::Dict SecurityToDict(const SecurityPolicy& p) {
   return d;
 }
 
-SecurityPolicy SecurityFromDict(const base::Value::Dict& d) {
+SecurityPolicy SecurityFromDict(const base::DictValue& d) {
   SecurityPolicy p;
   p.domain_whitelist = GetStringList(d, "domain_whitelist");
   p.require_approval_for = GetStringList(d, "require_approval_for");
@@ -280,8 +280,8 @@ SecurityPolicy SecurityFromDict(const base::Value::Dict& d) {
 
 namespace {
 
-base::Value::Dict StatsToDict(const Stats& s) {
-  base::Value::Dict d;
+base::DictValue StatsToDict(const Stats& s) {
+  base::DictValue d;
   d.Set("runs", s.runs);
   d.Set("successes", s.successes);
   d.Set("last_run_unix", static_cast<double>(s.last_run_unix));
@@ -291,7 +291,7 @@ base::Value::Dict StatsToDict(const Stats& s) {
   return d;
 }
 
-Stats StatsFromDict(const base::Value::Dict& d) {
+Stats StatsFromDict(const base::DictValue& d) {
   Stats s;
   s.runs = GetInt(d, "runs", 0);
   s.successes = GetInt(d, "successes", 0);
@@ -307,8 +307,8 @@ Stats StatsFromDict(const base::Value::Dict& d) {
 // Script <-> JSON
 // -----------------------------------------------------------------------------
 
-base::Value::Dict Script::ToJSON() const {
-  base::Value::Dict d;
+base::DictValue Script::ToJSON() const {
+  base::DictValue d;
   d.Set("id", id);
   d.Set("name", name);
   d.Set("version", version);
@@ -317,7 +317,7 @@ base::Value::Dict Script::ToJSON() const {
   d.Set("enabled", enabled);
   d.Set("trigger", TriggerToDict(trigger));
 
-  base::Value::List step_list;
+  base::ListValue step_list;
   for (const auto& s : steps) step_list.Append(StepToDict(s));
   d.Set("steps", std::move(step_list));
 
@@ -326,7 +326,7 @@ base::Value::Dict Script::ToJSON() const {
   return d;
 }
 
-std::optional<Script> Script::FromJSON(const base::Value::Dict& d) {
+std::optional<Script> Script::FromJSON(const base::DictValue& d) {
   Script s;
   s.id = GetString(d, "id", "");
   if (s.id.empty()) {
@@ -339,20 +339,20 @@ std::optional<Script> Script::FromJSON(const base::Value::Dict& d) {
   s.ai_model = GetString(d, "ai_model", "tinyllama-1.1b");
   s.enabled = GetBool(d, "enabled", true);
 
-  if (const base::Value::Dict* trig = d.FindDict("trigger"))
+  if (const base::DictValue* trig = d.FindDict("trigger"))
     s.trigger = TriggerFromDict(*trig);
 
-  if (const base::Value::List* steps = d.FindList("steps")) {
+  if (const base::ListValue* steps = d.FindList("steps")) {
     for (const auto& v : *steps) {
       if (v.is_dict())
         s.steps.push_back(StepFromDict(v.GetDict()));
     }
   }
 
-  if (const base::Value::Dict* sec = d.FindDict("security"))
+  if (const base::DictValue* sec = d.FindDict("security"))
     s.security = SecurityFromDict(*sec);
 
-  if (const base::Value::Dict* stats = d.FindDict("stats"))
+  if (const base::DictValue* stats = d.FindDict("stats"))
     s.stats = StatsFromDict(*stats);
 
   return s;

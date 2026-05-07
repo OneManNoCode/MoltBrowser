@@ -513,7 +513,7 @@ void AutomationRunner::DoAIExtract(const Step& s) {
   // returned JSON.
   if (!ai_runtime_) {
     if (!s.store_as.empty())
-      variables_[s.store_as] = base::Value(base::Value::Dict());
+      variables_[s.store_as] = base::Value(base::DictValue());
     OnStepFinished(true, "AI extract: no runtime");
     return;
   }

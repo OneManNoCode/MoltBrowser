@@ -61,7 +61,7 @@ class AutomationRecorder : public content::WebContentsObserver {
 
   // Hook for the WebUI / IPC layer: receive a step JSON dict that the
   // injected recorder JS posted via chrome.send.
-  void OnStepFromInjectedJS(const base::Value::Dict& step_json);
+  void OnStepFromInjectedJS(const base::DictValue& step_json);
 
  private:
   void InjectRecorderJS();

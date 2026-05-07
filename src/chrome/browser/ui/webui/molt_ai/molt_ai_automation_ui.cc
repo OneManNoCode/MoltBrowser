@@ -73,8 +73,8 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
 
   // Convert a Script to a UI-friendly dict (same shape its JSON has, but
   // also pre-renders some computed fields like success_rate).
-  base::Value::Dict ScriptToDict(const Script& s) {
-    base::Value::Dict d = s.ToJSON();
+  base::DictValue ScriptToDict(const Script& s) {
+    base::DictValue d = s.ToJSON();
     int rate = (s.stats.runs == 0)
                    ? -1
                    : (100 * s.stats.successes / s.stats.runs);
