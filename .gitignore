@@ -41,3 +41,4 @@ __pycache__/
 # Temporary files
 *.tmp
 *.log
+branding/models/*.gguf

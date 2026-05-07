@@ -50,9 +50,26 @@ fi
 # Create dist directory
 mkdir -p "$DMG_DIR"
 
+# Bundle TinyLlama 1.1B model into the app for first-run AI experience.
+# This ships ~638MB so users have AI working out of the box without
+# downloading anything. ModelManager.cc detects bundled models in
+# Contents/Resources/molt_models/ and uses them automatically.
+BUNDLED_MODEL="$REPO_DIR/branding/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+if [ -f "$BUNDLED_MODEL" ]; then
+  MODEL_DEST="$APP_PATH/Contents/Resources/molt_models"
+  echo "Bundling TinyLlama 1.1B (\$(du -h \"$BUNDLED_MODEL\" | cut -f1)) into app..."
+  mkdir -p "$MODEL_DEST"
+  # Use the model_id-based name expected by GetBundledModelPath()
+  cp "$BUNDLED_MODEL" "$MODEL_DEST/tinyllama-1.1b.gguf"
+  echo "Model bundled at $MODEL_DEST/tinyllama-1.1b.gguf"
+else
+  echo "WARNING: Bundled model not found at $BUNDLED_MODEL"
+  echo "  Run scripts/download-bundled-model.sh first, or skip bundling."
+fi
+
 # Get app size
 APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-echo "App size: $APP_SIZE"
+echo "App size (with bundled model): $APP_SIZE"
 
 # Optional: code sign
 if [ -n "$SIGN_IDENTITY" ]; then

@@ -1,0 +1,269 @@
+// Copyright 2025 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+#include "chrome/browser/molt_ai/models/model_manager.h"
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+
+#include "base/files/file_path.h"
+#include "base/logging.h"
+#include "base/path_service.h"
+#include "build/build_config.h"
+
+#if BUILDFLAG(IS_MAC)
+#include "base/apple/bundle_locations.h"
+#endif
+
+namespace molt_ai {
+
+struct ModelManager::Impl {
+  std::string model_dir;
+  bool initialized = false;
+  std::vector<ModelInfo> registry;
+  std::unordered_map<std::string, bool> download_in_progress;
+
+  // Returns the path to a bundled model if it exists in the .app's Resources
+  // directory. On macOS, this is Chromium.app/Contents/Resources/molt_models/.
+  // Returns empty string if no bundled model exists.
+  std::string GetBundledModelPath(const std::string& model_id) const {
+#if BUILDFLAG(IS_MAC)
+    // Check the main bundle's Contents/Resources/molt_models/ directory
+    // (where package-dmg.sh places the bundled TinyLlama model).
+    base::FilePath main_resources = base::apple::MainBundlePath().Append(
+        "Contents/Resources/molt_models");
+    base::FilePath bundled = main_resources.Append(model_id + ".gguf");
+    if (std::filesystem::exists(bundled.value())) {
+      return bundled.value();
+    }
+    // Also try the framework bundle's Resources/ directory
+    base::FilePath framework_resources =
+        base::apple::FrameworkBundlePath().Append("Resources/molt_models");
+    bundled = framework_resources.Append(model_id + ".gguf");
+    if (std::filesystem::exists(bundled.value())) {
+      return bundled.value();
+    }
+#elif BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+    base::FilePath exe_dir;
+    if (base::PathService::Get(base::DIR_EXE, &exe_dir)) {
+      base::FilePath bundled = exe_dir.Append("molt_models")
+                                   .Append(model_id + ".gguf");
+      if (std::filesystem::exists(bundled.value())) {
+        return bundled.value();
+      }
+    }
+#endif
+    return "";
+  }
+
+  void ScanLocalModels() {
+    if (!std::filesystem::exists(model_dir)) {
+      std::filesystem::create_directories(model_dir);
+    }
+
+    for (auto& model : registry) {
+      // 1. First check if the model is bundled with the app (free, no
+      //    download needed). This lets us ship MoltBrowser with TinyLlama
+      //    pre-installed so users have AI working out of the box.
+      std::string bundled_path = GetBundledModelPath(model.model_id);
+      if (!bundled_path.empty()) {
+        model.is_downloaded = true;
+        model.file_path = bundled_path;
+        model.file_size_bytes = std::filesystem::file_size(bundled_path);
+        LOG(INFO) << "[MoltAI] Found bundled model: " << model.model_id
+                  << " at " << bundled_path;
+        continue;
+      }
+
+      // 2. Otherwise check the user's local models directory (downloaded).
+      std::string path = model_dir + "/" + model.model_id + ".gguf";
+      if (std::filesystem::exists(path)) {
+        model.is_downloaded = true;
+        model.file_path = path;
+        model.file_size_bytes = std::filesystem::file_size(path);
+      } else {
+        model.is_downloaded = false;
+      }
+    }
+  }
+};
+
+ModelManager::ModelManager() : impl_(std::make_unique<Impl>()) {}
+ModelManager::~ModelManager() = default;
+
+bool ModelManager::Initialize(const std::string& model_dir) {
+  impl_->model_dir = model_dir;
+
+  // Create directory if needed
+  std::filesystem::create_directories(model_dir);
+
+  // Initialize model registry from known HuggingFace sources
+  impl_->registry = {
+      {"tinyllama-1.1b", "TinyLlama 1.1B Chat", "",
+       "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+       637534208ULL, 2147483648ULL, 1, "Q4_K_M", false, false},
+      {"phi-3.5-mini", "Phi-3.5 Mini Instruct", "",
+       "bartowski/Phi-3.5-mini-instruct-GGUF",
+       2362232832ULL, 4294967296ULL, 3, "Q4_K_M", false, false},
+      {"mistral-7b", "Mistral 7B Instruct v0.3", "",
+       "MistralAI/Mistral-7B-Instruct-v0.3-GGUF",
+       4368438272ULL, 6442450944ULL, 7, "Q4_K_M", false, false},
+      {"llama3.1-8b", "LLaMA 3.1 8B Instruct", "",
+       "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+       4615733248ULL, 6442450944ULL, 8, "Q4_K_M", false, false},
+      {"qwen2.5-7b", "Qwen2.5 7B Instruct", "",
+       "Qwen/Qwen2.5-7B-Instruct-GGUF",
+       4718592000ULL, 6442450944ULL, 7, "Q4_K_M", false, false},
+      {"gemma2-9b", "Gemma 2 9B Instruct", "",
+       "bartowski/gemma-2-9b-it-GGUF",
+       5905580032ULL, 8589934592ULL, 9, "Q4_K_M", false, false},
+  };
+
+  // Scan for locally downloaded models
+  impl_->ScanLocalModels();
+
+  impl_->initialized = true;
+  return true;
+}
+
+std::vector<ModelInfo> ModelManager::GetAllModels() const {
+  return impl_->registry;
+}
+
+std::vector<ModelInfo> ModelManager::GetDownloadedModels() const {
+  std::vector<ModelInfo> result;
+  for (const auto& model : impl_->registry) {
+    if (model.is_downloaded) {
+      result.push_back(model);
+    }
+  }
+  return result;
+}
+
+std::vector<ModelInfo> ModelManager::GetCompatibleModels(
+    const HardwareCapability& hardware) const {
+  std::vector<ModelInfo> result;
+  size_t max_ram = static_cast<size_t>(hardware.total_ram_bytes * 0.50f);
+
+  for (const auto& model : impl_->registry) {
+    if (model.ram_required_bytes <= max_ram) {
+      result.push_back(model);
+    }
+  }
+
+  // Sort by size (smallest first)
+  std::sort(result.begin(), result.end(),
+            [](const ModelInfo& a, const ModelInfo& b) {
+              return a.file_size_bytes < b.file_size_bytes;
+            });
+
+  return result;
+}
+
+bool ModelManager::DownloadModel(const std::string& model_id,
+                                  DownloadCallback callback) {
+  // Find model in registry
+  ModelInfo* model = nullptr;
+  for (auto& m : impl_->registry) {
+    if (m.model_id == model_id) {
+      model = &m;
+      break;
+    }
+  }
+
+  if (!model) return false;
+  if (model->is_downloaded) return true;
+  if (IsDownloading(model_id)) return false;
+
+  impl_->download_in_progress[model_id] = true;
+
+  // TODO: Implement actual HuggingFace Hub download
+  // URL pattern: https://huggingface.co/{repo}/resolve/main/{filename}
+  // Download in chunks, verify SHA256, report progress via callback
+  //
+  // Example URL:
+  // https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/
+  //   resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+
+  impl_->download_in_progress[model_id] = false;
+  return false;  // Not yet implemented
+}
+
+void ModelManager::CancelDownload(const std::string& model_id) {
+  impl_->download_in_progress[model_id] = false;
+}
+
+bool ModelManager::IsDownloading(const std::string& model_id) const {
+  auto it = impl_->download_in_progress.find(model_id);
+  return it != impl_->download_in_progress.end() && it->second;
+}
+
+std::string ModelManager::GetModelPath(const std::string& model_id) const {
+  for (const auto& model : impl_->registry) {
+    if (model.model_id == model_id && model.is_downloaded) {
+      return model.file_path;
+    }
+  }
+  return "";
+}
+
+bool ModelManager::DeleteModel(const std::string& model_id) {
+  for (auto& model : impl_->registry) {
+    if (model.model_id == model_id) {
+      if (model.is_downloaded && !model.file_path.empty()) {
+        std::filesystem::remove(model.file_path);
+        model.is_downloaded = false;
+        model.file_path.clear();
+        return true;
+      }
+      break;
+    }
+  }
+  return false;
+}
+
+size_t ModelManager::GetTotalDiskUsage() const {
+  size_t total = 0;
+  for (const auto& model : impl_->registry) {
+    if (model.is_downloaded) {
+      total += model.file_size_bytes;
+    }
+  }
+  return total;
+}
+
+bool ModelManager::VerifyModel(const std::string& model_id) const {
+  // TODO: SHA256 verification
+  return true;
+}
+
+std::string ModelManager::RecommendModel(
+    const HardwareCapability& hardware) const {
+  auto compatible = GetCompatibleModels(hardware);
+
+  if (compatible.empty()) {
+    return "";  // No compatible models
+  }
+
+  // Prefer the largest model that fits in 50% RAM
+  // and is already downloaded
+  for (auto it = compatible.rbegin(); it != compatible.rend(); ++it) {
+    if (it->is_downloaded) {
+      return it->model_id;
+    }
+  }
+
+  // If nothing downloaded, recommend based on hardware
+  size_t available = static_cast<size_t>(hardware.total_ram_bytes * 0.50f);
+
+  if (available >= 8589934592ULL) {  // 8GB+
+    return "llama3.1-8b";
+  } else if (available >= 4294967296ULL) {  // 4GB+
+    return "phi-3.5-mini";
+  } else {
+    return "tinyllama-1.1b";
+  }
+}
+
+}  // namespace molt_ai
