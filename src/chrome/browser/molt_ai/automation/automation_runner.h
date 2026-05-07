@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
@@ -126,9 +127,9 @@ class AutomationRunner {
   void Finish(bool success, const std::string& message);
 
   // ---- State ----
-  content::WebContents* target_contents_;       // not owned
-  BrowserAIRuntime* ai_runtime_;                // not owned
-  AutomationStorage* storage_;                  // not owned
+  raw_ptr<content::WebContents> target_contents_;  // not owned
+  raw_ptr<BrowserAIRuntime> ai_runtime_;           // not owned
+  raw_ptr<AutomationStorage> storage_;             // not owned
 
   Script script_;
   size_t current_index_ = 0;

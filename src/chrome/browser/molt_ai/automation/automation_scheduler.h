@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -70,7 +71,7 @@ class AutomationScheduler {
   void Tick();
   void ArmNext(base::Time now);
 
-  AutomationStorage* storage_ = nullptr;  // not owned
+  raw_ptr<AutomationStorage> storage_ = nullptr;  // not owned
   ScheduledFireCallback fire_cb_;
   base::OneShotTimer next_timer_;
   base::RepeatingTimer heartbeat_;        // catches missed wakeups
