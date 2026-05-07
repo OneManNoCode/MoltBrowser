@@ -7,6 +7,7 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_ui.h"
 
+#include <ctime>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -217,27 +218,27 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     nav.type = StepType::NAVIGATE;
     nav.target = "https://moltsearch.ai";
     nav.description = "Open MoltSearch home";
-    s.steps.push_back(nav);
+    s.steps.push_back(std::move(nav));
 
     Step wait;
     wait.type = StepType::WAIT_FOR;
     wait.target = "input";
     wait.timeout_ms = 5000;
     wait.description = "Wait for the search box";
-    s.steps.push_back(wait);
+    s.steps.push_back(std::move(wait));
 
     Step type;
     type.type = StepType::TYPE;
     type.target = "input";
     type.value = "flights to bali";
     type.description = "Enter search query";
-    s.steps.push_back(type);
+    s.steps.push_back(std::move(type));
 
     Step notify;
     notify.type = StepType::NOTIFY;
     notify.value = "Sample run finished";
     notify.description = "Notify user";
-    s.steps.push_back(notify);
+    s.steps.push_back(std::move(notify));
 
     bool ok = storage_.Save(s);
     base::DictValue result;
