@@ -5,6 +5,8 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_notification.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,14 +18,33 @@ AutomationSchedulerService::AutomationSchedulerService(Profile* profile)
     : profile_(profile),
       storage_(std::make_unique<AutomationStorage>()),
       scheduler_(std::make_unique<AutomationScheduler>()) {
-  storage_->EnsureDirectory();
+  // Defer disk I/O off the UI thread (KeyedService construction runs in
+  // PreMainMessageLoopRun where blocking is disallowed). After
+  // EnsureDirectory completes on the thread pool we bounce back to the
+  // UI sequence to start the scheduler (which uses base::OneShotTimer
+  // and must live on the UI sequence).
+  base::ThreadPool::PostTaskAndReply(
+      FROM_HERE,
+      {base::TaskPriority::BEST_EFFORT, base::MayBlock(),
+       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
+      base::BindOnce(
+          [](AutomationStorage* storage) { storage->EnsureDirectory(); },
+          storage_.get()),
+      base::BindOnce(&AutomationSchedulerService::FinishStartOnUI,
+                      weak_factory_.GetWeakPtr()));
+  LOG(INFO) << "[MoltAutomation] scheduler service init queued for "
+            << profile_->GetPath().value();
+}
+
+void AutomationSchedulerService::FinishStartOnUI() {
+  if (!scheduler_ || !storage_)
+    return;
   scheduler_->SetStorage(storage_.get());
   scheduler_->SetFireCallback(base::BindRepeating(
       &AutomationSchedulerService::OnTriggerFired,
       weak_factory_.GetWeakPtr()));
   scheduler_->Start();
-  LOG(INFO) << "[MoltAutomation] scheduler service started for profile "
-            << profile_->GetPath().value();
+  LOG(INFO) << "[MoltAutomation] scheduler started";
 }
 
 AutomationSchedulerService::~AutomationSchedulerService() = default;

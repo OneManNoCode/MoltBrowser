@@ -39,6 +39,10 @@ class AutomationSchedulerService : public KeyedService {
   void Shutdown() override;
 
  private:
+  // Continues construction on the UI sequence after EnsureDirectory()
+  // finishes on a worker thread. Wires the scheduler and starts it.
+  void FinishStartOnUI();
+
   // Default fire callback: route to background-or-foreground runner.
   void OnTriggerFired(const Script& script, base::Time fired_at);
 
