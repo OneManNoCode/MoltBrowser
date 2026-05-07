@@ -5,14 +5,25 @@
 # Lets users record web workflows, save them as scripts, schedule them
 # via cron, and run them with local AI augmentation.
 
+import("//build/config/ui.gni")
+
 source_set("automation") {
   sources = [
+    "automation_background_browser.cc",
+    "automation_background_browser.h",
+    "automation_notification.h",
     "automation_recorder.cc",
     "automation_recorder.h",
+    "automation_recorder_tab_helper.cc",
+    "automation_recorder_tab_helper.h",
     "automation_runner.cc",
     "automation_runner.h",
     "automation_scheduler.cc",
     "automation_scheduler.h",
+    "automation_scheduler_factory.cc",
+    "automation_scheduler_factory.h",
+    "automation_scheduler_service.cc",
+    "automation_scheduler_service.h",
     "automation_script.cc",
     "automation_script.h",
     "automation_security.cc",
@@ -21,12 +32,28 @@ source_set("automation") {
     "automation_storage.h",
   ]
 
+  if (is_mac) {
+    sources += [ "automation_notification_mac.mm" ]
+  } else {
+    sources += [ "automation_notification_stub.cc" ]
+  }
+
   deps = [
     "//base",
-    "//chrome/browser/profiles:profile",
+    "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/profiles:profile",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
     "//content/public/browser",
     "//ui/base",
     "//url",
   ]
+
+  if (is_mac) {
+    frameworks = [
+      "Foundation.framework",
+      "UserNotifications.framework",
+    ]
+  }
 }

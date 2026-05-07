@@ -4,7 +4,10 @@
 #include "chrome/browser/molt_ai/automation/automation_recorder.h"
 
 #include <ctime>
+#include <optional>
 
+#include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/render_frame_host.h"
@@ -66,17 +69,24 @@ const char kRecorderJS[] = R"JS(
     return out;
   }
 
+  // Maintain an in-page queue. The C++ recorder polls this queue every
+  // 400ms and drains it via ExecuteJavaScriptInIsolatedWorld. The JSON
+  // string is what crosses the bridge — keeps the protocol stable.
+  if (!window.__moltStepQueue) window.__moltStepQueue = [];
+  window.__moltDrainSteps = function() {
+    var out = window.__moltStepQueue;
+    window.__moltStepQueue = [];
+    return JSON.stringify(out);
+  };
+
   function send(step) {
     try {
       step.url = location.href;
       step.ts  = Date.now();
-      // chrome.send is provided by the WebUI host. For non-WebUI tabs we
-      // post to the parent via a custom event the C++ side captures.
-      if (window.chrome && window.chrome.send) {
-        window.chrome.send('automationStep', [step]);
-      } else {
-        document.dispatchEvent(new CustomEvent(
-            '__moltAutomationStep', {detail: JSON.stringify(step)}));
+      window.__moltStepQueue.push(step);
+      // Cap queue so a misbehaving page can't grow it without bound.
+      if (window.__moltStepQueue.length > 500) {
+        window.__moltStepQueue.splice(0, window.__moltStepQueue.length - 500);
       }
     } catch (e) { /* swallow */ }
   }
@@ -140,6 +150,38 @@ const char kRecorderJS[] = R"JS(
     }
   }, 600);
 
+  // ---- Recording overlay banner ----
+  // A small fixed-position chip in the bottom right so the user always
+  // sees that recording is active and how many steps were captured.
+  function renderOverlay() {
+    var el = document.getElementById('__moltRecOverlay');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__moltRecOverlay';
+      el.style.cssText = [
+        'position:fixed','right:14px','bottom:14px','z-index:2147483647',
+        'padding:8px 12px','border-radius:999px',
+        'background:rgba(220,38,38,0.95)','color:white',
+        'font-family:-apple-system,system-ui,sans-serif','font-size:13px',
+        'font-weight:600','box-shadow:0 4px 12px rgba(0,0,0,0.25)',
+        'pointer-events:none','user-select:none','letter-spacing:0.2px',
+      ].join(';');
+      el.innerHTML = '<span style="display:inline-block;width:8px;height:8px;'
+                      + 'border-radius:50%;background:white;margin-right:8px;'
+                      + 'animation:moltRecPulse 1.4s ease-in-out infinite"></span>'
+                      + '<span id="__moltRecCount">REC</span>';
+      var style = document.createElement('style');
+      style.textContent = '@keyframes moltRecPulse{'
+                          + '0%,100%{opacity:0.4}50%{opacity:1}}';
+      document.head && document.head.appendChild(style);
+      (document.body || document.documentElement).appendChild(el);
+    }
+    var c = document.getElementById('__moltRecCount');
+    if (c) c.textContent = 'REC · ' + window.__moltStepQueue.length;
+  }
+  setInterval(renderOverlay, 600);
+  renderOverlay();
+
   console.log('[MoltAutomation] recorder injected');
 })();
 )JS";
@@ -170,10 +212,16 @@ void AutomationRecorder::Start(StepCapturedCallback on_step_captured) {
     }
   }
   InjectRecorderJS();
+
+  // Drive the page-side queue from C++ at 400ms cadence.
+  poll_timer_.Start(FROM_HERE, base::Milliseconds(400),
+                    base::BindRepeating(&AutomationRecorder::PollPageQueue,
+                                         weak_factory_.GetWeakPtr()));
 }
 
 Script AutomationRecorder::Stop() {
   is_recording_ = false;
+  poll_timer_.Stop();
   Script s;
   s.id = "";
   s.name = "Recorded automation";
@@ -185,6 +233,33 @@ Script AutomationRecorder::Stop() {
   s.security.trust = TrustLevel::CASUAL;
   on_step_captured_.Reset();
   return s;
+}
+
+void AutomationRecorder::PollPageQueue() {
+  if (!is_recording_ || !web_contents() ||
+      !web_contents()->GetPrimaryMainFrame()) {
+    return;
+  }
+  // Drain returns a JSON-stringified array. We re-inject the recorder JS
+  // first call (idempotent at the page level via window.__moltRecorder).
+  std::u16string js = base::UTF8ToUTF16(std::string(
+      "(window.__moltDrainSteps && window.__moltDrainSteps()) || '[]'"));
+  web_contents()->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      js,
+      base::BindOnce(
+          [](base::WeakPtr<AutomationRecorder> self, base::Value v) {
+            if (!self || !self->is_recording_) return;
+            if (!v.is_string()) return;
+            std::optional<base::Value> parsed =
+                base::JSONReader::Read(v.GetString(), /*options=*/0);
+            if (!parsed || !parsed->is_list()) return;
+            for (auto& entry : parsed->GetList()) {
+              if (entry.is_dict())
+                self->OnStepFromInjectedJS(entry.GetDict());
+            }
+          },
+          weak_factory_.GetWeakPtr()),
+      content::ISOLATED_WORLD_ID_CONTENT_END);
 }
 
 void AutomationRecorder::DocumentOnLoadCompletedInPrimaryMainFrame() {

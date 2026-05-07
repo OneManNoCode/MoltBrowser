@@ -117,9 +117,25 @@ class AutomationRunner {
               base::OnceCallback<void(base::Value)> cb);
 
   // Runs the recorded selector + each fallback until one matches; returns
-  // the matching selector, or empty string if none found.
+  // the matching selector, or empty string if none found. If all recorded
+  // candidates fail, falls back to AskLLMForSelector() which queries the
+  // BrowserAIRuntime for a recovery selector.
   void ResolveSelector(
       const Step& s,
+      base::OnceCallback<void(const std::string&)> cb);
+
+  // Internal helper: walks the candidate ladder one at a time, then
+  // delegates to AskLLMForSelector if all fail.
+  void TryNextSelector(
+      std::vector<std::string> candidates,
+      size_t index,
+      std::string description,
+      base::OnceCallback<void(const std::string&)> cb);
+
+  // Last-resort recovery: send page snippet + step description to the LLM
+  // and ask for a CSS selector. Returns "" if the model fails.
+  void AskLLMForSelector(
+      const std::string& description,
       base::OnceCallback<void(const std::string&)> cb);
 
   void EmitStepProgress(bool starting, bool succeeded,

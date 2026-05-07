@@ -21,6 +21,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -66,11 +67,15 @@ class AutomationRecorder : public content::WebContentsObserver {
  private:
   void InjectRecorderJS();
   void DeduplicateAndAppend(Step step);
+  // Polls the injected JS queue and routes each entry to
+  // OnStepFromInjectedJS. Runs every 400ms while recording.
+  void PollPageQueue();
 
   bool is_recording_ = false;
   std::vector<Step> steps_;
   std::set<std::string> seen_hosts_;
   StepCapturedCallback on_step_captured_;
+  base::RepeatingTimer poll_timer_;
 
   base::WeakPtrFactory<AutomationRecorder> weak_factory_{this};
 };

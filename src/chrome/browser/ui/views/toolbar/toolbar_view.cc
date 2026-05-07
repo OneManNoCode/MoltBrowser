@@ -23,6 +23,7 @@
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/actor/ui/actor_ui_metrics.h"
+#include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/glic/public/glic_enabling.h"
@@ -594,6 +595,33 @@ void ToolbarView::Init() {
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     molt_ai_button->SetVectorIcon(vector_icons::kChatSparkIcon);
     AddChildView(std::move(molt_ai_button));
+  }
+
+  // MoltBrowser: Web Automation record button. Toggles recording on the
+  // currently active tab. On stop, saves the script and opens the
+  // automation manager.
+  {
+    auto rec_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+        [](Browser* browser) {
+          if (!browser || !browser->tab_strip_model()) return;
+          content::WebContents* wc =
+              browser->tab_strip_model()->GetActiveWebContents();
+          if (!wc) return;
+          molt_ai::automation::AutomationRecorderTabHelper::CreateForWebContents(
+              wc);
+          auto* helper =
+              molt_ai::automation::AutomationRecorderTabHelper::FromWebContents(
+                  wc);
+          if (helper)
+            helper->Toggle(browser->profile());
+        },
+        browser_));
+    rec_button->SetHighlight(u"Record", std::nullopt);
+    rec_button->SetTooltipText(
+        u"Record this tab as a Molt automation script");
+    rec_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    rec_button->SetVectorIcon(vector_icons::kScreenRecordIcon);
+    AddChildView(std::move(rec_button));
   }
 
   avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));

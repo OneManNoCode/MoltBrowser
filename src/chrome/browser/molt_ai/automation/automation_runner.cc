@@ -272,11 +272,49 @@ void AutomationRunner::EvalJS(
       content::ISOLATED_WORLD_ID_CONTENT_END);
 }
 
+void AutomationRunner::TryNextSelector(
+    std::vector<std::string> candidates,
+    size_t index,
+    std::string description,
+    base::OnceCallback<void(const std::string&)> cb) {
+  if (index >= candidates.size()) {
+    // All recorded selectors failed. Try LLM-based recovery if we have a
+    // runtime and a description to ground the request in.
+    if (ai_runtime_ && !description.empty() && target_contents_) {
+      AskLLMForSelector(description, std::move(cb));
+      return;
+    }
+    std::move(cb).Run("");
+    return;
+  }
+
+  std::string sel = candidates[index];
+  std::string js = base::StringPrintf(kHasSelectorJSTemplate,
+                                       JSQuote(sel).c_str());
+  auto self = weak_factory_.GetWeakPtr();
+  EvalJS(js, base::BindOnce(
+                  [](base::WeakPtr<AutomationRunner> self,
+                     std::vector<std::string> cands, size_t idx,
+                     std::string desc, std::string current,
+                     base::OnceCallback<void(const std::string&)> cb,
+                     base::Value v) {
+                    if (!self) return;
+                    if (v.is_bool() && v.GetBool()) {
+                      std::move(cb).Run(current);
+                      return;
+                    }
+                    self->TryNextSelector(std::move(cands), idx + 1,
+                                          std::move(desc), std::move(cb));
+                  },
+                  self, std::move(candidates), index, std::move(description),
+                  sel, std::move(cb)));
+}
+
 void AutomationRunner::ResolveSelector(
     const Step& s,
     base::OnceCallback<void(const std::string&)> cb) {
-  // Try primary, then fallbacks. Each attempt: query JS to see if exactly
-  // one match exists. The first success wins.
+  // Build the candidate ladder: primary target first, then recorded
+  // fallbacks. Each is variable-substituted via Resolve().
   std::vector<std::string> candidates;
   if (!s.target.empty())
     candidates.push_back(Resolve(s.target));
@@ -288,20 +326,65 @@ void AutomationRunner::ResolveSelector(
     return;
   }
 
-  // Capture-state recursive lambda via a helper class isn't trivial in C++,
-  // so we use a stateful callback pattern: for simplicity, just try the
-  // first candidate; if it fails we abort the step. The full ladder is a
-  // Sprint 2 polish item.
-  std::string first = candidates.front();
-  std::string js = base::StringPrintf(kHasSelectorJSTemplate,
-                                       JSQuote(first).c_str());
-  EvalJS(js, base::BindOnce(
-                  [](std::string sel,
-                     base::OnceCallback<void(const std::string&)> cb,
-                     base::Value v) {
-                    std::move(cb).Run(v.is_bool() && v.GetBool() ? sel : "");
-                  },
-                  first, std::move(cb)));
+  TryNextSelector(std::move(candidates), 0, Resolve(s.description),
+                  std::move(cb));
+}
+
+namespace {
+
+// Snippet of page innerText to give the LLM enough context to pick a new
+// selector. Capped to keep prompts under TinyLlama's context window.
+constexpr char kPageSnippetJS[] =
+    "(function(){"
+    "  const t = document.body ? document.body.innerText : '';"
+    "  return t.slice(0, 2000);"
+    "})()";
+
+}  // namespace
+
+void AutomationRunner::AskLLMForSelector(
+    const std::string& description,
+    base::OnceCallback<void(const std::string&)> cb) {
+  // First grab a small text snippet from the page, then ask the LLM.
+  auto self = weak_factory_.GetWeakPtr();
+  EvalJS(kPageSnippetJS,
+         base::BindOnce(
+             [](base::WeakPtr<AutomationRunner> self,
+                std::string desc,
+                base::OnceCallback<void(const std::string&)> cb,
+                base::Value v) {
+               if (!self || !self->ai_runtime_) {
+                 std::move(cb).Run("");
+                 return;
+               }
+               std::string snippet = v.is_string() ? v.GetString() : "";
+               std::string prompt =
+                   "Page text snippet (truncated):\n```\n" + snippet +
+                   "\n```\n\n"
+                   "The user wants to interact with: " + desc + "\n"
+                   "Return a single CSS selector that targets that element. "
+                   "Reply with ONLY the selector, no quotes, no commentary.";
+               molt_ai::PromptOptions opts;
+               opts.max_tokens = 64;
+               molt_ai::GenerationResult r =
+                   self->ai_runtime_->RunPrompt(prompt, opts);
+               std::string s = r.success ? r.text : std::string();
+               // Trim whitespace + leading/trailing punctuation the model
+               // loves to add.
+               while (!s.empty() &&
+                      (s.front() == ' ' || s.front() == '\n' ||
+                       s.front() == '`' || s.front() == '"'))
+                 s.erase(0, 1);
+               while (!s.empty() &&
+                      (s.back() == ' ' || s.back() == '\n' ||
+                       s.back() == '`' || s.back() == '"'))
+                 s.pop_back();
+               // Reject obviously-wrong replies (multi-line / very long).
+               if (s.find('\n') != std::string::npos || s.size() > 200)
+                 s.clear();
+               std::move(cb).Run(s);
+             },
+             self, description, std::move(cb)));
 }
 
 // -----------------------------------------------------------------------------
