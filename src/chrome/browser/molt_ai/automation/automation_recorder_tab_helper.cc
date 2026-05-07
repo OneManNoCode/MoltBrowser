@@ -22,11 +22,32 @@
 namespace molt_ai {
 namespace automation {
 
+namespace {
+// Tracks the WebContents of the currently-recording tab (if any). Used
+// by the toolbar Record button to render its Start/Stop label without
+// having to walk every tab.
+content::WebContents* g_recording_contents = nullptr;
+}  // namespace
+
+// static
+bool AutomationRecorderTabHelper::IsAnyRecording() {
+  return g_recording_contents != nullptr;
+}
+
+// static
+content::WebContents*
+AutomationRecorderTabHelper::GetActivelyRecordingContents() {
+  return g_recording_contents;
+}
+
 AutomationRecorderTabHelper::AutomationRecorderTabHelper(
     content::WebContents* contents)
     : content::WebContentsUserData<AutomationRecorderTabHelper>(*contents) {}
 
-AutomationRecorderTabHelper::~AutomationRecorderTabHelper() = default;
+AutomationRecorderTabHelper::~AutomationRecorderTabHelper() {
+  if (g_recording_contents == &GetWebContents())
+    g_recording_contents = nullptr;
+}
 
 void AutomationRecorderTabHelper::Toggle(Profile* profile) {
   content::WebContents* wc = &GetWebContents();
@@ -36,10 +57,12 @@ void AutomationRecorderTabHelper::Toggle(Profile* profile) {
   if (!rec_->is_recording()) {
     LOG(INFO) << "[MoltAutomation] start recording on tab";
     rec_->Start(base::DoNothing());
+    g_recording_contents = wc;
     return;
   }
 
   // Stop + save.
+  g_recording_contents = nullptr;
   Script s = rec_->Stop();
   // Auto-assign id if empty.
   if (s.id.empty()) {
@@ -68,11 +91,13 @@ void AutomationRecorderTabHelper::Toggle(Profile* profile) {
   }
   storage->Save(s);
 
-  // Open the manager UI so the user can rename/edit/run.
+  // Open the manager UI so the user can rename/edit/run. Pass the new
+  // script id in the fragment so the page can scroll to + highlight it.
   if (profile) {
     Browser* b = chrome::FindLastActiveWithProfile(profile);
     if (b) {
-      ShowSingletonTab(b, GURL("molt://ai-automation/"));
+      ShowSingletonTab(b,
+                        GURL("molt://ai-automation/#new=" + s.id));
     }
   }
 }

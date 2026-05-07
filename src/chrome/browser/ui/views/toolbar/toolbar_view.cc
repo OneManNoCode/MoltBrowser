@@ -599,28 +599,45 @@ void ToolbarView::Init() {
 
   // MoltBrowser: Web Automation record button. Toggles recording on the
   // currently active tab. On stop, saves the script and opens the
-  // automation manager.
+  // automation manager. Label flips between "Record" (idle) and
+  // "Stop" (recording) so the user always sees the current state.
   {
-    auto rec_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-        [](Browser* browser) {
+    auto rec_button = std::make_unique<ToolbarButton>();
+    ToolbarButton* rec_ptr = rec_button.get();
+
+    rec_ptr->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    // Initial idle label.
+    rec_ptr->SetHighlight(u"Record", std::nullopt);
+    rec_ptr->SetTooltipText(u"Record this tab as a Molt automation script");
+    rec_ptr->SetVectorIcon(vector_icons::kScreenRecordIcon);
+
+    rec_ptr->SetCallback(base::BindRepeating(
+        [](Browser* browser, ToolbarButton* btn) {
           if (!browser || !browser->tab_strip_model()) return;
-          content::WebContents* wc =
-              browser->tab_strip_model()->GetActiveWebContents();
-          if (!wc) return;
-          molt_ai::automation::AutomationRecorderTabHelper::CreateForWebContents(
-              wc);
-          auto* helper =
-              molt_ai::automation::AutomationRecorderTabHelper::FromWebContents(
-                  wc);
+          using Helper = molt_ai::automation::AutomationRecorderTabHelper;
+          content::WebContents* target = Helper::GetActivelyRecordingContents();
+          if (!target) {
+            target = browser->tab_strip_model()->GetActiveWebContents();
+          }
+          if (!target) return;
+          Helper::CreateForWebContents(target);
+          auto* helper = Helper::FromWebContents(target);
           if (helper)
             helper->Toggle(browser->profile());
+          // Refresh label/icon to reflect new state.
+          if (Helper::IsAnyRecording()) {
+            btn->SetHighlight(u"Stop", SkColorSetRGB(0xDC, 0x26, 0x26));
+            btn->SetTooltipText(
+                u"Stop recording and save this script");
+            btn->SetVectorIcon(vector_icons::kStopCircleIcon);
+          } else {
+            btn->SetHighlight(u"Record", std::nullopt);
+            btn->SetTooltipText(
+                u"Record this tab as a Molt automation script");
+            btn->SetVectorIcon(vector_icons::kScreenRecordIcon);
+          }
         },
-        browser_));
-    rec_button->SetHighlight(u"Record", std::nullopt);
-    rec_button->SetTooltipText(
-        u"Record this tab as a Molt automation script");
-    rec_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    rec_button->SetVectorIcon(vector_icons::kScreenRecordIcon);
+        browser_, rec_ptr));
     AddChildView(std::move(rec_button));
   }
 

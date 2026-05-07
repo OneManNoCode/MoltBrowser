@@ -109,6 +109,10 @@ void AutomationRunner::Run(Script script,
   is_running_ = true;
   cancel_requested_ = false;
   variables_.clear();
+  // Seed user-supplied default variables so {{name}} substitution
+  // works without an upstream EXTRACT step.
+  for (const auto& kv : script_.default_variables)
+    variables_[kv.first] = base::Value(kv.second);
   loop_stack_.clear();
   if_stack_.clear();
   start_time_ = base::TimeTicks::Now();

@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
@@ -151,9 +152,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
                               base::Value(std::move(result)));
   }
 
-  // Sprint-1 'run' — actually wires the AutomationRunner to a fresh tab in
-  // the parent browser, so the user sees their flow replay end-to-end.
-  // Sprint 3 swaps this for a hidden background browser per user spec.
+  // Run a saved script in a background browser window using the user's
+  // main profile (so cookies persist). Optional second arg is a
+  // {variable:value} dict that overrides default_variables for this run.
   void HandleRunScript(const base::ListValue& args) {
     AllowJavascript();
     CHECK_GE(args.size(), 2u);
@@ -171,9 +172,22 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       return;
     }
 
-    // For now we acknowledge the run synchronously and rely on Sprint 2's
-    // wired runner to actually drive a tab. The audit log records intent.
+    // Apply any one-shot variable overrides supplied with the run call.
+    if (args.size() > 2 && args[2].is_dict()) {
+      for (const auto kv : args[2].GetDict()) {
+        if (kv.second.is_string())
+          script->default_variables[kv.first] = kv.second.GetString();
+      }
+    }
+
     storage_.AppendAudit(id, "manual_run_requested", "from_ui");
+
+    Profile* profile = Profile::FromBrowserContext(
+        web_ui()->GetWebContents()->GetBrowserContext());
+    bool headless =
+        script->security.trust >= molt_ai::automation::TrustLevel::TRUSTED;
+    molt_ai::automation::RunScriptInBackgroundBrowser(profile, *script,
+                                                       headless);
 
     result.Set("success", true);
     result.Set("steps", static_cast<int>(script->steps.size()));
@@ -283,35 +297,84 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .btn{background:#ff4444;border:none;color:#fff;padding:8px 16px;
   border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;}
 .btn:hover{background:#ff5555;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
 .btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;}
 .btn.ghost:hover{border-color:#ff4444;color:#fff;}
-.container{max-width:980px;margin:0 auto;padding:32px 28px 64px;}
+.btn.green{background:#16a34a;}
+.btn.green:hover{background:#22c55e;}
+.btn.small{padding:5px 10px;font-size:11px;border-radius:6px;}
+.container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
 .intro{color:#888;margin-bottom:24px;line-height:1.5;}
 .intro b{color:#ddd;}
+.toolbar-row{display:flex;gap:10px;margin-bottom:24px;align-items:center;}
+.toolbar-row .grow{flex:1;}
+.search-input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
+  padding:8px 14px;border-radius:8px;font-size:13px;width:240px;}
+.search-input:focus{outline:none;border-color:#ff4444;}
 .script-list{display:flex;flex-direction:column;gap:12px;}
 .empty{padding:48px;text-align:center;color:#555;background:#0d0d14;
   border:1px dashed #1a1a2a;border-radius:12px;}
 .script-card{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
-  padding:18px 22px;display:flex;align-items:center;gap:16px;}
-.script-card .info{flex:1}
-.script-card .name{font-size:15px;font-weight:600;margin-bottom:4px;}
-.script-card .meta{font-size:12px;color:#888;}
-.script-card .actions{display:flex;gap:8px;}
-.dot{width:8px;height:8px;border-radius:50%;background:#3a3a3a;}
+  overflow:hidden;transition:border-color 0.2s,box-shadow 0.2s;}
+.script-card.highlight{border-color:#ff4444;
+  box-shadow:0 0 0 3px rgba(255,68,68,0.2);}
+.script-summary{padding:18px 22px;display:flex;align-items:center;gap:16px;
+  cursor:pointer;user-select:none;}
+.script-summary:hover{background:rgba(255,255,255,0.02);}
+.script-summary .info{flex:1;min-width:0;}
+.script-summary .name{font-size:15px;font-weight:600;margin-bottom:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.script-summary .meta{font-size:12px;color:#888;}
+.script-summary .actions{display:flex;gap:8px;flex-shrink:0;}
+.script-summary .chev{color:#555;font-size:14px;transition:transform 0.2s;
+  margin-left:4px;}
+.script-card.open .chev{transform:rotate(90deg);}
+.script-detail{display:none;padding:0 22px 18px;border-top:1px solid #1a1a2a;
+  background:#08080d;}
+.script-card.open .script-detail{display:block;}
+.detail-section{margin-top:16px;}
+.detail-section h4{font-size:11px;text-transform:uppercase;
+  letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;}
+.var-grid{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;
+  align-items:center;}
+.var-grid label{font-size:12px;color:#aaa;font-family:monospace;}
+.var-grid input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
+  padding:6px 10px;border-radius:6px;font-size:12px;width:100%;
+  font-family:monospace;}
+.var-grid input:focus{outline:none;border-color:#ff4444;}
+.var-empty{color:#555;font-size:12px;font-style:italic;padding:6px 0;}
+.steps-list{font-family:monospace;font-size:11px;line-height:1.7;}
+.step-row{display:flex;gap:8px;padding:4px 8px;border-radius:4px;}
+.step-row:hover{background:rgba(255,255,255,0.03);}
+.step-num{color:#444;width:24px;text-align:right;}
+.step-type{color:#ff7799;font-weight:600;width:90px;}
+.step-target{color:#74e0a0;}
+.step-value{color:#888;}
+.dot{width:8px;height:8px;border-radius:50%;background:#3a3a3a;
+  flex-shrink:0;}
 .dot.green{background:#4ade80;}
 .dot.yellow{background:#fbbf24;}
 .dot.red{background:#f87171;}
 .section-title{font-size:13px;color:#888;text-transform:uppercase;
-  letter-spacing:1px;margin:24px 0 10px;}
+  letter-spacing:1px;margin:24px 0 10px;display:flex;align-items:center;
+  gap:10px;}
+.section-title .count{background:#1a1a2a;color:#aaa;font-size:11px;
+  padding:2px 8px;border-radius:10px;}
 .audit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
   padding:14px 18px;font-family:monospace;font-size:11px;color:#bbb;
   max-height:240px;overflow-y:auto;line-height:1.6;}
 .toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
   color:#4ade80;padding:12px 18px;border-radius:10px;
   border:1px solid #2a4a2a;font-size:13px;font-weight:600;
-  transform:translateY(120px);opacity:0;transition:all 0.25s;}
+  transform:translateY(120px);opacity:0;transition:all 0.25s;
+  z-index:1000;}
 .toast.show{transform:translateY(0);opacity:1;}
 .toast.error{background:#3a1a1a;color:#f87171;border-color:#4a2a2a;}
+@keyframes flash{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,68,68,0);}
+  50%{box-shadow:0 0 0 6px rgba(255,68,68,0.35);}
+}
+.script-card.flash{animation:flash 0.8s ease-in-out 2;}
 </style>
 </head>
 <body>
@@ -331,22 +394,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     Record any web workflow, save it, and replay it on a schedule.
     Each script runs <b>locally</b> with your logged-in cookies and uses
     the <b>bundled local AI</b> for decisions like &ldquo;is this price low
-    enough?&rdquo;
+    enough?&rdquo; To record: click the <b>&#9210; Record</b> button in the
+    toolbar, perform your workflow, then click <b>&#x25A0; Stop</b>.
     <br><br>
     No cloud, no telemetry, no Google. Schedules survive browser restarts.
   </p>
 
-  <div style="display:flex;gap:10px;margin-bottom:24px;">
-    <button class="btn"       onclick="addSample()">+ Sample script</button>
-    <button class="btn ghost"  onclick="refresh()">Refresh</button>
-    <button class="btn ghost"  onclick="document.getElementById('audit-block').style.display='block';refreshAudit();">Show audit log</button>
+  <div class="toolbar-row">
+    <button class="btn"        onclick="addSample()">+ Sample script</button>
+    <button class="btn ghost"  onclick="refresh()">&#x21bb; Refresh</button>
+    <div class="grow"></div>
+    <input type="text" class="search-input" id="search"
+           placeholder="Search by name..."
+           oninput="renderScripts(allScripts)">
+    <button class="btn ghost"
+            onclick="document.getElementById('audit-block').style.display='block';refreshAudit();">
+      Audit log
+    </button>
   </div>
 
-  <div class="section-title">Saved automations</div>
+  <div class="section-title">
+    Saved automations
+    <span class="count" id="count">0</span>
+  </div>
   <div class="script-list" id="list">
     <div class="empty" id="empty">
       No automations yet. Click <b>+ Sample script</b> to create one,
-      or hit the <b>&#9210; Record</b> button (Sprint 2) on any tab to
+      or hit the toolbar <b>&#9210; Record</b> button on any tab to
       capture your first workflow.
     </div>
   </div>
@@ -363,6 +437,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 <script>
 var idCounter = 0;
 var pendingCbs = {};
+var allScripts = [];
 function sendWithPromise(method) {
   var args = Array.prototype.slice.call(arguments, 1);
   var id = method + '_' + (++idCounter);
@@ -408,36 +483,177 @@ function triggerLabel(s) {
   }
 }
 
+// Find every {{name}} placeholder used in step targets and values.
+function extractVarsFromScript(s) {
+  var found = {};
+  function scan(str) {
+    if (!str) return;
+    var re = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+    var m;
+    while ((m = re.exec(str)) !== null) found[m[1]] = true;
+  }
+  (s.steps || []).forEach(function(step){
+    scan(step.target); scan(step.value); scan(step.description);
+  });
+  return Object.keys(found).sort();
+}
+
+function stepShortDesc(step) {
+  var t = step.type || '?';
+  var pieces = ['<span class="step-type">' + esc(t.toUpperCase()) + '</span>'];
+  if (step.target) pieces.push(
+      '<span class="step-target">' + esc(step.target) + '</span>');
+  if (step.value)  pieces.push(
+      '<span class="step-value">= ' + esc(step.value) + '</span>');
+  return pieces.join(' ');
+}
+
+function buildDetailHTML(s) {
+  var vars = extractVarsFromScript(s);
+  var dv = s.default_variables || {};
+  var varsBlock = vars.length === 0
+    ? '<div class="var-empty">No {{variables}} used in this script.</div>'
+    : '<div class="var-grid">' + vars.map(function(name){
+        var val = dv[name] || '';
+        return '<label>{{' + esc(name) + '}}</label>' +
+               '<input type="text" data-var="' + esc(name) + '"' +
+               ' value="' + esc(val) + '" placeholder="value...">';
+      }).join('') + '</div>';
+
+  var stepsBlock = (s.steps || []).map(function(step, i){
+    return '<div class="step-row">' +
+              '<span class="step-num">' + (i + 1) + '.</span>' +
+              stepShortDesc(step) +
+            '</div>';
+  }).join('') || '<div class="var-empty">No steps recorded.</div>';
+
+  var lastRun = s.stats && s.stats.last_run_unix
+      ? new Date(s.stats.last_run_unix * 1000).toLocaleString()
+      : 'never';
+  var runs = (s.stats && s.stats.runs) || 0;
+  var ok   = (s.stats && s.stats.successes) || 0;
+
+  return ''
+    + '<div class="detail-section">'
+    +   '<h4>Variables (used by {{name}} placeholders inside steps)</h4>'
+    +   varsBlock
+    + '</div>'
+    + '<div class="detail-section">'
+    +   '<h4>Steps (' + (s.steps ? s.steps.length : 0) + ')</h4>'
+    +   '<div class="steps-list">' + stepsBlock + '</div>'
+    + '</div>'
+    + '<div class="detail-section">'
+    +   '<h4>Stats</h4>'
+    +   '<div style="font-size:12px;color:#aaa;line-height:1.7;">'
+    +     'Runs: ' + runs + ' &middot; Successes: ' + ok
+    +     ' &middot; Last run: ' + esc(lastRun)
+    +     (s.stats && s.stats.last_result
+        ? '<br>Last result: ' + esc(s.stats.last_result) : '')
+    +   '</div>'
+    + '</div>'
+    + '<div class="detail-section">'
+    +   '<button class="btn green"  data-act="run-with-vars">'
+    +     '&#9654; Run with these values</button> '
+    +   '<button class="btn ghost"  data-act="save-vars">Save values as defaults</button> '
+    +   '<button class="btn ghost"  data-act="copy-id">Copy ID</button> '
+    + '</div>';
+}
+
+function collectVars(card) {
+  var vars = {};
+  card.querySelectorAll('input[data-var]').forEach(function(inp){
+    vars[inp.getAttribute('data-var')] = inp.value;
+  });
+  return vars;
+}
+
 function renderScripts(scripts) {
+  allScripts = scripts;
+  var query = (document.getElementById('search').value || '').toLowerCase();
+  var filtered = scripts.filter(function(s){
+    if (!query) return true;
+    return (s.name || '').toLowerCase().indexOf(query) !== -1 ||
+           (s.id   || '').toLowerCase().indexOf(query) !== -1;
+  });
+
   var list = document.getElementById('list');
   var empty = document.getElementById('empty');
+  document.getElementById('count').textContent = scripts.length;
   list.innerHTML = '';
-  if (!scripts.length) { list.appendChild(empty); return; }
-  scripts.forEach(function(s) {
+  if (!filtered.length) {
+    if (!scripts.length) { list.appendChild(empty); }
+    else { list.innerHTML =
+      '<div class="empty">No automations match &ldquo;' + esc(query) +
+      '&rdquo;</div>'; }
+    return;
+  }
+
+  // Highlight just-recorded script if URL hash carries #new=ID.
+  var newId = (location.hash.match(/^#new=(.+)$/) || [])[1];
+
+  filtered.forEach(function(s) {
     var card = document.createElement('div');
     card.className = 'script-card';
+    if (s.id === newId) card.classList.add('flash', 'open', 'highlight');
     var lastRun = s.stats && s.stats.last_run_unix
         ? new Date(s.stats.last_run_unix * 1000).toLocaleString()
         : 'never';
     card.innerHTML =
-      '<span class="dot ' + dotClass(s) + '"></span>' +
-      '<div class="info">' +
-        '<div class="name">' + esc(s.name) + '</div>' +
-        '<div class="meta">' + esc(triggerLabel(s)) +
-        ' &middot; ' + (s.steps ? s.steps.length : 0) + ' steps' +
-        ' &middot; last run: ' + esc(lastRun) +
-        (s.stats && s.stats.last_result
-          ? ' &middot; ' + esc(s.stats.last_result) : '') +
+      '<div class="script-summary">' +
+        '<span class="dot ' + dotClass(s) + '"></span>' +
+        '<div class="info">' +
+          '<div class="name">' + esc(s.name) + '</div>' +
+          '<div class="meta">' + esc(triggerLabel(s)) +
+          ' &middot; ' + (s.steps ? s.steps.length : 0) + ' steps' +
+          ' &middot; last run: ' + esc(lastRun) +
+          (s.stats && s.stats.last_result
+            ? ' &middot; ' + esc(s.stats.last_result) : '') +
+          '</div>' +
         '</div>' +
+        '<div class="actions">' +
+          '<button class="btn"        data-act="run">&#9654; Run</button>' +
+          '<button class="btn ghost"  data-act="del">Delete</button>' +
+        '</div>' +
+        '<span class="chev">&#10095;</span>' +
       '</div>' +
-      '<div class="actions">' +
-        '<button class="btn"       data-act="run">Run</button>' +
-        '<button class="btn ghost" data-act="del">Delete</button>' +
-      '</div>';
-    card.querySelector('[data-act="run"]').onclick = function() { runScript(s.id); };
-    card.querySelector('[data-act="del"]').onclick = function() { deleteScript(s.id); };
+      '<div class="script-detail">' + buildDetailHTML(s) + '</div>';
+
+    var summary = card.querySelector('.script-summary');
+    summary.onclick = function(e) {
+      if (e.target.tagName === 'BUTTON') return;
+      card.classList.toggle('open');
+    };
+    card.querySelector('[data-act="run"]').onclick = function(e) {
+      e.stopPropagation();
+      runScript(s.id);
+    };
+    card.querySelector('[data-act="del"]').onclick = function(e) {
+      e.stopPropagation();
+      deleteScript(s.id);
+    };
+    var rwv = card.querySelector('[data-act="run-with-vars"]');
+    if (rwv) rwv.onclick = function() {
+      runScript(s.id, collectVars(card));
+    };
+    var sv = card.querySelector('[data-act="save-vars"]');
+    if (sv) sv.onclick = function() {
+      saveVarsFor(s, collectVars(card));
+    };
+    var cp = card.querySelector('[data-act="copy-id"]');
+    if (cp) cp.onclick = function() {
+      navigator.clipboard.writeText(s.id);
+      showToast('ID copied: ' + s.id);
+    };
+
     list.appendChild(card);
   });
+
+  // Scroll the highlighted card into view if we just got here from
+  // the toolbar Stop action.
+  if (newId) {
+    var hl = list.querySelector('.script-card.highlight');
+    if (hl) hl.scrollIntoView({behavior:'smooth', block:'center'});
+  }
 }
 
 function refresh() {
@@ -461,12 +677,25 @@ function addSample() {
   });
 }
 
-function runScript(id) {
-  sendWithPromise('runScript', id).then(function(r) {
-    if (r.success) showToast('Run scheduled: ' + (r.name || id));
+function runScript(id, vars) {
+  var args = vars ? ['runScript', id, vars] : ['runScript', id];
+  sendWithPromise.apply(null, args).then(function(r) {
+    if (r.success) showToast('Running: ' + (r.name || id));
     else           showToast('Run failed: ' + (r.error || ''), true);
     refresh();
     refreshAudit();
+  });
+}
+
+function saveVarsFor(scriptObj, vars) {
+  // Merge new vars into the script's default_variables and save.
+  scriptObj.default_variables = scriptObj.default_variables || {};
+  Object.keys(vars).forEach(function(k){
+    scriptObj.default_variables[k] = vars[k];
+  });
+  sendWithPromise('saveScript', scriptObj).then(function(r){
+    if (r.success) showToast('Default values saved');
+    else showToast('Save failed: ' + (r.error || ''), true);
   });
 }
 

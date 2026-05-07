@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/task/sequenced_task_runner.h"
 
 namespace molt_ai {
 namespace automation {
@@ -165,7 +166,15 @@ void AutomationScheduler::Start() {
   heartbeat_.Start(FROM_HERE, base::Seconds(60),
                    base::BindRepeating(&AutomationScheduler::Tick,
                                         weak_factory_.GetWeakPtr()));
-  Tick();
+  // Defer the first Tick: it calls AutomationStorage::ListAll() which
+  // does blocking disk I/O. If Start() is invoked from a startup-time
+  // KeyedService construction, blocking is disallowed and we'd FATAL.
+  // A 3s delay is well past PreMainMessageLoopRun; cron schedules don't
+  // care about sub-minute precision on the very first scan.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AutomationScheduler::Tick, weak_factory_.GetWeakPtr()),
+      base::Seconds(3));
 }
 
 void AutomationScheduler::Stop() {

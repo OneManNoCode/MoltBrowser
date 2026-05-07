@@ -14,6 +14,7 @@
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SCRIPT_H_
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -178,6 +179,11 @@ struct Script {
 
   // Whether the scheduler should consider this script for firing.
   bool enabled = true;
+
+  // User-editable default values for {{variables}} referenced inside
+  // step targets / values. Populated from the manager UI; the runner
+  // seeds its variables_ map from this before the first step.
+  std::map<std::string, std::string> default_variables;
 
   // -------- Serialization --------
   base::DictValue ToJSON() const;

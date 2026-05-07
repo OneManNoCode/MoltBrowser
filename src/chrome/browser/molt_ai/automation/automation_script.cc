@@ -323,6 +323,12 @@ base::DictValue Script::ToJSON() const {
 
   d.Set("security", SecurityToDict(security));
   d.Set("stats", StatsToDict(stats));
+
+  // User-editable {{variable}} defaults.
+  base::DictValue vars;
+  for (const auto& kv : default_variables)
+    vars.Set(kv.first, kv.second);
+  d.Set("default_variables", std::move(vars));
   return d;
 }
 
@@ -354,6 +360,13 @@ std::optional<Script> Script::FromJSON(const base::DictValue& d) {
 
   if (const base::DictValue* stats = d.FindDict("stats"))
     s.stats = StatsFromDict(*stats);
+
+  if (const base::DictValue* vars = d.FindDict("default_variables")) {
+    for (const auto kv : *vars) {
+      if (kv.second.is_string())
+        s.default_variables[kv.first] = kv.second.GetString();
+    }
+  }
 
   return s;
 }

@@ -34,6 +34,13 @@ class AutomationRecorderTabHelper
 
   bool is_recording() const { return rec_ && rec_->is_recording(); }
 
+  // ---- Global recording state (used by the toolbar Record button to
+  // render Start vs. Stop label). Only one tab can be recording at a
+  // time so the toolbar can show an unambiguous indicator regardless of
+  // which tab is active. ----
+  static bool IsAnyRecording();
+  static content::WebContents* GetActivelyRecordingContents();
+
  private:
   friend class content::WebContentsUserData<AutomationRecorderTabHelper>;
   explicit AutomationRecorderTabHelper(content::WebContents* contents);
