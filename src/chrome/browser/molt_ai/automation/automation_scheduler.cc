@@ -193,7 +193,7 @@ void AutomationScheduler::ArmNext(base::Time now) {
 
   std::vector<Script> scripts = storage_->ListAll();
   base::Time soonest;
-  Script soonest_script;
+  std::string soonest_script_id;
 
   for (const auto& s : scripts) {
     if (!s.enabled) continue;
@@ -230,7 +230,7 @@ void AutomationScheduler::ArmNext(base::Time now) {
 
     if (soonest.is_null() || next < soonest) {
       soonest = next;
-      soonest_script = s;
+      soonest_script_id = s.id;
     }
   }
 
@@ -250,12 +250,17 @@ void AutomationScheduler::ArmNext(base::Time now) {
   next_timer_.Start(
       FROM_HERE, delay,
       base::BindOnce(
-          [](base::WeakPtr<AutomationScheduler> self, Script script) {
-            if (!self) return;
-            if (self->fire_cb_) self->fire_cb_.Run(script, base::Time::Now());
+          [](base::WeakPtr<AutomationScheduler> self,
+             const std::string& script_id) {
+            if (!self || !self->storage_) return;
+            // Re-load the script from disk so we get the freshest copy.
+            // (Script is move-only because Step contains base::Value.)
+            auto script = self->storage_->Load(script_id);
+            if (script && self->fire_cb_)
+              self->fire_cb_.Run(*script, base::Time::Now());
             self->Tick();
           },
-          weak_factory_.GetWeakPtr(), soonest_script));
+          weak_factory_.GetWeakPtr(), soonest_script_id));
 }
 
 }  // namespace automation
