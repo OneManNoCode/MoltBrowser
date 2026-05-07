@@ -164,9 +164,9 @@ void AutomationRecorder::Start(StepCapturedCallback on_step_captured) {
       Step nav;
       nav.type = StepType::NAVIGATE;
       nav.target = u.spec();
-      nav.description = "Open " + u.host();
+      nav.description = "Open " + std::string(u.host());
       DeduplicateAndAppend(std::move(nav));
-      seen_hosts_.insert(u.host());
+      seen_hosts_.insert(std::string(u.host()));
     }
   }
   InjectRecorderJS();
@@ -209,7 +209,7 @@ void AutomationRecorder::OnStepFromInjectedJS(
   if (auto* url = step_json.FindString("url")) {
     GURL g(*url);
     if (g.is_valid() && !g.host().empty())
-      seen_hosts_.insert(g.host());
+      seen_hosts_.insert(std::string(g.host()));
   }
   // Build a Step from the JSON.
   Step s;
