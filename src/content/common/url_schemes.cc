@@ -62,10 +62,10 @@ void RegisterContentSchemes(bool should_lock_registry) {
   url::AddStandardScheme(kChromeUIScheme, url::SCHEME_WITH_HOST);
   url::AddStandardScheme(kChromeUIUntrustedScheme, url::SCHEME_WITH_HOST);
   url::AddStandardScheme(kChromeErrorScheme, url::SCHEME_WITH_HOST);
-  // MoltBrowser: Register molt:// as a standard scheme so molt://ai/, etc.
-  // get parsed correctly by GURL. The actual rewrite to chrome://molt-ai*
-  // happens in chrome_content_browser_client.cc HandleMoltSchemeRewrite.
-  url::AddStandardScheme("molt", url::SCHEME_WITH_HOST);
+  // MoltBrowser: molt:// scheme is registered via chrome_content_client.cc
+  // (AddAdditionalSchemes) so it flows through schemes.standard_schemes
+  // below. The actual rewrite to chrome://molt-ai* happens in
+  // chrome_content_browser_client.cc HandleMoltSchemeRewrite.
   for (auto& scheme : schemes.standard_schemes)
     url::AddStandardScheme(scheme.c_str(), url::SCHEME_WITH_HOST);
 
@@ -76,7 +76,9 @@ void RegisterContentSchemes(bool should_lock_registry) {
   schemes.secure_schemes.push_back(kChromeUIScheme);
   schemes.secure_schemes.push_back(kChromeUIUntrustedScheme);
   schemes.secure_schemes.push_back(kChromeErrorScheme);
-  // MoltBrowser: molt:// is a secure scheme (rewrites to chrome:// internally).
+  // MoltBrowser: molt:// secure-scheme entry is added via chrome_content_client
+  // (which contributes it to schemes.standard_schemes). We mirror that here by
+  // also marking it secure on the local schemes vector before the loop runs.
   schemes.secure_schemes.push_back("molt");
   for (auto& scheme : schemes.secure_schemes)
     url::AddSecureScheme(scheme.c_str());
