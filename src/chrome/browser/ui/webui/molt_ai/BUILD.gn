@@ -5,6 +5,8 @@ source_set("molt_ai") {
   sources = [
     "molt_ai_agent_ui.cc",
     "molt_ai_agent_ui.h",
+    "molt_ai_automation_ui.cc",
+    "molt_ai_automation_ui.h",
     "molt_ai_chat_handler.cc",
     "molt_ai_chat_handler.h",
     "molt_ai_chat_ui.cc",
@@ -19,6 +21,7 @@ source_set("molt_ai") {
     "//base",
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai/automation",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//content/public/browser",

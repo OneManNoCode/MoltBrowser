@@ -254,6 +254,7 @@ group("molt_ai") {
     ":molt_ai_embeddings",
     ":molt_shield",
     ":molt_update",
+    "automation:automation",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)

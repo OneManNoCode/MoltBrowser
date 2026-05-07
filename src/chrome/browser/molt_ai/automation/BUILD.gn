@@ -1,0 +1,28 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser web automation engine.
+# Lets users record web workflows, save them as scripts, schedule them
+# via cron, and run them with local AI augmentation.
+
+source_set("automation") {
+  sources = [
+    "automation_runner.cc",
+    "automation_runner.h",
+    "automation_script.cc",
+    "automation_script.h",
+    "automation_security.cc",
+    "automation_security.h",
+    "automation_storage.cc",
+    "automation_storage.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//content/public/browser",
+    "//ui/base",
+    "//url",
+  ]
+}

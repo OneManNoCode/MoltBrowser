@@ -213,6 +213,9 @@ inline constexpr char kChromeUIMoltAISettingsHost[] = "molt-ai-settings";
 inline constexpr char kChromeUIMoltAISettingsURL[] = "chrome://molt-ai-settings/";
 inline constexpr char kChromeUIMoltAIAgentHost[] = "molt-ai-agent";
 inline constexpr char kChromeUIMoltAIAgentURL[] = "chrome://molt-ai-agent/";
+inline constexpr char kChromeUIMoltAIAutomationHost[] = "molt-ai-automation";
+inline constexpr char kChromeUIMoltAIAutomationURL[] =
+    "chrome://molt-ai-automation/";
 
 // MoltBrowser molt:// scheme — user-facing alias for chrome://molt-ai*
 // These are what users see in the omnibox and what they should type.
@@ -221,10 +224,12 @@ inline constexpr char kMoltAIURL[] = "molt://ai/";
 inline constexpr char kMoltAIChatURL[] = "molt://ai-chat/";
 inline constexpr char kMoltAISettingsURL[] = "molt://ai-settings/";
 inline constexpr char kMoltAIAgentURL[] = "molt://ai-agent/";
+inline constexpr char kMoltAIAutomationURL[] = "molt://ai-automation/";
 inline constexpr char kMoltAIHost[] = "ai";
 inline constexpr char kMoltAIChatHost[] = "ai-chat";
 inline constexpr char kMoltAISettingsHost[] = "ai-settings";
 inline constexpr char kMoltAIAgentHost[] = "ai-agent";
+inline constexpr char kMoltAIAutomationHost[] = "ai-automation";
 inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
 inline constexpr char kChromeUINetExportHost[] = "net-export";
 inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
