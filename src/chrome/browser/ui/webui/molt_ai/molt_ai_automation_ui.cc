@@ -15,6 +15,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
@@ -90,6 +91,12 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
         "promoteTrust",
         base::BindRepeating(&MoltAIAutomationHandler::HandlePromoteTrust,
                             base::Unretained(this)));
+    // Day 6: per-script audit entries for the activity timeline.
+    web_ui()->RegisterMessageCallback(
+        "getAuditForScript",
+        base::BindRepeating(
+            &MoltAIAutomationHandler::HandleGetAuditForScript,
+            base::Unretained(this)));
   }
 
  private:
@@ -219,14 +226,23 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
       }
     }
 
-    storage_.AppendAudit(id, "manual_run_requested", "from_ui");
+    // Day 6: optional 4th arg is a 0-based step index to resume from.
+    size_t start_index = 0;
+    if (args.size() > 3 && args[3].is_int())
+      start_index = static_cast<size_t>(std::max(0, args[3].GetInt()));
+
+    storage_.AppendAudit(id, "manual_run_requested",
+                          start_index > 0
+                              ? "from_step=" +
+                                base::NumberToString(start_index)
+                              : "from_ui");
 
     Profile* profile = Profile::FromBrowserContext(
         web_ui()->GetWebContents()->GetBrowserContext());
     bool headless =
         script->security.trust >= molt_ai::automation::TrustLevel::TRUSTED;
     molt_ai::automation::RunScriptInBackgroundBrowser(profile, *script,
-                                                       headless);
+                                                       headless, start_index);
 
     result.Set("success", true);
     result.Set("steps", static_cast<int>(script->steps.size()));
@@ -360,6 +376,41 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     if (ok) storage_.AppendAudit(script->id, "imported", "from_ui");
     result.Set("success", ok);
     result.Set("script_id", script->id);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  }
+
+  // Day 6: parse the global audit log and return only entries whose
+  // script_id matches |id|. Each entry comes back as a structured dict
+  // {ts, script_id, event, extra} so the UI can render an icon timeline
+  // without reimplementing the parser in JS.
+  void HandleGetAuditForScript(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 2u);
+    const std::string callback_id = args[0].GetString();
+    const std::string id =
+        args[1].is_string() ? args[1].GetString() : "";
+    int max_lines = 500;
+    if (args.size() > 2 && args[2].is_int())
+      max_lines = args[2].GetInt();
+
+    base::ListValue out;
+    for (const auto& line : storage_.ReadAuditTail(max_lines)) {
+      // Format: ISO8601 | script_id | event | extra
+      std::vector<std::string> parts = base::SplitString(
+          line, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+      if (parts.size() < 3) continue;
+      if (parts[1] != id) continue;
+      base::DictValue d;
+      d.Set("ts", parts[0]);
+      d.Set("script_id", parts[1]);
+      d.Set("event", parts[2]);
+      d.Set("extra", parts.size() > 3 ? parts[3] : "");
+      out.Append(std::move(d));
+    }
+
+    base::DictValue result;
+    result.Set("entries", std::move(out));
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
   }
@@ -566,6 +617,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .promote-banner button:hover{background:rgba(255,255,255,0.25);}
 .promote-banner button.dismiss{background:transparent;}
 
+/* Day 6: history sparkline + activity timeline */
+.sparkline{display:flex;align-items:flex-end;gap:2px;height:36px;
+  padding:4px 6px;background:#08080d;border-radius:6px;
+  border:1px solid #1a1a2a;}
+.sparkline .bar{width:6px;min-width:6px;border-radius:1px;
+  background:#3a3a4a;cursor:pointer;transition:background 0.15s;}
+.sparkline .bar.ok{background:#4ade80;}
+.sparkline .bar.fail{background:#f87171;}
+.sparkline .bar:hover{filter:brightness(1.4);}
+.spark-legend{display:flex;gap:14px;font-size:11px;color:#888;
+  margin-top:6px;align-items:center;}
+.spark-legend b{color:#ddd;font-weight:500;}
+.timeline{margin-top:10px;font-family:monospace;font-size:11px;
+  max-height:280px;overflow-y:auto;background:#08080d;
+  border:1px solid #1a1a2a;border-radius:6px;padding:6px 10px;}
+.timeline-row{display:flex;gap:10px;padding:3px 4px;border-radius:3px;
+  align-items:center;}
+.timeline-row:hover{background:rgba(255,255,255,0.03);}
+.timeline-ts{color:#555;flex-shrink:0;min-width:140px;}
+.timeline-ev{flex-shrink:0;min-width:140px;font-weight:600;}
+.timeline-ev.ok{color:#4ade80;}
+.timeline-ev.fail{color:#f87171;}
+.timeline-ev.run{color:#fbbf24;}
+.timeline-ev.audit{color:#aaa;}
+.timeline-extra{color:#777;flex:1;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;}
+.retry-bar{background:#3a2a1a;color:#fbbf24;padding:8px 12px;
+  border-radius:6px;font-size:12px;margin-top:10px;
+  display:flex;align-items:center;gap:10px;border:1px solid #4a3a1a;}
+.retry-bar .grow{flex:1;}
+.retry-bar button{background:#fbbf24;color:#0a0a0f;border:none;
+  padding:5px 10px;border-radius:5px;font-weight:600;cursor:pointer;
+  font-size:11px;}
+.retry-bar button:hover{background:#fdd95e;}
+
 /* Day 5: confirmation modal */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);
   display:none;align-items:center;justify-content:center;z-index:2000;}
@@ -722,6 +808,45 @@ function stepShortDesc(step) {
 var STEP_TYPES = ['navigate','click','type','scroll','keypress','wait',
   'wait_for','extract','ai_extract','ai_decide','if','else','end_if',
   'loop','end_loop','assert','notify','screenshot','run_js'];
+
+// Day 6: render Stats.run_history (newest-first) as a small bar chart.
+// Bar height encodes duration_ms (capped); color encodes success.
+function buildSparklineHTML(s) {
+  var hist = (s.stats && s.stats.run_history) || [];
+  if (!hist.length) {
+    return '<div class="var-empty">No runs yet. Hit Run to record one.</div>';
+  }
+  // Show oldest -> newest left-to-right so the user reads time forward.
+  var rows = hist.slice().reverse();
+  var maxDur = rows.reduce(function(m,r){
+    return Math.max(m, r.dur_ms || 0);
+  }, 1);
+  var maxBars = 30;
+  if (rows.length > maxBars) rows = rows.slice(rows.length - maxBars);
+
+  var bars = rows.map(function(r){
+    var pct = Math.max(8, Math.round(((r.dur_ms || 0) / maxDur) * 100));
+    var when = new Date((r.ts || 0) * 1000).toLocaleString();
+    var tip = (r.ok ? '✓ ' : '✗ ') + (r.dur_ms || 0) + 'ms · ' +
+              (r.steps_executed || 0) + '/' + (r.total_steps || 0) +
+              ' steps · ' + when +
+              (r.ai_tokens ? ' · ' + r.ai_tokens + ' tok' : '');
+    return '<div class="bar ' + (r.ok ? 'ok' : 'fail') + '"' +
+           ' style="height:' + pct + '%"' +
+           ' title="' + esc(tip) + '"></div>';
+  }).join('');
+
+  var avgDur = Math.round(
+    rows.reduce(function(s,r){ return s + (r.dur_ms||0); }, 0) / rows.length);
+  var totTok = rows.reduce(function(s,r){ return s + (r.ai_tokens||0); }, 0);
+
+  return '<div class="sparkline">' + bars + '</div>' +
+    '<div class="spark-legend">' +
+      '<span><b>' + rows.length + '</b> recent runs</span>' +
+      '<span>avg <b>' + avgDur + 'ms</b></span>' +
+      (totTok ? '<span><b>' + totTok + '</b> AI tokens</span>' : '') +
+    '</div>';
+}
 
 function buildScheduleHTML(s) {
   var trig = s.trigger || {type:'manual', expression:''};
@@ -906,8 +1031,28 @@ function buildDetailHTML(s) {
   var runs = (s.stats && s.stats.runs) || 0;
   var ok   = (s.stats && s.stats.successes) || 0;
 
+  // Day 6: retry-from-failed banner — only when last run failed and we
+  // know which step. Shows a one-click button to start at that step.
+  var retryBanner = '';
+  if (s.stats && s.stats.last_failed_step_index >= 0 &&
+      s.stats.last_failed_step_index < (s.steps || []).length) {
+    var failIdx = s.stats.last_failed_step_index;
+    var failStep = (s.steps || [])[failIdx] || {};
+    retryBanner =
+      '<div class="retry-bar">' +
+        '<span>&#9888;</span>' +
+        '<div class="grow">Last run failed at step ' + (failIdx + 1) +
+        ' (' + esc((failStep.type || '?').toUpperCase()) + ' ' +
+        esc(failStep.target || '') + '). ' +
+        'Skip the steps before it and retry?</div>' +
+        '<button data-act="retry-from" data-idx="' + failIdx +
+        '">Retry from step ' + (failIdx + 1) + '</button>' +
+      '</div>';
+  }
+
   return ''
     + buildScheduleHTML(s)
+    + retryBanner
     + '<div class="detail-section">'
     +   '<h4>Variables (used by {{name}} placeholders inside steps)</h4>'
     +   varsBlock
@@ -919,12 +1064,20 @@ function buildDetailHTML(s) {
     + buildTrustPanel(s)
     + '<div class="detail-section">'
     +   '<h4>Stats</h4>'
-    +   '<div style="font-size:12px;color:#aaa;line-height:1.7;">'
+    +   buildSparklineHTML(s)
+    +   '<div style="font-size:12px;color:#aaa;line-height:1.7;margin-top:6px;">'
     +     'Runs: ' + runs + ' &middot; Successes: ' + ok
     +     ' &middot; Last run: ' + esc(lastRun)
+    +     (s.stats && s.stats.ai_tokens_total
+        ? ' &middot; AI tokens: ' + s.stats.ai_tokens_total : '')
     +     (s.stats && s.stats.last_result
         ? '<br>Last result: ' + esc(s.stats.last_result) : '')
     +   '</div>'
+    + '</div>'
+    + '<div class="detail-section">'
+    +   '<h4>Activity timeline</h4>'
+    +   '<div class="timeline" data-act="timeline" data-script-id="' +
+        esc(s.id) + '">Loading...</div>'
     + '</div>'
     + '<div class="detail-section">'
     +   '<button class="btn green"  data-act="run-with-vars">'
@@ -1106,6 +1259,27 @@ function renderScripts(scripts) {
     var exp = card.querySelector('[data-act="export"]');
     if (exp) exp.onclick = function() { exportScript(s); };
 
+    // Day 6: retry-from-failed-step button.
+    var retryBtn = card.querySelector('[data-act="retry-from"]');
+    if (retryBtn) retryBtn.onclick = function() {
+      var idx = parseInt(retryBtn.getAttribute('data-idx'), 10) || 0;
+      runScript(s.id, null, idx);
+    };
+
+    // Day 6: lazy-load the audit timeline only when the card opens.
+    var summaryEl = card.querySelector('.script-summary');
+    var loadedTimeline = false;
+    summaryEl.addEventListener('click', function() {
+      if (!card.classList.contains('open') || loadedTimeline) return;
+      loadedTimeline = true;
+      loadTimelineFor(card, s.id);
+    });
+    if (s.id === newId) {
+      // Card opens automatically on flash — load immediately.
+      loadedTimeline = true;
+      loadTimelineFor(card, s.id);
+    }
+
     // Day 5: trust panel wiring.
     var saveTrust = card.querySelector('[data-act="save-trust"]');
     if (saveTrust) saveTrust.onclick = function() {
@@ -1154,13 +1328,60 @@ function addSample() {
   });
 }
 
-function runScript(id, vars) {
-  var args = vars ? ['runScript', id, vars] : ['runScript', id];
+function runScript(id, vars, startIndex) {
+  // runScript handler accepts: callback_id, script_id, vars?, startIndex?
+  // Always pass vars (possibly empty {}) when startIndex is provided so
+  // the C++ side can read args[3] reliably.
+  var args = ['runScript', id];
+  if (startIndex != null && startIndex > 0) {
+    args.push(vars || {});
+    args.push(startIndex);
+  } else if (vars) {
+    args.push(vars);
+  }
   sendWithPromise.apply(null, args).then(function(r) {
-    if (r.success) showToast('Running: ' + (r.name || id));
-    else           showToast('Run failed: ' + (r.error || ''), true);
+    if (r.success) {
+      var label = (r.name || id) +
+        (startIndex ? ' (from step ' + (startIndex + 1) + ')' : '');
+      showToast('Running: ' + label);
+    } else {
+      showToast('Run failed: ' + (r.error || ''), true);
+    }
     refresh();
     refreshAudit();
+  });
+}
+
+// Day 6: fetch + render the per-script audit timeline.
+function loadTimelineFor(card, scriptId) {
+  var el = card.querySelector('[data-act="timeline"]');
+  if (!el) return;
+  sendWithPromise('getAuditForScript', scriptId, 200).then(function(r){
+    var entries = (r.entries || []).slice().reverse();  // newest first
+    if (!entries.length) {
+      el.innerHTML = '<div class="var-empty">No activity yet.</div>';
+      return;
+    }
+    el.innerHTML = entries.map(function(e){
+      var cls = 'audit';
+      if (e.event === 'run_succeeded')          cls = 'ok';
+      else if (e.event === 'run_failed')        cls = 'fail';
+      else if (e.event === 'run_started')       cls = 'run';
+      else if (e.event === 'manual_run_requested') cls = 'run';
+      else if (e.event === 'scheduled_fire')    cls = 'run';
+      var icon = (cls === 'ok')   ? '&#10003; ' :
+                 (cls === 'fail') ? '&#10007; ' :
+                 (cls === 'run')  ? '&#9654; ' : '&middot; ';
+      return '<div class="timeline-row">' +
+               '<span class="timeline-ts">' + esc(e.ts) + '</span>' +
+               '<span class="timeline-ev ' + cls + '">' + icon +
+                 esc(e.event) + '</span>' +
+               '<span class="timeline-extra">' + esc(e.extra || '') +
+               '</span>' +
+             '</div>';
+    }).join('');
+  }).catch(function(err) {
+    el.textContent = 'Failed to load: ' + err;
   });
 }
 

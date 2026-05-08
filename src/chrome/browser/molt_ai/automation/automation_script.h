@@ -156,6 +156,20 @@ struct SecurityPolicy {
   TrustLevel trust = TrustLevel::CASUAL;
 };
 
+// One row in Stats::run_history. Capped to last N runs by the runner.
+struct RunRecord {
+  int64_t timestamp_unix = 0;
+  bool success = false;
+  int duration_ms = 0;
+  int steps_executed = 0;
+  int total_steps = 0;
+  // Sum of prompt + generated tokens across every AI_DECIDE / AI_EXTRACT
+  // step in this run. 0 if no AI steps fired.
+  int ai_tokens = 0;
+  // 1-line summary ("Completed", "Selector miss on step 4", etc.).
+  std::string message;
+};
+
 // Run history aggregates surfaced in the manager UI.
 struct Stats {
   int runs = 0;
@@ -164,7 +178,24 @@ struct Stats {
   int last_run_duration_ms = 0;
   // Short result string ("Cheapest: $720", "Submitted", "Selector failed").
   std::string last_result;
+  // Day 6: 0-based index of the step that failed in the most recent run,
+  // or -1 if the last run succeeded / the script hasn't run. Used by the
+  // "Retry from failed step" button.
+  int last_failed_step_index = -1;
+  // Day 6: cumulative AI token usage across every run of this script.
+  // Useful to spot scripts whose AI_DECIDE/AI_EXTRACT prompts grew too
+  // expensive over time.
+  int64_t ai_tokens_total = 0;
+  // Day 6: ring buffer of the most recent run records (newest first).
+  // Capped at kRunHistoryCap by the runner. Drives the per-script
+  // sparkline / activity timeline in the manager UI.
+  std::vector<RunRecord> run_history;
 };
+
+// Maximum run records the runner keeps in Stats::run_history. ~50 is
+// enough to surface a useful time-series sparkline without bloating
+// the .molt JSON file.
+constexpr size_t kRunHistoryCap = 50;
 
 // The full script. Equivalent to one .molt JSON file.
 struct Script {

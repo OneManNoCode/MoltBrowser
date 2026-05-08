@@ -283,6 +283,30 @@ SecurityPolicy SecurityFromDict(const base::DictValue& d) {
 
 namespace {
 
+base::DictValue RunRecordToDict(const RunRecord& r) {
+  base::DictValue d;
+  d.Set("ts", static_cast<double>(r.timestamp_unix));
+  d.Set("ok", r.success);
+  d.Set("dur_ms", r.duration_ms);
+  d.Set("steps_executed", r.steps_executed);
+  d.Set("total_steps", r.total_steps);
+  if (r.ai_tokens > 0) d.Set("ai_tokens", r.ai_tokens);
+  if (!r.message.empty()) d.Set("message", r.message);
+  return d;
+}
+
+RunRecord RunRecordFromDict(const base::DictValue& d) {
+  RunRecord r;
+  r.timestamp_unix = GetInt64(d, "ts", 0);
+  if (auto v = d.FindBool("ok")) r.success = *v;
+  r.duration_ms = GetInt(d, "dur_ms", 0);
+  r.steps_executed = GetInt(d, "steps_executed", 0);
+  r.total_steps = GetInt(d, "total_steps", 0);
+  r.ai_tokens = GetInt(d, "ai_tokens", 0);
+  r.message = GetString(d, "message", "");
+  return r;
+}
+
 base::DictValue StatsToDict(const Stats& s) {
   base::DictValue d;
   d.Set("runs", s.runs);
@@ -291,6 +315,17 @@ base::DictValue StatsToDict(const Stats& s) {
   d.Set("last_run_duration_ms", s.last_run_duration_ms);
   if (!s.last_result.empty())
     d.Set("last_result", s.last_result);
+  // Day 6: extended observability fields. Only emitted when nonzero so
+  // older .molt files stay terse.
+  if (s.last_failed_step_index >= 0)
+    d.Set("last_failed_step_index", s.last_failed_step_index);
+  if (s.ai_tokens_total > 0)
+    d.Set("ai_tokens_total", static_cast<double>(s.ai_tokens_total));
+  if (!s.run_history.empty()) {
+    base::ListValue hist;
+    for (const auto& r : s.run_history) hist.Append(RunRecordToDict(r));
+    d.Set("run_history", std::move(hist));
+  }
   return d;
 }
 
@@ -301,6 +336,13 @@ Stats StatsFromDict(const base::DictValue& d) {
   s.last_run_unix = GetInt64(d, "last_run_unix", 0);
   s.last_run_duration_ms = GetInt(d, "last_run_duration_ms", 0);
   s.last_result = GetString(d, "last_result", "");
+  s.last_failed_step_index = GetInt(d, "last_failed_step_index", -1);
+  s.ai_tokens_total = GetInt64(d, "ai_tokens_total", 0);
+  if (const base::ListValue* hist = d.FindList("run_history")) {
+    for (const auto& v : *hist) {
+      if (v.is_dict()) s.run_history.push_back(RunRecordFromDict(v.GetDict()));
+    }
+  }
   return s;
 }
 

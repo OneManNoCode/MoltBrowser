@@ -76,9 +76,12 @@ class AutomationRunner {
 
   // Begin executing |script|. |on_complete| fires once at the end.
   // |on_step| fires for every step transition (start + end). May be null.
+  // |start_index| picks up at a specific step (for the manager UI's
+  // "retry from failed step" button); 0 = run from the beginning.
   void Run(Script script,
            StepProgressCallback on_step,
-           RunCompleteCallback on_complete);
+           RunCompleteCallback on_complete,
+           size_t start_index = 0);
 
   // Cooperative cancel. Stops at the next step boundary.
   void Cancel();
@@ -197,6 +200,12 @@ class AutomationRunner {
   // Per-step retry counter. Reset on step transition; incremented when
   // a step fails and Step::retries > attempts_so_far_.
   int step_attempt_ = 0;
+
+  // Day 6: AI tokens consumed by the current run. Accumulated from
+  // GenerationResult.tokens_prompt + tokens_generated on every
+  // AI_DECIDE / AI_EXTRACT call. Folded into Stats::ai_tokens_total
+  // and the new RunRecord at Finish().
+  int current_run_tokens_ = 0;
 
   // Per-step timeout — fires OnStepTimeout() if the dispatched step
   // doesn't call OnStepFinished in time.

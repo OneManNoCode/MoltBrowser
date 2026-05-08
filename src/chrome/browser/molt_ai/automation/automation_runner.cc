@@ -98,7 +98,8 @@ AutomationRunner::~AutomationRunner() = default;
 
 void AutomationRunner::Run(Script script,
                             StepProgressCallback on_step,
-                            RunCompleteCallback on_complete) {
+                            RunCompleteCallback on_complete,
+                            size_t start_index) {
   if (is_running_) {
     if (on_complete) {
       std::move(on_complete).Run(
@@ -107,9 +108,12 @@ void AutomationRunner::Run(Script script,
     return;
   }
   script_ = std::move(script);
-  current_index_ = 0;
+  // Day 6: support resume-at-step. Clamp to a valid index — out-of-range
+  // start values fall back to 0 to preserve the existing behavior.
+  current_index_ = (start_index < script_.steps.size()) ? start_index : 0;
   is_running_ = true;
   cancel_requested_ = false;
+  current_run_tokens_ = 0;
   variables_.clear();
   // Seed user-supplied default variables so {{name}} substitution
   // works without an upstream EXTRACT step.
@@ -121,8 +125,13 @@ void AutomationRunner::Run(Script script,
   on_step_ = std::move(on_step);
   on_complete_ = std::move(on_complete);
 
-  if (storage_)
-    storage_->AppendAudit(script_.id, "run_started", "");
+  if (storage_) {
+    std::string extra =
+        (current_index_ > 0)
+            ? "from_step=" + base::NumberToString(current_index_)
+            : "";
+    storage_->AppendAudit(script_.id, "run_started", extra);
+  }
 
   ExecuteNextStep();
 }
@@ -343,6 +352,25 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   script_.stats.last_run_unix = static_cast<int64_t>(std::time(nullptr));
   script_.stats.last_run_duration_ms = duration_ms;
   script_.stats.last_result = message;
+  // Day 6: track which step failed so the manager UI can offer a
+  // "retry from step N" button. -1 = run succeeded / no failure.
+  script_.stats.last_failed_step_index =
+      success ? -1 : static_cast<int>(current_index_);
+  // Day 6: cumulative + per-run AI token usage.
+  script_.stats.ai_tokens_total += current_run_tokens_;
+  RunRecord rec;
+  rec.timestamp_unix = script_.stats.last_run_unix;
+  rec.success = success;
+  rec.duration_ms = duration_ms;
+  rec.steps_executed = static_cast<int>(current_index_);
+  rec.total_steps = static_cast<int>(script_.steps.size());
+  rec.ai_tokens = current_run_tokens_;
+  rec.message = message;
+  // Newest first; cap to kRunHistoryCap so .molt files don't bloat.
+  script_.stats.run_history.insert(script_.stats.run_history.begin(),
+                                     std::move(rec));
+  if (script_.stats.run_history.size() > kRunHistoryCap)
+    script_.stats.run_history.resize(kRunHistoryCap);
   if (storage_) {
     storage_->Save(script_);
     storage_->AppendAudit(script_.id, success ? "run_succeeded" : "run_failed",
@@ -513,6 +541,8 @@ void AutomationRunner::AskLLMForSelector(
                opts.max_tokens = 64;
                molt_ai::GenerationResult r =
                    self->ai_runtime_->RunPrompt(prompt, opts);
+               self->current_run_tokens_ +=
+                   r.tokens_prompt + r.tokens_generated;
                std::string s = r.success ? r.text : std::string();
                // Trim whitespace + leading/trailing punctuation the model
                // loves to add.
@@ -723,6 +753,7 @@ void AutomationRunner::DoAIDecide(const Step& s) {
   opts.temperature = 0.1f;
   opts.stream = false;
   GenerationResult r = ai_runtime_->RunPrompt(framed, opts);
+  current_run_tokens_ += r.tokens_prompt + r.tokens_generated;
 
   std::string ans = base::ToLowerASCII(r.text);
   bool succeeded = ans.find("success") != std::string::npos ||
@@ -769,6 +800,8 @@ void AutomationRunner::DoAIExtract(const Step& s) {
               opts.temperature = 0.1f;
               opts.stream = false;
               GenerationResult r = self->ai_runtime_->RunPrompt(framed, opts);
+              self->current_run_tokens_ +=
+                  r.tokens_prompt + r.tokens_generated;
               // Try to parse JSON; if it fails, store as raw string.
               auto parsed = base::JSONReader::Read(
                   r.text, base::JSON_ALLOW_TRAILING_COMMAS);

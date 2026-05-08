@@ -24,9 +24,12 @@ namespace automation {
 // Launches |script| in a background browser window. Returns immediately;
 // the run continues asynchronously. When |minimize| is true the window
 // is minimized; otherwise it is shown so the user can watch.
+// |start_index| (default 0) lets callers pick up at a specific step —
+// used by the manager UI's "Retry from failed step" button.
 void RunScriptInBackgroundBrowser(Profile* profile,
                                   const Script& script,
-                                  bool minimize);
+                                  bool minimize,
+                                  size_t start_index = 0);
 
 }  // namespace automation
 }  // namespace molt_ai

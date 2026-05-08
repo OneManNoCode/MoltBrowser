@@ -41,11 +41,12 @@ class BackgroundRunHolder {
                                                     ai_runtime_.get(),
                                                     storage_.get())) {}
 
-  void Start(Script script) {
+  void Start(Script script, size_t start_index) {
     runner_->Run(std::move(script),
                  /*on_step=*/base::DoNothing(),
                  base::BindOnce(&BackgroundRunHolder::OnComplete,
-                                base::Unretained(this)));
+                                base::Unretained(this)),
+                 start_index);
   }
 
  private:
@@ -69,7 +70,8 @@ class BackgroundRunHolder {
 
 void RunScriptInBackgroundBrowser(Profile* profile,
                                   const Script& script,
-                                  bool minimize) {
+                                  bool minimize,
+                                  size_t start_index) {
   if (!profile) {
     LOG(WARNING) << "[MoltAutomation] no profile, skipping background run";
     return;
@@ -131,7 +133,7 @@ void RunScriptInBackgroundBrowser(Profile* profile,
   // The holder self-destructs when the run finishes.
   auto* holder = new BackgroundRunHolder(browser, std::move(ai_runtime),
                                          std::move(storage), contents);
-  holder->Start(std::move(*fresh));
+  holder->Start(std::move(*fresh), start_index);
 }
 
 }  // namespace automation
