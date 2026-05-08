@@ -178,6 +178,8 @@ base::DictValue StepToDict(const Step& s) {
     d.Set("timeout_ms", s.timeout_ms);
   if (s.max_iterations != 100)
     d.Set("max_iterations", s.max_iterations);
+  if (s.retries != 0)
+    d.Set("retries", s.retries);
   if (!s.extra.is_none())
     d.Set("extra", s.extra.Clone());
   if (!s.description.empty())
@@ -195,6 +197,7 @@ Step StepFromDict(const base::DictValue& d) {
   s.transform = GetString(d, "transform", "");
   s.timeout_ms = GetInt(d, "timeout_ms", 5000);
   s.max_iterations = GetInt(d, "max_iterations", 100);
+  s.retries = GetInt(d, "retries", 0);
   if (const base::Value* extra = d.Find("extra"))
     s.extra = extra->Clone();
   s.description = GetString(d, "description", "");

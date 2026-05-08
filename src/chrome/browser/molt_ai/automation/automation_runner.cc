@@ -6,11 +6,13 @@
 #include <ctime>
 #include <utility>
 
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -146,13 +148,77 @@ void AutomationRunner::ExecuteNextStep() {
   }
 
   const Step& s = script_.steps[current_index_];
+  bool execute = ShouldExecuteCurrentStep();
+
+  // Control-flow steps always run for stack management. Their effect
+  // when in a not-taken branch is adjusted (e.g. nested IF pushes
+  // {false} so its body is also skipped, LOOP pushes 0 iterations).
+  switch (s.type) {
+    case StepType::IF: {
+      bool cond = execute ? EvaluateIfCondition(s) : false;
+      if_stack_.push_back({cond, /*in_else=*/false});
+      OnStepFinished(true, cond ? "If: true" : "If: false");
+      return;
+    }
+    case StepType::ELSE: {
+      if (!if_stack_.empty()) if_stack_.back().in_else = true;
+      OnStepFinished(true, "Else");
+      return;
+    }
+    case StepType::END_IF: {
+      if (!if_stack_.empty()) if_stack_.pop_back();
+      OnStepFinished(true, "End if");
+      return;
+    }
+    case StepType::LOOP: {
+      // Push frame; if outer skip is on, push 0 iterations so we exit fast.
+      int iters = execute ? std::max(1, s.max_iterations) : 0;
+      loop_stack_.push_back({current_index_, iters});
+      OnStepFinished(true, "Loop start (" + base::NumberToString(iters) + ")");
+      return;
+    }
+    case StepType::END_LOOP: {
+      if (loop_stack_.empty()) {
+        OnStepFinished(false, "END_LOOP without LOOP");
+        return;
+      }
+      auto& top = loop_stack_.back();
+      top.remaining -= 1;
+      if (top.remaining > 0 && execute) {
+        // Jump back; OnStepFinished increments past the LOOP step.
+        current_index_ = top.start_index;
+        OnStepFinished(true, "Loop continue");
+      } else {
+        loop_stack_.pop_back();
+        OnStepFinished(true, "Loop done");
+      }
+      return;
+    }
+    default:
+      break;
+  }
+
+  // Non-control-flow step: skip if any IF frame is in not-taken branch.
+  if (!execute) {
+    EmitStepProgress(/*starting=*/true, /*succeeded=*/false, "(skipped)");
+    EmitStepProgress(/*starting=*/false, /*succeeded=*/true, "skipped");
+    ++current_index_;
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&AutomationRunner::ExecuteNextStep,
+                       weak_factory_.GetWeakPtr()));
+    return;
+  }
+
   EmitStepProgress(/*starting=*/true, /*succeeded=*/false, "");
+  ArmStepTimeout(s);
 
   switch (s.type) {
     case StepType::NAVIGATE:    DoNavigate(s); break;
     case StepType::CLICK:       DoClick(s); break;
     case StepType::TYPE:        DoType(s); break;
     case StepType::SCROLL:      DoScroll(s); break;
+    case StepType::KEYPRESS:    DoKeypress(s); break;
     case StepType::WAIT:        DoWait(s); break;
     case StepType::WAIT_FOR:    DoWaitFor(s); break;
     case StepType::EXTRACT:     DoExtract(s); break;
@@ -160,24 +226,99 @@ void AutomationRunner::ExecuteNextStep() {
     case StepType::AI_EXTRACT:  DoAIExtract(s); break;
     case StepType::NOTIFY:      DoNotify(s); break;
     case StepType::SCREENSHOT:  DoScreenshot(s); break;
-    case StepType::IF:          DoIf(s); break;
-    case StepType::ELSE:        DoElse(s); break;
-    case StepType::END_IF:      DoEndIf(s); break;
-    case StepType::LOOP:        DoLoop(s); break;
-    case StepType::END_LOOP:    DoEndLoop(s); break;
     case StepType::ASSERT:      DoAssert(s); break;
+    case StepType::RUN_JS:      DoRunJS(s); break;
     default:
       OnStepFinished(false, "Unknown step type");
       break;
   }
 }
 
+bool AutomationRunner::ShouldExecuteCurrentStep() const {
+  for (const auto& f : if_stack_) {
+    bool active = (f.condition && !f.in_else) ||
+                  (!f.condition && f.in_else);
+    if (!active) return false;
+  }
+  return true;
+}
+
+bool AutomationRunner::EvaluateIfCondition(const Step& s) const {
+  std::string expr = Resolve(s.value);
+  if (expr.empty()) {
+    // Empty: take the most recent AI_DECIDE outcome.
+    auto it = variables_.find("__ai_decision");
+    if (it != variables_.end() && it->second.is_bool())
+      return it->second.GetBool();
+    return false;
+  }
+  // Variable lookup: if expr matches a key in variables_, use that value.
+  auto it = variables_.find(expr);
+  if (it != variables_.end()) {
+    if (it->second.is_bool()) return it->second.GetBool();
+    if (it->second.is_int()) return it->second.GetInt() != 0;
+    if (it->second.is_double()) return it->second.GetDouble() != 0.0;
+    if (it->second.is_string()) return !it->second.GetString().empty();
+    return !it->second.is_none();
+  }
+  // Literal: "false"/"0"/"" → false, anything else → true.
+  std::string lower = base::ToLowerASCII(expr);
+  return lower != "false" && lower != "0" && lower != "no";
+}
+
+void AutomationRunner::ArmStepTimeout(const Step& s) {
+  step_timeout_timer_.Stop();
+  int ms = s.timeout_ms > 0 ? s.timeout_ms : 5000;
+  step_timeout_timer_.Start(
+      FROM_HERE, base::Milliseconds(ms),
+      base::BindOnce(&AutomationRunner::OnStepTimeout,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::OnStepTimeout() {
+  // The dispatched step never called OnStepFinished. Fail the step,
+  // letting the retry path kick in if Step::retries > 0.
+  OnStepFinished(false, "Step timed out");
+}
+
 void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
+  step_timeout_timer_.Stop();
   EmitStepProgress(/*starting=*/false, succeeded, note);
   if (!succeeded) {
-    Finish(false, note);
+    // Retry-with-backoff: if the failed step asked for retries and we
+    // haven't exhausted them, re-dispatch after exponential backoff.
+    if (current_index_ < script_.steps.size()) {
+      const Step& s = script_.steps[current_index_];
+      if (step_attempt_ < s.retries) {
+        step_attempt_++;
+        int backoff_ms = 250 * (1 << (step_attempt_ - 1));  // 250, 500, 1000...
+        if (backoff_ms > 5000) backoff_ms = 5000;
+        LOG(INFO) << "[Automation] step " << current_index_
+                  << " failed (" << note << "); retry "
+                  << step_attempt_ << "/" << s.retries
+                  << " in " << backoff_ms << "ms";
+        base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce(&AutomationRunner::ExecuteNextStep,
+                           weak_factory_.GetWeakPtr()),
+            base::Milliseconds(backoff_ms));
+        return;
+      }
+    }
+    // No retries left: take a failure snapshot then finish.
+    TakeSnapshot(
+        "step_" + base::NumberToString(current_index_) + "_failed",
+        base::BindOnce(
+            [](base::WeakPtr<AutomationRunner> self, std::string note,
+               bool /*ok*/) {
+              if (!self) return;
+              self->Finish(false, note);
+            },
+            weak_factory_.GetWeakPtr(), note));
     return;
   }
+  // Reset retry counter on successful step.
+  step_attempt_ = 0;
   ++current_index_;
   // Yield to message loop so the UI updates.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
@@ -656,53 +797,204 @@ void AutomationRunner::DoNotify(const Step& s) {
 }
 
 void AutomationRunner::DoScreenshot(const Step& s) {
-  // Defer real bitmap capture to Sprint 2; Sprint 1 just logs the intent
-  // so test scripts can include the step.
-  OnStepFinished(true, "Screenshot (deferred)");
+  // No bitmap yet — write a JSON snapshot {url, html_snippet, text_snippet}
+  // into ~/.moltbrowser/automations/artifacts/<id>/<tag>_<unix>.json.
+  std::string tag = Resolve(s.value);
+  if (tag.empty()) tag = "screenshot";
+  TakeSnapshot(tag, base::BindOnce(
+      [](base::WeakPtr<AutomationRunner> self, bool ok) {
+        if (!self) return;
+        self->OnStepFinished(ok, ok ? "Snapshot saved" : "Snapshot failed");
+      },
+      weak_factory_.GetWeakPtr()));
 }
 
+// IF / ELSE / END_IF / LOOP / END_LOOP have moved to ExecuteNextStep so
+// they can run even when we're in a not-taken branch (for stack
+// management).  These methods are kept as stubs to satisfy the header.
 void AutomationRunner::DoIf(const Step& s) {
-  // Sprint 1: if without ai_decide simply pushes 'true' so all branches run.
-  if_stack_.push_back(true);
   OnStepFinished(true, "If");
 }
-
 void AutomationRunner::DoElse(const Step& s) {
-  if (!if_stack_.empty()) if_stack_.back() = !if_stack_.back();
   OnStepFinished(true, "Else");
 }
-
 void AutomationRunner::DoEndIf(const Step& s) {
-  if (!if_stack_.empty()) if_stack_.pop_back();
   OnStepFinished(true, "End if");
 }
-
 void AutomationRunner::DoLoop(const Step& s) {
-  loop_stack_.push_back({current_index_, s.max_iterations});
-  OnStepFinished(true, "Loop start");
+  OnStepFinished(true, "Loop");
+}
+void AutomationRunner::DoEndLoop(const Step& s) {
+  OnStepFinished(true, "End loop");
 }
 
-void AutomationRunner::DoEndLoop(const Step& s) {
-  if (loop_stack_.empty()) {
-    OnStepFinished(false, "END_LOOP without LOOP");
+void AutomationRunner::DoKeypress(const Step& s) {
+  // We dispatch a synthetic KeyboardEvent on the focused element (or
+  // body). Note: synthetic events have isTrusted=false, so heavily
+  // sandboxed SPAs may ignore them — for those, prefer CLICK on a real
+  // submit button or use ENTER via a form.requestSubmit() call in JS.
+  std::string key = Resolve(s.value);
+  if (key.empty()) {
+    OnStepFinished(false, "Empty keypress value");
     return;
   }
-  auto& top = loop_stack_.back();
-  top.remaining -= 1;
-  if (top.remaining > 0) {
-    // Jump back to the LOOP step (current_index_ will be incremented to
-    // start_index + 1 in OnStepFinished).
-    current_index_ = top.start_index;
-    OnStepFinished(true, "Loop continue");
-  } else {
-    loop_stack_.pop_back();
-    OnStepFinished(true, "Loop done");
+  std::string js = base::StringPrintf(R"JS(
+    (function() {
+      var t = document.activeElement || document.body;
+      if (!t) return false;
+      var k = %s;
+      // Map "Enter" to also call form.requestSubmit() if the target is
+      // inside a form, since that's what users usually mean.
+      ['keydown','keypress','keyup'].forEach(function(type) {
+        try {
+          t.dispatchEvent(new KeyboardEvent(type, {
+            key: k, code: k, bubbles: true, cancelable: true
+          }));
+        } catch(e) {}
+      });
+      if (k === 'Enter' && t.form) {
+        try { t.form.requestSubmit ? t.form.requestSubmit() : t.form.submit(); }
+        catch(e) {}
+      }
+      return true;
+    })()
+  )JS", JSQuote(key).c_str());
+  EvalJS(js, base::BindOnce(
+      [](base::WeakPtr<AutomationRunner> self, std::string key,
+         base::Value v) {
+        if (!self) return;
+        bool ok = v.is_bool() && v.GetBool();
+        self->OnStepFinished(ok, ok ? "Pressed " + key : "Keypress failed");
+      },
+      weak_factory_.GetWeakPtr(), key));
+}
+
+void AutomationRunner::DoRunJS(const Step& s) {
+  // Trust gate: RUN_JS is power-user-only. Below TRUSTED, fail hard.
+  if (script_.security.trust < TrustLevel::TRUSTED) {
+    OnStepFinished(false, "RUN_JS requires Trusted script");
+    return;
   }
+  std::string js = Resolve(s.value);
+  if (js.empty()) {
+    OnStepFinished(false, "Empty JS");
+    return;
+  }
+  EvalJS(js, base::BindOnce(
+      [](base::WeakPtr<AutomationRunner> self, std::string store_as,
+         base::Value v) {
+        if (!self) return;
+        if (!store_as.empty())
+          self->variables_[store_as] = std::move(v);
+        self->OnStepFinished(true, store_as.empty() ? "Ran JS"
+                                                     : "Ran JS -> " + store_as);
+      },
+      weak_factory_.GetWeakPtr(), s.store_as));
 }
 
 void AutomationRunner::DoAssert(const Step& s) {
-  // For Sprint 1: just succeed. Sprint 2 wires real assertion checks.
-  OnStepFinished(true, "Assert");
+  // Two modes:
+  //   target only   -> selector must exist
+  //   target+value  -> matched element's innerText/value must contain value
+  std::string sel = Resolve(s.target);
+  std::string expected = Resolve(s.value);
+  if (sel.empty() && expected.empty()) {
+    OnStepFinished(false, "Assert needs target or value");
+    return;
+  }
+  if (!sel.empty() && expected.empty()) {
+    std::string js = base::StringPrintf(kHasSelectorJSTemplate,
+                                         JSQuote(sel).c_str());
+    EvalJS(js, base::BindOnce(
+        [](base::WeakPtr<AutomationRunner> self, std::string sel,
+           base::Value v) {
+          if (!self) return;
+          bool ok = v.is_bool() && v.GetBool();
+          self->OnStepFinished(ok,
+              ok ? "Assert: present" : "Assert: missing " + sel);
+        },
+        weak_factory_.GetWeakPtr(), sel));
+    return;
+  }
+  std::string js = base::StringPrintf(R"JS(
+    (function() {
+      var el = document.querySelector(%s);
+      if (!el) return null;
+      return (el.innerText || el.value || el.textContent || '');
+    })()
+  )JS", JSQuote(sel).c_str());
+  EvalJS(js, base::BindOnce(
+      [](base::WeakPtr<AutomationRunner> self, std::string sel,
+         std::string expected, base::Value v) {
+        if (!self) return;
+        if (!v.is_string()) {
+          self->OnStepFinished(false, "Assert: " + sel + " missing");
+          return;
+        }
+        std::string text = v.GetString();
+        bool ok = text.find(expected) != std::string::npos;
+        self->OnStepFinished(ok,
+            ok ? "Assert: matched"
+               : "Assert: '" + expected + "' not in '" +
+                 text.substr(0, 80) + "'");
+      },
+      weak_factory_.GetWeakPtr(), sel, expected));
+}
+
+void AutomationRunner::TakeSnapshot(const std::string& tag,
+                                     base::OnceCallback<void(bool)> on_done) {
+  if (!storage_ || !target_contents_) {
+    std::move(on_done).Run(false);
+    return;
+  }
+  // Capture URL + visible text + a small outerHTML snippet via JS.
+  EvalJS(R"JS(
+    (function() {
+      var body = document.body;
+      var html = body ? body.outerHTML.slice(0, 8000) : '';
+      var text = body ? body.innerText.slice(0, 4000) : '';
+      return {url: location.href, title: document.title,
+              text: text, html: html, ts: Date.now()};
+    })()
+  )JS", base::BindOnce(
+      [](base::WeakPtr<AutomationRunner> self, std::string tag,
+         base::OnceCallback<void(bool)> on_done, base::Value v) {
+        if (!self || !self->storage_) {
+          std::move(on_done).Run(false);
+          return;
+        }
+        base::FilePath dir =
+            self->storage_->EnsureArtifactsDir(self->script_.id);
+        if (dir.empty()) {
+          std::move(on_done).Run(false);
+          return;
+        }
+        std::string filename = tag + "_" +
+            base::NumberToString(static_cast<int64_t>(std::time(nullptr))) +
+            ".json";
+        base::FilePath path = dir.Append(filename);
+        std::string serialized;
+        base::JSONWriter::WriteWithOptions(
+            v, base::JSONWriter::OPTIONS_PRETTY_PRINT, &serialized);
+        // EnsureArtifactsDir already opened a ScopedAllowBlocking scope
+        // for itself, but WriteFile here is independent — open a local
+        // one. Since AutomationStorage is the gate, we go through a
+        // tiny helper that uses the same wrapper.
+        bool ok = false;
+        {
+          ScopedAllowBlockingForMolt allow_blocking;
+          ok = base::WriteFile(path, serialized);
+        }
+        if (ok) {
+          self->storage_->AppendAudit(self->script_.id, "snapshot",
+                                       filename);
+        } else {
+          LOG(WARNING) << "[Automation] snapshot write failed: "
+                       << path.value();
+        }
+        std::move(on_done).Run(ok);
+      },
+      weak_factory_.GetWeakPtr(), tag, std::move(on_done)));
 }
 
 }  // namespace automation

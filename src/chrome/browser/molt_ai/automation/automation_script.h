@@ -84,11 +84,19 @@ struct Step {
   // Optional JS expression to transform extracted text (e.g. "parseInt").
   std::string transform;
 
-  // Timeout for steps that wait (WAIT_FOR, navigation, AI_DECIDE).
+  // Timeout for steps that wait (WAIT_FOR, navigation, AI_DECIDE) and
+  // also a hard cap on every other step type — the runner arms a
+  // OneShotTimer that fails the step if its dispatched callback hasn't
+  // fired by this deadline. Defaults to 5s.
   int timeout_ms = 5000;
 
   // For LOOP / IF: max iterations or label, etc.
   int max_iterations = 100;
+
+  // Number of times to retry on transient failure (selector miss,
+  // network blip). 0 = no retry. Each retry uses exponential backoff
+  // starting at 250ms.
+  int retries = 0;
 
   // Free-form extra fields (e.g. "schema" for AI_EXTRACT, "url" for
   // OPEN_TAB if/when added). Stored as a Value so it round-trips JSON

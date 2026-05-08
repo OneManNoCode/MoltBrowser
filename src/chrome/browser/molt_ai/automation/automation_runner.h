@@ -24,6 +24,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
@@ -94,6 +95,7 @@ class AutomationRunner {
   void DoClick(const Step& s);
   void DoType(const Step& s);
   void DoScroll(const Step& s);
+  void DoKeypress(const Step& s);
   void DoWait(const Step& s);
   void DoWaitFor(const Step& s);
   void DoExtract(const Step& s);
@@ -107,6 +109,26 @@ class AutomationRunner {
   void DoLoop(const Step& s);
   void DoEndLoop(const Step& s);
   void DoAssert(const Step& s);
+  void DoRunJS(const Step& s);
+
+  // Returns true iff every IF frame currently allows execution. Used by
+  // ExecuteNextStep to skip steps inside a not-taken branch.
+  bool ShouldExecuteCurrentStep() const;
+  // Evaluate s.value as a truthy expression for IF. Looks up the variable
+  // by name first, falls back to literal-string truthiness.
+  bool EvaluateIfCondition(const Step& s) const;
+
+  // Save a JSON snapshot {url, html_snippet, text_snippet, timestamp} to
+  // ~/.moltbrowser/automations/artifacts/<script_id>/<tag>_<unix>.json.
+  // |on_done| fires on the UI thread after the file is written.
+  void TakeSnapshot(const std::string& tag,
+                    base::OnceCallback<void(bool)> on_done);
+
+  // Per-step timeout: if the dispatched step doesn't call OnStepFinished
+  // within |s.timeout_ms|, this fires false. Cleared on every legit
+  // OnStepFinished.
+  void ArmStepTimeout(const Step& s);
+  void OnStepTimeout();
 
   // Resolve {{variable}} placeholders in |raw| using current variables_.
   std::string Resolve(const std::string& raw) const;
@@ -163,9 +185,22 @@ class AutomationRunner {
   };
   std::vector<LoopFrame> loop_stack_;
 
-  // Stack of bool: did the last IF condition succeed? Used to skip ELSE
-  // branches.
-  std::vector<bool> if_stack_;
+  // Per-IF state: condition value at evaluation time + whether we've
+  // crossed the ELSE marker yet. A step executes iff for every frame
+  // (condition && !in_else) || (!condition && in_else).
+  struct IfFrame {
+    bool condition = false;
+    bool in_else = false;
+  };
+  std::vector<IfFrame> if_stack_;
+
+  // Per-step retry counter. Reset on step transition; incremented when
+  // a step fails and Step::retries > attempts_so_far_.
+  int step_attempt_ = 0;
+
+  // Per-step timeout — fires OnStepTimeout() if the dispatched step
+  // doesn't call OnStepFinished in time.
+  base::OneShotTimer step_timeout_timer_;
 
   StepProgressCallback on_step_;
   RunCompleteCallback on_complete_;
