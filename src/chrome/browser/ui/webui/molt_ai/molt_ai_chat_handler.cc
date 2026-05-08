@@ -20,6 +20,7 @@
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -141,6 +142,7 @@ struct MoltAISettings {
 };
 
 MoltAISettings LoadUserSettings() {
+  ScopedAllowBlockingForMolt allow_blocking;
   MoltAISettings settings;
   base::FilePath home_dir;
   base::PathService::Get(base::DIR_HOME, &home_dir);

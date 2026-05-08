@@ -137,7 +137,7 @@ class Profile;
 class ProfileImpl;
 class ScopedAllowBlockingForProfile;
 // MoltBrowser: file I/O for the web automation engine (script storage).
-class ScopedAllowBlockingForMoltAutomation;
+class ScopedAllowBlockingForMolt;
 #if BUILDFLAG(IS_WIN)
 class ScopedAllowBlockingForMediaFoundation;
 #endif
@@ -587,7 +587,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class ::GaiaConfig;
   friend class ::ProfileImpl;
   friend class ::ScopedAllowBlockingForProfile;
-  friend class ::ScopedAllowBlockingForMoltAutomation;
+  friend class ::ScopedAllowBlockingForMolt;
 #if BUILDFLAG(IS_WIN)
   friend class ::ScopedAllowBlockingForMediaFoundation;
 #endif

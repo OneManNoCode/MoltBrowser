@@ -41,6 +41,7 @@ source_set("automation") {
   deps = [
     "//base",
     "//chrome/browser:browser_public_dependencies",
+    "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/profiles:profile",
     "//components/keyed_service/content",

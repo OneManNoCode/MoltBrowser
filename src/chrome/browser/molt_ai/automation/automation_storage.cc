@@ -14,15 +14,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
-#include "base/threading/thread_restrictions.h"
-
-// MoltBrowser uses synchronous file I/O for its small per-user
-// automation script files. Inheriting base::ScopedAllowBlocking
-// (which has private ctor + global friend list) lets us allow the
-// blocking call site-by-site without a full async refactor. The
-// friend declaration lives in base/threading/thread_restrictions.h.
-class ScopedAllowBlockingForMoltAutomation
-    : public base::ScopedAllowBlocking {};
+#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 
 namespace molt_ai {
 namespace automation {
@@ -87,7 +79,7 @@ void AutomationStorage::SetRootForTesting(const base::FilePath& root) {
 }
 
 bool AutomationStorage::EnsureDirectory() {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   base::FilePath dir = GetAutomationsDir();
   if (base::DirectoryExists(dir))
     return true;
@@ -101,7 +93,7 @@ bool AutomationStorage::EnsureDirectory() {
 }
 
 std::vector<std::string> AutomationStorage::ListIds() {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   std::vector<std::string> out;
   base::FilePath dir = GetAutomationsDir();
   if (!base::DirectoryExists(dir))
@@ -128,7 +120,7 @@ std::vector<Script> AutomationStorage::ListAll() {
 }
 
 std::optional<Script> AutomationStorage::Load(const std::string& id) {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   if (!IsValidScriptId(id))
     return std::nullopt;
   std::string contents;
@@ -138,7 +130,7 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
 }
 
 bool AutomationStorage::Save(const Script& script) {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   if (!IsValidScriptId(script.id))
     return false;
   if (!EnsureDirectory())
@@ -166,7 +158,7 @@ bool AutomationStorage::Save(const Script& script) {
 }
 
 bool AutomationStorage::Delete(const std::string& id) {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   if (!IsValidScriptId(id))
     return false;
   bool deleted_script = base::DeleteFile(GetScriptPath(id));
@@ -180,7 +172,7 @@ bool AutomationStorage::Delete(const std::string& id) {
 void AutomationStorage::AppendAudit(const std::string& script_id,
                                      const std::string& event,
                                      const std::string& extra) {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   if (!EnsureDirectory())
     return;
   std::string line =
@@ -197,7 +189,7 @@ void AutomationStorage::AppendAudit(const std::string& script_id,
 }
 
 std::vector<std::string> AutomationStorage::ReadAuditTail(int max_lines) {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   std::vector<std::string> out;
   std::ifstream f(GetAuditLogPath().value());
   if (!f.is_open())
@@ -213,7 +205,7 @@ std::vector<std::string> AutomationStorage::ReadAuditTail(int max_lines) {
 
 base::FilePath AutomationStorage::EnsureArtifactsDir(
     const std::string& script_id) {
-  ScopedAllowBlockingForMoltAutomation allow_blocking;
+  ScopedAllowBlockingForMolt allow_blocking;
   base::FilePath dir =
       GetAutomationsDir().Append(kArtifactsSubdir).Append(script_id);
   if (!base::DirectoryExists(dir))

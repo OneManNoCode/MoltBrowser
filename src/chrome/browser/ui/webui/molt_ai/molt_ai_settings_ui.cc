@@ -19,6 +19,7 @@
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include <unistd.h>  // For access() in MoltNet Tor detection
 
 namespace {
@@ -91,6 +92,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   }
 
   base::DictValue LoadSettings() {
+    ScopedAllowBlockingForMolt allow_blocking;
     base::FilePath path = GetSettingsFilePath();
     std::string contents;
     if (base::ReadFileToString(path, &contents)) {
@@ -109,6 +111,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   }
 
   bool SaveSettings(const base::DictValue& settings) {
+    ScopedAllowBlockingForMolt allow_blocking;
     base::FilePath path = GetSettingsFilePath();
     base::FilePath dir = path.DirName();
     if (!base::DirectoryExists(dir)) {

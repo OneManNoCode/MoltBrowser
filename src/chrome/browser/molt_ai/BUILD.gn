@@ -255,6 +255,7 @@ group("molt_ai") {
     ":molt_shield",
     ":molt_update",
     "automation:automation",
+    "common:common",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)

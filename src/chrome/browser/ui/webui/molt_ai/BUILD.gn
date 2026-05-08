@@ -22,6 +22,7 @@ source_set("molt_ai") {
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/common",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//content/public/browser",

@@ -1,0 +1,14 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Shared utilities for MoltBrowser features that don't belong in any
+# specific subsystem.
+
+source_set("common") {
+  sources = [
+    "molt_blocking_scope.h",
+  ]
+  public_deps = [
+    "//base",
+  ]
+}
