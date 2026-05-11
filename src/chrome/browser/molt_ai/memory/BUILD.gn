@@ -1,0 +1,41 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Personal Vector Memory — passive on-device semantic index of every
+# page the user reads. Encrypted-at-rest via OSCrypt, queryable in
+# sub-millisecond time from anywhere in the browser.
+
+source_set("memory") {
+  sources = [
+    "memory_embedder.cc",
+    "memory_embedder.h",
+    "memory_extractor.cc",
+    "memory_extractor.h",
+    "memory_index.cc",
+    "memory_index.h",
+    "memory_privacy.cc",
+    "memory_privacy.h",
+    "memory_recorder.cc",
+    "memory_recorder.h",
+    "memory_service.cc",
+    "memory_service.h",
+    "memory_service_factory.cc",
+    "memory_service_factory.h",
+    "memory_storage.cc",
+    "memory_storage.h",
+    "memory_types.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser:browser_public_dependencies",
+    "//chrome/browser/profiles:profile",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
+    "//components/os_crypt/sync",
+    "//content/public/browser",
+    "//crypto",
+    "//sql",
+    "//url",
+  ]
+}

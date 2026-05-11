@@ -326,6 +326,7 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/media/router",
     "//chrome/browser/media/webrtc",
     "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/memory",
     "//chrome/browser/notifications",
     "//chrome/browser/omnibox",
     "//chrome/browser/optimization_guide",

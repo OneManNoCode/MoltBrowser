@@ -121,6 +121,7 @@
 #include "chrome/browser/metrics/profile_metrics_service_factory.h"
 #include "chrome/browser/metrics/variations/google_groups_manager_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
+#include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/multistep_filter/core/multistep_filter_service_factory.h"
 #include "chrome/browser/navigation_predictor/navigation_predictor_keyed_service_factory.h"
 #include "chrome/browser/navigation_predictor/preloading_model_keyed_service_factory.h"
@@ -1081,6 +1082,9 @@ void ChromeBrowserMainExtraPartsProfiles::
   // MoltBrowser web automation scheduler — runs cron triggers + catches
   // up missed fires after browser restart.
   molt_ai::automation::AutomationSchedulerServiceFactory::GetInstance();
+  // MoltBrowser personal vector memory — local semantic index of read
+  // pages, encrypted at rest via OSCrypt.
+  molt_ai::memory::MemoryServiceFactory::GetInstance();
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   metrics::DesktopProfileSessionDurationsServiceFactory::GetInstance();
 #endif

@@ -881,6 +881,8 @@ bool HandleMoltSchemeRewrite(GURL* url,
     new_host = chrome::kChromeUIMoltAIAgentHost;
   } else if (host == std::string_view(chrome::kMoltAIAutomationHost)) {
     new_host = chrome::kChromeUIMoltAIAutomationHost;
+  } else if (host == std::string_view(chrome::kMoltAIMemoryAliasHost)) {
+    new_host = chrome::kChromeUIMoltAIMemoryHost;
   } else {
     return false;
   }
@@ -913,6 +915,8 @@ bool HandleMoltSchemeReverseRewrite(GURL* url,
     new_host = chrome::kMoltAIAgentHost;
   } else if (host == std::string_view(chrome::kChromeUIMoltAIAutomationHost)) {
     new_host = chrome::kMoltAIAutomationHost;
+  } else if (host == std::string_view(chrome::kChromeUIMoltAIMemoryHost)) {
+    new_host = chrome::kMoltAIMemoryAliasHost;
   } else {
     return false;
   }
