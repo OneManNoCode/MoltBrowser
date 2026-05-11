@@ -143,7 +143,34 @@ struct MoltAISettings {
   std::string system_prompt =
       "You are MoltBrowser AI, a helpful local AI assistant "
       "built into MoltBrowser. You run entirely on-device for "
-      "privacy. Instructions:\n"
+      "privacy.\n"
+      "\n"
+      "You are docked in a side panel next to the user's current web "
+      "page. The page's text content is provided in the prompt under "
+      "'Active page content:' when available; ground your answers in "
+      "it when the user asks about the page.\n"
+      "\n"
+      "AGENTIC ACTIONS — when the user asks you to interact with the "
+      "page (click something, fill a form, scroll, navigate, choose "
+      "a dropdown option), emit one or more action tokens on their "
+      "own line. Each token is dispatched to the active tab "
+      "automatically by the browser:\n"
+      "  [[ACTION click:<css-selector>]]\n"
+      "  [[ACTION type:<css-selector>|<text-to-type>]]\n"
+      "  [[ACTION select:<css-selector>|<option-value>]]\n"
+      "  [[ACTION hover:<css-selector>]]\n"
+      "  [[ACTION scroll:<pixels>]]\n"
+      "  [[ACTION navigate:<full-url>]]\n"
+      "Rules for action tokens:\n"
+      "  - One token per line, exact syntax with the double brackets.\n"
+      "  - Prefer specific selectors: id (#name), data-testid, aria-"
+      "label, name attribute. CSS classes only if necessary.\n"
+      "  - Always include a one-sentence natural-language explanation "
+      "of what you're doing AFTER the token(s).\n"
+      "  - If the user just asks a question, do NOT emit any action "
+      "token — only emit when they ask you to DO something.\n"
+      "\n"
+      "Style:\n"
       "- Be concise, accurate, and directly helpful\n"
       "- Use markdown formatting: **bold**, `code`, ```code blocks```, "
       "bullet lists, and numbered lists\n"
@@ -1238,6 +1265,78 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
     return;
   }
 
+  std::string t = *type;
+
+  // P2.3: select-dropdown + hover are simple enough to execute via
+  // direct JS injection — no need to spin up an AutomationRunner
+  // (which assumes WebContentsObserver hooks and selector-ladder
+  // retries that buy nothing for fire-and-forget events). We still
+  // require an http(s) page so injecting into chrome:// or other
+  // privileged URLs is impossible.
+  if (t == "select" || t == "hover") {
+    if (!sel || sel->empty()) {
+      result.Set("success", false);
+      result.Set("error", "selector required for " + t);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    if (!target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+      result.Set("success", false);
+      result.Set("error", "only http(s) pages support " + t);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    // JS-escape the selector + value. We do simple JSON.stringify-style
+    // escaping inside the template since the values are user-supplied.
+    auto js_quote = [](const std::string& s) {
+      std::string out = "\"";
+      for (char c : s) {
+        if (c == '"' || c == '\\') out += '\\';
+        if (c == '\n') { out += "\\n"; continue; }
+        if (c == '\r') { out += "\\r"; continue; }
+        out += c;
+      }
+      out += '"';
+      return out;
+    };
+    std::string js;
+    if (t == "select") {
+      std::string v = value ? *value : "";
+      js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
+           ");if(!el)return false;el.value=" + js_quote(v) +
+           ";el.dispatchEvent(new Event('input',{bubbles:true}));"
+           "el.dispatchEvent(new Event('change',{bubbles:true}));"
+           "return true;})()";
+    } else {  // hover
+      js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
+           ");if(!el)return false;"
+           "['mouseover','mouseenter','mousemove'].forEach(function(t){"
+           "el.dispatchEvent(new MouseEvent(t,{bubbles:true,"
+           "cancelable:true,view:window}));});return true;})()";
+    }
+    std::string cb_id_copy = callback_id;
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
+    target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+        base::UTF8ToUTF16(js),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+               std::string type_str, base::Value v) {
+              if (!self) return;
+              bool ok = v.is_bool() && v.GetBool();
+              base::DictValue out;
+              out.Set("success", ok);
+              out.Set("message", ok ? type_str + " ok" :
+                                       type_str + ": selector not found");
+              self->ResolveJavascriptCallback(base::Value(cb_id),
+                                              base::Value(std::move(out)));
+            },
+            weak_this, cb_id_copy, t),
+        /*world_id=*/1);
+    return;
+  }
+
   // Build a single-step Script. We map the slash commands to the
   // existing AutomationRunner step types so we get all the
   // selector-recovery, retry, and snapshot-on-failure plumbing for
@@ -1249,7 +1348,6 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   s.security.max_runtime_seconds = 30;
 
   molt_ai::automation::Step step;
-  std::string t = *type;
   if (t == "click") {
     step.type = molt_ai::automation::StepType::CLICK;
     step.target = sel ? *sel : "";

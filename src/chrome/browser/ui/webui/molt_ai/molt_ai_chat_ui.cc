@@ -177,6 +177,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 /* Message actions */
 .msg-actions{display:flex;gap:4px;margin-top:6px;opacity:0;transition:opacity 0.2s}
 .message:hover .msg-actions{opacity:1}
+.molt-action-summary{margin-top:8px;padding:6px 10px;background:#1a2a3a;
+  color:#7dd3fc;font-size:12px;border-radius:6px;border:1px solid #2a3a4a;
+  display:inline-block;font-family:-apple-system,system-ui,sans-serif;}
+.molt-action-summary span{margin-right:6px;}
 .msg-action{padding:2px 8px;border-radius:4px;border:1px solid #333;background:none;color:#666;font-size:10px;cursor:pointer}
 .msg-action:hover{color:#e0e0e0;border-color:#6366f1}
 /* Search bar */
@@ -447,7 +451,25 @@ function appendToken(token) {
 
 function finishAiMessage() {
   if (currentAiMessageEl) {
-    currentAiMessageEl.innerHTML = renderMarkdown(currentAiText);
+    // Phase 2: scan the AI's final response for [[ACTION verb:args]]
+    // tokens and dispatch each one through runMoltAction (same path
+    // the user's /click /type /scroll /navigate slash-commands use).
+    // We strip the tokens from the rendered text so the chat reads
+    // naturally; a single "Running N action(s)..." footer replaces
+    // them visually.
+    var dispatched = parseAndDispatchActions(currentAiText);
+    var visibleText = currentAiText.replace(ACTION_TOKEN_REGEX, '').trim();
+    currentAiMessageEl.innerHTML = renderMarkdown(visibleText);
+    if (dispatched.length > 0) {
+      var summary = document.createElement('div');
+      summary.className = 'molt-action-summary';
+      summary.innerHTML = '<span>&#9881;</span> Running ' + dispatched.length +
+                          ' action' + (dispatched.length === 1 ? '' : 's') +
+                          ': ' + dispatched.map(function(a){
+                            return a.type + (a.selector ? ' ' + a.selector : '');
+                          }).join(', ');
+      currentAiMessageEl.appendChild(summary);
+    }
     // Add copy response button
     var actions = document.createElement('div');
     actions.className = 'msg-actions';
@@ -456,6 +478,63 @@ function finishAiMessage() {
   }
   currentAiMessageEl = null;
   currentAiText = '';
+}
+
+// --------------------------------------------------------------
+// Phase 2: LLM action-token parser.
+//
+// Contract — the system prompt teaches the LLM to emit:
+//   [[ACTION click:<css-selector>]]
+//   [[ACTION type:<css-selector>|<text-value>]]
+//   [[ACTION select:<css-selector>|<option-value>]]
+//   [[ACTION hover:<css-selector>]]
+//   [[ACTION scroll:<pixels>]]
+//   [[ACTION navigate:<absolute-or-bare-host>]]
+//
+// One token per line. Tokens are stripped from the user-visible
+// response before rendering, replaced by a single "Running N
+// action(s)..." footer. Each parsed action is dispatched through
+// the same runMoltAction IPC the slash-command path uses, so the
+// model gets all the selector-recovery / retry / timeout plumbing.
+//
+// Returns the list of dispatched actions (for the footer).
+// --------------------------------------------------------------
+var ACTION_TOKEN_REGEX = /\[\[ACTION\s+(\w+):([^\]]+)\]\]/g;
+
+function parseAndDispatchActions(text) {
+  if (!text) return [];
+  var dispatched = [];
+  var m;
+  ACTION_TOKEN_REGEX.lastIndex = 0;
+  while ((m = ACTION_TOKEN_REGEX.exec(text)) !== null) {
+    var verb = m[1].toLowerCase();
+    var args = m[2].trim();
+    var action = null;
+    if (verb === 'click' || verb === 'hover') {
+      action = {type: verb, selector: args};
+    } else if (verb === 'type' || verb === 'select') {
+      // Split on first '|' so values containing pipes still work.
+      var bar = args.indexOf('|');
+      if (bar < 0) continue;
+      action = {type: verb,
+                selector: args.slice(0, bar).trim(),
+                value: args.slice(bar + 1)};
+    } else if (verb === 'scroll') {
+      action = {type: 'scroll', value: args};
+    } else if (verb === 'navigate' || verb === 'nav' || verb === 'goto') {
+      var url = args.trim();
+      if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+      action = {type: 'navigate', value: url};
+    }
+    if (!action) continue;
+    dispatched.push(action);
+    // Fire-and-forget. We don't await here because we already showed
+    // the user "Running N action(s)..." — they'll see the page change.
+    // If the action fails, the runner's failure-snapshot path still
+    // records it to ~/.moltbrowser/automations/artifacts/.
+    sendWithPromise('runMoltAction', action).catch(function(){});
+  }
+  return dispatched;
 }
 
 function setGenerating(val) {
@@ -515,25 +594,24 @@ function buildHistoryString() {
 // the caller should skip the LLM path in that case.
 // --------------------------------------------------------------
 function tryDispatchActionCommand(text) {
-  var m = text.match(/^\s*\/(click|type|scroll|navigate|nav|goto)\b\s*(.*)$/i);
+  var m = text.match(/^\s*\/(click|type|select|hover|scroll|navigate|nav|goto)\b\s*(.*)$/i);
   if (!m) return false;
   var cmd = m[1].toLowerCase();
   var rest = (m[2] || '').trim();
   var action = null;
-  if (cmd === 'click') {
+  if (cmd === 'click' || cmd === 'hover') {
     if (!rest) {
-      addErrorMessage('Usage: /click <css-selector>');
+      addErrorMessage('Usage: /' + cmd + ' <css-selector>');
       return true;
     }
-    action = {type: 'click', selector: rest};
-  } else if (cmd === 'type') {
-    // Split: selector + remainder.
+    action = {type: cmd, selector: rest};
+  } else if (cmd === 'type' || cmd === 'select') {
     var sp = rest.indexOf(' ');
     if (sp < 0) {
-      addErrorMessage('Usage: /type <selector> <text...>');
+      addErrorMessage('Usage: /' + cmd + ' <selector> <value...>');
       return true;
     }
-    action = {type: 'type', selector: rest.slice(0, sp),
+    action = {type: cmd, selector: rest.slice(0, sp),
               value: rest.slice(sp + 1)};
   } else if (cmd === 'scroll') {
     action = {type: 'scroll', value: rest || '600'};
@@ -604,11 +682,25 @@ function sendMessage() {
     }
   }
 
-  // Fetch page context then send prompt
+  // Fetch page context then send prompt.
+  // Phase 2: also include the side-panel-captured active-tab text
+  // (window.__moltCurrentTabContext.text was set by the native
+  // AiChatSidePanelWebView when the user last switched tabs). This
+  // lets the LLM answer "summarize this page" / "what's the price on
+  // this listing?" instead of guessing from just the URL.
   sendWithPromise('getPageContext').then(function(ctx) {
     var pageCtx = '';
     if (ctx && ctx.has_context) {
       pageCtx = ctx.title + ' (' + ctx.url + ')';
+    }
+    var sp = window.__moltCurrentTabContext;
+    if (sp && sp.text && sp.text.length > 0) {
+      // Cap on the JS side too in case some upstream changed kPageTextCharCap
+      // on the C++ side after the page captured. 4500 keeps us under
+      // TinyLlama's effective context after history + user prompt.
+      var snippet = sp.text.slice(0, 4500);
+      pageCtx = (pageCtx ? (pageCtx + '\n\n') : '') +
+                'Active page content:\n' + snippet;
     }
     return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx);
   }).then(function(result) {
