@@ -58,6 +58,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleGetPageContent(const base::ListValue& args);
   void HandleCancelDownload(const base::ListValue& args);
   void HandleExportHistory(const base::ListValue& args);
+  // Side panel automation bridge. Runs a single click/type/scroll/
+  // navigate against the currently-active tab in the Browser that
+  // owns this WebUI's WebContents.
+  void HandleRunMoltAction(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,

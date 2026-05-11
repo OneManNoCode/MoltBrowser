@@ -20,6 +20,8 @@
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/automation/automation_runner.h"
+#include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/profiles/profile.h"
@@ -90,6 +92,16 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "exportHistory",
       base::BindRepeating(&MoltAIChatHandler::HandleExportHistory,
+                          base::Unretained(this)));
+  // Side panel automation bridge — lets the chat run a one-shot
+  // automation action (click / type / scroll / navigate) against
+  // the user's currently active tab. Args:
+  //   [0] callback_id (string)
+  //   [1] action dict {type:"click"|"type"|"scroll"|"navigate",
+  //                    selector:string, value:string}
+  web_ui()->RegisterMessageCallback(
+      "runMoltAction",
+      base::BindRepeating(&MoltAIChatHandler::HandleRunMoltAction,
                           base::Unretained(this)));
 }
 
@@ -1164,4 +1176,127 @@ void MoltAIChatHandler::OnHistoryExported(std::string callback_id,
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));
+}
+
+// ------------------------------------------------------------------
+// HandleRunMoltAction: Run one automation action against the active
+// tab in this WebUI's owning Browser. Used by the side-panel chat to
+// let users (or, downstream, the LLM) drive page actions in plain
+// language. The chat HTML side parses /click /type /scroll /navigate
+// slash-commands and posts them here.
+//
+// JS: chrome.send('runMoltAction',
+//                  [callback_id,
+//                   {type:"click", selector:".foo"} |
+//                   {type:"type", selector:"#email", value:"a@b.c"} |
+//                   {type:"scroll", value:"600"} |
+//                   {type:"navigate", value:"https://..."}])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue result;
+  if (!args[1].is_dict()) {
+    result.Set("success", false);
+    result.Set("error", "expected action dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  const base::DictValue& action = args[1].GetDict();
+  const std::string* type = action.FindString("type");
+  if (!type || type->empty()) {
+    result.Set("success", false);
+    result.Set("error", "missing action type");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  const std::string* sel = action.FindString("selector");
+  const std::string* value = action.FindString("value");
+
+  // Resolve the target tab: the active tab of the Browser that owns
+  // this WebUI's WebContents (the side-panel host).
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    result.Set("success", false);
+    result.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  content::WebContents* target =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (!target) {
+    result.Set("success", false);
+    result.Set("error", "no active tab");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+
+  // Build a single-step Script. We map the slash commands to the
+  // existing AutomationRunner step types so we get all the
+  // selector-recovery, retry, and snapshot-on-failure plumbing for
+  // free.
+  molt_ai::automation::Script s;
+  s.id = "ad-hoc-chat-action";
+  s.name = "Chat action";
+  s.security.trust = molt_ai::automation::TrustLevel::TRUSTED;
+  s.security.max_runtime_seconds = 30;
+
+  molt_ai::automation::Step step;
+  std::string t = *type;
+  if (t == "click") {
+    step.type = molt_ai::automation::StepType::CLICK;
+    step.target = sel ? *sel : "";
+  } else if (t == "type") {
+    step.type = molt_ai::automation::StepType::TYPE;
+    step.target = sel ? *sel : "";
+    step.value = value ? *value : "";
+  } else if (t == "scroll") {
+    step.type = molt_ai::automation::StepType::SCROLL;
+    step.value = value ? *value : "600";
+  } else if (t == "navigate") {
+    step.type = molt_ai::automation::StepType::NAVIGATE;
+    step.target = value ? *value : "";
+  } else {
+    result.Set("success", false);
+    result.Set("error", "unknown action type: " + t);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  step.timeout_ms = 8000;
+  s.steps.push_back(std::move(step));
+
+  // Run via a transient AutomationRunner. Storage is null — we don't
+  // persist this script's stats since it's an ad-hoc chat action.
+  // The runner is captured by a shared_ptr in the completion callback
+  // so it stays alive across async step execution.
+  auto runner = std::make_shared<molt_ai::automation::AutomationRunner>(
+      target, /*ai_runtime=*/nullptr, /*storage=*/nullptr);
+  std::string callback_id_copy = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  runner->Run(std::move(s),
+              base::DoNothing(),
+              base::BindOnce(
+                  [](base::WeakPtr<MoltAIChatHandler> self,
+                     std::string cb_id,
+                     std::shared_ptr<molt_ai::automation::AutomationRunner>
+                         keep_alive,
+                     molt_ai::automation::RunResult r) {
+                    if (!self) return;
+                    base::DictValue out;
+                    out.Set("success", r.success);
+                    out.Set("message", r.message);
+                    out.Set("duration_ms", r.duration_ms);
+                    self->ResolveJavascriptCallback(
+                        base::Value(cb_id),
+                        base::Value(std::move(out)));
+                  },
+                  weak_this, callback_id_copy, runner));
 }

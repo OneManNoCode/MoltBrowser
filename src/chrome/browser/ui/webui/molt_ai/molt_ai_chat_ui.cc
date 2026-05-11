@@ -504,11 +504,87 @@ function buildHistoryString() {
 
 // ---- Core Functions ----
 
+// --------------------------------------------------------------
+// Slash-command bridge to the active tab.
+// Recognized forms (case-insensitive command, free-form remainder):
+//   /click <selector>
+//   /type <selector> <value...>
+//   /scroll [pixels]            (default 600)
+//   /navigate <url>
+// Returns true if the text was a recognized action and was dispatched;
+// the caller should skip the LLM path in that case.
+// --------------------------------------------------------------
+function tryDispatchActionCommand(text) {
+  var m = text.match(/^\s*\/(click|type|scroll|navigate|nav|goto)\b\s*(.*)$/i);
+  if (!m) return false;
+  var cmd = m[1].toLowerCase();
+  var rest = (m[2] || '').trim();
+  var action = null;
+  if (cmd === 'click') {
+    if (!rest) {
+      addErrorMessage('Usage: /click <css-selector>');
+      return true;
+    }
+    action = {type: 'click', selector: rest};
+  } else if (cmd === 'type') {
+    // Split: selector + remainder.
+    var sp = rest.indexOf(' ');
+    if (sp < 0) {
+      addErrorMessage('Usage: /type <selector> <text...>');
+      return true;
+    }
+    action = {type: 'type', selector: rest.slice(0, sp),
+              value: rest.slice(sp + 1)};
+  } else if (cmd === 'scroll') {
+    action = {type: 'scroll', value: rest || '600'};
+  } else if (cmd === 'navigate' || cmd === 'nav' || cmd === 'goto') {
+    if (!rest) {
+      addErrorMessage('Usage: /navigate <url>');
+      return true;
+    }
+    if (!/^https?:\/\//i.test(rest)) rest = 'https://' + rest;
+    action = {type: 'navigate', value: rest};
+  }
+  if (!action) return false;
+
+  addUserMessage(text);
+  // Show a transient "running" status as an AI message we'll update.
+  startAiMessage();
+  appendToAiMessage('Running ' + cmd + '...');
+
+  sendWithPromise('runMoltAction', action).then(function(r) {
+    var msg = r.success
+        ? '\u2713 ' + (r.message || (cmd + ' ok'))
+        : '\u2717 ' + (r.message || r.error || cmd + ' failed');
+    currentAiText = msg;
+    finishAiMessage();
+    setGenerating(false);
+  }).catch(function(err) {
+    currentAiText = '\u2717 ' + (err || 'action failed');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
 function sendMessage() {
   if (isGenerating) return;
   var input = document.getElementById('prompt');
   var text = input.value.trim();
   if (!text) return;
+
+  // Slash-command shortcut: any `/click /type /scroll /navigate` line
+  // bypasses the LLM and runs as a one-shot automation action on the
+  // active tab. Lets the user drive page actions in plain language
+  // without waiting on inference. The LLM-emit-actions path is a
+  // follow-up that wraps the same runMoltAction IPC.
+  if (text.charAt(0) === '/' && tryDispatchActionCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
 
   addUserMessage(text);
   conversationHistory.push({role: 'user', content: text});
