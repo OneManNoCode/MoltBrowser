@@ -223,6 +223,50 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <span class="search-count" id="searchCount"></span>
   <button class="search-close" onclick="toggleSearch()">&times;</button>
 </div>
+<!-- Tab context strip: shows the URL/title the chat is grounded in.
+     Populated by the native AiChatSidePanelWebView via the
+     window.__moltSetTabContext({url,title}) contract whenever the
+     active tab changes. -->
+<div class="tab-context" id="tabContext" style="display:none">
+  <span class="tab-context-icon">&#128279;</span>
+  <span class="tab-context-label" id="tabContextLabel"></span>
+</div>
+<script>
+  // Tab-context contract. Native side calls this on every active-tab
+  // change. The same payload is also stashed at
+  // window.__moltLastTabContext for late-binding (race-free init).
+  window.__moltSetTabContext = function(ctx) {
+    window.__moltCurrentTabContext = ctx || null;
+    var bar = document.getElementById('tabContext');
+    var lbl = document.getElementById('tabContextLabel');
+    if (!bar || !lbl) return;
+    if (!ctx || !ctx.url ||
+        ctx.url.indexOf('chrome://') === 0 ||
+        ctx.url.indexOf('molt://')   === 0 ||
+        ctx.url === 'about:blank') {
+      bar.style.display = 'none';
+      return;
+    }
+    var host = ctx.url;
+    try { host = new URL(ctx.url).host; } catch (e) {}
+    var title = ctx.title || host;
+    lbl.textContent = 'Chatting about: ' + title +
+        (host && host !== title ? '  \u2022  ' + host : '');
+    lbl.title = ctx.url;
+    bar.style.display = 'flex';
+  };
+  if (window.__moltLastTabContext)
+    window.__moltSetTabContext(window.__moltLastTabContext);
+</script>
+<style>
+.tab-context{display:flex;align-items:center;gap:8px;
+  padding:6px 14px;font-size:11px;color:#8a8a98;
+  background:#0d0d14;border-bottom:1px solid #1a1a2a;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tab-context-icon{flex-shrink:0;}
+.tab-context-label{overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;cursor:default;}
+</style>
 <div class="hw-bar" id="hwBar">
   <span id="hwGpu"></span>
   <span id="hwRam"></span>

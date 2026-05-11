@@ -75,8 +75,10 @@ void SidePanelHelper::PopulateGlobalEntries(
       base::BindRepeating(
           [](Browser* browser, SidePanelEntryScope& scope)
               -> std::unique_ptr<views::View> {
-            return std::make_unique<AiChatSidePanelWebView>(
-                browser->profile());
+            // Pass the Browser* so the chat view can observe the
+            // TabStripModel and inject the active tab's URL + title
+            // into the chat WebUI for grounding.
+            return std::make_unique<AiChatSidePanelWebView>(browser);
           },
           base::Unretained(browser)),
       /*default_content_width_callback=*/base::NullCallback()));
