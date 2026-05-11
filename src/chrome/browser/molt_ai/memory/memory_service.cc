@@ -55,7 +55,19 @@ MemoryService::MemoryService(Profile* profile)
 MemoryService::~MemoryService() = default;
 
 void MemoryService::Shutdown() {
-  // Storage destructor closes the DB; nothing else to do.
+  // sql::Database has a sequence checker — it must be destroyed on
+  // the same task runner it was opened on. The DB was opened in
+  // worker_ via PostTaskAndReply (see ctor), so we hand storage_'s
+  // ownership back to the worker via DeleteSoon. This posts a
+  // deletion task at the tail of the worker queue, so any in-flight
+  // PostTask jobs that still hold raw_storage finish first and the
+  // deletion runs cleanly on the right sequence.
+  //
+  // After this move, storage_ is empty. The remaining ~MemoryService
+  // destruction on the UI thread is a no-op for storage_ — index_
+  // and embedder_ are UI-thread-only and tear down safely there.
+  if (storage_)
+    worker_->DeleteSoon(FROM_HERE, std::move(storage_));
 }
 
 void MemoryService::FinishStartOnUI() {
