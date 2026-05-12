@@ -23,10 +23,12 @@ namespace {
 // The URL for the AI chat WebUI interface.
 constexpr char kAiChatWebUIURL[] = "chrome://molt-ai-chat/";
 
-// How much innerText we capture from the active tab. 5 KB is enough
-// to fit a typical article opening in TinyLlama's 2K-ish token
-// context window without crowding out the user's actual prompt.
-constexpr int kPageTextCharCap = 5000;
+// How much innerText we capture from the active tab. 50 KB lets us
+// hold the full visible content of long articles / docs / search
+// results. The chat JS chunks this and runs a query-keyword overlap
+// retrieval to pick the top-K chunks at prompt-build time so the
+// LLM context window doesn't overflow.
+constexpr int kPageTextCharCap = 50000;
 
 }  // namespace
 

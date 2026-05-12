@@ -16,6 +16,7 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
@@ -23,6 +24,9 @@
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/memory/memory_service.h"
+#include "chrome/browser/molt_ai/memory/memory_service_factory.h"
+#include "chrome/browser/molt_ai/memory/memory_types.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -103,6 +107,12 @@ void MoltAIChatHandler::RegisterMessages() {
       "runMoltAction",
       base::BindRepeating(&MoltAIChatHandler::HandleRunMoltAction,
                           base::Unretained(this)));
+  // Personal Vector Memory grounding — top-K relevant chunks from
+  // the user's full browsing history. Args: [callback_id, query, top_k].
+  web_ui()->RegisterMessageCallback(
+      "queryMemory",
+      base::BindRepeating(&MoltAIChatHandler::HandleQueryMemory,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -151,24 +161,54 @@ struct MoltAISettings {
       "it when the user asks about the page.\n"
       "\n"
       "AGENTIC ACTIONS — when the user asks you to interact with the "
-      "page (click something, fill a form, scroll, navigate, choose "
-      "a dropdown option), emit one or more action tokens on their "
-      "own line. Each token is dispatched to the active tab "
-      "automatically by the browser:\n"
+      "page (click, fill a form, scroll, navigate, choose a dropdown "
+      "option, drag, etc.), emit one or more action tokens on their "
+      "own line. The browser dispatches each token in sequence as "
+      "soon as it's emitted, so you can interleave them with prose.\n"
       "  [[ACTION click:<css-selector>]]\n"
       "  [[ACTION type:<css-selector>|<text-to-type>]]\n"
       "  [[ACTION select:<css-selector>|<option-value>]]\n"
       "  [[ACTION hover:<css-selector>]]\n"
+      "  [[ACTION right-click:<css-selector>]]\n"
+      "  [[ACTION drag:<source-selector>|<target-selector>]]\n"
       "  [[ACTION scroll:<pixels>]]\n"
       "  [[ACTION navigate:<full-url>]]\n"
+      "  [[ACTION wait:<milliseconds>]]                      (sleep)\n"
+      "  [[ACTION wait-for:<css-selector>|<timeout-ms>]]     (poll until visible)\n"
+      "\n"
+      "Multi-step macros: emit tokens in the order you want them to "
+      "run. The dispatcher executes them sequentially and waits for "
+      "each to finish before starting the next. Use wait-for after "
+      "navigations or clicks that load new content, e.g.:\n"
+      "  [[ACTION navigate:https://example.com/login]]\n"
+      "  [[ACTION wait-for:input[name=username]|3000]]\n"
+      "  [[ACTION type:input[name=username]|raj]]\n"
+      "  [[ACTION type:input[name=password]|<from-user>]]\n"
+      "  [[ACTION click:button[type=submit]]]\n"
+      "\n"
+      "Conditionals: there is no if/else syntax yet. If you don't "
+      "know whether a selector will exist (CAPTCHA, A/B test), use "
+      "wait-for with a short timeout — if it doesn't appear the run "
+      "fails cleanly and the user sees the failure in the chat.\n"
+      "\n"
+      "File uploads: dispatch a click on the file input "
+      "([[ACTION click:input[type=file]]]). The native picker opens "
+      "and the user selects the file themselves.\n"
+      "\n"
       "Rules for action tokens:\n"
       "  - One token per line, exact syntax with the double brackets.\n"
-      "  - Prefer specific selectors: id (#name), data-testid, aria-"
-      "label, name attribute. CSS classes only if necessary.\n"
+      "  - Prefer specific selectors: id (#name), data-testid, "
+      "aria-label, name attribute. CSS classes only if necessary.\n"
       "  - Always include a one-sentence natural-language explanation "
       "of what you're doing AFTER the token(s).\n"
       "  - If the user just asks a question, do NOT emit any action "
       "token — only emit when they ask you to DO something.\n"
+      "\n"
+      "MEMORY GROUNDING — the prompt may include a 'Relevant past "
+      "reading:' section pulled from the user's local browsing "
+      "history. Use it to answer questions like 'what was that "
+      "article about X' or 'compare the restaurants I researched'. "
+      "Cite the URL inline.\n"
       "\n"
       "Style:\n"
       "- Be concise, accurate, and directly helpful\n"
@@ -1267,16 +1307,23 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
 
   std::string t = *type;
 
-  // P2.3: select-dropdown + hover are simple enough to execute via
-  // direct JS injection — no need to spin up an AutomationRunner
-  // (which assumes WebContentsObserver hooks and selector-ladder
-  // retries that buy nothing for fire-and-forget events). We still
-  // require an http(s) page so injecting into chrome:// or other
-  // privileged URLs is impossible.
-  if (t == "select" || t == "hover") {
+  // P2.3 / P3: select-dropdown, hover, right-click, drag are simple
+  // enough to execute via direct JS injection — no need to spin up
+  // an AutomationRunner (which assumes WebContentsObserver hooks
+  // and selector-ladder retries that buy nothing for fire-and-forget
+  // events). We still require an http(s) page so injecting into
+  // chrome:// or other privileged URLs is impossible.
+  if (t == "select" || t == "hover" || t == "right-click" || t == "drag") {
     if (!sel || sel->empty()) {
       result.Set("success", false);
       result.Set("error", "selector required for " + t);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    if (t == "drag" && (!value || value->empty())) {
+      result.Set("success", false);
+      result.Set("error", "drag needs a target selector in 'value'");
       ResolveJavascriptCallback(base::Value(callback_id),
                                 base::Value(std::move(result)));
       return;
@@ -1309,12 +1356,44 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
            ";el.dispatchEvent(new Event('input',{bubbles:true}));"
            "el.dispatchEvent(new Event('change',{bubbles:true}));"
            "return true;})()";
-    } else {  // hover
+    } else if (t == "hover") {
       js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
            ");if(!el)return false;"
            "['mouseover','mouseenter','mousemove'].forEach(function(t){"
            "el.dispatchEvent(new MouseEvent(t,{bubbles:true,"
            "cancelable:true,view:window}));});return true;})()";
+    } else if (t == "right-click") {
+      // Synthesize a contextmenu event with button=2. Most sites'
+      // custom right-click menus listen for this; the native macOS/
+      // OS menu won't appear, but page-level menus do.
+      js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
+           ");if(!el)return false;"
+           "var r=el.getBoundingClientRect();"
+           "el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,"
+           "cancelable:true,view:window,button:2,buttons:2,"
+           "clientX:r.left+r.width/2,clientY:r.top+r.height/2}));"
+           "return true;})()";
+    } else {  // drag
+      // Source = selector, target = value. Synthesize the full
+      // HTML5 drag-drop event sequence with a shared DataTransfer.
+      // Many SPAs (Trello-style, Notion-style) listen for these
+      // events directly so this is enough to drive them.
+      std::string tgt = value ? *value : "";
+      js = "(function(){"
+           "var src=document.querySelector(" + js_quote(*sel) + ");"
+           "var tgt=document.querySelector(" + js_quote(tgt) + ");"
+           "if(!src||!tgt)return false;"
+           "var dt=new DataTransfer();"
+           "var sr=src.getBoundingClientRect();var tr=tgt.getBoundingClientRect();"
+           "function ev(el,type,box){return new DragEvent(type,{bubbles:true,"
+           "cancelable:true,view:window,dataTransfer:dt,"
+           "clientX:box.left+box.width/2,clientY:box.top+box.height/2});}"
+           "src.dispatchEvent(ev(src,'dragstart',sr));"
+           "tgt.dispatchEvent(ev(tgt,'dragenter',tr));"
+           "tgt.dispatchEvent(ev(tgt,'dragover',tr));"
+           "tgt.dispatchEvent(ev(tgt,'drop',tr));"
+           "src.dispatchEvent(ev(src,'dragend',sr));"
+           "return true;})()";
     }
     std::string cb_id_copy = callback_id;
     auto weak_this = weak_ptr_factory_.GetWeakPtr();
@@ -1361,6 +1440,21 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   } else if (t == "navigate") {
     step.type = molt_ai::automation::StepType::NAVIGATE;
     step.target = value ? *value : "";
+  } else if (t == "wait") {
+    // P3: simple sleep. value is ms (default 1000).
+    step.type = molt_ai::automation::StepType::WAIT;
+    int ms = 1000;
+    if (value && !value->empty())
+      base::StringToInt(*value, &ms);
+    step.timeout_ms = ms;
+  } else if (t == "wait-for") {
+    // P3: poll until a selector appears, up to value ms (default 5000).
+    step.type = molt_ai::automation::StepType::WAIT_FOR;
+    step.target = sel ? *sel : "";
+    int ms = 5000;
+    if (value && !value->empty())
+      base::StringToInt(*value, &ms);
+    step.timeout_ms = ms;
   } else {
     result.Set("success", false);
     result.Set("error", "unknown action type: " + t);
@@ -1397,4 +1491,66 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                         base::Value(std::move(out)));
                   },
                   weak_this, callback_id_copy, runner));
+}
+
+// ------------------------------------------------------------------
+// HandleQueryMemory: Personal Vector Memory grounding for the chat.
+// Args: [callback_id, query_text, top_k_int]
+// Returns: {hits: [{url, title, snippet, score, visited_at}, ...]}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleQueryMemory(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string query =
+      args[1].is_string() ? args[1].GetString() : "";
+  int top_k = 3;
+  if (args.size() > 2 && args[2].is_int())
+    top_k = std::max(1, args[2].GetInt());
+
+  base::DictValue empty;
+  empty.Set("hits", base::ListValue());
+  if (query.empty()) {
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(empty)));
+    return;
+  }
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  if (!profile) {
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(empty)));
+    return;
+  }
+  molt_ai::memory::MemoryService* svc =
+      molt_ai::memory::MemoryServiceFactory::GetForProfile(profile);
+  if (!svc) {
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(empty)));
+    return;
+  }
+
+  std::string cb_id = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  svc->Query(query, top_k, base::BindOnce(
+      [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+         std::vector<molt_ai::memory::QueryHit> hits) {
+        if (!self) return;
+        base::ListValue arr;
+        for (const auto& h : hits) {
+          base::DictValue d;
+          d.Set("url", h.url);
+          d.Set("title", h.title);
+          d.Set("snippet", h.snippet);
+          d.Set("score", h.score);
+          d.Set("visited_at", static_cast<double>(h.visited_at_unix));
+          arr.Append(std::move(d));
+        }
+        base::DictValue r;
+        r.Set("hits", std::move(arr));
+        self->ResolveJavascriptCallback(base::Value(cb_id),
+                                        base::Value(std::move(r)));
+      },
+      weak_this, cb_id));
 }

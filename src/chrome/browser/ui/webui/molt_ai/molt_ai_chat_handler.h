@@ -62,6 +62,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // navigate against the currently-active tab in the Browser that
   // owns this WebUI's WebContents.
   void HandleRunMoltAction(const base::ListValue& args);
+  // Personal Vector Memory lookup — returns top-K relevant chunks
+  // from the user's full browsing history so the chat can ground
+  // answers in things the user has actually read before.
+  void HandleQueryMemory(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,
