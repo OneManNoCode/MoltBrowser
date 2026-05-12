@@ -9,6 +9,8 @@ import("//build/config/ui.gni")
 
 source_set("automation") {
   sources = [
+    "agent_inbox_registry.cc",
+    "agent_inbox_registry.h",
     "automation_background_browser.cc",
     "automation_background_browser.h",
     "automation_notification.h",

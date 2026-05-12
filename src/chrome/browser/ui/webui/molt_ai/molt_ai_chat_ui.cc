@@ -276,6 +276,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .tab-context-icon{flex-shrink:0;}
 .tab-context-label{overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;cursor:default;}
+.agent-inbox{background:rgba(58,134,255,0.08);border-bottom:1px solid #2a2a2a;
+  padding:6px 12px;font-size:11px;display:flex;flex-direction:column;gap:4px;}
+.agent-inbox-header{font-weight:600;color:#9ec5ff;opacity:0.85;
+  font-size:10px;text-transform:uppercase;letter-spacing:0.5px;}
+.agent-row{display:flex;align-items:center;gap:8px;
+  padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;}
+.agent-spinner{width:8px;height:8px;border-radius:50%;
+  background:#3a86ff;animation:agent-pulse 1.5s ease-in-out infinite;
+  flex-shrink:0;}
+.agent-spinner.done-ok{background:#46d160;animation:none;}
+.agent-spinner.done-err{background:#ff4d4d;animation:none;}
+@keyframes agent-pulse{0%,100%{opacity:0.4;}50%{opacity:1;}}
+.agent-name{font-weight:500;color:#e8e8e8;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto;max-width:40%;}
+.agent-progress{color:#9ea0a4;flex:0 0 auto;font-variant-numeric:tabular-nums;}
+.agent-note{color:#9ea0a4;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;flex:1 1 auto;font-style:italic;}
 </style>
 <div class="hw-bar" id="hwBar">
   <span id="hwGpu"></span>
@@ -283,10 +300,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <span id="hwCores"></span>
 </div>
 <div class="context-bar" id="contextBar"></div>
+<!-- Agent Inbox: live tray of currently-running background automations.
+     Polled every 3s from JS; hidden when no runs are active. -->
+<div class="agent-inbox" id="agentInbox" style="display:none;"></div>
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device. Send a message to begin.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br>Try a slash command: <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/click .button</code>, or send any message to chat.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -650,6 +670,141 @@ function buildHistoryString() {
 // Returns true if the text was a recognized action and was dispatched;
 // the caller should skip the LLM path in that case.
 // --------------------------------------------------------------
+// --------------------------------------------------------------
+// Tab Triage: /triage [close-inactive | close-domain <host> | list]
+// /triage list  -> show all tabs in this window with a snippet.
+// /triage close-inactive  -> close every non-active tab.
+// /triage close-domain x.com  -> close every tab whose host == x.com.
+// /triage bookmark-inactive -> bookmark every non-active tab to "Other".
+// --------------------------------------------------------------
+function tryDispatchTriageCommand(text) {
+  var m = text.match(/^\s*\/triage\b\s*(.*)$/i);
+  if (!m) return false;
+  var rest = (m[1] || '').trim();
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Scanning open tabs...');
+  sendWithPromise('listTabsInWindow').then(function(r) {
+    var tabs = (r && r.tabs) || [];
+    if (!rest || rest === 'list') {
+      var lines = ['Open tabs in this window (' + tabs.length + '):'];
+      for (var i = 0; i < tabs.length; i++) {
+        var t = tabs[i];
+        var prefix = (t.active ? '\u25CF ' : '  ') +
+                     (t.pinned ? '\u{1F4CC} ' : '');
+        lines.push(prefix + '[' + t.index + '] ' + (t.snippet || t.url));
+      }
+      currentAiText = lines.join('\n');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    // Pick indices to act on.
+    var picked = [];
+    var action = 'close';
+    var parts = rest.split(/\s+/);
+    var verb = parts[0];
+    if (verb === 'close-inactive') {
+      action = 'close';
+      tabs.forEach(function(t){ if (!t.active && !t.pinned) picked.push(t.index); });
+    } else if (verb === 'bookmark-inactive') {
+      action = 'bookmark';
+      tabs.forEach(function(t){ if (!t.active) picked.push(t.index); });
+    } else if (verb === 'pin-active') {
+      action = 'pin';
+      tabs.forEach(function(t){ if (t.active) picked.push(t.index); });
+    } else if (verb === 'close-domain' && parts[1]) {
+      action = 'close';
+      var host = parts[1].toLowerCase();
+      tabs.forEach(function(t){
+        try {
+          var u = new URL(t.url);
+          if (u.host.toLowerCase().indexOf(host) !== -1) picked.push(t.index);
+        } catch (e) {}
+      });
+    } else {
+      currentAiText = 'Usage:\n' +
+                      '  /triage list\n' +
+                      '  /triage close-inactive\n' +
+                      '  /triage close-domain <host>\n' +
+                      '  /triage bookmark-inactive\n' +
+                      '  /triage pin-active';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    if (!picked.length) {
+      currentAiText = 'No tabs matched.';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    sendWithPromise('triageActOnTabs',
+                    {action: action, indices: picked}).then(function(rr) {
+      currentAiText = rr.success
+          ? '\u2713 ' + action + 'd ' + rr.affected_count + ' tab' +
+            (rr.affected_count === 1 ? '' : 's')
+          : '\u2717 ' + (rr.error || 'triage failed');
+      finishAiMessage();
+      setGenerating(false);
+    });
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Page Watcher: /watch <url> <selector> [interval-seconds] [name...]
+// Creates a scheduled INTERVAL script that opens the URL, extracts the
+// selector text, and fires an OS notification with the current value.
+// --------------------------------------------------------------
+function tryDispatchWatchCommand(text) {
+  var m = text.match(/^\s*\/watch\b\s*(.*)$/i);
+  if (!m) return false;
+  var rest = (m[1] || '').trim();
+  if (!rest) {
+    addErrorMessage('Usage: /watch <url> <css-selector> ' +
+                    '[interval-seconds] [name]');
+    return true;
+  }
+  // First token = url, second = selector, third (optional) = seconds,
+  // remainder = display name.
+  var parts = rest.split(/\s+/);
+  if (parts.length < 2) {
+    addErrorMessage('Usage: /watch <url> <css-selector> ' +
+                    '[interval-seconds] [name]');
+    return true;
+  }
+  var url = parts[0];
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  var sel = parts[1];
+  var seconds = 900;
+  var nameStart = 2;
+  if (parts.length >= 3 && /^\d+$/.test(parts[2])) {
+    seconds = parseInt(parts[2], 10);
+    nameStart = 3;
+  }
+  var name = parts.slice(nameStart).join(' ') || '';
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Creating watcher...');
+  sendWithPromise('createWatcher',
+                  {url: url, selector: sel,
+                   interval_seconds: seconds,
+                   name: name}).then(function(r) {
+    if (r.success) {
+      currentAiText = '\u2713 Watching ' + url + '\n' +
+                      'Selector: ' + sel + '\n' +
+                      'Every ' + r.interval_seconds + 's\n' +
+                      'Script id: ' + r.script_id;
+    } else {
+      currentAiText = '\u2717 ' + (r.error || 'watcher creation failed');
+    }
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
 function tryDispatchActionCommand(text) {
   var m = text.match(/^\s*\/(click|type|select|hover|right-click|rclick|drag|scroll|navigate|nav|goto|wait|wait-for|waitfor)\b\s*(.*)$/i);
   if (!m) return false;
@@ -803,6 +958,20 @@ function sendMessage() {
   // without waiting on inference. The LLM-emit-actions path is a
   // follow-up that wraps the same runMoltAction IPC.
   if (text.charAt(0) === '/' && tryDispatchActionCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchTriageCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchWatchCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
@@ -1518,6 +1687,53 @@ document.addEventListener('keydown', function(e) {
   }).catch(function() {
     setStatus('error', 'Failed to initialize');
   });
+
+  // Agent Inbox poller — refreshes the running-agents tray every 3s.
+  // Cheap IPC (just a snapshot of an in-memory map) so polling at this
+  // cadence is fine. Hides the tray when nothing's running so it
+  // doesn't take up real estate.
+  function renderAgents(agents) {
+    var tray = document.getElementById('agentInbox');
+    if (!tray) return;
+    if (!agents || !agents.length) {
+      tray.style.display = 'none';
+      tray.innerHTML = '';
+      return;
+    }
+    var rows = ['<div class="agent-inbox-header">' +
+                'Running agents (' + agents.length + ')</div>'];
+    agents.forEach(function(a) {
+      var done = a.finished_at_unix && a.finished_at_unix > 0;
+      var cls = !done ? '' : (a.succeeded ? ' done-ok' : ' done-err');
+      var step = a.total_steps
+          ? (a.current_step + '/' + a.total_steps)
+          : (a.current_step + '');
+      var note = a.status_note || '';
+      if (done) note = a.succeeded ? 'Completed' : 'Failed';
+      // Cheap text-escape: avoid breaking the DOM if a script name
+      // contains stray < or &.
+      function esc(s) { return (s + '').replace(/&/g,'&amp;')
+                                       .replace(/</g,'&lt;')
+                                       .replace(/>/g,'&gt;'); }
+      rows.push(
+        '<div class="agent-row">' +
+          '<div class="agent-spinner' + cls + '"></div>' +
+          '<div class="agent-name" title="' + esc(a.start_url) + '">' +
+            esc(a.script_name) + '</div>' +
+          '<div class="agent-progress">step ' + esc(step) + '</div>' +
+          '<div class="agent-note">' + esc(note) + '</div>' +
+        '</div>');
+    });
+    tray.innerHTML = rows.join('');
+    tray.style.display = 'flex';
+  }
+  function pollAgents() {
+    sendWithPromise('listActiveAgents').then(function(r) {
+      renderAgents(r && r.agents);
+    }).catch(function() {});
+  }
+  pollAgents();
+  setInterval(pollAgents, 3000);
 })();
 </script>
 </body>

@@ -5,8 +5,13 @@
 
 #include <memory>
 
+#include <ctime>
+
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
+#include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -42,11 +47,40 @@ class BackgroundRunHolder {
                                                     storage_.get())) {}
 
   void Start(Script script, size_t start_index) {
-    runner_->Run(std::move(script),
-                 /*on_step=*/base::DoNothing(),
-                 base::BindOnce(&BackgroundRunHolder::OnComplete,
-                                base::Unretained(this)),
-                 start_index);
+    // Register with the Agent Inbox so the side panel can show a live
+    // status row for this run.
+    inbox_id_ = AgentInboxRegistry::Get()->NewId();
+    AgentInboxEntry entry;
+    entry.id = inbox_id_;
+    entry.script_id = script.id;
+    entry.script_name = script.name.empty() ? script.id : script.name;
+    for (const auto& step : script.steps) {
+      if (step.type == StepType::NAVIGATE && !step.target.empty()) {
+        entry.start_url = step.target;
+        break;
+      }
+    }
+    entry.total_steps = static_cast<int>(script.steps.size());
+    entry.current_step = static_cast<int>(start_index);
+    entry.status_note = "Starting";
+    entry.started_at_unix = static_cast<int64_t>(time(nullptr));
+    AgentInboxRegistry::Get()->Add(std::move(entry));
+
+    const int64_t my_id = inbox_id_;
+    runner_->Run(
+        std::move(script),
+        base::BindRepeating(
+            [](int64_t id, const StepProgress& sp) {
+              if (!sp.starting) {
+                return;
+              }
+              AgentInboxRegistry::Get()->UpdateStep(
+                  id, sp.index + 1, sp.description);
+            },
+            my_id),
+        base::BindOnce(&BackgroundRunHolder::OnComplete,
+                       base::Unretained(this)),
+        start_index);
   }
 
  private:
@@ -55,6 +89,16 @@ class BackgroundRunHolder {
               << result.success
               << " steps=" << result.steps_executed
               << "/" << result.total_steps;
+    // Mark finished in the inbox so the UI shows the final status briefly,
+    // then prune the entry after 30s so the tray doesn't accumulate cruft.
+    AgentInboxRegistry::Get()->Finish(inbox_id_, result.success);
+    const int64_t id_to_clear = inbox_id_;
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](int64_t id) { AgentInboxRegistry::Get()->Remove(id); },
+            id_to_clear),
+        base::Seconds(30));
     if (browser_ && browser_->window())
       browser_->window()->Close();
     delete this;  // owns nothing else; safe to suicide here
@@ -64,6 +108,7 @@ class BackgroundRunHolder {
   std::unique_ptr<molt_ai::BrowserAIRuntime> ai_runtime_;
   std::unique_ptr<AutomationStorage> storage_;
   std::unique_ptr<AutomationRunner> runner_;
+  int64_t inbox_id_ = 0;
 };
 
 }  // namespace

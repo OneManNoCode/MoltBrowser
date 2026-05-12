@@ -6,6 +6,9 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
 
+#include <algorithm>
+#include <ctime>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -17,13 +20,21 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
+#include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
+#include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
@@ -112,6 +123,26 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "queryMemory",
       base::BindRepeating(&MoltAIChatHandler::HandleQueryMemory,
+                          base::Unretained(this)));
+  // Tab triage: list every tab in the owning window with a snippet.
+  web_ui()->RegisterMessageCallback(
+      "listTabsInWindow",
+      base::BindRepeating(&MoltAIChatHandler::HandleListTabsInWindow,
+                          base::Unretained(this)));
+  // Tab triage: bulk action on tabs (close / bookmark / pin).
+  web_ui()->RegisterMessageCallback(
+      "triageActOnTabs",
+      base::BindRepeating(&MoltAIChatHandler::HandleTriageActOnTabs,
+                          base::Unretained(this)));
+  // Page Watchers: create a scheduled extract+notify Script.
+  web_ui()->RegisterMessageCallback(
+      "createWatcher",
+      base::BindRepeating(&MoltAIChatHandler::HandleCreateWatcher,
+                          base::Unretained(this)));
+  // Agent Inbox: list currently-running background automation runs.
+  web_ui()->RegisterMessageCallback(
+      "listActiveAgents",
+      base::BindRepeating(&MoltAIChatHandler::HandleListActiveAgents,
                           base::Unretained(this)));
 }
 
@@ -1553,4 +1584,336 @@ void MoltAIChatHandler::HandleQueryMemory(const base::ListValue& args) {
                                         base::Value(std::move(r)));
       },
       weak_this, cb_id));
+}
+
+// ------------------------------------------------------------------
+// HandleListTabsInWindow: Tab Triage feature.
+// Enumerates every tab in the Browser that owns this side-panel WebUI,
+// returning {id, url, title, snippet, pinned, active, last_active_unix}.
+// The chat then asks the LLM (or shows a manual list) which tabs to
+// close / bookmark / pin.
+// Args: [callback_id]
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleListTabsInWindow(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+  base::ListValue tabs;
+
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("tabs", std::move(tabs));
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  TabStripModel* model = browser->tab_strip_model();
+  const int active = model->active_index();
+  const int n = model->count();
+  for (int i = 0; i < n; ++i) {
+    content::WebContents* wc = model->GetWebContentsAt(i);
+    if (!wc) continue;
+    base::DictValue d;
+    d.Set("index", i);
+    d.Set("url", wc->GetLastCommittedURL().spec());
+    d.Set("title", base::UTF16ToUTF8(wc->GetTitle()));
+    d.Set("pinned", model->IsTabPinned(i));
+    d.Set("active", i == active);
+    // Cheap snippet: last commit URL's host + path tail. Anything richer
+    // would require a content-extraction JS round-trip across N tabs;
+    // the side panel can fall back to that on demand.
+    std::string host = std::string(wc->GetLastCommittedURL().host());
+    std::string path = std::string(wc->GetLastCommittedURL().path());
+    if (path.size() > 40) path = path.substr(0, 40) + "…";
+    d.Set("snippet", host + path);
+    d.Set("last_active_unix",
+          static_cast<double>(wc->GetLastActiveTime().ToTimeT()));
+    tabs.Append(std::move(d));
+  }
+  out.Set("tabs", std::move(tabs));
+  out.Set("active_index", active);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleTriageActOnTabs: Tab Triage bulk action.
+// Args: [callback_id, {action:"close"|"bookmark"|"pin",
+//                       indices:[int, int, ...]}]
+// Returns: {success, affected_count, error?}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleTriageActOnTabs(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected action dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const base::DictValue& dict = args[1].GetDict();
+  const std::string* action = dict.FindString("action");
+  const base::ListValue* indices = dict.FindList("indices");
+  if (!action || action->empty() || !indices) {
+    out.Set("success", false);
+    out.Set("error", "missing action or indices");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("success", false);
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  TabStripModel* model = browser->tab_strip_model();
+
+  // Collect & sort indices descending so closing doesn't shift the
+  // remaining indices out from under us.
+  std::vector<int> idxs;
+  for (const base::Value& v : *indices) {
+    if (v.is_int()) idxs.push_back(v.GetInt());
+  }
+  std::sort(idxs.begin(), idxs.end(), std::greater<int>());
+
+  int affected = 0;
+  if (*action == "close") {
+    for (int i : idxs) {
+      if (i < 0 || i >= model->count()) continue;
+      model->CloseWebContentsAt(i, TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB |
+                                       TabCloseTypes::CLOSE_USER_GESTURE);
+      ++affected;
+    }
+  } else if (*action == "pin") {
+    for (int i : idxs) {
+      if (i < 0 || i >= model->count()) continue;
+      if (!model->IsTabPinned(i)) {
+        model->SetTabPinned(i, /*pinned=*/true);
+        ++affected;
+      }
+    }
+  } else if (*action == "bookmark") {
+    Profile* profile = Profile::FromBrowserContext(
+        webui_wc->GetBrowserContext());
+    bookmarks::BookmarkModel* bm =
+        profile ? BookmarkModelFactory::GetForBrowserContext(profile)
+                : nullptr;
+    if (!bm || !bm->loaded()) {
+      out.Set("success", false);
+      out.Set("error", "bookmark model unavailable");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(out)));
+      return;
+    }
+    const bookmarks::BookmarkNode* parent = bm->other_node();
+    for (int i : idxs) {
+      if (i < 0 || i >= model->count()) continue;
+      content::WebContents* wc = model->GetWebContentsAt(i);
+      if (!wc) continue;
+      GURL url = wc->GetLastCommittedURL();
+      if (!url.is_valid()) continue;
+      bm->AddURL(parent, parent->children().size(), wc->GetTitle(), url);
+      ++affected;
+    }
+  } else {
+    out.Set("success", false);
+    out.Set("error", "unknown action: " + *action);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  out.Set("success", true);
+  out.Set("affected_count", affected);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleCreateWatcher: Page Watcher feature.
+// Builds a Script with an INTERVAL trigger that:
+//   1. NAVIGATEs to the watched URL
+//   2. WAIT_FORs the selector
+//   3. EXTRACTs the selector's text into {{value}}
+//   4. NOTIFYs the user with that value
+// then saves it via AutomationStorage so the existing scheduler picks
+// it up on its next tick. Per user spec, watchers use the default
+// (TinyLlama) model and run in a background window.
+//
+// Args: [callback_id, {url, selector, interval_seconds, name?}]
+// Returns: {success, script_id, error?}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected watcher dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const base::DictValue& d = args[1].GetDict();
+  const std::string* url = d.FindString("url");
+  const std::string* selector = d.FindString("selector");
+  std::optional<int> interval = d.FindInt("interval_seconds");
+  const std::string* name = d.FindString("name");
+  if (!url || url->empty() || !selector || selector->empty()) {
+    out.Set("success", false);
+    out.Set("error", "url and selector are required");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  int seconds = interval.value_or(900);  // default 15 min
+  if (seconds < 60) seconds = 60;        // floor: 1 min
+
+  GURL gurl(*url);
+  if (!gurl.is_valid() || !gurl.SchemeIsHTTPOrHTTPS()) {
+    out.Set("success", false);
+    out.Set("error", "url must be http(s)");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  molt_ai::automation::Script s;
+  // Stable id from a hash of the url+selector — re-creating the watcher
+  // with the same args updates the existing script in place.
+  size_t h = std::hash<std::string>{}(*url + "|" + *selector);
+  s.id = base::StringPrintf("watcher-%zx", h);
+  s.name = (name && !name->empty()) ? *name
+                                    : ("Watch " + std::string(gurl.host()));
+  s.created_at_unix = static_cast<int64_t>(time(nullptr));
+  s.trigger.type = molt_ai::automation::TriggerType::INTERVAL;
+  s.trigger.expression = base::NumberToString(seconds);
+  s.security.trust = molt_ai::automation::TrustLevel::APPROVED;
+  s.security.max_runtime_seconds = 120;
+  s.security.domain_whitelist.push_back(std::string(gurl.host()));
+
+  {
+    molt_ai::automation::Step step;
+    step.type = molt_ai::automation::StepType::NAVIGATE;
+    step.target = *url;
+    step.timeout_ms = 20000;
+    step.description = "Open watched page";
+    s.steps.push_back(std::move(step));
+  }
+  {
+    molt_ai::automation::Step step;
+    step.type = molt_ai::automation::StepType::WAIT_FOR;
+    step.target = *selector;
+    step.timeout_ms = 15000;
+    step.description = "Wait for selector";
+    s.steps.push_back(std::move(step));
+  }
+  {
+    molt_ai::automation::Step step;
+    step.type = molt_ai::automation::StepType::EXTRACT;
+    step.target = *selector;
+    step.store_as = "value";
+    step.timeout_ms = 5000;
+    step.description = "Extract current value";
+    s.steps.push_back(std::move(step));
+  }
+  {
+    molt_ai::automation::Step step;
+    step.type = molt_ai::automation::StepType::NOTIFY;
+    step.target = s.name;
+    step.value = "Current value: {{value}}";
+    step.timeout_ms = 2000;
+    step.description = "Notify user";
+    s.steps.push_back(std::move(step));
+  }
+
+  // Save the script to disk. AutomationStorage methods touch the
+  // filesystem on the UI thread, so wrap in ScopedAllowBlockingForMolt.
+  bool saved = false;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::automation::AutomationStorage storage;
+    storage.EnsureDirectory();
+    saved = storage.Save(s);
+  }
+
+  if (!saved) {
+    out.Set("success", false);
+    out.Set("error", "failed to save watcher script");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Nudge the scheduler so it picks up the new INTERVAL trigger right
+  // away rather than waiting for its next reload tick.
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  if (profile) {
+    auto* svc =
+        molt_ai::automation::AutomationSchedulerServiceFactory::GetForProfile(
+            profile);
+    if (svc && svc->scheduler()) {
+      svc->scheduler()->Reschedule();
+    }
+  }
+
+  out.Set("success", true);
+  out.Set("script_id", s.id);
+  out.Set("interval_seconds", seconds);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleListActiveAgents: Agent Inbox feature.
+// Reads the process-wide AgentInboxRegistry and returns one row per
+// currently-running (or just-finished) background automation run.
+// The side-panel polls this every few seconds to keep the "Running
+// agents" tray fresh.
+// Args: [callback_id]
+// Returns: {agents: [{id, script_id, script_name, start_url,
+//                     current_step, total_steps, status_note,
+//                     started_at_unix, finished_at_unix, succeeded}]}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleListActiveAgents(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::ListValue arr;
+  auto entries = molt_ai::automation::AgentInboxRegistry::Get()->List();
+  for (const auto& e : entries) {
+    base::DictValue d;
+    d.Set("id", static_cast<double>(e.id));
+    d.Set("script_id", e.script_id);
+    d.Set("script_name", e.script_name);
+    d.Set("start_url", e.start_url);
+    d.Set("current_step", e.current_step);
+    d.Set("total_steps", e.total_steps);
+    d.Set("status_note", e.status_note);
+    d.Set("started_at_unix", static_cast<double>(e.started_at_unix));
+    d.Set("finished_at_unix", static_cast<double>(e.finished_at_unix));
+    d.Set("succeeded", e.succeeded);
+    arr.Append(std::move(d));
+  }
+  base::DictValue out;
+  out.Set("agents", std::move(arr));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
 }

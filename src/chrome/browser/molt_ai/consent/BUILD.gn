@@ -1,0 +1,19 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser universal cookie-modal killer. Per-tab WebContents
+# observer that injects a rule-based + text-fallback consent
+# dismisser on every page load.
+
+source_set("consent") {
+  sources = [
+    "consent_killer_tab_helper.cc",
+    "consent_killer_tab_helper.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+    "//url",
+  ]
+}

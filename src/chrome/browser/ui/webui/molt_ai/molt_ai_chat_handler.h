@@ -66,6 +66,15 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // from the user's full browsing history so the chat can ground
   // answers in things the user has actually read before.
   void HandleQueryMemory(const base::ListValue& args);
+  // Tab Triage — enumerate the owning Browser's tabs with snippets.
+  void HandleListTabsInWindow(const base::ListValue& args);
+  // Tab Triage — bulk close / bookmark / pin on a list of tab ids.
+  void HandleTriageActOnTabs(const base::ListValue& args);
+  // Page Watchers — create a scheduled Script that periodically
+  // extracts a selector and fires a notification on change/threshold.
+  void HandleCreateWatcher(const base::ListValue& args);
+  // Agent Inbox — list currently-running background automation runs.
+  void HandleListActiveAgents(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,
