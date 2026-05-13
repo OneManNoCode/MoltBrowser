@@ -75,6 +75,16 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleCreateWatcher(const base::ListValue& args);
   // Agent Inbox — list currently-running background automation runs.
   void HandleListActiveAgents(const base::ListValue& args);
+  // Form Filler — load/save the encrypted local profile blob.
+  // Args (load): [callback_id]
+  // Args (save): [callback_id, dict]
+  void HandleGetMoltProfile(const base::ListValue& args);
+  void HandleSaveMoltProfile(const base::ListValue& args);
+  // Form Filler — execute autofill on the active tab. The matching
+  // logic lives in injected JS; this handler only forwards the
+  // profile dict and reports back affected_field_count.
+  // Args: [callback_id]
+  void HandleRunFormFill(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,

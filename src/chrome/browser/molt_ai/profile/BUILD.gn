@@ -1,0 +1,17 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser local profile — encrypted JSON blob backing the Form
+# Filler Agent. Stored at ~/.moltbrowser/profile.enc via OSCrypt.
+
+source_set("profile") {
+  sources = [
+    "molt_profile_store.cc",
+    "molt_profile_store.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/os_crypt/sync",
+  ]
+}

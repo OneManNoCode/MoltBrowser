@@ -26,6 +26,7 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/profile",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//content/public/browser",

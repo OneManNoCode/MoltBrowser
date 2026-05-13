@@ -300,6 +300,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .agent-progress{color:#9ea0a4;flex:0 0 auto;font-variant-numeric:tabular-nums;}
 .agent-note{color:#9ea0a4;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;flex:1 1 auto;font-style:italic;}
+.profile-editor{display:flex;flex-direction:column;gap:6px;padding:8px;
+  background:rgba(58,134,255,0.05);border-radius:6px;}
+.profile-help{font-size:11px;color:#9ea0a4;margin-bottom:4px;line-height:1.5;}
+.profile-help code{background:#1a1a2a;padding:1px 4px;border-radius:3px;}
+.profile-row{display:flex;align-items:center;gap:8px;}
+.profile-row label{flex:0 0 110px;font-size:11px;color:#a8a8b8;}
+.profile-row input{flex:1;padding:4px 8px;font-size:12px;
+  background:#0d0d14;color:#e8e8e8;border:1px solid #2a2a3a;border-radius:4px;}
+.profile-row input:focus{outline:none;border-color:#3a86ff;}
+.profile-actions{display:flex;gap:6px;margin-top:6px;}
+.profile-actions button{padding:4px 12px;font-size:12px;border-radius:4px;
+  background:#3a86ff;color:#fff;border:none;cursor:pointer;}
+.profile-actions .profile-cancel{background:#2a2a3a;color:#a8a8b8;}
 </style>
 <div class="hw-bar" id="hwBar">
   <span id="hwGpu"></span>
@@ -313,7 +326,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br>Try a slash command: <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/click .button</code>, or send any message to chat.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br>Try a slash command: <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code> (autofill forms), <code>/profile</code> (set up your saved profile), <code>/click .button</code>, or send any message to chat.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -812,6 +825,110 @@ function tryDispatchWatchCommand(text) {
   return true;
 }
 
+// --------------------------------------------------------------
+// Form Filler: /fill  (autofill the active tab from the saved profile)
+//              /profile  (open the encrypted profile editor)
+// --------------------------------------------------------------
+function tryDispatchFillCommand(text) {
+  if (/^\s*\/profile\b/i.test(text)) {
+    addUserMessage(text);
+    openProfileEditor();
+    setGenerating(false);
+    return true;
+  }
+  if (!/^\s*\/fill\b/i.test(text)) return false;
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Filling form...');
+  sendWithPromise('runFormFill').then(function(r) {
+    if (r.success) {
+      currentAiText = '\u2713 Filled ' + r.filled + ' field' +
+                      (r.filled === 1 ? '' : 's') +
+                      ' (of ' + r.total + ' on this page)';
+    } else {
+      currentAiText = '\u2717 ' + (r.error || 'fill failed') +
+                      '\n\nType /profile to set up your saved profile.';
+    }
+    finishAiMessage();
+    setGenerating(false);
+  }).catch(function(e) {
+    currentAiText = '\u2717 ' + (e || 'fill failed');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// Render an inline profile editor in the messages area. Loads the
+// encrypted profile via getMoltProfile and saves it back via
+// saveMoltProfile. Keeps the WebUI surface area small — no separate
+// settings page, no extension UI.
+function openProfileEditor() {
+  startAiMessage();
+  appendToAiMessage('Loading your saved profile...');
+  sendWithPromise('getMoltProfile').then(function(r) {
+    var p = (r && r.profile) || {};
+    var fields = [
+      ['full_name',    'Full name'],
+      ['first_name',   'First name'],
+      ['last_name',    'Last name'],
+      ['email',        'Email'],
+      ['phone',        'Phone'],
+      ['address_line1','Address line 1'],
+      ['address_line2','Address line 2'],
+      ['city',         'City'],
+      ['state',        'State / Province'],
+      ['zip',          'Postal code'],
+      ['country',      'Country'],
+      ['company',      'Company'],
+      ['job_title',    'Job title'],
+      ['website',      'Website']
+    ];
+    function esc(s){return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+    var rows = fields.map(function(f){
+      return '<div class="profile-row">' +
+             '<label>' + f[1] + '</label>' +
+             '<input data-key="' + f[0] + '" type="text" value="' +
+                esc(p[f[0]] || '') + '">' +
+             '</div>';
+    }).join('');
+    currentAiText = '__PROFILE_EDITOR__';
+    finishAiMessage();
+    // Replace the last AI message with the editor markup.
+    var msgs = document.querySelectorAll('#messages .message.ai');
+    var last = msgs[msgs.length - 1];
+    if (!last) return;
+    last.querySelector('.text').innerHTML =
+        '<div class="profile-editor">' +
+        '<div class="profile-help">Encrypted at rest via your OS keychain. ' +
+        'Used by <code>/fill</code> to autofill forms on http(s) pages.</div>' +
+        rows +
+        '<div class="profile-actions">' +
+        '<button class="profile-save">Save profile</button>' +
+        '<button class="profile-cancel">Cancel</button>' +
+        '</div></div>';
+    last.querySelector('.profile-save').addEventListener('click', function(){
+      var dict = {};
+      last.querySelectorAll('input[data-key]').forEach(function(el){
+        var v = el.value.trim();
+        if (v) dict[el.getAttribute('data-key')] = v;
+      });
+      sendWithPromise('saveMoltProfile', dict).then(function(rr){
+        var text = rr.success
+            ? '\u2713 Profile saved ('
+              + Object.keys(dict).length + ' field' +
+              (Object.keys(dict).length === 1 ? '' : 's') + ')'
+            : '\u2717 ' + (rr.error || 'save failed');
+        last.querySelector('.text').textContent = text;
+      });
+    });
+    last.querySelector('.profile-cancel').addEventListener('click', function(){
+      last.querySelector('.text').textContent = 'Profile editor closed.';
+    });
+  });
+}
+
 function tryDispatchActionCommand(text) {
   var m = text.match(/^\s*\/(click|type|select|hover|right-click|rclick|drag|scroll|navigate|nav|goto|wait|wait-for|waitfor)\b\s*(.*)$/i);
   if (!m) return false;
@@ -979,6 +1096,13 @@ function sendMessage() {
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchWatchCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchFillCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';

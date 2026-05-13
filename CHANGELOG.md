@@ -19,6 +19,37 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-05-12 — Form filler agent (encrypted local profile, no cloud)
+
+A form filler whose entire universe is one local file. `/profile` opens
+an inline editor; `/fill` autofills the active page's form.
+([devblog](website/updates/devblog/2026-05-12-form-filler.md))
+
+### Added
+- New module `chrome/browser/molt_ai/profile/` with `MoltProfileStore`
+  reading/writing `~/.moltbrowser/profile.enc` (OSCrypt-encrypted JSON).
+- Chat IPCs `getMoltProfile`, `saveMoltProfile`, `runFormFill`.
+- Slash commands `/profile` (inline editor in the side panel,
+  14 fields) and `/fill` (autofills the active tab from the saved
+  profile).
+- Heuristic field matcher (regex-based; substring search against
+  `name | id | placeholder | autocomplete | aria-label | <label>`).
+  Dispatches `input` and `change` events so SPA frameworks see the
+  update. Never overwrites an existing user value.
+- Each filled control gets `data-molt-filled="<key>"` so future
+  visual-confirmation UI can paint a halo.
+
+### Notes
+- v1 is intentionally deterministic; no LLM round-trip in the fill
+  path. v2 will route unmatched fields through the local LLM using
+  the same selector-recovery prompt template the automation runner
+  uses.
+- We skip `type="password"`, `type="file"`, and disabled / readonly
+  controls.
+- Nothing syncs. By design.
+
+---
+
 ## 2026-05-12 — PDF chat
 
 The side-panel chat now reads PDFs. Same `__moltSetTabContext` contract

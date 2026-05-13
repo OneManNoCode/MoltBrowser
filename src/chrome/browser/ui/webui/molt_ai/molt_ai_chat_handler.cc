@@ -17,6 +17,7 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -33,6 +34,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
@@ -143,6 +145,20 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "listActiveAgents",
       base::BindRepeating(&MoltAIChatHandler::HandleListActiveAgents,
+                          base::Unretained(this)));
+  // Form Filler: load/save the encrypted local profile.
+  web_ui()->RegisterMessageCallback(
+      "getMoltProfile",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetMoltProfile,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "saveMoltProfile",
+      base::BindRepeating(&MoltAIChatHandler::HandleSaveMoltProfile,
+                          base::Unretained(this)));
+  // Form Filler: run the autofill on the active tab.
+  web_ui()->RegisterMessageCallback(
+      "runFormFill",
+      base::BindRepeating(&MoltAIChatHandler::HandleRunFormFill,
                           base::Unretained(this)));
 }
 
@@ -1916,4 +1932,235 @@ void MoltAIChatHandler::HandleListActiveAgents(const base::ListValue& args) {
   out.Set("agents", std::move(arr));
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// Form Filler — load/save the encrypted local profile.
+// Profile lives at ~/.moltbrowser/profile.enc, encrypted via OSCrypt.
+// We do synchronous file I/O on the UI thread guarded by
+// ScopedAllowBlockingForMolt; the blob is ~hundreds-of-bytes small so
+// the cost is negligible vs. the bounce-to-worker boilerplate.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetMoltProfile(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue dict;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::profile::MoltProfileStore store;
+    dict = store.Load();
+  }
+  base::DictValue out;
+  out.Set("profile", std::move(dict));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+void MoltAIChatHandler::HandleSaveMoltProfile(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected profile dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  base::DictValue dict = args[1].GetDict().Clone();
+  bool ok = false;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::profile::MoltProfileStore store;
+    ok = store.Save(dict);
+  }
+  out.Set("success", ok);
+  if (!ok) out.Set("error", "failed to save profile");
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// Form Filler — autofill the active tab from the saved profile.
+//
+// We do the matching in JS injected into an isolated world. Reasons:
+//   - The matcher needs full DOM access (labels, autocomplete attrs,
+//     aria-labelledby chains, surrounding text) which is cheaper to
+//     express in JS than to round-trip across IPC.
+//   - The matcher dispatches input/change events so SPA frameworks
+//     (React, Angular, Vue) see the change.
+//
+// Native side just loads the profile, JSON-stringifies it, and hands
+// it to the injected JS as a literal.
+// ------------------------------------------------------------------
+namespace {
+
+// Heuristic field-name matcher. Returns the list of candidate substrings
+// for each profile key — case-insensitive substring search against the
+// concatenation of input.name, input.id, input.placeholder, label-for
+// text, autocomplete attribute, and aria-label.
+constexpr char kFormFillJS[] = R"JS(
+(function(profile){
+  if (!profile || typeof profile !== 'object') return {filled:0, total:0};
+  // Match table: profile key -> array of regex strings to test against
+  // the input's concatenated identity (name|id|placeholder|label|...).
+  var rules = {
+    email:          [/e[-_ ]?mail/i, /^email/i, /username.*email/i],
+    phone:          [/phone/i, /tel(ephone)?/i, /mobile/i, /cell/i],
+    full_name:      [/^name$/i, /full[-_ ]?name/i, /your[-_ ]?name/i],
+    first_name:    [/first[-_ ]?name/i, /given[-_ ]?name/i, /\bfname\b/i],
+    last_name:     [/last[-_ ]?name/i, /family[-_ ]?name/i, /sur[-_ ]?name/i, /\blname\b/i],
+    address_line1: [/address[-_ ]?(line)?[-_ ]?1/i, /street[-_ ]?address/i, /^address$/i, /\baddr1?\b/i],
+    address_line2: [/address[-_ ]?(line)?[-_ ]?2/i, /apt|apartment|suite|unit/i, /\baddr2\b/i],
+    city:          [/city/i, /town/i, /locality/i],
+    state:         [/state/i, /province/i, /region/i],
+    zip:           [/zip/i, /postal/i, /post[-_ ]?code/i],
+    country:       [/country/i, /nation/i],
+    company:       [/company/i, /organi[sz]ation/i, /employer/i],
+    job_title:     [/job[-_ ]?title/i, /position/i, /role/i],
+    website:       [/website/i, /\burl\b/i, /homepage/i]
+  };
+  // Build identity string for a form control.
+  function identity(el) {
+    var s = (el.name || '') + ' ' + (el.id || '') + ' ' +
+            (el.placeholder || '') + ' ' +
+            (el.getAttribute('autocomplete') || '') + ' ' +
+            (el.getAttribute('aria-label') || '');
+    if (el.labels) {
+      for (var i = 0; i < el.labels.length; i++) {
+        s += ' ' + (el.labels[i].innerText || '');
+      }
+    }
+    return s;
+  }
+  function fillField(el, value) {
+    if (value == null || value === '') return false;
+    try {
+      var d = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, 'value');
+      if (d && d.set) d.set.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event('input', {bubbles:true}));
+      el.dispatchEvent(new Event('change', {bubbles:true}));
+      return true;
+    } catch (e) { return false; }
+  }
+  var inputs = Array.prototype.slice.call(
+      document.querySelectorAll('input, textarea, select'));
+  var filled = 0;
+  var skipped = 0;
+  for (var i = 0; i < inputs.length; i++) {
+    var el = inputs[i];
+    if (el.type === 'hidden' || el.type === 'submit' ||
+        el.type === 'button' || el.type === 'file' ||
+        el.type === 'password' || el.type === 'checkbox' ||
+        el.type === 'radio' || el.disabled || el.readOnly) {
+      skipped++;
+      continue;
+    }
+    if (el.value && el.value.length > 0) {
+      // Don't overwrite existing values — user may have typed.
+      skipped++;
+      continue;
+    }
+    var id = identity(el).toLowerCase();
+    if (!id.trim()) continue;
+    var matched = null;
+    for (var key in rules) {
+      if (!Object.prototype.hasOwnProperty.call(rules, key)) continue;
+      if (!profile[key]) continue;
+      var patterns = rules[key];
+      for (var p = 0; p < patterns.length; p++) {
+        if (patterns[p].test(id)) { matched = key; break; }
+      }
+      if (matched) break;
+    }
+    if (matched && fillField(el, profile[matched])) {
+      filled++;
+      el.setAttribute('data-molt-filled', matched);
+    }
+  }
+  return {filled: filled, total: inputs.length, skipped: skipped};
+})
+)JS";
+
+}  // namespace
+
+void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+
+  // Resolve target tab.
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("success", false);
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  content::WebContents* target =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+    out.Set("success", false);
+    out.Set("error", "active tab is not an http(s) page");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Load profile and stringify.
+  base::DictValue profile;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::profile::MoltProfileStore store;
+    profile = store.Load();
+  }
+  if (profile.empty()) {
+    out.Set("success", false);
+    out.Set("error", "profile is empty — open settings to set one up");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  std::string profile_json;
+  base::JSONWriter::Write(profile, &profile_json);
+
+  std::string js = std::string(kFormFillJS) + "(" + profile_json + ")";
+
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  std::string cb_id = callback_id;
+  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      base::UTF8ToUTF16(js),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             base::Value v) {
+            if (!self) return;
+            base::DictValue r;
+            if (v.is_dict()) {
+              const base::DictValue& d = v.GetDict();
+              std::optional<int> filled = d.FindInt("filled");
+              std::optional<int> total = d.FindInt("total");
+              r.Set("success", filled.value_or(0) > 0);
+              r.Set("filled", filled.value_or(0));
+              r.Set("total", total.value_or(0));
+              if (filled.value_or(0) == 0)
+                r.Set("error", "no matching fields found");
+            } else {
+              r.Set("success", false);
+              r.Set("error", "fill script returned no data");
+            }
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(r)));
+          },
+          weak_this, cb_id),
+      /*world_id=*/1);
 }
