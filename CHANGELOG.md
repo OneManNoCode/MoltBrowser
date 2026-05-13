@@ -19,6 +19,28 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-05-12 — PDF chat
+
+The side-panel chat now reads PDFs. Same `__moltSetTabContext` contract
+as every other tab, just routed through the accessibility tree.
+([devblog](website/updates/devblog/2026-05-12-pdf-chat.md))
+
+### Added
+- When the active tab's MIME type is `application/pdf`, the side panel
+  calls `WebContents::RequestAXTreeSnapshot` and flattens the resulting
+  tree's `kName` attributes into the same 50 KB text payload used for
+  regular pages. PDFium publishes glyph runs as AX leaf nodes, so the
+  text fidelity is the same as Chromium's built-in find-in-PDF.
+- Chat-side icon flips from "chain link" to "page glyph" with the
+  label "Chatting with PDF: …" when the active context is a PDF.
+- PDFs run entirely local — the file never leaves the machine.
+
+### Changed
+- `AiChatSidePanelWebView` grew one new dispatch arm and a
+  `FlattenAxTreeText` helper. No behavioural change for non-PDF tabs.
+
+---
+
 ## 2026-05-12 — Universal cookie killer, tab triage, page watchers, agent inbox
 
 Four agent/UX features built on the side-panel + automation + memory

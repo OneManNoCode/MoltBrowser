@@ -260,7 +260,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var host = ctx.url;
     try { host = new URL(ctx.url).host; } catch (e) {}
     var title = ctx.title || host;
-    lbl.textContent = 'Chatting about: ' + title +
+    // Native side suffixes PDF titles with " (PDF)" so we can show a
+    // distinct icon. Simple heuristic — also accept any .pdf URL.
+    var isPdf = (/\(PDF\)$/.test(title)) ||
+                /\.pdf(\?|#|$)/i.test(ctx.url);
+    document.querySelector('#tabContext .tab-context-icon').innerHTML =
+        isPdf ? '&#128196;' : '&#128279;';  // page glyph vs. chain link
+    lbl.textContent = (isPdf ? 'Chatting with PDF: ' : 'Chatting about: ')
+                       + title +
         (host && host !== title ? '  \u2022  ' + host : '');
     lbl.title = ctx.url;
     bar.style.display = 'flex';

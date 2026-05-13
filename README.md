@@ -14,6 +14,7 @@ Built by [GenEye AI Labs Inc.](https://github.com/OneManNoCode)
 
 We push to `main` every day. The latest visible work:
 
+- **2026-05-12** — PDF chat: side panel reads PDFs via AX-tree snapshot, fully local. ([post](website/updates/devblog/2026-05-12-pdf-chat.md))
 - **2026-05-12** — Universal cookie killer, tab triage, page watchers, agent inbox tray. ([post](website/updates/devblog/2026-05-12-four-agent-features.md))
 - **2026-05-11** — Page-content chunking, memory grounding, new action verbs.
 - **2026-05-10** — Side panel grounded in the active tab, LLM emits actions directly.

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/molt_ai/side_panel/ai_chat_side_panel_web_view.h"
 
+#include <map>
+
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_writer.h"
@@ -13,8 +15,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "components/pdf/common/constants.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_mode.h"
+#include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "url/gurl.h"
 
@@ -29,6 +36,32 @@ constexpr char kAiChatWebUIURL[] = "chrome://molt-ai-chat/";
 // retrieval to pick the top-K chunks at prompt-build time so the
 // LLM context window doesn't overflow.
 constexpr int kPageTextCharCap = 50000;
+
+// Walk an AX tree update and concatenate every node's accessible name.
+// Used for PDF text extraction since the PDF viewer is an isolated
+// <embed> whose innerText is not reachable from JS. The PDFium-side
+// accessibility tree exposes the document text as kName attributes on
+// the leaf nodes — that's exactly what we need for the chat to read.
+std::string FlattenAxTreeText(const ui::AXTreeUpdate& update, int cap) {
+  std::string out;
+  out.reserve(8192);
+  for (const ui::AXNodeData& node : update.nodes) {
+    if (!node.HasStringAttribute(ax::mojom::StringAttribute::kName))
+      continue;
+    const std::string& name =
+        node.GetStringAttribute(ax::mojom::StringAttribute::kName);
+    if (name.empty())
+      continue;
+    if (!out.empty())
+      out += '\n';
+    out += name;
+    if (static_cast<int>(out.size()) >= cap) {
+      out.resize(cap);
+      break;
+    }
+  }
+  return out;
+}
 
 }  // namespace
 
@@ -84,6 +117,22 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
     return;
   }
 
+  // PDF chat: PDFs render inside an isolated <embed> whose innerText is
+  // unreachable from a content-script. Route through the accessibility
+  // tree instead — PDFium publishes the document's text as kName
+  // attributes on the leaf AX nodes, so a flat walk gives us the same
+  // payload shape as innerText for the chat to ground on.
+  if (active->GetContentsMimeType() == pdf::kPDFMimeType) {
+    active->RequestAXTreeSnapshot(
+        base::BindOnce(&AiChatSidePanelWebView::OnAxTreeCaptured,
+                       weak_factory_.GetWeakPtr(), my_gen, url, title),
+        ui::kAXModeWebContentsOnly,
+        /*max_nodes=*/50000,
+        /*timeout=*/base::TimeDelta(),
+        content::WebContents::AXTreeSnapshotPolicy::kAll);
+    return;
+  }
+
   // Capture document.body.innerText, capped. The cap goes inside the
   // JS so we don't ship a huge string across the IPC just to truncate
   // it here. Wrapped in a try/catch so a hostile page that overrides
@@ -99,6 +148,20 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
       base::BindOnce(&AiChatSidePanelWebView::OnActiveTabTextCaptured,
                      weak_factory_.GetWeakPtr(), my_gen, url, title),
       /*world_id=*/1);
+}
+
+void AiChatSidePanelWebView::OnAxTreeCaptured(int64_t generation,
+                                                std::string url,
+                                                std::string title,
+                                                ui::AXTreeUpdate& update) {
+  if (generation != generation_)
+    return;
+  std::string text = FlattenAxTreeText(update, kPageTextCharCap);
+  // Prefix with a small marker so the chat can render a "PDF" chip
+  // distinct from a normal web-page context chip.
+  std::string prefixed_title = title.empty() ? std::string("PDF document")
+                                              : (title + " (PDF)");
+  InjectContextIntoChat(url, prefixed_title, text);
 }
 
 void AiChatSidePanelWebView::OnActiveTabTextCaptured(int64_t generation,

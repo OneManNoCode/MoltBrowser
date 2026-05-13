@@ -12,6 +12,7 @@
 #include "base/values.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/controls/webview/webview.h"
 
@@ -71,6 +72,15 @@ class AiChatSidePanelWebView : public views::WebView,
                                 std::string url,
                                 std::string title,
                                 base::Value page_text);
+
+  // PDF variant of the reply step: receives an AX tree snapshot and
+  // flattens its kName attributes into text for the chat. Used when
+  // the active tab's MIME type is application/pdf since the PDF
+  // viewer's content isn't reachable via document.body.innerText.
+  void OnAxTreeCaptured(int64_t generation,
+                         std::string url,
+                         std::string title,
+                         ui::AXTreeUpdate& update);
 
   // Inject the {url, title, text} dict into the chat WebUI as JSON.
   void InjectContextIntoChat(const std::string& url,
