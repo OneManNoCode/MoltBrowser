@@ -85,6 +85,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // profile dict and reports back affected_field_count.
   // Args: [callback_id]
   void HandleRunFormFill(const base::ListValue& args);
+  // AI-grouped history — read up to N recent docs from MemoryService
+  // and ship back {docs:[{url,title,visited_at,word_count}], ...}.
+  // The JS side does the clustering so it can re-cluster on filter
+  // without a round-trip.
+  // Args: [callback_id, limit?]
+  void HandleListMemoryDocs(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,

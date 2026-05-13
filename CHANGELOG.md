@@ -19,6 +19,27 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-05-12 — AI-grouped history (`/history`)
+
+Personal Vector Memory gets a face. `/history` in the side panel pulls
+your recent reading from MemoryService and clusters it into topic
+cards by title-keyword overlap. No LLM round-trip in the hot path; the
+whole thing is sub-50ms in the WebUI JS.
+([devblog](website/updates/devblog/2026-05-12-grouped-history.md))
+
+### Added
+- IPC `listMemoryDocs(limit)` returning `{docs:[{doc_id, url, title,
+  visited_at_unix, word_count, host}]}` — a thin pass-through to
+  `MemoryService::ListRecent`.
+- `/history [limit]` slash command. Default 200, max 2000.
+- Greedy Jaccard-overlap clusterer in the WebUI JS: tokenize titles,
+  drop stop-words, join cluster if `|A ∩ B| / |A ∪ B| >= 0.20`,
+  otherwise start new cluster. Label = top-2 most-frequent tokens.
+- Cluster cards render as `<details>` elements; top-3 open by
+  default, the rest collapsed.
+
+---
+
 ## 2026-05-12 — Form filler agent (encrypted local profile, no cloud)
 
 A form filler whose entire universe is one local file. `/profile` opens

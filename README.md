@@ -14,6 +14,7 @@ Built by [GenEye AI Labs Inc.](https://github.com/OneManNoCode)
 
 We push to `main` every day. The latest visible work:
 
+- **2026-05-12** — AI-grouped history: `/history` clusters your reading into topic cards, sub-50ms, all local. ([post](website/updates/devblog/2026-05-12-grouped-history.md))
 - **2026-05-12** — Form filler agent: encrypted local profile, `/fill` autofills any web form, nothing ever syncs. ([post](website/updates/devblog/2026-05-12-form-filler.md))
 - **2026-05-12** — PDF chat: side panel reads PDFs via AX-tree snapshot, fully local. ([post](website/updates/devblog/2026-05-12-pdf-chat.md))
 - **2026-05-12** — Universal cookie killer, tab triage, page watchers, agent inbox tray. ([post](website/updates/devblog/2026-05-12-four-agent-features.md))

@@ -160,6 +160,12 @@ void MoltAIChatHandler::RegisterMessages() {
       "runFormFill",
       base::BindRepeating(&MoltAIChatHandler::HandleRunFormFill,
                           base::Unretained(this)));
+  // AI-grouped history: enumerate recent docs from Personal Vector
+  // Memory; the JS side clusters them by keyword overlap.
+  web_ui()->RegisterMessageCallback(
+      "listMemoryDocs",
+      base::BindRepeating(&MoltAIChatHandler::HandleListMemoryDocs,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -2163,4 +2169,69 @@ void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
           },
           weak_this, cb_id),
       /*world_id=*/1);
+}
+
+// ------------------------------------------------------------------
+// HandleListMemoryDocs — Personal Vector Memory dump for the AI-grouped
+// history WebUI. We don't cluster server-side; the JS does
+// keyword-overlap clustering so the user can re-cluster (filter by
+// host, "merge near-duplicates", etc.) without a round-trip.
+// Args: [callback_id, limit?]  (limit defaults to 200, capped at 2000)
+// Returns: {docs:[{url,title,visited_at,word_count,host}]}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleListMemoryDocs(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  int limit = 200;
+  if (args.size() > 1 && args[1].is_int()) {
+    limit = std::max(1, std::min(2000, args[1].GetInt()));
+  }
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  if (!profile) {
+    base::DictValue empty;
+    empty.Set("docs", base::ListValue());
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(empty)));
+    return;
+  }
+  molt_ai::memory::MemoryService* svc =
+      molt_ai::memory::MemoryServiceFactory::GetForProfile(profile);
+  if (!svc) {
+    base::DictValue empty;
+    empty.Set("docs", base::ListValue());
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(empty)));
+    return;
+  }
+  std::string cb_id = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  svc->ListRecent(limit, base::BindOnce(
+      [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+         std::vector<molt_ai::memory::Document> docs) {
+        if (!self) return;
+        base::ListValue arr;
+        for (const auto& d : docs) {
+          base::DictValue dv;
+          dv.Set("doc_id", static_cast<double>(d.doc_id));
+          dv.Set("url", d.url);
+          dv.Set("title", d.title);
+          dv.Set("visited_at_unix",
+                 static_cast<double>(d.visited_at_unix));
+          dv.Set("word_count", d.word_count);
+          // Convenience: pre-extract the host so the JS clusterer
+          // doesn't need to instantiate a URL per doc.
+          GURL g(d.url);
+          dv.Set("host", g.is_valid() ? std::string(g.host()) : std::string());
+          arr.Append(std::move(dv));
+        }
+        base::DictValue out;
+        out.Set("docs", std::move(arr));
+        self->ResolveJavascriptCallback(base::Value(cb_id),
+                                        base::Value(std::move(out)));
+      },
+      weak_this, cb_id));
 }
