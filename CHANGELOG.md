@@ -1,0 +1,132 @@
+# MoltBrowser Changelog
+
+All notable changes to MoltBrowser are tracked here. Each release ships
+to `main` and the public daily build at
+[github.com/OneManNoCode/MoltBrowser](https://github.com/OneManNoCode/MoltBrowser).
+
+The project is GPL-3.0 licensed — contributions, issues, and forks are
+all welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup.
+
+Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
+For longer narrative posts behind each entry see
+[`website/updates/devblog/`](website/updates/devblog/).
+
+---
+
+## [Unreleased]
+
+(In-flight on `main` — will be folded into the next versioned build.)
+
+---
+
+## 2026-05-12 — Universal cookie killer, tab triage, page watchers, agent inbox
+
+Four agent/UX features built on the side-panel + automation + memory
+stacks. ([`bd52774`](https://github.com/OneManNoCode/MoltBrowser/commit/bd52774))
+
+### Added
+- **Universal cookie-modal killer** — Per-tab `WebContentsObserver`
+  injects a 3-stage script that auto-clicks "reject all" on OneTrust,
+  Cookiebot, TrustArc, Quantcast, Didomi, CookieYes, Osano, Sourcepoint,
+  Usercentrics, Klaro, plus a text-based fallback that scans visible
+  buttons for "reject all" / "decline all" / "only necessary".
+- **Tab triage** — Chat slash command `/triage list | close-inactive |
+  close-domain <host> | bookmark-inactive | pin-active`. Backed by two
+  new WebUI IPCs (`listTabsInWindow`, `triageActOnTabs`) that
+  enumerate and bulk-act on tabs in the side-panel's owning Browser.
+- **Page watchers** — Chat slash command `/watch <url> <selector>
+  [interval] [name]` builds an `INTERVAL`-triggered Script
+  (`NAVIGATE → WAIT_FOR → EXTRACT → NOTIFY`) and saves it via
+  `AutomationStorage`. The existing scheduler picks it up and fires an
+  OS notification every N seconds with the current value.
+- **Agent inbox** — Process-wide `AgentInboxRegistry` holds one row per
+  in-flight background automation. A 3-second side-panel poller renders
+  a live "Running agents" tray with a pulsing dot, script name, step
+  counter, and status note. Hides when nothing's running.
+
+---
+
+## 2026-05-11 — Phase 3 follow-ups
+
+Closed six Phase-2 gaps in one batch.
+([`5d9702f`](https://github.com/OneManNoCode/MoltBrowser/commit/5d9702f))
+
+### Added
+- Page-content chunking at sentence boundaries with keyword-overlap
+  ranking — beats blind head-truncation on long articles.
+- Memory query pre-fetch before every LLM prompt, top-3 hits prepended
+  to the system message so cross-page recall ("what was that REIT
+  article I read last week") works.
+- Hover, right-click, drag, wait, wait-for action types in the
+  slash-command dispatcher.
+
+---
+
+## 2026-05-10 — Side panel grounded in the active tab
+
+Phase 2: page-content grounding + LLM-emit-actions + new action verbs.
+([`beafb03`](https://github.com/OneManNoCode/MoltBrowser/commit/beafb03),
+ [`56538d5`](https://github.com/OneManNoCode/MoltBrowser/commit/56538d5),
+ [`5db8470`](https://github.com/OneManNoCode/MoltBrowser/commit/5db8470))
+
+### Added
+- `TabStripModelObserver` in the side panel pushes the active tab's
+  URL + title + 50 KB of innerText to the chat every time the user
+  switches tabs.
+- LLM can emit `[[ACTION verb:args]]` tokens; the side panel parses
+  them and runs the same `runMoltAction` IPC the user gets via
+  slash commands. The model now drives the page directly.
+- New action verbs: `click`, `type`, `scroll`, `navigate`, `select`,
+  `hover`, `right-click`, `drag`, `wait`, `wait-for`.
+
+---
+
+## 2026-05-08 — Personal Vector Memory
+
+Encrypted on-device semantic index of every page you read, with
+sub-millisecond cosine search.
+([`1cfa58c`](https://github.com/OneManNoCode/MoltBrowser/commit/1cfa58c),
+ [`3e2df81`](https://github.com/OneManNoCode/MoltBrowser/commit/3e2df81))
+
+### Added
+- `MemoryService` (profile-scoped `KeyedService`): hashing-trick
+  embedder, contiguous flat index, SQLite storage encrypted at rest
+  with `OSCrypt`. Sub-millisecond query latency on 10k pages.
+- Privacy gate: excludes `chrome://`, `data:`, file-scheme, incognito,
+  and a user-editable domain blocklist.
+- UI at `molt://memory` for stats, recent docs, delete-by-domain, and
+  clear-all.
+
+---
+
+## 2026-05-05 — Automation manager + audit observability
+
+Day 6: run history, retry-from-failed-step, AI token accounting.
+([`d3b3de6`](https://github.com/OneManNoCode/MoltBrowser/commit/d3b3de6))
+
+### Added
+- Per-script `RunRecord` ring buffer (last 50 runs) drives the manager
+  UI's sparkline + activity timeline.
+- "Retry from failed step" button picks up at the recorded
+  `last_failed_step_index` instead of restarting the whole script.
+- Cumulative AI token totals surface per-script "is this prompt
+  getting too expensive" diagnostics.
+
+---
+
+## 2026-05-04 — Web automation engine v1
+
+Days 3–5: schedule editor, manual create / import / export, trust UX.
+([`11ef4be`](https://github.com/OneManNoCode/MoltBrowser/commit/11ef4be))
+
+### Added
+- Record / replay / schedule any web workflow.
+- `~/.moltbrowser/automations/*.molt` JSON-on-disk script format.
+- Cron and interval triggers with timezone support, missed-run
+  catch-up on browser launch.
+- Trust levels (`CASUAL` / `APPROVED` / `TRUSTED` / `ADMIN`) with
+  per-action approval gates.
+
+---
+
+[unreleased]: https://github.com/OneManNoCode/MoltBrowser/compare/bd52774...HEAD

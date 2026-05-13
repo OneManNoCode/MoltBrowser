@@ -4,6 +4,27 @@
 
 Built by [GenEye AI Labs Inc.](https://github.com/OneManNoCode)
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Changelog](https://img.shields.io/badge/changelog-keep--a--changelog-orange)](CHANGELOG.md)
+[![Devblog](https://img.shields.io/badge/devblog-daily%20updates-green)](website/updates/devblog/)
+
+---
+
+## What's new
+
+We push to `main` every day. The latest visible work:
+
+- **2026-05-12** — Universal cookie killer, tab triage, page watchers, agent inbox tray. ([post](website/updates/devblog/2026-05-12-four-agent-features.md))
+- **2026-05-11** — Page-content chunking, memory grounding, new action verbs.
+- **2026-05-10** — Side panel grounded in the active tab, LLM emits actions directly.
+- **2026-05-08** — Personal Vector Memory: encrypted on-device semantic index.
+
+Full history: [`CHANGELOG.md`](CHANGELOG.md) — Narrative behind each entry: [`website/updates/devblog/`](website/updates/devblog/).
+
+Want to contribute? See [`CONTRIBUTING.md`](CONTRIBUTING.md). Issues and
+PRs welcome — pick anything from the changelog "Unreleased" section or
+propose your own.
+
 ---
 
 ## What is MoltBrowser?
