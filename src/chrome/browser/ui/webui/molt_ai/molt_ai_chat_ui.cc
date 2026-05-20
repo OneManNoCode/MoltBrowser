@@ -343,7 +343,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br>Try a slash command: <code>/history</code> (your reading, AI-grouped), <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code> (autofill forms), <code>/profile</code> (set up your saved profile), <code>/click .button</code>, or send any message to chat.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br>Try a slash command: <code>/pdf</code> (chat with a PDF), <code>/bookmark &lt;query&gt;</code> (semantic bookmark search), <code>/ask-tabs &lt;question&gt;</code> (ask across all open tabs), <code>/sandbox &lt;url&gt;</code> (throwaway session), <code>/history</code> (your reading, AI-grouped), <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code> (autofill forms), <code>/profile</code> (saved profile), <code>/click .button</code>, or send any message to chat.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -707,6 +707,187 @@ function buildHistoryString() {
 // Returns true if the text was a recognized action and was dispatched;
 // the caller should skip the LLM path in that case.
 // --------------------------------------------------------------
+// --------------------------------------------------------------
+// PDF chat: /pdf [url]
+// With no arg, uses the active tab URL if it ends in .pdf. Otherwise
+// fetches the supplied URL. The extracted text is stored as the next
+// user turn's pre-pended context so any follow-up question grounds
+// in the PDF.
+// --------------------------------------------------------------
+var pdfContext = null;  // {url, host, text} — primed by /pdf, consumed once
+function tryDispatchPdfCommand(text) {
+  var m = text.match(/^\s*\/pdf\b\s*(.*)$/i);
+  if (!m) return false;
+  var rest = (m[1] || '').trim();
+  var url = rest;
+  if (!url) {
+    // Use the active tab if it looks like a PDF.
+    var tabUrl = (window.__moltLastTabContext &&
+                  window.__moltLastTabContext.url) || '';
+    if (/\.pdf(\?|#|$)/i.test(tabUrl)) url = tabUrl;
+  }
+  if (!url) {
+    addErrorMessage('Usage: /pdf <url>  (or open a .pdf tab first)');
+    return true;
+  }
+  if (!/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
+    url = 'https://' + url;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Fetching ' + url + '...');
+  sendWithPromise('extractPdfText', url).then(function(r) {
+    if (!r.success) {
+      currentAiText = '✗ ' + (r.error || 'PDF extraction failed');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    var host = '';
+    try { host = new URL(r.url).host; } catch (e) {}
+    pdfContext = {url: r.url, host: host, text: r.text};
+    var preview = (r.text || '').slice(0, 280);
+    currentAiText = '✓ Loaded ' + r.char_count + ' chars from ' +
+                    (host || r.url) + '. Ask me anything about it.\n\n' +
+                    '"' + preview + (r.char_count > 280 ? '…' : '') + '"';
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Smart bookmarks: /bookmark <query> | /bm <query>
+// Keyword-ranks the user's bookmarks and shows top hits with one-click
+// open links.
+// --------------------------------------------------------------
+function tryDispatchBookmarksCommand(text) {
+  var m = text.match(/^\s*\/(bookmark|bm)\b\s*(.*)$/i);
+  if (!m) return false;
+  var query = (m[2] || '').trim();
+  if (!query) {
+    addErrorMessage('Usage: /bookmark <query>');
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Searching bookmarks...');
+  sendWithPromise('searchBookmarks', query, 10).then(function(r) {
+    var hits = (r && r.hits) || [];
+    if (!hits.length) {
+      currentAiText = 'No bookmark matched "' + query + '".';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    function esc(s) { return (s + '').replace(/&/g,'&amp;')
+                                     .replace(/</g,'&lt;')
+                                     .replace(/>/g,'&gt;')
+                                     .replace(/"/g,'&quot;'); }
+    var lines = ['Top bookmark matches:'];
+    hits.forEach(function(h, i) {
+      lines.push((i + 1) + '. ' + esc(h.title) +
+                 ' — ' + esc(h.host) +
+                 ' (score ' + h.score + ')' +
+                 (h.parent ? '  · ' + esc(h.parent) : '') +
+                 '\n   ' + esc(h.url));
+    });
+    currentAiText = lines.join('\n');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Cross-tab Q&A: /ask-tabs <question> | /ask <question>
+// Pulls innerText from every tab in this window, chunks it, ranks
+// chunks against the question, and asks the LLM with the top-K
+// chunks as grounding context. The standard chunk-ranker is reused.
+// --------------------------------------------------------------
+function tryDispatchAskTabsCommand(text) {
+  var m = text.match(/^\s*\/(ask-tabs|asktabs|ask)\b\s*(.*)$/i);
+  if (!m) return false;
+  var question = (m[2] || '').trim();
+  if (!question) {
+    addErrorMessage('Usage: /ask-tabs <question>');
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Reading all open tabs...');
+  sendWithPromise('extractAllTabsText', 4000).then(function(r) {
+    var tabs = (r && r.tabs) || [];
+    if (!tabs.length) {
+      currentAiText = 'No tabs to read.';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    // Build a combined text labeled per tab.
+    var labeled = '';
+    tabs.forEach(function(t) {
+      if (!t.text) return;
+      labeled += '\n\n[' + (t.title || t.url) + ']\n' + t.text;
+    });
+    // Chunk + rank with existing helpers.
+    var chunks = chunkPageText(labeled, 600);
+    var top = rankChunksByQuery(chunks, question, 6);
+    var ctx = top.join('\n\n---\n\n');
+    var prompt = 'Question: ' + question;
+    var historyForPrompt = '';
+    var pageCtx =
+      'Cross-tab Q&A (' + tabs.length + ' tabs). Use only these snippets:\n' +
+      ctx;
+    currentAiText = '';
+    // Restart the AI message bubble since we'll stream into it.
+    startAiMessage();
+    sendWithPromise('sendPrompt', prompt, historyForPrompt, pageCtx)
+        .then(function(result) {
+          finishAiMessage();
+          setGenerating(false);
+          if (result && !result.success && result.error) {
+            addErrorMessage(result.error);
+          }
+        }).catch(function() {
+          finishAiMessage();
+          setGenerating(false);
+        });
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Sandbox tab: /sandbox <url>
+// Opens the URL in an off-the-record window. Cookies and storage
+// from that session vanish when the window closes.
+// --------------------------------------------------------------
+function tryDispatchSandboxCommand(text) {
+  var m = text.match(/^\s*\/sandbox\b\s*(.*)$/i);
+  if (!m) return false;
+  var url = (m[1] || '').trim();
+  if (!url) {
+    var tabUrl = (window.__moltLastTabContext &&
+                  window.__moltLastTabContext.url) || '';
+    if (tabUrl) url = tabUrl;
+  }
+  if (!url) {
+    addErrorMessage('Usage: /sandbox <url>');
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  sendWithPromise('openSandboxTab', url).then(function(r) {
+    currentAiText = r.success
+        ? '✓ Opened ' + r.url + ' in a sandbox window. ' +
+          'Cookies/storage will be discarded on close.'
+        : '✗ ' + (r.error || 'sandbox open failed');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
 // --------------------------------------------------------------
 // Tab Triage: /triage [close-inactive | close-domain <host> | list]
 // /triage list  -> show all tabs in this window with a snippet.
@@ -1255,6 +1436,34 @@ function sendMessage() {
     setGenerating(true);
     return;
   }
+  if (text.charAt(0) === '/' && tryDispatchPdfCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchBookmarksCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchAskTabsCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchSandboxCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
   if (text.charAt(0) === '/' && tryDispatchTriageCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
@@ -1323,6 +1532,18 @@ function sendMessage() {
         pageCtx = (pageCtx ? (pageCtx + '\n\n') : '') +
                   'Active page content (most relevant excerpts):\n' +
                   top.map(function(c){ return '- ' + c; }).join('\n');
+      }
+    }
+    // PDF chat: if /pdf was just used, prepend the top-K relevant
+    // chunks from the loaded PDF to ground the answer in that document.
+    if (pdfContext && pdfContext.text) {
+      var pdfChunks = chunkPageText(pdfContext.text, 600);
+      var pdfTop = rankChunksByQuery(pdfChunks, text, 6);
+      if (pdfTop.length) {
+        pageCtx = (pageCtx ? (pageCtx + '\n\n') : '') +
+                  'Loaded PDF (' + (pdfContext.host || pdfContext.url) +
+                  ') — most relevant excerpts:\n' +
+                  pdfTop.map(function(c){ return '- ' + c; }).join('\n');
       }
     }
     // Personal Vector Memory grounding. Failures here are non-fatal

@@ -237,6 +237,7 @@ void AutomationRunner::ExecuteNextStep() {
     case StepType::SCREENSHOT:  DoScreenshot(s); break;
     case StepType::ASSERT:      DoAssert(s); break;
     case StepType::RUN_JS:      DoRunJS(s); break;
+    case StepType::RUN_SCRIPT:  DoRunScript(s); break;
     default:
       OnStepFinished(false, "Unknown step type");
       break;
@@ -923,6 +924,53 @@ void AutomationRunner::DoRunJS(const Step& s) {
                                                      : "Ran JS -> " + store_as);
       },
       weak_factory_.GetWeakPtr(), s.store_as));
+}
+
+// RUN_SCRIPT: chain agents. The step's `target` field is the id of a
+// saved Script to invoke. We load the child script from storage and
+// splice its steps into the parent's script_.steps vector at the
+// position immediately after the current step, so when ExecuteNextStep
+// advances it picks up the child's first step. The child shares the
+// parent's WebContents, ai_runtime, storage, and variables_ map, so
+// {{vars}} flow through. The parent's stats/security policy continue
+// to apply.
+//
+// Cycle protection: if the child id matches script_.id we refuse,
+// since the user could chain a script into itself ad infinitum.
+void AutomationRunner::DoRunScript(const Step& s) {
+  std::string child_id = Resolve(s.target);
+  if (child_id.empty()) {
+    OnStepFinished(false, "RUN_SCRIPT: missing target script id");
+    return;
+  }
+  if (child_id == script_.id) {
+    OnStepFinished(false, "RUN_SCRIPT: refusing to recurse into self");
+    return;
+  }
+  if (!storage_) {
+    OnStepFinished(false, "RUN_SCRIPT: no storage available");
+    return;
+  }
+  auto child = storage_->Load(child_id);
+  if (!child) {
+    OnStepFinished(false, "RUN_SCRIPT: child not found: " + child_id);
+    return;
+  }
+  if (child->steps.empty()) {
+    OnStepFinished(true, "RUN_SCRIPT: " + child_id + " (empty, skipped)");
+    return;
+  }
+  // Splice the child's steps after the current index. ExecuteNextStep
+  // will advance current_index_ by 1 and pick up the first child step.
+  // Step contains a base::Value (move-only), so we move-iterate.
+  const size_t inserted = child->steps.size();
+  auto insert_pos = script_.steps.begin() + current_index_ + 1;
+  script_.steps.insert(insert_pos,
+                       std::make_move_iterator(child->steps.begin()),
+                       std::make_move_iterator(child->steps.end()));
+  OnStepFinished(true,
+                 "RUN_SCRIPT: expanded " + child_id +
+                 " (" + std::to_string(inserted) + " steps)");
 }
 
 void AutomationRunner::DoAssert(const Step& s) {

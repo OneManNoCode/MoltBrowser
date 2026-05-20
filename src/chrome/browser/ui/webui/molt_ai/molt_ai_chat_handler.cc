@@ -10,8 +10,11 @@
 #include <ctime>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -34,9 +37,12 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
@@ -53,6 +59,8 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/fetch_api.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 
 MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
     : profile_(profile) {}
@@ -145,6 +153,26 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "listActiveAgents",
       base::BindRepeating(&MoltAIChatHandler::HandleListActiveAgents,
+                          base::Unretained(this)));
+  // PDF chat: fetch a PDF URL, extract text, return to chat.
+  web_ui()->RegisterMessageCallback(
+      "extractPdfText",
+      base::BindRepeating(&MoltAIChatHandler::HandleExtractPdfText,
+                          base::Unretained(this)));
+  // Smart bookmarks: keyword-rank user's bookmarks by query.
+  web_ui()->RegisterMessageCallback(
+      "searchBookmarks",
+      base::BindRepeating(&MoltAIChatHandler::HandleSearchBookmarks,
+                          base::Unretained(this)));
+  // Cross-tab Q&A: pull innerText from every tab in the owning Browser.
+  web_ui()->RegisterMessageCallback(
+      "extractAllTabsText",
+      base::BindRepeating(&MoltAIChatHandler::HandleExtractAllTabsText,
+                          base::Unretained(this)));
+  // Sandbox tab: open a URL in an OTR session.
+  web_ui()->RegisterMessageCallback(
+      "openSandboxTab",
+      base::BindRepeating(&MoltAIChatHandler::HandleOpenSandboxTab,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -2234,4 +2262,405 @@ void MoltAIChatHandler::HandleListMemoryDocs(const base::ListValue& args) {
                                         base::Value(std::move(out)));
       },
       weak_this, cb_id));
+}
+
+// ------------------------------------------------------------------
+// HandleExtractPdfText: download a PDF URL via SimpleURLLoader, run
+// our minimal PDF text scraper, and ship the result back to chat.
+// The result includes the host so the UI can show a "Chatting with
+// foo.pdf from example.com" chip.
+//
+// Args: [callback_id, url]
+// Returns: {success, url, text, char_count, error?}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string url = args[1].is_string() ? args[1].GetString() : "";
+
+  base::DictValue err;
+  if (url.empty()) {
+    err.Set("success", false);
+    err.Set("error", "missing url");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(err)));
+    return;
+  }
+  GURL gurl(url);
+  if (!gurl.is_valid() ||
+      (!gurl.SchemeIsHTTPOrHTTPS() && !gurl.SchemeIsFile())) {
+    err.Set("success", false);
+    err.Set("error", "url must be http(s) or file://");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(err)));
+    return;
+  }
+
+  pdf_callback_id_ = callback_id;
+  pdf_source_url_ = url;
+
+  auto resource_request = std::make_unique<network::ResourceRequest>();
+  resource_request->url = gurl;
+  resource_request->method = "GET";
+  resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+
+  net::NetworkTrafficAnnotationTag traffic_annotation =
+      net::DefineNetworkTrafficAnnotation("molt_ai_pdf_extract", R"(
+        semantics {
+          sender: "MoltBrowser AI"
+          description: "Downloads a PDF the user asked to chat with"
+          trigger: "User invokes /pdf in the side panel chat"
+          data: "HTTP GET for the PDF the user asked about"
+          destination: WEBSITE
+        }
+        policy {
+          cookies_allowed: NO
+          setting: "User-initiated PDF extraction in the AI side panel"
+        })");
+
+  pdf_loader_ = network::SimpleURLLoader::Create(
+      std::move(resource_request), traffic_annotation);
+  pdf_loader_->SetAllowHttpErrorResults(false);
+  // Cap at 25 MB so a giant PDF doesn't OOM the browser process.
+  static constexpr size_t kMaxPdfBytes = 25 * 1024 * 1024;
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  network::mojom::URLLoaderFactory* factory =
+      profile ? profile->GetDefaultStoragePartition()
+                    ->GetURLLoaderFactoryForBrowserProcess().get()
+              : nullptr;
+  if (!factory) {
+    err.Set("success", false);
+    err.Set("error", "no url loader factory");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(err)));
+    pdf_loader_.reset();
+    return;
+  }
+
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  pdf_loader_->DownloadToString(
+      factory,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self,
+             std::optional<std::string> body) {
+            if (!self) return;
+            std::string cb_id = self->pdf_callback_id_;
+            std::string src_url = self->pdf_source_url_;
+            self->pdf_loader_.reset();
+            self->pdf_callback_id_.clear();
+            self->pdf_source_url_.clear();
+
+            base::DictValue out;
+            out.Set("url", src_url);
+            if (!body.has_value() || body->empty()) {
+              out.Set("success", false);
+              out.Set("error", "PDF download failed");
+              self->ResolveJavascriptCallback(base::Value(cb_id),
+                                              base::Value(std::move(out)));
+              return;
+            }
+            // Hand to the scraper. CPU-only, ~100ms for typical PDFs.
+            std::vector<uint8_t> bytes(body->begin(), body->end());
+            std::string text =
+                molt_ai::pdf::ExtractText(bytes, /*max_chars=*/50000);
+            if (text.empty()) {
+              out.Set("success", false);
+              out.Set("error",
+                      "no text layer (image-only PDF — OCR coming soon)");
+              self->ResolveJavascriptCallback(base::Value(cb_id),
+                                              base::Value(std::move(out)));
+              return;
+            }
+            out.Set("success", true);
+            out.Set("text", text);
+            out.Set("char_count", static_cast<int>(text.size()));
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(out)));
+          },
+          weak_this),
+      kMaxPdfBytes);
+}
+
+// ------------------------------------------------------------------
+// HandleSearchBookmarks: walk the BookmarkModel tree and rank entries
+// against the query using simple unique-token overlap on title+url+host.
+// Same ranker as the chunk-ranker in the chat (deterministic, no
+// embedding needed). Returns top-K.
+//
+// Args: [callback_id, query, top_k]
+// Returns: {hits: [{title, url, host, score, parent}]}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleSearchBookmarks(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string query = args[1].is_string() ? args[1].GetString() : "";
+  int top_k = 8;
+  if (args.size() > 2 && args[2].is_int())
+    top_k = std::max(1, args[2].GetInt());
+
+  base::DictValue out;
+  base::ListValue hits;
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  bookmarks::BookmarkModel* bm =
+      profile ? BookmarkModelFactory::GetForBrowserContext(profile)
+              : nullptr;
+  if (!bm || !bm->loaded() || query.empty()) {
+    out.Set("hits", std::move(hits));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Tokenise query.
+  auto tokenise = [](const std::string& s) {
+    std::vector<std::string> out_tokens;
+    std::string cur;
+    for (char c : s) {
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9')) {
+        cur += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      } else {
+        if (cur.size() >= 2) out_tokens.push_back(cur);
+        cur.clear();
+      }
+    }
+    if (cur.size() >= 2) out_tokens.push_back(cur);
+    return out_tokens;
+  };
+  std::vector<std::string> q_tokens = tokenise(query);
+  std::set<std::string> q_set(q_tokens.begin(), q_tokens.end());
+  if (q_set.empty()) {
+    out.Set("hits", std::move(hits));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  struct Cand {
+    int score = 0;
+    std::string title;
+    std::string url;
+    std::string host;
+    std::string parent;
+  };
+  std::vector<Cand> cands;
+
+  // DFS over the bookmark tree.
+  std::function<void(const bookmarks::BookmarkNode*, const std::string&)> dfs;
+  dfs = [&](const bookmarks::BookmarkNode* node,
+            const std::string& parent_name) {
+    if (!node) return;
+    if (node->is_url()) {
+      std::string title = base::UTF16ToUTF8(node->GetTitle());
+      std::string url = node->url().spec();
+      std::string host = std::string(node->url().host());
+      std::vector<std::string> doc_tokens = tokenise(title + " " + url);
+      std::set<std::string> seen;
+      int score = 0;
+      for (const auto& t : doc_tokens) {
+        if (q_set.count(t) && !seen.count(t)) {
+          ++score;
+          seen.insert(t);
+        }
+      }
+      if (score > 0) {
+        cands.push_back({score, std::move(title), std::move(url),
+                         std::move(host), parent_name});
+      }
+    } else {
+      std::string my_name = base::UTF16ToUTF8(node->GetTitle());
+      for (size_t i = 0; i < node->children().size(); ++i) {
+        dfs(node->children()[i].get(),
+            my_name.empty() ? parent_name : my_name);
+      }
+    }
+  };
+  dfs(bm->root_node(), "");
+
+  std::sort(cands.begin(), cands.end(),
+            [](const Cand& a, const Cand& b) { return a.score > b.score; });
+  int kept = 0;
+  for (const auto& c : cands) {
+    if (kept++ >= top_k) break;
+    base::DictValue d;
+    d.Set("title", c.title);
+    d.Set("url", c.url);
+    d.Set("host", c.host);
+    d.Set("score", c.score);
+    d.Set("parent", c.parent);
+    hits.Append(std::move(d));
+  }
+  out.Set("hits", std::move(hits));
+  out.Set("query_token_count", static_cast<int>(q_set.size()));
+  out.Set("total_candidates", static_cast<int>(cands.size()));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleExtractAllTabsText: pull innerText from every tab in the owning
+// Browser's tab strip via ExecuteJavaScriptInIsolatedWorld. Returns a
+// flat array of {url, title, text}. Each tab is capped at
+// max_chars_per_tab (default 4000) so the LLM context isn't blown.
+//
+// The N async JS calls all hit the same UI thread; we use a small
+// shared counter to know when all returned and emit the final response
+// once.
+//
+// Args: [callback_id, max_chars_per_tab]
+// Returns: {tabs: [{url, title, text}], total_chars}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleExtractAllTabsText(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  int max_chars_per_tab = 4000;
+  if (args.size() > 1 && args[1].is_int())
+    max_chars_per_tab = std::max(200, args[1].GetInt());
+
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+
+  base::DictValue out;
+  base::ListValue tabs;
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("tabs", std::move(tabs));
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  TabStripModel* model = browser->tab_strip_model();
+  const int n = model->count();
+  if (n == 0) {
+    out.Set("tabs", std::move(tabs));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Shared collector held by shared_ptr so each per-tab callback can
+  // contribute. When pending drops to 0 we emit the resolve.
+  struct Collector {
+    int pending = 0;
+    base::ListValue results;
+    int total_chars = 0;
+  };
+  auto collector = std::make_shared<Collector>();
+  collector->pending = n;
+  std::string cb_id_copy = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+
+  for (int i = 0; i < n; ++i) {
+    content::WebContents* wc = model->GetWebContentsAt(i);
+    base::DictValue tab_row;
+    tab_row.Set("index", i);
+    if (!wc || !wc->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+      tab_row.Set("url", wc ? wc->GetLastCommittedURL().spec() : std::string());
+      tab_row.Set("title",
+                  wc ? base::UTF16ToUTF8(wc->GetTitle()) : std::string());
+      tab_row.Set("text", "");
+      collector->results.Append(std::move(tab_row));
+      --collector->pending;
+      if (collector->pending == 0) {
+        base::DictValue resolved;
+        resolved.Set("tabs", std::move(collector->results));
+        resolved.Set("total_chars", collector->total_chars);
+        ResolveJavascriptCallback(base::Value(cb_id_copy),
+                                  base::Value(std::move(resolved)));
+      }
+      continue;
+    }
+    tab_row.Set("url", wc->GetLastCommittedURL().spec());
+    tab_row.Set("title", base::UTF16ToUTF8(wc->GetTitle()));
+    // Inject a tiny script that returns the body innerText sliced to
+    // |max_chars_per_tab|. Isolated world 1 — same world the chat
+    // already uses for page-context extraction.
+    std::string js = "(function(){"
+        "var t=(document.body && document.body.innerText) || '';"
+        "return t.length > " + std::to_string(max_chars_per_tab) + "?"
+        "t.slice(0," + std::to_string(max_chars_per_tab) + "):t;})()";
+    wc->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+        base::UTF8ToUTF16(js),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAIChatHandler> self,
+               std::shared_ptr<Collector> c, std::string cb_id,
+               base::DictValue row, base::Value result) {
+              std::string txt = result.is_string() ? result.GetString() : "";
+              row.Set("text", txt);
+              c->total_chars += static_cast<int>(txt.size());
+              c->results.Append(std::move(row));
+              if (--c->pending == 0 && self) {
+                base::DictValue resolved;
+                resolved.Set("tabs", std::move(c->results));
+                resolved.Set("total_chars", c->total_chars);
+                self->ResolveJavascriptCallback(
+                    base::Value(cb_id),
+                    base::Value(std::move(resolved)));
+              }
+            },
+            weak_this, collector, cb_id_copy, std::move(tab_row)),
+        /*world_id=*/1);
+  }
+}
+
+// ------------------------------------------------------------------
+// HandleOpenSandboxTab: open |url| in an off-the-record session so the
+// page's cookies and storage are discarded when the OTR window closes.
+// Reuses Chromium's existing chrome::OpenURLOffTheRecord which handles
+// the OTR profile lifecycle for us.
+//
+// Args: [callback_id, url]
+// Returns: {success, error?}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  std::string url_str = args[1].is_string() ? args[1].GetString() : "";
+
+  base::DictValue out;
+  if (url_str.empty()) {
+    out.Set("success", false);
+    out.Set("error", "missing url");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  if (!url_str.starts_with("http://") && !url_str.starts_with("https://")) {
+    url_str = "https://" + url_str;
+  }
+  GURL g(url_str);
+  if (!g.is_valid()) {
+    out.Set("success", false);
+    out.Set("error", "invalid url");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  if (!profile) {
+    out.Set("success", false);
+    out.Set("error", "no profile");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  // OpenURLOffTheRecord wants the *original* (non-OTR) profile.
+  Profile* original = profile->GetOriginalProfile();
+  chrome::OpenURLOffTheRecord(original, g);
+
+  out.Set("success", true);
+  out.Set("url", g.spec());
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
 }

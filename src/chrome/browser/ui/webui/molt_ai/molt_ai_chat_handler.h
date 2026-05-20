@@ -75,6 +75,19 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleCreateWatcher(const base::ListValue& args);
   // Agent Inbox — list currently-running background automation runs.
   void HandleListActiveAgents(const base::ListValue& args);
+  // PDF chat — download the PDF at |url|, extract text, return.
+  // Args: [callback_id, url]
+  void HandleExtractPdfText(const base::ListValue& args);
+  // Smart bookmarks — keyword-rank the user's bookmarks against |query|.
+  // Args: [callback_id, query, top_k]
+  void HandleSearchBookmarks(const base::ListValue& args);
+  // Cross-tab Q&A — pull innerText from every tab in the owning Browser.
+  // Args: [callback_id, max_chars_per_tab]
+  void HandleExtractAllTabsText(const base::ListValue& args);
+  // Sandbox tab — open |url| in an off-the-record window so cookies and
+  // storage are discarded when the window closes.
+  // Args: [callback_id, url]
+  void HandleOpenSandboxTab(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]
@@ -125,6 +138,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
 
   // Model download state
   std::unique_ptr<network::SimpleURLLoader> url_loader_;
+  // PDF extraction transient state (separate loader so it doesn't race
+  // with a concurrent model download).
+  std::unique_ptr<network::SimpleURLLoader> pdf_loader_;
+  std::string pdf_callback_id_;
+  std::string pdf_source_url_;
   std::string download_callback_id_;
   std::string downloading_model_id_;
   uint64_t download_total_bytes_ = 0;

@@ -113,6 +113,9 @@ class AutomationRunner {
   void DoEndLoop(const Step& s);
   void DoAssert(const Step& s);
   void DoRunJS(const Step& s);
+  // RUN_SCRIPT: inline-expand a child script's steps into the current
+  // script_.steps vector at current_index_ + 1, then continue.
+  void DoRunScript(const Step& s);
 
   // Returns true iff every IF frame currently allows execution. Used by
   // ExecuteNextStep to skip steps inside a not-taken branch.

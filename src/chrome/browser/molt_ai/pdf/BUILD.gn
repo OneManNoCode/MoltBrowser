@@ -1,0 +1,18 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# PDF text extraction for MoltBrowser. Used by the side-panel chat to
+# turn an open PDF into chat-context without dragging in the full
+# PDFium renderer.
+
+source_set("pdf") {
+  sources = [
+    "pdf_text_scraper.cc",
+    "pdf_text_scraper.h",
+  ]
+
+  deps = [
+    "//base",
+    "//third_party/zlib",
+  ]
+}

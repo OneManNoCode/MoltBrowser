@@ -323,6 +323,7 @@ static_library("ui") {
     "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
     "//chrome/browser/molt_ai/consent",
     "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/pdf",
     "//chrome/browser/new_tab_page/chrome_colors:generate_chrome_colors_info",
     "//chrome/browser/new_tab_page/chrome_colors:selected_colors_info",
     "//chrome/browser/obsolete_system",

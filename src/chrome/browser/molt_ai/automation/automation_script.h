@@ -55,6 +55,7 @@ enum class StepType {
   NOTIFY,      // OS notification on top-right (per user spec)
   SCREENSHOT,
   RUN_JS,      // arbitrary JS in the active frame (Trusted only)
+  RUN_SCRIPT,  // delegate to another saved Script by id (chain agents)
 
   // Sentinel
   UNKNOWN,
