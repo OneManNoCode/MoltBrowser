@@ -237,6 +237,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
      Populated by the native AiChatSidePanelWebView via the
      window.__moltSetTabContext({url,title}) contract whenever the
      active tab changes. -->
+<div class="anon-banner" id="anonBanner" style="display:none">
+  <span class="anon-icon">&#128274;</span>
+  <span>Anonymous session — cookies and storage discarded on close.</span>
+</div>
 <div class="tab-context" id="tabContext" style="display:none">
   <span class="tab-context-icon">&#128279;</span>
   <span class="tab-context-label" id="tabContextLabel"></span>
@@ -249,6 +253,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     window.__moltCurrentTabContext = ctx || null;
     var bar = document.getElementById('tabContext');
     var lbl = document.getElementById('tabContextLabel');
+    var anon = document.getElementById('anonBanner');
+    // Anonymous session banner — shown whenever the active tab lives
+    // in an OTR profile. The native side sets is_anonymous_session
+    // on every context push so this stays in sync with tab switches.
+    if (anon) {
+      anon.style.display = (ctx && ctx.is_anonymous_session) ? 'flex'
+                                                              : 'none';
+    }
     if (!bar || !lbl) return;
     if (!ctx || !ctx.url ||
         ctx.url.indexOf('chrome://') === 0 ||
@@ -283,6 +295,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .tab-context-icon{flex-shrink:0;}
 .tab-context-label{overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;cursor:default;}
+.anon-banner{display:flex;align-items:center;gap:8px;
+  background:#3a2a5a;color:#dabfff;padding:6px 12px;
+  font-size:11px;font-weight:500;border-bottom:1px solid #2a1a3a;}
+.anon-icon{flex-shrink:0;}
 .agent-inbox{background:rgba(58,134,255,0.08);border-bottom:1px solid #2a2a2a;
   padding:6px 12px;font-size:11px;display:flex;flex-direction:column;gap:4px;}
 .agent-inbox-header{font-weight:600;color:#9ec5ff;opacity:0.85;
@@ -343,7 +359,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br>Try a slash command: <code>/pdf</code> (chat with a PDF), <code>/bookmark &lt;query&gt;</code> (semantic bookmark search), <code>/ask-tabs &lt;question&gt;</code> (ask across all open tabs), <code>/sandbox &lt;url&gt;</code> (throwaway session), <code>/history</code> (your reading, AI-grouped), <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code> (autofill forms), <code>/profile</code> (saved profile), <code>/click .button</code>, or send any message to chat.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code><br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code>, <code>/click .button</code><br><br>Or just send a message.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -882,6 +898,194 @@ function tryDispatchSandboxCommand(text) {
         ? '✓ Opened ' + r.url + ' in a sandbox window. ' +
           'Cookies/storage will be discarded on close.'
         : '✗ ' + (r.error || 'sandbox open failed');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Privacy heatmap: /trackers
+// Asks the active tab for a breakdown of third-party resources it
+// loaded, grouped by ads / analytics / cdn / other. The JS probe is
+// implemented in the C++ handler — we only render the result here.
+// --------------------------------------------------------------
+function tryDispatchTrackersCommand(text) {
+  if (!/^\s*\/trackers\b/i.test(text)) return false;
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Scanning active tab for third-party resources...');
+  sendWithPromise('getTrackerBreakdown').then(function(r) {
+    if (!r || r.error) {
+      currentAiText = '✗ ' + (r && r.error || 'tracker scan failed');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    var c = r.counts || {};
+    var total = r.total_third_party || 0;
+    var lines = [
+      'Privacy heatmap for ' + (r.origin || 'this tab') + ':',
+      '  First-party resources: ' + (c.first_party || 0),
+      '  Third-party total:     ' + total +
+        '   (across ' + (r.unique_third_party_hosts || 0) +
+        ' unique hosts)',
+      '    · ads:       ' + (c.ads || 0),
+      '    · analytics: ' + (c.analytics || 0),
+      '    · cdn:       ' + (c.cdn || 0),
+      '    · other:     ' + (c.other || 0)
+    ];
+    if (r.top_hosts && r.top_hosts.length) {
+      lines.push('');
+      lines.push('Top third-party hosts:');
+      r.top_hosts.forEach(function(h){
+        lines.push('  [' + h.category + '] ' + h.host + ' × ' + h.count);
+      });
+    }
+    if (total === 0) {
+      lines.push('');
+      lines.push('Nothing third-party loaded — clean page.');
+    }
+    currentAiText = lines.join('\n');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Domain reputation: /reputation [host] | /rep [host]
+// Uses Personal Vector Memory data to tell the user how many times
+// they've visited this host, how much they've read, when first and
+// last. Plus a tiny conservative risk-flag heuristic for sketchy
+// TLDs / raw-IP hosts.
+// --------------------------------------------------------------
+function tryDispatchReputationCommand(text) {
+  var m = text.match(/^\s*\/(reputation|rep)\b\s*(.*)$/i);
+  if (!m) return false;
+  var hostArg = (m[2] || '').trim();
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Looking up domain reputation...');
+  sendWithPromise('getDomainReputation', hostArg).then(function(r) {
+    if (!r || r.error) {
+      currentAiText = '✗ ' + (r && r.error || 'reputation lookup failed');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    function fmt(unix) {
+      if (!unix) return '—';
+      var d = new Date(unix * 1000);
+      return d.toLocaleString();
+    }
+    var lines = ['Domain reputation for ' + (r.host || 'unknown') + ':'];
+    if (r.first_visit_on_device) {
+      lines.push('  • First visit on this device.');
+    } else {
+      lines.push('  • Visited ' + r.visit_count + ' time' +
+                 (r.visit_count === 1 ? '' : 's') + ' before.');
+      lines.push('  • First seen: ' + fmt(r.first_visit_unix));
+      lines.push('  • Last seen:  ' + fmt(r.last_visit_unix));
+      lines.push('  • Total content read: ' +
+                 (r.total_words_read || 0).toLocaleString() + ' words');
+    }
+    if (r.risky_tld) {
+      lines.push('  ⚠ TLD often associated with low-cost / abuse-heavy ' +
+                 'registrations — be careful with credentials.');
+    }
+    if (r.is_ip_host) {
+      lines.push('  ⚠ Raw IP address as host. Legitimate sites almost ' +
+                 'always have a domain name.');
+    }
+    currentAiText = lines.join('\n');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Connection path: /hops [url]
+// v0: shows the URL structure, OTR session status, and a 3-hop
+// you → ISP → destination diagram. Honest about not yet routing
+// through Tor — that's the next batch.
+// --------------------------------------------------------------
+function tryDispatchHopsCommand(text) {
+  var m = text.match(/^\s*\/hops\b\s*(.*)$/i);
+  if (!m) return false;
+  var url = (m[1] || '').trim();
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Tracing connection path...');
+  sendWithPromise('getConnectionPath', url).then(function(r) {
+    if (!r || r.error) {
+      currentAiText = '✗ ' + (r && r.error || 'connection path failed');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    var lines = ['Connection path to ' + r.host + ':'];
+    lines.push('');
+    var hops = r.hops || [];
+    for (var i = 0; i < hops.length; i++) {
+      var h = hops[i];
+      var marker = (i === 0) ? '●' : (i === hops.length - 1 ? '○' : '─');
+      lines.push('  ' + marker + ' ' + h.label +
+                 (h.detail ? '  — ' + h.detail : ''));
+      if (i < hops.length - 1) lines.push('  │');
+    }
+    lines.push('');
+    lines.push('Scheme: ' + r.scheme +
+               (r.is_https ? '  (TLS-encrypted)' : '  (PLAINTEXT)'));
+    if (r.is_anonymous_session) {
+      lines.push('Session: ✓ Anonymous (sandbox tab).');
+    }
+    if (r.notes) {
+      lines.push('');
+      lines.push('Note: ' + r.notes);
+    }
+    currentAiText = lines.join('\n');
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Selective JS toggle: /js on | /js off [host]
+// HostContentSettingsMap toggle. Reloads active tab so the change
+// takes effect right now.
+// --------------------------------------------------------------
+function tryDispatchJsCommand(text) {
+  var m = text.match(/^\s*\/js\b\s*(.*)$/i);
+  if (!m) return false;
+  var rest = (m[1] || '').trim();
+  var parts = rest.split(/\s+/);
+  var enabled;
+  if (parts[0] === 'on' || parts[0] === 'enable') enabled = true;
+  else if (parts[0] === 'off' || parts[0] === 'disable') enabled = false;
+  else {
+    addErrorMessage('Usage: /js on | /js off  [host]');
+    return true;
+  }
+  var host = parts[1] || '';
+  if (!host) {
+    var tabUrl = (window.__moltLastTabContext &&
+                  window.__moltLastTabContext.url) || '';
+    try { host = new URL(tabUrl).host; } catch (e) {}
+  }
+  if (!host) {
+    addErrorMessage('No host. Try /js ' + parts[0] + ' example.com');
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  sendWithPromise('setJsForDomain', host, enabled).then(function(r) {
+    currentAiText = r.success
+        ? '✓ JavaScript ' + (enabled ? 'enabled' : 'disabled') +
+          ' for ' + host + '. Active tab reloaded.'
+        : '✗ ' + (r.error || 'JS toggle failed');
     finishAiMessage();
     setGenerating(false);
   });
@@ -1458,6 +1662,34 @@ function sendMessage() {
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchSandboxCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchTrackersCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchReputationCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchHopsCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchJsCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';

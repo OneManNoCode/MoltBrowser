@@ -88,6 +88,22 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // storage are discarded when the window closes.
   // Args: [callback_id, url]
   void HandleOpenSandboxTab(const base::ListValue& args);
+  // Privacy heatmap — enumerate third-party resources loaded into the
+  // active tab and bucket them into ads / analytics / cdn / other.
+  // Args: [callback_id]
+  void HandleGetTrackerBreakdown(const base::ListValue& args);
+  // Domain reputation — return visit count / first / last for the host
+  // of the active tab (or |args[1]| if supplied) from MemoryService.
+  // Args: [callback_id, host?]
+  void HandleGetDomainReputation(const base::ListValue& args);
+  // Connection path — for a URL, return what we can show about how the
+  // user's traffic gets there. v0: just the URL structure and whether
+  // the tab is in an OTR session. Foundation for Tor circuit display.
+  // Args: [callback_id, url?]
+  void HandleGetConnectionPath(const base::ListValue& args);
+  // Selective JS off — toggle JavaScript content-setting for |host|.
+  // Args: [callback_id, host, enabled_bool]
+  void HandleSetJsForDomain(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]

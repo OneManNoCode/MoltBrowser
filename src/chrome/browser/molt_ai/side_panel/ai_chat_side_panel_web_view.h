@@ -94,6 +94,11 @@ class AiChatSidePanelWebView : public views::WebView,
   // are dropped on arrival.
   int64_t generation_ = 0;
 
+  // Set in PushActiveTabContext, read in InjectContextIntoChat. Lets the
+  // side-panel chat render an "Anonymous session" banner without having
+  // to re-query the BrowserContext.
+  bool last_pushed_is_anonymous_ = false;
+
   base::WeakPtrFactory<AiChatSidePanelWebView> weak_factory_{this};
 };
 

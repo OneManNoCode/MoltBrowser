@@ -4,6 +4,8 @@
 
 #include "chrome/browser/molt_ai/side_panel/ai_chat_side_panel_web_view.h"
 
+#include "content/public/browser/browser_context.h"
+
 #include <map>
 
 #include "base/functional/bind.h"
@@ -104,6 +106,12 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
 
   std::string url = active->GetLastCommittedURL().spec();
   std::string title = base::UTF16ToUTF8(active->GetTitle());
+  // Stash the OTR flag on the instance so InjectContextIntoChat can
+  // include it in the JSON payload — saves threading another argument
+  // through every capture path.
+  last_pushed_is_anonymous_ =
+      active->GetBrowserContext() &&
+      active->GetBrowserContext()->IsOffTheRecord();
 
   // Bump the generation; capture for the previous tab is now stale.
   int64_t my_gen = ++generation_;
@@ -188,6 +196,7 @@ void AiChatSidePanelWebView::InjectContextIntoChat(const std::string& url,
   ctx.Set("url", url);
   ctx.Set("title", title);
   ctx.Set("text", text);
+  ctx.Set("is_anonymous_session", last_pushed_is_anonymous_);
 
   std::string json;
   if (!base::JSONWriter::Write(ctx, &json))

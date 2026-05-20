@@ -7,6 +7,7 @@
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
 
 #include <algorithm>
+#include <cstring>
 #include <ctime>
 #include <functional>
 #include <memory>
@@ -30,6 +31,11 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/content_settings/core/common/content_settings.h"
+#include "components/content_settings/core/common/content_settings_pattern.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
@@ -52,6 +58,8 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
@@ -173,6 +181,26 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "openSandboxTab",
       base::BindRepeating(&MoltAIChatHandler::HandleOpenSandboxTab,
+                          base::Unretained(this)));
+  // Privacy heatmap: enumerate third-party resources on the active tab.
+  web_ui()->RegisterMessageCallback(
+      "getTrackerBreakdown",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetTrackerBreakdown,
+                          base::Unretained(this)));
+  // Domain reputation: visit history for a host.
+  web_ui()->RegisterMessageCallback(
+      "getDomainReputation",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetDomainReputation,
+                          base::Unretained(this)));
+  // Connection path: what we can show about how traffic flows to a URL.
+  web_ui()->RegisterMessageCallback(
+      "getConnectionPath",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetConnectionPath,
+                          base::Unretained(this)));
+  // Selective JS off: HostContentSettingsMap toggle for a host.
+  web_ui()->RegisterMessageCallback(
+      "setJsForDomain",
+      base::BindRepeating(&MoltAIChatHandler::HandleSetJsForDomain,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -2661,6 +2689,373 @@ void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
 
   out.Set("success", true);
   out.Set("url", g.spec());
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleGetTrackerBreakdown: Privacy heatmap.
+//
+// Inject a JS probe into the active tab's primary frame (isolated
+// world 1) that walks performance.getEntriesByType('resource') —
+// every subresource the page already loaded. We classify each remote
+// host into ads / analytics / cdn / other, then return aggregate
+// counts plus the top 12 unique hosts.
+//
+// We deliberately do *not* use a giant block-list dependency. The
+// classifier here is intentionally conservative — its purpose is
+// transparency about who the page talks to, not to be EasyList.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetTrackerBreakdown(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  content::WebContents* target =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+    out.Set("error", "active tab is not an http(s) page");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // The JS does the classification client-side and returns a struct.
+  // Why: avoids round-tripping every resource URL to C++; resource
+  // lists can be hundreds long on news pages.
+  static constexpr char kProbeJS[] = R"JS(
+(function(){
+  try {
+    var origin = location.host;
+    var entries = performance.getEntriesByType('resource') || [];
+    var counts = {ads:0, analytics:0, cdn:0, other:0, first_party:0};
+    var hostSet = {};
+    function classify(h) {
+      if (/doubleclick|adservice|adsystem|adnxs|ads-twitter|pubmatic|rubiconproject|criteo|taboola|outbrain|adsrvr|adform|amazon-adsystem|googlesyndication|googletagservices/.test(h))
+        return 'ads';
+      if (/google-analytics|googletagmanager|segment\.io|mixpanel|hotjar|fullstory|chartbeat|optimizely|amplitude|heap|matomo|plausible|cloudflareinsights|datadoghq|sentry/.test(h))
+        return 'analytics';
+      if (/cloudfront|akamai|fastly|cdn77|jsdelivr|unpkg|bunnycdn|cloudflare\.com|akamaihd|edgekey|imgix/.test(h))
+        return 'cdn';
+      return 'other';
+    }
+    for (var i = 0; i < entries.length; i++) {
+      var u;
+      try { u = new URL(entries[i].name); } catch(e) { continue; }
+      var h = u.host;
+      if (!h) continue;
+      if (h === origin || h.endsWith('.' + origin) ||
+          origin.endsWith('.' + h)) {
+        counts.first_party += 1;
+        continue;
+      }
+      hostSet[h] = (hostSet[h] || 0) + 1;
+      var c = classify(h);
+      counts[c] += 1;
+    }
+    var hosts = Object.keys(hostSet).map(function(h){
+      return {host: h, count: hostSet[h], category: classify(h)};
+    }).sort(function(a,b){ return b.count - a.count; }).slice(0, 12);
+    return JSON.stringify({
+      origin: origin,
+      counts: counts,
+      total_third_party: counts.ads + counts.analytics +
+                         counts.cdn + counts.other,
+      unique_third_party_hosts: Object.keys(hostSet).length,
+      top_hosts: hosts
+    });
+  } catch (e) { return JSON.stringify({error: '' + e}); }
+})();
+)JS";
+
+  std::string callback_id_copy = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      base::UTF8ToUTF16(std::string(kProbeJS)),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             base::Value v) {
+            if (!self) return;
+            base::DictValue resolved;
+            if (v.is_string()) {
+              auto parsed = base::JSONReader::Read(v.GetString(),
+                                                   /*options=*/0);
+              if (parsed && parsed->is_dict()) {
+                self->ResolveJavascriptCallback(
+                    base::Value(cb_id),
+                    base::Value(std::move(parsed->GetDict())));
+                return;
+              }
+            }
+            resolved.Set("error", "tracker probe returned no data");
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(resolved)));
+          },
+          weak_this, callback_id_copy),
+      /*world_id=*/1);
+}
+
+// ------------------------------------------------------------------
+// HandleGetDomainReputation: ask MemoryService for everything we've
+// indexed from |host| (or the active tab's host), and return a small
+// summary: visit count, first/last visited, total word_count read.
+// Plus a tiny risk-flag heuristic for sketchy TLDs / IP-as-host.
+//
+// The user can use this to answer "have I been here before? when?
+// how much have I read here?" without trusting any external
+// reputation service.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetDomainReputation(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  std::string host = (args.size() > 1 && args[1].is_string())
+                         ? args[1].GetString()
+                         : std::string();
+
+  // If no host was supplied, infer from the active tab.
+  if (host.empty()) {
+    content::WebContents* webui_wc = web_ui()->GetWebContents();
+    Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+    if (browser && browser->tab_strip_model()) {
+      content::WebContents* t =
+          browser->tab_strip_model()->GetActiveWebContents();
+      if (t) host = std::string(t->GetLastCommittedURL().host());
+    }
+  }
+  base::DictValue out;
+  out.Set("host", host);
+  if (host.empty()) {
+    out.Set("error", "no host");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Risk heuristics (super conservative — purely informational chips
+  // for the user, not blocking).
+  bool risky_tld = false;
+  for (const char* t :
+       {".tk", ".ml", ".ga", ".cf", ".gq", ".top", ".xyz", ".click"}) {
+    size_t tl = std::strlen(t);
+    if (host.size() >= tl &&
+        host.compare(host.size() - tl, tl, t) == 0) {
+      risky_tld = true;
+      break;
+    }
+  }
+  bool is_ip_host = !host.empty() &&
+                    (host[0] >= '0' && host[0] <= '9');
+  out.Set("risky_tld", risky_tld);
+  out.Set("is_ip_host", is_ip_host);
+
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  molt_ai::memory::MemoryService* svc =
+      profile ? molt_ai::memory::MemoryServiceFactory::GetForProfile(profile)
+              : nullptr;
+  if (!svc) {
+    out.Set("first_visit_on_device", true);
+    out.Set("visit_count", 0);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  std::string cb = callback_id;
+  std::string host_copy = host;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  // Pull a wide window of recent docs and filter here. The memory
+  // index is held in RAM so this is sub-ms even at 50k docs.
+  svc->ListRecent(
+      10000,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::string host, base::DictValue out_init,
+             std::vector<molt_ai::memory::Document> docs) {
+            if (!self) return;
+            base::DictValue out = std::move(out_init);
+            int visit_count = 0;
+            int64_t first = 0;
+            int64_t last = 0;
+            int64_t total_words = 0;
+            for (const auto& d : docs) {
+              GURL u(d.url);
+              if (!u.is_valid()) continue;
+              std::string h = std::string(u.host());
+              if (h != host && !(h.size() > host.size() &&
+                                  h.compare(h.size() - host.size() - 1,
+                                            host.size() + 1,
+                                            "." + host) == 0)) {
+                continue;
+              }
+              ++visit_count;
+              total_words += d.word_count;
+              if (first == 0 || d.visited_at_unix < first)
+                first = d.visited_at_unix;
+              if (d.visited_at_unix > last) last = d.visited_at_unix;
+            }
+            out.Set("visit_count", visit_count);
+            out.Set("first_visit_on_device", visit_count == 0);
+            out.Set("first_visit_unix", static_cast<double>(first));
+            out.Set("last_visit_unix", static_cast<double>(last));
+            out.Set("total_words_read", static_cast<double>(total_words));
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(out)));
+          },
+          weak_this, cb, host_copy, std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleGetConnectionPath: v0 of the network-path visualizer.
+//
+// At this point we don't actually route through Tor or do live
+// traceroutes — those land in Phase B. What we return now is honest
+// about that: it's the URL structure, whether the tab is in an OTR
+// session, and a templated 3-hop "you -> ISP -> destination" diagram.
+// The same response shape will later carry the real circuit nodes.
+//
+// Args: [callback_id, url?]
+// Returns: {url, host, scheme, is_https, is_anonymous_session,
+//           hops: [{label, kind}], notes}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetConnectionPath(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  std::string url_str = (args.size() > 1 && args[1].is_string())
+                            ? args[1].GetString()
+                            : std::string();
+
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  content::WebContents* active =
+      (browser && browser->tab_strip_model())
+          ? browser->tab_strip_model()->GetActiveWebContents()
+          : nullptr;
+  if (url_str.empty() && active) {
+    url_str = active->GetLastCommittedURL().spec();
+  }
+
+  base::DictValue out;
+  GURL g(url_str);
+  if (!g.is_valid() || g.host().empty()) {
+    out.Set("error", "no valid URL");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  out.Set("url", g.spec());
+  out.Set("host", std::string(g.host()));
+  out.Set("scheme", g.scheme());
+  out.Set("is_https", g.SchemeIs("https"));
+
+  bool otr = active && active->GetBrowserContext()->IsOffTheRecord();
+  out.Set("is_anonymous_session", otr);
+
+  // Three logical hops for direct browsing. Phase B will replace this
+  // with real Tor circuit data when an Anonymous Tab is active.
+  base::ListValue hops;
+  auto add_hop = [&](const std::string& label, const std::string& kind,
+                     const std::string& detail) {
+    base::DictValue h;
+    h.Set("label", label);
+    h.Set("kind", kind);
+    h.Set("detail", detail);
+    hops.Append(std::move(h));
+  };
+  add_hop("You", "origin", "this device");
+  add_hop("Your ISP", "isp",
+          "the network you're connected to right now");
+  add_hop(std::string(g.host()), "destination",
+          g.SchemeIs("https") ? "TLS-encrypted to the destination"
+                              : "PLAINTEXT — not HTTPS, anyone on the "
+                                "path can read this");
+  out.Set("hops", std::move(hops));
+  out.Set(
+      "notes",
+      otr ? "Anonymous session — cookies and storage discarded on close."
+          : "Direct connection. Tor multi-hop integration is in "
+            "development — coming next.");
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleSetJsForDomain: toggle JavaScript for |host| via
+// HostContentSettingsMap. Persisted across launches by Chromium's
+// content settings infrastructure. The active tab is reloaded so the
+// change takes effect immediately.
+//
+// Args: [callback_id, host, enabled_bool]
+// Returns: {success, host, enabled}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 3u);
+  const std::string callback_id = args[0].GetString();
+  std::string host = args[1].is_string() ? args[1].GetString() : "";
+  bool enabled = args[2].is_bool() ? args[2].GetBool() : true;
+
+  base::DictValue out;
+  if (host.empty()) {
+    out.Set("success", false);
+    out.Set("error", "missing host");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  Profile* profile = Profile::FromBrowserContext(
+      web_ui()->GetWebContents()->GetBrowserContext());
+  HostContentSettingsMap* map =
+      profile ? HostContentSettingsMapFactory::GetForProfile(profile)
+              : nullptr;
+  if (!map) {
+    out.Set("success", false);
+    out.Set("error", "no content settings");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString("[*.]" + host);
+  if (!pattern.IsValid()) {
+    out.Set("success", false);
+    out.Set("error", "invalid host pattern");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  map->SetContentSettingCustomScope(
+      pattern, ContentSettingsPattern::Wildcard(),
+      ContentSettingsType::JAVASCRIPT,
+      enabled ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK);
+
+  // Reload the active tab so the change takes effect now.
+  Browser* browser = chrome::FindBrowserWithTab(
+      web_ui()->GetWebContents());
+  if (browser && browser->tab_strip_model()) {
+    content::WebContents* t =
+        browser->tab_strip_model()->GetActiveWebContents();
+    if (t && std::string(t->GetLastCommittedURL().host()) == host) {
+      t->GetController().Reload(content::ReloadType::NORMAL,
+                                /*check_for_repost=*/false);
+    }
+  }
+  out.Set("success", true);
+  out.Set("host", host);
+  out.Set("enabled", enabled);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
