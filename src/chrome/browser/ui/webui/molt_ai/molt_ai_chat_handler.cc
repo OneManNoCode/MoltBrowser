@@ -45,6 +45,7 @@
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
+#include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -201,6 +202,15 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "setJsForDomain",
       base::BindRepeating(&MoltAIChatHandler::HandleSetJsForDomain,
+                          base::Unretained(this)));
+  // Tor (Phase B.1): probe local tor + read circuits.
+  web_ui()->RegisterMessageCallback(
+      "getTorStatus",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetTorStatus,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "getTorCircuits",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetTorCircuits,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -3058,4 +3068,86 @@ void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
   out.Set("enabled", enabled);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleGetTorStatus: Phase B.1 of the privacy tentpole.
+// Probes the local Tor control port (127.0.0.1:9051) and reports
+// version + running state. Honest about scope — if tor isn't
+// installed/configured we tell the user how to fix it.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  std::string cb = callback_id;
+  molt_ai::tor::TorService::Get()->Probe(base::BindOnce(
+      [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+         molt_ai::tor::TorStatus s) {
+        if (!self) return;
+        base::DictValue out;
+        out.Set("running", s.running);
+        out.Set("version", s.version);
+        out.Set("control_port", s.control_port_addr);
+        out.Set("socks_port", s.socks_port_addr);
+        if (!s.running) {
+          out.Set("error", s.error);
+          out.Set(
+              "install_hint",
+              "Install Tor (macOS: `brew install tor`) and add `ControlPort "
+              "9051` to your torrc (often /opt/homebrew/etc/tor/torrc or "
+              "/usr/local/etc/tor/torrc). Start it with `brew services start "
+              "tor` and re-run /tor status.");
+        }
+        self->ResolveJavascriptCallback(base::Value(cb),
+                                        base::Value(std::move(out)));
+      },
+      weak_this, cb));
+}
+
+// ------------------------------------------------------------------
+// HandleGetTorCircuits: returns the live circuit list from Tor's
+// control port — id, state, purpose, and the ordered list of relay
+// hops (guard → middle → exit). Each hop has a fingerprint and (when
+// the operator set one) a nickname.
+//
+// Phase B.2 will enrich each hop with IP + country/city via GeoIP.
+// For now the visualizer shows nicknames + fingerprints which are
+// already useful — relay operators choose memorable nicknames
+// (artichoke, F3Netze, niftyforestbear, etc.).
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGetTorCircuits(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  std::string cb = callback_id;
+  molt_ai::tor::TorService::Get()->GetCircuits(base::BindOnce(
+      [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+         std::vector<molt_ai::tor::TorCircuit> circuits) {
+        if (!self) return;
+        base::ListValue arr;
+        for (const auto& c : circuits) {
+          base::DictValue d;
+          d.Set("id", c.id);
+          d.Set("state", c.state);
+          d.Set("purpose", c.purpose);
+          base::ListValue hops;
+          for (const auto& h : c.hops) {
+            base::DictValue hd;
+            hd.Set("fingerprint", h.fingerprint);
+            hd.Set("nickname", h.nickname);
+            hops.Append(std::move(hd));
+          }
+          d.Set("hops", std::move(hops));
+          arr.Append(std::move(d));
+        }
+        base::DictValue out;
+        out.Set("circuits", std::move(arr));
+        out.Set("count", static_cast<int>(circuits.size()));
+        self->ResolveJavascriptCallback(base::Value(cb),
+                                        base::Value(std::move(out)));
+      },
+      weak_this, cb));
 }

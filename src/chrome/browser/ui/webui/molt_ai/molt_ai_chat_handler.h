@@ -104,6 +104,14 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Selective JS off — toggle JavaScript content-setting for |host|.
   // Args: [callback_id, host, enabled_bool]
   void HandleSetJsForDomain(const base::ListValue& args);
+  // Tor (Phase B.1): probe local Tor on 127.0.0.1:9051 and read
+  // current circuit info from its control port. Routing through Tor
+  // ships in Phase B.2 — this batch is the visualization foundation
+  // (talk to Tor, show real circuits) plus the response shape that
+  // routing will plug into without UI changes.
+  // Args: [callback_id]
+  void HandleGetTorStatus(const base::ListValue& args);
+  void HandleGetTorCircuits(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]

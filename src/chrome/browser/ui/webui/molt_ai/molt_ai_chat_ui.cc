@@ -359,7 +359,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code><br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code>, <code>/click .button</code><br><br>Or just send a message.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code><br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code>, <code>/click .button</code><br><br>Or just send a message.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -1018,7 +1018,17 @@ function tryDispatchHopsCommand(text) {
   addUserMessage(text);
   startAiMessage();
   appendToAiMessage('Tracing connection path...');
-  sendWithPromise('getConnectionPath', url).then(function(r) {
+  // We fan out two queries in parallel: the local connection-path
+  // template and the live Tor circuit data. If Tor is up, we fold its
+  // relays into the hop diagram. This is the same response shape
+  // Phase B.2 will hit when routing through Tor — the visualizer
+  // doesn't need to change when routing arrives.
+  Promise.all([
+    sendWithPromise('getConnectionPath', url),
+    sendWithPromise('getTorCircuits').catch(function(){ return null; })
+  ]).then(function(arr) {
+    var r = arr[0];
+    var torR = arr[1];
     if (!r || r.error) {
       currentAiText = '✗ ' + (r && r.error || 'connection path failed');
       finishAiMessage();
@@ -1028,12 +1038,41 @@ function tryDispatchHopsCommand(text) {
     var lines = ['Connection path to ' + r.host + ':'];
     lines.push('');
     var hops = r.hops || [];
-    for (var i = 0; i < hops.length; i++) {
-      var h = hops[i];
-      var marker = (i === 0) ? '●' : (i === hops.length - 1 ? '○' : '─');
-      lines.push('  ' + marker + ' ' + h.label +
-                 (h.detail ? '  — ' + h.detail : ''));
-      if (i < hops.length - 1) lines.push('  │');
+    // Pick a built circuit's relays to splice in between "Your ISP"
+    // and the destination. The visualizer still labels these as
+    // "would-route-through" until Phase B.2 actually pipes traffic.
+    var torHops = null;
+    if (torR && torR.circuits && torR.circuits.length) {
+      for (var i = 0; i < torR.circuits.length; i++) {
+        var c = torR.circuits[i];
+        if (c.state === 'BUILT' && c.hops && c.hops.length >= 2) {
+          torHops = c.hops;
+          break;
+        }
+      }
+    }
+    if (torHops) {
+      // Replace the middle "Your ISP" hop with the Tor relay chain.
+      var newHops = [hops[0]];
+      torHops.forEach(function(h, idx) {
+        var role = idx === 0 ? 'guard'
+                  : (idx === torHops.length - 1 ? 'exit' : 'middle');
+        newHops.push({
+          label: 'Tor ' + role + ': ' +
+                 (h.nickname || h.fingerprint.slice(0, 8) + '…'),
+          detail: h.fingerprint
+        });
+      });
+      newHops.push(hops[hops.length - 1]);
+      hops = newHops;
+    }
+    for (var i2 = 0; i2 < hops.length; i2++) {
+      var h2 = hops[i2];
+      var marker = (i2 === 0) ? '●'
+                  : (i2 === hops.length - 1 ? '○' : '─');
+      lines.push('  ' + marker + ' ' + h2.label +
+                 (h2.detail ? '  — ' + h2.detail : ''));
+      if (i2 < hops.length - 1) lines.push('  │');
     }
     lines.push('');
     lines.push('Scheme: ' + r.scheme +
@@ -1041,13 +1080,109 @@ function tryDispatchHopsCommand(text) {
     if (r.is_anonymous_session) {
       lines.push('Session: ✓ Anonymous (sandbox tab).');
     }
-    if (r.notes) {
+    if (torHops) {
+      lines.push('Tor:     ✓ live circuit shown above (relays from your ' +
+                 'local Tor instance). Routing your tabs through them ' +
+                 'lands in Phase B.2.');
+    } else if (r.notes) {
       lines.push('');
       lines.push('Note: ' + r.notes);
     }
     currentAiText = lines.join('\n');
     finishAiMessage();
     setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Tor (Phase B.1): /tor [status|circuit|circuits|help]
+// Talks to a locally-running Tor over its control port (127.0.0.1:9051).
+// Honest about scope: this batch ships the visualizer + the protocol
+// integration. Routing through Tor lands in Phase B.2 — until then,
+// /tor status shows whether local Tor is running and /tor circuit
+// shows the live circuit list (guard / middle / exit hops with their
+// nicknames).
+// --------------------------------------------------------------
+function renderTorCircuits(circuits) {
+  if (!circuits || !circuits.length) {
+    return 'No circuits yet — Tor is still bootstrapping. Try again in a few seconds.';
+  }
+  var lines = ['Live Tor circuits (' + circuits.length + '):'];
+  circuits.forEach(function(c) {
+    var hopStr = '';
+    if (c.hops && c.hops.length) {
+      hopStr = c.hops.map(function(h){
+        return h.nickname ? h.nickname : h.fingerprint.slice(0, 8) + '…';
+      }).join('  →  ');
+    } else {
+      hopStr = '(no path yet)';
+    }
+    lines.push('  [' + c.id + ' ' + c.state +
+               (c.purpose ? ' · ' + c.purpose : '') + ']  ' + hopStr);
+  });
+  return lines.join('\n');
+}
+
+function tryDispatchTorCommand(text) {
+  var m = text.match(/^\s*\/tor\b\s*(.*)$/i);
+  if (!m) return false;
+  var sub = ((m[1] || '').trim().split(/\s+/)[0] || 'status').toLowerCase();
+  addUserMessage(text);
+  startAiMessage();
+  if (sub === 'help') {
+    currentAiText =
+      'Tor commands:\n' +
+      '  /tor status    — is local Tor running? what version?\n' +
+      '  /tor circuit   — show live circuit hops (guard → middle → exit)\n' +
+      '\n' +
+      'To enable: install Tor and add `ControlPort 9051` to torrc.\n' +
+      '  macOS:   brew install tor && brew services start tor\n' +
+      '  Linux:   apt-get install tor\n' +
+      '\n' +
+      'Routing your traffic through Tor lands in the next batch ' +
+      '(Phase B.2). This batch is the visualization foundation.';
+    finishAiMessage();
+    setGenerating(false);
+    return true;
+  }
+  if (sub === 'circuit' || sub === 'circuits') {
+    appendToAiMessage('Reading circuit list from Tor control port...');
+    sendWithPromise('getTorCircuits').then(function(r) {
+      currentAiText = renderTorCircuits(r && r.circuits);
+      finishAiMessage();
+      setGenerating(false);
+    });
+    return true;
+  }
+  // status (default)
+  appendToAiMessage('Probing local Tor on 127.0.0.1:9051...');
+  sendWithPromise('getTorStatus').then(function(r) {
+    if (!r.running) {
+      currentAiText = '✗ Tor is not running locally.\n\n' +
+                      (r.error ? '  Reason: ' + r.error + '\n\n' : '') +
+                      (r.install_hint || '');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    var lines = [
+      '✓ Tor is running.',
+      '  Version:      ' + (r.version || 'unknown'),
+      '  Control port: ' + r.control_port,
+      '  SOCKS port:   ' + r.socks_port + '  (used by Phase B.2 routing)',
+    ];
+    // Pull circuits for a one-shot snapshot under the status.
+    sendWithPromise('getTorCircuits').then(function(c) {
+      lines.push('');
+      lines.push(renderTorCircuits(c && c.circuits));
+      lines.push('');
+      lines.push('Routing your tabs through these circuits lands in ' +
+                 'Phase B.2. Today: visualization layer.');
+      currentAiText = lines.join('\n');
+      finishAiMessage();
+      setGenerating(false);
+    });
   });
   return true;
 }
@@ -1683,6 +1818,13 @@ function sendMessage() {
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchHopsCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchTorCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
