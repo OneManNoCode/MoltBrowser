@@ -130,6 +130,25 @@ echo "=== Build Complete ==="
 echo "Finished at: $(date)"
 echo ""
 
+# Phase B.3: bundle the tor binary into MoltBrowser.app so users
+# never need to `brew install tor`. Only runs on macOS builds — we
+# bundle Linux tor through the .deb in package-linux.sh and Windows
+# tor through the NSIS script in package-win.sh (those are wired in
+# separately to keep this build script platform-clean).
+if [ "${PLATFORM:-auto}" = "macos" ] || \
+   { [ "${PLATFORM:-auto}" = "auto" ] && [ "$(uname)" = "Darwin" ]; }; then
+  APP="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
+  if [ -d "$APP" ]; then
+    echo "=== Bundling Tor ==="
+    "$SCRIPT_DIR/bundle-tor.sh" --app "$APP" || {
+      echo "[build] WARNING: tor bundling failed. The app builds fine"
+      echo "[build] but /tor launch will fall back to system tor if any."
+    }
+    echo ""
+  fi
+fi
+
+
 # Report binary location based on platform
 case "${PLATFORM:-auto}" in
   macos)

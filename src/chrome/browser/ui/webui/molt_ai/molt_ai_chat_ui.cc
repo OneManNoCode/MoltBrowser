@@ -1153,16 +1153,15 @@ function tryDispatchTorCommand(text) {
   if (sub === 'help') {
     currentAiText =
       'Tor commands:\n' +
-      '  /tor status            — is local Tor running? what version?\n' +
+      '  /tor status            — is Tor available? running? bundled or system?\n' +
       '  /tor circuit           — live circuit hops with country flags\n' +
-      '  /tor launch            — auto-launch & supervise tor (if installed)\n' +
+      '  /tor launch            — start the bundled tor (no install needed)\n' +
       '  /tor open <url>        — open URL in OTR session routed through Tor\n' +
       '  /tor close             — stop the managed tor child process\n' +
       '\n' +
-      'First time: install Tor and either run it yourself or use\n' +
-      '/tor launch to have MoltBrowser supervise it.\n' +
-      '  macOS:   brew install tor\n' +
-      '  Linux:   apt-get install tor';
+      'MoltBrowser ships with tor bundled inside the app. Run\n' +
+      '/tor launch to start it, /tor open <url> to use it.\n' +
+      'No external installation required.';
     finishAiMessage();
     setGenerating(false);
     return true;
@@ -1235,18 +1234,30 @@ function tryDispatchTorCommand(text) {
   appendToAiMessage('Probing local Tor on 127.0.0.1:9051...');
   sendWithPromise('getTorStatus').then(function(r) {
     if (!r.running) {
-      currentAiText = '✗ Tor is not running locally.\n\n' +
-                      (r.error ? '  Reason: ' + r.error + '\n\n' : '') +
+      var src = r.binary_source || 'none';
+      var srcLine =
+        src === 'bundled' ? '  Binary: ✓ bundled (' + r.binary_path + ')'
+        : src === 'system' ? '  Binary: ⚠ system tor (' + r.binary_path + ')'
+        : '  Binary: ✗ none found';
+      currentAiText = '✗ Tor is not running yet.\n\n' +
+                      srcLine + '\n\n' +
                       (r.install_hint || '');
       finishAiMessage();
       setGenerating(false);
       return;
     }
+    var src = r.binary_source || 'unknown';
+    var srcLabel =
+      src === 'bundled' ? '✓ bundled (no install required)'
+      : src === 'system' ? '⚠ system tor'
+      : 'unknown';
     var lines = [
       '✓ Tor is running.',
+      '  Source:       ' + srcLabel,
+      '  Binary:       ' + (r.binary_path || '?'),
       '  Version:      ' + (r.version || 'unknown'),
       '  Control port: ' + r.control_port,
-      '  SOCKS port:   ' + r.socks_port + '  (used by Phase B.2 routing)',
+      '  SOCKS port:   ' + r.socks_port,
     ];
     // Pull circuits for a one-shot snapshot under the status.
     sendWithPromise('getTorCircuits').then(function(c) {

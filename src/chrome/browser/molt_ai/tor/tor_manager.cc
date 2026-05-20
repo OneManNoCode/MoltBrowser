@@ -150,10 +150,44 @@ bool TorManager::WriteTorrc() {
   contents += "DataDirectory " + dir.value() + "\n";
   contents += "Log notice file " + dir.AppendASCII("tor.log").value() + "\n";
   contents += "AvoidDiskWrites 1\n";
+  // Point Tor at our bundled GeoIP DB if it's present. Without this,
+  // a bundled tor wouldn't know where to find its country DB (system-
+  // installed Tor expects /usr/local/share/tor/geoip but we don't
+  // ship to that path). GETINFO ip-to-country depends on this.
+  base::FilePath geo = GetBundledTorDir().AppendASCII("geoip");
+  base::FilePath geo6 = GetBundledTorDir().AppendASCII("geoip6");
+  if (base::PathExists(geo))
+    contents += "GeoIPFile " + geo.value() + "\n";
+  if (base::PathExists(geo6))
+    contents += "GeoIPv6File " + geo6.value() + "\n";
   return base::WriteFile(GetTorrcPath(), contents);
 }
 
+base::FilePath TorManager::GetBundledTorDir() const {
+#if BUILDFLAG(IS_MAC)
+  // On macOS the running MoltBrowser executable lives at
+  //   MoltBrowser.app/Contents/MacOS/MoltBrowser
+  // The bundled tor sits at
+  //   MoltBrowser.app/Contents/Resources/tor/tor
+  base::FilePath exe;
+  if (!base::PathService::Get(base::FILE_EXE, &exe)) return base::FilePath();
+  base::FilePath contents = exe.DirName().DirName();
+  return contents.AppendASCII("Resources").AppendASCII("tor");
+#else
+  // Linux/Windows bundling lands in a follow-up — for now the system
+  // path lookup in ResolveTorBinary() handles those platforms.
+  return base::FilePath();
+#endif
+}
+
 base::FilePath TorManager::ResolveTorBinary() const {
+  // 1) Bundled tor first — gives the seamless out-of-box experience.
+  base::FilePath bundled = GetBundledTorDir().AppendASCII("tor");
+  if (!bundled.value().empty() && base::PathExists(bundled) &&
+      access(bundled.value().c_str(), X_OK) == 0) {
+    return bundled;
+  }
+  // 2) System-installed tor (power users / dev fallback).
   for (const char* p : kCandidatePaths) {
     base::FilePath fp(p);
     if (base::PathExists(fp) &&
@@ -162,6 +196,13 @@ base::FilePath TorManager::ResolveTorBinary() const {
     }
   }
   return base::FilePath();
+}
+
+bool TorManager::IsUsingBundledTor() const {
+  base::FilePath bundled = GetBundledTorDir().AppendASCII("tor");
+  base::FilePath resolved = ResolveTorBinary();
+  return !bundled.value().empty() && !resolved.value().empty() &&
+         resolved.value() == bundled.value();
 }
 
 void TorManager::Launch(

@@ -3099,8 +3099,15 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
   const std::string callback_id = args[0].GetString();
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
   std::string cb = callback_id;
+  // Snapshot binary resolution now so we can include it in the
+  // response regardless of whether Tor is currently running.
+  base::FilePath resolved_bin =
+      molt_ai::tor::TorManager::Get()->ResolveTorBinary();
+  bool is_bundled = molt_ai::tor::TorManager::Get()->IsUsingBundledTor();
+  std::string resolved_path = resolved_bin.value();
   molt_ai::tor::TorService::Get()->Probe(base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+         std::string resolved_path, bool is_bundled,
          molt_ai::tor::TorStatus s) {
         if (!self) return;
         base::DictValue out;
@@ -3108,19 +3115,34 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
         out.Set("version", s.version);
         out.Set("control_port", s.control_port_addr);
         out.Set("socks_port", s.socks_port_addr);
+        out.Set("binary_path", resolved_path);
+        out.Set("binary_source",
+                resolved_path.empty()
+                    ? std::string("none")
+                    : (is_bundled ? std::string("bundled")
+                                  : std::string("system")));
         if (!s.running) {
           out.Set("error", s.error);
-          out.Set(
-              "install_hint",
-              "Install Tor (macOS: `brew install tor`) and add `ControlPort "
-              "9051` to your torrc (often /opt/homebrew/etc/tor/torrc or "
-              "/usr/local/etc/tor/torrc). Start it with `brew services start "
-              "tor` and re-run /tor status.");
+          // Two cases:
+          //   - We have a binary (bundled or system) but Tor isn't
+          //     running yet — tell the user to /tor launch.
+          //   - We have nothing — tell them to rebuild with bundling,
+          //     not to install via brew.
+          if (resolved_path.empty()) {
+            out.Set("install_hint",
+                    "No tor binary is bundled with this build. Rebuild "
+                    "after running scripts/bundle-tor.sh (or use a fresh "
+                    "release DMG, which ships with Tor inside).");
+          } else {
+            out.Set("install_hint",
+                    "Tor binary is available at " + resolved_path +
+                    ". Run /tor launch to start it (~15s to bootstrap).");
+          }
         }
         self->ResolveJavascriptCallback(base::Value(cb),
                                         base::Value(std::move(out)));
       },
-      weak_this, cb));
+      weak_this, cb, resolved_path, is_bundled));
 }
 
 // ------------------------------------------------------------------

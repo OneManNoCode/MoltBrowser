@@ -49,9 +49,25 @@ class TorManager {
   TorManager(const TorManager&) = delete;
   TorManager& operator=(const TorManager&) = delete;
 
-  // Look for a tor binary on common install paths. Returns empty
-  // FilePath if none found. Sync, cheap.
+  // Look for a tor binary. Resolution order:
+  //   1. Bundled at MoltBrowser.app/Contents/Resources/tor/tor (the
+  //      preferred path — produced by scripts/bundle-tor.sh during
+  //      build, so users don't have to install anything).
+  //   2. System paths (/opt/homebrew/bin/tor, /usr/local/bin/tor,
+  //      /usr/bin/tor, /opt/local/bin/tor). Lets power users override
+  //      the bundle with their own tor if they want.
+  // Returns empty FilePath if none found. Sync, cheap.
   base::FilePath ResolveTorBinary() const;
+
+  // Returns true iff the binary at ResolveTorBinary() came from our
+  // own .app bundle (as opposed to the user's system). Used by the
+  // UI to render "bundled tor" vs. "system tor" in /tor status.
+  bool IsUsingBundledTor() const;
+
+  // Path to the bundled tor directory (Contents/Resources/tor/). May
+  // be empty if we can't resolve the .app location. The GeoIP files
+  // live in this directory.
+  base::FilePath GetBundledTorDir() const;
 
   // Returns true iff we currently have a child tor process running
   // (or believe we do).
