@@ -112,6 +112,18 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: [callback_id]
   void HandleGetTorStatus(const base::ListValue& args);
   void HandleGetTorCircuits(const base::ListValue& args);
+  // Phase B.2: launch a locally-installed tor binary as a child
+  // process of MoltBrowser, with a managed torrc.
+  // Args: [callback_id]
+  void HandleLaunchTor(const base::ListValue& args);
+  // Phase B.2: stop the managed tor child.
+  // Args: [callback_id]
+  void HandleStopTor(const base::ListValue& args);
+  // Phase B.2: open |url| in an OTR window whose SOCKS5 proxy is set
+  // to route through the local Tor instance on 127.0.0.1:9050. All
+  // tabs in that OTR profile share the proxy.
+  // Args: [callback_id, url]
+  void HandleOpenTorTab(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]

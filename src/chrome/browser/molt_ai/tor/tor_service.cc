@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <map>
 #include <sstream>
 #include <utility>
 
@@ -37,6 +38,13 @@ TorCircuit::TorCircuit(TorCircuit&&) = default;
 TorCircuit& TorCircuit::operator=(const TorCircuit&) = default;
 TorCircuit& TorCircuit::operator=(TorCircuit&&) = default;
 TorCircuit::~TorCircuit() = default;
+
+TorRelay::TorRelay() = default;
+TorRelay::TorRelay(const TorRelay&) = default;
+TorRelay::TorRelay(TorRelay&&) = default;
+TorRelay& TorRelay::operator=(const TorRelay&) = default;
+TorRelay& TorRelay::operator=(TorRelay&&) = default;
+TorRelay::~TorRelay() = default;
 
 namespace {
 
@@ -348,6 +356,78 @@ TorCircuit ParseCircuitLine(const std::string& line) {
   return c;
 }
 
+// Parse the IP from a "ns/id/<fp>" response. Tor responds with a
+// 250+ns/id/...= block of consensus lines. The "r " line contains:
+//   r <nickname> <id-base64> <descriptor-base64> <date> <time> <ip> <orport> <dirport>
+std::string ParseIpFromNsBlock(const std::string& body) {
+  size_t s = body.find("\r\nr ");
+  if (s == std::string::npos) return {};
+  s += 4;
+  size_t e = body.find("\r\n", s);
+  if (e == std::string::npos) return {};
+  std::string line = body.substr(s, e - s);
+  // Tokenize on space; IP is field index 5 (0-based).
+  auto parts = base::SplitString(line, " ", base::TRIM_WHITESPACE,
+                                  base::SPLIT_WANT_NONEMPTY);
+  if (parts.size() < 6) return {};
+  return parts[5];
+}
+
+// Parse the country code from "250-ip-to-country/<ip>=XX".
+std::string ParseCountryReply(const std::string& body) {
+  size_t s = body.find("=");
+  if (s == std::string::npos) return {};
+  ++s;
+  size_t e = body.find("\r\n", s);
+  std::string code = e == std::string::npos ? body.substr(s)
+                                              : body.substr(s, e - s);
+  // Tor returns "??" when the IP isn't in its GeoIP DB.
+  if (code == "??" || code.empty()) return {};
+  return code;
+}
+
+// Forward decl — defined below.
+std::vector<TorCircuit> GetCircuitsBlocking();
+
+std::vector<TorCircuit> GetCircuitsEnrichedBlocking() {
+  std::vector<TorCircuit> circuits = GetCircuitsBlocking();
+  // For each unique fingerprint across all hops, resolve IP + country.
+  // Cache the lookups so we only ask once per fingerprint per call.
+  // |ip_cache|[fp] = ip; |country_cache|[ip] = ISO code.
+  std::map<std::string, std::string> ip_cache;
+  std::map<std::string, std::string> country_cache;
+  for (auto& c : circuits) {
+    for (auto& h : c.hops) {
+      if (h.fingerprint.empty()) continue;
+      // Resolve IP.
+      auto it = ip_cache.find(h.fingerprint);
+      if (it == ip_cache.end()) {
+        ControlResult r =
+            RunOneCommand("GETINFO ns/id/" + h.fingerprint);
+        std::string ip = r.ok ? ParseIpFromNsBlock(r.body) : std::string();
+        ip_cache[h.fingerprint] = ip;
+        h.ip = ip;
+      } else {
+        h.ip = it->second;
+      }
+      if (h.ip.empty()) continue;
+      // Resolve country.
+      auto cit = country_cache.find(h.ip);
+      if (cit == country_cache.end()) {
+        ControlResult r =
+            RunOneCommand("GETINFO ip-to-country/" + h.ip);
+        std::string cc =
+            r.ok ? ParseCountryReply(r.body) : std::string();
+        country_cache[h.ip] = cc;
+        h.country = cc;
+      } else {
+        h.country = cit->second;
+      }
+    }
+  }
+  return circuits;
+}
+
 std::vector<TorCircuit> GetCircuitsBlocking() {
   std::vector<TorCircuit> out;
   ControlResult r = RunOneCommand("GETINFO circuit-status");
@@ -408,6 +488,15 @@ void TorService::GetCircuits(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&GetCircuitsBlocking),
+      std::move(on_done));
+}
+
+void TorService::GetCircuitsEnriched(
+    base::OnceCallback<void(std::vector<TorCircuit>)> on_done) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&GetCircuitsEnrichedBlocking),
       std::move(on_done));
 }
 

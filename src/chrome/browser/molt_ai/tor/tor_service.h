@@ -56,8 +56,21 @@ struct TorStatus {
 };
 
 struct TorRelay {
+  TorRelay();
+  TorRelay(const TorRelay&);
+  TorRelay(TorRelay&&);
+  TorRelay& operator=(const TorRelay&);
+  TorRelay& operator=(TorRelay&&);
+  ~TorRelay();
+
   std::string fingerprint;  // 40-hex uppercase
   std::string nickname;     // operator-chosen name (no privacy guarantee)
+  // Phase B.2 enrichment. Filled by GetCircuitsEnriched() via
+  // GETINFO ns/id/<fp> (resolves to consensus document with IP) and
+  // GETINFO ip-to-country/<ip>. Empty if enrichment didn't run or
+  // couldn't resolve.
+  std::string ip;
+  std::string country;      // ISO 3166-1 alpha-2 from Tor's GeoIP DB
 };
 
 struct TorCircuit {
@@ -89,6 +102,23 @@ class TorService {
   // hops in build order (guard first, exit last).
   void GetCircuits(
       base::OnceCallback<void(std::vector<TorCircuit>)> on_done);
+
+  // Like GetCircuits() but also resolves each hop's IP (via
+  // GETINFO ns/id/<fingerprint>) and country (via
+  // GETINFO ip-to-country/<ip>). Costs N+1 extra round-trips per
+  // unique relay (~50ms total over local socket for a typical
+  // 3-hop circuit). Used by the visualizer to show flags.
+  void GetCircuitsEnriched(
+      base::OnceCallback<void(std::vector<TorCircuit>)> on_done);
+
+  // Open |url| in an OTR window whose proxy is configured to route
+  // through the local Tor SOCKS5 port. Caller is responsible for
+  // making sure Tor is actually up (via Probe() or by launching it
+  // via TorManager); this just configures the proxy and navigates.
+  // Returns true if the navigation was dispatched, false otherwise.
+  // (Note: lives in chat handler land, declared here only for
+  // discoverability — the implementation uses Browser / Profile
+  // APIs not available in this layer.)
 
  private:
   friend class base::NoDestructor<TorService>;

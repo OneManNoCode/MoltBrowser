@@ -1057,10 +1057,12 @@ function tryDispatchHopsCommand(text) {
       torHops.forEach(function(h, idx) {
         var role = idx === 0 ? 'guard'
                   : (idx === torHops.length - 1 ? 'exit' : 'middle');
+        var name = h.nickname || h.fingerprint.slice(0, 8) + '…';
+        var flag = h.country ? ccToFlag(h.country) + ' ' : '';
+        var country = h.country ? ' (' + h.country + ')' : '';
         newHops.push({
-          label: 'Tor ' + role + ': ' +
-                 (h.nickname || h.fingerprint.slice(0, 8) + '…'),
-          detail: h.fingerprint
+          label: flag + 'Tor ' + role + ': ' + name + country,
+          detail: (h.ip ? h.ip + '  ·  ' : '') + h.fingerprint
         });
       });
       newHops.push(hops[hops.length - 1]);
@@ -1113,7 +1115,11 @@ function renderTorCircuits(circuits) {
     var hopStr = '';
     if (c.hops && c.hops.length) {
       hopStr = c.hops.map(function(h){
-        return h.nickname ? h.nickname : h.fingerprint.slice(0, 8) + '…';
+        var name = h.nickname ? h.nickname
+                              : h.fingerprint.slice(0, 8) + '…';
+        var flag = h.country ? ccToFlag(h.country) + ' ' : '';
+        return flag + name +
+               (h.country ? ' (' + h.country + ')' : '');
       }).join('  →  ');
     } else {
       hopStr = '(no path yet)';
@@ -1124,26 +1130,96 @@ function renderTorCircuits(circuits) {
   return lines.join('\n');
 }
 
+// ISO 3166-1 alpha-2 → emoji flag. Tor's GETINFO ip-to-country
+// returns two-letter codes; we render each by mapping each letter to
+// the corresponding Regional Indicator Symbol (U+1F1E6..U+1F1FF).
+function ccToFlag(cc) {
+  if (!cc || cc.length !== 2) return '';
+  var A = 0x1F1E6;
+  var hi = cc.toUpperCase().charCodeAt(0) - 65 + A;
+  var lo = cc.toUpperCase().charCodeAt(1) - 65 + A;
+  if (hi < A || lo < A) return '';
+  return String.fromCodePoint(hi) + String.fromCodePoint(lo);
+}
+
 function tryDispatchTorCommand(text) {
   var m = text.match(/^\s*\/tor\b\s*(.*)$/i);
   if (!m) return false;
-  var sub = ((m[1] || '').trim().split(/\s+/)[0] || 'status').toLowerCase();
+  var rest = (m[1] || '').trim();
+  var parts = rest.split(/\s+/);
+  var sub = (parts[0] || 'status').toLowerCase();
   addUserMessage(text);
   startAiMessage();
   if (sub === 'help') {
     currentAiText =
       'Tor commands:\n' +
-      '  /tor status    — is local Tor running? what version?\n' +
-      '  /tor circuit   — show live circuit hops (guard → middle → exit)\n' +
+      '  /tor status            — is local Tor running? what version?\n' +
+      '  /tor circuit           — live circuit hops with country flags\n' +
+      '  /tor launch            — auto-launch & supervise tor (if installed)\n' +
+      '  /tor open <url>        — open URL in OTR session routed through Tor\n' +
+      '  /tor close             — stop the managed tor child process\n' +
       '\n' +
-      'To enable: install Tor and add `ControlPort 9051` to torrc.\n' +
-      '  macOS:   brew install tor && brew services start tor\n' +
-      '  Linux:   apt-get install tor\n' +
-      '\n' +
-      'Routing your traffic through Tor lands in the next batch ' +
-      '(Phase B.2). This batch is the visualization foundation.';
+      'First time: install Tor and either run it yourself or use\n' +
+      '/tor launch to have MoltBrowser supervise it.\n' +
+      '  macOS:   brew install tor\n' +
+      '  Linux:   apt-get install tor';
     finishAiMessage();
     setGenerating(false);
+    return true;
+  }
+  if (sub === 'launch') {
+    appendToAiMessage('Looking for tor binary and launching... ' +
+                       '(bootstrap may take 15-30s)');
+    sendWithPromise('launchTor').then(function(r) {
+      if (r.success) {
+        currentAiText = '✓ Tor launched.\n' +
+                        '  Binary: ' + (r.binary_path || '?') + '\n' +
+                        '  PID:    ' + (r.pid || '?') + '\n\n' +
+                        'Use /tor open <url> to route a tab through it.';
+      } else {
+        currentAiText = '✗ ' + (r.error || 'launch failed');
+      }
+      finishAiMessage();
+      setGenerating(false);
+    });
+    return true;
+  }
+  if (sub === 'close' || sub === 'stop' || sub === 'kill') {
+    sendWithPromise('stopTor').then(function() {
+      currentAiText = '✓ Sent SIGTERM to managed tor child. ' +
+                      'External tor (if any) is unaffected.';
+      finishAiMessage();
+      setGenerating(false);
+    });
+    return true;
+  }
+  if (sub === 'open') {
+    var url = parts.slice(1).join(' ').trim();
+    if (!url) {
+      var tabUrl = (window.__moltLastTabContext &&
+                    window.__moltLastTabContext.url) || '';
+      if (tabUrl) url = tabUrl;
+    }
+    if (!url) {
+      currentAiText = 'Usage: /tor open <url>';
+      finishAiMessage();
+      setGenerating(false);
+      return true;
+    }
+    appendToAiMessage('Configuring SOCKS5 proxy on OTR profile and ' +
+                       'opening ' + url + '...');
+    sendWithPromise('openTorTab', url).then(function(r) {
+      if (r.success) {
+        currentAiText = '✓ Opened ' + r.url + ' in an OTR window ' +
+                        'routed through ' + r.proxy + '.\n\n' +
+                        'All tabs in that OTR window now use Tor. ' +
+                        'Close the window to revert.';
+      } else {
+        currentAiText = '✗ ' + (r.error || 'open-tor-tab failed');
+      }
+      finishAiMessage();
+      setGenerating(false);
+    });
     return true;
   }
   if (sub === 'circuit' || sub === 'circuits') {

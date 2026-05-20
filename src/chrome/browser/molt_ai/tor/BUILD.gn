@@ -1,13 +1,14 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# Tor integration for MoltBrowser. Phase B.1 — control-port reader.
-# The user installs Tor locally (Homebrew / package manager) and
-# configures ControlPort 9051. MoltBrowser then visualizes the live
-# circuit data in the side panel.
+# Tor integration for MoltBrowser.
+#   Phase B.1 — control-port reader (tor_service.*)
+#   Phase B.2 — subprocess launcher + GeoIP enrichment (tor_manager.*)
 
 source_set("tor") {
   sources = [
+    "tor_manager.cc",
+    "tor_manager.h",
     "tor_service.cc",
     "tor_service.h",
   ]
