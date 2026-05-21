@@ -324,6 +324,7 @@ static_library("ui") {
     "//chrome/browser/molt_ai/anti_rage",
     "//chrome/browser/molt_ai/consent",
     "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/ocr",
     "//chrome/browser/molt_ai/pdf",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/vault",

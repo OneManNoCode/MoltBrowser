@@ -45,6 +45,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/ocr/ocr_service.h"
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
@@ -2469,19 +2470,56 @@ void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
             std::vector<uint8_t> bytes(body->begin(), body->end());
             std::string text =
                 molt_ai::pdf::ExtractText(bytes, /*max_chars=*/50000);
-            if (text.empty()) {
-              out.Set("success", false);
-              out.Set("error",
-                      "no text layer (image-only PDF — OCR coming soon)");
+            if (!text.empty()) {
+              out.Set("success", true);
+              out.Set("text", text);
+              out.Set("char_count", static_cast<int>(text.size()));
+              out.Set("source", "text_layer");
               self->ResolveJavascriptCallback(base::Value(cb_id),
                                               base::Value(std::move(out)));
               return;
             }
-            out.Set("success", true);
-            out.Set("text", text);
-            out.Set("char_count", static_cast<int>(text.size()));
-            self->ResolveJavascriptCallback(base::Value(cb_id),
-                                            base::Value(std::move(out)));
+            // No text layer — fall back to OCR via bundled tesseract.
+            // We keep the URL in the response by routing through a
+            // tiny lambda that re-wraps the result.
+            std::string raw(body->begin(), body->end());
+            std::string cb_inner = cb_id;
+            molt_ai::ocr::OcrService::Get()->OcrPdf(
+                std::move(raw), /*max_chars=*/50000,
+                base::BindOnce(
+                    [](base::WeakPtr<MoltAIChatHandler> self,
+                       std::string cb_id, std::string src_url,
+                       molt_ai::ocr::OcrResult r) {
+                      if (!self) return;
+                      base::DictValue out;
+                      out.Set("url", src_url);
+                      out.Set("source", "ocr");
+                      out.Set("ocr_binary_source", r.binary_source);
+                      out.Set("ocr_duration_ms", r.duration_ms);
+                      if (r.success) {
+                        out.Set("success", true);
+                        out.Set("text", r.text);
+                        out.Set("char_count",
+                                static_cast<int>(r.text.size()));
+                      } else {
+                        out.Set("success", false);
+                        // Be explicit about whether tesseract was
+                        // missing vs. failed.
+                        if (r.binary_source == "none") {
+                          out.Set("error",
+                                  "no text layer and no OCR available "
+                                  "— run scripts/bundle-tesseract.sh "
+                                  "or install tesseract.");
+                        } else {
+                          out.Set("error", "no text layer; OCR failed: " +
+                                            r.error);
+                        }
+                      }
+                      self->ResolveJavascriptCallback(
+                          base::Value(cb_id),
+                          base::Value(std::move(out)));
+                    },
+                    self, cb_id, src_url));
           },
           weak_this),
       kMaxPdfBytes);

@@ -1,0 +1,15 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# OCR for image-only PDFs. Wraps a bundled (or system) tesseract.
+
+source_set("ocr") {
+  sources = [
+    "ocr_service.cc",
+    "ocr_service.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}

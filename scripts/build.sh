@@ -152,6 +152,13 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
       echo "[build] will fall back to a system-installed whisper-cli."
     }
     echo ""
+    # Tier-3 polish: bundle tesseract for image-only-PDF OCR fallback.
+    echo "=== Bundling Tesseract ==="
+    "$SCRIPT_DIR/bundle-tesseract.sh" --app "$APP" || {
+      echo "[build] WARNING: tesseract bundling failed. /pdf OCR"
+      echo "[build] fallback will use system tesseract or be unavailable."
+    }
+    echo ""
   fi
 fi
 
