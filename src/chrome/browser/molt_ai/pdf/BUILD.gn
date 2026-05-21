@@ -16,3 +16,22 @@ source_set("pdf") {
     "//third_party/zlib",
   ]
 }
+
+# Unit tests for the PDF text scraper. Picked up by the
+# //chrome/browser/molt_ai/test:molt_ai_unittests binary so the
+# standalone test target builds independently of //chrome/test:unit_tests
+# (which is a 13000-line GN file we don't want to keep mirroring on
+# every Chromium upgrade). Run with:
+#   autoninja -C out/MoltBrowser molt_ai_unittests
+#   ./out/MoltBrowser/molt_ai_unittests
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "pdf_text_scraper_unittest.cc",
+  ]
+  deps = [
+    ":pdf",
+    "//base",
+    "//testing/gtest",
+  ]
+}

@@ -1,0 +1,29 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Standalone test binary for the MoltBrowser molt_ai modules.
+#
+# Why standalone vs. piggybacking on //chrome/test:unit_tests:
+#   - chrome/test/BUILD.gn is ~13000 lines. Adding our deps there
+#     means mirroring that file in src/ and merging conflicts on
+#     every Chromium upgrade.
+#   - The modules here are pure-CPU logic (PDF parsing, vault
+#     encryption, automation step matrix). They don't need the
+#     ProfileManager / RenderThread / TestingProfile setup that
+#     chrome unit_tests pulls in.
+#
+# Build: autoninja -C out/MoltBrowser molt_ai_unittests
+# Run:   ./out/MoltBrowser/molt_ai_unittests
+# Filter to one suite: ./out/MoltBrowser/molt_ai_unittests \
+#                        --gtest_filter='PdfTextScraperTest.*'
+
+import("//testing/test.gni")
+
+test("molt_ai_unittests") {
+  deps = [
+    "//base/test:run_all_unittests",
+
+    # Each module under molt_ai/ that has tests adds itself here.
+    "//chrome/browser/molt_ai/pdf:unit_tests",
+  ]
+}

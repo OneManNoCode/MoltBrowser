@@ -280,3 +280,15 @@ group("molt_ai") {
     ]
   }
 }
+
+# Reachable handle for the standalone test binary. GN only enumerates
+# BUILD.gn files for targets in the active build graph, so without
+# this referencing edge the test() target in molt_ai/test/ would be
+# invisible to `autoninja molt_ai_unittests`. data_deps doesn't
+# propagate testonly, so this lives in its own group.
+group("molt_ai_tests") {
+  testonly = true
+  deps = [
+    "test:molt_ai_unittests",
+  ]
+}
