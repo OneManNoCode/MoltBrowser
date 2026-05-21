@@ -359,7 +359,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/click .button</code><br><br>Or just send a message.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/fill ai</code>, <code>/click .button</code><br><b>Vault:</b> <code>/vault list</code>, <code>/vault fill</code>, <code>/vault generate</code><br><b>Translate:</b> <code>/translate [lang] &lt;text&gt;</code><br><br>Or just send a message.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -1929,6 +1929,322 @@ function tryDispatchPlanCommand(text) {
   return true;
 }
 
+// --------------------------------------------------------------
+// Password vault: /vault [list|find|fill|add|delete|generate]
+//
+// All credentials are OSCrypt-encrypted on disk
+// (~/.moltbrowser/vault.enc). Passwords are never echoed to chat;
+// /vault list returns usernames + sites only, and /vault fill never
+// shows the password in the message — it writes straight into the
+// active tab's login form.
+// --------------------------------------------------------------
+function tryDispatchVaultCommand(text) {
+  var m = text.match(/^\s*\/vault\b\s*(.*)$/i);
+  if (!m) return false;
+  var rest = (m[1] || '').trim();
+  var parts = rest.split(/\s+/);
+  var sub = (parts[0] || 'help').toLowerCase();
+  addUserMessage(text);
+  startAiMessage();
+
+  function fmtTime(unix){
+    if (!unix) return 'never';
+    var d = new Date(unix * 1000);
+    return d.toLocaleDateString();
+  }
+
+  if (sub === 'help' || sub === '') {
+    currentAiText =
+      'Vault commands:\n' +
+      '  /vault list                       — list saved credentials\n' +
+      '  /vault find                       — entries for active tab\'s site\n' +
+      '  /vault fill                       — autofill active tab\n' +
+      '  /vault fill <id>                  — autofill with specific entry\n' +
+      '  /vault add <host> <user> <pass>   — add (best done from settings)\n' +
+      '  /vault delete <id>                — remove an entry\n' +
+      '  /vault generate [length]          — generate strong password\n' +
+      '\nAll entries are encrypted at rest via OSCrypt (Keychain on macOS).';
+    finishAiMessage();
+    setGenerating(false);
+    return true;
+  }
+
+  if (sub === 'list') {
+    sendWithPromise('vaultList').then(function(r) {
+      var entries = (r && r.entries) || [];
+      if (!entries.length) {
+        currentAiText = 'Vault is empty. Use /vault add <host> <user> <pass>.';
+      } else {
+        var lines = ['Vault (' + entries.length + ' entries):'];
+        entries.forEach(function(e){
+          lines.push('  • ' + e.site_host + ' — ' + (e.username || '(no user)') +
+                     '   [id ' + e.id.slice(0, 8) + '…]' +
+                     '   last used: ' + fmtTime(e.last_used_unix));
+        });
+        currentAiText = lines.join('\n');
+      }
+      finishAiMessage();
+      setGenerating(false);
+    });
+    return true;
+  }
+
+  if (sub === 'find') {
+    sendWithPromise('vaultFindForActive').then(function(r) {
+      var host = r && r.host || '(unknown)';
+      var matches = (r && r.matches) || [];
+      if (!matches.length) {
+        currentAiText = 'No vault entries match ' + host + '.';
+      } else {
+        var lines = ['Matches for ' + host + ':'];
+        matches.forEach(function(m){
+          lines.push('  • ' + m.username + '   [id ' + m.id.slice(0, 8) +
+                     '…]   last used: ' + fmtTime(m.last_used_unix));
+        });
+        lines.push('');
+        lines.push('Fill with: /vault fill ' + matches[0].id.slice(0, 8));
+        currentAiText = lines.join('\n');
+      }
+      finishAiMessage();
+      setGenerating(false);
+    });
+    return true;
+  }
+
+  if (sub === 'fill') {
+    var idArg = (parts[1] || '').trim();
+    // Short-id lookup: user can pass any 8+ char prefix.
+    var doFill = function(id) {
+      sendWithPromise('vaultAutofill', id || '').then(function(r) {
+        if (r.success) {
+          currentAiText = '✓ Filled ' + r.filled + ' login form' +
+              (r.filled === 1 ? '' : 's') + ' (' +
+              r.total_password_fields + ' password field' +
+              (r.total_password_fields === 1 ? '' : 's') + ' on page).';
+        } else {
+          currentAiText = '✗ ' + (r.error || 'autofill failed');
+        }
+        finishAiMessage();
+        setGenerating(false);
+      });
+    };
+    if (!idArg) { doFill(''); return true; }
+    // Resolve short id → full id.
+    sendWithPromise('vaultList').then(function(r) {
+      var hit = (r.entries || []).find(function(e){
+        return e.id.indexOf(idArg) === 0;
+      });
+      if (!hit) {
+        currentAiText = '✗ No entry with id prefix "' + idArg + '"';
+        finishAiMessage();
+        setGenerating(false);
+        return;
+      }
+      doFill(hit.id);
+    });
+    return true;
+  }
+
+  if (sub === 'add') {
+    var host = parts[1], user = parts[2];
+    var pass = parts.slice(3).join(' ');
+    if (!host || !user || !pass) {
+      currentAiText = 'Usage: /vault add <host> <username> <password>';
+      finishAiMessage();
+      setGenerating(false);
+      return true;
+    }
+    sendWithPromise('vaultAdd',
+        {site_host: host, username: user, password: pass}).then(function(r) {
+      if (r.success) {
+        currentAiText = '✓ Saved credential for ' + host + ' (id ' +
+                         r.id.slice(0, 8) + '…).\n' +
+                         '  Tip: clear the chat to remove the plaintext ' +
+                         'password from screen.';
+      } else {
+        currentAiText = '✗ ' + (r.error || 'save failed');
+      }
+      finishAiMessage();
+      setGenerating(false);
+    });
+    return true;
+  }
+
+  if (sub === 'delete' || sub === 'remove' || sub === 'rm') {
+    var idArg2 = (parts[1] || '').trim();
+    if (!idArg2) {
+      currentAiText = 'Usage: /vault delete <id-prefix>';
+      finishAiMessage();
+      setGenerating(false);
+      return true;
+    }
+    sendWithPromise('vaultList').then(function(r) {
+      var hit = (r.entries || []).find(function(e){
+        return e.id.indexOf(idArg2) === 0;
+      });
+      if (!hit) {
+        currentAiText = '✗ No entry matches.';
+        finishAiMessage();
+        setGenerating(false);
+        return;
+      }
+      sendWithPromise('vaultDelete', hit.id).then(function(r2) {
+        currentAiText = r2.success
+            ? '✓ Deleted ' + hit.site_host + ' / ' + hit.username
+            : '✗ ' + (r2.error || 'delete failed');
+        finishAiMessage();
+        setGenerating(false);
+      });
+    });
+    return true;
+  }
+
+  if (sub === 'generate' || sub === 'gen') {
+    // Client-side via crypto.getRandomValues — keeps the generated
+    // password out of any LLM/IPC path until the user explicitly
+    // saves it.
+    var len = parseInt(parts[1] || '20', 10);
+    if (isNaN(len) || len < 8 || len > 128) len = 20;
+    var alphabet =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+      '0123456789!@#$%^&*-_=+';
+    var buf = new Uint32Array(len);
+    crypto.getRandomValues(buf);
+    var pw = '';
+    for (var i = 0; i < len; i++) pw += alphabet[buf[i] % alphabet.length];
+    currentAiText = 'Generated password (' + len + ' chars):\n\n  ' + pw +
+                    '\n\nTip: pair with /vault add <host> <user> ' + pw;
+    finishAiMessage();
+    setGenerating(false);
+    return true;
+  }
+
+  currentAiText = 'Unknown /vault subcommand: ' + sub + '. Try /vault help.';
+  finishAiMessage();
+  setGenerating(false);
+  return true;
+}
+
+// --------------------------------------------------------------
+// Inline translate: /translate [lang] <text or selection>
+// If no text supplied, uses the current text selection (via the
+// runMoltAction eval shim). Default target language is English.
+// --------------------------------------------------------------
+function tryDispatchTranslateCommand(text) {
+  var m = text.match(/^\s*\/translate\b\s*(.*)$/i);
+  if (!m) return false;
+  var rest = (m[1] || '').trim();
+  // First token might be a target language code (en, es, fr, de, ...).
+  var lang = 'English';
+  var body = rest;
+  var firstSpace = rest.indexOf(' ');
+  var firstTok = firstSpace > 0 ? rest.slice(0, firstSpace) : rest;
+  var langMap = {
+    en: 'English', es: 'Spanish', fr: 'French', de: 'German',
+    it: 'Italian', pt: 'Portuguese', ja: 'Japanese', zh: 'Chinese',
+    ko: 'Korean', ar: 'Arabic', hi: 'Hindi', ru: 'Russian',
+    tr: 'Turkish', nl: 'Dutch', sv: 'Swedish', pl: 'Polish'
+  };
+  if (firstTok && langMap[firstTok.toLowerCase()]) {
+    lang = langMap[firstTok.toLowerCase()];
+    body = rest.slice(firstSpace + 1).trim();
+  }
+  addUserMessage(text);
+  startAiMessage();
+  function doTranslate(src) {
+    if (!src) {
+      currentAiText = 'Nothing to translate. Use /translate [lang] <text>, ' +
+                       'or select text on the page first.';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    var prompt =
+      'Translate the following text to ' + lang + '. Preserve ' +
+      'meaning and tone. Output the translation only, no preamble.\n\n' +
+      'Text:\n' + src.slice(0, 8000);
+    sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+      finishAiMessage();
+      setGenerating(false);
+    });
+  }
+  if (body) { doTranslate(body); return true; }
+  // No text supplied — fall back to using the captured active-page
+  // text (whatever the side panel snapshotted on tab-change). It's
+  // not the live selection but gets us 80% there without needing a
+  // generic eval IPC. The user can scope down by quoting a phrase.
+  var sp = window.__moltCurrentTabContext;
+  var fallback = sp && sp.text ? sp.text.slice(0, 4000) : '';
+  if (!fallback) {
+    currentAiText = 'Usage: /translate [lang] <text>  (or open a page ' +
+                     'with content first).';
+    finishAiMessage();
+    setGenerating(false);
+    return true;
+  }
+  doTranslate(fallback);
+  return true;
+}
+
+// --------------------------------------------------------------
+// Form filler v2: /fill ai (LLM fallback)
+// Two-phase: phase 1 asks the C++ side to probe form fields and
+// return a ready prompt; phase 2 sends the LLM's JSON mapping back
+// for application.
+// --------------------------------------------------------------
+function tryDispatchFillAICommand(text) {
+  var m = text.match(/^\s*\/fill\s+ai\b\s*(.*)$/i);
+  if (!m) return false;
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Probing form fields...');
+  sendWithPromise('runFormFillAI').then(function(r) {
+    if (!r.success) {
+      currentAiText = '✗ ' + (r.error || 'probe failed');
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    currentAiText = '';
+    sendWithPromise('sendPrompt', r.prompt, '', '').then(function() {
+      // Parse JSON from currentAiText.
+      var s = currentAiText;
+      var i = s.indexOf('{'), j = s.lastIndexOf('}');
+      if (i < 0 || j <= i) {
+        currentAiText += '\n\n✗ Could not parse JSON mapping.';
+        finishAiMessage();
+        setGenerating(false);
+        return;
+      }
+      var parsed;
+      try { parsed = JSON.parse(s.substring(i, j + 1)); }
+      catch (e) {
+        currentAiText += '\n\n✗ Invalid JSON: ' + e;
+        finishAiMessage();
+        setGenerating(false);
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object' ||
+          Object.keys(parsed).length === 0) {
+        currentAiText += '\n\n✗ Empty mapping — no fields confidently matched.';
+        finishAiMessage();
+        setGenerating(false);
+        return;
+      }
+      sendWithPromise('applyFormFillMap', {map: parsed})
+          .then(function(r2){
+            currentAiText = r2.success
+                ? '✓ Filled ' + r2.filled + ' of ' + r2.total +
+                  ' fields via AI mapping.'
+                : '✗ ' + (r2.error || 'apply failed');
+            finishAiMessage();
+            setGenerating(false);
+          });
+    });
+  });
+  return true;
+}
+
 function tryDispatchHistoryCommand(text) {
   var m = text.match(/^\s*\/history\b\s*(\d*)$/i);
   if (!m) return false;
@@ -2309,6 +2625,27 @@ function sendMessage() {
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchFillCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchVaultCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchTranslateCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchFillAICommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';

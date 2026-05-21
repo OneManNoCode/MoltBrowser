@@ -134,6 +134,24 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // into a saved Script, written via AutomationStorage.
   // Args: [callback_id, {name, steps: [string], task}]
   void HandleSavePlanScript(const base::ListValue& args);
+  // Tier 4: Password vault.
+  //   vaultList(callback_id, [include_passwords_bool=false])
+  //   vaultAdd(callback_id, {site_host, username, password, notes?})
+  //   vaultDelete(callback_id, id)
+  //   vaultFindForActive(callback_id)  → entries matching active tab
+  //   vaultAutofill(callback_id, id)   → inject creds into active tab
+  void HandleVaultList(const base::ListValue& args);
+  void HandleVaultAdd(const base::ListValue& args);
+  void HandleVaultDelete(const base::ListValue& args);
+  void HandleVaultFindForActive(const base::ListValue& args);
+  void HandleVaultAutofill(const base::ListValue& args);
+  // Tier 4: Form filler v2 — LLM fallback. Two-phase:
+  //   1. HandleRunFormFillAI: probe visible form fields, return a
+  //      ready-to-send prompt for the LLM.
+  //   2. HandleApplyFormFillMap: take the LLM's parsed mapping
+  //      (selector → value) and apply it to the active tab.
+  void HandleRunFormFillAI(const base::ListValue& args);
+  void HandleApplyFormFillMap(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]

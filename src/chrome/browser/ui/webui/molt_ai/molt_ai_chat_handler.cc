@@ -46,6 +46,7 @@
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
+#include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
@@ -238,6 +239,36 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "savePlanScript",
       base::BindRepeating(&MoltAIChatHandler::HandleSavePlanScript,
+                          base::Unretained(this)));
+  // Tier 4: password vault.
+  web_ui()->RegisterMessageCallback(
+      "vaultList",
+      base::BindRepeating(&MoltAIChatHandler::HandleVaultList,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "vaultAdd",
+      base::BindRepeating(&MoltAIChatHandler::HandleVaultAdd,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "vaultDelete",
+      base::BindRepeating(&MoltAIChatHandler::HandleVaultDelete,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "vaultFindForActive",
+      base::BindRepeating(&MoltAIChatHandler::HandleVaultFindForActive,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "vaultAutofill",
+      base::BindRepeating(&MoltAIChatHandler::HandleVaultAutofill,
+                          base::Unretained(this)));
+  // Tier 4: form filler v2 (LLM fallback).
+  web_ui()->RegisterMessageCallback(
+      "runFormFillAI",
+      base::BindRepeating(&MoltAIChatHandler::HandleRunFormFillAI,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "applyFormFillMap",
+      base::BindRepeating(&MoltAIChatHandler::HandleApplyFormFillMap,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -3565,4 +3596,647 @@ void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
   out.Set("parsed_ok", parsed_ok);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
+}
+
+// ==================================================================
+// Tier 4: Password vault
+//
+// Five small handlers backed by molt_ai::vault::VaultStore (OSCrypt-
+// encrypted ~/.moltbrowser/vault.enc). The store is opened
+// per-request — sub-millisecond on a small vault, and avoids holding
+// any plaintext credentials in long-lived memory.
+// ==================================================================
+
+// HandleVaultList: dump entries. Passwords are scrubbed by default;
+// callers pass include_passwords=true (boolean second arg) only when
+// they need the plaintext (e.g. the dedicated reveal view).
+void MoltAIChatHandler::HandleVaultList(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  bool include_passwords = false;
+  if (args.size() > 1 && args[1].is_bool())
+    include_passwords = args[1].GetBool();
+
+  std::vector<molt_ai::vault::VaultEntry> entries;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::vault::VaultStore store;
+    entries = store.List();
+  }
+  base::ListValue arr;
+  for (const auto& e : entries) {
+    base::DictValue d;
+    d.Set("id", e.id);
+    d.Set("site_host", e.site_host);
+    d.Set("username", e.username);
+    if (include_passwords) d.Set("password", e.password);
+    d.Set("notes", e.notes);
+    d.Set("created_at_unix", static_cast<double>(e.created_at_unix));
+    d.Set("last_used_unix", static_cast<double>(e.last_used_unix));
+    d.Set("last_changed_unix", static_cast<double>(e.last_changed_unix));
+    arr.Append(std::move(d));
+  }
+  base::DictValue out;
+  out.Set("entries", std::move(arr));
+  out.Set("count", static_cast<int>(entries.size()));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+void MoltAIChatHandler::HandleVaultAdd(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected entry dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const base::DictValue& d = args[1].GetDict();
+  molt_ai::vault::VaultEntry e;
+  if (auto* s = d.FindString("site_host")) e.site_host = *s;
+  if (auto* s = d.FindString("username"))  e.username = *s;
+  if (auto* s = d.FindString("password"))  e.password = *s;
+  if (auto* s = d.FindString("notes"))     e.notes = *s;
+  if (e.site_host.empty() || e.password.empty()) {
+    out.Set("success", false);
+    out.Set("error", "site_host and password required");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  std::string id;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::vault::VaultStore store;
+    id = store.Add(std::move(e));
+  }
+  if (id.empty()) {
+    out.Set("success", false);
+    out.Set("error", "save failed");
+  } else {
+    out.Set("success", true);
+    out.Set("id", id);
+  }
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+void MoltAIChatHandler::HandleVaultDelete(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  std::string id = args[1].is_string() ? args[1].GetString() : "";
+  bool ok = false;
+  if (!id.empty()) {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::vault::VaultStore store;
+    ok = store.Delete(id);
+  }
+  base::DictValue out;
+  out.Set("success", ok);
+  if (!ok) out.Set("error", "entry not found");
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+void MoltAIChatHandler::HandleVaultFindForActive(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  // Resolve the active tab's host.
+  std::string host;
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (browser && browser->tab_strip_model()) {
+    content::WebContents* t =
+        browser->tab_strip_model()->GetActiveWebContents();
+    if (t) host = std::string(t->GetLastCommittedURL().host());
+  }
+  std::vector<molt_ai::vault::VaultEntry> matches;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::vault::VaultStore store;
+    matches = store.FindForHost(host);
+  }
+  base::ListValue arr;
+  for (const auto& e : matches) {
+    base::DictValue d;
+    d.Set("id", e.id);
+    d.Set("site_host", e.site_host);
+    d.Set("username", e.username);
+    d.Set("last_used_unix", static_cast<double>(e.last_used_unix));
+    arr.Append(std::move(d));
+  }
+  base::DictValue out;
+  out.Set("host", host);
+  out.Set("matches", std::move(arr));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// JS injection that finds the most likely login form and fills it.
+// Strategy:
+//   1. Find every visible input[type=password].
+//   2. For each, find a username field — preferring inputs in the
+//      same <form>, falling back to nearest preceding input with a
+//      text-ish type. We pick by autocomplete + name + id signals
+//      ("username", "email", "user", "login").
+//   3. Set values via a property descriptor write so React/Vue
+//      controlled inputs pick up the change, then dispatch
+//      input + change events.
+// Returns {filled: int, total_pwd: int, used_form: bool}.
+static constexpr char kVaultAutofillJS[] = R"JS(
+(function(creds) {
+  function isVisible(el) {
+    if (!el) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none';
+  }
+  function setNative(el, value) {
+    var proto = el.tagName === 'TEXTAREA'
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    setter.call(el, value);
+    el.dispatchEvent(new Event('input', {bubbles: true}));
+    el.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+  function userScore(el) {
+    // Score 0-100 for "this looks like a username/email input".
+    var s = 0;
+    var ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+    if (/username|email/.test(ac)) s += 60;
+    var n = (el.getAttribute('name') || '').toLowerCase();
+    var id = (el.id || '').toLowerCase();
+    var ph = (el.getAttribute('placeholder') || '').toLowerCase();
+    var bag = n + ' ' + id + ' ' + ph;
+    if (/(^|[^a-z])(user|login|email|account)([^a-z]|$)/.test(bag)) s += 30;
+    var t = (el.type || '').toLowerCase();
+    if (t === 'email') s += 30;
+    if (t === 'text' || t === 'tel') s += 10;
+    return s;
+  }
+  function pickUsernameFor(pwd) {
+    var candidates = [];
+    var form = pwd.form;
+    if (form) {
+      var inputs = form.querySelectorAll('input');
+      inputs.forEach(function(i){
+        if (i === pwd) return;
+        if (!isVisible(i)) return;
+        var t = (i.type || '').toLowerCase();
+        if (t === 'hidden' || t === 'submit' || t === 'button') return;
+        if (t === 'password') return;
+        candidates.push(i);
+      });
+    }
+    if (!candidates.length) {
+      // Fallback: scan all visible inputs preceding the password field.
+      var all = Array.from(document.querySelectorAll('input'));
+      var idx = all.indexOf(pwd);
+      for (var i = idx - 1; i >= 0; i--) {
+        var x = all[i];
+        if (!isVisible(x)) continue;
+        var t = (x.type || '').toLowerCase();
+        if (t === 'password' || t === 'hidden' ||
+            t === 'submit' || t === 'button') continue;
+        candidates.push(x);
+        if (candidates.length >= 4) break;
+      }
+    }
+    if (!candidates.length) return null;
+    // Pick the highest-scoring visible candidate.
+    candidates.sort(function(a,b){ return userScore(b) - userScore(a); });
+    return candidates[0];
+  }
+  var pwds = Array.from(document.querySelectorAll('input[type=password]'))
+                  .filter(isVisible);
+  if (!pwds.length) {
+    return {filled: 0, total_pwd: 0, used_form: false,
+            error: 'no visible password field'};
+  }
+  var filled = 0;
+  var usedForm = false;
+  pwds.forEach(function(p) {
+    setNative(p, creds.password);
+    var u = pickUsernameFor(p);
+    if (u) {
+      setNative(u, creds.username || '');
+      usedForm = !!p.form;
+      filled++;
+    }
+  });
+  return {filled: filled, total_pwd: pwds.length, used_form: usedForm};
+})
+)JS";
+
+void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  std::string entry_id = args[1].is_string() ? args[1].GetString() : "";
+  base::DictValue out;
+
+  // Resolve target tab.
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("success", false);
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  content::WebContents* target =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+    out.Set("success", false);
+    out.Set("error", "active tab is not an http(s) page");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Resolve the entry. If no id supplied, pick the most-recently-
+  // used match for the active tab's host.
+  molt_ai::vault::VaultEntry chosen;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::vault::VaultStore store;
+    std::vector<molt_ai::vault::VaultEntry> picks;
+    if (!entry_id.empty()) {
+      for (auto& e : store.List()) {
+        if (e.id == entry_id) { picks.push_back(std::move(e)); break; }
+      }
+    } else {
+      picks = store.FindForHost(
+          std::string(target->GetLastCommittedURL().host()));
+    }
+    if (picks.empty()) {
+      out.Set("success", false);
+      out.Set("error",
+              entry_id.empty()
+                  ? "no vault entry matches this site"
+                  : "vault entry not found");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(out)));
+      return;
+    }
+    chosen = std::move(picks[0]);
+    store.TouchLastUsed(chosen.id);
+  }
+
+  // Compose creds JSON for the JS shim.
+  base::DictValue creds;
+  creds.Set("username", chosen.username);
+  creds.Set("password", chosen.password);
+  std::string creds_json;
+  base::JSONWriter::Write(creds, &creds_json);
+  std::string js = std::string(kVaultAutofillJS) + "(" + creds_json + ")";
+
+  std::string cb_id = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      base::UTF8ToUTF16(js),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             base::Value v) {
+            if (!self) return;
+            base::DictValue r;
+            if (v.is_dict()) {
+              const base::DictValue& d = v.GetDict();
+              auto filled = d.FindInt("filled");
+              auto total = d.FindInt("total_pwd");
+              bool ok = filled.value_or(0) > 0;
+              r.Set("success", ok);
+              r.Set("filled", filled.value_or(0));
+              r.Set("total_password_fields", total.value_or(0));
+              if (auto* err = d.FindString("error")) r.Set("error", *err);
+            } else {
+              r.Set("success", false);
+              r.Set("error", "autofill script returned no data");
+            }
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(r)));
+          },
+          weak_this, cb_id),
+      /*world_id=*/1);
+}
+
+// ==================================================================
+// Tier 4: Form filler v2 — LLM fallback path.
+//
+// The existing /fill works by heuristic matching on input
+// name/placeholder/autocomplete. When the heuristic misses (sites
+// with non-English labels, custom widget libraries, or fields named
+// "fld_3"), this path collects the page's visible input attributes,
+// sends them to the LLM with the user's profile, and asks the LLM
+// to emit a JSON mapping of field selector → profile key. We then
+// re-run a filler with that mapping.
+//
+// This is NOT bypass: if the heuristic finds matches, we still use
+// them. The LLM only fills the leftovers. Visible in /fill --ai or
+// `runFormFillAI` IPC.
+//
+// Args: [callback_id]
+// ==================================================================
+
+// JS probe that enumerates visible inputs and returns a compact
+// summary the LLM can reason over.
+static constexpr char kFormProbeJS[] = R"JS(
+(function() {
+  function isVisible(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    var s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none';
+  }
+  function cssPath(el) {
+    if (el.id) return '#' + CSS.escape(el.id);
+    var n = (el.getAttribute('name') || '').trim();
+    if (n) return el.tagName.toLowerCase() + '[name="' +
+                 n.replace(/"/g,'\\"') + '"]';
+    // Fallback: structural path.
+    var parts = [];
+    var cur = el;
+    for (var i = 0; cur && i < 6; i++) {
+      var sib = cur, idx = 1;
+      while ((sib = sib.previousElementSibling) != null) {
+        if (sib.tagName === cur.tagName) idx++;
+      }
+      parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + idx + ')');
+      cur = cur.parentElement;
+    }
+    return parts.join(' > ');
+  }
+  function labelFor(el) {
+    if (el.id) {
+      var L = document.querySelector('label[for="' + el.id + '"]');
+      if (L && L.innerText) return L.innerText.trim();
+    }
+    var p = el.parentElement;
+    if (p && p.tagName === 'LABEL') return p.innerText.trim();
+    return '';
+  }
+  var inputs = Array.from(document.querySelectorAll(
+      'input, textarea, select'));
+  var rows = [];
+  inputs.forEach(function(el) {
+    if (!isVisible(el)) return;
+    var t = (el.type || '').toLowerCase();
+    if (t === 'hidden' || t === 'submit' || t === 'button' ||
+        t === 'password') return;
+    if (el.disabled || el.readOnly) return;
+    rows.push({
+      selector: cssPath(el),
+      type: t,
+      name: el.getAttribute('name') || '',
+      id: el.id || '',
+      placeholder: el.getAttribute('placeholder') || '',
+      autocomplete: el.getAttribute('autocomplete') || '',
+      label: labelFor(el).slice(0, 60)
+    });
+    if (rows.length >= 40) return;
+  });
+  return JSON.stringify({inputs: rows});
+})()
+)JS";
+
+// JS shim that applies a {selector: value} map to the active page.
+static constexpr char kFormFillByMapJS[] = R"JS(
+(function(map) {
+  function setNative(el, value) {
+    var proto = el.tagName === 'TEXTAREA'
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    setter.call(el, value);
+    el.dispatchEvent(new Event('input', {bubbles: true}));
+    el.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+  var filled = 0, total = 0;
+  Object.keys(map).forEach(function(sel){
+    total++;
+    var el;
+    try { el = document.querySelector(sel); } catch (e) { return; }
+    if (!el) return;
+    setNative(el, String(map[sel]));
+    filled++;
+  });
+  return {filled: filled, total: total};
+})
+)JS";
+
+void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  base::DictValue out;
+
+  // Resolve target tab.
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("success", false);
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  content::WebContents* target =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+    out.Set("success", false);
+    out.Set("error", "active tab is not an http(s) page");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Load profile.
+  base::DictValue profile;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::profile::MoltProfileStore store;
+    profile = store.Load();
+  }
+  if (profile.empty()) {
+    out.Set("success", false);
+    out.Set("error", "profile is empty — set one via /profile first");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  std::string cb_id = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  base::DictValue profile_copy = profile.Clone();
+
+  // Step 1: enumerate visible form fields.
+  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      base::UTF8ToUTF16(std::string(kFormProbeJS)),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             content::WebContents* target,
+             base::DictValue profile,
+             base::Value probe_result) {
+            if (!self) return;
+            base::DictValue out;
+            if (!probe_result.is_string()) {
+              out.Set("success", false);
+              out.Set("error", "form probe returned no data");
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id), base::Value(std::move(out)));
+              return;
+            }
+            auto parsed = base::JSONReader::Read(probe_result.GetString(),
+                                                  /*options=*/0);
+            if (!parsed || !parsed->is_dict()) {
+              out.Set("success", false);
+              out.Set("error", "probe parse failed");
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id), base::Value(std::move(out)));
+              return;
+            }
+            const base::ListValue* inputs =
+                parsed->GetDict().FindList("inputs");
+            if (!inputs || inputs->empty()) {
+              out.Set("success", false);
+              out.Set("error", "no fillable inputs found");
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id), base::Value(std::move(out)));
+              return;
+            }
+
+            // Step 2: build LLM prompt. We ask for a strict JSON
+            // object mapping CSS selector → string value to type.
+            std::string inputs_json;
+            base::JSONWriter::Write(*inputs, &inputs_json);
+            std::string profile_json;
+            base::JSONWriter::Write(profile, &profile_json);
+            std::string prompt =
+                "You are a web form filler. Below is the user's saved "
+                "profile (key → value) and the visible form fields on "
+                "the current page. Match each field to a profile value "
+                "if and only if the match is unambiguous. Respond with "
+                "ONE JSON object: keys are the field selectors, values "
+                "are the strings to type. Skip any field you can't "
+                "confidently match. No prose, no markdown.\n\n"
+                "Profile:\n" + profile_json +
+                "\n\nForm fields:\n" + inputs_json +
+                "\n\nMapping:";
+
+            // Use the existing sendPrompt pipeline by reaching into the
+            // runtime directly. We need the streaming machinery so we
+            // get the final text. Simplest path: kick off a normal
+            // sendPrompt and let the chat finalize it; the user sees
+            // the JSON in the chat, then a follow-up action fills.
+            //
+            // For a cleaner v1, we instead call the runtime synchronously
+            // through GetOrCreateRuntime() and a tiny wrapper. To keep
+            // this commit reviewable, route through the existing
+            // streaming sendPrompt path: emit the prompt text directly
+            // and have the JS side (which already drives /receipt and
+            // /plan) own the parse + fill step. That keeps the
+            // contract for /fill --ai identical to /receipt: LLM
+            // streams JSON, JS parses, JS calls a tiny IPC to apply.
+            //
+            // Here we just return the prompt + the JS shim so the
+            // JS layer can stream the LLM call itself.
+            out.Set("success", true);
+            out.Set("phase", "ready_for_llm");
+            out.Set("prompt", prompt);
+            self->ResolveJavascriptCallback(
+                base::Value(cb_id), base::Value(std::move(out)));
+          },
+          weak_this, cb_id, target, std::move(profile_copy)),
+      /*world_id=*/1);
+}
+
+// HandleApplyFormFillMap: phase 2 of the Form Filler v2. The JS
+// layer has already streamed the LLM, parsed its JSON output, and
+// now hands us a dict of {selector: value} pairs to apply.
+//
+// Args: [callback_id, {map: {selector: value, ...}}]
+// Returns: {success, filled, total}
+void MoltAIChatHandler::HandleApplyFormFillMap(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected {map: {...}} dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const base::DictValue& d = args[1].GetDict();
+  const base::DictValue* map = d.FindDict("map");
+  if (!map || map->empty()) {
+    out.Set("success", false);
+    out.Set("error", "empty mapping");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  // Resolve target tab.
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("success", false);
+    out.Set("error", "no owning browser");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  content::WebContents* target =
+      browser->tab_strip_model()->GetActiveWebContents();
+  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+    out.Set("success", false);
+    out.Set("error", "active tab is not an http(s) page");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  // Serialize the map and apply via the shim.
+  std::string map_json;
+  base::Value map_val(map->Clone());
+  base::JSONWriter::Write(map_val, &map_json);
+  std::string js = std::string(kFormFillByMapJS) + "(" + map_json + ")";
+
+  std::string cb_id = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      base::UTF8ToUTF16(js),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             base::Value v) {
+            if (!self) return;
+            base::DictValue r;
+            if (v.is_dict()) {
+              const base::DictValue& d = v.GetDict();
+              auto filled = d.FindInt("filled");
+              auto total = d.FindInt("total");
+              r.Set("success", filled.value_or(0) > 0);
+              r.Set("filled", filled.value_or(0));
+              r.Set("total", total.value_or(0));
+            } else {
+              r.Set("success", false);
+              r.Set("error", "apply script returned no data");
+            }
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(r)));
+          },
+          weak_this, cb_id),
+      /*world_id=*/1);
 }

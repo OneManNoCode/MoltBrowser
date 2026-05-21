@@ -17,6 +17,7 @@ component("sync") {
     # browser" allowance, but GN visibility doesn't follow that pattern.
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/profile",
+    "//chrome/browser/molt_ai/vault",
     "//chrome/test:test_support",
     "//components/os_crypt/async/browser:dpapi_key_provider",
     "//components/os_crypt/async/browser:freedesktop_secret_key_provider",

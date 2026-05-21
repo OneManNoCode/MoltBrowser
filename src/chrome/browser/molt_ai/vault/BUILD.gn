@@ -1,0 +1,17 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser password vault. Encrypted credentials store at
+# ~/.moltbrowser/vault.enc, OSCrypt-backed.
+
+source_set("vault") {
+  sources = [
+    "vault_store.cc",
+    "vault_store.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/os_crypt/sync",
+  ]
+}
