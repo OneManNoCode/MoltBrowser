@@ -34,11 +34,24 @@ source_set("molt_ai_dom") {
   ]
 }
 
+# DEAD CODE — kept as a source_set with no sources so existing deps
+# don't break, but the .cc + .h are no longer compiled.
+#
+# Why: agents/agent_engine.cc had LLM-controlled action.target /
+# action.value concatenated directly into JS source passed to
+# ExecuteJavaScriptInIsolatedWorld at 5 call sites (CLICK, FILL_FORM,
+# EXTRACT_DATA, OPEN_TAB, TYPE_TEXT). A prompt-injected LLM could
+# break out of the string literal and run arbitrary JS in the active
+# tab. The vulnerability was masked from rebuilds because:
+#   - The file currently has pre-existing compile errors that ninja
+#     hid via a cached .o from a prior build state.
+#   - No live code path instantiates AgentEngine — only a "TODO:
+#     Integrate with AgentEngine" comment in browser_ai_api.cc:92.
+# Code-review finding 2026-05-20. When agent automation actually ships
+# (current path is molt_ai/automation/), this file should be rewritten
+# from scratch with base::JSONWriter for every JS-source interpolation.
 source_set("molt_ai_agents") {
-  sources = [
-    "agents/agent_engine.cc",
-    "agents/agent_engine.h",
-  ]
+  sources = []
 
   deps = [
     ":molt_ai_dom",
