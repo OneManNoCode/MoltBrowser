@@ -14,6 +14,7 @@ source_set("molt_ai") {
     "molt_ai_chat_handler_vault.cc",
     "molt_ai_chat_ui.cc",
     "molt_ai_chat_ui.h",
+    "molt_ai_chat_ui_js.h",
     "molt_ai_memory_ui.cc",
     "molt_ai_memory_ui.h",
     "molt_ai_settings_ui.cc",
