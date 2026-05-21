@@ -359,7 +359,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code><br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/fill</code>, <code>/click .button</code><br><br>Or just send a message.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/click .button</code><br><br>Or just send a message.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -1563,6 +1563,372 @@ function openProfileEditor() {
 // We do the clustering here in JS so the user can re-cluster on
 // filter (by host, by date range) without an IPC round-trip.
 // --------------------------------------------------------------
+// --------------------------------------------------------------
+// Reader 2.0: /simplify, /eli5, /summarize, /tldr
+// Take the active page's captured innerText, wrap it in a per-mode
+// framing prompt, and stream the LLM's rewrite into chat. All four
+// modes share the same plumbing — only the prompt template differs.
+// --------------------------------------------------------------
+function tryDispatchReaderCommand(text) {
+  var m = text.match(/^\s*\/(simplify|eli5|summarize|tldr)\b\s*(.*)$/i);
+  if (!m) return false;
+  var mode = m[1].toLowerCase();
+  var extra = (m[2] || '').trim();
+  var sp = window.__moltCurrentTabContext;
+  if (!sp || !sp.text || !sp.text.length) {
+    addErrorMessage('Open an http(s) page first — Reader needs page content.');
+    return true;
+  }
+  // Cap input so we don't spend half the context window on boilerplate.
+  // 12k chars ≈ ~3k tokens, leaves room for the generation budget on
+  // a 4k-context bundled model.
+  var pageText = sp.text.length > 12000 ? sp.text.slice(0, 12000) : sp.text;
+  var framings = {
+    simplify:
+      'Rewrite the following web page in plain, accessible language ' +
+      'without losing accuracy. Use short sentences. Keep numbers, ' +
+      'names, and dates exact.' +
+      (extra ? ' Focus especially on: ' + extra + '.' : ''),
+    eli5:
+      'Explain this web page like the reader is five years old. Use ' +
+      'playful, concrete analogies. Avoid jargon entirely. Keep it ' +
+      'short — under 200 words.' +
+      (extra ? ' The reader is most curious about: ' + extra + '.' : ''),
+    summarize:
+      'Summarize this web page in 3-5 tight bullet points. Each bullet ' +
+      'is one sentence and captures one fact, claim, or conclusion.' +
+      (extra ? ' Bias the summary toward: ' + extra + '.' : ''),
+    tldr:
+      'Give a single-sentence TL;DR of this web page that a busy ' +
+      'reader could absorb in two seconds.'
+  };
+  var prompt = framings[mode] +
+               '\n\nPage title: ' + (sp.title || '(untitled)') +
+               '\n\nPage content:\n' + pageText;
+  addUserMessage(text);
+  startAiMessage();
+  sendWithPromise('sendPrompt', prompt, /*history=*/'', /*ctx=*/'').then(
+      function(result) {
+        finishAiMessage();
+        setGenerating(false);
+        if (result && !result.success && result.error) {
+          addErrorMessage(result.error);
+        }
+      }).catch(function() {
+        finishAiMessage();
+        setGenerating(false);
+      });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Receipt extractor: /receipt
+// LLM extracts a strict JSON {merchant,date,total,currency,items} from
+// the active page (which should be a checkout confirmation or invoice
+// view). We parse it client-side and append to a local CSV ledger
+// via the new appendReceipt IPC. The ledger lives at
+// ~/.moltbrowser/ledger.csv — plaintext so you can pull it into a
+// spreadsheet without any tooling.
+// --------------------------------------------------------------
+function tryDispatchReceiptCommand(text) {
+  if (!/^\s*\/receipt\b/i.test(text)) return false;
+  var sp = window.__moltCurrentTabContext;
+  if (!sp || !sp.text || !sp.text.length) {
+    addErrorMessage('Open a receipt / invoice / order-confirmation page first.');
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  var schema =
+    '{"merchant":"<string>","date":"YYYY-MM-DD",' +
+    '"total":<number>,"currency":"<ISO 4217 code, default USD>",' +
+    '"items":[{"name":"<string>","qty":<number>,"price":<number>}]}';
+  var prompt =
+    'You are a receipt extractor. Read the page below and respond with ' +
+    'ONE JSON object matching this schema exactly:\n' + schema + '\n\n' +
+    'Rules:\n' +
+    '- If the page is not a receipt or invoice, respond with: ' +
+    '{"error":"not a receipt"}\n' +
+    '- Date must be ISO YYYY-MM-DD. If only the month and year are ' +
+    'visible, use the first day.\n' +
+    '- total is the grand total INCLUDING tax and shipping.\n' +
+    '- If you can\'t find an item-level breakdown, return items: [].\n' +
+    '- Respond with JSON only, no prose, no markdown fences.\n\n' +
+    'Page title: ' + (sp.title || '(untitled)') +
+    '\nPage URL: ' + (sp.url || '') +
+    '\n\nPage content:\n' +
+    (sp.text.length > 10000 ? sp.text.slice(0, 10000) : sp.text);
+  sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+    // Grab whatever the LLM streamed into the current AI message bubble.
+    // currentAiText holds the accumulated text.
+    var jsonStr = currentAiText;
+    // Best-effort JSON extraction: take the first balanced { ... } run.
+    var first = jsonStr.indexOf('{');
+    var last = jsonStr.lastIndexOf('}');
+    if (first < 0 || last <= first) {
+      currentAiText += '\n\n✗ Could not find JSON in the LLM response.';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    var slice = jsonStr.substring(first, last + 1);
+    var data;
+    try { data = JSON.parse(slice); }
+    catch (e) {
+      currentAiText += '\n\n✗ Invalid JSON: ' + e;
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    if (data.error) {
+      currentAiText = '✗ ' + data.error;
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    sendWithPromise('appendReceipt', data, sp.url || '').then(function(r) {
+      if (r.success) {
+        currentAiText = '✓ Saved receipt: ' +
+            (data.merchant || '?') + ' ' +
+            (data.date || '') + ' ' +
+            (data.currency || 'USD') + ' ' +
+            (typeof data.total === 'number' ? data.total.toFixed(2)
+                                            : data.total) + '\n' +
+            'Ledger: ' + r.path;
+      } else {
+        currentAiText = '✗ ' + (r.error || 'save failed');
+      }
+      finishAiMessage();
+      setGenerating(false);
+    });
+  }).catch(function() {
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// YouTube chapterizer: /chapters
+// Injects a probe into the active tab that pulls the visible
+// transcript (YouTube renders one in ytd-transcript-segment-renderer
+// when the user has opened the transcript panel). We then ask the
+// LLM to group those timestamped lines into chapters.
+//
+// If the transcript panel isn't open, we ask the user to open it
+// rather than try to click "..." → "Show transcript" via brittle
+// DOM scraping (that path changes every couple months).
+// --------------------------------------------------------------
+function tryDispatchChaptersCommand(text) {
+  if (!/^\s*\/chapters\b/i.test(text)) return false;
+  var sp = window.__moltCurrentTabContext;
+  if (!sp || !sp.url || sp.url.indexOf('youtube.com') < 0) {
+    addErrorMessage('Open a YouTube video first.');
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Reading transcript from the YouTube tab...');
+  // We re-use the cross-tab IPC to inject into the active tab. Same
+  // isolated-world world_id=1 the action engine uses.
+  var probe =
+    '(function(){' +
+    'var segs=document.querySelectorAll(' +
+    '"ytd-transcript-segment-renderer, .ytd-transcript-segment-renderer");' +
+    'if(!segs.length) return JSON.stringify({error:"no transcript"});' +
+    'var out=[];' +
+    'segs.forEach(function(s){' +
+      'var ts=(s.querySelector(".segment-timestamp")||{}).innerText||"";' +
+      'var tx=(s.querySelector(".segment-text")||{}).innerText||"";' +
+      'if(ts||tx) out.push((ts.trim()+" "+tx.trim()).trim());' +
+    '});' +
+    'return JSON.stringify({lines: out.slice(0, 600)});' +
+    '})()';
+  sendWithPromise('runMoltAction',
+                  {type: 'eval_for_chapters', script: probe})
+      .catch(function(){ return null; })
+      .then(function(r) {
+        // Fallback: if the eval action type isn't supported, ask the
+        // user to manually open the transcript.
+        var transcriptText = '';
+        if (r && r.result) {
+          try {
+            var parsed = JSON.parse(r.result);
+            if (parsed.lines) transcriptText = parsed.lines.join('\n');
+          } catch(e) {}
+        }
+        if (!transcriptText) {
+          // Backup heuristic: look in page-context capture for "::" or
+          // numeric timestamp prefixes which YouTube's transcript uses.
+          if (sp.text) {
+            var lines = sp.text.split('\n').filter(function(L){
+              return /^\s*\d{1,2}:\d{2}/.test(L);
+            });
+            if (lines.length >= 5) transcriptText = lines.join('\n');
+          }
+        }
+        if (!transcriptText) {
+          currentAiText =
+            '✗ No transcript found. Click the "..." menu under the ' +
+            'video, choose "Show transcript", then re-run /chapters.';
+          finishAiMessage();
+          setGenerating(false);
+          return;
+        }
+        currentAiText = '';
+        var prompt =
+          'Below are timestamped transcript lines from a YouTube video. ' +
+          'Group them into 5-10 chapters. For each chapter, output one ' +
+          'line of the form:\n' +
+          '  MM:SS  Chapter title\n' +
+          'Use the earliest timestamp in that chapter\'s range. Keep ' +
+          'titles short (under 8 words). Output chapter lines only, ' +
+          'one per line, no preamble.\n\n' +
+          'Transcript:\n' + transcriptText.slice(0, 12000);
+        sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+          finishAiMessage();
+          setGenerating(false);
+        });
+      });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Cluster Q&A: /cluster <n> <question>
+// Chat against just the docs in cluster N from the most recent
+// /history run. The docs (URL + title) are pre-pended to the prompt
+// as grounding so the answer stays inside that topic.
+// --------------------------------------------------------------
+function tryDispatchClusterCommand(text) {
+  var m = text.match(/^\s*\/cluster\b\s*(\d*)\s*(.*)$/i);
+  if (!m) return false;
+  var idx = parseInt(m[1] || '0', 10);
+  var question = (m[2] || '').trim();
+  var cls = window.__moltLastHistoryClusters;
+  if (!cls || !cls.length) {
+    addErrorMessage('Run /history first to build the cluster index.');
+    return true;
+  }
+  if (isNaN(idx) || idx < 1 || idx > cls.length) {
+    addErrorMessage('Usage: /cluster <n> <question>  (n between 1 and ' +
+                    cls.length + ')');
+    return true;
+  }
+  var cluster = cls[idx - 1];
+  if (!question) {
+    // No question — just dump the cluster's pages for the user.
+    addUserMessage(text);
+    startAiMessage();
+    var lines = ['Cluster ' + idx + ' — ' + (cluster.label || '(untitled)') +
+                 '  (' + cluster.docs.length + ' pages):'];
+    cluster.docs.slice(0, 30).forEach(function(d){
+      lines.push('  • ' + (d.title || d.host || d.url));
+    });
+    if (cluster.docs.length > 30) {
+      lines.push('  … (' + (cluster.docs.length - 30) + ' more)');
+    }
+    lines.push('');
+    lines.push('To chat against this cluster: /cluster ' + idx +
+               ' <your question>');
+    currentAiText = lines.join('\n');
+    finishAiMessage();
+    setGenerating(false);
+    return true;
+  }
+  addUserMessage(text);
+  startAiMessage();
+  // Build a small grounding block from the cluster's docs. We only
+  // include url + title (no snippets) — the LLM uses titles as a
+  // pointer to its own memory of having seen the page, and a real
+  // answer would need a memory-service query against just these doc
+  // ids (not yet exposed via IPC — that's a B.2 follow-up for /cluster).
+  var ground = cluster.docs.slice(0, 50).map(function(d){
+    return '- ' + (d.title || d.host || d.url) + '  ' + d.url;
+  }).join('\n');
+  var prompt =
+    'Below is a list of web pages the user has visited that belong to ' +
+    'one topic cluster (' + (cluster.label || 'untitled') + '). ' +
+    'Answer the user\'s question using only what you can confidently ' +
+    'infer from these titles. If you can\'t answer with confidence, ' +
+    'say so and recommend which pages to revisit.\n\n' +
+    'Pages:\n' + ground + '\n\nQuestion: ' + question;
+  sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+    finishAiMessage();
+    setGenerating(false);
+  }).catch(function() {
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Plan-a-task: /plan <task description>
+// Asks the LLM to emit a multi-step plan in our action-token format,
+// then parses it into a Script and saves it via the new savePlanScript
+// IPC. The script is non-trusted by default — the user has to open
+// it in the manager UI and click Run.
+// --------------------------------------------------------------
+function tryDispatchPlanCommand(text) {
+  var m = text.match(/^\s*\/plan\b\s+(.+)$/i);
+  if (!m) return false;
+  var task = m[1].trim();
+  addUserMessage(text);
+  startAiMessage();
+  var prompt =
+    'You are a browser automation planner. Decompose the following ' +
+    'task into a sequence of concrete browser steps using ONLY these ' +
+    'action verbs:\n' +
+    '  navigate <url>\n' +
+    '  click <css-selector>\n' +
+    '  type <css-selector> <text>\n' +
+    '  wait-for <css-selector>\n' +
+    '  scroll <pixels>\n' +
+    '  extract <css-selector> as <var-name>\n' +
+    '  notify <body>\n\n' +
+    'Output one step per line, prefixed with "STEP: ". Then output ' +
+    'a line "NAME: <short script name>" at the end. No prose, no ' +
+    'markdown, no explanation.\n\n' +
+    'Task: ' + task;
+  sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+    // Parse currentAiText for STEP: and NAME: lines.
+    var lines = currentAiText.split('\n');
+    var steps = [];
+    var name = task.slice(0, 60);
+    lines.forEach(function(L){
+      var sm = L.match(/^\s*STEP:\s*(.+)$/i);
+      if (sm) steps.push(sm[1].trim());
+      var nm = L.match(/^\s*NAME:\s*(.+)$/i);
+      if (nm) name = nm[1].trim();
+    });
+    if (!steps.length) {
+      currentAiText += '\n\n✗ Could not parse any STEP: lines from the LLM ' +
+                       'plan. (Smaller models sometimes ignore the format; ' +
+                       'try a more specific task.)';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    sendWithPromise('savePlanScript', {name: name, steps: steps, task: task})
+        .then(function(r) {
+          if (r.success) {
+            currentAiText += '\n\n✓ Saved plan as script "' +
+                             r.script_id + '"  (' + steps.length +
+                             ' steps). Open the Automations manager ' +
+                             'to review + run.';
+          } else {
+            currentAiText += '\n\n✗ ' + (r.error || 'save failed');
+          }
+          finishAiMessage();
+          setGenerating(false);
+        });
+  }).catch(function() {
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
 function tryDispatchHistoryCommand(text) {
   var m = text.match(/^\s*\/history\b\s*(\d*)$/i);
   if (!m) return false;
@@ -1580,6 +1946,9 @@ function tryDispatchHistoryCommand(text) {
       return;
     }
     var clusters = clusterDocsByTitleKeywords(docs);
+    // Stash on window so /cluster <n> can refer back to a specific
+    // group without another IPC + re-clustering round-trip.
+    window.__moltLastHistoryClusters = clusters;
     renderHistoryClusters(clusters, docs.length);
     setGenerating(false);
   }).catch(function(e) {
@@ -1947,6 +2316,41 @@ function sendMessage() {
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchHistoryCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchReaderCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchReceiptCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchChaptersCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchClusterCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchPlanCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';

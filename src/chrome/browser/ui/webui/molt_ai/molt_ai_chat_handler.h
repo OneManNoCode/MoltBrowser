@@ -124,6 +124,16 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // tabs in that OTR profile share the proxy.
   // Args: [callback_id, url]
   void HandleOpenTorTab(const base::ListValue& args);
+  // Tier 3: Receipt extractor — append a parsed receipt dict to
+  // ~/.moltbrowser/ledger.csv. The LLM JSON parsing lives in JS; we
+  // just write the CSV row here so the file lifecycle is in one
+  // place.
+  // Args: [callback_id, receipt_dict, source_url]
+  void HandleAppendReceipt(const base::ListValue& args);
+  // Tier 3: Plan-a-task — turn a list of natural-language step lines
+  // into a saved Script, written via AutomationStorage.
+  // Args: [callback_id, {name, steps: [string], task}]
+  void HandleSavePlanScript(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]

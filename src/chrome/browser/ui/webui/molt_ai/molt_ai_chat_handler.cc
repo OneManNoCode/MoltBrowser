@@ -25,6 +25,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
@@ -228,6 +229,15 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "openTorTab",
       base::BindRepeating(&MoltAIChatHandler::HandleOpenTorTab,
+                          base::Unretained(this)));
+  // Tier 3: receipt extractor + plan-a-task.
+  web_ui()->RegisterMessageCallback(
+      "appendReceipt",
+      base::BindRepeating(&MoltAIChatHandler::HandleAppendReceipt,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "savePlanScript",
+      base::BindRepeating(&MoltAIChatHandler::HandleSavePlanScript,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -3298,6 +3308,261 @@ void MoltAIChatHandler::HandleOpenTorTab(const base::ListValue& args) {
   out.Set("success", true);
   out.Set("url", g.spec());
   out.Set("proxy", "socks5://127.0.0.1:9050");
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleAppendReceipt: Tier 3 — write one CSV row to
+// ~/.moltbrowser/ledger.csv. Plaintext, dead-simple, so the user
+// can pull the file into a spreadsheet without any extra tooling.
+//
+// Schema:
+//   date,merchant,total,currency,source_url,saved_at_unix,items_json
+//
+// The items array is serialized as inline JSON inside its own
+// quoted column — cheap and reversible, avoids the row-explosion
+// you'd get from one-row-per-item.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleAppendReceipt(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected receipt dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const base::DictValue& r = args[1].GetDict();
+  std::string source_url = (args.size() > 2 && args[2].is_string())
+                               ? args[2].GetString()
+                               : std::string();
+
+  const std::string* merchant = r.FindString("merchant");
+  const std::string* date     = r.FindString("date");
+  std::optional<double> total = r.FindDouble("total");
+  const std::string* currency = r.FindString("currency");
+  const base::ListValue* items = r.FindList("items");
+
+  // Resolve ledger path: ~/.moltbrowser/ledger.csv
+  base::FilePath home;
+  if (!base::PathService::Get(base::DIR_HOME, &home)) {
+    out.Set("success", false);
+    out.Set("error", "no home dir");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  base::FilePath dir = home.AppendASCII(".moltbrowser");
+  base::FilePath ledger = dir.AppendASCII("ledger.csv");
+
+  // CSV-escape: wrap in quotes, double internal quotes.
+  auto csv = [](const std::string& s) {
+    bool need_quote = s.find(',') != std::string::npos ||
+                      s.find('"') != std::string::npos ||
+                      s.find('\n') != std::string::npos;
+    if (!need_quote) return s;
+    std::string out;
+    out.reserve(s.size() + 4);
+    out += '"';
+    for (char c : s) { if (c == '"') out += '"'; out += c; }
+    out += '"';
+    return out;
+  };
+
+  // Serialize items as inline JSON.
+  std::string items_json = "[]";
+  if (items) {
+    base::Value items_val(items->Clone());
+    base::JSONWriter::Write(items_val, &items_json);
+  }
+
+  std::string row;
+  row += csv(date ? *date : "") + ",";
+  row += csv(merchant ? *merchant : "") + ",";
+  row += (total ? base::NumberToString(*total) : "") + ",";
+  row += csv(currency ? *currency : "USD") + ",";
+  row += csv(source_url) + ",";
+  row += base::NumberToString(static_cast<int64_t>(time(nullptr))) + ",";
+  row += csv(items_json) + "\n";
+
+  bool wrote = false;
+  {
+    ScopedAllowBlockingForMolt allow;
+    base::CreateDirectory(dir);
+    // Write header if the file is brand new.
+    if (!base::PathExists(ledger)) {
+      const char* header =
+          "date,merchant,total,currency,source_url,saved_at_unix,"
+          "items_json\n";
+      wrote = base::WriteFile(ledger, header);
+    } else {
+      wrote = true;
+    }
+    if (wrote) {
+      wrote = base::AppendToFile(ledger, row);
+    }
+  }
+  if (!wrote) {
+    out.Set("success", false);
+    out.Set("error", "failed to write ledger");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  out.Set("success", true);
+  out.Set("path", ledger.value());
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleSavePlanScript: Tier 3 — turn a list of natural-language step
+// lines (from the LLM's /plan output) into a Script and save it via
+// AutomationStorage. The parser is intentionally permissive — small
+// models are inconsistent about formatting, so we accept any leading
+// verb token (navigate / click / type / wait-for / scroll / extract /
+// notify) and try to fill out the rest of the Step fields heuristically.
+//
+// We never auto-run the resulting script — it's saved as CASUAL trust
+// so the user has to open the manager UI and click Run. That's the
+// safety boundary against an LLM plan that hallucinates a navigation
+// to a phishing URL.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  base::DictValue out;
+  if (!args[1].is_dict()) {
+    out.Set("success", false);
+    out.Set("error", "expected plan dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const base::DictValue& plan = args[1].GetDict();
+  const std::string* name_in = plan.FindString("name");
+  const std::string* task_in = plan.FindString("task");
+  const base::ListValue* step_lines = plan.FindList("steps");
+  if (!step_lines || step_lines->empty()) {
+    out.Set("success", false);
+    out.Set("error", "no steps");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  molt_ai::automation::Script s;
+  s.id = base::StringPrintf("plan-%lx",
+                             static_cast<unsigned long>(time(nullptr)));
+  s.name = (name_in && !name_in->empty()) ? *name_in
+                                          : std::string("Untitled plan");
+  s.created_at_unix = static_cast<int64_t>(time(nullptr));
+  s.trigger.type = molt_ai::automation::TriggerType::MANUAL;
+  s.security.trust = molt_ai::automation::TrustLevel::CASUAL;
+  s.security.max_runtime_seconds = 300;
+  if (task_in) {
+    // Stash the original task description in a default variable so the
+    // Manager UI can show "Generated for: <task>".
+    s.default_variables["plan_task"] = *task_in;
+  }
+
+  auto parse_line = [](const std::string& line) {
+    molt_ai::automation::Step step;
+    step.description = line;
+    step.timeout_ms = 10000;
+    // Tokenize on whitespace; first token is the verb.
+    std::vector<std::string> parts = base::SplitString(
+        line, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+    if (parts.empty()) return step;
+    std::string verb = parts[0];
+    std::transform(verb.begin(), verb.end(), verb.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+    auto join_from = [&](size_t i) {
+      std::string out;
+      for (size_t k = i; k < parts.size(); ++k) {
+        if (!out.empty()) out += " ";
+        out += parts[k];
+      }
+      return out;
+    };
+    if (verb == "navigate" || verb == "goto" || verb == "open") {
+      step.type = molt_ai::automation::StepType::NAVIGATE;
+      step.target = join_from(1);
+    } else if (verb == "click") {
+      step.type = molt_ai::automation::StepType::CLICK;
+      step.target = join_from(1);
+    } else if (verb == "type" && parts.size() >= 3) {
+      step.type = molt_ai::automation::StepType::TYPE;
+      step.target = parts[1];
+      step.value = join_from(2);
+    } else if (verb == "wait-for" || verb == "waitfor") {
+      step.type = molt_ai::automation::StepType::WAIT_FOR;
+      step.target = join_from(1);
+      step.timeout_ms = 15000;
+    } else if (verb == "scroll") {
+      step.type = molt_ai::automation::StepType::SCROLL;
+      step.value = parts.size() > 1 ? parts[1] : "600";
+    } else if (verb == "extract" && parts.size() >= 4) {
+      // extract <selector> as <varname>
+      step.type = molt_ai::automation::StepType::EXTRACT;
+      step.target = parts[1];
+      // Find "as" token; varname is what follows.
+      for (size_t i = 2; i + 1 < parts.size(); ++i) {
+        if (parts[i] == "as" || parts[i] == "AS") {
+          step.store_as = parts[i + 1];
+          break;
+        }
+      }
+    } else if (verb == "notify") {
+      step.type = molt_ai::automation::StepType::NOTIFY;
+      step.target = "MoltBrowser";
+      step.value = join_from(1);
+    } else {
+      step.type = molt_ai::automation::StepType::UNKNOWN;
+    }
+    return step;
+  };
+
+  int parsed_ok = 0;
+  for (const base::Value& v : *step_lines) {
+    if (!v.is_string()) continue;
+    molt_ai::automation::Step step = parse_line(v.GetString());
+    if (step.type != molt_ai::automation::StepType::UNKNOWN) {
+      ++parsed_ok;
+    }
+    s.steps.push_back(std::move(step));
+  }
+  if (parsed_ok == 0) {
+    out.Set("success", false);
+    out.Set("error", "no recognizable steps");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  bool saved = false;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::automation::AutomationStorage storage;
+    storage.EnsureDirectory();
+    saved = storage.Save(s);
+  }
+  if (!saved) {
+    out.Set("success", false);
+    out.Set("error", "AutomationStorage::Save failed");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  out.Set("success", true);
+  out.Set("script_id", s.id);
+  out.Set("step_count", static_cast<int>(s.steps.size()));
+  out.Set("parsed_ok", parsed_ok);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
