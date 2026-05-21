@@ -321,6 +321,7 @@ static_library("ui") {
     "//chrome/browser/lookalikes",
     "//chrome/browser/media/router:media_router_feature",
     "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
+    "//chrome/browser/molt_ai/anti_rage",
     "//chrome/browser/molt_ai/consent",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/pdf",

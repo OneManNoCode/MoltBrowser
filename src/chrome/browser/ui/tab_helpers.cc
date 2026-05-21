@@ -44,6 +44,7 @@
 #include "chrome/browser/lookalikes/safety_tip_web_contents_observer.h"
 #include "chrome/browser/media/media_engagement_service.h"
 #include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_observer.h"
+#include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 #include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 #include "chrome/browser/molt_ai/memory/memory_recorder.h"
 #include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
@@ -631,6 +632,11 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   // MoltBrowser: universal cookie/GDPR-modal killer. Injects a
   // rule-based + text-fallback consent dismisser on every page load.
   molt_ai::consent::ConsentKillerTabHelper::CreateForWebContents(
+      web_contents);
+
+  // MoltBrowser: anti-rage-click. Detects rapid same-target click
+  // patterns and overlays a /simplify+/sandbox hint chip.
+  molt_ai::anti_rage::AntiRageTabHelper::CreateForWebContents(
       web_contents);
 
   // NO! Do not just add your tab helper here. This is a large alphabetized

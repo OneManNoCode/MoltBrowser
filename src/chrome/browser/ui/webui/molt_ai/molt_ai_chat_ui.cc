@@ -359,7 +359,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/fill ai</code>, <code>/click .button</code><br><b>Vault:</b> <code>/vault list</code>, <code>/vault fill</code>, <code>/vault generate</code><br><b>Translate:</b> <code>/translate [lang] &lt;text&gt;</code><br><br>Or just send a message.</div>
+    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/fill ai</code>, <code>/paste</code>, <code>/click .button</code><br><b>Vault:</b> <code>/vault list</code>, <code>/vault fill</code>, <code>/vault generate</code><br><b>Translate:</b> <code>/translate [lang] &lt;text&gt;</code><br><b>Digest:</b> <code>/digest</code> (last 24h briefing)<br><br>Or just send a message.</div>
   </div>
 </div>
 <div class="actions" id="quickActions">
@@ -1930,6 +1930,177 @@ function tryDispatchPlanCommand(text) {
 }
 
 // --------------------------------------------------------------
+// Smart paste: /paste [extra]
+// Reads the clipboard via navigator.clipboard.readText() (works in
+// privileged WebUI context with no prompt), then routes through
+// the existing Form Filler v2 path: probe active page → LLM maps
+// pasted blob to fields → apply.
+//
+// Optional [extra] text is appended to the LLM prompt as a hint:
+//   /paste prefer phone over fax
+//
+// Privacy note: the pasted content goes to the LOCAL LLM only, never
+// over the network. The user pasted it; it doesn't leave the device.
+// --------------------------------------------------------------
+function tryDispatchPasteCommand(text) {
+  var m = text.match(/^\s*\/paste\b\s*(.*)$/i);
+  if (!m) return false;
+  var hint = (m[1] || '').trim();
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Reading clipboard...');
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    currentAiText = '✗ Clipboard API not available in this context.';
+    finishAiMessage();
+    setGenerating(false);
+    return true;
+  }
+  navigator.clipboard.readText().then(function(clip) {
+    clip = (clip || '').trim();
+    if (!clip) {
+      currentAiText = '✗ Clipboard is empty.';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    appendToAiMessage('\nProbing form fields...');
+    sendWithPromise('runFormFillAI').then(function(r) {
+      if (!r.success) {
+        currentAiText = '✗ ' + (r.error || 'probe failed');
+        finishAiMessage();
+        setGenerating(false);
+        return;
+      }
+      // Reframe the prompt: instead of mapping from PROFILE → fields,
+      // we map from PASTED BLOB → fields. We replace the "Profile:"
+      // section with a "Pasted content:" section.
+      var p = r.prompt;
+      p = p.replace(/Profile:\n[\s\S]*?\n\nForm fields:/,
+        'Pasted content (one blob, possibly multi-line):\n' + clip +
+        '\n\n' +
+        (hint ? 'Hint from user: ' + hint + '\n\n' : '') +
+        'Form fields:');
+      currentAiText = '';
+      sendWithPromise('sendPrompt', p, '', '').then(function() {
+        var s = currentAiText;
+        var i = s.indexOf('{'), j = s.lastIndexOf('}');
+        if (i < 0 || j <= i) {
+          currentAiText += '\n\n✗ Could not parse JSON mapping.';
+          finishAiMessage();
+          setGenerating(false);
+          return;
+        }
+        var parsed;
+        try { parsed = JSON.parse(s.substring(i, j + 1)); }
+        catch (e) {
+          currentAiText += '\n\n✗ Invalid JSON: ' + e;
+          finishAiMessage();
+          setGenerating(false);
+          return;
+        }
+        if (!parsed || Object.keys(parsed).length === 0) {
+          currentAiText += '\n\n✗ Empty mapping — LLM didn\'t recognize ' +
+                            'how to split this content.';
+          finishAiMessage();
+          setGenerating(false);
+          return;
+        }
+        sendWithPromise('applyFormFillMap', {map: parsed}).then(function(r2){
+          currentAiText = r2.success
+              ? '✓ Smart-pasted into ' + r2.filled + ' of ' + r2.total +
+                ' fields.'
+              : '✗ ' + (r2.error || 'apply failed');
+          finishAiMessage();
+          setGenerating(false);
+        });
+      });
+    });
+  }, function(err) {
+    currentAiText = '✗ Could not read clipboard: ' + err;
+    finishAiMessage();
+    setGenerating(false);
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
+// Daily digest: /digest
+// Aggregates the user's last-24h activity from the local memory
+// service and asks the LLM to compose a tight briefing. Pure
+// client-side composition over existing IPCs (listMemoryDocs,
+// listActiveAgents). Privacy: every data point is already on the
+// user's disk; the digest never sends anything to the network.
+// --------------------------------------------------------------
+function tryDispatchDigestCommand(text) {
+  if (!/^\s*\/digest\b/i.test(text)) return false;
+  addUserMessage(text);
+  startAiMessage();
+  appendToAiMessage('Reading your recent activity...');
+  var nowUnix = Math.floor(Date.now() / 1000);
+  var dayAgo = nowUnix - 86400;
+  // Pull more docs than we strictly need so the 24-hour filter has
+  // material on a heavy-browsing day.
+  Promise.all([
+    sendWithPromise('listMemoryDocs', 200),
+    sendWithPromise('listActiveAgents').catch(function(){ return null; })
+  ]).then(function(arr) {
+    var memRes = arr[0] || {};
+    var agentRes = arr[1] || {agents: []};
+    var docs = (memRes.docs || []).filter(function(d){
+      return d.visited_at_unix && d.visited_at_unix >= dayAgo;
+    });
+    var agents = (agentRes.agents || []);
+
+    if (!docs.length && !agents.length) {
+      currentAiText = 'Nothing in the last 24 hours yet — browse a few ' +
+                       'pages or wait for watchers to fire.';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+
+    // Build a compact context blob for the LLM. Cap to keep prompt
+    // budget reasonable on the bundled model (~3k tokens of input).
+    var lines = [];
+    lines.push('Pages visited in the last 24h: ' + docs.length);
+    docs.slice(0, 80).forEach(function(d) {
+      var ts = new Date(d.visited_at_unix * 1000).toISOString().slice(11, 16);
+      lines.push('  [' + ts + '] ' + (d.title || d.host || d.url) +
+                 '  (' + d.host + ')');
+    });
+    if (agents.length) {
+      lines.push('');
+      lines.push('Background automations currently in flight: ' +
+                 agents.length);
+      agents.forEach(function(a) {
+        var step = a.total_steps ? (a.current_step + '/' + a.total_steps)
+                                  : String(a.current_step);
+        lines.push('  · ' + (a.script_name || a.script_id) +
+                   '  step ' + step +
+                   (a.status_note ? '  — ' + a.status_note : ''));
+      });
+    }
+    var prompt =
+      'Compose a tight daily-digest briefing for the user based on ' +
+      'their local browsing + automation activity over the last 24 ' +
+      'hours. Group pages into 2-4 themes by topic, summarize each ' +
+      'theme in one sentence, then list any in-flight automations. ' +
+      'No preamble, no markdown headers, just the briefing in plain ' +
+      'paragraphs. Aim for under 200 words.\n\n' +
+      'Activity:\n' + lines.join('\n');
+    currentAiText = '';
+    sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+      finishAiMessage();
+      setGenerating(false);
+    }).catch(function() {
+      finishAiMessage();
+      setGenerating(false);
+    });
+  });
+  return true;
+}
+
+// --------------------------------------------------------------
 // Password vault: /vault [list|find|fill|add|delete|generate]
 //
 // All credentials are OSCrypt-encrypted on disk
@@ -2625,6 +2796,20 @@ function sendMessage() {
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchFillCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchPasteCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    setGenerating(true);
+    return;
+  }
+  if (text.charAt(0) === '/' && tryDispatchDigestCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';

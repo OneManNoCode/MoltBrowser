@@ -1,0 +1,18 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Anti-rage-click: per-tab observer that detects user frustration and
+# overlays a hint chip with /simplify and /sandbox suggestions.
+
+source_set("anti_rage") {
+  sources = [
+    "anti_rage_tab_helper.cc",
+    "anti_rage_tab_helper.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+    "//url",
+  ]
+}
