@@ -83,6 +83,24 @@ DEST="$APP_PATH/Contents/Resources/whisper"
 mkdir -p "$DEST"
 mkdir -p "$CACHE_DIR"
 
+# Pre-flight: we need git + cmake + curl on PATH. build.sh calls into
+# this script silently from the macOS post-build step; a missing dep
+# used to show up as a confusing cmake-not-found halfway through the
+# clone. Catch it up-front with a clear message. Code-review LOW #17.
+_missing=""
+for tool in git cmake curl; do
+  command -v "$tool" >/dev/null 2>&1 || _missing="$_missing $tool"
+done
+if [[ -n "$_missing" ]]; then
+  echo "[bundle-whisper] FATAL: missing required tools:$_missing"
+  echo "[bundle-whisper] On macOS:  brew install$_missing"
+  echo "[bundle-whisper] On Linux:  apt-get install$_missing"
+  echo "[bundle-whisper] (Build will continue without bundled whisper;"
+  echo "[bundle-whisper] /transcribeAudio will fall back to system whisper-cli"
+  echo "[bundle-whisper] if any. Re-run scripts/bundle-whisper.sh after install.)"
+  exit 1
+fi
+
 # Build whisper.cpp at a pinned tag (idempotent — skips if already done).
 SRC_DIR="$CACHE_DIR/whisper.cpp-$WHISPER_TAG"
 if [[ ! -d "$SRC_DIR" ]]; then

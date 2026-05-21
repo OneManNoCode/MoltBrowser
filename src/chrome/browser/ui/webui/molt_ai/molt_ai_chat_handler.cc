@@ -3184,6 +3184,34 @@ void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
                               base::Value(std::move(out)));
     return;
   }
+  // Restrict to plausible hostname characters. Without this we'd
+  // accept things like "*", "//evil.com", "..", "foo bar" that
+  // either produce nonsense ContentSettingsPatterns or, worse,
+  // produce a valid wildcard that disables JS far too broadly.
+  // Code-review LOW #16. Allowed: a-z A-Z 0-9 . - _ ; 1-253 chars
+  // (DNS hostname limit). Bare IP addresses are accepted by the
+  // same regex.
+  auto host_is_safe = [](const std::string& h) {
+    if (h.empty() || h.size() > 253) return false;
+    if (h[0] == '.' || h[0] == '-') return false;  // can't start with these
+    for (char c : h) {
+      bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') ||
+                c == '.' || c == '-' || c == '_';
+      if (!ok) return false;
+    }
+    // Reject the all-wildcard "*"-equivalent pattern just in case the
+    // wildcard-like host slipped through (it shouldn't given the
+    // alphabet check above, but cheap belt-and-suspenders).
+    return h != "*";
+  };
+  if (!host_is_safe(host)) {
+    out.Set("success", false);
+    out.Set("error", "invalid host (allowed: letters, digits, . - _)");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
   Profile* profile = Profile::FromBrowserContext(
       web_ui()->GetWebContents()->GetBrowserContext());
   HostContentSettingsMap* map =

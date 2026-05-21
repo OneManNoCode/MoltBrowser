@@ -268,13 +268,36 @@ void TorManager::Launch(
 
 void TorManager::Stop() {
   if (!child_.IsValid()) return;
-  // Polite first: SIGTERM. Tor handles it as a clean shutdown signal.
-  pid_t pid = child_.Pid();
-  ::kill(pid, SIGTERM);
-  // Don't block the UI thread waiting; the OS will reap. We also
-  // detach from our base::Process handle to avoid double-kill.
-  child_ = base::Process();
-  LOG(INFO) << "[MoltTor] sent SIGTERM to pid=" << pid;
+  // SIGTERM first — Tor handles it as a clean shutdown signal and
+  // flushes its hidden service descriptors. Move the wait+SIGKILL to
+  // a worker thread so we don't block the UI thread but also don't
+  // leak the child (the previous version's "drop the handle and let
+  // the OS reap" left orphans on a wedged Tor). Code-review LOW #15.
+  base::Process child = std::move(child_);
+  child_ = base::Process();  // mark not-running on the UI side
+  const pid_t pid = child.Pid();
+  LOG(INFO) << "[MoltTor] sending SIGTERM to pid=" << pid;
+  base::ThreadPool::PostTask(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+       base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+      base::BindOnce(
+          [](base::Process child) {
+            const pid_t pid = child.Pid();
+            ::kill(pid, SIGTERM);
+            int exit_code = 0;
+            // Give Tor 3s to shut down cleanly, then escalate.
+            if (!child.WaitForExitWithTimeout(base::Seconds(3),
+                                               &exit_code)) {
+              LOG(WARNING) << "[MoltTor] pid=" << pid
+                           << " ignored SIGTERM; sending SIGKILL";
+              ::kill(pid, SIGKILL);
+              child.WaitForExitWithTimeout(base::Seconds(1), &exit_code);
+            }
+            LOG(INFO) << "[MoltTor] pid=" << pid
+                      << " exited with code=" << exit_code;
+          },
+          std::move(child)));
 }
 
 }  // namespace tor
