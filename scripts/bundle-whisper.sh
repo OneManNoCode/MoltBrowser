@@ -31,6 +31,24 @@ CACHE_DIR="$ROOT_DIR/.molt-whisper-cache"
 WHISPER_TAG="v1.7.5"
 APP_PATH=""
 
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-bundle-verify.sh"
+
+# Pinned commit SHA that the whisper.cpp tag should resolve to. Git
+# tags are mutable on the server side — a compromised github.com could
+# repoint v1.7.5 to a malicious commit. The commit SHA is content-
+# addressed (changing any byte changes the SHA), so verifying we got
+# the expected commit forecloses that attack.
+#
+# To populate: `git rev-parse refs/tags/v1.7.5^{commit}` in a trusted
+# checkout, paste the 40-char hex below. Empty = WARNING in output.
+EXPECTED_COMMIT_WHISPER_V1_7_5=""
+
+# Pinned SHA256 of ggml-tiny.en.bin from the official HuggingFace
+# mirror. Get from the HuggingFace model card or `shasum -a 256` on
+# a trusted local copy.
+EXPECTED_SHA256_WHISPER_TINY_EN=""
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --app) APP_PATH="$2"; shift 2 ;;
@@ -72,6 +90,27 @@ if [[ ! -d "$SRC_DIR" ]]; then
   git clone --depth 1 --branch "$WHISPER_TAG" \
     https://github.com/ggerganov/whisper.cpp "$SRC_DIR"
 fi
+# Verify the cloned commit matches the pinned SHA. Git tags are
+# mutable; commit SHAs are not.
+ACTUAL_COMMIT="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+if [[ -n "$EXPECTED_COMMIT_WHISPER_V1_7_5" ]]; then
+  if [[ "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT_WHISPER_V1_7_5" ]]; then
+    echo "[bundle-whisper] FATAL: whisper.cpp commit mismatch"
+    echo "[bundle-whisper]   expected $EXPECTED_COMMIT_WHISPER_V1_7_5"
+    echo "[bundle-whisper]   actual   $ACTUAL_COMMIT"
+    echo "[bundle-whisper] either the upstream tag was repointed or the"
+    echo "[bundle-whisper] pinned SHA needs updating (verify in a trusted"
+    echo "[bundle-whisper] checkout, then paste the new value at the top"
+    echo "[bundle-whisper] of $0)."
+    exit 1
+  fi
+  echo "[bundle-whisper] OK: whisper.cpp commit $ACTUAL_COMMIT"
+else
+  echo "[bundle-whisper] WARNING: no pinned commit SHA for $WHISPER_TAG"
+  echo "[bundle-whisper]          actual = $ACTUAL_COMMIT"
+  echo "[bundle-whisper]          paste this into EXPECTED_COMMIT_WHISPER_V1_7_5"
+  echo "[bundle-whisper]          after verifying in a trusted checkout."
+fi
 
 # Use whisper.cpp's CMake build. -DGGML_METAL=1 lets it use Apple
 # Silicon's GPU; falls back to CPU on Intel macs.
@@ -89,13 +128,13 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 # Download the tiny.en model (~40 MB) — best size/quality tradeoff
-# for "press mic, speak a sentence" UX. Cached, idempotent.
+# for "press mic, speak a sentence" UX. Cached, verified, idempotent.
 MODEL_CACHE="$CACHE_DIR/ggml-tiny.en.bin"
-if [[ ! -f "$MODEL_CACHE" ]]; then
-  echo "[bundle-whisper] Downloading ggml-tiny.en.bin model"
-  curl -fL -o "$MODEL_CACHE.tmp" \
-    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
-  mv "$MODEL_CACHE.tmp" "$MODEL_CACHE"
+MODEL_URL="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
+if ! verify_or_redownload "$MODEL_CACHE" \
+        "$EXPECTED_SHA256_WHISPER_TINY_EN" "$MODEL_URL"; then
+  echo "[bundle-whisper] FATAL: model verification failed"
+  exit 1
 fi
 
 # Install. Strip extended attrs so the bundled binary launches

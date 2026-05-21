@@ -28,6 +28,25 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CHROMIUM_SRC="$ROOT_DIR/chromium/src"
 CACHE_DIR="$ROOT_DIR/.molt-tor-cache"
 
+# Pull in shared SHA verification helpers.
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-bundle-verify.sh"
+
+# Pinned SHA256 of the Tor Expert Bundle tarball, per (version, arch).
+# Tor Project publishes these via their key-signed .sha256sum file
+# alongside each release. We DO NOT trust the published .sha256sum
+# at download time (a coordinated origin compromise serves bad .tar.gz
+# AND bad .sha256sum together). Instead, paste the hash here once,
+# verified out-of-band against a key-signed Tor Project release.
+#
+# To populate: download the tarball + the matching .sha256sum.asc,
+# verify the signature with the Tor Project release key, paste the
+# hex below. Leave empty for development — script will warn but
+# proceed (the WARNING line in build output is the dev signal that
+# you're shipping an unverified artifact).
+EXPECTED_SHA256_TOR_AARCH64=""
+EXPECTED_SHA256_TOR_X86_64=""
+
 # The Tor Expert Bundle ships with each Tor Browser release. Bumping
 # this to a newer minor version is safe; we only consume the `tor`
 # binary + geoip data, neither of which has changed shape in years.
@@ -87,15 +106,21 @@ ARCHIVE_NAME="tor-expert-bundle-macos-${ARCH}-${TOR_VERSION}.tar.gz"
 ARCHIVE_PATH="$CACHE_DIR/$ARCHIVE_NAME"
 ARCHIVE_URL="https://archive.torproject.org/tor-package-archive/torbrowser/${TOR_VERSION}/${ARCHIVE_NAME}"
 
-# Download (idempotent).
-if [[ ! -f "$ARCHIVE_PATH" ]]; then
-  echo "[bundle-tor] Downloading $ARCHIVE_URL"
-  if ! curl -fL -o "$ARCHIVE_PATH.tmp" "$ARCHIVE_URL"; then
-    echo "[bundle-tor] Download failed. Check Tor version in $0."
-    rm -f "$ARCHIVE_PATH.tmp"
-    exit 1
-  fi
-  mv "$ARCHIVE_PATH.tmp" "$ARCHIVE_PATH"
+# Pick the right pinned hash for this arch.
+if [[ "$ARCH" == "aarch64" ]]; then
+  EXPECTED_SHA="$EXPECTED_SHA256_TOR_AARCH64"
+else
+  EXPECTED_SHA="$EXPECTED_SHA256_TOR_X86_64"
+fi
+
+# Download with integrity check. verify_or_redownload re-checks the
+# cached file on every run, redownloads if tampered locally, and
+# fails hard if the fresh download mismatches a pinned SHA. With an
+# empty EXPECTED_SHA it logs a WARNING and proceeds — the bundling
+# pipeline doesn't stall during early development.
+if ! verify_or_redownload "$ARCHIVE_PATH" "$EXPECTED_SHA" "$ARCHIVE_URL"; then
+  echo "[bundle-tor] FATAL: tor bundle verification failed."
+  exit 1
 fi
 
 # Extract to a scratch dir we can throw away.
