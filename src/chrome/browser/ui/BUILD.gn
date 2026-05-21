@@ -327,6 +327,7 @@ static_library("ui") {
     "//chrome/browser/molt_ai/pdf",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/vault",
+    "//chrome/browser/molt_ai/voice",
     "//chrome/browser/new_tab_page/chrome_colors:generate_chrome_colors_info",
     "//chrome/browser/new_tab_page/chrome_colors:selected_colors_info",
     "//chrome/browser/obsolete_system",

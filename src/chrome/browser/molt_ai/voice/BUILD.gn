@@ -1,0 +1,15 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Voice mode: local speech-to-text via bundled whisper.cpp.
+
+source_set("voice") {
+  sources = [
+    "voice_service.cc",
+    "voice_service.h",
+  ]
+
+  deps = [
+    "//base",
+  ]
+}

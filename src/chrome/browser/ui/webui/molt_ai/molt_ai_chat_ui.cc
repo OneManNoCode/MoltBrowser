@@ -98,6 +98,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .input-area button.send:disabled{opacity:0.4;cursor:not-allowed}
 .input-area button.cancel{padding:10px 12px;border-radius:10px;border:1px solid #f87171;background:transparent;color:#f87171;font-size:13px;cursor:pointer;display:none}
 .input-area button.cancel.active{display:block}
+.input-area button.mic{padding:10px 12px;border-radius:10px;border:1px solid #3a3a3a;background:transparent;color:#bbb;font-size:14px;cursor:pointer}
+.input-area button.mic:hover{background:#2a2a2a;color:#fff}
+.input-area button.mic.recording{background:#dc2626;color:#fff;border-color:#dc2626;animation:mic-pulse 1.2s ease-in-out infinite}
+.input-area button.mic.transcribing{background:#3a3a3a;color:#9ec5ff;border-color:#3a86ff}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.6)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0.0)}}
 /* Model Panel */
 .model-panel{position:absolute;top:0;left:0;right:0;bottom:0;background:#0d0d0d;z-index:10;display:none;flex-direction:column;overflow-y:auto}
 .model-panel.open{display:flex}
@@ -370,6 +375,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 <div class="input-area">
   <input type="text" id="prompt" placeholder="Ask MoltBrowser AI..." autofocus>
+  <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
   <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
   <button class="send" id="sendBtn" onclick="sendMessage()">Send</button>
 </div>
@@ -3564,6 +3570,205 @@ document.addEventListener('keydown', function(e) {
     if (bar.classList.contains('open')) toggleSearch();
   }
 });
+
+// --------------------------------------------------------------
+// Voice mode (Tier 5).
+// Click the mic, the button goes red, speak. Click again (or wait
+// 30s) and we stop, encode the captured audio as a 16-kHz mono WAV,
+// base64 it, and ship to the transcribeAudio IPC which hands off
+// to bundled whisper.cpp. The result lands in the chat input box
+// — the user can review and edit before sending.
+//
+// We do the resampling ourselves rather than asking the browser
+// for 16k input, because most macOS mics report 44.1k or 48k and
+// the WebAudio constraint isn't reliably honored across hardware.
+// --------------------------------------------------------------
+var voiceState = {
+  recording: false,
+  ctx: null,
+  source: null,
+  processor: null,
+  stream: null,
+  chunks: [],       // Float32Array slices captured in real time
+  inputRate: 0,
+  startedAt: 0,
+  maxMs: 30000      // hard cap so a forgotten mic doesn't run forever
+};
+
+function _wavBytesFromPCM(pcm16, sampleRate) {
+  // pcm16 is Int16Array of mono samples.
+  var byteLen = 44 + pcm16.length * 2;
+  var ab = new ArrayBuffer(byteLen);
+  var dv = new DataView(ab);
+  function w(off, str){
+    for (var i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i));
+  }
+  w(0, 'RIFF');
+  dv.setUint32(4, byteLen - 8, true);
+  w(8, 'WAVE');
+  w(12, 'fmt ');
+  dv.setUint32(16, 16, true);          // fmt chunk size
+  dv.setUint16(20, 1, true);           // PCM format
+  dv.setUint16(22, 1, true);           // mono
+  dv.setUint32(24, sampleRate, true);
+  dv.setUint32(28, sampleRate * 2, true);
+  dv.setUint16(32, 2, true);           // block align
+  dv.setUint16(34, 16, true);          // bits per sample
+  w(36, 'data');
+  dv.setUint32(40, pcm16.length * 2, true);
+  for (var i = 0; i < pcm16.length; i++) {
+    dv.setInt16(44 + i * 2, pcm16[i], true);
+  }
+  return new Uint8Array(ab);
+}
+
+function _resampleTo16k(floatBuf, fromRate) {
+  if (fromRate === 16000) return floatBuf;
+  var ratio = fromRate / 16000;
+  var outLen = Math.floor(floatBuf.length / ratio);
+  var out = new Float32Array(outLen);
+  for (var i = 0; i < outLen; i++) {
+    // Cheap linear interp; whisper is forgiving.
+    var srcIdx = i * ratio;
+    var s0 = Math.floor(srcIdx);
+    var s1 = Math.min(s0 + 1, floatBuf.length - 1);
+    var t = srcIdx - s0;
+    out[i] = floatBuf[s0] * (1 - t) + floatBuf[s1] * t;
+  }
+  return out;
+}
+
+function _floatToInt16(buf) {
+  var out = new Int16Array(buf.length);
+  for (var i = 0; i < buf.length; i++) {
+    var s = Math.max(-1, Math.min(1, buf[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return out;
+}
+
+function _bytesToBase64(bytes) {
+  // Chunk to avoid blowing the call-stack on a long recording.
+  var chunkSize = 0x8000;
+  var s = '';
+  for (var i = 0; i < bytes.length; i += chunkSize) {
+    s += String.fromCharCode.apply(null,
+        bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+  }
+  return btoa(s);
+}
+
+function toggleMic() {
+  if (voiceState.recording) {
+    _stopRecording();
+  } else {
+    _startRecording();
+  }
+}
+
+function _startRecording() {
+  var btn = document.getElementById('micBtn');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    addErrorMessage('Mic API unavailable in this context.');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({audio: {
+    channelCount: 1,
+    noiseSuppression: true,
+    echoCancellation: true
+  }}).then(function(stream) {
+    voiceState.stream = stream;
+    voiceState.chunks = [];
+    voiceState.startedAt = Date.now();
+    // Use the legacy ScriptProcessorNode — universally supported.
+    // AudioWorklet would be cleaner but adds complexity for a v1.
+    voiceState.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    voiceState.inputRate = voiceState.ctx.sampleRate;
+    voiceState.source = voiceState.ctx.createMediaStreamSource(stream);
+    voiceState.processor = voiceState.ctx.createScriptProcessor(4096, 1, 1);
+    voiceState.processor.onaudioprocess = function(e) {
+      var chan = e.inputBuffer.getChannelData(0);
+      // Copy because the underlying buffer is reused next frame.
+      voiceState.chunks.push(new Float32Array(chan));
+      if (Date.now() - voiceState.startedAt > voiceState.maxMs) {
+        _stopRecording();
+      }
+    };
+    voiceState.source.connect(voiceState.processor);
+    voiceState.processor.connect(voiceState.ctx.destination);
+    voiceState.recording = true;
+    if (btn) {
+      btn.classList.add('recording');
+      btn.textContent = '⏺';
+      btn.title = 'Recording... click to stop (auto-stops at 30s)';
+    }
+  }, function(err) {
+    addErrorMessage('Mic permission denied: ' + err);
+  });
+}
+
+function _stopRecording() {
+  var btn = document.getElementById('micBtn');
+  if (!voiceState.recording) return;
+  voiceState.recording = false;
+  try { voiceState.processor.disconnect(); } catch(e) {}
+  try { voiceState.source.disconnect(); } catch(e) {}
+  try { voiceState.ctx.close(); } catch(e) {}
+  if (voiceState.stream) {
+    voiceState.stream.getTracks().forEach(function(t){ t.stop(); });
+  }
+  // Concatenate all captured chunks into one Float32Array.
+  var total = voiceState.chunks.reduce(function(s, c){ return s + c.length; }, 0);
+  var merged = new Float32Array(total);
+  var off = 0;
+  voiceState.chunks.forEach(function(c){
+    merged.set(c, off);
+    off += c.length;
+  });
+  voiceState.chunks = [];
+
+  if (merged.length < 1600) {  // less than 0.1s at 16k
+    if (btn) {
+      btn.classList.remove('recording');
+      btn.textContent = '🎙';
+      btn.title = 'Hold or click to record (local Whisper)';
+    }
+    addErrorMessage('Recording too short.');
+    return;
+  }
+
+  var resampled = _resampleTo16k(merged, voiceState.inputRate);
+  var pcm16 = _floatToInt16(resampled);
+  var wav = _wavBytesFromPCM(pcm16, 16000);
+  var b64 = _bytesToBase64(wav);
+
+  if (btn) {
+    btn.classList.remove('recording');
+    btn.classList.add('transcribing');
+    btn.textContent = '…';
+    btn.title = 'Transcribing locally...';
+  }
+  sendWithPromise('transcribeAudio', b64).then(function(r) {
+    if (btn) {
+      btn.classList.remove('transcribing');
+      btn.textContent = '🎙';
+      btn.title = 'Hold or click to record (local Whisper)';
+    }
+    if (!r.success) {
+      addErrorMessage('Transcribe: ' + (r.error || 'unknown') +
+                       (r.install_hint ? '\n' + r.install_hint : ''));
+      return;
+    }
+    var input = document.getElementById('prompt');
+    if (input) {
+      // Append to whatever's already in the box; nice for "speak,
+      // then add a clarifier and hit send".
+      var prefix = input.value ? input.value + ' ' : '';
+      input.value = prefix + r.text;
+      input.focus();
+    }
+  });
+}
 
 // ---- Initialization ----
 

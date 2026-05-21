@@ -145,6 +145,13 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
       echo "[build] but /tor launch will fall back to system tor if any."
     }
     echo ""
+    # Phase Tier-5: bundle whisper.cpp for the voice-mode mic button.
+    echo "=== Bundling Whisper ==="
+    "$SCRIPT_DIR/bundle-whisper.sh" --app "$APP" || {
+      echo "[build] WARNING: whisper bundling failed. /transcribeAudio"
+      echo "[build] will fall back to a system-installed whisper-cli."
+    }
+    echo ""
   fi
 fi
 

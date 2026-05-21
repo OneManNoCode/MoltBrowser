@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/base64.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -47,6 +48,7 @@
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
+#include "chrome/browser/molt_ai/voice/voice_service.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
@@ -269,6 +271,11 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "applyFormFillMap",
       base::BindRepeating(&MoltAIChatHandler::HandleApplyFormFillMap,
+                          base::Unretained(this)));
+  // Tier 5: voice mode — local whisper transcription.
+  web_ui()->RegisterMessageCallback(
+      "transcribeAudio",
+      base::BindRepeating(&MoltAIChatHandler::HandleTranscribeAudio,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -4239,4 +4246,69 @@ void MoltAIChatHandler::HandleApplyFormFillMap(
           },
           weak_this, cb_id),
       /*world_id=*/1);
+}
+
+// ==================================================================
+// Tier 5: Voice mode
+//
+// The client side (chat_ui.cc) records audio via WebAudio, encodes
+// it as a 16-kHz mono WAV byte string, base64-encodes the bytes, and
+// posts here. We decode, hand to VoiceService, and stream the
+// transcription back via callback. Audio never leaves the device.
+// ==================================================================
+void MoltAIChatHandler::HandleTranscribeAudio(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string b64 = args[1].is_string() ? args[1].GetString() : "";
+  base::DictValue out;
+  if (b64.empty()) {
+    out.Set("success", false);
+    out.Set("error", "no audio");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  std::string wav_bytes;
+  if (!base::Base64Decode(b64, &wav_bytes)) {
+    out.Set("success", false);
+    out.Set("error", "base64 decode failed");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  if (wav_bytes.size() < 44) {
+    out.Set("success", false);
+    out.Set("error", "WAV too short");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  std::string cb = callback_id;
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  molt_ai::voice::VoiceService::Get()->Transcribe(
+      std::move(wav_bytes),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+             molt_ai::voice::TranscribeResult r) {
+            if (!self) return;
+            base::DictValue out;
+            out.Set("success", r.success);
+            out.Set("text", r.text);
+            out.Set("error", r.error);
+            out.Set("binary_source", r.binary_source);
+            out.Set("binary_path", r.binary_path);
+            out.Set("duration_ms", r.duration_ms);
+            if (!r.success && r.binary_source == "none") {
+              out.Set(
+                  "install_hint",
+                  "No whisper binary is bundled with this build. "
+                  "Run scripts/bundle-whisper.sh, or use a fresh "
+                  "release DMG which ships with Whisper inside.");
+            }
+            self->ResolveJavascriptCallback(base::Value(cb),
+                                            base::Value(std::move(out)));
+          },
+          weak_this, cb));
 }

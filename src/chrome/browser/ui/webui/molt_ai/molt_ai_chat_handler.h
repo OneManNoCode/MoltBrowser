@@ -145,6 +145,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleVaultDelete(const base::ListValue& args);
   void HandleVaultFindForActive(const base::ListValue& args);
   void HandleVaultAutofill(const base::ListValue& args);
+  // Tier 5: Voice mode. Client records audio via WebAudio, encodes
+  // as base64-WAV, ships it here. We hand to VoiceService which
+  // shells out to bundled whisper.cpp and returns transcribed text.
+  // Args: [callback_id, wav_b64]
+  void HandleTranscribeAudio(const base::ListValue& args);
   // Tier 4: Form filler v2 — LLM fallback. Two-phase:
   //   1. HandleRunFormFillAI: probe visible form fields, return a
   //      ready-to-send prompt for the LLM.
