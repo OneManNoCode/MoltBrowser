@@ -326,6 +326,19 @@ molt_ai::BrowserAIRuntime* MoltAIChatHandler::GetOrCreateRuntime() {
 // LoadUserSettings: Read settings.json for inference parameters
 // ------------------------------------------------------------------
 namespace {
+
+// JSON-encode an arbitrary string so it can be safely embedded
+// inside a JS source literal passed to ExecuteJavaScriptInIsolatedWorld.
+// Handles backslash, double-quote, all control characters, and the
+// JS-string-breaking U+2028 / U+2029 separators. Replaces a former
+// hand-rolled escaper that missed those last two — code-review
+// HIGH #4 from 2026-05-20. Pair to JSQuote in automation_runner.cc.
+std::string JsStringLiteral(const std::string& s) {
+  std::string out;
+  base::JSONWriter::Write(base::Value(s), &out);
+  return out;
+}
+
 struct MoltAISettings {
   int max_tokens = 512;
   float temperature = 0.7f;
@@ -1520,29 +1533,22 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                                 base::Value(std::move(result)));
       return;
     }
-    // JS-escape the selector + value. We do simple JSON.stringify-style
-    // escaping inside the template since the values are user-supplied.
-    auto js_quote = [](const std::string& s) {
-      std::string out = "\"";
-      for (char c : s) {
-        if (c == '"' || c == '\\') out += '\\';
-        if (c == '\n') { out += "\\n"; continue; }
-        if (c == '\r') { out += "\\r"; continue; }
-        out += c;
-      }
-      out += '"';
-      return out;
-    };
+    // JS-escape the selector + value via JsStringLiteral (file-scope
+    // helper using base::JSONWriter::Write). Replaces a former hand-
+    // rolled escaper that handled \", \\, \n, \r but missed control
+    // chars and U+2028 / U+2029. Code-review HIGH #4.
     std::string js;
     if (t == "select") {
       std::string v = value ? *value : "";
-      js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
-           ");if(!el)return false;el.value=" + js_quote(v) +
+      js = "(function(){var el=document.querySelector(" +
+           JsStringLiteral(*sel) +
+           ");if(!el)return false;el.value=" + JsStringLiteral(v) +
            ";el.dispatchEvent(new Event('input',{bubbles:true}));"
            "el.dispatchEvent(new Event('change',{bubbles:true}));"
            "return true;})()";
     } else if (t == "hover") {
-      js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
+      js = "(function(){var el=document.querySelector(" +
+           JsStringLiteral(*sel) +
            ");if(!el)return false;"
            "['mouseover','mouseenter','mousemove'].forEach(function(t){"
            "el.dispatchEvent(new MouseEvent(t,{bubbles:true,"
@@ -1551,7 +1557,8 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
       // Synthesize a contextmenu event with button=2. Most sites'
       // custom right-click menus listen for this; the native macOS/
       // OS menu won't appear, but page-level menus do.
-      js = "(function(){var el=document.querySelector(" + js_quote(*sel) +
+      js = "(function(){var el=document.querySelector(" +
+           JsStringLiteral(*sel) +
            ");if(!el)return false;"
            "var r=el.getBoundingClientRect();"
            "el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,"
@@ -1565,8 +1572,8 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
       // events directly so this is enough to drive them.
       std::string tgt = value ? *value : "";
       js = "(function(){"
-           "var src=document.querySelector(" + js_quote(*sel) + ");"
-           "var tgt=document.querySelector(" + js_quote(tgt) + ");"
+           "var src=document.querySelector(" + JsStringLiteral(*sel) + ");"
+           "var tgt=document.querySelector(" + JsStringLiteral(tgt) + ");"
            "if(!src||!tgt)return false;"
            "var dt=new DataTransfer();"
            "var sr=src.getBoundingClientRect();var tr=tgt.getBoundingClientRect();"
@@ -2392,10 +2399,16 @@ void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
     return;
   }
   GURL gurl(url);
-  if (!gurl.is_valid() ||
-      (!gurl.SchemeIsHTTPOrHTTPS() && !gurl.SchemeIsFile())) {
+  // http(s) only. The earlier version also allowed file://, but the
+  // browser-process URLLoaderFactory we use here doesn't actually
+  // honor file:// — so it was a dormant LFI primitive waiting for
+  // someone to swap in a permissive factory. Code-review HIGH #3.
+  // If file:// PDF support is ever needed, route it through a
+  // dedicated handler that explicitly opts in (and adds path-prefix
+  // restrictions).
+  if (!gurl.is_valid() || !gurl.SchemeIsHTTPOrHTTPS()) {
     err.Set("success", false);
-    err.Set("error", "url must be http(s) or file://");
+    err.Set("error", "url must be http(s)");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(err)));
     return;

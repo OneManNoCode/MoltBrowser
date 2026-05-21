@@ -192,6 +192,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .molt-action-result.ok{background:#0f2818;color:#86efac;border:1px solid #1a3a28;}
 .molt-action-result.fail{background:#2a1010;color:#fca5a5;border:1px solid #4a1a1a;}
 .molt-action-result .detail{opacity:0.7;font-size:10px;margin-left:6px;}
+.molt-action-confirm{margin:6px 0 6px 36px;padding:8px 10px;
+  border-radius:8px;background:#1f1d2e;color:#e2dffb;
+  border:1px solid #6366f1;font-size:11px;
+  font-family:-apple-system,system-ui,sans-serif;
+  display:flex;align-items:center;gap:10px;max-width:520px;}
+.molt-action-confirm .ac-icon{font-size:16px;flex-shrink:0;}
+.molt-action-confirm .ac-body{flex:1;min-width:0;}
+.molt-action-confirm .ac-title{font-weight:600;font-size:10px;
+  text-transform:uppercase;letter-spacing:0.5px;opacity:0.8;
+  margin-bottom:2px;}
+.molt-action-confirm .ac-label{overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-family:ui-monospace,Menlo,monospace;}
+.molt-action-confirm .ac-buttons{display:flex;gap:6px;flex-shrink:0;}
+.molt-action-confirm button{padding:4px 10px;border-radius:5px;
+  border:1px solid #444;background:transparent;color:#e2dffb;
+  font-size:11px;cursor:pointer;font-family:inherit;}
+.molt-action-confirm .ac-allow{background:#6366f1;border-color:#6366f1;
+  color:#fff;}
+.molt-action-confirm .ac-allow:hover{opacity:0.85;}
+.molt-action-confirm .ac-deny:hover{background:#2a1010;border-color:#4a1a1a;
+  color:#fca5a5;}
 .msg-action{padding:2px 8px;border-radius:4px;border:1px solid #333;background:none;color:#666;font-size:10px;cursor:pointer}
 .msg-action:hover{color:#e0e0e0;border-color:#6366f1}
 /* Search bar */
@@ -639,6 +660,60 @@ function enqueueAction(action) {
   if (!actionQueueDraining) drainActionQueue();
 }
 
+// Action types that CAN modify state on the active tab. Each one
+// requires a one-tap user confirmation before dispatch. Read-only
+// or strictly local actions (scroll, wait, wait-for) auto-run.
+//
+// This is the defense against prompt injection in any third-party
+// content the LLM consumes (PDF text, page captures, YouTube
+// transcripts, bookmark titles, vault notes) emitting
+// [[ACTION navigate:phishing.example]] / [[ACTION click:#delete]] /
+// [[ACTION type:#pw|secret]] and having it run silently. Code-review
+// finding HIGH #2 from 2026-05-20.
+var DANGEROUS_ACTION_TYPES = {
+  click: 1, type: 1, select: 1, hover: 1, 'right-click': 1,
+  drag: 1, navigate: 1
+};
+
+function _renderActionLabel(action) {
+  return action.type +
+         (action.selector ? ' ' + action.selector : '') +
+         ((action.value && action.type !== 'wait-for')
+             ? ' = ' + action.value : '');
+}
+
+function _renderConfirmChip(action, onAllow, onDeny) {
+  var msgs = document.getElementById('messages');
+  if (!msgs) { onDeny(); return; }
+  var d = document.createElement('div');
+  d.className = 'molt-action-confirm';
+  var label = _renderActionLabel(action);
+  // Stylesheet for this chip is added inline so it can't be skinned
+  // out by site CSS injection into our message area.
+  d.innerHTML =
+    '<span class="ac-icon">⚡</span>' +
+    '<div class="ac-body">' +
+      '<div class="ac-title">AI proposes an action</div>' +
+      '<div class="ac-label">' + esc(label) + '</div>' +
+    '</div>' +
+    '<div class="ac-buttons">' +
+      '<button class="ac-deny">Deny</button>' +
+      '<button class="ac-allow">Allow</button>' +
+    '</div>';
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+  // Single-use handlers; remove the chip on either path so the chat
+  // stays clean.
+  var settle = function(handler) {
+    return function(){
+      try { d.parentNode && d.parentNode.removeChild(d); } catch(e) {}
+      handler();
+    };
+  };
+  d.querySelector('.ac-allow').onclick = settle(onAllow);
+  d.querySelector('.ac-deny').onclick = settle(onDeny);
+}
+
 function drainActionQueue() {
   if (actionQueueDraining) return;
   actionQueueDraining = true;
@@ -648,16 +723,23 @@ function drainActionQueue() {
       return;
     }
     var action = actionQueue.shift();
-    var label = action.type +
-                (action.selector ? ' ' + action.selector : '') +
-                ((action.value && action.type !== 'wait-for')
-                    ? ' = ' + action.value : '');
-    sendWithPromise('runMoltAction', action).then(function(r) {
-      appendActionResult(r && r.success, label,
-                          r ? (r.message || r.error || '') : '');
-    }).catch(function(err) {
-      appendActionResult(false, label, String(err || 'failed'));
-    }).then(loop, loop);
+    var label = _renderActionLabel(action);
+    var dispatch = function() {
+      sendWithPromise('runMoltAction', action).then(function(r) {
+        appendActionResult(r && r.success, label,
+                            r ? (r.message || r.error || '') : '');
+      }).catch(function(err) {
+        appendActionResult(false, label, String(err || 'failed'));
+      }).then(loop, loop);
+    };
+    if (DANGEROUS_ACTION_TYPES[action.type]) {
+      _renderConfirmChip(action, dispatch, function(){
+        appendActionResult(false, label, 'denied by user');
+        loop();
+      });
+    } else {
+      dispatch();
+    }
   };
   loop();
 }
