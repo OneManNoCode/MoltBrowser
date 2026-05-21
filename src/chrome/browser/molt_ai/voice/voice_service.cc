@@ -67,23 +67,19 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
     return r;
   }
 
-  // Stage the audio to a temp file. whisper-cli expects a file path.
-  base::FilePath temp_dir;
-  if (!base::GetTempDir(&temp_dir)) {
-    r.error = "no temp dir";
+  // Create a private 0700 scratch directory so the audio + the .txt
+  // output whisper-cli writes alongside it can't be raced by a local-
+  // user attacker placing symlinks. Code-review MEDIUM #5+#6.
+  base::FilePath scratch_dir;
+  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("molt_voice"),
+                                     &scratch_dir)) {
+    r.error = "could not create scratch directory";
     return r;
   }
-  base::FilePath audio_path;
-  if (!base::CreateTemporaryFileInDir(temp_dir, &audio_path)) {
-    r.error = "could not create temp audio file";
-    return r;
-  }
-  // Force .wav extension so whisper-cli's format sniffer is happy.
-  base::FilePath wav_path = audio_path.AddExtensionASCII(".wav");
-  base::Move(audio_path, wav_path);
+  base::FilePath wav_path = scratch_dir.AppendASCII("input.wav");
   if (!base::WriteFile(wav_path, wav_bytes)) {
     r.error = "could not write temp audio";
-    base::DeleteFile(wav_path);
+    base::DeletePathRecursively(scratch_dir);
     return r;
   }
 
@@ -112,13 +108,13 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
       base::GetAppOutputWithExitCode(cmd, &combined_output, &exit_code);
   if (!launched) {
     r.error = "failed to launch whisper subprocess";
-    base::DeleteFile(wav_path);
+    base::DeletePathRecursively(scratch_dir);
     return r;
   }
   if (exit_code != 0) {
     r.error = "whisper exit=" + std::to_string(exit_code) + ": " +
               combined_output.substr(0, 200);
-    base::DeleteFile(wav_path);
+    base::DeletePathRecursively(scratch_dir);
     return r;
   }
 
@@ -127,12 +123,11 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   std::string transcription;
   if (base::PathExists(txt_path)) {
     base::ReadFileToString(txt_path, &transcription);
-    base::DeleteFile(txt_path);
   } else {
     // Older whisper builds dump stdout directly. Use that as fallback.
     transcription = combined_output;
   }
-  base::DeleteFile(wav_path);
+  base::DeletePathRecursively(scratch_dir);
 
   // Trim leading/trailing whitespace.
   std::string trimmed;

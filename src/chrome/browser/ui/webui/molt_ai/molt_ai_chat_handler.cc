@@ -339,6 +339,22 @@ std::string JsStringLiteral(const std::string& s) {
   return out;
 }
 
+// Best-effort zero of a std::string's backing buffer before it goes
+// out of scope. Used for transient buffers that briefly hold vault
+// credentials before they're handed off to the renderer via
+// ExecuteJavaScriptInIsolatedWorld. The volatile pointer prevents
+// the compiler from optimizing out the dead store. Not airtight
+// (SSO, small-string-in-register cases, plus the renderer still
+// holds the value for the duration of the eval) but reduces the
+// in-memory plaintext window from "until heap reuse" to "until the
+// next instruction". Code-review MEDIUM #7.
+void SecureClear(std::string& s) {
+  if (s.empty()) return;
+  volatile char* p = const_cast<volatile char*>(s.data());
+  for (size_t i = 0; i < s.size(); ++i) p[i] = 0;
+  s.clear();
+}
+
 struct MoltAISettings {
   int max_tokens = 512;
   float temperature = 0.7f;
@@ -559,7 +575,10 @@ void MoltAIChatHandler::HandleLoadModel(const base::ListValue& args) {
 
   CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
-  const std::string model_id = args[1].GetString();
+  // Type-check second arg — a malicious renderer could send a non-
+  // string here and CHECK-crash the browser. Code-review MEDIUM #8.
+  const std::string model_id =
+      args[1].is_string() ? args[1].GetString() : std::string();
 
   auto* runtime = GetOrCreateRuntime();
 
@@ -621,12 +640,26 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
 
   CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
-  const std::string prompt_text = args[1].GetString();
+  std::string prompt_text =
+      args[1].is_string() ? args[1].GetString() : std::string();
+  // Cap to prevent a compromised WebUI from OOMing the browser with
+  // a multi-GB string. 1 MiB is ~250k tokens — well above any
+  // legitimate single-turn use. Code-review MEDIUM #8+#9.
+  constexpr size_t kMaxPromptBytes = 1 << 20;
+  if (prompt_text.size() > kMaxPromptBytes) {
+    prompt_text.resize(kMaxPromptBytes);
+  }
 
   // Optional: conversation history as pre-formatted string
   std::string history_text;
   if (args.size() >= 3u && args[2].is_string()) {
     history_text = args[2].GetString();
+    // History grows with the conversation but stays bounded by
+    // trimHistory on the JS side. Cap defensively at 2 MiB.
+    constexpr size_t kMaxHistoryBytes = 2 << 20;
+    if (history_text.size() > kMaxHistoryBytes) {
+      history_text.resize(kMaxHistoryBytes);
+    }
   }
 
   // Optional: page context (URL + title) for context-aware responses
@@ -921,7 +954,8 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
 
   CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
-  const std::string model_id = args[1].GetString();
+  const std::string model_id =
+      args[1].is_string() ? args[1].GetString() : std::string();
 
   auto* runtime = GetOrCreateRuntime();
   auto info = runtime->GetModelInfo(model_id);
@@ -1215,7 +1249,8 @@ void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
 
   CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
-  const std::string model_id = args[1].GetString();
+  const std::string model_id =
+      args[1].is_string() ? args[1].GetString() : std::string();
 
   auto* runtime = GetOrCreateRuntime();
 
@@ -1388,7 +1423,14 @@ void MoltAIChatHandler::HandleExportHistory(const base::ListValue& args) {
 
   CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
-  const std::string history_json = args[1].GetString();
+  std::string history_json =
+      args[1].is_string() ? args[1].GetString() : std::string();
+  // Cap exported history to keep the on-disk file size bounded.
+  // 16 MiB is plenty for a multi-month chat log.
+  constexpr size_t kMaxHistoryExportBytes = 16 << 20;
+  if (history_json.size() > kMaxHistoryExportBytes) {
+    history_json.resize(kMaxHistoryExportBytes);
+  }
 
   // Generate timestamp-based filename on UI thread (no I/O).
   base::Time now = base::Time::Now();
@@ -3959,6 +4001,10 @@ void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
   std::string creds_json;
   base::JSONWriter::Write(creds, &creds_json);
   std::string js = std::string(kVaultAutofillJS) + "(" + creds_json + ")";
+  // The renderer-side copy lives in the UTF-16 string passed below
+  // for the duration of the eval; nothing we can do about that. But
+  // our process-side copies (creds_json, js) get scrubbed as soon as
+  // the eval is dispatched. Code-review MEDIUM #7.
 
   std::string cb_id = callback_id;
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
@@ -3987,6 +4033,13 @@ void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
           },
           weak_this, cb_id),
       /*world_id=*/1);
+  // Scrub the plaintext password from our local heap. The chosen
+  // VaultEntry's own .password field also gets cleared as the local
+  // variable goes out of scope at function exit, but its std::string
+  // backing buffer survives — scrub that too.
+  SecureClear(creds_json);
+  SecureClear(js);
+  SecureClear(chosen.password);
 }
 
 // ==================================================================
@@ -4317,6 +4370,19 @@ void MoltAIChatHandler::HandleTranscribeAudio(
   if (b64.empty()) {
     out.Set("success", false);
     out.Set("error", "no audio");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  // Pre-decode size cap. The recorder caps at 30 s of 16-kHz mono
+  // PCM = ~960 KB raw + WAV header. Base64 inflates by ~4/3 so the
+  // worst-case legitimate payload is ~1.3 MB. 8 MB gives generous
+  // headroom for a custom uploader without letting a compromised
+  // WebUI OOM the browser on a gigabyte string. Code-review MEDIUM #9.
+  constexpr size_t kMaxAudioB64Bytes = 8 << 20;
+  if (b64.size() > kMaxAudioB64Bytes) {
+    out.Set("success", false);
+    out.Set("error", "audio exceeds max size (8 MiB base64)");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;

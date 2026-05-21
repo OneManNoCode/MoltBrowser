@@ -54,21 +54,19 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
     return r;
   }
 
-  base::FilePath temp_dir;
-  if (!base::GetTempDir(&temp_dir)) {
-    r.error = "no temp dir";
+  // Private 0700 scratch dir so the PDF + tesseract's .txt output
+  // can't be raced by a local-user symlink attack. Code-review
+  // MEDIUM #5+#6.
+  base::FilePath scratch_dir;
+  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("molt_ocr"),
+                                     &scratch_dir)) {
+    r.error = "could not create scratch directory";
     return r;
   }
-  base::FilePath pdf_path;
-  if (!base::CreateTemporaryFileInDir(temp_dir, &pdf_path)) {
-    r.error = "could not create temp pdf";
-    return r;
-  }
-  base::FilePath named = pdf_path.AddExtensionASCII(".pdf");
-  base::Move(pdf_path, named);
+  base::FilePath named = scratch_dir.AppendASCII("input.pdf");
   if (!base::WriteFile(named, pdf_bytes)) {
     r.error = "could not write temp pdf";
-    base::DeleteFile(named);
+    base::DeletePathRecursively(scratch_dir);
     return r;
   }
 
@@ -90,13 +88,13 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
   bool launched = base::GetAppOutputWithExitCode(cmd, &combined, &exit_code);
   if (!launched) {
     r.error = "failed to launch tesseract";
-    base::DeleteFile(named);
+    base::DeletePathRecursively(scratch_dir);
     return r;
   }
   if (exit_code != 0) {
     r.error = "tesseract exit=" + std::to_string(exit_code) + ": " +
               combined.substr(0, 200);
-    base::DeleteFile(named);
+    base::DeletePathRecursively(scratch_dir);
     return r;
   }
   // tesseract writes <stem>.txt
@@ -104,9 +102,8 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
   std::string text;
   if (base::PathExists(txt)) {
     base::ReadFileToString(txt, &text);
-    base::DeleteFile(txt);
   }
-  base::DeleteFile(named);
+  base::DeletePathRecursively(scratch_dir);
 
   if (text.size() > max_chars) text.resize(max_chars);
   r.success = !text.empty();

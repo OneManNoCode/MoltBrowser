@@ -1817,34 +1817,18 @@ function tryDispatchChaptersCommand(text) {
   addUserMessage(text);
   startAiMessage();
   appendToAiMessage('Reading transcript from the YouTube tab...');
-  // We re-use the cross-tab IPC to inject into the active tab. Same
-  // isolated-world world_id=1 the action engine uses.
-  var probe =
-    '(function(){' +
-    'var segs=document.querySelectorAll(' +
-    '"ytd-transcript-segment-renderer, .ytd-transcript-segment-renderer");' +
-    'if(!segs.length) return JSON.stringify({error:"no transcript"});' +
-    'var out=[];' +
-    'segs.forEach(function(s){' +
-      'var ts=(s.querySelector(".segment-timestamp")||{}).innerText||"";' +
-      'var tx=(s.querySelector(".segment-text")||{}).innerText||"";' +
-      'if(ts||tx) out.push((ts.trim()+" "+tx.trim()).trim());' +
-    '});' +
-    'return JSON.stringify({lines: out.slice(0, 600)});' +
-    '})()';
-  sendWithPromise('runMoltAction',
-                  {type: 'eval_for_chapters', script: probe})
-      .catch(function(){ return null; })
+  // We don't ship a generic JS-eval IPC (deliberately — it would be
+  // a perpetual RCE-into-active-tab landmine the moment a future
+  // commit accidentally wires the script through unescaped). Instead
+  // we rely on the page-context capture the side panel does on every
+  // tab switch: when the transcript panel is open YouTube renders
+  // timestamped lines into the DOM that show up in sp.text. We then
+  // filter for "MM:SS" prefixes. Code-review LOW #13 (removed dead
+  // `eval_for_chapters` branch that referenced a never-implemented
+  // action type).
+  (Promise.resolve(null))
       .then(function(r) {
-        // Fallback: if the eval action type isn't supported, ask the
-        // user to manually open the transcript.
         var transcriptText = '';
-        if (r && r.result) {
-          try {
-            var parsed = JSON.parse(r.result);
-            if (parsed.lines) transcriptText = parsed.lines.join('\n');
-          } catch(e) {}
-        }
         if (!transcriptText) {
           // Backup heuristic: look in page-context capture for "::" or
           // numeric timestamp prefixes which YouTube's transcript uses.
