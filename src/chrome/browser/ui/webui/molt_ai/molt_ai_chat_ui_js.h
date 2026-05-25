@@ -348,7 +348,7 @@ function appendActionResult(ok, label, detail) {
 function setGenerating(val) {
   isGenerating = val;
   document.getElementById('sendBtn').disabled = val;
-  document.getElementById('prompt').disabled = val;
+  document.getElementById('chatInput').disabled = val;
   document.getElementById('cancelBtn').className = 'cancel' + (val ? ' active' : '');
   var btns = document.querySelectorAll('#quickActions button');
   for (var i = 0; i < btns.length; i++) btns[i].disabled = val;
@@ -2364,7 +2364,7 @@ function rankChunksByQuery(chunks, query, topK) {
 
 function sendMessage() {
   if (isGenerating) return;
-  var input = document.getElementById('prompt');
+  var input = document.getElementById('chatInput');
   var text = input.value.trim();
   if (!text) return;
 
@@ -2651,10 +2651,10 @@ function quickAction(action) {
       } else {
         prompt = 'Summarize this page';
       }
-      document.getElementById('prompt').value = prompt;
+      document.getElementById('chatInput').value = prompt;
       sendMessage();
     }).catch(function() {
-      document.getElementById('prompt').value = 'Summarize this page';
+      document.getElementById('chatInput').value = 'Summarize this page';
       sendMessage();
     });
   } else if (action === 'extract') {
@@ -2666,10 +2666,10 @@ function quickAction(action) {
       } else {
         prompt = 'Extract key data from this page';
       }
-      document.getElementById('prompt').value = prompt;
+      document.getElementById('chatInput').value = prompt;
       sendMessage();
     }).catch(function() {
-      document.getElementById('prompt').value = 'Extract key data from this page';
+      document.getElementById('chatInput').value = 'Extract key data from this page';
       sendMessage();
     });
   } else if (action === 'explain') {
@@ -2681,14 +2681,14 @@ function quickAction(action) {
       } else {
         prompt = 'Explain this page simply';
       }
-      document.getElementById('prompt').value = prompt;
+      document.getElementById('chatInput').value = prompt;
       sendMessage();
     }).catch(function() {
-      document.getElementById('prompt').value = 'Explain this page simply';
+      document.getElementById('chatInput').value = 'Explain this page simply';
       sendMessage();
     });
   } else {
-    document.getElementById('prompt').value = 'Translate this page to English';
+    document.getElementById('chatInput').value = 'Translate this page to English';
     sendMessage();
   }
 }
@@ -3007,7 +3007,7 @@ cr.addWebUiListener('download-complete', function(modelId, success) {
 });
 
 // Keyboard shortcut
-document.getElementById('prompt').addEventListener('keydown', function(e) {
+document.getElementById('chatInput').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
@@ -3415,7 +3415,7 @@ function _stopRecording() {
                        (r.install_hint ? '\n' + r.install_hint : ''));
       return;
     }
-    var input = document.getElementById('prompt');
+    var input = document.getElementById('chatInput');
     if (input) {
       // Append to whatever's already in the box; nice for "speak,
       // then add a clarifier and hit send".
@@ -3508,6 +3508,178 @@ function _stopRecording() {
   }
   pollAgents();
   setInterval(pollAgents, 3000);
+})();
+
+// ============================================================
+// WebAgent UI — autonomous browsing agent in the side panel
+// Streams step-by-step progress via the 'agent-step' WebUI event.
+// Triggered by the "Browse" button next to the chat input.
+// ============================================================
+(function(){
+  var agentRunning = false;
+
+  // Inject agent-specific styles.
+  var css = `
+.agent-bar{display:none;flex-direction:column;gap:0;background:#0a0a14;
+  border-top:1px solid #1a1a2a;padding:10px 14px 6px}
+.agent-bar.active{display:flex}
+.agent-bar-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.agent-bar-title{font-size:11px;font-weight:700;color:#a78bfa;letter-spacing:0.5px}
+.agent-stop-btn{font-size:10px;padding:2px 8px;border-radius:6px;
+  background:#2a1a1a;border:1px solid #5a2a2a;color:#f87171;cursor:pointer}
+.agent-stop-btn:hover{background:#3a1a1a}
+.agent-steps{display:flex;flex-direction:column;gap:3px;max-height:220px;overflow-y:auto;
+  scrollbar-width:thin}
+.agent-step{display:flex;gap:6px;align-items:flex-start;padding:4px 5px;border-radius:5px}
+.agent-step.ok{background:#0d1a0d}.agent-step.fail{background:#1a0d0d}
+.agent-step-num{font-size:9px;color:#555;min-width:18px;text-align:right;padding-top:2px}
+.agent-step-badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:5px;
+  white-space:nowrap;min-width:52px;text-align:center}
+.badge-NAVIGATE,.badge-SEARCH{background:#1a1a3a;color:#818cf8}
+.badge-CLICK{background:#1a2a1a;color:#4ade80}
+.badge-TYPE,.badge-FILL_FORM{background:#1a2a2a;color:#22d3ee}
+.badge-SCROLL,.badge-OBSERVE{background:#181818;color:#9ca3af}
+.badge-DONE{background:#0d2a0d;color:#4ade80}
+.badge-ERROR{background:#2a0d0d;color:#f87171}
+.agent-step-body{flex:1;min-width:0}
+.agent-step-target{font-size:10px;color:#c4b5fd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-step-reason{font-size:9px;color:#555;margin-top:1px}
+.agent-spinner-sm{width:7px;height:7px;border:1.5px solid #4338ca;
+  border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;
+  margin-top:3px;flex-shrink:0}
+.agent-result{font-size:11px;color:#e0e0e0;padding:5px 8px;background:#0d1a0d;
+  border-radius:5px;margin-top:4px;border-left:2px solid #4ade80}
+.agent-result.fail{background:#1a0d0d;border-color:#f87171;color:#fca5a5}
+  `;
+  var s = document.createElement('style');
+  s.textContent = css;
+  document.head.appendChild(s);
+
+  // Build the agent bar DOM once.
+  function ensureBar() {
+    if (document.getElementById('agentBar')) return;
+    var bar = document.createElement('div');
+    bar.id = 'agentBar';
+    bar.className = 'agent-bar';
+    bar.innerHTML =
+      '<div class="agent-bar-hdr">' +
+        '<span class="agent-bar-title">&#129302; AGENT RUNNING</span>' +
+        '<button class="agent-stop-btn" id="agentStopBtn">&#9632; Stop</button>' +
+      '</div>' +
+      '<div class="agent-steps" id="agentSteps"></div>' +
+      '<div id="agentResult" style="display:none"></div>';
+    var inputArea = document.getElementById('inputArea') ||
+                    document.querySelector('.input-area');
+    if (inputArea && inputArea.parentNode)
+      inputArea.parentNode.insertBefore(bar, inputArea);
+    else
+      document.body.appendChild(bar);
+
+    document.getElementById('agentStopBtn').addEventListener('click', function() {
+      chrome.send('cancelWebAgent', []);
+      agentRunning = false;
+      finishBar(false, 'Cancelled by user');
+    });
+  }
+
+  // Show bar and reset its contents.
+  function startBar(goal) {
+    ensureBar();
+    agentRunning = true;
+    document.getElementById('agentBar').classList.add('active');
+    document.getElementById('agentSteps').innerHTML =
+      '<div class="agent-step ok">' +
+        '<div class="agent-spinner-sm"></div>' +
+        '<div class="agent-step-body"><div class="agent-step-target">Goal: ' +
+          goal.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
+        '</div></div></div>';
+    document.getElementById('agentResult').style.display = 'none';
+    var hdr = document.querySelector('.agent-bar-title');
+    if (hdr) hdr.textContent = '\u{1F916} AGENT RUNNING';
+    var stopBtn = document.getElementById('agentStopBtn');
+    if (stopBtn) stopBtn.style.display = '';
+  }
+
+  // Append one step row.
+  cr.addWebUiListener('agent-step', function(step) {
+    if (!agentRunning) return;
+    var steps = document.getElementById('agentSteps');
+    if (!steps) return;
+    // Remove placeholder spinner.
+    var ph = steps.querySelector('.agent-spinner-sm');
+    if (ph && ph.parentNode) ph.parentNode.remove();
+
+    var badge = step.action || '?';
+    var target = (step.target || '').substring(0, 70);
+    var reason = (step.reason || '').substring(0, 90);
+
+    var row = document.createElement('div');
+    row.className = 'agent-step ' + (step.success ? 'ok' : 'fail');
+    row.innerHTML =
+      '<div class="agent-step-num">' + step.number + '</div>' +
+      '<span class="agent-step-badge badge-' + badge + '">' + badge + '</span>' +
+      '<div class="agent-step-body">' +
+        '<div class="agent-step-target">' +
+          target.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
+        '</div>' +
+        (reason
+          ? '<div class="agent-step-reason">' +
+              reason.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
+            '</div>'
+          : '') +
+      '</div>';
+    steps.appendChild(row);
+    steps.scrollTop = steps.scrollHeight;
+  });
+
+  // Finish the bar (success or failure).
+  function finishBar(success, result) {
+    agentRunning = false;
+    var hdr = document.querySelector('.agent-bar-title');
+    if (hdr) hdr.textContent = success ? '✅ AGENT DONE' : '❌ AGENT STOPPED';
+    var stopBtn = document.getElementById('agentStopBtn');
+    if (stopBtn) stopBtn.style.display = 'none';
+    var resultEl = document.getElementById('agentResult');
+    if (resultEl) {
+      resultEl.className = 'agent-result' + (success ? '' : ' fail');
+      resultEl.textContent = (result || '(no result)').substring(0, 400);
+      resultEl.style.display = 'block';
+    }
+    // Append answer as a chat bubble so it stays in history.
+    if (typeof appendAIMessage === 'function') {
+      appendAIMessage(success
+        ? '**Agent result:** ' + (result || '')
+        : '**Agent stopped:** ' + (result || 'Cancelled'));
+    }
+    // Auto-collapse the bar after 10 s.
+    setTimeout(function() {
+      var bar = document.getElementById('agentBar');
+      if (bar) bar.classList.remove('active');
+    }, 10000);
+  }
+
+  // Public entry point: start an agent task.
+  window.startWebAgent = function(goal) {
+    if (!goal || !goal.trim()) return;
+    startBar(goal);
+    sendWithPromise('startWebAgent', goal)
+      .then(function(r) { finishBar(r && r.success, r && r.result); })
+      .catch(function(e) { finishBar(false, String(e)); });
+  };
+
+  // Wire the "Browse" button (id="agentBtn") added in the HTML.
+  document.addEventListener('DOMContentLoaded', function() {
+    var btn = document.getElementById('agentBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+      var inp = document.getElementById('chatInput') ||
+                document.querySelector('textarea');
+      var goal = inp ? inp.value.trim() : '';
+      if (!goal) { if (inp) inp.focus(); return; }
+      if (inp) inp.value = '';
+      window.startWebAgent(goal);
+    });
+  });
 })();
 )JS";
 

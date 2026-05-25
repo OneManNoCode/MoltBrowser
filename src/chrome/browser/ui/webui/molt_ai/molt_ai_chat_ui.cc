@@ -395,11 +395,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <button onclick="quickAction('explain')">Explain</button>
   <button onclick="quickAction('translate')">Translate</button>
 </div>
-<div class="input-area">
-  <input type="text" id="prompt" placeholder="Ask MoltBrowser AI..." autofocus>
+<div id="inputArea" class="input-area">
+  <input type="text" id="chatInput" placeholder="Ask AI or describe a task to browse..." autofocus>
   <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
   <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
   <button class="send" id="sendBtn" onclick="sendMessage()">Send</button>
+  <button class="send" id="agentBtn" title="Let AI autonomously browse and complete this task"
+    style="background:linear-gradient(135deg,#4338ca,#7c3aed);margin-left:2px">Browse</button>
 </div>
 
 <!-- Model Management Panel -->

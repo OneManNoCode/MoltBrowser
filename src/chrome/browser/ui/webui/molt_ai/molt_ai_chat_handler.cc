@@ -299,6 +299,16 @@ void MoltAIChatHandler::RegisterMessages() {
       "listMemoryDocs",
       base::BindRepeating(&MoltAIChatHandler::HandleListMemoryDocs,
                           base::Unretained(this)));
+
+  // Autonomous web agent (ReAct loop).
+  web_ui()->RegisterMessageCallback(
+      "startWebAgent",
+      base::BindRepeating(&MoltAIChatHandler::HandleStartWebAgent,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "cancelWebAgent",
+      base::BindRepeating(&MoltAIChatHandler::HandleCancelWebAgent,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -3880,4 +3890,102 @@ void MoltAIChatHandler::HandleTranscribeAudio(
                                             base::Value(std::move(out)));
           },
           weak_this, cb));
+}
+
+// ------------------------------------------------------------------
+// HandleStartWebAgent — launch a ReAct-loop web browsing agent.
+//
+// JS calls: chrome.send('startWebAgent', [callback_id, goal])
+//   - Each completed step fires: FireWebUIListener('agent-step', {...})
+//   - Final result resolves: ResolveJavascriptCallback(callback_id, {...})
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
+  AllowJavascript();
+  if (args.size() < 2) return;
+
+  const std::string callback_id = args[0].GetString();
+  const std::string goal        = args[1].GetString();
+
+  if (goal.empty()) {
+    base::DictValue err;
+    err.Set("success", false);
+    err.Set("result", "Goal cannot be empty");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(err)));
+    return;
+  }
+
+  // Find the active browsing tab (not the side-panel WebContents itself).
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  content::WebContents* target_wc = nullptr;
+  if (browser) {
+    target_wc = browser->tab_strip_model()->GetActiveWebContents();
+  }
+  if (!target_wc) {
+    base::DictValue err;
+    err.Set("success", false);
+    err.Set("result", "No active browser tab found");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(err)));
+    return;
+  }
+
+  // Cancel any previous agent run.
+  if (web_agent_) web_agent_->Cancel();
+
+  molt_ai::BrowserAIRuntime* runtime = GetOrCreateRuntime();
+  web_agent_ = std::make_unique<molt_ai::WebAgent>(target_wc, runtime);
+
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+
+  // Step callback: stream each completed step to the UI in real time.
+  auto on_step = base::BindRepeating(
+      [](base::WeakPtr<MoltAIChatHandler> self,
+         const molt_ai::WebAgent::Step& step) {
+        if (!self || !self->IsJavascriptAllowed()) return;
+        base::DictValue d;
+        d.Set("number",      step.number);
+        d.Set("action",      step.action);
+        d.Set("target",      step.target);
+        d.Set("value",       step.value);
+        d.Set("reason",      step.reason);
+        d.Set("observation", step.observation.substr(
+                                 0, std::min<int>(500,
+                                    static_cast<int>(step.observation.size()))));
+        d.Set("success",     step.success);
+        d.Set("note",        step.note);
+        self->FireWebUIListener("agent-step", base::Value(std::move(d)));
+      },
+      weak_this);
+
+  // Done callback: resolve the JS promise with the final result.
+  auto on_done = base::BindOnce(
+      [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+         bool success, std::string result) {
+        if (!self || !self->IsJavascriptAllowed()) return;
+        self->web_agent_.reset();
+        base::DictValue d;
+        d.Set("success", success);
+        d.Set("result",  result);
+        self->ResolveJavascriptCallback(base::Value(cb_id),
+                                        base::Value(std::move(d)));
+      },
+      weak_this, callback_id);
+
+  web_agent_->Start(goal, std::move(on_step), std::move(on_done));
+
+  LOG(INFO) << "[MoltAI] Web agent started. Goal: " << goal;
+}
+
+// ------------------------------------------------------------------
+// HandleCancelWebAgent — stop a running agent immediately.
+// JS calls: chrome.send('cancelWebAgent', [])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleCancelWebAgent(const base::ListValue& args) {
+  if (web_agent_) {
+    web_agent_->Cancel();
+    web_agent_.reset();
+    LOG(INFO) << "[MoltAI] Web agent cancelled by user";
+  }
 }

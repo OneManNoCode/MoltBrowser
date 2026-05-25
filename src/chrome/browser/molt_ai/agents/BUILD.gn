@@ -1,0 +1,18 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# MoltBrowser WebAgent — autonomous browsing agent (ReAct loop)
+
+source_set("molt_ai_agents") {
+  sources = [
+    "web_agent.cc",
+    "web_agent.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/dom:molt_ai_dom",
+    "//chrome/browser/molt_ai/runtime:molt_ai_runtime",
+    "//content/public/browser",
+    "//ui/base",
+    "//url",
+  ]
+}

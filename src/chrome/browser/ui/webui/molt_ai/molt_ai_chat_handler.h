@@ -23,6 +23,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
@@ -174,6 +175,15 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: [callback_id, limit?]
   void HandleListMemoryDocs(const base::ListValue& args);
 
+  // ---- Autonomous Web Agent (WebAgent / ReAct loop) ---------------
+  // Start an agent task. Steps are streamed back via 'agent-step'
+  // WebUI listener events; the final result resolves the callback.
+  // Args: [callback_id, goal_string]
+  void HandleStartWebAgent(const base::ListValue& args);
+  // Cancel the currently running agent (no-op if none running).
+  // Args: []
+  void HandleCancelWebAgent(const base::ListValue& args);
+
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,
                       base::DictValue settings_dict);
@@ -220,6 +230,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   base::TimeTicks download_start_time_;
   uint64_t download_last_bytes_ = 0;
   base::TimeTicks download_last_time_;
+
+  // Active WebAgent (null when no agent task is running).
+  std::unique_ptr<molt_ai::WebAgent> web_agent_;
 
   base::WeakPtrFactory<MoltAIChatHandler> weak_ptr_factory_{this};
 };
