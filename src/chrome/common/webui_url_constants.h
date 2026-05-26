@@ -285,7 +285,7 @@ inline constexpr char kChromeUIPrivacySandboxInternalsHost[] =
 inline constexpr char kChromeUIPrivacySandboxInternalsURL[] =
     "chrome://privacy-sandbox-internals";
 inline constexpr char16_t kChromeUIPrivacySandboxManageTopicsLearnMoreURL[] =
-    u"https://support.google.com/chrome?p=ad_privacy";
+    u"https://moltsearch.ai/privacy";
 inline constexpr char16_t kChromeUIPrivacySandboxTopicsURL[] =
     u"chrome://settings/adPrivacy/interests";
 inline constexpr char kChromeUIProfileInternalsHost[] = "profile-internals";
