@@ -676,6 +676,21 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
   }
   tokens.resize(static_cast<size_t>(n_tokens));
 
+  // Guard: truncate from the front if prompt exceeds context window.
+  // Context size is fixed at kDefaultContextSize (2048) tokens. Without this
+  // guard, llama_decode() calls ggml_abort() and the process dies with SIGABRT.
+  int n_ctx = static_cast<int>(llama_n_ctx(impl_->llama_ctx));
+  int max_prompt_tokens = n_ctx - options.max_tokens - 4;  // 4 safety margin
+  if (max_prompt_tokens < 1) max_prompt_tokens = 1;
+  if (n_tokens > max_prompt_tokens) {
+    // Keep the tail of the token list (most recent context)
+    int drop = n_tokens - max_prompt_tokens;
+    tokens.erase(tokens.begin(), tokens.begin() + drop);
+    n_tokens = static_cast<int>(tokens.size());
+    std::cerr << "[MoltAI] StreamPrompt: prompt truncated by " << drop
+              << " tokens to fit context window" << std::endl;
+  }
+
   // Evaluate prompt
   llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
   if (llama_decode(impl_->llama_ctx, batch) != 0) {
