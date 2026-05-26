@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -691,6 +692,20 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
               << " tokens to fit context window" << std::endl;
   }
 
+  // CRITICAL: Clear the KV cache BEFORE each inference run.
+  // The cache is also cleared at the end, but if a previous run exited early
+  // (cancellation, error, or crash recovery), the cache may hold stale tokens.
+  // Starting a new decode on a dirty cache shifts the effective sequence
+  // position forward, and the combined length can exceed n_ctx → ggml_abort.
+  {
+    llama_memory_t mem = llama_get_memory(impl_->llama_ctx);
+    if (mem) {
+      llama_memory_clear(mem, true);
+      std::cerr << "[MoltAI] StreamPrompt: KV cache cleared before inference"
+                << std::endl;
+    }
+  }
+
   // Evaluate prompt
   llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
   if (llama_decode(impl_->llama_ctx, batch) != 0) {
@@ -712,8 +727,18 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
 
   llama_token eos_token = llama_vocab_eos(vocab);
 
+  // Hard-cap the generation budget so n_tokens + generated never reaches n_ctx.
+  // options.max_tokens is user-configurable (settings.json) and could exceed
+  // what's safe. This ensures the loop exits before the KV cache is full,
+  // making ggml_abort in llama_decode provably impossible.
+  int max_gen = std::min(options.max_tokens, n_ctx - n_tokens - 1);
+  if (max_gen < 1) max_gen = 1;
+  std::cerr << "[MoltAI] StreamPrompt: n_ctx=" << n_ctx
+            << " n_prompt=" << n_tokens
+            << " max_gen=" << max_gen << std::endl;
+
   // Stream tokens
-  for (int i = 0; i < options.max_tokens; ++i) {
+  for (int i = 0; i < max_gen; ++i) {
     if (impl_->cancel_requested) {
       if (callback) callback("", true);
       break;
