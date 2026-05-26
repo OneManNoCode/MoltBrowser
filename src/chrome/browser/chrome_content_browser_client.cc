@@ -9182,9 +9182,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
 }
 
 std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {
-  static constexpr char kGoogleDnsResolverUrl[] =
-      "https://dns.google/resolve?type=txt&do=1&name=";
-  return kGoogleDnsResolverUrl;
+  // MoltBrowser: use Cloudflare DoH (privacy-first, no Google affiliation)
+  static constexpr char kMoltDnsResolverUrl[] =
+      "https://cloudflare-dns.com/dns-query?type=TXT&do=1&name=";
+  return kMoltDnsResolverUrl;
 }
 
 bool ChromeContentBrowserClient::ShouldAllowPrefetchRedirection(

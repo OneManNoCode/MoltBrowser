@@ -144,7 +144,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     <div class="goal-section">
       <h3>Agent Goal</h3>
       <textarea class="goal-input" id="goalInput"
-        placeholder="Describe what you want the agent to do...&#10;&#10;Examples:&#10;- Navigate to nike.com and find running shoes&#10;- Search for 'best laptops 2026' on Google&#10;- Fill out the contact form on example.com"></textarea>
+        placeholder="Describe what you want the agent to do...&#10;&#10;Examples:&#10;- Navigate to nike.com and find running shoes&#10;- Search for 'best laptops 2026' on MoltSearch&#10;- Fill out the contact form on example.com"></textarea>
     </div>
     <div class="actions">
       <button class="action-btn primary" onclick="runAgent()">&#9654; Run Agent</button>

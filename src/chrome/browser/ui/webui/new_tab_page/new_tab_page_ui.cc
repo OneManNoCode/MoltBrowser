@@ -643,7 +643,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
         case ntp_realbox::PlaceholderText::ASK_OR_TYPE:
           source->AddString("searchBoxPlaceholder",
                             l10n_util::GetStringFUTF16(
-                                IDS_WEBUI_OMNIBOX_PLACEHOLDER_TEXT, u"Google"));
+                                IDS_WEBUI_OMNIBOX_PLACEHOLDER_TEXT, u"MoltSearch"));
           break;
         case ntp_realbox::PlaceholderText::ASK:
           source->AddLocalizedString(
