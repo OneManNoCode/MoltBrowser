@@ -224,6 +224,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .search-bar .search-count{font-size:10px;color:#888;padding:6px 8px}
 .search-bar .search-close{background:none;border:none;color:#888;cursor:pointer;font-size:14px;padding:4px}
 .highlight{background:#6366f1;color:#fff;border-radius:2px;padding:0 2px}
+/* Model chip — needs-selection pulsing state */
+.model-chip.needs-selection{border-color:#fbbf24;animation:chip-pulse 1.4s ease-in-out infinite}
+@keyframes chip-pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,0.4)}60%{box-shadow:0 0 0 5px rgba(251,191,36,0)}}
+.model-chip.model-ready-flash{border-color:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,0.3);transition:all 0.4s}
+/* Permission mode banner */
+.permission-banner{margin:8px 0 12px;padding:12px 14px;border-radius:10px;background:#0f0f1a;border:1px solid #2a2a3e;font-family:-apple-system,system-ui,sans-serif}
+.permission-banner .pb-title{font-size:12px;font-weight:600;color:#c4b5fd;margin-bottom:2px}
+.permission-banner .pb-subtitle{font-size:11px;color:#666;margin-bottom:10px}
+.permission-banner .pb-buttons{display:flex;gap:8px}
+.permission-banner button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border-radius:8px;border:1px solid #333;background:#111;color:#e0e0e0;cursor:pointer;transition:all 0.2s;font-family:inherit}
+.permission-banner button:hover{border-color:#6366f1;background:#1a1a2e}
+.permission-banner .pb-ask:hover{border-color:#4ade80;background:#0f2818}
+.permission-banner .pb-auto:hover{border-color:#fbbf24;background:#2a1f0f}
+.permission-banner .pb-icon{font-size:18px}
+.permission-banner .pb-label{font-size:12px;font-weight:600}
+.permission-banner .pb-desc{font-size:10px;color:#888}
+/* Compact mode chip shown after selection */
+.pb-mode-chip{margin:4px 0 10px;padding:5px 10px;border-radius:14px;font-size:11px;color:#888;background:#111;border:1px solid #222;display:inline-block;font-family:-apple-system,system-ui,sans-serif}
+/* Model-needs-selection banner */
+.model-select-banner{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;background:#2a1f0a;border:1px solid #4a3a1a;color:#fbbf24;font-size:11px;margin-bottom:10px;font-family:-apple-system,system-ui,sans-serif;animation:chip-pulse 1.4s ease-in-out infinite}
+.model-select-banner .msb-icon{flex-shrink:0;font-size:14px}
+/* Real-time navigate chip */
+.molt-navigating-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:#0f1a2a;border:1px solid #1a3a5a;color:#7dd3fc;font-size:11px;margin:4px 0 4px 36px;font-family:-apple-system,system-ui,sans-serif;max-width:90%;overflow:hidden}
+.molt-navigating-chip .nav-icon{flex-shrink:0;font-size:14px}
+.molt-navigating-chip .nav-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.molt-navigating-chip .nav-spinner{width:10px;height:10px;border:2px solid #1a3a5a;border-top-color:#7dd3fc;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>

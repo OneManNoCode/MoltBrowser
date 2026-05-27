@@ -206,6 +206,11 @@ var streamLastParsedIdx = 0;
 var actionQueue = [];
 var actionQueueDraining = false;
 
+// Session permission mode: 'ask' shows a confirm chip before every
+// dangerous action; 'auto' executes them immediately without prompting.
+// Set by the permission banner shown at the start of each new chat.
+var actionAutoMode = false;
+
 function parseActionPayload(verb, args) {
   verb = verb.toLowerCase();
   args = (args || '').trim();
@@ -304,6 +309,20 @@ function _renderConfirmChip(action, onAllow, onDeny) {
   d.querySelector('.ac-deny').onclick = settle(onDeny);
 }
 
+// Show a real-time "🌐 Navigating to …" chip so the user sees the
+// browser actually loading the page, not just a silent result chip.
+function appendNavigatingChip(url) {
+  var m = document.getElementById('messages');
+  if (!m) return;
+  var d = document.createElement('div');
+  d.className = 'molt-navigating-chip';
+  d.innerHTML = '<span class="nav-icon">🌐</span>' +
+                '<span class="nav-label">Navigating to ' + esc(url) + '</span>' +
+                '<span class="nav-spinner"></span>';
+  m.appendChild(d);
+  m.scrollTop = m.scrollHeight;
+}
+
 function drainActionQueue() {
   if (actionQueueDraining) return;
   actionQueueDraining = true;
@@ -315,6 +334,10 @@ function drainActionQueue() {
     var action = actionQueue.shift();
     var label = _renderActionLabel(action);
     var dispatch = function() {
+      // Show real-time chip for navigate so user sees the browser move
+      if (action.type === 'navigate') {
+        appendNavigatingChip(action.value || label);
+      }
       sendWithPromise('runMoltAction', action).then(function(r) {
         appendActionResult(r && r.success, label,
                             r ? (r.message || r.error || '') : '');
@@ -322,7 +345,9 @@ function drainActionQueue() {
         appendActionResult(false, label, String(err || 'failed'));
       }).then(loop, loop);
     };
-    if (DANGEROUS_ACTION_TYPES[action.type]) {
+    // In auto mode every action runs immediately; in ask mode dangerous
+    // actions need one-tap user approval before dispatch.
+    if (!actionAutoMode && DANGEROUS_ACTION_TYPES[action.type]) {
       _renderConfirmChip(action, dispatch, function(){
         appendActionResult(false, label, 'denied by user');
         loop();
@@ -2695,11 +2720,74 @@ function quickAction(action) {
 
 // ---- New Chat ----
 
+// Show the permission mode chooser banner.
+// Called at the start of every new conversation so the user can pick:
+//   🛡 Ask Permission — confirm chip before every dangerous action (safe default)
+//   ⚡ Auto Mode      — execute all actions immediately without prompting
+function showPermissionBanner() {
+  var m = document.getElementById('messages');
+  if (!m) return;
+  var d = document.createElement('div');
+  d.className = 'permission-banner';
+  d.innerHTML =
+    '<div class="pb-title">Choose action mode for this session</div>' +
+    '<div class="pb-subtitle">The AI can browse the web and interact with pages on your behalf.</div>' +
+    '<div class="pb-buttons">' +
+      '<button class="pb-ask" onclick="setActionMode(\'ask\', this.closest(\'.permission-banner\'))">' +
+        '<span class="pb-icon">🛡️</span>' +
+        '<span class="pb-label">Ask Permission</span>' +
+        '<span class="pb-desc">Approve each action</span>' +
+      '</button>' +
+      '<button class="pb-auto" onclick="setActionMode(\'auto\', this.closest(\'.permission-banner\'))">' +
+        '<span class="pb-icon">⚡</span>' +
+        '<span class="pb-label">Auto Mode</span>' +
+        '<span class="pb-desc">Execute all automatically</span>' +
+      '</button>' +
+    '</div>';
+  m.appendChild(d);
+  m.scrollTop = m.scrollHeight;
+}
+
+function setActionMode(mode, bannerEl) {
+  actionAutoMode = (mode === 'auto');
+  if (bannerEl && bannerEl.parentNode) {
+    // Replace banner with a compact status chip
+    var chip = document.createElement('div');
+    chip.className = 'pb-mode-chip';
+    chip.innerHTML = actionAutoMode
+      ? '⚡ Auto Mode — actions run without prompts'
+      : '🛡️ Ask Permission — you\'ll approve each action';
+    bannerEl.parentNode.replaceChild(chip, bannerEl);
+  }
+  var m = document.getElementById('messages');
+  if (m) m.scrollTop = m.scrollHeight;
+}
+
+// Show a banner when a model is available but not yet selected/loaded.
+function showModelSelectBanner() {
+  var m = document.getElementById('messages');
+  if (!m) return;
+  // Avoid duplicates
+  if (m.querySelector('.model-select-banner')) return;
+  var d = document.createElement('div');
+  d.className = 'model-select-banner';
+  d.innerHTML =
+    '<span class="msb-icon">⬆️</span>' +
+    '<span class="msb-text">Select a model above to start chatting</span>';
+  m.insertBefore(d, m.firstChild);
+}
+
+function clearModelSelectBanner() {
+  var b = document.querySelector('.model-select-banner');
+  if (b && b.parentNode) b.parentNode.removeChild(b);
+}
+
 function newChat() {
   conversationHistory = [];
+  actionAutoMode = false; // reset mode for new session
   var m = document.getElementById('messages');
-  m.innerHTML = '<div class="message ai"><div class="sender">AI Assistant</div>' +
-    '<div class="text">New conversation started. How can I help?</div></div>';
+  m.innerHTML = '';
+  showPermissionBanner();
   updateContextBar();
 }
 
@@ -2802,9 +2890,13 @@ function cancelDownload() {
 
 function loadModel(modelId) {
   setStatus('loading', 'Loading ' + modelId + '...');
+  // Remove the pulsing needs-selection state immediately — user made a choice
+  var chip = document.getElementById('modelChip');
+  if (chip) chip.classList.remove('needs-selection');
   sendWithPromise('loadModel', modelId).then(function(r) {
     if (r.success) {
       setStatus('ready', 'Model Ready');
+      clearModelSelectBanner();
       refreshModelList();
       sendWithPromise('getModelStatus').then(function(rr) {
         allModels = rr.models || [];
@@ -2812,6 +2904,7 @@ function loadModel(modelId) {
       });
     } else {
       setStatus('error', 'Load failed');
+      if (chip) chip.classList.add('needs-selection');
     }
   });
 }
@@ -2942,6 +3035,10 @@ cr.addWebUiListener('model-status', function(status, detail) {
     setStatus('loading', 'Loading model...');
   } else if (status === 'ready') {
     setStatus('ready', 'Model Ready');
+    clearModelSelectBanner();
+    // Pulse the model chip briefly to confirm selection
+    var chip = document.getElementById('modelChip');
+    if (chip) { chip.classList.add('model-ready-flash'); setTimeout(function(){ chip.classList.remove('model-ready-flash'); }, 1200); }
   } else if (status === 'error') {
     setStatus('error', 'Error: ' + (detail || 'Unknown'));
   }
@@ -3445,6 +3542,7 @@ function _stopRecording() {
     // Check model status
     if (info.model_loaded) {
       setStatus('ready', 'Model Ready');
+      showPermissionBanner();
     } else if (info.is_first_run) {
       // Show first-run welcome overlay
       isFirstRun = true;
@@ -3453,7 +3551,12 @@ function _stopRecording() {
     } else {
       var downloaded = (info.models || []).filter(function(m) { return m.is_downloaded; });
       if (downloaded.length > 0) {
-        setStatus('offline', 'Model available \u2014 send a message to start');
+        setStatus('offline', 'Model available \u2014 select above to start');
+        showPermissionBanner();
+        showModelSelectBanner();
+        // Pulse the model chip to draw attention
+        var chip = document.getElementById('modelChip');
+        if (chip) chip.classList.add('needs-selection');
       } else {
         setStatus('error', 'No models \u2014 click Models to download');
       }

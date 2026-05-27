@@ -1515,13 +1515,19 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   const std::string* sel = action.FindString("selector");
   const std::string* value = action.FindString("value");
 
-  // Resolve the target tab: the active tab of the Browser that owns
-  // this WebUI's WebContents (the side-panel host).
+  // Resolve the browser window that should receive the action.
+  // The side-panel's WebContents is NOT a tab in the tab strip, so
+  // FindBrowserWithTab returns null for it. Fall back to
+  // chrome::FindLastActive() — the most-recently-focused browser window,
+  // which is the one the user is actively looking at.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser) {
+    browser = chrome::FindLastActive();
+  }
   if (!browser || !browser->tab_strip_model()) {
     result.Set("success", false);
-    result.Set("error", "no owning browser");
+    result.Set("error", "no active browser window");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
     return;
