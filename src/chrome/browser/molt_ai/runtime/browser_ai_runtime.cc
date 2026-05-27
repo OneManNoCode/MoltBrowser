@@ -338,7 +338,11 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id) {
   // Create inference context
   llama_context_params ctx_params = llama_context_default_params();
   ctx_params.n_ctx = kDefaultContextSize;
-  ctx_params.n_batch = 512;
+  // n_batch MUST be >= the longest prompt decoded in a single llama_decode()
+  // call. The system prompt alone tokenises to ~800 tokens, so n_batch=512
+  // caused GGML_ASSERT(n_tokens_all <= cparams.n_batch) to fire → SIGABRT.
+  // Set n_batch = n_ctx so the full context always fits in one decode pass.
+  ctx_params.n_batch = kDefaultContextSize;
   ctx_params.n_threads = impl_->hardware.cpu_cores > 4
                              ? impl_->hardware.cpu_cores / 2
                              : impl_->hardware.cpu_cores;
