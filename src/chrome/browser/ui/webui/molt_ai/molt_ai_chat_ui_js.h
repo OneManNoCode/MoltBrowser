@@ -2720,47 +2720,51 @@ function quickAction(action) {
 
 // ---- New Chat ----
 
-// Show the permission mode chooser banner.
-// Called at the start of every new conversation so the user can pick:
-//   🛡 Ask Permission — confirm chip before every dangerous action (safe default)
-//   ⚡ Auto Mode      — execute all actions immediately without prompting
-function showPermissionBanner() {
-  var m = document.getElementById('messages');
-  if (!m) return;
-  var d = document.createElement('div');
-  d.className = 'permission-banner';
-  d.innerHTML =
-    '<div class="pb-title">Choose action mode for this session</div>' +
-    '<div class="pb-subtitle">The AI can browse the web and interact with pages on your behalf.</div>' +
-    '<div class="pb-buttons">' +
-      '<button class="pb-ask" onclick="setActionMode(\'ask\', this.closest(\'.permission-banner\'))">' +
-        '<span class="pb-icon">🛡️</span>' +
-        '<span class="pb-label">Ask Permission</span>' +
-        '<span class="pb-desc">Approve each action</span>' +
-      '</button>' +
-      '<button class="pb-auto" onclick="setActionMode(\'auto\', this.closest(\'.permission-banner\'))">' +
-        '<span class="pb-icon">⚡</span>' +
-        '<span class="pb-label">Auto Mode</span>' +
-        '<span class="pb-desc">Execute all automatically</span>' +
-      '</button>' +
-    '</div>';
-  m.appendChild(d);
-  m.scrollTop = m.scrollHeight;
+// ---- Mode picker (compact dropdown button in the input bar) ----
+
+function toggleModePicker(e) {
+  if (e) e.stopPropagation();
+  var btn = document.getElementById('modePickerBtn');
+  var dd  = document.getElementById('modePickerDropdown');
+  if (!btn || !dd) return;
+  var isOpen = dd.classList.contains('open');
+  dd.classList.toggle('open', !isOpen);
+  btn.classList.toggle('open', !isOpen);
+  // Close on outside click
+  if (!isOpen) {
+    var close = function(ev) {
+      if (!btn.contains(ev.target) && !dd.contains(ev.target)) {
+        dd.classList.remove('open');
+        btn.classList.remove('open');
+        document.removeEventListener('click', close, true);
+      }
+    };
+    document.addEventListener('click', close, true);
+  }
 }
 
-function setActionMode(mode, bannerEl) {
+function setActionMode(mode) {
   actionAutoMode = (mode === 'auto');
-  if (bannerEl && bannerEl.parentNode) {
-    // Replace banner with a compact status chip
-    var chip = document.createElement('div');
-    chip.className = 'pb-mode-chip';
-    chip.innerHTML = actionAutoMode
-      ? '⚡ Auto Mode — actions run without prompts'
-      : '🛡️ Ask Permission — you\'ll approve each action';
-    bannerEl.parentNode.replaceChild(chip, bannerEl);
-  }
-  var m = document.getElementById('messages');
-  if (m) m.scrollTop = m.scrollHeight;
+  // Update button label
+  var icon  = document.getElementById('modePickerIcon');
+  var label = document.getElementById('modePickerLabel');
+  var btn   = document.getElementById('modePickerBtn');
+  if (icon)  icon.textContent  = actionAutoMode ? '⚡' : '🛡️';
+  if (label) label.textContent = actionAutoMode ? 'Auto' : 'Ask';
+  if (btn)   btn.classList.toggle('auto-active', actionAutoMode);
+  // Update checkmarks and active highlight
+  var askRow  = document.getElementById('mpdAsk');
+  var autoRow = document.getElementById('mpdAuto');
+  var chkAsk  = document.getElementById('mpdCheckAsk');
+  var chkAuto = document.getElementById('mpdCheckAuto');
+  if (askRow)  askRow.classList.toggle('active', !actionAutoMode);
+  if (autoRow) autoRow.classList.toggle('active',  actionAutoMode);
+  if (chkAsk)  chkAsk.classList.toggle('visible',  !actionAutoMode);
+  if (chkAuto) chkAuto.classList.toggle('visible',  actionAutoMode);
+  // Close dropdown
+  var dd = document.getElementById('modePickerDropdown');
+  if (dd) dd.classList.remove('open');
+  if (btn) btn.classList.remove('open');
 }
 
 // Show a banner when a model is available but not yet selected/loaded.
@@ -2784,10 +2788,9 @@ function clearModelSelectBanner() {
 
 function newChat() {
   conversationHistory = [];
-  actionAutoMode = false; // reset mode for new session
+  setActionMode('ask'); // reset to safe default for new session
   var m = document.getElementById('messages');
   m.innerHTML = '';
-  showPermissionBanner();
   updateContextBar();
 }
 
@@ -3542,7 +3545,6 @@ function _stopRecording() {
     // Check model status
     if (info.model_loaded) {
       setStatus('ready', 'Model Ready');
-      showPermissionBanner();
     } else if (info.is_first_run) {
       // Show first-run welcome overlay
       isFirstRun = true;
@@ -3552,7 +3554,6 @@ function _stopRecording() {
       var downloaded = (info.models || []).filter(function(m) { return m.is_downloaded; });
       if (downloaded.length > 0) {
         setStatus('offline', 'Model available \u2014 select above to start');
-        showPermissionBanner();
         showModelSelectBanner();
         // Pulse the model chip to draw attention
         var chip = document.getElementById('modelChip');

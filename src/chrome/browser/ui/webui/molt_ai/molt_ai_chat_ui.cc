@@ -228,21 +228,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-chip.needs-selection{border-color:#fbbf24;animation:chip-pulse 1.4s ease-in-out infinite}
 @keyframes chip-pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,0.4)}60%{box-shadow:0 0 0 5px rgba(251,191,36,0)}}
 .model-chip.model-ready-flash{border-color:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,0.3);transition:all 0.4s}
-/* Permission mode banner */
-.permission-banner{margin:8px 0 12px;padding:12px 14px;border-radius:10px;background:#0f0f1a;border:1px solid #2a2a3e;font-family:-apple-system,system-ui,sans-serif}
-.permission-banner .pb-title{font-size:12px;font-weight:600;color:#c4b5fd;margin-bottom:2px}
-.permission-banner .pb-subtitle{font-size:11px;color:#666;margin-bottom:10px}
-.permission-banner .pb-buttons{display:flex;gap:8px}
-.permission-banner button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 8px;border-radius:8px;border:1px solid #333;background:#111;color:#e0e0e0;cursor:pointer;transition:all 0.2s;font-family:inherit}
-.permission-banner button:hover{border-color:#6366f1;background:#1a1a2e}
-.permission-banner .pb-ask:hover{border-color:#4ade80;background:#0f2818}
-.permission-banner .pb-auto:hover{border-color:#fbbf24;background:#2a1f0f}
-.permission-banner .pb-icon{font-size:18px}
-.permission-banner .pb-label{font-size:12px;font-weight:600}
-.permission-banner .pb-desc{font-size:10px;color:#888}
-/* Compact mode chip shown after selection */
-.pb-mode-chip{margin:4px 0 10px;padding:5px 10px;border-radius:14px;font-size:11px;color:#888;background:#111;border:1px solid #222;display:inline-block;font-family:-apple-system,system-ui,sans-serif}
-/* Model-needs-selection banner */
+/* Model-needs-selection banner (still used, just not the permission banner) */
 .model-select-banner{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;background:#2a1f0a;border:1px solid #4a3a1a;color:#fbbf24;font-size:11px;margin-bottom:10px;font-family:-apple-system,system-ui,sans-serif;animation:chip-pulse 1.4s ease-in-out infinite}
 .model-select-banner .msb-icon{flex-shrink:0;font-size:14px}
 /* Real-time navigate chip */
@@ -251,6 +237,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .molt-navigating-chip .nav-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .molt-navigating-chip .nav-spinner{width:10px;height:10px;border:2px solid #1a3a5a;border-top-color:#7dd3fc;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* ---- Mode-picker toolbar button (bottom-left, like Claude Code) ---- */
+.mode-picker-wrap{position:relative;display:flex;align-items:center}
+.mode-picker-btn{display:flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;border:1px solid #2a2a3e;background:#111;color:#a0a0c0;font-size:11px;font-weight:500;cursor:pointer;transition:all 0.18s;white-space:nowrap;font-family:inherit}
+.mode-picker-btn:hover{border-color:#6366f1;color:#e0e0e0;background:#1a1a2e}
+.mode-picker-btn.auto-active{border-color:#fbbf24;color:#fbbf24;background:#1a1500}
+.mode-picker-btn .mp-chevron{font-size:8px;opacity:0.6;margin-left:1px;transition:transform 0.15s}
+.mode-picker-btn.open .mp-chevron{transform:rotate(180deg)}
+/* Dropdown — pops UP from the button */
+.mode-picker-dropdown{position:absolute;bottom:calc(100% + 6px);left:0;min-width:200px;background:#0d0d1a;border:1px solid #2a2a3e;border-radius:10px;padding:4px;box-shadow:0 -6px 24px rgba(0,0,0,0.6);display:none;z-index:100}
+.mode-picker-dropdown.open{display:block}
+.mpd-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:6px;cursor:pointer;transition:background 0.15s}
+.mpd-item:hover{background:#1a1a2e}
+.mpd-item.active{background:#12120a}
+.mpd-icon{font-size:16px;flex-shrink:0}
+.mpd-text{flex:1;min-width:0}
+.mpd-title{font-size:12px;font-weight:600;color:#e0e0e0}
+.mpd-desc{font-size:10px;color:#666;margin-top:1px}
+.mpd-check{font-size:12px;color:#4ade80;font-weight:700;flex-shrink:0;opacity:0}
+.mpd-check.visible{opacity:1}
 </style>
 </head>
 <body>
@@ -423,6 +428,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <button onclick="quickAction('translate')">Translate</button>
 </div>
 <div id="inputArea" class="input-area">
+  <!-- Mode picker: compact dropdown left of the input (like Claude Code's Auto chip) -->
+  <div class="mode-picker-wrap">
+    <button class="mode-picker-btn" id="modePickerBtn"
+            onclick="toggleModePicker(event)" title="Action permission mode">
+      <span id="modePickerIcon">🛡️</span>
+      <span id="modePickerLabel">Ask</span>
+      <span class="mp-chevron">▾</span>
+    </button>
+    <div class="mode-picker-dropdown" id="modePickerDropdown">
+      <div class="mpd-item active" id="mpdAsk" onclick="setActionMode('ask')">
+        <span class="mpd-icon">🛡️</span>
+        <div class="mpd-text">
+          <div class="mpd-title">Ask Permission</div>
+          <div class="mpd-desc">Approve each browser action</div>
+        </div>
+        <span class="mpd-check visible" id="mpdCheckAsk">✓</span>
+      </div>
+      <div class="mpd-item" id="mpdAuto" onclick="setActionMode('auto')">
+        <span class="mpd-icon">⚡</span>
+        <div class="mpd-text">
+          <div class="mpd-title">Auto Mode</div>
+          <div class="mpd-desc">Execute all actions automatically</div>
+        </div>
+        <span class="mpd-check" id="mpdCheckAuto">✓</span>
+      </div>
+    </div>
+  </div>
   <input type="text" id="chatInput" placeholder="Ask AI or describe a task to browse..." autofocus>
   <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
   <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
