@@ -879,6 +879,10 @@ void MoltAIChatHandler::HandleGetModelStatus(
   const std::string callback_id = args[0].GetString();
 
   auto* runtime = GetOrCreateRuntime();
+  // Re-scan disk so previously-downloaded GGUF files are detected after
+  // every browser restart. Without this, models appear as not-downloaded
+  // even though the file is still in ~/.moltbrowser/models/.
+  runtime->RefreshModelStatus();
   auto models = runtime->GetAvailableModels();
 
   base::ListValue model_list;
