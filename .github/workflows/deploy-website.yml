@@ -1,0 +1,41 @@
+name: Deploy website to GitHub Pages
+
+# Auto-publishes website/ to GitHub Pages on every push to main.
+# The CNAME inside website/ pins the site to moltbrowser.com.
+# Setup needed once in repo Settings → Pages:
+#   Source: GitHub Actions
+# And in DNS:
+#   moltbrowser.com  CNAME  onemannocode.github.io
+#   www.moltbrowser.com  CNAME  onemannocode.github.io
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/
+      - id: deployment
+        uses: actions/deploy-pages@v4

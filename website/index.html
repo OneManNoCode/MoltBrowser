@@ -215,9 +215,15 @@
   <h1>AI in Your Browser.<br>On Your Device.</h1>
   <p>MoltBrowser is a privacy-first browser with built-in AI. Run large language models locally — no cloud, no tracking, no compromises.</p>
   <div class="hero-actions">
-    <a href="#download" class="btn-primary">
+    <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
+       class="btn-primary" id="heroDownload"
+       data-mac-arm="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
+       data-mac-x64="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-x64.dmg"
+       data-win="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe"
+       data-linux-deb="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb"
+       data-linux-appimage="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.AppImage">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Download for Mac
+      <span id="heroDownloadLabel">Download for Mac</span>
     </a>
     <a href="https://github.com/OneManNoCode/MoltBrowser" class="btn-secondary">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
@@ -267,26 +273,33 @@
   <h2>Download MoltBrowser</h2>
   <p class="subtitle">Choose your platform. Your data stays on your device.</p>
   <div class="download-grid">
-    <div class="download-card available">
+    <div class="download-card available" id="card-mac">
       <h3>&#63743; macOS <span class="badge badge-green">Available</span></h3>
       <p>Apple Silicon &amp; Intel. macOS 12.0+. Metal GPU acceleration for fast inference.</p>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest" class="download-btn" id="mac-download">
-        Download DMG
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
+         class="download-btn" id="mac-arm-download">Download for Apple Silicon</a>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-x64.dmg"
+         class="download-btn" id="mac-x64-download"
+         style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
+        Download for Intel Mac
       </a>
     </div>
-    <div class="download-card available">
+    <div class="download-card available" id="card-linux">
       <h3>&#128039; Linux <span class="badge badge-green">Available</span></h3>
       <p>Ubuntu, Fedora, Arch. Available as .deb, .rpm, AppImage, and Flatpak. Vulkan GPU acceleration.</p>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest" class="download-btn">
-        Download for Linux
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb"
+         class="download-btn">Download .deb (Ubuntu/Debian)</a>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.AppImage"
+         class="download-btn"
+         style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
+        Download AppImage
       </a>
     </div>
-    <div class="download-card available">
+    <div class="download-card available" id="card-win">
       <h3>&#128187; Windows <span class="badge badge-green">Available</span></h3>
       <p>Windows 10/11 x64. Installer or portable zip. Vulkan GPU acceleration on supported hardware.</p>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest" class="download-btn">
-        Download for Windows
-      </a>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe"
+         class="download-btn">Download Installer</a>
     </div>
     <div class="download-card">
       <h3>&#128241; Android <span class="badge badge-gray">In Development</span></h3>
@@ -347,12 +360,71 @@
 </footer>
 
 <script>
-// Auto-detect platform and highlight the right download
+// Auto-detect the visitor's OS and point the hero button to the right
+// installer. All URLs use the GitHub /releases/latest/download/ pattern,
+// which always serves the most-recent release without a redeploy.
 (function() {
   var ua = navigator.userAgent;
-  var macBtn = document.getElementById('mac-download');
-  if (ua.indexOf('Mac') !== -1 && macBtn) {
-    macBtn.textContent = 'Download for Mac';
+  var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+  var hero = document.getElementById('heroDownload');
+  var heroLabel = document.getElementById('heroDownloadLabel');
+  if (!hero || !heroLabel) return;
+
+  var os = 'mac-arm';  // sensible default — most early users are on Apple Silicon
+  var label = 'Download for Mac';
+
+  // Apple Silicon detection: ua contains "Mac" + arm64/Apple in platform/uaData
+  var isMac = /Mac/i.test(ua) || /Mac/i.test(platform);
+  var isWin = /Windows|Win64|Win32/i.test(ua);
+  var isLinux = /Linux/i.test(ua) && !/Android/i.test(ua);
+  var isAndroid = /Android/i.test(ua);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+  if (isAndroid || isIOS) {
+    // Mobile — point to GitHub releases page; mobile builds in development
+    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest';
+    label = isIOS ? 'iOS — Coming Q4 2026' : 'Android — Coming Q3 2026';
+    hero.classList.add('disabled');
+  } else if (isWin) {
+    os = 'win';
+    label = 'Download for Windows';
+    hero.href = hero.getAttribute('data-win');
+  } else if (isLinux) {
+    os = 'linux-deb';
+    label = 'Download for Linux';
+    hero.href = hero.getAttribute('data-linux-deb');
+  } else if (isMac) {
+    // Heuristic: M1/M2/M3/M4 Macs report Apple Silicon via uaData; older Macs ship Intel
+    var arch = (navigator.userAgentData && navigator.userAgentData.platformArchitecture) || '';
+    var isAppleSilicon = arch === 'arm' || arch === 'arm64' ||
+                         /Apple/i.test(platform) ||
+                         // Best heuristic without UA-CH: any Mac running macOS 11+ is increasingly likely ARM
+                         /Mac OS X 1[1-9]/i.test(ua);
+    if (isAppleSilicon) {
+      os = 'mac-arm';
+      label = 'Download for Mac (Apple Silicon)';
+      hero.href = hero.getAttribute('data-mac-arm');
+    } else {
+      os = 'mac-x64';
+      label = 'Download for Mac (Intel)';
+      hero.href = hero.getAttribute('data-mac-x64');
+    }
+  } else {
+    // Unknown OS — keep default Mac ARM, let user pick in the cards
+    hero.href = hero.getAttribute('data-mac-arm');
+  }
+
+  heroLabel.textContent = label;
+
+  // Highlight the matching card in the download grid with a green ring
+  var cardId = isMac ? 'card-mac' : isWin ? 'card-win' : isLinux ? 'card-linux' : null;
+  if (cardId) {
+    var card = document.getElementById(cardId);
+    if (card) {
+      card.style.borderColor = 'var(--green)';
+      card.style.borderWidth = '2px';
+      card.style.boxShadow = '0 0 24px rgba(74,222,128,0.15)';
+    }
   }
 })();
 </script>
