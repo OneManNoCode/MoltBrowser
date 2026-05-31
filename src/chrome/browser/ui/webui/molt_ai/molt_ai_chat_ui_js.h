@@ -214,6 +214,12 @@ var actionAutoMode = false;
 function parseActionPayload(verb, args) {
   verb = verb.toLowerCase();
   args = (args || '').trim();
+  // Reject placeholder syntax: small models sometimes regurgitate the
+  // example tokens from the system prompt verbatim (e.g. <full-url>,
+  // <css-selector>, <text-to-type>). Drop these silently rather than
+  // showing the user a wall of "Invalid URL" / "selector not found"
+  // error chips.
+  if (/<[a-z][^>]*>/i.test(args)) return null;
   if (verb === 'click' || verb === 'hover' || verb === 'right-click') {
     return {type: verb, selector: args};
   }
@@ -2387,11 +2393,71 @@ function rankChunksByQuery(chunks, query, topK) {
   return hits.map(function(s){ return s.chunk; });
 }
 
+// Direct-navigate intent: if the user types something that's obviously
+// a navigation request — "open nasa.com", "go to github.com/x", or just
+// a bare URL like "nasa.com" — skip the LLM entirely and navigate the
+// active tab. This avoids the small-model failure mode where the 8B
+// LLaMA regurgitates [[ACTION navigate:<full-url>]] placeholders from
+// the system-prompt examples.
+function tryDispatchNavigateIntent(text) {
+  var url = null;
+  // Imperative: "open X" / "go to X" / "visit X" / "navigate to X" /
+  // "browse to X" / "launch X"
+  var m = text.match(
+      /^(?:open|go\s+to|visit|navigate\s+to|browse\s+to|launch)\s+(.+)$/i);
+  if (m) {
+    url = m[1].trim();
+  } else {
+    // Bare URL or domain: "nasa.com", "https://nasa.com/foo",
+    // "www.example.com/path"
+    m = text.match(
+        /^(https?:\/\/\S+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/\S*)?)$/i);
+    if (m) url = m[1].trim();
+  }
+  if (!url) return false;
+  // Strip trailing punctuation
+  url = url.replace(/[.,!?\)\]]+$/, '');
+  // Reject if it contains spaces or placeholder markers — not a URL.
+  if (/\s/.test(url) || /[<>]/.test(url)) return false;
+  // Reject if user typed a /-slash-command — those are handled elsewhere.
+  if (url.charAt(0) === '/') return false;
+  // Auto-prepend https:// when no protocol was given.
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  // Validate the URL parses and has a hostname with a TLD.
+  try {
+    var u = new URL(url);
+    if (!u.hostname || u.hostname.indexOf('.') < 0) return false;
+  } catch (e) {
+    return false;
+  }
+  // Render the same UX the LLM path would produce: user message,
+  // navigating chip with spinner, then a result chip on completion.
+  addUserMessage(text);
+  appendNavigatingChip(url);
+  sendWithPromise('runMoltAction', {type: 'navigate', value: url}).then(
+      function(r) {
+        appendActionResult(r && r.success, 'navigate = ' + url,
+                           r ? (r.message || r.error || '') : '');
+      }).catch(function(err) {
+        appendActionResult(false, 'navigate = ' + url,
+                           String(err || 'failed'));
+      });
+  return true;
+}
+
 function sendMessage() {
   if (isGenerating) return;
   var input = document.getElementById('chatInput');
   var text = input.value.trim();
   if (!text) return;
+
+  // Direct-navigate intent (no LLM): "open X.com" / "go to X" / bare URL.
+  if (tryDispatchNavigateIntent(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    return;
+  }
 
   // Slash-command shortcut: any `/click /type /scroll /navigate` line
   // bypasses the LLM and runs as a one-shot automation action on the
