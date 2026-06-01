@@ -1,0 +1,167 @@
+name: Release
+
+# Triggered by pushing a version tag (git tag v0.2.2 && git push --tags).
+# Runs in parallel on whichever self-hosted runners are configured; jobs
+# whose runners don't exist will queue forever (mark them as skipped via
+# workflow_dispatch input if you only want a subset).
+#
+# Why not hosted runners?
+#   Chromium needs 60+ GB free disk and 16+ GB RAM for incremental builds.
+#   GitHub-hosted runners ship with ~14 GB disk. The build won't fit.
+#   Either use self-hosted runners (free, runs on your machine), GitHub's
+#   Larger Runners (paid by-minute), or a dedicated CI host.
+#
+# Required GitHub Secrets (set under Settings → Secrets and variables →
+# Actions):
+#   MAC_SIGNING_IDENTITY    "Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)"
+#   APPLE_ID                raj@geneye.ai
+#   APPLE_TEAM_ID           83DA5U8N7Z
+#   APPLE_APP_PASSWORD      the app-specific notary password (xxxx-xxxx-xxxx-xxxx)
+#
+# Required runner labels:
+#   macos:    [self-hosted, macOS, ARM64]   — your Mac
+#   linux:    [self-hosted, Linux, X64]     — when you set one up
+#   windows:  [self-hosted, Windows, X64]   — when you set one up
+#
+# Self-hosted Mac runner setup (one-time, ~5 min):
+#   1. Repo Settings → Actions → Runners → New self-hosted runner → macOS / ARM64
+#   2. Follow the displayed install steps to run ./config.sh and ./run.sh
+#   3. Optional: install as a launchd service so it auto-starts after reboot:
+#        sudo ./svc.sh install && sudo ./svc.sh start
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Comma-separated platforms to build (macos,linux,windows)'
+        required: false
+        default: 'macos'
+
+permissions:
+  contents: write  # needed to upload release assets
+
+jobs:
+  # -------------------------------------------------------------------
+  # macOS arm64 — signed + notarized DMG
+  # Runs on your Mac via self-hosted runner. Uses existing scripts.
+  # -------------------------------------------------------------------
+  macos:
+    if: ${{ github.event_name == 'push' || contains(github.event.inputs.platforms, 'macos') }}
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure environment
+        run: |
+          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Sync MoltBrowser src/ → chromium/src/
+        run: |
+          # Copy git-tracked overrides into the Chromium build tree
+          rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
+
+      - name: Build chrome target
+        run: autoninja -C chromium/src/out/MoltBrowser chrome
+
+      - name: Sign + notarize + DMG
+        env:
+          MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+          APPLE_ID:             ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID:        ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD:   ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          # Refresh the notary keychain profile in case it expired
+          xcrun notarytool store-credentials AC_PASSWORD \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD"
+
+          ./scripts/sign-app.sh \
+            --identity "$MAC_SIGNING_IDENTITY" \
+            --notarize
+
+          mkdir -p dist
+          rm -f dist/MoltBrowser-macOS-arm64.dmg
+          hdiutil create -volname MoltBrowser \
+            -srcfolder chromium/src/out/MoltBrowser/MoltBrowser.app \
+            -ov -format UDZO dist/MoltBrowser-macOS-arm64.dmg
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/MoltBrowser-macOS-arm64.dmg \
+            --clobber
+
+  # -------------------------------------------------------------------
+  # Linux x64 — .deb + AppImage
+  # Requires a self-hosted Linux runner. Use Ubuntu 22.04+ with Docker
+  # if cross-compiling, or run scripts/release-linux.sh natively.
+  # -------------------------------------------------------------------
+  linux:
+    if: ${{ github.event_name == 'workflow_dispatch' && contains(github.event.inputs.platforms, 'linux') }}
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure environment
+        run: |
+          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Sync MoltBrowser src/ → chromium/src/
+        run: rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
+
+      - name: Build and package
+        run: |
+          ./scripts/release-linux.sh --version "$VERSION" --build 1
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.AppImage; do
+            [ -f "$f" ] && gh release upload "$GITHUB_REF_NAME" "$f" --clobber
+          done
+
+  # -------------------------------------------------------------------
+  # Windows x64 — NSIS Setup.exe
+  # Requires a self-hosted Windows runner with Visual Studio Build Tools
+  # OR a Linux runner with Docker (cross-compile via release-win.sh --docker).
+  # Add code-signing once you have an EV cert.
+  # -------------------------------------------------------------------
+  windows:
+    if: ${{ github.event_name == 'workflow_dispatch' && contains(github.event.inputs.platforms, 'windows') }}
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure environment
+        shell: bash
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Sync MoltBrowser src/ → chromium/src/
+        shell: bash
+        run: rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
+
+      - name: Build and package
+        shell: bash
+        run: |
+          ./scripts/release-win.sh --version "$VERSION" --build 1
+
+      - name: Upload to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in dist/MoltBrowser-Windows-x64-Setup.exe; do
+            [ -f "$f" ] && gh release upload "$GITHUB_REF_NAME" "$f" --clobber
+          done
