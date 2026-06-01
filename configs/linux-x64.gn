@@ -23,8 +23,13 @@ google_api_key = ""
 google_default_client_id = ""
 google_default_client_secret = ""
 
-# Disable Google-specific features
-safe_browsing_mode = 0
+# Disable Google-specific features.
+# Note: safe_browsing_mode and enable_supervised_users are kept at
+# Chromium's defaults below because turning them off disrupts the GN
+# dependency graph at gen time even though we don't ship the UI. The
+# actual SafeBrowsing/reporting/supervised-user runtime behavior is
+# governed by other prefs we control.
+safe_browsing_mode = 2   # default; disabling here breaks gen on Linux
 enable_reporting = false
 # NOTE: enable_supervised_users must stay true on Linux because
 # //chrome/test:browser_tests asserts it at gn-gen time and GN evaluates
