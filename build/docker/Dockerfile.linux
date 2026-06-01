@@ -40,6 +40,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     pkg-config \
+    # Chromium build-time codegen tools.
+    # gperf is required by //third_party/blink/renderer/platform:color_data
+    # and other Blink targets that generate perfect-hash lookup tables.
+    # Without it the build dies with FileNotFoundError: 'gperf' at ~step 3300.
+    gperf \
+    bison \
+    flex \
     # Chromium library dependencies
     libgtk-3-dev \
     libglib2.0-dev \
@@ -116,7 +123,11 @@ RUN if getent group ${BUILD_GID} >/dev/null; then \
         userdel -r "$(getent passwd ${BUILD_UID} | cut -d: -f1)" 2>/dev/null || true; \
     fi && \
     groupadd -g ${BUILD_GID} builder && \
-    useradd -m -u ${BUILD_UID} -g ${BUILD_GID} builder
+    useradd -m -u ${BUILD_UID} -g ${BUILD_GID} builder && \
+    # Give the builder user ownership of depot_tools so CIPD's selfupdate
+    # and gclient's bootstrap scratch files can write into it. Without
+    # this, "CIPD selfupdate failed... mktemp: Permission denied".
+    chown -R builder:builder /opt/depot_tools
 USER builder
 
 WORKDIR /moltbrowser
