@@ -86,10 +86,22 @@ ENV PATH="/opt/depot_tools:${PATH}"
 # Disable depot_tools auto-update in Docker
 ENV DEPOT_TOOLS_UPDATE=0
 
-# Create build user (matching host UID for volume mounts)
+# Create build user (matching host UID/GID so volume-mounted files
+# from the host are owned correctly inside the container).
+#
+# Caveat: on macOS the default user's primary GID is 20 (= staff),
+# which collides with Ubuntu's "dialout" group. Same with a few other
+# low IDs. Before creating the builder group/user, evict whatever
+# preexisting Ubuntu group/user happens to own the host's GID/UID.
 ARG BUILD_UID=1000
 ARG BUILD_GID=1000
-RUN groupadd -g ${BUILD_GID} builder && \
+RUN if getent group ${BUILD_GID} >/dev/null; then \
+        groupdel "$(getent group ${BUILD_GID} | cut -d: -f1)"; \
+    fi && \
+    if getent passwd ${BUILD_UID} >/dev/null; then \
+        userdel -r "$(getent passwd ${BUILD_UID} | cut -d: -f1)" 2>/dev/null || true; \
+    fi && \
+    groupadd -g ${BUILD_GID} builder && \
     useradd -m -u ${BUILD_UID} -g ${BUILD_GID} builder
 USER builder
 
