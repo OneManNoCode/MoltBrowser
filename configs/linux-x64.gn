@@ -29,7 +29,7 @@ google_default_client_secret = ""
 # dependency graph at gen time even though we don't ship the UI. The
 # actual SafeBrowsing/reporting/supervised-user runtime behavior is
 # governed by other prefs we control.
-safe_browsing_mode = 2   # default; disabling here breaks gen on Linux
+safe_browsing_mode = 1   # basic; mode=2 pulls in Android targets we don't build
 enable_reporting = false
 # NOTE: enable_supervised_users must stay true on Linux because
 # //chrome/test:browser_tests asserts it at gn-gen time and GN evaluates
