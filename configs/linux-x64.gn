@@ -26,7 +26,14 @@ google_default_client_secret = ""
 # Disable Google-specific features
 safe_browsing_mode = 0
 enable_reporting = false
-enable_supervised_users = false
+# NOTE: enable_supervised_users must stay true on Linux because
+# //chrome/test:browser_tests asserts it at gn-gen time and GN evaluates
+# all reachable targets even when we only build :chrome. The flag itself
+# is a feature-availability switch; the actual supervised-user controls
+# are governed at runtime by other flags and we don't surface any UI
+# for them in MoltBrowser. Disabling here triggers:
+#   ERROR at //chrome/test/BUILD.gn:60:1: Assertion failed.
+enable_supervised_users = true
 
 # Branding
 is_chrome_branded = false

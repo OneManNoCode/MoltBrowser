@@ -159,30 +159,26 @@ source_set("ggml_cpu_arch_arm_c") {
   ]
 }
 
-# CoreML backend for iOS (Neural Engine + GPU via CoreML)
-if (is_ios) {
-  source_set("ggml_coreml") {
+# Metal targets — only exist on Apple platforms. The `enable_arc` config
+# removal and the .m source files are macOS-specific, so the whole block
+# is guarded by is_mac to keep gn-gen valid on Linux/Windows builds.
+if (is_mac) {
+  # Metal shader resources — bundle into the .app framework so
+  # ggml_metal_library_init() can find ggml-metal.metal at runtime.
+  bundle_data("llama_cpp_metal_resources") {
     sources = [
-      "ggml/src/ggml-coreml/ggml-coreml.mm",
+      "ggml/src/ggml-metal/ggml-metal.metal",
+      "ggml/src/ggml-common.h",
+      "ggml/src/ggml-metal/ggml-metal-impl.h",
     ]
-
-    public_configs = [ ":llama_cpp_config" ]
-
-    defines = [ "GGML_USE_COREML" ]
-
-    frameworks = [
-      "CoreML.framework",
-      "Foundation.framework",
-    ]
-
-    cflags_objcc = [
-      "-w",
-      "-fobjc-arc",
-    ]
+    outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
   }
 
-  # Metal on iOS — same compute shaders, different framework linking
-  source_set("ggml_metal_ios") {
+  # Metal backend C++ sources.
+  # Note: -fno-modules is needed because ggml-metal-ops.cpp uses std::swap
+  # on a custom struct, and Chromium's C++ modules don't instantiate it
+  # correctly across translation units.
+  source_set("ggml_metal") {
     sources = [
       "ggml/src/ggml-metal/ggml-metal.cpp",
       "ggml/src/ggml-metal/ggml-metal-common.cpp",
@@ -192,15 +188,6 @@ if (is_ios) {
 
     public_configs = [ ":llama_cpp_config" ]
 
-    defines = [ "GGML_USE_METAL" ]
-
-    frameworks = [
-      "Metal.framework",
-      "MetalKit.framework",
-      "Foundation.framework",
-      "Accelerate.framework",
-    ]
-
     cflags_cc = [
       "-std=c++17",
       "-w",
@@ -208,7 +195,9 @@ if (is_ios) {
     ]
   }
 
-  source_set("ggml_metal_ios_objc") {
+  # Metal Objective-C sources (separated due to different compiler flags).
+  # llama.cpp uses manual retain/release — disable Chromium's default ARC.
+  source_set("ggml_metal_objc") {
     sources = [
       "ggml/src/ggml-metal/ggml-metal-device.m",
       "ggml/src/ggml-metal/ggml-metal-context.m",
@@ -216,94 +205,13 @@ if (is_ios) {
 
     public_configs = [ ":llama_cpp_config" ]
 
+    # Disable ARC for this third-party code that uses manual retain/release
     configs -= [ "//build/config/compiler:enable_arc" ]
 
     cflags_objc = [
       "-w",
       "-fno-objc-arc",
     ]
-  }
-}
-
-# Metal shader resources — bundle into the macOS .app framework so
-# ggml_metal_library_init() can find ggml-metal.metal at runtime.
-if (is_mac) {
-  bundle_data("llama_cpp_metal_resources") {
-    sources = [
-      "ggml/src/ggml-metal/ggml-metal.metal",
-      "ggml/src/ggml-common.h",
-      "ggml/src/ggml-metal/ggml-metal-impl.h",
-    ]
-    outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
-  }
-}
-
-# Metal backend for macOS
-# Note: -fno-modules is needed because ggml-metal-ops.cpp uses std::swap
-# on a custom struct, and Chromium's C++ modules don't instantiate it
-# correctly across translation units.
-source_set("ggml_metal") {
-  sources = [
-    "ggml/src/ggml-metal/ggml-metal.cpp",
-    "ggml/src/ggml-metal/ggml-metal-common.cpp",
-    "ggml/src/ggml-metal/ggml-metal-device.cpp",
-    "ggml/src/ggml-metal/ggml-metal-ops.cpp",
-  ]
-
-  public_configs = [ ":llama_cpp_config" ]
-
-  cflags_cc = [
-    "-std=c++17",
-    "-w",
-    "-fno-modules",
-  ]
-}
-
-# Metal Objective-C sources (separated due to different compiler flags)
-# llama.cpp uses manual retain/release — disable Chromium's default ARC.
-source_set("ggml_metal_objc") {
-  sources = [
-    "ggml/src/ggml-metal/ggml-metal-device.m",
-    "ggml/src/ggml-metal/ggml-metal-context.m",
-  ]
-
-  public_configs = [ ":llama_cpp_config" ]
-
-  # Disable ARC for this third-party code that uses manual retain/release
-  configs -= [ "//build/config/compiler:enable_arc" ]
-
-  cflags_objc = [
-    "-w",
-    "-fno-objc-arc",
-  ]
-}
-
-# Vulkan backend for Linux/Windows/Android GPU acceleration
-# Requires Vulkan SDK headers and runtime
-if (is_linux || is_win || is_android) {
-  source_set("ggml_vulkan") {
-    sources = [
-      "ggml/src/ggml-vulkan/ggml-vulkan.cpp",
-    ]
-
-    public_configs = [ ":llama_cpp_config" ]
-
-    defines = [ "GGML_USE_VULKAN" ]
-
-    cflags_cc = [
-      "-std=c++17",
-      "-w",
-    ]
-
-    if (is_linux) {
-      libs = [ "vulkan" ]
-    }
-    if (is_win) {
-      libs = [ "vulkan-1.lib" ]
-    }
-    if (is_android) {
-      libs = [ "vulkan" ]
-    }
   }
 }
 
@@ -328,20 +236,6 @@ group("ggml") {
       ":ggml_metal",
       ":ggml_metal_objc",
     ]
-  }
-
-  # iOS: CoreML (Neural Engine) + Metal GPU
-  if (is_ios) {
-    public_deps += [
-      ":ggml_coreml",
-      ":ggml_metal_ios",
-      ":ggml_metal_ios_objc",
-    ]
-  }
-
-  # Vulkan GPU acceleration on Linux, Windows, and Android
-  if (is_linux || is_win || is_android) {
-    public_deps += [ ":ggml_vulkan" ]
   }
 }
 
