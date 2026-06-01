@@ -15,7 +15,9 @@
 #   docker run --rm -v $(pwd):/moltbrowser -w /moltbrowser moltbrowser-linux \
 #     ./scripts/release-linux.sh --version 0.1.0 --build 1
 
-FROM ubuntu:22.04
+# Use linux/amd64 explicitly so Chromium's prebuilt x86_64 depot_tools
+# binaries execute. On Apple Silicon hosts this runs via Rosetta 2.
+FROM --platform=linux/amd64 ubuntu:22.04
 
 LABEL maintainer="GenEye AI Labs Inc. <build@geneye.ai>"
 LABEL description="MoltBrowser Linux build environment"

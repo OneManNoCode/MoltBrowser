@@ -38,10 +38,18 @@ if ! command -v docker &>/dev/null; then
   exit 1
 fi
 
+# We always build/run as linux/amd64 so the prebuilt x86_64 binaries that
+# ship with Chromium's depot_tools (python3, gn, ninja, etc.) execute.
+# On Apple Silicon hosts this uses Rosetta 2 emulation (slower than native
+# but reliable). Without this, the build dies with "Exec format error" the
+# first time it tries to run depot_tools/python-bin/python3.
+PLATFORM_FLAG="--platform=linux/amd64"
+
 # Build Docker image if needed
 if [ "$(docker images -q $IMAGE_NAME 2>/dev/null)" = "" ] || [ "$REBUILD" = true ]; then
   echo "=== Building Docker image: $IMAGE_NAME ==="
   docker build \
+    $PLATFORM_FLAG \
     --build-arg BUILD_UID=$(id -u) \
     --build-arg BUILD_GID=$(id -g) \
     -t "$IMAGE_NAME" \
@@ -54,6 +62,7 @@ echo "=== Building MoltBrowser for Linux x64 ==="
 
 # Mount the repo, persist the build cache
 DOCKER_ARGS=(
+  $PLATFORM_FLAG
   --rm
   -v "$ROOT_DIR:/moltbrowser"
   -w /moltbrowser
