@@ -69,9 +69,24 @@ DOCKER_ARGS=(
   -e HOME=/tmp/builder
 )
 
-# Sync Chromium source if needed
-if [ ! -d "$ROOT_DIR/chromium/src/base" ]; then
-  echo "Syncing Chromium source (this takes a while on first run)..."
+# Ensure .gclient declares Linux as a target OS so gclient sync fetches
+# Linux-specific binaries (buildtools/linux64/gn, sysroots, etc). Without
+# this, syncing on a macOS host only pulls Mac toolchains, and the
+# Linux build later dies with "Could not find gn executable".
+GCLIENT_FILE="$ROOT_DIR/chromium/.gclient"
+if [ -f "$GCLIENT_FILE" ] && ! grep -q "target_os" "$GCLIENT_FILE"; then
+  echo "Adding target_os=['linux'] to $GCLIENT_FILE"
+  echo "target_os = ['linux']" >> "$GCLIENT_FILE"
+fi
+
+# Sync if either: (a) src/base is missing (cold checkout), or
+# (b) Linux buildtools are missing (synced on Mac only).
+NEED_SYNC=0
+[ ! -d "$ROOT_DIR/chromium/src/base" ] && NEED_SYNC=1
+[ ! -x "$ROOT_DIR/chromium/src/buildtools/linux64/gn" ] && NEED_SYNC=1
+
+if [ "$NEED_SYNC" = "1" ]; then
+  echo "Syncing Chromium source for Linux (takes ~30-60 min on first run)..."
   docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" bash -c \
     "cd chromium/src && gclient sync --no-history --shallow"
 fi

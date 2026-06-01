@@ -19,7 +19,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CHROMIUM_SRC="$ROOT_DIR/chromium/src"
 
-export PATH="$ROOT_DIR/depot_tools:$PATH"
+# Prefer /opt/depot_tools when present (Docker container case): the
+# host's depot_tools/ directory is mounted into the container but its
+# python3/gn/ninja binaries are the host's architecture (e.g., macOS
+# arm64 Mach-O), which won't execute inside a Linux container.
+if [ -d "/opt/depot_tools" ]; then
+  export PATH="/opt/depot_tools:$PATH"
+else
+  export PATH="$ROOT_DIR/depot_tools:$PATH"
+fi
 
 # Defaults — auto-detect host
 HOST_PLATFORM="$(uname -s)"
