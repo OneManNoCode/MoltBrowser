@@ -92,8 +92,14 @@ if [ "$NEED_SYNC" = "1" ]; then
 fi
 
 # Configure + Build
+# Cap parallelism with -j 4. Chromium's heaviest C++ files (V8 codegen,
+# Blink renderer) can consume 5-8 GB each. With Docker capped at 15.6 GB,
+# more than 4 parallel jobs reliably OOMs the container around step
+# ~28000 — silently, because Docker kills the container without writing
+# to our build log. 4 jobs caps peak memory at ~12 GB and still keeps
+# Rosetta CPUs busy.
 docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" bash -c \
-  "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh"
+  "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --jobs 4"
 
 echo "Build complete."
 
