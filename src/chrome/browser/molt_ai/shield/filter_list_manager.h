@@ -7,6 +7,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_SHIELD_FILTER_LIST_MANAGER_H_
 #define CHROME_BROWSER_MOLT_AI_SHIELD_FILTER_LIST_MANAGER_H_
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <functional>
 #include <memory>
 #include <string>

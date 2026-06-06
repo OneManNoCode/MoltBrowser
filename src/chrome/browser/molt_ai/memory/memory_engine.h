@@ -4,6 +4,7 @@
 #ifndef MOLT_AI_MEMORY_MEMORY_ENGINE_H_
 #define MOLT_AI_MEMORY_MEMORY_ENGINE_H_
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <memory>
 #include <string>
 #include <vector>

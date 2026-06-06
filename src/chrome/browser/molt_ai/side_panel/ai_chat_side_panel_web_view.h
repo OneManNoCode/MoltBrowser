@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_SIDE_PANEL_AI_CHAT_SIDE_PANEL_WEB_VIEW_H_
 #define CHROME_BROWSER_MOLT_AI_SIDE_PANEL_AI_CHAT_SIDE_PANEL_WEB_VIEW_H_
 
+#include <cstdint>  // for uint32_t — required on Linux under -fmodules
 #include <string>
 
 #include "base/memory/raw_ptr.h"

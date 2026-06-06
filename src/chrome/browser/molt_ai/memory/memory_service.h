@@ -9,6 +9,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <memory>
 #include <string>
 #include <vector>

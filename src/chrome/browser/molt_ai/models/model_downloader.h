@@ -8,6 +8,7 @@
 #ifndef CHROME_BROWSER_MOLT_AI_MODELS_MODEL_DOWNLOADER_H_
 #define CHROME_BROWSER_MOLT_AI_MODELS_MODEL_DOWNLOADER_H_
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <string>
 #include <functional>
 #include <memory>
