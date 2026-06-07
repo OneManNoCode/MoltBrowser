@@ -21,22 +21,21 @@ bool g_initialized = false;
 std::string g_release_url = "https://github.com/OneManNoCode/MoltBrowser/releases/latest";
 
 molt_ai::LinuxPackageFormat DetectPackageFormat() {
-  // Check if running as AppImage
+  // Check if running as AppImage. Note: base::Environment::GetVar in
+  // modern Chromium returns std::optional<std::string> and takes one
+  // argument. The old two-arg form (bool, out-string) was removed.
   auto env = base::Environment::Create();
-  std::string appimage_path;
-  if (env->GetVar("APPIMAGE", &appimage_path)) {
+  if (env->GetVar("APPIMAGE").has_value()) {
     return molt_ai::LinuxPackageFormat::kAppImage;
   }
 
   // Check if installed via Flatpak
-  std::string flatpak_id;
-  if (env->GetVar("FLATPAK_ID", &flatpak_id)) {
+  if (env->GetVar("FLATPAK_ID").has_value()) {
     return molt_ai::LinuxPackageFormat::kFlatpak;
   }
 
   // Check if installed via Snap
-  std::string snap;
-  if (env->GetVar("SNAP", &snap)) {
+  if (env->GetVar("SNAP").has_value()) {
     return molt_ai::LinuxPackageFormat::kSnap;
   }
 
