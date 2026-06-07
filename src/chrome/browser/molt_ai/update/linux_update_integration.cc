@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/update/linux_update_integration.h"
 
 #include "base/logging.h"
+#include "build/build_config.h"  // for BUILDFLAG(IS_LINUX) — explicit not transitive
 
 #if BUILDFLAG(IS_LINUX)
 #include "base/command_line.h"

@@ -3,6 +3,7 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_memory_ui.h"
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <utility>
 
 #include "base/functional/bind.h"

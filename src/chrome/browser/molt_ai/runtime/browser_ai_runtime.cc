@@ -7,6 +7,9 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <cstdint>  // for int32_t/int64_t — required on Linux under -fmodules
+#include <cstdio>   // for sscanf
+#include <cstdlib>  // for getenv
 #include <iostream>
 #include <mutex>
 #include <ratio>

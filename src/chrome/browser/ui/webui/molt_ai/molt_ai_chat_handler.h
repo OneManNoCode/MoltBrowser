@@ -16,6 +16,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_HANDLER_H_
 
+#include <cstdint>  // for uint64_t — required on Linux under -fmodules
 #include <memory>
 #include <string>
 

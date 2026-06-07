@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/files/file_util.h"
+#include "build/build_config.h"  // for BUILDFLAG(IS_WIN) — explicit not transitive
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "components/os_crypt/sync/os_crypt.h"

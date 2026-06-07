@@ -11,6 +11,7 @@
 #include <ctime>
 #include <functional>
 #include <memory>
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <optional>
 #include <set>
 #include <string>

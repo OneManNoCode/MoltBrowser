@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 
+#include <algorithm>  // for std::max
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
 #include <utility>
 

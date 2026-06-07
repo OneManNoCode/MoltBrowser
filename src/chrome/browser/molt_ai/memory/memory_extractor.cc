@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/memory/memory_extractor.h"
 
+#include <algorithm>  // for std::min — required on Linux under -fmodules
 #include <cctype>
 
 #include "chrome/browser/molt_ai/memory/memory_types.h"

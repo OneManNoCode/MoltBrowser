@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <memory>
 
 #include <ctime>

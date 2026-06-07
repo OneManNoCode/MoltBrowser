@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 
+#include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
 
 #include "base/functional/bind.h"
