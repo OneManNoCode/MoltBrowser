@@ -159,6 +159,50 @@ source_set("ggml_cpu_arch_arm_c") {
   ]
 }
 
+# Architecture-specific CPU sources — x86_64 (Linux/Windows desktop).
+# Without these, the linker fails at the final stage with:
+#   undefined symbol: quantize_row_q8_0
+#   undefined symbol: ggml_vec_dot_q4_0_q8_0
+# etc., because the quantized matrix-multiply implementations live in
+# the architecture-specific TU.
+source_set("ggml_cpu_arch_x86") {
+  sources = [
+    "ggml/src/ggml-cpu/arch/x86/cpu-feats.cpp",
+    "ggml/src/ggml-cpu/arch/x86/repack.cpp",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+    # x86 SIMD intrinsics — match what ggml's CMakeLists enables by
+    # default for x86_64 desktop CPUs.
+    "-mavx2",
+    "-mfma",
+    "-mf16c",
+    "-msse4.2",
+  ]
+}
+
+# x86 C sources (quants.c would conflict with cpu quants.c)
+source_set("ggml_cpu_arch_x86_c") {
+  sources = [
+    "ggml/src/ggml-cpu/arch/x86/quants.c",
+  ]
+
+  public_configs = [ ":llama_cpp_config" ]
+
+  cflags_c = [
+    "-std=c11",
+    "-w",
+    "-mavx2",
+    "-mfma",
+    "-mf16c",
+    "-msse4.2",
+  ]
+}
+
 # Metal targets — only exist on Apple platforms. The `enable_arc` config
 # removal and the .m source files are macOS-specific, so the whole block
 # is guarded by is_mac to keep gn-gen valid on Linux/Windows builds.
@@ -228,6 +272,13 @@ group("ggml") {
     public_deps += [
       ":ggml_cpu_arch_arm",
       ":ggml_cpu_arch_arm_c",
+    ]
+  }
+
+  if (current_cpu == "x64") {
+    public_deps += [
+      ":ggml_cpu_arch_x86",
+      ":ggml_cpu_arch_x86_c",
     ]
   }
 
