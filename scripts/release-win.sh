@@ -79,8 +79,14 @@ if [ "$USE_DOCKER" = true ]; then
   echo "[1/5] Cross-compiling via Docker..."
   DOCKER_IMG="moltbrowser-wincross"
 
+  # Always build/run as linux/amd64 so the prebuilt x86_64 binaries that
+  # ship with Chromium's depot_tools execute. On Apple Silicon hosts this
+  # uses Rosetta 2 emulation (same approach as the Linux build).
+  PLATFORM_FLAG="--platform=linux/amd64"
+
   if [ "$(docker images -q $DOCKER_IMG 2>/dev/null)" = "" ]; then
     docker build \
+      $PLATFORM_FLAG \
       --build-arg BUILD_UID=$(id -u) \
       --build-arg BUILD_GID=$(id -g) \
       -t "$DOCKER_IMG" \
@@ -88,11 +94,13 @@ if [ "$USE_DOCKER" = true ]; then
       "$ROOT_DIR"
   fi
 
-  DOCKER_ARGS=(--rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser)
+  DOCKER_ARGS=($PLATFORM_FLAG --rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser -e HOME=/tmp/builder)
 
   if [ "$SKIP_BUILD" = false ]; then
+    # Cap parallelism to prevent OOM on heavy V8/Blink files (same -j 4
+    # rule that let the Linux build finally finish).
     docker run "${DOCKER_ARGS[@]}" "$DOCKER_IMG" bash -c \
-      "./scripts/configure.sh --platform windows --arch x64 && ./scripts/build.sh"
+      "./scripts/configure.sh --platform windows --arch x64 && ./scripts/build.sh --jobs 4"
   fi
 
 else

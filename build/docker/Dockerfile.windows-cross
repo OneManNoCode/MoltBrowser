@@ -14,7 +14,11 @@
 # Note: Chromium supports cross-compiling to Windows from Linux.
 # See: https://chromium.googlesource.com/chromium/src/+/main/docs/win_cross.md
 
-FROM ubuntu:22.04
+# Use linux/amd64 explicitly so Chromium's prebuilt x86_64 depot_tools
+# binaries execute on Apple Silicon hosts (via Rosetta 2). Without this,
+# the build dies with "Exec format error" the first time it tries to run
+# depot_tools/python-bin/python3.
+FROM --platform=linux/amd64 ubuntu:22.04
 
 LABEL maintainer="GenEye AI Labs Inc. <build@geneye.ai>"
 LABEL description="MoltBrowser Windows cross-compilation environment"
@@ -22,7 +26,9 @@ LABEL description="MoltBrowser Windows cross-compilation environment"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# Build essentials + cross-compilation tools
+# Build essentials + cross-compilation tools + Chromium codegen tools.
+# gperf/bison/flex are required by Blink's codegen for color_data and
+# CSS/HTML parsers. We learned this the hard way on Linux at step ~3300.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     clang \
@@ -36,6 +42,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     zip \
     unzip \
+    gperf \
+    bison \
+    flex \
     # Wine for running Windows tests (optional)
     wine64 \
     && rm -rf /var/lib/apt/lists/*
@@ -43,14 +52,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install depot_tools
 RUN git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git /opt/depot_tools
 ENV PATH="/opt/depot_tools:${PATH}"
+
+# Bootstrap depot_tools so its prebuilt Python/gn binaries get downloaded
+# into bootstrap-*/. Without this, the first invocation dies with:
+#   python3_bin_reldir.txt not found. need to initialize depot_tools...
+RUN cd /opt/depot_tools && \
+    ./update_depot_tools && \
+    ./gclient --version > /dev/null 2>&1 || true
+
 ENV DEPOT_TOOLS_UPDATE=0
 ENV DEPOT_TOOLS_WIN_TOOLCHAIN=0
 
-# Create build user
+# Create build user (matching host UID/GID so mounted files come in
+# with the right ownership). On macOS hosts the default user GID is 20
+# (= staff), which collides with Ubuntu's "dialout" group. Evict any
+# preexisting Ubuntu group/user that owns the host's GID/UID before
+# creating builder. Then chown depot_tools so CIPD's selfupdate can
+# write scratch files (without it: "mktemp: Permission denied").
 ARG BUILD_UID=1000
 ARG BUILD_GID=1000
-RUN groupadd -g ${BUILD_GID} builder && \
-    useradd -m -u ${BUILD_UID} -g ${BUILD_GID} builder
+RUN if getent group ${BUILD_GID} >/dev/null; then \
+        groupdel "$(getent group ${BUILD_GID} | cut -d: -f1)"; \
+    fi && \
+    if getent passwd ${BUILD_UID} >/dev/null; then \
+        userdel -r "$(getent passwd ${BUILD_UID} | cut -d: -f1)" 2>/dev/null || true; \
+    fi && \
+    groupadd -g ${BUILD_GID} builder && \
+    useradd -m -u ${BUILD_UID} -g ${BUILD_GID} builder && \
+    chown -R builder:builder /opt/depot_tools
 USER builder
 
 WORKDIR /moltbrowser
