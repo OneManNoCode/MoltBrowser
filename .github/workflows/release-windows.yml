@@ -1,0 +1,163 @@
+name: Release Windows build
+
+# Automated Windows x64 build pipeline. Triggers on every git tag push
+# (v*) and on manual workflow_dispatch. Builds natively on a GitHub-
+# hosted Windows runner with VS Build Tools pre-installed — NO Docker,
+# NO Rosetta, NO Mac cross-compile. Uploads the NSIS installer + a
+# portable .zip directly to the GitHub Release matching the tag.
+#
+# Why this exists:
+# Cross-compiling Chromium to Windows from a Linux/Docker host requires
+# packaging the Microsoft Windows SDK + VS Build Tools onto the build
+# host — a chicken-and-egg problem that requires a real Windows machine
+# to start with. GitHub-hosted windows-latest runners have the entire
+# toolchain pre-installed, so native build is genuinely simpler and
+# faster than any local-Mac cross-compile attempt.
+#
+# Resource notes:
+# - windows-latest (free for public repos): 16 GB RAM, 4 cores, ~14 GB
+#   disk after pre-installed software. Tight for Chromium but enough
+#   when we cap parallelism at -j 4 and clean as we go.
+# - windows-latest-large (paid, ~$0.16/min × ~270 min ≈ $43/build):
+#   64 GB RAM, 16 cores, plenty of disk. Use for faster releases.
+# - Self-hosted Windows runner is best long-term but requires renting
+#   a Windows VM.
+#
+# Build target: Windows x64. We don't build arm64 yet because Microsoft
+# doesn't make ARM runners broadly available for free.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to attach binaries to (e.g., v0.2.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # needed to upload assets to the release
+
+jobs:
+  build-windows:
+    # Default to the free windows-latest runner. To upgrade for faster
+    # builds, replace with `windows-latest-large` and update billing.
+    runs-on: windows-latest
+    timeout-minutes: 720   # 12 hr ceiling
+
+    defaults:
+      run:
+        shell: bash    # GitHub provides Git Bash on Windows; matches our scripts
+
+    steps:
+      - name: Check out repo (no submodules)
+        uses: actions/checkout@v4
+
+      - name: Determine target tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Free up disk on the runner (Chromium needs every GB)
+        run: |
+          # GitHub windows-latest comes with ~80 GB used by preinstalled
+          # tooling. Chromium needs ~50 GB during build. Trim what we
+          # don't need.
+          df -h
+          # Android SDK (~14 GB) — not needed for Chromium
+          rm -rf "/c/Program Files (x86)/Android" || true
+          # Trim old Visual Studio caches
+          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019" || true
+          df -h
+
+      - name: Install depot_tools
+        run: |
+          git clone --depth 1 \
+            https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+            "$HOME/depot_tools"
+          echo "$HOME/depot_tools" >> $GITHUB_PATH
+          # On Windows, set this so depot_tools uses Google's pre-built
+          # tools rather than trying to look up a Microsoft auth token
+          # that we don't have.
+          echo "DEPOT_TOOLS_WIN_TOOLCHAIN=0" >> $GITHUB_ENV
+          echo "GYP_MSVS_VERSION=2022" >> $GITHUB_ENV
+
+      - name: Bootstrap depot_tools (download Python, ninja, gn)
+        env:
+          DEPOT_TOOLS_UPDATE: "1"
+        run: |
+          cd "$HOME/depot_tools"
+          ./update_depot_tools.bat || true
+          ./gclient --version || true
+
+      - name: Sync Chromium source (~60 min, ~30 GB)
+        env:
+          DEPOT_TOOLS_UPDATE: "0"
+          DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
+        run: |
+          mkdir -p chromium && cd chromium
+          if [ ! -f .gclient ]; then
+            cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ['win']
+          EOF
+          fi
+          mkdir -p src
+          (cd src && gclient sync --no-history --shallow)
+
+      - name: Copy MoltBrowser source overlays into chromium/src/
+        run: |
+          cp -r src/* chromium/src/
+
+      - name: Configure + Build chrome (~4-6 hr)
+        env:
+          DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
+        run: |
+          ./scripts/configure.sh --platform windows --arch x64
+          ./scripts/build.sh --jobs 4
+
+      - name: Package Windows installer + portable zip
+        run: |
+          ./scripts/package-win.sh --version "${{ steps.tag.outputs.tag }}"
+          ls -lh dist/
+
+      - name: Rename to stable asset names
+        run: |
+          cd dist
+          # The actual filename varies by script version; find each and rename
+          for f in MoltBrowser-*-win-x64-setup.exe; do
+            mv "$f" MoltBrowser-Windows-x64-Setup.exe 2>/dev/null || true
+          done
+          for f in MoltBrowser-*-win-x64.zip; do
+            mv "$f" MoltBrowser-Windows-x64.zip 2>/dev/null || true
+          done
+          ls -lh
+
+      - name: Upload Windows artifacts to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            dist/MoltBrowser-Windows-x64-Setup.exe \
+            --repo "${{ github.repository }}" \
+            --clobber
+          # Also upload the portable zip if it exists
+          if [ -f dist/MoltBrowser-Windows-x64.zip ]; then
+            gh release upload "${{ steps.tag.outputs.tag }}" \
+              dist/MoltBrowser-Windows-x64.zip \
+              --repo "${{ github.repository }}" --clobber
+          fi
