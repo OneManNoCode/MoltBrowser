@@ -101,23 +101,27 @@ jobs:
           DEPOT_TOOLS_UPDATE: "0"
           DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
         run: |
+          # Use depot_tools' canonical `fetch` command instead of our
+          # hand-rolled .gclient. The hand-rolled one had managed:False,
+          # which on a fresh CI runner (no pre-existing src/) causes
+          # gclient sync to skip cloning the main src.git and only fetch
+          # DEPS. The build then dies at gn-gen because chrome/BUILD.gn
+          # references //build/config/chromeos/ui_mode.gni which was
+          # never downloaded.
           mkdir -p chromium && cd chromium
-          if [ ! -f .gclient ]; then
-            cat > .gclient <<'EOF'
-          solutions = [
-            {
-              "name": "src",
-              "url": "https://chromium.googlesource.com/chromium/src.git",
-              "managed": False,
-              "custom_deps": {},
-              "custom_vars": {},
-            },
-          ]
-          target_os = ['win']
-          EOF
+          if [ ! -d src/.git ]; then
+            # `fetch chromium` writes a correct .gclient AND clones src.
+            # --no-history makes it shallow (saves ~10 GB and a lot of time).
+            fetch --no-history --nohooks chromium
           fi
-          mkdir -p src
-          (cd src && gclient sync --no-history --shallow)
+          # Add target_os=['win'] after fetch so Windows-specific deps
+          # get pulled too. fetch writes target_os to .gclient based on
+          # host OS; on Linux it defaults to ['linux']; we need ['win'].
+          if ! grep -q "target_os = \['win'\]" .gclient; then
+            echo "target_os = ['win']" >> .gclient
+          fi
+          # Sync DEPS now that .gclient knows about Windows targets.
+          (cd src && gclient sync --no-history --shallow --nohooks)
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |

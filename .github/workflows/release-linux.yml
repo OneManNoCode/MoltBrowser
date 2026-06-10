@@ -88,26 +88,18 @@ jobs:
         env:
           DEPOT_TOOLS_UPDATE: "0"
         run: |
-          mkdir -p chromium
-          cd chromium
-          if [ ! -d src ]; then
-            cat > .gclient <<'EOF'
-          solutions = [
-            {
-              "name": "src",
-              "url": "https://chromium.googlesource.com/chromium/src.git",
-              "managed": False,
-              "custom_deps": {},
-              "custom_vars": {},
-            },
-          ]
-          target_os = ['linux']
-          EOF
+          # Use depot_tools' canonical `fetch` command. managed:False in
+          # a hand-rolled .gclient causes gclient sync to skip cloning
+          # src.git on a fresh runner, breaking gn-gen at the first
+          # import("//build/config/...") that wasn't in DEPS.
+          mkdir -p chromium && cd chromium
+          if [ ! -d src/.git ]; then
+            fetch --no-history --nohooks chromium
           fi
-          if [ ! -d src/base ] || [ ! -x src/buildtools/linux64/gn ]; then
-            mkdir -p src
-            (cd src && gclient sync --no-history --shallow)
+          if ! grep -q "target_os = \['linux'\]" .gclient; then
+            echo "target_os = ['linux']" >> .gclient
           fi
+          (cd src && gclient sync --no-history --shallow --nohooks)
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |
