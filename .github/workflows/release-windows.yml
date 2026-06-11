@@ -101,27 +101,45 @@ jobs:
           DEPOT_TOOLS_UPDATE: "0"
           DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
         run: |
-          # Use depot_tools' canonical `fetch` command instead of our
-          # hand-rolled .gclient. The hand-rolled one had managed:False,
-          # which on a fresh CI runner (no pre-existing src/) causes
-          # gclient sync to skip cloning the main src.git and only fetch
-          # DEPS. The build then dies at gn-gen because chrome/BUILD.gn
-          # references //build/config/chromeos/ui_mode.gni which was
-          # never downloaded.
+          # Explicit clone + sync with verbose output. Previous attempts
+          # used `fetch --no-history chromium` which exited successfully
+          # in ~6 min on Windows but didn't actually populate src/.
+          # Doing it manually so each step is visible in the log.
+          set -x
           mkdir -p chromium && cd chromium
+          ls -la
+          # Step 1: write .gclient explicitly (no managed:False; we want
+          # gclient to fully manage src on a fresh CI runner)
+          cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ['win']
+          EOF
+          cat .gclient
+          # Step 2: shallow-clone src.git directly (~10 GB, 15-20 min).
+          # This is what `fetch chromium` is supposed to do but silently
+          # skipped on Windows. Doing it explicitly with git.
           if [ ! -d src/.git ]; then
-            # `fetch chromium` writes a correct .gclient AND clones src.
-            # --no-history makes it shallow (saves ~10 GB and a lot of time).
-            fetch --no-history --nohooks chromium
+            echo "Cloning chromium/src.git (shallow, no history)..."
+            git clone --depth=1 --no-tags \
+              https://chromium.googlesource.com/chromium/src.git src
           fi
-          # Add target_os=['win'] after fetch so Windows-specific deps
-          # get pulled too. fetch writes target_os to .gclient based on
-          # host OS; on Linux it defaults to ['linux']; we need ['win'].
-          if ! grep -q "target_os = \['win'\]" .gclient; then
-            echo "target_os = ['win']" >> .gclient
-          fi
-          # Sync DEPS now that .gclient knows about Windows targets.
-          (cd src && gclient sync --no-history --shallow --nohooks)
+          ls -la src | head -20
+          ls -la src/build/config/chromeos 2>&1 | head -5 || echo "chromeos dir MISSING from src"
+          # Step 3: now sync DEPS (Windows toolchain, third_party libs, etc).
+          # This downloads ~5-10 GB more and runs hooks that generate
+          # LASTCHANGE.committime and other files chrome/BUILD.gn expects.
+          echo "Running gclient sync..."
+          gclient sync --no-history --shallow
+          # Verify the previously-missing files now exist
+          ls -la src/build/config/chromeos/ui_mode.gni 2>&1 | head -2
+          ls -la src/build/util/LASTCHANGE.committime 2>&1 | head -2
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |
