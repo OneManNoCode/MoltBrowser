@@ -130,16 +130,21 @@ jobs:
             git clone --depth=1 --no-tags \
               https://chromium.googlesource.com/chromium/src.git src
           fi
-          ls -la src | head -20
-          ls -la src/build/config/chromeos 2>&1 | head -5 || echo "chromeos dir MISSING from src"
+          ls src/ 2>&1 | head -10 || true
           # Step 3: now sync DEPS (Windows toolchain, third_party libs, etc).
           # This downloads ~5-10 GB more and runs hooks that generate
           # LASTCHANGE.committime and other files chrome/BUILD.gn expects.
           echo "Running gclient sync..."
           gclient sync --no-history --shallow
-          # Verify the previously-missing files now exist
-          ls -la src/build/config/chromeos/ui_mode.gni 2>&1 | head -2
-          ls -la src/build/util/LASTCHANGE.committime 2>&1 | head -2
+          # Non-failing diagnostics — don't crash the step if these files
+          # don't exist at this exact path (Chromium upstream sometimes
+          # refactors). GN-gen in the next step will tell us if anything
+          # is genuinely missing.
+          set +e
+          echo "--- post-sync diagnostic ---"
+          test -f src/build/config/chromeos/ui_mode.gni && echo "✓ chromeos/ui_mode.gni present" || echo "✗ chromeos/ui_mode.gni absent (may be ok)"
+          test -f src/build/util/LASTCHANGE.committime && echo "✓ LASTCHANGE.committime present" || echo "✗ LASTCHANGE.committime absent (may be ok)"
+          set -e
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |
