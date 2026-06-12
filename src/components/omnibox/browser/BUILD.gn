@@ -757,14 +757,8 @@ static_library("test_support") {
     "//ui/gfx",
   ]
 
-  if (build_with_tflite_lib) {
-    sources += [
-      "fake_autocomplete_scoring_model_service.cc",
-      "fake_autocomplete_scoring_model_service.h",
-      "fake_on_device_tail_model_service.cc",
-      "fake_on_device_tail_model_service.h",
-    ]
-  }
+  # NOTE: second build_with_tflite_lib block — same removal reason as
+  # the one earlier in this file. Upstream Chromium removed the variable.
 
   if (toolkit_views) {
     # Needed to get the TOOLKIT_VIEWS define.
