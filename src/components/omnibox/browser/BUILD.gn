@@ -933,14 +933,7 @@ source_set("unit_tests") {
     deps += [ "//chromeos/constants" ]
   }
 
-  if (build_with_tflite_lib) {
-    sources += [
-      "autocomplete_scoring_model_executor_unittest.cc",
-      "autocomplete_scoring_model_handler_unittest.cc",
-      "on_device_tail_model_executor_unittest.cc",
-      "on_device_tail_model_service_unittest.cc",
-    ]
-  }
+  # NOTE: third build_with_tflite_lib block — same removal reason.
 
   if (enable_extensions) {
     deps += [ "//extensions/common:extension_features" ]
