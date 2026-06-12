@@ -96,20 +96,19 @@ jobs:
           ./update_depot_tools.bat || true
           ./gclient --version || true
 
-      - name: Sync Chromium source (~60 min, ~30 GB)
+      - name: Sync Chromium source (~60 min, ~30 GB) — pinned to our overlay commit
         env:
           DEPOT_TOOLS_UPDATE: "0"
           DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
+          # Pin to the EXACT Chromium commit our src/ overlay was
+          # snapshotted from. Without this, every CI run fetches the
+          # latest main and our overlay drifts further out of sync
+          # (we hit 5+ stale-identifier failures iterating tonight).
+          # Found via `cd chromium/src && git log -1` locally.
+          CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
         run: |
-          # Explicit clone + sync with verbose output. Previous attempts
-          # used `fetch --no-history chromium` which exited successfully
-          # in ~6 min on Windows but didn't actually populate src/.
-          # Doing it manually so each step is visible in the log.
           set -x
           mkdir -p chromium && cd chromium
-          ls -la
-          # Step 1: write .gclient explicitly (no managed:False; we want
-          # gclient to fully manage src on a fresh CI runner)
           cat > .gclient <<'EOF'
           solutions = [
             {
@@ -122,29 +121,24 @@ jobs:
           target_os = ['win']
           EOF
           cat .gclient
-          # Step 2: shallow-clone src.git directly (~10 GB, 15-20 min).
-          # This is what `fetch chromium` is supposed to do but silently
-          # skipped on Windows. Doing it explicitly with git.
+          # Step 1: fetch ONLY the pinned commit (gitiles allows fetching
+          # by SHA directly). --depth=1 keeps it shallow.
           if [ ! -d src/.git ]; then
-            echo "Cloning chromium/src.git (shallow, no history)..."
-            git clone --depth=1 --no-tags \
-              https://chromium.googlesource.com/chromium/src.git src
+            echo "Fetching Chromium pinned commit ${CHROMIUM_REVISION}..."
+            mkdir -p src
+            (cd src && \
+              git init -q && \
+              git remote add origin https://chromium.googlesource.com/chromium/src.git && \
+              git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
+              git checkout --detach FETCH_HEAD)
           fi
-          ls src/ 2>&1 | head -10 || true
-          # Step 3: now sync DEPS (Windows toolchain, third_party libs, etc).
-          # This downloads ~5-10 GB more and runs hooks that generate
-          # LASTCHANGE.committime and other files chrome/BUILD.gn expects.
-          echo "Running gclient sync..."
-          gclient sync --no-history --shallow
-          # Non-failing diagnostics — don't crash the step if these files
-          # don't exist at this exact path (Chromium upstream sometimes
-          # refactors). GN-gen in the next step will tell us if anything
-          # is genuinely missing.
-          set +e
-          echo "--- post-sync diagnostic ---"
-          test -f src/build/config/chromeos/ui_mode.gni && echo "✓ chromeos/ui_mode.gni present" || echo "✗ chromeos/ui_mode.gni absent (may be ok)"
-          test -f src/build/util/LASTCHANGE.committime && echo "✓ LASTCHANGE.committime present" || echo "✗ LASTCHANGE.committime absent (may be ok)"
-          set -e
+          # Sanity-check we're at the right revision
+          (cd src && git log -1 --format="HEAD = %H %s" 2>&1) | head -1
+          # Step 2: gclient sync DEPS pinned to our revision. With
+          # --revision src@SHA, gclient looks up the DEPS file recorded
+          # at that commit and fetches matching third_party versions.
+          echo "Running gclient sync --revision src@${CHROMIUM_REVISION}..."
+          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |

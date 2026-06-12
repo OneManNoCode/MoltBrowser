@@ -87,19 +87,34 @@ jobs:
       - name: Sync Chromium source (~30-60 min on first run, cached on self-hosted)
         env:
           DEPOT_TOOLS_UPDATE: "0"
+          # Pin to the EXACT Chromium commit our src/ overlay matches.
+          # Without this, fresh CI runs hit stale-overlay BUILD.gn
+          # errors as upstream Chromium drifts. Update when we rebase.
+          CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
         run: |
-          # Use depot_tools' canonical `fetch` command. managed:False in
-          # a hand-rolled .gclient causes gclient sync to skip cloning
-          # src.git on a fresh runner, breaking gn-gen at the first
-          # import("//build/config/...") that wasn't in DEPS.
+          set -x
           mkdir -p chromium && cd chromium
+          cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ['linux']
+          EOF
           if [ ! -d src/.git ]; then
-            fetch --no-history --nohooks chromium
+            mkdir -p src
+            (cd src && \
+              git init -q && \
+              git remote add origin https://chromium.googlesource.com/chromium/src.git && \
+              git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
+              git checkout --detach FETCH_HEAD)
           fi
-          if ! grep -q "target_os = \['linux'\]" .gclient; then
-            echo "target_os = ['linux']" >> .gclient
-          fi
-          (cd src && gclient sync --no-history --shallow --nohooks)
+          (cd src && git log -1 --format="HEAD = %H %s") | head -1
+          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow --nohooks
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |
