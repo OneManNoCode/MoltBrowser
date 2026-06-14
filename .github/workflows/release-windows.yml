@@ -150,15 +150,23 @@ jobs:
 
       - name: Extract restored build directory
         run: |
-          if [ -f restore-tmp/out.tar.zst ]; then
-            echo "Found prior build dir — extracting to resume..."
-            mkdir -p chromium/src/out
-            # zstd is bundled with Git for Windows; fall back to tar -I
+          # The build dir is saved as multiple <1.5GB chunks
+          # (out.tar.zst.part-aa, -ab, ...) to dodge the 2GB-per-file
+          # limit in the artifact actions' Node Buffer. Reassemble by
+          # cat-ing the parts back into the tar stream.
+          if ls restore-tmp/out.tar.zst.part-* >/dev/null 2>&1; then
+            echo "Found prior build chunks — reassembling + extracting..."
+            cat restore-tmp/out.tar.zst.part-* \
+              | tar --use-compress-program=zstd -xf - -C chromium/src/
+            echo "Restored. Build resumes incrementally."
+            du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+          elif [ -f restore-tmp/out.tar.zst ]; then
+            # Back-compat: older single-file artifact (<2GB only)
+            echo "Found single-file prior build dir — extracting..."
             tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/
-            echo "Restored. Build will resume incrementally."
             du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
           else
-            echo "No prior build dir — this is a fresh start."
+            echo "No prior build dir — fresh start."
           fi
 
       - name: Configure (gn gen)
@@ -220,22 +228,24 @@ jobs:
           echo "🎉 Windows build complete and uploaded!"
 
       # ---- If partial: save build dir + chain the next run ----
-      - name: Save partial build directory
+      - name: Save partial build directory (chunked)
         if: always() && steps.status.outputs.status == 'partial'
         run: |
           cd chromium/src
-          echo "Compressing out/MoltBrowser (a few minutes)..."
-          tar --use-compress-program="zstd -3 -T0" \
-            -cf ../../out.tar.zst out/MoltBrowser
+          echo "Compressing + splitting out/MoltBrowser into <1.5GB chunks..."
+          # Stream tar|zstd into split so no single file exceeds the
+          # ~2GB Node Buffer limit in the artifact download action.
+          tar --use-compress-program="zstd -3 -T0" -cf - out/MoltBrowser \
+            | split -b 1500M - ../../out.tar.zst.part-
           cd ../..
-          ls -lh out.tar.zst
+          ls -lh out.tar.zst.part-*
 
       - name: Upload partial build directory
         if: always() && steps.status.outputs.status == 'partial'
         uses: actions/upload-artifact@v4
         with:
           name: windows-build-out
-          path: out.tar.zst
+          path: out.tar.zst.part-*
           retention-days: 3
           overwrite: true
 
