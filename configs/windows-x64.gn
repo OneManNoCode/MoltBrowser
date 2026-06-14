@@ -9,7 +9,13 @@ target_os = "win"
 target_cpu = "x64"
 
 # Build type
-is_official_build = true
+# IMPORTANT: is_official_build = false on Windows to fit in GitHub
+# Actions' 6-hour per-job hard cap. Official build (with PGO + ThinLTO)
+# took ~6h 15m on windows-latest and got killed at the timeout. Without
+# PGO/LTO the compile drops ~30-40% to ~4 hours. Trade-off: the Windows
+# binary is larger and slightly slower at runtime than the macOS/Linux
+# versions — acceptable for a v0.2.1 preview release.
+is_official_build = false
 is_debug = false
 
 # De-Google: Remove Google API dependencies
@@ -25,10 +31,12 @@ enable_supervised_users = false
 # Branding
 is_chrome_branded = false
 
-# Performance
+# Performance — minimal flags to fit CI time budget
 is_component_build = false
 symbol_level = 0
 enable_nacl = false
+enable_swiftshader = false   # we don't ship the software renderer fallback
+blink_symbol_level = 0
 
 # Chrome extension compatibility
 enable_extensions = true
@@ -44,6 +52,6 @@ use_lld = true
 # DirectML available as alternative on Windows
 # (configured in llama.cpp BUILD.gn via is_win checks)
 
-# PGO disabled for dev builds
+# PGO disabled (also implicit with is_official_build=false)
 chrome_pgo_phase = 0
 treat_warnings_as_errors = false
