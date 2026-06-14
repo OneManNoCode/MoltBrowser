@@ -1,30 +1,29 @@
 name: Release Windows build
 
-# Automated Windows x64 build pipeline. Triggers on every git tag push
-# (v*) and on manual workflow_dispatch. Builds natively on a GitHub-
-# hosted Windows runner with VS Build Tools pre-installed — NO Docker,
-# NO Rosetta, NO Mac cross-compile. Uploads the NSIS installer + a
-# portable .zip directly to the GitHub Release matching the tag.
+# RESUMABLE Windows x64 build pipeline for FREE GitHub-hosted runners.
 #
-# Why this exists:
-# Cross-compiling Chromium to Windows from a Linux/Docker host requires
-# packaging the Microsoft Windows SDK + VS Build Tools onto the build
-# host — a chicken-and-egg problem that requires a real Windows machine
-# to start with. GitHub-hosted windows-latest runners have the entire
-# toolchain pre-installed, so native build is genuinely simpler and
-# faster than any local-Mac cross-compile attempt.
+# The problem: a full Chromium compile takes ~6.5 hours on a free
+# windows-latest runner (4 cores), but GitHub hard-caps each job at 6
+# hours. Run #10 (official build) died at 6h15m; run #11 (stripped
+# build) also exceeded 6h. Free 4-core runners simply cannot finish in
+# one slot.
 #
-# Resource notes:
-# - windows-latest (free for public repos): 16 GB RAM, 4 cores, ~14 GB
-#   disk after pre-installed software. Tight for Chromium but enough
-#   when we cap parallelism at -j 4 and clean as we go.
-# - windows-latest-large (paid, ~$0.16/min × ~270 min ≈ $43/build):
-#   64 GB RAM, 16 cores, plenty of disk. Use for faster releases.
-# - Self-hosted Windows runner is best long-term but requires renting
-#   a Windows VM.
+# The free solution: incremental resume. ninja/siso builds are
+# incremental — already-compiled .obj files don't get rebuilt. So we:
+#   1. Build for ~4 hours (self-limited, well under the 6h cap)
+#   2. Save the build directory (chromium/src/out) as an artifact
+#   3. Auto-trigger the next run, which restores the build dir and
+#      continues where the last one stopped
+#   4. Repeat until chrome.exe exists, then package + upload the .exe
 #
-# Build target: Windows x64. We don't build arm64 yet because Microsoft
-# doesn't make ARM runners broadly available for free.
+# Public repos get unlimited free Actions minutes + free artifact
+# storage, so this costs nothing. Wall-clock is ~2-3 chained runs
+# (~12-18h) but it's fully automated and $0.
+#
+# Each run re-syncs the (pinned, deterministic) Chromium source. We
+# rely on siso's content-hash-based incremental build so that fresh
+# source mtimes don't force a full rebuild — only genuinely-changed or
+# not-yet-built objects compile.
 
 on:
   push:
@@ -33,48 +32,63 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to attach binaries to (e.g., v0.2.1)'
+        description: 'Tag to attach binaries to (e.g., v0.2.1)'
         required: true
         type: string
+        default: 'v0.2.1'
+      attempt:
+        description: 'Resume attempt counter (auto-incremented by the chain)'
+        required: false
+        type: string
+        default: '1'
 
 permissions:
-  contents: write   # needed to upload assets to the release
+  contents: write   # upload release assets
+  actions: write    # self-trigger the next run in the chain
 
 jobs:
   build-windows:
-    # Default to the free windows-latest runner. To upgrade for faster
-    # builds, replace with `windows-latest-large` and update billing.
     runs-on: windows-latest
-    timeout-minutes: 720   # 12 hr ceiling
+    timeout-minutes: 350   # 5h50m — self-limit under GitHub's 6h hard cap
 
     defaults:
       run:
-        shell: bash    # GitHub provides Git Bash on Windows; matches our scripts
+        shell: bash
+
+    env:
+      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
+      GYP_MSVS_VERSION: "2022"
+      # Build budget in seconds before we stop ninja to leave room for
+      # saving the partial build dir. 3.75h compile + ~2h overhead < 6h.
+      BUILD_TIMEOUT_SECONDS: "13500"
+      MAX_ATTEMPTS: "5"
 
     steps:
-      - name: Check out repo (no submodules)
+      - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Determine target tag
-        id: tag
+      - name: Determine target tag + attempt
+        id: meta
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "attempt=${{ inputs.attempt }}" >> $GITHUB_OUTPUT
           else
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "attempt=1" >> $GITHUB_OUTPUT
           fi
+          echo "Build attempt #${{ inputs.attempt }} for tag ${{ inputs.tag }}"
 
-      - name: Free up disk on the runner (Chromium needs every GB)
+      - name: Free up disk on the runner
         run: |
-          # GitHub windows-latest comes with ~80 GB used by preinstalled
-          # tooling. Chromium needs ~50 GB during build. Trim what we
-          # don't need.
-          df -h
-          # Android SDK (~14 GB) — not needed for Chromium
+          df -h || true
           rm -rf "/c/Program Files (x86)/Android" || true
-          # Trim old Visual Studio caches
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019" || true
-          df -h
+          rm -rf "/c/Program Files/dotnet" || true
+          rm -rf "/c/hostedtoolcache/windows/Ruby" || true
+          rm -rf "/c/hostedtoolcache/windows/go" || true
+          df -h || true
 
       - name: Install depot_tools
         run: |
@@ -82,13 +96,8 @@ jobs:
             https://chromium.googlesource.com/chromium/tools/depot_tools.git \
             "$HOME/depot_tools"
           echo "$HOME/depot_tools" >> $GITHUB_PATH
-          # On Windows, set this so depot_tools uses Google's pre-built
-          # tools rather than trying to look up a Microsoft auth token
-          # that we don't have.
-          echo "DEPOT_TOOLS_WIN_TOOLCHAIN=0" >> $GITHUB_ENV
-          echo "GYP_MSVS_VERSION=2022" >> $GITHUB_ENV
 
-      - name: Bootstrap depot_tools (download Python, ninja, gn)
+      - name: Bootstrap depot_tools
         env:
           DEPOT_TOOLS_UPDATE: "1"
         run: |
@@ -96,16 +105,9 @@ jobs:
           ./update_depot_tools.bat || true
           ./gclient --version || true
 
-      - name: Sync Chromium source (~60 min, ~30 GB) — pinned to our overlay commit
+      - name: Sync Chromium source (pinned)
         env:
           DEPOT_TOOLS_UPDATE: "0"
-          DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
-          # Pin to the EXACT Chromium commit our src/ overlay was
-          # snapshotted from. Without this, every CI run fetches the
-          # latest main and our overlay drifts further out of sync
-          # (we hit 5+ stale-identifier failures iterating tonight).
-          # Found via `cd chromium/src && git log -1` locally.
-          CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
         run: |
           set -x
           mkdir -p chromium && cd chromium
@@ -120,11 +122,7 @@ jobs:
           ]
           target_os = ['win']
           EOF
-          cat .gclient
-          # Step 1: fetch ONLY the pinned commit (gitiles allows fetching
-          # by SHA directly). --depth=1 keeps it shallow.
           if [ ! -d src/.git ]; then
-            echo "Fetching Chromium pinned commit ${CHROMIUM_REVISION}..."
             mkdir -p src
             (cd src && \
               git init -q && \
@@ -132,34 +130,72 @@ jobs:
               git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
               git checkout --detach FETCH_HEAD)
           fi
-          # Sanity-check we're at the right revision
-          (cd src && git log -1 --format="HEAD = %H %s" 2>&1) | head -1
-          # Step 2: gclient sync DEPS pinned to our revision. With
-          # --revision src@SHA, gclient looks up the DEPS file recorded
-          # at that commit and fetches matching third_party versions.
-          echo "Running gclient sync --revision src@${CHROMIUM_REVISION}..."
+          (cd src && git log -1 --format="HEAD = %H %s") | head -1
           gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
 
-      - name: Copy MoltBrowser source overlays into chromium/src/
+      - name: Copy MoltBrowser source overlays
         run: |
           cp -r src/* chromium/src/
 
-      - name: Configure + Build chrome (~4-6 hr)
-        env:
-          DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
+      # ---- RESUME: restore the partial build dir from a prior run ----
+      - name: Restore previous build directory (if any)
+        id: restore
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: windows-build-out
+          path: restore-tmp
+          search_artifacts: true
+          workflow_conclusion: ""   # match any prior run (success or failure)
+          if_no_artifact_found: warn
+
+      - name: Extract restored build directory
+        run: |
+          if [ -f restore-tmp/out.tar.zst ]; then
+            echo "Found prior build dir — extracting to resume..."
+            mkdir -p chromium/src/out
+            # zstd is bundled with Git for Windows; fall back to tar -I
+            tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/
+            echo "Restored. Build will resume incrementally."
+            du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+          else
+            echo "No prior build dir — this is a fresh start."
+          fi
+
+      - name: Configure (gn gen)
         run: |
           ./scripts/configure.sh --platform windows --arch x64
-          ./scripts/build.sh --jobs 4
 
-      - name: Package Windows installer + portable zip
+      # Build with a STEP-LEVEL timeout (portable; no GNU `timeout`
+      # dependency). continue-on-error means a timeout doesn't fail the
+      # job — the next step inspects the result and decides what to do.
+      # autoninja is incremental: restored .obj files are not rebuilt.
+      - name: Build chrome (time-limited, resumable)
+        id: build
+        continue-on-error: true
+        timeout-minutes: 225   # 3h45m of compile; leaves room for save+chain
         run: |
-          ./scripts/package-win.sh --version "${{ steps.tag.outputs.tag }}"
-          ls -lh dist/
+          export PATH="$HOME/depot_tools:$PATH"
+          cd chromium/src
+          autoninja -C out/MoltBrowser chrome
 
-      - name: Rename to stable asset names
+      - name: Determine build status
+        id: status
+        if: always()
         run: |
+          if [ -f chromium/src/out/MoltBrowser/chrome.exe ]; then
+            echo "status=complete" >> $GITHUB_OUTPUT
+            echo "✅ BUILD COMPLETE — chrome.exe exists"
+          else
+            echo "status=partial" >> $GITHUB_OUTPUT
+            echo "⏳ BUILD PARTIAL — will save progress and chain next run"
+          fi
+
+      # ---- If complete: package + upload the installer ----
+      - name: Package Windows installer
+        if: always() && steps.status.outputs.status == 'complete'
+        run: |
+          ./scripts/package-win.sh --version "${{ steps.meta.outputs.tag }}" || true
           cd dist
-          # The actual filename varies by script version; find each and rename
           for f in MoltBrowser-*-win-x64-setup.exe; do
             mv "$f" MoltBrowser-Windows-x64-Setup.exe 2>/dev/null || true
           done
@@ -168,17 +204,54 @@ jobs:
           done
           ls -lh
 
-      - name: Upload Windows artifacts to the release
+      - name: Upload installer to release
+        if: always() && steps.status.outputs.status == 'complete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ steps.tag.outputs.tag }}" \
+          gh release upload "${{ steps.meta.outputs.tag }}" \
             dist/MoltBrowser-Windows-x64-Setup.exe \
-            --repo "${{ github.repository }}" \
-            --clobber
-          # Also upload the portable zip if it exists
+            --repo "${{ github.repository }}" --clobber
           if [ -f dist/MoltBrowser-Windows-x64.zip ]; then
-            gh release upload "${{ steps.tag.outputs.tag }}" \
+            gh release upload "${{ steps.meta.outputs.tag }}" \
               dist/MoltBrowser-Windows-x64.zip \
               --repo "${{ github.repository }}" --clobber
           fi
+          echo "🎉 Windows build complete and uploaded!"
+
+      # ---- If partial: save build dir + chain the next run ----
+      - name: Save partial build directory
+        if: always() && steps.status.outputs.status == 'partial'
+        run: |
+          cd chromium/src
+          echo "Compressing out/MoltBrowser (a few minutes)..."
+          tar --use-compress-program="zstd -3 -T0" \
+            -cf ../../out.tar.zst out/MoltBrowser
+          cd ../..
+          ls -lh out.tar.zst
+
+      - name: Upload partial build directory
+        if: always() && steps.status.outputs.status == 'partial'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-out
+          path: out.tar.zst
+          retention-days: 3
+          overwrite: true
+
+      - name: Chain the next resume run
+        if: always() && steps.status.outputs.status == 'partial'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEXT=$(( ${{ steps.meta.outputs.attempt }} + 1 ))
+          if [ "$NEXT" -gt "${MAX_ATTEMPTS}" ]; then
+            echo "::error::Reached MAX_ATTEMPTS (${MAX_ATTEMPTS}) without finishing."
+            exit 1
+          fi
+          echo "Triggering resume run #$NEXT..."
+          gh workflow run release-windows.yml \
+            --repo "${{ github.repository }}" \
+            -f tag="${{ steps.meta.outputs.tag }}" \
+            -f attempt="$NEXT"
+          echo "▶ Resume run #$NEXT queued. This run ends (partial)."
