@@ -62,7 +62,7 @@ jobs:
       # Build budget in seconds before we stop ninja to leave room for
       # saving the partial build dir. 3.75h compile + ~2h overhead < 6h.
       BUILD_TIMEOUT_SECONDS: "13500"
-      MAX_ATTEMPTS: "5"
+      MAX_ATTEMPTS: "10"
 
     steps:
       - name: Check out repo
@@ -137,36 +137,40 @@ jobs:
         run: |
           cp -r src/* chromium/src/
 
-      # ---- RESUME: restore the partial build dir from a prior run ----
+      # ---- RESUME: restore partial build dir via gh CLI ----
+      # CRITICAL: download with `gh` (Go, no size limit), NOT a Node-based
+      # action. dawidd6/action-download-artifact choked on >2GB artifacts
+      # with "length out of range ... 2147483647" (the 2GB Node Buffer
+      # cap), which silently broke every resume for 5 attempts. gh CLI
+      # streams the artifact zip with no such limit.
       - name: Restore previous build directory (if any)
-        id: restore
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          name: windows-build-out
-          path: restore-tmp
-          search_artifacts: true
-          workflow_conclusion: ""   # match any prior run (success or failure)
-          if_no_artifact_found: warn
-
-      - name: Extract restored build directory
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # The build dir is saved as multiple <1.5GB chunks
-          # (out.tar.zst.part-aa, -ab, ...) to dodge the 2GB-per-file
-          # limit in the artifact actions' Node Buffer. Reassemble by
-          # cat-ing the parts back into the tar stream.
-          if ls restore-tmp/out.tar.zst.part-* >/dev/null 2>&1; then
-            echo "Found prior build chunks — reassembling + extracting..."
-            cat restore-tmp/out.tar.zst.part-* \
-              | tar --use-compress-program=zstd -xf - -C chromium/src/
-            echo "Restored. Build resumes incrementally."
-            du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
-          elif [ -f restore-tmp/out.tar.zst ]; then
-            # Back-compat: older single-file artifact (<2GB only)
-            echo "Found single-file prior build dir — extracting..."
-            tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/
-            du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+          set -x
+          ART_ID=$(gh api --paginate \
+            "/repos/${{ github.repository }}/actions/artifacts" \
+            --jq '[.artifacts[] | select(.name=="windows-build-out" and .expired==false)] | sort_by(.created_at) | last | .id')
+          echo "Latest windows-build-out artifact id: ${ART_ID:-none}"
+          if [ -n "$ART_ID" ] && [ "$ART_ID" != "null" ]; then
+            echo "Downloading artifact $ART_ID via gh (handles >2GB)..."
+            gh api "/repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > artifact.zip
+            ls -lh artifact.zip
+            mkdir -p restore-tmp
+            unzip -o -q artifact.zip -d restore-tmp
+            ls -lh restore-tmp/
+            if [ -f restore-tmp/out.tar.zst ]; then
+              echo "Extracting build dir — resuming incrementally..."
+              tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/
+              du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+            elif ls restore-tmp/out.tar.zst.part-* >/dev/null 2>&1; then
+              cat restore-tmp/out.tar.zst.part-* \
+                | tar --use-compress-program=zstd -xf - -C chromium/src/
+              du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+            fi
+            rm -f artifact.zip
           else
-            echo "No prior build dir — fresh start."
+            echo "No prior artifact — fresh start."
           fi
 
       - name: Configure (gn gen)
@@ -228,24 +232,24 @@ jobs:
           echo "🎉 Windows build complete and uploaded!"
 
       # ---- If partial: save build dir + chain the next run ----
-      - name: Save partial build directory (chunked)
+      - name: Save partial build directory
         if: always() && steps.status.outputs.status == 'partial'
         run: |
           cd chromium/src
-          echo "Compressing + splitting out/MoltBrowser into <1.5GB chunks..."
-          # Stream tar|zstd into split so no single file exceeds the
-          # ~2GB Node Buffer limit in the artifact download action.
-          tar --use-compress-program="zstd -3 -T0" -cf - out/MoltBrowser \
-            | split -b 1500M - ../../out.tar.zst.part-
+          echo "Compressing out/MoltBrowser..."
+          # Single file is fine — upload-artifact@v4 handles >2GB on
+          # upload, and we restore with gh CLI which has no size cap.
+          tar --use-compress-program="zstd -3 -T0" \
+            -cf ../../out.tar.zst out/MoltBrowser
           cd ../..
-          ls -lh out.tar.zst.part-*
+          ls -lh out.tar.zst
 
       - name: Upload partial build directory
         if: always() && steps.status.outputs.status == 'partial'
         uses: actions/upload-artifact@v4
         with:
           name: windows-build-out
-          path: out.tar.zst.part-*
+          path: out.tar.zst
           retention-days: 3
           overwrite: true
 
