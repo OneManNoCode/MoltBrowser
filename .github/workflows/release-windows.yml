@@ -62,7 +62,7 @@ jobs:
       # Build budget in seconds before we stop ninja to leave room for
       # saving the partial build dir. 3.75h compile + ~2h overhead < 6h.
       BUILD_TIMEOUT_SECONDS: "13500"
-      MAX_ATTEMPTS: "10"
+      MAX_ATTEMPTS: "12"
 
     steps:
       - name: Check out repo
@@ -197,7 +197,7 @@ jobs:
       - name: Build chrome (time-limited, resumable)
         id: build
         continue-on-error: true
-        timeout-minutes: 225   # 3h45m of compile; leaves room for save+chain
+        timeout-minutes: 255   # 4h15m of compile; ~40min headroom for save+chain
         run: |
           export PATH="$HOME/depot_tools:$PATH"
           cd chromium/src
@@ -250,12 +250,22 @@ jobs:
         run: |
           cd chromium/src
           echo "Compressing out/MoltBrowser..."
-          # Single file is fine — upload-artifact@v4 handles >2GB on
-          # upload, and we restore with gh CLI which has no size cap.
-          tar --use-compress-program="zstd -3 -T0" \
-            -cf ../../out.tar.zst out/MoltBrowser
+          # siso may still be flushing log files when the build step is
+          # killed at timeout, so tar can hit "file changed/removed as we
+          # read it" (exit 1). Those files are non-essential build logs;
+          # the .obj files are all captured. Suppress those warnings and
+          # don't let a benign exit code fail the save.
+          tar --warning=no-file-changed --warning=no-file-removed \
+            --ignore-failed-read \
+            --use-compress-program="zstd -3 -T0" \
+            -cf ../../out.tar.zst out/MoltBrowser || true
           cd ../..
-          ls -lh out.tar.zst
+          if [ -s out.tar.zst ]; then
+            ls -lh out.tar.zst
+          else
+            echo "::error::out.tar.zst is empty — save genuinely failed"
+            exit 1
+          fi
 
       - name: Upload partial build directory
         if: always() && steps.status.outputs.status == 'partial'
