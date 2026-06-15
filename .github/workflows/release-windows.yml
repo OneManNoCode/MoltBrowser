@@ -144,31 +144,44 @@ jobs:
       # cap), which silently broke every resume for 5 attempts. gh CLI
       # streams the artifact zip with no such limit.
       - name: Restore previous build directory (if any)
+        continue-on-error: true   # a restore hiccup → fresh build, never cascade
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Stop Git Bash (MSYS) from rewriting /repos/... API paths into
+          # Windows filesystem paths (C:/Program Files/Git/repos/...).
+          MSYS_NO_PATHCONV: "1"
+          MSYS2_ARG_CONV_EXCL: "*"
         run: |
           set -x
+          # NOTE: no leading slash on the endpoint — gh prepends the API
+          # base, and a leading slash triggers MSYS path mangling on
+          # Windows runners.
           ART_ID=$(gh api --paginate \
-            "/repos/${{ github.repository }}/actions/artifacts" \
-            --jq '[.artifacts[] | select(.name=="windows-build-out" and .expired==false)] | sort_by(.created_at) | last | .id')
+            "repos/${{ github.repository }}/actions/artifacts" \
+            --jq '[.artifacts[] | select(.name=="windows-build-out" and .expired==false)] | sort_by(.created_at) | last | .id' || echo "")
           echo "Latest windows-build-out artifact id: ${ART_ID:-none}"
           if [ -n "$ART_ID" ] && [ "$ART_ID" != "null" ]; then
             echo "Downloading artifact $ART_ID via gh (handles >2GB)..."
-            gh api "/repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > artifact.zip
-            ls -lh artifact.zip
-            mkdir -p restore-tmp
-            unzip -o -q artifact.zip -d restore-tmp
-            ls -lh restore-tmp/
-            if [ -f restore-tmp/out.tar.zst ]; then
-              echo "Extracting build dir — resuming incrementally..."
-              tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/
-              du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
-            elif ls restore-tmp/out.tar.zst.part-* >/dev/null 2>&1; then
-              cat restore-tmp/out.tar.zst.part-* \
-                | tar --use-compress-program=zstd -xf - -C chromium/src/
-              du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+            if gh api "repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > artifact.zip; then
+              ls -lh artifact.zip
+              mkdir -p restore-tmp
+              unzip -o -q artifact.zip -d restore-tmp || true
+              ls -lh restore-tmp/ || true
+              if [ -f restore-tmp/out.tar.zst ]; then
+                echo "Extracting build dir — resuming incrementally..."
+                tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/ \
+                  && echo "RESTORE_OK" || echo "extract failed — fresh start"
+                du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+              elif ls restore-tmp/out.tar.zst.part-* >/dev/null 2>&1; then
+                cat restore-tmp/out.tar.zst.part-* \
+                  | tar --use-compress-program=zstd -xf - -C chromium/src/ \
+                  && echo "RESTORE_OK" || echo "extract failed — fresh start"
+                du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+              fi
+              rm -f artifact.zip
+            else
+              echo "Download failed — fresh start."
             fi
-            rm -f artifact.zip
           else
             echo "No prior artifact — fresh start."
           fi
