@@ -1,27 +1,17 @@
 name: Release Windows build (self-hosted)
 
-# Builds Windows x64 on YOUR self-hosted runner (e.g. your work Windows
-# PC). Self-hosted runners have NO 6-hour cap, so this is a single
-# continuous full build — no resume, no chunking, no mtime tricks. The
-# runner agent is GitHub's standard CI tool (NOT Claude); install it
-# once, build, then remove it.
+# Builds Windows x64 on a self-hosted runner (the user's Windows PC).
+# No 6h cap (self-hosted), single continuous build.
 #
-# SETUP (one-time, on the Windows PC):
-#   1. GitHub → repo Settings → Actions → Runners → "New self-hosted
-#      runner" → Windows. Copy the shown download+config commands.
-#   2. Run them in PowerShell on the Windows PC. When it prints
-#      "Listening for Jobs" (or shows Idle in Settings), it's ready.
-#   3. Trigger: gh workflow run release-windows-selfhosted.yml -f tag=v0.2.1
-#      (or run it from the Actions tab in the browser).
+# KEY LESSON (learned the hard way): depot_tools (gclient/gn/ninja) must
+# run in a NATIVE Windows shell (PowerShell/cmd), NOT Git Bash. Bash
+# mangles /c/ paths when depot_tools hands off to its bundled Python
+# ("CreateFile C:\c\Users\...gclient.py: cannot find path"). So all
+# depot_tools + build steps below use `shell: powershell`. Only plain
+# file-copy + packaging use bash.
 #
-# PREREQUISITES on the Windows PC:
-#   - Visual Studio 2022 with "Desktop development with C++" workload
-#     + Windows 11 SDK (required for any Chromium Windows build)
-#   - ~100 GB free disk, Git for Windows
-#   depot_tools (Python, ninja, gn) is fetched by the workflow itself.
-#
-# After the .exe ships: remove the runner (Settings → Actions → Runners
-# → … → Remove, or run `./config.cmd remove` on the PC).
+# Prereqs on the PC: Visual Studio 2022 (Desktop C++ workload) + Windows
+# SDK, ~100GB disk, Git for Windows. Runner registered as self-hosted.
 
 on:
   workflow_dispatch:
@@ -37,151 +27,115 @@ permissions:
 
 jobs:
   build-windows-selfhosted:
-    # Matches the labels a default Windows self-hosted runner advertises.
     runs-on: [self-hosted, windows, X64]
-    timeout-minutes: 600   # generous; self-hosted has no GitHub cap anyway
-
-    defaults:
-      run:
-        shell: bash
+    timeout-minutes: 600
 
     env:
       CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
-      MSYS_NO_PATHCONV: "1"
-      MSYS2_ARG_CONV_EXCL: "*"
 
     steps:
-      # FIRST: locate Git Bash and put it on PATH. On work PCs without
-      # admin, Git for Windows installs to a user-local dir that GitHub
-      # Actions' bash auto-detection misses → "bash: command not found".
-      # This pwsh step (no bash needed) finds bash wherever it landed and
-      # adds its dir to GITHUB_PATH so all later `shell: bash` steps work.
-      - name: Locate Git Bash and add to PATH
-        shell: powershell   # Windows PowerShell 5.1 (built-in); pwsh 7 isn't installed on stock Windows
-        run: |
-          $candidates = @(
-            "C:\Program Files\Git\bin",
-            "C:\Program Files (x86)\Git\bin",
-            "$env:LOCALAPPDATA\Programs\Git\bin",
-            "$env:USERPROFILE\AppData\Local\Programs\Git\bin",
-            "$env:ProgramW6432\Git\bin"
-          )
-          $found = $null
-          foreach ($c in $candidates) {
-            if ($c -and (Test-Path (Join-Path $c 'bash.exe'))) { $found = $c; break }
-          }
-          if (-not $found) {
-            $g = Get-Command git.exe -ErrorAction SilentlyContinue
-            if ($g) {
-              $root = Split-Path (Split-Path $g.Source)   # ...\Git\cmd\git.exe -> ...\Git
-              if (Test-Path (Join-Path $root 'bin\bash.exe')) { $found = (Join-Path $root 'bin') }
-            }
-          }
-          if (-not $found) {
-            $hit = Get-ChildItem -Path "C:\","$env:LOCALAPPDATA","$env:USERPROFILE" -Filter bash.exe -Recurse -ErrorAction SilentlyContinue -Force | Select-Object -First 1
-            if ($hit) { $found = Split-Path $hit.FullName }
-          }
-          if (-not $found) {
-            Write-Error "Git Bash (bash.exe) not found anywhere. Install Git for Windows."
-            exit 1
-          }
-          Write-Host "Found Git Bash at: $found"
-          Add-Content -Path $env:GITHUB_PATH -Value $found
-          & (Join-Path $found 'bash.exe') --version
-
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-          # Keep chromium/ + depot_tools/ between runs on this self-hosted
-          # runner so a retry doesn't re-download the ~30GB Chromium source
-          # (the sync takes ~1h). Only the tracked repo files get reset.
-          clean: false
+          clean: false   # keep chromium/ + depot_tools/ between runs (saves the ~1h sync)
 
-      - name: Install depot_tools
+      - name: Install depot_tools (PowerShell — native Windows paths)
+        shell: powershell
         run: |
-          if [ ! -d "depot_tools/.git" ]; then
-            git clone --depth 1 \
-              https://chromium.googlesource.com/chromium/tools/depot_tools.git \
-              depot_tools
-          fi
-          # Add depot_tools to PATH as a WINDOWS-style path. $(pwd) returns
-          # an MSYS /c/Users/... path; Windows tools (gclient.bat → python
-          # gclient.py) mis-read that as C:\c\Users\... → "cannot find
-          # path". cygpath -w converts it to C:\Users\... which both bash
-          # and Windows tools resolve correctly.
-          echo "$(cygpath -w "$(pwd)/depot_tools")" >> $GITHUB_PATH
-
-      - name: Bootstrap depot_tools
-        env:
-          DEPOT_TOOLS_UPDATE: "1"
-        run: |
-          # gclient is on PATH now; the first call self-bootstraps
-          # depot_tools' bundled Python/ninja/gn.
-          gclient --version || true
+          $ErrorActionPreference = "Stop"
+          if (-not (Test-Path depot_tools/.git)) {
+            git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git depot_tools
+          }
+          $dt = Join-Path (Get-Location).Path "depot_tools"
+          Add-Content -Path $env:GITHUB_PATH -Value $dt
+          Write-Host "depot_tools on PATH: $dt"
 
       - name: Sync Chromium source (pinned)
-        env:
-          DEPOT_TOOLS_UPDATE: "0"
+        shell: powershell
         run: |
-          set -x
-          # Chromium has paths >260 chars; Windows' default MAX_PATH makes
-          # git fail with "Filename too long". core.longpaths (per-user,
-          # no admin needed) lets git create them. Apply to all git ops
-          # including gclient's sub-fetches.
+          $ErrorActionPreference = "Stop"
+          # Chromium has >260-char paths; allow them (per-user, no admin).
           git config --global core.longpaths true
-          mkdir -p chromium && cd chromium
-          cat > .gclient <<'EOF'
-          solutions = [
-            {
-              "name": "src",
-              "url": "https://chromium.googlesource.com/chromium/src.git",
-              "custom_deps": {},
-              "custom_vars": {},
-            },
-          ]
-          target_os = ['win']
-          EOF
-          if [ ! -d src/.git ]; then
-            mkdir -p src
-            (cd src && \
-              git init -q && \
-              git remote add origin https://chromium.googlesource.com/chromium/src.git && \
-              git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
-              git checkout --detach FETCH_HEAD)
-          fi
-          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
+          New-Item -ItemType Directory -Force -Path chromium | Out-Null
+          Set-Location chromium
+          # Write .gclient line-by-line (avoids here-string indentation issues)
+          $g = @(
+            'solutions = ['
+            '  {'
+            '    "name": "src",'
+            '    "url": "https://chromium.googlesource.com/chromium/src.git",'
+            '    "custom_deps": {},'
+            '    "custom_vars": {},'
+            '  },'
+            ']'
+            "target_os = ['win']"
+          )
+          $g | Set-Content -Path .gclient -Encoding ascii
+          if (-not (Test-Path src/.git)) {
+            New-Item -ItemType Directory -Force -Path src | Out-Null
+            Set-Location src
+            git init -q
+            git remote add origin https://chromium.googlesource.com/chromium/src.git
+            git fetch --depth=1 --no-tags origin $env:CHROMIUM_REVISION
+            git checkout --detach FETCH_HEAD
+            Set-Location ..
+          }
+          & gclient sync --revision "src@$($env:CHROMIUM_REVISION)" --no-history --shallow
+          if ($LASTEXITCODE -ne 0) { throw "gclient sync failed ($LASTEXITCODE)" }
 
       - name: Copy MoltBrowser overlays
-        run: cp -r src/* chromium/src/
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Merge the repo's src/* overlay into chromium/src (robocopy
+          # merges cleanly; exit codes 0-7 are success, 8+ are errors).
+          robocopy src chromium/src /E /NFL /NDL /NJH /NJS /NP
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }
+          exit 0
 
       - name: Configure (gn gen)
-        run: ./scripts/configure.sh --platform windows --arch x64
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-Location chromium/src
+          New-Item -ItemType Directory -Force -Path out/MoltBrowser | Out-Null
+          # gn reads args from <out>/args.gn — use our Windows config.
+          Copy-Item ../../configs/windows-x64.gn out/MoltBrowser/args.gn -Force
+          Get-Content out/MoltBrowser/args.gn
+          & gn gen out/MoltBrowser
+          if ($LASTEXITCODE -ne 0) { throw "gn gen failed ($LASTEXITCODE)" }
 
       - name: Build chrome (full, no cap)
+        shell: powershell
         run: |
-          # depot_tools already on PATH via GITHUB_PATH (no $HOME).
-          cd chromium/src
-          autoninja -C out/MoltBrowser chrome
+          $ErrorActionPreference = "Stop"
+          Set-Location chromium/src
+          & autoninja -C out/MoltBrowser chrome
+          if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
+          if (-not (Test-Path out/MoltBrowser/chrome.exe)) { throw "chrome.exe missing after build" }
+          Write-Host "✅ chrome.exe built"
 
-      - name: Package + upload installer
+      - name: Package portable zip + upload
+        shell: powershell
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./scripts/package-win.sh --version "${{ inputs.tag }}" || true
-          cd dist
-          for f in MoltBrowser-*-win-x64-setup.exe; do
-            mv "$f" MoltBrowser-Windows-x64-Setup.exe 2>/dev/null || true
-          done
-          for f in MoltBrowser-*-win-x64.zip; do
-            mv "$f" MoltBrowser-Windows-x64.zip 2>/dev/null || true
-          done
-          ls -lh
-          gh release upload "${{ inputs.tag }}" \
-            MoltBrowser-Windows-x64-Setup.exe \
+          $ErrorActionPreference = "Stop"
+          Set-Location chromium/src/out/MoltBrowser
+          # Bundle the runtime files (exe + dlls + resources + locales),
+          # excluding build intermediates (obj/, gen/, *.lib, *.pdb).
+          $items = Get-ChildItem -File | Where-Object {
+            $_.Extension -in '.exe','.dll','.pak','.bin','.dat','.json' -or $_.Name -like '*.dll.*'
+          }
+          $stage = "MoltBrowser-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $items | ForEach-Object { Copy-Item $_.FullName $stage/ -Force }
+          if (Test-Path locales)   { Copy-Item locales   $stage/locales   -Recurse -Force }
+          if (Test-Path resources) { Copy-Item resources $stage/resources -Recurse -Force }
+          Compress-Archive -Path "$stage/*" -DestinationPath MoltBrowser-Windows-x64.zip -Force
+          Get-Item MoltBrowser-Windows-x64.zip | Format-List Name,Length
+          gh release upload "${{ inputs.tag }}" MoltBrowser-Windows-x64.zip `
             --repo "${{ github.repository }}" --clobber
-          [ -f MoltBrowser-Windows-x64.zip ] && \
-            gh release upload "${{ inputs.tag }}" MoltBrowser-Windows-x64.zip \
-              --repo "${{ github.repository }}" --clobber || true
-          echo "🎉 Windows shipped from self-hosted runner!"
+          Write-Host "🎉 Windows portable zip uploaded to release!"
