@@ -1,55 +1,49 @@
 name: Release Windows build
 
-# RESUMABLE Windows x64 build pipeline for FREE GitHub-hosted runners.
+# RESUMABLE Windows x64 build for FREE GitHub runners — whole-tree persist.
 #
-# The problem: a full Chromium compile takes ~6.5 hours on a free
-# windows-latest runner (4 cores), but GitHub hard-caps each job at 6
-# hours. Run #10 (official build) died at 6h15m; run #11 (stripped
-# build) also exceeded 6h. Free 4-core runners simply cannot finish in
-# one slot.
+# Background: a full Chromium compile takes >6h on a free 4-core runner,
+# over GitHub's 6h job cap. We resume across chained ~4h runs. The FIRST
+# resumable design persisted only chromium/src/out and re-synced source
+# each run — but a fresh sync gives every source file a new mtime, so
+# ninja/siso rebuilt the same ~40% every run and never converged (proven:
+# 14h, 4 runs, stuck at 40%).
 #
-# The free solution: incremental resume. ninja/siso builds are
-# incremental — already-compiled .obj files don't get rebuilt. So we:
-#   1. Build for ~4 hours (self-limited, well under the 6h cap)
-#   2. Save the build directory (chromium/src/out) as an artifact
-#   3. Auto-trigger the next run, which restores the build dir and
-#      continues where the last one stopped
-#   4. Repeat until chrome.exe exists, then package + upload the .exe
+# THE FIX (this design): persist the ENTIRE chromium/ tree (source +
+# build output) between runs. tar preserves mtimes, so restored source
+# stays OLDER than its restored .obj files → real incremental resume.
+# We sync source ONLY on the cold first run; warm runs just restore the
+# tree and keep compiling where they left off.
 #
-# Public repos get unlimited free Actions minutes + free artifact
-# storage, so this costs nothing. Wall-clock is ~2-3 chained runs
-# (~12-18h) but it's fully automated and $0.
-#
-# Each run re-syncs the (pinned, deterministic) Chromium source. We
-# rely on siso's content-hash-based incremental build so that fresh
-# source mtimes don't force a full rebuild — only genuinely-changed or
-# not-yet-built objects compile.
+# Artifact: ~12-15GB compressed, split into <2GB chunks (upload-artifact
+# has a per-file Buffer ceiling) and restored via gh CLI (Go, no limit).
+# Public repos get unlimited free Actions + artifact storage → $0.
+# Expected ~3 chained runs (cold ~40%, warm ~75%, warm finish).
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to attach binaries to (e.g., v0.2.1)'
+        description: 'Tag to attach binaries to'
         required: true
         type: string
         default: 'v0.2.1'
       attempt:
-        description: 'Resume attempt counter (auto-incremented by the chain)'
+        description: 'Resume attempt counter (auto-incremented)'
         required: false
         type: string
         default: '1'
 
 permissions:
-  contents: write   # upload release assets
-  actions: write    # self-trigger the next run in the chain
+  contents: write
+  actions: write
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 350   # 5h50m — self-limit under GitHub's 6h hard cap
+    timeout-minutes: 350
 
     defaults:
       run:
@@ -59,10 +53,10 @@ jobs:
       CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
-      # Build budget in seconds before we stop ninja to leave room for
-      # saving the partial build dir. 3.75h compile + ~2h overhead < 6h.
-      BUILD_TIMEOUT_SECONDS: "13500"
       MAX_ATTEMPTS: "12"
+      ARTIFACT_NAME: "chromium-tree"
+      MSYS_NO_PATHCONV: "1"
+      MSYS2_ARG_CONV_EXCL: "*"
 
     steps:
       - name: Check out repo
@@ -78,7 +72,6 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
             echo "attempt=1" >> $GITHUB_OUTPUT
           fi
-          echo "Build attempt #${{ inputs.attempt }} for tag ${{ inputs.tag }}"
 
       - name: Free up disk on the runner
         run: |
@@ -105,7 +98,50 @@ jobs:
           ./update_depot_tools.bat || true
           ./gclient --version || true
 
-      - name: Sync Chromium source (pinned)
+      # ---- RESUME: restore the WHOLE chromium tree from a prior run ----
+      # Download via gh CLI (Go — no 2GB Buffer cap). The tree is stored
+      # as <2GB chunks (chromium.tar.zst.part-*). Reassemble + extract;
+      # tar preserves source mtimes so the resumed build is truly
+      # incremental.
+      - name: Restore chromium tree (if any)
+        id: restore
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -x
+          ART_ID=$(gh api --paginate \
+            "repos/${{ github.repository }}/actions/artifacts" \
+            --jq "[.artifacts[] | select(.name==\"${ARTIFACT_NAME}\" and .expired==false)] | sort_by(.created_at) | last | .id" || echo "")
+          echo "Latest ${ARTIFACT_NAME} artifact id: ${ART_ID:-none}"
+          if [ -n "$ART_ID" ] && [ "$ART_ID" != "null" ]; then
+            echo "Downloading tree artifact $ART_ID via gh..."
+            if gh api "repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > tree.zip; then
+              ls -lh tree.zip
+              mkdir -p tree-tmp
+              unzip -o -q tree.zip -d tree-tmp || true
+              if ls tree-tmp/chromium.tar.zst.part-* >/dev/null 2>&1; then
+                echo "Reassembling + extracting whole tree (preserves mtimes)..."
+                cat tree-tmp/chromium.tar.zst.part-* \
+                  | tar --use-compress-program=zstd -xf - \
+                  && echo "restored=true" >> $GITHUB_OUTPUT \
+                  && echo "TREE_RESTORE_OK"
+                du -sh chromium/src 2>/dev/null || true
+                du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
+              else
+                echo "Artifact had no chunks — cold start."
+              fi
+              rm -rf tree.zip tree-tmp
+            else
+              echo "Download failed — cold start."
+            fi
+          else
+            echo "No prior tree — cold start."
+          fi
+
+      # ---- COLD START ONLY: sync source + overlays (skipped on resume) ----
+      - name: Sync Chromium source (cold start only)
+        if: steps.restore.outputs.restored != 'true'
         env:
           DEPOT_TOOLS_UPDATE: "0"
         run: |
@@ -133,71 +169,19 @@ jobs:
           (cd src && git log -1 --format="HEAD = %H %s") | head -1
           gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
 
-      - name: Copy MoltBrowser source overlays
+      - name: Copy MoltBrowser overlays (cold start only)
+        if: steps.restore.outputs.restored != 'true'
         run: |
           cp -r src/* chromium/src/
-
-      # ---- RESUME: restore partial build dir via gh CLI ----
-      # CRITICAL: download with `gh` (Go, no size limit), NOT a Node-based
-      # action. dawidd6/action-download-artifact choked on >2GB artifacts
-      # with "length out of range ... 2147483647" (the 2GB Node Buffer
-      # cap), which silently broke every resume for 5 attempts. gh CLI
-      # streams the artifact zip with no such limit.
-      - name: Restore previous build directory (if any)
-        continue-on-error: true   # a restore hiccup → fresh build, never cascade
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Stop Git Bash (MSYS) from rewriting /repos/... API paths into
-          # Windows filesystem paths (C:/Program Files/Git/repos/...).
-          MSYS_NO_PATHCONV: "1"
-          MSYS2_ARG_CONV_EXCL: "*"
-        run: |
-          set -x
-          # NOTE: no leading slash on the endpoint — gh prepends the API
-          # base, and a leading slash triggers MSYS path mangling on
-          # Windows runners.
-          ART_ID=$(gh api --paginate \
-            "repos/${{ github.repository }}/actions/artifacts" \
-            --jq '[.artifacts[] | select(.name=="windows-build-out" and .expired==false)] | sort_by(.created_at) | last | .id' || echo "")
-          echo "Latest windows-build-out artifact id: ${ART_ID:-none}"
-          if [ -n "$ART_ID" ] && [ "$ART_ID" != "null" ]; then
-            echo "Downloading artifact $ART_ID via gh (handles >2GB)..."
-            if gh api "repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > artifact.zip; then
-              ls -lh artifact.zip
-              mkdir -p restore-tmp
-              unzip -o -q artifact.zip -d restore-tmp || true
-              ls -lh restore-tmp/ || true
-              if [ -f restore-tmp/out.tar.zst ]; then
-                echo "Extracting build dir — resuming incrementally..."
-                tar --use-compress-program=zstd -xf restore-tmp/out.tar.zst -C chromium/src/ \
-                  && echo "RESTORE_OK" || echo "extract failed — fresh start"
-                du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
-              elif ls restore-tmp/out.tar.zst.part-* >/dev/null 2>&1; then
-                cat restore-tmp/out.tar.zst.part-* \
-                  | tar --use-compress-program=zstd -xf - -C chromium/src/ \
-                  && echo "RESTORE_OK" || echo "extract failed — fresh start"
-                du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
-              fi
-              rm -f artifact.zip
-            else
-              echo "Download failed — fresh start."
-            fi
-          else
-            echo "No prior artifact — fresh start."
-          fi
 
       - name: Configure (gn gen)
         run: |
           ./scripts/configure.sh --platform windows --arch x64
 
-      # Build with a STEP-LEVEL timeout (portable; no GNU `timeout`
-      # dependency). continue-on-error means a timeout doesn't fail the
-      # job — the next step inspects the result and decides what to do.
-      # autoninja is incremental: restored .obj files are not rebuilt.
       - name: Build chrome (time-limited, resumable)
         id: build
         continue-on-error: true
-        timeout-minutes: 255   # 4h15m of compile; ~40min headroom for save+chain
+        timeout-minutes: 240   # 4h compile; ~1.5h headroom for big tree save
         run: |
           export PATH="$HOME/depot_tools:$PATH"
           cd chromium/src
@@ -212,10 +196,10 @@ jobs:
             echo "✅ BUILD COMPLETE — chrome.exe exists"
           else
             echo "status=partial" >> $GITHUB_OUTPUT
-            echo "⏳ BUILD PARTIAL — will save progress and chain next run"
+            echo "⏳ BUILD PARTIAL — saving tree + chaining"
           fi
 
-      # ---- If complete: package + upload the installer ----
+      # ---- complete: package + ship ----
       - name: Package Windows installer
         if: always() && steps.status.outputs.status == 'complete'
         run: |
@@ -244,35 +228,30 @@ jobs:
           fi
           echo "🎉 Windows build complete and uploaded!"
 
-      # ---- If partial: save build dir + chain the next run ----
-      - name: Save partial build directory
+      # ---- partial: save the WHOLE tree (chunked) + chain ----
+      - name: Save chromium tree (chunked)
         if: always() && steps.status.outputs.status == 'partial'
         run: |
-          cd chromium/src
-          echo "Compressing out/MoltBrowser..."
-          # siso may still be flushing log files when the build step is
-          # killed at timeout, so tar can hit "file changed/removed as we
-          # read it" (exit 1). Those files are non-essential build logs;
-          # the .obj files are all captured. Suppress those warnings and
-          # don't let a benign exit code fail the save.
+          echo "Tar+zstd the whole chromium/ tree, split into <2GB chunks..."
+          # Drop the shallow .git (~2-3GB) — warm runs never re-sync, so
+          # history isn't needed; LASTCHANGE files were already generated.
+          rm -rf chromium/src/.git || true
           tar --warning=no-file-changed --warning=no-file-removed \
             --ignore-failed-read \
-            --use-compress-program="zstd -3 -T0" \
-            -cf ../../out.tar.zst out/MoltBrowser || true
-          cd ../..
-          if [ -s out.tar.zst ]; then
-            ls -lh out.tar.zst
-          else
-            echo "::error::out.tar.zst is empty — save genuinely failed"
-            exit 1
+            --use-compress-program="zstd -3 -T0" -cf - chromium \
+            | split -b 1900M - chromium.tar.zst.part- || true
+          ls -lh chromium.tar.zst.part-* || true
+          # Verify at least one chunk exists and is non-empty
+          if ! ls -s chromium.tar.zst.part-* 2>/dev/null | grep -qv '^0 '; then
+            echo "::error::tree save produced no usable chunks"
           fi
 
-      - name: Upload partial build directory
+      - name: Upload chromium tree
         if: always() && steps.status.outputs.status == 'partial'
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build-out
-          path: out.tar.zst
+          name: chromium-tree
+          path: chromium.tar.zst.part-*
           retention-days: 3
           overwrite: true
 
@@ -283,12 +262,11 @@ jobs:
         run: |
           NEXT=$(( ${{ steps.meta.outputs.attempt }} + 1 ))
           if [ "$NEXT" -gt "${MAX_ATTEMPTS}" ]; then
-            echo "::error::Reached MAX_ATTEMPTS (${MAX_ATTEMPTS}) without finishing."
+            echo "::error::Reached MAX_ATTEMPTS (${MAX_ATTEMPTS})."
             exit 1
           fi
-          echo "Triggering resume run #$NEXT..."
           gh workflow run release-windows.yml \
             --repo "${{ github.repository }}" \
             -f tag="${{ steps.meta.outputs.tag }}" \
             -f attempt="$NEXT"
-          echo "▶ Resume run #$NEXT queued. This run ends (partial)."
+          echo "▶ Resume run #$NEXT queued."
