@@ -93,18 +93,25 @@ jobs:
 
       - name: Check out repo
         uses: actions/checkout@v4
+        with:
+          # Keep chromium/ + depot_tools/ between runs on this self-hosted
+          # runner so a retry doesn't re-download the ~30GB Chromium source
+          # (the sync takes ~1h). Only the tracked repo files get reset.
+          clean: false
 
       - name: Install depot_tools
         run: |
-          # Clone into the workspace (cwd is GITHUB_WORKSPACE for every
-          # run step, so this is identical across steps — unlike $HOME,
-          # which resolves inconsistently on this self-hosted runner).
           if [ ! -d "depot_tools/.git" ]; then
             git clone --depth 1 \
               https://chromium.googlesource.com/chromium/tools/depot_tools.git \
               depot_tools
           fi
-          echo "$(pwd)/depot_tools" >> $GITHUB_PATH
+          # Add depot_tools to PATH as a WINDOWS-style path. $(pwd) returns
+          # an MSYS /c/Users/... path; Windows tools (gclient.bat → python
+          # gclient.py) mis-read that as C:\c\Users\... → "cannot find
+          # path". cygpath -w converts it to C:\Users\... which both bash
+          # and Windows tools resolve correctly.
+          echo "$(cygpath -w "$(pwd)/depot_tools")" >> $GITHUB_PATH
 
       - name: Bootstrap depot_tools
         env:
