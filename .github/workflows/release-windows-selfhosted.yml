@@ -41,6 +41,46 @@ jobs:
         with:
           clean: false   # keep chromium/ + depot_tools/ between runs (saves the ~1h sync)
 
+      # The runner (run.cmd) was started before Git for Windows was
+      # installed, so its PATH is stale and `git` isn't visible to the
+      # steps it spawns. (That's also why actions/checkout above silently
+      # fell back to an API tarball.) Find git ourselves and put it on
+      # PATH for every later step — no runner restart needed.
+      - name: Locate git + put it on PATH
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $g = Get-Command git -ErrorAction SilentlyContinue
+          if ($g) {
+            $dir = Split-Path $g.Source
+            Write-Host "git already on PATH: $($g.Source)"
+          } else {
+            $cands = @(
+              "$env:ProgramFiles\Git\cmd\git.exe",
+              "${env:ProgramFiles(x86)}\Git\cmd\git.exe",
+              "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe",
+              "$env:LOCALAPPDATA\Programs\Git\bin\git.exe",
+              "$env:USERPROFILE\AppData\Local\Programs\Git\cmd\git.exe",
+              "$env:USERPROFILE\scoop\apps\git\current\cmd\git.exe"
+            )
+            $hit = $cands | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $hit) {
+              Write-Host "Not in common spots; scanning install roots..."
+              $roots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:USERPROFILE") |
+                       Where-Object { $_ -and (Test-Path $_) }
+              foreach ($r in $roots) {
+                $f = Get-ChildItem -Path $r -Recurse -Filter git.exe -ErrorAction SilentlyContinue |
+                     Where-Object { $_.FullName -match '\\cmd\\git\.exe$' } | Select-Object -First 1
+                if ($f) { $hit = $f.FullName; break }
+              }
+            }
+            if (-not $hit) { throw "git.exe not found. Install Git for Windows on the runner." }
+            $dir = Split-Path $hit
+            Write-Host "Found git: $hit"
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+          Write-Host "git dir added to PATH: $dir"
+
       - name: Install depot_tools (PowerShell — native Windows paths)
         shell: powershell
         run: |
