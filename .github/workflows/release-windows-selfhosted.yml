@@ -94,22 +94,25 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Install depot_tools (into the workspace, self-contained)
+      - name: Install depot_tools
         run: |
-          if [ ! -d "$HOME/depot_tools/.git" ]; then
+          # Clone into the workspace (cwd is GITHUB_WORKSPACE for every
+          # run step, so this is identical across steps — unlike $HOME,
+          # which resolves inconsistently on this self-hosted runner).
+          if [ ! -d "depot_tools/.git" ]; then
             git clone --depth 1 \
               https://chromium.googlesource.com/chromium/tools/depot_tools.git \
-              "$HOME/depot_tools"
+              depot_tools
           fi
-          echo "$HOME/depot_tools" >> $GITHUB_PATH
+          echo "$(pwd)/depot_tools" >> $GITHUB_PATH
 
       - name: Bootstrap depot_tools
         env:
           DEPOT_TOOLS_UPDATE: "1"
         run: |
-          cd "$HOME/depot_tools"
-          ./update_depot_tools.bat || true
-          ./gclient --version || true
+          # gclient is on PATH now; the first call self-bootstraps
+          # depot_tools' bundled Python/ninja/gn.
+          gclient --version || true
 
       - name: Sync Chromium source (pinned)
         env:
@@ -146,7 +149,7 @@ jobs:
 
       - name: Build chrome (full, no cap)
         run: |
-          export PATH="$HOME/depot_tools:$PATH"
+          # depot_tools already on PATH via GITHUB_PATH (no $HOME).
           cd chromium/src
           autoninja -C out/MoltBrowser chrome
 
