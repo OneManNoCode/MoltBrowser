@@ -119,6 +119,11 @@ jobs:
           DEPOT_TOOLS_UPDATE: "0"
         run: |
           set -x
+          # Chromium has paths >260 chars; Windows' default MAX_PATH makes
+          # git fail with "Filename too long". core.longpaths (per-user,
+          # no admin needed) lets git create them. Apply to all git ops
+          # including gclient's sub-fetches.
+          git config --global core.longpaths true
           mkdir -p chromium && cd chromium
           cat > .gclient <<'EOF'
           solutions = [
