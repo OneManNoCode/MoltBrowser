@@ -53,6 +53,44 @@ jobs:
       MSYS2_ARG_CONV_EXCL: "*"
 
     steps:
+      # FIRST: locate Git Bash and put it on PATH. On work PCs without
+      # admin, Git for Windows installs to a user-local dir that GitHub
+      # Actions' bash auto-detection misses → "bash: command not found".
+      # This pwsh step (no bash needed) finds bash wherever it landed and
+      # adds its dir to GITHUB_PATH so all later `shell: bash` steps work.
+      - name: Locate Git Bash and add to PATH
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "C:\Program Files\Git\bin",
+            "C:\Program Files (x86)\Git\bin",
+            "$env:LOCALAPPDATA\Programs\Git\bin",
+            "$env:USERPROFILE\AppData\Local\Programs\Git\bin",
+            "$env:ProgramW6432\Git\bin"
+          )
+          $found = $null
+          foreach ($c in $candidates) {
+            if ($c -and (Test-Path (Join-Path $c 'bash.exe'))) { $found = $c; break }
+          }
+          if (-not $found) {
+            $g = Get-Command git.exe -ErrorAction SilentlyContinue
+            if ($g) {
+              $root = Split-Path (Split-Path $g.Source)   # ...\Git\cmd\git.exe -> ...\Git
+              if (Test-Path (Join-Path $root 'bin\bash.exe')) { $found = (Join-Path $root 'bin') }
+            }
+          }
+          if (-not $found) {
+            $hit = Get-ChildItem -Path "C:\","$env:LOCALAPPDATA","$env:USERPROFILE" -Filter bash.exe -Recurse -ErrorAction SilentlyContinue -Force | Select-Object -First 1
+            if ($hit) { $found = Split-Path $hit.FullName }
+          }
+          if (-not $found) {
+            Write-Error "Git Bash (bash.exe) not found anywhere. Install Git for Windows."
+            exit 1
+          }
+          Write-Host "Found Git Bash at: $found"
+          Add-Content -Path $env:GITHUB_PATH -Value $found
+          & (Join-Path $found 'bash.exe') --version
+
       - name: Check out repo
         uses: actions/checkout@v4
 
