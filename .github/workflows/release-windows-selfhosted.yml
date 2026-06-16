@@ -1,0 +1,134 @@
+name: Release Windows build (self-hosted)
+
+# Builds Windows x64 on YOUR self-hosted runner (e.g. your work Windows
+# PC). Self-hosted runners have NO 6-hour cap, so this is a single
+# continuous full build — no resume, no chunking, no mtime tricks. The
+# runner agent is GitHub's standard CI tool (NOT Claude); install it
+# once, build, then remove it.
+#
+# SETUP (one-time, on the Windows PC):
+#   1. GitHub → repo Settings → Actions → Runners → "New self-hosted
+#      runner" → Windows. Copy the shown download+config commands.
+#   2. Run them in PowerShell on the Windows PC. When it prints
+#      "Listening for Jobs" (or shows Idle in Settings), it's ready.
+#   3. Trigger: gh workflow run release-windows-selfhosted.yml -f tag=v0.2.1
+#      (or run it from the Actions tab in the browser).
+#
+# PREREQUISITES on the Windows PC:
+#   - Visual Studio 2022 with "Desktop development with C++" workload
+#     + Windows 11 SDK (required for any Chromium Windows build)
+#   - ~100 GB free disk, Git for Windows
+#   depot_tools (Python, ninja, gn) is fetched by the workflow itself.
+#
+# After the .exe ships: remove the runner (Settings → Actions → Runners
+# → … → Remove, or run `./config.cmd remove` on the PC).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to attach the .exe to'
+        required: true
+        type: string
+        default: 'v0.2.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-selfhosted:
+    # Matches the labels a default Windows self-hosted runner advertises.
+    runs-on: [self-hosted, windows, X64]
+    timeout-minutes: 600   # generous; self-hosted has no GitHub cap anyway
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
+      GYP_MSVS_VERSION: "2022"
+      MSYS_NO_PATHCONV: "1"
+      MSYS2_ARG_CONV_EXCL: "*"
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Install depot_tools (into the workspace, self-contained)
+        run: |
+          if [ ! -d "$HOME/depot_tools/.git" ]; then
+            git clone --depth 1 \
+              https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+              "$HOME/depot_tools"
+          fi
+          echo "$HOME/depot_tools" >> $GITHUB_PATH
+
+      - name: Bootstrap depot_tools
+        env:
+          DEPOT_TOOLS_UPDATE: "1"
+        run: |
+          cd "$HOME/depot_tools"
+          ./update_depot_tools.bat || true
+          ./gclient --version || true
+
+      - name: Sync Chromium source (pinned)
+        env:
+          DEPOT_TOOLS_UPDATE: "0"
+        run: |
+          set -x
+          mkdir -p chromium && cd chromium
+          cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ['win']
+          EOF
+          if [ ! -d src/.git ]; then
+            mkdir -p src
+            (cd src && \
+              git init -q && \
+              git remote add origin https://chromium.googlesource.com/chromium/src.git && \
+              git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
+              git checkout --detach FETCH_HEAD)
+          fi
+          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
+
+      - name: Copy MoltBrowser overlays
+        run: cp -r src/* chromium/src/
+
+      - name: Configure (gn gen)
+        run: ./scripts/configure.sh --platform windows --arch x64
+
+      - name: Build chrome (full, no cap)
+        run: |
+          export PATH="$HOME/depot_tools:$PATH"
+          cd chromium/src
+          autoninja -C out/MoltBrowser chrome
+
+      - name: Package + upload installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/package-win.sh --version "${{ inputs.tag }}" || true
+          cd dist
+          for f in MoltBrowser-*-win-x64-setup.exe; do
+            mv "$f" MoltBrowser-Windows-x64-Setup.exe 2>/dev/null || true
+          done
+          for f in MoltBrowser-*-win-x64.zip; do
+            mv "$f" MoltBrowser-Windows-x64.zip 2>/dev/null || true
+          done
+          ls -lh
+          gh release upload "${{ inputs.tag }}" \
+            MoltBrowser-Windows-x64-Setup.exe \
+            --repo "${{ github.repository }}" --clobber
+          [ -f MoltBrowser-Windows-x64.zip ] && \
+            gh release upload "${{ inputs.tag }}" MoltBrowser-Windows-x64.zip \
+              --repo "${{ github.repository }}" --clobber || true
+          echo "🎉 Windows shipped from self-hosted runner!"
