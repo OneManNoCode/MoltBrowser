@@ -59,7 +59,7 @@ jobs:
       # This pwsh step (no bash needed) finds bash wherever it landed and
       # adds its dir to GITHUB_PATH so all later `shell: bash` steps work.
       - name: Locate Git Bash and add to PATH
-        shell: pwsh
+        shell: powershell   # Windows PowerShell 5.1 (built-in); pwsh 7 isn't installed on stock Windows
         run: |
           $candidates = @(
             "C:\Program Files\Git\bin",
