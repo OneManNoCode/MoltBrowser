@@ -3,21 +3,21 @@ name: Release Windows build (self-hosted)
 # Builds Windows x64 on a self-hosted runner (the user's Windows PC).
 # No 6h cap (self-hosted), single continuous build.
 #
-# LESSON 1 — shells: depot_tools (gclient/gn/ninja) must run in a NATIVE
+# LESSON 1 - shells: depot_tools (gclient/gn/ninja) must run in a NATIVE
 # Windows shell (PowerShell/cmd), NOT Git Bash. Bash mangles /c/ paths
 # into C:\c\ when depot_tools hands off to its bundled Python. So every
 # depot_tools + build step below uses `shell: powershell`.
 #
-# LESSON 2 — MAX_PATH: the Actions workspace
+# LESSON 2 - MAX_PATH: the Actions workspace
 # (C:\Users\<u>\actions-runner\_work\MoltBrowser\MoltBrowser\chromium\ =
 # 73 chars) plus Chromium's vendored depot_tools gsutil tree produces a
-# 261-char path — 1 over Windows' 260 MAX_PATH — so gsutil's self-extract
+# 261-char path - 1 over Windows' 260 MAX_PATH - so gsutil's self-extract
 # drops a file and `gclient sync` dies (FileNotFoundError on rc.exe hook).
 # Fix: sync + build from a SHORT root, C:\cr (canonical Chromium-on-Win
 # workaround). Same path drops to ~194 chars. C:\cr is OUTSIDE the
 # workspace, so it also persists across runs for free.
 #
-# LESSON 3 — PATH: the runner's PATH can predate the Git install, so we
+# LESSON 3 - PATH: the runner's PATH can predate the Git install, so we
 # locate git ourselves (see "Locate git").
 #
 # Prereqs on the PC: Visual Studio 2022 (Desktop C++ workload) + Windows
@@ -44,7 +44,7 @@ jobs:
       CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
-      BUILD_ROOT: 'C:\cr'   # short root — keeps Chromium paths under MAX_PATH
+      BUILD_ROOT: 'C:\cr'   # short root - keeps Chromium paths under MAX_PATH
 
     steps:
       - name: Check out repo
@@ -91,7 +91,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $dir
           Write-Host "git dir added to PATH: $dir"
 
-      - name: Install depot_tools (PowerShell — native Windows paths)
+      - name: Install depot_tools (PowerShell - native Windows paths)
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -102,7 +102,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $dt
           Write-Host "depot_tools on PATH: $dt"
 
-      - name: Sync Chromium source (pinned) — short root C:\cr
+      - name: Sync Chromium source (pinned) - short root C:\cr
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -114,7 +114,7 @@ jobs:
               -Name "LongPathsEnabled" -Value 1 -Type DWord -ErrorAction Stop
             Write-Host "LongPathsEnabled=1 (system-wide)"
           } catch {
-            Write-Host "LongPathsEnabled not set (no admin) — short root C:\cr is the primary fix"
+            Write-Host "LongPathsEnabled not set (no admin) - short root C:\cr is the primary fix"
           }
 
           $root = $env:BUILD_ROOT
