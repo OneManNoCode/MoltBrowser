@@ -167,6 +167,16 @@ jobs:
             Write-Host "Salvaging prior workspace sync: $wsChromium -> $root"
             Move-Item -LiteralPath $wsChromium -Destination $root -Force
           }
+
+          # If the tree is already fully synced, skip gclient sync. A prior
+          # run copies MoltBrowser overlays into src AFTER sync, leaving the
+          # tree 'dirty' - which makes `gclient sync` refuse ("You have
+          # uncommitted changes"). Source + DEPS + hooks are already
+          # complete, so we go straight to overlays -> gn gen -> build.
+          if ((Test-Path "$root\.molt-synced") -or (Test-Path "$root\src\third_party\depot_tools\gclient.py")) {
+            Write-Host "C:\cr\src already synced - skipping gclient sync."
+            exit 0
+          }
           New-Item -ItemType Directory -Force -Path $root | Out-Null
 
           # The prior run's gsutil self-extract failed mid-way at the long
@@ -201,6 +211,8 @@ jobs:
           }
           & gclient sync --revision "src@$($env:CHROMIUM_REVISION)" --no-history --shallow
           if ($LASTEXITCODE -ne 0) { throw "gclient sync failed ($LASTEXITCODE)" }
+          New-Item -ItemType File -Force -Path "$root\.molt-synced" | Out-Null
+          Write-Host "Sync complete - wrote .molt-synced sentinel."
 
       - name: Copy MoltBrowser overlays
         shell: powershell
