@@ -106,11 +106,17 @@ jobs:
           # normally triggers this, but we skip sync on warm runs - so do
           # it here, idempotently, so gn gen always finds initialized tools.
           $env:PATH = "$dt;$env:PATH"
-          & gclient --version 2>&1 | Out-Host
+          # gclient/*.bat print recommendation WARNINGs to stderr; under
+          # -ErrorActionPreference Stop those become fatal NativeCommandErrors.
+          # Relax to Continue for the native bootstrap calls and judge
+          # success solely by the python3_bin_reldir.txt artifact.
+          $ErrorActionPreference = "Continue"
+          cmd /c "gclient --version"
           if (-not (Test-Path "$dt\python3_bin_reldir.txt")) {
             Write-Host "Forcing bootstrap via update_depot_tools.bat..."
-            & "$dt\update_depot_tools.bat" 2>&1 | Out-Host
+            cmd /c "$dt\update_depot_tools.bat"
           }
+          $ErrorActionPreference = "Stop"
           if (-not (Test-Path "$dt\python3_bin_reldir.txt")) {
             throw "depot_tools bootstrap failed: python3_bin_reldir.txt missing"
           }
