@@ -26,7 +26,9 @@ google_default_client_secret = ""
 # Disable Google-specific features
 safe_browsing_mode = 0
 enable_reporting = false
-enable_supervised_users = false
+# NOTE: enable_supervised_users must stay at its default (true) - Chromium
+# asserts it (//chrome/test/BUILD.gn: assert(enable_supervised_users)), so
+# forcing it false breaks gn gen on Windows.
 
 # Branding
 is_chrome_branded = false
