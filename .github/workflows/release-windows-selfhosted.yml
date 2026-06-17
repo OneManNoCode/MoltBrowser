@@ -266,6 +266,15 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
+          # Keep the PC awake for the multi-hour compile. A prior build died
+          # when the machine idle-slept ("runner lost communication"). This
+          # holds ES_SYSTEM_REQUIRED for the life of THIS powershell process
+          # (which stays alive running autoninja), so no idle sleep. It
+          # auto-clears when the step ends - no persistent power-config change.
+          Add-Type -Namespace Win32 -Name Power -MemberDefinition '[DllImport("kernel32.dll", SetLastError=true)] public static extern uint SetThreadExecutionState(uint esFlags);'
+          # ES_CONTINUOUS(0x80000000)|ES_SYSTEM_REQUIRED(0x1)|ES_AWAYMODE_REQUIRED(0x40)=2147483713
+          [void][Win32.Power]::SetThreadExecutionState(2147483713)
+          Write-Host "Sleep inhibited for the duration of the build."
           Set-Location "$env:BUILD_ROOT\src"
           & autoninja -C out/MoltBrowser chrome
           if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
