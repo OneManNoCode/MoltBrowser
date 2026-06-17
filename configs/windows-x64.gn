@@ -23,12 +23,10 @@ google_api_key = ""
 google_default_client_id = ""
 google_default_client_secret = ""
 
-# Disable Google-specific features
-safe_browsing_mode = 0
+# Disable Google-specific features (values mirror the proven linux-x64.gn)
+safe_browsing_mode = 1   # basic; mode=0 breaks deps (report_unsafe_site needs client_side_detection), mode=2 pulls Android targets
 enable_reporting = false
-# NOTE: enable_supervised_users must stay at its default (true) - Chromium
-# asserts it (//chrome/test/BUILD.gn: assert(enable_supervised_users)), so
-# forcing it false breaks gn gen on Windows.
+enable_supervised_users = true   # Chromium asserts this (//chrome/test/BUILD.gn); cannot be false
 
 # Branding
 is_chrome_branded = false
