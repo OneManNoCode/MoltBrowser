@@ -101,6 +101,20 @@ jobs:
           $dt = Join-Path (Get-Location).Path "depot_tools"
           Add-Content -Path $env:GITHUB_PATH -Value $dt
           Write-Host "depot_tools on PATH: $dt"
+          # Bootstrap depot_tools now (downloads bundled python3/git and
+          # writes python3_bin_reldir.txt that gn requires). gclient sync
+          # normally triggers this, but we skip sync on warm runs - so do
+          # it here, idempotently, so gn gen always finds initialized tools.
+          $env:PATH = "$dt;$env:PATH"
+          & gclient --version 2>&1 | Out-Host
+          if (-not (Test-Path "$dt\python3_bin_reldir.txt")) {
+            Write-Host "Forcing bootstrap via update_depot_tools.bat..."
+            & "$dt\update_depot_tools.bat" 2>&1 | Out-Host
+          }
+          if (-not (Test-Path "$dt\python3_bin_reldir.txt")) {
+            throw "depot_tools bootstrap failed: python3_bin_reldir.txt missing"
+          }
+          Write-Host "depot_tools bootstrapped (python3_bin_reldir.txt present)."
 
       # Chromium compiles with MSVC. If no Visual Studio C++ toolchain is
       # present, install VS 2022 Build Tools (C++ workload + Win SDK + ATL)
