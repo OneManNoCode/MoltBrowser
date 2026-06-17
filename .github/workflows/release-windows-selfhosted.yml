@@ -132,37 +132,44 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $haveVC = $false
-          if (Test-Path $vswhere) {
-            $inst = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
-            if ($inst) { $haveVC = $true; Write-Host "VS with C++ tools already present: $inst" }
+          function Get-VSPath {
+            if (Test-Path $vswhere) {
+              return (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+            }
+            return $null
           }
-          if ($haveVC) { Write-Host "Skipping install."; exit 0 }
-
-          $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-          if (-not $isAdmin) {
-            throw "VS C++ tools missing and the runner is NOT elevated, so I cannot install them. Install VS 2022 Build Tools with the 'Desktop development with C++' workload from an elevated shell, then re-run."
+          $inst = Get-VSPath
+          if (-not $inst) {
+            $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+            if (-not $isAdmin) {
+              throw "VS C++ tools missing and the runner is NOT elevated, so I cannot install them. Install VS 2022 Build Tools with the 'Desktop development with C++' workload from an elevated shell, then re-run."
+            }
+            Write-Host "Installing VS 2022 Build Tools (C++ workload) unattended - this takes ~15-20 min..."
+            $bs = Join-Path $env:TEMP "vs_buildtools.exe"
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bs
+            $vsArgs = @(
+              "--quiet","--wait","--norestart","--nocache",
+              "--add","Microsoft.VisualStudio.Workload.VCTools",
+              "--add","Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+              "--add","Microsoft.VisualStudio.Component.Windows11SDK.26100",
+              "--add","Microsoft.VisualStudio.Component.Windows11SDK.22621",
+              "--add","Microsoft.VisualStudio.Component.VC.ATL",
+              "--includeRecommended"
+            )
+            $p = Start-Process -FilePath $bs -ArgumentList $vsArgs -Wait -PassThru
+            Write-Host "VS installer exit code: $($p.ExitCode)"
+            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "VS install failed ($($p.ExitCode))" }
+            $inst = Get-VSPath
           }
-
-          Write-Host "Installing VS 2022 Build Tools (C++ workload) unattended - this takes ~15-20 min..."
-          $bs = Join-Path $env:TEMP "vs_buildtools.exe"
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bs
-          $vsArgs = @(
-            "--quiet","--wait","--norestart","--nocache",
-            "--add","Microsoft.VisualStudio.Workload.VCTools",
-            "--add","Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "--add","Microsoft.VisualStudio.Component.Windows11SDK.26100",
-            "--add","Microsoft.VisualStudio.Component.Windows11SDK.22621",
-            "--add","Microsoft.VisualStudio.Component.VC.ATL",
-            "--includeRecommended"
-          )
-          $p = Start-Process -FilePath $bs -ArgumentList $vsArgs -Wait -PassThru
-          Write-Host "VS installer exit code: $($p.ExitCode)"
-          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "VS install failed ($($p.ExitCode))" }
-
-          $inst = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
-          if (-not $inst) { throw "VS install finished but C++ tools still not detected." }
-          Write-Host "VS C++ tools installed at: $inst"
+          if (-not $inst) { throw "VS C++ tools still not detected." }
+          Write-Host "VS C++ tools at: $inst"
+          # vs_toolchain.py (DEPOT_TOOLS_WIN_TOOLCHAIN=0) only finds VS via
+          # these env vars when it lives outside %ProgramFiles(x86)% - which
+          # VS 2022 does (it installs under 64-bit %ProgramFiles%). Export
+          # the vswhere-resolved path for gn gen + build.
+          "vs2022_install=$inst"         | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          "GYP_MSVS_OVERRIDE_PATH=$inst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          Write-Host "Exported vs2022_install + GYP_MSVS_OVERRIDE_PATH=$inst"
 
       - name: Sync Chromium source (pinned) - short root C:\cr
         shell: powershell
