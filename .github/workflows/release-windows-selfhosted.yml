@@ -276,7 +276,15 @@ jobs:
           [void][Win32.Power]::SetThreadExecutionState(2147483713)
           Write-Host "Sleep inhibited for the duration of the build."
           Set-Location "$env:BUILD_ROOT\src"
-          & autoninja -C out/MoltBrowser chrome
+          # Thermal headroom: this runs on a laptop that overheated and froze
+          # at full load. Cap parallelism to half the logical processors so
+          # the CPU isn't pegged at 100% for hours. Slower but won't cook the
+          # machine. (Override with MOLT_NINJA_JOBS if needed.)
+          $cores = [Environment]::ProcessorCount
+          if ($env:MOLT_NINJA_JOBS) { $jobs = [int]$env:MOLT_NINJA_JOBS }
+          else { $jobs = [Math]::Max(2, [Math]::Floor($cores / 2)) }
+          Write-Host "Logical processors: $cores -> building with -j $jobs (thermal headroom)"
+          & ninja -C out/MoltBrowser -j $jobs chrome
           if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
           if (-not (Test-Path out/MoltBrowser/chrome.exe)) { throw "chrome.exe missing after build" }
           Write-Host "chrome.exe built"
