@@ -256,6 +256,19 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           Set-Location "$env:BUILD_ROOT\src"
+          # One-time clean: a hard reboot during a prior compile left the siso
+          # build state corrupted (thousands of fs errors, failure at target
+          # ~130 on code that compiled fine pre-reboot). Wipe the output dir
+          # once so we build from a clean, consistent state. Future runs skip
+          # this (sentinel present) and resume incrementally.
+          $cleanSentinel = Join-Path $env:BUILD_ROOT ".molt-clean-v1"
+          if (-not (Test-Path $cleanSentinel)) {
+            if (Test-Path out/MoltBrowser) {
+              Write-Host "One-time clean of corrupted build state: out/MoltBrowser"
+              Remove-Item -Recurse -Force out/MoltBrowser -ErrorAction SilentlyContinue
+            }
+            New-Item -ItemType File -Force -Path $cleanSentinel | Out-Null
+          }
           New-Item -ItemType Directory -Force -Path out/MoltBrowser | Out-Null
           Copy-Item "$env:GITHUB_WORKSPACE\configs\windows-x64.gn" out/MoltBrowser/args.gn -Force
           Get-Content out/MoltBrowser/args.gn
@@ -288,7 +301,14 @@ jobs:
           # autoninja picks the right tool and forwards -j to cap concurrency,
           # preserving the incremental build while limiting heat.
           & autoninja -C out/MoltBrowser -j $jobs chrome
-          if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
+          $buildCode = $LASTEXITCODE
+          if ($buildCode -ne 0) {
+            Write-Host "===== siso_output (tail 120) ====="
+            if (Test-Path out/MoltBrowser/siso_output) { Get-Content out/MoltBrowser/siso_output -Tail 120 }
+            Write-Host "===== siso_failed_commands.bat ====="
+            if (Test-Path out/MoltBrowser/siso_failed_commands.bat) { Get-Content out/MoltBrowser/siso_failed_commands.bat }
+            throw "build failed ($buildCode)"
+          }
           if (-not (Test-Path out/MoltBrowser/chrome.exe)) { throw "chrome.exe missing after build" }
           Write-Host "chrome.exe built"
 
