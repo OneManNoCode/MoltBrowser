@@ -284,7 +284,10 @@ jobs:
           if ($env:MOLT_NINJA_JOBS) { $jobs = [int]$env:MOLT_NINJA_JOBS }
           else { $jobs = [Math]::Max(2, [Math]::Floor($cores / 2)) }
           Write-Host "Logical processors: $cores -> building with -j $jobs (thermal headroom)"
-          & ninja -C out/MoltBrowser -j $jobs chrome
+          # autoninja (not plain ninja) - the out dir was initialized by siso;
+          # autoninja picks the right tool and forwards -j to cap concurrency,
+          # preserving the incremental build while limiting heat.
+          & autoninja -C out/MoltBrowser -j $jobs chrome
           if ($LASTEXITCODE -ne 0) { throw "build failed ($LASTEXITCODE)" }
           if (-not (Test-Path out/MoltBrowser/chrome.exe)) { throw "chrome.exe missing after build" }
           Write-Host "chrome.exe built"
