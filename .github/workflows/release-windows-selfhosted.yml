@@ -38,7 +38,7 @@ permissions:
 jobs:
   build-windows-selfhosted:
     runs-on: [self-hosted, windows, X64]
-    timeout-minutes: 600
+    timeout-minutes: 1200   # half-core thermal cap makes the laptop compile slow; generous headroom
 
     env:
       CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
