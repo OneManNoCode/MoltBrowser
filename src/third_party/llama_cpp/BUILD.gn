@@ -45,9 +45,18 @@ config("llama_cpp_config") {
 
 # llama.cpp uses C++ exceptions which Chromium disables by default.
 # Remove the global no_exceptions config and enable exceptions.
+# NOTE: on Windows the toolchain is clang-cl (MSVC-compatible driver),
+# where "-fexceptions" is NOT enough - clang still reports "cannot use
+# 'throw' with exceptions disabled". clang-cl needs the MSVC-style /EHsc
+# flag (which clang maps to -fcxx-exceptions internally). POSIX clang
+# uses -fexceptions as before.
 config("llama_exceptions") {
-  cflags_cc = [ "-fexceptions" ]
-  cflags_objcc = [ "-fexceptions" ]
+  if (is_win) {
+    cflags_cc = [ "/EHsc" ]
+  } else {
+    cflags_cc = [ "-fexceptions" ]
+    cflags_objcc = [ "-fexceptions" ]
+  }
 }
 
 # ---- GGML split into sub-targets to avoid duplicate .o names ----
