@@ -3,7 +3,11 @@
 
 #include "chrome/browser/molt_ai/voice/voice_service.h"
 
+#include "build/build_config.h"
+
+#if !BUILDFLAG(IS_WIN)
 #include <unistd.h>
+#endif
 
 #include <utility>
 
@@ -17,7 +21,6 @@
 #include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
-#include "build/build_config.h"
 
 namespace molt_ai {
 namespace voice {
@@ -51,7 +54,7 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
                                      base::FilePath bin,
                                      base::FilePath model) {
   TranscribeResult r;
-  r.binary_path = bin.value();
+  r.binary_path = bin.AsUTF8Unsafe();
   const base::TimeTicks t0 = base::TimeTicks::Now();
 
   if (bin.value().empty()) {
@@ -59,7 +62,7 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
     return r;
   }
   if (!base::PathExists(bin)) {
-    r.error = "whisper binary not found at " + bin.value();
+    r.error = "whisper binary not found at " + bin.AsUTF8Unsafe();
     return r;
   }
   if (wav_bytes.empty()) {
@@ -174,6 +177,22 @@ base::FilePath VoiceService::GetBundledModelPath() const {
 
 base::FilePath VoiceService::ResolveWhisperBinary() const {
   base::FilePath bundled = GetBundledWhisperDir().AppendASCII("whisper-cli");
+#if BUILDFLAG(IS_WIN)
+  // Windows has no execute-permission concept (no access(..., X_OK)); fall
+  // back to a plain existence check. Voice transcription is not wired up on
+  // Windows in this preview build, so the bundled/system binaries below are
+  // not expected to be present anyway.
+  if (!bundled.value().empty() && base::PathExists(bundled)) {
+    return bundled;
+  }
+  for (const char* p : kCandidatePaths) {
+    base::FilePath fp = base::FilePath::FromUTF8Unsafe(p);
+    if (base::PathExists(fp)) {
+      return fp;
+    }
+  }
+  return base::FilePath();
+#else
   if (!bundled.value().empty() && base::PathExists(bundled) &&
       access(bundled.value().c_str(), X_OK) == 0) {
     return bundled;
@@ -186,6 +205,7 @@ base::FilePath VoiceService::ResolveWhisperBinary() const {
     }
   }
   return base::FilePath();
+#endif
 }
 
 bool VoiceService::IsUsingBundledWhisper() const {

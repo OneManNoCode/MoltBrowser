@@ -3,12 +3,16 @@
 
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 
+#include "build/build_config.h"
+
+#if !BUILDFLAG(IS_WIN)
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
+#endif  // !BUILDFLAG(IS_WIN)
 
 #include <cstring>
 #include <map>
@@ -47,6 +51,14 @@ TorRelay& TorRelay::operator=(TorRelay&&) = default;
 TorRelay::~TorRelay() = default;
 
 namespace {
+
+// Everything below in this anonymous namespace is the blocking
+// control-port implementation: raw TCP sockets, POSIX auth-cookie
+// reading, and the response parsers that only the blocking helpers
+// call. None of it is reachable from Windows-compiled code (the public
+// TorService methods return graceful "unavailable" results on Windows),
+// so the whole block is compiled out there.
+#if !BUILDFLAG(IS_WIN)
 
 constexpr const char* kControlHost = "127.0.0.1";
 constexpr int kControlPort = 9051;
@@ -463,6 +475,8 @@ std::vector<TorCircuit> GetCircuitsBlocking() {
   return out;
 }
 
+#endif  // !BUILDFLAG(IS_WIN)
+
 }  // namespace
 
 // static
@@ -475,29 +489,53 @@ TorService::TorService() = default;
 TorService::~TorService() = default;
 
 void TorService::Probe(base::OnceCallback<void(TorStatus)> on_done) {
+#if BUILDFLAG(IS_WIN)
+  // Tor is not supported on Windows in this preview build. Report a
+  // graceful "not running" status rather than touching raw sockets.
+  TorStatus s;
+  s.running = false;
+  s.error = "Tor is not supported on Windows in this build.";
+  s.control_port_addr = "127.0.0.1:9051";
+  s.socks_port_addr = "127.0.0.1:9050";
+  std::move(on_done).Run(std::move(s));
+  return;
+#else
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&ProbeBlocking),
       std::move(on_done));
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 void TorService::GetCircuits(
     base::OnceCallback<void(std::vector<TorCircuit>)> on_done) {
+#if BUILDFLAG(IS_WIN)
+  // Tor is not supported on Windows in this preview build. No circuits.
+  std::move(on_done).Run(std::vector<TorCircuit>());
+  return;
+#else
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&GetCircuitsBlocking),
       std::move(on_done));
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 void TorService::GetCircuitsEnriched(
     base::OnceCallback<void(std::vector<TorCircuit>)> on_done) {
+#if BUILDFLAG(IS_WIN)
+  // Tor is not supported on Windows in this preview build. No circuits.
+  std::move(on_done).Run(std::vector<TorCircuit>());
+  return;
+#else
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&GetCircuitsEnrichedBlocking),
       std::move(on_done));
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 }  // namespace tor

@@ -3,7 +3,11 @@
 
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
 
+#include "build/build_config.h"
+
+#if !BUILDFLAG(IS_WIN)
 #include <unistd.h>
+#endif
 
 #include <utility>
 
@@ -16,7 +20,6 @@
 #include "base/process/launch.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
-#include "build/build_config.h"
 
 namespace molt_ai {
 namespace ocr {
@@ -42,7 +45,7 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
                                 base::FilePath tessdata,
                                 size_t max_chars) {
   OcrResult r;
-  r.binary_path = bin.value();
+  r.binary_path = bin.AsUTF8Unsafe();
   const base::TimeTicks t0 = base::TimeTicks::Now();
 
   if (bin.value().empty()) {
@@ -138,15 +141,24 @@ base::FilePath OcrService::GetBundledOcrDir() const {
 }
 
 base::FilePath OcrService::ResolveTesseractBinary() const {
+  // On Windows there is no bundled binary and the POSIX candidate paths do
+  // not exist; access()/X_OK are POSIX-only, so fall back to a plain
+  // existence check (OCR is effectively unavailable on Windows here).
   base::FilePath bundled = GetBundledOcrDir().AppendASCII("tesseract");
-  if (!bundled.value().empty() && base::PathExists(bundled) &&
-      access(bundled.value().c_str(), X_OK) == 0) {
+  if (!bundled.value().empty() && base::PathExists(bundled)
+#if !BUILDFLAG(IS_WIN)
+      && access(bundled.value().c_str(), X_OK) == 0
+#endif
+  ) {
     return bundled;
   }
   for (const char* p : kCandidatePaths) {
     base::FilePath fp(p);
-    if (base::PathExists(fp) &&
-        access(fp.value().c_str(), X_OK) == 0) {
+    if (base::PathExists(fp)
+#if !BUILDFLAG(IS_WIN)
+        && access(fp.value().c_str(), X_OK) == 0
+#endif
+    ) {
       return fp;
     }
   }

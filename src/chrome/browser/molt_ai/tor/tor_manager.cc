@@ -3,6 +3,9 @@
 
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 
+#include "build/build_config.h"
+
+#if !BUILDFLAG(IS_WIN)
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <signal.h>
@@ -10,10 +13,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif  // !BUILDFLAG(IS_WIN)
 
 #include <utility>
-
-#include "build/build_config.h"
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -67,6 +69,15 @@ base::FilePath ResolveAppSupportRoot() {
 // already has a 300ms connect timeout, so we just loop until success
 // or total_ms elapsed.
 TorLaunchResult DoWaitForBootstrap(int total_ms) {
+#if BUILDFLAG(IS_WIN)
+  // Tor is not supported on Windows in this preview build. The raw
+  // control-port socket probe below uses POSIX sockets, so we just
+  // report unavailability and never spin the polling loop.
+  TorLaunchResult r;
+  r.success = false;
+  r.error = "Tor is not available on Windows in this preview build.";
+  return r;
+#else
   TorLaunchResult r;
   const int kPollIntervalMs = 500;
   int waited = 0;
@@ -106,6 +117,7 @@ TorLaunchResult DoWaitForBootstrap(int total_ms) {
   r.error = "Tor did not become reachable within " +
             base::NumberToString(total_ms / 1000) + "s.";
   return r;
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 }  // namespace
@@ -133,8 +145,15 @@ base::FilePath TorManager::GetTorrcPath() const {
 }
 
 bool TorManager::WriteTorrc() {
+#if BUILDFLAG(IS_WIN)
+  // Tor is not supported on Windows in this preview build. The torrc
+  // builder below concatenates base::FilePath::value() (a std::wstring
+  // on Windows) into a std::string, and we never launch Tor here, so
+  // skip it entirely and report failure to the caller.
+  return false;
+#else
   base::FilePath dir = GetDataDir();
-  if (dir.empty()) return false;
+  if (dir.value().empty()) return false;
   if (!base::CreateDirectory(dir)) return false;
   // Write a minimal torrc that:
   //   - Binds SocksPort + ControlPort on loopback only
@@ -161,6 +180,7 @@ bool TorManager::WriteTorrc() {
   if (base::PathExists(geo6))
     contents += "GeoIPv6File " + geo6.value() + "\n";
   return base::WriteFile(GetTorrcPath(), contents);
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 base::FilePath TorManager::GetBundledTorDir() const {
@@ -183,15 +203,22 @@ base::FilePath TorManager::GetBundledTorDir() const {
 base::FilePath TorManager::ResolveTorBinary() const {
   // 1) Bundled tor first — gives the seamless out-of-box experience.
   base::FilePath bundled = GetBundledTorDir().AppendASCII("tor");
-  if (!bundled.value().empty() && base::PathExists(bundled) &&
-      access(bundled.value().c_str(), X_OK) == 0) {
+  if (!bundled.value().empty() && base::PathExists(bundled)
+#if !BUILDFLAG(IS_WIN)
+      // access(X_OK) is POSIX-only; on Windows fall back to existence.
+      && access(bundled.value().c_str(), X_OK) == 0
+#endif
+  ) {
     return bundled;
   }
   // 2) System-installed tor (power users / dev fallback).
   for (const char* p : kCandidatePaths) {
     base::FilePath fp(p);
-    if (base::PathExists(fp) &&
-        access(fp.value().c_str(), X_OK) == 0) {
+    if (base::PathExists(fp)
+#if !BUILDFLAG(IS_WIN)
+        && access(fp.value().c_str(), X_OK) == 0
+#endif
+    ) {
       return fp;
     }
   }
@@ -227,7 +254,8 @@ void TorManager::Launch(
   }
   if (!WriteTorrc()) {
     TorLaunchResult r;
-    r.error = "Failed to write managed torrc to " + GetDataDir().value();
+    r.error =
+        "Failed to write managed torrc to " + GetDataDir().AsUTF8Unsafe();
     std::move(on_ready).Run(std::move(r));
     return;
   }
@@ -240,12 +268,12 @@ void TorManager::Launch(
   if (!p.IsValid()) {
     TorLaunchResult r;
     r.error = "Failed to spawn tor (LaunchProcess returned invalid).";
-    r.binary_path = bin.value();
+    r.binary_path = bin.AsUTF8Unsafe();
     std::move(on_ready).Run(std::move(r));
     return;
   }
   child_ = std::move(p);
-  LOG(INFO) << "[MoltTor] launched " << bin.value()
+  LOG(INFO) << "[MoltTor] launched " << bin.AsUTF8Unsafe()
             << " pid=" << child_.Pid();
 
   // Wait off-thread for the control port to come up.
@@ -268,6 +296,26 @@ void TorManager::Launch(
 
 void TorManager::Stop() {
   if (!child_.IsValid()) return;
+#if BUILDFLAG(IS_WIN)
+  // Tor is not supported on Windows in this preview build, so we never
+  // actually spawn a child here (Launch fails before LaunchProcess).
+  // This path is defensive: terminate via the cross-platform
+  // base::Process API since the POSIX kill()/SIGTERM/SIGKILL signals
+  // below don't exist on Windows. Move the wait+terminate to a worker
+  // thread so we don't block the UI thread or leak the child.
+  base::Process child = std::move(child_);
+  child_ = base::Process();  // mark not-running on the UI side
+  LOG(INFO) << "[MoltTor] terminating pid=" << child.Pid();
+  base::ThreadPool::PostTask(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+       base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+      base::BindOnce(
+          [](base::Process child) {
+            child.Terminate(/*exit_code=*/0, /*wait=*/true);
+          },
+          std::move(child)));
+#else
   // SIGTERM first — Tor handles it as a clean shutdown signal and
   // flushes its hidden service descriptors. Move the wait+SIGKILL to
   // a worker thread so we don't block the UI thread but also don't
@@ -298,6 +346,7 @@ void TorManager::Stop() {
                       << " exited with code=" << exit_code;
           },
           std::move(child)));
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 }  // namespace tor
