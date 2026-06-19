@@ -294,9 +294,14 @@ jobs:
           # the CPU isn't pegged at 100% for hours. Slower but won't cook the
           # machine. (Override with MOLT_NINJA_JOBS if needed.)
           $cores = [Environment]::ProcessorCount
+          # Lowered from cores/2 to cores/4: at -j6 siso advanced at only
+          # ~0.29x wall-time = severe RAM-swap thrashing (too many heavy
+          # Blink/V8 compiles for available RAM). Fewer parallel jobs fit in
+          # RAM, eliminate swapping, and raise real throughput. Tune via
+          # MOLT_NINJA_JOBS if needed.
           if ($env:MOLT_NINJA_JOBS) { $jobs = [int]$env:MOLT_NINJA_JOBS }
-          else { $jobs = [Math]::Max(2, [Math]::Floor($cores / 2)) }
-          Write-Host "Logical processors: $cores -> building with -j $jobs (thermal headroom)"
+          else { $jobs = [Math]::Max(2, [Math]::Floor($cores / 4)) }
+          Write-Host "Logical processors: $cores -> building with -j $jobs (RAM-thrash mitigation)"
           # autoninja (not plain ninja) - the out dir was initialized by siso;
           # autoninja picks the right tool and forwards -j to cap concurrency,
           # preserving the incremental build while limiting heat.
