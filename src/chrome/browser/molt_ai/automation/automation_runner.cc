@@ -1055,7 +1055,7 @@ void AutomationRunner::TakeSnapshot(const std::string& tag,
         std::string filename = tag + "_" +
             base::NumberToString(static_cast<int64_t>(std::time(nullptr))) +
             ".json";
-        base::FilePath path = dir.Append(filename);
+        base::FilePath path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
         std::string serialized;
         base::JSONWriter::WriteWithOptions(
             v, base::JSONWriter::OPTIONS_PRETTY_PRINT, &serialized);
