@@ -250,7 +250,7 @@ void TorManager::Launch(
 
   // Wait off-thread for the control port to come up.
   int pid_copy = child_.Pid();
-  std::string bin_path_copy = bin.value();
+  std::string bin_path_copy = bin.AsUTF8Unsafe();
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},

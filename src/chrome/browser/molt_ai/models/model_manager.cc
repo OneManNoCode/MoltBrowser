@@ -47,10 +47,11 @@ struct ModelManager::Impl {
 #elif BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
     base::FilePath exe_dir;
     if (base::PathService::Get(base::DIR_EXE, &exe_dir)) {
-      base::FilePath bundled = exe_dir.Append("molt_models")
-                                   .Append(model_id + ".gguf");
+      base::FilePath bundled =
+          exe_dir.Append(FILE_PATH_LITERAL("molt_models"))
+              .Append(base::FilePath::FromUTF8Unsafe(model_id + ".gguf"));
       if (std::filesystem::exists(bundled.value())) {
-        return bundled.value();
+        return bundled.AsUTF8Unsafe();
       }
     }
 #endif

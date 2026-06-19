@@ -4,7 +4,6 @@
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 
 #include <ctime>
-#include <fstream>
 #include <sstream>
 #include <utility>
 
@@ -13,6 +12,7 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 
@@ -59,19 +59,21 @@ base::FilePath AutomationStorage::GetRoot() const {
     return root_override_;
   base::FilePath home;
   base::PathService::Get(base::DIR_HOME, &home);
-  return home.Append(kAutomationsDirName);
+  return home.Append(base::FilePath::FromUTF8Unsafe(kAutomationsDirName));
 }
 
 base::FilePath AutomationStorage::GetAutomationsDir() const {
-  return GetRoot().Append(kAutomationsSubdir);
+  return GetRoot().Append(base::FilePath::FromUTF8Unsafe(kAutomationsSubdir));
 }
 
 base::FilePath AutomationStorage::GetScriptPath(const std::string& id) const {
-  return GetAutomationsDir().Append(id + kScriptExt);
+  return GetAutomationsDir().Append(
+      base::FilePath::FromUTF8Unsafe(id + kScriptExt));
 }
 
 base::FilePath AutomationStorage::GetAuditLogPath() const {
-  return GetAutomationsDir().Append(kAuditLogName);
+  return GetAutomationsDir().Append(
+      base::FilePath::FromUTF8Unsafe(kAuditLogName));
 }
 
 void AutomationStorage::SetRootForTesting(const base::FilePath& root) {
@@ -103,7 +105,7 @@ std::vector<std::string> AutomationStorage::ListIds() {
                          base::FileEnumerator::FILES,
                          FILE_PATH_LITERAL("*.molt"));
   for (auto path = e.Next(); !path.empty(); path = e.Next()) {
-    std::string filename = path.BaseName().RemoveExtension().value();
+    std::string filename = path.BaseName().RemoveExtension().AsUTF8Unsafe();
     if (!filename.empty())
       out.push_back(filename);
   }
@@ -163,7 +165,9 @@ bool AutomationStorage::Delete(const std::string& id) {
     return false;
   bool deleted_script = base::DeleteFile(GetScriptPath(id));
   base::FilePath artifacts =
-      GetAutomationsDir().Append(kArtifactsSubdir).Append(id);
+      GetAutomationsDir()
+          .Append(base::FilePath::FromUTF8Unsafe(kArtifactsSubdir))
+          .Append(base::FilePath::FromUTF8Unsafe(id));
   base::DeletePathRecursively(artifacts);
   AppendAudit(id, "deleted", "");
   return deleted_script;
@@ -181,25 +185,21 @@ void AutomationStorage::AppendAudit(const std::string& script_id,
     line += " | " + extra;
   line += "\n";
 
-  // Open in append mode (std::ofstream is fine for this small write).
-  std::ofstream f(GetAuditLogPath().value(), std::ios::app);
-  if (f.is_open()) {
-    f << line;
-  }
+  // base::AppendToFile is cross-platform; std::ofstream can't take the
+  // wstring that FilePath::value() returns on Windows.
+  base::AppendToFile(GetAuditLogPath(), line);
 }
 
 std::vector<std::string> AutomationStorage::ReadAuditTail(int max_lines) {
   ScopedAllowBlockingForMolt allow_blocking;
   std::vector<std::string> out;
-  std::ifstream f(GetAuditLogPath().value());
-  if (!f.is_open())
+  std::string contents;
+  if (!base::ReadFileToString(GetAuditLogPath(), &contents))
     return out;
-  std::string line;
-  while (std::getline(f, line)) {
-    out.push_back(line);
-    if (static_cast<int>(out.size()) > max_lines)
-      out.erase(out.begin());
-  }
+  out = base::SplitString(contents, "\n", base::KEEP_WHITESPACE,
+                          base::SPLIT_WANT_NONEMPTY);
+  if (static_cast<int>(out.size()) > max_lines)
+    out.erase(out.begin(), out.end() - max_lines);
   return out;
 }
 
@@ -207,7 +207,9 @@ base::FilePath AutomationStorage::EnsureArtifactsDir(
     const std::string& script_id) {
   ScopedAllowBlockingForMolt allow_blocking;
   base::FilePath dir =
-      GetAutomationsDir().Append(kArtifactsSubdir).Append(script_id);
+      GetAutomationsDir()
+          .Append(base::FilePath::FromUTF8Unsafe(kArtifactsSubdir))
+          .Append(base::FilePath::FromUTF8Unsafe(script_id));
   if (!base::DirectoryExists(dir))
     base::CreateDirectory(dir);
   return dir;
