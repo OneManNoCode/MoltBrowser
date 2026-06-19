@@ -213,7 +213,7 @@ base::FilePath TorManager::ResolveTorBinary() const {
   }
   // 2) System-installed tor (power users / dev fallback).
   for (const char* p : kCandidatePaths) {
-    base::FilePath fp(p);
+    base::FilePath fp = base::FilePath::FromUTF8Unsafe(p);
     if (base::PathExists(fp)
 #if !BUILDFLAG(IS_WIN)
         && access(fp.value().c_str(), X_OK) == 0

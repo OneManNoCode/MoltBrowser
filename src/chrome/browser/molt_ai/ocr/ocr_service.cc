@@ -84,7 +84,7 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
   cmd.AppendArg("eng");
   base::LaunchOptions opts;
   if (!tessdata.value().empty()) {
-    opts.environment["TESSDATA_PREFIX"] = tessdata.value();
+    opts.environment[FILE_PATH_LITERAL("TESSDATA_PREFIX")] = tessdata.value();
   }
   std::string combined;
   int exit_code = -1;
@@ -153,7 +153,7 @@ base::FilePath OcrService::ResolveTesseractBinary() const {
     return bundled;
   }
   for (const char* p : kCandidatePaths) {
-    base::FilePath fp(p);
+    base::FilePath fp = base::FilePath::FromUTF8Unsafe(p);
     if (base::PathExists(fp)
 #if !BUILDFLAG(IS_WIN)
         && access(fp.value().c_str(), X_OK) == 0

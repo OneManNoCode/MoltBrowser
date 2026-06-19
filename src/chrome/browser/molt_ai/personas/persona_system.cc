@@ -166,7 +166,7 @@ void PersonaSystem::LoadCustomPersonas() {
     return;
 
   base::FilePath json_path =
-      base::FilePath(storage_path_).Append(FILE_PATH_LITERAL("personas.json"));
+      base::FilePath::FromUTF8Unsafe(storage_path_).Append(FILE_PATH_LITERAL("personas.json"));
 
   std::string json_content;
   if (!base::ReadFileToString(json_path, &json_content))
@@ -229,7 +229,7 @@ void PersonaSystem::SaveCustomPersonas() const {
       base::Value(std::move(personas_list)),
       base::JSONWriter::OPTIONS_PRETTY_PRINT, &json_output);
 
-  base::FilePath dir_path(storage_path_);
+  base::FilePath dir_path = base::FilePath::FromUTF8Unsafe(storage_path_);
   base::CreateDirectory(dir_path);
 
   base::FilePath json_path =

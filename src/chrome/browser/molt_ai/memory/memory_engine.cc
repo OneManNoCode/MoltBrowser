@@ -43,11 +43,11 @@ struct MemoryEngine::Impl {
     base::JSONWriter::WriteWithOptions(
         base::Value(std::move(list)),
         base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
-    base::WriteFile(base::FilePath(storage_path + "/memory.json"), json);
+    base::WriteFile(base::FilePath::FromUTF8Unsafe(storage_path + "/memory.json"), json);
   }
 
   void LoadFromFile() {
-    base::FilePath path(storage_path + "/memory.json");
+    base::FilePath path = base::FilePath::FromUTF8Unsafe(storage_path + "/memory.json");
     std::string json;
     if (!base::ReadFileToString(path, &json)) return;
     auto parsed = base::JSONReader::Read(json,
@@ -84,7 +84,7 @@ MemoryEngine::~MemoryEngine() { Shutdown(); }
 bool MemoryEngine::Initialize(const std::string& storage_path) {
   if (impl_->initialized) return true;
   impl_->storage_path = storage_path;
-  base::CreateDirectory(base::FilePath(storage_path));
+  base::CreateDirectory(base::FilePath::FromUTF8Unsafe(storage_path));
   impl_->LoadFromFile();
   impl_->initialized = true;
   return true;
