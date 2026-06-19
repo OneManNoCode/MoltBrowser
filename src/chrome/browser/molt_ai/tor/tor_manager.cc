@@ -263,7 +263,9 @@ void TorManager::Launch(
   cmd.AppendArg("-f");
   cmd.AppendArgPath(GetTorrcPath());
   base::LaunchOptions opts;
-  opts.new_process_group = true;
+#if BUILDFLAG(IS_POSIX)
+  opts.new_process_group = true;  // POSIX-only LaunchOptions field
+#endif
   base::Process p = base::LaunchProcess(cmd, opts);
   if (!p.IsValid()) {
     TorLaunchResult r;
