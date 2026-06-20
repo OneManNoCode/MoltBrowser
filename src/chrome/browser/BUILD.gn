@@ -8240,7 +8240,16 @@ static_library("browser") {
     ]
   }
 
-  # NOTE: build_with_tflite_lib removed from upstream Chromium; skip.
+  # Re-added (matches upstream): defines PasswordFieldClassificationModel
+  # HandlerFactory, referenced by the tflite-guarded callers; omitting it
+  # broke the chrome.dll link with undefined symbols on Windows.
+  if (build_with_tflite_lib) {
+    sources += [
+      "password_manager/password_field_classification_model_handler_factory.cc",
+      "password_manager/password_field_classification_model_handler_factory.h",
+    ]
+    deps += [ "//components/segmentation_platform/internal:optimization_guide_segmentation_handler" ]
+  }
 
   if (enable_compose) {
     deps += [

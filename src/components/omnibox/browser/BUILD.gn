@@ -411,11 +411,31 @@ static_library("browser") {
     deps += [ ":vector_icons" ]
   }
 
-  # NOTE: upstream Chromium removed the `build_with_tflite_lib` GN
-  # variable; the tflite-scoring sources are now wired in differently.
-  # Removed the block here so fresh CI checkouts of newer Chromium pass
-  # gn-gen. If we need those sources back, mirror the current upstream
-  # gating pattern (looks like they moved into a separate target).
+  # Re-added (matches upstream): build_with_tflite_lib IS a valid GN var
+  # here, and these impl sources define AutocompleteScoringModelService /
+  # OnDeviceTailModelService etc. that the (tflite-guarded) callers
+  # reference. Omitting them broke the chrome.dll link with undefined
+  # symbols on Windows.
+  if (build_with_tflite_lib) {
+    sources += [
+      "autocomplete_scoring_model_executor.cc",
+      "autocomplete_scoring_model_executor.h",
+      "autocomplete_scoring_model_handler.cc",
+      "autocomplete_scoring_model_handler.h",
+      "autocomplete_scoring_model_service.cc",
+      "autocomplete_scoring_model_service.h",
+      "on_device_tail_model_executor.cc",
+      "on_device_tail_model_executor.h",
+      "on_device_tail_model_service.cc",
+      "on_device_tail_model_service.h",
+    ]
+    public_deps += [
+      "//third_party/tflite",
+      "//third_party/tflite:tflite_public_headers",
+      "//third_party/tflite_support",
+      "//third_party/tflite_support:tflite_support_proto",
+    ]
+  }
 
   if (enable_extensions_core) {
     deps += [
