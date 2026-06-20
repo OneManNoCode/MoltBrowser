@@ -300,14 +300,11 @@
         Download .tar.gz (Arch / other)
       </a>
     </div>
-    <div class="download-card" id="card-win">
-      <h3>&#128187; Windows <span class="badge badge-gray">Coming Soon</span></h3>
-      <p>Windows 10/11 x64. Installer in development. Vulkan GPU acceleration on supported hardware.</p>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/issues/new?title=Windows+build+request"
-         class="download-btn"
-         style="background:transparent;border:1px solid var(--text2);color:var(--text2)">
-        Request Windows Build
-      </a>
+    <div class="download-card available" id="card-win">
+      <h3>&#128187; Windows <span class="badge badge-green">Available</span></h3>
+      <p>Windows 10/11 x64. Portable build &mdash; unzip and run MoltBrowser.exe. Vulkan GPU acceleration on supported hardware.</p>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip"
+         class="download-btn">Download .zip (Windows 10/11 x64)</a>
     </div>
     <div class="download-card">
       <h3>&#128241; Android <span class="badge badge-gray">In Development</span></h3>
@@ -394,15 +391,11 @@
     label = isIOS ? 'iOS — Coming Q4 2026' : 'Android — Coming Q3 2026';
     hero.classList.add('disabled');
   } else if (isWin) {
-    // Windows build not yet published — point to issue tracker so users
-    // can vote for it instead of getting a 404.
-    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/issues/new?title=Windows+build+request';
-    label = 'Windows — Coming Soon';
-    hero.classList.add('disabled');
+    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip';
+    label = 'Download for Windows (x64)';
   } else if (isLinux) {
-    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/issues/new?title=Linux+build+request';
-    label = 'Linux — Coming Soon';
-    hero.classList.add('disabled');
+    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb';
+    label = 'Download for Linux (.deb)';
   } else if (isMac) {
     // Heuristic: M1/M2/M3/M4 Macs report Apple Silicon via uaData; older Macs ship Intel
     var arch = (navigator.userAgentData && navigator.userAgentData.platformArchitecture) || '';
