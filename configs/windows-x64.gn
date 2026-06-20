@@ -52,6 +52,14 @@ use_lld = true
 # DirectML available as alternative on Windows
 # (configured in llama.cpp BUILD.gn via is_win checks)
 
+# Disable the TFLite-based optimization-guide ML services (autocomplete
+# scoring, on-device tail suggestions, password field classification).
+# Their implementations are excluded from this build (the build_with_tflite_lib
+# BUILD.gn blocks were removed), so the callers - all guarded by
+# BUILDFLAG(BUILD_WITH_TFLITE_LIB) - must be excluded too, else chrome.dll
+# fails to link with undefined symbols. Matches the Linux build.
+build_with_tflite_lib = false
+
 # PGO disabled (also implicit with is_official_build=false)
 chrome_pgo_phase = 0
 treat_warnings_as_errors = false

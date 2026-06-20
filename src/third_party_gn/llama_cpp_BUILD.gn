@@ -80,6 +80,7 @@ source_set("ggml_cpp") {
     "ggml/src/ggml.cpp",
     "ggml/src/ggml-backend.cpp",
     "ggml/src/ggml-backend-reg.cpp",
+    "ggml/src/ggml-backend-dl.cpp",
     "ggml/src/ggml-opt.cpp",
     "ggml/src/ggml-threading.cpp",
     "ggml/src/gguf.cpp",
