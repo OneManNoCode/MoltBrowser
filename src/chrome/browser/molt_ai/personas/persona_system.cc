@@ -205,12 +205,12 @@ void PersonaSystem::SaveCustomPersonas() const {
   if (storage_path_.empty())
     return;
 
-  base::Value::List personas_list;
+  base::ListValue personas_list;
   for (const auto& [id, persona] : personas_) {
     if (persona.is_builtin)
       continue;
 
-    base::Value::Dict dict;
+    base::DictValue dict;
     dict.Set("id", persona.id);
     dict.Set("name", persona.name);
     dict.Set("description", persona.description);
