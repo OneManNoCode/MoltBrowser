@@ -166,7 +166,19 @@ const data = await browser.ai.extractData("table.pricing");
 const models = await browser.ai.getModels();
 ```
 
-## Current Status (v0.1.0)
+## Download — v0.2.1 (available now on all three desktop platforms 🎉)
+
+| Platform | Download |
+|----------|----------|
+| **macOS** (Apple Silicon) | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized |
+| **Windows** (10/11 x64) | [MoltBrowser-Windows-x64.zip](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip) — portable, unzip & run `MoltBrowser.exe` |
+| **Linux** (x64) | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.tar.gz) |
+
+Or visit **[moltbrowser.com](https://moltbrowser.com)** (auto-detects your OS) or the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases/latest).
+
+> Windows note: Tor routing, voice input, and OCR are not yet functional in the Windows preview (POSIX-only; stubbed). Core browsing, on-device AI chat, and MoltShield work on all platforms.
+
+## Current Status (v0.2.1)
 
 | Feature | Status |
 |---------|--------|
@@ -184,12 +196,12 @@ const models = await browser.ai.getModels();
 | Chat export/import, search, keyboard shortcuts | ✅ Complete |
 | Model downloading from HuggingFace | ✅ Complete |
 | Sparkle/WinSparkle auto-update | ✅ Complete |
-| macOS DMG + notarization pipeline | ✅ Ready |
-| Windows NSIS installer | ✅ Ready |
-| Linux deb/rpm/AppImage/Flatpak | ✅ Ready |
-| Android APK scaffolding | ✅ Scaffolding |
-| iOS IPA scaffolding | ✅ Scaffolding |
-| CI/CD GitHub Actions (5-platform matrix) | ✅ Complete |
+| macOS DMG (signed + notarized) | ✅ Shipped (v0.2.1) |
+| Windows x64 portable build | ✅ Shipped (v0.2.1) |
+| Linux deb / rpm / tar.gz | ✅ Shipped (v0.2.1) |
+| Android APK scaffolding | 🔨 Scaffolding |
+| iOS IPA scaffolding | 🔨 Scaffolding |
+| CI/CD GitHub Actions (macOS native, Linux Docker, Windows self-hosted) | ✅ Complete |
 
 ### Testing Pages
 

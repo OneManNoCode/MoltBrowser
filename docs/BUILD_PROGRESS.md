@@ -6,9 +6,50 @@
 
 ## Session State
 
-**Last Updated**: 2025-03-12 (Day 2)
-**Current Phase**: Day 2 — BUILD SYSTEM + FEATURES IN PROGRESS
-**Overall Status**: 🔄 Incremental build running with llama.cpp + AI modules + branding changes
+**Last Updated**: 2026-06-20
+**Current Phase**: ✅ SHIPPED — v0.2.1 live on macOS, Linux, and Windows
+**Overall Status**: All three desktop platforms built and published on the [v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1). Windows was the final holdout — see "Milestone: Windows + 3-platform release" immediately below.
+
+---
+
+## Milestone: Windows + 3-platform release (v0.2.1 — 2026-06-20)
+
+MoltBrowser now ships on **macOS, Linux, and Windows**. Assets on v0.2.1:
+`MoltBrowser-macOS-arm64.dmg` (signed + notarized), `MoltBrowser-Linux-x64.{deb,rpm,tar.gz}`,
+and `MoltBrowser-Windows-x64.zip` (546 MB portable — unzip & run `MoltBrowser.exe`).
+
+**Windows is built on a self-hosted GitHub Actions runner** (the user's Windows
+laptop, host `DSRINIVAS-REM`) via `.github/workflows/release-windows-selfhosted.yml`.
+Free GitHub-hosted runners (4 vCPU, 6 h cap) cannot compile Chromium in time;
+self-hosted has no cap. The pipeline runs entirely in **native PowerShell** (NOT
+Git Bash, which mangles `/c/` paths handed to depot_tools):
+
+1. Locate `git` + add to PATH (the runner's PATH can predate the Git install).
+2. Install + bootstrap depot_tools (`gclient --version`).
+3. Ensure VS 2022 Build Tools (C++ workload) + the Windows SDK **Debugging Tools**
+   (`dbghelp.dll`); export `vs2022_install` + `GYP_MSVS_OVERRIDE_PATH` so
+   `vs_toolchain.py` finds VS under 64-bit `Program Files`.
+4. Sync Chromium (pinned `51a413be…`) into short root **`C:\cr`** to dodge Windows
+   MAX_PATH; skip on warm runs; `C:\cr` persists across runs.
+5. `gn gen` with `configs/windows-x64.gn`.
+6. `autoninja -C out/MoltBrowser -j <cores/4> chrome` — the laptop is RAM-limited,
+   so `-j` is capped to avoid swap-thrash, plus keep-awake via
+   `SetThreadExecutionState`. The final `chrome.dll` link is RAM-bound and slow
+   (~10 h through swap) but **completes — a long link is not a hang**.
+7. Package portable zip + upload via `softprops/action-gh-release`.
+
+**Windows-portability fixes (molt_ai was written POSIX-only)** — full list in the
+CTO-agent memory `windows_selfhosted_build.md`. Highlights: `FilePath::value()` is
+`std::wstring` on Windows (→ `AsUTF8Unsafe()`/`FromUTF8Unsafe()`); `std::ofstream`
+→ `base::WriteFile`/`AppendToFile`; POSIX headers/sockets/`access()` in
+tor/voice/ocr guarded + stubbed (those 3 are non-functional on the Windows
+preview); llama.cpp exceptions via `/EHsc` on clang-cl; the fork's
+`base::ListValue`/`base::DictValue` names; committed the never-tracked
+`model_manager.h`; added missing `ggml-backend-dl.cpp`; restored the wrongly-removed
+`build_with_tflite_lib` model-service BUILD.gn blocks.
+
+**Next:** Android/iOS (still scaffolding); a real Windows installer; functional
+tor/voice/ocr on Windows (winsock port).
 
 ---
 

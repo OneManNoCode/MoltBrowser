@@ -27,10 +27,17 @@ MoltBrowser is an AI-native privacy browser built on a Chromium fork by GenEye A
 ./build/docker/build-linux.sh --package
 ```
 
-### Windows (via Docker cross-compile)
+### Windows (self-hosted GitHub Actions runner — NOT Docker)
+Windows builds run on a self-hosted runner (the host's Windows PC), via the
+`release-windows-selfhosted.yml` workflow. Trigger it:
 ```bash
-./scripts/release-win.sh --version 0.1.0 --build 1 --docker
+gh workflow run release-windows-selfhosted.yml -f tag=v0.2.1 --repo OneManNoCode/MoltBrowser
 ```
+Prereqs on the runner: online ("Listening for Jobs"), VS 2022 Build Tools (C++
+workload) + Windows SDK "Debugging Tools". Builds in short root `C:\cr`
+(MAX_PATH) and resumes incrementally. The monolithic `chrome.dll` link is
+RAM-bound and slow on low-memory machines (hours via swap) but completes — a
+long link is not a hang. Full gotcha list: `docs/BUILD_PROGRESS.md`.
 
 ### Direct build command
 ```bash

@@ -19,6 +19,44 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-06-20 — v0.2.1: Windows ships — MoltBrowser is now on all three desktop platforms 🎉
+
+MoltBrowser is now available on **macOS, Linux, and Windows**. The Windows
+x64 build (`MoltBrowser-Windows-x64.zip`, portable) joins the already-shipping
+macOS DMG and Linux `.deb`/`.rpm`/`.tar.gz` on the
+[v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1).
+
+### Added
+
+- **Windows x64 portable build** — unzip and run `MoltBrowser.exe`. On-device
+  AI chat, MoltShield, omnibox AI, personas, and memory all work.
+- **One-click downloads** for every platform via
+  `/releases/latest/download/<asset>`; the website auto-detects the OS.
+
+### Build / infrastructure
+
+- **Windows is built on a self-hosted GitHub Actions runner** (replacing the
+  old Docker cross-compile path). depot_tools/gn/ninja run in native
+  PowerShell; source + build live in a short root `C:\cr` to dodge Windows
+  MAX_PATH; toolchain is VS 2022 Build Tools + the Windows SDK "Debugging
+  Tools". Full play-by-play in `docs/BUILD_PROGRESS.md`.
+- **~40 Windows-portability fixes** to molt_ai code that had been POSIX-only:
+  `FilePath::value()` is `std::wstring` on Windows (→ `AsUTF8Unsafe()` /
+  `FromUTF8Unsafe()`); `std::ofstream` → `base::WriteFile`/`AppendToFile`;
+  POSIX headers/sockets/`access()` in tor/voice/ocr guarded + stubbed;
+  llama.cpp exceptions via `/EHsc` on clang-cl; the fork's
+  `base::ListValue`/`base::DictValue` names.
+- **Link fixes:** added the missing `ggml-backend-dl.cpp`; restored the
+  `build_with_tflite_lib` model-service BUILD.gn blocks that had been wrongly
+  removed.
+
+### Known limitations (Windows preview)
+
+- Tor routing, voice input, and OCR are stubbed (not yet functional on Windows).
+- Distributed as a portable ZIP (no installer yet).
+
+---
+
 ## 2026-05-12 — AI-grouped history (`/history`)
 
 Personal Vector Memory gets a face. `/history` in the side panel pulls
