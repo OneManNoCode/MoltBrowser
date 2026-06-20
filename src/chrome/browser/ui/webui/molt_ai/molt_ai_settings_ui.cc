@@ -20,7 +20,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
-#include <unistd.h>  // For access() in MoltNet Tor detection
+#include "build/build_config.h"
+#if !BUILDFLAG(IS_WIN)
+#include <unistd.h>  // For access() in MoltNet Tor detection (POSIX only)
+#endif
 
 namespace {
 
@@ -185,6 +188,10 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // 4. If no, emits a status event explaining how to install Tor.
 
   bool IsTorInstalled() const {
+#if BUILDFLAG(IS_WIN)
+    // Tor is not supported on Windows in this preview build.
+    return false;
+#else
     const char* candidates[] = {
         "/opt/homebrew/bin/tor",
         "/usr/local/bin/tor",
@@ -195,6 +202,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
         return true;
     }
     return false;
+#endif
   }
 
   void EmitMoltnetStatus(const std::string& status,
