@@ -49,7 +49,7 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
   base::FilePath resolved_bin =
       molt_ai::tor::TorManager::Get()->ResolveTorBinary();
   bool is_bundled = molt_ai::tor::TorManager::Get()->IsUsingBundledTor();
-  std::string resolved_path = resolved_bin.value();
+  std::string resolved_path = resolved_bin.AsUTF8Unsafe();
   molt_ai::tor::TorService::Get()->Probe(base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
          std::string resolved_path, bool is_bundled,

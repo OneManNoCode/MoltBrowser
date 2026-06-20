@@ -29,7 +29,8 @@ const char kSettingsFileName[] = "settings.json";
 base::FilePath GetSettingsFilePath() {
   base::FilePath home_dir;
   base::PathService::Get(base::DIR_HOME, &home_dir);
-  return home_dir.Append(".moltbrowser").Append(kSettingsFileName);
+  return home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
+      .Append(base::FilePath::FromUTF8Unsafe(kSettingsFileName));
 }
 
 // ---- Settings Handler ----

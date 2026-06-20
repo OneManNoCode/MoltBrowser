@@ -445,7 +445,8 @@ MoltAISettings LoadUserSettings() {
   base::FilePath home_dir;
   base::PathService::Get(base::DIR_HOME, &home_dir);
   base::FilePath path =
-      home_dir.Append(".moltbrowser").Append("settings.json");
+      home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
+          .Append(base::FilePath::FromUTF8Unsafe("settings.json"));
   std::string contents;
   if (base::ReadFileToString(path, &contents)) {
     auto parsed = base::JSONReader::Read(
@@ -1005,7 +1006,8 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::ModelInfo info) -> base::DictValue {
             base::DictValue r;
-            base::FilePath model_dir(info.file_path);
+            base::FilePath model_dir =
+                base::FilePath::FromUTF8Unsafe(info.file_path);
             base::FilePath parent_dir = model_dir.DirName();
             if (!base::DirectoryExists(parent_dir)) {
               base::CreateDirectory(parent_dir);
@@ -1025,7 +1027,8 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
                         " MB available.");
               return r;
             }
-            base::FilePath partial_path(info.file_path + ".partial");
+            base::FilePath partial_path =
+                base::FilePath::FromUTF8Unsafe(info.file_path + ".partial");
             int64_t existing_bytes = 0;
             auto file_size = base::GetFileSize(partial_path);
             if (file_size.has_value()) {
@@ -1071,11 +1074,12 @@ void MoltAIChatHandler::OnDownloadPrecheckComplete(
   }
 
   // Build HuggingFace download URL
-  base::FilePath file_path(info.file_path);
-  std::string filename = file_path.BaseName().value();
+  base::FilePath file_path = base::FilePath::FromUTF8Unsafe(info.file_path);
+  std::string filename = file_path.BaseName().AsUTF8Unsafe();
   std::string url = "https://huggingface.co/" + info.huggingface_id +
                     "/resolve/main/" + filename;
-  base::FilePath partial_path(info.file_path + ".partial");
+  base::FilePath partial_path =
+      base::FilePath::FromUTF8Unsafe(info.file_path + ".partial");
 
   LOG(INFO) << "[MoltAI] Starting download: " << url
             << " -> " << info.file_path
@@ -1395,7 +1399,8 @@ void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
 
     // Clean up partial file on a worker thread (DeleteFile blocks on I/O).
     if (!download_final_path_.value().empty()) {
-      base::FilePath partial_path(download_final_path_.value() + ".partial");
+      base::FilePath partial_path = base::FilePath::FromUTF8Unsafe(
+          download_final_path_.AsUTF8Unsafe() + ".partial");
       base::ThreadPool::PostTask(
           FROM_HERE, {base::MayBlock()},
           base::BindOnce(
@@ -1458,7 +1463,9 @@ void MoltAIChatHandler::HandleExportHistory(const base::ListValue& args) {
   base::FilePath home_dir;
   base::PathService::Get(base::DIR_HOME, &home_dir);
   base::FilePath file_path =
-      home_dir.Append(".moltbrowser").Append("chat_exports").Append(filename);
+      home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
+          .Append(base::FilePath::FromUTF8Unsafe("chat_exports"))
+          .Append(base::FilePath::FromUTF8Unsafe(filename));
 
   // mkdir + WriteFile on a ThreadPool worker; reply with success bool.
   base::ThreadPool::PostTaskAndReplyWithResult(
@@ -1487,7 +1494,7 @@ void MoltAIChatHandler::OnHistoryExported(std::string callback_id,
 
   base::DictValue result;
   result.Set("success", success);
-  result.Set("path", file_path.value());
+  result.Set("path", file_path.AsUTF8Unsafe());
   result.Set("filename", filename);
 
   ResolveJavascriptCallback(base::Value(callback_id),
@@ -3374,7 +3381,7 @@ void MoltAIChatHandler::HandleAppendReceipt(const base::ListValue& args) {
     return;
   }
   out.Set("success", true);
-  out.Set("path", ledger.value());
+  out.Set("path", ledger.AsUTF8Unsafe());
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
