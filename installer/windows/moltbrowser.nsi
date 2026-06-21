@@ -1,173 +1,191 @@
-; MoltBrowser Windows Installer (NSIS Script)
-; Copyright 2025 GenEye AI Labs Inc.
+; MoltBrowser Windows Installer (NSIS / MUI2 script)
+; Copyright 2026 GenEye AI Labs Inc.
 ;
-; Creates a professional Windows installer with:
-;   - Custom install directory
-;   - Desktop + Start Menu shortcuts
-;   - File associations (HTTP/HTTPS)
-;   - Default browser registration
-;   - Uninstaller with proper cleanup
-;   - WinSparkle auto-update DLL
+; Packages a STAGED Windows build directory (the runtime files produced by
+; the release-windows-selfhosted workflow's "Stage portable zip" step:
+; chrome.exe + *.dll + *.pak + *.bin + *.dat, locales/, resources/, and the
+; bundled tor/ocr/whisper dirs when present) into a per-machine setup .exe:
+;   MoltBrowser-Windows-x64-Setup.exe
 ;
-; Build with: makensis -DVERSION=0.1.0 moltbrowser.nsi
+; Produces:
+;   - Install to $PROGRAMFILES64\MoltBrowser (per-machine, admin)
+;   - Start Menu shortcut + optional Desktop shortcut to MoltBrowser.exe
+;   - Uninstaller + Add/Remove Programs registry entries
+;   - App icon from branding\ when an .ico is available
+;
+; The workflow passes everything in as /D defines, e.g.:
+;   makensis /DVERSION=0.2.1 ^
+;            /DSTAGE_DIR=C:\cr\src\out\MoltBrowser\MoltBrowser-Windows-x64 ^
+;            /DOUT_FILE=C:\...\MoltBrowser-Windows-x64-Setup.exe ^
+;            installer\windows\moltbrowser.nsi
+;
 ; Requires NSIS 3.x: https://nsis.sourceforge.io/
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "x64.nsh"
 
-; ---- Configuration ----
+; ----------------------------------------------------------------------------
+; Configurable defines (override on the makensis command line with /D...)
+; ----------------------------------------------------------------------------
+
+; Version string shown in the UI and Add/Remove Programs.
 !ifndef VERSION
-  !define VERSION "0.1.0"
+  !define VERSION "0.0.0"
 !endif
 
-Name "MoltBrowser ${VERSION}"
-OutFile "..\..\dist\MoltBrowser-${VERSION}-win-x64-setup.exe"
+; Directory holding the staged runtime files to package. Defaults to the
+; portable-zip layout relative to this .nsi so a local `makensis` works too,
+; but the workflow always passes an absolute /DSTAGE_DIR.
+!ifndef STAGE_DIR
+  !define STAGE_DIR "..\..\dist\MoltBrowser-Windows-x64"
+!endif
+
+; Output installer path. Default lands next to the staged dir's parent.
+!ifndef OUT_FILE
+  !define OUT_FILE "MoltBrowser-Windows-x64-Setup.exe"
+!endif
+
+; App icon: resolved from branding\ when present. Override with /DAPP_ICON.
+!ifndef APP_ICON
+  !define APP_ICON "..\..\branding\icon.ico"
+!endif
+
+; ----------------------------------------------------------------------------
+; Constants
+; ----------------------------------------------------------------------------
+!define APP_NAME      "MoltBrowser"
+!define APP_EXE       "MoltBrowser.exe"
+!define PUBLISHER     "GenEye AI Labs Inc."
+!define WEBSITE       "https://moltbrowser.com"
+!define UNINST_KEY    "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser"
+
+Name "${APP_NAME} ${VERSION}"
+OutFile "${OUT_FILE}"
 InstallDir "$PROGRAMFILES64\MoltBrowser"
 InstallDirRegKey HKLM "Software\MoltBrowser" "InstallDir"
 RequestExecutionLevel admin
 Unicode True
+SetCompressor /SOLID lzma
 
-; ---- Branding ----
-!define MUI_ICON "..\..\branding\icon.ico"
-!define MUI_UNICON "..\..\branding\icon.ico"
-!define MUI_HEADERIMAGE
-!define MUI_WELCOMEFINISHPAGE_BITMAP_STRETCH FitControl
+; ----------------------------------------------------------------------------
+; Modern UI 2
+; ----------------------------------------------------------------------------
 !define MUI_ABORTWARNING
 
-; ---- Installer Pages ----
+; Use the branding icon only when it actually exists, so a missing .ico does
+; not abort the build (branding\ ships PNGs today, not an .ico).
+!if /FileExists "${APP_ICON}"
+  !define MUI_ICON   "${APP_ICON}"
+  !define MUI_UNICON "${APP_ICON}"
+!endif
+
+; Pages
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
+!if /FileExists "..\..\LICENSE"
+  !insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
+!endif
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 
-; Finish page — launch browser option
-!define MUI_FINISHPAGE_RUN "$INSTDIR\MoltBrowser.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Launch MoltBrowser"
+; Finish page: offer to launch the browser.
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch ${APP_NAME}"
 !define MUI_FINISHPAGE_LINK "Visit moltbrowser.com"
-!define MUI_FINISHPAGE_LINK_LOCATION "https://moltbrowser.com"
+!define MUI_FINISHPAGE_LINK_LOCATION "${WEBSITE}"
 !insertmacro MUI_PAGE_FINISH
 
-; ---- Uninstaller Pages ----
+; Uninstaller pages
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-; ---- Languages ----
 !insertmacro MUI_LANGUAGE "English"
 
-; ---- Version Info ----
+; ----------------------------------------------------------------------------
+; Version info (embedded in the setup .exe resources)
+; ----------------------------------------------------------------------------
 VIProductVersion "${VERSION}.0"
-VIAddVersionKey "ProductName" "MoltBrowser"
-VIAddVersionKey "CompanyName" "GenEye AI Labs Inc."
-VIAddVersionKey "FileDescription" "MoltBrowser AI-Native Privacy Browser"
-VIAddVersionKey "FileVersion" "${VERSION}"
+VIAddVersionKey "ProductName"    "${APP_NAME}"
+VIAddVersionKey "CompanyName"    "${PUBLISHER}"
+VIAddVersionKey "FileDescription" "MoltBrowser AI-Native Privacy Browser Setup"
+VIAddVersionKey "FileVersion"    "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
-VIAddVersionKey "LegalCopyright" "Copyright 2025 GenEye AI Labs Inc."
+VIAddVersionKey "LegalCopyright" "Copyright 2026 ${PUBLISHER}"
 
-; ---- Install Section ----
-Section "MoltBrowser" SecMain
-  SectionIn RO ; Read-only (required)
-  SetOutPath $INSTDIR
+; ----------------------------------------------------------------------------
+; Install
+; ----------------------------------------------------------------------------
+Section "MoltBrowser (required)" SecMain
+  SectionIn RO
+  SetOutPath "$INSTDIR"
 
-  ; Copy all build artifacts
-  File /r "..\..\dist\MoltBrowser-${VERSION}-win-x64\*.*"
+  ; Recursively copy the entire staged runtime tree. /r captures top-level
+  ; files (exe/dll/pak/bin/dat) plus locales\, resources\, and the bundled
+  ; tor\ ocr\ whisper\ dirs whenever the stage step includes them.
+  File /r "${STAGE_DIR}\*.*"
 
-  ; Store install directory
+  ; The portable-zip stage ships the raw chrome.exe. Shortcuts and registry
+  ; below all point at MoltBrowser.exe, so normalize the name here: if the
+  ; staged tree did not already rename it, rename in place after extraction.
+  ; (Harmless no-op when MoltBrowser.exe is already present.)
+  IfFileExists "$INSTDIR\${APP_EXE}" haveExe 0
+    IfFileExists "$INSTDIR\chrome.exe" 0 haveExe
+      Rename "$INSTDIR\chrome.exe" "$INSTDIR\${APP_EXE}"
+  haveExe:
+
+  ; Remember where we installed.
   WriteRegStr HKLM "Software\MoltBrowser" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "Software\MoltBrowser" "Version" "${VERSION}"
 
-  ; Create uninstaller
+  ; Uninstaller.
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; Start Menu shortcuts
-  CreateDirectory "$SMPROGRAMS\MoltBrowser"
-  CreateShortcut "$SMPROGRAMS\MoltBrowser\MoltBrowser.lnk" "$INSTDIR\MoltBrowser.exe" \
-    "" "$INSTDIR\MoltBrowser.exe" 0
-  CreateShortcut "$SMPROGRAMS\MoltBrowser\Uninstall MoltBrowser.lnk" "$INSTDIR\uninstall.exe"
+  ; Start Menu shortcuts.
+  CreateDirectory "$SMPROGRAMS\${APP_NAME}"
+  CreateShortcut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0
+  CreateShortcut "$SMPROGRAMS\${APP_NAME}\Uninstall ${APP_NAME}.lnk" "$INSTDIR\uninstall.exe"
 
-  ; Desktop shortcut
-  CreateShortcut "$DESKTOP\MoltBrowser.lnk" "$INSTDIR\MoltBrowser.exe" \
-    "" "$INSTDIR\MoltBrowser.exe" 0
+  ; ---- Add/Remove Programs entry ----
+  WriteRegStr   HKLM "${UNINST_KEY}" "DisplayName"     "${APP_NAME}"
+  WriteRegStr   HKLM "${UNINST_KEY}" "DisplayVersion"  "${VERSION}"
+  WriteRegStr   HKLM "${UNINST_KEY}" "Publisher"       "${PUBLISHER}"
+  WriteRegStr   HKLM "${UNINST_KEY}" "DisplayIcon"     "$\"$INSTDIR\${APP_EXE}$\""
+  WriteRegStr   HKLM "${UNINST_KEY}" "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
+  WriteRegStr   HKLM "${UNINST_KEY}" "QuietUninstallString" "$\"$INSTDIR\uninstall.exe$\" /S"
+  WriteRegStr   HKLM "${UNINST_KEY}" "InstallLocation" "$\"$INSTDIR$\""
+  WriteRegStr   HKLM "${UNINST_KEY}" "URLInfoAbout"    "${WEBSITE}"
+  WriteRegDWORD HKLM "${UNINST_KEY}" "NoModify" 1
+  WriteRegDWORD HKLM "${UNINST_KEY}" "NoRepair" 1
 
-  ; Register as available browser (Add/Remove Programs)
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "DisplayName" "MoltBrowser"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "DisplayIcon" "$\"$INSTDIR\MoltBrowser.exe$\""
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "Publisher" "GenEye AI Labs Inc."
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "URLInfoAbout" "https://moltbrowser.com"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "URLUpdateInfo" "https://moltbrowser.com"
-
-  ; Calculate installed size
+  ; EstimatedSize (in KB) for Add/Remove Programs.
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser" \
-    "EstimatedSize" "$0"
-
-  ; Register as HTTP/HTTPS handler (user can set as default in Windows Settings)
-  WriteRegStr HKLM "Software\RegisteredApplications" "MoltBrowser" \
-    "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities"
-
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser" "" "MoltBrowser"
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\DefaultIcon" "" \
-    "$INSTDIR\MoltBrowser.exe,0"
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\shell\open\command" "" \
-    "$\"$INSTDIR\MoltBrowser.exe$\""
-
-  ; URL Associations capability
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities" \
-    "ApplicationDescription" "AI-Native Privacy Browser with on-device LLM inference"
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities" \
-    "ApplicationName" "MoltBrowser"
-
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities\URLAssociations" \
-    "http" "MoltBrowserURL"
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities\URLAssociations" \
-    "https" "MoltBrowserURL"
-
-  ; File type associations capability
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities\FileAssociations" \
-    ".htm" "MoltBrowserHTML"
-  WriteRegStr HKLM "Software\Clients\StartMenuInternet\MoltBrowser\Capabilities\FileAssociations" \
-    ".html" "MoltBrowserHTML"
-
-  ; URL handler registration
-  WriteRegStr HKLM "Software\Classes\MoltBrowserURL" "" "MoltBrowser URL"
-  WriteRegStr HKLM "Software\Classes\MoltBrowserURL\shell\open\command" "" \
-    "$\"$INSTDIR\MoltBrowser.exe$\" $\"%1$\""
-
-  WriteRegStr HKLM "Software\Classes\MoltBrowserHTML" "" "MoltBrowser HTML Document"
-  WriteRegStr HKLM "Software\Classes\MoltBrowserHTML\shell\open\command" "" \
-    "$\"$INSTDIR\MoltBrowser.exe$\" $\"%1$\""
-
-  ; Notify Windows of changes
-  System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
+  WriteRegDWORD HKLM "${UNINST_KEY}" "EstimatedSize" "$0"
 SectionEnd
 
-; ---- Uninstall Section ----
+; Optional Desktop shortcut (user can untick it on the components page).
+Section "Desktop shortcut" SecDesktop
+  CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}" "" "$INSTDIR\${APP_EXE}" 0
+SectionEnd
+
+; Component descriptions.
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}    "The MoltBrowser application files (required)."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Place a MoltBrowser shortcut on the Desktop."
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+
+; ----------------------------------------------------------------------------
+; Uninstall
+; ----------------------------------------------------------------------------
 Section "Uninstall"
-  ; Remove files
+  ; Remove the whole install tree (files + locales/resources/tor/ocr/whisper).
   RMDir /r "$INSTDIR"
 
-  ; Remove shortcuts
-  RMDir /r "$SMPROGRAMS\MoltBrowser"
-  Delete "$DESKTOP\MoltBrowser.lnk"
+  ; Shortcuts.
+  RMDir /r "$SMPROGRAMS\${APP_NAME}"
+  Delete "$DESKTOP\${APP_NAME}.lnk"
 
-  ; Remove registry entries
+  ; Registry.
+  DeleteRegKey HKLM "${UNINST_KEY}"
   DeleteRegKey HKLM "Software\MoltBrowser"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser"
-  DeleteRegKey HKLM "Software\Clients\StartMenuInternet\MoltBrowser"
-  DeleteRegValue HKLM "Software\RegisteredApplications" "MoltBrowser"
-  DeleteRegKey HKLM "Software\Classes\MoltBrowserURL"
-  DeleteRegKey HKLM "Software\Classes\MoltBrowserHTML"
-
-  ; Notify Windows
-  System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
 SectionEnd

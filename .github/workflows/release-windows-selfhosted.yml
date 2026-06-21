@@ -338,11 +338,104 @@ jobs:
           Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
           Get-Item $zip | Format-List Name,Length
 
-      - name: Upload portable zip to release
+      # Build the NSIS setup installer from the SAME staged dir the portable
+      # zip used (C:\cr\src\out\MoltBrowser\MoltBrowser-Windows-x64). Output
+      # MoltBrowser-Windows-x64-Setup.exe into the workspace root, next to
+      # the zip. Best-effort makensis discovery/install; if NSIS cannot be
+      # made available we log clearly and SKIP the installer rather than
+      # failing the run (the portable zip is the guaranteed artifact).
+      #
+      # NOTE: pure-ASCII body. Windows PowerShell 5.1 reads this BOM-less
+      # script as CP1252; a stray em-dash/smart-quote becomes a fatal parse
+      # error. Keep it plain ASCII.
+      - name: Build NSIS setup installer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $stageDir = Join-Path $env:BUILD_ROOT "src\out\MoltBrowser\MoltBrowser-Windows-x64"
+          if (-not (Test-Path $stageDir)) { throw "Staged dir not found: $stageDir" }
+
+          $version = "${{ inputs.tag }}".TrimStart("v")
+          if (-not $version) { $version = "0.0.0" }
+
+          $outFile = Join-Path $env:GITHUB_WORKSPACE "MoltBrowser-Windows-x64-Setup.exe"
+          $nsi     = Join-Path $env:GITHUB_WORKSPACE "installer\windows\moltbrowser.nsi"
+          if (-not (Test-Path $nsi)) { throw "NSIS script not found: $nsi" }
+
+          # ---- Locate makensis.exe (PATH, then standard NSIS install dirs) ----
+          function Find-MakeNSIS {
+            $cmd = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+            $cands = @(
+              "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
+              "$env:ProgramFiles\NSIS\makensis.exe"
+            )
+            foreach ($c in $cands) { if (Test-Path $c) { return $c } }
+            return $null
+          }
+
+          $makensis = Find-MakeNSIS
+
+          # ---- Best-effort install if missing: winget first, then NSIS zip ----
+          if (-not $makensis) {
+            Write-Host "makensis not found; attempting install via winget..."
+            $winget = Get-Command winget -ErrorAction SilentlyContinue
+            if ($winget) {
+              try {
+                & winget install --id NSIS.NSIS -e --silent --accept-source-agreements --accept-package-agreements
+              } catch {
+                Write-Host "winget install threw: $($_.Exception.Message)"
+              }
+              $makensis = Find-MakeNSIS
+            } else {
+              Write-Host "winget not available."
+            }
+          }
+
+          if (-not $makensis) {
+            Write-Host "Falling back to portable NSIS zip download..."
+            try {
+              $nsisVer = "3.10"
+              $url = "https://downloads.sourceforge.net/project/nsis/NSIS%203/$nsisVer/nsis-$nsisVer.zip"
+              $tmpZip = Join-Path $env:TEMP "nsis-$nsisVer.zip"
+              $dest   = Join-Path $env:TEMP "nsis-$nsisVer"
+              Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
+              if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+              Expand-Archive -Path $tmpZip -DestinationPath $dest -Force
+              $found = Get-ChildItem -Path $dest -Recurse -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $makensis = $found.FullName }
+            } catch {
+              Write-Host "NSIS zip download/extract failed: $($_.Exception.Message)"
+            }
+          }
+
+          if (-not $makensis) {
+            Write-Host "::warning::NSIS (makensis) unavailable - skipping setup installer. Portable zip still uploads. Install NSIS on the runner (winget install NSIS.NSIS) to enable the installer."
+            exit 0
+          }
+
+          Write-Host "Using makensis: $makensis"
+          Write-Host "Stage dir:      $stageDir"
+          Write-Host "Version:        $version"
+          Write-Host "Output:         $outFile"
+
+          if (Test-Path $outFile) { Remove-Item -Force $outFile }
+
+          & $makensis "/DVERSION=$version" "/DSTAGE_DIR=$stageDir" "/DOUT_FILE=$outFile" $nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
+          if (-not (Test-Path $outFile)) { throw "Installer not produced: $outFile" }
+          Get-Item $outFile | Format-List Name,Length
+
+      - name: Upload portable zip + setup installer to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
-          files: MoltBrowser-Windows-x64.zip
-          fail_on_unmatched_files: true
+          # The setup .exe is best-effort (skipped if NSIS is unavailable on
+          # the runner), so do NOT fail the upload when only the zip exists.
+          files: |
+            MoltBrowser-Windows-x64.zip
+            MoltBrowser-Windows-x64-Setup.exe
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
