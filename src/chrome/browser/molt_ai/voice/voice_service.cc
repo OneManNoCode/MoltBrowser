@@ -61,7 +61,11 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
     r.error = "no whisper binary available";
     return r;
   }
-  if (!base::PathExists(bin)) {
+  // Only verify existence for an absolute path (bundled / system-install
+  // resolution). A bare relative name is a PATH fallback (Windows): let
+  // base::LaunchProcess perform the PATH search; a genuine absence then
+  // surfaces below as a clean "failed to launch" error.
+  if (bin.IsAbsolute() && !base::PathExists(bin)) {
     r.error = "whisper binary not found at " + bin.AsUTF8Unsafe();
     return r;
   }
@@ -163,6 +167,12 @@ base::FilePath VoiceService::GetBundledWhisperDir() const {
   // MoltBrowser.app/Contents/MacOS/<exe>  →  .../Contents/Resources/whisper
   return exe.DirName().DirName().AppendASCII("Resources")
       .AppendASCII("whisper");
+#elif BUILDFLAG(IS_WIN)
+  // Windows ships a flat install dir, so the bundle lives next to the
+  // executable: <DIR_EXE>\whisper\ (whisper-cli.exe + ggml-tiny.en.bin).
+  base::FilePath exe_dir;
+  if (!base::PathService::Get(base::DIR_EXE, &exe_dir)) return base::FilePath();
+  return exe_dir.Append(FILE_PATH_LITERAL("whisper"));
 #else
   return base::FilePath();
 #endif
@@ -175,32 +185,45 @@ base::FilePath VoiceService::GetBundledModelPath() const {
   return dir.AppendASCII("ggml-tiny.en.bin");
 }
 
-base::FilePath VoiceService::ResolveWhisperBinary() const {
-  base::FilePath bundled = GetBundledWhisperDir().AppendASCII("whisper-cli");
+base::FilePath VoiceService::BundledWhisperPath() const {
+  base::FilePath dir = GetBundledWhisperDir();
+  if (dir.value().empty()) return base::FilePath();
 #if BUILDFLAG(IS_WIN)
-  // Windows has no execute-permission concept (no access(..., X_OK)); fall
-  // back to a plain existence check. Voice transcription is not wired up on
-  // Windows in this preview build, so the bundled/system binaries below are
-  // not expected to be present anyway.
-  if (!bundled.value().empty() && base::PathExists(bundled)) {
-    return bundled;
-  }
-  for (const char* p : kCandidatePaths) {
-    base::FilePath fp = base::FilePath::FromUTF8Unsafe(p);
-    if (base::PathExists(fp)) {
-      return fp;
-    }
-  }
-  return base::FilePath();
+  // whisper.cpp's CLI is `whisper-cli.exe`; older builds shipped it as
+  // `whisper.exe`. Prefer the current name, fall back to the legacy one.
+  base::FilePath cli = dir.Append(FILE_PATH_LITERAL("whisper-cli.exe"));
+  if (base::PathExists(cli)) return cli;
+  base::FilePath legacy = dir.Append(FILE_PATH_LITERAL("whisper.exe"));
+  if (base::PathExists(legacy)) return legacy;
+  // Neither present: return the canonical name so existence checks below
+  // report "not bundled" cleanly (PathExists on this will be false).
+  return cli;
 #else
-  if (!bundled.value().empty() && base::PathExists(bundled) &&
-      access(bundled.value().c_str(), X_OK) == 0) {
+  return dir.AppendASCII("whisper-cli");
+#endif
+}
+
+base::FilePath VoiceService::ResolveWhisperBinary() const {
+  // Prefer the binary bundled next to the executable. access()/X_OK are
+  // POSIX-only, so existence is checked with base::PathExists and the
+  // executable-bit check is guarded to non-Windows platforms.
+  base::FilePath bundled = BundledWhisperPath();
+  if (!bundled.value().empty() && base::PathExists(bundled)
+#if !BUILDFLAG(IS_WIN)
+      && access(bundled.value().c_str(), X_OK) == 0
+#endif
+  ) {
     return bundled;
   }
+#if BUILDFLAG(IS_WIN)
+  // The POSIX candidate paths (/opt/homebrew, /usr/bin, ...) never exist
+  // on Windows. Fall back to a bare "whisper-cli.exe" and let the OS PATH
+  // search in base::LaunchProcess resolve it if one is installed.
+  return base::FilePath(FILE_PATH_LITERAL("whisper-cli.exe"));
+#else
   for (const char* p : kCandidatePaths) {
     base::FilePath fp(p);
-    if (base::PathExists(fp) &&
-        access(fp.value().c_str(), X_OK) == 0) {
+    if (base::PathExists(fp) && access(fp.value().c_str(), X_OK) == 0) {
       return fp;
     }
   }
@@ -209,7 +232,7 @@ base::FilePath VoiceService::ResolveWhisperBinary() const {
 }
 
 bool VoiceService::IsUsingBundledWhisper() const {
-  base::FilePath bundled = GetBundledWhisperDir().AppendASCII("whisper-cli");
+  base::FilePath bundled = BundledWhisperPath();
   base::FilePath resolved = ResolveWhisperBinary();
   return !bundled.value().empty() && !resolved.value().empty() &&
          resolved.value() == bundled.value();

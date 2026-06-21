@@ -79,6 +79,11 @@ class VoiceService {
   friend class base::NoDestructor<VoiceService>;
   VoiceService();
   ~VoiceService();
+
+  // Expected path of the bundled whisper binary next to the bundle dir
+  // (whisper-cli.exe/whisper.exe on Windows, whisper-cli elsewhere).
+  // Empty FilePath if there is no bundle dir on this platform.
+  base::FilePath BundledWhisperPath() const;
 };
 
 }  // namespace voice

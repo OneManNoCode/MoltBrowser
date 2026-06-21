@@ -72,6 +72,11 @@ class OcrService {
   friend class base::NoDestructor<OcrService>;
   OcrService();
   ~OcrService();
+
+  // Expected path of the bundled tesseract binary next to the bundle dir
+  // (platform-correct filename: tesseract.exe on Windows, tesseract
+  // elsewhere). Empty FilePath if there is no bundle dir on this platform.
+  base::FilePath BundledTesseractPath() const;
 };
 
 }  // namespace ocr

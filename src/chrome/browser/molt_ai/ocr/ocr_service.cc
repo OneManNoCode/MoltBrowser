@@ -74,17 +74,23 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
   }
 
   // tesseract <input> <output-stem> [args]
-  // Setting TESSDATA_PREFIX env var points it at our bundled
-  // traineddata directory when we're using a bundled binary.
+  // Point tesseract at our bundled traineddata when we're using a
+  // bundled binary. We pass --tessdata-dir on the command line rather
+  // than the TESSDATA_PREFIX env var: GetAppOutputWithExitCode() does
+  // not take LaunchOptions, so an env entry would be silently dropped.
+  // |tessdata| is the bundle dir (the *parent* of tessdata/, matching
+  // the TESSDATA_PREFIX convention), so the flag gets the tessdata/
+  // subdirectory that actually holds eng.traineddata. This is
+  // cross-platform; on Windows it resolves <DIR_EXE>\ocr\tessdata.
   base::FilePath out_stem = named.RemoveExtension();
   base::CommandLine cmd(bin);
   cmd.AppendArgPath(named);
   cmd.AppendArgPath(out_stem);
   cmd.AppendArg("-l");
   cmd.AppendArg("eng");
-  base::LaunchOptions opts;
   if (!tessdata.value().empty()) {
-    opts.environment[FILE_PATH_LITERAL("TESSDATA_PREFIX")] = tessdata.value();
+    cmd.AppendArg("--tessdata-dir");
+    cmd.AppendArgPath(tessdata.AppendASCII("tessdata"));
   }
   std::string combined;
   int exit_code = -1;
@@ -135,16 +141,33 @@ base::FilePath OcrService::GetBundledOcrDir() const {
   base::FilePath exe;
   if (!base::PathService::Get(base::FILE_EXE, &exe)) return base::FilePath();
   return exe.DirName().DirName().AppendASCII("Resources").AppendASCII("ocr");
+#elif BUILDFLAG(IS_WIN)
+  // Windows ships a flat install dir, so the bundle lives next to the
+  // executable: <DIR_EXE>\ocr\ (binary tesseract.exe + tessdata\).
+  // DIR_EXE is the directory containing the running executable.
+  base::FilePath exe_dir;
+  if (!base::PathService::Get(base::DIR_EXE, &exe_dir)) return base::FilePath();
+  return exe_dir.Append(FILE_PATH_LITERAL("ocr"));
 #else
   return base::FilePath();
 #endif
 }
 
+base::FilePath OcrService::BundledTesseractPath() const {
+  base::FilePath dir = GetBundledOcrDir();
+  if (dir.value().empty()) return base::FilePath();
+#if BUILDFLAG(IS_WIN)
+  return dir.Append(FILE_PATH_LITERAL("tesseract.exe"));
+#else
+  return dir.AppendASCII("tesseract");
+#endif
+}
+
 base::FilePath OcrService::ResolveTesseractBinary() const {
-  // On Windows there is no bundled binary and the POSIX candidate paths do
-  // not exist; access()/X_OK are POSIX-only, so fall back to a plain
-  // existence check (OCR is effectively unavailable on Windows here).
-  base::FilePath bundled = GetBundledOcrDir().AppendASCII("tesseract");
+  // Prefer the binary bundled next to the executable. access()/X_OK are
+  // POSIX-only, so existence is checked with base::PathExists and the
+  // executable-bit check is guarded to non-Windows platforms.
+  base::FilePath bundled = BundledTesseractPath();
   if (!bundled.value().empty() && base::PathExists(bundled)
 #if !BUILDFLAG(IS_WIN)
       && access(bundled.value().c_str(), X_OK) == 0
@@ -152,21 +175,24 @@ base::FilePath OcrService::ResolveTesseractBinary() const {
   ) {
     return bundled;
   }
+#if BUILDFLAG(IS_WIN)
+  // The POSIX candidate paths (/usr/bin, ...) never exist on Windows.
+  // Fall back to a bare "tesseract.exe" and let the OS PATH search in
+  // base::LaunchProcess resolve it if the user installed tesseract.
+  return base::FilePath(FILE_PATH_LITERAL("tesseract.exe"));
+#else
   for (const char* p : kCandidatePaths) {
     base::FilePath fp = base::FilePath::FromUTF8Unsafe(p);
-    if (base::PathExists(fp)
-#if !BUILDFLAG(IS_WIN)
-        && access(fp.value().c_str(), X_OK) == 0
-#endif
-    ) {
+    if (base::PathExists(fp) && access(fp.value().c_str(), X_OK) == 0) {
       return fp;
     }
   }
   return base::FilePath();
+#endif
 }
 
 bool OcrService::IsUsingBundledTesseract() const {
-  base::FilePath bundled = GetBundledOcrDir().AppendASCII("tesseract");
+  base::FilePath bundled = BundledTesseractPath();
   base::FilePath resolved = ResolveTesseractBinary();
   return !bundled.value().empty() && !resolved.value().empty() &&
          resolved.value() == bundled.value();
