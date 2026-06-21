@@ -348,6 +348,30 @@ jobs:
           $ProgressPreference = "SilentlyContinue"
           $dl = $env:TEMP
 
+          # Provision a full 7z.exe up front (no admin, no winget): 7zr.exe is a
+          # standalone .7z extractor and the 7-Zip installer is itself a 7z SFX,
+          # so 7zr unpacks it to yield 7z.exe + 7z.dll. Used both to extract the
+          # Tesseract NSIS installer AND to build a spec-compliant forward-slash
+          # zip (the .NET ZipFile in PS5.1/.NET Framework writes BACKSLASH entry
+          # names, which some Windows extractors mishandle). Cached in TEMP.
+          $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
+          if (-not (Test-Path $sevenZip)) {
+            try {
+              $szDir = Join-Path $dl "7zip-portable"
+              $sevenZip = Join-Path $szDir "7z.exe"
+              if (-not (Test-Path $sevenZip)) {
+                New-Item -ItemType Directory -Force -Path $szDir | Out-Null
+                $zr = Join-Path $dl "7zr.exe"
+                if (-not (Test-Path $zr)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $zr }
+                $zi = Join-Path $dl "7z-inst-x64.exe"
+                if (-not (Test-Path $zi)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2408-x64.exe" -OutFile $zi }
+                & $zr x $zi "-o$szDir" -y -bso0 -bsp0 | Out-Null
+              }
+            } catch { Write-Host "::warning::7-Zip provisioning failed: $($_.Exception.Message)" }
+          }
+          $have7z = (Test-Path $sevenZip)
+          Write-Host "7-Zip available: $have7z ($sevenZip)"
+
           # Tor Expert Bundle - tor.exe is statically linked (no DLLs); the
           # geoip databases live under data\ inside the tarball. tar is native.
           try {
@@ -373,25 +397,7 @@ jobs:
           # silent-extracts it. Copy tesseract.exe + ALL dlls (transitive
           # closure is version-fragile) + eng/osd traineddata.
           try {
-            # Acquire a full 7z.exe portably (no admin, no winget): 7zr.exe is a
-            # standalone .7z extractor; the 7-Zip installer is itself a 7z SFX,
-            # so 7zr unpacks it to yield 7z.exe + 7z.dll. Needed because the only
-            # Windows tesseract distribution is an NSIS installer, which only the
-            # full 7-Zip (not 7zr/7za) can extract. Cached in TEMP across runs.
-            $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
-            if (-not (Test-Path $sevenZip)) {
-              $szDir = Join-Path $dl "7zip-portable"
-              $sevenZip = Join-Path $szDir "7z.exe"
-              if (-not (Test-Path $sevenZip)) {
-                New-Item -ItemType Directory -Force -Path $szDir | Out-Null
-                $zr = Join-Path $dl "7zr.exe"
-                if (-not (Test-Path $zr)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $zr }
-                $zi = Join-Path $dl "7z-inst-x64.exe"
-                if (-not (Test-Path $zi)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2408-x64.exe" -OutFile $zi }
-                & $zr x $zi "-o$szDir" -y -bso0 -bsp0 | Out-Null
-              }
-            }
-            if (-not (Test-Path $sevenZip)) { throw "could not provision 7-Zip" }
+            if (-not $have7z) { throw "7-Zip unavailable (see provisioning warning above)" }
             $tessVer = "5.4.0.20240606"
             $tessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVer/tesseract-ocr-w64-setup-$tessVer.exe"
             $tessExe = Join-Path $dl "tesseract-$tessVer.exe"
@@ -439,13 +445,18 @@ jobs:
 
           $zip = Join-Path $env:GITHUB_WORKSPACE "MoltBrowser-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item -Force $zip }
-          # .NET ZipFile is dramatically faster than Compress-Archive, which
-          # took ~4h on this 600MB+ tree in PS5.1. CreateFromDirectory writes
-          # entries relative to the staged dir (contents at the zip root), same
-          # layout the prior Compress-Archive produced.
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $stageFull = (Resolve-Path $stage).Path
-          [System.IO.Compression.ZipFile]::CreateFromDirectory($stageFull, $zip)
+          # Prefer 7-Zip: fast AND writes spec-compliant forward-slash entries
+          # (so tor/ ocr/ whisper/ extract as real subfolders the app resolves
+          # at runtime). "$stage\*" stores entries relative to the staged dir
+          # (contents at the zip root). Fall back to .NET ZipFile only if 7z is
+          # unavailable (that path writes backslash entries - last resort).
+          if ($have7z) {
+            & $sevenZip a -tzip -mx=3 -bso0 -bsp0 $zip "$stage\*" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "7z zip failed ($LASTEXITCODE)" }
+          } else {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $stage).Path, $zip)
+          }
           Get-Item $zip | Format-List Name,Length
           # The best-effort native tools above (tar, 7z, 7zr) can leave a
           # nonzero $LASTEXITCODE; GitHub appends "exit $LASTEXITCODE" to the
@@ -521,19 +532,36 @@ jobs:
           }
 
           if (-not $makensis) {
-            Write-Host "Falling back to portable NSIS zip download..."
+            Write-Host "makensis not found; downloading portable NSIS..."
             try {
+              [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+              $ProgressPreference = "SilentlyContinue"
+              # Reuse the portable 7z the Stage step provisioned (same job/TEMP);
+              # the SourceForge zip can come back as an HTML interstitial that
+              # Expand-Archive rejects, so validate size and extract with 7z.
+              $sz = "$env:TEMP\7zip-portable\7z.exe"
+              if (-not (Test-Path $sz)) { $sz = "$env:ProgramFiles\7-Zip\7z.exe" }
               $nsisVer = "3.10"
-              $url = "https://downloads.sourceforge.net/project/nsis/NSIS%203/$nsisVer/nsis-$nsisVer.zip"
               $tmpZip = Join-Path $env:TEMP "nsis-$nsisVer.zip"
               $dest   = Join-Path $env:TEMP "nsis-$nsisVer"
-              Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
+              $urls = @(
+                "https://downloads.sourceforge.net/project/nsis/NSIS%203/$nsisVer/nsis-$nsisVer.zip",
+                "https://sourceforge.net/projects/nsis/files/NSIS%203/$nsisVer/nsis-$nsisVer.zip/download"
+              )
+              if (-not ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb))) {
+                foreach ($u in $urls) {
+                  try { Invoke-WebRequest -Uri $u -OutFile $tmpZip -UseBasicParsing -MaximumRedirection 10 } catch { continue }
+                  if ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb)) { break }
+                }
+              }
+              if (-not ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb))) { throw "NSIS download did not yield a valid zip" }
               if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-              Expand-Archive -Path $tmpZip -DestinationPath $dest -Force
+              if (Test-Path $sz) { & $sz x $tmpZip "-o$dest" -y -bso0 -bsp0 | Out-Null }
+              else { Expand-Archive -Path $tmpZip -DestinationPath $dest -Force }
               $found = Get-ChildItem -Path $dest -Recurse -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
               if ($found) { $makensis = $found.FullName }
             } catch {
-              Write-Host "NSIS zip download/extract failed: $($_.Exception.Message)"
+              Write-Host "NSIS download/extract failed: $($_.Exception.Message)"
             }
           }
 
