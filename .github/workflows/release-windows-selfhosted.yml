@@ -333,6 +333,97 @@ jobs:
           $items | ForEach-Object { Copy-Item $_.FullName $stage/ -Force }
           if (Test-Path locales)   { Copy-Item locales   $stage/locales   -Recurse -Force }
           if (Test-Path resources) { Copy-Item resources $stage/resources -Recurse -Force }
+
+          # ---- Bundle runtime binaries: Tor / Tesseract OCR / whisper.cpp ----
+          # Makes MoltNet (Tor), OCR, and voice transcription functional on
+          # Windows. The app resolves them next to the exe at runtime:
+          #   <DIR_EXE>\tor\tor.exe          (+ geoip, geoip6)
+          #   <DIR_EXE>\ocr\tesseract.exe    (+ *.dll, tessdata\eng.traineddata)
+          #   <DIR_EXE>\whisper\whisper-cli.exe (+ dlls, ggml-tiny.en.bin)
+          # Best-effort PER binary: a download failure logs ::warning:: and
+          # still ships the rest (the zip is never blocked). Downloads cache in
+          # $env:TEMP across runs. PS5.1 needs TLS1.2 forced or all the
+          # Invoke-WebRequest calls fail on a stock runner. ASCII only.
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $ProgressPreference = "SilentlyContinue"
+          $dl = $env:TEMP
+
+          # Tor Expert Bundle - tor.exe is statically linked (no DLLs); the
+          # geoip databases live under data\ inside the tarball. tar is native.
+          try {
+            $torVer = "15.0.15"
+            $torUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/$torVer/tor-expert-bundle-windows-x86_64-$torVer.tar.gz"
+            $torTgz = Join-Path $dl "tor-eb-$torVer.tar.gz"
+            $torEx  = Join-Path $dl "tor-eb-$torVer"
+            if (-not (Test-Path $torTgz)) { Invoke-WebRequest -Uri $torUrl -OutFile $torTgz }
+            if (Test-Path $torEx) { Remove-Item $torEx -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $torEx | Out-Null
+            tar -xzf $torTgz -C $torEx
+            if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
+            $torDst = Join-Path $stage "tor"
+            New-Item -ItemType Directory -Force -Path $torDst | Out-Null
+            Copy-Item (Join-Path $torEx "tor\tor.exe")         $torDst -Force
+            Copy-Item (Join-Path $torEx "tor\tor-gencert.exe") $torDst -Force
+            Copy-Item (Join-Path $torEx "data\geoip")          $torDst -Force
+            Copy-Item (Join-Path $torEx "data\geoip6")         $torDst -Force
+            Write-Host "Bundled Tor $torVer into tor\"
+          } catch { Write-Host "::warning::Tor bundle skipped: $($_.Exception.Message)" }
+
+          # Tesseract OCR - UB-Mannheim ships only an NSIS installer; 7-Zip
+          # silent-extracts it. Copy tesseract.exe + ALL dlls (transitive
+          # closure is version-fragile) + eng/osd traineddata.
+          try {
+            $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
+            if (-not (Test-Path $sevenZip)) {
+              $wg = Get-Command winget -ErrorAction SilentlyContinue
+              if ($wg) { try { & winget install --id 7zip.7zip -e --silent --accept-source-agreements --accept-package-agreements } catch {} }
+            }
+            if (-not (Test-Path $sevenZip)) { throw "7-Zip not available (install: winget install 7zip.7zip)" }
+            $tessVer = "5.4.0.20240606"
+            $tessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVer/tesseract-ocr-w64-setup-$tessVer.exe"
+            $tessExe = Join-Path $dl "tesseract-$tessVer.exe"
+            $tessEx  = Join-Path $dl "tesseract-$tessVer"
+            if (-not (Test-Path $tessExe)) { Invoke-WebRequest -Uri $tessUrl -OutFile $tessExe }
+            if (Test-Path $tessEx) { Remove-Item $tessEx -Recurse -Force }
+            & $sevenZip x $tessExe "-o$tessEx" -y -bso0 -bsp0 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
+            $ocrDst = Join-Path $stage "ocr"
+            New-Item -ItemType Directory -Force -Path $ocrDst | Out-Null
+            Copy-Item (Join-Path $tessEx "tesseract.exe") $ocrDst -Force
+            Copy-Item (Join-Path $tessEx "*.dll")         $ocrDst -Force
+            $tdDst = Join-Path $ocrDst "tessdata"
+            New-Item -ItemType Directory -Force -Path $tdDst | Out-Null
+            Copy-Item (Join-Path $tessEx "tessdata\eng.traineddata") $tdDst -Force
+            if (Test-Path (Join-Path $tessEx "tessdata\osd.traineddata")) { Copy-Item (Join-Path $tessEx "tessdata\osd.traineddata") $tdDst -Force }
+            Write-Host "Bundled Tesseract $tessVer into ocr\"
+          } catch { Write-Host "::warning::Tesseract bundle skipped: $($_.Exception.Message)" }
+
+          # whisper.cpp - plain CPU build (portable across x64; no BLAS/CUDA
+          # runtimes). Modern CLI is whisper-cli.exe (main.exe is a deprecated
+          # stub). Model from HuggingFace. Files sit under Release\ in the zip.
+          try {
+            $whVer = "v1.9.1"
+            $whUrl = "https://github.com/ggml-org/whisper.cpp/releases/download/$whVer/whisper-bin-x64.zip"
+            $whZip = Join-Path $dl "whisper-$whVer.zip"
+            $whEx  = Join-Path $dl "whisper-$whVer"
+            if (-not (Test-Path $whZip)) { Invoke-WebRequest -Uri $whUrl -OutFile $whZip }
+            if (Test-Path $whEx) { Remove-Item $whEx -Recurse -Force }
+            Expand-Archive -Path $whZip -DestinationPath $whEx -Force
+            $rel = Join-Path $whEx "Release"
+            if (-not (Test-Path $rel)) { $rel = $whEx }
+            $whDst = Join-Path $stage "whisper"
+            New-Item -ItemType Directory -Force -Path $whDst | Out-Null
+            Copy-Item (Join-Path $rel "whisper-cli.exe") $whDst -Force
+            Copy-Item (Join-Path $rel "whisper.dll")     $whDst -Force
+            Copy-Item (Join-Path $rel "ggml.dll")        $whDst -Force
+            Copy-Item (Join-Path $rel "ggml-base.dll")   $whDst -Force
+            Copy-Item (Join-Path $rel "ggml-cpu-*.dll")  $whDst -Force
+            $whModelDl = Join-Path $dl "ggml-tiny.en.bin"
+            if (-not (Test-Path $whModelDl)) { Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin" -OutFile $whModelDl }
+            Copy-Item $whModelDl (Join-Path $whDst "ggml-tiny.en.bin") -Force
+            Write-Host "Bundled whisper.cpp $whVer + tiny.en into whisper\"
+          } catch { Write-Host "::warning::whisper bundle skipped: $($_.Exception.Message)" }
+
           $zip = Join-Path $env:GITHUB_WORKSPACE "MoltBrowser-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item -Force $zip }
           Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
