@@ -544,14 +544,20 @@ jobs:
               $nsisVer = "3.10"
               $tmpZip = Join-Path $env:TEMP "nsis-$nsisVer.zip"
               $dest   = Join-Path $env:TEMP "nsis-$nsisVer"
+              # master.dl.sourceforge.net serves files DIRECTLY (no "download
+              # will start shortly" HTML interstitial that broke the others).
+              # Browser UA + hard TimeoutSec so a stalled mirror fails in
+              # minutes, never hangs the step for hours.
               $urls = @(
+                "https://master.dl.sourceforge.net/project/nsis/NSIS%203/$nsisVer/nsis-$nsisVer.zip?viasf=1",
                 "https://downloads.sourceforge.net/project/nsis/NSIS%203/$nsisVer/nsis-$nsisVer.zip",
                 "https://sourceforge.net/projects/nsis/files/NSIS%203/$nsisVer/nsis-$nsisVer.zip/download"
               )
+              $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
               if (-not ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb))) {
                 foreach ($u in $urls) {
-                  try { Invoke-WebRequest -Uri $u -OutFile $tmpZip -UseBasicParsing -MaximumRedirection 10 } catch { continue }
-                  if ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb)) { break }
+                  try { Invoke-WebRequest -Uri $u -OutFile $tmpZip -UseBasicParsing -MaximumRedirection 10 -UserAgent $ua -TimeoutSec 300 } catch { Write-Host "  NSIS url failed: $u"; continue }
+                  if ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb)) { Write-Host "  NSIS from: $u"; break }
                 }
               }
               if (-not ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb))) { throw "NSIS download did not yield a valid zip" }
