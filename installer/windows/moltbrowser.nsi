@@ -66,7 +66,9 @@ InstallDir "$PROGRAMFILES64\MoltBrowser"
 InstallDirRegKey HKLM "Software\MoltBrowser" "InstallDir"
 RequestExecutionLevel admin
 Unicode True
-SetCompressor /SOLID lzma
+; zlib (fast), NOT /SOLID lzma: the staged runtime tree is ~2GB and solid
+; LZMA compression takes hours on the RAM-constrained self-hosted runner.
+SetCompressor zlib
 
 ; ----------------------------------------------------------------------------
 ; Modern UI 2

@@ -453,6 +453,18 @@ jobs:
           # throw under EAP=Stop and never reach here, so exit 0 is correct.
           exit 0
 
+      # Upload the portable zip immediately, decoupled from the (slower) NSIS
+      # installer, so functional Windows is live the moment staging completes
+      # and is never blocked by installer compression time.
+      - name: Upload portable zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: MoltBrowser-Windows-x64.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Build the NSIS setup installer from the SAME staged dir the portable
       # zip used (C:\cr\src\out\MoltBrowser\MoltBrowser-Windows-x64). Output
       # MoltBrowser-Windows-x64-Setup.exe into the workspace root, next to
@@ -542,15 +554,13 @@ jobs:
           if (-not (Test-Path $outFile)) { throw "Installer not produced: $outFile" }
           Get-Item $outFile | Format-List Name,Length
 
-      - name: Upload portable zip + setup installer to release
+      - name: Upload setup installer to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag }}
-          # The setup .exe is best-effort (skipped if NSIS is unavailable on
-          # the runner), so do NOT fail the upload when only the zip exists.
-          files: |
-            MoltBrowser-Windows-x64.zip
-            MoltBrowser-Windows-x64-Setup.exe
+          # Installer is best-effort (skipped if NSIS unavailable) and the zip
+          # is already uploaded above, so don't fail if only the zip exists.
+          files: MoltBrowser-Windows-x64-Setup.exe
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
