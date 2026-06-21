@@ -373,12 +373,25 @@ jobs:
           # silent-extracts it. Copy tesseract.exe + ALL dlls (transitive
           # closure is version-fragile) + eng/osd traineddata.
           try {
+            # Acquire a full 7z.exe portably (no admin, no winget): 7zr.exe is a
+            # standalone .7z extractor; the 7-Zip installer is itself a 7z SFX,
+            # so 7zr unpacks it to yield 7z.exe + 7z.dll. Needed because the only
+            # Windows tesseract distribution is an NSIS installer, which only the
+            # full 7-Zip (not 7zr/7za) can extract. Cached in TEMP across runs.
             $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
             if (-not (Test-Path $sevenZip)) {
-              $wg = Get-Command winget -ErrorAction SilentlyContinue
-              if ($wg) { try { & winget install --id 7zip.7zip -e --silent --accept-source-agreements --accept-package-agreements } catch {} }
+              $szDir = Join-Path $dl "7zip-portable"
+              $sevenZip = Join-Path $szDir "7z.exe"
+              if (-not (Test-Path $sevenZip)) {
+                New-Item -ItemType Directory -Force -Path $szDir | Out-Null
+                $zr = Join-Path $dl "7zr.exe"
+                if (-not (Test-Path $zr)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $zr }
+                $zi = Join-Path $dl "7z-inst-x64.exe"
+                if (-not (Test-Path $zi)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2408-x64.exe" -OutFile $zi }
+                & $zr x $zi "-o$szDir" -y -bso0 -bsp0 | Out-Null
+              }
             }
-            if (-not (Test-Path $sevenZip)) { throw "7-Zip not available (install: winget install 7zip.7zip)" }
+            if (-not (Test-Path $sevenZip)) { throw "could not provision 7-Zip" }
             $tessVer = "5.4.0.20240606"
             $tessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVer/tesseract-ocr-w64-setup-$tessVer.exe"
             $tessExe = Join-Path $dl "tesseract-$tessVer.exe"
@@ -426,8 +439,19 @@ jobs:
 
           $zip = Join-Path $env:GITHUB_WORKSPACE "MoltBrowser-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item -Force $zip }
-          Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
+          # .NET ZipFile is dramatically faster than Compress-Archive, which
+          # took ~4h on this 600MB+ tree in PS5.1. CreateFromDirectory writes
+          # entries relative to the staged dir (contents at the zip root), same
+          # layout the prior Compress-Archive produced.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $stageFull = (Resolve-Path $stage).Path
+          [System.IO.Compression.ZipFile]::CreateFromDirectory($stageFull, $zip)
           Get-Item $zip | Format-List Name,Length
+          # The best-effort native tools above (tar, 7z, 7zr) can leave a
+          # nonzero $LASTEXITCODE; GitHub appends "exit $LASTEXITCODE" to the
+          # step, which would fail it despite a successful stage. Cmdlet errors
+          # throw under EAP=Stop and never reach here, so exit 0 is correct.
+          exit 0
 
       # Build the NSIS setup installer from the SAME staged dir the portable
       # zip used (C:\cr\src\out\MoltBrowser\MoltBrowser-Windows-x64). Output
