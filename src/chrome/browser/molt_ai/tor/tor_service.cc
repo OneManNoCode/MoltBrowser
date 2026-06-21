@@ -5,17 +5,22 @@
 
 #include "build/build_config.h"
 
-#if !BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN)
+// Winsock must be included before <windows.h>; pull in both via winsock2.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
-#endif  // !BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <utility>
 
@@ -53,17 +58,49 @@ TorRelay::~TorRelay() = default;
 namespace {
 
 // Everything below in this anonymous namespace is the blocking
-// control-port implementation: raw TCP sockets, POSIX auth-cookie
-// reading, and the response parsers that only the blocking helpers
-// call. None of it is reachable from Windows-compiled code (the public
-// TorService methods return graceful "unavailable" results on Windows),
-// so the whole block is compiled out there.
-#if !BUILDFLAG(IS_WIN)
+// control-port implementation: raw TCP sockets, auth-cookie reading,
+// and the response parsers that only the blocking helpers call. The
+// socket layer is cross-platform: each helper has a winsock branch
+// (#if BUILDFLAG(IS_WIN)) and the original POSIX body (#else), so Tor
+// now works on Windows as well as macOS/Linux.
+
+// Cross-platform socket handle. Windows uses the opaque SOCKET type
+// (an unsigned UINT_PTR), POSIX uses an int file descriptor.
+#if BUILDFLAG(IS_WIN)
+using SocketHandle = SOCKET;
+constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
+#else
+using SocketHandle = int;
+constexpr SocketHandle kInvalidSocket = -1;
+#endif
 
 constexpr const char* kControlHost = "127.0.0.1";
 constexpr int kControlPort = 9051;
 constexpr int kConnectTimeoutMs = 300;   // Tor is local: fast or absent.
 constexpr int kIoTimeoutMs = 1000;       // Per send/recv slice.
+
+#if BUILDFLAG(IS_WIN)
+// Initialize Winsock exactly once for the process. We deliberately do
+// not call WSACleanup(): the browser uses sockets for its whole
+// lifetime and a matching cleanup would race other users of winsock.
+void EnsureWinsockStarted() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    WSADATA wsa_data;
+    WSAStartup(MAKEWORD(2, 2), &wsa_data);
+  });
+}
+
+void CloseSocket(SocketHandle fd) {
+  closesocket(fd);
+}
+#else
+void EnsureWinsockStarted() {}
+
+void CloseSocket(SocketHandle fd) {
+  close(fd);
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 // One blocking control-port session. Connects, authenticates, runs
 // |command|, closes. Returns the raw response body (lines between
@@ -78,13 +115,15 @@ struct ControlResult {
 // Read all bytes off the socket until we see a "250 OK\r\n" line on
 // its own, or the connection closes. Caps at 256 KB so a broken Tor
 // can't OOM us.
-bool ReadFullResponse(int fd, std::string& out) {
+bool ReadFullResponse(SocketHandle fd, std::string& out) {
   out.clear();
   out.reserve(2048);
   char buf[4096];
   constexpr size_t kCap = 256 * 1024;
   while (out.size() < kCap) {
-    ssize_t n = recv(fd, buf, sizeof(buf), 0);
+    // recv() returns ssize_t on POSIX and int on winsock; an int holds
+    // either since the buffer is 4 KB. <=0 means closed/error/timeout.
+    int n = recv(fd, buf, sizeof(buf), 0);
     if (n <= 0) return !out.empty();
     out.append(buf, static_cast<size_t>(n));
     // Look for "250 OK\r\n" at the end (Tor's standard success
@@ -107,16 +146,71 @@ bool ReadFullResponse(int fd, std::string& out) {
 }
 
 // Set send/recv timeout on |fd|.
-void SetTimeouts(int fd) {
+#if BUILDFLAG(IS_WIN)
+void SetTimeouts(SocketHandle fd) {
+  // Winsock takes SO_RCVTIMEO/SO_SNDTIMEO as a DWORD of milliseconds,
+  // not a struct timeval, and optval is passed as a const char*.
+  DWORD ms = static_cast<DWORD>(kIoTimeoutMs);
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+             reinterpret_cast<const char*>(&ms), sizeof(ms));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO,
+             reinterpret_cast<const char*>(&ms), sizeof(ms));
+}
+#else
+void SetTimeouts(SocketHandle fd) {
   struct timeval tv;
   tv.tv_sec = kIoTimeoutMs / 1000;
   tv.tv_usec = (kIoTimeoutMs % 1000) * 1000;
   setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
+#endif  // BUILDFLAG(IS_WIN)
 
 // Connect with a configurable timeout using non-blocking + select.
-int ConnectWithTimeout(int fd, const struct sockaddr* addr, socklen_t len) {
+// Returns 0 on success, -1 on failure/timeout.
+#if BUILDFLAG(IS_WIN)
+int ConnectWithTimeout(SocketHandle fd,
+                       const struct sockaddr* addr,
+                       int len) {
+  // Put the socket in non-blocking mode via ioctlsocket(FIONBIO).
+  u_long nonblocking = 1;
+  ioctlsocket(fd, FIONBIO, &nonblocking);
+  int r = connect(fd, addr, len);
+  if (r == 0) {
+    u_long blocking = 0;
+    ioctlsocket(fd, FIONBIO, &blocking);
+    return 0;
+  }
+  // A pending connect reports WSAEWOULDBLOCK on winsock (vs EINPROGRESS).
+  if (WSAGetLastError() != WSAEWOULDBLOCK) return -1;
+  fd_set wset;
+  FD_ZERO(&wset);
+  FD_SET(fd, &wset);
+  // winsock can also signal a refused connect via the exception set.
+  fd_set eset;
+  FD_ZERO(&eset);
+  FD_SET(fd, &eset);
+  struct timeval tv;
+  tv.tv_sec = kConnectTimeoutMs / 1000;
+  tv.tv_usec = (kConnectTimeoutMs % 1000) * 1000;
+  // The first arg to select() is ignored on winsock.
+  int sr = select(0, nullptr, &wset, &eset, &tv);
+  if (sr <= 0) return -1;
+  if (FD_ISSET(fd, &eset)) return -1;
+  int err = 0;
+  int errlen = sizeof(err);
+  if (getsockopt(fd, SOL_SOCKET, SO_ERROR,
+                 reinterpret_cast<char*>(&err), &errlen) != 0) {
+    return -1;
+  }
+  if (err != 0) return -1;
+  u_long blocking = 0;
+  ioctlsocket(fd, FIONBIO, &blocking);
+  return 0;
+}
+#else
+int ConnectWithTimeout(SocketHandle fd, const struct sockaddr* addr,
+                       socklen_t len) {
   int flags = fcntl(fd, F_GETFL, 0);
   fcntl(fd, F_SETFL, flags | O_NONBLOCK);
   int r = connect(fd, addr, len);
@@ -140,6 +234,7 @@ int ConnectWithTimeout(int fd, const struct sockaddr* addr, socklen_t len) {
   fcntl(fd, F_SETFL, flags);
   return 0;
 }
+#endif  // BUILDFLAG(IS_WIN)
 
 // Hex-encode a byte string for AUTHENTICATE <hex>.
 std::string HexEncode(const std::string& bytes) {
@@ -157,13 +252,22 @@ std::string HexEncode(const std::string& bytes) {
 // macOS / Linux locations. The cookie is a 32-byte binary blob.
 // Returns empty string if not found / unreadable.
 std::string TryReadAuthCookie(const std::string& path_hint) {
+  // |path_hint| is the COOKIEFILE path Tor reported via PROTOCOLINFO.
+  // On Windows it is a native path string, so build the FilePath via
+  // FromUTF8Unsafe() (base::FilePath(std::string) is not valid here —
+  // value() is std::wstring on Windows).
   if (!path_hint.empty()) {
     std::string contents;
-    if (base::ReadFileToString(base::FilePath(path_hint), &contents) &&
+    if (base::ReadFileToString(base::FilePath::FromUTF8Unsafe(path_hint),
+                               &contents) &&
         contents.size() >= 16) {
       return contents;
     }
   }
+#if !BUILDFLAG(IS_WIN)
+  // These fixed fallbacks are POSIX-only install locations. On Windows
+  // we rely entirely on the COOKIEFILE path from PROTOCOLINFO (above),
+  // which for our managed Tor lives under the app-data tor directory.
   static const char* kCommonPaths[] = {
       "/usr/local/var/lib/tor/control_auth_cookie",        // Intel brew
       "/opt/homebrew/var/lib/tor/control_auth_cookie",     // Apple Silicon brew
@@ -171,11 +275,13 @@ std::string TryReadAuthCookie(const std::string& path_hint) {
   };
   for (const char* p : kCommonPaths) {
     std::string contents;
-    if (base::ReadFileToString(base::FilePath(p), &contents) &&
+    if (base::ReadFileToString(base::FilePath::FromUTF8Unsafe(p),
+                               &contents) &&
         contents.size() >= 16) {
       return contents;
     }
   }
+#endif  // !BUILDFLAG(IS_WIN)
   return {};
 }
 
@@ -231,8 +337,9 @@ ProtocolInfo ParseProtocolInfo(const std::string& resp) {
 // MayBlock() thread-pool task.
 ControlResult RunOneCommand(const std::string& command) {
   ControlResult r;
-  int fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) {
+  EnsureWinsockStarted();  // No-op on POSIX.
+  SocketHandle fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd == kInvalidSocket) {
     r.error = "socket() failed";
     return r;
   }
@@ -242,7 +349,7 @@ ControlResult RunOneCommand(const std::string& command) {
   inet_pton(AF_INET, kControlHost, &addr.sin_addr);
   if (ConnectWithTimeout(fd, reinterpret_cast<struct sockaddr*>(&addr),
                           sizeof(addr)) != 0) {
-    close(fd);
+    CloseSocket(fd);
     r.error = "no local Tor (connect refused/timeout on 127.0.0.1:9051)";
     return r;
   }
@@ -250,7 +357,7 @@ ControlResult RunOneCommand(const std::string& command) {
 
   // 1) PROTOCOLINFO to learn supported auth methods + version.
   if (send(fd, "PROTOCOLINFO 1\r\n", 16, 0) < 0) {
-    close(fd); r.error = "send PROTOCOLINFO failed"; return r;
+    CloseSocket(fd); r.error = "send PROTOCOLINFO failed"; return r;
   }
   std::string pi_resp;
   ReadFullResponse(fd, pi_resp);
@@ -264,39 +371,42 @@ ControlResult RunOneCommand(const std::string& command) {
   } else if (pi.cookie_auth) {
     std::string cookie = TryReadAuthCookie(pi.cookie_path);
     if (cookie.empty()) {
-      close(fd);
+      CloseSocket(fd);
       r.error = "Tor requires cookie auth but cookie file unreadable. "
                 "Add `CookieAuthFileGroupReadable 1` to torrc.";
       return r;
     }
     auth_cmd = "AUTHENTICATE " + HexEncode(cookie) + "\r\n";
   } else {
-    close(fd);
+    CloseSocket(fd);
     r.error =
         "Tor requires HASHEDPASSWORD or SAFECOOKIE auth — not yet supported.";
     return r;
   }
-  if (send(fd, auth_cmd.data(), auth_cmd.size(), 0) < 0) {
-    close(fd); r.error = "send AUTHENTICATE failed"; return r;
+  // send()'s length is int on winsock and size_t on POSIX; cast to int
+  // (auth/command strings are tiny) so Windows doesn't warn on 64->32.
+  if (send(fd, auth_cmd.data(), static_cast<int>(auth_cmd.size()), 0) < 0) {
+    CloseSocket(fd); r.error = "send AUTHENTICATE failed"; return r;
   }
   std::string auth_resp;
   ReadFullResponse(fd, auth_resp);
   if (auth_resp.find("250 OK") == std::string::npos) {
-    close(fd);
+    CloseSocket(fd);
     r.error = "Tor rejected auth: " + auth_resp.substr(0, 80);
     return r;
   }
 
   // 3) The actual command.
   std::string cmd_with_eol = command + "\r\n";
-  if (send(fd, cmd_with_eol.data(), cmd_with_eol.size(), 0) < 0) {
-    close(fd); r.error = "send command failed"; return r;
+  if (send(fd, cmd_with_eol.data(), static_cast<int>(cmd_with_eol.size()),
+           0) < 0) {
+    CloseSocket(fd); r.error = "send command failed"; return r;
   }
   ReadFullResponse(fd, r.body);
 
   // 4) Polite QUIT.
   send(fd, "QUIT\r\n", 6, 0);
-  close(fd);
+  CloseSocket(fd);
   r.ok = true;
   return r;
 }
@@ -475,8 +585,6 @@ std::vector<TorCircuit> GetCircuitsBlocking() {
   return out;
 }
 
-#endif  // !BUILDFLAG(IS_WIN)
-
 }  // namespace
 
 // static
@@ -489,53 +597,32 @@ TorService::TorService() = default;
 TorService::~TorService() = default;
 
 void TorService::Probe(base::OnceCallback<void(TorStatus)> on_done) {
-#if BUILDFLAG(IS_WIN)
-  // Tor is not supported on Windows in this preview build. Report a
-  // graceful "not running" status rather than touching raw sockets.
-  TorStatus s;
-  s.running = false;
-  s.error = "Tor is not supported on Windows in this build.";
-  s.control_port_addr = "127.0.0.1:9051";
-  s.socks_port_addr = "127.0.0.1:9050";
-  std::move(on_done).Run(std::move(s));
-  return;
-#else
+  // The control-port socket layer is now cross-platform (winsock on
+  // Windows, POSIX elsewhere), so the same blocking probe runs on a
+  // MayBlock() thread-pool task on every platform.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&ProbeBlocking),
       std::move(on_done));
-#endif  // BUILDFLAG(IS_WIN)
 }
 
 void TorService::GetCircuits(
     base::OnceCallback<void(std::vector<TorCircuit>)> on_done) {
-#if BUILDFLAG(IS_WIN)
-  // Tor is not supported on Windows in this preview build. No circuits.
-  std::move(on_done).Run(std::vector<TorCircuit>());
-  return;
-#else
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&GetCircuitsBlocking),
       std::move(on_done));
-#endif  // BUILDFLAG(IS_WIN)
 }
 
 void TorService::GetCircuitsEnriched(
     base::OnceCallback<void(std::vector<TorCircuit>)> on_done) {
-#if BUILDFLAG(IS_WIN)
-  // Tor is not supported on Windows in this preview build. No circuits.
-  std::move(on_done).Run(std::vector<TorCircuit>());
-  return;
-#else
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&GetCircuitsEnrichedBlocking),
       std::move(on_done));
-#endif  // BUILDFLAG(IS_WIN)
 }
 
 }  // namespace tor

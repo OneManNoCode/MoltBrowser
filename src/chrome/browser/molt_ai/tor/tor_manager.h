@@ -22,6 +22,7 @@
 #define CHROME_BROWSER_MOLT_AI_TOR_TOR_MANAGER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
@@ -83,6 +84,30 @@ class TorManager {
   // clean shutdown; falls back to SIGTERM after a short grace period.
   void Stop();
 
+  // ---- Exit-country selection ("VPN-style" exit relay control) ----
+  //
+  // Constrain which country Tor uses for the exit relay. |country_code|
+  // is a lowercase ISO 3166-1 alpha-2 code ("us", "de", "jp", ...).
+  // Pass "" to clear the constraint (Tor picks any exit). The code is
+  // stored in memory, best-effort persisted to a small file in the Tor
+  // data dir, and applied by rewriting the torrc (adding/removing
+  // `ExitNodes {<cc>}` + `StrictNodes 1`). If Tor is currently running
+  // we reload it in place (SIGNAL RELOAD then SIGNAL NEWNYM to rebuild
+  // circuits through the new exit); otherwise the change takes effect
+  // on the next Launch(). Called on the UI thread.
+  void SetExitCountry(const std::string& country_code);
+
+  // Current exit-country constraint, or "" if none is set. Reads the
+  // in-memory value (which is hydrated from the persisted file on first
+  // use). Lowercase ISO alpha-2.
+  std::string GetExitCountry() const;
+
+  // A curated list of commonly-used exit-country codes (lowercase ISO
+  // alpha-2) suitable for populating a picker UI. This is a static
+  // list, not a live query of the consensus; see the .cc note about a
+  // future GETINFO-based dynamic list.
+  std::vector<std::string> GetAvailableExitCountries() const;
+
  private:
   friend class base::NoDestructor<TorManager>;
 
@@ -93,7 +118,17 @@ class TorManager {
   base::FilePath GetDataDir() const;
   base::FilePath GetTorrcPath() const;
 
-  // Write the managed torrc to |GetTorrcPath()|. Idempotent.
+  // File under the Tor data dir where we persist the selected exit
+  // country across restarts (a single lowercase ISO code, no newline).
+  base::FilePath GetExitCountryPath() const;
+
+  // Lazily load |exit_country_| from disk on first access. Marks
+  // |exit_country_loaded_| so we only hit the disk once. const because
+  // it only mutates mutable cache fields.
+  void EnsureExitCountryLoaded() const;
+
+  // Write the managed torrc to |GetTorrcPath()|. Idempotent. Includes
+  // the ExitNodes/StrictNodes lines when |exit_country_| is non-empty.
   bool WriteTorrc();
 
   // Poll the control port until it answers AUTH, up to |total_ms|.
@@ -101,6 +136,12 @@ class TorManager {
   static TorLaunchResult WaitForBootstrap(int total_ms);
 
   base::Process child_;
+
+  // Selected exit-country (lowercase ISO alpha-2), or "" for "any".
+  // Mutable + the loaded flag so the const getters can hydrate from
+  // disk on first use without forcing callers through a non-const path.
+  mutable std::string exit_country_;
+  mutable bool exit_country_loaded_ = false;
 };
 
 }  // namespace tor
