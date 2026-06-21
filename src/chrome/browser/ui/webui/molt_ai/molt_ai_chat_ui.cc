@@ -75,6 +75,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .header-actions{margin-left:auto;display:flex;gap:6px;align-items:center}
 .icon-btn{background:none;border:1px solid #333;border-radius:6px;color:#888;padding:4px 8px;font-size:11px;cursor:pointer;transition:all 0.2s}
 .icon-btn:hover{border-color:#6366f1;color:#e0e0e0}
+/* MoltNet exit-country bar — slim always-visible Tor exit selector */
+.moltnet-bar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:#0a0a0a;border-bottom:1px solid #1a1a1a;font-size:11px;color:#888}
+.moltnet-bar-icon{font-size:12px}
+.moltnet-bar-label{color:#aaa;font-weight:600}
+.moltnet-bar select{background:#111;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:6px;font-size:11px;outline:none;cursor:pointer}
+.moltnet-bar select:focus{border-color:#6366f1}
+.moltnet-bar-hint{color:#4ade80;font-size:11px;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50%}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .hw-bar{padding:6px 16px;background:#0a0a0a;border-bottom:1px solid #1a1a1a;font-size:10px;color:#555;display:flex;gap:12px}
 .hw-bar span{display:flex;align-items:center;gap:3px}
@@ -286,6 +293,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <span class="chevron">&#9662;</span>
   </button>
   <div class="model-chip-dropdown" id="modelChipDropdown"></div>
+</div>
+<!-- MoltNet exit-country selector (VPN-style Tor exit relay control).
+     Populated on load from getTorExitCountries; onchange calls
+     setTorExitCountry and shows a brief "routing through <country>"
+     confirmation in the transcript. Wired to the real TorManager
+     backend (see HandleGetTorExitCountries / HandleSetTorExitCountry). -->
+<div class="moltnet-bar" id="moltnetBar" title="Choose which country Tor exits from">
+  <span class="moltnet-bar-icon">&#128274;</span>
+  <span class="moltnet-bar-label">MoltNet exit</span>
+  <select id="torExitCountry" onchange="onTorExitCountryChange(this.value)">
+    <option value="">Any country</option>
+  </select>
+  <span class="moltnet-bar-hint" id="torExitHint"></span>
 </div>
 <div class="search-bar" id="searchBar">
   <input type="text" id="searchInput" placeholder="Search messages..." oninput="doSearch()">

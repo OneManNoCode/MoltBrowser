@@ -13,6 +13,7 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
 
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
@@ -175,6 +177,92 @@ void MoltAIChatHandler::HandleStopTor(const base::ListValue& args) {
   molt_ai::tor::TorManager::Get()->Stop();
   base::DictValue out;
   out.Set("success", true);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleGetTorExitCountries: populate the exit-country picker. Returns
+//   { selected: "<cc or ''>",
+//     available: [ { code: "<cc>", name: "<display name>" }, ... ] }
+// The available list comes from TorManager's curated static list
+// (lowercase ISO alpha-2); we map each code to a human-readable name
+// here in the UI layer (the backend stays code-only). Unknown codes
+// fall back to their uppercased form so the picker never shows a blank.
+// ------------------------------------------------------------------
+namespace {
+
+// Display names for the curated exit-country codes. Keep in sync with
+// TorManager::GetAvailableExitCountries(); any code not found here is
+// rendered as its uppercased ISO code (e.g. "xx" -> "XX").
+std::string ExitCountryDisplayName(const std::string& cc) {
+  static const auto* const kNames =
+      new std::map<std::string, std::string>{
+          {"us", "United States"}, {"gb", "United Kingdom"},
+          {"de", "Germany"},       {"fr", "France"},
+          {"nl", "Netherlands"},   {"ch", "Switzerland"},
+          {"se", "Sweden"},        {"no", "Norway"},
+          {"fi", "Finland"},       {"ca", "Canada"},
+          {"jp", "Japan"},         {"sg", "Singapore"},
+          {"au", "Australia"},     {"es", "Spain"},
+          {"it", "Italy"},         {"at", "Austria"},
+          {"pl", "Poland"},        {"cz", "Czechia"},
+          {"ro", "Romania"},       {"is", "Iceland"},
+      };
+  auto it = kNames->find(cc);
+  if (it != kNames->end())
+    return it->second;
+  return base::ToUpperASCII(cc);
+}
+
+}  // namespace
+
+void MoltAIChatHandler::HandleGetTorExitCountries(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+  base::DictValue out;
+  out.Set("selected", mgr->GetExitCountry());
+  base::ListValue available;
+  for (const std::string& cc : mgr->GetAvailableExitCountries()) {
+    base::DictValue entry;
+    entry.Set("code", cc);
+    entry.Set("name", ExitCountryDisplayName(cc));
+    available.Append(std::move(entry));
+  }
+  out.Set("available", std::move(available));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
+// HandleSetTorExitCountry: constrain (or clear) the Tor exit relay's
+// country. Arg 1 is a lowercase ISO alpha-2 code, or "" for "any".
+// TorManager rewrites the torrc and, if Tor is running, reloads it in
+// place to rebuild circuits through the new exit. Resolves
+//   { success: true, selected: "<cc or ''>" }.
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleSetTorExitCountry(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  std::string cc = (args.size() > 1 && args[1].is_string())
+                       ? args[1].GetString()
+                       : std::string();
+  // Normalize to lowercase so the backend's ISO comparison is stable
+  // regardless of what the UI sent.
+  cc = base::ToLowerASCII(cc);
+
+  molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+  mgr->SetExitCountry(cc);
+
+  base::DictValue out;
+  out.Set("success", true);
+  out.Set("selected", mgr->GetExitCountry());
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }

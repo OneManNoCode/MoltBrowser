@@ -126,6 +126,18 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // tabs in that OTR profile share the proxy.
   // Args: [callback_id, url]
   void HandleOpenTorTab(const base::ListValue& args);
+  // Exit-country selector (VPN-style exit relay control). Returns the
+  // currently-selected exit country and the curated list of available
+  // codes mapped to display names:
+  //   { selected: "<cc or ''>",
+  //     available: [ {code, name}, ... ] }
+  // Args: [callback_id]
+  void HandleGetTorExitCountries(const base::ListValue& args);
+  // Constrain (or clear, when "") the Tor exit relay's country. Calls
+  // TorManager::SetExitCountry, which rewrites the torrc and reloads a
+  // running Tor in place. Resolves { success: true, selected: "<cc>" }.
+  // Args: [callback_id, country_code]
+  void HandleSetTorExitCountry(const base::ListValue& args);
   // Tier 3: Receipt extractor — append a parsed receipt dict to
   // ~/.moltbrowser/ledger.csv. The LLM JSON parsing lives in JS; we
   // just write the CSV row here so the file lifecycle is in one

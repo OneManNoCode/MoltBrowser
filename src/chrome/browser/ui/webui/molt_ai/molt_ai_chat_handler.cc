@@ -236,6 +236,15 @@ void MoltAIChatHandler::RegisterMessages() {
       "openTorTab",
       base::BindRepeating(&MoltAIChatHandler::HandleOpenTorTab,
                           base::Unretained(this)));
+  // Exit-country selector: read + set the Tor exit relay country.
+  web_ui()->RegisterMessageCallback(
+      "getTorExitCountries",
+      base::BindRepeating(&MoltAIChatHandler::HandleGetTorExitCountries,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "setTorExitCountry",
+      base::BindRepeating(&MoltAIChatHandler::HandleSetTorExitCountry,
+                          base::Unretained(this)));
   // Tier 3: receipt extractor + plan-a-task.
   web_ui()->RegisterMessageCallback(
       "appendReceipt",

@@ -851,6 +851,70 @@ function ccToFlag(cc) {
   return String.fromCodePoint(hi) + String.fromCodePoint(lo);
 }
 
+// --------------------------------------------------------------
+// MoltNet exit-country selector. Populates the #torExitCountry
+// dropdown from getTorExitCountries (curated codes + display names
+// from the backend), reflects the currently-selected exit, and on
+// change calls setTorExitCountry and shows a brief confirmation.
+// Wired to the real TorManager backend — selecting a country
+// rewrites the torrc and (if Tor is running) rebuilds circuits
+// through an exit in that country.
+// --------------------------------------------------------------
+function populateTorExitCountries() {
+  var sel = document.getElementById('torExitCountry');
+  if (!sel) return;
+  sendWithPromise('getTorExitCountries').then(function(r) {
+    if (!r || !r.available) return;
+    // First option ("Any country" = "") is in the static HTML; append
+    // the backend-provided list after it, then restore the selection.
+    sel.length = 1;
+    r.available.forEach(function(c) {
+      var opt = document.createElement('option');
+      opt.value = c.code;
+      var flag = ccToFlag(c.code);
+      opt.textContent = (flag ? flag + ' ' : '') + c.name;
+      sel.appendChild(opt);
+    });
+    sel.value = r.selected || '';
+    var hint = document.getElementById('torExitHint');
+    if (hint) {
+      hint.textContent = sel.value
+          ? 'routing through ' + torExitLabel(sel.value)
+          : '';
+    }
+  }).catch(function() { /* Tor backend unavailable — leave "Any". */ });
+}
+
+// Human-readable label for a selected option (flag + name), falling
+// back to the uppercased code if the option isn't in the list yet.
+function torExitLabel(cc) {
+  if (!cc) return 'any country';
+  var sel = document.getElementById('torExitCountry');
+  if (sel) {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === cc) return sel.options[i].textContent;
+    }
+  }
+  return cc.toUpperCase();
+}
+
+function onTorExitCountryChange(cc) {
+  var hint = document.getElementById('torExitHint');
+  if (hint) hint.textContent = 'updating…';
+  sendWithPromise('setTorExitCountry', cc).then(function(r) {
+    var selected = (r && typeof r.selected === 'string') ? r.selected : cc;
+    var label = torExitLabel(selected);
+    if (hint) hint.textContent = selected ? 'routing through ' + label : '';
+    addSystemMessage(selected
+        ? 'MoltNet: routing through ' + label +
+          '. New Tor circuits will use an exit relay in this country.'
+        : 'MoltNet: exit country cleared — Tor will pick any exit.');
+  }).catch(function() {
+    if (hint) hint.textContent = '';
+    addErrorMessage('Could not set Tor exit country.');
+  });
+}
+
 function tryDispatchTorCommand(text) {
   var m = text.match(/^\s*\/tor\b\s*(.*)$/i);
   if (!m) return false;
@@ -3631,6 +3695,9 @@ function _stopRecording() {
   }).catch(function() {
     setStatus('error', 'Failed to initialize');
   });
+
+  // Populate the MoltNet exit-country selector from the Tor backend.
+  populateTorExitCountries();
 
   // Agent Inbox poller — refreshes the running-agents tray every 3s.
   // Cheap IPC (just a snapshot of an in-memory map) so polling at this
