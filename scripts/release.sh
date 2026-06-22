@@ -168,6 +168,22 @@ if [ -n "$SIGN_IDENTITY" ]; then
   FRAMEWORK="$APP_PATH/Contents/Frameworks/MoltBrowser Framework.framework"
   [ -d "$FRAMEWORK" ] && codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$FRAMEWORK"
 
+  # Sign bundled third-party binaries in Resources/ (tor, tesseract/OCR,
+  # whisper). codesign --deep treats Resources/ as DATA and does NOT code-sign
+  # executables there, so the notary service flags them as unsigned / no
+  # hardened runtime / no secure timestamp. Sign each Mach-O explicitly here
+  # (inside-out, before the app seal). All signed with our Developer ID (same
+  # team) so hardened-runtime library validation passes for their dylibs.
+  for d in tor ocr whisper; do
+    if [ -d "$APP_PATH/Contents/Resources/$d" ]; then
+      find "$APP_PATH/Contents/Resources/$d" -type f | while read -r f; do
+        if file "$f" | grep -q "Mach-O"; then
+          codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f" 2>/dev/null || true
+        fi
+      done
+    fi
+  done
+
   codesign --deep --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$APP_PATH"
   codesign --verify --deep --strict "$APP_PATH"
   echo "  Code signing complete and verified"
