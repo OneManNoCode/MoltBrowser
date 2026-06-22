@@ -45,6 +45,21 @@ export PATH="$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH
 autoninja -C chromium/src/out/MoltBrowser chrome
 ```
 
+### Packaging gotchas (learned in the v0.2.1 2026-06-22 rebuild)
+- **macOS:** codesign the bundled `tor`/`ocr`/`whisper` binaries under
+  `Contents/Resources/` **explicitly** with the hardened runtime — `codesign
+  --deep` skips `Resources/`, so they ship unsigned and fail notarization
+  otherwise. On a shared mac+linux Chromium checkout, `gclient` `target_os` must
+  list **both** `mac` and `linux`; use depot_tools' bundled `python3` (not
+  Homebrew 3.14); set `enable_supervised_users=true` + `safe_browsing_mode=1` to
+  match linux/windows; download the Metal toolchain via `xcodebuild
+  -downloadComponent MetalToolchain`.
+- **Windows:** build the portable ZIP with **7-Zip** so entries use forward
+  slashes (.NET `ZipFile` writes backslashes; `Compress-Archive` is too slow).
+  Fetch NSIS by extracting its 7-Zip SFX with `7zr` from a direct
+  `master.dl.sourceforge.net` mirror.
+- Full play-by-play in `docs/BUILD_PROGRESS.md`.
+
 ## Key Development Rules
 
 ### File Management

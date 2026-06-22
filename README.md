@@ -40,7 +40,7 @@ MoltBrowser is an open-source, AI-native web browser built on a Chromium fork wi
 - **Autonomous Agent Mode** — AI agents that can browse, extract data, fill forms, and complete multi-step research tasks.
 - **Chrome-Compatible** — Full Chrome extension support, identical UI patterns, zero learning curve for Chrome users.
 - **MoltShield Privacy** — Tracker blocking, fingerprint mitigation, cookie management, and anti-detection systems.
-- **MoltNet Privacy Mesh** — Tor-level IP privacy through decentralized routing.
+- **MoltNet Tor Routing** — Onion-routed IP privacy with a Tor exit-country selector: pick the country your traffic exits through, straight from the AI side panel.
 - **Multi-AI Sidebar** — Built-in AI panel supporting multiple models for summarization, code generation, and research.
 - **Persona System** — Customizable AI personas (Researcher, Developer, Lawyer, etc.) that modify AI reasoning.
 - **browser.ai.* APIs** — Extension APIs for developers to build AI-powered browser extensions.
@@ -170,13 +170,13 @@ const models = await browser.ai.getModels();
 
 | Platform | Download |
 |----------|----------|
-| **macOS** (Apple Silicon) | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized |
-| **Windows** (10/11 x64) | [MoltBrowser-Windows-x64.zip](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip) — portable, unzip & run `MoltBrowser.exe` |
+| **macOS** (Apple Silicon) | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
+| **Windows** (10/11 x64) | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
 | **Linux** (x64) | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.tar.gz) |
 
 Or visit **[moltbrowser.com](https://moltbrowser.com)** (auto-detects your OS) or the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases/latest).
 
-> Windows note: Tor routing, voice input, and OCR are not yet functional in the Windows preview (POSIX-only; stubbed). Core browsing, on-device AI chat, and MoltShield work on all platforms.
+> All three desktop platforms now share the same feature set, including Tor routing, voice input, and OCR. The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
 
 ## Current Status (v0.2.1)
 
@@ -190,14 +190,16 @@ Or visit **[moltbrowser.com](https://moltbrowser.com)** (auto-detects your OS) o
 | Fingerprint protection (Canvas, WebGL, Audio) | ✅ Complete |
 | Agent browser automation (CLICK, SCROLL, NAVIGATE) | ✅ Complete |
 | Agent testing UI (`chrome://molt-ai-agent/`) | ✅ Complete |
-| MoltNet privacy routing UI | ✅ Complete |
+| MoltNet Tor routing UI | ✅ Complete |
+| MoltNet Tor exit-country selector | ✅ Complete (v0.2.1, all platforms) |
 | Persona system (5 built-in + custom) | ✅ Complete |
 | Memory engine (SQLite + embeddings) | ✅ Complete |
 | Chat export/import, search, keyboard shortcuts | ✅ Complete |
 | Model downloading from HuggingFace | ✅ Complete |
 | Sparkle/WinSparkle auto-update | ✅ Complete |
-| macOS DMG (signed + notarized) | ✅ Shipped (v0.2.1) |
-| Windows x64 portable build | ✅ Shipped (v0.2.1) |
+| macOS DMG (signed + notarized + stapled) | ✅ Shipped (v0.2.1) |
+| Windows x64 (portable ZIP + NSIS installer) | ✅ Shipped (v0.2.1) |
+| Windows Tor / voice / OCR (functional parity) | ✅ Shipped (v0.2.1) |
 | Linux deb / rpm / tar.gz | ✅ Shipped (v0.2.1) |
 | Android APK scaffolding | 🔨 Scaffolding |
 | iOS IPA scaffolding | 🔨 Scaffolding |
@@ -218,7 +220,7 @@ MoltBrowser is built privacy-first:
 - **No telemetry** — Zero data collection by default
 - **Local AI** — Models run on your device, prompts never leave your machine
 - **MoltShield** — Blocks trackers, mitigates fingerprinting
-- **MoltNet** — Tor-level IP privacy through decentralized routing
+- **MoltNet** — Onion-routed IP privacy with a Tor exit-country selector
 - **Open Source** — Full transparency, auditable code
 
 ## License

@@ -19,22 +19,42 @@ For longer narrative posts behind each entry see
 
 ---
 
-## 2026-06-20 — v0.2.1: Windows ships — MoltBrowser is now on all three desktop platforms 🎉
+## 2026-06-22 — v0.2.1: full feature parity across macOS, Linux, and Windows 🎉
 
-MoltBrowser is now available on **macOS, Linux, and Windows**. The Windows
-x64 build (`MoltBrowser-Windows-x64.zip`, portable) joins the already-shipping
-macOS DMG and Linux `.deb`/`.rpm`/`.tar.gz` on the
-[v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1).
+All three desktop platforms were rebuilt and now ship the **same feature set**.
+Windows reaches functional parity (Tor/MoltNet, OCR, and voice are no longer
+stubbed) and gains a native installer, and a new MoltNet **Tor exit-country
+selector** lands on all three. Assets on the
+[v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1):
+`MoltBrowser-macOS-arm64.dmg` (883 MB, signed + notarized + stapled),
+`MoltBrowser-Linux-x64.{deb,rpm,tar.gz}` (141/194/195 MB), and
+`MoltBrowser-Windows-x64.zip` (702 MB portable) +
+`MoltBrowser-Windows-x64-Setup.exe` (672 MB NSIS installer).
 
 ### Added
 
-- **Windows x64 portable build** — unzip and run `MoltBrowser.exe`. On-device
-  AI chat, MoltShield, omnibox AI, personas, and memory all work.
-- **One-click downloads** for every platform via
-  `/releases/latest/download/<asset>`; the website auto-detects the OS.
+- **MoltNet Tor exit-country selector (all platforms)** — pick an exit country
+  from the AI side panel; the app writes `ExitNodes {cc}` + `StrictNodes 1` into
+  the Tor `torrc` and reloads, routing traffic through an exit relay in that
+  country. Onion-routed and privacy-preserving — handy for reaching
+  geo-restricted content. Note this is Tor, not a classic VPN: it's slower, only
+  countries that host exit relays are selectable, and some sites block Tor.
+- **Windows functional parity** — Tor/MoltNet, OCR, and voice transcription now
+  work on Windows (previously stubbed):
+  - **Tor/MoltNet** — POSIX sockets ported to winsock
+    (`WSAStartup`/`closesocket`); bundles the Tor Expert Bundle 15.0.15
+    (`tor.exe` + geoip).
+  - **OCR** — bundles Tesseract 5.4.0 (+ `eng`/`osd` traineddata).
+  - **Voice transcription** — bundles whisper.cpp v1.9.1 + the `ggml-tiny.en`
+    model.
+  These three already worked on macOS and Linux; this release brings Windows up
+  to the same level.
+- **Native Windows installer** — `MoltBrowser-Windows-x64-Setup.exe` (NSIS),
+  alongside the existing portable ZIP.
 
 ### Build / infrastructure
 
+- **All three platforms rebuilt 2026-06-22** from a shared Chromium checkout.
 - **Windows is built on a self-hosted GitHub Actions runner** (replacing the
   old Docker cross-compile path). depot_tools/gn/ninja run in native
   PowerShell; source + build live in a short root `C:\cr` to dodge Windows
@@ -43,17 +63,22 @@ macOS DMG and Linux `.deb`/`.rpm`/`.tar.gz` on the
 - **~40 Windows-portability fixes** to molt_ai code that had been POSIX-only:
   `FilePath::value()` is `std::wstring` on Windows (→ `AsUTF8Unsafe()` /
   `FromUTF8Unsafe()`); `std::ofstream` → `base::WriteFile`/`AppendToFile`;
-  POSIX headers/sockets/`access()` in tor/voice/ocr guarded + stubbed;
-  llama.cpp exceptions via `/EHsc` on clang-cl; the fork's
-  `base::ListValue`/`base::DictValue` names.
+  POSIX sockets in tor/voice/ocr ported to winsock; llama.cpp exceptions via
+  `/EHsc` on clang-cl; the fork's `base::ListValue`/`base::DictValue` names.
+- **Packaging lessons** (full notes in `docs/BUILD_PROGRESS.md`): the Windows
+  ZIP must use forward-slash entries (built with 7-Zip — `.NET ZipFile` writes
+  backslashes and `Compress-Archive` is too slow); NSIS is fetched by extracting
+  its 7-Zip SFX with `7zr` off a direct SourceForge mirror; on macOS the bundled
+  tor/ocr/whisper binaries under `Contents/Resources/` are codesigned explicitly
+  with the hardened runtime because `codesign --deep` skips `Resources/`.
 - **Link fixes:** added the missing `ggml-backend-dl.cpp`; restored the
   `build_with_tflite_lib` model-service BUILD.gn blocks that had been wrongly
   removed.
 
-### Known limitations (Windows preview)
+### Notes
 
-- Tor routing, voice input, and OCR are stubbed (not yet functional on Windows).
-- Distributed as a portable ZIP (no installer yet).
+- Only the macOS DMG bundles an on-device model (TinyLlama) in the download;
+  Linux and Windows download a model on first run.
 
 ---
 

@@ -211,17 +211,15 @@
 </nav>
 
 <section class="hero">
-  <span class="version-tag" id="version-tag">v0.1.0 — Now Available</span>
+  <span class="version-tag" id="version-tag">v0.2.1 — Now Available</span>
   <h1>AI in Your Browser.<br>On Your Device.</h1>
   <p>MoltBrowser is a privacy-first browser with built-in AI. Run large language models locally — no cloud, no tracking, no compromises.</p>
   <div class="hero-actions">
     <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
        class="btn-primary" id="heroDownload"
        data-mac-arm="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
-       data-mac-x64="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-x64.dmg"
        data-win="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe"
-       data-linux-deb="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb"
-       data-linux-appimage="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.AppImage">
+       data-linux-deb="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span id="heroDownloadLabel">Download for Mac</span>
     </a>
@@ -245,6 +243,11 @@
       <div class="feature-icon">&#128274;</div>
       <h3>MoltShield</h3>
       <p>Built-in ad and tracker blocker using EasyList and uBlock filter syntax. No extensions needed — protection is native.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#127757;</div>
+      <h3>MoltNet — Tor Routing</h3>
+      <p>Onion-route your browsing over the Tor network with one click, and pick your exit country from the menu bar. Reach geo-restricted sites and keep your location private — built in, no setup, on macOS, Linux, and Windows.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">&#128196;</div>
@@ -275,14 +278,9 @@
   <div class="download-grid">
     <div class="download-card available" id="card-mac">
       <h3>&#63743; macOS <span class="badge badge-green">Available</span></h3>
-      <p>Apple Silicon &amp; Intel. macOS 12.0+. Metal GPU acceleration for fast inference.</p>
+      <p>Apple Silicon (arm64). macOS 12.0+. Metal GPU acceleration, with an on-device model bundled in.</p>
       <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
-         class="download-btn" id="mac-arm-download">Download for Apple Silicon</a>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-x64.dmg"
-         class="download-btn" id="mac-x64-download"
-         style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
-        Download for Intel Mac
-      </a>
+         class="download-btn" id="mac-arm-download">Download for Apple Silicon (.dmg)</a>
     </div>
     <div class="download-card available" id="card-linux">
       <h3>&#128039; Linux <span class="badge badge-green">Available</span></h3>
@@ -302,9 +300,14 @@
     </div>
     <div class="download-card available" id="card-win">
       <h3>&#128187; Windows <span class="badge badge-green">Available</span></h3>
-      <p>Windows 10/11 x64. Portable build &mdash; unzip and run MoltBrowser.exe. Vulkan GPU acceleration on supported hardware.</p>
+      <p>Windows 10/11 x64. Installer or portable zip. Vulkan GPU acceleration on supported hardware.</p>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe"
+         class="download-btn">Download Installer (.exe)</a>
       <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip"
-         class="download-btn">Download .zip (Windows 10/11 x64)</a>
+         class="download-btn"
+         style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
+        Download Portable (.zip)
+      </a>
     </div>
     <div class="download-card">
       <h3>&#128241; Android <span class="badge badge-gray">In Development</span></h3>
@@ -391,27 +394,15 @@
     label = isIOS ? 'iOS — Coming Q4 2026' : 'Android — Coming Q3 2026';
     hero.classList.add('disabled');
   } else if (isWin) {
-    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip';
-    label = 'Download for Windows (x64)';
+    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe';
+    label = 'Download for Windows (Installer)';
   } else if (isLinux) {
     hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb';
     label = 'Download for Linux (.deb)';
   } else if (isMac) {
-    // Heuristic: M1/M2/M3/M4 Macs report Apple Silicon via uaData; older Macs ship Intel
-    var arch = (navigator.userAgentData && navigator.userAgentData.platformArchitecture) || '';
-    var isAppleSilicon = arch === 'arm' || arch === 'arm64' ||
-                         /Apple/i.test(platform) ||
-                         // Best heuristic without UA-CH: any Mac running macOS 11+ is increasingly likely ARM
-                         /Mac OS X 1[1-9]/i.test(ua);
-    if (isAppleSilicon) {
-      os = 'mac-arm';
-      label = 'Download for Mac (Apple Silicon)';
-      hero.href = hero.getAttribute('data-mac-arm');
-    } else {
-      os = 'mac-x64';
-      label = 'Download for Mac (Intel)';
-      hero.href = hero.getAttribute('data-mac-x64');
-    }
+    // Only an Apple Silicon (arm64) build is shipped.
+    label = 'Download for Mac (Apple Silicon)';
+    hero.href = hero.getAttribute('data-mac-arm');
   } else {
     // Unknown OS — keep default Mac ARM, let user pick in the cards
     hero.href = hero.getAttribute('data-mac-arm');

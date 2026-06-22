@@ -6,9 +6,57 @@
 
 ## Session State
 
-**Last Updated**: 2026-06-20
-**Current Phase**: ✅ SHIPPED — v0.2.1 live on macOS, Linux, and Windows
-**Overall Status**: All three desktop platforms built and published on the [v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1). Windows was the final holdout — see "Milestone: Windows + 3-platform release" immediately below.
+**Last Updated**: 2026-06-22
+**Current Phase**: ✅ SHIPPED — v0.2.1 at full feature parity on macOS, Linux, and Windows
+**Overall Status**: All three desktop platforms rebuilt 2026-06-22 and republished on the [v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1). Windows reached functional parity (Tor/OCR/voice) and gained an NSIS installer; a MoltNet Tor exit-country selector shipped on all three. See "Milestone: cross-platform parity rebuild" immediately below.
+
+---
+
+## Milestone: cross-platform parity rebuild (v0.2.1 — 2026-06-22)
+
+All three desktop platforms were rebuilt and now ship the **same feature set**.
+Final assets on v0.2.1: `MoltBrowser-macOS-arm64.dmg` (883 MB, Developer ID
+signed + notarized + stapled, bundles a TinyLlama on-device model),
+`MoltBrowser-Linux-x64.{deb,rpm,tar.gz}` (141/194/195 MB),
+`MoltBrowser-Windows-x64.zip` (702 MB portable) +
+`MoltBrowser-Windows-x64-Setup.exe` (672 MB NSIS installer). Only macOS bundles
+the model in the download; Linux/Windows fetch one on first run.
+
+**New cross-platform feature — MoltNet Tor exit-country selector.** Users pick an
+exit country from the AI side panel; the app writes `ExitNodes {cc}` +
+`StrictNodes 1` into the Tor `torrc` and reloads, routing traffic through an exit
+relay in that country. It's Tor (not a classic VPN): slower, limited to countries
+that host exit relays, and some sites block Tor — framed accordingly in-product.
+
+**Windows brought to functional parity** (these three were stubbed in the earlier
+0.2.1 preview and already worked on macOS/Linux):
+- **Tor/MoltNet** — POSIX sockets ported to winsock (`WSAStartup`/`closesocket`);
+  bundles the Tor Expert Bundle 15.0.15 (`tor.exe` + geoip).
+- **OCR** — bundles Tesseract 5.4.0 (+ `eng`/`osd` traineddata).
+- **Voice transcription** — bundles whisper.cpp v1.9.1 + the `ggml-tiny.en` model.
+- **Native NSIS installer** added alongside the portable ZIP.
+
+### Build lessons learned this round
+
+- **Windows ZIP entries must use forward slashes.** Build the zip with **7-Zip**
+  — .NET `ZipFile` writes backslash separators (some tools mis-extract), and
+  `Compress-Archive` is too slow on a tree this size.
+- **NSIS fetch on the runner** — extract the NSIS 7-Zip SFX with **`7zr`** off a
+  direct `master.dl.sourceforge.net` mirror (the redirecting download URLs were
+  unreliable in CI).
+- **macOS environment drift fixed** (shared Chromium checkout used for both mac
+  and linux):
+  - `gclient` `target_os` must list **both `mac` and `linux`** on the shared
+    checkout, or one platform's deps go missing.
+  - Use **depot_tools' bundled `python3`**, not Homebrew 3.14, to run the build
+    scripts.
+  - Set `enable_supervised_users=true` and `safe_browsing_mode=1` to match the
+    Linux/Windows configs.
+  - The Xcode **Metal Toolchain** must be downloaded via
+    `xcodebuild -downloadComponent MetalToolchain`.
+  - **Codesign the bundled tor/ocr/whisper binaries explicitly** (with the
+    hardened runtime) under `Contents/Resources/` — `codesign --deep` skips
+    `Resources/`, so they'd otherwise ship unsigned and break notarization.
 
 ---
 
@@ -48,8 +96,8 @@ preview); llama.cpp exceptions via `/EHsc` on clang-cl; the fork's
 `model_manager.h`; added missing `ggml-backend-dl.cpp`; restored the wrongly-removed
 `build_with_tflite_lib` model-service BUILD.gn blocks.
 
-**Next:** Android/iOS (still scaffolding); a real Windows installer; functional
-tor/voice/ocr on Windows (winsock port).
+**Next:** Android/iOS (still scaffolding). _(Windows installer + functional
+tor/voice/ocr landed in the 2026-06-22 parity rebuild — see milestone above.)_
 
 ---
 
