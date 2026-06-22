@@ -134,38 +134,75 @@ else
   echo "  WARNING: Sparkle binary not found at expected path"
 fi
 
-# --- Generate EdDSA signing key if not exists ---
+# --- Ensure EdDSA signing key + set SUPublicEDKey (Sparkle 2.6.4) ---
+# Sparkle 2.6.x is keychain-based: generate_keys stores the private key in the
+# login keychain and prints the public key. The pre-2.x file-output form
+# (`generate_keys -p <dir>`) was removed — `-p` now takes NO argument and just
+# prints the existing public key. That CLI mismatch is what previously aborted
+# this script (and forced the broken `release.sh --no-sparkle` packaging).
+#   generate_keys        -> create keypair in keychain, print public key
+#   generate_keys -p     -> print existing public key (non-zero exit if none)
+#   generate_keys -x F   -> export private key (base64 seed) to file F
 KEYS_DIR="$ROOT_DIR/.sparkle-keys"
-if [ ! -f "$KEYS_DIR/eddsa_key" ]; then
-  echo ""
-  echo "--- Generating EdDSA signing key ---"
-  mkdir -p "$KEYS_DIR"
+mkdir -p "$KEYS_DIR"
+chmod 700 "$KEYS_DIR" 2>/dev/null || true
 
-  # Check if Sparkle's generate_keys tool is available
-  GENERATE_KEYS="$SPARKLE_DIR/bin/generate_keys"
-  if [ -x "$GENERATE_KEYS" ]; then
-    echo "Using Sparkle's generate_keys tool..."
-    "$GENERATE_KEYS" -p "$KEYS_DIR"
-    echo "EdDSA key generated at: $KEYS_DIR/"
-    echo ""
-    echo "IMPORTANT: Keep the private key SAFE and SECRET."
-    echo "  Private key: $KEYS_DIR/eddsa_key"
-    echo "  Add the PUBLIC key to Info.plist as SUPublicEDKey"
+GENERATE_KEYS="$SPARKLE_DIR/bin/generate_keys"
+if [ ! -x "$GENERATE_KEYS" ]; then
+  echo "ERROR: generate_keys not found at $GENERATE_KEYS"
+  exit 1
+fi
+
+echo ""
+echo "--- Sparkle EdDSA signing key ---"
+
+# Look up the existing public key from the keychain (automation form).
+# NOTE: `generate_keys -p` exits non-zero AND prints "ERROR: No existing
+# signing key found!" to *stdout* when no key exists — so gate on the exit
+# status and only capture stdout on success, otherwise the error text would be
+# mistaken for a key.
+PUB_KEY=""
+if out="$("$GENERATE_KEYS" -p 2>/dev/null)"; then PUB_KEY="$out"; fi
+
+if [ -z "$PUB_KEY" ]; then
+  echo "No existing key in keychain — generating a new EdDSA keypair..."
+  # Creates the keypair and stores the private key in the login keychain.
+  "$GENERATE_KEYS" >/dev/null
+  if out="$("$GENERATE_KEYS" -p 2>/dev/null)"; then PUB_KEY="$out"; fi
+fi
+
+if [ -z "$PUB_KEY" ] || [ "${PUB_KEY:0:5}" = "ERROR" ]; then
+  echo "ERROR: Could not obtain the Sparkle EdDSA public key from the keychain."
+  echo "       Run '$GENERATE_KEYS' manually (approve the keychain prompt and"
+  echo "       unlock the login keychain), then re-run this script."
+  exit 1
+fi
+echo "Public key: $PUB_KEY"
+
+# Export a private-key backup for headless appcast signing
+# (sign_update --ed-key-file) and disaster recovery. KEEP SECRET — the
+# .sparkle-keys/ directory is gitignored. Done once; reused thereafter.
+# INTERACTIVE ONLY: `generate_keys -x` can pop a keychain approval dialog,
+# which would HANG a headless/CI build. Skip when there's no TTY; SUPublicEDKey
+# is already set from `-p` above, and appcast signing can use the keychain
+# key directly, so the dmg/auto-update verification is unaffected.
+if [ -t 0 ] && [ ! -f "$KEYS_DIR/eddsa_key" ]; then
+  if "$GENERATE_KEYS" -x "$KEYS_DIR/eddsa_key" >/dev/null 2>&1; then
+    chmod 600 "$KEYS_DIR/eddsa_key"
+    echo "Private key backup exported: $KEYS_DIR/eddsa_key"
   else
-    echo "NOTE: generate_keys tool not found in Sparkle distribution."
-    echo "Generate manually with: $SPARKLE_DIR/bin/generate_keys -p $KEYS_DIR"
+    echo "NOTE: private-key backup export skipped (keychain prompt declined);"
+    echo "      appcast signing will fall back to the keychain key directly."
   fi
 fi
+printf '%s\n' "$PUB_KEY" > "$KEYS_DIR/eddsa_key.pub"
 
-# Check if public key needs to be added to Info.plist
-if [ -f "$KEYS_DIR/eddsa_key.pub" ]; then
-  PUB_KEY=$(cat "$KEYS_DIR/eddsa_key.pub")
-  echo ""
-  echo "Setting SUPublicEDKey in Info.plist..."
-  /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$APP_PATH/Contents/Info.plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $PUB_KEY" "$APP_PATH/Contents/Info.plist"
-  echo "Public key set in Info.plist."
-fi
+# Set SUPublicEDKey in the app's Info.plist so the app can verify updates.
+PLIST="$APP_PATH/Contents/Info.plist"
+echo "Setting SUPublicEDKey in Info.plist..."
+/usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $PUB_KEY" "$PLIST"
+echo "SUPublicEDKey set."
 
 echo ""
 echo "=== Sparkle Bundling Complete ==="

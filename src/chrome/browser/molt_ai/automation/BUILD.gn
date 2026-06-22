@@ -13,6 +13,7 @@ source_set("automation") {
     "agent_inbox_registry.h",
     "automation_background_browser.cc",
     "automation_background_browser.h",
+    "automation_notification.cc",
     "automation_notification.h",
     "automation_recorder.cc",
     "automation_recorder.h",
@@ -34,11 +35,11 @@ source_set("automation") {
     "automation_storage.h",
   ]
 
-  if (is_mac) {
-    sources += [ "automation_notification_mac.mm" ]
-  } else {
-    sources += [ "automation_notification_stub.cc" ]
-  }
+  # automation_notification.cc is a single cross-platform implementation
+  # (Chromium's NotificationDisplayService) used on macOS, Windows, and
+  # Linux. The former is_mac (.mm UNUserNotificationCenter) / stub split is
+  # gone; automation_notification_mac.mm and automation_notification_stub.cc
+  # are now unused.
 
   deps = [
     "//base",
@@ -50,13 +51,7 @@ source_set("automation") {
     "//components/keyed_service/core",
     "//content/public/browser",
     "//ui/base",
+    "//ui/message_center/public/cpp",
     "//url",
   ]
-
-  if (is_mac) {
-    frameworks = [
-      "Foundation.framework",
-      "UserNotifications.framework",
-    ]
-  }
 }

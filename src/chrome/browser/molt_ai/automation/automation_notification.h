@@ -1,9 +1,11 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// Cross-platform thin wrapper around the OS notification center. On
-// macOS, posts a top-right banner via UNUserNotificationCenter. On
-// other platforms, currently logs to LOG(INFO) and returns.
+// Cross-platform thin wrapper around the OS notification center. Posts a
+// real desktop notification on macOS, Windows, and Linux via Chromium's
+// browser-process notification stack (NotificationDisplayService +
+// message_center::Notification). Implemented once in
+// automation_notification.cc.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_NOTIFICATION_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_NOTIFICATION_H_

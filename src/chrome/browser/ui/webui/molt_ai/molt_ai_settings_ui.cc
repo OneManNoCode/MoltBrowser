@@ -3,6 +3,11 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_settings_ui.h"
 
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "base/memory/ref_counted_memory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/url_data_source.h"
@@ -13,17 +18,19 @@
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "build/build_config.h"
-#if !BUILDFLAG(IS_WIN)
-#include <unistd.h>  // For access() in MoltNet Tor detection (POSIX only)
-#endif
 
 namespace {
 
@@ -34,6 +41,30 @@ base::FilePath GetSettingsFilePath() {
   base::PathService::Get(base::DIR_HOME, &home_dir);
   return home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
       .Append(base::FilePath::FromUTF8Unsafe(kSettingsFileName));
+}
+
+// Display names for the curated exit-country codes returned by
+// TorManager::GetAvailableExitCountries() (lowercase ISO alpha-2). Kept
+// in sync with the identical map in molt_ai_chat_handler_tor.cc so the
+// settings picker and the chat side-panel picker show the same labels.
+// Any code not found here renders as its uppercased ISO code.
+std::string ExitCountryDisplayName(const std::string& cc) {
+  static const auto* const kNames = new std::map<std::string, std::string>{
+      {"us", "United States"}, {"gb", "United Kingdom"},
+      {"de", "Germany"},       {"fr", "France"},
+      {"nl", "Netherlands"},   {"ch", "Switzerland"},
+      {"se", "Sweden"},        {"no", "Norway"},
+      {"fi", "Finland"},       {"ca", "Canada"},
+      {"jp", "Japan"},         {"sg", "Singapore"},
+      {"au", "Australia"},     {"es", "Spain"},
+      {"it", "Italy"},         {"at", "Austria"},
+      {"pl", "Poland"},        {"cz", "Czechia"},
+      {"ro", "Romania"},       {"is", "Iceland"},
+  };
+  auto it = kNames->find(cc);
+  if (it != kNames->end())
+    return it->second;
+  return base::ToUpperASCII(cc);
 }
 
 // ---- Settings Handler ----
@@ -74,6 +105,14 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
         "moltnetSetExitCountry",
         base::BindRepeating(&MoltAISettingsHandler::HandleMoltnetSetExitCountry,
                             base::Unretained(this)));
+    // Populate the exit-country picker from the real backend list
+    // (TorManager::GetAvailableExitCountries) — mirrors the chat panel's
+    // getTorExitCountries handler.
+    web_ui()->RegisterMessageCallback(
+        "getMoltnetExitCountries",
+        base::BindRepeating(
+            &MoltAISettingsHandler::HandleGetMoltnetExitCountries,
+            base::Unretained(this)));
   }
 
  private:
@@ -180,46 +219,119 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   // ---- MoltNet (Tor privacy routing) ----
   //
-  // The MoltNet UI in the settings page calls into these handlers to
-  // start/stop Tor and refresh the relay circuit. Each handler:
-  // 1. Calls AllowJavascript() so we can fire listeners back.
-  // 2. Detects whether `tor` is installed locally (brew install tor on Mac).
-  // 3. If yes, runs the requested action and emits a 'moltnet-status' event.
-  // 4. If no, emits a status event explaining how to install Tor.
+  // These handlers drive the same real backend as the chat side-panel's
+  // Tor controls (see molt_ai_chat_handler_tor.cc): molt_ai::tor::
+  // TorManager for launch/stop/exit-country and molt_ai::tor::TorService
+  // for live circuit/relay info over the control port. No placeholder
+  // data — every value reported to the UI comes from the running Tor.
+  //
+  // The settings page is event-driven (it listens for "moltnet-status"
+  // via cr.addWebUIListener and calls chrome.send fire-and-forget), so
+  // each action ends by re-querying the real state and broadcasting it
+  // with FireWebUIListener, rather than resolving a per-call promise.
 
-  bool IsTorInstalled() const {
-#if BUILDFLAG(IS_WIN)
-    // Tor is not supported on Windows in this preview build.
-    return false;
-#else
-    const char* candidates[] = {
-        "/opt/homebrew/bin/tor",
-        "/usr/local/bin/tor",
-        "/usr/bin/tor",
-    };
-    for (const char* p : candidates) {
-      if (access(p, X_OK) == 0)
-        return true;
-    }
-    return false;
-#endif
+  // True iff a tor binary is actually resolvable (bundled inside the
+  // .app on macOS/Windows, or a system install). This is exactly how the
+  // backend decides what it can launch — no per-platform hardcoding, no
+  // "unsupported on Windows" special case.
+  bool IsTorAvailable() const {
+    return !molt_ai::tor::TorManager::Get()
+                ->ResolveTorBinary()
+                .value()
+                .empty();
   }
 
-  void EmitMoltnetStatus(const std::string& status,
-                         const std::string& apparent_ip = "",
-                         const std::vector<std::string>& relays = {}) {
+  // Probe the live Tor and, if it's up, fetch the enriched circuit list,
+  // then broadcast a "moltnet-status" event built entirely from real
+  // data. |forced_status| lets callers show a transient state (e.g.
+  // "connecting") immediately; pass "" to report whatever Probe finds.
+  void RefreshMoltnetStatus(const std::string& forced_status = "") {
+    AllowJavascript();
+    if (!IsTorAvailable()) {
+      EmitMoltnetStatus(
+          "disconnected",
+          "No tor binary available (bundled tor missing from this build).");
+      return;
+    }
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
+    std::string forced = forced_status;
+    molt_ai::tor::TorService::Get()->Probe(base::BindOnce(
+        [](base::WeakPtr<MoltAISettingsHandler> self, std::string forced,
+           molt_ai::tor::TorStatus s) {
+          if (!self)
+            return;
+          if (!s.running) {
+            self->EmitMoltnetStatus("disconnected", s.error);
+            return;
+          }
+          // Tor is up — pull the real circuits (with IP + country per
+          // hop) and report them. The apparent_ip shown to the user is
+          // the exit relay's IP from the first built general circuit.
+          std::string status =
+              forced.empty() ? std::string("connected") : forced;
+          molt_ai::tor::TorService::Get()->GetCircuitsEnriched(
+              base::BindOnce(
+                  [](base::WeakPtr<MoltAISettingsHandler> self,
+                     std::string status,
+                     std::vector<molt_ai::tor::TorCircuit> circuits) {
+                    if (!self)
+                      return;
+                    self->EmitMoltnetStatusFromCircuits(status, circuits);
+                  },
+                  self, status));
+        },
+        weak_this, forced));
+  }
+
+  // Build and fire the "moltnet-status" event from a real circuit list.
+  // Picks the first BUILT general-purpose circuit as the active one; its
+  // ordered hops (guard -> middle -> exit) become the relay chain and
+  // its exit hop's IP becomes the apparent IP.
+  void EmitMoltnetStatusFromCircuits(
+      const std::string& status,
+      const std::vector<molt_ai::tor::TorCircuit>& circuits) {
+    const molt_ai::tor::TorCircuit* active = nullptr;
+    for (const auto& c : circuits) {
+      if (c.state == "BUILT" && !c.hops.empty()) {
+        active = &c;
+        if (c.purpose == "GENERAL")
+          break;  // prefer a general circuit; otherwise take any built one
+      }
+    }
+
     base::DictValue result;
     result.Set("status", status);
-    result.Set("apparent_ip", apparent_ip);
     base::ListValue relay_list;
-    for (size_t i = 0; i < relays.size(); ++i) {
-      base::DictValue relay;
-      relay.Set("country", relays[i]);
-      relay.Set("relay_id", "relay" + base::NumberToString(i));
-      relay.Set("latency_ms", 50 + static_cast<int>(i) * 30);
-      relay_list.Append(std::move(relay));
+    std::string apparent_ip;
+    if (active) {
+      for (const auto& h : active->hops) {
+        base::DictValue relay;
+        // The JS flag map keys on uppercase ISO codes; Tor's GeoIP can
+        // return either case, so normalize here.
+        relay.Set("country", base::ToUpperASCII(h.country));
+        // Real relay identity (operator nickname, falling back to
+        // fingerprint) instead of a synthesized "relayN" id.
+        relay.Set("relay_id",
+                  h.nickname.empty() ? h.fingerprint : h.nickname);
+        relay.Set("fingerprint", h.fingerprint);
+        relay.Set("ip", h.ip);
+        relay_list.Append(std::move(relay));
+      }
+      apparent_ip = active->hops.back().ip;
     }
+    result.Set("apparent_ip", apparent_ip);
     result.Set("relays", std::move(relay_list));
+    FireWebUIListener("moltnet-status", base::Value(std::move(result)));
+  }
+
+  // Simple status broadcast with no circuit data (disconnected /
+  // connecting / error states). |detail| is shown next to the badge.
+  void EmitMoltnetStatus(const std::string& status,
+                         const std::string& detail = "") {
+    base::DictValue result;
+    result.Set("status", status);
+    result.Set("apparent_ip", detail);
+    result.Set("relays", base::ListValue());
     FireWebUIListener("moltnet-status", base::Value(std::move(result)));
   }
 
@@ -230,44 +342,63 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       mode = args[0].GetString();
     }
 
-    if (!IsTorInstalled()) {
-      // Tor not present — surface a friendly status message.
-      EmitMoltnetStatus("disconnected",
-                        "Tor not installed (run: brew install tor)");
+    // "direct" means no privacy routing — stop any managed Tor instead
+    // of launching one.
+    if (mode == "direct") {
+      molt_ai::tor::TorManager::Get()->Stop();
+      EmitMoltnetStatus("disconnected");
       return;
     }
 
-    // Demonstrate connecting status, then a connected state with a sample
-    // 3-hop circuit. Real circuit info comes from the Tor control port —
-    // wired up in src/moltnet/moltnet.cc but not yet integrated into the
-    // browser process. For now we report a deterministic placeholder so
-    // the UI animates correctly.
-    EmitMoltnetStatus("connecting");
-
-    std::vector<std::string> relays = {"DE", "NL", "SE"};
-    if (mode == "proxy") {
-      relays = {"NL"};
-    } else if (mode == "direct") {
-      relays = {};
+    if (!IsTorAvailable()) {
+      EmitMoltnetStatus(
+          "disconnected",
+          "No tor binary available (bundled tor missing from this build).");
+      return;
     }
-    EmitMoltnetStatus("connected", "192.0.2.42", relays);
+
+    // Show "connecting" immediately, then actually launch Tor. Launch()
+    // resolves only after the control port answers (bootstrap can take
+    // ~15-30s), at which point we report the real running state +
+    // circuits.
+    EmitMoltnetStatus("connecting");
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
+    molt_ai::tor::TorManager::Get()->Launch(base::BindOnce(
+        [](base::WeakPtr<MoltAISettingsHandler> self,
+           molt_ai::tor::TorLaunchResult r) {
+          if (!self)
+            return;
+          if (!r.success) {
+            self->EmitMoltnetStatus(
+                "disconnected",
+                r.error.empty() ? std::string("Failed to launch Tor")
+                                : r.error);
+            return;
+          }
+          self->RefreshMoltnetStatus();
+        },
+        weak_this));
   }
 
   void HandleMoltnetDisconnect(const base::ListValue& args) {
     AllowJavascript();
+    molt_ai::tor::TorManager::Get()->Stop();
     EmitMoltnetStatus("disconnected");
   }
 
   void HandleMoltnetNewCircuit(const base::ListValue& args) {
     AllowJavascript();
-    if (!IsTorInstalled()) {
-      EmitMoltnetStatus("disconnected",
-                        "Tor not installed (run: brew install tor)");
+    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+    if (!mgr->IsRunning()) {
+      EmitMoltnetStatus("disconnected");
       return;
     }
-    // Rotate to a different sample circuit
-    EmitMoltnetStatus("connected", "198.51.100.7",
-                      {"CH", "FR", "JP"});
+    // There is no standalone NEWNYM entry point in the public API; the
+    // backend rebuilds circuits (SIGNAL RELOAD + SIGNAL NEWNYM) as part
+    // of SetExitCountry(). Re-applying the *current* exit country is the
+    // supported way to force a fresh circuit without changing the exit.
+    mgr->SetExitCountry(mgr->GetExitCountry());
+    RefreshMoltnetStatus();
   }
 
   void HandleMoltnetSetExitCountry(const base::ListValue& args) {
@@ -276,11 +407,38 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     if (args.size() > 0 && args[0].is_string()) {
       country = args[0].GetString();
     }
-    std::vector<std::string> relays = {"DE", "NL"};
-    if (!country.empty())
-      relays.push_back(country);
-    EmitMoltnetStatus("connected", "203.0.113.5", relays);
+    // TorManager validates/normalizes, but lowercase here too so we match
+    // the chat handler's contract exactly.
+    molt_ai::tor::TorManager::Get()->SetExitCountry(
+        base::ToLowerASCII(country));
+    RefreshMoltnetStatus();
   }
+
+  // Mirrors the chat panel's getTorExitCountries: returns the real
+  // curated list (lowercase ISO codes) + the currently-selected exit,
+  // each with a display name, so the picker is data-driven.
+  void HandleGetMoltnetExitCountries(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 1u);
+    const std::string callback_id = args[0].GetString();
+
+    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+    base::DictValue out;
+    out.Set("selected", mgr->GetExitCountry());
+    base::ListValue available;
+    for (const std::string& cc : mgr->GetAvailableExitCountries()) {
+      base::DictValue entry;
+      entry.Set("code", cc);
+      entry.Set("name", ExitCountryDisplayName(cc));
+      available.Append(std::move(entry));
+    }
+    out.Set("available", std::move(available));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+  }
+
+ private:
+  base::WeakPtrFactory<MoltAISettingsHandler> weak_ptr_factory_{this};
 };
 
 // ---- Data Source ----
@@ -498,14 +656,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="field" style="display:flex;gap:10px">
         <button class="btn secondary" onclick="newCircuit()" style="font-size:12px;padding:6px 16px">New Circuit</button>
         <select id="exitCountry" onchange="setExitCountry(this.value)" style="background:#111;border:1px solid #333;color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px">
-          <option value="">Auto (Any Exit)</option>
-          <option value="US">Exit: United States</option>
-          <option value="DE">Exit: Germany</option>
-          <option value="NL">Exit: Netherlands</option>
-          <option value="SE">Exit: Sweden</option>
-          <option value="CH">Exit: Switzerland</option>
-          <option value="JP">Exit: Japan</option>
-          <option value="SG">Exit: Singapore</option>
+          <option value="">Any country</option>
         </select>
       </div>
     </div>
@@ -629,6 +780,26 @@ function setExitCountry(cc) {
   chrome.send('moltnetSetExitCountry', [cc]);
 }
 
+// Populate the exit-country picker from the real backend list
+// (TorManager::GetAvailableExitCountries via getMoltnetExitCountries),
+// the same source the chat side-panel picker uses. Keeps "Any country"
+// as the first option and pre-selects whatever exit is currently set.
+function loadExitCountries() {
+  sendWithPromise('getMoltnetExitCountries').then(function(data) {
+    var sel = document.getElementById('exitCountry');
+    if (!sel) return;
+    // Drop everything except the leading "Any country" option.
+    while (sel.options.length > 1) sel.remove(1);
+    (data.available || []).forEach(function(c) {
+      var opt = document.createElement('option');
+      opt.value = c.code;  // lowercase ISO code, as the backend expects
+      opt.textContent = 'Exit: ' + c.name;
+      sel.appendChild(opt);
+    });
+    sel.value = data.selected || '';
+  });
+}
+
 function updateMoltNetUI(data) {
   var badge = document.getElementById('moltnetStatusBadge');
   var ip = document.getElementById('moltnetIP');
@@ -653,9 +824,13 @@ function updateMoltNetUI(data) {
   if (data.relays && data.relays.length > 0) {
     var html = '<span style="color:#4ade80">You</span>';
     data.relays.forEach(function(r) {
-      var flag = countryFlags[r.country] || countryFlags['??'];
+      var cc = (r.country || '').toUpperCase();
+      var flag = countryFlags[cc] || countryFlags['??'];
+      // Real relay identity from the Tor control port: operator nickname
+      // (or fingerprint) plus the resolved exit IP — no synthetic latency.
+      var tip = (r.relay_id || '') + (r.ip ? ' (' + r.ip + ')' : '');
       html += ' <span style="color:#555">&#8594;</span> <span title="' +
-        r.relay_id + ' (' + r.latency_ms + 'ms)">' + flag + '</span>';
+        tip + '">' + flag + '</span>';
     });
     html += ' <span style="color:#555">&#8594;</span> <span style="color:#8b5cf6">&#127760; Internet</span>';
     circuit.innerHTML = html;
@@ -675,6 +850,8 @@ cr.addWebUIListener('moltnet-status', updateMoltNetUI);
 sendWithPromise('getSettings').then(function(s) {
   loadSettingsIntoUI(s);
 });
+// Drive the exit-country picker from the real backend list.
+loadExitCountries();
 </script>
 </body>
 </html>)HTML";
