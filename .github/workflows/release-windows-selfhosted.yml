@@ -515,21 +515,11 @@ jobs:
 
           $makensis = Find-MakeNSIS
 
-          # ---- Best-effort install if missing: winget first, then NSIS zip ----
-          if (-not $makensis) {
-            Write-Host "makensis not found; attempting install via winget..."
-            $winget = Get-Command winget -ErrorAction SilentlyContinue
-            if ($winget) {
-              try {
-                & winget install --id NSIS.NSIS -e --silent --accept-source-agreements --accept-package-agreements
-              } catch {
-                Write-Host "winget install threw: $($_.Exception.Message)"
-              }
-              $makensis = Find-MakeNSIS
-            } else {
-              Write-Host "winget not available."
-            }
-          }
+          # ---- If missing, fetch portable NSIS directly (below) ----
+          # NOTE: deliberately NOT trying "winget install NSIS.NSIS" here - it
+          # hangs for hours non-interactively on this runner (no console for the
+          # source/package agreement prompts), which previously made this step
+          # take ~4h. The direct portable-zip download below is fast + reliable.
 
           if (-not $makensis) {
             Write-Host "makensis not found; downloading portable NSIS..."
