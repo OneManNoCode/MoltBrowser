@@ -18,9 +18,9 @@ google_default_client_id = ""
 google_default_client_secret = ""
 
 # Disable Google-specific features
-safe_browsing_mode = 0
+safe_browsing_mode = 1   # basic; mode=0 trips client_side_detection deps. matches linux/windows
 enable_reporting = false
-enable_supervised_users = false
+enable_supervised_users = true   # Chromium asserts this in //chrome/test/BUILD.gn; cannot be false
 
 # Branding
 is_chrome_branded = false
