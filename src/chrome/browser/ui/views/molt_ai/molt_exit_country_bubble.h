@@ -28,6 +28,7 @@ class Browser;
 
 namespace views {
 class Label;
+class LabelButton;
 class View;
 }  // namespace views
 
@@ -85,11 +86,11 @@ class MoltExitCountryBubble : public views::BubbleDialogDelegateView {
   // separately as the first "Any country" row, not stored here).
   std::vector<std::string> country_codes_;
 
-  // Per-row labels keyed by index into a parallel list of codes, where
+  // Per-row buttons keyed by index into a parallel list of codes, where
   // index 0 is the "Any country" row (code "") and index i>0 maps to
-  // country_codes_[i-1]. Used to redraw the selection checkmark.
-  std::vector<raw_ptr<views::Label>> row_labels_;
-  std::vector<std::string> row_codes_;  // parallel to row_labels_
+  // country_codes_[i-1]. Used to redraw the selection checkmark via SetText.
+  std::vector<raw_ptr<views::LabelButton>> row_buttons_;
+  std::vector<std::string> row_codes_;  // parallel to row_buttons_
 
   raw_ptr<views::Label> ip_label_ = nullptr;
   raw_ptr<views::Label> note_label_ = nullptr;

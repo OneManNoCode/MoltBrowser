@@ -116,9 +116,9 @@ void MoltExitCountryBubble::BuildContents() {
     all_codes.push_back(cc);
 
   row_codes_.clear();
-  row_labels_.clear();
+  row_buttons_.clear();
   row_codes_.reserve(all_codes.size());
-  row_labels_.reserve(all_codes.size());
+  row_buttons_.reserve(all_codes.size());
 
   for (const auto& cc : all_codes) {
     const bool selected = (cc == selected_country_);
@@ -127,10 +127,9 @@ void MoltExitCountryBubble::BuildContents() {
                             weak_factory_.GetWeakPtr(), cc),
         RowText(cc, selected));
     button->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    if (selected)
-      button->label()->SetTextStyle(views::style::STYLE_EMPHASIZED);
+    views::LabelButton* button_ptr = button.get();
     row_codes_.push_back(cc);
-    row_labels_.push_back(button->label());
+    row_buttons_.push_back(button_ptr);
     AddChildView(std::move(button));
   }
 
@@ -191,13 +190,11 @@ void MoltExitCountryBubble::OnCountryChosen(const std::string& country_code) {
 }
 
 void MoltExitCountryBubble::UpdateSelectionHighlight() {
-  for (size_t i = 0; i < row_labels_.size(); ++i) {
-    if (!row_labels_[i])
+  for (size_t i = 0; i < row_buttons_.size(); ++i) {
+    if (!row_buttons_[i])
       continue;
     const bool selected = (row_codes_[i] == selected_country_);
-    row_labels_[i]->SetText(RowText(row_codes_[i], selected));
-    row_labels_[i]->SetTextStyle(selected ? views::style::STYLE_EMPHASIZED
-                                           : views::style::STYLE_PRIMARY);
+    row_buttons_[i]->SetText(RowText(row_codes_[i], selected));
   }
 }
 
