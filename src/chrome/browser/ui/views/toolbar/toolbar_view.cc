@@ -78,7 +78,7 @@
 #include "chrome/browser/ui/views/location_bar/intent_chip_button.h"
 #include "chrome/browser/ui/views/location_bar/star_view.h"
 #include "chrome/browser/ui/views/location_bar/webui_location_bar.h"
-#include "chrome/browser/ui/views/molt_ai/molt_exit_country_bubble.h"
+#include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_container.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_controller.h"
@@ -644,47 +644,28 @@ void ToolbarView::Init() {
     AddChildView(std::move(rec_button));
   }
 
-  // MoltBrowser: Tor exit-country picker. A globe button whose label shows
-  // the current exit country ("Auto" when unconstrained, else the
-  // uppercased ISO code). Clicking opens MoltExitCountryBubble, which lets
-  // the user pick a country and shows the apparent exit IP. On change the
-  // bubble invokes the on-changed callback below to refresh this label.
+  // MoltBrowser: Tor exit-country button. A globe whose label shows the
+  // current exit country ("Auto" when unconstrained, else the uppercased ISO
+  // code). Clicking opens MoltNet settings (molt://ai-settings/), which has
+  // the real exit-country selector + apparent exit IP.
   {
-    auto exit_button = std::make_unique<ToolbarButton>();
-    ToolbarButton* exit_ptr = exit_button.get();
-
-    exit_ptr->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    exit_ptr->SetVectorIcon(vector_icons::kGlobeIcon);
-    exit_ptr->SetTooltipText(u"Tor exit country & apparent IP");
-    // Initial label from the current exit-country constraint. "" (any) ->
-    // "Auto"; otherwise the uppercased ISO code (e.g. "us" -> "US").
-    {
-      const std::string cc =
-          molt_ai::tor::TorManager::Get()->GetExitCountry();
-      exit_ptr->SetHighlight(
-          cc.empty() ? u"Auto" : base::UTF8ToUTF16(base::ToUpperASCII(cc)),
-          std::nullopt);
-    }
-
-    exit_ptr->SetCallback(base::BindRepeating(
-        [](Browser* browser, ToolbarButton* btn) {
-          // On-changed callback: re-read the (possibly new) exit country
-          // and refresh this button's label to match.
-          auto refresh = base::BindRepeating(
-              [](ToolbarButton* btn) {
-                const std::string cc =
-                    molt_ai::tor::TorManager::Get()->GetExitCountry();
-                btn->SetHighlight(cc.empty()
-                                      ? u"Auto"
-                                      : base::UTF8ToUTF16(
-                                            base::ToUpperASCII(cc)),
-                                  std::nullopt);
-              },
-              btn);
-          molt_ai::MoltExitCountryBubble::Show(btn, browser,
-                                               std::move(refresh));
+    auto exit_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+        [](Browser* browser) {
+          chrome::AddSelectedTabWithURL(browser,
+                                        GURL("molt://ai-settings/"),
+                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
         },
-        browser_, exit_ptr));
+        browser_));
+    exit_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    exit_button->SetVectorIcon(vector_icons::kGlobeIcon);
+    exit_button->SetTooltipText(u"Tor exit country & apparent IP (MoltNet)");
+    // Label = current exit-country constraint: "" (any) -> "Auto"; otherwise
+    // the uppercased ISO code (e.g. "us" -> "US").
+    const std::string cc =
+        molt_ai::tor::TorManager::Get()->GetExitCountry();
+    exit_button->SetHighlight(
+        cc.empty() ? u"Auto" : base::UTF8ToUTF16(base::ToUpperASCII(cc)),
+        std::nullopt);
     AddChildView(std::move(exit_button));
   }
 

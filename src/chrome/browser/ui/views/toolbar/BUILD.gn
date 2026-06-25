@@ -198,7 +198,6 @@ source_set("impl") {
     "//chrome/browser/ui/views/frame:toolbar_button_provider",
     "//chrome/browser/ui/views/glic",
     "//chrome/browser/ui/views/interaction",
-    "//chrome/browser/ui/views/molt_ai",
     "//chrome/browser/ui/views/page_action",
     "//chrome/browser/ui/views/tabs/glic",
     "//chrome/browser/ui/waap",
