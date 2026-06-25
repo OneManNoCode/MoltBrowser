@@ -72,7 +72,10 @@ std::u16string RowText(const std::string& cc, bool selected) {
 MoltExitCountryBubble::MoltExitCountryBubble(views::View* anchor,
                                              Browser* browser,
                                              OnChangedCallback on_changed)
-    : BubbleDialogDelegateView(anchor, views::BubbleBorder::TOP_RIGHT),
+    : BubbleDialogDelegateView(views::BubbleAnchor(anchor),
+                               views::BubbleBorder::TOP_RIGHT,
+                               views::BubbleBorder::DIALOG_SHADOW,
+                               /*autosize=*/false),
       browser_(browser),
       on_changed_(std::move(on_changed)) {
   // No OK/Cancel — selection is applied immediately on row click.
