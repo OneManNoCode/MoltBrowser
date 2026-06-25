@@ -1,0 +1,19 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser-specific Views UI (toolbar bubbles, etc.).
+
+source_set("molt_ai") {
+  sources = [
+    "molt_exit_country_bubble.cc",
+    "molt_exit_country_bubble.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/tor",
+    "//components/vector_icons",
+    "//ui/base",
+    "//ui/views",
+  ]
+}
