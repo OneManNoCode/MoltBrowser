@@ -154,7 +154,7 @@ void UpdateManager::CheckForUpdates(bool user_initiated) {
 }
 
 void UpdateManager::OnCheckResponse(bool user_initiated,
-                                    std::unique_ptr<std::string> body) {
+                                    std::optional<std::string> body) {
   loader_.reset();
 
   if (!body || body->empty()) {
@@ -162,12 +162,13 @@ void UpdateManager::OnCheckResponse(bool user_initiated,
     return;
   }
 
-  std::optional<base::Value> parsed = base::JSONReader::Read(*body);
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(*body, base::JSON_PARSE_RFC);
   if (!parsed || !parsed->is_dict()) {
     SetError("Unexpected response from the update server");
     return;
   }
-  const base::Value::Dict& root = parsed->GetDict();
+  const base::DictValue& root = parsed->GetDict();
 
   const std::string* tag = root.FindString("tag_name");
   if (!tag || tag->empty()) {
@@ -189,12 +190,12 @@ void UpdateManager::OnCheckResponse(bool user_initiated,
   asset_size_ = 0;
   const std::string matcher = PlatformAssetMatcher();
   if (!matcher.empty()) {
-    if (const base::Value::List* assets = root.FindList("assets")) {
+    if (const base::ListValue* assets = root.FindList("assets")) {
       for (const base::Value& a : *assets) {
         if (!a.is_dict()) {
           continue;
         }
-        const base::Value::Dict& ad = a.GetDict();
+        const base::DictValue& ad = a.GetDict();
         const std::string* name = ad.FindString("name");
         const std::string* dl = ad.FindString("browser_download_url");
         if (!name || !dl) {

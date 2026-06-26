@@ -25,6 +25,7 @@
 #define CHROME_BROWSER_MOLT_AI_UPDATE_UPDATE_MANAGER_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "base/files/file_path.h"
@@ -115,7 +116,7 @@ class UpdateManager {
   UpdateManager();
   ~UpdateManager();
 
-  void OnCheckResponse(bool user_initiated, std::unique_ptr<std::string> body);
+  void OnCheckResponse(bool user_initiated, std::optional<std::string> body);
   void OnDownloadProgress(uint64_t current);
   void OnDownloadComplete(base::FilePath expected_path, base::FilePath path);
   void OnPeriodicTimer();
