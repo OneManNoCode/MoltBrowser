@@ -162,6 +162,7 @@ source_set("impl") {
     "//chrome/browser/media/router:media_router_feature",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/molt_ai:molt_update",
     "//chrome/browser/performance_manager/public/user_tuning",
     "//chrome/browser/prefs",
     "//chrome/browser/preloading",

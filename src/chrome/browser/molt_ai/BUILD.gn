@@ -232,6 +232,12 @@ source_set("molt_update") {
 
   deps = [
     "//base",
+    "//chrome/browser/molt_ai/common",
+    "//chrome/common",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
   ]
 
   if (is_mac) {

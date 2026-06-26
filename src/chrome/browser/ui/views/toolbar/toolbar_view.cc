@@ -26,6 +26,9 @@
 #include "chrome/browser/actor/ui/actor_ui_metrics.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/molt_ai/update/update_manager.h"
+#include "content/public/browser/storage_partition.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/glic/public/glic_enabling.h"
@@ -667,6 +670,28 @@ void ToolbarView::Init() {
         cc.empty() ? u"Auto" : base::UTF8ToUTF16(base::ToUpperASCII(cc)),
         std::nullopt);
     AddChildView(std::move(exit_button));
+  }
+
+  // MoltBrowser: Software-update button. Opens molt://update/ (the in-app
+  // updater: current vs latest version + one-click update) and kicks off the
+  // cross-platform UpdateManager so fully-automatic background updates run on
+  // every platform. Initialize() is idempotent, so calling it per-window is
+  // safe; it needs the profile's network URLLoaderFactory.
+  {
+    molt_ai::UpdateManager::Get()->Initialize(
+        browser_->profile()
+            ->GetDefaultStoragePartition()
+            ->GetURLLoaderFactoryForBrowserProcess());
+    auto update_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+        [](Browser* browser) {
+          chrome::AddSelectedTabWithURL(browser, GURL("molt://update/"),
+                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+        },
+        browser_));
+    update_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    update_button->SetVectorIcon(vector_icons::kInstallDesktopIcon);
+    update_button->SetTooltipText(u"Software update");
+    AddChildView(std::move(update_button));
   }
 
   avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));

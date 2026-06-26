@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_settings_ui.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_update_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_memory_ui.h"
@@ -285,6 +286,7 @@ void RegisterChromeWebUIConfigs() {
   map.AddWebUIConfig(std::make_unique<MoltAIAgentUIConfig>());
   map.AddWebUIConfig(std::make_unique<MoltAIAutomationUIConfig>());
   map.AddWebUIConfig(std::make_unique<MoltAIMemoryUIConfig>());
+  map.AddWebUIConfig(std::make_unique<MoltAIUpdateUIConfig>());
   map.AddWebUIConfig(std::make_unique<NetExportUIConfig>());
   map.AddWebUIConfig(std::make_unique<NetInternalsUIConfig>());
   map.AddWebUIConfig(std::make_unique<NTPTilesInternalsUIConfig>());

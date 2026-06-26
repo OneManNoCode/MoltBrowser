@@ -19,6 +19,8 @@ source_set("molt_ai") {
     "molt_ai_memory_ui.h",
     "molt_ai_settings_ui.cc",
     "molt_ai_settings_ui.h",
+    "molt_ai_update_ui.cc",
+    "molt_ai_update_ui.h",
     "molt_ai_ui.cc",
     "molt_ai_ui.h",
   ]
@@ -28,6 +30,7 @@ source_set("molt_ai") {
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/molt_ai:molt_ai_agents",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/browser/molt_ai:molt_update",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai/memory",

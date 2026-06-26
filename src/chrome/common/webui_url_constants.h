@@ -218,6 +218,8 @@ inline constexpr char kChromeUIMoltAIAutomationURL[] =
     "chrome://molt-ai-automation/";
 inline constexpr char kChromeUIMoltAIMemoryHost[] = "molt-memory";
 inline constexpr char kChromeUIMoltAIMemoryURL[] = "chrome://molt-memory/";
+inline constexpr char kChromeUIMoltAIUpdateHost[] = "molt-ai-update";
+inline constexpr char kChromeUIMoltAIUpdateURL[] = "chrome://molt-ai-update/";
 
 // MoltBrowser molt:// scheme — user-facing alias for chrome://molt-ai*
 // These are what users see in the omnibox and what they should type.
@@ -234,6 +236,14 @@ inline constexpr char kMoltAISettingsHost[] = "ai-settings";
 inline constexpr char kMoltAIAgentHost[] = "ai-agent";
 inline constexpr char kMoltAIAutomationHost[] = "ai-automation";
 inline constexpr char kMoltAIMemoryAliasHost[] = "memory";
+inline constexpr char kMoltAIUpdateURL[] = "molt://update/";
+inline constexpr char kMoltAIUpdateAliasHost[] = "update";
+
+// MoltBrowser product version — single source of truth for the in-app
+// updater's "current version". Chromium's version_info reports the upstream
+// 148.x.x.x, not ours, so the updater compares THIS against the GitHub
+// release tag. Bump on each release (keep in sync with release.sh --version).
+inline constexpr char kMoltBrowserVersion[] = "0.2.1";
 inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
 inline constexpr char kChromeUINetExportHost[] = "net-export";
 inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
