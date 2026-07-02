@@ -269,8 +269,19 @@ window.cr = window.cr || {};
 cr.webUIResponse = function(id, ok, resp) {
   var cb = pendingCbs[id]; if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
 };
-cr.addWebUIListener = cr.addWebUIListener || function(event, fn) {
-  document.addEventListener(event, function(e) { fn(e.detail); });
+// C++ FireWebUIListener(event, v) invokes cr.webUIListenerCallback — register
+// handlers into a map it reads. (The previous document-event polyfill was
+// wrong: FireWebUIListener does NOT dispatch DOM events, so 'update-state'
+// pushes never arrived and "Check for updates" appeared to do nothing — the
+// page only ever populated from the initial getUpdateState promise.)
+var webUIListeners = {};
+cr.addWebUIListener = function(event, fn) {
+  (webUIListeners[event] = webUIListeners[event] || []).push(fn);
+};
+cr.webUIListenerCallback = function(event) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  var ls = webUIListeners[event] || [];
+  for (var i = 0; i < ls.length; i++) ls[i].apply(null, args);
 };
 
 var lastState = 'idle';
