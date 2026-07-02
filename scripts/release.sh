@@ -157,23 +157,27 @@ echo ""
 if [ -n "$SIGN_IDENTITY" ]; then
   echo "[$STEP/$STEPS_TOTAL] Code signing..."
 
-  # Sign helpers and frameworks (inside-out)
-  find "$APP_PATH/Contents/Frameworks" -type f -name "*.dylib" -exec \
+  # --- Inside-out code signing with per-process-type entitlements ---
+  # CRITICAL: the Renderer/GPU helpers MUST be signed with allow-jit
+  # (helper-renderer/gpu-entitlements.plist) or V8 cannot reserve its JIT
+  # CodeRange under the hardened runtime -> every renderer is KILLED on launch
+  # ("V8 process OOM (Failed to reserve virtual memory for CodeRange)"),
+  # surfacing as "Can't open this page / Error code 5" on every URL and a blank
+  # AI-chat/WebUI. Two prior bugs caused this: (a) the helper glob below pointed
+  # at Contents/Frameworks/ but the helpers live INSIDE the framework
+  # (Framework.framework/Versions/X/Helpers/), so it matched nothing; (b) the
+  # final `codesign --deep` on the app re-signed the nested helpers with the
+  # OUTER (empty) entitlements, stripping allow-jit. Fix: locate the real
+  # helpers, sign each with its entitlements, and NEVER --deep the outer app.
+  ENT_DIR="$SCRIPT_DIR/../chromium/src/chrome/app"
+
+  # 1. Nested dynamic libraries — hardened runtime, no entitlements.
+  find "$APP_PATH/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) -exec \
     codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp {} \; 2>/dev/null || true
 
-  for helper in "$APP_PATH/Contents/Frameworks/MoltBrowser Helper"*.app; do
-    [ -d "$helper" ] && codesign --deep --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$helper"
-  done
-
-  FRAMEWORK="$APP_PATH/Contents/Frameworks/MoltBrowser Framework.framework"
-  [ -d "$FRAMEWORK" ] && codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$FRAMEWORK"
-
-  # Sign bundled third-party binaries in Resources/ (tor, tesseract/OCR,
-  # whisper). codesign --deep treats Resources/ as DATA and does NOT code-sign
-  # executables there, so the notary service flags them as unsigned / no
-  # hardened runtime / no secure timestamp. Sign each Mach-O explicitly here
-  # (inside-out, before the app seal). All signed with our Developer ID (same
-  # team) so hardened-runtime library validation passes for their dylibs.
+  # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper).
+  # codesign --deep treats Resources/ as DATA and skips them; sign each Mach-O
+  # explicitly (before the app seal), same Developer ID/team.
   for d in tor ocr whisper; do
     if [ -d "$APP_PATH/Contents/Resources/$d" ]; then
       find "$APP_PATH/Contents/Resources/$d" -type f | while read -r f; do
@@ -184,7 +188,31 @@ if [ -n "$SIGN_IDENTITY" ]; then
     fi
   done
 
-  codesign --deep --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$APP_PATH"
+  # 3. Helper apps (nested in the framework) — each with its process-type
+  # entitlements. Renderer/GPU -> allow-jit; Plugin/base/Alerts -> plugin
+  # entitlements (allow-unsigned-executable-memory + disable-library-validation).
+  REN_HELPER=$(find "$APP_PATH/Contents/Frameworks" -type d -name "*Helper (Renderer).app" 2>/dev/null | head -1)
+  if [ -n "$REN_HELPER" ]; then
+    HELPERS_DIR=$(dirname "$REN_HELPER")
+    for helper in "$HELPERS_DIR/"*.app; do
+      [ -d "$helper" ] || continue
+      case "$(basename "$helper")" in
+        *"(Renderer)"*) ENT="$ENT_DIR/helper-renderer-entitlements.plist" ;;
+        *"(GPU)"*)      ENT="$ENT_DIR/helper-gpu-entitlements.plist" ;;
+        *)              ENT="$ENT_DIR/helper-plugin-entitlements.plist" ;;
+      esac
+      codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp \
+        --entitlements "$ENT" "$helper"
+    done
+  fi
+
+  # 4. Framework — re-seal (no --deep, so helper entitlements survive).
+  FRAMEWORK="$APP_PATH/Contents/Frameworks/MoltBrowser Framework.framework"
+  [ -d "$FRAMEWORK" ] && codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$FRAMEWORK/Versions/Current"
+
+  # 5. Outer app — app entitlements, NO --deep (must not re-sign the helpers).
+  codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp \
+    --entitlements "$ENT_DIR/app-entitlements.plist" "$APP_PATH"
   codesign --verify --deep --strict "$APP_PATH"
   echo "  Code signing complete and verified"
 else
