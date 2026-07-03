@@ -171,9 +171,15 @@ if [ -n "$SIGN_IDENTITY" ]; then
   # helpers, sign each with its entitlements, and NEVER --deep the outer app.
   ENT_DIR="$SCRIPT_DIR/../chromium/src/chrome/app"
 
-  # 1. Nested dynamic libraries — hardened runtime, no entitlements.
-  find "$APP_PATH/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) -exec \
-    codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp {} \; 2>/dev/null || true
+  # 1. Base pass: --deep sign EVERYTHING (all nested Mach-O — dylibs AND the
+  # BARE Helper executables that sit directly in Helpers/ and are NOT .app
+  # bundles: chrome_crashpad_handler, app_mode_loader, web_app_shortcut_copier).
+  # Signing only *.dylib here missed those bare executables -> notarization
+  # Invalid ("not signed / no hardened runtime / no secure timestamp"). The
+  # per-helper entitlement re-sign in step 3 overwrites the .app helpers
+  # (restoring allow-jit), and the framework + app are resealed WITHOUT --deep in
+  # steps 4-5 so those entitlements survive.
+  codesign --force --deep --sign "$SIGN_IDENTITY" --options runtime --timestamp "$APP_PATH"
 
   # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper).
   # codesign --deep treats Resources/ as DATA and skips them; sign each Mach-O
