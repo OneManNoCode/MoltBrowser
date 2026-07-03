@@ -197,6 +197,13 @@ jobs:
           # single-threaded RAM-hungry final link (Chromium's documented
           # linker-OOM workaround) and lowers peak per-link memory — which is
           # what lets the probe make honest progress under the 6 h / 15 GiB cap.
+          # depot_tools' gn/ninja wrappers shell out to depot_tools' bundled
+          # python3; that needs the bootstrap sentinel (python3_bin_reldir.txt).
+          # $GITHUB_PATH already prepends depot_tools, but bootstrap the python
+          # explicitly so `gn gen` doesn't die with "python3_bin_reldir.txt not
+          # found. need to initialize depot_tools" (observed in run 28685135499).
+          export PATH="$HOME/depot_tools:$PATH"
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
           COMPONENT="${{ inputs.component_build }}"
           COMPONENT="${COMPONENT:-true}"   # push events carry no inputs → default true
           if [ "$COMPONENT" = "true" ]; then
@@ -230,7 +237,14 @@ jobs:
           chrome_pgo_phase = 0
           treat_warnings_as_errors = false
           EOF
-            gn gen out/MoltBrowser
+            # Prefer the checkout's own gn (fetched by sync into
+            # buildtools/linux64/gn) over the depot_tools python wrapper — it
+            # needs no python bootstrap, so gn gen can't hit the sentinel error.
+            if [ -x buildtools/linux64/gn ]; then
+              buildtools/linux64/gn gen out/MoltBrowser
+            else
+              gn gen out/MoltBrowser
+            fi
           else
             echo "Using official build config from configs/linux-x64.gn."
             ./scripts/configure.sh --platform linux --arch x64
@@ -250,6 +264,9 @@ jobs:
         id: build
         run: |
           export PATH="$HOME/depot_tools:$PATH"
+          # Same depot_tools python bootstrap guard as the Configure GN step so
+          # autoninja's wrapper never hits the python3_bin_reldir.txt error.
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
           cd chromium/src
           BUDGET="${{ inputs.build_budget_min }}"
           BUDGET="${BUDGET:-180}"
