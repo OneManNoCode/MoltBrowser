@@ -1,0 +1,321 @@
+# Free-runner Linux x64 CI probe for MoltBrowser (a Chromium fork)
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# GOAL
+# ----
+# Prove out (or disprove) a *pure-$0* Linux x86-64 build on GitHub's FREE
+# `ubuntu-latest` runners, so milestone cross-platform builds no longer need
+# the ~28 h Rosetta build on the Mac and no machine has to be bought.
+#
+# The repo is PUBLIC, so GitHub Actions minutes are free and unlimited on
+# native x86-64 Linux runners (no Rosetta). The open questions this workflow
+# actually TESTS (not just reasons about) are the two hard walls:
+#
+#   1. DISK. A free `ubuntu-latest` box has only ~14 GB free on `/` but a
+#      much larger (~65-80 GB) scratch volume on `/mnt`. A Chromium checkout
+#      is ~30 GB and a full `out/` is another ~40-80 GB, so we must (a) free
+#      the preinstalled Android/.NET/Haskell SDKs and (b) put BOTH the
+#      checkout and the build output on `/mnt`. This workflow does both and
+#      prints `df -h` after every phase so the logs themselves show whether
+#      disk is the wall.
+#
+#   2. TIME. Public-repo jobs are capped at 6 h. A cold Chromium build on
+#      4 vCPU is ~10-20 h for an official build, so a single cold job can't
+#      finish. We therefore (a) use a faster `is_component_build=true` config
+#      by default to cut compile time and peak per-file RAM, and (b) bound
+#      the ninja step to a time budget (`BUILD_BUDGET_MIN`) so the probe ends
+#      cleanly and REPORTS how far it got (X / N ninja steps) instead of
+#      being killed at the 6 h cliff with no signal.
+#
+# This is a PROBE, not the shipping release pipeline. It deliberately stops
+# at a confident verdict rather than burning 20 h. See the report in the PR /
+# branch description for the conclusion and the ranked recommendation.
+#
+# Triggering: pushing the `ci/free-linux-build` branch runs it; you can also
+# fire it manually. It does NOT need to live on `main`.
+
+name: CI probe - free-runner Linux x64
+
+on:
+  push:
+    branches:
+      - ci/free-linux-build
+  workflow_dispatch:
+    inputs:
+      component_build:
+        description: 'Use is_component_build=true (faster/lower-RAM probe). false = official build.'
+        type: boolean
+        default: true
+      build_budget_min:
+        description: 'Minutes to let autoninja run before we stop and report progress.'
+        type: string
+        default: '180'
+
+# Read-only: this probe never uploads release assets. It only reports.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-free-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe-free-linux:
+    runs-on: ubuntu-latest
+    # Public repo hard cap is 6 h/job. We stay under it and let the ninja
+    # budget (default 180 min) end the compile phase well before this.
+    timeout-minutes: 350
+
+    env:
+      # Pin to the EXACT Chromium commit our src/ overlay matches, identical
+      # to release-linux.yml. Without this, fresh CI hits stale-overlay
+      # BUILD.gn errors as upstream Chromium drifts. Update on rebase.
+      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      DEPOT_TOOLS_UPDATE: "0"
+      # Everything heavy lives on the big /mnt scratch volume, never on the
+      # ~14 GB root. Set in the "relocate to /mnt" step and re-exported below.
+      BUILD_ROOT: "/mnt/molt"
+
+    steps:
+      # ----------------------------------------------------------------
+      # Phase 0 — baseline. Record what a free runner actually gives us.
+      # ----------------------------------------------------------------
+      - name: Baseline disk + hardware
+        run: |
+          echo "::group::CPU / RAM"
+          nproc
+          echo "---"
+          free -h
+          echo "::endgroup::"
+          echo "::group::Disk BEFORE any cleanup"
+          df -h
+          echo "---- /mnt ----"
+          df -h /mnt || true
+          echo "::endgroup::"
+
+      # ----------------------------------------------------------------
+      # Phase 1 — reclaim disk on root. Removes preinstalled toolchains
+      # (Android SDK, .NET, GHC/Haskell, big Docker images, etc.) that we
+      # never use. Frees ~20-30 GB on `/`.
+      # ----------------------------------------------------------------
+      - name: Free disk space (remove unused preinstalled SDKs)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false   # apt purge is slow; skip — we relocate to /mnt anyway
+          docker-images: true
+          swap-storage: false     # keep swap; the chrome link is RAM-hungry
+
+      - name: Disk AFTER free-disk-space
+        run: df -h
+
+      # ----------------------------------------------------------------
+      # Phase 2 — relocate all heavy dirs to the big /mnt scratch volume.
+      # /mnt has ~65-80 GB free vs ~14 GB on /. We keep the git checkout on
+      # / (it's tiny, ~30 MB of overlay) but put chromium/ and out/ on /mnt.
+      # ----------------------------------------------------------------
+      - name: Prepare /mnt build root
+        run: |
+          sudo mkdir -p "${BUILD_ROOT}"
+          sudo chown "$USER:$USER" "${BUILD_ROOT}"
+          echo "BUILD_ROOT=${BUILD_ROOT}" >> "$GITHUB_ENV"
+          df -h "${BUILD_ROOT}"
+
+      - name: Check out MoltBrowser overlay (no Chromium submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # ----------------------------------------------------------------
+      # Phase 3 — depot_tools on /mnt (its bootstrap python/gn are ~1 GB).
+      # ----------------------------------------------------------------
+      - name: Install depot_tools
+        run: |
+          git clone --depth 1 \
+            https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+            "${BUILD_ROOT}/depot_tools"
+          echo "${BUILD_ROOT}/depot_tools" >> "$GITHUB_PATH"
+          ( cd "${BUILD_ROOT}/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true )
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang lld cmake ninja-build python3 python3-pip \
+            git curl wget pkg-config gperf bison flex \
+            libgtk-3-dev libglib2.0-dev libnss3-dev libatk1.0-dev \
+            libatk-bridge2.0-dev libcups2-dev libdrm-dev libxkbcommon-dev \
+            libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev \
+            libpango1.0-dev libasound2-dev libdbus-1-dev libexpat1-dev \
+            libfontconfig1-dev libfreetype-dev libnspr4-dev libpulse-dev \
+            libx11-xcb-dev libxcb-dri3-dev libxext-dev libxfixes-dev \
+            libxi-dev libxrender-dev libxtst-dev libvulkan-dev vulkan-tools \
+            dpkg-dev rpm fakeroot zip fonts-liberation fonts-noto-color-emoji
+
+      - name: Disk AFTER deps + depot_tools
+        run: df -h
+
+      # ----------------------------------------------------------------
+      # Phase 4 — sync Chromium at the pinned revision onto /mnt. Same
+      # shallow/no-history pattern as release-linux.yml. This is the FIRST
+      # place disk can blow up (~30 GB checkout).
+      # ----------------------------------------------------------------
+      - name: Sync Chromium source (pinned, shallow) onto /mnt
+        run: |
+          set -x
+          mkdir -p "${BUILD_ROOT}/chromium" && cd "${BUILD_ROOT}/chromium"
+          cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ['linux']
+          EOF
+          if [ ! -d src/.git ]; then
+            mkdir -p src
+            ( cd src && \
+              git init -q && \
+              git remote add origin https://chromium.googlesource.com/chromium/src.git && \
+              git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
+              git checkout --detach FETCH_HEAD )
+          fi
+          ( cd src && git log -1 --format="HEAD = %H %s" ) | head -1
+          # No --nohooks: hooks fetch the clang toolchain, sysroot, node, and
+          # test fonts that gn gen + the compile need. This matches the
+          # proven build-linux.sh / build-matrix.yml Linux path.
+          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
+
+      - name: Disk AFTER gclient sync (checkout footprint)
+        run: |
+          df -h
+          echo "---- chromium/src size ----"
+          du -sh "${BUILD_ROOT}/chromium/src" || true
+
+      # ----------------------------------------------------------------
+      # Phase 5 — overlay MoltBrowser's src/ onto the Chromium tree. Then
+      # generate build files with the requested config. We rewrite the
+      # scripts' hardcoded chromium/src path to the /mnt location by
+      # symlinking the checkout back under the repo, so configure.sh /
+      # build.sh work unmodified.
+      # ----------------------------------------------------------------
+      - name: Overlay MoltBrowser src + symlink checkout into repo
+        run: |
+          cp -r src/* "${BUILD_ROOT}/chromium/src/"
+          # configure.sh / build.sh compute CHROMIUM_SRC as repo/chromium/src.
+          # Point that at the /mnt checkout so the scripts run unmodified.
+          rm -rf chromium
+          ln -s "${BUILD_ROOT}/chromium" chromium
+          ls -ld chromium "${BUILD_ROOT}/chromium/src/base"
+
+      - name: Configure GN (component build = ${{ inputs.component_build }})
+        run: |
+          # Default the probe to a faster component build unless the manual
+          # dispatch asked for the official build. component_build cuts both
+          # compile time and peak per-file RAM, which is what lets the probe
+          # make real progress inside the 6 h cap.
+          COMPONENT="${{ inputs.component_build }}"
+          COMPONENT="${COMPONENT:-true}"   # push events have no inputs → default true
+          if [ "$COMPONENT" = "true" ]; then
+            echo "Using is_component_build=true (fast probe config)."
+            cd "${BUILD_ROOT}/chromium/src"
+            mkdir -p out/MoltBrowser
+            # Inline args mirroring configs/linux-x64.gn but with the faster,
+            # lower-RAM component-build knobs flipped on for the probe.
+            cat > out/MoltBrowser/args.gn <<'EOF'
+          target_os = "linux"
+          target_cpu = "x64"
+          is_debug = false
+          is_official_build = false
+          is_component_build = true
+          symbol_level = 0
+          blink_symbol_level = 0
+          enable_nacl = false
+          is_clang = true
+          use_lld = true
+          use_sysroot = true
+          use_ozone = true
+          ozone_auto_platforms = true
+          google_api_key = ""
+          google_default_client_id = ""
+          google_default_client_secret = ""
+          safe_browsing_mode = 1
+          enable_reporting = false
+          enable_supervised_users = true
+          is_chrome_branded = false
+          enable_extensions = true
+          chrome_pgo_phase = 0
+          treat_warnings_as_errors = false
+          EOF
+            gn gen out/MoltBrowser
+          else
+            echo "Using official build config from configs/linux-x64.gn."
+            ./scripts/configure.sh --platform linux --arch x64
+          fi
+
+      - name: Disk AFTER gn gen
+        run: df -h
+
+      # ----------------------------------------------------------------
+      # Phase 6 — the real test: run autoninja for a bounded budget and
+      # report exactly how far it got. `timeout` ends the compile cleanly so
+      # the following steps can read progress out of the ninja log, instead
+      # of the job dying at the 6 h wall with no signal.
+      # ----------------------------------------------------------------
+      - name: Build chrome (bounded budget) + capture progress
+        id: build
+        run: |
+          export PATH="${BUILD_ROOT}/depot_tools:$PATH"
+          cd "${BUILD_ROOT}/chromium/src"
+          BUDGET="${{ inputs.build_budget_min }}"
+          BUDGET="${BUDGET:-180}"
+          echo "Letting autoninja run for up to ${BUDGET} min on $(nproc) cores..."
+          echo "Started: $(date -u)"
+          # -k 0 keeps going past a single failing target so we learn the
+          # real progress ceiling, not just the first error. Tee to a log.
+          set +e
+          timeout "${BUDGET}m" autoninja -C out/MoltBrowser chrome 2>&1 | tee /tmp/ninja.log
+          RC=$?
+          set -e
+          echo "autoninja exit: ${RC} (124 = hit the time budget, still compiling)"
+          echo "Finished: $(date -u)"
+          echo "rc=${RC}" >> "$GITHUB_OUTPUT"
+
+      - name: Report build progress + final disk
+        if: always()
+        run: |
+          echo "## Free-runner Linux x64 probe — results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Disk at end" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          df -h >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### out/ size" >> "$GITHUB_STEP_SUMMARY"
+          du -sh "${BUILD_ROOT}/chromium/src/out/MoltBrowser" 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Last ninja progress line (X/N steps)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -oE '\[[0-9]+/[0-9]+\]' /tmp/ninja.log 2>/dev/null | tail -1 >> "$GITHUB_STEP_SUMMARY" || echo "(no ninja progress captured)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Tail of ninja log" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -40 /tmp/ninja.log 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "(no log)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # Did we produce the binary?
+          if [ -f "${BUILD_ROOT}/chromium/src/out/MoltBrowser/chrome" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "**chrome binary WAS produced** ✅" >> "$GITHUB_STEP_SUMMARY"
+            ls -lh "${BUILD_ROOT}/chromium/src/out/MoltBrowser/chrome" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "_chrome binary not yet produced at end of budget._" >> "$GITHUB_STEP_SUMMARY"
+          fi
