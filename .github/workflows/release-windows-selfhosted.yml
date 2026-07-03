@@ -47,6 +47,15 @@ jobs:
       BUILD_ROOT: 'C:\cr'   # short root - keeps Chromium paths under MAX_PATH
 
     steps:
+      # Corporate/fresh runners default PowerShell ExecutionPolicy to Restricted,
+      # which blocks the temp .ps1 files GitHub Actions writes for every
+      # `shell: powershell` step ("running scripts is disabled on this system").
+      # Set it once for this user (no admin) via an INLINE command run from cmd
+      # (cmd is not a .ps1, so the policy can't block this bootstrap step).
+      - name: Allow PowerShell scripts on this runner
+        shell: cmd
+        run: powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force"
+
       - name: Check out repo
         uses: actions/checkout@v4
         with:
