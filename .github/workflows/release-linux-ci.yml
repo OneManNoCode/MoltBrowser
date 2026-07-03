@@ -218,6 +218,11 @@ jobs:
           is_debug = false
           is_official_build = false
           is_component_build = true
+          # Force the classic ninja build graph (not siso). Newer Chromium
+          # defaults use_siso=true, whose build.ninja requires depot_tools'
+          # `siso`/`autoninja` python wrapper — which we avoid (see build step).
+          use_siso = false
+          use_remoteexec = false
           symbol_level = 0
           blink_symbol_level = 0
           enable_nacl = false
@@ -270,13 +275,30 @@ jobs:
           cd chromium/src
           BUDGET="${{ inputs.build_budget_min }}"
           BUDGET="${BUDGET:-180}"
-          echo "Letting autoninja run for up to ${BUDGET} min on $(nproc) cores..."
+          # Use the checkout's OWN ninja (fetched by hooks), not depot_tools'
+          # `autoninja` wrapper. autoninja shells out to depot_tools' python via
+          # the python3_bin_reldir.txt sentinel, which DEPOT_TOOLS_UPDATE=0
+          # suppresses — so autoninja died instantly with that error in run
+          # 28685577550 while `tee` masked it as success. Plain ninja needs no
+          # python bootstrap. Fall back through the known checkout ninja paths.
+          NINJA=""
+          for c in third_party/ninja/ninja \
+                   third_party/depot_tools/ninja \
+                   "$HOME/depot_tools/ninja"; do
+            [ -x "$c" ] && { NINJA="$c"; break; }
+          done
+          [ -z "$NINJA" ] && command -v ninja >/dev/null 2>&1 && NINJA="ninja"
+          echo "Using ninja: ${NINJA:-<none found>}"
+          echo "Letting ninja run for up to ${BUDGET} min on $(nproc) cores..."
           echo "Started: $(date -u)"
           set +e
-          timeout "${BUDGET}m" autoninja -C out/MoltBrowser chrome 2>&1 | tee /tmp/ninja.log
-          RC=$?
+          # -k 0 keeps going past a single failing target so we learn the real
+          # progress ceiling, not just the first error. PIPESTATUS[0] captures
+          # ninja's status, not tee's — the bug that faked success last run.
+          timeout "${BUDGET}m" "$NINJA" -C out/MoltBrowser -k 0 chrome 2>&1 | tee /tmp/ninja.log
+          RC=${PIPESTATUS[0]}
           set -e
-          echo "autoninja exit: ${RC} (124 = hit the time budget, still compiling)"
+          echo "ninja exit: ${RC} (124 = hit the time budget, still compiling)"
           echo "Finished: $(date -u)"
           echo "rc=${RC}" >> "$GITHUB_OUTPUT"
 
