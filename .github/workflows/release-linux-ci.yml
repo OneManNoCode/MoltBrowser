@@ -29,8 +29,8 @@
 # and every public-repo job is hard-capped at **6 hours**.
 #
 # So this stays a PROBE, not the shipping pipeline. It uses a faster
-# is_component_build=true config and bounds autoninja to a time budget, then
-# reports how many ninja steps completed (X / N) so we measure the real
+# is_component_build=true config and bounds the ninja compile to a time budget,
+# then reports how many ninja steps completed (X / N) so we measure the real
 # compile-rate ceiling and can project whether any single 6 h job could ever
 # finish. See the branch/PR report for the verdict + ranked recommendation.
 #
@@ -50,7 +50,7 @@ on:
         type: boolean
         default: true
       build_budget_min:
-        description: 'Minutes to let autoninja run before we stop and report X/N progress.'
+        description: 'Minutes to let ninja run before we stop and report X/N progress.'
         type: string
         default: '180'
 
