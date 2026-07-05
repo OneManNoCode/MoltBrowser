@@ -21,7 +21,9 @@
 #include <string>
 
 #include "base/files/file_path.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
@@ -60,6 +62,18 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleGetPageContent(const base::ListValue& args);
   void HandleCancelDownload(const base::ListValue& args);
   void HandleExportHistory(const base::ListValue& args);
+  // Conversation store (sidebar Recents). One JSON file per
+  // conversation at ~/.moltbrowser/conversations/<id>.json:
+  //   {id, title, updated_at (ms since epoch), messages:[{role,content}]}
+  //   listConversations(callback_id)         → {success, conversations:[…]}
+  //   saveConversation(callback_id, id, title, history_json)
+  //   loadConversation(callback_id, id)      → {success, id, title,
+  //                                             history_json}
+  //   deleteConversation(callback_id, id)    → {success, error?}
+  void HandleListConversations(const base::ListValue& args);
+  void HandleSaveConversation(const base::ListValue& args);
+  void HandleLoadConversation(const base::ListValue& args);
+  void HandleDeleteConversation(const base::ListValue& args);
   // Side panel automation bridge. Runs a single click/type/scroll/
   // navigate against the currently-active tab in the Browser that
   // owns this WebUI's WebContents.
@@ -218,6 +232,13 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
                          base::FilePath file_path,
                          std::string filename,
                          bool success);
+  // Shared reply for the conversation-store handlers: resolves the JS
+  // promise with the result dict built on the ThreadPool worker.
+  void ResolveConversationCallback(std::string callback_id,
+                                   base::DictValue result);
+  // Lazily-created single sequence for conversation-store file IO (keeps
+  // same-id autosaves ordered).
+  base::SequencedTaskRunner* ConversationTaskRunner();
   void OnPageContentExtracted(std::string callback_id, base::Value result);
 
   // Ensure BrowserAIRuntime is created and initialized
@@ -246,6 +267,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
 
   // Active WebAgent (null when no agent task is running).
   std::unique_ptr<molt_ai::WebAgent> web_agent_;
+
+  // Conversation-store file IO runs on a single sequence so a slow older
+  // autosave can never land after (and clobber) a newer one for the same
+  // conversation id. Created lazily on first use.
+  scoped_refptr<base::SequencedTaskRunner> conversation_task_runner_;
 
   base::WeakPtrFactory<MoltAIChatHandler> weak_ptr_factory_{this};
 };

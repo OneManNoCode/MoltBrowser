@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -137,6 +138,24 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "exportHistory",
       base::BindRepeating(&MoltAIChatHandler::HandleExportHistory,
+                          base::Unretained(this)));
+  // Conversation store — sidebar Recents. One JSON file per
+  // conversation under ~/.moltbrowser/conversations/<id>.json.
+  web_ui()->RegisterMessageCallback(
+      "listConversations",
+      base::BindRepeating(&MoltAIChatHandler::HandleListConversations,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "saveConversation",
+      base::BindRepeating(&MoltAIChatHandler::HandleSaveConversation,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "loadConversation",
+      base::BindRepeating(&MoltAIChatHandler::HandleLoadConversation,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "deleteConversation",
+      base::BindRepeating(&MoltAIChatHandler::HandleDeleteConversation,
                           base::Unretained(this)));
   // Side panel automation bridge — lets the chat run a one-shot
   // automation action (click / type / scroll / navigate) against
@@ -915,6 +934,8 @@ void MoltAIChatHandler::HandleGetModelStatus(
     base::DictValue d;
     d.Set("model_id", m.model_id);
     d.Set("display_name", m.display_name);
+    d.Set("quantization", m.quantization);
+    d.Set("param_billions", m.parameter_count_billions);
     d.Set("is_downloaded", m.is_downloaded);
     d.Set("is_loaded", m.is_loaded);
     d.Set("file_size_mb",
@@ -1505,6 +1526,354 @@ void MoltAIChatHandler::OnHistoryExported(std::string callback_id,
   result.Set("success", success);
   result.Set("path", file_path.AsUTF8Unsafe());
   result.Set("filename", filename);
+
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(result)));
+}
+
+// ------------------------------------------------------------------
+// Conversation store: list/save/load/delete named conversations.
+// One JSON file per conversation at
+// ~/.moltbrowser/conversations/<id>.json:
+//   {id, title, updated_at (double ms since epoch),
+//    messages:[{role, content}, ...]}
+// JS: chrome.send('listConversations',  [callback_id])
+//     chrome.send('saveConversation',   [callback_id, id, title,
+//                                        history_json])
+//     chrome.send('loadConversation',   [callback_id, id])
+//     chrome.send('deleteConversation', [callback_id, id])
+// ------------------------------------------------------------------
+namespace {
+
+// Same on-disk size cap as HandleExportHistory.
+constexpr size_t kMaxConversationBytes = 16 << 20;
+// The sidebar Recents list is capped server-side.
+constexpr size_t kMaxConversationListEntries = 100;
+// Titles are display-only; keep them short on disk. The contract caps
+// titles at 80 CHARS; a char can be up to 4 UTF-8 bytes, so allow
+// 320 bytes — the JS-derived title (40 chars + ellipsis, up to ~123
+// bytes for CJK) must never be truncated here.
+constexpr size_t kMaxConversationTitleBytes = 320;
+
+// Path-traversal defense: a conversation id must match
+// [a-zA-Z0-9_-]{1,64}. Checked BEFORE any path construction.
+bool IsValidConversationId(const std::string& id) {
+  if (id.empty() || id.size() > 64) {
+    return false;
+  }
+  for (char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+base::FilePath GetConversationsDir() {
+  base::FilePath home_dir;
+  base::PathService::Get(base::DIR_HOME, &home_dir);
+  return home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
+      .Append(base::FilePath::FromUTF8Unsafe("conversations"));
+}
+
+// ---- ThreadPool worker bodies (blocking file IO). Each returns the
+// dict that resolves the JS promise on the UI thread. ----------------
+
+base::DictValue ListConversationsOnWorker(base::FilePath dir) {
+  base::DictValue result;
+  result.Set("success", true);
+  base::ListValue conversations;
+  if (!base::DirectoryExists(dir)) {
+    // Missing/empty dir is not an error — just no conversations yet.
+    result.Set("conversations", std::move(conversations));
+    return result;
+  }
+
+  struct Entry {
+    double updated_at = 0.0;
+    base::DictValue dict;
+  };
+  std::vector<Entry> entries;
+
+  base::FileEnumerator e(dir, /*recursive=*/false,
+                         base::FileEnumerator::FILES,
+                         FILE_PATH_LITERAL("*.json"));
+  for (auto path = e.Next(); !path.value().empty(); path = e.Next()) {
+    // Only trust files whose basename is a well-formed conversation id.
+    const std::string stem = path.BaseName().RemoveExtension().AsUTF8Unsafe();
+    if (!IsValidConversationId(stem)) {
+      continue;
+    }
+    auto size = base::GetFileSize(path);
+    if (!size || *size > static_cast<int64_t>(kMaxConversationBytes)) {
+      continue;
+    }
+    std::string contents;
+    if (!base::ReadFileToString(path, &contents)) {
+      continue;
+    }
+    auto parsed = base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
+    if (!parsed || !parsed->is_dict()) {
+      continue;  // Skip corrupt files rather than failing the whole list.
+    }
+    const auto& d = parsed->GetDict();
+    const std::string* id = d.FindString("id");
+    const std::string* title = d.FindString("title");
+    const double updated_at = d.FindDouble("updated_at").value_or(0.0);
+    int message_count = 0;
+    if (const base::ListValue* messages = d.FindList("messages")) {
+      message_count = static_cast<int>(messages->size());
+    }
+
+    Entry entry;
+    entry.updated_at = updated_at;
+    entry.dict.Set("id", (id && !id->empty()) ? *id : stem);
+    entry.dict.Set("title", title ? *title : std::string());
+    entry.dict.Set("updated_at", updated_at);
+    entry.dict.Set("message_count", message_count);
+    entries.push_back(std::move(entry));
+  }
+
+  std::stable_sort(entries.begin(), entries.end(),
+                   [](const Entry& a, const Entry& b) {
+                     return a.updated_at > b.updated_at;
+                   });
+  if (entries.size() > kMaxConversationListEntries) {
+    entries.resize(kMaxConversationListEntries);
+  }
+  for (auto& entry : entries) {
+    conversations.Append(std::move(entry.dict));
+  }
+  result.Set("conversations", std::move(conversations));
+  return result;
+}
+
+base::DictValue SaveConversationOnWorker(base::FilePath path,
+                                         std::string id,
+                                         std::string title,
+                                         std::string history_json) {
+  base::DictValue result;
+  // Parse first and re-serialize inside the wrapper so the on-disk file
+  // is always valid JSON, whatever the renderer sent.
+  auto parsed = base::JSONReader::Read(history_json, base::JSON_PARSE_RFC);
+  if (!parsed || !parsed->is_list()) {
+    result.Set("success", false);
+    result.Set("error", "history_json is not a valid JSON array");
+    return result;
+  }
+
+  base::DictValue wrapper;
+  wrapper.Set("id", id);
+  wrapper.Set("title", title);
+  wrapper.Set("updated_at",
+              base::Time::Now().InMillisecondsFSinceUnixEpoch());
+  wrapper.Set("messages", std::move(*parsed));
+
+  std::string serialized;
+  if (!base::JSONWriter::Write(wrapper, &serialized)) {
+    result.Set("success", false);
+    result.Set("error", "failed to serialize conversation");
+    return result;
+  }
+
+  base::FilePath dir = path.DirName();
+  if (!base::DirectoryExists(dir)) {
+    base::CreateDirectory(dir);
+  }
+  // Write to a temp file then rename, so a crash mid-autosave can never
+  // truncate the only copy of a conversation (same .partial -> final
+  // pattern the model downloader uses).
+  base::FilePath tmp = path.AddExtension(FILE_PATH_LITERAL("tmp"));
+  if (!base::WriteFile(tmp, serialized) ||
+      !base::ReplaceFile(tmp, path, nullptr)) {
+    base::DeleteFile(tmp);
+    result.Set("success", false);
+    result.Set("error", "failed to write conversation file");
+    return result;
+  }
+  result.Set("success", true);
+  return result;
+}
+
+base::DictValue LoadConversationOnWorker(base::FilePath path,
+                                         std::string id) {
+  base::DictValue result;
+  result.Set("id", id);
+  auto size = base::GetFileSize(path);
+  if (size && *size > static_cast<int64_t>(kMaxConversationBytes)) {
+    result.Set("success", false);
+    result.Set("error", "conversation file too large");
+    return result;
+  }
+  std::string contents;
+  if (!base::ReadFileToString(path, &contents)) {
+    result.Set("success", false);
+    result.Set("error", "conversation not found");
+    return result;
+  }
+  auto parsed = base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
+  if (!parsed || !parsed->is_dict()) {
+    result.Set("success", false);
+    result.Set("error", "conversation file is corrupt");
+    return result;
+  }
+  const auto& d = parsed->GetDict();
+  const std::string* title = d.FindString("title");
+  result.Set("title", title ? *title : std::string());
+  std::string history_json = "[]";
+  if (const base::ListValue* messages = d.FindList("messages")) {
+    base::JSONWriter::Write(*messages, &history_json);
+  }
+  result.Set("history_json", history_json);
+  result.Set("success", true);
+  return result;
+}
+
+base::DictValue DeleteConversationOnWorker(base::FilePath path) {
+  base::DictValue result;
+  if (base::DeleteFile(path)) {
+    result.Set("success", true);
+  } else {
+    result.Set("success", false);
+    result.Set("error", "failed to delete conversation");
+  }
+  return result;
+}
+
+}  // namespace
+
+base::SequencedTaskRunner* MoltAIChatHandler::ConversationTaskRunner() {
+  if (!conversation_task_runner_) {
+    conversation_task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
+        {base::TaskPriority::USER_BLOCKING, base::MayBlock()});
+  }
+  return conversation_task_runner_.get();
+}
+
+void MoltAIChatHandler::HandleListConversations(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  ConversationTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&ListConversationsOnWorker, GetConversationsDir()),
+      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltAIChatHandler::HandleSaveConversation(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 4u);
+  const std::string callback_id = args[0].GetString();
+  const std::string id =
+      args[1].is_string() ? args[1].GetString() : std::string();
+  std::string title =
+      args[2].is_string() ? args[2].GetString() : std::string();
+  const std::string history_json =
+      args[3].is_string() ? args[3].GetString() : std::string();
+
+  base::DictValue error;
+  if (!IsValidConversationId(id)) {
+    error.Set("success", false);
+    error.Set("error", "invalid conversation id");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(error)));
+    return;
+  }
+  // Same size cap as HandleExportHistory. Truncating JSON would only
+  // produce an unparseable payload, so oversized input is rejected.
+  if (history_json.size() > kMaxConversationBytes) {
+    error.Set("success", false);
+    error.Set("error", "history_json exceeds 16 MiB cap");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(error)));
+    return;
+  }
+  // Cap the title without splitting a multi-byte UTF-8 sequence.
+  if (title.size() > kMaxConversationTitleBytes) {
+    size_t cut = kMaxConversationTitleBytes;
+    while (cut > 0 &&
+           (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80) {
+      --cut;
+    }
+    title.resize(cut);
+  }
+
+  base::FilePath path = GetConversationsDir().Append(
+      base::FilePath::FromUTF8Unsafe(id + ".json"));
+
+  ConversationTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&SaveConversationOnWorker, path, id, title,
+                     history_json),
+      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltAIChatHandler::HandleLoadConversation(const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string id =
+      args[1].is_string() ? args[1].GetString() : std::string();
+
+  if (!IsValidConversationId(id)) {
+    base::DictValue error;
+    error.Set("success", false);
+    error.Set("error", "invalid conversation id");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(error)));
+    return;
+  }
+
+  base::FilePath path = GetConversationsDir().Append(
+      base::FilePath::FromUTF8Unsafe(id + ".json"));
+
+  ConversationTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&LoadConversationOnWorker, path, id),
+      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltAIChatHandler::HandleDeleteConversation(
+    const base::ListValue& args) {
+  AllowJavascript();
+
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string id =
+      args[1].is_string() ? args[1].GetString() : std::string();
+
+  if (!IsValidConversationId(id)) {
+    base::DictValue error;
+    error.Set("success", false);
+    error.Set("error", "invalid conversation id");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(error)));
+    return;
+  }
+
+  base::FilePath path = GetConversationsDir().Append(
+      base::FilePath::FromUTF8Unsafe(id + ".json"));
+
+  ConversationTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&DeleteConversationOnWorker, path),
+      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltAIChatHandler::ResolveConversationCallback(std::string callback_id,
+                                                    base::DictValue result) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) return;
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));

@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "base/command_line.h"
 #include "base/containers/fixed_flat_map.h"
@@ -25,6 +27,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/actor/ui/actor_ui_metrics.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
+#include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/update/update_manager.h"
 #include "content/public/browser/storage_partition.h"
@@ -54,6 +57,7 @@
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/tab_search_feature.h"
 #include "chrome/browser/ui/tabs/features.h"
 #include "chrome/browser/ui/tabs/glic_actor_task_icon_manager_factory.h"
@@ -135,7 +139,9 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/mojom/menu_source_type.mojom.h"
 #include "ui/base/theme_provider.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/window_open_disposition.h"
@@ -147,6 +153,7 @@
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/scoped_canvas.h"
+#include "ui/menus/simple_menu_model.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/cascading_property.h"
@@ -301,6 +308,124 @@ bool IsMigratedClickToCallBubble(
   return bubble_type == IntentPickerBubbleView::BubbleType::kClickToCall &&
          IsPageActionMigrated(PageActionIconType::kClickToCall);
 }
+
+// MoltBrowser: Toolbar button for the MoltNet (Tor) exit-country picker.
+// Left-click opens a native checkmark menu: "Auto (recommended)" + the
+// curated country list from TorManager, then "New identity" (re-applies
+// the current constraint, which triggers SIGNAL NEWNYM if Tor is running)
+// and "MoltNet settings…" (molt://ai-settings/, the deep-config home).
+// The button is its own menu-model delegate; the check mark and label are
+// read from TorManager on demand, so the label self-heals from changes
+// made in other windows or via the WebUI pickers.
+class TorExitCountryButton : public ToolbarButton,
+                             public ui::SimpleMenuModel::Delegate {
+  METADATA_HEADER(TorExitCountryButton, ToolbarButton)
+
+ public:
+  explicit TorExitCountryButton(Browser* browser)
+      : browser_(browser),
+        menu_model_(this),
+        country_codes_(
+            molt_ai::tor::TorManager::Get()->GetAvailableExitCountries()) {
+    menu_model_.AddCheckItem(kCommandAuto, u"Auto (recommended)");
+    for (size_t i = 0; i < country_codes_.size(); ++i) {
+      menu_model_.AddCheckItem(
+          kCommandFirstCountry + static_cast<int>(i),
+          base::UTF8ToUTF16(
+              molt_ai::tor::ExitCountryDisplayName(country_codes_[i])));
+    }
+    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_.AddItem(kCommandNewIdentity, u"New identity");
+    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_.AddItem(kCommandSettings, u"MoltNet settings…");
+
+    SetCallback(base::BindRepeating(&TorExitCountryButton::ButtonPressed,
+                                    base::Unretained(this)));
+    SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    SetVectorIcon(vector_icons::kGlobeIcon);
+    SetTooltipText(u"MoltNet exit country (Tor) — click to choose");
+    UpdateLabel();
+  }
+  TorExitCountryButton(const TorExitCountryButton&) = delete;
+  TorExitCountryButton& operator=(const TorExitCountryButton&) = delete;
+  ~TorExitCountryButton() override = default;
+
+  // ui::SimpleMenuModel::Delegate:
+  bool IsCommandIdChecked(int command_id) const override {
+    const std::string current =
+        molt_ai::tor::TorManager::Get()->GetExitCountry();
+    if (command_id == kCommandAuto) {
+      return current.empty();
+    }
+    if (command_id >= kCommandFirstCountry) {
+      const size_t index =
+          static_cast<size_t>(command_id - kCommandFirstCountry);
+      if (index < country_codes_.size()) {
+        return country_codes_[index] == current;
+      }
+    }
+    return false;
+  }
+
+  void ExecuteCommand(int command_id, int event_flags) override {
+    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+    if (command_id == kCommandAuto) {
+      mgr->SetExitCountry(std::string());
+    } else if (command_id == kCommandNewIdentity) {
+      // Re-applying the current constraint is the sanctioned new-circuit
+      // path (matches HandleMoltnetNewCircuit in molt_ai_settings_ui.cc):
+      // SetExitCountry rewrites the torrc and, if Tor is running, sends
+      // SIGNAL RELOAD + SIGNAL NEWNYM.
+      mgr->SetExitCountry(mgr->GetExitCountry());
+    } else if (command_id == kCommandSettings) {
+      chrome::AddSelectedTabWithURL(browser_, GURL("molt://ai-settings/"),
+                                    ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+      return;
+    } else {
+      const size_t index =
+          static_cast<size_t>(command_id - kCommandFirstCountry);
+      if (index >= country_codes_.size()) {
+        return;
+      }
+      mgr->SetExitCountry(country_codes_[index]);
+    }
+    // Reflect the new selection immediately in this window's toolbar.
+    UpdateLabel();
+  }
+
+ private:
+  // Menu command ids. Countries occupy the contiguous range
+  // [kCommandFirstCountry, kCommandFirstCountry + country_codes_.size()),
+  // so the fixed commands after them start well clear at 1000.
+  static constexpr int kCommandAuto = 0;
+  static constexpr int kCommandFirstCountry = 1;
+  static constexpr int kCommandNewIdentity = 1000;
+  static constexpr int kCommandSettings = 1001;
+
+  void ButtonPressed() {
+    // Refresh from the source of truth before showing the menu: other
+    // windows or the WebUI pickers may have changed the country since this
+    // label was last set (TorManager has no observer API).
+    UpdateLabel();
+    ShowMenuForModel(ui::mojom::MenuSourceType::kNone, &menu_model_);
+  }
+
+  // Label = current exit-country constraint: "" (any) -> "Auto"; otherwise
+  // the uppercased ISO code (e.g. "us" -> "US").
+  void UpdateLabel() {
+    const std::string cc = molt_ai::tor::TorManager::Get()->GetExitCountry();
+    SetHighlight(
+        cc.empty() ? u"Auto" : base::UTF8ToUTF16(base::ToUpperASCII(cc)),
+        std::nullopt);
+  }
+
+  const raw_ptr<Browser> browser_;
+  ui::SimpleMenuModel menu_model_;
+  const std::vector<std::string> country_codes_;
+};
+
+BEGIN_METADATA(TorExitCountryButton)
+END_METADATA
 
 }  // namespace
 
@@ -582,14 +707,19 @@ void ToolbarView::Init() {
   }
 
   // MoltBrowser: AI chat quick-access button with explicit "Local AI" label.
-  // Opens molt://ai/ (which rewrites internally to chrome://molt-ai/).
-  // Placed where the Google avatar button used to live so the primary
-  // on-device AI feature is one click away.
+  // Toggles the AI chat side panel (the redesigned chat surface). Placed
+  // where the Google avatar button used to live so the primary on-device AI
+  // feature is one click away.
   {
     auto molt_ai_button = std::make_unique<ToolbarButton>(base::BindRepeating(
         [](Browser* browser) {
-          chrome::AddSelectedTabWithURL(browser, GURL("molt://ai/"),
-                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
+          if (!side_panel_ui) {
+            return;
+          }
+          side_panel_ui->Toggle(
+              SidePanelEntryKey(SidePanelEntryId::kMoltAiChat),
+              SidePanelOpenTrigger::kToolbarButton);
         },
         browser_));
     // SetHighlight is the public API for showing a label on a ToolbarButton
@@ -597,7 +727,7 @@ void ToolbarView::Init() {
     // the default theme color.
     molt_ai_button->SetHighlight(u"Local AI", std::nullopt);
     molt_ai_button->SetTooltipText(
-        u"Open MoltBrowser AI Chat — runs locally on your device (⌘⇧L)");
+        u"Toggle MoltBrowser AI Chat — runs locally on your device (⌘⇧L)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     molt_ai_button->SetVectorIcon(vector_icons::kChatSparkIcon);
     AddChildView(std::move(molt_ai_button));
@@ -649,27 +779,10 @@ void ToolbarView::Init() {
 
   // MoltBrowser: Tor exit-country button. A globe whose label shows the
   // current exit country ("Auto" when unconstrained, else the uppercased ISO
-  // code). Clicking opens MoltNet settings (molt://ai-settings/), which has
-  // the real exit-country selector + apparent exit IP.
+  // code). Left-click opens a native checkmark menu to pick the exit country,
+  // request a new identity, or open MoltNet settings (molt://ai-settings/).
   {
-    auto exit_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-        [](Browser* browser) {
-          chrome::AddSelectedTabWithURL(browser,
-                                        GURL("molt://ai-settings/"),
-                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
-        },
-        browser_));
-    exit_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    exit_button->SetVectorIcon(vector_icons::kGlobeIcon);
-    exit_button->SetTooltipText(u"Tor exit country & apparent IP (MoltNet)");
-    // Label = current exit-country constraint: "" (any) -> "Auto"; otherwise
-    // the uppercased ISO code (e.g. "us" -> "US").
-    const std::string cc =
-        molt_ai::tor::TorManager::Get()->GetExitCountry();
-    exit_button->SetHighlight(
-        cc.empty() ? u"Auto" : base::UTF8ToUTF16(base::ToUpperASCII(cc)),
-        std::nullopt);
-    AddChildView(std::move(exit_button));
+    AddChildView(std::make_unique<TorExitCountryButton>(browser_));
   }
 
   // MoltBrowser: Software-update button. Opens molt://update/ (the in-app

@@ -81,7 +81,11 @@ void SidePanelHelper::PopulateGlobalEntries(
             return std::make_unique<AiChatSidePanelWebView>(browser);
           },
           base::Unretained(browser)),
-      /*default_content_width_callback=*/base::NullCallback()));
+      // MoltBrowser: the redesigned chat UI is laid out for a 480px
+      // default (upstream default is 360). Still user-resizable; a
+      // user-dragged width persists per entry id and wins over this.
+      /*default_content_width_callback=*/base::BindRepeating(
+          []() { return 480; })));
 }
 
 // static

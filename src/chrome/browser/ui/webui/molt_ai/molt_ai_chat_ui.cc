@@ -58,254 +58,315 @@ class MoltAIChatDataSource : public content::URLDataSource {
 <meta charset="utf-8">
 <title>AI Chat</title>
 <style>
+:root{
+  --bg:#1f1e1d;
+  --surface:#282725;
+  --surface2:#32302d;
+  --border:#3d3a36;
+  --text:#eceae4;
+  --muted:#a5a099;
+  --faint:#6e6a63;
+  --accent:#e5484d;
+  --accent-hover:#f2555a;
+  --ok:#58bd7d;
+  --warn:#e0b454;
+  --err:#f07070;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d0d0d;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;position:relative}
-.header{padding:12px 16px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}
-.header .title{font-size:14px;font-weight:600;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.header .status{font-size:11px;display:flex;align-items:center;gap:4px;transition:color 0.3s}
-.header .status::before{content:'';width:6px;height:6px;border-radius:50%;transition:background 0.3s}
-.header .status.ready{color:#4ade80}
-.header .status.ready::before{background:#4ade80}
-.header .status.loading{color:#fbbf24}
-.header .status.loading::before{background:#fbbf24;animation:pulse 1s infinite}
-.header .status.error{color:#f87171}
-.header .status.error::before{background:#f87171}
-.header .status.offline{color:#888}
-.header .status.offline::before{background:#888}
-.header-actions{margin-left:auto;display:flex;gap:6px;align-items:center}
-.icon-btn{background:none;border:1px solid #333;border-radius:6px;color:#888;padding:4px 8px;font-size:11px;cursor:pointer;transition:all 0.2s}
-.icon-btn:hover{border-color:#6366f1;color:#e0e0e0}
-/* MoltNet exit-country bar — slim always-visible Tor exit selector */
-.moltnet-bar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:#0a0a0a;border-bottom:1px solid #1a1a1a;font-size:11px;color:#888}
-.moltnet-bar-icon{font-size:12px}
-.moltnet-bar-label{color:#aaa;font-weight:600}
-.moltnet-bar select{background:#111;border:1px solid #333;color:#ccc;padding:4px 8px;border-radius:6px;font-size:11px;outline:none;cursor:pointer}
-.moltnet-bar select:focus{border-color:#6366f1}
-.moltnet-bar-hint{color:#4ade80;font-size:11px;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
+button{font-family:inherit}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-.hw-bar{padding:6px 16px;background:#0a0a0a;border-bottom:1px solid #1a1a1a;font-size:10px;color:#555;display:flex;gap:12px}
-.hw-bar span{display:flex;align-items:center;gap:3px}
-.context-bar{padding:4px 16px;font-size:10px;color:#444;text-align:right;border-bottom:1px solid #111}
-.messages{flex:1;overflow-y:auto;padding:16px}
-.message{margin-bottom:16px;font-size:13px;line-height:1.6}
-.message .sender{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;color:#6366f1}
-.message.user .sender{color:#8b5cf6}
-.message .text{padding:10px 14px;border-radius:10px;background:#111;border:1px solid #1a1a1a;white-space:pre-wrap;word-wrap:break-word}
-.message.user .text{background:#1a1a2e;border-color:#2a2a4a}
-.message .text .cursor{display:inline-block;width:2px;height:14px;background:#6366f1;animation:blink 0.8s infinite;vertical-align:text-bottom;margin-left:1px}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-.actions{padding:8px 16px;display:flex;gap:6px;flex-wrap:wrap}
-.actions button{padding:6px 12px;border-radius:8px;border:1px solid #333;background:#111;color:#aaa;font-size:12px;cursor:pointer;transition:all 0.2s}
-.actions button:hover{border-color:#6366f1;color:#e0e0e0}
-.actions button:disabled{opacity:0.4;cursor:not-allowed}
-.input-area{padding:12px 16px;border-top:1px solid #222;display:flex;gap:8px}
-.input-area input{flex:1;padding:10px 14px;border-radius:10px;border:1px solid #333;background:#111;color:#e0e0e0;font-size:13px;outline:none}
-.input-area input:focus{border-color:#6366f1}
-.input-area button.send{padding:10px 16px;border-radius:10px;border:none;background:#6366f1;color:white;font-size:13px;cursor:pointer;transition:opacity 0.2s}
-.input-area button.send:hover{opacity:0.85}
-.input-area button.send:disabled{opacity:0.4;cursor:not-allowed}
-.input-area button.cancel{padding:10px 12px;border-radius:10px;border:1px solid #f87171;background:transparent;color:#f87171;font-size:13px;cursor:pointer;display:none}
-.input-area button.cancel.active{display:block}
-.input-area button.mic{padding:10px 12px;border-radius:10px;border:1px solid #3a3a3a;background:transparent;color:#bbb;font-size:14px;cursor:pointer}
-.input-area button.mic:hover{background:#2a2a2a;color:#fff}
-.input-area button.mic.recording{background:#dc2626;color:#fff;border-color:#dc2626;animation:mic-pulse 1.2s ease-in-out infinite}
-.input-area button.mic.transcribing{background:#3a3a3a;color:#9ec5ff;border-color:#3a86ff}
-@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.6)}50%{box-shadow:0 0 0 6px rgba(220,38,38,0.0)}}
-/* Model Panel */
-.model-panel{position:absolute;top:0;left:0;right:0;bottom:0;background:#0d0d0d;z-index:10;display:none;flex-direction:column;overflow-y:auto}
-.model-panel.open{display:flex}
-.model-panel-header{padding:12px 16px;border-bottom:1px solid #222;display:flex;align-items:center;justify-content:space-between}
-.model-panel-header h3{font-size:14px;font-weight:600;color:#e0e0e0}
-.model-card{padding:12px 16px;border-bottom:1px solid #1a1a1a}
-.model-card .name{font-size:13px;font-weight:600;color:#e0e0e0}
-.model-card .meta{font-size:11px;color:#666;margin-top:2px}
-.model-card .card-actions{margin-top:8px;display:flex;gap:6px;align-items:center}
-.model-card .btn{padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid #333;background:#111;color:#aaa;transition:all 0.2s}
-.model-card .btn:hover{border-color:#6366f1;color:#e0e0e0}
-.model-card .btn:disabled{opacity:0.4;cursor:not-allowed}
-.model-card .btn.primary{background:#6366f1;border-color:#6366f1;color:#fff}
-.model-card .btn.primary:hover{opacity:0.85}
-.model-card .btn.danger{border-color:#f87171;color:#f87171}
-.model-card .btn.danger:hover{background:#2a1111}
-.model-card .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
-.model-card .badge.active{background:#1a2e1a;color:#4ade80}
-.model-card .badge.downloaded{background:#1a1a2e;color:#6366f1}
-.model-card .badge.unavailable{background:#1a1a1a;color:#666}
-.model-card .progress-wrap{margin-top:6px;display:none}
-.model-card .progress-wrap.active{display:block}
-.model-card .progress-bar{height:4px;border-radius:2px;background:#222;overflow:hidden}
-.model-card .progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
-.model-card .progress-text{font-size:10px;color:#888;margin-top:2px}
-/* Model chip — compact side panel variant */
-.model-chip-wrap{position:relative;padding:6px 10px;border-bottom:1px solid #1a1a1a}
-.model-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:16px;background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;width:100%}
-.model-chip:hover{border-color:#6366f1;background:#202036}
-.model-chip .icon{font-size:13px}
-.model-chip .name{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.model-chip .chevron{font-size:9px;color:#888;transition:transform 0.2s}
-.model-chip.open .chevron{transform:rotate(180deg)}
-.model-chip-progress{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;display:none}
-.model-chip.downloading .icon{display:none}
-.model-chip.downloading .model-chip-progress{display:block}
-.model-chip-progress svg{transform:rotate(-90deg)}
-.model-chip-progress circle{fill:none;stroke:#222;stroke-width:2}
-.model-chip-progress .fg{stroke:#8b5cf6;stroke-dasharray:43.98;stroke-dashoffset:43.98;transition:stroke-dashoffset 0.3s}
-.model-chip-progress .pct{position:absolute;top:0;left:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:#a855f7}
-.model-chip-dropdown{position:absolute;top:calc(100% + 4px);left:10px;right:10px;background:#0d0d18;border:1px solid #2a2a3e;border-radius:10px;padding:4px;max-height:340px;overflow-y:auto;z-index:50;display:none;box-shadow:0 6px 30px rgba(0,0,0,0.5)}
-.model-chip-dropdown.open{display:block}
-.model-chip-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background 0.15s}
-.model-chip-item:hover{background:#1a1a2e}
-.model-chip-item.active{background:#1a2e1a}
-.model-chip-item .mname{flex:1;font-size:12px;color:#e0e0e0}
-.model-chip-item .msize{font-size:10px;color:#666}
-.model-chip-item .mstatus{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:600;text-transform:uppercase}
-.model-chip-item .mstatus.active{background:#1a3a1a;color:#4ade80}
-.model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#8b5cf6}
-.model-chip-item .mstatus.available{background:#1a1a1a;color:#666}
-.model-chip-item .mstatus.downloading{background:#3a2e1a;color:#fbbf24}
-/* First-Run Welcome */
-.welcome-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:#0d0d0d;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
-.welcome-overlay.open{display:flex}
-.welcome-logo-area{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px}.welcome-logo-img{width:56px;height:56px;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.5)}.welcome-logo-text{font-size:20px;font-weight:700;background:linear-gradient(135deg,#6366f1,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.welcome-text{color:#888;font-size:13px;max-width:320px;line-height:1.6;margin-bottom:16px}
-.welcome-features{text-align:left;max-width:280px;margin-bottom:20px}
-.welcome-features div{padding:6px 0;font-size:12px;color:#aaa;display:flex;align-items:center;gap:8px}
-.welcome-features .feat-icon{color:#6366f1;font-size:14px}
-.welcome-btn{padding:12px 32px;border-radius:10px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;font-size:14px;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-bottom:8px}
-.welcome-btn:hover{opacity:0.85}
-.welcome-skip{color:#666;font-size:11px;cursor:pointer;border:none;background:none;padding:4px}
-.welcome-skip:hover{color:#aaa}
-.welcome-progress{width:100%;max-width:280px;margin-top:12px;display:none}
-.welcome-progress.active{display:block}
-.welcome-pbar{height:6px;border-radius:3px;background:#222;overflow:hidden}
-.welcome-pfill{height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);transition:width 0.3s;width:0}
-.welcome-ptext{font-size:11px;color:#888;margin-top:4px}
-/* Code block copy button */
+@keyframes spin{to{transform:rotate(360deg)}}
+/* ---- Header ---- */
+.header{flex:0 0 40px;height:40px;padding:0 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.header .title{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap}
+.header .status{font-size:10px;color:var(--faint);display:flex;align-items:center;gap:5px;transition:color 0.15s;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.header .status::before{content:'';width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);transition:background 0.15s}
+.header .status.ready{color:var(--muted)}
+.header .status.ready::before{background:var(--ok)}
+.header .status.loading{color:var(--warn)}
+.header .status.loading::before{background:var(--warn);animation:pulse 1s infinite}
+.header .status.error{color:var(--err)}
+.header .status.error::before{background:var(--err)}
+.header .status.offline{color:var(--faint)}
+.header .status.offline::before{background:var(--faint)}
+.header-actions{margin-left:auto;display:flex;gap:2px;align-items:center}
+.icon-btn{background:none;border:none;border-radius:8px;color:var(--muted);width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;transition:background 0.15s,color 0.15s}
+.icon-btn:hover{background:var(--surface2);color:var(--text)}
+.icon-btn.labeled{width:auto;padding:0 10px;font-size:11px;border:1px solid var(--border)}
+/* ---- Header overflow menu ---- */
+.overflow-wrap{position:relative}
+.overflow-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:212px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;box-shadow:0 8px 30px rgba(0,0,0,0.45);display:none;z-index:60}
+.overflow-menu.open{display:block}
+.om-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:12px;color:var(--text);cursor:pointer;transition:background 0.15s;white-space:nowrap}
+.om-item:hover{background:var(--surface2)}
+.om-sep{height:1px;background:var(--border);margin:5px 6px}
+.om-label{padding:6px 10px 2px;font-size:10px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--faint)}
+.om-check{margin-left:auto;color:var(--accent);font-weight:700;opacity:0;transition:opacity 0.15s}
+.om-check.visible{opacity:1}
+.om-meta{margin-top:5px;border-top:1px solid var(--border);padding:7px 10px 4px;font-size:10px;color:var(--faint);display:flex;gap:10px;flex-wrap:wrap}
+/* ---- Recents drawer ---- */
+.drawer-scrim{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:29;opacity:0;pointer-events:none;transition:opacity 0.15s}
+.drawer-scrim.open{opacity:1;pointer-events:auto}
+.drawer{position:absolute;top:0;bottom:0;left:0;width:240px;background:var(--surface);border-right:1px solid var(--border);z-index:30;display:flex;flex-direction:column;padding:10px;transform:translateX(-100%);transition:transform 0.18s ease;box-shadow:6px 0 24px rgba(0,0,0,0.35)}
+.drawer.open{transform:translateX(0)}
+.drawer-new{display:flex;align-items:center;gap:6px;padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12.5px;font-weight:500;cursor:pointer;text-align:left;transition:border-color 0.15s}
+.drawer-new:hover{border-color:var(--faint)}
+.drawer-search input{width:100%;margin-top:8px;padding:7px 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;outline:none;transition:border-color 0.15s}
+.drawer-search input::placeholder{color:var(--faint)}
+.drawer-search input:focus{border-color:var(--faint)}
+.drawer-label{padding:14px 6px 6px;font-size:10px;font-weight:600;letter-spacing:0.6px;text-transform:uppercase;color:var(--faint)}
+.conv-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.conv-item{display:flex;align-items:center;gap:6px;padding:8px;border-radius:9px;font-size:12px;color:var(--muted);cursor:pointer;transition:background 0.15s,color 0.15s}
+.conv-item:hover,.conv-item.active{background:var(--surface2);color:var(--text)}
+.conv-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conv-del{flex:0 0 auto;background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer;opacity:0;padding:2px 5px;border-radius:6px;transition:opacity 0.15s,color 0.15s}
+.conv-item:hover .conv-del{opacity:1}
+.conv-del:hover{color:var(--err)}
+.conv-empty{padding:14px 8px;font-size:11px;color:var(--faint);text-align:center}
+/* ---- Search bar (Cmd+F) ---- */
+.search-bar{padding:6px 16px;border-bottom:1px solid var(--border);display:none;gap:6px;align-items:center}
+.search-bar.open{display:flex}
+.search-bar input{flex:1;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;outline:none}
+.search-bar input:focus{border-color:var(--faint)}
+.search-bar .search-count{font-size:10px;color:var(--faint);padding:6px 4px;white-space:nowrap}
+.search-bar .search-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px}
+.search-bar .search-close:hover{color:var(--text)}
+.highlight{background:var(--warn);color:#1f1e1d;border-radius:2px;padding:0 2px}
+/* ---- Tab context strip + anonymous banner ---- */
+.tab-context{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:11px;color:var(--faint);background:var(--surface);border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab-context-icon{flex-shrink:0}
+.tab-context-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+.anon-banner{display:flex;align-items:center;gap:8px;background:var(--surface2);color:var(--muted);padding:6px 16px;font-size:11px;font-weight:500;border-bottom:1px solid var(--border)}
+.anon-icon{flex-shrink:0}
+/* ---- Agent inbox tray ---- */
+.agent-inbox{background:var(--surface);border-bottom:1px solid var(--border);padding:6px 12px;font-size:11px;display:flex;flex-direction:column;gap:4px}
+.agent-inbox-header{font-weight:600;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px}
+.agent-row{display:flex;align-items:center;gap:8px;padding:4px 6px;background:var(--surface2);border-radius:6px}
+.agent-spinner{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:agent-pulse 1.5s ease-in-out infinite;flex-shrink:0}
+.agent-spinner.done-ok{background:var(--ok);animation:none}
+.agent-spinner.done-err{background:var(--err);animation:none}
+@keyframes agent-pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+.agent-name{font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto;max-width:40%}
+.agent-progress{color:var(--muted);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.agent-note{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;font-style:italic}
+/* ---- Messages ---- */
+.messages{flex:1;overflow-y:auto;padding:18px 16px 8px}
+.message{max-width:72ch;margin:0 auto 18px;font-size:13px;line-height:1.65}
+.message .sender{display:none}
+.message .text{white-space:pre-wrap;word-wrap:break-word}
+.message.user{display:flex;justify-content:flex-end}
+.message.user .text{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:9px 13px;max-width:85%}
+.message.system{text-align:center}
+.message.system .text{display:inline-block;font-size:11px;color:var(--ok);opacity:0.85}
+.message.error .text{border-left:3px solid var(--err);background:var(--surface);border-radius:8px;padding:8px 12px;color:var(--err);font-size:12px}
+.message .text .cursor{display:inline-block;width:2px;height:14px;background:var(--accent);animation:blink 0.8s infinite;vertical-align:text-bottom;margin-left:1px}
+/* ---- Code copy + per-message hover actions ---- */
 .code-wrap{position:relative;margin:8px 0}
 .code-wrap pre{margin:0}
-.code-copy{position:absolute;top:4px;right:4px;padding:2px 8px;border-radius:4px;border:1px solid #444;background:#222;color:#888;font-size:10px;cursor:pointer;opacity:0;transition:opacity 0.2s}
+.code-copy{position:absolute;top:4px;right:4px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:10px;cursor:pointer;opacity:0;transition:opacity 0.15s}
 .code-wrap:hover .code-copy{opacity:1}
-.code-copy:hover{color:#e0e0e0;border-color:#6366f1}
-.code-copy.copied{color:#4ade80;border-color:#4ade80}
-/* Message actions */
-.msg-actions{display:flex;gap:4px;margin-top:6px;opacity:0;transition:opacity 0.2s}
+.code-copy:hover{color:var(--text);border-color:var(--faint)}
+.code-copy.copied{color:var(--ok);border-color:var(--ok)}
+.msg-actions{display:flex;gap:4px;margin-top:6px;opacity:0;transition:opacity 0.15s}
 .message:hover .msg-actions{opacity:1}
-.molt-action-summary{margin-top:8px;padding:6px 10px;background:#1a2a3a;
-  color:#7dd3fc;font-size:12px;border-radius:6px;border:1px solid #2a3a4a;
-  display:inline-block;font-family:-apple-system,system-ui,sans-serif;}
-.molt-action-summary span{margin-right:6px;}
-.molt-action-result{margin:4px 0 4px 36px;padding:4px 10px;border-radius:6px;
-  font-size:11px;font-family:-apple-system,system-ui,sans-serif;
-  display:inline-block;}
-.molt-action-result.ok{background:#0f2818;color:#86efac;border:1px solid #1a3a28;}
-.molt-action-result.fail{background:#2a1010;color:#fca5a5;border:1px solid #4a1a1a;}
-.molt-action-result .detail{opacity:0.7;font-size:10px;margin-left:6px;}
-.molt-action-confirm{margin:6px 0 6px 36px;padding:8px 10px;
-  border-radius:8px;background:#1f1d2e;color:#e2dffb;
-  border:1px solid #6366f1;font-size:11px;
-  font-family:-apple-system,system-ui,sans-serif;
-  display:flex;align-items:center;gap:10px;max-width:520px;}
-.molt-action-confirm .ac-icon{font-size:16px;flex-shrink:0;}
-.molt-action-confirm .ac-body{flex:1;min-width:0;}
-.molt-action-confirm .ac-title{font-weight:600;font-size:10px;
-  text-transform:uppercase;letter-spacing:0.5px;opacity:0.8;
-  margin-bottom:2px;}
-.molt-action-confirm .ac-label{overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;font-family:ui-monospace,Menlo,monospace;}
-.molt-action-confirm .ac-buttons{display:flex;gap:6px;flex-shrink:0;}
-.molt-action-confirm button{padding:4px 10px;border-radius:5px;
-  border:1px solid #444;background:transparent;color:#e2dffb;
-  font-size:11px;cursor:pointer;font-family:inherit;}
-.molt-action-confirm .ac-allow{background:#6366f1;border-color:#6366f1;
-  color:#fff;}
-.molt-action-confirm .ac-allow:hover{opacity:0.85;}
-.molt-action-confirm .ac-deny:hover{background:#2a1010;border-color:#4a1a1a;
-  color:#fca5a5;}
-.msg-action{padding:2px 8px;border-radius:4px;border:1px solid #333;background:none;color:#666;font-size:10px;cursor:pointer}
-.msg-action:hover{color:#e0e0e0;border-color:#6366f1}
-/* Search bar */
-.search-bar{padding:6px 16px;border-bottom:1px solid #1a1a1a;display:none}
-.search-bar.open{display:flex}
-.search-bar input{flex:1;padding:6px 10px;border-radius:6px;border:1px solid #333;background:#111;color:#e0e0e0;font-size:12px;outline:none}
-.search-bar input:focus{border-color:#6366f1}
-.search-bar .search-count{font-size:10px;color:#888;padding:6px 8px}
-.search-bar .search-close{background:none;border:none;color:#888;cursor:pointer;font-size:14px;padding:4px}
-.highlight{background:#6366f1;color:#fff;border-radius:2px;padding:0 2px}
-/* Model chip — needs-selection pulsing state */
-.model-chip.needs-selection{border-color:#fbbf24;animation:chip-pulse 1.4s ease-in-out infinite}
-@keyframes chip-pulse{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,0.4)}60%{box-shadow:0 0 0 5px rgba(251,191,36,0)}}
-.model-chip.model-ready-flash{border-color:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,0.3);transition:all 0.4s}
-/* Model-needs-selection banner (still used, just not the permission banner) */
-.model-select-banner{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;background:#2a1f0a;border:1px solid #4a3a1a;color:#fbbf24;font-size:11px;margin-bottom:10px;font-family:-apple-system,system-ui,sans-serif;animation:chip-pulse 1.4s ease-in-out infinite}
-.model-select-banner .msb-icon{flex-shrink:0;font-size:14px}
-/* Real-time navigate chip */
-.molt-navigating-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:#0f1a2a;border:1px solid #1a3a5a;color:#7dd3fc;font-size:11px;margin:4px 0 4px 36px;font-family:-apple-system,system-ui,sans-serif;max-width:90%;overflow:hidden}
+.msg-action{padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:none;color:var(--faint);font-size:10px;cursor:pointer}
+.msg-action:hover{color:var(--text);border-color:var(--faint)}
+/* ---- Inline agent action chips ---- */
+.molt-action-summary{margin:8px auto 0;max-width:72ch;padding:6px 10px;background:var(--surface2);color:var(--muted);font-size:12px;border-radius:8px;border:1px solid var(--border)}
+.molt-action-summary span{margin-right:6px}
+.molt-action-result{margin:4px auto;max-width:72ch;padding:4px 10px;border-radius:8px;font-size:11px;background:var(--surface);border:1px solid var(--border)}
+.molt-action-result.ok{color:var(--ok)}
+.molt-action-result.fail{color:var(--err)}
+.molt-action-result .detail{opacity:0.7;font-size:10px;margin-left:6px}
+.molt-action-confirm{margin:6px auto;max-width:72ch;padding:8px 10px;border-radius:10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-left:3px solid var(--accent);font-size:11px;display:flex;align-items:center;gap:10px}
+.molt-action-confirm .ac-icon{font-size:16px;flex-shrink:0}
+.molt-action-confirm .ac-body{flex:1;min-width:0}
+.molt-action-confirm .ac-title{font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:2px}
+.molt-action-confirm .ac-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Menlo,monospace}
+.molt-action-confirm .ac-buttons{display:flex;gap:6px;flex-shrink:0}
+.molt-action-confirm button{padding:4px 10px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:11px;cursor:pointer;font-family:inherit}
+.molt-action-confirm .ac-allow{background:var(--accent);border-color:var(--accent);color:#fff}
+.molt-action-confirm .ac-allow:hover{background:var(--accent-hover)}
+.molt-action-confirm .ac-deny:hover{border-color:var(--err);color:var(--err)}
+/* ---- Real-time navigate chip ---- */
+.molt-navigating-chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:11px;margin:4px auto;max-width:72ch;overflow:hidden}
 .molt-navigating-chip .nav-icon{flex-shrink:0;font-size:14px}
 .molt-navigating-chip .nav-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.molt-navigating-chip .nav-spinner{width:10px;height:10px;border:2px solid #1a3a5a;border-top-color:#7dd3fc;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
-@keyframes spin{to{transform:rotate(360deg)}}
-/* ---- Mode-picker toolbar button (bottom-left, like Claude Code) ---- */
-.mode-picker-wrap{position:relative;display:flex;align-items:center}
-.mode-picker-btn{display:flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;border:1px solid #2a2a3e;background:#111;color:#a0a0c0;font-size:11px;font-weight:500;cursor:pointer;transition:all 0.18s;white-space:nowrap;font-family:inherit}
-.mode-picker-btn:hover{border-color:#6366f1;color:#e0e0e0;background:#1a1a2e}
-.mode-picker-btn.auto-active{border-color:#fbbf24;color:#fbbf24;background:#1a1500}
-.mode-picker-btn .mp-chevron{font-size:8px;opacity:0.6;margin-left:1px;transition:transform 0.15s}
-.mode-picker-btn.open .mp-chevron{transform:rotate(180deg)}
-/* Dropdown — pops UP from the button */
-.mode-picker-dropdown{position:absolute;bottom:calc(100% + 6px);left:0;min-width:200px;background:#0d0d1a;border:1px solid #2a2a3e;border-radius:10px;padding:4px;box-shadow:0 -6px 24px rgba(0,0,0,0.6);display:none;z-index:100}
-.mode-picker-dropdown.open{display:block}
-.mpd-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:6px;cursor:pointer;transition:background 0.15s}
-.mpd-item:hover{background:#1a1a2e}
-.mpd-item.active{background:#12120a}
-.mpd-icon{font-size:16px;flex-shrink:0}
-.mpd-text{flex:1;min-width:0}
-.mpd-title{font-size:12px;font-weight:600;color:#e0e0e0}
-.mpd-desc{font-size:10px;color:#666;margin-top:1px}
-.mpd-check{font-size:12px;color:#4ade80;font-weight:700;flex-shrink:0;opacity:0}
-.mpd-check.visible{opacity:1}
+.molt-navigating-chip .nav-spinner{width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--muted);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
+/* ---- Model-needs-selection banner ---- */
+.model-select-banner{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--warn);color:var(--warn);font-size:11px;margin:0 auto 10px;max-width:72ch;animation:chip-pulse 1.4s ease-in-out infinite}
+.model-select-banner .msb-icon{flex-shrink:0;font-size:13px}
+@keyframes chip-pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,180,84,0.35)}60%{box-shadow:0 0 0 5px rgba(224,180,84,0)}}
+/* ---- Quick action chips (above composer) ---- */
+.actions{padding:0 16px 8px;display:flex;gap:6px;flex-wrap:wrap;width:100%;max-width:calc(72ch + 32px);margin:0 auto}
+.actions button{padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s}
+.actions button:hover{border-color:var(--faint);color:var(--text);background:var(--surface)}
+.actions button:disabled{opacity:0.4;cursor:not-allowed}
+/* ---- Composer card ---- */
+.composer{flex:0 0 auto;padding:4px 16px 14px}
+.composer-card{width:100%;max-width:calc(72ch + 32px);margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:6px;transition:border-color 0.15s,box-shadow 0.15s}
+.composer-card:focus-within{border-color:var(--faint);box-shadow:0 0 0 1px var(--faint)}
+.composer-card textarea{width:100%;background:transparent;border:none;outline:none;resize:none;color:var(--text);font-size:13px;line-height:1.5;font-family:inherit;max-height:120px;overflow-y:auto;padding:2px 2px 0}
+.composer-card textarea::placeholder{color:var(--faint)}
+.composer-card textarea:disabled{opacity:0.5}
+.composer-row{display:flex;align-items:center;gap:6px;min-width:0}
+.composer-spacer{flex:1}
+.browse-btn{padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
+.browse-btn:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+.composer-row .mic{width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,color 0.15s;flex:0 0 auto}
+.composer-row .mic:hover{background:var(--surface2);color:var(--text)}
+.composer-row .mic.recording{background:var(--err);color:#fff;animation:mic-pulse 1.2s ease-in-out infinite}
+.composer-row .mic.transcribing{background:var(--surface2);color:var(--warn)}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(240,112,112,0.5)}50%{box-shadow:0 0 0 6px rgba(240,112,112,0)}}
+.composer-row .cancel{padding:5px 11px;border-radius:999px;border:1px solid var(--err);background:transparent;color:var(--err);font-size:11.5px;cursor:pointer;display:none;flex:0 0 auto}
+.composer-row .cancel.active{display:block}
+.composer-row .send{width:28px;height:28px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,opacity 0.15s;flex:0 0 auto}
+.composer-row .send:hover{background:var(--accent-hover)}
+.composer-row .send:disabled{opacity:0.35;cursor:not-allowed}
+/* ---- Model picker pill + pop-up dropdown ---- */
+.model-chip-wrap{position:relative;display:flex;align-items:center;min-width:0;flex-shrink:1}
+.model-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;max-width:100%;min-width:0}
+.model-chip:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+.model-chip .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.model-chip .chevron{font-size:8px;color:var(--faint);flex:0 0 auto;transition:transform 0.15s}
+.model-chip.open .chevron{transform:rotate(180deg)}
+.model-chip.needs-selection{border-color:var(--warn);animation:chip-pulse 1.6s ease-in-out infinite}
+.model-chip.model-ready-flash{border-color:var(--ok);box-shadow:0 0 0 3px rgba(88,189,125,0.25);transition:all 0.4s}
+.model-chip.loading::before{content:'';width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex:0 0 auto}
+.model-chip-progress{display:none;width:18px;height:18px;position:relative;flex:0 0 auto}
+.model-chip.downloading .model-chip-progress{display:block}
+.model-chip-progress svg{transform:rotate(-90deg);display:block}
+.model-chip-progress circle{fill:none;stroke:var(--border);stroke-width:2}
+.model-chip-progress .fg{stroke:var(--accent);stroke-dasharray:43.98;stroke-dashoffset:43.98;transition:stroke-dashoffset 0.3s}
+.model-chip-progress .pct{position:absolute;top:0;left:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:var(--text)}
+.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);left:0;min-width:250px;max-width:calc(100vw - 56px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;max-height:320px;overflow-y:auto;z-index:50;display:none;box-shadow:0 -8px 30px rgba(0,0,0,0.45)}
+.model-chip-dropdown.open{display:block}
+.mcd-header{padding:7px 10px 3px;font-size:10px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--faint)}
+.model-chip-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s}
+.model-chip-item:hover{background:var(--surface2)}
+.model-chip-item.disabled{opacity:0.45;cursor:default}
+.model-chip-item.disabled:hover{background:transparent}
+.model-chip-item .mmain{flex:1;min-width:0}
+.model-chip-item .mname{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-chip-item .msize{font-size:10px;color:var(--faint);margin-top:1px}
+.mcheck{font-size:12px;font-weight:700;flex:0 0 auto}
+.mcheck.on{color:var(--accent)}
+.mcheck.disk{color:var(--faint)}
+.mget{font-size:10.5px;color:var(--muted);flex:0 0 auto;white-space:nowrap}
+.mpct{font-size:10.5px;color:var(--warn);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.mrow-bar{height:3px;border-radius:2px;background:var(--border);overflow:hidden;margin-top:5px}
+.mrow-fill{height:100%;background:var(--accent);width:0;transition:width 0.3s}
+.mcd-footer{margin-top:4px;border-top:1px solid var(--border);padding:8px 10px;font-size:11.5px;color:var(--muted);cursor:pointer;transition:color 0.15s,background 0.15s;border-radius:0 0 8px 8px}
+.mcd-footer:hover{color:var(--text);background:var(--surface2)}
+/* ---- Model management overlay ---- */
+.model-panel{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:10;display:none;flex-direction:column;overflow-y:auto}
+.model-panel.open{display:flex}
+.model-panel-header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.model-panel-header h3{font-size:13px;font-weight:600;color:var(--text)}
+.model-card{padding:12px 16px;border-bottom:1px solid var(--surface2)}
+.model-card .name{font-size:13px;font-weight:600;color:var(--text)}
+.model-card .meta{font-size:11px;color:var(--faint);margin-top:2px}
+.model-card .card-actions{margin-top:8px;display:flex;gap:6px;align-items:center}
+.model-card .btn{padding:4px 12px;border-radius:7px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:border-color 0.15s,color 0.15s}
+.model-card .btn:hover{border-color:var(--faint);color:var(--text)}
+.model-card .btn:disabled{opacity:0.4;cursor:not-allowed}
+.model-card .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.model-card .btn.primary:hover{background:var(--accent-hover)}
+.model-card .btn.danger{border-color:var(--err);color:var(--err);background:transparent}
+.model-card .btn.danger:hover{background:rgba(240,112,112,0.12)}
+.model-card .badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600}
+.model-card .badge.active{background:rgba(88,189,125,0.14);color:var(--ok)}
+.model-card .badge.downloaded{background:var(--surface2);color:var(--muted)}
+.model-card .badge.unavailable{background:var(--surface);color:var(--faint)}
+.model-card .progress-wrap{margin-top:6px;display:none}
+.model-card .progress-wrap.active{display:block}
+.model-card .progress-bar{height:4px;border-radius:2px;background:var(--surface2);overflow:hidden}
+.model-card .progress-fill{height:100%;background:var(--accent);transition:width 0.3s;width:0}
+.model-card .progress-text{font-size:10px;color:var(--faint);margin-top:2px}
+/* ---- First-run welcome overlay ---- */
+.welcome-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+.welcome-overlay.open{display:flex}
+.welcome-logo-area{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px}
+.welcome-logo-img{width:56px;height:56px;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.5)}
+.welcome-logo-text{font-size:19px;font-weight:700;color:var(--text)}
+.welcome-text{color:var(--muted);font-size:13px;max-width:320px;line-height:1.6;margin-bottom:16px}
+.welcome-features{text-align:left;max-width:280px;margin-bottom:20px}
+.welcome-features div{padding:6px 0;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.welcome-features .feat-icon{color:var(--accent);font-size:14px}
+.welcome-btn{padding:12px 32px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;margin-bottom:8px}
+.welcome-btn:hover{background:var(--accent-hover)}
+.welcome-btn:disabled{opacity:0.6;cursor:default}
+.welcome-skip{color:var(--faint);font-size:11px;cursor:pointer;border:none;background:none;padding:4px}
+.welcome-skip:hover{color:var(--muted)}
+.welcome-progress{width:100%;max-width:280px;margin-top:12px;display:none}
+.welcome-progress.active{display:block}
+.welcome-pbar{height:6px;border-radius:3px;background:var(--surface2);overflow:hidden}
+.welcome-pfill{height:100%;background:var(--accent);transition:width 0.3s;width:0}
+.welcome-ptext{font-size:11px;color:var(--muted);margin-top:4px}
+/* ---- Profile editor (/fill) ---- */
+.profile-editor{display:flex;flex-direction:column;gap:6px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.profile-help{font-size:11px;color:var(--muted);margin-bottom:4px;line-height:1.5}
+.profile-help code{background:var(--surface2);padding:1px 4px;border-radius:3px}
+.profile-row{display:flex;align-items:center;gap:8px}
+.profile-row label{flex:0 0 110px;font-size:11px;color:var(--muted)}
+.profile-row input{flex:1;padding:4px 8px;font-size:12px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px}
+.profile-row input:focus{outline:none;border-color:var(--faint)}
+.profile-actions{display:flex;gap:6px;margin-top:6px}
+.profile-actions button{padding:4px 12px;font-size:12px;border-radius:6px;background:var(--accent);color:#fff;border:none;cursor:pointer}
+.profile-actions button:hover{background:var(--accent-hover)}
+.profile-actions .profile-cancel{background:var(--surface2);color:var(--muted)}
+.profile-actions .profile-cancel:hover{color:var(--text)}
+/* ---- History clusters (/history) ---- */
+.history-summary{font-size:11px;color:var(--muted);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.history-cluster{margin-bottom:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
+.history-cluster summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;list-style:none}
+.history-cluster summary::-webkit-details-marker{display:none}
+.hist-label{font-weight:600;color:var(--text)}
+.hist-count{font-size:10px;color:var(--muted);background:var(--surface2);padding:2px 8px;border-radius:10px}
+.history-cluster ul{margin:6px 0 0 0;padding-left:0;list-style:none}
+.history-cluster li{padding:3px 0;font-size:11px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.history-cluster li a{color:var(--muted);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.history-cluster li a:hover{color:var(--text);text-decoration:underline}
+.hist-meta{color:var(--faint);font-size:10px;flex-shrink:0;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
 <div class="header">
+  <button class="icon-btn" onclick="toggleDrawer()" title="Chats">&#9776;</button>
   <div class="title">MoltBrowser AI</div>
   <div class="status offline" id="statusIndicator">Initializing...</div>
   <div class="header-actions">
-    <button class="icon-btn" onclick="newChat()" title="New Chat">New</button>
-    <button class="icon-btn" onclick="toggleSearch()" title="Search (Cmd+F)">&#128269;</button>
-    <button class="icon-btn" onclick="exportChat()" title="Export Chat">&#128190;</button>
-    <button class="icon-btn" onclick="importChat()" title="Import Chat">&#128194;</button>
-    <button class="icon-btn" onclick="toggleModelPanel()" title="Manage Models">Manage</button>
-    <button class="icon-btn" onclick="window.open('molt://ai-settings/')" title="Settings">&#9881;</button>
+    <button class="icon-btn" onclick="newChat()" title="New chat">&#9998;</button>
+    <div class="overflow-wrap">
+      <button class="icon-btn" onclick="toggleOverflowMenu(event)" title="More options">&#8943;</button>
+      <div class="overflow-menu" id="overflowMenu">
+        <div class="om-item" onclick="closeOverflowMenu();newChat()">New chat</div>
+        <div class="om-item" onclick="closeOverflowMenu();toggleSearch()">Search in chat</div>
+        <div class="om-item" onclick="closeOverflowMenu();exportChat()">Export chat</div>
+        <div class="om-item" onclick="closeOverflowMenu();importChat()">Import chat</div>
+        <div class="om-item" onclick="closeOverflowMenu();toggleModelPanel()">Manage models</div>
+        <div class="om-sep"></div>
+        <div class="om-label">Agent actions</div>
+        <div class="om-item" onclick="setActionMode('ask')">Ask first<span class="om-check visible" id="ovCheckAsk">&#10003;</span></div>
+        <div class="om-item" onclick="setActionMode('auto')">Auto<span class="om-check" id="ovCheckAuto">&#10003;</span></div>
+        <div class="om-sep"></div>
+        <div class="om-item" onclick="closeOverflowMenu();window.open('molt://ai-settings/')">Settings</div>
+        <div class="om-meta"><span id="hwGpu"></span><span id="hwRam"></span><span id="hwCores"></span></div>
+      </div>
+    </div>
   </div>
 </div>
-<!-- Always-visible model selector chip -->
-<div class="model-chip-wrap">
-  <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
-    <span class="icon">&#129302;</span>
-    <span class="model-chip-progress" id="modelChipProgress">
-      <svg width="18" height="18" viewBox="0 0 18 18">
-        <circle cx="9" cy="9" r="7"></circle>
-        <circle class="fg" id="modelChipProgressFg" cx="9" cy="9" r="7"></circle>
-      </svg>
-      <span class="pct" id="modelChipPct">0%</span>
-    </span>
-    <span class="name" id="modelChipName">No Model</span>
-    <span class="chevron">&#9662;</span>
-  </button>
-  <div class="model-chip-dropdown" id="modelChipDropdown"></div>
-</div>
-<!-- MoltNet exit-country selector (VPN-style Tor exit relay control).
-     Populated on load from getTorExitCountries; onchange calls
-     setTorExitCountry and shows a brief "routing through <country>"
-     confirmation in the transcript. Wired to the real TorManager
-     backend (see HandleGetTorExitCountries / HandleSetTorExitCountry). -->
-<div class="moltnet-bar" id="moltnetBar" title="Choose which country Tor exits from">
-  <span class="moltnet-bar-icon">&#128274;</span>
-  <span class="moltnet-bar-label">MoltNet exit</span>
-  <select id="torExitCountry" onchange="onTorExitCountryChange(this.value)">
-    <option value="">Any country</option>
-  </select>
-  <span class="moltnet-bar-hint" id="torExitHint"></span>
+<!-- Recents drawer: overlay conversation list. Backed by the
+     listConversations / loadConversation / deleteConversation
+     messages on MoltAIChatHandler; autosaved per turn from JS. -->
+<div class="drawer-scrim" id="drawerScrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-new" onclick="closeDrawer();newChat()">+ New chat</button>
+  <div class="drawer-search"><input type="text" id="drawerSearch" placeholder="Search chats" oninput="filterConvList()"></div>
+  <div class="drawer-label">Recents</div>
+  <div class="conv-list" id="convList"></div>
 </div>
 <div class="search-bar" id="searchBar">
   <input type="text" id="searchInput" placeholder="Search messages..." oninput="doSearch()">
@@ -333,6 +394,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     var bar = document.getElementById('tabContext');
     var lbl = document.getElementById('tabContextLabel');
     var anon = document.getElementById('anonBanner');
+    // Quick-action chips only make sense when a real page is loaded,
+    // so they follow the same visibility as the tab-context strip.
+    var qa = document.getElementById('quickActions');
     // Anonymous session banner — shown whenever the active tab lives
     // in an OTR profile. The native side sets is_anonymous_session
     // on every context push so this stays in sync with tab switches.
@@ -346,6 +410,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         ctx.url.indexOf('molt://')   === 0 ||
         ctx.url === 'about:blank') {
       bar.style.display = 'none';
+      if (qa) qa.style.display = 'none';
       return;
     }
     var host = ctx.url;
@@ -362,76 +427,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         (host && host !== title ? '  \u2022  ' + host : '');
     lbl.title = ctx.url;
     bar.style.display = 'flex';
+    if (qa) qa.style.display = 'flex';
   };
   if (window.__moltLastTabContext)
     window.__moltSetTabContext(window.__moltLastTabContext);
 </script>
-<style>
-.tab-context{display:flex;align-items:center;gap:8px;
-  padding:6px 14px;font-size:11px;color:#8a8a98;
-  background:#0d0d14;border-bottom:1px solid #1a1a2a;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.tab-context-icon{flex-shrink:0;}
-.tab-context-label{overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;cursor:default;}
-.anon-banner{display:flex;align-items:center;gap:8px;
-  background:#3a2a5a;color:#dabfff;padding:6px 12px;
-  font-size:11px;font-weight:500;border-bottom:1px solid #2a1a3a;}
-.anon-icon{flex-shrink:0;}
-.agent-inbox{background:rgba(58,134,255,0.08);border-bottom:1px solid #2a2a2a;
-  padding:6px 12px;font-size:11px;display:flex;flex-direction:column;gap:4px;}
-.agent-inbox-header{font-weight:600;color:#9ec5ff;opacity:0.85;
-  font-size:10px;text-transform:uppercase;letter-spacing:0.5px;}
-.agent-row{display:flex;align-items:center;gap:8px;
-  padding:4px 6px;background:rgba(255,255,255,0.03);border-radius:4px;}
-.agent-spinner{width:8px;height:8px;border-radius:50%;
-  background:#3a86ff;animation:agent-pulse 1.5s ease-in-out infinite;
-  flex-shrink:0;}
-.agent-spinner.done-ok{background:#46d160;animation:none;}
-.agent-spinner.done-err{background:#ff4d4d;animation:none;}
-@keyframes agent-pulse{0%,100%{opacity:0.4;}50%{opacity:1;}}
-.agent-name{font-weight:500;color:#e8e8e8;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto;max-width:40%;}
-.agent-progress{color:#9ea0a4;flex:0 0 auto;font-variant-numeric:tabular-nums;}
-.agent-note{color:#9ea0a4;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;flex:1 1 auto;font-style:italic;}
-.profile-editor{display:flex;flex-direction:column;gap:6px;padding:8px;
-  background:rgba(58,134,255,0.05);border-radius:6px;}
-.profile-help{font-size:11px;color:#9ea0a4;margin-bottom:4px;line-height:1.5;}
-.profile-help code{background:#1a1a2a;padding:1px 4px;border-radius:3px;}
-.profile-row{display:flex;align-items:center;gap:8px;}
-.profile-row label{flex:0 0 110px;font-size:11px;color:#a8a8b8;}
-.profile-row input{flex:1;padding:4px 8px;font-size:12px;
-  background:#0d0d14;color:#e8e8e8;border:1px solid #2a2a3a;border-radius:4px;}
-.profile-row input:focus{outline:none;border-color:#3a86ff;}
-.profile-actions{display:flex;gap:6px;margin-top:6px;}
-.profile-actions button{padding:4px 12px;font-size:12px;border-radius:4px;
-  background:#3a86ff;color:#fff;border:none;cursor:pointer;}
-.profile-actions .profile-cancel{background:#2a2a3a;color:#a8a8b8;}
-.history-summary{font-size:11px;color:#9ea0a4;margin-bottom:8px;
-  padding-bottom:6px;border-bottom:1px solid #2a2a3a;}
-.history-cluster{margin-bottom:6px;background:rgba(255,255,255,0.02);
-  border-radius:6px;padding:6px 10px;}
-.history-cluster summary{cursor:pointer;display:flex;justify-content:space-between;
-  align-items:center;font-size:12px;list-style:none;}
-.history-cluster summary::-webkit-details-marker{display:none;}
-.hist-label{font-weight:600;color:#e8e8e8;}
-.hist-count{font-size:10px;color:#9ea0a4;background:#1a1a2a;
-  padding:2px 8px;border-radius:10px;}
-.history-cluster ul{margin:6px 0 0 0;padding-left:0;list-style:none;}
-.history-cluster li{padding:3px 0;font-size:11px;
-  display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
-.history-cluster li a{color:#9ec5ff;text-decoration:none;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;}
-.history-cluster li a:hover{text-decoration:underline;}
-.hist-meta{color:#6e7080;font-size:10px;flex-shrink:0;font-variant-numeric:tabular-nums;}
-</style>
-<div class="hw-bar" id="hwBar">
-  <span id="hwGpu"></span>
-  <span id="hwRam"></span>
-  <span id="hwCores"></span>
-</div>
-<div class="context-bar" id="contextBar"></div>
 <!-- Agent Inbox: live tray of currently-running background automations.
      Polled every 3s from JS; hidden when no runs are active. -->
 <div class="agent-inbox" id="agentInbox" style="display:none;"></div>
@@ -441,53 +441,44 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/fill ai</code>, <code>/paste</code>, <code>/click .button</code><br><b>Vault:</b> <code>/vault list</code>, <code>/vault fill</code>, <code>/vault generate</code><br><b>Translate:</b> <code>/translate [lang] &lt;text&gt;</code><br><b>Digest:</b> <code>/digest</code> (last 24h briefing)<br><br>Or just send a message.</div>
   </div>
 </div>
-<div class="actions" id="quickActions">
+<div class="actions" id="quickActions" style="display:none">
   <button onclick="quickAction('summarize')">Summarize</button>
-  <button onclick="quickAction('extract')">Extract Data</button>
+  <button onclick="quickAction('extract')">Extract data</button>
   <button onclick="quickAction('explain')">Explain</button>
   <button onclick="quickAction('translate')">Translate</button>
 </div>
-<div id="inputArea" class="input-area">
-  <!-- Mode picker: compact dropdown left of the input (like Claude Code's Auto chip) -->
-  <div class="mode-picker-wrap">
-    <button class="mode-picker-btn" id="modePickerBtn"
-            onclick="toggleModePicker(event)" title="Action permission mode">
-      <span id="modePickerIcon">🛡️</span>
-      <span id="modePickerLabel">Ask</span>
-      <span class="mp-chevron">▾</span>
-    </button>
-    <div class="mode-picker-dropdown" id="modePickerDropdown">
-      <div class="mpd-item active" id="mpdAsk" onclick="setActionMode('ask')">
-        <span class="mpd-icon">🛡️</span>
-        <div class="mpd-text">
-          <div class="mpd-title">Ask Permission</div>
-          <div class="mpd-desc">Approve each browser action</div>
-        </div>
-        <span class="mpd-check visible" id="mpdCheckAsk">✓</span>
+<div class="composer">
+  <div id="inputArea" class="composer-card">
+    <textarea id="chatInput" rows="1" placeholder="Ask MoltBrowser AI&#8230;" autofocus></textarea>
+    <div class="composer-row">
+      <div class="model-chip-wrap">
+        <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
+          <span class="model-chip-progress" id="modelChipProgress">
+            <svg width="18" height="18" viewBox="0 0 18 18">
+              <circle cx="9" cy="9" r="7"></circle>
+              <circle class="fg" id="modelChipProgressFg" cx="9" cy="9" r="7"></circle>
+            </svg>
+            <span class="pct" id="modelChipPct">0%</span>
+          </span>
+          <span class="name" id="modelChipName">Choose model</span>
+          <span class="chevron">&#9662;</span>
+        </button>
+        <div class="model-chip-dropdown" id="modelChipDropdown"></div>
       </div>
-      <div class="mpd-item" id="mpdAuto" onclick="setActionMode('auto')">
-        <span class="mpd-icon">⚡</span>
-        <div class="mpd-text">
-          <div class="mpd-title">Auto Mode</div>
-          <div class="mpd-desc">Execute all actions automatically</div>
-        </div>
-        <span class="mpd-check" id="mpdCheckAuto">✓</span>
-      </div>
+      <div class="composer-spacer"></div>
+      <button class="browse-btn" id="agentBtn" title="Let AI browse this page for you">Browse</button>
+      <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
+      <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
+      <button class="send" id="sendBtn" onclick="sendMessage()" title="Send">&#8593;</button>
     </div>
   </div>
-  <input type="text" id="chatInput" placeholder="Ask AI or describe a task to browse..." autofocus>
-  <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
-  <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
-  <button class="send" id="sendBtn" onclick="sendMessage()">Send</button>
-  <button class="send" id="agentBtn" title="Let AI autonomously browse and complete this task"
-    style="background:linear-gradient(135deg,#4338ca,#7c3aed);margin-left:2px">Browse</button>
 </div>
 
 <!-- Model Management Panel -->
 <div class="model-panel" id="modelPanel">
   <div class="model-panel-header">
     <h3>Model Management</h3>
-    <button class="icon-btn" onclick="toggleModelPanel()">Close</button>
+    <button class="icon-btn labeled" onclick="toggleModelPanel()">Close</button>
   </div>
   <div id="modelList"></div>
 </div>

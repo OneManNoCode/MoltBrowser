@@ -33,6 +33,12 @@ var promptIdCounter = 0;
 var conversationHistory = [];
 var MAX_HISTORY_MESSAGES = 16; // 8 user + 8 assistant exchanges
 
+// Conversation persistence for the Recents drawer. `conversationId`
+// stays null until the first autosave creates the on-disk file
+// (~/.moltbrowser/conversations/<id>.json via saveConversation).
+var conversationId = null;
+var conversationTitle = '';
+
 // cr.sendWithPromise polyfill
 var pendingCallbacks = {};
 
@@ -86,25 +92,25 @@ function renderMarkdown(text) {
   // Code blocks (``` ... ```) with copy button
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
     var id = 'cb-' + (++codeBlockId);
-    var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:9px;color:#666;text-transform:uppercase">' + lang + '</span>' : '';
+    var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:9px;color:var(--faint);text-transform:uppercase">' + lang + '</span>' : '';
     return '<div class="code-wrap">' + langLabel +
       '<button class="code-copy" onclick="copyCode(\'' + id + '\',this)">Copy</button>' +
-      '<pre id="' + id + '" style="background:#1a1a2e;padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:6px;overflow-x:auto;font-size:12px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre></div>';
+      '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:12px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>';
   });
   // Inline code (`...`)
-  s = s.replace(/`([^`\n]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:12px;color:#a78bfa">$1</code>');
+  s = s.replace(/`([^`\n]+)`/g, '<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--text)">$1</code>');
   // Bold (**...**)
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e0e0e0">$1</strong>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--text)">$1</strong>');
   // Italic (*...*)
   s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
   // Headers (### ... , ## ... , # ...)
-  s = s.replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:700;margin:10px 0 4px;color:#a78bfa">$1</div>');
-  s = s.replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:#8b5cf6">$1</div>');
-  s = s.replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:14px 0 6px;color:#6366f1">$1</div>');
+  s = s.replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:700;margin:10px 0 4px;color:var(--text)">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:var(--text)">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:14px 0 6px;color:var(--text)">$1</div>');
   // Unordered lists (- item or * item)
-  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:#6366f1">\u2022</span>$1</div>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:var(--muted)">\u2022</span>$1</div>');
   // Ordered lists (1. item)
-  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:#6366f1;font-size:12px">$1.</span>$2</div>');
+  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:var(--muted);font-size:12px">$1.</span>$2</div>');
   // Line breaks
   s = s.replace(/\n/g, '<br>');
   return s;
@@ -171,6 +177,21 @@ function finishAiMessage() {
   }
   currentAiMessageEl = null;
   currentAiText = '';
+  // Autosave the completed assistant turn (Recents drawer).
+  saveCurrentConversation();
+}
+
+// Interim progress text in the streaming AI bubble ("Fetching…",
+// "Scanning open tabs…"). Used by the slash commands, which later
+// overwrite currentAiText with the final result and call
+// finishAiMessage(). Creates the bubble if a stream isn't active.
+function appendToAiMessage(text) {
+  if (!currentAiMessageEl) startAiMessage();
+  currentAiText += text;
+  currentAiMessageEl.innerHTML =
+      renderMarkdown(currentAiText) + '<span class="cursor"></span>';
+  var m = document.getElementById('messages');
+  if (m) m.scrollTop = m.scrollHeight;
 }
 
 // --------------------------------------------------------------
@@ -378,9 +399,20 @@ function appendActionResult(ok, label, detail) {
 
 function setGenerating(val) {
   isGenerating = val;
-  document.getElementById('sendBtn').disabled = val;
-  document.getElementById('chatInput').disabled = val;
-  document.getElementById('cancelBtn').className = 'cancel' + (val ? ' active' : '');
+  var input = document.getElementById('chatInput');
+  var sendBtn = document.getElementById('sendBtn');
+  if (sendBtn) {
+    // Stop replaces Send while generating.
+    sendBtn.style.display = val ? 'none' : '';
+    sendBtn.disabled = val || !(input && input.value.trim());
+  }
+  if (input) {
+    input.disabled = val;
+    // Collapse the autogrown textarea once its contents were sent.
+    if (!input.value) input.style.height = 'auto';
+  }
+  var cancelBtn = document.getElementById('cancelBtn');
+  if (cancelBtn) cancelBtn.className = 'cancel' + (val ? ' active' : '');
   var btns = document.querySelectorAll('#quickActions button');
   for (var i = 0; i < btns.length; i++) btns[i].disabled = val;
 }
@@ -405,6 +437,10 @@ function trimHistory() {
     conversationHistory = conversationHistory.slice(
         conversationHistory.length - MAX_HISTORY_MESSAGES);
   }
+  // Every user turn is pushed and immediately followed by trimHistory,
+  // so autosaving here persists the conversation even when the
+  // generation that follows is interrupted.
+  saveCurrentConversation();
 }
 
 function buildHistoryString() {
@@ -851,69 +887,10 @@ function ccToFlag(cc) {
   return String.fromCodePoint(hi) + String.fromCodePoint(lo);
 }
 
-// --------------------------------------------------------------
-// MoltNet exit-country selector. Populates the #torExitCountry
-// dropdown from getTorExitCountries (curated codes + display names
-// from the backend), reflects the currently-selected exit, and on
-// change calls setTorExitCountry and shows a brief confirmation.
-// Wired to the real TorManager backend — selecting a country
-// rewrites the torrc and (if Tor is running) rebuilds circuits
-// through an exit in that country.
-// --------------------------------------------------------------
-function populateTorExitCountries() {
-  var sel = document.getElementById('torExitCountry');
-  if (!sel) return;
-  sendWithPromise('getTorExitCountries').then(function(r) {
-    if (!r || !r.available) return;
-    // First option ("Any country" = "") is in the static HTML; append
-    // the backend-provided list after it, then restore the selection.
-    sel.length = 1;
-    r.available.forEach(function(c) {
-      var opt = document.createElement('option');
-      opt.value = c.code;
-      var flag = ccToFlag(c.code);
-      opt.textContent = (flag ? flag + ' ' : '') + c.name;
-      sel.appendChild(opt);
-    });
-    sel.value = r.selected || '';
-    var hint = document.getElementById('torExitHint');
-    if (hint) {
-      hint.textContent = sel.value
-          ? 'routing through ' + torExitLabel(sel.value)
-          : '';
-    }
-  }).catch(function() { /* Tor backend unavailable — leave "Any". */ });
-}
-
-// Human-readable label for a selected option (flag + name), falling
-// back to the uppercased code if the option isn't in the list yet.
-function torExitLabel(cc) {
-  if (!cc) return 'any country';
-  var sel = document.getElementById('torExitCountry');
-  if (sel) {
-    for (var i = 0; i < sel.options.length; i++) {
-      if (sel.options[i].value === cc) return sel.options[i].textContent;
-    }
-  }
-  return cc.toUpperCase();
-}
-
-function onTorExitCountryChange(cc) {
-  var hint = document.getElementById('torExitHint');
-  if (hint) hint.textContent = 'updating…';
-  sendWithPromise('setTorExitCountry', cc).then(function(r) {
-    var selected = (r && typeof r.selected === 'string') ? r.selected : cc;
-    var label = torExitLabel(selected);
-    if (hint) hint.textContent = selected ? 'routing through ' + label : '';
-    addSystemMessage(selected
-        ? 'MoltNet: routing through ' + label +
-          '. New Tor circuits will use an exit relay in this country.'
-        : 'MoltNet: exit country cleared — Tor will pick any exit.');
-  }).catch(function() {
-    if (hint) hint.textContent = '';
-    addErrorMessage('Could not set Tor exit country.');
-  });
-}
+// The MoltNet exit-country selector moved out of the chat panel and
+// into the browser toolbar (globe button menu). The
+// getTorExitCountries / setTorExitCountry endpoints stay registered
+// on the handler for the settings page and toolbar.
 
 function tryDispatchTorCommand(text) {
   var m = text.match(/^\s*\/tor\b\s*(.*)$/i);
@@ -2520,6 +2497,9 @@ function sendMessage() {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
+    // This path skips setGenerating(), so re-sync the autogrow height
+    // and the empty-input send-disabled state manually.
+    input.dispatchEvent(new Event('input'));
     return;
   }
 
@@ -2783,10 +2763,13 @@ function sendMessage() {
 }
 
 function addErrorMessage(text) {
+  // Slim inline notice in the message flow (left red border) — errors
+  // never take over the header.
   var m = document.getElementById('messages');
+  if (!m) return;
   var d = document.createElement('div');
-  d.className = 'message ai';
-  d.innerHTML = '<div class="sender" style="color:#f87171">Error</div><div class="text" style="border-color:#f87171;color:#f87171">' + esc(text) + '</div>';
+  d.className = 'message error';
+  d.innerHTML = '<div class="text">' + esc(text) + '</div>';
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -2850,51 +2833,18 @@ function quickAction(action) {
 
 // ---- New Chat ----
 
-// ---- Mode picker (compact dropdown button in the input bar) ----
-
-function toggleModePicker(e) {
-  if (e) e.stopPropagation();
-  var btn = document.getElementById('modePickerBtn');
-  var dd  = document.getElementById('modePickerDropdown');
-  if (!btn || !dd) return;
-  var isOpen = dd.classList.contains('open');
-  dd.classList.toggle('open', !isOpen);
-  btn.classList.toggle('open', !isOpen);
-  // Close on outside click
-  if (!isOpen) {
-    var close = function(ev) {
-      if (!btn.contains(ev.target) && !dd.contains(ev.target)) {
-        dd.classList.remove('open');
-        btn.classList.remove('open');
-        document.removeEventListener('click', close, true);
-      }
-    };
-    document.addEventListener('click', close, true);
-  }
-}
+// ---- Agent-action permission mode (Ask first / Auto) ----
+// The picker lives in the header ⋯ overflow menu. actionAutoMode
+// gates the confirm-chip pipeline in drainActionQueue — the
+// prompt-injection defense for LLM-emitted [[ACTION ...]] tokens.
 
 function setActionMode(mode) {
   actionAutoMode = (mode === 'auto');
-  // Update button label
-  var icon  = document.getElementById('modePickerIcon');
-  var label = document.getElementById('modePickerLabel');
-  var btn   = document.getElementById('modePickerBtn');
-  if (icon)  icon.textContent  = actionAutoMode ? '⚡' : '🛡️';
-  if (label) label.textContent = actionAutoMode ? 'Auto' : 'Ask';
-  if (btn)   btn.classList.toggle('auto-active', actionAutoMode);
-  // Update checkmarks and active highlight
-  var askRow  = document.getElementById('mpdAsk');
-  var autoRow = document.getElementById('mpdAuto');
-  var chkAsk  = document.getElementById('mpdCheckAsk');
-  var chkAuto = document.getElementById('mpdCheckAuto');
-  if (askRow)  askRow.classList.toggle('active', !actionAutoMode);
-  if (autoRow) autoRow.classList.toggle('active',  actionAutoMode);
-  if (chkAsk)  chkAsk.classList.toggle('visible',  !actionAutoMode);
-  if (chkAuto) chkAuto.classList.toggle('visible',  actionAutoMode);
-  // Close dropdown
-  var dd = document.getElementById('modePickerDropdown');
-  if (dd) dd.classList.remove('open');
-  if (btn) btn.classList.remove('open');
+  var chkAsk  = document.getElementById('ovCheckAsk');
+  var chkAuto = document.getElementById('ovCheckAuto');
+  if (chkAsk)  chkAsk.classList.toggle('visible', !actionAutoMode);
+  if (chkAuto) chkAuto.classList.toggle('visible', actionAutoMode);
+  closeOverflowMenu();
 }
 
 // Show a banner when a model is available but not yet selected/loaded.
@@ -2906,8 +2856,8 @@ function showModelSelectBanner() {
   var d = document.createElement('div');
   d.className = 'model-select-banner';
   d.innerHTML =
-    '<span class="msb-icon">⬆️</span>' +
-    '<span class="msb-text">Select a model above to start chatting</span>';
+    '<span class="msb-icon">⬇</span>' +
+    '<span class="msb-text">Choose a model below to start chatting</span>';
   m.insertBefore(d, m.firstChild);
 }
 
@@ -2917,10 +2867,19 @@ function clearModelSelectBanner() {
 }
 
 function newChat() {
+  // Finish (and stop) any in-flight stream first so stray tokens
+  // can't leak into the fresh transcript.
+  if (isGenerating) cancelGeneration();
+  if (currentAiMessageEl) finishAiMessage();
+  currentAiMessageEl = null;
+  currentAiText = '';
+  pdfContext = null;
   conversationHistory = [];
+  conversationId = null;   // next autosave creates a new Recents entry
+  conversationTitle = '';
   setActionMode('ask'); // reset to safe default for new session
   var m = document.getElementById('messages');
-  m.innerHTML = '';
+  if (m) m.innerHTML = '';
   updateContextBar();
 }
 
@@ -2934,6 +2893,7 @@ function cancelGeneration() {
 
 function toggleModelPanel() {
   var p = document.getElementById('modelPanel');
+  if (!p) return;
   if (p.classList.contains('open')) {
     p.classList.remove('open');
   } else {
@@ -2945,6 +2905,7 @@ function toggleModelPanel() {
 function refreshModelList() {
   sendWithPromise('getModelStatus').then(function(info) {
     var list = document.getElementById('modelList');
+    if (!list) return;
     list.innerHTML = '';
     var models = info.models || [];
     models.sort(function(a, b) { return a.file_size_mb - b.file_size_mb; });
@@ -2974,7 +2935,7 @@ function refreshModelList() {
 
       card.innerHTML =
         '<div class="name">' + esc(m.display_name) + '</div>' +
-        '<div class="meta">' + m.quantization + ' \u00b7 ' + sizeStr + '</div>' +
+        '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
         '<div style="margin-top:4px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
         '<div class="progress-wrap" id="pw-' + m.model_id + '">' +
@@ -3025,8 +2986,14 @@ function loadModel(modelId) {
   setStatus('loading', 'Loading ' + modelId + '...');
   // Remove the pulsing needs-selection state immediately — user made a choice
   var chip = document.getElementById('modelChip');
-  if (chip) chip.classList.remove('needs-selection');
+  if (chip) {
+    chip.classList.remove('needs-selection');
+    chip.classList.add('loading');
+  }
+  var nameEl = document.getElementById('modelChipName');
+  if (nameEl) nameEl.textContent = 'Loading…';
   sendWithPromise('loadModel', modelId).then(function(r) {
+    if (chip) chip.classList.remove('loading');
     if (r.success) {
       setStatus('ready', 'Model Ready');
       clearModelSelectBanner();
@@ -3038,6 +3005,7 @@ function loadModel(modelId) {
     } else {
       setStatus('error', 'Load failed');
       if (chip) chip.classList.add('needs-selection');
+      refreshModelChip();
     }
   });
 }
@@ -3063,8 +3031,8 @@ function refreshModelChip() {
     activeModelId = active.model_id;
     nameEl.textContent = active.display_name || active.model_id;
   } else {
-    var first = allModels.find(function(m){ return m.is_downloaded; });
-    nameEl.textContent = first ? ((first.display_name || first.model_id) + ' (tap to load)') : 'Choose Model';
+    activeModelId = null;
+    nameEl.textContent = 'Choose model';
   }
 }
 
@@ -3083,7 +3051,7 @@ function renderModelChipDropdown() {
   var dd = document.getElementById('modelChipDropdown');
   if (!dd) return;
   if (allModels.length === 0) {
-    dd.innerHTML = '<div style="padding:12px;color:#666;font-size:11px;text-align:center">Loading...</div>';
+    dd.innerHTML = '<div style="padding:12px;color:var(--faint);font-size:11px;text-align:center">Loading\u2026</div>';
     sendWithPromise('getModelStatus').then(function(r){
       allModels = r.models || [];
       renderModelChipDropdown();
@@ -3091,37 +3059,73 @@ function renderModelChipDropdown() {
     });
     return;
   }
-  dd.innerHTML = '';
+  dd.innerHTML = '<div class="mcd-header">Models</div>';
   allModels.forEach(function(m) {
     var item = document.createElement('div');
     item.className = 'model-chip-item';
     var isActive = !!m.is_loaded;
-    if (isActive) item.className += ' active';
-    var statusClass, statusText;
-    if (isActive) { statusClass = 'active'; statusText = 'Active'; }
-    else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = '\u2026'; }
-    else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
-    else { statusClass = 'available'; statusText = 'Get'; }
+    var isDownloading = downloadingModelId === m.model_id;
     var sizeMB = m.file_size_mb || 0;
+    var sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
+    var meta = (m.quantization ? m.quantization + ' \u00b7 ' : '') + sizeStr;
+    // Right-hand affordance per state:
+    //   loaded          \u2192 accent check (selected)
+    //   downloading     \u2192 live % (see the download-progress listener)
+    //   on disk         \u2192 subtle check; click loads
+    //   not downloaded  \u2192 \u2b07 + size; click starts the download
+    var right;
+    if (isActive) {
+      item.className += ' active';
+      right = '<span class="mcheck on">\u2713</span>';
+    } else if (isDownloading) {
+      item.className += ' downloading';
+      right = '<span class="mpct" id="chipRowPct-' + m.model_id + '">\u2026</span>';
+    } else if (m.is_downloaded) {
+      right = '<span class="mcheck disk" title="Downloaded \u2014 click to load">\u2713</span>';
+    } else {
+      right = '<span class="mget">\u2b07 ' + sizeStr + '</span>';
+      // Single concurrent download: while one is running, other
+      // download rows are disabled (handler enforces this too).
+      if (downloadingModelId) item.className += ' disabled';
+    }
     item.innerHTML =
-      '<div style="flex:1;min-width:0">' +
-        '<div class="mname">' + (m.display_name || m.model_id) + '</div>' +
-        '<div class="msize">' + sizeMB + ' MB</div>' +
-      '</div>' +
-      '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
-    item.onclick = function() {
-      if (isActive) { toggleModelDropdown(); return; }
+      '<div class="mmain">' +
+        '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
+        '<div class="msize">' + esc(meta) + '</div>' +
+        (isDownloading
+            ? '<div class="mrow-bar"><div class="mrow-fill" id="chipRowFill-' +
+              m.model_id + '"></div></div>'
+            : '') +
+      '</div>' + right;
+    item.onclick = function(ev) {
+      // The re-render below detaches the clicked row; without this the
+      // document-level outside-click handler sees a detached target and
+      // closes the menu we mean to keep open.
+      if (ev) ev.stopPropagation();
+      if (isActive || isDownloading) return;
       if (m.is_downloaded) {
         loadModel(m.model_id);
-      } else {
-        downloadingModelId = m.model_id;
-        downloadModel(m.model_id);
-        document.getElementById('modelChip').classList.add('downloading');
+        toggleModelDropdown();
+        return;
       }
-      toggleModelDropdown();
+      if (downloadingModelId) return;  // one download at a time
+      downloadingModelId = m.model_id;
+      downloadModel(m.model_id);
+      var chip = document.getElementById('modelChip');
+      if (chip) chip.classList.add('downloading');
+      // Keep the menu open so the row shows inline progress.
+      renderModelChipDropdown();
     };
     dd.appendChild(item);
   });
+  var foot = document.createElement('div');
+  foot.className = 'mcd-footer';
+  foot.textContent = 'Manage models\u2026';
+  foot.onclick = function() {
+    toggleModelDropdown();
+    toggleModelPanel();
+  };
+  dd.appendChild(foot);
 }
 
 function updateModelChipProgress(percent) {
@@ -3198,13 +3202,17 @@ cr.addWebUiListener('download-progress', function(modelId, current, total, speed
     }
     if (ptext) ptext.textContent = info;
   }
-  // Update model chip progress
+  // Update model pill progress ring + the inline row in the picker
   if (downloadingModelId === modelId && total > 0) {
     var pct2 = (current / total) * 100;
     updateModelChipProgress(pct2);
     var nameEl = document.getElementById('modelChipName');
     var info2 = allModels.find(function(m){return m.model_id === modelId;});
     if (nameEl && info2) nameEl.textContent = 'Downloading ' + (info2.display_name || modelId);
+    var rowPct = document.getElementById('chipRowPct-' + modelId);
+    if (rowPct) rowPct.textContent = Math.round(pct2) + '%';
+    var rowFill = document.getElementById('chipRowFill-' + modelId);
+    if (rowFill) rowFill.style.width = pct2 + '%';
   }
 });
 
@@ -3220,29 +3228,54 @@ cr.addWebUiListener('download-complete', function(modelId, success) {
     if (success) {
       sendWithPromise('getModelStatus').then(function(r){
         allModels = r.models || [];
-        loadModel(modelId);
+        // Order matters: refreshModelChip() would overwrite the pill
+        // with "Choose model", so run it before loadModel() sets the
+        // "Loading…" state for the auto-load.
         refreshModelChip();
+        loadModel(modelId);
+        // Refresh the picker rows if it's still open.
+        var dd = document.getElementById('modelChipDropdown');
+        if (dd && dd.classList.contains('open')) renderModelChipDropdown();
       });
+    } else {
+      var dd2 = document.getElementById('modelChipDropdown');
+      if (dd2 && dd2.classList.contains('open')) renderModelChipDropdown();
+      refreshModelChip();
     }
   }
   if (success) {
     refreshModelList();
     // Close welcome overlay if it was open
     var wo = document.getElementById('welcomeOverlay');
-    if (wo.classList.contains('open')) {
+    if (wo && wo.classList.contains('open')) {
       wo.classList.remove('open');
       setStatus('offline', 'Model ready \u2014 send a message to start');
     }
   }
 });
 
-// Keyboard shortcut
+// Keyboard: Enter sends, Shift+Enter inserts a newline (textarea).
 document.getElementById('chatInput').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
 });
+
+// Autogrow the composer textarea (1 → ~6 lines) and keep the send
+// button disabled while the input is empty.
+(function() {
+  var input = document.getElementById('chatInput');
+  if (!input) return;
+  var sync = function() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    var sendBtn = document.getElementById('sendBtn');
+    if (sendBtn && !isGenerating) sendBtn.disabled = !input.value.trim();
+  };
+  input.addEventListener('input', sync);
+  sync();
+})();
 
 // ---- First-Run Experience ----
 
@@ -3264,7 +3297,7 @@ function skipFirstRun() {
 // Hook download progress into welcome overlay too
 cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
   var wo = document.getElementById('welcomeOverlay');
-  if (wo.classList.contains('open') && total > 0) {
+  if (wo && wo.classList.contains('open') && total > 0) {
     var pct = Math.round((current / total) * 100);
     document.getElementById('welcomePfill').style.width = pct + '%';
     var info = pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
@@ -3347,6 +3380,196 @@ function clearSearch() {
   }
 }
 
+// ---- Conversation rendering (shared by import + Recents switch) ----
+
+function renderConversationDOM(messages) {
+  var m = document.getElementById('messages');
+  if (!m) return;
+  m.innerHTML = '';
+  for (var i = 0; i < messages.length; i++) {
+    var msg = messages[i];
+    if (msg.role === 'user') {
+      addUserMessage(msg.content);
+    } else {
+      var d = document.createElement('div');
+      d.className = 'message ai';
+      d.innerHTML = '<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(msg.content) + '</div>' +
+        '<div class="msg-actions"><button class="msg-action" onclick="copyResponse(this)">Copy response</button></div>';
+      m.appendChild(d);
+    }
+  }
+  m.scrollTop = m.scrollHeight;
+  updateContextBar();
+}
+
+// ---- Recents drawer + conversation store ----
+// One JSON file per conversation on the C++ side; the JS generates
+// ids, derives titles from the first user message and autosaves
+// after every user turn (trimHistory) and assistant turn
+// (finishAiMessage).
+
+var allConversations = [];
+
+function toggleDrawer() {
+  var d = document.getElementById('drawer');
+  if (d && d.classList.contains('open')) closeDrawer();
+  else openDrawer();
+}
+
+function openDrawer() {
+  var d = document.getElementById('drawer');
+  var s = document.getElementById('drawerScrim');
+  if (d) d.classList.add('open');
+  if (s) s.classList.add('open');
+  refreshConvList();
+}
+
+function closeDrawer() {
+  var d = document.getElementById('drawer');
+  var s = document.getElementById('drawerScrim');
+  if (d) d.classList.remove('open');
+  if (s) s.classList.remove('open');
+}
+
+function refreshConvList() {
+  sendWithPromise('listConversations').then(function(r) {
+    allConversations = (r && r.conversations) || [];
+    renderConvList();
+  }).catch(function() {
+    allConversations = [];
+    renderConvList();
+  });
+}
+
+function renderConvList() {
+  var list = document.getElementById('convList');
+  if (!list) return;
+  var q = '';
+  var si = document.getElementById('drawerSearch');
+  if (si) q = si.value.trim().toLowerCase();
+  list.innerHTML = '';
+  var shown = 0;
+  for (var i = 0; i < allConversations.length; i++) {
+    var c = allConversations[i];
+    var title = c.title || 'Untitled chat';
+    if (q && title.toLowerCase().indexOf(q) < 0) continue;
+    shown++;
+    var row = document.createElement('div');
+    row.className = 'conv-item' + (c.id === conversationId ? ' active' : '');
+    row.innerHTML = '<span class="conv-title">' + esc(title) + '</span>' +
+                    '<button class="conv-del" title="Delete chat">🗑</button>';
+    (function(id) {
+      row.onclick = function() { loadConversationById(id); };
+      row.querySelector('.conv-del').onclick = function(ev) {
+        ev.stopPropagation();
+        deleteConversationById(id);
+      };
+    })(c.id);
+    list.appendChild(row);
+  }
+  if (!shown) {
+    list.innerHTML = '<div class="conv-empty">' +
+        (q ? 'No matching chats' : 'No conversations yet') + '</div>';
+  }
+}
+
+function filterConvList() { renderConvList(); }
+
+function genConversationId() {
+  return 'c' + Date.now().toString(36) + '-' +
+         Math.random().toString(36).slice(2, 8);
+}
+
+function deriveConversationTitle() {
+  for (var i = 0; i < conversationHistory.length; i++) {
+    if (conversationHistory[i].role === 'user') {
+      var t = (conversationHistory[i].content || '')
+                  .replace(/\s+/g, ' ').trim();
+      if (t.length > 40) t = t.slice(0, 40) + '…';
+      if (t) return t;
+    }
+  }
+  return 'New chat';
+}
+
+function saveCurrentConversation() {
+  if (!conversationHistory.length) return;
+  var isNew = !conversationId;
+  if (isNew) {
+    conversationId = genConversationId();
+    conversationTitle = deriveConversationTitle();
+  }
+  var json;
+  try { json = JSON.stringify(conversationHistory); } catch (e) { return; }
+  sendWithPromise('saveConversation', conversationId, conversationTitle, json)
+      .then(function() {
+        // A brand-new conversation should appear in an open drawer.
+        var d = document.getElementById('drawer');
+        if (isNew && d && d.classList.contains('open')) refreshConvList();
+      })
+      .catch(function() { /* Persistence is best-effort. */ });
+}
+
+function loadConversationById(id) {
+  if (isGenerating) return;
+  sendWithPromise('loadConversation', id).then(function(r) {
+    if (!r || !r.success) {
+      addErrorMessage('Could not load conversation.');
+      return;
+    }
+    var msgs = [];
+    try { msgs = JSON.parse(r.history_json || '[]'); } catch (e) {}
+    if (!Array.isArray(msgs)) msgs = [];
+    conversationId = r.id || id;
+    conversationTitle = r.title || '';
+    conversationHistory = msgs;
+    pdfContext = null;
+    currentAiMessageEl = null;
+    currentAiText = '';
+    renderConversationDOM(msgs);
+    closeDrawer();
+  }).catch(function() {
+    addErrorMessage('Could not load conversation.');
+  });
+}
+
+function deleteConversationById(id) {
+  sendWithPromise('deleteConversation', id).then(function() {
+    // Deleting the active conversation detaches it: the transcript
+    // stays on screen but the next autosave creates a fresh entry.
+    if (id === conversationId) conversationId = null;
+    refreshConvList();
+  }).catch(function() { refreshConvList(); });
+}
+
+// ---- Header overflow menu (⋯) ----
+
+function toggleOverflowMenu(e) {
+  if (e) e.stopPropagation();
+  var menu = document.getElementById('overflowMenu');
+  if (!menu) return;
+  var willOpen = !menu.classList.contains('open');
+  menu.classList.toggle('open', willOpen);
+  if (willOpen) {
+    // Exclude the whole .overflow-wrap (menu + its ⋯ button): this
+    // runs in the capture phase, so if it closed on the button the
+    // button's own onclick would immediately re-open the menu.
+    var wrap = menu.parentNode;
+    var close = function(ev) {
+      if (!wrap.contains(ev.target)) {
+        menu.classList.remove('open');
+        document.removeEventListener('click', close, true);
+      }
+    };
+    document.addEventListener('click', close, true);
+  }
+}
+
+function closeOverflowMenu() {
+  var menu = document.getElementById('overflowMenu');
+  if (menu) menu.classList.remove('open');
+}
+
 // ---- Import Chat History ----
 
 function importChat() {
@@ -3362,23 +3585,10 @@ function importChat() {
         var data = JSON.parse(ev.target.result);
         if (data.messages && Array.isArray(data.messages)) {
           conversationHistory = data.messages;
-          // Rebuild message display
-          var m = document.getElementById('messages');
-          m.innerHTML = '';
-          for (var i = 0; i < data.messages.length; i++) {
-            var msg = data.messages[i];
-            if (msg.role === 'user') {
-              addUserMessage(msg.content);
-            } else {
-              var d = document.createElement('div');
-              d.className = 'message ai';
-              d.innerHTML = '<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(msg.content) + '</div>' +
-                '<div class="msg-actions"><button class="msg-action" onclick="copyResponse(this)">Copy response</button></div>';
-              m.appendChild(d);
-            }
-          }
-          m.scrollTop = m.scrollHeight;
-          updateContextBar();
+          // An import becomes its own conversation on the next save.
+          conversationId = null;
+          conversationTitle = '';
+          renderConversationDOM(data.messages);
           addSystemMessage('Imported ' + data.messages.length + ' messages from ' + file.name);
         } else {
           addErrorMessage('Invalid chat export file');
@@ -3413,10 +3623,12 @@ function exportChat() {
 }
 
 function addSystemMessage(text) {
+  // One-line, small, centered notice in the flow.
   var m = document.getElementById('messages');
+  if (!m) return;
   var d = document.createElement('div');
-  d.className = 'message ai';
-  d.innerHTML = '<div class="sender" style="color:#4ade80">System</div><div class="text" style="border-color:#1a2e1a;color:#4ade80;font-size:12px">' + esc(text) + '</div>';
+  d.className = 'message system';
+  d.innerHTML = '<div class="text">' + esc(text) + '</div>';
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -3452,8 +3664,12 @@ document.addEventListener('keydown', function(e) {
     toggleSearch();
   }
   if (e.key === 'Escape') {
+    var dr = document.getElementById('drawer');
+    if (dr && dr.classList.contains('open')) { closeDrawer(); return; }
+    var om = document.getElementById('overflowMenu');
+    if (om && om.classList.contains('open')) { closeOverflowMenu(); return; }
     var bar = document.getElementById('searchBar');
-    if (bar.classList.contains('open')) toggleSearch();
+    if (bar && bar.classList.contains('open')) toggleSearch();
   }
 });
 
@@ -3651,6 +3867,9 @@ function _stopRecording() {
       // then add a clarifier and hit send".
       var prefix = input.value ? input.value + ' ' : '';
       input.value = prefix + r.text;
+      // Programmatic value writes don't fire 'input': nudge the
+      // autogrow/send-enable sync so Send lights up for the transcript.
+      input.dispatchEvent(new Event('input'));
       input.focus();
     }
   });
@@ -3683,21 +3902,18 @@ function _stopRecording() {
     } else {
       var downloaded = (info.models || []).filter(function(m) { return m.is_downloaded; });
       if (downloaded.length > 0) {
-        setStatus('offline', 'Model available \u2014 select above to start');
+        setStatus('offline', 'Model available \u2014 choose below to start');
         showModelSelectBanner();
-        // Pulse the model chip to draw attention
+        // Pulse the model pill to draw attention
         var chip = document.getElementById('modelChip');
         if (chip) chip.classList.add('needs-selection');
       } else {
-        setStatus('error', 'No models \u2014 click Models to download');
+        setStatus('error', 'No models \u2014 download one from the model picker');
       }
     }
   }).catch(function() {
     setStatus('error', 'Failed to initialize');
   });
-
-  // Populate the MoltNet exit-country selector from the Tor backend.
-  populateTorExitCountries();
 
   // Agent Inbox poller — refreshes the running-agents tray every 3s.
   // Cheap IPC (just a snapshot of an in-memory map) so polling at this
@@ -3757,36 +3973,37 @@ function _stopRecording() {
 
   // Inject agent-specific styles.
   var css = `
-.agent-bar{display:none;flex-direction:column;gap:0;background:#0a0a14;
-  border-top:1px solid #1a1a2a;padding:10px 14px 6px}
+.agent-bar{display:none;flex-direction:column;gap:0;background:var(--surface);
+  border:1px solid var(--border);border-radius:12px;padding:10px 12px 8px;
+  width:100%;max-width:calc(72ch + 32px);margin:0 auto 8px}
 .agent-bar.active{display:flex}
 .agent-bar-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-.agent-bar-title{font-size:11px;font-weight:700;color:#a78bfa;letter-spacing:0.5px}
+.agent-bar-title{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:0.5px}
 .agent-stop-btn{font-size:10px;padding:2px 8px;border-radius:6px;
-  background:#2a1a1a;border:1px solid #5a2a2a;color:#f87171;cursor:pointer}
-.agent-stop-btn:hover{background:#3a1a1a}
+  background:transparent;border:1px solid var(--err);color:var(--err);cursor:pointer}
+.agent-stop-btn:hover{background:rgba(240,112,112,0.12)}
 .agent-steps{display:flex;flex-direction:column;gap:3px;max-height:220px;overflow-y:auto;
   scrollbar-width:thin}
 .agent-step{display:flex;gap:6px;align-items:flex-start;padding:4px 5px;border-radius:5px}
-.agent-step.ok{background:#0d1a0d}.agent-step.fail{background:#1a0d0d}
-.agent-step-num{font-size:9px;color:#555;min-width:18px;text-align:right;padding-top:2px}
+.agent-step.ok{background:var(--surface2)}.agent-step.fail{background:rgba(240,112,112,0.08)}
+.agent-step-num{font-size:9px;color:var(--faint);min-width:18px;text-align:right;padding-top:2px}
 .agent-step-badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:5px;
-  white-space:nowrap;min-width:52px;text-align:center}
-.badge-NAVIGATE,.badge-SEARCH{background:#1a1a3a;color:#818cf8}
-.badge-CLICK{background:#1a2a1a;color:#4ade80}
-.badge-TYPE,.badge-FILL_FORM{background:#1a2a2a;color:#22d3ee}
-.badge-SCROLL,.badge-OBSERVE{background:#181818;color:#9ca3af}
-.badge-DONE{background:#0d2a0d;color:#4ade80}
-.badge-ERROR{background:#2a0d0d;color:#f87171}
+  white-space:nowrap;min-width:52px;text-align:center;background:var(--bg)}
+.badge-NAVIGATE,.badge-SEARCH{color:var(--muted)}
+.badge-CLICK{color:var(--ok)}
+.badge-TYPE,.badge-FILL_FORM{color:var(--muted)}
+.badge-SCROLL,.badge-OBSERVE{color:var(--faint)}
+.badge-DONE{color:var(--ok)}
+.badge-ERROR{color:var(--err)}
 .agent-step-body{flex:1;min-width:0}
-.agent-step-target{font-size:10px;color:#c4b5fd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.agent-step-reason{font-size:9px;color:#555;margin-top:1px}
-.agent-spinner-sm{width:7px;height:7px;border:1.5px solid #4338ca;
+.agent-step-target{font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-step-reason{font-size:9px;color:var(--faint);margin-top:1px}
+.agent-spinner-sm{width:7px;height:7px;border:1.5px solid var(--accent);
   border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;
   margin-top:3px;flex-shrink:0}
-.agent-result{font-size:11px;color:#e0e0e0;padding:5px 8px;background:#0d1a0d;
-  border-radius:5px;margin-top:4px;border-left:2px solid #4ade80}
-.agent-result.fail{background:#1a0d0d;border-color:#f87171;color:#fca5a5}
+.agent-result{font-size:11px;color:var(--text);padding:5px 8px;background:var(--surface2);
+  border-radius:5px;margin-top:4px;border-left:2px solid var(--ok)}
+.agent-result.fail{background:rgba(240,112,112,0.08);border-color:var(--err);color:var(--err)}
   `;
   var s = document.createElement('style');
   s.textContent = css;
@@ -3913,7 +4130,11 @@ function _stopRecording() {
                 document.querySelector('textarea');
       var goal = inp ? inp.value.trim() : '';
       if (!goal) { if (inp) inp.focus(); return; }
-      if (inp) inp.value = '';
+      if (inp) {
+        inp.value = '';
+        // Re-sync autogrow + send-disabled after the programmatic clear.
+        inp.dispatchEvent(new Event('input'));
+      }
       window.startWebAgent(goal);
     });
   });
