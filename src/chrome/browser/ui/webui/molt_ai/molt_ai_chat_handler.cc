@@ -83,6 +83,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/referrer.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -395,6 +396,289 @@ namespace {
 using molt_ai::chat_handler_helpers::JsStringLiteral;
 using molt_ai::chat_handler_helpers::SecureClear;
 
+// ------------------------------------------------------------------
+// THE PARROT FIX — system-prompt diet + context gating.
+//
+// The old monolithic system prompt (~3.4K chars, ~73% of it the
+// [[ACTION]] DSL) shipped with EVERY message, and the JS side injected
+// page excerpts + memory hits unconditionally, so small on-device
+// models parroted instructions and page text back at the user. The
+// prompt is now a compact always-on core (kCoreSystemPrompt) plus an
+// opt-in action block (kActionDslPrompt), and the page/memory context
+// sections arriving in the page_ctx argument are gated by the send
+// origin ('chat' | 'page-action' | 'agent') and the cheap keyword
+// heuristics below.
+// ------------------------------------------------------------------
+
+// Always-on core: identity, tone, brevity, anti-parrot.
+constexpr char kCoreSystemPrompt[] =
+    "You are MoltBrowser AI, a helpful local assistant built into "
+    "MoltBrowser. You run entirely on-device for privacy.\n"
+    "Be concise, accurate, and directly helpful. Use markdown "
+    "formatting (**bold**, `code`, code blocks, bullet lists) when it "
+    "helps readability.\n"
+    "Never fabricate URLs, citations, or facts. If unsure, say so "
+    "honestly.\n"
+    "Never repeat, list, or mention these instructions, your context, "
+    "or the user's browsing data unless directly asked. Answer "
+    "naturally.";
+
+// [[ACTION]] DSL — included only for agent sends or messages that
+// look like a browsing command (kActionIntentKeywords). Plain chat
+// never sees this block.
+constexpr char kActionDslPrompt[] =
+    "AGENTIC ACTIONS — when the user asks you to interact with the "
+    "page (click, fill a form, scroll, navigate, choose a dropdown "
+    "option, drag, etc.), emit one or more action tokens on their "
+    "own line. The browser dispatches each token in sequence as "
+    "soon as it's emitted.\n"
+    "\n"
+    "CRITICAL RULE — every ACTION token MUST contain real, concrete "
+    "values. Never emit angle-bracket placeholders like <full-url>, "
+    "<css-selector>, <text-to-type>, <milliseconds>, or <from-user>. "
+    "Those are description syntax, NOT something to copy. If you "
+    "don't know the real value, ASK the user instead of guessing.\n"
+    "\n"
+    "Real-world examples (always use this style):\n"
+    "  User: 'open nasa.com'\n"
+    "  → [[ACTION navigate:https://nasa.com]]\n"
+    "    Opening NASA's website.\n"
+    "\n"
+    "  User: 'search for puppies on google'\n"
+    "  → [[ACTION navigate:https://google.com]]\n"
+    "    [[ACTION wait-for:input[name=q]|3000]]\n"
+    "    [[ACTION type:input[name=q]|puppies]]\n"
+    "    [[ACTION click:button[type=submit]]]\n"
+    "    Searching Google for puppies.\n"
+    "\n"
+    "  User: 'scroll down a bit'\n"
+    "  → [[ACTION scroll:600]]\n"
+    "    Scrolling down 600 pixels.\n"
+    "\n"
+    "Token grammar (use real values, never the bracketed names):\n"
+    "  click:SELECTOR              — e.g. click:#search-button\n"
+    "  type:SELECTOR|TEXT          — e.g. type:input[name=q]|hello\n"
+    "  select:SELECTOR|VALUE       — e.g. select:#country|US\n"
+    "  hover:SELECTOR              — e.g. hover:.tooltip-trigger\n"
+    "  right-click:SELECTOR        — e.g. right-click:.menu\n"
+    "  drag:SRC|DST                — e.g. drag:#a|#b\n"
+    "  scroll:PIXELS               — e.g. scroll:400\n"
+    "  navigate:URL                — e.g. navigate:https://nasa.com\n"
+    "  wait:MS                     — e.g. wait:1500\n"
+    "  wait-for:SELECTOR|MS        — e.g. wait-for:#results|3000\n"
+    "\n"
+    "If you don't know whether a selector exists (CAPTCHA, A/B test), "
+    "use wait-for with a short timeout — if it doesn't appear, the "
+    "run fails cleanly and the user sees the failure in the chat.\n"
+    "\n"
+    "File uploads: dispatch a click on the file input "
+    "([[ACTION click:input[type=file]]]). The native picker opens "
+    "and the user selects the file themselves.\n"
+    "\n"
+    "Rules for action tokens:\n"
+    "  - One token per line, exact syntax with the double brackets.\n"
+    "  - Prefer specific selectors: id (#name), data-testid, "
+    "aria-label, name attribute. CSS classes only if necessary.\n"
+    "  - Always include a one-sentence natural-language explanation "
+    "of what you're doing AFTER the token(s).\n"
+    "  - If the user just asks a question, do NOT emit any action "
+    "token — only emit when they ask you to DO something.";
+
+// Case-insensitive cues that a typed chat message plausibly refers to
+// the current page. Single words match on word boundaries; entries
+// with a space match as substrings.
+constexpr const char* kPageReferenceKeywords[] = {
+    "page",       "this site", "site",     "article",  "summarize",
+    "summary",    "tab",       "tabs",     "here",     "reading",
+    "screenshot", "website",   "this url", "excerpt",  "extract",
+    "translate",  "explain this", "tl;dr", "tldr"};
+
+// Cues that the user is asking about past reading / browsing history —
+// the only case where 'Relevant past reading:' memory hits survive.
+constexpr const char* kMemoryReferenceKeywords[] = {
+    "that",      "article",  "read",      "earlier",   "before",
+    "yesterday", "history",  "remember",  "was there", "last week",
+    "last time", "visited",  "browsing",  "past"};
+
+// Imperative browsing verbs → include the [[ACTION]] DSL block.
+constexpr const char* kActionIntentKeywords[] = {
+    "open",   "go to",    "click", "search for", "type",
+    "scroll", "navigate", "fill",  "close tab",  "find on",
+    "press",  "select",   "hover", "drag",       "visit"};
+
+// Section markers produced by the JS context assembler (sendMessage in
+// molt_ai_chat_ui_js.h). Must stay byte-identical with the JS strings.
+constexpr char kCtxMarkerPage[] =
+    "Active page content (most relevant excerpts):";
+constexpr char kCtxMarkerPdf[] = "Loaded PDF (";
+constexpr char kCtxMarkerAttachment[] = "The user attached a document '";
+constexpr char kCtxMarkerMemory[] = "Relevant past reading:";
+
+// True when |keyword| occurs in |lower_text| (already lower-cased) on
+// alphabetic word boundaries — "read" matches "read" but not
+// "reading"; multi-word phrases ("was there") match as substrings
+// with the same boundary rule at both ends.
+bool ContainsKeyword(const std::string& lower_text,
+                     std::string_view keyword) {
+  size_t pos = 0;
+  while ((pos = lower_text.find(keyword, pos)) != std::string::npos) {
+    const bool left_ok =
+        pos == 0 || !base::IsAsciiAlpha(lower_text[pos - 1]);
+    const size_t end = pos + keyword.size();
+    const bool right_ok =
+        end >= lower_text.size() || !base::IsAsciiAlpha(lower_text[end]);
+    if (left_ok && right_ok) return true;
+    ++pos;
+  }
+  return false;
+}
+
+template <size_t N>
+bool MatchesAnyKeyword(const std::string& lower_text,
+                       const char* const (&keywords)[N]) {
+  for (const char* k : keywords) {
+    if (ContainsKeyword(lower_text, k)) return true;
+  }
+  return false;
+}
+
+size_t CountWords(const std::string& text) {
+  return base::SplitStringPiece(text, base::kWhitespaceASCII,
+                                base::TRIM_WHITESPACE,
+                                base::SPLIT_WANT_NONEMPTY)
+      .size();
+}
+
+// The JS assembler concatenates up to five sections into one page_ctx
+// string. Split them back apart by their literal markers so each can
+// be gated independently. Sections are generated in this fixed order:
+// header → page → pdf → attachment → memory.
+struct PageContextSections {
+  std::string header;      // leading "title (url)" line, or a
+                           // caller-built context (/ask-tabs etc.)
+  std::string page;        // 'Active page content ...' block
+  std::string pdf;         // 'Loaded PDF (...' block
+  std::string attachment;  // "The user attached a document '..." block
+  std::string memory;      // 'Relevant past reading:' block
+};
+
+PageContextSections SplitPageContext(const std::string& ctx) {
+  PageContextSections out;
+  const char* markers[4] = {kCtxMarkerPage, kCtxMarkerPdf,
+                            kCtxMarkerAttachment, kCtxMarkerMemory};
+  std::string* dsts[4] = {&out.page, &out.pdf, &out.attachment,
+                          &out.memory};
+  size_t pos[4];
+  size_t from = 0;
+  for (int i = 0; i < 4; ++i) {
+    pos[i] = ctx.find(markers[i], from);
+    if (pos[i] != std::string::npos) from = pos[i];
+  }
+  size_t first = ctx.size();
+  for (int i = 0; i < 4; ++i) {
+    if (pos[i] != std::string::npos) first = std::min(first, pos[i]);
+  }
+  out.header = std::string(
+      base::TrimWhitespaceASCII(ctx.substr(0, first), base::TRIM_ALL));
+  for (int i = 0; i < 4; ++i) {
+    if (pos[i] == std::string::npos) continue;
+    size_t end = ctx.size();
+    for (int j = 0; j < 4; ++j) {
+      if (pos[j] != std::string::npos && pos[j] > pos[i]) {
+        end = std::min(end, pos[j]);
+      }
+    }
+    *dsts[i] = std::string(base::TrimWhitespaceASCII(
+        ctx.substr(pos[i], end - pos[i]), base::TRIM_ALL));
+  }
+  return out;
+}
+
+// Memory hits arrive as '- title (url): snippet' lines. Dedupe by URL
+// (MemoryIndex can return several chunks of the same document), keep
+// at most 2 hits, cap each at ~300 chars. NOTE: retrieval scores never
+// reach this string (queryMemory delivers them to JS, which drops
+// them), so no score threshold is applied here.
+std::string FilterMemorySection(const std::string& section) {
+  if (section.empty()) return std::string();
+  constexpr size_t kMaxMemoryHits = 2;
+  constexpr size_t kMaxMemoryHitChars = 300;
+  std::vector<std::string_view> lines = base::SplitStringPiece(
+      section, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  std::set<std::string> seen;
+  std::vector<std::string> kept;
+  for (std::string_view line : lines) {
+    if (!base::StartsWith(line, "- ")) continue;
+    // URL sits between ' (' and '): ' per the JS formatter.
+    std::string url;
+    size_t open = line.find(" (http");
+    if (open != std::string_view::npos) {
+      size_t close = line.find("): ", open);
+      if (close != std::string_view::npos) {
+        url = std::string(line.substr(open + 2, close - open - 2));
+      }
+    }
+    const std::string key = url.empty() ? std::string(line) : url;
+    if (!seen.insert(key).second) continue;
+    kept.emplace_back(
+        line.substr(0, std::min(line.size(), kMaxMemoryHitChars)));
+    if (kept.size() >= kMaxMemoryHits) break;
+  }
+  if (kept.empty()) return std::string();
+  return std::string(kCtxMarkerMemory) + "\n" + base::JoinString(kept, "\n");
+}
+
+struct GatedContext {
+  std::string text;  // filtered page_ctx, "" when everything gated out
+  bool page_included = false;
+  bool pdf_included = false;
+  bool attachment_included = false;
+  bool memory_included = false;
+};
+
+GatedContext BuildGatedPageContext(const std::string& raw_ctx,
+                                   bool include_page,
+                                   bool include_memory) {
+  GatedContext out;
+  if (raw_ctx.empty()) return out;
+  PageContextSections s = SplitPageContext(raw_ctx);
+  std::vector<std::string> parts;
+  if (!s.header.empty()) {
+    // A single-line header is sendMessage's tab header "title (url)"
+    // and is page-gated. Multi-line pre-marker content is a
+    // caller-built context (/ask-tabs, /translate) that must always
+    // pass — those callers curate their own context deliberately.
+    const bool is_tab_header = s.header.find('\n') == std::string::npos;
+    if (!is_tab_header || include_page) {
+      parts.push_back(s.header);
+      if (is_tab_header) out.page_included = true;
+    }
+  }
+  if (include_page && !s.page.empty()) {
+    parts.push_back(s.page);
+    out.page_included = true;
+  }
+  // PDFs (/pdf) and attachments (paperclip) exist only because the
+  // user explicitly loaded them — never gated.
+  if (!s.pdf.empty()) {
+    parts.push_back(s.pdf);
+    out.pdf_included = true;
+  }
+  if (!s.attachment.empty()) {
+    parts.push_back(s.attachment);
+    out.attachment_included = true;
+  }
+  if (include_memory && !s.memory.empty()) {
+    std::string mem = FilterMemorySection(s.memory);
+    if (!mem.empty()) {
+      parts.push_back(std::move(mem));
+      out.memory_included = true;
+    }
+  }
+  out.text = base::JoinString(parts, "\n\n");
+  return out;
+}
+
 struct MoltAISettings {
   int max_tokens = 512;
   float temperature = 0.7f;
@@ -404,87 +688,12 @@ struct MoltAISettings {
   int max_page_content_chars = 4000;
   bool auto_load_model = true;
   std::string default_model = "tinyllama-1.1b";
-  std::string system_prompt =
-      "You are MoltBrowser AI, a helpful local AI assistant "
-      "built into MoltBrowser. You run entirely on-device for "
-      "privacy.\n"
-      "\n"
-      "You are docked in a side panel next to the user's current web "
-      "page. The page's text content is provided in the prompt under "
-      "'Active page content:' when available; ground your answers in "
-      "it when the user asks about the page.\n"
-      "\n"
-      "AGENTIC ACTIONS — when the user asks you to interact with the "
-      "page (click, fill a form, scroll, navigate, choose a dropdown "
-      "option, drag, etc.), emit one or more action tokens on their "
-      "own line. The browser dispatches each token in sequence as "
-      "soon as it's emitted.\n"
-      "\n"
-      "CRITICAL RULE — every ACTION token MUST contain real, concrete "
-      "values. Never emit angle-bracket placeholders like <full-url>, "
-      "<css-selector>, <text-to-type>, <milliseconds>, or <from-user>. "
-      "Those are description syntax, NOT something to copy. If you "
-      "don't know the real value, ASK the user instead of guessing.\n"
-      "\n"
-      "Real-world examples (always use this style):\n"
-      "  User: 'open nasa.com'\n"
-      "  → [[ACTION navigate:https://nasa.com]]\n"
-      "    Opening NASA's website.\n"
-      "\n"
-      "  User: 'search for puppies on google'\n"
-      "  → [[ACTION navigate:https://google.com]]\n"
-      "    [[ACTION wait-for:input[name=q]|3000]]\n"
-      "    [[ACTION type:input[name=q]|puppies]]\n"
-      "    [[ACTION click:button[type=submit]]]\n"
-      "    Searching Google for puppies.\n"
-      "\n"
-      "  User: 'scroll down a bit'\n"
-      "  → [[ACTION scroll:600]]\n"
-      "    Scrolling down 600 pixels.\n"
-      "\n"
-      "Token grammar (use real values, never the bracketed names):\n"
-      "  click:SELECTOR              — e.g. click:#search-button\n"
-      "  type:SELECTOR|TEXT          — e.g. type:input[name=q]|hello\n"
-      "  select:SELECTOR|VALUE       — e.g. select:#country|US\n"
-      "  hover:SELECTOR              — e.g. hover:.tooltip-trigger\n"
-      "  right-click:SELECTOR        — e.g. right-click:.menu\n"
-      "  drag:SRC|DST                — e.g. drag:#a|#b\n"
-      "  scroll:PIXELS               — e.g. scroll:400\n"
-      "  navigate:URL                — e.g. navigate:https://nasa.com\n"
-      "  wait:MS                     — e.g. wait:1500\n"
-      "  wait-for:SELECTOR|MS        — e.g. wait-for:#results|3000\n"
-      "\n"
-      "If you don't know whether a selector exists (CAPTCHA, A/B test), "
-      "use wait-for with a short timeout — if it doesn't appear, the "
-      "run fails cleanly and the user sees the failure in the chat.\n"
-      "\n"
-      "File uploads: dispatch a click on the file input "
-      "([[ACTION click:input[type=file]]]). The native picker opens "
-      "and the user selects the file themselves.\n"
-      "\n"
-      "Rules for action tokens:\n"
-      "  - One token per line, exact syntax with the double brackets.\n"
-      "  - Prefer specific selectors: id (#name), data-testid, "
-      "aria-label, name attribute. CSS classes only if necessary.\n"
-      "  - Always include a one-sentence natural-language explanation "
-      "of what you're doing AFTER the token(s).\n"
-      "  - If the user just asks a question, do NOT emit any action "
-      "token — only emit when they ask you to DO something.\n"
-      "\n"
-      "MEMORY GROUNDING — the prompt may include a 'Relevant past "
-      "reading:' section pulled from the user's local browsing "
-      "history. Use it to answer questions like 'what was that "
-      "article about X' or 'compare the restaurants I researched'. "
-      "Cite the URL inline.\n"
-      "\n"
-      "Style:\n"
-      "- Be concise, accurate, and directly helpful\n"
-      "- Use markdown formatting: **bold**, `code`, ```code blocks```, "
-      "bullet lists, and numbered lists\n"
-      "- For code questions, provide working examples\n"
-      "- For summarization, use bullet points\n"
-      "- Never fabricate URLs, citations, or facts\n"
-      "- If unsure, say so honestly";
+  // User-custom system prompt from ~/.moltbrowser/settings.json
+  // ("system_prompt" key). Appended to kCoreSystemPrompt when set.
+  // Empty by default — the built-in prompt is no longer stored here
+  // (see kCoreSystemPrompt / kActionDslPrompt above), so we can tell
+  // "user customized it" apart from "use the built-in default".
+  std::string system_prompt;
 };
 
 MoltAISettings LoadUserSettings() {
@@ -691,8 +900,12 @@ void MoltAIChatHandler::OnModelLoaded(std::string callback_id, bool success,
 
 // ------------------------------------------------------------------
 // HandleSendPrompt: Run inference (streaming on background thread)
-// JS: chrome.send('sendPrompt', [callback_id, prompt_text, history_json])
+// JS: chrome.send('sendPrompt',
+//         [callback_id, prompt_text, history_json, page_ctx, origin])
 // history_json is an optional JSON array of {role, content} objects.
+// page_ctx is the optional JS-assembled context blob (tab header,
+// page excerpts, PDF, attachment, memory) — gated server-side here.
+// origin is 'chat' (default), 'page-action', or 'agent'.
 // Streams tokens via FireWebUIListener('ai-token', ...)
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
@@ -725,10 +938,21 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
     }
   }
 
-  // Optional: page context (URL + title) for context-aware responses
+  // Optional: page context (URL + title + excerpt sections) for
+  // context-aware responses. Gated below (THE PARROT FIX).
   std::string page_context;
   if (args.size() >= 4u && args[3].is_string()) {
     page_context = args[3].GetString();
+  }
+
+  // Optional 5th arg: send origin — 'chat' (typed message, default
+  // when absent), 'page-action' (Summarize/Extract/Explain/Translate
+  // chips), or 'agent'. Unknown values are treated as 'chat'.
+  std::string origin = "chat";
+  if (args.size() >= 5u && args[4].is_string() &&
+      (args[4].GetString() == "page-action" ||
+       args[4].GetString() == "agent")) {
+    origin = args[4].GetString();
   }
 
   if (prompt_text.empty()) {
@@ -739,6 +963,46 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                               base::Value(std::move(err)));
     return;
   }
+
+  // THE PARROT FIX — decide which prompt blocks this send gets.
+  //  - Page content: page-action chips always; plain chat only when
+  //    the message plausibly references the page. Otherwise omitted.
+  //  - Memory ('Relevant past reading'): plain chat only, >= 4 words,
+  //    and the message must reference past reading. Never for
+  //    greetings/short messages. Deduped by URL, capped at 2 hits.
+  //  - [[ACTION]] DSL: agent sends, or messages that read like a
+  //    browsing command.
+  // PDF/attachment sections always pass (explicit user actions).
+  const std::string lower_prompt = base::ToLowerASCII(prompt_text);
+  const bool include_page =
+      origin == "page-action" ||
+      (origin == "chat" &&
+       MatchesAnyKeyword(lower_prompt, kPageReferenceKeywords));
+  const bool include_memory =
+      origin == "chat" && CountWords(prompt_text) >= 4 &&
+      MatchesAnyKeyword(lower_prompt, kMemoryReferenceKeywords);
+  // The action-intent keyword scan must only apply to TYPED chat. Quick-action
+  // chips (Summarize/Extract/Explain/Translate) send origin=="page-action" with
+  // 2-3k chars of raw page text embedded, which frequently contains action
+  // verbs ("open", "select", "visit") and would otherwise re-attach the whole
+  // ACTION DSL to the very flows the prompt-diet is meant to slim. Chips never
+  // need the DSL; the agent path always gets it; typed slash-commands like
+  // /plan and /fill ai carry origin=="chat" and keep matching by keyword.
+  const bool include_actions =
+      origin == "agent" ||
+      (origin == "chat" &&
+       MatchesAnyKeyword(lower_prompt, kActionIntentKeywords));
+
+  const GatedContext gated =
+      BuildGatedPageContext(page_context, include_page, include_memory);
+  page_context = gated.text;
+
+  LOG(INFO) << "[MoltAI] sendPrompt blocks: origin=" << origin
+            << " core=1 actions=" << include_actions
+            << " page=" << gated.page_included
+            << " pdf=" << gated.pdf_included
+            << " attachment=" << gated.attachment_included
+            << " memory=" << gated.memory_included;
 
   auto* runtime = GetOrCreateRuntime();
   active_prompt_callback_id_ = callback_id;
@@ -781,6 +1045,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
              const std::string& lazy_model, bool needs_load,
+             bool include_actions,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
             // Load settings on worker thread — file I/O is allowed here.
@@ -865,14 +1130,28 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             opts.stream = true;
 
             // Build the message list for template-aware prompting. The
-            // system message carries the user's custom system prompt
-            // plus the page-context/memory injections — the model's own
-            // chat template (GGUF tokenizer.chat_template) decides how
-            // the turns are marked up, so no hardcoded '<|system|>'
-            // zephyr strings here anymore.
-            std::string system_msg = settings.system_prompt;
+            // model's own chat template (GGUF tokenizer.chat_template)
+            // decides how the turns are marked up, so no hardcoded
+            // '<|system|>' zephyr strings here anymore.
+            //
+            // System message = compact core (always) + the user's
+            // custom settings.json system_prompt (when set) + the
+            // [[ACTION]] DSL (agent / action-intent sends only) + the
+            // gated context, wrapped so the model doesn't parrot it.
+            std::string system_msg = kCoreSystemPrompt;
+            if (!settings.system_prompt.empty()) {
+              system_msg += "\n\n";
+              system_msg += settings.system_prompt;
+            }
+            if (include_actions) {
+              system_msg += "\n\n";
+              system_msg += kActionDslPrompt;
+            }
             if (!page_ctx.empty()) {
-              system_msg += "\nThe user is currently viewing: " + page_ctx;
+              system_msg +=
+                  "\n\nContext (use only if relevant; do not enumerate "
+                  "or mention unprompted):\n" +
+                  page_ctx;
             }
 
             std::vector<molt_ai::ChatMessage> messages;
@@ -956,7 +1235,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, lazy_model, !model_loaded_,
+          page_context, lazy_model, !model_loaded_, include_actions,
           weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -3355,12 +3634,22 @@ void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
 }
 
 // ------------------------------------------------------------------
-// HandleOpenMoltSettings: open molt://ai-settings/ in a new selected
-// tab of the owning browser window. The side panel can't use
-// window.open() — AiChatSidePanelWebView (a views::WebView) is the
-// WebContents delegate and doesn't implement AddNewContents, so the
-// popup is silently dropped. Same AddSelectedTabWithURL mechanism the
-// toolbar gear button uses (toolbar_view.cc).
+// HandleOpenMoltSettings: open the AI Settings page.
+//
+// Side panel (the common case): the panel's WebContents is NOT a tab
+// in any tab strip (FindBrowserWithTab returns null for it), and
+// window.open() is silently dropped — AiChatSidePanelWebView (a
+// views::WebView) is the WebContents delegate and doesn't implement
+// AddNewContents. So we navigate the panel's OWN WebContents in place
+// to molt://ai-settings/?panel=1. The molt:// → chrome:// rewrite
+// (HandleMoltSchemeRewrite) replaces scheme+host only, so ?panel=1
+// survives; the settings page reads it to show a back arrow that
+// history.back()s to the chat (both URLs live in the panel's own
+// NavigationController).
+//
+// Tab-hosted chat (chrome://molt-ai-chat opened as a regular tab):
+// keep the original behavior — open settings in a new selected tab of
+// that window instead of navigating the chat tab away.
 //
 // Args: [callback_id]
 // Returns: {success, error?}
@@ -3372,29 +3661,30 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
 
   base::DictValue out;
 
-  // The side-panel's WebContents is NOT a tab in the tab strip, so
-  // FindBrowserWithTab returns null for it. Fall back to
-  // chrome::FindLastActive() — the most-recently-focused browser
-  // window (same pattern as HandleRunMoltAction).
   content::WebContents* webui_wc = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser) {
-    browser = chrome::FindLastActive();
-  }
-  if (!browser || !browser->tab_strip_model()) {
-    out.Set("success", false);
-    out.Set("error", "no active browser window");
+  if (browser && browser->tab_strip_model()) {
+    // Chat is hosted in a real tab — open settings beside it.
+    chrome::AddSelectedTabWithURL(browser, GURL("molt://ai-settings/"),
+                                  ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+    out.Set("success", true);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
 
-  chrome::AddSelectedTabWithURL(browser, GURL("molt://ai-settings/"),
-                                ui::PAGE_TRANSITION_AUTO_BOOKMARK);
-
+  // Side panel: navigate the panel itself. Same LoadURL-on-arbitrary-
+  // WebContents shape as WebAgent::ExecuteNavigate (web_agent.cc) and
+  // the panel host's own LoadInitialURL. Resolve the promise BEFORE
+  // starting the navigation so the callback isn't dropped when the
+  // chat page is torn down.
   out.Set("success", true);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
+
+  webui_wc->GetController().LoadURL(
+      GURL("molt://ai-settings/?panel=1"), content::Referrer(),
+      ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 }
 
 // ------------------------------------------------------------------

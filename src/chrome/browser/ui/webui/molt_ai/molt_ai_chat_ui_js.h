@@ -25,6 +25,15 @@ inline constexpr char kMoltChatJS[] = R"JS(
 // ============================================================
 
 var isGenerating = false;
+// Per-message origin metadata for backend context gating. Contract
+// with the C++ side: 5th sendPrompt arg, one of 'chat' (typed free
+// text — the default), 'page-action' (quick-action chips), or 'agent'
+// (reserved; the Agent button uses the separate startWebAgent IPC and
+// never enters sendMessage). Set by quickAction() right before it
+// invokes sendMessage(); captured + reset inside sendMessage only once
+// the message is actually committed, so the model-load auto-resend
+// re-entry still sees the chip's flag (same pattern as pendingAutoSend).
+var sendOrigin = 'chat';
 var currentAiMessageEl = null;
 var currentAiText = '';
 var promptIdCounter = 0;
@@ -2717,13 +2726,18 @@ function tryDispatchNavigateIntent(text) {
 }
 
 function sendMessage() {
-  if (isGenerating) return;
+  // These two early-outs consume nothing — drop any chip-set origin
+  // flag so a blocked page-action send can't mislabel the next typed
+  // message. (The model-load auto-resend path below deliberately does
+  // NOT reset it: its re-entry must still see the chip's flag.)
+  if (isGenerating) { sendOrigin = 'chat'; return; }
   var input = document.getElementById('chatInput');
   var text = input.value.trim();
-  if (!text) return;
+  if (!text) { sendOrigin = 'chat'; return; }
 
   // Direct-navigate intent (no LLM): "open X.com" / "go to X" / bare URL.
   if (tryDispatchNavigateIntent(text)) {
+    sendOrigin = 'chat';
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
@@ -2933,6 +2947,7 @@ function sendMessage() {
       if (dl.length === 1) {
         pickId = dl[0].model_id;
       } else if (dl.length === 0) {
+        sendOrigin = 'chat';  // message not sent — drop any chip flag
         addErrorMessage(downloadingModelId
             ? 'Model is still downloading — it will load when finished.'
             : 'No model downloaded yet — pick one from the model menu below.');
@@ -2949,6 +2964,7 @@ function sendMessage() {
         if (ok) {
           sendMessage();
         } else {
+          sendOrigin = 'chat';  // message not sent — drop any chip flag
           addErrorMessage(
               'Model failed to load — choose another from the model menu.');
         }
@@ -2956,6 +2972,13 @@ function sendMessage() {
       return;
     }
   }
+
+  // Commit point: capture the per-message origin ('chat'|'page-action')
+  // and reset the module flag so the NEXT typed message defaults back
+  // to 'chat'. Done here — after the model-load guard — so the
+  // auto-resend re-entry above still sees a chip-set flag.
+  var origin = sendOrigin;
+  sendOrigin = 'chat';
 
   addUserMessage(text,
       (attachmentContext && attachmentContext.text)
@@ -3035,10 +3058,12 @@ function sendMessage() {
               return '- ' + (h.title || h.url) + ' (' + h.url + '): ' + snip;
             }).join('\n');
       }
-      return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx);
+      return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx,
+                             origin);
     }, function() {
       // queryMemory failed (no service yet, etc.) — proceed without it.
-      return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx);
+      return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx,
+                             origin);
     });
   }).then(function(result) {
     // Same scrub finishAiMessage applies to the visible bubble — the
@@ -3187,6 +3212,16 @@ function pickAttachment() {
 
 // ---- Quick Actions with Page Content ----
 
+// All chip sends go through the normal sendMessage pipeline but carry
+// origin='page-action' so the backend can gate/dedupe its own page-
+// context injection (the chips already embed their excerpt in the
+// prompt itself).
+function _sendQuickPrompt(prompt) {
+  document.getElementById('chatInput').value = prompt;
+  sendOrigin = 'page-action';
+  sendMessage();
+}
+
 function quickAction(action) {
   if (isGenerating) return;
   if (action === 'summarize') {
@@ -3200,11 +3235,9 @@ function quickAction(action) {
       } else {
         prompt = 'Summarize this page';
       }
-      document.getElementById('chatInput').value = prompt;
-      sendMessage();
+      _sendQuickPrompt(prompt);
     }).catch(function() {
-      document.getElementById('chatInput').value = 'Summarize this page';
-      sendMessage();
+      _sendQuickPrompt('Summarize this page');
     });
   } else if (action === 'extract') {
     sendWithPromise('getPageContent').then(function(result) {
@@ -3215,11 +3248,9 @@ function quickAction(action) {
       } else {
         prompt = 'Extract key data from this page';
       }
-      document.getElementById('chatInput').value = prompt;
-      sendMessage();
+      _sendQuickPrompt(prompt);
     }).catch(function() {
-      document.getElementById('chatInput').value = 'Extract key data from this page';
-      sendMessage();
+      _sendQuickPrompt('Extract key data from this page');
     });
   } else if (action === 'explain') {
     sendWithPromise('getPageContent').then(function(result) {
@@ -3230,15 +3261,12 @@ function quickAction(action) {
       } else {
         prompt = 'Explain this page simply';
       }
-      document.getElementById('chatInput').value = prompt;
-      sendMessage();
+      _sendQuickPrompt(prompt);
     }).catch(function() {
-      document.getElementById('chatInput').value = 'Explain this page simply';
-      sendMessage();
+      _sendQuickPrompt('Explain this page simply');
     });
   } else {
-    document.getElementById('chatInput').value = 'Translate this page to English';
-    sendMessage();
+    _sendQuickPrompt('Translate this page to English');
   }
 }
 
@@ -4216,8 +4244,19 @@ var voiceState = {
   chunks: [],       // Float32Array slices captured in real time
   inputRate: 0,
   startedAt: 0,
-  maxMs: 30000      // hard cap so a forgotten mic doesn't run forever
+  maxMs: 30000,     // hard cap so a forgotten mic doesn't run forever
+  // ---- Live dictation state ----
+  session: 0,        // bumped per recording; stale IPC results are dropped
+  liveTimer: null,   // ~2.75s interval driving interim transcribes
+  inFlight: false,   // serialize transcribeAudio calls — never overlap
+  finalQueued: false,// stop() arrived while an interim was in flight
+  failed: false,     // an interim transcribe errored; stop polling quietly
+  prefix: '',        // composer text present when dictation started
+  transcript: '',    // newest whisper transcript for this session
+  lastApplied: null  // exact composer value we last wrote (edit detection)
 };
+var VOICE_LIVE_TICK_MS = 2750;  // interim transcribe cadence (~2.5-3s)
+var VOICE_MIN_SECONDS = 0.7;    // below this total -> 'Recording too short.'
 
 function _wavBytesFromPCM(pcm16, sampleRate) {
   // pcm16 is Int16Array of mono samples.
@@ -4282,6 +4321,168 @@ function _bytesToBase64(bytes) {
   return btoa(s);
 }
 
+// Concatenate the captured chunks WITHOUT consuming them — live
+// dictation re-transcribes the growing cumulative buffer each tick.
+function _mergedVoiceSamples() {
+  var total = 0;
+  for (var i = 0; i < voiceState.chunks.length; i++)
+    total += voiceState.chunks[i].length;
+  var merged = new Float32Array(total);
+  var off = 0;
+  for (var j = 0; j < voiceState.chunks.length; j++) {
+    merged.set(voiceState.chunks[j], off);
+    off += voiceState.chunks[j].length;
+  }
+  return merged;
+}
+
+function _voiceWavB64(merged) {
+  var resampled = _resampleTo16k(merged, voiceState.inputRate || 16000);
+  var pcm16 = _floatToInt16(resampled);
+  var wav = _wavBytesFromPCM(pcm16, 16000);
+  return _bytesToBase64(wav);
+}
+
+// Subtle status line above the composer: pulsing dot + 'Listening…'
+// while recording, amber 'Transcribing…' during the final pass.
+// state: 'listening' | 'transcribing' | anything else = hidden.
+function _setDictationHint(state) {
+  var h = document.getElementById('dictationHint');
+  if (!h) return;
+  var t = document.getElementById('dictationHintText');
+  if (state === 'listening') {
+    h.className = 'dictation-hint on';
+    if (t) t.textContent = 'Listening…';
+  } else if (state === 'transcribing') {
+    h.className = 'dictation-hint on transcribing';
+    if (t) t.textContent = 'Transcribing…';
+  } else {
+    h.className = 'dictation-hint';
+  }
+}
+
+// Replace the dictation region of the composer with the newest
+// transcript: value = prefix + transcript. Text the user had typed
+// BEFORE dictation started lives in the prefix; if they edit the box
+// between interim results, fold that edit into the prefix instead of
+// clobbering it.
+function _applyDictation(newText) {
+  var st = voiceState;
+  var input = document.getElementById('chatInput');
+  if (!input) { st.transcript = newText; return; }
+  var cur = input.value;
+  if (st.lastApplied !== null && cur !== st.lastApplied) {
+    if (st.transcript && cur.length >= st.transcript.length &&
+        cur.slice(cur.length - st.transcript.length) === st.transcript) {
+      // Our previous transcript is still the tail — the user edited
+      // the part before it; keep that as the new prefix.
+      st.prefix = cur.slice(0, cur.length - st.transcript.length);
+    } else {
+      // Transcript tail is gone — treat the whole box as new prefix.
+      st.prefix = cur ? cur.replace(/\s+$/, '') + ' ' : '';
+    }
+  }
+  st.transcript = newText;
+  input.value = st.prefix + newText;
+  st.lastApplied = input.value;
+  // Programmatic value writes don't fire 'input': nudge the
+  // autogrow/send-enable sync on every live update.
+  input.dispatchEvent(new Event('input'));
+}
+
+function _resetMicButton() {
+  var btn = document.getElementById('micBtn');
+  if (!btn) return;
+  btn.classList.remove('recording');
+  btn.classList.remove('transcribing');
+  btn.textContent = '🎙';
+  btn.title = 'Hold or click to record (local Whisper)';
+}
+
+// Tear the dictation session down (final pass done, error, too short).
+function _finishDictation(session) {
+  if (session !== voiceState.session) return;
+  if (voiceState.liveTimer) {
+    clearInterval(voiceState.liveTimer);
+    voiceState.liveTimer = null;
+  }
+  voiceState.chunks = [];
+  voiceState.finalQueued = false;
+  _setDictationHint('off');
+  _resetMicButton();
+  var input = document.getElementById('chatInput');
+  if (input) input.focus();
+}
+
+// One transcribe of the CUMULATIVE buffer over the stateless
+// transcribeAudio IPC (fresh whisper-cli per call — repeat-callable).
+// Interim calls update the composer quietly; the final call also tears
+// the session down and surfaces errors. Strictly serialized via
+// voiceState.inFlight — a new call is never issued while one runs.
+function _transcribePass(isFinal) {
+  var st = voiceState;
+  var session = st.session;
+  var b64 = _voiceWavB64(_mergedVoiceSamples());
+  st.inFlight = true;
+  sendWithPromise('transcribeAudio', b64).then(function(r) {
+    st.inFlight = false;
+    if (session !== st.session) {
+      // A newer session took over; if ITS stop queued a final pass
+      // behind this stale call, run it now that the pipe is free
+      // (otherwise that session would hang in 'Transcribing…').
+      if (st.finalQueued && !st.recording) {
+        st.finalQueued = false;
+        _transcribePass(true);
+      }
+      return;
+    }
+    if (!r || !r.success) {
+      if (isFinal) {
+        addErrorMessage('Transcribe: ' + ((r && r.error) || 'unknown') +
+                        ((r && r.install_hint) ? '\n' + r.install_hint : ''));
+        _finishDictation(session);
+      } else {
+        // Whisper unavailable/failing — stop the live loop quietly;
+        // the final pass on stop surfaces the full error once.
+        st.failed = true;
+        if (st.finalQueued) { st.finalQueued = false; _transcribePass(true); }
+      }
+      return;
+    }
+    _applyDictation((r.text || '').trim());
+    if (isFinal) {
+      _finishDictation(session);
+    } else if (st.finalQueued) {
+      // Stop arrived while this interim was in flight — run the queued
+      // full-buffer final pass now that the pipe is free.
+      st.finalQueued = false;
+      _transcribePass(true);
+    }
+  }, function(err) {
+    st.inFlight = false;
+    if (session !== st.session) return;
+    if (isFinal) {
+      addErrorMessage('Transcribe failed: ' + err);
+      _finishDictation(session);
+    } else {
+      st.failed = true;
+      if (st.finalQueued) { st.finalQueued = false; _transcribePass(true); }
+    }
+  });
+}
+
+// Interval tick while recording: ship the cumulative audio unless a
+// call is already in flight (skip that tick — never overlap IPCs) or
+// there isn't enough audio yet to be worth a whisper spawn.
+function _liveDictationTick() {
+  var st = voiceState;
+  if (!st.recording || st.inFlight || st.failed) return;
+  var total = 0;
+  for (var i = 0; i < st.chunks.length; i++) total += st.chunks[i].length;
+  if (total < (st.inputRate || 16000) * VOICE_MIN_SECONDS) return;
+  _transcribePass(false);
+}
+
 function toggleMic() {
   if (voiceState.recording) {
     _stopRecording();
@@ -4304,6 +4505,17 @@ function _startRecording() {
     voiceState.stream = stream;
     voiceState.chunks = [];
     voiceState.startedAt = Date.now();
+    // New dictation session: invalidates any stale in-flight result.
+    voiceState.session++;
+    voiceState.failed = false;
+    voiceState.finalQueued = false;
+    voiceState.transcript = '';
+    voiceState.lastApplied = null;
+    // Preserve whatever the user already typed: live transcripts are
+    // always written as prefix + newest transcript.
+    var input0 = document.getElementById('chatInput');
+    voiceState.prefix = (input0 && input0.value)
+        ? input0.value.replace(/\s+$/, '') + ' ' : '';
     // Use the legacy ScriptProcessorNode — universally supported.
     // AudioWorklet would be cleaner but adds complexity for a v1.
     voiceState.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -4321,6 +4533,13 @@ function _startRecording() {
     voiceState.source.connect(voiceState.processor);
     voiceState.processor.connect(voiceState.ctx.destination);
     voiceState.recording = true;
+    // Live dictation: every ~2.75s transcribe the cumulative buffer and
+    // replace the composer's dictation region with the newest
+    // transcript. Ticks are skipped while a transcribe is in flight.
+    if (voiceState.liveTimer) clearInterval(voiceState.liveTimer);
+    voiceState.liveTimer =
+        setInterval(_liveDictationTick, VOICE_LIVE_TICK_MS);
+    _setDictationHint('listening');
     if (btn) {
       btn.classList.add('recording');
       btn.textContent = '⏺';
@@ -4335,36 +4554,28 @@ function _stopRecording() {
   var btn = document.getElementById('micBtn');
   if (!voiceState.recording) return;
   voiceState.recording = false;
+  if (voiceState.liveTimer) {
+    clearInterval(voiceState.liveTimer);
+    voiceState.liveTimer = null;
+  }
   try { voiceState.processor.disconnect(); } catch(e) {}
   try { voiceState.source.disconnect(); } catch(e) {}
   try { voiceState.ctx.close(); } catch(e) {}
   if (voiceState.stream) {
     voiceState.stream.getTracks().forEach(function(t){ t.stop(); });
   }
-  // Concatenate all captured chunks into one Float32Array.
-  var total = voiceState.chunks.reduce(function(s, c){ return s + c.length; }, 0);
-  var merged = new Float32Array(total);
-  var off = 0;
-  voiceState.chunks.forEach(function(c){
-    merged.set(c, off);
-    off += c.length;
-  });
-  voiceState.chunks = [];
+  var total = 0;
+  for (var i = 0; i < voiceState.chunks.length; i++)
+    total += voiceState.chunks[i].length;
 
-  if (merged.length < 1600) {  // less than 0.1s at 16k
-    if (btn) {
-      btn.classList.remove('recording');
-      btn.textContent = '🎙';
-      btn.title = 'Hold or click to record (local Whisper)';
-    }
+  // "Too short" only when the WHOLE take is under ~0.7s, measured at
+  // the raw device rate. (The old `< 1600 raw samples` check was ~33ms
+  // at 48kHz despite its 0.1s comment.)
+  if (total < (voiceState.inputRate || 16000) * VOICE_MIN_SECONDS) {
+    _finishDictation(voiceState.session);
     addErrorMessage('Recording too short.');
     return;
   }
-
-  var resampled = _resampleTo16k(merged, voiceState.inputRate);
-  var pcm16 = _floatToInt16(resampled);
-  var wav = _wavBytesFromPCM(pcm16, 16000);
-  var b64 = _bytesToBase64(wav);
 
   if (btn) {
     btn.classList.remove('recording');
@@ -4372,29 +4583,16 @@ function _stopRecording() {
     btn.textContent = '…';
     btn.title = 'Transcribing locally...';
   }
-  sendWithPromise('transcribeAudio', b64).then(function(r) {
-    if (btn) {
-      btn.classList.remove('transcribing');
-      btn.textContent = '🎙';
-      btn.title = 'Hold or click to record (local Whisper)';
-    }
-    if (!r.success) {
-      addErrorMessage('Transcribe: ' + (r.error || 'unknown') +
-                       (r.install_hint ? '\n' + r.install_hint : ''));
-      return;
-    }
-    var input = document.getElementById('chatInput');
-    if (input) {
-      // Append to whatever's already in the box; nice for "speak,
-      // then add a clarifier and hit send".
-      var prefix = input.value ? input.value + ' ' : '';
-      input.value = prefix + r.text;
-      // Programmatic value writes don't fire 'input': nudge the
-      // autogrow/send-enable sync so Send lights up for the transcript.
-      input.dispatchEvent(new Event('input'));
-      input.focus();
-    }
-  });
+  _setDictationHint('transcribing');
+
+  // Final full-buffer pass replaces the composer text one last time,
+  // then tears the session down. If an interim call is still in
+  // flight, queue the final behind it — the IPC is never overlapped.
+  if (voiceState.inFlight) {
+    voiceState.finalQueued = true;
+  } else {
+    _transcribePass(true);
+  }
 }
 
 // ---- Initialization ----
@@ -4608,6 +4806,46 @@ function _stopRecording() {
     steps.scrollTop = steps.scrollHeight;
   });
 
+  // Persist the agent outcome in the transcript — the bar itself
+  // auto-collapses after 10 s, so without this the result vanishes
+  // from the UI entirely. Success renders as a normal AI bubble (and
+  // joins conversationHistory so follow-up questions can reference
+  // it); failure renders as the standard inline error row.
+  function appendAgentOutcome(success, result) {
+    // Success bubbles render through renderMarkdown both live (below) and
+    // on Recents restore (renderConversationDOM), so the persisted string
+    // must carry the same '**Agent result:**' markup the live bubble uses
+    // — otherwise the bold header is lost after a reload.
+    var successText = '**Agent result:** ' + (result || '(no result)');
+    var text = success
+        ? successText
+        : 'Agent stopped: ' + (result || 'Cancelled');
+    if (!success) {
+      if (typeof addErrorMessage === 'function') addErrorMessage(text);
+      return;
+    }
+    var m = document.getElementById('messages');
+    if (m) {
+      var d = document.createElement('div');
+      d.className = 'message ai';
+      d.innerHTML = '<div class="sender">AI Assistant</div>' +
+          '<div class="text">' +
+          (typeof renderMarkdown === 'function'
+              ? renderMarkdown(successText)
+              : successText.replace(/[<>&]/g, function(c){
+                  return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]; })) +
+          '</div>';
+      m.appendChild(d);
+      m.scrollTop = m.scrollHeight;
+    }
+    if (typeof conversationHistory !== 'undefined') {
+      conversationHistory.push({role: 'assistant', content: text});
+      if (typeof trimHistory === 'function') trimHistory();
+      if (typeof saveCurrentConversation === 'function')
+        saveCurrentConversation();
+    }
+  }
+
   // Finish the bar (success or failure).
   function finishBar(success, result) {
     agentRunning = false;
@@ -4621,12 +4859,7 @@ function _stopRecording() {
       resultEl.textContent = (result || '(no result)').substring(0, 400);
       resultEl.style.display = 'block';
     }
-    // Append answer as a chat bubble so it stays in history.
-    if (typeof appendAIMessage === 'function') {
-      appendAIMessage(success
-        ? '**Agent result:** ' + (result || '')
-        : '**Agent stopped:** ' + (result || 'Cancelled'));
-    }
+    appendAgentOutcome(success, result);
     // Auto-collapse the bar after 10 s.
     setTimeout(function() {
       var bar = document.getElementById('agentBar');
@@ -4637,6 +4870,11 @@ function _stopRecording() {
   // Public entry point: start an agent task.
   window.startWebAgent = function(goal) {
     if (!goal || !goal.trim()) return;
+    if (agentRunning) {
+      if (typeof addErrorMessage === 'function')
+        addErrorMessage('An agent run is already in progress — stop it first.');
+      return;
+    }
     startBar(goal);
     sendWithPromise('startWebAgent', goal)
       .then(function(r) { finishBar(r && r.success, r && r.result); })
@@ -4658,7 +4896,7 @@ function _stopRecording() {
   }
 
   // Wire the "Agent" button (id="agentBtn") added in the HTML.
-  document.addEventListener('DOMContentLoaded', function() {
+  function wireAgentBtn() {
     var btn = document.getElementById('agentBtn');
     if (!btn) return;
     btn.addEventListener('click', function() {
@@ -4671,6 +4909,31 @@ function _stopRecording() {
         showAgentHint();
         return;
       }
+      // Preflight the silent-failure preconditions with clear inline
+      // notices (the goal stays in the composer so the user can fix
+      // the precondition and retry):
+      // (1) No model loaded — the C++ agent otherwise burns 20 silent
+      //     OBSERVE steps because RunPrompt's 'No model loaded' error
+      //     text is discarded by WebAgent::AskLLM.
+      if (typeof activeModelId !== 'undefined' && !activeModelId) {
+        addErrorMessage('The agent needs a loaded model — pick one from ' +
+                        'the model menu below, then press Agent again.');
+        return;
+      }
+      // (2) Active tab isn't a regular web page (chrome://, molt://,
+      //     about:blank) — the agent acts on the active tab and can't
+      //     drive internal pages. Only gate when the native side has
+      //     told us what the active tab is; if unknown, let the C++
+      //     handler decide (its failure resolves visibly via finishBar).
+      var tabCtx = window.__moltCurrentTabContext;
+      if (tabCtx && tabCtx.url &&
+          (tabCtx.url.indexOf('chrome://') === 0 ||
+           tabCtx.url.indexOf('molt://') === 0 ||
+           tabCtx.url === 'about:blank')) {
+        addErrorMessage('The agent works on the active web page — open a ' +
+                        'regular site in the current tab first.');
+        return;
+      }
       if (inp) {
         inp.value = '';
         // Re-sync autogrow + send-disabled after the programmatic clear.
@@ -4678,7 +4941,15 @@ function _stopRecording() {
       }
       window.startWebAgent(goal);
     });
-  });
+  }
+  // The chat JS normally runs as an end-of-body script (before
+  // DOMContentLoaded), but wire immediately if the document is already
+  // interactive so a late-injected copy can't silently miss the event.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireAgentBtn);
+  } else {
+    wireAgentBtn();
+  }
 })();
 )JS";
 

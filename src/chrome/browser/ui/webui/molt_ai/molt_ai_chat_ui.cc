@@ -58,32 +58,40 @@ class MoltAIChatDataSource : public content::URLDataSource {
 <meta charset="utf-8">
 <title>AI Chat</title>
 <style>
-/* Default theme = "Gray" (the dark palette users know). The other two
-   themes override the vars via data-theme on <html>:
+/* Default theme = "Gray" — a true dark-GRAY palette, visibly distinct
+   from Black. The other two themes override the vars via data-theme
+   on <html>:
      black -> data-theme="black" (pure-black surfaces)
      white -> data-theme="light" (pure-white surfaces)
-   Gray is the absence of the attribute so old sessions keep working. */
+   Gray is the absence of the attribute so old sessions keep working;
+   picking Gray in the menu removes the attribute, which fully restores
+   every base var below (Black overrides the same set, so the two
+   round-trip cleanly). */
 :root{
-  --bg:#000000;
-  --surface:#101010;
-  --surface2:#1a1a1a;
-  --border:#262626;
+  --bg:#181818;
+  --surface:#232323;
+  --surface2:#2d2d2d;
+  --border:#3c3c3c;
   --text:#f2f2f2;
-  --muted:#9a9a9a;
-  --faint:#6a6a6a;
+  --muted:#a3a3a3;
+  --faint:#767676;
   --accent:#e5484d;
   --accent-hover:#f2555a;
   --ok:#58bd7d;
   --warn:#e0b454;
   --err:#f07070;
 }
-/* Black theme: pure black with slightly lifted surfaces. */
+/* Black theme: pure black with slightly lifted surfaces. Overrides
+   every var Gray defines differently, so switching Black->Gray (attr
+   removal) restores the full gray palette and vice versa. */
 :root[data-theme="black"]{
   --bg:#000000;
   --surface:#0e0e0e;
   --surface2:#181818;
   --border:#262626;
   --text:#f2f2f2;
+  --muted:#9a9a9a;
+  --faint:#6a6a6a;
 }
 /* White theme: pure white surfaces; accent stays Molt red (darkened
    for contrast on white). Everything keyed to the vars flips. */
@@ -271,6 +279,11 @@ button{font-family:inherit}
 .browse-btn:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
 /* ---- Transient agent hint (empty-input nudge above the composer) ---- */
 .agent-hint{width:100%;max-width:calc(72ch + 32px);margin:0 auto 6px;font-size:11px;color:var(--muted);padding:0 4px}
+/* ---- Live dictation status (mic): subtle listening pulse ---- */
+.dictation-hint{display:none;width:100%;max-width:calc(72ch + 32px);margin:0 auto 6px;font-size:11px;color:var(--muted);padding:0 4px;align-items:center;gap:6px}
+.dictation-hint.on{display:flex}
+.dictation-dot{width:7px;height:7px;border-radius:50%;background:var(--err);animation:pulse 1.2s ease-in-out infinite;flex:0 0 auto}
+.dictation-hint.transcribing .dictation-dot{background:var(--warn)}
 /* ---- Agent-action mode chip (Ask first / Auto) + upward menu ---- */
 .mode-chip-wrap{position:relative;display:flex;align-items:center;flex-shrink:0}
 .mode-chip{display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;white-space:nowrap}
@@ -534,6 +547,7 @@ button{font-family:inherit}
 <div class="composer">
   <div class="attach-chip-wrap" id="attachChipWrap" style="display:none"></div>
   <div class="agent-hint" id="agentHint" style="display:none">Tell the agent what to do &#8212; e.g. &quot;find MoonSwatch prices&quot;</div>
+  <div class="dictation-hint" id="dictationHint"><span class="dictation-dot"></span><span id="dictationHintText">Listening&#8230;</span></div>
   <div id="inputArea" class="composer-card">
     <textarea id="chatInput" rows="1" placeholder="Ask MoltBrowser AI&#8230;" autofocus></textarea>
     <div class="composer-row">
