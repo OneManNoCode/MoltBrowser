@@ -1,0 +1,27 @@
+app-id: com.geneye.MoltBrowser
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: moltbrowser
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=home
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - name: moltbrowser
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 moltbrowser /app/bin/moltbrowser
+      - cp -r *.pak locales resources /app/bin/ 2>/dev/null || true
+      - cp icudtl.dat v8_context_snapshot.bin /app/bin/ 2>/dev/null || true
+      - install -Dm644 moltbrowser.desktop /app/share/applications/com.geneye.MoltBrowser.desktop
+      - install -Dm644 moltbrowser.png /app/share/icons/hicolor/256x256/apps/com.geneye.MoltBrowser.png
+    sources:
+      - type: archive
+        url: https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-0.2.1-linux-x64.tar.gz
+        sha256: FIXME_REPLACE_WITH_ACTUAL_SHA256

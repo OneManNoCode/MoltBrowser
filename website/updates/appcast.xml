@@ -5,6 +5,21 @@
     <link>https://moltbrowser.com/updates/appcast.xml</link>
     <description>MoltBrowser release feed for Sparkle auto-updates.</description>
     <language>en</language>
+
+    <item>
+      <title>MoltBrowser 0.2.1</title>
+      <sparkle:releaseNotesLink>https://moltbrowser.com/updates/release-notes/0.2.1.html</sparkle:releaseNotesLink>
+      <pubDate>Mon, 22 Jun 2026 22:50:56 +0000</pubDate>
+      <enclosure
+        url="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-macOS-arm64.dmg"
+        sparkle:version="2"
+        sparkle:shortVersionString="0.2.1"
+        length="926348152"
+        type="application/octet-stream"
+        sparkle:edSignature="6PtuDN7ZCWadi0zbMFBBibIRGdqqygCa1bGerfNz16XcPrGwSIriVeVNvdRkyl2lEInGlfst6WvetzjZANefAA=="
+      />
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+    </item>
     <!--
       This appcast is served from moltbrowser.com and checked by Sparkle
       on macOS. The generate-appcast.sh script automatically adds new
@@ -13,19 +28,5 @@
       EdDSA signatures are generated from the private key in .sparkle-keys/
       and verified by the public key embedded in Info.plist (SUPublicEDKey).
     -->
-    <item>
-      <title>MoltBrowser 0.1.0</title>
-      <sparkle:releaseNotesLink>https://moltbrowser.com/updates/release-notes/0.1.0.html</sparkle:releaseNotesLink>
-      <pubDate><!-- PLACEHOLDER: Set by generate-appcast.sh --></pubDate>
-      <enclosure
-        url="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.1.0/MoltBrowser-0.1.0-macOS-universal.dmg"
-        sparkle:version="1"
-        sparkle:shortVersionString="0.1.0"
-        sparkle:edSignature="<!-- PLACEHOLDER: Set by generate-appcast.sh -->"
-        length="0"
-        type="application/octet-stream"
-      />
-      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
-    </item>
   </channel>
 </rss>

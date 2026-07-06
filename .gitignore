@@ -25,6 +25,10 @@ models/
 .AppleDouble
 .LSOverride
 
+# Sparkle auto-update signing — NEVER commit the private EdDSA key
+.sparkle-keys/
+.sparkle-cache/
+
 # Build system
 *.o
 *.obj

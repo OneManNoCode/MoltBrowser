@@ -57,7 +57,8 @@ mkdir -p "$DMG_DIR"
 BUNDLED_MODEL="$REPO_DIR/branding/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 if [ -f "$BUNDLED_MODEL" ]; then
   MODEL_DEST="$APP_PATH/Contents/Resources/molt_models"
-  echo "Bundling TinyLlama 1.1B (\$(du -h \"$BUNDLED_MODEL\" | cut -f1)) into app..."
+  MODEL_SIZE=$(du -h "$BUNDLED_MODEL" | cut -f1)
+  echo "Bundling TinyLlama 1.1B (${MODEL_SIZE}) into app..."
   mkdir -p "$MODEL_DEST"
   # Use the model_id-based name expected by GetBundledModelPath()
   cp "$BUNDLED_MODEL" "$MODEL_DEST/tinyllama-1.1b.gguf"

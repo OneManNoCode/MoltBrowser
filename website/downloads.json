@@ -1,0 +1,17 @@
+{
+  "version": "0.2.2",
+  "build": "8",
+  "date": "2026-07-03T04:01:30Z",
+  "platforms": {
+    "macos": {
+      "universal": false,
+      "dmg": {
+        "filename": "MoltBrowser-0.2.2-macOS-arm64.dmg",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.2/MoltBrowser-0.2.2-macOS-arm64.dmg",
+        "size_bytes": 926236854
+      },
+      "min_os": "12.0",
+      "architectures": ["arm64"]
+    }
+  }
+}
