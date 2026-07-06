@@ -59,6 +59,26 @@ class AiChatSidePanelWebView : public views::WebView,
       const TabStripModelChange& change,
       const TabStripSelectionChange& selection) override;
 
+  // content::WebContentsDelegate:
+  //
+  // views::WebView installs ITSELF as the hosted WebContents' delegate but
+  // doesn't override the media-permission hooks, so the default
+  // WebContentsDelegate implementation denies every getUserMedia() with
+  // NOT_SUPPORTED. That's why the chat's mic button worked when the chat was
+  // opened as a tab (Browser's delegate forwards to
+  // MediaCaptureDevicesDispatcher) but always failed in the side panel.
+  // Forward both hooks to MediaCaptureDevicesDispatcher, exactly like
+  // Browser::RequestMediaAccessPermission does — the chrome:// scheme is
+  // allowlisted for MEDIASTREAM_MIC, so the chat WebUI's mic is auto-granted
+  // without a prompt on all platforms.
+  void RequestMediaAccessPermission(
+      content::WebContents* web_contents,
+      const content::MediaStreamRequest& request,
+      content::MediaResponseCallback callback) override;
+  bool CheckMediaAccessPermission(content::RenderFrameHost* render_frame_host,
+                                  const url::Origin& security_origin,
+                                  blink::mojom::MediaStreamType type) override;
+
  private:
   // Kick off the active-tab context push. Async: first ExecuteJS on
   // the active tab to grab innerText, then ExecuteJS on the chat

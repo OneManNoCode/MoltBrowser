@@ -48,6 +48,13 @@ enum class RouteTarget {
 // Token streaming callback
 using TokenCallback = std::function<void(const std::string& token, bool is_done)>;
 
+// A single chat turn for template-aware prompting (StreamChat /
+// ApplyChatTemplate). role is "system", "user" or "assistant".
+struct ChatMessage {
+  std::string role;
+  std::string content;
+};
+
 // Prompt options
 struct PromptOptions {
   std::string model_id;          // Specific model to use, or empty for auto
@@ -151,6 +158,26 @@ class BrowserAIRuntime {
                     TokenCallback callback,
                     const PromptOptions& options = {});
 
+  // Format |messages| with the loaded model's own chat template (the
+  // GGUF's tokenizer.chat_template, via llama_chat_apply_template).
+  // Falls back to llama.cpp's built-in "chatml" format when the model
+  // ships no template or its template is unrecognized. When
+  // |add_assistant| is true, the assistant-turn start marker is
+  // appended so the model continues as the assistant.
+  std::string ApplyChatTemplate(const std::vector<ChatMessage>& messages,
+                                bool add_assistant) const;
+
+  // Chat-aware streaming inference: applies the loaded model's chat
+  // template to |messages| (system + history + final user turn) and
+  // streams the reply. Unlike StreamPrompt, the template's control
+  // markers are tokenized as real special tokens and generation stops
+  // on ANY end-of-generation token (llama_vocab_is_eog), so template
+  // or EOS text never leaks into the token stream. Model-agnostic:
+  // works for zephyr/chatml/llama3/phi/gemma-style templates alike.
+  void StreamChat(const std::vector<ChatMessage>& messages,
+                  TokenCallback callback,
+                  const PromptOptions& options = {});
+
   // Cancel an in-progress generation
   void CancelGeneration();
 
@@ -190,6 +217,14 @@ class BrowserAIRuntime {
   void RefreshModelStatus();
 
  private:
+  // Shared streaming core behind StreamPrompt (parse_special=false,
+  // legacy raw-prompt callers) and StreamChat (parse_special=true so
+  // templated control markers become real special tokens).
+  void StreamWithPrompt(const std::string& full_prompt,
+                        bool parse_special,
+                        TokenCallback callback,
+                        const PromptOptions& options);
+
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

@@ -41,5 +41,7 @@ source_set("molt_ai") {
     "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
+    # HandleExtractAttachment (.docx unzip) uses zip::ZipReader.
+    "//third_party/zlib/google:zip",
   ]
 }

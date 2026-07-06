@@ -58,19 +58,48 @@ class MoltAIChatDataSource : public content::URLDataSource {
 <meta charset="utf-8">
 <title>AI Chat</title>
 <style>
+/* Default theme = "Gray" (the dark palette users know). The other two
+   themes override the vars via data-theme on <html>:
+     black -> data-theme="black" (pure-black surfaces)
+     white -> data-theme="light" (pure-white surfaces)
+   Gray is the absence of the attribute so old sessions keep working. */
 :root{
-  --bg:#1f1e1d;
-  --surface:#282725;
-  --surface2:#32302d;
-  --border:#3d3a36;
-  --text:#eceae4;
-  --muted:#a5a099;
-  --faint:#6e6a63;
+  --bg:#000000;
+  --surface:#101010;
+  --surface2:#1a1a1a;
+  --border:#262626;
+  --text:#f2f2f2;
+  --muted:#9a9a9a;
+  --faint:#6a6a6a;
   --accent:#e5484d;
   --accent-hover:#f2555a;
   --ok:#58bd7d;
   --warn:#e0b454;
   --err:#f07070;
+}
+/* Black theme: pure black with slightly lifted surfaces. */
+:root[data-theme="black"]{
+  --bg:#000000;
+  --surface:#0e0e0e;
+  --surface2:#181818;
+  --border:#262626;
+  --text:#f2f2f2;
+}
+/* White theme: pure white surfaces; accent stays Molt red (darkened
+   for contrast on white). Everything keyed to the vars flips. */
+:root[data-theme="light"]{
+  --bg:#ffffff;
+  --surface:#f6f6f6;
+  --surface2:#ececec;
+  --border:#dcdcdc;
+  --text:#111111;
+  --muted:#666666;
+  --faint:#9a9a9a;
+  --accent:#d63638;
+  --accent-hover:#b32d2e;
+  --ok:#1a8a45;
+  --warn:#9a6700;
+  --err:#c62828;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
@@ -133,7 +162,7 @@ button{font-family:inherit}
 .search-bar .search-count{font-size:10px;color:var(--faint);padding:6px 4px;white-space:nowrap}
 .search-bar .search-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px}
 .search-bar .search-close:hover{color:var(--text)}
-.highlight{background:var(--warn);color:#1f1e1d;border-radius:2px;padding:0 2px}
+.highlight{background:#e8c25a;color:#111;border-radius:2px;padding:0 2px}
 /* ---- Tab context strip + anonymous banner ---- */
 .tab-context{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:11px;color:var(--faint);background:var(--surface);border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tab-context-icon{flex-shrink:0}
@@ -156,8 +185,22 @@ button{font-family:inherit}
 .message{max-width:72ch;margin:0 auto 18px;font-size:13px;line-height:1.65}
 .message .sender{display:none}
 .message .text{white-space:pre-wrap;word-wrap:break-word}
-.message.user{display:flex;justify-content:flex-end}
+.message.user{display:flex;justify-content:flex-end;align-items:center;gap:4px}
 .message.user .text{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:9px 13px;max-width:85%}
+/* ---- Inline edit of user messages (Claude-style) ---- */
+.msg-edit{background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer;opacity:0;padding:2px 6px;border-radius:6px;transition:opacity 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
+.message.user:hover .msg-edit{opacity:1}
+.msg-edit:hover{color:var(--text);background:var(--surface2)}
+.msg-edit-area{display:flex;flex-direction:column;gap:6px;width:100%;max-width:85%}
+.msg-edit-area textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:9px 13px;color:var(--text);font-size:13px;line-height:1.5;font-family:inherit;resize:vertical;min-height:60px;outline:none}
+.msg-edit-area textarea:focus{border-color:var(--faint)}
+.msg-edit-btns{display:flex;gap:6px;justify-content:flex-end}
+.msg-edit-btns button{padding:4px 12px;border-radius:8px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted)}
+.msg-edit-btns .save{background:var(--accent);border-color:var(--accent);color:#fff}
+.msg-edit-btns .save:hover{background:var(--accent-hover)}
+.msg-edit-btns .cancel-edit:hover{color:var(--text);border-color:var(--faint)}
+.attached-note{font-size:10px;color:var(--muted);margin-top:4px;font-style:italic}
+.welcome-hint{color:var(--muted);font-size:11px;margin-top:6px}
 .message.system{text-align:center}
 .message.system .text{display:inline-block;font-size:11px;color:var(--ok);opacity:0.85}
 .message.error .text{border-left:3px solid var(--err);background:var(--surface);border-radius:8px;padding:8px 12px;color:var(--err);font-size:12px}
@@ -204,6 +247,17 @@ button{font-family:inherit}
 .actions button{padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s}
 .actions button:hover{border-color:var(--faint);color:var(--text);background:var(--surface)}
 .actions button:disabled{opacity:0.4;cursor:not-allowed}
+/* ---- Attachment chip (above the composer card) ---- */
+.attach-chip-wrap{width:100%;max-width:calc(72ch + 32px);margin:0 auto 6px;display:flex}
+.attach-chip{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--border);font-size:11px;color:var(--muted);max-width:100%;min-width:0}
+.attach-chip .a-name{color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.attach-chip .a-size{color:var(--faint);flex:0 0 auto}
+.attach-chip .a-status{flex:0 0 auto;white-space:nowrap}
+.attach-chip .a-status.ok{color:var(--ok)}
+.attach-chip .a-status.err{color:var(--err)}
+.attach-chip .a-spin{width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex:0 0 auto}
+.attach-chip .a-close{background:none;border:none;color:var(--faint);cursor:pointer;font-size:12px;padding:0 2px;flex:0 0 auto}
+.attach-chip .a-close:hover{color:var(--err)}
 /* ---- Composer card ---- */
 .composer{flex:0 0 auto;padding:4px 16px 14px}
 .composer-card{width:100%;max-width:calc(72ch + 32px);margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:6px;transition:border-color 0.15s,box-shadow 0.15s}
@@ -215,6 +269,23 @@ button{font-family:inherit}
 .composer-spacer{flex:1}
 .browse-btn{padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
 .browse-btn:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+/* ---- Transient agent hint (empty-input nudge above the composer) ---- */
+.agent-hint{width:100%;max-width:calc(72ch + 32px);margin:0 auto 6px;font-size:11px;color:var(--muted);padding:0 4px}
+/* ---- Agent-action mode chip (Ask first / Auto) + upward menu ---- */
+.mode-chip-wrap{position:relative;display:flex;align-items:center;flex-shrink:0}
+.mode-chip{display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;white-space:nowrap}
+.mode-chip:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+.mode-chip .chevron{font-size:8px;color:var(--faint);flex:0 0 auto;transition:transform 0.15s}
+.mode-chip.open .chevron{transform:rotate(180deg)}
+.mode-chip-dropdown{position:absolute;bottom:calc(100% + 8px);left:0;min-width:232px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;z-index:50;display:none;box-shadow:0 -8px 30px rgba(0,0,0,0.45)}
+.mode-chip-dropdown.open{display:block}
+.mode-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s}
+.mode-item:hover{background:var(--surface2)}
+.mode-item-icon{font-size:13px;flex:0 0 auto;padding-top:1px}
+.mode-item-main{flex:1;min-width:0}
+.mode-item-name{font-size:12px;color:var(--text)}
+.mode-item-desc{font-size:10px;color:var(--faint);margin-top:1px;line-height:1.4}
+.mode-item .om-check{margin-left:4px;padding-top:1px}
 .composer-row .mic{width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--muted);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,color 0.15s;flex:0 0 auto}
 .composer-row .mic:hover{background:var(--surface2);color:var(--text)}
 .composer-row .mic.recording{background:var(--err);color:#fff;animation:mic-pulse 1.2s ease-in-out infinite}
@@ -241,7 +312,9 @@ button{font-family:inherit}
 .model-chip-progress circle{fill:none;stroke:var(--border);stroke-width:2}
 .model-chip-progress .fg{stroke:var(--accent);stroke-dasharray:43.98;stroke-dashoffset:43.98;transition:stroke-dashoffset 0.3s}
 .model-chip-progress .pct{position:absolute;top:0;left:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:var(--text)}
-.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);left:0;min-width:250px;max-width:calc(100vw - 56px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;max-height:320px;overflow-y:auto;z-index:50;display:none;box-shadow:0 -8px 30px rgba(0,0,0,0.45)}
+/* The pill sits on the RIGHT side of the composer row, so the popup is
+   right-anchored and grows leftward; clamp against the left edge. */
+.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);right:0;left:auto;min-width:250px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;max-height:320px;overflow-y:auto;z-index:50;display:none;box-shadow:0 -8px 30px rgba(0,0,0,0.45)}
 .model-chip-dropdown.open{display:block}
 .mcd-header{padding:7px 10px 3px;font-size:10px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--faint)}
 .model-chip-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s}
@@ -331,6 +404,16 @@ button{font-family:inherit}
 .history-cluster li a:hover{color:var(--text);text-decoration:underline}
 .hist-meta{color:var(--faint);font-size:10px;flex-shrink:0;font-variant-numeric:tabular-nums}
 </style>
+<script>
+  // Apply the persisted theme before first paint to avoid a flash.
+  // Default is 'gray' (no attribute — the vars users know); explicit
+  // 'black' or 'light' choices set the override attribute.
+  try {
+    var t = localStorage.getItem('moltTheme');
+    if (t === 'light' || t === 'black')
+      document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
 </head>
 <body>
 <div class="header">
@@ -348,11 +431,12 @@ button{font-family:inherit}
         <div class="om-item" onclick="closeOverflowMenu();importChat()">Import chat</div>
         <div class="om-item" onclick="closeOverflowMenu();toggleModelPanel()">Manage models</div>
         <div class="om-sep"></div>
-        <div class="om-label">Agent actions</div>
-        <div class="om-item" onclick="setActionMode('ask')">Ask first<span class="om-check visible" id="ovCheckAsk">&#10003;</span></div>
-        <div class="om-item" onclick="setActionMode('auto')">Auto<span class="om-check" id="ovCheckAuto">&#10003;</span></div>
+        <div class="om-label">Theme</div>
+        <div class="om-item" onclick="setTheme('gray')">Gray<span class="om-check visible" id="thCheckGray">&#10003;</span></div>
+        <div class="om-item" onclick="setTheme('black')">Black<span class="om-check" id="thCheckBlack">&#10003;</span></div>
+        <div class="om-item" onclick="setTheme('light')">White<span class="om-check" id="thCheckLight">&#10003;</span></div>
         <div class="om-sep"></div>
-        <div class="om-item" onclick="closeOverflowMenu();window.open('molt://ai-settings/')">Settings</div>
+        <div class="om-item" onclick="closeOverflowMenu();openMoltSettings()">Settings</div>
         <div class="om-meta"><span id="hwGpu"></span><span id="hwRam"></span><span id="hwCores"></span></div>
       </div>
     </div>
@@ -438,7 +522,7 @@ button{font-family:inherit}
 <div class="messages" id="messages">
   <div class="message ai">
     <div class="sender">AI Assistant</div>
-    <div class="text">Welcome! I'm your local AI assistant running entirely on this device.<br><br><b>AI:</b> <code>/pdf</code>, <code>/bookmark &lt;q&gt;</code>, <code>/ask-tabs &lt;q&gt;</code>, <code>/history</code>, <code>/cluster &lt;n&gt; &lt;q&gt;</code><br><b>Reader:</b> <code>/simplify</code>, <code>/eli5</code>, <code>/summarize</code>, <code>/tldr</code>, <code>/chapters</code> (YouTube)<br><b>Privacy:</b> <code>/trackers</code>, <code>/reputation</code>, <code>/hops</code>, <code>/tor status</code>, <code>/sandbox &lt;url&gt;</code>, <code>/js on|off</code><br><b>Actions:</b> <code>/triage list</code>, <code>/watch &lt;url&gt; &lt;selector&gt;</code>, <code>/receipt</code>, <code>/plan &lt;task&gt;</code>, <code>/fill</code>, <code>/fill ai</code>, <code>/paste</code>, <code>/click .button</code><br><b>Vault:</b> <code>/vault list</code>, <code>/vault fill</code>, <code>/vault generate</code><br><b>Translate:</b> <code>/translate [lang] &lt;text&gt;</code><br><b>Digest:</b> <code>/digest</code> (last 24h briefing)<br><br>Or just send a message.</div>
+    <div class="text"><span id="welcomeMsgText">Welcome! Choose a model below to start.</span><div class="welcome-hint">Type /help for commands.</div></div>
   </div>
 </div>
 <div class="actions" id="quickActions" style="display:none">
@@ -448,9 +532,39 @@ button{font-family:inherit}
   <button onclick="quickAction('translate')">Translate</button>
 </div>
 <div class="composer">
+  <div class="attach-chip-wrap" id="attachChipWrap" style="display:none"></div>
+  <div class="agent-hint" id="agentHint" style="display:none">Tell the agent what to do &#8212; e.g. &quot;find MoonSwatch prices&quot;</div>
   <div id="inputArea" class="composer-card">
     <textarea id="chatInput" rows="1" placeholder="Ask MoltBrowser AI&#8230;" autofocus></textarea>
     <div class="composer-row">
+      <div class="mode-chip-wrap">
+        <button class="mode-chip" id="modeChip" onclick="toggleModeDropdown(event)" title="How agent actions run on the page">
+          <span class="mode-icon" id="modeChipIcon">&#128737;</span>
+          <span class="name" id="modeChipName">Ask first</span>
+          <span class="chevron">&#9662;</span>
+        </button>
+        <div class="mode-chip-dropdown" id="modeChipDropdown">
+          <div class="mode-item" onclick="setActionMode('ask')">
+            <span class="mode-item-icon">&#128737;</span>
+            <div class="mode-item-main">
+              <div class="mode-item-name">Ask first</div>
+              <div class="mode-item-desc">Confirm each page action before it runs</div>
+            </div>
+            <span class="om-check visible" id="ovCheckAsk">&#10003;</span>
+          </div>
+          <div class="mode-item" onclick="setActionMode('auto')">
+            <span class="mode-item-icon">&#9889;</span>
+            <div class="mode-item-main">
+              <div class="mode-item-name">Auto</div>
+              <div class="mode-item-desc">Run page actions immediately without asking</div>
+            </div>
+            <span class="om-check" id="ovCheckAuto">&#10003;</span>
+          </div>
+        </div>
+      </div>
+      <button class="browse-btn" id="agentBtn" title="AI browses and acts on this page">Agent</button>
+      <button class="mic" id="attachBtn" onclick="pickAttachment()" title="Attach a file (pdf, docx, txt, md, png, jpg, webp)">&#128206;</button>
+      <div class="composer-spacer"></div>
       <div class="model-chip-wrap">
         <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
           <span class="model-chip-progress" id="modelChipProgress">
@@ -465,8 +579,6 @@ button{font-family:inherit}
         </button>
         <div class="model-chip-dropdown" id="modelChipDropdown"></div>
       </div>
-      <div class="composer-spacer"></div>
-      <button class="browse-btn" id="agentBtn" title="Let AI browse this page for you">Browse</button>
       <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
       <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
       <button class="send" id="sendBtn" onclick="sendMessage()" title="Send">&#8593;</button>

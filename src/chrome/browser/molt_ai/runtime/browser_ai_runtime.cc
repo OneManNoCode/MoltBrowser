@@ -565,7 +565,6 @@ GenerationResult BrowserAIRuntime::RunPrompt(const std::string& prompt,
   // ---- Step 4: Generate tokens ----
   std::string generated_text;
   int n_generated = 0;
-  llama_token eos_token = llama_vocab_eos(vocab);
 
   for (int i = 0; i < options.max_tokens; ++i) {
     // Check for cancellation
@@ -581,8 +580,11 @@ GenerationResult BrowserAIRuntime::RunPrompt(const std::string& prompt,
     // Accept token in sampler
     llama_sampler_accept(sampler, new_token);
 
-    // Check for end of sequence
-    if (new_token == eos_token) {
+    // Check for end of generation. llama_vocab_is_eog covers every
+    // end-of-generation token the vocab declares (EOS, <|eot_id|>,
+    // <|im_end|>, <|end|>, ...) — a single llama_vocab_eos comparison
+    // misses models whose end-of-turn token is not the one EOS id.
+    if (llama_vocab_is_eog(vocab, new_token)) {
       break;
     }
 
@@ -626,6 +628,107 @@ GenerationResult BrowserAIRuntime::RunPrompt(const std::string& prompt,
 void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
                                      TokenCallback callback,
                                      const PromptOptions& options) {
+  // Legacy raw-prompt streaming path (agents/automation callers that
+  // build their own prompt text). Chat UI traffic should use
+  // StreamChat, which formats with the model's own chat template.
+
+  // Build full prompt
+  std::string full_prompt;
+  if (!options.system_prompt.empty()) {
+    full_prompt = options.system_prompt + "\n\n" + prompt;
+  } else {
+    full_prompt = prompt;
+  }
+
+  StreamWithPrompt(full_prompt, /*parse_special=*/false,
+                   std::move(callback), options);
+}
+
+std::string BrowserAIRuntime::ApplyChatTemplate(
+    const std::vector<ChatMessage>& messages,
+    bool add_assistant) const {
+  // Fetch the template the model ships in its GGUF metadata
+  // (tokenizer.chat_template). nullptr → llama_chat_apply_template
+  // falls back to llama.cpp's built-in "chatml" format.
+  const char* tmpl = nullptr;
+  if (impl_->llama_model_handle) {
+    tmpl = llama_model_chat_template(impl_->llama_model_handle,
+                                     /*name=*/nullptr);
+  }
+
+  std::vector<llama_chat_message> chat;
+  chat.reserve(messages.size());
+  size_t total_chars = 0;
+  for (const auto& m : messages) {
+    chat.push_back({m.role.c_str(), m.content.c_str()});
+    total_chars += m.role.size() + m.content.size();
+  }
+
+  // llama.h recommends allocating ~2x the total message chars up front;
+  // if that still isn't enough, the return value is the required size.
+  std::vector<char> buf(std::max<size_t>(total_chars * 2, 1024));
+  int32_t n = llama_chat_apply_template(
+      tmpl, chat.data(), chat.size(), add_assistant,
+      buf.data(), static_cast<int32_t>(buf.size()));
+
+  if (n < 0 && tmpl != nullptr) {
+    // The GGUF's template isn't one of llama.cpp's recognized formats —
+    // retry with the chatml default (tmpl=nullptr never fails).
+    std::cerr << "[MoltAI] ApplyChatTemplate: model chat template "
+                 "unrecognized, falling back to chatml" << std::endl;
+    tmpl = nullptr;
+    n = llama_chat_apply_template(
+        tmpl, chat.data(), chat.size(), add_assistant,
+        buf.data(), static_cast<int32_t>(buf.size()));
+  }
+
+  if (n > static_cast<int32_t>(buf.size())) {
+    // Result was truncated (strncpy semantics) — resize to the reported
+    // total byte count and format again.
+    buf.resize(static_cast<size_t>(n));
+    n = llama_chat_apply_template(
+        tmpl, chat.data(), chat.size(), add_assistant,
+        buf.data(), static_cast<int32_t>(buf.size()));
+  }
+
+  if (n < 0) {
+    // Defensive last resort (should be unreachable — chatml is a
+    // built-in): hand-format zephyr-style so generation can proceed.
+    std::string out;
+    for (const auto& m : messages) {
+      out += "<|" + m.role + "|>\n" + m.content + "</s>\n";
+    }
+    if (add_assistant) {
+      out += "<|assistant|>\n";
+    }
+    return out;
+  }
+
+  // Always use the returned byte count — the buffer is NOT
+  // null-terminated when the result exactly fills it.
+  return std::string(buf.data(), static_cast<size_t>(n));
+}
+
+void BrowserAIRuntime::StreamChat(const std::vector<ChatMessage>& messages,
+                                  TokenCallback callback,
+                                  const PromptOptions& options) {
+  const std::string full_prompt =
+      ApplyChatTemplate(messages, /*add_assistant=*/true);
+  if (full_prompt.empty()) {
+    if (callback) callback("[Error: empty chat prompt]", true);
+    return;
+  }
+  // parse_special=true: the template's control markers (<|im_end|>,
+  // <|eot_id|>, </s>, ...) must become real special tokens, not plain
+  // text — otherwise the model learns to emit them back as text.
+  StreamWithPrompt(full_prompt, /*parse_special=*/true,
+                   std::move(callback), options);
+}
+
+void BrowserAIRuntime::StreamWithPrompt(const std::string& full_prompt,
+                                        bool parse_special,
+                                        TokenCallback callback,
+                                        const PromptOptions& options) {
   // Streaming inference — generates tokens one at a time and calls callback
   // This runs synchronously; for async streaming, the caller should
   // invoke this on a background thread.
@@ -652,21 +755,13 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
     return;
   }
 
-  // Build full prompt
-  std::string full_prompt;
-  if (!options.system_prompt.empty()) {
-    full_prompt = options.system_prompt + "\n\n" + prompt;
-  } else {
-    full_prompt = prompt;
-  }
-
   // Tokenize
   std::vector<llama_token> tokens(full_prompt.length() + 256);
   int n_tokens = llama_tokenize(
       vocab, full_prompt.c_str(),
       static_cast<int32_t>(full_prompt.length()),
       tokens.data(), static_cast<int32_t>(tokens.size()),
-      true, false);
+      true, parse_special);
 
   if (n_tokens < 0) {
     tokens.resize(static_cast<size_t>(-n_tokens));
@@ -674,7 +769,7 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
         vocab, full_prompt.c_str(),
         static_cast<int32_t>(full_prompt.length()),
         tokens.data(), static_cast<int32_t>(tokens.size()),
-        true, false);
+        true, parse_special);
   }
 
   if (n_tokens <= 0) {
@@ -732,8 +827,6 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
   llama_sampler_chain_add(sampler,
                           llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-  llama_token eos_token = llama_vocab_eos(vocab);
-
   // Hard-cap the generation budget so n_tokens + generated never reaches n_ctx.
   // options.max_tokens is user-configurable (settings.json) and could exceed
   // what's safe. This ensures the loop exits before the KV cache is full,
@@ -755,7 +848,10 @@ void BrowserAIRuntime::StreamPrompt(const std::string& prompt,
         sampler, impl_->llama_ctx, -1);
     llama_sampler_accept(sampler, new_token);
 
-    if (new_token == eos_token) {
+    // Stop on ANY end-of-generation token (EOS, <|eot_id|>, <|im_end|>,
+    // <|end|>, ...) BEFORE converting to text, so EOG token text is
+    // never emitted to the callback.
+    if (llama_vocab_is_eog(vocab, new_token)) {
       if (callback) callback("", true);
       break;
     }

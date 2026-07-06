@@ -79,14 +79,23 @@ static const std::map<std::string, llm_chat_template> LLM_CHAT_TEMPLATES = {
 };
 
 llm_chat_template llm_chat_template_from_str(const std::string & name) {
-    return LLM_CHAT_TEMPLATES.at(name);
+    // MoltBrowser: Chromium builds with -fno-exceptions, so map::at() on a
+    // miss aborts the process instead of throwing (the try/catch below can
+    // never fire). Use find() and report a miss as UNKNOWN so callers fall
+    // through to the content heuristics.
+    auto it = LLM_CHAT_TEMPLATES.find(name);
+    if (it == LLM_CHAT_TEMPLATES.end()) {
+        return LLM_CHAT_TEMPLATE_UNKNOWN;
+    }
+    return it->second;
 }
 
 llm_chat_template llm_chat_detect_template(const std::string & tmpl) {
-    try {
-        return llm_chat_template_from_str(tmpl);
-    } catch (const std::out_of_range &) {
-        // ignore
+    {
+        llm_chat_template named = llm_chat_template_from_str(tmpl);
+        if (named != LLM_CHAT_TEMPLATE_UNKNOWN) {
+            return named;
+        }
     }
 
     auto tmpl_contains = [&tmpl](const char * haystack) -> bool {

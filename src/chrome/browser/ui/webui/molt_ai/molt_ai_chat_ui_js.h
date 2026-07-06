@@ -122,13 +122,197 @@ function setStatus(state, text) {
   el.textContent = text;
 }
 
-function addUserMessage(text) {
+// ---- Theme (Gray default / Black / White) ----
+// The persisted choice is applied pre-paint by a tiny inline script
+// in <head>; this keeps the ⋯ menu check marks + storage in sync.
+// 'gray' is the absence of the data-theme attribute; 'black' and
+// 'light' set explicit var-override attributes.
+
+function applyTheme(theme) {
+  if (theme !== 'black' && theme !== 'light') theme = 'gray';
+  if (theme === 'gray') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  try { localStorage.setItem('moltTheme', theme); } catch (e) {}
+  var checks = {
+    gray: 'thCheckGray',
+    black: 'thCheckBlack',
+    light: 'thCheckLight'
+  };
+  for (var key in checks) {
+    var el = document.getElementById(checks[key]);
+    if (el) el.classList.toggle('visible', key === theme);
+  }
+}
+
+// ⋯ menu entry point: apply + close the menu.
+function setTheme(theme) {
+  applyTheme(theme);
+  closeOverflowMenu();
+}
+
+// Sync the menu check marks with whatever the pre-paint script applied
+// (old persisted values like 'dark' collapse to the gray default).
+applyTheme(document.documentElement.getAttribute('data-theme') || 'gray');
+
+// ---- Minimal welcome message ----
+// The static HTML ships a one-line welcome; this keeps it current
+// with the loaded model. The full command list moved to /help.
+
+function updateWelcomeMessage() {
+  var el = document.getElementById('welcomeMsgText');
+  if (!el) return;
+  var active = null;
+  for (var i = 0; i < allModels.length; i++) {
+    if (allModels[i].is_loaded) { active = allModels[i]; break; }
+  }
+  el.textContent = active
+      ? "Welcome! You're chatting with " +
+        (active.display_name || active.model_id) + '.'
+      : 'Welcome! Choose a model below to start.';
+}
+
+// Re-insert the welcome bubble into an empty transcript (New chat).
+function ensureWelcomeMessage() {
+  var m = document.getElementById('messages');
+  if (!m || m.children.length) return;
+  var d = document.createElement('div');
+  d.className = 'message ai';
+  d.innerHTML = '<div class="sender">AI Assistant</div>' +
+      '<div class="text"><span id="welcomeMsgText">Welcome!</span>' +
+      '<div class="welcome-hint">Type /help for commands.</div></div>';
+  m.appendChild(d);
+  updateWelcomeMessage();
+}
+
+function addUserMessage(text, attachName) {
   var m = document.getElementById('messages');
   var d = document.createElement('div');
   d.className = 'message user';
-  d.innerHTML = '<div class="sender">You</div><div class="text">' + esc(text) + '</div>';
+  d.innerHTML = '<div class="sender">You</div>' +
+      '<button class="msg-edit" title="Edit message" ' +
+          'onclick="startEditMessage(this)">&#9998;</button>' +
+      '<div class="text"><span class="msg-text-body">' + esc(text) +
+      '</span>' +
+      (attachName
+          ? '<div class="attached-note">[Attached: ' + esc(attachName) +
+            ']</div>'
+          : '') +
+      '</div>';
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
+}
+
+// ---- Editable user messages (Claude-style) ----
+// Hovering a user bubble shows a small pencil; clicking it swaps the
+// bubble for an inline textarea with "Save & resubmit" / "Cancel".
+// Saving truncates conversationHistory to just BEFORE that user turn,
+// removes the bubble and everything after it from the DOM, autosaves
+// the truncated conversation, then re-sends the edited text through
+// the normal sendMessage pipeline.
+
+function _userBubblePosFromEnd(msgEl) {
+  var all = document.querySelectorAll('#messages .message.user');
+  for (var i = 0; i < all.length; i++) {
+    if (all[i] === msgEl) return all.length - 1 - i;
+  }
+  return -1;
+}
+
+function startEditMessage(btn) {
+  if (isGenerating) return;
+  var msgEl = btn.closest('.message.user');
+  if (!msgEl || msgEl.querySelector('.msg-edit-area')) return;
+  var textEl = msgEl.querySelector('.text');
+  if (!textEl) return;
+  var body = textEl.querySelector('.msg-text-body');
+  var original = (body || textEl).textContent;
+  var area = document.createElement('div');
+  area.className = 'msg-edit-area';
+  area.innerHTML = '<textarea></textarea>' +
+      '<div class="msg-edit-btns">' +
+        '<button class="cancel-edit">Cancel</button>' +
+        '<button class="save">Save &amp; resubmit</button>' +
+      '</div>';
+  var ta = area.querySelector('textarea');
+  ta.value = original;
+  textEl.style.display = 'none';
+  btn.style.display = 'none';
+  msgEl.appendChild(area);
+  ta.focus();
+  area.querySelector('.cancel-edit').onclick = function() {
+    msgEl.removeChild(area);
+    textEl.style.display = '';
+    btn.style.display = '';
+  };
+  area.querySelector('.save').onclick = function() {
+    if (isGenerating) return;
+    var newText = ta.value.trim();
+    if (!newText) return;
+    _resubmitEditedMessage(msgEl, newText);
+  };
+}
+
+function _resubmitEditedMessage(msgEl, newText) {
+  // Map the DOM bubble to its conversationHistory entry by counting
+  // user bubbles from the END — trimHistory drops old entries while
+  // the DOM keeps them, so end-relative indexing stays correct.
+  var posFromEnd = _userBubblePosFromEnd(msgEl);
+  if (posFromEnd < 0) {
+    addErrorMessage('Could not edit this message.');
+    return;
+  }
+  var userIdxs = [];
+  for (var i = 0; i < conversationHistory.length; i++) {
+    if (conversationHistory[i].role === 'user') userIdxs.push(i);
+  }
+  if (posFromEnd >= userIdxs.length) {
+    addErrorMessage(
+        'This message is too old to edit (outside the history window).');
+    return;
+  }
+  var histIdx = userIdxs[userIdxs.length - 1 - posFromEnd];
+  // Mirror sendMessage's send guard BEFORE destroying state: when the
+  // send can only end in an early-return error (no model loaded and
+  // nothing downloaded, or a guard-triggered load is already in
+  // flight), bail while the original turn is still intact in the
+  // transcript and the conversation store.
+  if (!activeModelId && allModels.length) {
+    var anyDownloaded = allModels.some(function(mm) {
+      return mm.is_downloaded;
+    });
+    if (!anyDownloaded) {
+      addErrorMessage(downloadingModelId
+          ? 'Model is still downloading — it will load when finished.'
+          : 'No model downloaded yet — pick one from the model menu below.');
+      return;
+    }
+    if (pendingAutoSend) return;
+  }
+  conversationHistory = conversationHistory.slice(0, histIdx);
+  // Remove the edited bubble and everything after it (AI replies,
+  // action chips, error rows) from the transcript.
+  var m = document.getElementById('messages');
+  while (msgEl.nextSibling) m.removeChild(msgEl.nextSibling);
+  m.removeChild(msgEl);
+  updateContextBar();
+  // Keep the stored conversation in sync with the truncation so the
+  // Recents copy never contains the discarded tail.
+  saveCurrentConversation();
+  // Re-send through the normal pipeline (history/autosave/store all
+  // behave exactly like a fresh send).
+  var input = document.getElementById('chatInput');
+  var draft = input ? input.value : '';
+  if (input) input.value = newText;
+  sendMessage();
+  // sendMessage cleared the input on a successful dispatch — restore
+  // whatever draft the user had typed there.
+  if (input && !input.value && draft) {
+    input.value = draft;
+    input.dispatchEvent(new Event('input'));
+  }
 }
 
 function startAiMessage() {
@@ -161,13 +345,26 @@ function appendToken(token) {
   m.scrollTop = m.scrollHeight;
 }
 
+// Defense-in-depth scrub of chat-template control markers that leak
+// into the visible reply when a model emits them as plain text. The
+// real fix is C++-side (proper chat templating + EOG detection in
+// BrowserAIRuntime); this just guarantees the rendered bubble is clean.
+function scrubSpecialTokens(t) {
+  return t
+      .replace(/<\|start_header_id\|>[\s\S]*?<\|end_header_id\|>/g, '')
+      .replace(/<\|(?:user|assistant|system|eot_id|end|im_start|im_end|endoftext)\|>/g, '')
+      .replace(/<\/s>/g, '');
+}
+
 function finishAiMessage() {
   if (currentAiMessageEl) {
     // P3 streaming: tokens were already dispatched in appendToken.
     // Run one final scan in case the last token landed without a
     // followup append (LLM finishes exactly on `]]`).
-    scanStreamForActions();
-    var visibleText = currentAiText.replace(ACTION_TOKEN_REGEX, '').trim();
+    scanStreamForActions(true);
+    var visibleText =
+        scrubSpecialTokens(currentAiText.replace(ACTION_TOKEN_REGEX, ''))
+            .trim();
     currentAiMessageEl.innerHTML = renderMarkdown(visibleText);
     // Add copy response button
     var actions = document.createElement('div');
@@ -222,7 +419,14 @@ function appendToAiMessage(text) {
 //   - finishAiMessage runs one last scan and strips tokens from the
 //     visible text. The bare prose is what the user sees.
 // --------------------------------------------------------------
-var ACTION_TOKEN_REGEX = /\[\[ACTION\s+(\w+):([^\]]+)\]\]/g;
+// Verb allows hyphens (wait-for, right-click). Args are matched
+// lazily up to the first `]]` that is NOT followed by another `]`,
+// so CSS attribute selectors survive: in
+// [[ACTION type:input[name=q]|puppies]] the `]` inside the selector
+// no longer kills the match, and [[ACTION click:input[name=q]]]
+// yields the full selector `input[name=q]`. `.` (not [\s\S]) keeps
+// a malformed unterminated token from swallowing following lines.
+var ACTION_TOKEN_REGEX = /\[\[ACTION\s+([\w-]+):(.+?)\]\](?!\])/g;
 var streamLastParsedIdx = 0;
 var actionQueue = [];
 var actionQueueDraining = false;
@@ -266,11 +470,16 @@ function parseActionPayload(verb, args) {
   return null;
 }
 
-function scanStreamForActions() {
+function scanStreamForActions(isFinal) {
   if (!currentAiText) return;
   ACTION_TOKEN_REGEX.lastIndex = streamLastParsedIdx;
   var m;
   while ((m = ACTION_TOKEN_REGEX.exec(currentAiText)) !== null) {
+    // Mid-stream, a match that touches the end of the buffer can still
+    // be incomplete — `[[ACTION click:input[name=q]]` parses as a full
+    // token while the selector's closing `]` is in flight. Defer it to
+    // the next append (or the final pass from finishAiMessage).
+    if (!isFinal && m.index + m[0].length >= currentAiText.length) break;
     var action = parseActionPayload(m[1], m[2]);
     if (action) enqueueAction(action);
     streamLastParsedIdx = m.index + m[0].length;
@@ -443,19 +652,6 @@ function trimHistory() {
   saveCurrentConversation();
 }
 
-function buildHistoryString() {
-  var s = '';
-  for (var i = 0; i < conversationHistory.length; i++) {
-    var msg = conversationHistory[i];
-    if (msg.role === 'user') {
-      s += '<|user|>\n' + msg.content + '</s>\n';
-    } else {
-      s += '<|assistant|>\n' + msg.content + '</s>\n';
-    }
-  }
-  return s;
-}
-
 // ---- Core Functions ----
 
 // --------------------------------------------------------------
@@ -468,6 +664,40 @@ function buildHistoryString() {
 // Returns true if the text was a recognized action and was dispatched;
 // the caller should skip the LLM path in that case.
 // --------------------------------------------------------------
+// --------------------------------------------------------------
+// /help — prints the full slash-command list (the text that used to
+// be the giant static welcome bubble). Purely local; no LLM call.
+// --------------------------------------------------------------
+var HELP_TEXT =
+    "I'm your local AI assistant running entirely on this device.\n\n" +
+    '**AI:** `/pdf`, `/bookmark <q>`, `/ask-tabs <q>`, `/history`, ' +
+    '`/cluster <n> <q>`\n' +
+    '**Reader:** `/simplify`, `/eli5`, `/summarize`, `/tldr`, ' +
+    '`/chapters` (YouTube)\n' +
+    '**Privacy:** `/trackers`, `/reputation`, `/hops`, `/tor status`, ' +
+    '`/sandbox <url>`, `/js on|off`\n' +
+    '**Actions:** `/triage list`, `/watch <url> <selector>`, `/receipt`, ' +
+    '`/plan <task>`, `/fill`, `/fill ai`, `/paste`, `/click .button`\n' +
+    '**Vault:** `/vault list`, `/vault fill`, `/vault generate`\n' +
+    '**Translate:** `/translate [lang] <text>`\n' +
+    '**Digest:** `/digest` (last 24h briefing)\n\n' +
+    'Or just send a message.';
+
+function tryDispatchHelpCommand(text) {
+  if (!/^\s*\/help\b/i.test(text)) return false;
+  addUserMessage(text);
+  var m = document.getElementById('messages');
+  if (m) {
+    var d = document.createElement('div');
+    d.className = 'message ai';
+    d.innerHTML = '<div class="sender">AI Assistant</div>' +
+        '<div class="text">' + renderMarkdown(HELP_TEXT) + '</div>';
+    m.appendChild(d);
+    m.scrollTop = m.scrollHeight;
+  }
+  return true;
+}
+
 // --------------------------------------------------------------
 // PDF chat: /pdf [url]
 // With no arg, uses the active tab URL if it ends in .pdf. Otherwise
@@ -2503,6 +2733,15 @@ function sendMessage() {
     return;
   }
 
+  // /help renders locally and synchronously — no generating state.
+  if (text.charAt(0) === '/' && tryDispatchHelpCommand(text)) {
+    conversationHistory.push({role: 'user', content: text});
+    trimHistory();
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    return;
+  }
+
   // Slash-command shortcut: any `/click /type /scroll /navigate` line
   // bypasses the LLM and runs as a one-shot automation action on the
   // active tab. Lets the user drive page actions in plain language
@@ -2677,23 +2916,66 @@ function sendMessage() {
     return;
   }
 
-  addUserMessage(text);
+  // Send guard: if no model is loaded yet but the user has picked one
+  // in the model menu (or exactly one is downloaded), load it first —
+  // pill spinner via loadModel — then re-run this send automatically.
+  // Only error when the load fails or nothing is downloaded at all.
+  if (!activeModelId && allModels.length) {
+    var pickId = pickedModelId;
+    // A pick that isn't on disk (e.g. its download is still running or
+    // failed) can't be loaded — fall back to the downloaded-set logic.
+    if (pickId) {
+      var pm = allModels.find(function(mm) { return mm.model_id === pickId; });
+      if (!pm || !pm.is_downloaded) pickId = null;
+    }
+    if (!pickId) {
+      var dl = allModels.filter(function(mm) { return mm.is_downloaded; });
+      if (dl.length === 1) {
+        pickId = dl[0].model_id;
+      } else if (dl.length === 0) {
+        addErrorMessage(downloadingModelId
+            ? 'Model is still downloading — it will load when finished.'
+            : 'No model downloaded yet — pick one from the model menu below.');
+        return;
+      }
+      // Multiple downloaded and no explicit pick: fall through and let
+      // the backend lazy-load its configured default.
+    }
+    if (pendingAutoSend) return;  // a guard-triggered load is in flight
+    if (pickId) {
+      pendingAutoSend = true;
+      loadModel(pickId, function(ok) {
+        pendingAutoSend = false;
+        if (ok) {
+          sendMessage();
+        } else {
+          addErrorMessage(
+              'Model failed to load — choose another from the model menu.');
+        }
+      });
+      return;
+    }
+  }
+
+  addUserMessage(text,
+      (attachmentContext && attachmentContext.text)
+          ? attachmentContext.name : null);
   conversationHistory.push({role: 'user', content: text});
   trimHistory();
   input.value = '';
   setGenerating(true);
   startAiMessage();
 
-  // Build history from all messages except the last user message
-  var historyForPrompt = '';
-  if (conversationHistory.length > 1) {
-    var prev = conversationHistory.slice(0, conversationHistory.length - 1);
-    for (var i = 0; i < prev.length; i++) {
-      var m = prev[i];
-      if (m.role === 'user') historyForPrompt += '<|user|>\n' + m.content + '</s>\n';
-      else historyForPrompt += '<|assistant|>\n' + m.content + '</s>\n';
-    }
-  }
+  // History = every message BEFORE the just-pushed user turn, as a
+  // JSON array of {role:'user'|'assistant', content} objects. The C++
+  // side (HandleSendPrompt) owns all chat templating now — no model
+  // markers are ever assembled in JS. Empty string means no history.
+  // conversationHistory is already capped at MAX_HISTORY_MESSAGES by
+  // trimHistory() right after the push above.
+  var historyForPrompt = conversationHistory.length > 1
+      ? JSON.stringify(
+            conversationHistory.slice(0, conversationHistory.length - 1))
+      : '';
 
   // P3: build a richer page+memory context:
   //   - Active page: chunk the captured innerText (up to 50KB now)
@@ -2730,6 +3012,19 @@ function sendMessage() {
                   pdfTop.map(function(c){ return '- ' + c; }).join('\n');
       }
     }
+    // Uploaded attachment (paperclip): persists across turns until the
+    // chip's ✕ is clicked. Mirrors the pdfContext consumption above —
+    // chunk + keyword-rank so a 50K-char document doesn't blow the
+    // context window; falls back to the head when ranking finds nothing.
+    if (attachmentContext && attachmentContext.text) {
+      var atChunks = chunkPageText(attachmentContext.text, 600);
+      var atTop = rankChunksByQuery(atChunks, text, 6);
+      var atBody = atTop.length ? atTop.join('\n')
+                                : attachmentContext.text.slice(0, 4000);
+      pageCtx = (pageCtx ? (pageCtx + '\n\n') : '') +
+          "The user attached a document '" + attachmentContext.name +
+          "'. Its extracted content:\n---\n" + atBody + '\n---\n';
+    }
     // Personal Vector Memory grounding. Failures here are non-fatal
     // — we still want to send the prompt even if memory is empty/off.
     return sendWithPromise('queryMemory', text, 3).then(function(mem) {
@@ -2746,7 +3041,10 @@ function sendMessage() {
       return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx);
     });
   }).then(function(result) {
-    var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();
+    // Same scrub finishAiMessage applies to the visible bubble — the
+    // stored history must not re-feed leaked template markers to the
+    // model (or show them on Recents restore). Covers </s> too.
+    var aiText = scrubSpecialTokens(currentAiText).trim();
     if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMessage();
     setGenerating(false);
@@ -2772,6 +3070,119 @@ function addErrorMessage(text) {
   d.innerHTML = '<div class="text">' + esc(text) + '</div>';
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
+}
+
+// --------------------------------------------------------------
+// Attachments (paperclip). Pick a file → base64 (FileReader, data:
+// prefix stripped) → sendWithPromise('extractAttachment', name,
+// mime, b64) → C++ extracts text (pdf scraper / docx unzip / OCR /
+// plain text). The extracted text lives in attachmentContext and is
+// prepended to every following prompt until the chip's ✕ is clicked.
+// --------------------------------------------------------------
+var attachmentContext = null;  // {name, text, truncated}
+var attachmentPending = false;
+// Bumped by every ✕ / new pick so a stale extraction that resolves
+// after the user removed the chip can't resurrect the attachment.
+var attachmentSeq = 0;
+var MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;  // friendly 20 MB cap
+
+function _fmtBytes(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB'
+                      : Math.max(1, Math.round(n / 1024)) + ' KB';
+}
+
+function _renderAttachChip(name, size, state, note) {
+  var wrap = document.getElementById('attachChipWrap');
+  if (!wrap) return;
+  var status;
+  if (state === 'loading') {
+    status = '<span class="a-spin"></span>';
+  } else if (state === 'ok') {
+    status = '<span class="a-status ok">✓' +
+             (note ? ' ' + esc(note) : '') + '</span>';
+  } else {
+    status = '<span class="a-status err">✗ ' +
+             esc(note || 'failed') + '</span>';
+  }
+  // esc() (textContent→innerHTML) does not encode quotes, so anything
+  // interpolated into an ATTRIBUTE also needs the `"` escape below —
+  // a downloaded file named `x" onmouseover="...` must not be able to
+  // inject attributes into this privileged WebUI page.
+  var attrName = esc(name).replace(/"/g, '&quot;');
+  wrap.innerHTML = '<div class="attach-chip">' +
+      '<span>📎</span>' +
+      '<span class="a-name" title="' + attrName + '">' + esc(name) +
+      '</span>' +
+      '<span class="a-size">' + _fmtBytes(size) + '</span>' +
+      status +
+      '<button class="a-close" title="Remove attachment" ' +
+          'onclick="clearAttachment()">✕</button>' +
+      '</div>';
+  wrap.style.display = 'flex';
+}
+
+function clearAttachment() {
+  attachmentSeq++;          // invalidate any in-flight extraction
+  attachmentPending = false;
+  attachmentContext = null;
+  var wrap = document.getElementById('attachChipWrap');
+  if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+}
+
+function pickAttachment() {
+  if (attachmentPending) return;
+  var picker = document.createElement('input');
+  picker.type = 'file';
+  picker.accept = '.pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp';
+  picker.onchange = function(e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    attachmentContext = null;
+    if (f.size > MAX_ATTACHMENT_BYTES) {
+      _renderAttachChip(f.name, f.size, 'error',
+                        'Too large — the limit is 20 MB.');
+      return;
+    }
+    _renderAttachChip(f.name, f.size, 'loading');
+    attachmentPending = true;
+    var seq = ++attachmentSeq;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      if (seq !== attachmentSeq) return;  // ✕ clicked while reading
+      // readAsDataURL yields "data:<mime>;base64,<payload>" — the
+      // extractAttachment contract wants the raw base64 payload only.
+      var b64 = String(ev.target.result || '');
+      var comma = b64.indexOf(',');
+      if (comma >= 0) b64 = b64.slice(comma + 1);
+      sendWithPromise('extractAttachment', f.name, f.type || '', b64)
+          .then(function(r) {
+            if (seq !== attachmentSeq) return;  // ✕ clicked meanwhile
+            attachmentPending = false;
+            if (r && r.success) {
+              attachmentContext =
+                  {name: f.name, text: r.text || '', truncated: !!r.truncated};
+              _renderAttachChip(f.name, f.size, 'ok',
+                                r.truncated ? '(truncated)' : '');
+            } else {
+              _renderAttachChip(f.name, f.size, 'error',
+                                (r && r.error) || 'Extraction failed');
+            }
+          })
+          .catch(function(err) {
+            if (seq !== attachmentSeq) return;  // ✕ clicked meanwhile
+            attachmentPending = false;
+            _renderAttachChip(f.name, f.size, 'error',
+                              String(err || 'Extraction failed'));
+          });
+    };
+    reader.onerror = function() {
+      if (seq !== attachmentSeq) return;
+      attachmentPending = false;
+      _renderAttachChip(f.name, f.size, 'error', 'Could not read file.');
+    };
+    reader.readAsDataURL(f);
+  };
+  picker.click();
 }
 
 // ---- Quick Actions with Page Content ----
@@ -2834,7 +3245,8 @@ function quickAction(action) {
 // ---- New Chat ----
 
 // ---- Agent-action permission mode (Ask first / Auto) ----
-// The picker lives in the header ⋯ overflow menu. actionAutoMode
+// The picker is the mode chip at the left of the composer row (a
+// Claude-Code-style chip that opens an upward menu). actionAutoMode
 // gates the confirm-chip pipeline in drainActionQueue — the
 // prompt-injection defense for LLM-emitted [[ACTION ...]] tokens.
 
@@ -2844,7 +3256,58 @@ function setActionMode(mode) {
   var chkAuto = document.getElementById('ovCheckAuto');
   if (chkAsk)  chkAsk.classList.toggle('visible', !actionAutoMode);
   if (chkAuto) chkAuto.classList.toggle('visible', actionAutoMode);
-  closeOverflowMenu();
+  // Keep the composer chip label in sync with the active mode.
+  var icon = document.getElementById('modeChipIcon');
+  var name = document.getElementById('modeChipName');
+  if (icon) icon.innerHTML = actionAutoMode ? '&#9889;' : '&#128737;';
+  if (name) name.textContent = actionAutoMode ? 'Auto' : 'Ask first';
+  closeModeDropdown();
+}
+
+function toggleModeDropdown(ev) {
+  if (ev) ev.stopPropagation();
+  var chip = document.getElementById('modeChip');
+  var dd = document.getElementById('modeChipDropdown');
+  if (!chip || !dd) return;
+  // stopPropagation keeps the outside-click closers from firing, so
+  // explicitly close the other composer popup — never both at once.
+  closeModelDropdown();
+  dd.classList.toggle('open');
+  chip.classList.toggle('open');
+}
+
+// Shared "close the model popup" used by both toggles above/below.
+function closeModelDropdown() {
+  var chip = document.getElementById('modelChip');
+  var dd = document.getElementById('modelChipDropdown');
+  if (dd) dd.classList.remove('open');
+  if (chip) chip.classList.remove('open');
+}
+
+function closeModeDropdown() {
+  var chip = document.getElementById('modeChip');
+  var dd = document.getElementById('modeChipDropdown');
+  if (dd) dd.classList.remove('open');
+  if (chip) chip.classList.remove('open');
+}
+
+// Close the mode menu on outside click (mirrors the model dropdown).
+document.addEventListener('click', function(e) {
+  var wrap = document.querySelector('.mode-chip-wrap');
+  if (wrap && !wrap.contains(e.target)) closeModeDropdown();
+});
+
+// ---- Settings (⋯ menu) ----
+// The side-panel WebContents has no tab-strip delegate, so
+// window.open('molt://ai-settings/') is silently dropped there. The
+// C++ handler 'openMoltSettings' opens chrome://molt-ai-settings in a
+// real browser tab instead. Contract: resolves {success: bool}.
+function openMoltSettings() {
+  sendWithPromise('openMoltSettings').then(function(r) {
+    if (!r || !r.success) addErrorMessage('Could not open Settings.');
+  }).catch(function() {
+    addErrorMessage('Could not open Settings.');
+  });
 }
 
 // Show a banner when a model is available but not yet selected/loaded.
@@ -2874,12 +3337,14 @@ function newChat() {
   currentAiMessageEl = null;
   currentAiText = '';
   pdfContext = null;
+  clearAttachment();  // attachments are per-conversation
   conversationHistory = [];
   conversationId = null;   // next autosave creates a new Recents entry
   conversationTitle = '';
   setActionMode('ask'); // reset to safe default for new session
   var m = document.getElementById('messages');
   if (m) m.innerHTML = '';
+  ensureWelcomeMessage();
   updateContextBar();
 }
 
@@ -2907,8 +3372,9 @@ function refreshModelList() {
     var list = document.getElementById('modelList');
     if (!list) return;
     list.innerHTML = '';
-    var models = info.models || [];
-    models.sort(function(a, b) { return a.file_size_mb - b.file_size_mb; });
+    // Same ordering as the picker: downloaded (loaded first) on top,
+    // then not-downloaded; size ascending within each group.
+    var models = sortModelsForPicker(info.models || []);
 
     models.forEach(function(m) {
       var card = document.createElement('div');
@@ -2982,7 +3448,12 @@ function cancelDownload() {
   chrome.send('cancelDownload', []);
 }
 
-function loadModel(modelId) {
+// onDone (optional) fires with true/false AFTER the model state has
+// been re-fetched, so callers (the sendMessage guard) can rely on
+// activeModelId being current. The user's pick is remembered in
+// pickedModelId even when the load fails.
+function loadModel(modelId, onDone) {
+  pickedModelId = modelId;
   setStatus('loading', 'Loading ' + modelId + '...');
   // Remove the pulsing needs-selection state immediately — user made a choice
   var chip = document.getElementById('modelChip');
@@ -3001,12 +3472,22 @@ function loadModel(modelId) {
       sendWithPromise('getModelStatus').then(function(rr) {
         allModels = rr.models || [];
         refreshModelChip();
+        if (onDone) onDone(true);
       });
     } else {
       setStatus('error', 'Load failed');
       if (chip) chip.classList.add('needs-selection');
       refreshModelChip();
+      if (onDone) onDone(false);
     }
+  }).catch(function() {
+    if (chip) {
+      chip.classList.remove('loading');
+      chip.classList.add('needs-selection');
+    }
+    setStatus('error', 'Load failed');
+    refreshModelChip();
+    if (onDone) onDone(false);
   });
 }
 
@@ -3022,6 +3503,13 @@ function deleteModel(modelId) {
 var allModels = [];
 var activeModelId = null;
 var downloadingModelId = null;
+// The model the user last picked in the menu — survives a failed
+// load so the sendMessage guard can retry it, unlike activeModelId
+// which only ever mirrors the actually-loaded model.
+var pickedModelId = null;
+// True while the sendMessage guard is waiting on a loadModel round
+// trip; blocks re-entrant guard loads from repeated Send presses.
+var pendingAutoSend = false;
 
 function refreshModelChip() {
   var nameEl = document.getElementById('modelChipName');
@@ -3034,6 +3522,18 @@ function refreshModelChip() {
     activeModelId = null;
     nameEl.textContent = 'Choose model';
   }
+  updateWelcomeMessage();
+}
+
+// Picker ordering: downloaded first (the loaded model at the very
+// top), then not-downloaded; size ascending within each group.
+function sortModelsForPicker(models) {
+  return models.slice().sort(function(a, b) {
+    var ra = a.is_loaded ? 0 : (a.is_downloaded ? 1 : 2);
+    var rb = b.is_loaded ? 0 : (b.is_downloaded ? 1 : 2);
+    if (ra !== rb) return ra - rb;
+    return (a.file_size_mb || 0) - (b.file_size_mb || 0);
+  });
 }
 
 function toggleModelDropdown(ev) {
@@ -3041,6 +3541,7 @@ function toggleModelDropdown(ev) {
   var chip = document.getElementById('modelChip');
   var dd = document.getElementById('modelChipDropdown');
   if (!chip || !dd) return;
+  closeModeDropdown();  // one composer popup at a time
   var willOpen = !dd.classList.contains('open');
   dd.classList.toggle('open');
   chip.classList.toggle('open');
@@ -3060,7 +3561,7 @@ function renderModelChipDropdown() {
     return;
   }
   dd.innerHTML = '<div class="mcd-header">Models</div>';
-  allModels.forEach(function(m) {
+  sortModelsForPicker(allModels).forEach(function(m) {
     var item = document.createElement('div');
     item.className = 'model-chip-item';
     var isActive = !!m.is_loaded;
@@ -3109,6 +3610,7 @@ function renderModelChipDropdown() {
         return;
       }
       if (downloadingModelId) return;  // one download at a time
+      pickedModelId = m.model_id;  // remember the pick for the send guard
       downloadingModelId = m.model_id;
       downloadModel(m.model_id);
       var chip = document.getElementById('modelChip');
@@ -3176,6 +3678,13 @@ cr.addWebUiListener('model-status', function(status, detail) {
     // Pulse the model chip briefly to confirm selection
     var chip = document.getElementById('modelChip');
     if (chip) { chip.classList.add('model-ready-flash'); setTimeout(function(){ chip.classList.remove('model-ready-flash'); }, 1200); }
+    // Lazy loads (backend auto-load on first send) reach here without
+    // a loadModel round trip — re-fetch so the chip name and welcome
+    // line reflect the newly loaded model.
+    sendWithPromise('getModelStatus').then(function(r) {
+      allModels = r.models || [];
+      refreshModelChip();
+    });
   } else if (status === 'error') {
     setStatus('error', 'Error: ' + (detail || 'Unknown'));
   }
@@ -3393,7 +3902,11 @@ function renderConversationDOM(messages) {
     } else {
       var d = document.createElement('div');
       d.className = 'message ai';
-      d.innerHTML = '<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(msg.content) + '</div>' +
+      // History stores the raw assistant text; strip [[ACTION ...]]
+      // tokens here too so Recents restore / import never shows them.
+      var visible = scrubSpecialTokens(
+          String(msg.content || '').replace(ACTION_TOKEN_REGEX, '')).trim();
+      d.innerHTML = '<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(visible) + '</div>' +
         '<div class="msg-actions"><button class="msg-action" onclick="copyResponse(this)">Copy response</button></div>';
       m.appendChild(d);
     }
@@ -3524,6 +4037,7 @@ function loadConversationById(id) {
     conversationTitle = r.title || '';
     conversationHistory = msgs;
     pdfContext = null;
+    clearAttachment();
     currentAiMessageEl = null;
     currentAiText = '';
     renderConversationDOM(msgs);
@@ -3684,6 +4198,14 @@ document.addEventListener('keydown', function(e) {
 // We do the resampling ourselves rather than asking the browser
 // for 16k input, because most macOS mics report 44.1k or 48k and
 // the WebAudio constraint isn't reliably honored across hardware.
+//
+// NOTE (2026-07 side-panel fix): getUserMedia is KEPT. The side
+// panel's "Mic permission denied: NotSupportedError" was a hosting
+// bug — AiChatSidePanelWebView is a bare views::WebView whose
+// default WebContentsDelegate denies media requests. The native fix
+// forwards Request/CheckMediaAccessPermission to
+// MediaCaptureDevicesDispatcher (same path as tab-hosted chrome://
+// pages, which auto-ALLOW mic); no JS change is needed here.
 // --------------------------------------------------------------
 var voiceState = {
   recording: false,
@@ -4121,7 +4643,21 @@ function _stopRecording() {
       .catch(function(e) { finishBar(false, String(e)); });
   };
 
-  // Wire the "Browse" button (id="agentBtn") added in the HTML.
+  // Empty-input nudge: transient muted hint line above the composer
+  // (static #agentHint div in the HTML). Auto-hides after 4 s.
+  var agentHintTimer = null;
+  function showAgentHint() {
+    var h = document.getElementById('agentHint');
+    if (!h) return;
+    h.style.display = 'block';
+    if (agentHintTimer) clearTimeout(agentHintTimer);
+    agentHintTimer = setTimeout(function() {
+      h.style.display = 'none';
+      agentHintTimer = null;
+    }, 4000);
+  }
+
+  // Wire the "Agent" button (id="agentBtn") added in the HTML.
   document.addEventListener('DOMContentLoaded', function() {
     var btn = document.getElementById('agentBtn');
     if (!btn) return;
@@ -4129,7 +4665,12 @@ function _stopRecording() {
       var inp = document.getElementById('chatInput') ||
                 document.querySelector('textarea');
       var goal = inp ? inp.value.trim() : '';
-      if (!goal) { if (inp) inp.focus(); return; }
+      if (!goal) {
+        // No silent no-op: focus the input and explain what to type.
+        if (inp) inp.focus();
+        showAgentHint();
+        return;
+      }
       if (inp) {
         inp.value = '';
         // Re-sync autogrow + send-disabled after the programmatic clear.

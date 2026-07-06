@@ -99,7 +99,7 @@ echo "║  Upload:     $DO_UPLOAD"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-STEPS_TOTAL=8
+STEPS_TOTAL=9
 STEP=0
 
 # ---- Step 1: Build ----
@@ -151,7 +151,64 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping Sparkle bundling (--no-sparkle)"
 fi
 
-# ---- Step 4: Code Sign ----
+# ---- Step 4: Metal shader library (default.metallib) ----
+# llama.cpp's Metal backend looks up default.metallib in the framework's
+# Resources/ at runtime (ggml-metal-device.m pathForResource). No GN rule
+# produces it — a fresh out dir ships without it and Metal falls back to
+# JIT-compiling ggml-metal.metal, which fails under the hardened runtime.
+# v0.2.2 shipped with model loading broken on macOS because this file was
+# missing. Compile it here, BEFORE code signing, so the framework seal
+# covers it (dropping it in after signing invalidates the signature).
+STEP=$((STEP + 1))
+echo ""
+FRAMEWORK="$APP_PATH/Contents/Frameworks/MoltBrowser Framework.framework"
+# Resources/ is a symlink into the versioned dir — resolve it the same way
+# the helper-signing step resolves paths inside the framework, so we write
+# into Versions/<ver>/Resources and not through a possibly-dangling symlink.
+FRAMEWORK_RES="$FRAMEWORK/Versions/Current/Resources"
+if [ ! -d "$FRAMEWORK_RES" ]; then
+  FRAMEWORK_RES=$(find "$FRAMEWORK/Versions" -mindepth 2 -maxdepth 2 -type d -name "Resources" 2>/dev/null | head -1 || true)
+fi
+if [ -f "$FRAMEWORK_RES/default.metallib" ]; then
+  echo "[$STEP/$STEPS_TOTAL] Metal shader library already present, skipping compile"
+else
+  echo "[$STEP/$STEPS_TOTAL] Compiling Metal shader library (default.metallib)..."
+  if [ -z "$FRAMEWORK_RES" ] || [ ! -d "$FRAMEWORK_RES" ]; then
+    echo ""
+    echo "  ❌ FATAL: cannot locate framework Resources dir under:"
+    echo "     $FRAMEWORK/Versions"
+    echo "     Cannot install default.metallib — DO NOT SHIP THIS BUILD."
+    exit 1
+  fi
+  GGML_SRC="$REPO_DIR/src/third_party/llama_cpp/ggml/src"
+  METAL_WORKDIR=$(mktemp -d)
+  if (cp "$GGML_SRC/ggml-metal/ggml-metal.metal" \
+         "$GGML_SRC/ggml-common.h" \
+         "$GGML_SRC/ggml-metal/ggml-metal-impl.h" \
+         "$METAL_WORKDIR/" \
+      && cd "$METAL_WORKDIR" \
+      && xcrun -sdk macosx metal -O2 -fno-fast-math -I . -c ggml-metal.metal -o ggml-metal.air \
+      && xcrun -sdk macosx metallib ggml-metal.air -o default.metallib); then
+    cp "$METAL_WORKDIR/default.metallib" "$FRAMEWORK_RES/default.metallib"
+    rm -rf "$METAL_WORKDIR"
+    echo "  default.metallib installed: $FRAMEWORK_RES/default.metallib"
+  else
+    rm -rf "$METAL_WORKDIR"
+    echo ""
+    echo "  ╔══════════════════════════════════════════════════════════════════╗"
+    echo "  ║  ❌ FATAL: Metal shader compilation FAILED                        ║"
+    echo "  ║                                                                  ║"
+    echo "  ║  v0.2.2 shipped with model loading broken on macOS because this ║"
+    echo "  ║  file was missing — do not ship without it.                     ║"
+    echo "  ║                                                                  ║"
+    echo "  ║  Ensure the Metal toolchain is installed:                        ║"
+    echo "  ║    xcodebuild -downloadComponent MetalToolchain                  ║"
+    echo "  ╚══════════════════════════════════════════════════════════════════╝"
+    exit 1
+  fi
+fi
+
+# ---- Step 5: Code Sign ----
 STEP=$((STEP + 1))
 echo ""
 if [ -n "$SIGN_IDENTITY" ]; then
@@ -225,7 +282,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping code signing (no --identity)"
 fi
 
-# ---- Step 5: Package DMG ----
+# ---- Step 6: Package DMG ----
 STEP=$((STEP + 1))
 echo ""
 echo "[$STEP/$STEPS_TOTAL] Creating DMG..."
@@ -256,7 +313,7 @@ fi
 DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 echo "  DMG created: $DMG_PATH ($DMG_SIZE)"
 
-# ---- Step 6: Notarize ----
+# ---- Step 7: Notarize ----
 STEP=$((STEP + 1))
 echo ""
 if [ "$DO_NOTARIZE" = true ] && [ -n "$SIGN_IDENTITY" ]; then
@@ -272,7 +329,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping notarization"
 fi
 
-# ---- Step 7: Upload to GitHub Releases ----
+# ---- Step 8: Upload to GitHub Releases ----
 STEP=$((STEP + 1))
 echo ""
 if [ "$DO_UPLOAD" = true ]; then
@@ -335,7 +392,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping upload"
 fi
 
-# ---- Step 8: Generate landing page assets ----
+# ---- Step 9: Generate landing page assets ----
 STEP=$((STEP + 1))
 echo ""
 echo "[$STEP/$STEPS_TOTAL] Generating landing page download metadata..."

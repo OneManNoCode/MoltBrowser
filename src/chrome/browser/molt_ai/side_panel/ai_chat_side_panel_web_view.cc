@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -86,6 +87,31 @@ AiChatSidePanelWebView::AiChatSidePanelWebView(Profile* profile)
 AiChatSidePanelWebView::~AiChatSidePanelWebView() {
   if (browser_ && browser_->tab_strip_model())
     browser_->tab_strip_model()->RemoveObserver(this);
+}
+
+void AiChatSidePanelWebView::RequestMediaAccessPermission(
+    content::WebContents* web_contents,
+    const content::MediaStreamRequest& request,
+    content::MediaResponseCallback callback) {
+  // Without this override the base WebContentsDelegate denies every
+  // getUserMedia() with NOT_SUPPORTED, so the chat's voice/mic button
+  // could never work while hosted in the side panel. Forward to the
+  // shared dispatcher — same path Browser::RequestMediaAccessPermission
+  // takes for tab-hosted pages, minus the extension lookup (the chat is
+  // a chrome:// WebUI, never an extension origin). chrome:// is
+  // allowlisted for MEDIASTREAM_MIC in the content-settings registry,
+  // so the mic is granted promptlessly.
+  MediaCaptureDevicesDispatcher::GetInstance()->ProcessMediaAccessRequest(
+      web_contents, request, std::move(callback), /*extension=*/nullptr);
+}
+
+bool AiChatSidePanelWebView::CheckMediaAccessPermission(
+    content::RenderFrameHost* render_frame_host,
+    const url::Origin& security_origin,
+    blink::mojom::MediaStreamType type) {
+  return MediaCaptureDevicesDispatcher::GetInstance()
+      ->CheckMediaAccessPermission(render_frame_host, security_origin, type,
+                                   /*extension=*/nullptr);
 }
 
 void AiChatSidePanelWebView::OnTabStripModelChanged(

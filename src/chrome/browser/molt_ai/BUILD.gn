@@ -142,6 +142,7 @@ source_set("molt_ai_side_panel") {
 
   deps = [
     "//base",
+    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
     "//components/pdf/common:constants",

@@ -402,14 +402,13 @@ function doSend() {
   inp.value = '';
   setGen(true); startAiMsg();
 
-  var prevHistory = '';
-  if (conversationHistory.length > 1) {
-    var prev = conversationHistory.slice(0, conversationHistory.length - 1);
-    for (var i = 0; i < prev.length; i++) {
-      var m = prev[i];
-      prevHistory += (m.role === 'user' ? '<|user|>\n' : '<|assistant|>\n') + m.content + '</s>\n';
-    }
-  }
+  // History = every message BEFORE the just-pushed user turn, as a JSON
+  // array of {role, content} objects. The C++ side (HandleSendPrompt)
+  // owns all chat templating — no model markers are assembled in JS.
+  var prevHistory = conversationHistory.length > 1
+      ? JSON.stringify(
+            conversationHistory.slice(0, conversationHistory.length - 1))
+      : '';
 
   sendWithPromise('sendPrompt', t, prevHistory).then(function(r) {
     var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();

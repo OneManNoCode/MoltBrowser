@@ -4,7 +4,9 @@
 // MoltAIChatHandler: WebUIMessageHandler that bridges the AI chat WebUI
 // JavaScript frontend to BrowserAIRuntime for local LLM inference.
 //
-// JS → C++:  chrome.send('sendPrompt', [callback_id, prompt_text])
+// JS → C++:  chrome.send('sendPrompt',
+//                [callback_id, prompt_text, history_json?, page_ctx?])
+//            (history_json: JSON array of {role, content} objects)
 //            chrome.send('loadModel', [callback_id, model_id])
 //            chrome.send('cancelGeneration', [])
 //            chrome.send('getModelStatus', [callback_id])
@@ -104,6 +106,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // storage are discarded when the window closes.
   // Args: [callback_id, url]
   void HandleOpenSandboxTab(const base::ListValue& args);
+  // Open molt://ai-settings/ in a new foreground tab of the browser
+  // that owns this WebUI. Falls back to the last-active browser when
+  // hosted in the side panel (whose WebContents is not a tab, so
+  // window.open there is silently dropped by views::WebView).
+  // Args: [callback_id] → {success, error?}
+  void HandleOpenMoltSettings(const base::ListValue& args);
   // Privacy heatmap — enumerate third-party resources loaded into the
   // active tab and bucket them into ads / analytics / cdn / other.
   // Args: [callback_id]
@@ -178,6 +186,15 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // shells out to bundled whisper.cpp and returns transcribed text.
   // Args: [callback_id, wav_b64]
   void HandleTranscribeAudio(const base::ListValue& args);
+  // Attachment uploads — decode a base64-encoded file the user picked
+  // in the chat and extract plain text from it on a ThreadPool worker:
+  //   .txt/.md   → UTF-8 validate + pass through
+  //   .docx      → in-memory unzip, strip word/document.xml markup
+  //   images     → tesseract OCR (same binary the OCR service resolves)
+  //   .pdf       → pdf_text_scraper, then OCR fallback (mirrors /pdf)
+  // Resolves {success, text, truncated, error?}.
+  // Args: [callback_id, name, mime, base64_data]
+  void HandleExtractAttachment(const base::ListValue& args);
   // Tier 4: Form filler v2 — LLM fallback. Two-phase:
   //   1. HandleRunFormFillAI: probe visible form fields, return a
   //      ready-to-send prompt for the LLM.
@@ -247,6 +264,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   raw_ptr<Profile> profile_;
   std::unique_ptr<molt_ai::BrowserAIRuntime> runtime_;
   bool model_loaded_ = false;
+  // The model id most recently requested via loadModel (the chat
+  // model-chip picker). The lazy-load path in HandleSendPrompt prefers
+  // this over settings.json's default_model, so a pick whose explicit
+  // load failed is retried on the next send instead of silently
+  // falling back to a different model.
+  std::string last_requested_model_id_;
   std::string active_prompt_callback_id_;
 
   // Model download state

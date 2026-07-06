@@ -15,10 +15,12 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -27,8 +29,10 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
@@ -59,7 +63,9 @@
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
+#include "ui/base/page_transition_types.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
@@ -82,6 +88,7 @@
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "third_party/zlib/google/zip_reader.h"
 
 MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
     : profile_(profile) {}
@@ -213,6 +220,14 @@ void MoltAIChatHandler::RegisterMessages() {
       "openSandboxTab",
       base::BindRepeating(&MoltAIChatHandler::HandleOpenSandboxTab,
                           base::Unretained(this)));
+  // AI settings: open molt://ai-settings/ in a tab of the owning
+  // browser. window.open() is silently dropped when the chat is
+  // hosted in the side panel (views::WebView doesn't implement
+  // AddNewContents), so the UI calls this instead.
+  web_ui()->RegisterMessageCallback(
+      "openMoltSettings",
+      base::BindRepeating(&MoltAIChatHandler::HandleOpenMoltSettings,
+                          base::Unretained(this)));
   // Privacy heatmap: enumerate third-party resources on the active tab.
   web_ui()->RegisterMessageCallback(
       "getTrackerBreakdown",
@@ -307,6 +322,11 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "transcribeAudio",
       base::BindRepeating(&MoltAIChatHandler::HandleTranscribeAudio,
+                          base::Unretained(this)));
+  // Attachment uploads: extract text from a base64-encoded file.
+  web_ui()->RegisterMessageCallback(
+      "extractAttachment",
+      base::BindRepeating(&MoltAIChatHandler::HandleExtractAttachment,
                           base::Unretained(this)));
   // Form Filler: load/save the encrypted local profile.
   web_ui()->RegisterMessageCallback(
@@ -614,6 +634,13 @@ void MoltAIChatHandler::HandleLoadModel(const base::ListValue& args) {
   const std::string model_id =
       args[1].is_string() ? args[1].GetString() : std::string();
 
+  // Remember the user's explicit pick so the lazy-load path in
+  // HandleSendPrompt retries it — even when this load attempt fails —
+  // instead of silently falling back to settings.json's default_model.
+  if (!model_id.empty()) {
+    last_requested_model_id_ = model_id;
+  }
+
   auto* runtime = GetOrCreateRuntime();
 
   // Fire a status update to the UI
@@ -684,7 +711,9 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
     prompt_text.resize(kMaxPromptBytes);
   }
 
-  // Optional: conversation history as pre-formatted string
+  // Optional: conversation history as a JSON array of {role, content}
+  // objects ('' when there is no history — most call sites). Parsed on
+  // the worker below; invalid JSON degrades to no history.
   std::string history_text;
   if (args.size() >= 3u && args[2].is_string()) {
     history_text = args[2].GetString();
@@ -714,6 +743,30 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   auto* runtime = GetOrCreateRuntime();
   active_prompt_callback_id_ = callback_id;
 
+  // Lazy-load preference for when no model is loaded yet (consumed by
+  // the worker below):
+  //   (a) the model the user last explicitly requested via loadModel,
+  //   (b) else the sole downloaded model when exactly one exists,
+  //   (c) else empty — the worker falls back to settings.json's
+  //       default_model.
+  std::string lazy_model = last_requested_model_id_;
+  if (!model_loaded_ && lazy_model.empty()) {
+    // Same UI-thread disk rescan HandleGetModelStatus already does, so
+    // models downloaded in an earlier session are counted.
+    runtime->RefreshModelStatus();
+    std::string only_downloaded;
+    int downloaded_count = 0;
+    for (const auto& m : runtime->GetAvailableModels()) {
+      if (m.is_downloaded) {
+        ++downloaded_count;
+        only_downloaded = m.model_id;
+      }
+    }
+    if (downloaded_count == 1) {
+      lazy_model = only_downloaded;
+    }
+  }
+
   // settings.json is read inside the worker — UI thread cannot do file I/O
   // (Chromium's hang watchdog DCHECKs blocking calls).
 
@@ -727,14 +780,19 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
-             bool needs_load,
+             const std::string& lazy_model, bool needs_load,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
             // Load settings on worker thread — file I/O is allowed here.
             MoltAISettings settings = LoadUserSettings();
+            // Lazy-load target: the caller-computed preference (last
+            // explicit pick, else sole downloaded model) wins over
+            // settings.json's default_model.
+            const std::string model_to_load =
+                lazy_model.empty() ? settings.default_model : lazy_model;
             // Auto-load model on background thread if needed
             if (needs_load && settings.auto_load_model) {
-              LOG(INFO) << "[MoltAI] Auto-loading " << settings.default_model
+              LOG(INFO) << "[MoltAI] Auto-loading " << model_to_load
                         << " on background thread...";
               content::GetUIThreadTaskRunner({})->PostTask(
                   FROM_HERE,
@@ -749,16 +807,16 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                                           " model..."));
                         }
                       },
-                      weak_self, settings.default_model));
+                      weak_self, model_to_load));
 
-              bool loaded = rt->LoadModel(settings.default_model);
+              bool loaded = rt->LoadModel(model_to_load);
               if (!loaded) {
                 LOG(ERROR) << "[MoltAI] Failed to load model: "
-                           << settings.default_model;
+                           << model_to_load;
                 molt_ai::GenerationResult fail;
                 fail.success = false;
                 fail.error_message =
-                    "Failed to load model '" + settings.default_model +
+                    "Failed to load model '" + model_to_load +
                     "'. Please download it from the Models panel or check "
                     "~/.moltbrowser/models/";
                 // Notify UI of error
@@ -776,7 +834,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                         weak_self, fail.error_message));
                 return fail;
               }
-              LOG(INFO) << "[MoltAI] " << settings.default_model
+              LOG(INFO) << "[MoltAI] " << model_to_load
                         << " loaded successfully";
 
               content::GetUIThreadTaskRunner({})->PostTask(
@@ -790,7 +848,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                               base::Value(model_name));
                         }
                       },
-                      weak_self, settings.default_model));
+                      weak_self, model_to_load));
             } else if (needs_load && !settings.auto_load_model) {
               molt_ai::GenerationResult fail;
               fail.success = false;
@@ -806,29 +864,64 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             opts.top_k = settings.top_k;
             opts.stream = true;
 
-            // Format prompt with user's custom system prompt
+            // Build the message list for template-aware prompting. The
+            // system message carries the user's custom system prompt
+            // plus the page-context/memory injections — the model's own
+            // chat template (GGUF tokenizer.chat_template) decides how
+            // the turns are marked up, so no hardcoded '<|system|>'
+            // zephyr strings here anymore.
             std::string system_msg = settings.system_prompt;
             if (!page_ctx.empty()) {
               system_msg += "\nThe user is currently viewing: " + page_ctx;
             }
-            std::string formatted_prompt =
-                "<|system|>\n" + system_msg + "</s>\n";
 
-            // Include conversation history if provided
+            std::vector<molt_ai::ChatMessage> messages;
+            messages.push_back({"system", system_msg});
+
+            // Optional conversation history: JSON array of
+            // {role:'user'|'assistant', content} objects. Malformed
+            // input degrades to no history (backward compatible with
+            // legacy callers that pass '').
             if (!history.empty()) {
-              formatted_prompt += history;
+              auto parsed = base::JSONReader::Read(
+                  history, base::JSON_PARSE_RFC);
+              if (parsed && parsed->is_list()) {
+                const auto& list = parsed->GetList();
+                // Defensive cap: trimHistory bounds this JS-side, but
+                // re-enforce settings.max_history_messages here by
+                // keeping only the most recent entries.
+                size_t start = 0;
+                if (settings.max_history_messages > 0 &&
+                    list.size() > static_cast<size_t>(
+                                      settings.max_history_messages)) {
+                  start = list.size() -
+                          static_cast<size_t>(settings.max_history_messages);
+                }
+                for (size_t i = start; i < list.size(); ++i) {
+                  if (!list[i].is_dict()) continue;
+                  const auto& d = list[i].GetDict();
+                  const std::string* role = d.FindString("role");
+                  const std::string* content = d.FindString("content");
+                  if (!role || !content || content->empty()) continue;
+                  if (*role != "user" && *role != "assistant") continue;
+                  messages.push_back({*role, *content});
+                }
+              } else {
+                LOG(WARNING) << "[MoltAI] sendPrompt history is not a "
+                                "valid JSON array — ignoring history";
+              }
             }
 
-            formatted_prompt +=
-                "<|user|>\n" + prompt + "</s>\n<|assistant|>\n";
+            messages.push_back({"user", prompt});
 
-            LOG(INFO) << "[MoltAI] Starting inference...";
+            LOG(INFO) << "[MoltAI] Starting inference ("
+                      << messages.size() << " messages)...";
 
-            // Use StreamPrompt to send tokens one at a time.
+            // Use StreamChat to send tokens one at a time.
             // Each token is posted back to the UI thread.
             std::string full_text;
-            rt->StreamPrompt(
-                formatted_prompt,
+            rt->StreamChat(
+                messages,
                 [&full_text, weak_self](const std::string& token,
                                         bool is_done) {
                   full_text += token;
@@ -863,7 +956,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, !model_loaded_,
+          page_context, lazy_model, !model_loaded_,
           weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -3262,6 +3355,49 @@ void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
 }
 
 // ------------------------------------------------------------------
+// HandleOpenMoltSettings: open molt://ai-settings/ in a new selected
+// tab of the owning browser window. The side panel can't use
+// window.open() — AiChatSidePanelWebView (a views::WebView) is the
+// WebContents delegate and doesn't implement AddNewContents, so the
+// popup is silently dropped. Same AddSelectedTabWithURL mechanism the
+// toolbar gear button uses (toolbar_view.cc).
+//
+// Args: [callback_id]
+// Returns: {success, error?}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+
+  // The side-panel's WebContents is NOT a tab in the tab strip, so
+  // FindBrowserWithTab returns null for it. Fall back to
+  // chrome::FindLastActive() — the most-recently-focused browser
+  // window (same pattern as HandleRunMoltAction).
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser) {
+    browser = chrome::FindLastActive();
+  }
+  if (!browser || !browser->tab_strip_model()) {
+    out.Set("success", false);
+    out.Set("error", "no active browser window");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  chrome::AddSelectedTabWithURL(browser, GURL("molt://ai-settings/"),
+                                ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+
+  out.Set("success", true);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+// ------------------------------------------------------------------
 // HandleGetTrackerBreakdown: Privacy heatmap.
 //
 // Inject a JS probe into the active tab's primary frame (isolated
@@ -4299,6 +4435,420 @@ void MoltAIChatHandler::HandleTranscribeAudio(
                                             base::Value(std::move(out)));
           },
           weak_this, cb));
+}
+
+// ------------------------------------------------------------------
+// HandleExtractAttachment: extract plain text from a base64-uploaded
+// file (chat attachment).
+// JS: chrome.send('extractAttachment', [callback_id, name, mime, b64])
+// Resolves {success, text, truncated, error?}.
+// ------------------------------------------------------------------
+namespace {
+
+// Decoded-payload cap. Same convention as kMaxAudioB64Bytes (8 MiB)
+// and kMaxPdfBytes (25 MB): explicit per-handler caps so a compromised
+// WebUI can't OOM the browser process with a giant string.
+constexpr size_t kMaxAttachmentBytes = 20 * 1024 * 1024;  // 20 MiB
+// Base64 inflates by 4/3, so 28 MiB of b64 bounds a 20 MiB payload.
+// Checked pre-decode to reject before the decode allocation.
+constexpr size_t kMaxAttachmentB64Bytes = 28u << 20;
+// Extracted-text budget shipped back to the chat context.
+constexpr size_t kMaxAttachmentChars = 48000;
+// word/document.xml read cap — the decompressed XML can be far larger
+// than the .docx itself (zip bomb); bound the inflation.
+constexpr uint64_t kMaxDocxXmlBytes = 20 * 1024 * 1024;
+
+enum class AttachmentKind { kText, kDocx, kImage, kPdf, kUnsupported };
+
+AttachmentKind DetectAttachmentKind(const std::string& lower_name,
+                                    const std::string& lower_mime) {
+  if (base::EndsWith(lower_name, ".pdf") ||
+      lower_mime == "application/pdf") {
+    return AttachmentKind::kPdf;
+  }
+  if (base::EndsWith(lower_name, ".docx") ||
+      lower_mime ==
+          "application/vnd.openxmlformats-officedocument."
+          "wordprocessingml.document") {
+    return AttachmentKind::kDocx;
+  }
+  if (base::EndsWith(lower_name, ".png") ||
+      base::EndsWith(lower_name, ".jpg") ||
+      base::EndsWith(lower_name, ".jpeg") ||
+      base::EndsWith(lower_name, ".webp") ||
+      lower_mime == "image/png" || lower_mime == "image/jpeg" ||
+      lower_mime == "image/webp") {
+    return AttachmentKind::kImage;
+  }
+  if (base::EndsWith(lower_name, ".txt") ||
+      base::EndsWith(lower_name, ".md") ||
+      base::EndsWith(lower_name, ".markdown") ||
+      base::StartsWith(lower_mime, "text/")) {
+    return AttachmentKind::kText;
+  }
+  return AttachmentKind::kUnsupported;
+}
+
+// Temp-file extension for the tesseract input. Tesseract sniffs the
+// actual content via Leptonica, so this only needs to be plausible.
+std::string AttachmentImageExtension(const std::string& lower_name,
+                                     const std::string& lower_mime) {
+  if (lower_mime == "image/png" || base::EndsWith(lower_name, ".png")) {
+    return "png";
+  }
+  if (lower_mime == "image/webp" || base::EndsWith(lower_name, ".webp")) {
+    return "webp";
+  }
+  return "jpg";  // image/jpeg, .jpg, .jpeg
+}
+
+// Truncate |*text| to at most |max_chars| bytes, preferring a
+// whitespace boundary. Returns true when a cut was made. The hard-cut
+// fallback backs off over UTF-8 continuation bytes so the result stays
+// a valid UTF-8 string (base::Value requires it).
+bool TruncateAtWhitespaceBoundary(std::string* text, size_t max_chars) {
+  if (text->size() <= max_chars) {
+    return false;
+  }
+  size_t cut = text->find_last_of(" \t\n\r", max_chars);
+  if (cut == std::string::npos || cut < max_chars / 2) {
+    cut = max_chars;
+    while (cut > 0 &&
+           (static_cast<unsigned char>((*text)[cut]) & 0xC0) == 0x80) {
+      --cut;
+    }
+  }
+  text->resize(cut);
+  return true;
+}
+
+base::DictValue MakeAttachmentError(const std::string& error) {
+  base::DictValue out;
+  out.Set("success", false);
+  out.Set("text", "");
+  out.Set("truncated", false);
+  out.Set("error", error);
+  return out;
+}
+
+base::DictValue MakeAttachmentSuccess(std::string text) {
+  const bool truncated =
+      TruncateAtWhitespaceBoundary(&text, kMaxAttachmentChars);
+  base::DictValue out;
+  out.Set("success", true);
+  out.Set("truncated", truncated);
+  out.Set("text", std::move(text));
+  return out;
+}
+
+// Strip WordprocessingML down to plain text: keep the character data
+// inside <w:t> runs, map </w:p> to \n, <w:tab/> to \t and <w:br/> /
+// <w:cr/> to \n. Same hand-rolled-scanner altitude as
+// pdf_text_scraper — no XML parser dependency needed.
+std::string StripWordprocessingXml(const std::string& xml) {
+  std::string out;
+  bool in_text = false;
+  size_t i = 0;
+  while (i < xml.size()) {
+    if (xml[i] != '<') {
+      if (in_text) {
+        out += xml[i];
+      }
+      ++i;
+      continue;
+    }
+    size_t close = xml.find('>', i);
+    if (close == std::string::npos) {
+      break;
+    }
+    std::string_view tag(xml.data() + i + 1, close - i - 1);
+    const bool self_closing = !tag.empty() && tag.back() == '/';
+    if (self_closing) {
+      tag.remove_suffix(1);
+    }
+    const size_t space = tag.find_first_of(" \t\r\n");
+    const std::string_view tag_name =
+        space == std::string_view::npos ? tag : tag.substr(0, space);
+    if (tag_name == "w:t") {
+      in_text = !self_closing;
+    } else if (tag_name == "/w:t") {
+      in_text = false;
+    } else if (tag_name == "/w:p") {
+      out += '\n';
+    } else if (tag_name == "w:tab") {
+      out += '\t';
+    } else if (tag_name == "w:br" || tag_name == "w:cr") {
+      out += '\n';
+    }
+    i = close + 1;
+  }
+  // Decode the predefined XML entities. &amp; must go last so an
+  // escaped "&amp;lt;" decodes to a literal "&lt;", not a fake tag.
+  base::ReplaceSubstringsAfterOffset(&out, 0, "&lt;", "<");
+  base::ReplaceSubstringsAfterOffset(&out, 0, "&gt;", ">");
+  base::ReplaceSubstringsAfterOffset(&out, 0, "&quot;", "\"");
+  base::ReplaceSubstringsAfterOffset(&out, 0, "&apos;", "'");
+  base::ReplaceSubstringsAfterOffset(&out, 0, "&amp;", "&");
+  return out;
+}
+
+// In-memory .docx → text. Blocking-safe CPU work only (zlib inflate
+// via zip::ZipReader::OpenFromString — no temp files, no mojo).
+std::string ExtractDocxText(const std::string& zip_bytes,
+                            std::string* error) {
+  zip::ZipReader reader;
+  if (!reader.OpenFromString(zip_bytes)) {
+    *error = "not a valid .docx (could not open as a zip archive)";
+    return std::string();
+  }
+  bool found = false;
+  std::string xml;
+  while (const zip::ZipReader::Entry* entry = reader.Next()) {
+    if (entry->is_directory || entry->is_encrypted) {
+      continue;
+    }
+    // Zip entry paths use '/', but base::FilePath may hold either
+    // separator on Windows — compare a normalized UTF-8 form.
+    std::string path = entry->path.AsUTF8Unsafe();
+    std::replace(path.begin(), path.end(), '\\', '/');
+    if (path != "word/document.xml") {
+      continue;
+    }
+    found = true;
+    const bool ok = reader.ExtractCurrentEntryToString(kMaxDocxXmlBytes, &xml);
+    if (!ok && xml.size() < kMaxDocxXmlBytes) {
+      // Real inflate error (a full-to-the-cap buffer just means the
+      // XML hit the read cap; the char budget truncates below that
+      // anyway, so we keep what we got).
+      *error = "failed to read word/document.xml from the archive";
+      return std::string();
+    }
+    break;
+  }
+  if (!found) {
+    *error = "no word/document.xml entry — is this really a .docx file?";
+    return std::string();
+  }
+  std::string text = StripWordprocessingXml(xml);
+  if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
+    *error = "document contains no extractable text";
+    return std::string();
+  }
+  if (!base::IsStringUTF8(text)) {
+    *error = "document text is not valid UTF-8";
+    return std::string();
+  }
+  return text;
+}
+
+// OCR an image via tesseract. Reuses OcrService's public binary
+// resolution (bundled Resources/ocr first, then system paths) and
+// replicates its exact subprocess invocation from RunTesseractBlocking
+// — the service's only entry point is OcrPdf, which hard-codes an
+// input.pdf temp name; images just need a different extension (and are
+// tesseract's native input). Runs on a MayBlock worker.
+base::DictValue OcrImageBlocking(const std::string& image_bytes,
+                                 const std::string& ext) {
+  auto* svc = molt_ai::ocr::OcrService::Get();
+  const base::FilePath bin = svc->ResolveTesseractBinary();
+  if (bin.value().empty()) {
+    return MakeAttachmentError(
+        "no OCR binary available — run scripts/bundle-tesseract.sh or "
+        "install tesseract.");
+  }
+  base::FilePath tessdata;
+  if (svc->IsUsingBundledTesseract()) {
+    tessdata = svc->GetBundledOcrDir();
+  }
+  // Private 0700 scratch dir — same symlink-race rationale as the OCR
+  // service's RunTesseractBlocking.
+  base::FilePath scratch_dir;
+  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("molt_attach_ocr"),
+                                    &scratch_dir)) {
+    return MakeAttachmentError("could not create scratch directory");
+  }
+  const base::FilePath named = scratch_dir.AppendASCII("input." + ext);
+  if (!base::WriteFile(named, image_bytes)) {
+    base::DeletePathRecursively(scratch_dir);
+    return MakeAttachmentError("could not write temp image");
+  }
+  const base::FilePath out_stem = named.RemoveExtension();
+  base::CommandLine cmd(bin);
+  cmd.AppendArgPath(named);
+  cmd.AppendArgPath(out_stem);
+  cmd.AppendArg("-l");
+  cmd.AppendArg("eng");
+  if (!tessdata.value().empty()) {
+    cmd.AppendArg("--tessdata-dir");
+    cmd.AppendArgPath(tessdata.AppendASCII("tessdata"));
+  }
+  std::string combined;
+  int exit_code = -1;
+  const bool launched =
+      base::GetAppOutputWithExitCode(cmd, &combined, &exit_code);
+  if (!launched) {
+    base::DeletePathRecursively(scratch_dir);
+    return MakeAttachmentError("failed to launch tesseract");
+  }
+  if (exit_code != 0) {
+    base::DeletePathRecursively(scratch_dir);
+    return MakeAttachmentError("tesseract exit=" +
+                               std::to_string(exit_code) + ": " +
+                               combined.substr(0, 200));
+  }
+  const base::FilePath txt = out_stem.AddExtensionASCII(".txt");
+  std::string text;
+  if (base::PathExists(txt)) {
+    base::ReadFileToString(txt, &text);
+  }
+  base::DeletePathRecursively(scratch_dir);
+  if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
+    return MakeAttachmentError("OCR returned no text");
+  }
+  return MakeAttachmentSuccess(std::move(text));
+}
+
+// Runs on a MayBlock ThreadPool worker. Returns the response dict
+// plus, for text-layer-less PDFs only, the raw PDF bytes (second
+// member nonempty) so the UI-thread reply can chain into the async
+// OcrService::OcrPdf fallback — mirroring HandleExtractPdfText.
+std::pair<base::DictValue, std::string> ExtractAttachmentBlocking(
+    const std::string& name,
+    const std::string& mime,
+    const std::string& b64) {
+  std::string bytes;
+  if (!base::Base64Decode(b64, &bytes)) {
+    return {MakeAttachmentError("base64 decode failed"), std::string()};
+  }
+  if (bytes.empty()) {
+    return {MakeAttachmentError("empty attachment"), std::string()};
+  }
+  if (bytes.size() > kMaxAttachmentBytes) {
+    return {MakeAttachmentError("attachment exceeds max size (20 MiB)"),
+            std::string()};
+  }
+  const std::string lower_name = base::ToLowerASCII(name);
+  const std::string lower_mime = base::ToLowerASCII(mime);
+  switch (DetectAttachmentKind(lower_name, lower_mime)) {
+    case AttachmentKind::kText: {
+      if (!base::IsStringUTF8(bytes)) {
+        return {MakeAttachmentError("text file is not valid UTF-8"),
+                std::string()};
+      }
+      return {MakeAttachmentSuccess(std::move(bytes)), std::string()};
+    }
+    case AttachmentKind::kDocx: {
+      std::string error;
+      std::string text = ExtractDocxText(bytes, &error);
+      if (text.empty()) {
+        return {MakeAttachmentError(error), std::string()};
+      }
+      return {MakeAttachmentSuccess(std::move(text)), std::string()};
+    }
+    case AttachmentKind::kImage: {
+      return {OcrImageBlocking(bytes,
+                               AttachmentImageExtension(lower_name,
+                                                        lower_mime)),
+              std::string()};
+    }
+    case AttachmentKind::kPdf: {
+      // Same two-tier route as /pdf (HandleExtractPdfText): cheap
+      // text-layer scraper first, tesseract OCR as fallback. The +1
+      // over budget lets the truncation helper detect the cut.
+      const std::vector<uint8_t> vec(bytes.begin(), bytes.end());
+      std::string text =
+          molt_ai::pdf::ExtractText(vec, kMaxAttachmentChars + 1);
+      if (!text.empty()) {
+        return {MakeAttachmentSuccess(std::move(text)), std::string()};
+      }
+      // No text layer — hand the bytes back for the OCR fallback.
+      return {base::DictValue(), std::move(bytes)};
+    }
+    case AttachmentKind::kUnsupported:
+      break;
+  }
+  return {MakeAttachmentError(
+              "unsupported attachment type (mime='" + mime +
+              "') — supported: .txt/.md, .docx, .pdf, and "
+              ".png/.jpg/.jpeg/.webp images"),
+          std::string()};
+}
+
+}  // namespace
+
+void MoltAIChatHandler::HandleExtractAttachment(
+    const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 4u);
+  const std::string callback_id = args[0].GetString();
+  const std::string name =
+      args[1].is_string() ? args[1].GetString() : std::string();
+  const std::string mime =
+      args[2].is_string() ? args[2].GetString() : std::string();
+  const std::string b64 =
+      args[3].is_string() ? args[3].GetString() : std::string();
+  if (b64.empty()) {
+    ResolveJavascriptCallback(
+        base::Value(callback_id),
+        base::Value(MakeAttachmentError("no attachment data")));
+    return;
+  }
+  // Pre-decode size cap — reject before the decode allocation, same
+  // rationale as kMaxAudioB64Bytes in HandleTranscribeAudio.
+  if (b64.size() > kMaxAttachmentB64Bytes) {
+    ResolveJavascriptCallback(
+        base::Value(callback_id),
+        base::Value(
+            MakeAttachmentError("attachment exceeds max size (20 MiB)")));
+    return;
+  }
+
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
+       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
+      base::BindOnce(&ExtractAttachmentBlocking, name, mime, b64),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::pair<base::DictValue, std::string> extracted) {
+            if (!self) {
+              return;
+            }
+            if (extracted.second.empty()) {
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id),
+                  base::Value(std::move(extracted.first)));
+              return;
+            }
+            // PDF with no text layer — same OCR fallback as /pdf.
+            molt_ai::ocr::OcrService::Get()->OcrPdf(
+                std::move(extracted.second), kMaxAttachmentChars + 1,
+                base::BindOnce(
+                    [](base::WeakPtr<MoltAIChatHandler> self,
+                       std::string cb_id, molt_ai::ocr::OcrResult r) {
+                      if (!self) {
+                        return;
+                      }
+                      base::DictValue out;
+                      if (r.success) {
+                        out = MakeAttachmentSuccess(std::move(r.text));
+                      } else if (r.binary_source == "none") {
+                        out = MakeAttachmentError(
+                            "PDF has no text layer and no OCR is "
+                            "available — run scripts/bundle-tesseract.sh "
+                            "or install tesseract.");
+                      } else {
+                        out = MakeAttachmentError(
+                            "PDF has no text layer; OCR failed: " +
+                            r.error);
+                      }
+                      self->ResolveJavascriptCallback(
+                          base::Value(cb_id),
+                          base::Value(std::move(out)));
+                    },
+                    self, std::move(cb_id)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id));
 }
 
 // ------------------------------------------------------------------
