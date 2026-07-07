@@ -239,6 +239,13 @@ inline constexpr char kMoltAIMemoryAliasHost[] = "memory";
 inline constexpr char kMoltAIUpdateURL[] = "molt://update/";
 inline constexpr char kMoltAIUpdateAliasHost[] = "update";
 
+// MoltBrowser: user-facing alias for chrome://settings. The molt:// host and
+// the chrome:// host are both literally "settings", so molt://settings maps to
+// chrome://settings and vice versa. Sub-paths and queries (e.g.
+// molt://settings/privacy?search=foo) are preserved by ReplaceComponents.
+inline constexpr char kMoltSettingsHost[] = "settings";
+inline constexpr char kMoltSettingsURL[] = "molt://settings/";
+
 // MoltBrowser product version — single source of truth for the in-app
 // updater's "current version". Chromium's version_info reports the upstream
 // 148.x.x.x, not ours, so the updater compares THIS against the GitHub

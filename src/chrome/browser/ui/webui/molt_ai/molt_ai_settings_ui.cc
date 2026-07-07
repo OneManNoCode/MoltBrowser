@@ -977,7 +977,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="importSection">
     <h2><span class="icon">&#128229;</span> Import &amp; Migration</h2>
     <div class="field">
       <div class="desc">Bring your bookmarks and saved passwords over from another browser installed on this computer.</div>
@@ -1396,6 +1396,30 @@ sendWithPromise('getSettings').then(function(s) {
 loadExitCountries();
 // Detect installed browsers for the Import & Migration section.
 loadImportableBrowsers();
+
+// Deep link: molt://ai-settings/?section=import scrolls to (and briefly
+// highlights) the Import & Migration section. Used by the bookmarks
+// side-panel "Import bookmarks" button. The molt:// rewriter preserves the
+// path + query, so the query is present here.
+(function() {
+  var deepLinkParams = new URLSearchParams(window.location.search);
+  if (deepLinkParams.get('section') === 'import') {
+    var importSection = document.getElementById('importSection');
+    if (importSection) {
+      importSection.scrollIntoView({behavior: 'smooth', block: 'start'});
+      var prevTransition = importSection.style.transition;
+      var prevShadow = importSection.style.boxShadow;
+      importSection.style.transition = 'box-shadow 0.4s ease';
+      importSection.style.boxShadow = '0 0 0 2px #6366f1';
+      setTimeout(function() {
+        importSection.style.boxShadow = prevShadow;
+        setTimeout(function() {
+          importSection.style.transition = prevTransition;
+        }, 500);
+      }, 1600);
+    }
+  }
+})();
 </script>
 </body>
 </html>)HTML";

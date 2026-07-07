@@ -130,15 +130,15 @@
     MoltBrowser preloads even more pages that you're likely to visit, so that they load more quickly when you visit them
   </message>
   <message name="IDS_SETTINGS_PRELOAD_PAGES_EXTENDED_PRELOADING_THINGS_TO_CONSIDER_BULLET_TWO" desc="Bullet point in the extended preloading and things to consider column. Informs the user about what the extended preloading setting does.">
-    When a site asks to privately preload links on their page, MoltBrowser uses Google servers. This hides your identity from the preloaded site, but Google learns what sites get preloaded.
+    When a site asks to privately preload links on their page, MoltBrowser uses a preloading proxy. This hides your identity from the preloaded site, but the proxy provider learns what sites get preloaded.
   </message>
   <message name="IDS_SETTINGS_PRELOAD_PAGES_THINGS_TO_CONSIDER_BULLET_ONE" desc="Bullet point in the things to consider column. Informs the user about what the preloading setting does.">
     If you allow cookies, MoltBrowser may use them when preloading
   </message>
 
   <!-- Privacy Page -->
-  <message name="IDS_SETTINGS_SPELLING_PREF_DESC" desc="Description of using a web serviced to help resolve spelling errors. It is important to convey that what the user types will be sent to Google.">
-    To fix spelling errors, MoltBrowser sends the text you type in text fields to Google
+  <message name="IDS_SETTINGS_SPELLING_PREF_DESC" desc="Description of using a web service to help resolve spelling errors. It is important to convey that what the user types will be sent to a spelling service.">
+    To fix spelling errors, MoltBrowser sends the text you type in text fields to a spelling service
   </message>
   <message name="IDS_SETTINGS_RESTART_TO_APPLY_CHANGES" desc="Description in the snackbar to restart Chrome and apply changes.">
     To apply your changes, relaunch MoltBrowser
@@ -149,7 +149,7 @@
     Allow MoltBrowser sign-in
     </message>
     <message name="IDS_SETTINGS_SIGNIN_ALLOWED_DESC" desc="The description of the preference to allow to sign-in to Chrome">
-    By turning this off, you can sign in to Google sites like Gmail without signing in to MoltBrowser
+    By turning this off, you can sign in to websites without signing in to MoltBrowser
     </message>
     <message name="IDS_SETTINGS_SIGNIN_ALLOWED_DESC_2" desc="The description of the preference to allow to sign-in to Chrome">
     Shows prompts to sign in to MoltBrowser
@@ -201,7 +201,7 @@
     MoltBrowser gives you more control over the ads you see and limits what sites can learn about you when they show you personalized ads
   </message>
   <message name="IDS_SETTINGS_PRIVACY_GUIDE_COMPLETION_CARD_WAA_SUB_LABEL" desc="Text of the Web and App Activity sublabel in the completion card of the 'Privacy Guide'.">
-    Choose whether to include MoltBrowser history for more personalized experiences in Google services
+    Choose whether to include MoltBrowser history for more personalized experiences
   </message>
   <message name="IDS_SETTINGS_PRIVACY_GUIDE_MSBB_FEATURE_DESCRIPTION3" desc="A part of the feature description of 'make searches and browsing better' in the 'Privacy Guide'.">
     If you also save your bookmarks in your MoltBrowser Account, you can track product prices in MoltBrowser and get notified when the price drops
@@ -228,13 +228,13 @@
 
   <!-- Safe Browsing -->
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_BULLET_TWO" desc="Bullet point under the safe browsing enhanced protection mode">
-    Keeps you safe on MoltBrowser and may be used to improve your security in other Google apps when you are signed in
+    Keeps you safe on MoltBrowser and may be used to improve your security across your browsing
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_BULLET_TWO" desc="Bullet point under the safe browsing standard protection mode">
     Checks URLs with a list of unsafe sites stored in MoltBrowser. If a site tries to steal your password, or when you download a harmful file, MoltBrowser may also send URLs, including bits of page content, to Safe Browsing.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_ONE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
-    Warns you about dangerous sites, even ones Google didn't know about before, by analyzing more data from sites than standard protection. You can choose to skip MoltBrowser warnings.
+    Warns you about dangerous sites, even ones not previously known to be unsafe, by analyzing more data from sites than standard protection. You can choose to skip MoltBrowser warnings.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_LEARN_MORE_LABEL" desc="The text for a link to a help center article that gives more information about Safe Browsing.">
     Learn more about <ph name="BEGIN_LINK">&lt;a href="#" id="enhancedProtectionLearnMoreLink" on-click="onEnhancedProtectionLearnMoreClick_"&gt;</ph>how MoltBrowser keeps your data private<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
@@ -279,10 +279,10 @@
   </message>
 </if>
   <message name="IDS_SETTINGS_SIGNIN_CHROME_SIGNIN_OPTIONS_TITLE" desc="Title of the settings that controls whether a user gets signed in to Chromium when signing in to Google Services.">
-    Sign in to MoltBrowser when you sign in to other Google services
+    Sign in to MoltBrowser when you sign in to a website
   </message>
   <message name="IDS_SETTINGS_SIGNIN_CHROME_SIGNIN_OPTIONS_DESC" desc="Description of the settings that controls whether a user gets signed in to Chromium when signing in to Google Services.">
-    When signing into Google services like Gmail or Youtube with <ph name="USER_EMAIL">$1<ex>foo@example.com</ex></ph>, you can automatically sign in to MoltBrowser with the same account
+    When signing into a website with <ph name="USER_EMAIL">$1<ex>foo@example.com</ex></ph>, you can automatically sign in to MoltBrowser with the same account
   </message>
   <message name="IDS_SETTINGS_PEOPLE_SIGNIN_SECTION_SIGNED_OUT_TITLE" desc="The text displayed to prompt users to sign in to Chromium. Shown on top of the account card in the people settings page when the user is signed out.">
     Make MoltBrowser your own

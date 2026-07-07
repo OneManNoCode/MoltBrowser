@@ -1687,7 +1687,7 @@
     Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats
   </message>
   <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_ENHANCED_PROTECTION_PRIVACY_DESCRIPTION3" desc="A part of the privacy description of the enhanced protection section of the safe browsing card in the 'Privacy guide'.">
-    Temporarily links this data to your MoltBrowser Account when you're signed in, to protect you across Google apps
+    Uses this data to strengthen MoltShield protection across your browsing
   </message>
   <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_STANDARD_PROTECTION_FEATURE_DESCRIPTION1" desc="A part of the feature description of the standard protection section of the safe browsing card in the 'Privacy guide'.">
     Detects and warns you about dangerous events when they happen
@@ -1840,10 +1840,10 @@
     Safe Browsing (protects you and your device from dangerous sites)
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENABLEPROTECTION_DESC" desc="Checkbox label: should Chrome protect user and user's device from dangerous sites">
-    Sends URLs of some pages you visit to Google, when your security is at risk
+    Sends URLs of some pages you visit to MoltShield, when your security is at risk
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENABLE_REPORTING_DESC" desc="Description for extended safe browsing">
-    Sends URLs of some pages you visit, limited system information, and some page content to Google, to help discover new threats and protect everyone on the web.
+    Sends URLs of some pages you visit, limited system information, and some page content to MoltShield, to help discover new threats and protect everyone on the web.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_SECTION_LABEL" desc="The section label of the safe browsing section grouping safe browsing settings">
     Safe Browsing
@@ -1852,7 +1852,7 @@
     Enhanced protection
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_DESC_UPDATED" desc="Description of safe browsing enhanced protection mode">
-    Real-time, AI-powered protection against dangerous sites, downloads, and extensions that's based on your browsing data getting sent to Google
+    Real-time, AI-powered protection against dangerous sites, downloads, and extensions that's based on your browsing data getting sent to MoltShield
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_EXPAND_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the detailed description of safe browsing enhanced protection. Only visible by screen reader software.">
     Show enhanced protection details
@@ -1867,13 +1867,13 @@
     Warns you if passwords are exposed in a data breach
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_BULLET_FIVE" desc="Bullet point under the safe browsing enhanced protection mode">
-    Sends URLs to Safe Browsing to check them. Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats. Temporarily links this data to your MoltBrowser Account when you're signed in, to protect you across Google apps.
+    Sends URLs to MoltShield to check them. Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats. Uses this data to strengthen MoltShield protection across your browsing.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_TWO" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
     In-depth scans for suspicious downloads.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_THREE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
-    When you're signed in, protects you across Google services.
+    Strengthens MoltShield protection across your browsing.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_FOUR" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
     Improves security for you and everyone on the web.
@@ -1882,7 +1882,7 @@
     Sends the URLs of sites you visit and a small sample of page content, downloads, extension activity, and system information to MoltShield to check if they're harmful.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_TWO" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
-    When you're signed in, this data is linked to your MoltBrowser Account to protect you across Google services, for example increasing protection in Gmail after a security incident.
+    This data is used to strengthen MoltShield protection across your browsing, for example increasing protection after a security incident.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_THREE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
     Doesn't noticeably slow down your browser or device.
@@ -3821,8 +3821,8 @@
   </message>
 
   <!-- Sync / People Page -->
-  <message name="IDS_SETTINGS_PEOPLE" desc="Name of the settings page which manages the user's relationship to Google.">
-    You and Google
+  <message name="IDS_SETTINGS_PEOPLE" desc="Name of the settings page which manages the user's profile.">
+    Profile
   </message>
   <message name="IDS_SETTINGS_CHANGE_PICTURE_PROFILE_PHOTO" desc="The text on the Google profile photo of the user.">
     Google Profile photo
@@ -3896,8 +3896,8 @@
     <message name="IDS_SETTINGS_ACCOUNT_HISTORY_TOGGLE_SUB_LABEL_OFF" desc="Subtitle describing the effects of turning on the merged toggle in the account settings page, combining the data types history, tabs, and saved tab groups. Shown on next to the toggle that controls whether these data types should be saved in the Google Account and synced across devices. Shown only if the toggle is off.">
       Turn on to get your browsing history and tabs from other devices
     </message>
-    <message name="IDS_SETTINGS_GOOGLE_SERVICES_PAGE_TITLE" desc="Name of the settings page for managing Google services.">
-      Google services
+    <message name="IDS_SETTINGS_GOOGLE_SERVICES_PAGE_TITLE" desc="Name of the settings page for managing account services.">
+      Account services
     </message>
   </if>
 

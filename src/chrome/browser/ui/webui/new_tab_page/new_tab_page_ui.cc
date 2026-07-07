@@ -635,9 +635,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
 
   if (ntp_realbox::IsNtpRealboxNextEnabled(profile)) {
     if (ntp_realbox::kCyclingPlaceholders.Get()) {
-      source->AddLocalizedString(
-          "searchBoxPlaceholder",
-          IDS_NTP_SEARCH_BOX_DYNAMIC_PLACEHOLDER_ASK_GOOGLE);
+      source->AddString("searchBoxPlaceholder", u"Ask MoltSearch");
     } else {
       switch (ntp_realbox::kSteadyPlaceholder.Get()) {
         case ntp_realbox::PlaceholderText::ASK_OR_TYPE:
@@ -646,9 +644,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
                                 IDS_WEBUI_OMNIBOX_PLACEHOLDER_TEXT, u"MoltSearch"));
           break;
         case ntp_realbox::PlaceholderText::ASK:
-          source->AddLocalizedString(
-              "searchBoxPlaceholder",
-              IDS_NTP_SEARCH_BOX_DYNAMIC_PLACEHOLDER_ASK_GOOGLE);
+          source->AddString("searchBoxPlaceholder", u"Ask MoltSearch");
           break;
         default:
           NOTREACHED();
@@ -656,8 +652,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
     }
 
   } else {
-    source->AddLocalizedString("searchBoxPlaceholder",
-                               IDS_GOOGLE_SEARCH_BOX_EMPTY_HINT_MD);
+    source->AddString("searchBoxPlaceholder", u"Search MoltSearch or type a URL");
   }
 
   source->AddBoolean("composeboxNoFlickerSuggestionsFix", false);

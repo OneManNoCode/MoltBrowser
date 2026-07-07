@@ -635,4 +635,10 @@
   </message>
   <!-- End of screen reader message strings. -->
 
+  <!-- Begin of Import bookmarks strings. -->
+  <message name="IDS_BOOKMARKS_IMPORT_TOOLTIP" desc="Tooltip for the button in the bookmarks side panel which imports bookmarks from another browser.">
+    Import bookmarks from another browser
+  </message>
+  <!-- End of Import bookmarks strings. -->
+
 </grit-part>

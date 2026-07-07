@@ -486,18 +486,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
       <if expr="_is_chrome_for_testing_branded">
         <then>
           <message name="IDS_ABOUT_VERSION_COMPANY_NAME" desc="Company name on the about pages">
-            Google LLC
+            GenEye AI Labs Inc.
           </message>
           <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-            Copyright <ph name="YEAR">{0,date,y}<ex>2016</ex></ph> Google LLC. All rights reserved.
+            Copyright <ph name="YEAR">{0,date,y}<ex>2016</ex></ph> GenEye AI Labs Inc. All rights reserved.
           </message>
         </then>
         <else>
           <message name="IDS_ABOUT_VERSION_COMPANY_NAME" desc="Company name on the about pages">
-            The Chromium Authors
+            GenEye AI Labs Inc.
           </message>
           <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-            Copyright <ph name="YEAR">{0,date,y}<ex>2016</ex></ph> The Chromium Authors. All rights reserved.
+            Copyright <ph name="YEAR">{0,date,y}<ex>2016</ex></ph> GenEye AI Labs Inc. All rights reserved.
           </message>
         </else>
       </if>

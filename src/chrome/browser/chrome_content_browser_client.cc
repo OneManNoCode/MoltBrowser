@@ -885,6 +885,11 @@ bool HandleMoltSchemeRewrite(GURL* url,
     new_host = chrome::kChromeUIMoltAIMemoryHost;
   } else if (host == std::string_view(chrome::kMoltAIUpdateAliasHost)) {
     new_host = chrome::kChromeUIMoltAIUpdateHost;
+  } else if (host == std::string_view(chrome::kMoltSettingsHost)) {
+    // molt://settings[/subpage][?query] -> chrome://settings[/subpage][?query].
+    // ReplaceComponents keeps the path and query below, so sub-paths such as
+    // molt://settings/privacy?panel=1 are preserved.
+    new_host = chrome::kChromeUISettingsHost;
   } else {
     return false;
   }
@@ -921,6 +926,10 @@ bool HandleMoltSchemeReverseRewrite(GURL* url,
     new_host = chrome::kMoltAIMemoryAliasHost;
   } else if (host == std::string_view(chrome::kChromeUIMoltAIUpdateHost)) {
     new_host = chrome::kMoltAIUpdateAliasHost;
+  } else if (host == std::string_view(chrome::kChromeUISettingsHost)) {
+    // chrome://settings[/subpage][?query] displays as
+    // molt://settings[/subpage][?query] in the omnibox. Path/query preserved.
+    new_host = chrome::kMoltSettingsHost;
   } else {
     return false;
   }
