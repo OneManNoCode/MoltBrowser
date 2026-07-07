@@ -843,55 +843,57 @@ base::FilePath GetSafariBookmarksPath() {
 std::vector<DetectedBrowser> BrowserImporter::DetectInstalled() {
   std::vector<DetectedBrowser> out;
 
-  // Chromium family.
+  // Chromium family. Emit an entry for EVERY supported browser, whether or not
+  // it is installed here — the UI shows not-installed ones greyed. `installed`
+  // is true iff a bookmarks and/or Login Data store was found on disk.
   for (const BrowserDescriptor& d : kDescriptors) {
     base::FilePath profile = GetChromiumProfileDir(d);
-    if (profile.empty()) {
-      continue;
-    }
-    bool has_bookmarks = base::PathExists(profile.Append("Bookmarks"));
-    bool has_passwords = base::PathExists(profile.Append("Login Data"));
-    if (!has_bookmarks && !has_passwords) {
-      continue;
-    }
+    bool has_bookmarks =
+        !profile.empty() && base::PathExists(profile.Append("Bookmarks"));
+    bool has_passwords =
+        !profile.empty() && base::PathExists(profile.Append("Login Data"));
     DetectedBrowser db;
     db.id = d.id;
     db.display_name = d.display_name;
     db.profile_path = profile;
     db.has_bookmarks = has_bookmarks;
     db.has_passwords_store = has_passwords;
+    db.installed = has_bookmarks || has_passwords;
     out.push_back(std::move(db));
   }
 
-  // Firefox (bookmarks only).
+  // Firefox (bookmarks only). Always emitted; installed iff a profile exists.
   {
     base::FilePath ff = FindFirefoxProfileDir();
-    if (!ff.empty()) {
-      DetectedBrowser db;
-      db.id = BrowserId::kFirefox;
-      db.display_name = "Firefox";
-      db.profile_path = ff;
-      db.has_bookmarks = true;
-      db.has_passwords_store = false;
-      out.push_back(std::move(db));
-    }
+    DetectedBrowser db;
+    db.id = BrowserId::kFirefox;
+    db.display_name = "Firefox";
+    db.profile_path = ff;
+    db.has_bookmarks = !ff.empty();
+    db.has_passwords_store = false;
+    db.installed = !ff.empty();
+    out.push_back(std::move(db));
   }
 
-  // Safari (bookmarks only, mac only).
-#if BUILDFLAG(IS_MAC)
+  // Safari (bookmarks only). Always emitted so the UI can list it; installed
+  // iff its bookmarks store is present (mac only — off-mac it is never found).
   {
+    DetectedBrowser db;
+    db.id = BrowserId::kSafari;
+    db.display_name = "Safari";
+#if BUILDFLAG(IS_MAC)
     base::FilePath safari = GetSafariBookmarksPath();
-    if (!safari.empty() && base::PathExists(safari)) {
-      DetectedBrowser db;
-      db.id = BrowserId::kSafari;
-      db.display_name = "Safari";
-      db.profile_path = safari;
-      db.has_bookmarks = true;
-      db.has_passwords_store = false;
-      out.push_back(std::move(db));
-    }
-  }
+    bool safari_present = !safari.empty() && base::PathExists(safari);
+    db.profile_path = safari;
+    db.has_bookmarks = safari_present;
+    db.installed = safari_present;
+#else
+    db.has_bookmarks = false;
+    db.installed = false;
 #endif
+    db.has_passwords_store = false;
+    out.push_back(std::move(db));
+  }
 
   return out;
 }

@@ -95,6 +95,10 @@ struct DetectedBrowser {
   base::FilePath profile_path;
   bool has_bookmarks = false;
   bool has_passwords_store = false;
+  // True iff a usable profile for this browser was found on disk (i.e. it has
+  // a bookmarks and/or password store). When false, the browser is a supported
+  // target that is not installed here — the UI shows it greyed/disabled.
+  bool installed = false;
 };
 
 class BrowserImporter {

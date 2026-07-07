@@ -530,9 +530,11 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     return true;
   }
 
-  // getImportableBrowsers -> {browsers:[{id,display_name,has_bookmarks,
-  // has_passwords_store}]}. Detection is stat-only (no keychain, no
-  // decryption) so it is cheap enough to run inline on the UI thread.
+  // getImportableBrowsers -> {browsers:[{id,display_name,installed,
+  // has_bookmarks,has_passwords_store}]}. Detection is stat-only (no keychain,
+  // no decryption) so it is cheap enough to run inline on the UI thread. Every
+  // supported browser is returned; `installed` is false for ones not present
+  // here so the UI can render them greyed/disabled.
   void HandleGetImportableBrowsers(const base::ListValue& args) {
     AllowJavascript();
     CHECK_GE(args.size(), 1u);
@@ -545,6 +547,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       base::DictValue entry;
       entry.Set("id", BrowserIdToString(b.id));
       entry.Set("display_name", b.display_name);
+      entry.Set("installed", b.installed);
       entry.Set("has_bookmarks", b.has_bookmarks);
       entry.Set("has_passwords_store", b.has_passwords_store);
       browsers.Append(std::move(entry));
@@ -820,13 +823,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .field .range-wrap{display:flex;align-items:center;gap:12px}
 .field input[type="range"]{flex:1;accent-color:#6366f1}
 .field .range-val{font-size:13px;color:#6366f1;min-width:40px;text-align:right;font-weight:600}
-.toggle{display:flex;align-items:center;gap:10px;cursor:pointer}
+.field label.toggle,.toggle{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:normal;color:inherit;margin-bottom:0}
 .toggle input{display:none}
-.toggle .track{width:40px;height:22px;border-radius:11px;background:#333;position:relative;transition:background 0.2s}
+.toggle .track{flex:0 0 auto;width:40px;height:22px;border-radius:11px;background:#333;position:relative;transition:background 0.2s}
 .toggle input:checked + .track{background:#6366f1}
 .toggle .track::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#e0e0e0;transition:transform 0.2s}
 .toggle input:checked + .track::after{transform:translateX(18px)}
-.toggle .label{font-size:13px}
+.toggle .label{font-size:13px;color:#ccc}
+.toggle.disabled{opacity:0.5;cursor:not-allowed}
+.browser-row.not-installed{opacity:0.45}
+.browser-logo{flex:0 0 auto;width:22px;height:22px;display:inline-block;vertical-align:middle}
+.not-installed-label{margin-left:auto;font-size:12px;color:#777;font-style:italic}
 .actions{display:flex;gap:10px;margin-top:20px}
 .btn{padding:10px 24px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s}
 .btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white}
@@ -1100,38 +1107,113 @@ function onImportProgress(p) {
     (p.done || 0) + (total ? '/' + total : '') + ')';
 }
 
-// Per-browser emoji glyph. Falls back to a generic globe for anything not
-// listed so a new BrowserId still renders sensibly.
-var browserEmoji = {
-  chrome: '🔴', chromium: '🔵', edge: '🌐',
-  brave: '🦁', opera: '🎼', vivaldi: '🎻',
-  firefox: '🦊', safari: '🧭'
+// Per-browser brand-style icon. Small ORIGINAL simplified marks built from each
+// browser's signature colors + geometric shapes (nominative use to identify the
+// SOURCE browser we import FROM — not pixel-exact trademarked logos). Returns an
+// inline <svg> string sized 22x22. Falls back to a neutral globe for unknown ids.
+var browserLogos = {
+  // Chrome: concentric red/yellow/green ring with a blue center dot.
+  chrome:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="11" fill="#e8453c"/>' +
+    '<path d="M12 1a11 11 0 0 1 9.5 5.5H12a5.5 5.5 0 0 0-4.9 3L3.4 5.2A11 11 0 0 1 12 1z" fill="#fbbc05"/>' +
+    '<path d="M2.5 6.7 8 16a5.5 5.5 0 0 0 4 3l-3 4A11 11 0 0 1 2.5 6.7z" fill="#34a853"/>' +
+    '<circle cx="12" cy="12" r="4.5" fill="#4285f4"/>' +
+    '<circle cx="12" cy="12" r="3.4" fill="#fff"/><circle cx="12" cy="12" r="2.6" fill="#4285f4"/></svg>',
+  // Chromium: blue/grey version of the same ring.
+  chromium:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="11" fill="#557aa8"/>' +
+    '<path d="M12 1a11 11 0 0 1 9.5 5.5H12a5.5 5.5 0 0 0-4.9 3L3.4 5.2A11 11 0 0 1 12 1z" fill="#8fb4d6"/>' +
+    '<path d="M2.5 6.7 8 16a5.5 5.5 0 0 0 4 3l-3 4A11 11 0 0 1 2.5 6.7z" fill="#a9c7e0"/>' +
+    '<circle cx="12" cy="12" r="4.5" fill="#2c5c8f"/>' +
+    '<circle cx="12" cy="12" r="3.4" fill="#eef4fa"/><circle cx="12" cy="12" r="2.6" fill="#2c5c8f"/></svg>',
+  // Edge: teal-to-blue crescent/swirl.
+  edge:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<defs><linearGradient id="mbEdge" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0" stop-color="#37c6d0"/><stop offset="1" stop-color="#1b74c8"/></linearGradient></defs>' +
+    '<path d="M12 1a11 11 0 0 1 10.6 8c-1.2-2.4-3.7-3.6-6.4-3.6-4 0-7.2 2.7-7.2 6 0 1.9 1 3.3 2.4 4.3C7 15 3 12.4 3 8.6 3 4.2 7 1 12 1z" fill="url(#mbEdge)"/>' +
+    '<path d="M22.6 9c.3 1 .4 2 .4 3 0 6.1-4.9 11-11 11-3.4 0-6-1.4-7.7-3.6 1.6 1 3.6 1.4 5.6 1.1 4.6-.7 7.6-3.7 8.1-6.9.4-2.4-.7-4-2.2-5.1 2.3-.3 4.9.4 6.8.4z" fill="#3aa6e0"/></svg>',
+  // Brave: orange shield with an angular lion-mark silhouette.
+  brave:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<path d="M12 1.5 20 4l-.6 9.2c-.2 3-2.1 5.6-4.9 6.9L12 21.5l-2.5-1.4c-2.8-1.3-4.7-3.9-4.9-6.9L4 4z" fill="#f15a24"/>' +
+    '<path d="M12 4 18 5.8l-.5 7.3c-.1 2.2-1.5 4.1-3.6 5.1L12 19l-1.9-.8c-2.1-1-3.5-2.9-3.6-5.1L6 5.8z" fill="#e8471c"/>' +
+    '<path d="M12 7 9.2 9.5l1 1.4-1.7 1.9 1.3 2.2L12 17l2.2-2 1.3-2.2-1.7-1.9 1-1.4z" fill="#fff"/></svg>',
+  // Opera: red rounded 'O'.
+  opera:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="11" fill="#e8203a"/>' +
+    '<ellipse cx="12" cy="12" rx="4.6" ry="7.2" fill="#fff"/></svg>',
+  // Vivaldi: red rounded square with angular lines.
+  vivaldi:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#ef3939"/>' +
+    '<path d="M6 8h5l-2.5 8z" fill="#fff"/><path d="M18 8h-4l1.6 5z" fill="#fff"/>' +
+    '<circle cx="12" cy="10" r="1.6" fill="#fff"/></svg>',
+  // Firefox: orange-to-yellow rounded flame.
+  firefox:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<defs><radialGradient id="mbFf" cx="0.4" cy="0.7" r="0.9">' +
+    '<stop offset="0" stop-color="#ffdd44"/><stop offset="0.5" stop-color="#ff8c1a"/>' +
+    '<stop offset="1" stop-color="#e0430f"/></radialGradient></defs>' +
+    '<path d="M12 1.5c1.5 2 1.2 4 .3 5.4 1.2-.6 2-.2 2.5.6.9-1 .6-2.3.6-2.3 2.8 2 4.6 5.3 4.6 9 0 5.4-4.3 9.8-9.6 9.8S1.5 19.6 1.5 14.2c0-3 1.3-5.4 3.2-6.9-.4 1.4.1 2.7.9 3.4-.6-2.6.6-5.2 2.6-6.7-.5 1.7.2 3 1.3 3.7C11.7 6.3 12.6 3.9 12 1.5z" fill="url(#mbFf)"/>' +
+    '<circle cx="11.5" cy="15" r="4.5" fill="#ffd23f" opacity="0.5"/></svg>',
+  // Safari: blue circle with a red/white compass needle.
+  safari:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="11" fill="#1b9df0"/>' +
+    '<circle cx="12" cy="12" r="9" fill="#e8f3fb"/>' +
+    '<path d="M12 12 16 8l-2 6z" fill="#f4402e"/>' +
+    '<path d="M12 12 8 16l2-6z" fill="#c8d6e0"/></svg>',
+  globe:
+    '<svg class="browser-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="10.5" fill="none" stroke="#888" stroke-width="1.6"/>' +
+    '<ellipse cx="12" cy="12" rx="5" ry="10.5" fill="none" stroke="#888" stroke-width="1.6"/>' +
+    '<line x1="1.5" y1="12" x2="22.5" y2="12" stroke="#888" stroke-width="1.6"/></svg>'
 };
 
 // The list of browsers currently rendered, in row order — used by
 // importFromAll() to iterate sequentially.
 var detectedBrowsers = [];
 
-// Build one row per detected browser. Each row has: emoji + name, a per-row
-// 'include passwords' checkbox (disabled with an explanatory tooltip when the
-// source has no readable password store on this OS), an Import button, and a
-// per-row status line.
+// True when the browser is present on this machine. The detection backend sets
+// an explicit `installed` flag; treat a missing flag as installed so older
+// backends stay backward-compatible.
+function isInstalled(b) {
+  return b.installed !== false;
+}
+
+// Build one row per supported browser. INSTALLED rows show a brand logo + name,
+// an 'Include passwords' toggle (disabled with a tooltip when that source has no
+// readable password store on this OS), an Import button, and a per-row status
+// line. NOT-INSTALLED rows are dimmed and show a 'Not installed' label in place
+// of the Import button (no dead button). Installed browsers are listed first.
 function renderBrowserList(browsers) {
-  detectedBrowsers = browsers || [];
+  var all = browsers || [];
+  // Installed first, otherwise preserve backend order (stable sort).
+  detectedBrowsers = all.slice().sort(function(a, b) {
+    return (isInstalled(a) ? 0 : 1) - (isInstalled(b) ? 0 : 1);
+  });
   var list = document.getElementById('browserList');
   list.textContent = '';
   if (!detectedBrowsers.length) {
     var none = document.createElement('div');
     none.className = 'desc';
-    none.textContent = 'No other browsers were detected on this computer.';
+    none.textContent = 'No supported browsers to import from.';
     list.appendChild(none);
     document.getElementById('importAllBtn').style.display = 'none';
     return;
   }
 
+  var installedCount = 0;
   detectedBrowsers.forEach(function(b) {
+    var installed = isInstalled(b);
+    if (installed) { installedCount++; }
+
     var row = document.createElement('div');
-    row.className = 'field';
+    row.className = 'field browser-row' + (installed ? '' : ' not-installed');
     row.style.display = 'flex';
     row.style.alignItems = 'center';
     row.style.gap = '10px';
@@ -1139,9 +1221,23 @@ function renderBrowserList(browsers) {
 
     var name = document.createElement('span');
     name.style.fontWeight = '600';
-    name.textContent = (browserEmoji[b.id] || '🌐') + '  ' +
-      b.display_name;
+    name.style.display = 'flex';
+    name.style.alignItems = 'center';
+    name.style.gap = '8px';
+    name.innerHTML = (browserLogos[b.id] || browserLogos.globe) +
+      '<span></span>';
+    name.lastChild.textContent = b.display_name;
     row.appendChild(name);
+
+    if (!installed) {
+      // Dimmed row: no toggle, no button — just a status marker.
+      var notLabel = document.createElement('span');
+      notLabel.className = 'not-installed-label';
+      notLabel.textContent = 'Not installed';
+      row.appendChild(notLabel);
+      list.appendChild(row);
+      return;
+    }
 
     var pwLabel = document.createElement('label');
     pwLabel.className = 'toggle';
@@ -1154,6 +1250,7 @@ function renderBrowserList(browsers) {
     } else {
       pwInput.checked = false;
       pwInput.disabled = true;
+      pwLabel.classList.add('disabled');
       pwLabel.title = "Passwords can't be imported from " + b.display_name +
         ' on this OS';
     }
@@ -1189,9 +1286,10 @@ function renderBrowserList(browsers) {
     list.appendChild(row);
   });
 
-  // The 'Import from all' button only makes sense with more than one source.
+  // The 'Import from all' button only makes sense with more than one installed
+  // source.
   document.getElementById('importAllBtn').style.display =
-    detectedBrowsers.length > 1 ? '' : 'none';
+    installedCount > 1 ? '' : 'none';
 }
 
 // Compose the final per-import summary from the resolved result.
@@ -1264,6 +1362,8 @@ function importFromAll() {
     'access…';
   var chain = Promise.resolve();
   detectedBrowsers.forEach(function(b) {
+    // Skip not-installed rows — they have no import controls.
+    if (!isInstalled(b) || !b._btn) { return; }
     chain = chain.then(function() {
       var wantPw = b._pwInput ? b._pwInput.checked : false;
       return importBrowser(b.id, wantPw, b._btn, b._rowStatus);
