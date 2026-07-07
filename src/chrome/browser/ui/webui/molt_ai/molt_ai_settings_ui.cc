@@ -25,6 +25,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/task_traits.h"
@@ -670,12 +671,40 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
                               base::Value(std::move(result)));
   }
 
-  // Creates (or reuses) a top-level "Imported from <Browser>" folder under
-  // the bookmark bar and adds each imported bookmark into it. NOTE (v1): the
-  // source folder_path is *flattened* — every bookmark lands directly in the
-  // single "Imported from <Browser>" folder rather than reconstructing the
-  // source browser's nested folder hierarchy. This keeps the write path
-  // simple and is acceptable for a first version.
+  // Find-or-create the nested folder chain described by |folder_path| (e.g.
+  // "Bookmarks Bar/Tech/News") under |root|, creating any missing folders, and
+  // return the leaf folder. Empty/whitespace-only segments are skipped; an
+  // empty path returns |root| itself.
+  const bookmarks::BookmarkNode* GetOrCreateFolderPath(
+      bookmarks::BookmarkModel* model,
+      const bookmarks::BookmarkNode* root,
+      const std::string& folder_path) {
+    const bookmarks::BookmarkNode* current = root;
+    for (const std::string& segment :
+         base::SplitString(folder_path, "/", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_NONEMPTY)) {
+      const std::u16string seg16 = base::UTF8ToUTF16(segment);
+      const bookmarks::BookmarkNode* next = nullptr;
+      for (const auto& child : current->children()) {
+        if (child->is_folder() && child->GetTitle() == seg16) {
+          next = child.get();
+          break;
+        }
+      }
+      if (!next) {
+        next = model->AddFolder(current, current->children().size(), seg16);
+      }
+      current = next;
+    }
+    return current;
+  }
+
+  // Creates (or reuses) a top-level "Imported from <Browser>" folder under the
+  // bookmark bar and RE-CREATES the source browser's nested folder hierarchy
+  // inside it, placing each bookmark in the same folder it had in the source
+  // browser (from bm.folder_path, e.g. "Bookmarks Bar/Tech"). Folders are
+  // found-or-created so bookmarks sharing a path group together, and repeat
+  // imports reuse existing folders instead of duplicating them.
   int ImportBookmarks(
       Profile* profile,
       const std::string& source_display_name,
@@ -692,22 +721,24 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     // Reuse an existing "Imported from <Browser>" folder if the user has
     // imported from this source before, so repeated imports don't stack up
     // duplicate top-level folders.
-    const bookmarks::BookmarkNode* folder = nullptr;
+    const bookmarks::BookmarkNode* root_folder = nullptr;
     for (const auto& child : bar->children()) {
       if (child->is_folder() && child->GetTitle() == folder_title) {
-        folder = child.get();
+        root_folder = child.get();
         break;
       }
     }
-    if (!folder)
-      folder = model->AddFolder(bar, bar->children().size(), folder_title);
+    if (!root_folder)
+      root_folder = model->AddFolder(bar, bar->children().size(), folder_title);
 
     int imported = 0;
     for (const auto& bm : bookmarks) {
       GURL url(bm.url);
       if (!url.is_valid())
         continue;
-      model->AddURL(folder, folder->children().size(), bm.title, url);
+      const bookmarks::BookmarkNode* target =
+          GetOrCreateFolderPath(model, root_folder, bm.folder_path);
+      model->AddURL(target, target->children().size(), bm.title, url);
       ++imported;
     }
     return imported;
