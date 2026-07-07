@@ -36,6 +36,7 @@ chromium-metrics-reviews@google.com.
   <variant name="AggregationService" summary="AggregationService"/>
   <variant name="AnnotationStorage" summary="AnnotationStorage"/>
   <variant name="BackgroundRequestQueue" summary="BackgroundRequestQueue"/>
+  <variant name="BrowserImporter" summary="Browser profile import (Login Data copy) across the Chromium family"/>
   <variant name="BrowsingTopics" summary="BrowsingTopics"/>
   <variant name="CdmStorage" summary="CdmStorage"/>
   <variant name="ChromeImporter" summary="Google Chrome profile import (Login Data copy)"/>
@@ -53,6 +54,7 @@ chromium-metrics-reviews@google.com.
   <variant name="DIPS" summary="DIPS"/>
   <variant name="DownloadRecord" summary="DownloadRecord"/>
   <variant name="FileIndexService" summary="FileIndexService"/>
+  <variant name="FirefoxImport" summary="Mozilla Firefox bookmark import (places.sqlite copy)"/>
   <variant name="FirefoxImporter" summary="FirefoxImporter"/>
   <variant name="FirstPartySets" summary="FirstPartySets"/>
   <variant name="FSPContextDatabase" summary="FSPContextDatabase"/>

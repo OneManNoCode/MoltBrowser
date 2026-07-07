@@ -131,14 +131,18 @@ source_set("molt_ai_api") {
 # AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
 # (registered directly in autocomplete_controller.cc)
 
-# Chrome profile importer — read/parse/decrypt CORE for the "Import from
-# Chrome" browser-migration feature (bookmarks + passwords). Pure data layer,
-# no UI, no writes. Password import + Keychain read are macOS-only this phase;
-# the file compiles cross-platform (bookmarks everywhere, passwords #if'd out).
+# Browser profile importer — read/parse/decrypt CORE for the "Import from
+# another browser" migration feature (bookmarks + passwords) across the
+# Chromium family (Chrome, Chromium, Edge, Brave, Opera, Vivaldi) plus Firefox
+# and Safari. Pure data layer, no UI, no writes. Password import is supported on
+# mac/win/linux (per-vendor os_crypt scheme); Firefox/Safari are bookmarks-only.
+# chrome_importer.h is a header-only back-compat shim over BrowserImporter.
 source_set("molt_ai_import") {
   sources = [
-    "import/chrome_importer.cc",
+    "import/browser_importer.cc",
+    "import/browser_importer.h",
     "import/chrome_importer.h",
+    "import/firefox_safari_reader.cc",
   ]
 
   deps = [
@@ -154,6 +158,16 @@ source_set("molt_ai_import") {
       "Foundation.framework",
       "Security.framework",
     ]
+  }
+
+  if (is_win) {
+    libs = [ "crypt32.lib" ]
+  }
+
+  if (is_linux) {
+    # libsecret is dlopen()'d at runtime (see ReadLibsecretPassword); libdl is
+    # needed for dlopen/dlsym.
+    libs = [ "dl" ]
   }
 }
 

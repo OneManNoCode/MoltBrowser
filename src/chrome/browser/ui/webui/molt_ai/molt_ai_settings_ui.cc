@@ -32,6 +32,7 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
@@ -125,9 +126,23 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
         base::BindRepeating(
             &MoltAISettingsHandler::HandleGetMoltnetExitCountries,
             base::Unretained(this)));
-    // Import & Migration — drives molt_ai::ChromeImporter to read the
-    // default Google Chrome profile and write bookmarks/passwords into
-    // this profile.
+    // Import & Migration — drives molt_ai::BrowserImporter to detect
+    // installed browsers, read a chosen profile, and write its
+    // bookmarks/passwords into this profile.
+    //
+    // getImportableBrowsers: stat-only detection of installed browsers.
+    web_ui()->RegisterMessageCallback(
+        "getImportableBrowsers",
+        base::BindRepeating(
+            &MoltAISettingsHandler::HandleGetImportableBrowsers,
+            base::Unretained(this)));
+    // importFromBrowser: read+write one detected browser's profile.
+    web_ui()->RegisterMessageCallback(
+        "importFromBrowser",
+        base::BindRepeating(&MoltAISettingsHandler::HandleImportFromBrowser,
+                            base::Unretained(this)));
+    // importFromChrome: legacy message kept working during the migration —
+    // it delegates to importFromBrowser("chrome", include_passwords).
     web_ui()->RegisterMessageCallback(
         "importFromChrome",
         base::BindRepeating(&MoltAISettingsHandler::HandleImportFromChrome,
@@ -456,44 +471,159 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
                               base::Value(std::move(out)));
   }
 
-  // ---- Import & Migration (from Google Chrome) ----
+  // ---- Import & Migration (multi-browser) ----
   //
-  // Reads the default Google Chrome profile off the main thread via
-  // molt_ai::ChromeImporter (Agent B owns the actual decryption /
-  // platform gating; on non-mac it returns passwords_supported=false),
-  // then writes the results into this profile's BookmarkModel and
-  // PasswordStore on the UI thread. Progress between the bookmark and
-  // password phases is streamed via the "import-progress" WebUI listener.
+  // Detects installed browsers and, on request, reads a chosen browser's
+  // profile off the main thread via molt_ai::BrowserImporter (Agent B/A own
+  // the actual detection / decryption / platform gating; passwords are
+  // reported per-source via passwords_supported), then writes the results
+  // into this profile's BookmarkModel and PasswordStore on the UI thread.
+  // Progress between the bookmark and password phases is streamed via the
+  // "import-progress" WebUI listener.
+
+  // Map a stable lowercase string id (used by the WebUI) to a BrowserId, and
+  // back. Keeping the mapping local means the settings page and the importer
+  // agree on exactly one wire format for the id.
+  static std::string BrowserIdToString(molt_ai::BrowserId id) {
+    switch (id) {
+      case molt_ai::BrowserId::kChrome:
+        return "chrome";
+      case molt_ai::BrowserId::kChromium:
+        return "chromium";
+      case molt_ai::BrowserId::kEdge:
+        return "edge";
+      case molt_ai::BrowserId::kBrave:
+        return "brave";
+      case molt_ai::BrowserId::kOpera:
+        return "opera";
+      case molt_ai::BrowserId::kVivaldi:
+        return "vivaldi";
+      case molt_ai::BrowserId::kFirefox:
+        return "firefox";
+      case molt_ai::BrowserId::kSafari:
+        return "safari";
+    }
+    return "chrome";
+  }
+
+  // Returns false (and leaves |out| untouched) for an unknown id string.
+  static bool StringToBrowserId(const std::string& s, molt_ai::BrowserId* out) {
+    if (s == "chrome") {
+      *out = molt_ai::BrowserId::kChrome;
+    } else if (s == "chromium") {
+      *out = molt_ai::BrowserId::kChromium;
+    } else if (s == "edge") {
+      *out = molt_ai::BrowserId::kEdge;
+    } else if (s == "brave") {
+      *out = molt_ai::BrowserId::kBrave;
+    } else if (s == "opera") {
+      *out = molt_ai::BrowserId::kOpera;
+    } else if (s == "vivaldi") {
+      *out = molt_ai::BrowserId::kVivaldi;
+    } else if (s == "firefox") {
+      *out = molt_ai::BrowserId::kFirefox;
+    } else if (s == "safari") {
+      *out = molt_ai::BrowserId::kSafari;
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  // getImportableBrowsers -> {browsers:[{id,display_name,has_bookmarks,
+  // has_passwords_store}]}. Detection is stat-only (no keychain, no
+  // decryption) so it is cheap enough to run inline on the UI thread.
+  void HandleGetImportableBrowsers(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 1u);
+    const std::string callback_id = args[0].GetString();
+
+    base::DictValue out;
+    base::ListValue browsers;
+    for (const molt_ai::DetectedBrowser& b :
+         molt_ai::BrowserImporter::DetectInstalled()) {
+      base::DictValue entry;
+      entry.Set("id", BrowserIdToString(b.id));
+      entry.Set("display_name", b.display_name);
+      entry.Set("has_bookmarks", b.has_bookmarks);
+      entry.Set("has_passwords_store", b.has_passwords_store);
+      browsers.Append(std::move(entry));
+    }
+    out.Set("browsers", std::move(browsers));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+  }
+
+  // importFromBrowser(callback_id, browser_id_string, include_passwords):
+  // reads the chosen browser's profile off-thread, then writes it in.
+  void HandleImportFromBrowser(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 3u);
+    const std::string callback_id = args[0].GetString();
+    const std::string browser_id_string =
+        args[1].is_string() ? args[1].GetString() : std::string();
+    const bool include_passwords = args[2].is_bool() && args[2].GetBool();
+
+    molt_ai::BrowserId browser_id;
+    if (!StringToBrowserId(browser_id_string, &browser_id)) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("browser_id", browser_id_string);
+      result.Set("error", "Unknown browser");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE,
+        {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(&molt_ai::BrowserImporter::ReadProfile, browser_id,
+                       include_passwords),
+        base::BindOnce(&MoltAISettingsHandler::OnBrowserProfileRead,
+                       weak_ptr_factory_.GetWeakPtr(), callback_id,
+                       include_passwords));
+  }
+
+  // Legacy importFromChrome(callback_id, include_passwords) — delegate to the
+  // generalized path so nothing breaks mid-migration.
   void HandleImportFromChrome(const base::ListValue& args) {
     AllowJavascript();
     CHECK_GE(args.size(), 2u);
     const std::string callback_id = args[0].GetString();
-    // args[1] is the "include saved passwords" checkbox state.
     const bool include_passwords = args[1].is_bool() && args[1].GetBool();
 
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE,
         {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
-        base::BindOnce(&molt_ai::ChromeImporter::ReadDefaultProfile,
-                       include_passwords),
-        base::BindOnce(&MoltAISettingsHandler::OnChromeProfileRead,
+        base::BindOnce(&molt_ai::BrowserImporter::ReadProfile,
+                       molt_ai::BrowserId::kChrome, include_passwords),
+        base::BindOnce(&MoltAISettingsHandler::OnBrowserProfileRead,
                        weak_ptr_factory_.GetWeakPtr(), callback_id,
                        include_passwords));
   }
 
-  void OnChromeProfileRead(const std::string& callback_id,
-                           bool include_passwords,
-                           molt_ai::ChromeImportData data) {
+  void OnBrowserProfileRead(const std::string& callback_id,
+                            bool include_passwords,
+                            molt_ai::BrowserImportData data) {
     // The handler could have outlived its WebContents; AllowJavascript()
-    // was already called in HandleImportFromChrome, but re-guard against a
+    // was already called in the Handle* entrypoint, but re-guard against a
     // torn-down page.
     if (!IsJavascriptAllowed())
       return;
 
-    if (!data.chrome_profile_found) {
+    const std::string browser_id = BrowserIdToString(data.source_id);
+
+    if (!data.profile_found) {
       base::DictValue result;
       result.Set("success", false);
-      result.Set("error", "No Google Chrome profile found");
+      result.Set("browser_id", browser_id);
+      result.Set("needs_full_disk_access", data.needs_full_disk_access);
+      result.Set(
+          "error",
+          data.error.empty()
+              ? ("No " + data.display_name + " profile found")
+              : data.error);
       ResolveJavascriptCallback(base::Value(callback_id),
                                 base::Value(std::move(result)));
       return;
@@ -505,7 +635,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     FireImportProgress("bookmarks", 0,
                        static_cast<int>(data.bookmarks.size()));
     int bookmarks_imported =
-        ImportBookmarks(profile, data.bookmarks);
+        ImportBookmarks(profile, data.display_name, data.bookmarks);
     FireImportProgress("bookmarks", bookmarks_imported,
                        static_cast<int>(data.bookmarks.size()));
 
@@ -524,35 +654,41 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
     base::DictValue result;
     result.Set("success", true);
+    result.Set("browser_id", browser_id);
     result.Set("bookmarks_imported", bookmarks_imported);
     result.Set("passwords_imported", passwords_imported);
     result.Set("password_failures", password_failures);
     result.Set("keychain_denied", data.keychain_denied);
     result.Set("passwords_supported", data.passwords_supported);
+    result.Set("needs_full_disk_access", data.needs_full_disk_access);
+    if (!data.error.empty())
+      result.Set("error", data.error);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
   }
 
-  // Creates (or reuses) a top-level "Imported from Chrome" folder under the
-  // bookmark bar and adds each imported bookmark into it. NOTE (v1): the
-  // source folder_path is *flattened* — every bookmark lands directly in
-  // the single "Imported from Chrome" folder rather than reconstructing
-  // Chrome's nested folder hierarchy. This keeps the write path simple and
-  // is acceptable for a first version.
+  // Creates (or reuses) a top-level "Imported from <Browser>" folder under
+  // the bookmark bar and adds each imported bookmark into it. NOTE (v1): the
+  // source folder_path is *flattened* — every bookmark lands directly in the
+  // single "Imported from <Browser>" folder rather than reconstructing the
+  // source browser's nested folder hierarchy. This keeps the write path
+  // simple and is acceptable for a first version.
   int ImportBookmarks(
       Profile* profile,
-      const std::vector<molt_ai::ChromeBookmark>& bookmarks) {
+      const std::string& source_display_name,
+      const std::vector<molt_ai::BrowserBookmark>& bookmarks) {
     bookmarks::BookmarkModel* model =
         BookmarkModelFactory::GetForBrowserContext(profile);
     if (!model || !model->loaded())
       return 0;
 
     const bookmarks::BookmarkNode* bar = model->bookmark_bar_node();
-    const std::u16string folder_title = u"Imported from Chrome";
+    const std::u16string folder_title =
+        u"Imported from " + base::UTF8ToUTF16(source_display_name);
 
-    // Reuse an existing "Imported from Chrome" folder if the user has
-    // imported before, so repeated imports don't stack up duplicate
-    // top-level folders.
+    // Reuse an existing "Imported from <Browser>" folder if the user has
+    // imported from this source before, so repeated imports don't stack up
+    // duplicate top-level folders.
     const bookmarks::BookmarkNode* folder = nullptr;
     for (const auto& child : bar->children()) {
       if (child->is_folder() && child->GetTitle() == folder_title) {
@@ -576,7 +712,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   void ImportPasswords(
       Profile* profile,
-      const std::vector<molt_ai::ChromeCredential>& credentials,
+      const std::vector<molt_ai::BrowserCredential>& credentials,
       int* imported,
       int* failures) {
     scoped_refptr<password_manager::PasswordStoreInterface> store =
@@ -844,17 +980,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="section">
     <h2><span class="icon">&#128229;</span> Import &amp; Migration</h2>
     <div class="field">
-      <div class="desc">Bring your bookmarks and saved passwords over from Google Chrome.</div>
+      <div class="desc">Bring your bookmarks and saved passwords over from another browser installed on this computer.</div>
     </div>
+    <div id="browserList" class="field"></div>
     <div class="field">
-      <label class="toggle">
-        <input type="checkbox" id="importPasswords" checked>
-        <span class="track"></span>
-        <span class="label">Include saved passwords (asks for macOS Keychain permission)</span>
-      </label>
-    </div>
-    <div class="field">
-      <button class="btn primary" id="importChromeBtn" onclick="importFromChrome()">Import from Google Chrome</button>
+      <button class="btn" id="importAllBtn" style="display:none" onclick="importFromAll()">Import from all detected browsers</button>
     </div>
     <div id="importStatus" class="desc" style="margin-top:4px"></div>
   </div>
@@ -956,7 +1086,7 @@ function resetSettings() {
   });
 }
 
-// ---- Import from Google Chrome ----
+// ---- Import & Migration (multi-browser) ----
 // Renders {phase,done,total} progress events streamed from the C++ handler
 // between the bookmark and password write phases. Uses textContent
 // throughout so any backend-supplied text (e.g. an error string) can't
@@ -970,31 +1100,187 @@ function onImportProgress(p) {
     (p.done || 0) + (total ? '/' + total : '') + ')';
 }
 
-function importFromChrome() {
-  var btn = document.getElementById('importChromeBtn');
-  var status = document.getElementById('importStatus');
-  var includePasswords = document.getElementById('importPasswords').checked;
-  btn.disabled = true;
-  status.textContent = 'Importing…';
-  sendWithPromise('importFromChrome', includePasswords).then(function(r) {
-    if (!r || !r.success) {
-      status.textContent = (r && r.error) ? r.error : 'Import failed';
-      return;
+// Per-browser emoji glyph. Falls back to a generic globe for anything not
+// listed so a new BrowserId still renders sensibly.
+var browserEmoji = {
+  chrome: '🔴', chromium: '🔵', edge: '🌐',
+  brave: '🦁', opera: '🎼', vivaldi: '🎻',
+  firefox: '🦊', safari: '🧭'
+};
+
+// The list of browsers currently rendered, in row order — used by
+// importFromAll() to iterate sequentially.
+var detectedBrowsers = [];
+
+// Build one row per detected browser. Each row has: emoji + name, a per-row
+// 'include passwords' checkbox (disabled with an explanatory tooltip when the
+// source has no readable password store on this OS), an Import button, and a
+// per-row status line.
+function renderBrowserList(browsers) {
+  detectedBrowsers = browsers || [];
+  var list = document.getElementById('browserList');
+  list.textContent = '';
+  if (!detectedBrowsers.length) {
+    var none = document.createElement('div');
+    none.className = 'desc';
+    none.textContent = 'No other browsers were detected on this computer.';
+    list.appendChild(none);
+    document.getElementById('importAllBtn').style.display = 'none';
+    return;
+  }
+
+  detectedBrowsers.forEach(function(b) {
+    var row = document.createElement('div');
+    row.className = 'field';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+    row.style.flexWrap = 'wrap';
+
+    var name = document.createElement('span');
+    name.style.fontWeight = '600';
+    name.textContent = (browserEmoji[b.id] || '🌐') + '  ' +
+      b.display_name;
+    row.appendChild(name);
+
+    var pwLabel = document.createElement('label');
+    pwLabel.className = 'toggle';
+    pwLabel.style.marginLeft = 'auto';
+    var pwInput = document.createElement('input');
+    pwInput.type = 'checkbox';
+    pwInput.className = 'importPasswords';
+    if (b.has_passwords_store) {
+      pwInput.checked = true;
+    } else {
+      pwInput.checked = false;
+      pwInput.disabled = true;
+      pwLabel.title = "Passwords can't be imported from " + b.display_name +
+        ' on this OS';
     }
-    var msg = '✓ Imported ' + (r.bookmarks_imported || 0) +
-      ' bookmarks and ' + (r.passwords_imported || 0) + ' passwords';
-    if (includePasswords && r.passwords_supported === false) {
-      msg += ' (password import is not supported on this platform)';
+    var track = document.createElement('span');
+    track.className = 'track';
+    var lbl = document.createElement('span');
+    lbl.className = 'label';
+    lbl.textContent = 'Include passwords';
+    pwLabel.appendChild(pwInput);
+    pwLabel.appendChild(track);
+    pwLabel.appendChild(lbl);
+    row.appendChild(pwLabel);
+
+    var btn = document.createElement('button');
+    btn.className = 'btn primary';
+    btn.textContent = 'Import';
+    btn.onclick = function() {
+      importBrowser(b.id, pwInput.checked, btn, rowStatus);
+    };
+    row.appendChild(btn);
+
+    var rowStatus = document.createElement('div');
+    rowStatus.className = 'desc';
+    rowStatus.style.flexBasis = '100%';
+    rowStatus.style.marginTop = '2px';
+    row.appendChild(rowStatus);
+
+    // Stash refs on the browser record so importFromAll() can drive the row.
+    b._btn = btn;
+    b._pwInput = pwInput;
+    b._rowStatus = rowStatus;
+
+    list.appendChild(row);
+  });
+
+  // The 'Import from all' button only makes sense with more than one source.
+  document.getElementById('importAllBtn').style.display =
+    detectedBrowsers.length > 1 ? '' : 'none';
+}
+
+// Compose the final per-import summary from the resolved result.
+function importSummary(r, includePasswords) {
+  if (!r || !r.success) {
+    if (r && r.needs_full_disk_access) {
+      return 'Needs Full Disk Access — grant it in System Settings › ' +
+        'Privacy & Security › Full Disk Access, then try again';
+    }
+    return (r && r.error) ? r.error : 'Import failed';
+  }
+  var msg = '✓ ' + (r.bookmarks_imported || 0) + ' bookmarks';
+  if (includePasswords) {
+    if (r.needs_full_disk_access) {
+      msg += ', 0 passwords — Needs Full Disk Access — grant it in System ' +
+        'Settings › Privacy & Security › Full Disk Access, then try again';
+    } else if (r.passwords_supported === false) {
+      msg += ', 0 passwords — No passwords: not supported for this browser ' +
+        'on this OS';
     } else if (r.keychain_denied) {
-      msg += ' (macOS Keychain permission was denied, so passwords were skipped)';
-    } else if (r.password_failures) {
-      msg += ' (' + r.password_failures + ' passwords could not be imported)';
+      msg += ', 0 passwords — No passwords: Keychain permission was denied';
+    } else {
+      msg += ', ' + (r.passwords_imported || 0) + ' passwords';
+      if (r.password_failures) {
+        msg += ' (' + r.password_failures + ' could not be imported)';
+      }
     }
-    status.textContent = msg;
-  }).catch(function(e) {
-    status.textContent = (e && e.error) ? e.error : 'Import failed';
-  }).then(function() {
-    btn.disabled = false;
+  }
+  return msg;
+}
+
+// Import one browser. Returns a promise so importFromAll() can chain. |btn|
+// and |rowStatus| are the row's controls (disabled while running); the
+// shared #importStatus area mirrors the per-source progress.
+function importBrowser(browserId, includePasswords, btn, rowStatus) {
+  var status = document.getElementById('importStatus');
+  if (btn) btn.disabled = true;
+  if (rowStatus) rowStatus.textContent = 'Importing…';
+  status.textContent = 'Importing…';
+  return sendWithPromise('importFromBrowser', browserId, includePasswords)
+    .then(function(r) {
+      var msg = importSummary(r, includePasswords);
+      if (rowStatus) rowStatus.textContent = msg;
+      status.textContent = msg;
+      return r;
+    }).catch(function(e) {
+      var msg = (e && e.error) ? e.error : 'Import failed';
+      if (rowStatus) rowStatus.textContent = msg;
+      status.textContent = msg;
+      return null;
+    }).then(function(r) {
+      if (btn) btn.disabled = false;
+      return r;
+    });
+}
+
+// Legacy shim so anything still calling importFromChrome() keeps working.
+function importFromChrome() {
+  return importBrowser('chrome', true, null, null);
+}
+
+// Import from every detected browser, one at a time. Each source may raise
+// its own Keychain prompt, so we run them sequentially and note that.
+function importFromAll() {
+  var allBtn = document.getElementById('importAllBtn');
+  var status = document.getElementById('importStatus');
+  allBtn.disabled = true;
+  status.textContent =
+    'Importing from all detected browsers — each may prompt for Keychain ' +
+    'access…';
+  var chain = Promise.resolve();
+  detectedBrowsers.forEach(function(b) {
+    chain = chain.then(function() {
+      var wantPw = b._pwInput ? b._pwInput.checked : false;
+      return importBrowser(b.id, wantPw, b._btn, b._rowStatus);
+    });
+  });
+  chain.then(function() {
+    status.textContent = '✓ Finished importing from all detected browsers';
+    allBtn.disabled = false;
+  });
+}
+
+// Detect installed browsers and render the list on load.
+function loadImportableBrowsers() {
+  sendWithPromise('getImportableBrowsers').then(function(r) {
+    renderBrowserList(r && r.browsers ? r.browsers : []);
+  }).catch(function() {
+    renderBrowserList([]);
   });
 }
 
@@ -1108,6 +1394,8 @@ sendWithPromise('getSettings').then(function(s) {
 });
 // Drive the exit-country picker from the real backend list.
 loadExitCountries();
+// Detect installed browsers for the Import & Migration section.
+loadImportableBrowsers();
 </script>
 </body>
 </html>)HTML";
