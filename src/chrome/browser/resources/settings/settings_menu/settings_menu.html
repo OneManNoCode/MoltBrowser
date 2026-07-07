@@ -1,0 +1,190 @@
+    <style include="cr-hidden-style cr-icons cr-nav-menu-item-style">
+      :host {
+        box-sizing: border-box;
+        display: block;
+        padding-bottom: 5px; /* Prevents focus outlines from being cropped. */
+        padding-top: 8px;
+      }
+
+      :host * {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      #menu {
+        color: var(--google-grey-700);
+        display: flex;
+        flex-direction: column;
+        min-width: fit-content;
+      }
+
+      #extensionsLink > .cr-icon {
+        height: var(--cr-icon-size);
+        margin-inline-end: 14px;  /* 16px - 2px from margin for outline. */
+        width: var(--cr-icon-size);
+      }
+
+      .menu-separator {
+        /* Per bettes@, this is different from the other separator lines. */
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        margin-bottom: 8px;
+        margin-top: 8px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        #menu {
+          color: var(--cr-primary-text-color);
+        }
+
+        .menu-separator {
+          border-bottom: var(--cr-separator-line);  /* override */
+        }
+      }
+    </style>
+
+    <div role="navigation">
+      <cr-menu-selector id="menu"
+          selectable="a:not(#extensionsLink):not(#importBookmarksLink)"
+          attr-for-selected="href" on-iron-activate="onSelectorActivate_"
+          on-click="onLinkClick_" selected-attribute="selected">
+        <a role="menuitem"
+            id="people" href="/people" hidden="[[!pageVisibility_.people]]"
+            class="cr-nav-menu-item">
+<!-- MoltBrowser: always use the neutral person glyph. Never render the
+     branded settings-internal:google-g (blue Google "G") even on
+     _google_chrome-flavored builds. -->
+          <cr-icon icon="settings:person"></cr-icon>
+          $i18n{peoplePageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" id="autofill" href="/autofill"
+            on-click="onAutofillClick_"
+            class="cr-nav-menu-item"
+            hidden="[[!showAutofillMenuItem_(
+                enableYourSavedInfoSettingsPage_,
+                pageVisibility_.yourSavedInfo, pageVisibility_.autofill)]]">
+          <cr-icon icon="settings:assignment"></cr-icon>
+          $i18n{autofillPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <!-- MoltBrowser: prominent, always-visible entry point for the
+             one-click browser-migration flow. Modeled on #extensionsLink
+             (external link): the href navigates to MoltBrowser's detected-
+             browser import page in a new tab; excluded from menu selection.
+             Placed high (right after Autofill) so users migrating from
+             another browser can't miss it. -->
+        <a role="menuitem" id="importBookmarksLink" class="cr-nav-menu-item"
+            href="molt://ai-settings/?section=import" target="_blank"
+            title="Import bookmarks &amp; passwords from another browser">
+          <cr-icon icon="cr:file-download"></cr-icon>
+          <span>Import bookmarks</span>
+          <div class="cr-icon icon-external"></div>
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" href="/privacy"
+            hidden="[[!pageVisibility_.privacy]]"
+            class="cr-nav-menu-item">
+          <cr-icon icon="settings:security"></cr-icon>
+          $i18n{privacyPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" id="performance" href="/performance"
+            class="cr-nav-menu-item"
+            hidden="[[!pageVisibility_.performance]]">
+          <cr-icon icon="settings:navigation-performance"></cr-icon>
+          $i18n{performancePageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" href="/ai"
+            hidden="[[!showAiPageMenuItem_(showAiPage_, pageVisibility_.ai)]]"
+            on-click="onAiPageClick_"
+            class="cr-nav-menu-item">
+          <cr-icon icon="settings20:magic"></cr-icon>
+          $i18n{aiInnovationsPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" id="appearance" href="/appearance"
+            hidden="[[!pageVisibility_.appearance]]"
+            class="cr-nav-menu-item">
+          <cr-icon icon="settings:palette"></cr-icon>
+          $i18n{appearancePageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" href="/search" class="cr-nav-menu-item">
+          <cr-icon icon="settings:search"></cr-icon>
+          $i18n{searchPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+<if expr="not is_chromeos">
+        <a role="menuitem" id="defaultBrowser" class="cr-nav-menu-item"
+          href="/defaultBrowser"
+          hidden="[[!pageVisibility_.defaultBrowser]]">
+          <cr-icon icon="settings:web"></cr-icon>
+          $i18n{defaultBrowser}
+          <cr-ripple></cr-ripple>
+        </a>
+</if>
+        <a role="menuitem" id="onStartup" href="/onStartup"
+            class="cr-nav-menu-item"
+            hidden="[[!pageVisibility_.onStartup]]">
+          <cr-icon icon="settings:power-settings"></cr-icon>
+          $i18n{onStartup}
+          <cr-ripple></cr-ripple>
+        </a>
+        <div class="menu-separator"></div>
+        <a role="menuitem" id="languages" href="/languages"
+            class="cr-nav-menu-item"
+            hidden="[[!pageVisibility_.languages]]">
+          <cr-icon icon="settings:navigation-language"></cr-icon>
+          $i18n{languagesPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" id="downloads" href="/downloads"
+            class="cr-nav-menu-item"
+            hidden="[[!pageVisibility_.downloads]]">
+          <cr-icon icon="settings:download"></cr-icon>
+          $i18n{downloadsPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" id="accessibility" href="/accessibility"
+            class="cr-nav-menu-item"
+            hidden="[[!pageVisibility_.a11y]]">
+          <cr-icon icon="settings:accessibility"></cr-icon>
+          $i18n{a11yPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+<if expr="not is_chromeos">
+        <a role="menuitem" id="system" href="/system" class="cr-nav-menu-item"
+            hidden="[[!pageVisibility_.system]]">
+          <cr-icon icon="settings:system"></cr-icon>
+          $i18n{systemPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+</if>
+        <a role="menuitem" id="reset" href="/reset"
+            hidden="[[!pageVisibility_.reset]]" class="cr-nav-menu-item">
+          <cr-icon icon="settings:restore"></cr-icon>
+          $i18n{resetPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+        <div hidden="[[hideBottomMenuSeparator_(pageVisibility_)]]"
+            class="menu-separator"></div>
+        <a role="menuitem" id="extensionsLink" class="cr-nav-menu-item"
+            href="chrome://extensions" target="_blank"
+            hidden="[[!pageVisibility_.extensions]]"
+            on-click="onExtensionsLinkClick_"
+            title="$i18n{extensionsLinkTooltip}">
+          <cr-icon icon="settings:extension"></cr-icon>
+          <span>$i18n{extensionsPageTitle}</span>
+          <div class="cr-icon icon-external"></div>
+          <cr-ripple></cr-ripple>
+        </a>
+        <a role="menuitem" id="about-menu" href="/help"
+            class="cr-nav-menu-item">
+          <!-- MoltBrowser: neutral info glyph instead of cr:chrome-product
+               (the blue Chrome/Google swirl) on the About row. -->
+          <cr-icon icon="cr:info"></cr-icon>
+          $i18n{aboutPageTitle}
+          <cr-ripple></cr-ripple>
+        </a>
+      </cr-menu-selector>
+    </div>
