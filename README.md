@@ -2,7 +2,7 @@
 
 **The AI-Native Browser for the Agent Era**
 
-Built by [GenEye AI Labs Inc.](https://github.com/OneManNoCode)
+Built by [GenEye AI Labs Inc.](https://geneye.ai/moltbrowser)
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Changelog](https://img.shields.io/badge/changelog-keep--a--changelog-orange)](CHANGELOG.md)
