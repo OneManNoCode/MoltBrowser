@@ -131,6 +131,32 @@ source_set("molt_ai_api") {
 # AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
 # (registered directly in autocomplete_controller.cc)
 
+# Chrome profile importer — read/parse/decrypt CORE for the "Import from
+# Chrome" browser-migration feature (bookmarks + passwords). Pure data layer,
+# no UI, no writes. Password import + Keychain read are macOS-only this phase;
+# the file compiles cross-platform (bookmarks everywhere, passwords #if'd out).
+source_set("molt_ai_import") {
+  sources = [
+    "import/chrome_importer.cc",
+    "import/chrome_importer.h",
+  ]
+
+  deps = [
+    "//base",
+    "//crypto",
+    "//sql",
+    "//url",
+  ]
+
+  if (is_mac) {
+    frameworks = [
+      "CoreFoundation.framework",
+      "Foundation.framework",
+      "Security.framework",
+    ]
+  }
+}
+
 # AI Side Panel — chat interface in the browser sidebar
 source_set("molt_ai_side_panel") {
   sources = [
@@ -264,6 +290,7 @@ group("molt_ai") {
     ":molt_ai_models",
     ":molt_ai_api",
     ":molt_ai_embeddings",
+    ":molt_ai_import",
     ":molt_shield",
     ":molt_update",
     "automation:automation",

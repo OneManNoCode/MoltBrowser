@@ -95,6 +95,15 @@ function esc(t) {
 
 // ---- Markdown Rendering ----
 var codeBlockId = 0;
+
+// Scheme allowlist for links surfaced in chat. http/https ONLY —
+// this is the JS half of the two-layer validation (the C++
+// 'openUrlInTab' handler re-checks the scheme before navigating).
+// Rejects javascript:, data:, file:, chrome:, etc.
+function isSafeHttpUrl(u) {
+  return /^https?:\/\//i.test(u);
+}
+
 function renderMarkdown(text) {
   // Escape HTML first
   var s = esc(text);
@@ -108,6 +117,39 @@ function renderMarkdown(text) {
   });
   // Inline code (`...`)
   s = s.replace(/`([^`\n]+)`/g, '<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--text)">$1</code>');
+  // esc() (textContent->innerHTML) encodes & < > but NOT double-quotes,
+  // so a url containing a `"` would break out of the href="" attribute
+  // and inject live handler attributes (e.g. onmouseover=). Quote-escape
+  // the url before it lands in an attribute.
+  function attrUrl(u) { return u.replace(/"/g, '&quot;'); }
+  // Markdown links [text](url). `s` is already HTML-escaped, so the
+  // captured url/text are entity-safe for the element body; the url is
+  // additionally quote-escaped via attrUrl() before the href attribute.
+  // Only emit an anchor for http/https urls; unsafe schemes fall back
+  // to the original literal text (no anchor). The anchor carries the
+  // chat-link class + data-molt-link marker so the delegated click
+  // handler routes it to a real browser tab via 'openUrlInTab'.
+  s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function(m, txt, url) {
+    if (!isSafeHttpUrl(url)) return m;
+    return '<a href="' + attrUrl(url) + '" class="chat-link" ' +
+           'data-molt-link="1">' + txt + '</a>';
+  });
+  // Bare-URL autolinker. Runs AFTER the markdown-link rule so it must
+  // not re-wrap urls already inside an anchor built above. A url there
+  // is immediately preceded by either href=" or > (the anchor body),
+  // so the negative lookbehind on those two chars skips them; the
+  // remaining match is a plain url at a word boundary. Trailing
+  // punctuation (.,;:!?) is left outside the link. Urls inside a code
+  // span/block (already wrapped in <code>...</code> or <pre>...</pre> by
+  // the rules above) are left untouched so code samples are not turned
+  // into clickable links or corrupted. The url is quote-escaped for the
+  // href attribute (see attrUrl above).
+  s = s.replace(/(<code[^>]*>[\s\S]*?<\/code>)|(^|[^"\/>=])(https?:\/\/[^\s<]+[^\s<.,;:!?)\]])/gi,
+    function(m, codeSpan, pre, url) {
+      if (codeSpan) return codeSpan;  // leave code content as-is
+      return pre + '<a href="' + attrUrl(url) + '" class="chat-link" ' +
+             'data-molt-link="1">' + url + '</a>';
+    });
   // Bold (**...**)
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--text)">$1</strong>');
   // Italic (*...*)
@@ -3688,6 +3730,28 @@ sendWithPromise('getModelStatus').then(function(r){
 });
 
 // ---- Event Listeners ----
+
+// Clickable links in chat responses. The side-panel WebContents has no
+// AddNewContents delegate, so a plain <a target="_blank"> is swallowed.
+// Intercept clicks on any http(s) anchor inside #messages (including the
+// chat-link anchors built by renderMarkdown and the memory-docs list)
+// and route them to a real browser tab via the 'openUrlInTab' IPC.
+(function(){
+  var messages = document.getElementById('messages');
+  var target = messages || document;
+  target.addEventListener('click', function(e) {
+    var a = e.target.closest && e.target.closest('a.chat-link, a[href^="http"]');
+    if (!a) return;
+    var href = a.href || a.getAttribute('href');
+    if (!isSafeHttpUrl(href)) return;
+    e.preventDefault();
+    sendWithPromise('openUrlInTab', href).then(function(r){
+      if (!r || !r.success) addErrorMessage('Could not open link.');
+    }).catch(function(){
+      addErrorMessage('Could not open link.');
+    });
+  });
+})();
 
 // Token streaming
 cr.addWebUiListener('ai-token', function(token, isDone) {

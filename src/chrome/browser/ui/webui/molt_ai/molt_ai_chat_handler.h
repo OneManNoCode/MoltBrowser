@@ -112,6 +112,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // window.open there is silently dropped by views::WebView).
   // Args: [callback_id] → {success, error?}
   void HandleOpenMoltSettings(const base::ListValue& args);
+  // Open an http(s) link from a chat response in a real browser tab.
+  void HandleOpenUrlInTab(const base::ListValue& args);
   // Privacy heatmap — enumerate third-party resources loaded into the
   // active tab and bucket them into ads / analytics / cdn / other.
   // Args: [callback_id]

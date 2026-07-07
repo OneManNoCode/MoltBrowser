@@ -38,6 +38,7 @@ chromium-metrics-reviews@google.com.
   <variant name="BackgroundRequestQueue" summary="BackgroundRequestQueue"/>
   <variant name="BrowsingTopics" summary="BrowsingTopics"/>
   <variant name="CdmStorage" summary="CdmStorage"/>
+  <variant name="ChromeImporter" summary="Google Chrome profile import (Login Data copy)"/>
   <variant name="Chromoting" summary="Chromoting"/>
   <variant name="CodeCache"/>
   <variant name="CollaborationMessageStorage"

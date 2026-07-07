@@ -26,10 +26,22 @@
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/task/task_traits.h"
+#include "base/task/thread_pool.h"
 #include "base/values.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/password_manager/profile_password_store_factory.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node.h"
+#include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store/password_store_interface.h"
+#include "components/keyed_service/core/service_access_type.h"
+#include "url/gurl.h"
 #include "build/build_config.h"
 
 namespace {
@@ -113,6 +125,13 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
         base::BindRepeating(
             &MoltAISettingsHandler::HandleGetMoltnetExitCountries,
             base::Unretained(this)));
+    // Import & Migration — drives molt_ai::ChromeImporter to read the
+    // default Google Chrome profile and write bookmarks/passwords into
+    // this profile.
+    web_ui()->RegisterMessageCallback(
+        "importFromChrome",
+        base::BindRepeating(&MoltAISettingsHandler::HandleImportFromChrome,
+                            base::Unretained(this)));
   }
 
  private:
@@ -437,6 +456,164 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
                               base::Value(std::move(out)));
   }
 
+  // ---- Import & Migration (from Google Chrome) ----
+  //
+  // Reads the default Google Chrome profile off the main thread via
+  // molt_ai::ChromeImporter (Agent B owns the actual decryption /
+  // platform gating; on non-mac it returns passwords_supported=false),
+  // then writes the results into this profile's BookmarkModel and
+  // PasswordStore on the UI thread. Progress between the bookmark and
+  // password phases is streamed via the "import-progress" WebUI listener.
+  void HandleImportFromChrome(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 2u);
+    const std::string callback_id = args[0].GetString();
+    // args[1] is the "include saved passwords" checkbox state.
+    const bool include_passwords = args[1].is_bool() && args[1].GetBool();
+
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE,
+        {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
+        base::BindOnce(&molt_ai::ChromeImporter::ReadDefaultProfile,
+                       include_passwords),
+        base::BindOnce(&MoltAISettingsHandler::OnChromeProfileRead,
+                       weak_ptr_factory_.GetWeakPtr(), callback_id,
+                       include_passwords));
+  }
+
+  void OnChromeProfileRead(const std::string& callback_id,
+                           bool include_passwords,
+                           molt_ai::ChromeImportData data) {
+    // The handler could have outlived its WebContents; AllowJavascript()
+    // was already called in HandleImportFromChrome, but re-guard against a
+    // torn-down page.
+    if (!IsJavascriptAllowed())
+      return;
+
+    if (!data.chrome_profile_found) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error", "No Google Chrome profile found");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+
+    Profile* profile = Profile::FromWebUI(web_ui());
+
+    // ---- Phase 1: bookmarks ----
+    FireImportProgress("bookmarks", 0,
+                       static_cast<int>(data.bookmarks.size()));
+    int bookmarks_imported =
+        ImportBookmarks(profile, data.bookmarks);
+    FireImportProgress("bookmarks", bookmarks_imported,
+                       static_cast<int>(data.bookmarks.size()));
+
+    // ---- Phase 2: passwords ----
+    int passwords_imported = 0;
+    int password_failures = 0;
+    if (include_passwords && data.passwords_supported &&
+        !data.keychain_denied) {
+      FireImportProgress("passwords", 0,
+                         static_cast<int>(data.credentials.size()));
+      ImportPasswords(profile, data.credentials, &passwords_imported,
+                      &password_failures);
+      FireImportProgress("passwords", passwords_imported,
+                         static_cast<int>(data.credentials.size()));
+    }
+
+    base::DictValue result;
+    result.Set("success", true);
+    result.Set("bookmarks_imported", bookmarks_imported);
+    result.Set("passwords_imported", passwords_imported);
+    result.Set("password_failures", password_failures);
+    result.Set("keychain_denied", data.keychain_denied);
+    result.Set("passwords_supported", data.passwords_supported);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  }
+
+  // Creates (or reuses) a top-level "Imported from Chrome" folder under the
+  // bookmark bar and adds each imported bookmark into it. NOTE (v1): the
+  // source folder_path is *flattened* — every bookmark lands directly in
+  // the single "Imported from Chrome" folder rather than reconstructing
+  // Chrome's nested folder hierarchy. This keeps the write path simple and
+  // is acceptable for a first version.
+  int ImportBookmarks(
+      Profile* profile,
+      const std::vector<molt_ai::ChromeBookmark>& bookmarks) {
+    bookmarks::BookmarkModel* model =
+        BookmarkModelFactory::GetForBrowserContext(profile);
+    if (!model || !model->loaded())
+      return 0;
+
+    const bookmarks::BookmarkNode* bar = model->bookmark_bar_node();
+    const std::u16string folder_title = u"Imported from Chrome";
+
+    // Reuse an existing "Imported from Chrome" folder if the user has
+    // imported before, so repeated imports don't stack up duplicate
+    // top-level folders.
+    const bookmarks::BookmarkNode* folder = nullptr;
+    for (const auto& child : bar->children()) {
+      if (child->is_folder() && child->GetTitle() == folder_title) {
+        folder = child.get();
+        break;
+      }
+    }
+    if (!folder)
+      folder = model->AddFolder(bar, bar->children().size(), folder_title);
+
+    int imported = 0;
+    for (const auto& bm : bookmarks) {
+      GURL url(bm.url);
+      if (!url.is_valid())
+        continue;
+      model->AddURL(folder, folder->children().size(), bm.title, url);
+      ++imported;
+    }
+    return imported;
+  }
+
+  void ImportPasswords(
+      Profile* profile,
+      const std::vector<molt_ai::ChromeCredential>& credentials,
+      int* imported,
+      int* failures) {
+    scoped_refptr<password_manager::PasswordStoreInterface> store =
+        ProfilePasswordStoreFactory::GetForProfile(
+            profile, ServiceAccessType::EXPLICIT_ACCESS);
+    if (!store) {
+      *failures = static_cast<int>(credentials.size());
+      return;
+    }
+
+    for (const auto& cred : credentials) {
+      GURL url(cred.url);
+      if (!url.is_valid() || cred.signon_realm.empty()) {
+        ++(*failures);
+        continue;
+      }
+      password_manager::PasswordForm form;
+      form.signon_realm = cred.signon_realm;
+      form.url = url;
+      form.username_value = cred.username;
+      form.password_value = cred.password;
+      // AddLogin is asynchronous (writes on the store's own sequence); we
+      // count it as accepted for import here. The store dedupes on its
+      // primary key, so re-importing existing logins is a no-op there.
+      store->AddLogin(form);
+      ++(*imported);
+    }
+  }
+
+  void FireImportProgress(const std::string& phase, int done, int total) {
+    base::DictValue progress;
+    progress.Set("phase", phase);
+    progress.Set("done", done);
+    progress.Set("total", total);
+    FireWebUIListener("import-progress", base::Value(std::move(progress)));
+  }
+
  private:
   base::WeakPtrFactory<MoltAISettingsHandler> weak_ptr_factory_{this};
 };
@@ -665,6 +842,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
 
   <div class="section">
+    <h2><span class="icon">&#128229;</span> Import &amp; Migration</h2>
+    <div class="field">
+      <div class="desc">Bring your bookmarks and saved passwords over from Google Chrome.</div>
+    </div>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="importPasswords" checked>
+        <span class="track"></span>
+        <span class="label">Include saved passwords (asks for macOS Keychain permission)</span>
+      </label>
+    </div>
+    <div class="field">
+      <button class="btn primary" id="importChromeBtn" onclick="importFromChrome()">Import from Google Chrome</button>
+    </div>
+    <div id="importStatus" class="desc" style="margin-top:4px"></div>
+  </div>
+
+  <div class="section">
     <h2><span class="icon">&#128736;</span> Tools</h2>
     <div class="field">
       <a href="molt://ai-agent/" style="color:#8b5cf6;text-decoration:none;font-weight:600">Open Agent Testing UI &#8594;</a>
@@ -696,6 +891,15 @@ function sendWithPromise(method) {
 window.cr = window.cr || {};
 cr.webUIResponse = function(id, ok, resp) {
   var cb = pendingCbs[id]; if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
+};
+// C++ FireWebUIListener("event", value) calls cr.webUIListenerCallback in
+// JS. This lightweight page doesn't load chrome://resources/js/cr.js, so we
+// bridge listener events onto our own DOM-event-based cr.addWebUIListener
+// (defined below): each fired listener becomes a CustomEvent whose detail is
+// the payload. Used by both "moltnet-status" and "import-progress".
+cr.webUIListenerCallback = function(event) {
+  var detail = arguments.length > 1 ? arguments[1] : undefined;
+  document.dispatchEvent(new CustomEvent(event, {detail: detail}));
 };
 
 function showToast(msg) {
@@ -749,6 +953,48 @@ function resetSettings() {
   sendWithPromise('resetSettings').then(function(s) {
     loadSettingsIntoUI(s);
     showToast('Settings reset to defaults');
+  });
+}
+
+// ---- Import from Google Chrome ----
+// Renders {phase,done,total} progress events streamed from the C++ handler
+// between the bookmark and password write phases. Uses textContent
+// throughout so any backend-supplied text (e.g. an error string) can't
+// inject markup.
+function onImportProgress(p) {
+  var status = document.getElementById('importStatus');
+  if (!status || !p) return;
+  var label = p.phase === 'passwords' ? 'passwords' : 'bookmarks';
+  var total = p.total || 0;
+  status.textContent = 'Importing ' + label + '… (' +
+    (p.done || 0) + (total ? '/' + total : '') + ')';
+}
+
+function importFromChrome() {
+  var btn = document.getElementById('importChromeBtn');
+  var status = document.getElementById('importStatus');
+  var includePasswords = document.getElementById('importPasswords').checked;
+  btn.disabled = true;
+  status.textContent = 'Importing…';
+  sendWithPromise('importFromChrome', includePasswords).then(function(r) {
+    if (!r || !r.success) {
+      status.textContent = (r && r.error) ? r.error : 'Import failed';
+      return;
+    }
+    var msg = '✓ Imported ' + (r.bookmarks_imported || 0) +
+      ' bookmarks and ' + (r.passwords_imported || 0) + ' passwords';
+    if (includePasswords && r.passwords_supported === false) {
+      msg += ' (password import is not supported on this platform)';
+    } else if (r.keychain_denied) {
+      msg += ' (macOS Keychain permission was denied, so passwords were skipped)';
+    } else if (r.password_failures) {
+      msg += ' (' + r.password_failures + ' passwords could not be imported)';
+    }
+    status.textContent = msg;
+  }).catch(function(e) {
+    status.textContent = (e && e.error) ? e.error : 'Import failed';
+  }).then(function() {
+    btn.disabled = false;
   });
 }
 
@@ -847,6 +1093,7 @@ cr.addWebUIListener = cr.addWebUIListener || function(event, fn) {
   document.addEventListener(event, function(e) { fn(e.detail); });
 };
 cr.addWebUIListener('moltnet-status', updateMoltNetUI);
+cr.addWebUIListener('import-progress', onImportProgress);
 
 // In-panel mode: when opened inside the side panel (?panel=1), show a back
 // arrow that returns to the chat page via the panel's own history.

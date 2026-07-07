@@ -213,6 +213,7 @@ button{font-family:inherit}
 .message.system .text{display:inline-block;font-size:11px;color:var(--ok);opacity:0.85}
 .message.error .text{border-left:3px solid var(--err);background:var(--surface);border-radius:8px;padding:8px 12px;color:var(--err);font-size:12px}
 .message .text .cursor{display:inline-block;width:2px;height:14px;background:var(--accent);animation:blink 0.8s infinite;vertical-align:text-bottom;margin-left:1px}
+a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-break:break-all}
 /* ---- Code copy + per-message hover actions ---- */
 .code-wrap{position:relative;margin:8px 0}
 .code-wrap pre{margin:0}

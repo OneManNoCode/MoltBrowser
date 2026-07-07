@@ -90,6 +90,8 @@
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/zlib/google/zip_reader.h"
+#include "url/gurl.h"
+#include "url/url_constants.h"
 
 MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
     : profile_(profile) {}
@@ -228,6 +230,12 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "openMoltSettings",
       base::BindRepeating(&MoltAIChatHandler::HandleOpenMoltSettings,
+                          base::Unretained(this)));
+  // Open an http(s) link from a chat response in a real browser tab
+  // (the side panel swallows target=_blank). Scheme-validated here too.
+  web_ui()->RegisterMessageCallback(
+      "openUrlInTab",
+      base::BindRepeating(&MoltAIChatHandler::HandleOpenUrlInTab,
                           base::Unretained(this)));
   // Privacy heatmap: enumerate third-party resources on the active tab.
   web_ui()->RegisterMessageCallback(
@@ -3634,6 +3642,64 @@ void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
 }
 
 // ------------------------------------------------------------------
+// HandleOpenUrlInTab: open an http(s) link from a chat response in a
+// real browser tab. The AI chat side panel's WebContents is not a tab
+// in any tab strip and has no AddNewContents delegate, so a plain
+// <a target="_blank"> is silently dropped. The frontend intercepts the
+// click and routes the URL here.
+//
+// This is the C++ half of a two-layer scheme allowlist: the JS side
+// only builds/forwards http(s) anchors, and this re-validates before
+// navigating. Unlike the sandbox/tor handlers we do NOT prepend https
+// to a bare string — an invalid or non-http(s) URL is rejected.
+//
+// Args: [callback_id, url]
+// Returns: {success, error?}
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleOpenUrlInTab(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  // Guard the type as the rest of this file does; a non-string arg then
+  // cleanly fails the is_valid()/scheme check below rather than tripping
+  // GetString()'s DCHECK.
+  const std::string url = args[1].is_string() ? args[1].GetString()
+                                              : std::string();
+
+  base::DictValue out;
+
+  GURL g(url);
+  if (!g.is_valid() ||
+      !(g.SchemeIs(url::kHttpScheme) || g.SchemeIs(url::kHttpsScheme))) {
+    out.Set("success", false);
+    out.Set("error", "unsupported url");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Resolve the browser window that should receive the new tab. The
+  // side panel's WebContents is not a tab (FindBrowserWithTab returns
+  // null), so fall back to the most-recently-active browser window.
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser) {
+    browser = chrome::FindLastActive();
+  }
+  if (!browser) {
+    out.Set("success", false);
+    out.Set("error", "no active browser window");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  chrome::AddSelectedTabWithURL(browser, g, ui::PAGE_TRANSITION_LINK);
+  out.Set("success", true);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
 // HandleOpenMoltSettings: open the AI Settings page.
 //
 // Side panel (the common case): the panel's WebContents is NOT a tab
