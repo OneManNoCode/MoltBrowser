@@ -478,7 +478,15 @@ void ShowSettingsSubPageInTabbedBrowser(Browser* browser,
   // a menu, ensure the web contents (and therefore the settings page that is
   // about to be shown) is focused. (See crbug/926492 for motivation.)
   FocusWebContents(browser);
-  ShowSingletonTabIgnorePathOverwriteNTP(browser, GetSettingsUrl(sub_page));
+  // MoltBrowser: open Settings via the molt:// scheme so the omnibox displays
+  // "molt://settings" rather than "chrome://settings". The forward rewriter
+  // (HandleMoltSchemeRewrite) maps molt://settings[/sub-page] to the internal
+  // chrome://settings host for loading, while the navigation's virtual URL —
+  // which is what the omnibox shows — stays molt://. (A direct chrome://
+  // navigation keeps chrome:// as the virtual URL, which is why menu-opened
+  // Settings previously showed chrome://settings.)
+  ShowSingletonTabIgnorePathOverwriteNTP(
+      browser, GURL(base::StrCat({kMoltSettingsURL, sub_page})));
 }
 
 void ShowPageWithPromoForProfile(Profile* profile,
