@@ -1,0 +1,338 @@
+# molt_ai Linux x64 COMPILE CHECKPOINT for MoltBrowser (a Chromium fork)
+# Copyright 2025 GenEye AI Labs Inc.
+#
+# GOAL
+# ----
+# This is NOT a full release build. It is a fast COMPILE CHECKPOINT that
+# verifies the accumulated cross-platform C++ under chrome/browser/molt_ai/
+# actually compiles for a native Linux x86-64 target on GitHub's FREE
+# `ubuntu-latest` runners. The highest-risk new code is:
+#   * chrome/browser/molt_ai/import/browser_importer.cc  (per-OS password
+#     crypto: mac Keychain, Linux libsecret/kwallet + AES-128-CBC, Windows
+#     DPAPI + AES-256-GCM, all under BUILDFLAG)
+#   * chrome/browser/molt_ai/import/firefox_safari_reader.cc
+# and the WebUI molt_ai TUs (molt_ai_settings_ui / molt_ai_chat_handler /
+# molt_ai_chat_ui, ...).
+#
+# The repo is PUBLIC → Actions minutes are free and unlimited on native
+# x86-64 Linux runners (no Rosetta). We reuse the *proven* setup from the
+# earlier probe (free-disk-space, deps + depot_tools, pinned shallow Chromium
+# sync, gn gen with use_siso=false using the checkout's own gn/ninja), and
+# swap the final "bounded full-chrome ninja" for a targeted compile of ONLY
+# the molt_ai object files. That exercises the Linux BUILDFLAG crypto branches
+# directly and finishes in minutes, well under the 6 h public-repo cap.
+#
+# The Linux BUILDFLAG branch we most want to compile lives behind IS_LINUX in
+# browser_importer.cc (dlopen libsecret, crypto::aes_cbc::Decrypt,
+# crypto::kdf::DeriveKeyPbkdf2HmacSha1). Ninja pulls in the transitive
+# generated headers automatically, so we only name the molt_ai targets.
+#
+# Triggering: pushing `ci/linux-checkpoint` runs it; also workflow_dispatch.
+# Read-only — uploads no release assets. FAILS the job on any compile error.
+
+name: molt_ai Linux x64 compile checkpoint
+
+on:
+  push:
+    branches:
+      - ci/linux-checkpoint
+  workflow_dispatch:
+    inputs:
+      component_build:
+        description: 'is_component_build=true (faster/lower-RAM). false = official build config.'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-linux-checkpoint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  molt-ai-linux-compile:
+    runs-on: ubuntu-latest
+    # Targeted molt_ai compile is minutes; sync + gn gen dominate. Stay well
+    # under the 6 h public-repo cap.
+    timeout-minutes: 350
+
+    env:
+      # Pin to the EXACT Chromium commit our src/ overlay matches, identical to
+      # release-linux.yml. Update on rebase.
+      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      DEPOT_TOOLS_UPDATE: "0"
+
+    steps:
+      - name: Baseline disk + hardware
+        run: |
+          echo "::group::CPU / RAM"
+          echo "vCPU: $(nproc)"
+          free -h
+          echo "::endgroup::"
+          echo "::group::Disk BEFORE any cleanup"
+          df -h /
+          echo "::endgroup::"
+
+      - name: Free disk space (remove unused preinstalled SDKs)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - name: Disk AFTER free-disk-space
+        run: df -h /
+
+      - name: Check out MoltBrowser overlay (no Chromium submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install depot_tools
+        run: |
+          git clone --depth 1 \
+            https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+            "$HOME/depot_tools"
+          echo "$HOME/depot_tools" >> "$GITHUB_PATH"
+          ( cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true )
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang lld cmake ninja-build python3 python3-pip \
+            git curl wget pkg-config gperf bison flex \
+            libgtk-3-dev libglib2.0-dev libnss3-dev libatk1.0-dev \
+            libatk-bridge2.0-dev libcups2-dev libdrm-dev libxkbcommon-dev \
+            libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev \
+            libpango1.0-dev libasound2-dev libdbus-1-dev libexpat1-dev \
+            libfontconfig1-dev libfreetype-dev libnspr4-dev libpulse-dev \
+            libx11-xcb-dev libxcb-dri3-dev libxext-dev libxfixes-dev \
+            libxi-dev libxrender-dev libxtst-dev libvulkan-dev vulkan-tools \
+            dpkg-dev rpm fakeroot zip fonts-liberation fonts-noto-color-emoji
+
+      - name: Disk AFTER deps + depot_tools
+        run: df -h /
+
+      - name: Sync Chromium source (pinned, shallow)
+        run: |
+          set -x
+          mkdir -p chromium && cd chromium
+          cat > .gclient <<'EOF'
+          solutions = [
+            {
+              "name": "src",
+              "url": "https://chromium.googlesource.com/chromium/src.git",
+              "managed": False,
+              "custom_deps": {},
+              "custom_vars": {},
+            },
+          ]
+          target_os = ['linux']
+          EOF
+          if [ ! -d src/.git ]; then
+            mkdir -p src
+            ( cd src && \
+              git init -q && \
+              git remote add origin https://chromium.googlesource.com/chromium/src.git && \
+              git fetch --depth=1 --no-tags origin "${CHROMIUM_REVISION}" && \
+              git checkout --detach FETCH_HEAD )
+          fi
+          ( cd src && git log -1 --format="HEAD = %H %s" ) | head -1
+          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow
+
+      - name: Disk AFTER gclient sync (checkout footprint)
+        run: |
+          df -h /
+          echo "---- chromium/src size ----"
+          du -sh chromium/src || true
+
+      - name: Overlay MoltBrowser src onto the Chromium tree
+        run: |
+          cp -r src/* chromium/src/
+          ls -ld chromium/src/base chromium/src/chrome
+          echo "---- confirm our molt_ai import sources landed ----"
+          ls -l chromium/src/chrome/browser/molt_ai/import/
+
+      - name: Configure GN (component build = ${{ inputs.component_build }})
+        run: |
+          export PATH="$HOME/depot_tools:$PATH"
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
+          COMPONENT="${{ inputs.component_build }}"
+          COMPONENT="${COMPONENT:-true}"   # push events carry no inputs → default true
+          cd chromium/src
+          mkdir -p out/MoltBrowser
+          if [ "$COMPONENT" = "false" ]; then
+            echo "Using official build config from configs/linux-x64.gn."
+            cd "$OLDPWD"
+            ./scripts/configure.sh --platform linux --arch x64
+          else
+            echo "Using is_component_build=true (fast compile-checkpoint config)."
+            cat > out/MoltBrowser/args.gn <<'EOF'
+          target_os = "linux"
+          target_cpu = "x64"
+          is_debug = false
+          is_official_build = false
+          is_component_build = true
+          use_siso = false
+          use_remoteexec = false
+          symbol_level = 0
+          blink_symbol_level = 0
+          enable_nacl = false
+          is_clang = true
+          use_lld = true
+          use_sysroot = true
+          use_ozone = true
+          ozone_auto_platforms = true
+          google_api_key = ""
+          google_default_client_id = ""
+          google_default_client_secret = ""
+          safe_browsing_mode = 1
+          enable_reporting = false
+          enable_supervised_users = true
+          is_chrome_branded = false
+          enable_extensions = true
+          chrome_pgo_phase = 0
+          treat_warnings_as_errors = false
+          EOF
+            if [ -x buildtools/linux64/gn ]; then
+              buildtools/linux64/gn gen out/MoltBrowser
+            else
+              gn gen out/MoltBrowser
+            fi
+          fi
+
+      - name: Disk AFTER gn gen
+        run: df -h /
+
+      # ----------------------------------------------------------------
+      # THE CHECKPOINT: compile ONLY the molt_ai object files. This directly
+      # exercises the Linux BUILDFLAG(IS_LINUX) crypto branches in
+      # browser_importer.cc. Ninja pulls transitive generated headers in as
+      # deps automatically. Any compile error → non-zero exit → job FAILS.
+      # ----------------------------------------------------------------
+      - name: Resolve molt_ai ninja targets
+        id: targets
+        run: |
+          export PATH="$HOME/depot_tools:$PATH"
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
+          cd chromium/src
+          # Find the checkout's own ninja (no depot_tools python bootstrap needed).
+          NINJA=""
+          for c in third_party/ninja/ninja \
+                   third_party/depot_tools/ninja \
+                   "$HOME/depot_tools/ninja"; do
+            [ -x "$c" ] && { NINJA="$c"; break; }
+          done
+          [ -z "$NINJA" ] && command -v ninja >/dev/null 2>&1 && NINJA="ninja"
+          echo "Using ninja: ${NINJA:-<none found>}"
+          echo "ninja=${NINJA}" >> "$GITHUB_OUTPUT"
+
+          echo "::group::All ninja object targets matching molt_ai/import"
+          "$NINJA" -C out/MoltBrowser -t targets all 2>/dev/null \
+            | grep -E 'molt_ai/import/.*\.o:' || echo "(none matched import — will fall back to GN labels)"
+          echo "::endgroup::"
+
+          echo "::group::All ninja object targets matching webui/molt_ai"
+          "$NINJA" -C out/MoltBrowser -t targets all 2>/dev/null \
+            | grep -E 'webui/molt_ai/.*\.o:' || echo "(none matched webui molt_ai)"
+          echo "::endgroup::"
+
+          # Build the exact object-file target list. Ninja object targets are
+          # <config>/obj/<path>/<target>/<tu>.o — resolve them from the graph so
+          # we don't hardcode the config subdir. Grab the import crypto TUs plus
+          # the requested webui TUs; each entry is a real ninja target path.
+          OBJS="$("$NINJA" -C out/MoltBrowser -t targets all 2>/dev/null \
+            | grep -oE '[^ ]*obj/chrome/browser/molt_ai/import/molt_ai_import/(browser_importer|firefox_safari_reader)\.o' \
+            | sort -u)"
+          WEBUI_OBJS="$("$NINJA" -C out/MoltBrowser -t targets all 2>/dev/null \
+            | grep -oE '[^ ]*obj/chrome/browser/ui/webui/molt_ai/molt_ai/(molt_ai_settings_ui|molt_ai_chat_handler|molt_ai_chat_ui|molt_ai_chat_handler_tor|molt_ai_chat_handler_vault)\.o' \
+            | sort -u)"
+          {
+            echo "objs<<EOF"
+            printf '%s\n' $OBJS $WEBUI_OBJS
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved object targets:"
+          printf '  %s\n' $OBJS $WEBUI_OBJS
+
+      - name: Compile molt_ai object files (FAILS on any compile error)
+        id: compile
+        run: |
+          export PATH="$HOME/depot_tools:$PATH"
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
+          cd chromium/src
+          NINJA="${{ steps.targets.outputs.ninja }}"
+          echo "Using ninja: ${NINJA}"
+
+          # Prefer the resolved explicit object-file targets. If resolution came
+          # up empty (target-name drift), fall back to the GN source_set labels,
+          # which force-build every .o in those source_sets and still exercise
+          # the Linux crypto branches. Either path is authoritative — object
+          # compiles either succeed or the job fails.
+          OBJ_TARGETS=$(cat <<'EOF'
+          ${{ steps.targets.outputs.objs }}
+          EOF
+          )
+          OBJ_TARGETS=$(printf '%s\n' "$OBJ_TARGETS" | sed '/^[[:space:]]*$/d')
+
+          set +e
+          if [ -n "$OBJ_TARGETS" ]; then
+            echo "==> Compiling explicit molt_ai object-file targets:"
+            printf '    %s\n' $OBJ_TARGETS
+            echo "-----------------------------------------------------------"
+            "$NINJA" -C out/MoltBrowser -k 0 $OBJ_TARGETS 2>&1 | tee /tmp/molt_ai_compile.log
+            RC=${PIPESTATUS[0]}
+          else
+            echo "==> Object-target resolution empty; falling back to GN source_set labels."
+            echo "-----------------------------------------------------------"
+            "$NINJA" -C out/MoltBrowser -k 0 \
+              chrome/browser/molt_ai:molt_ai_import \
+              chrome/browser/ui/webui/molt_ai:molt_ai 2>&1 | tee /tmp/molt_ai_compile.log
+            RC=${PIPESTATUS[0]}
+          fi
+          set -e
+
+          echo "-----------------------------------------------------------"
+          echo "ninja exit code: ${RC}"
+          echo "rc=${RC}" >> "$GITHUB_OUTPUT"
+          if [ "${RC}" -ne 0 ]; then
+            echo "::error::molt_ai Linux compile FAILED (ninja rc=${RC}). See errors above."
+            exit "${RC}"
+          fi
+          echo "molt_ai Linux compile SUCCEEDED."
+
+      - name: Report compile result
+        if: always()
+        run: |
+          cd chromium/src 2>/dev/null || true
+          {
+            echo "## molt_ai Linux x64 compile checkpoint — result"
+            echo ""
+            echo "- Chromium revision: \`${CHROMIUM_REVISION}\`"
+            echo "- ninja exit code: \`${{ steps.compile.outputs.rc }}\`"
+            echo ""
+            if [ "${{ steps.compile.outputs.rc }}" = "0" ]; then
+              echo "### VERDICT: molt_ai Linux code COMPILES :white_check_mark:"
+            else
+              echo "### VERDICT: molt_ai Linux code FAILED to compile :x:"
+            fi
+            echo ""
+            echo "### Object files produced"
+            echo '```'
+            find out/MoltBrowser/obj/chrome/browser/molt_ai -name '*.o' 2>/dev/null \
+              | grep -E '(browser_importer|firefox_safari_reader)\.o' || echo "(import objects not found)"
+            find out/MoltBrowser/obj/chrome/browser/ui/webui/molt_ai -name '*.o' 2>/dev/null \
+              | grep -E '(molt_ai_settings_ui|molt_ai_chat_handler|molt_ai_chat_ui)\.o' || echo "(webui objects not found)"
+            echo '```'
+            echo ""
+            echo "### Compile log tail"
+            echo '```'
+            tail -60 /tmp/molt_ai_compile.log 2>/dev/null || echo "(no log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
