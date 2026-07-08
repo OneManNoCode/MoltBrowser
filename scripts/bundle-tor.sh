@@ -130,8 +130,13 @@ mkdir -p "$EXTRACT_DIR"
 tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
 
 # The expert bundle layout is:
-#   tor/tor         (the binary)
-#   tor/libevent-2.1.7.dylib  (sometimes; statically linked since 14.x)
+#   tor/tor                    (the binary)
+#   tor/libevent-2.1.7.dylib   (REQUIRED — tor 14.x is NOT statically linked;
+#                               `otool -L tor` shows @executable_path/
+#                               libevent-2.1.7.dylib. Omitting it makes the
+#                               bundled tor fail at launch with
+#                               "dyld: Library not loaded" and MoltNet never
+#                               starts. This was a real shipped bug.)
 #   data/geoip
 #   data/geoip6
 SRC_BIN="$EXTRACT_DIR/tor/tor"
@@ -145,16 +150,31 @@ if [[ ! -x "$SRC_BIN" ]]; then
 fi
 
 # Install. We remove the existing copy first so we never end up with
-# a stale binary when versions change.
-rm -f "$TOR_DEST/tor" "$TOR_DEST/geoip" "$TOR_DEST/geoip6"
+# a stale binary (or stale dylib) when versions change.
+rm -f "$TOR_DEST/tor" "$TOR_DEST/geoip" "$TOR_DEST/geoip6" "$TOR_DEST"/*.dylib
 install -m 755 "$SRC_BIN" "$TOR_DEST/tor"
+# Copy EVERY dylib that ships next to the tor binary (libevent, and whatever
+# else a future bundle links against) so @executable_path/ resolves. Verify
+# tor's declared dylib deps are all present afterwards or fail loudly.
+for _dylib in "$EXTRACT_DIR/tor/"*.dylib; do
+  [[ -f "$_dylib" ]] && install -m 755 "$_dylib" "$TOR_DEST/$(basename "$_dylib")"
+done
+for _need in $(otool -L "$TOR_DEST/tor" 2>/dev/null \
+                 | grep -o '@executable_path/[^ ]*\.dylib' \
+                 | sed 's|@executable_path/||'); do
+  if [[ ! -f "$TOR_DEST/$_need" ]]; then
+    echo "[bundle-tor] FATAL: tor needs $_need but it is not in the bundle."
+    echo "             The tor binary will fail to launch. Bundle layout changed?"
+    exit 1
+  fi
+done
 [[ -f "$SRC_GEOIP" ]]  && install -m 644 "$SRC_GEOIP"  "$TOR_DEST/geoip"
 [[ -f "$SRC_GEOIP6" ]] && install -m 644 "$SRC_GEOIP6" "$TOR_DEST/geoip6"
 
-# Drop the macOS quarantine bit so the bundled binary launches without
+# Drop the macOS quarantine bit so the bundled binaries launch without
 # the "downloaded from the internet" prompt the first time. This is
 # safe for binaries we just placed ourselves.
-xattr -d com.apple.quarantine "$TOR_DEST/tor" 2>/dev/null || true
+xattr -dr com.apple.quarantine "$TOR_DEST" 2>/dev/null || true
 
 # Record the version we bundled, useful for support / debug.
 echo "$TOR_VERSION" > "$TOR_DEST/.version"
