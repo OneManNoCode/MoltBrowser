@@ -136,6 +136,7 @@ bool WriteEncrypted(const base::DictValue& dict) {
   }
   base::FilePath tmp = path.AddExtensionASCII(".tmp");
   if (!base::WriteFile(tmp, ciphertext)) {
+    base::DeleteFile(tmp);  // don't leave a partial temp behind
     return false;
   }
   if (!base::ReplaceFile(tmp, path, /*error=*/nullptr)) {

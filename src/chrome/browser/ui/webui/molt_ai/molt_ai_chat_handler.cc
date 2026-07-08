@@ -1533,11 +1533,22 @@ void MoltAIChatHandler::HandleCancelGeneration(
   }
   // Drop any in-flight cloud stream — destroying the CloudChatStream
   // cancels the underlying loader and stops all further token/done
-  // callbacks (its contract). Without this, a cloud reply keeps streaming
-  // after the user hits Stop.
+  // callbacks (its contract). Because an explicit Cancel()/destruction
+  // deliberately does NOT run the stream's on_done, we must settle the
+  // pending JS sendPrompt promise ourselves here — otherwise it stays
+  // unresolved and the composer locks (setGenerating(false) only runs in
+  // the promise's .then/.catch). This mirrors the local path, where cancel
+  // still lets the worker reply fire OnPromptComplete. Any text streamed so
+  // far is kept, exactly like a cancelled local generation.
   if (active_cloud_stream_) {
     active_cloud_stream_.reset();
+    std::string cb = active_prompt_callback_id_;
+    std::string partial = std::move(cloud_accumulated_text_);
     cloud_accumulated_text_.clear();
+    if (!cb.empty()) {
+      OnPromptComplete(std::move(cb), /*success=*/!partial.empty(), partial,
+                       std::string());
+    }
   }
 }
 

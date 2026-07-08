@@ -299,15 +299,22 @@ std::string ExtractGeminiDelta(const base::Value& v) {
     return std::string();
   }
   const base::ListValue* parts = content->FindList("parts");
-  if (!parts || parts->empty()) {
+  if (!parts) {
     return std::string();
   }
-  const base::Value& part0 = (*parts)[0];
-  if (!part0.is_dict()) {
-    return std::string();
+  // A single Gemini chunk can carry multiple text parts — concatenate them
+  // all rather than dropping everything after parts[0].
+  std::string out;
+  for (const base::Value& part : *parts) {
+    if (!part.is_dict()) {
+      continue;
+    }
+    const std::string* text = part.GetDict().FindString("text");
+    if (text) {
+      out += *text;
+    }
   }
-  const std::string* text = part0.GetDict().FindString("text");
-  return text ? *text : std::string();
+  return out;
 }
 
 // ==================================================================
