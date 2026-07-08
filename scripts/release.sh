@@ -251,6 +251,22 @@ if [ -n "$SIGN_IDENTITY" ]; then
     fi
   done
 
+  # 2b. GPU/GL dylibs inside the framework's Libraries/ (libEGL.dylib,
+  # libGLESv2.dylib, libvk_swiftshader.dylib). The linker emits these ad-hoc
+  # (adhoc, linker-signed, TeamIdentifier not set) and codesign --deep does
+  # NOT descend into a framework version's Libraries/ dir, so they ship
+  # ad-hoc -> notarization Invalid ("not signed with a valid Developer ID
+  # certificate / signature does not include a secure timestamp"). Sign each
+  # explicitly with Developer ID + hardened runtime + timestamp, BEFORE the
+  # framework is resealed in step 4. (v0.2.3 hit this.)
+  FRAMEWORK_DIR="$APP_PATH/Contents/Frameworks/MoltBrowser Framework.framework"
+  if [ -d "$FRAMEWORK_DIR" ]; then
+    find "$FRAMEWORK_DIR/Versions" -type f -name "*.dylib" -path "*/Libraries/*" \
+      | while read -r f; do
+      codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f"
+    done
+  fi
+
   # 3. Helper apps (nested in the framework) — each with its process-type
   # entitlements. Renderer/GPU -> allow-jit; Plugin/base/Alerts -> plugin
   # entitlements (allow-unsigned-executable-memory + disable-library-validation).
