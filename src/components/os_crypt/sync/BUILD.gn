@@ -15,6 +15,7 @@ component("sync") {
     # rest via the OS keychain. Both targets sit under //chrome/browser
     # so they're conceptually within scope of the original "chrome/
     # browser" allowance, but GN visibility doesn't follow that pattern.
+    "//chrome/browser/molt_ai/keys",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/profile",
     "//chrome/browser/molt_ai/vault",

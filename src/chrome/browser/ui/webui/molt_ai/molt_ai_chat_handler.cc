@@ -50,7 +50,9 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
@@ -744,6 +746,66 @@ MoltAISettings LoadUserSettings() {
   }
   return settings;
 }
+
+// Assemble the ordered (role, content) message list shared by the local
+// and cloud send paths: a system message (core prompt + user's custom
+// system_prompt + optional [[ACTION]] DSL + gated context), the capped
+// conversation history, then the user turn. Returns pairs so the caller
+// can map them to either molt_ai::ChatMessage or molt_ai::CloudMessage.
+std::vector<std::pair<std::string, std::string>> BuildChatMessages(
+    const MoltAISettings& settings,
+    const std::string& prompt,
+    const std::string& history,
+    const std::string& page_ctx,
+    bool include_actions) {
+  std::string system_msg = kCoreSystemPrompt;
+  if (!settings.system_prompt.empty()) {
+    system_msg += "\n\n";
+    system_msg += settings.system_prompt;
+  }
+  if (include_actions) {
+    system_msg += "\n\n";
+    system_msg += kActionDslPrompt;
+  }
+  if (!page_ctx.empty()) {
+    system_msg +=
+        "\n\nContext (use only if relevant; do not enumerate "
+        "or mention unprompted):\n" +
+        page_ctx;
+  }
+
+  std::vector<std::pair<std::string, std::string>> messages;
+  messages.emplace_back("system", system_msg);
+
+  if (!history.empty()) {
+    auto parsed = base::JSONReader::Read(history, base::JSON_PARSE_RFC);
+    if (parsed && parsed->is_list()) {
+      const auto& list = parsed->GetList();
+      size_t start = 0;
+      if (settings.max_history_messages > 0 &&
+          list.size() >
+              static_cast<size_t>(settings.max_history_messages)) {
+        start = list.size() -
+                static_cast<size_t>(settings.max_history_messages);
+      }
+      for (size_t i = start; i < list.size(); ++i) {
+        if (!list[i].is_dict()) continue;
+        const auto& d = list[i].GetDict();
+        const std::string* role = d.FindString("role");
+        const std::string* content = d.FindString("content");
+        if (!role || !content || content->empty()) continue;
+        if (*role != "user" && *role != "assistant") continue;
+        messages.emplace_back(*role, *content);
+      }
+    } else {
+      LOG(WARNING) << "[MoltAI] sendPrompt history is not a valid JSON "
+                      "array — ignoring history";
+    }
+  }
+
+  messages.emplace_back("user", prompt);
+  return messages;
+}
 }  // namespace
 
 // ------------------------------------------------------------------
@@ -850,6 +912,23 @@ void MoltAIChatHandler::HandleLoadModel(const base::ListValue& args) {
   // string here and CHECK-crash the browser. Code-review MEDIUM #8.
   const std::string model_id =
       args[1].is_string() ? args[1].GetString() : std::string();
+
+  // Cloud "provider:model" ids have nothing to load into memory — they are
+  // ready by selection. Short-circuit to instant-ready instead of handing
+  // the id to the local runtime, which would fail trying to open a GGUF
+  // file by that name (and flip the chip to an error state). We do NOT set
+  // last_requested_model_id_ here — that drives the LOCAL lazy-load path,
+  // and the cloud send instead routes on the explicit args[5] model id.
+  if (molt_ai::IsCloudModelId(model_id)) {
+    FireWebUIListener("model-status", base::Value("ready"),
+                      base::Value(model_id));
+    base::DictValue result;
+    result.Set("success", true);
+    result.Set("model_id", model_id);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
 
   // Remember the user's explicit pick so the lazy-load path in
   // HandleSendPrompt retries it — even when this load attempt fails —
@@ -963,6 +1042,15 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
     origin = args[4].GetString();
   }
 
+  // Optional 6th arg: the picked model id. A plain local GGUF id routes to
+  // the on-device runtime; a namespaced "provider:model" cloud id (e.g.
+  // "openai:gpt-5.1") routes to the frontier-API path below. Absent/empty
+  // keeps the existing local lazy-load behavior.
+  std::string model_id;
+  if (args.size() >= 6u && args[5].is_string()) {
+    model_id = args[5].GetString();
+  }
+
   if (prompt_text.empty()) {
     base::DictValue err;
     err.Set("success", false);
@@ -1011,6 +1099,16 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             << " pdf=" << gated.pdf_included
             << " attachment=" << gated.attachment_included
             << " memory=" << gated.memory_included;
+
+  // Cloud (frontier API) route: a "provider:model" id streams from the
+  // user's own configured provider instead of the local llama.cpp runtime,
+  // reusing the exact same gated system prompt + history assembled here.
+  // The local runtime is never touched for a cloud send.
+  if (molt_ai::IsCloudModelId(model_id)) {
+    StartCloudPrompt(callback_id, model_id, prompt_text, history_text,
+                     page_context, include_actions);
+    return;
+  }
 
   auto* runtime = GetOrCreateRuntime();
   active_prompt_callback_id_ = callback_id;
@@ -1279,6 +1377,151 @@ void MoltAIChatHandler::OnPromptComplete(std::string callback_id,
 }
 
 // ------------------------------------------------------------------
+// Cloud (frontier API) send path.
+// ------------------------------------------------------------------
+scoped_refptr<network::SharedURLLoaderFactory>
+MoltAIChatHandler::GetUrlLoaderFactory() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!profile_) {
+    return nullptr;
+  }
+  return profile_->GetDefaultStoragePartition()
+      ->GetURLLoaderFactoryForBrowserProcess();
+}
+
+void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
+                                         std::string model_id,
+                                         std::string prompt_text,
+                                         std::string history_text,
+                                         std::string page_context,
+                                         bool include_actions) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  active_prompt_callback_id_ = callback_id;
+  cloud_accumulated_text_.clear();
+
+  std::string provider_id;
+  std::string model;
+  molt_ai::SplitCloudModelId(model_id, &provider_id, &model);
+
+  // settings.json + keys.enc are blocking disk/keychain reads, so the
+  // conversation + provider-key assembly happens on a worker. The api_key
+  // rides inside the returned CloudChatRequest (in-process only, never
+  // logged, never sent to JS). The actual network stream is kicked off
+  // back on the UI thread in OnCloudPromptReady.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::TaskPriority::USER_BLOCKING, base::MayBlock(),
+       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
+      base::BindOnce(
+          [](std::string provider_id, std::string model, std::string prompt,
+             std::string history, std::string page_ctx,
+             bool include_actions)
+              -> std::pair<bool, molt_ai::CloudChatRequest> {
+            MoltAISettings settings = LoadUserSettings();
+            std::optional<molt_ai::ProviderConfig> cfg =
+                molt_ai::MoltKeysStore::Get(provider_id);
+            molt_ai::CloudChatRequest req;
+            req.provider_id = provider_id;
+            req.model = model;
+            req.max_tokens = settings.max_tokens;
+            req.temperature = settings.temperature;
+            const bool cfg_found = cfg && !cfg->api_key.empty();
+            if (cfg_found) {
+              req.api_key = cfg->api_key;
+              req.base_url = cfg->base_url;
+            }
+            for (auto& msg : BuildChatMessages(settings, prompt, history,
+                                               page_ctx, include_actions)) {
+              req.messages.push_back(
+                  {std::move(msg.first), std::move(msg.second)});
+            }
+            return std::make_pair(cfg_found, std::move(req));
+          },
+          provider_id, model, std::move(prompt_text), std::move(history_text),
+          std::move(page_context), include_actions),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+             std::string pid, std::string mdl,
+             std::pair<bool, molt_ai::CloudChatRequest> built) {
+            if (!self) {
+              return;
+            }
+            self->OnCloudPromptReady(std::move(cb), std::move(pid),
+                                     std::move(mdl), built.first,
+                                     std::move(built.second));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id, provider_id, model));
+}
+
+void MoltAIChatHandler::OnCloudPromptReady(std::string callback_id,
+                                           std::string provider_id,
+                                           std::string model,
+                                           bool cfg_found,
+                                           molt_ai::CloudChatRequest request) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+
+  if (!cfg_found) {
+    const molt_ai::CloudProviderInfo* info =
+        molt_ai::FindCloudProvider(provider_id);
+    const std::string name = info ? info->display_name : provider_id;
+    OnPromptComplete(std::move(callback_id), /*success=*/false, std::string(),
+                     "No API key configured for " + name +
+                         ". Add it in AI Settings → Connect AI Providers.");
+    return;
+  }
+
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      GetUrlLoaderFactory();
+  if (!factory) {
+    OnPromptComplete(std::move(callback_id), /*success=*/false, std::string(),
+                     "No network context available");
+    return;
+  }
+
+  cloud_accumulated_text_.clear();
+  const base::WeakPtr<MoltAIChatHandler> weak =
+      weak_ptr_factory_.GetWeakPtr();
+
+  // request (incl. api_key) is consumed synchronously inside StartCloudChat
+  // — it builds the HTTP request before returning — so passing the local by
+  // const ref is safe; nothing retains it past this call.
+  active_cloud_stream_ = molt_ai::StartCloudChat(
+      std::move(factory), request,
+      base::BindRepeating(
+          [](base::WeakPtr<MoltAIChatHandler> self, const std::string& delta) {
+            if (!self || !self->IsJavascriptAllowed()) {
+              return;
+            }
+            self->cloud_accumulated_text_ += delta;
+            // Mirror the local streaming shape: each delta is a non-final
+            // ai-token; is_done=true is fired once from on_done below.
+            self->FireWebUIListener("ai-token", base::Value(delta),
+                                    base::Value(false));
+          },
+          weak),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb, bool ok,
+             const std::string& error) {
+            if (!self) {
+              return;
+            }
+            if (self->IsJavascriptAllowed()) {
+              self->FireWebUIListener("ai-token", base::Value(std::string()),
+                                      base::Value(true));
+            }
+            const std::string text = self->cloud_accumulated_text_;
+            self->cloud_accumulated_text_.clear();
+            self->active_cloud_stream_.reset();
+            self->OnPromptComplete(std::move(cb), ok && !text.empty(), text,
+                                   ok ? std::string() : error);
+          },
+          weak, callback_id));
+}
+
+// ------------------------------------------------------------------
 // HandleCancelGeneration: Cancel in-progress generation
 // JS: chrome.send('cancelGeneration', [])
 // ------------------------------------------------------------------
@@ -1287,6 +1530,14 @@ void MoltAIChatHandler::HandleCancelGeneration(
   AllowJavascript();
   if (runtime_) {
     runtime_->CancelGeneration();
+  }
+  // Drop any in-flight cloud stream — destroying the CloudChatStream
+  // cancels the underlying loader and stops all further token/done
+  // callbacks (its contract). Without this, a cloud reply keeps streaming
+  // after the user hits Stop.
+  if (active_cloud_stream_) {
+    active_cloud_stream_.reset();
+    cloud_accumulated_text_.clear();
   }
 }
 
@@ -1318,11 +1569,37 @@ void MoltAIChatHandler::HandleGetModelStatus(
     d.Set("param_billions", m.parameter_count_billions);
     d.Set("is_downloaded", m.is_downloaded);
     d.Set("is_loaded", m.is_loaded);
+    // Explicit so the JS picker's is_cloud checks are unambiguous.
+    d.Set("is_cloud", false);
     d.Set("file_size_mb",
           static_cast<int>(m.file_size_bytes / (1024 * 1024)));
     model_list.Append(std::move(d));
     if (m.is_loaded) {
       loaded_model = m.display_name;
+    }
+  }
+
+  // Append connected cloud (frontier API) models — one row per model the
+  // user enabled for each configured provider. These are ready-by-
+  // selection (nothing to download or load), so is_downloaded/is_loaded
+  // stay false; the picker renders them in its "Cloud · via your key"
+  // group. Reading keys.enc is a tiny OSCrypt-decrypt on the UI thread,
+  // same idiom as the vault handlers.
+  {
+    ScopedAllowBlockingForMolt allow;
+    for (const auto& [provider_id, cfg] : molt_ai::MoltKeysStore::LoadAll()) {
+      const molt_ai::CloudProviderInfo* info =
+          molt_ai::FindCloudProvider(provider_id);
+      for (const std::string& cloud_model : cfg.enabled_models) {
+        base::DictValue d;
+        d.Set("model_id", provider_id + ":" + cloud_model);
+        d.Set("display_name", cloud_model);
+        d.Set("provider", info ? info->display_name : provider_id);
+        d.Set("is_cloud", true);
+        d.Set("is_downloaded", false);
+        d.Set("is_loaded", false);
+        model_list.Append(std::move(d));
+      }
     }
   }
 

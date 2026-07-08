@@ -1,0 +1,21 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser cloud AI adapter engine. Streaming chat + model listing
+# for frontier API-key providers (OpenAI / Anthropic / Gemini wire
+# formats). Consumes keys from molt_ai/keys; never stores them.
+
+source_set("cloud") {
+  sources = [
+    "cloud_provider.cc",
+    "cloud_provider.h",
+  ]
+
+  deps = [
+    "//base",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}

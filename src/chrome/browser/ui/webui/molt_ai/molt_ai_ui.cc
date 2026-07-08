@@ -144,6 +144,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#8b5cf6}
 .model-chip-item .mstatus.available{background:#1a1a1a;color:#666}
 .model-chip-item .mstatus.downloading{background:#3a2e1a;color:#fbbf24}
+.mcd-header{padding:9px 12px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#777}
+.mcd-footer{padding:10px 12px;font-size:12px;color:#8b5cf6;cursor:pointer;border-top:1px solid #1a1a2e;text-align:center}
+.mcd-footer:hover{background:#1a1a2e}
 /* First-Run Welcome */
 .welcome-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:#0a0a0a;z-index:200;display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center}
 .welcome-overlay.open{display:flex}
@@ -410,7 +413,10 @@ function doSend() {
             conversationHistory.slice(0, conversationHistory.length - 1))
       : '';
 
-  sendWithPromise('sendPrompt', t, prevHistory).then(function(r) {
+  // args[5] = the picked model id. A "provider:model" cloud id routes to the
+  // frontier-API path; a plain id (or '') uses the local runtime.
+  sendWithPromise('sendPrompt', t, prevHistory, '', '',
+                  activeModelId || pickedModelId || '').then(function(r) {
     var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();
     if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMsg(); setGen(false);
@@ -544,7 +550,28 @@ function deleteModel(modelId) {
 // ---- Model Chip (always-visible top selector) ----
 var allModels = [];
 var activeModelId = null;
+var pickedModelId = null;
 var downloadingModelId = null;
+
+// The currently-selected cloud model dict, or null. A cloud model is active
+// purely by selection (is_loaded is always false for cloud).
+function selectedCloudModel() {
+  if (!activeModelId) return null;
+  return allModels.find(function(m){
+    return m.is_cloud && m.model_id === activeModelId;
+  }) || null;
+}
+
+// Select a cloud "provider:model" model. Nothing to download or load — the
+// backend short-circuits loadModel for cloud ids to instant-ready.
+function selectCloudModel(modelId) {
+  activeModelId = modelId;
+  pickedModelId = modelId;
+  setStatus('ready', 'Model Ready');
+  sendWithPromise('loadModel', modelId).then(function(){}, function(){});
+  refreshModelChip();
+  toggleModelDropdown();
+}
 
 function refreshModelChip() {
   var chip = document.getElementById('modelChip');
@@ -554,13 +581,18 @@ function refreshModelChip() {
   if (active) {
     activeModelId = active.model_id;
     nameEl.textContent = active.display_name || active.model_id;
+    return;
+  }
+  var cloud = selectedCloudModel();
+  if (cloud) {
+    nameEl.textContent = cloud.display_name || cloud.model_id;
+    return;
+  }
+  var firstDownloaded = allModels.find(function(m){ return m.is_downloaded; });
+  if (firstDownloaded) {
+    nameEl.textContent = (firstDownloaded.display_name || firstDownloaded.model_id) + ' (click to load)';
   } else {
-    var firstDownloaded = allModels.find(function(m){ return m.is_downloaded; });
-    if (firstDownloaded) {
-      nameEl.textContent = (firstDownloaded.display_name || firstDownloaded.model_id) + ' (click to load)';
-    } else {
-      nameEl.textContent = 'Choose Model';
-    }
+    nameEl.textContent = 'Choose Model';
   }
 }
 
@@ -590,7 +622,19 @@ function renderModelChipDropdown() {
     return;
   }
   dd.innerHTML = '';
-  allModels.forEach(function(m) {
+  // Partition into local (on-device GGUF) and cloud (via the user's key)
+  // models. Cloud models carry is_cloud=true + provider from the backend.
+  var localModels = [], cloudModels = [];
+  allModels.forEach(function(m){ (m.is_cloud ? cloudModels : localModels).push(m); });
+
+  if (cloudModels.length && localModels.length) {
+    var lh = document.createElement('div');
+    lh.className = 'mcd-header';
+    lh.textContent = 'Local · Private 🔒';
+    dd.appendChild(lh);
+  }
+
+  localModels.forEach(function(m) {
     var item = document.createElement('div');
     item.className = 'model-chip-item';
     var isActive = !!m.is_loaded;
@@ -620,6 +664,45 @@ function renderModelChipDropdown() {
     };
     dd.appendChild(item);
   });
+
+  // ---- Cloud group: instant-select rows (no download/load) ----
+  if (cloudModels.length) {
+    var ch = document.createElement('div');
+    ch.className = 'mcd-header';
+    ch.textContent = 'Cloud · via your key ☁️';
+    dd.appendChild(ch);
+    cloudModels.forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'model-chip-item';
+      var isActive = activeModelId === m.model_id;
+      if (isActive) item.className += ' active';
+      var sub = m.provider ? (m.provider + ' · cloud') : 'cloud';
+      item.innerHTML =
+        '<div style="flex:1">' +
+          '<div class="mname">' + (m.display_name || m.model_id) + '</div>' +
+          '<div class="msize">' + sub + '</div>' +
+        '</div>' +
+        '<span class="mstatus ' + (isActive ? 'active' : 'downloaded') + '">' +
+          (isActive ? 'Active' : 'Use') + '</span>';
+      item.onclick = function() {
+        if (isActive) { toggleModelDropdown(); return; }
+        selectCloudModel(m.model_id);
+      };
+      dd.appendChild(item);
+    });
+  }
+
+  // Footer: connect (or manage) cloud providers in AI settings.
+  var foot = document.createElement('div');
+  foot.className = 'mcd-footer';
+  foot.textContent = cloudModels.length
+      ? 'Manage cloud providers…'
+      : '⊕ Connect a cloud model (OpenAI, Claude, Gemini…)';
+  foot.onclick = function() {
+    toggleModelDropdown();
+    window.open('molt://ai-settings/?section=providers', '_blank');
+  };
+  dd.appendChild(foot);
 }
 
 function updateModelChipProgress(percent) {

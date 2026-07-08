@@ -219,6 +219,16 @@ function updateWelcomeMessage() {
   for (var i = 0; i < allModels.length; i++) {
     if (allModels[i].is_loaded) { active = allModels[i]; break; }
   }
+  // A selected cloud model is ready-by-selection (never is_loaded), so
+  // fall back to it when no local model is loaded.
+  if (!active && activeModelId) {
+    for (var j = 0; j < allModels.length; j++) {
+      if (allModels[j].is_cloud && allModels[j].model_id === activeModelId) {
+        active = allModels[j];
+        break;
+      }
+    }
+  }
   el.textContent = active
       ? "Welcome! You're chatting with " +
         (active.display_name || active.model_id) + '.'
@@ -330,7 +340,13 @@ function _resubmitEditedMessage(msgEl, newText) {
   // nothing downloaded, or a guard-triggered load is already in
   // flight), bail while the original turn is still intact in the
   // transcript and the conversation store.
-  if (!activeModelId && allModels.length) {
+  // A selected cloud model is ready-by-selection (no download/load), so
+  // it never trips the "nothing downloaded" bail.
+  var editCloudId = activeModelId || pickedModelId;
+  var editIsCloud = editCloudId && allModels.some(function(mm) {
+    return mm.is_cloud && mm.model_id === editCloudId;
+  });
+  if (!activeModelId && !editIsCloud && allModels.length) {
     var anyDownloaded = allModels.some(function(mm) {
       return mm.is_downloaded;
     });
@@ -884,7 +900,8 @@ function tryDispatchAskTabsCommand(text) {
     currentAiText = '';
     // Restart the AI message bubble since we'll stream into it.
     startAiMessage();
-    sendWithPromise('sendPrompt', prompt, historyForPrompt, pageCtx)
+    sendWithPromise('sendPrompt', prompt, historyForPrompt, pageCtx, '',
+                    activeModelId || pickedModelId || '')
         .then(function(result) {
           finishAiMessage();
           setGenerating(false);
@@ -1638,7 +1655,8 @@ function tryDispatchReaderCommand(text) {
                '\n\nPage content:\n' + pageText;
   addUserMessage(text);
   startAiMessage();
-  sendWithPromise('sendPrompt', prompt, /*history=*/'', /*ctx=*/'').then(
+  sendWithPromise('sendPrompt', prompt, /*history=*/'', /*ctx=*/'',
+                  /*origin=*/'', activeModelId || pickedModelId || '').then(
       function(result) {
         finishAiMessage();
         setGenerating(false);
@@ -1689,7 +1707,8 @@ function tryDispatchReceiptCommand(text) {
     '\nPage URL: ' + (sp.url || '') +
     '\n\nPage content:\n' +
     (sp.text.length > 10000 ? sp.text.slice(0, 10000) : sp.text);
-  sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+  sendWithPromise('sendPrompt', prompt, '', '', '',
+                  activeModelId || pickedModelId || '').then(function() {
     // Grab whatever the LLM streamed into the current AI message bubble.
     // currentAiText holds the accumulated text.
     var jsonStr = currentAiText;
@@ -1800,7 +1819,8 @@ function tryDispatchChaptersCommand(text) {
           'titles short (under 8 words). Output chapter lines only, ' +
           'one per line, no preamble.\n\n' +
           'Transcript:\n' + transcriptText.slice(0, 12000);
-        sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+        sendWithPromise('sendPrompt', prompt, '', '', '',
+                    activeModelId || pickedModelId || '').then(function() {
           finishAiMessage();
           setGenerating(false);
         });
@@ -1867,7 +1887,8 @@ function tryDispatchClusterCommand(text) {
     'infer from these titles. If you can\'t answer with confidence, ' +
     'say so and recommend which pages to revisit.\n\n' +
     'Pages:\n' + ground + '\n\nQuestion: ' + question;
-  sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+  sendWithPromise('sendPrompt', prompt, '', '', '',
+                  activeModelId || pickedModelId || '').then(function() {
     finishAiMessage();
     setGenerating(false);
   }).catch(function() {
@@ -1905,7 +1926,8 @@ function tryDispatchPlanCommand(text) {
     'a line "NAME: <short script name>" at the end. No prose, no ' +
     'markdown, no explanation.\n\n' +
     'Task: ' + task;
-  sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+  sendWithPromise('sendPrompt', prompt, '', '', '',
+                  activeModelId || pickedModelId || '').then(function() {
     // Parse currentAiText for STEP: and NAME: lines.
     var lines = currentAiText.split('\n');
     var steps = [];
@@ -1996,7 +2018,8 @@ function tryDispatchPasteCommand(text) {
         (hint ? 'Hint from user: ' + hint + '\n\n' : '') +
         'Form fields:');
       currentAiText = '';
-      sendWithPromise('sendPrompt', p, '', '').then(function() {
+      sendWithPromise('sendPrompt', p, '', '', '',
+                      activeModelId || pickedModelId || '').then(function() {
         var s = currentAiText;
         var i = s.indexOf('{'), j = s.lastIndexOf('}');
         if (i < 0 || j <= i) {
@@ -2104,7 +2127,8 @@ function tryDispatchDigestCommand(text) {
       'paragraphs. Aim for under 200 words.\n\n' +
       'Activity:\n' + lines.join('\n');
     currentAiText = '';
-    sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+    sendWithPromise('sendPrompt', prompt, '', '', '',
+                    activeModelId || pickedModelId || '').then(function() {
       finishAiMessage();
       setGenerating(false);
     }).catch(function() {
@@ -2349,7 +2373,8 @@ function tryDispatchTranslateCommand(text) {
       'Translate the following text to ' + lang + '. Preserve ' +
       'meaning and tone. Output the translation only, no preamble.\n\n' +
       'Text:\n' + src.slice(0, 8000);
-    sendWithPromise('sendPrompt', prompt, '', '').then(function() {
+    sendWithPromise('sendPrompt', prompt, '', '', '',
+                    activeModelId || pickedModelId || '').then(function() {
       finishAiMessage();
       setGenerating(false);
     });
@@ -2392,7 +2417,8 @@ function tryDispatchFillAICommand(text) {
       return;
     }
     currentAiText = '';
-    sendWithPromise('sendPrompt', r.prompt, '', '').then(function() {
+    sendWithPromise('sendPrompt', r.prompt, '', '', '',
+                    activeModelId || pickedModelId || '').then(function() {
       // Parse JSON from currentAiText.
       var s = currentAiText;
       var i = s.indexOf('{'), j = s.lastIndexOf('}');
@@ -2975,8 +3001,14 @@ function sendMessage() {
   // Send guard: if no model is loaded yet but the user has picked one
   // in the model menu (or exactly one is downloaded), load it first —
   // pill spinner via loadModel — then re-run this send automatically.
+  // A selected CLOUD model is ready-by-selection: no GGUF to download or
+  // load, so skip the whole local load-guard and send straight through.
+  var guardCloudId = activeModelId || pickedModelId;
+  var guardIsCloud = guardCloudId && allModels.some(function(mm) {
+    return mm.is_cloud && mm.model_id === guardCloudId;
+  });
   // Only error when the load fails or nothing is downloaded at all.
-  if (!activeModelId && allModels.length) {
+  if (!activeModelId && !guardIsCloud && allModels.length) {
     var pickId = pickedModelId;
     // A pick that isn't on disk (e.g. its download is still running or
     // failed) can't be loaded — fall back to the downloaded-set logic.
@@ -3021,6 +3053,11 @@ function sendMessage() {
   // auto-resend re-entry above still sees a chip-set flag.
   var origin = sendOrigin;
   sendOrigin = 'chat';
+
+  // The active model id (local or 'provider:model' cloud id) — the C++
+  // HandleSendPrompt reads it as args[5] to route cloud vs. local. May
+  // be '' when unknown; the backend falls back to its loaded default.
+  var sendModelId = activeModelId || pickedModelId || '';
 
   addUserMessage(text,
       (attachmentContext && attachmentContext.text)
@@ -3101,11 +3138,11 @@ function sendMessage() {
             }).join('\n');
       }
       return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx,
-                             origin);
+                             origin, sendModelId);
     }, function() {
       // queryMemory failed (no service yet, etc.) — proceed without it.
       return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx,
-                             origin);
+                             origin, sendModelId);
     });
   }).then(function(result) {
     // Same scrub finishAiMessage applies to the visible bubble — the
@@ -3561,6 +3598,30 @@ function loadModel(modelId, onDone) {
   });
 }
 
+// Select a cloud model (provider:model id). Unlike a local GGUF, there
+// is nothing to download or load into memory — the backend short-circuits
+// 'loadModel' for cloud ids to instant-ready. We set the active/picked
+// ids optimistically so the chip + send-guard treat it as READY right
+// away, with no download/load spinner.
+function selectCloudModel(modelId) {
+  activeModelId = modelId;
+  pickedModelId = modelId;
+  // Clear any leftover local-model needs-selection/loading affordances.
+  var chip = document.getElementById('modelChip');
+  if (chip) {
+    chip.classList.remove('needs-selection');
+    chip.classList.remove('loading');
+    chip.classList.remove('downloading');
+  }
+  setStatus('ready', 'Model Ready');
+  clearModelSelectBanner();
+  // Tell the backend which model is active (instant-ready for cloud ids).
+  // We don't gate the UI on the response — the chip is already usable.
+  sendWithPromise('loadModel', modelId).then(function() {}, function() {});
+  refreshModelChip();
+  toggleModelDropdown();  // close the picker
+}
+
 function deleteModel(modelId) {
   sendWithPromise('deleteModel', modelId).then(function(r) {
     if (r.success) {
@@ -3581,16 +3642,34 @@ var pickedModelId = null;
 // trip; blocks re-entrant guard loads from repeated Send presses.
 var pendingAutoSend = false;
 
+// Returns the currently-selected cloud model dict, or null. A cloud
+// model is "active" purely by selection (is_loaded is always false for
+// cloud) — activeModelId points at it after selectCloudModel().
+function selectedCloudModel() {
+  if (!activeModelId) return null;
+  return allModels.find(function(m){
+    return m.is_cloud && m.model_id === activeModelId;
+  }) || null;
+}
+
 function refreshModelChip() {
   var nameEl = document.getElementById('modelChipName');
   if (!nameEl) return;
+  // A loaded LOCAL model always wins and re-asserts activeModelId. If
+  // none is loaded but the user picked a CLOUD model, keep that active
+  // (cloud is ready-by-selection, never is_loaded). Otherwise clear.
   var active = allModels.find(function(m){ return m.is_loaded; });
   if (active) {
     activeModelId = active.model_id;
     nameEl.textContent = active.display_name || active.model_id;
   } else {
-    activeModelId = null;
-    nameEl.textContent = 'Choose model';
+    var cloud = selectedCloudModel();
+    if (cloud) {
+      nameEl.textContent = cloud.display_name || cloud.model_id;
+    } else {
+      activeModelId = null;
+      nameEl.textContent = 'Choose model';
+    }
   }
   updateWelcomeMessage();
 }
@@ -3630,8 +3709,25 @@ function renderModelChipDropdown() {
     });
     return;
   }
-  dd.innerHTML = '<div class="mcd-header">Models</div>';
-  sortModelsForPicker(allModels).forEach(function(m) {
+  dd.innerHTML = '';
+  // Partition into local (on-device GGUF) and cloud (via user's key)
+  // models. Cloud models carry is_cloud=true and provider!='' from the
+  // backend; they need no download/load and are always ready-to-select.
+  var localModels = [];
+  var cloudModels = [];
+  for (var li = 0; li < allModels.length; li++) {
+    if (allModels[li].is_cloud) cloudModels.push(allModels[li]);
+    else localModels.push(allModels[li]);
+  }
+
+  // ---- Local group: existing download/load affordances ----
+  if (localModels.length) {
+    var lh = document.createElement('div');
+    lh.className = 'mcd-header';
+    lh.textContent = 'Local \u00b7 Private \ud83d\udd12';
+    dd.appendChild(lh);
+  }
+  sortModelsForPicker(localModels).forEach(function(m) {
     var item = document.createElement('div');
     item.className = 'model-chip-item';
     var isActive = !!m.is_loaded;
@@ -3690,6 +3786,46 @@ function renderModelChipDropdown() {
     };
     dd.appendChild(item);
   });
+
+  // ---- Cloud group: simplified rows (name + select check only) ----
+  // No download/size/load affordances \u2014 a cloud model is instantly
+  // usable via the user's API key. The "via your key" header is the
+  // privacy signal that distinguishes it from the private local models.
+  if (cloudModels.length) {
+    var ch = document.createElement('div');
+    ch.className = 'mcd-header';
+    ch.textContent = 'Cloud \u00b7 via your key \u2601\ufe0f';
+    dd.appendChild(ch);
+    cloudModels.forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'model-chip-item';
+      var isActive = activeModelId === m.model_id;
+      var right = isActive
+          ? '<span class="mcheck on">\u2713</span>'
+          : '<span class="mcheck disk" title="Click to use">\u2713</span>';
+      if (isActive) item.className += ' active';
+      var sub = m.provider
+          ? (esc(m.provider) + ' \u00b7 cloud') : 'cloud';
+      item.innerHTML =
+        '<div class="mmain">' +
+          '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
+          '<div class="msize">' + sub + '</div>' +
+        '</div>' + right;
+      item.onclick = function(ev) {
+        if (ev) ev.stopPropagation();
+        if (isActive) return;
+        selectCloudModel(m.model_id);
+      };
+      dd.appendChild(item);
+    });
+  }
+
+  if (!localModels.length && !cloudModels.length) {
+    var none = document.createElement('div');
+    none.className = 'mcd-header';
+    none.textContent = 'Models';
+    dd.appendChild(none);
+  }
   var foot = document.createElement('div');
   foot.className = 'mcd-footer';
   foot.textContent = 'Manage models\u2026';

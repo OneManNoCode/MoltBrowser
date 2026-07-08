@@ -29,12 +29,14 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
+#include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 class Profile;
 
 namespace network {
+class SharedURLLoaderFactory;
 class SimpleURLLoader;
 }  // namespace network
 
@@ -263,6 +265,31 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Ensure BrowserAIRuntime is created and initialized
   molt_ai::BrowserAIRuntime* GetOrCreateRuntime();
 
+  // The profile's browser-process URL loader factory, used for the
+  // cloud (frontier API) chat + model-listing paths.
+  scoped_refptr<network::SharedURLLoaderFactory> GetUrlLoaderFactory();
+
+  // Cloud (frontier API) send path — invoked from HandleSendPrompt when
+  // the picked model id is a cloud "provider:model" id. Assembles the
+  // same gated system prompt + history + user message as the local
+  // path (settings + key read off-thread), then streams via
+  // molt_ai::StartCloudChat with all callbacks on the UI thread.
+  void StartCloudPrompt(std::string callback_id,
+                        std::string model_id,
+                        std::string prompt_text,
+                        std::string history_text,
+                        std::string page_context,
+                        bool include_actions);
+  // UI-thread continuation of StartCloudPrompt after the off-thread
+  // settings + provider-config read. |messages| is the fully assembled
+  // conversation; |cfg_found| is false when the provider has no stored
+  // key. Kicks off the actual network stream.
+  void OnCloudPromptReady(std::string callback_id,
+                          std::string provider_id,
+                          std::string model,
+                          bool cfg_found,
+                          molt_ai::CloudChatRequest request);
+
   raw_ptr<Profile> profile_;
   std::unique_ptr<molt_ai::BrowserAIRuntime> runtime_;
   bool model_loaded_ = false;
@@ -292,6 +319,14 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
 
   // Active WebAgent (null when no agent task is running).
   std::unique_ptr<molt_ai::WebAgent> web_agent_;
+
+  // Active cloud (frontier API) chat stream (null when no cloud send is
+  // in flight). Kept alive for the stream's duration; destroying it or
+  // calling Cancel() stops all callbacks. HandleCancelGeneration resets
+  // it in addition to cancelling the local runtime.
+  std::unique_ptr<molt_ai::CloudChatStream> active_cloud_stream_;
+  // Accumulated cloud reply text, for the final ResolveJavascriptCallback.
+  std::string cloud_accumulated_text_;
 
   // Conversation-store file IO runs on a single sequence so a slow older
   // autosave can never land after (and clobber) a newer one for the same

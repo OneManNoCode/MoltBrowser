@@ -1,0 +1,17 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser cloud-provider API-key store. OSCrypt-encrypted key blob
+# at ~/.moltbrowser/keys.enc. Same idiom as molt_ai/vault.
+
+source_set("keys") {
+  sources = [
+    "molt_keys_store.cc",
+    "molt_keys_store.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/os_crypt/sync",
+  ]
+}

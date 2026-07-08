@@ -3,7 +3,9 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_settings_ui.h"
 
+#include <algorithm>
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,12 +34,16 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
+#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
+#include "content/public/browser/storage_partition.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/password_manager/core/browser/password_form.h"
@@ -147,6 +153,34 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     web_ui()->RegisterMessageCallback(
         "importFromChrome",
         base::BindRepeating(&MoltAISettingsHandler::HandleImportFromChrome,
+                            base::Unretained(this)));
+    // Connect AI Providers — cloud/frontier models via the user's own API
+    // key. Keys live encrypted in molt_ai::MoltKeysStore (never returned to
+    // JS); the model list is fetched/validated live via
+    // molt_ai::FetchCloudModels.
+    //
+    // getProviders: list every known provider + which are connected +
+    // enabled models.
+    web_ui()->RegisterMessageCallback(
+        "getProviders",
+        base::BindRepeating(&MoltAISettingsHandler::HandleGetProviders,
+                            base::Unretained(this)));
+    // saveProviderKey(cb, provider, key, base_url): validate the key by
+    // listing models, then store it and return the model list.
+    web_ui()->RegisterMessageCallback(
+        "saveProviderKey",
+        base::BindRepeating(&MoltAISettingsHandler::HandleSaveProviderKey,
+                            base::Unretained(this)));
+    // setModelEnabled(cb, provider, model, enabled): toggle one model in a
+    // connected provider's enabled set.
+    web_ui()->RegisterMessageCallback(
+        "setModelEnabled",
+        base::BindRepeating(&MoltAISettingsHandler::HandleSetModelEnabled,
+                            base::Unretained(this)));
+    // removeProvider(cb, provider): forget a provider's key + config.
+    web_ui()->RegisterMessageCallback(
+        "removeProvider",
+        base::BindRepeating(&MoltAISettingsHandler::HandleRemoveProvider,
                             base::Unretained(this)));
   }
 
@@ -784,6 +818,214 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     FireWebUIListener("import-progress", base::Value(std::move(progress)));
   }
 
+  // ---- Connect AI Providers (cloud / frontier API models) -----------
+  //
+  // API keys live encrypted in molt_ai::MoltKeysStore (keys.enc, OSCrypt).
+  // They are NEVER returned to JS and NEVER logged — getProviders reports
+  // only whether a key is stored, plus the non-secret base_url + enabled
+  // model list. keys.enc reads/writes are tiny OSCrypt operations wrapped
+  // in ScopedAllowBlockingForMolt, exactly like the password vault.
+
+  // getProviders(callback_id) → { providers: [ {id, display_name,
+  //   default_base_url, custom_base_url, connected, base_url,
+  //   enabled_models:[...] } ] }
+  void HandleGetProviders(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 1u);
+    const std::string callback_id = args[0].GetString();
+
+    std::map<std::string, molt_ai::ProviderConfig> stored;
+    {
+      ScopedAllowBlockingForMolt allow;
+      stored = molt_ai::MoltKeysStore::LoadAll();
+    }
+
+    base::ListValue providers;
+    for (const molt_ai::CloudProviderInfo& info :
+         molt_ai::GetCloudProviders()) {
+      base::DictValue p;
+      p.Set("id", info.id);
+      p.Set("display_name", info.display_name);
+      p.Set("default_base_url", info.default_base_url);
+      p.Set("custom_base_url", info.custom_base_url);
+      auto it = stored.find(info.id);
+      const bool connected =
+          it != stored.end() && !it->second.api_key.empty();
+      p.Set("connected", connected);
+      // Non-secret fields only — the api_key itself never leaves C++.
+      p.Set("base_url", connected ? it->second.base_url : std::string());
+      base::ListValue enabled;
+      if (connected) {
+        for (const std::string& m : it->second.enabled_models) {
+          enabled.Append(m);
+        }
+      }
+      p.Set("enabled_models", std::move(enabled));
+      providers.Append(std::move(p));
+    }
+
+    base::DictValue result;
+    result.Set("providers", std::move(providers));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  }
+
+  // saveProviderKey(callback_id, provider, api_key, base_url?) — validate
+  // the key by listing models over the network, then store it and return
+  // the model list. On any validation failure nothing is persisted.
+  void HandleSaveProviderKey(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 3u);
+    const std::string callback_id = args[0].GetString();
+    const std::string provider_id =
+        args[1].is_string() ? args[1].GetString() : std::string();
+    const std::string api_key =
+        args[2].is_string() ? args[2].GetString() : std::string();
+    const std::string base_url =
+        (args.size() >= 4u && args[3].is_string()) ? args[3].GetString()
+                                                   : std::string();
+
+    if (provider_id.empty() || api_key.empty()) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error", "Provider and API key are required");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+
+    Profile* profile = Profile::FromWebUI(web_ui());
+    scoped_refptr<network::SharedURLLoaderFactory> factory =
+        profile ? profile->GetDefaultStoragePartition()
+                      ->GetURLLoaderFactoryForBrowserProcess()
+                : nullptr;
+    if (!factory) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error", "No network context available");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+
+    molt_ai::FetchCloudModels(
+        std::move(factory), provider_id, api_key, base_url,
+        base::BindOnce(&MoltAISettingsHandler::OnProviderKeyValidated,
+                       weak_ptr_factory_.GetWeakPtr(), callback_id,
+                       provider_id, api_key, base_url));
+  }
+
+  void OnProviderKeyValidated(const std::string& callback_id,
+                              const std::string& provider_id,
+                              const std::string& api_key,
+                              const std::string& base_url,
+                              bool ok,
+                              std::vector<std::string> models,
+                              std::string error) {
+    if (!IsJavascriptAllowed())
+      return;
+
+    base::DictValue result;
+    if (!ok) {
+      result.Set("success", false);
+      result.Set("error",
+                 error.empty() ? "Could not validate API key" : error);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+
+    // Persist the (encrypted) key. Preserve any previously-enabled models
+    // so re-entering a key to refresh the list keeps the user's picks.
+    molt_ai::ProviderConfig cfg;
+    cfg.api_key = api_key;
+    cfg.base_url = base_url;
+    {
+      ScopedAllowBlockingForMolt allow;
+      std::optional<molt_ai::ProviderConfig> existing =
+          molt_ai::MoltKeysStore::Get(provider_id);
+      if (existing) {
+        cfg.enabled_models = existing->enabled_models;
+      }
+      molt_ai::MoltKeysStore::Save(provider_id, cfg);
+    }
+
+    result.Set("success", true);
+    base::ListValue model_list;
+    for (const std::string& m : models) {
+      model_list.Append(m);
+    }
+    result.Set("models", std::move(model_list));
+    base::ListValue enabled;
+    for (const std::string& m : cfg.enabled_models) {
+      enabled.Append(m);
+    }
+    result.Set("enabled_models", std::move(enabled));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  }
+
+  // setModelEnabled(callback_id, provider, model, enabled) — toggle one
+  // model in a connected provider's enabled set.
+  void HandleSetModelEnabled(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 4u);
+    const std::string callback_id = args[0].GetString();
+    const std::string provider_id =
+        args[1].is_string() ? args[1].GetString() : std::string();
+    const std::string model =
+        args[2].is_string() ? args[2].GetString() : std::string();
+    const bool enabled = args[3].is_bool() && args[3].GetBool();
+
+    base::DictValue result;
+    {
+      ScopedAllowBlockingForMolt allow;
+      std::optional<molt_ai::ProviderConfig> cfg =
+          molt_ai::MoltKeysStore::Get(provider_id);
+      if (!cfg || cfg->api_key.empty()) {
+        result.Set("success", false);
+        result.Set("error", "Provider not connected");
+        ResolveJavascriptCallback(base::Value(callback_id),
+                                  base::Value(std::move(result)));
+        return;
+      }
+      auto& list = cfg->enabled_models;
+      auto it = std::find(list.begin(), list.end(), model);
+      if (enabled && it == list.end()) {
+        list.push_back(model);
+      } else if (!enabled && it != list.end()) {
+        list.erase(it);
+      }
+      molt_ai::MoltKeysStore::Save(provider_id, *cfg);
+      result.Set("success", true);
+      base::ListValue enabled_list;
+      for (const std::string& m : list) {
+        enabled_list.Append(m);
+      }
+      result.Set("enabled_models", std::move(enabled_list));
+    }
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  }
+
+  // removeProvider(callback_id, provider) — forget a provider's key +
+  // config entirely.
+  void HandleRemoveProvider(const base::ListValue& args) {
+    AllowJavascript();
+    CHECK_GE(args.size(), 2u);
+    const std::string callback_id = args[0].GetString();
+    const std::string provider_id =
+        args[1].is_string() ? args[1].GetString() : std::string();
+    {
+      ScopedAllowBlockingForMolt allow;
+      molt_ai::MoltKeysStore::Remove(provider_id);
+    }
+    base::DictValue result;
+    result.Set("success", true);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  }
+
  private:
   base::WeakPtrFactory<MoltAISettingsHandler> weak_ptr_factory_{this};
 };
@@ -876,6 +1118,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:10px;background:#1a2e1a;color:#4ade80;font-size:13px;font-weight:600;border:1px solid #2a4a2a;transform:translateY(100px);opacity:0;transition:all 0.3s}
 .toast.show{transform:translateY(0);opacity:1}
 .model-dir{font-family:monospace;font-size:12px;color:#888;padding:8px 12px;background:#0a0a0a;border-radius:6px;border:1px solid #1a1a1a;margin-top:6px}
+.provider-row{border:1px solid #222;border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#0d0d0d}
+.provider-head{display:flex;align-items:center;gap:10px}
+.provider-name{font-size:13px;font-weight:600;color:#e0e0e0}
+.provider-badge{font-size:11px;font-weight:600;color:#4ade80;background:#12240f;border:1px solid #234d1a;border-radius:10px;padding:2px 8px}
+.provider-btn{margin-left:auto;font-size:12px;padding:6px 14px}
+.provider-body{margin-top:10px}
+.provider-form{display:flex;flex-direction:column;gap:8px}
+.provider-form input{width:100%;padding:8px 12px;border-radius:8px;border:1px solid #333;background:#0a0a0a;color:#e0e0e0;font-size:13px;outline:none;box-sizing:border-box}
+.provider-form input:focus{border-color:#6366f1}
+.provider-form .row{display:flex;gap:8px}
+.provider-hint{font-size:11px;color:#666;line-height:1.5}
+.provider-err{font-size:12px;color:#f87171}
+.model-scroll{max-height:220px;overflow-y:auto;margin-top:6px}
+.model-toggle{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px;color:#ccc;border-top:1px solid #191919;cursor:pointer}
+.model-toggle:first-child{border-top:none}
+.model-toggle input{accent-color:#6366f1;width:16px;height:16px;flex:0 0 auto}
+.model-toggle .mt-name{font-family:monospace;font-size:12px;word-break:break-all}
+.model-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.model-chip{display:inline-flex;align-items:center;gap:6px;background:#141428;border:1px solid #2a2a44;color:#c7c7f0;border-radius:12px;padding:3px 10px;font-size:12px;font-family:monospace}
+.model-chip button{background:none;border:none;color:#8888c0;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.model-chip button:hover{color:#f87171}
 </style>
 </head>
 <body>
@@ -972,6 +1235,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <label>Model Directory</label>
       <div class="model-dir">~/.moltbrowser/models/</div>
     </div>
+  </div>
+
+  <div class="section" id="providersSection">
+    <h2><span class="icon">&#9729;</span> Connect AI Providers</h2>
+    <div class="field">
+      <div class="desc">Add frontier models &mdash; OpenAI, Anthropic, Google Gemini and more &mdash; with your own API key. Your key is validated, then encrypted on this device and used only to talk directly to the provider you pick. On-device local models stay fully private and need no key.</div>
+    </div>
+    <div id="providersList" class="field"></div>
   </div>
 
   <div class="section">
@@ -1519,6 +1790,264 @@ if (panelParams.get('panel') === '1') {
   document.getElementById('backBtn').style.display = 'flex';
 }
 
+// ---- Connect AI Providers (cloud / frontier models) ----
+// API keys are stored encrypted on-device by the backend and are NEVER
+// returned to this page — getProviders reports only connected state + the
+// enabled model list. saveProviderKey validates the key over the network
+// and, on success, returns the provider's full model list for one-click
+// enabling.
+var providersData = [];
+var fetchedModels = {};  // provider_id -> [model id]  (from the last connect)
+
+function loadProviders() {
+  sendWithPromise('getProviders').then(function(r) {
+    providersData = (r && r.providers) || [];
+    renderProviders();
+  });
+}
+
+function providerById(id) {
+  for (var i = 0; i < providersData.length; i++) {
+    if (providersData[i].id === id) return providersData[i];
+  }
+  return null;
+}
+
+function exampleModel(id) {
+  var ex = {
+    openai: 'gpt-5.1', anthropic: 'claude-opus-4-8', gemini: 'gemini-2.5-pro',
+    openrouter: 'anthropic/claude-opus-4', xai: 'grok-4',
+    deepseek: 'deepseek-chat', groq: 'llama-3.1-70b-versatile',
+    mistral: 'mistral-large-latest', perplexity: 'sonar-pro'
+  };
+  return ex[id] || 'model-name';
+}
+
+function renderProviders() {
+  var host = document.getElementById('providersList');
+  if (!host) return;
+  host.innerHTML = '';
+  providersData.forEach(function(p) {
+    var row = document.createElement('div');
+    row.className = 'provider-row';
+
+    var head = document.createElement('div');
+    head.className = 'provider-head';
+    var name = document.createElement('span');
+    name.className = 'provider-name';
+    name.textContent = p.display_name;
+    head.appendChild(name);
+
+    var btn = document.createElement('button');
+    btn.className = 'btn secondary provider-btn';
+    if (p.connected) {
+      var badge = document.createElement('span');
+      badge.className = 'provider-badge';
+      badge.textContent = '✓ Connected';
+      head.appendChild(badge);
+      btn.textContent = 'Disconnect';
+      btn.onclick = function() { disconnectProvider(p.id); };
+    } else {
+      btn.textContent = 'Connect';
+      btn.onclick = function() { toggleConnectForm(p.id); };
+    }
+    head.appendChild(btn);
+    row.appendChild(head);
+
+    var body = document.createElement('div');
+    body.className = 'provider-body';
+    body.id = 'pbody-' + p.id;
+    if (p.connected) {
+      renderConnectedBody(body, p);
+    } else {
+      renderConnectForm(body, p);
+      body.style.display = 'none';
+    }
+    row.appendChild(body);
+    host.appendChild(row);
+  });
+}
+
+function toggleConnectForm(id) {
+  var body = document.getElementById('pbody-' + id);
+  if (!body) return;
+  body.style.display = (body.style.display === 'none') ? 'block' : 'none';
+  if (body.style.display === 'block') {
+    var inp = body.querySelector('.pkey');
+    if (inp) inp.focus();
+  }
+}
+
+function renderConnectForm(body, p) {
+  body.innerHTML = '';
+  var form = document.createElement('div');
+  form.className = 'provider-form';
+
+  var key = document.createElement('input');
+  key.type = 'password';
+  key.className = 'pkey';
+  key.placeholder = 'Paste your ' + p.display_name + ' API key';
+  key.autocomplete = 'off';
+  form.appendChild(key);
+
+  var base = null;
+  if (p.custom_base_url) {
+    base = document.createElement('input');
+    base.type = 'text';
+    base.className = 'pbase';
+    base.placeholder = 'Base URL (OpenAI-compatible endpoint)';
+    form.appendChild(base);
+  }
+
+  var errEl = document.createElement('div');
+  errEl.className = 'provider-err';
+  errEl.style.display = 'none';
+  form.appendChild(errEl);
+
+  var rowb = document.createElement('div');
+  rowb.className = 'row';
+  var connectBtn = document.createElement('button');
+  connectBtn.className = 'btn primary';
+  connectBtn.style.cssText = 'font-size:12px;padding:6px 16px';
+  connectBtn.textContent = 'Connect';
+  connectBtn.onclick = function() {
+    var k = key.value.trim();
+    if (!k) {
+      errEl.textContent = 'Enter an API key.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+    connectBtn.disabled = true;
+    connectBtn.textContent = 'Connecting…';
+    var bu = base ? base.value.trim() : '';
+    sendWithPromise('saveProviderKey', p.id, k, bu).then(function(r) {
+      connectBtn.disabled = false;
+      connectBtn.textContent = 'Connect';
+      if (!r || !r.success) {
+        errEl.textContent = (r && r.error) ? r.error : 'Could not connect.';
+        errEl.style.display = 'block';
+        return;
+      }
+      fetchedModels[p.id] = r.models || [];
+      p.connected = true;
+      p.enabled_models = r.enabled_models || [];
+      showToast(p.display_name + ' connected');
+      renderProviders();
+    });
+  };
+  rowb.appendChild(connectBtn);
+  form.appendChild(rowb);
+
+  var hint = document.createElement('div');
+  hint.className = 'provider-hint';
+  hint.textContent = 'Your key is validated, then encrypted on this device. ' +
+      'It is sent only to ' + p.display_name + ' — never to us.';
+  form.appendChild(hint);
+
+  body.appendChild(form);
+}
+
+function renderConnectedBody(body, p) {
+  body.innerHTML = '';
+  var enabled = p.enabled_models || [];
+  var full = fetchedModels[p.id];
+
+  if (full && full.length) {
+    // Freshly fetched this session: show every model with a checkbox.
+    var lbl = document.createElement('div');
+    lbl.className = 'provider-hint';
+    lbl.textContent = 'Choose which models to show in the chat model picker:';
+    body.appendChild(lbl);
+    var scroll = document.createElement('div');
+    scroll.className = 'model-scroll';
+    full.forEach(function(m) {
+      var rowm = document.createElement('label');
+      rowm.className = 'model-toggle';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = enabled.indexOf(m) !== -1;
+      cb.onchange = function() { setCloudModelEnabled(p.id, m, cb.checked); };
+      var nm = document.createElement('span');
+      nm.className = 'mt-name';
+      nm.textContent = m;
+      rowm.appendChild(cb);
+      rowm.appendChild(nm);
+      scroll.appendChild(rowm);
+    });
+    body.appendChild(scroll);
+    return;
+  }
+
+  // Reloaded session (no fetched list): enabled models as removable chips,
+  // plus a free-text add box so a model can be enabled by id with no key
+  // round-trip.
+  if (enabled.length) {
+    var chips = document.createElement('div');
+    chips.className = 'model-chips';
+    enabled.forEach(function(m) {
+      var chip = document.createElement('span');
+      chip.className = 'model-chip';
+      chip.appendChild(document.createTextNode(m));
+      var x = document.createElement('button');
+      x.textContent = '×';
+      x.title = 'Remove';
+      x.onclick = function() { setCloudModelEnabled(p.id, m, false); };
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+    body.appendChild(chips);
+  } else {
+    var none = document.createElement('div');
+    none.className = 'provider-hint';
+    none.textContent = 'No models enabled yet — add one below.';
+    body.appendChild(none);
+  }
+
+  var addRow = document.createElement('div');
+  addRow.className = 'row';
+  addRow.style.marginTop = '8px';
+  var addInp = document.createElement('input');
+  addInp.type = 'text';
+  addInp.placeholder = 'Model id (e.g. ' + exampleModel(p.id) + ')';
+  addInp.style.cssText = 'flex:1;padding:8px 12px;border-radius:8px;border:1px solid #333;background:#0a0a0a;color:#e0e0e0;font-size:13px;outline:none';
+  var addBtn = document.createElement('button');
+  addBtn.className = 'btn secondary';
+  addBtn.style.cssText = 'font-size:12px;padding:6px 14px';
+  addBtn.textContent = 'Add';
+  var doAdd = function() {
+    var m = addInp.value.trim();
+    if (m) { setCloudModelEnabled(p.id, m, true); }
+  };
+  addBtn.onclick = doAdd;
+  addInp.onkeydown = function(e) { if (e.key === 'Enter') doAdd(); };
+  addRow.appendChild(addInp);
+  addRow.appendChild(addBtn);
+  body.appendChild(addRow);
+}
+
+function setCloudModelEnabled(providerId, model, enabled) {
+  sendWithPromise('setModelEnabled', providerId, model, enabled).then(
+      function(r) {
+        if (r && r.success) {
+          var p = providerById(providerId);
+          if (p) p.enabled_models = r.enabled_models || [];
+          renderProviders();
+        }
+      });
+}
+
+function disconnectProvider(id) {
+  sendWithPromise('removeProvider', id).then(function(r) {
+    if (r && r.success) {
+      delete fetchedModels[id];
+      var p = providerById(id);
+      if (p) { p.connected = false; p.enabled_models = []; }
+      renderProviders();
+    }
+  });
+}
+
 // Init
 sendWithPromise('getSettings').then(function(s) {
   loadSettingsIntoUI(s);
@@ -1527,6 +2056,8 @@ sendWithPromise('getSettings').then(function(s) {
 loadExitCountries();
 // Detect installed browsers for the Import & Migration section.
 loadImportableBrowsers();
+// Load configured cloud/frontier providers.
+loadProviders();
 
 // Deep link: molt://ai-settings/?section=import scrolls to (and briefly
 // highlights) the Import & Migration section. Used by the bookmarks
@@ -1534,18 +2065,22 @@ loadImportableBrowsers();
 // path + query, so the query is present here.
 (function() {
   var deepLinkParams = new URLSearchParams(window.location.search);
-  if (deepLinkParams.get('section') === 'import') {
-    var importSection = document.getElementById('importSection');
-    if (importSection) {
-      importSection.scrollIntoView({behavior: 'smooth', block: 'start'});
-      var prevTransition = importSection.style.transition;
-      var prevShadow = importSection.style.boxShadow;
-      importSection.style.transition = 'box-shadow 0.4s ease';
-      importSection.style.boxShadow = '0 0 0 2px #6366f1';
+  var section = deepLinkParams.get('section');
+  var targetId = section === 'import' ? 'importSection'
+               : section === 'providers' ? 'providersSection'
+               : null;
+  if (targetId) {
+    var el = document.getElementById(targetId);
+    if (el) {
+      el.scrollIntoView({behavior: 'smooth', block: 'start'});
+      var prevTransition = el.style.transition;
+      var prevShadow = el.style.boxShadow;
+      el.style.transition = 'box-shadow 0.4s ease';
+      el.style.boxShadow = '0 0 0 2px #6366f1';
       setTimeout(function() {
-        importSection.style.boxShadow = prevShadow;
+        el.style.boxShadow = prevShadow;
         setTimeout(function() {
-          importSection.style.transition = prevTransition;
+          el.style.transition = prevTransition;
         }, 500);
       }, 1600);
     }
