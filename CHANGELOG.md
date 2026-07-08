@@ -19,6 +19,54 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-07-08 — v0.2.3: on-device models work again on macOS + BYO-key cloud models, a redesigned AI chat, and one-click browser import
+
+The headline is a **fix**: on-device model loading works again on macOS.
+v0.2.2 shipped without the compiled Metal shader library
+(`default.metallib`), so llama.cpp fell back to JIT-compiling shaders under
+the hardened runtime and every model failed to load. The release pipeline
+now compiles and seals `default.metallib` into the app framework before
+signing — and hard-fails if it can't — so this can't ship broken again.
+
+On top of that fix, a large batch of work that had been landing on `main`.
+
+### Added
+
+- **Bring-your-own-key cloud models** — connect frontier models (OpenAI,
+  Anthropic, Google Gemini, plus OpenRouter, xAI/Grok, DeepSeek, Groq,
+  Mistral, Perplexity, and any OpenAI-compatible endpoint) with your own API
+  key. Keys are validated, then encrypted on-device (OSCrypt —
+  Keychain/DPAPI/libsecret) and never leave your machine except to the
+  provider you chose. The chat model picker keeps local
+  ("Local · Private 🔒") and cloud ("Cloud · via your key ☁️") models
+  clearly separated so the privacy boundary stays visible; on-device models
+  stay fully local and need no key.
+- **One-click import from any browser** — bring bookmarks (with their folder
+  structure preserved) and saved passwords over from Chrome, Edge, Brave,
+  Opera, Vivaldi, Chromium, Safari, or Firefox in one click, read directly
+  from the source profile — no manual HTML/CSV export.
+- **Redesigned AI chat** — a Recents drawer with persistent conversations, a
+  composer model picker, file attachments (PDF/DOCX/TXT/images with on-device
+  text extraction), editable + resubmittable messages, live voice dictation,
+  and three themes.
+- **Toolbar exit-country control** — the MoltNet Tor exit-country selector
+  moved to a native toolbar globe menu next to the address bar.
+
+### Fixed
+
+- **macOS on-device model loading** — the `default.metallib` regression above.
+- Per-model GGUF chat templates — replies no longer leak `<|user|>`-style
+  template markers on non-Zephyr models.
+- Fresh-conversation context isolation — a new chat no longer bleeds prior
+  browsing-memory or page content into unrelated prompts.
+
+### Changed
+
+- Settings de-Googled — removed upstream "You and Google"/Chrome-branded
+  onboarding surfaces in favor of MoltBrowser-native settings.
+
+---
+
 ## 2026-06-22 — v0.2.1: full feature parity across macOS, Linux, and Windows 🎉
 
 All three desktop platforms were rebuilt and now ship the **same feature set**.
