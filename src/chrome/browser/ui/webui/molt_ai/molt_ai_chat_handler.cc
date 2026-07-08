@@ -4013,13 +4013,28 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
   CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
 
+  // Optional 2nd arg: a settings section to deep-link to. The settings page
+  // reads ?section=<name> and scrolls to (and briefly highlights) it.
+  // Allow-list the known sections so we never build an odd URL from JS.
+  std::string section;
+  if (args.size() >= 2u && args[1].is_string()) {
+    const std::string& s = args[1].GetString();
+    if (s == "providers" || s == "import") {
+      section = s;
+    }
+  }
+
   base::DictValue out;
 
   content::WebContents* webui_wc = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithTab(webui_wc);
   if (browser && browser->tab_strip_model()) {
     // Chat is hosted in a real tab — open settings beside it.
-    chrome::AddSelectedTabWithURL(browser, GURL("molt://ai-settings/"),
+    std::string url = "molt://ai-settings/";
+    if (!section.empty()) {
+      url += "?section=" + section;
+    }
+    chrome::AddSelectedTabWithURL(browser, GURL(url),
                                   ui::PAGE_TRANSITION_AUTO_BOOKMARK);
     out.Set("success", true);
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -4031,14 +4046,19 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
   // WebContents shape as WebAgent::ExecuteNavigate (web_agent.cc) and
   // the panel host's own LoadInitialURL. Resolve the promise BEFORE
   // starting the navigation so the callback isn't dropped when the
-  // chat page is torn down.
+  // chat page is torn down. ?panel=1 drives the back-arrow; a section
+  // deep-link (if any) rides alongside it.
   out.Set("success", true);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 
-  webui_wc->GetController().LoadURL(
-      GURL("molt://ai-settings/?panel=1"), content::Referrer(),
-      ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+  std::string url = "molt://ai-settings/?panel=1";
+  if (!section.empty()) {
+    url += "&section=" + section;
+  }
+  webui_wc->GetController().LoadURL(GURL(url), content::Referrer(),
+                                    ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                    std::string());
 }
 
 // ------------------------------------------------------------------

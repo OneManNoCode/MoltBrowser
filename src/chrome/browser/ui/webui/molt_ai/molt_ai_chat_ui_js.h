@@ -3409,8 +3409,10 @@ document.addEventListener('click', function(e) {
 // window.open('molt://ai-settings/') is silently dropped there. The
 // C++ handler 'openMoltSettings' opens chrome://molt-ai-settings in a
 // real browser tab instead. Contract: resolves {success: bool}.
-function openMoltSettings() {
-  sendWithPromise('openMoltSettings').then(function(r) {
+function openMoltSettings(section) {
+  // Optional section deep-links the settings page (e.g. 'providers' for
+  // Connect AI Providers, 'import' for Import & Migration).
+  sendWithPromise('openMoltSettings', section || '').then(function(r) {
     if (!r || !r.success) addErrorMessage('Could not open Settings.');
   }).catch(function() {
     addErrorMessage('Could not open Settings.');
@@ -3826,9 +3828,26 @@ function renderModelChipDropdown() {
     none.textContent = 'Models';
     dd.appendChild(none);
   }
+  // Cloud provider connect/manage entry \u2014 the path to bring-your-own-key
+  // frontier models (OpenAI, Claude, Gemini, \u2026). It opens the "Connect AI
+  // Providers" section of AI Settings via the openMoltSettings IPC, because
+  // window.open is dropped in the side-panel WebContents. This is the only
+  // affordance that surfaces cloud models before any provider is connected
+  // (the Cloud group above is empty until then), so it always shows.
+  var cloudFoot = document.createElement('div');
+  cloudFoot.className = 'mcd-footer';
+  cloudFoot.textContent = cloudModels.length
+      ? '\u2699\ufe0f Manage cloud providers\u2026'
+      : '\u2295 Connect a cloud model (OpenAI, Claude, Gemini\u2026)';
+  cloudFoot.onclick = function() {
+    toggleModelDropdown();
+    openMoltSettings('providers');
+  };
+  dd.appendChild(cloudFoot);
+
   var foot = document.createElement('div');
   foot.className = 'mcd-footer';
-  foot.textContent = 'Manage models\u2026';
+  foot.textContent = 'Manage local models\u2026';
   foot.onclick = function() {
     toggleModelDropdown();
     toggleModelPanel();
