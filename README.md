@@ -166,22 +166,27 @@ const data = await browser.ai.extractData("table.pricing");
 const models = await browser.ai.getModels();
 ```
 
-## Download — v0.2.1 (available now on all three desktop platforms 🎉)
+## Download
 
-| Platform | Download |
-|----------|----------|
-| **macOS** (Apple Silicon) | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
-| **Windows** (10/11 x64) | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
-| **Linux** (x64) | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.tar.gz) |
+The macOS build is current at **v0.2.3**; the Windows and Linux desktop builds are at **v0.2.1** and get rebuilt per-platform at each milestone.
 
-Or visit **[moltbrowser.com](https://moltbrowser.com)** (auto-detects your OS) or the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases/latest).
+| Platform | Version | Download |
+|----------|---------|----------|
+| **macOS** (Apple Silicon) | **v0.2.3** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
+| **Windows** (10/11 x64) | v0.2.1 | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
+| **Linux** (x64) | v0.2.1 | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.tar.gz) |
 
-> All three desktop platforms now share the same feature set, including Tor routing, voice input, and OCR. The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
+Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases).
 
-## Current Status (v0.2.1)
+> **macOS v0.2.3** restores on-device model loading (a v0.2.2 regression) and adds bring-your-own-key cloud models, one-click browser import, and a redesigned AI chat. Windows and Linux parity builds follow at the next cross-platform milestone. The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
+
+## Current Status
 
 | Feature | Status |
 |---------|--------|
+| Bring-your-own-key cloud models (OpenAI / Anthropic / Gemini + 7 more) | ✅ Complete (v0.2.3) |
+| One-click import from any browser (bookmarks + passwords, folders preserved) | ✅ Complete (v0.2.3) |
+| Redesigned AI chat (Recents, model picker, attachments, voice, themes) | ✅ Complete (v0.2.3) |
 | On-device LLM inference (6 models, Metal/Vulkan GPU) | ✅ Complete |
 | AI Chat (full page + side panel + omnibox) | ✅ Complete |
 | MoltShield ad/tracker blocking (ABP filter engine) | ✅ Complete |
