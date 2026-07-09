@@ -210,6 +210,15 @@ inline constexpr char kChromeUIMoltAIURL[] = "chrome://molt-ai/";
 // MoltBrowser new-tab / home page (Liquid Glass): chrome://molt-home/
 inline constexpr char kChromeUIMoltHomeHost[] = "molt-home";
 inline constexpr char kChromeUIMoltHomeURL[] = "chrome://molt-home/";
+// MoltBrowser MoltNet (Tor) glass popover: chrome://molt-net/ — hosted in a
+// translucent toolbar bubble (also resolves as a full tab for verification).
+inline constexpr char kChromeUIMoltNetHost[] = "molt-net";
+inline constexpr char kChromeUIMoltNetURL[] = "chrome://molt-net/";
+// MoltBrowser Import (browser migration) glass popover: chrome://molt-import/ —
+// hosted in a translucent toolbar bubble (also resolves as a full tab for
+// verification).
+inline constexpr char kChromeUIMoltImportHost[] = "molt-import";
+inline constexpr char kChromeUIMoltImportURL[] = "chrome://molt-import/";
 inline constexpr char kChromeUIMoltAIChatHost[] = "molt-ai-chat";
 inline constexpr char kChromeUIMoltAIChatURL[] = "chrome://molt-ai-chat/";
 inline constexpr char kChromeUIMoltAISettingsHost[] = "molt-ai-settings";

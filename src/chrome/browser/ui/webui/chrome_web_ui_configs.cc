@@ -21,6 +21,8 @@
 // MoltBrowser AI WebUI
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_home_ui.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_net_ui.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_import_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_settings_ui.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_update_ui.h"
@@ -283,6 +285,8 @@ void RegisterChromeWebUIConfigs() {
   // MoltBrowser AI WebUI pages
   map.AddWebUIConfig(std::make_unique<MoltAIUIConfig>());
   map.AddWebUIConfig(std::make_unique<MoltHomeUIConfig>());
+  map.AddWebUIConfig(std::make_unique<MoltNetUIConfig>());
+  map.AddWebUIConfig(std::make_unique<MoltImportUIConfig>());
   map.AddWebUIConfig(std::make_unique<MoltAIChatUIConfig>());
   map.AddWebUIConfig(std::make_unique<MoltAISettingsUIConfig>());
   map.AddWebUIConfig(std::make_unique<MoltAIAgentUIConfig>());

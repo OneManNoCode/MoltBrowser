@@ -103,6 +103,8 @@
 #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
 #include "chrome/browser/ui/views/toolbar/live_toolbar_background.h"
+#include "chrome/browser/ui/views/toolbar/molt_import_bubble.h"
+#include "chrome/browser/ui/views/toolbar/molt_net_bubble.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
@@ -469,9 +471,12 @@ class TorExitCountryButton : public ToolbarButton,
   }
 
   void ButtonPressed() {
-    BuildMenu();
     UpdateLabel();
-    ShowMenuForModel(ui::mojom::MenuSourceType::kNone, &menu_model_);
+    // MoltBrowser: open the Liquid Glass MoltNet popover (a translucent
+    // WebUI bubble). The native SimpleMenuModel path — BuildMenu(),
+    // ExecuteCommand(), menu_model_ — is retained as a fallback/reference but
+    // is no longer wired to the click.
+    MoltNetBubbleView::Show(/*anchor=*/this, browser_->profile());
   }
 
   void OnTorLaunched(molt_ai::tor::TorLaunchResult /*result*/) {
@@ -854,22 +859,24 @@ void ToolbarView::Init() {
     AddChildView(std::make_unique<TorExitCountryButton>(browser_));
   }
 
-  // MoltBrowser: Import & Migration quick-access button. Opens the Import
-  // section of AI settings so bookmarks + saved passwords from another
-  // browser are one click from the toolbar, not buried in settings.
+  // MoltBrowser: Import & Migration quick-access button. Opens the Liquid Glass
+  // Import popover (a translucent WebUI bubble) anchored to the button — the
+  // sibling of the MoltNet globe's popover — so bookmarks + saved passwords
+  // from another browser are one click from the toolbar, not buried in
+  // settings.
   {
-    auto import_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-        [](Browser* browser) {
-          chrome::AddSelectedTabWithURL(
-              browser, GURL("molt://ai-settings/?section=import"),
-              ui::PAGE_TRANSITION_AUTO_BOOKMARK);
-        },
-        browser_));
+    auto import_button = std::make_unique<ToolbarButton>();
     import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     import_button->SetVectorIcon(vector_icons::kFileDownloadIcon);
     import_button->SetTooltipText(
         u"Import bookmarks & passwords from another browser");
-    AddChildView(std::move(import_button));
+    ToolbarButton* import_button_ptr =
+        AddChildView(std::move(import_button));
+    import_button_ptr->SetCallback(base::BindRepeating(
+        [](ToolbarButton* anchor, Browser* browser) {
+          MoltImportBubbleView::Show(anchor, browser->profile());
+        },
+        base::Unretained(import_button_ptr), browser_));
   }
 
   // MoltBrowser: Software-update button. Opens molt://update/ (the in-app

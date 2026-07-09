@@ -25,6 +25,14 @@ source_set("molt_ai") {
     "molt_ai_ui.h",
     "molt_home_ui.cc",
     "molt_home_ui.h",
+    "molt_import_handler.cc",
+    "molt_import_handler.h",
+    "molt_import_ui.cc",
+    "molt_import_ui.h",
+    "molt_net_handler.cc",
+    "molt_net_handler.h",
+    "molt_net_ui.cc",
+    "molt_net_ui.h",
   ]
 
   deps = [
@@ -40,6 +48,7 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai/keys",
     "//chrome/browser/molt_ai/memory",
+    "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/profile",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
