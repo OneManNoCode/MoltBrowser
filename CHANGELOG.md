@@ -19,6 +19,38 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-07-09 — v0.2.4: Liquid Glass, MoltNet Tor actually works, and a de-Googled toolbar
+
+A design + fixes release on top of v0.2.3.
+
+### Fixed
+
+- **MoltNet (Tor) works again.** Every prior build shipped a `tor` binary that
+  couldn't launch — the packager dropped its `libevent` dylib, so
+  `tor` died at startup and privacy routing never started. Now bundled and
+  verified end-to-end: choosing an exit country actually routes your traffic
+  through a relay in that country (tested US / DE / NL).
+- **Removed the Google "Ask" button.** Chromium's new AI-Mode omnibox
+  entrypoint routed to Google's AI overview; it's disabled. MoltBrowser stays
+  Google-free.
+
+### Added / Changed
+
+- **Liquid Glass UI.** The AI chat panel, full-page chat, and settings adopt a
+  visionOS-style frosted-glass treatment — floating translucent panels with
+  luminous edges over a soft ambient backdrop. Respects light/dark themes and
+  reduced-motion.
+- **Native glass toolbar** (macOS vibrancy) with floating pill buttons.
+- **Exactly-centered address bar**, Safari-style, without hiding any toolbar
+  button.
+- **MoltNet toolbar control** now shows live connection status, an Enable
+  toggle, and the exit-country list with flags + full names; a new **Import**
+  toolbar button jumps straight to browser migration.
+- The chat **model picker** leads with **"Connect a cloud model"** (OpenAI /
+  Anthropic / Gemini, bring-your-own-key), above the local models.
+
+---
+
 ## 2026-07-08 — v0.2.3: on-device models work again on macOS + BYO-key cloud models, a redesigned AI chat, and one-click browser import
 
 The headline is a **fix**: on-device model loading works again on macOS.

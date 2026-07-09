@@ -250,7 +250,7 @@ inline constexpr char kMoltSettingsURL[] = "molt://settings/";
 // updater's "current version". Chromium's version_info reports the upstream
 // 148.x.x.x, not ours, so the updater compares THIS against the GitHub
 // release tag. Bump on each release (keep in sync with release.sh --version).
-inline constexpr char kMoltBrowserVersion[] = "0.2.3";
+inline constexpr char kMoltBrowserVersion[] = "0.2.4";
 inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
 inline constexpr char kChromeUINetExportHost[] = "net-export";
 inline constexpr char kChromeUINetInternalsHost[] = "net-internals";

@@ -168,17 +168,17 @@ const models = await browser.ai.getModels();
 
 ## Download
 
-The macOS build is current at **v0.2.3**; the Windows and Linux desktop builds are at **v0.2.1** and get rebuilt per-platform at each milestone.
+The macOS build is current at **v0.2.4**; the Windows and Linux desktop builds are at **v0.2.1** and get rebuilt per-platform at each milestone.
 
 | Platform | Version | Download |
 |----------|---------|----------|
-| **macOS** (Apple Silicon) | **v0.2.3** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
+| **macOS** (Apple Silicon) | **v0.2.4** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
 | **Windows** (10/11 x64) | v0.2.1 | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
 | **Linux** (x64) | v0.2.1 | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.tar.gz) |
 
 Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases).
 
-> **macOS v0.2.3** restores on-device model loading (a v0.2.2 regression) and adds bring-your-own-key cloud models, one-click browser import, and a redesigned AI chat. Windows and Linux parity builds follow at the next cross-platform milestone. The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
+> **macOS v0.2.4** adds a visionOS-style Liquid Glass UI, an exactly-centered address bar, and fixes MoltNet Tor routing (the bundled tor was missing a library and never launched). Builds on v0.2.3's bring-your-own-key cloud models, one-click browser import, and redesigned AI chat. Windows and Linux parity builds follow at the next cross-platform milestone. The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
 
 ## Current Status
 
