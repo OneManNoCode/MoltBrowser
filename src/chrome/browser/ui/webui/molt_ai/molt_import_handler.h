@@ -43,6 +43,16 @@ class MoltImportHandler : public content::WebUIMessageHandler {
   static std::string BrowserIdToString(molt_ai::BrowserId id);
   static bool StringToBrowserId(const std::string& s, molt_ai::BrowserId* out);
 
+  // getBookmarks(callback_id) -> {bookmarks:[{title,url,host,folder}]}.
+  // Reads THIS profile's own BookmarkModel so the popover's default view can
+  // show the user's existing bookmarks. Resolves an empty list if the model is
+  // absent or not yet loaded. Capped at a few hundred entries for the compact
+  // popover.
+  void HandleGetBookmarks(const base::ListValue& args);
+  // openBookmark(callback_id, url) -> {ok:true}. Opens an http(s) URL in a new
+  // tab of the active browser window (mirrors the chat handler's open-in-tab).
+  void HandleOpenBookmark(const base::ListValue& args);
+
   // getImportableBrowsers -> {browsers:[{id,display_name,installed,
   // has_bookmarks,has_passwords_store}]}. Stat-only, cheap enough inline.
   void HandleGetImportableBrowsers(const base::ListValue& args);

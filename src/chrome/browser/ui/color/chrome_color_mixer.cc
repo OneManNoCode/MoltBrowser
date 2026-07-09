@@ -1174,8 +1174,9 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
     // so the capsule reads as floating glass, not a flat gray outline.
     mixer[kColorToolbarButtonBackgroundHighlightedDefault] = {
         SkColorSetARGB(0x1F, 0xFF, 0xFF, 0xFF)};
-    // Softer, brighter specular pill edge. rgba(255,255,255,0.18).
-    mixer[kColorToolbarButtonBorder] = {SkColorSetARGB(0x2E, 0xFF, 0xFF, 0xFF)};
+    // Very faint specular pill edge (glass, not a gray outline). The pill reads
+    // by its translucent fill; the edge is just a whisper. rgba(255,255,255,0.07).
+    mixer[kColorToolbarButtonBorder] = {SkColorSetARGB(0x12, 0xFF, 0xFF, 0xFF)};
     // Keep toolbar icons crisp light on the dark bar.
     mixer[kColorToolbarButtonIcon] = {SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF)};
     // Omnibox capsule: opaque near-black keeps subpixel text AA; specular edge
@@ -1183,7 +1184,7 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
     mixer[kColorLocationBarBackground] = {SkColorSetRGB(0x14, 0x16, 0x1E)};
     mixer[kColorLocationBarBackgroundHovered] = {
         SkColorSetRGB(0x1A, 0x1C, 0x26)};
-    mixer[kColorLocationBarBorder] = {SkColorSetARGB(0x24, 0xFF, 0xFF, 0xFF)};
+    mixer[kColorLocationBarBorder] = {SkColorSetARGB(0x14, 0xFF, 0xFF, 0xFF)};
     // Frame behind/around the bar → deepest ambient.
     mixer[ui::kColorFrameActive] = {SkColorSetRGB(0x06, 0x07, 0x0C)};  // #06070c
     mixer[ui::kColorFrameInactive] = {SkColorSetRGB(0x06, 0x07, 0x0C)};

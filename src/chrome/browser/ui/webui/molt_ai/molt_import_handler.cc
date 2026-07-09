@@ -18,18 +18,68 @@
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/keyed_service/core/service_access_type.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
+
+namespace {
+
+// The compact popover only shows a few hundred rows; cap the walk so a huge
+// bookmark tree can't bloat the IPC payload or the scroll list.
+constexpr size_t kMaxBookmarkEntries = 300;
+
+// Depth-first append of every URL node under |node| into |out| as
+// {title,url,host,folder}. |folder| is the title of the immediate containing
+// folder ("" for bookmarks sitting directly under a permanent root such as the
+// bookmark bar). Folders themselves are skipped but recursed into. Stops once
+// the cap is reached.
+void CollectBookmarks(const bookmarks::BookmarkNode* node,
+                      const std::string& folder,
+                      base::ListValue* out) {
+  if (!node)
+    return;
+  for (const auto& child : node->children()) {
+    if (out->size() >= kMaxBookmarkEntries)
+      return;
+    if (child->is_url()) {
+      base::DictValue entry;
+      entry.Set("title", base::UTF16ToUTF8(child->GetTitle()));
+      entry.Set("url", child->url().spec());
+      entry.Set("host", child->url().host());
+      entry.Set("folder", folder);
+      out->Append(std::move(entry));
+    } else if (child->is_folder()) {
+      CollectBookmarks(child.get(), base::UTF16ToUTF8(child->GetTitle()), out);
+    }
+  }
+}
+
+}  // namespace
 
 MoltImportHandler::MoltImportHandler() = default;
 MoltImportHandler::~MoltImportHandler() = default;
 
 void MoltImportHandler::RegisterMessages() {
+  // getBookmarks: read this profile's own bookmarks for the default popover
+  // view.
+  web_ui()->RegisterMessageCallback(
+      "getBookmarks",
+      base::BindRepeating(&MoltImportHandler::HandleGetBookmarks,
+                          base::Unretained(this)));
+  // openBookmark: open one of the user's bookmarks in a new tab.
+  web_ui()->RegisterMessageCallback(
+      "openBookmark",
+      base::BindRepeating(&MoltImportHandler::HandleOpenBookmark,
+                          base::Unretained(this)));
   // getImportableBrowsers: stat-only detection of installed browsers.
   web_ui()->RegisterMessageCallback(
       "getImportableBrowsers",
@@ -98,6 +148,72 @@ bool MoltImportHandler::StringToBrowserId(const std::string& s,
     return false;
   }
   return true;
+}
+
+void MoltImportHandler::HandleGetBookmarks(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  base::DictValue out;
+  base::ListValue bookmark_list;
+
+  bookmarks::BookmarkModel* model =
+      BookmarkModelFactory::GetForBrowserContext(Profile::FromWebUI(web_ui()));
+  if (model && model->loaded()) {
+    // Bookmark bar first, then "Other", then mobile (if present). Bookmarks
+    // sitting directly under a permanent root carry an empty folder label.
+    CollectBookmarks(model->bookmark_bar_node(), std::string(), &bookmark_list);
+    CollectBookmarks(model->other_node(), std::string(), &bookmark_list);
+    if (model->mobile_node())
+      CollectBookmarks(model->mobile_node(), std::string(), &bookmark_list);
+  }
+
+  out.Set("bookmarks", std::move(bookmark_list));
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
+}
+
+void MoltImportHandler::HandleOpenBookmark(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 2u);
+  const std::string callback_id = args[0].GetString();
+  const std::string url =
+      args[1].is_string() ? args[1].GetString() : std::string();
+
+  base::DictValue out;
+
+  // Re-validate here: only navigate to a well-formed http(s) URL. A bad or
+  // non-http(s) string is rejected rather than "fixed up".
+  GURL gurl(url);
+  if (!gurl.is_valid() || !gurl.SchemeIsHTTPOrHTTPS()) {
+    out.Set("ok", false);
+    out.Set("error", "unsupported url");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  // Resolve the browser window that should receive the new tab. This popover's
+  // WebContents lives in a bubble widget, not a tab strip, so FindBrowserWithTab
+  // returns null — fall back to the most-recently-active browser window.
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser)
+    browser = chrome::FindLastActive();
+  if (!browser) {
+    out.Set("ok", false);
+    out.Set("error", "no active browser window");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  chrome::AddSelectedTabWithURL(browser, gurl,
+                                ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+  out.Set("ok", true);
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
 }
 
 void MoltImportHandler::HandleGetImportableBrowsers(

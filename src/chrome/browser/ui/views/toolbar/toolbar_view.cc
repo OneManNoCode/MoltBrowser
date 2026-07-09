@@ -709,7 +709,7 @@ void ToolbarView::Init() {
     import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     import_button->SetVectorIcon(kBookmarksManagerIcon);
     import_button->SetTooltipText(
-        u"Import bookmarks & passwords from another browser");
+        u"Bookmarks — view yours, or import from another browser");
     ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
     import_button_ptr->SetCallback(base::BindRepeating(
         [](ToolbarButton* anchor, Browser* browser) {

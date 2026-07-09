@@ -150,6 +150,35 @@ class MoltImportDataSource : public content::URLDataSource {
     border-color:transparent;color:#fff}
   .act.primary:hover{filter:brightness(1.06);color:#fff}
 
+  /* Segmented [ Bookmarks | Import ] switch under the header. */
+  .tabs{display:flex;gap:4px;margin:0 14px 4px;padding:3px;border-radius:12px;
+    background:rgba(255,255,255,.05);border:1px solid var(--edge);flex:0 0 auto}
+  .tab{flex:1;text-align:center;font-size:12px;font-weight:600;padding:7px 4px;
+    border-radius:9px;cursor:pointer;color:var(--muted);transition:.15s;user-select:none}
+  .tab:hover{color:var(--text)}
+  .tab.on{background:rgba(255,255,255,.12);color:var(--text);
+    box-shadow:inset 0 1px 0 var(--specular)}
+
+  /* Each tab's pane fills the remaining height; only one is shown at a time. */
+  .view{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+  .view[hidden]{display:none}
+
+  .search{margin:2px 14px 8px;flex:0 0 auto}
+  .search input{width:100%;padding:8px 11px;border-radius:10px;font-size:12.5px;
+    color:var(--text);background:rgba(255,255,255,.06);border:1px solid var(--edge);
+    outline:none;font-family:var(--font)}
+  .search input::placeholder{color:var(--faint)}
+  .search input:focus{border-color:var(--edge-hi);background:rgba(255,255,255,.09)}
+
+  /* Two-line bookmark rows: title over a dim host. */
+  .row .meta{flex:1;min-width:0;display:flex;flex-direction:column}
+  .row .meta .name{flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .meta .sub{font-size:11px;color:var(--faint);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+
+  .empty .lnk{color:var(--accent);cursor:pointer;font-weight:600}
+  .empty .lnk:hover{text-decoration:underline}
+
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -159,19 +188,33 @@ class MoltImportDataSource : public content::URLDataSource {
   <div class="frost">
     <div class="hdr">
       <span class="dot" id="dot"></span>
-      <div><div class="title">Import</div><div class="st" id="st">Detecting browsers&hellip;</div></div>
+      <div><div class="title" id="title">Bookmarks</div><div class="st" id="st">&nbsp;</div></div>
     </div>
-    <div class="sec">Import from</div>
-    <div class="list" id="list"></div>
-    <div class="divider"></div>
-    <div class="toggle-row">
-      <div><div class="lbl">Include saved passwords</div><div class="sub">Off by default &middot; may prompt for Keychain</div></div>
-      <div class="sw" id="sw" onclick="togglePw()"><div class="knob"></div></div>
+    <div class="tabs">
+      <div class="tab on" id="tab-bm" onclick="setTab('bookmarks')">Bookmarks</div>
+      <div class="tab" id="tab-im" onclick="setTab('import')">Import</div>
     </div>
-    <div class="status" id="status"></div>
-    <div class="foot">
-      <div class="act primary" id="go" onclick="importPrimary()">Import bookmarks</div>
-      <div class="act" onclick="go('molt://ai-settings/?section=import')">&#9881;&#65039; Settings</div>
+
+    <!-- DEFAULT view: the user's own saved bookmarks. -->
+    <div class="view" id="view-bm">
+      <div class="search"><input id="bmsearch" type="text" placeholder="Search bookmarks&hellip;" autocomplete="off" spellcheck="false"></div>
+      <div class="list" id="bmlist"></div>
+    </div>
+
+    <!-- SECOND view: migrate bookmarks/passwords from another browser. -->
+    <div class="view" id="view-im" hidden>
+      <div class="sec">Import from</div>
+      <div class="list" id="implist"></div>
+      <div class="divider"></div>
+      <div class="toggle-row">
+        <div><div class="lbl">Include saved passwords</div><div class="sub">Off by default &middot; may prompt for Keychain</div></div>
+        <div class="sw" id="sw" onclick="togglePw()"><div class="knob"></div></div>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="foot">
+        <div class="act primary" id="go" onclick="importPrimary()">Import bookmarks</div>
+        <div class="act" onclick="go('molt://ai-settings/?section=import')">Manage</div>
+      </div>
     </div>
   </div>
 </div>
@@ -244,21 +287,98 @@ var LOGO={
     '<ellipse cx="12" cy="12" rx="5" ry="10.5" fill="none" stroke="#888" stroke-width="1.6"/>'+
     '<line x1="1.5" y1="12" x2="22.5" y2="12" stroke="#888" stroke-width="1.6"/></svg>'};
 
-var STATE={browsers:[],selected:'',includePasswords:false,busy:false};
+var STATE={tab:'bookmarks',browsers:[],selected:'',includePasswords:false,
+           busy:false,bookmarks:[],filter:''};
 
 function isInstalled(b){return b.installed!==false;}
 function setStatus(t){el('status').textContent=t||'';}
 
+// Pure client-side show/hide between the Bookmarks and Import panes, plus the
+// shared header (dot + title + subline) which reflects the active tab.
+function setTab(t){
+  STATE.tab=t;
+  el('tab-bm').className='tab'+(t==='bookmarks'?' on':'');
+  el('tab-im').className='tab'+(t==='import'?' on':'');
+  el('view-bm').hidden=(t!=='bookmarks');
+  el('view-im').hidden=(t!=='import');
+  updateHeader();
+}
+
+function updateHeader(){
+  if(STATE.tab==='bookmarks'){
+    el('title').textContent='Bookmarks';
+    el('dot').className='dot on';
+    var n=STATE.bookmarks.length;
+    el('st').textContent=n?(n+' saved'):'No bookmarks yet';
+  }else{
+    el('title').textContent='Import';
+    el('dot').className='dot'+(STATE.busy?' busy':(STATE.browsers.length?' on':''));
+    var m=STATE.browsers.filter(isInstalled).length;
+    el('st').textContent=m?(m+' browser'+(m===1?'':'s')+' detected')
+                          :'No other browsers detected';
+  }
+}
+
 function render(){
   el('sw').className='sw'+(STATE.includePasswords?' on':'');
   el('go').textContent=STATE.includePasswords?'Import bookmarks & passwords':'Import bookmarks';
-  el('dot').className='dot'+(STATE.busy?' busy':(STATE.browsers.length?' on':''));
-  var list=el('list');list.innerHTML='';
+  var list=el('implist');list.innerHTML='';
   if(!STATE.browsers.length){
     var e=document.createElement('div');e.className='empty';
     e.textContent='No other browsers detected on this device.';
-    list.appendChild(e);return;}
-  STATE.browsers.forEach(function(b){list.appendChild(rowEl(b));});
+    list.appendChild(e);
+  }else{
+    STATE.browsers.forEach(function(b){list.appendChild(rowEl(b));});
+  }
+  updateHeader();
+}
+
+// ---- Bookmarks pane (the user's own saved bookmarks) ----
+
+function bmRowEl(b){
+  var r=document.createElement('div');r.className='row';
+  r.onclick=function(){openBookmark(b.url);};
+  var f=document.createElement('span');f.className='flag';
+  f.innerHTML=LOGO.globe;  // constant string only
+  var m=document.createElement('div');m.className='meta';
+  var n=document.createElement('div');n.className='name';
+  n.textContent=b.title||b.host||b.url||'';
+  var s=document.createElement('div');s.className='sub';
+  s.textContent=b.host||'';
+  m.appendChild(n);m.appendChild(s);
+  r.appendChild(f);r.appendChild(m);return r;
+}
+
+function renderBookmarks(){
+  var list=el('bmlist');list.innerHTML='';
+  if(!STATE.bookmarks.length){
+    var e=document.createElement('div');e.className='empty';
+    // Constant markup only; the click switches to the Import tab.
+    e.innerHTML='No bookmarks yet — <span class="lnk" id="toimport">import some &rarr;</span>';
+    list.appendChild(e);
+    el('toimport').onclick=function(){setTab('import');};
+    return;}
+  var f=STATE.filter.toLowerCase();
+  var items=f?STATE.bookmarks.filter(function(b){
+    return (b.title||'').toLowerCase().indexOf(f)>=0 ||
+           (b.host||'').toLowerCase().indexOf(f)>=0;}):STATE.bookmarks;
+  if(!items.length){
+    var e2=document.createElement('div');e2.className='empty';
+    e2.textContent='No matches.';list.appendChild(e2);return;}
+  items.forEach(function(b){list.appendChild(bmRowEl(b));});
+}
+
+function openBookmark(url){
+  if(!url) return;
+  // Fire-and-forget: the bubble stays open so the user can open several.
+  sendWithPromise('openBookmark',url).then(function(){}).catch(function(){});
+}
+
+function loadBookmarks(){
+  sendWithPromise('getBookmarks').then(function(r){
+    STATE.bookmarks=(r&&r.bookmarks)?r.bookmarks:[];
+    renderBookmarks();updateHeader();
+  }).catch(function(){STATE.bookmarks=[];renderBookmarks();updateHeader();});
 }
 
 function rowEl(b){
@@ -332,15 +452,19 @@ function loadBrowsers(){
     STATE.selected='';
     for(var i=0;i<all.length;i++){
       if(isInstalled(all[i])){STATE.selected=all[i].id;break;}}
-    var n=all.filter(isInstalled).length;
-    el('st').textContent=n?(n+' browser'+(n===1?'':'s')+' detected')
-                          :'No other browsers detected';
-    render();
-  }).catch(function(){STATE.browsers=[];el('st').textContent='Detection failed';render();});
+    render();  // render() -> updateHeader() refreshes the Import subline
+  }).catch(function(){STATE.browsers=[];render();});
 }
 
 cr.addWebUIListener('import-progress',onImportProgress);
-document.addEventListener('DOMContentLoaded',function(){loadBrowsers();});
+document.addEventListener('DOMContentLoaded',function(){
+  setTab('bookmarks');           // default view = the user's own bookmarks
+  var s=el('bmsearch');
+  if(s) s.addEventListener('input',function(){
+    STATE.filter=s.value||'';renderBookmarks();});
+  loadBookmarks();               // primary: fill the Bookmarks list
+  loadBrowsers();                // secondary: pre-populate the Import tab
+});
 </script>
 </body>
 </html>)HTML";

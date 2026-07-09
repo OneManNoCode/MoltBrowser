@@ -200,18 +200,15 @@ void ToolbarButton::UpdateColorsAndInsets() {
     SetBackground(nullptr);
     const auto* cp = GetColorProvider();
     if (cp) {
-      // MoltBrowser: on the dark glass toolbar, give every icon-only / nav
-      // button a translucent-white floating capsule fill (dark mode gives none
-      // by default, so they'd otherwise sit flat on the bar).
-      ChromeColorIds bg_id = default_background_color_id_;
-      if (bg_id == kChromeColorsStart &&
-          base::FeatureList::IsEnabled(features::kGlassToolbar)) {
-        bg_id = kColorToolbarButtonBackgroundHighlightedDefault;
-      }
-      if (bg_id != kChromeColorsStart) {
+      // MoltBrowser: icon-only / nav buttons stay BARE on the dark glass
+      // toolbar (no fill, no border) so they float on the glass rather than
+      // reading as gray-outlined buttons. Only labeled feature buttons (Local
+      // AI, MoltNet, …) get a glass pill, via the highlight-animation path.
+      if (default_background_color_id_ != kChromeColorsStart) {
         SetBackground(views::CreateBackgroundFromPainter(
             views::Painter::CreateSolidRoundRectPainter(
-                cp->GetColor(bg_id), highlight_radius, paint_insets)));
+                cp->GetColor(default_background_color_id_), highlight_radius,
+                paint_insets)));
       }
       label()->SetBackgroundColor(cp->GetColor(kColorToolbar));
     }
@@ -220,12 +217,6 @@ void ToolbarButton::UpdateColorsAndInsets() {
   // Apply new border with target insets.
   std::optional<SkColor> border_color =
       highlight_color_animation_.GetBorderColor();
-  // MoltBrowser: supply the specular pill border when the animation gives none,
-  // so the floating capsule reads on the dark glass toolbar.
-  if (!border_color && GetColorProvider() &&
-      base::FeatureList::IsEnabled(features::kGlassToolbar)) {
-    border_color = GetColorProvider()->GetColor(kColorToolbarButtonBorder);
-  }
   if (ShouldPaintBorder() && border_color) {
     int border_thickness_dp = GetText().empty() ? kBorderThicknessDpWithoutLabel
                                                 : kBorderThicknessDpWithLabel;
