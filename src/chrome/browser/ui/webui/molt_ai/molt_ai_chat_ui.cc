@@ -347,6 +347,12 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .mrow-fill{height:100%;background:var(--accent);width:0;transition:width 0.3s}
 .mcd-footer{margin-top:4px;border-top:1px solid var(--border);padding:8px 10px;font-size:11.5px;color:var(--muted);cursor:pointer;transition:color 0.15s,background 0.15s;border-radius:0 0 8px 8px}
 .mcd-footer:hover{color:var(--text);background:var(--surface2)}
+.mcd-cloud-cta{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;border-radius:8px;cursor:pointer;background:linear-gradient(90deg,rgba(139,92,246,0.14),rgba(99,102,241,0.05));border:1px solid rgba(139,92,246,0.4);transition:background 0.15s}
+.mcd-cloud-cta:hover{background:linear-gradient(90deg,rgba(139,92,246,0.24),rgba(99,102,241,0.1))}
+.mcd-cloud-cta .mcc-icon{font-size:15px;line-height:1}
+.mcd-cloud-cta .mcc-text{flex:1;display:flex;flex-direction:column;font-size:12.5px;font-weight:600;color:var(--text)}
+.mcd-cloud-cta .mcc-sub{font-size:10px;font-weight:400;color:var(--muted);margin-top:1px}
+.mcd-cloud-cta .mcc-arrow{color:var(--muted);font-size:14px}
 /* ---- Model management overlay ---- */
 .model-panel{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:10;display:none;flex-direction:column;overflow-y:auto}
 .model-panel.open{display:flex}

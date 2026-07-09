@@ -3722,6 +3722,24 @@ function renderModelChipDropdown() {
     else localModels.push(allModels[li]);
   }
 
+  // ---- Cloud connect: the FIRST, most-prominent option so bring-your-own-
+  // key frontier models are the top action in the picker. Opens the Connect
+  // AI Providers settings (a manage entry once any provider is connected). ----
+  var cloudCta = document.createElement('div');
+  cloudCta.className = 'mcd-cloud-cta';
+  cloudCta.innerHTML =
+    '<span class="mcc-icon">☁️</span>' +
+    '<span class="mcc-text">' +
+      (cloudModels.length ? 'Manage cloud providers' : 'Connect a cloud model') +
+      '<span class="mcc-sub">OpenAI, Claude, Gemini &amp; more — your key</span>' +
+    '</span>' +
+    '<span class="mcc-arrow">→</span>';
+  cloudCta.onclick = function() {
+    toggleModelDropdown();
+    openMoltSettings('providers');
+  };
+  dd.appendChild(cloudCta);
+
   // ---- Local group: existing download/load affordances ----
   if (localModels.length) {
     var lh = document.createElement('div');
@@ -3828,23 +3846,8 @@ function renderModelChipDropdown() {
     none.textContent = 'Models';
     dd.appendChild(none);
   }
-  // Cloud provider connect/manage entry \u2014 the path to bring-your-own-key
-  // frontier models (OpenAI, Claude, Gemini, \u2026). It opens the "Connect AI
-  // Providers" section of AI Settings via the openMoltSettings IPC, because
-  // window.open is dropped in the side-panel WebContents. This is the only
-  // affordance that surfaces cloud models before any provider is connected
-  // (the Cloud group above is empty until then), so it always shows.
-  var cloudFoot = document.createElement('div');
-  cloudFoot.className = 'mcd-footer';
-  cloudFoot.textContent = cloudModels.length
-      ? '\u2699\ufe0f Manage cloud providers\u2026'
-      : '\u2295 Connect a cloud model (OpenAI, Claude, Gemini\u2026)';
-  cloudFoot.onclick = function() {
-    toggleModelDropdown();
-    openMoltSettings('providers');
-  };
-  dd.appendChild(cloudFoot);
-
+  // (Cloud connect/manage lives at the TOP of the dropdown now \u2014 see the
+  // .mcd-cloud-cta entry above \u2014 so it's the first thing the user sees.)
   var foot = document.createElement('div');
   foot.className = 'mcd-footer';
   foot.textContent = 'Manage local models\u2026';

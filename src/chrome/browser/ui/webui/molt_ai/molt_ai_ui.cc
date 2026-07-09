@@ -627,6 +627,23 @@ function renderModelChipDropdown() {
   var localModels = [], cloudModels = [];
   allModels.forEach(function(m){ (m.is_cloud ? cloudModels : localModels).push(m); });
 
+  // ---- Cloud connect: the FIRST, most-prominent option so bring-your-own-
+  // key frontier models are the top action in the picker. ----
+  var cloudCta = document.createElement('div');
+  cloudCta.className = 'mcd-cloud-cta';
+  cloudCta.innerHTML =
+    '<span class="mcc-icon">☁️</span>' +
+    '<span class="mcc-text">' +
+      (cloudModels.length ? 'Manage cloud providers' : 'Connect a cloud model') +
+      '<span class="mcc-sub">OpenAI, Claude, Gemini &amp; more — your key</span>' +
+    '</span>' +
+    '<span class="mcc-arrow">→</span>';
+  cloudCta.onclick = function() {
+    toggleModelDropdown();
+    window.open('molt://ai-settings/?section=providers', '_blank');
+  };
+  dd.appendChild(cloudCta);
+
   if (cloudModels.length && localModels.length) {
     var lh = document.createElement('div');
     lh.className = 'mcd-header';
@@ -692,17 +709,8 @@ function renderModelChipDropdown() {
     });
   }
 
-  // Footer: connect (or manage) cloud providers in AI settings.
-  var foot = document.createElement('div');
-  foot.className = 'mcd-footer';
-  foot.textContent = cloudModels.length
-      ? 'Manage cloud providers…'
-      : '⊕ Connect a cloud model (OpenAI, Claude, Gemini…)';
-  foot.onclick = function() {
-    toggleModelDropdown();
-    window.open('molt://ai-settings/?section=providers', '_blank');
-  };
-  dd.appendChild(foot);
+  // (Cloud connect/manage lives at the TOP of the dropdown now — the
+  // .mcd-cloud-cta entry above — so it's the first option the user sees.)
 }
 
 function updateModelChipProgress(percent) {

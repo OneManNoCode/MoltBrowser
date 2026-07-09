@@ -309,14 +309,34 @@ bool IsMigratedClickToCallBubble(
          IsPageActionMigrated(PageActionIconType::kClickToCall);
 }
 
-// MoltBrowser: Toolbar button for the MoltNet (Tor) exit-country picker.
-// Left-click opens a native checkmark menu: "Auto (recommended)" + the
-// curated country list from TorManager, then "New identity" (re-applies
-// the current constraint, which triggers SIGNAL NEWNYM if Tor is running)
-// and "MoltNet settings…" (molt://ai-settings/, the deep-config home).
-// The button is its own menu-model delegate; the check mark and label are
-// read from TorManager on demand, so the label self-heals from changes
-// made in other windows or via the WebUI pickers.
+// MoltBrowser: turn a 2-letter ISO country code into its flag emoji
+// (regional-indicator surrogate pair per letter). "us" -> 🇺🇸. Empty for a
+// malformed code.
+std::u16string CountryFlagEmoji(const std::string& cc) {
+  if (cc.size() != 2) {
+    return std::u16string();
+  }
+  std::u16string out;
+  for (char raw : cc) {
+    const char c = base::ToLowerASCII(raw);
+    if (c < 'a' || c > 'z') {
+      return std::u16string();
+    }
+    uint32_t cp = 0x1F1E6u + static_cast<uint32_t>(c - 'a');  // regional ind.
+    cp -= 0x10000u;
+    out.push_back(static_cast<char16_t>(0xD800u + (cp >> 10)));
+    out.push_back(static_cast<char16_t>(0xDC00u + (cp & 0x3FFu)));
+  }
+  return out;
+}
+
+// MoltBrowser: Toolbar control for MoltNet (Tor) privacy routing. Left-click
+// opens a rich native menu with (1) a live connection-status line, (2) an
+// "Enable MoltNet Privacy Routing" toggle that launches/stops the bundled
+// Tor, (3) an exit-country picker with flag emoji + full names, and (4) New
+// identity / Import-from-another-browser / MoltNet settings entries. The menu
+// is rebuilt on every open from TorManager, so status + selection self-heal
+// from changes in other windows or the WebUI pickers.
 class TorExitCountryButton : public ToolbarButton,
                              public ui::SimpleMenuModel::Delegate {
   METADATA_HEADER(TorExitCountryButton, ToolbarButton)
@@ -327,23 +347,11 @@ class TorExitCountryButton : public ToolbarButton,
         menu_model_(this),
         country_codes_(
             molt_ai::tor::TorManager::Get()->GetAvailableExitCountries()) {
-    menu_model_.AddCheckItem(kCommandAuto, u"Auto (recommended)");
-    for (size_t i = 0; i < country_codes_.size(); ++i) {
-      menu_model_.AddCheckItem(
-          kCommandFirstCountry + static_cast<int>(i),
-          base::UTF8ToUTF16(
-              molt_ai::tor::ExitCountryDisplayName(country_codes_[i])));
-    }
-    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
-    menu_model_.AddItem(kCommandNewIdentity, u"New identity");
-    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
-    menu_model_.AddItem(kCommandSettings, u"MoltNet settings…");
-
     SetCallback(base::BindRepeating(&TorExitCountryButton::ButtonPressed,
                                     base::Unretained(this)));
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
     SetVectorIcon(vector_icons::kGlobeIcon);
-    SetTooltipText(u"MoltNet exit country (Tor) — click to choose");
+    SetTooltipText(u"MoltNet privacy routing (Tor) — connect & pick exit country");
     UpdateLabel();
   }
   TorExitCountryButton(const TorExitCountryButton&) = delete;
@@ -352,36 +360,54 @@ class TorExitCountryButton : public ToolbarButton,
 
   // ui::SimpleMenuModel::Delegate:
   bool IsCommandIdChecked(int command_id) const override {
-    const std::string current =
-        molt_ai::tor::TorManager::Get()->GetExitCountry();
+    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+    if (command_id == kCommandEnable) {
+      return mgr->IsRunning();
+    }
+    const std::string current = mgr->GetExitCountry();
     if (command_id == kCommandAuto) {
       return current.empty();
     }
-    if (command_id >= kCommandFirstCountry) {
-      const size_t index =
-          static_cast<size_t>(command_id - kCommandFirstCountry);
-      if (index < country_codes_.size()) {
-        return country_codes_[index] == current;
-      }
+    if (command_id >= kCommandFirstCountry &&
+        command_id < kCommandFirstCountry +
+                         static_cast<int>(country_codes_.size())) {
+      return country_codes_[static_cast<size_t>(command_id -
+                                                kCommandFirstCountry)] ==
+             current;
     }
     return false;
   }
 
   void ExecuteCommand(int command_id, int event_flags) override {
     molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
-    if (command_id == kCommandAuto) {
+    if (command_id == kCommandEnable) {
+      if (mgr->IsRunning()) {
+        mgr->Stop();
+      } else {
+        // Launch is async (~15-30s bootstrap). Show a pending label now;
+        // the callback re-reads the running state when Tor is up.
+        SetHighlight(u"…", std::nullopt);
+        mgr->Launch(base::BindOnce(&TorExitCountryButton::OnTorLaunched,
+                                   weak_factory_.GetWeakPtr()));
+        return;
+      }
+    } else if (command_id == kCommandAuto) {
       mgr->SetExitCountry(std::string());
     } else if (command_id == kCommandNewIdentity) {
       // Re-applying the current constraint is the sanctioned new-circuit
-      // path (matches HandleMoltnetNewCircuit in molt_ai_settings_ui.cc):
-      // SetExitCountry rewrites the torrc and, if Tor is running, sends
-      // SIGNAL RELOAD + SIGNAL NEWNYM.
+      // path (matches HandleMoltnetNewCircuit): rewrites torrc and, if Tor
+      // is running, sends SIGNAL RELOAD + SIGNAL NEWNYM.
       mgr->SetExitCountry(mgr->GetExitCountry());
+    } else if (command_id == kCommandImport) {
+      chrome::AddSelectedTabWithURL(
+          browser_, GURL("molt://ai-settings/?section=import"),
+          ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+      return;
     } else if (command_id == kCommandSettings) {
       chrome::AddSelectedTabWithURL(browser_, GURL("molt://ai-settings/"),
                                     ui::PAGE_TRANSITION_AUTO_BOOKMARK);
       return;
-    } else {
+    } else if (command_id >= kCommandFirstCountry) {
       const size_t index =
           static_cast<size_t>(command_id - kCommandFirstCountry);
       if (index >= country_codes_.size()) {
@@ -389,25 +415,67 @@ class TorExitCountryButton : public ToolbarButton,
       }
       mgr->SetExitCountry(country_codes_[index]);
     }
-    // Reflect the new selection immediately in this window's toolbar.
     UpdateLabel();
   }
 
  private:
-  // Menu command ids. Countries occupy the contiguous range
-  // [kCommandFirstCountry, kCommandFirstCountry + country_codes_.size()),
-  // so the fixed commands after them start well clear at 1000.
+  // Menu command ids. Countries occupy [kCommandFirstCountry, +N); the fixed
+  // commands sit well clear at 1000+.
   static constexpr int kCommandAuto = 0;
   static constexpr int kCommandFirstCountry = 1;
-  static constexpr int kCommandNewIdentity = 1000;
-  static constexpr int kCommandSettings = 1001;
+  static constexpr int kCommandEnable = 1000;
+  static constexpr int kCommandNewIdentity = 1001;
+  static constexpr int kCommandImport = 1002;
+  static constexpr int kCommandSettings = 1003;
+
+  // Rebuild the menu each open so the status line + toggle + checkmarks
+  // reflect the live TorManager state.
+  void BuildMenu() {
+    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+    menu_model_.Clear();
+
+    const std::string cc = mgr->GetExitCountry();
+    std::u16string status;
+    if (mgr->IsRunning()) {
+      std::u16string where =
+          cc.empty()
+              ? u"any country"
+              : (CountryFlagEmoji(cc) + u" " +
+                 base::UTF8ToUTF16(molt_ai::tor::ExitCountryDisplayName(cc)));
+      status = u"\U0001F7E2 Connected · exit " + where;
+    } else {
+      status = u"⚫ Not connected";
+    }
+    menu_model_.AddTitle(status);
+    menu_model_.AddCheckItem(kCommandEnable,
+                             u"Enable MoltNet Privacy Routing");
+    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
+
+    menu_model_.AddTitle(u"Exit country");
+    menu_model_.AddCheckItem(kCommandAuto, u"\U0001F310  Auto (recommended)");
+    for (size_t i = 0; i < country_codes_.size(); ++i) {
+      std::u16string label =
+          CountryFlagEmoji(country_codes_[i]) + u"  " +
+          base::UTF8ToUTF16(
+              molt_ai::tor::ExitCountryDisplayName(country_codes_[i]));
+      menu_model_.AddCheckItem(kCommandFirstCountry + static_cast<int>(i),
+                               label);
+    }
+    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
+    menu_model_.AddItem(kCommandNewIdentity, u"\U0001F504  New identity");
+    menu_model_.AddItem(kCommandImport,
+                        u"\U0001F4E5  Import from another browser…");
+    menu_model_.AddItem(kCommandSettings, u"⚙️  MoltNet settings…");
+  }
 
   void ButtonPressed() {
-    // Refresh from the source of truth before showing the menu: other
-    // windows or the WebUI pickers may have changed the country since this
-    // label was last set (TorManager has no observer API).
+    BuildMenu();
     UpdateLabel();
     ShowMenuForModel(ui::mojom::MenuSourceType::kNone, &menu_model_);
+  }
+
+  void OnTorLaunched(molt_ai::tor::TorLaunchResult /*result*/) {
+    UpdateLabel();
   }
 
   // Label = current exit-country constraint: "" (any) -> "Auto"; otherwise
@@ -422,6 +490,7 @@ class TorExitCountryButton : public ToolbarButton,
   const raw_ptr<Browser> browser_;
   ui::SimpleMenuModel menu_model_;
   const std::vector<std::string> country_codes_;
+  base::WeakPtrFactory<TorExitCountryButton> weak_factory_{this};
 };
 
 BEGIN_METADATA(TorExitCountryButton)
@@ -783,6 +852,24 @@ void ToolbarView::Init() {
   // request a new identity, or open MoltNet settings (molt://ai-settings/).
   {
     AddChildView(std::make_unique<TorExitCountryButton>(browser_));
+  }
+
+  // MoltBrowser: Import & Migration quick-access button. Opens the Import
+  // section of AI settings so bookmarks + saved passwords from another
+  // browser are one click from the toolbar, not buried in settings.
+  {
+    auto import_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+        [](Browser* browser) {
+          chrome::AddSelectedTabWithURL(
+              browser, GURL("molt://ai-settings/?section=import"),
+              ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+        },
+        browser_));
+    import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    import_button->SetVectorIcon(vector_icons::kFileDownloadIcon);
+    import_button->SetTooltipText(
+        u"Import bookmarks & passwords from another browser");
+    AddChildView(std::move(import_button));
   }
 
   // MoltBrowser: Software-update button. Opens molt://update/ (the in-app
@@ -1465,8 +1552,45 @@ void ToolbarView::InitLayout() {
       .SetDefault(views::kMarginsKey, gfx::Insets::VH(0, default_margin));
 
   if (location_bar_view_) {
+    // MoltBrowser: Safari-style centered omnibox. Instead of letting the
+    // location bar stretch edge-to-edge (kUnbounded), cap it at a comfortable
+    // max width and flank it with two flexible spacers that split the leftover
+    // space, so it renders as a centered pill. On narrow windows the spacers
+    // scale to zero first, then the omnibox shrinks to its minimum — nothing
+    // overlaps the toolbar buttons on either side.
+    constexpr int kMoltMaxOmniboxWidth = 640;
+    const views::FlexSpecification capped_location_bar_rule =
+        views::FlexSpecification(
+            base::BindRepeating(
+                [](const views::View* view,
+                   const views::SizeBounds& bounds) -> gfx::Size {
+                  const int height = view->GetPreferredSize().height();
+                  int width = kMoltMaxOmniboxWidth;
+                  if (bounds.width().is_bounded()) {
+                    width = std::min(width, bounds.width().value());
+                  }
+                  return gfx::Size(std::max(width, 0), height);
+                }))
+            .WithOrder(kLocationBarFlexOrder);
+
+    // Spacers grow to fill (centering the pill) but collapse to zero before
+    // the omnibox shrinks (higher order = yields first).
+    const views::FlexSpecification spacer_rule =
+        views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
+                                 views::MaximumFlexSizeRule::kUnbounded)
+            .WithWeight(1)
+            .WithOrder(kLocationBarFlexOrder + 5);
+
+    const size_t lb_index = GetIndexOf(location_bar_view_).value();
+    views::View* spacer_left =
+        AddChildViewAt(std::make_unique<views::View>(), lb_index);
+    views::View* spacer_right =
+        AddChildViewAt(std::make_unique<views::View>(), lb_index + 2);
+    spacer_left->SetProperty(views::kFlexBehaviorKey, spacer_rule);
+    spacer_right->SetProperty(views::kFlexBehaviorKey, spacer_rule);
+
     location_bar_view_->SetProperty(views::kFlexBehaviorKey,
-                                    location_bar_flex_rule);
+                                    capped_location_bar_rule);
     location_bar_view_->SetProperty(views::kMarginsKey,
                                     gfx::Insets::VH(0, location_bar_margin));
   } else {
