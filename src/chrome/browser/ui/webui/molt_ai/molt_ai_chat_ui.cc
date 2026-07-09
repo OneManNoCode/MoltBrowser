@@ -80,6 +80,18 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --ok:#58bd7d;
   --warn:#e0b454;
   --err:#f07070;
+  /* ---- Liquid Glass tokens (dark themes) ----
+     Floating panels read as frosted glass over the ambient orbs.
+     Light theme overrides these below with opaque-leaning values. */
+  --glass-bg:rgba(255,255,255,0.055);
+  --glass-bg-strong:rgba(255,255,255,0.075);
+  --glass-border:rgba(255,255,255,0.12);
+  --glass-border-hover:rgba(255,255,255,0.22);
+  --glass-blur:blur(26px) saturate(1.7);
+  --glass-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20);
+  --glass-shadow-sm:0 12px 30px -14px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.16);
+  --violet:#a78bfa;
+  --ambient-opacity:0.16;
 }
 /* Black theme: pure black with slightly lifted surfaces. Overrides
    every var Gray defines differently, so switching Black->Gray (attr
@@ -92,6 +104,13 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --text:#f2f2f2;
   --muted:#9a9a9a;
   --faint:#6a6a6a;
+  /* Pure-black ground: nudge glass a hair brighter and let the orbs
+     glow a touch more so panels don't read as flat black rectangles. */
+  --glass-bg:rgba(255,255,255,0.05);
+  --glass-bg-strong:rgba(255,255,255,0.07);
+  --glass-border:rgba(255,255,255,0.11);
+  --glass-border-hover:rgba(255,255,255,0.2);
+  --ambient-opacity:0.2;
 }
 /* White theme: pure white surfaces; accent stays Molt red (darkened
    for contrast on white). Everything keyed to the vars flips. */
@@ -108,15 +127,47 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --ok:#1a8a45;
   --warn:#9a6700;
   --err:#c62828;
+  /* Light theme: clean, no ambient orbs. Glass = frosted white so
+     panels still float and refract, but surfaces stay bright and text
+     keeps AA contrast. Ambient opacity 0 disables the orb layer. */
+  --glass-bg:rgba(255,255,255,0.65);
+  --glass-bg-strong:rgba(255,255,255,0.78);
+  --glass-border:rgba(0,0,0,0.08);
+  --glass-border-hover:rgba(0,0,0,0.16);
+  --glass-blur:blur(24px) saturate(1.5);
+  --glass-shadow:0 18px 44px -20px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.9);
+  --glass-shadow-sm:0 10px 26px -16px rgba(0,0,0,0.22),inset 0 1px 0 rgba(255,255,255,0.85);
+  --violet:#7c5cff;
+  --ambient-opacity:0;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
+/* Ground color lives on <html> so the fixed ambient layer (z-index:-1)
+   can paint above it but behind every body child, whether or not that
+   child is positioned. Body itself is transparent. */
+html{background:var(--bg)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:transparent;color:var(--text);height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
 button{font-family:inherit}
+/* ---- Liquid Glass ambient layer ----
+   Heavily-blurred low-opacity orbs give the frosted panels something to
+   refract. Fixed + pointer-events:none + z-index:-1 so it never touches
+   layout or input. Disabled on the light theme via --ambient-opacity:0. */
+.lg-ambient{position:fixed;inset:-10%;z-index:-1;pointer-events:none;overflow:hidden;opacity:var(--ambient-opacity);transition:opacity 0.3s}
+.lg-ambient::before,.lg-ambient::after,.lg-ambient .lg-orb{content:'';position:absolute;border-radius:50%;filter:blur(80px);will-change:transform}
+.lg-ambient::before{width:52%;height:52%;top:-8%;left:-6%;background:radial-gradient(circle at center,var(--accent),transparent 68%);animation:lg-drift-a 34s ease-in-out infinite alternate}
+.lg-ambient::after{width:50%;height:50%;bottom:-10%;right:-8%;background:radial-gradient(circle at center,var(--violet),transparent 68%);animation:lg-drift-b 40s ease-in-out infinite alternate}
+.lg-ambient .lg-orb{width:46%;height:46%;top:36%;left:34%;background:radial-gradient(circle at center,#2bb6c4,transparent 70%);animation:lg-drift-c 46s ease-in-out infinite alternate}
+@keyframes lg-drift-a{from{transform:translate3d(0,0,0)}to{transform:translate3d(9%,7%,0)}}
+@keyframes lg-drift-b{from{transform:translate3d(0,0,0)}to{transform:translate3d(-8%,-6%,0)}}
+@keyframes lg-drift-c{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(5%,-8%,0) scale(1.08)}}
+/* Respect reduced-motion: freeze the ambient drift entirely. */
+@media (prefers-reduced-motion: reduce){
+  .lg-ambient::before,.lg-ambient::after,.lg-ambient .lg-orb{animation:none}
+}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* ---- Header ---- */
-.header{flex:0 0 40px;height:40px;padding:0 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.header{flex:0 0 40px;height:40px;padding:0 8px;border-bottom:1px solid var(--glass-border);background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:inset 0 1px 0 rgba(255,255,255,0.14);display:flex;align-items:center;gap:8px;position:relative;z-index:5}
 .header .title{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap}
 .header .status{font-size:10px;color:var(--faint);display:flex;align-items:center;gap:5px;transition:color 0.15s;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .header .status::before{content:'';width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);transition:background 0.15s}
@@ -134,7 +185,7 @@ button{font-family:inherit}
 .icon-btn.labeled{width:auto;padding:0 10px;font-size:11px;border:1px solid var(--border)}
 /* ---- Header overflow menu ---- */
 .overflow-wrap{position:relative}
-.overflow-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:212px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;box-shadow:0 8px 30px rgba(0,0,0,0.45);display:none;z-index:60}
+.overflow-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:212px;background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:16px;padding:5px;box-shadow:var(--glass-shadow);display:none;z-index:60}
 .overflow-menu.open{display:block}
 .om-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:12px;color:var(--text);cursor:pointer;transition:background 0.15s;white-space:nowrap}
 .om-item:hover{background:var(--surface2)}
@@ -146,7 +197,7 @@ button{font-family:inherit}
 /* ---- Recents drawer ---- */
 .drawer-scrim{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:29;opacity:0;pointer-events:none;transition:opacity 0.15s}
 .drawer-scrim.open{opacity:1;pointer-events:auto}
-.drawer{position:absolute;top:0;bottom:0;left:0;width:240px;background:var(--surface);border-right:1px solid var(--border);z-index:30;display:flex;flex-direction:column;padding:10px;transform:translateX(-100%);transition:transform 0.18s ease;box-shadow:6px 0 24px rgba(0,0,0,0.35)}
+.drawer{position:absolute;top:0;bottom:0;left:0;width:240px;background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border-right:1px solid var(--glass-border);z-index:30;display:flex;flex-direction:column;padding:10px;transform:translateX(-100%);transition:transform 0.18s ease;box-shadow:6px 0 40px -8px rgba(0,0,0,0.5),inset -1px 0 0 rgba(255,255,255,0.08)}
 .drawer.open{transform:translateX(0)}
 .drawer-new{display:flex;align-items:center;gap:6px;padding:9px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12.5px;font-weight:500;cursor:pointer;text-align:left;transition:border-color 0.15s}
 .drawer-new:hover{border-color:var(--faint)}
@@ -163,7 +214,7 @@ button{font-family:inherit}
 .conv-del:hover{color:var(--err)}
 .conv-empty{padding:14px 8px;font-size:11px;color:var(--faint);text-align:center}
 /* ---- Search bar (Cmd+F) ---- */
-.search-bar{padding:6px 16px;border-bottom:1px solid var(--border);display:none;gap:6px;align-items:center}
+.search-bar{padding:6px 16px;border-bottom:1px solid var(--glass-border);background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:inset 0 1px 0 rgba(255,255,255,0.12);display:none;gap:6px;align-items:center;position:relative;z-index:4}
 .search-bar.open{display:flex}
 .search-bar input{flex:1;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;outline:none}
 .search-bar input:focus{border-color:var(--faint)}
@@ -172,7 +223,7 @@ button{font-family:inherit}
 .search-bar .search-close:hover{color:var(--text)}
 .highlight{background:#e8c25a;color:#111;border-radius:2px;padding:0 2px}
 /* ---- Tab context strip + anonymous banner ---- */
-.tab-context{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:11px;color:var(--faint);background:var(--surface);border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab-context{display:flex;align-items:center;gap:8px;padding:6px 16px;font-size:11px;color:var(--faint);background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border-bottom:1px solid var(--glass-border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;z-index:3}
 .tab-context-icon{flex-shrink:0}
 .tab-context-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
 .anon-banner{display:flex;align-items:center;gap:8px;background:var(--surface2);color:var(--muted);padding:6px 16px;font-size:11px;font-weight:500;border-bottom:1px solid var(--border)}
@@ -194,7 +245,10 @@ button{font-family:inherit}
 .message .sender{display:none}
 .message .text{white-space:pre-wrap;word-wrap:break-word}
 .message.user{display:flex;justify-content:flex-end;align-items:center;gap:4px}
-.message.user .text{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:9px 13px;max-width:85%}
+/* User bubble: translucent glass look WITHOUT backdrop-filter — these
+   scroll, and per the perf rule we keep GPU blur off list rows. The
+   luminous border + inset highlight still read as Liquid Glass. */
+.message.user .text{background:var(--glass-bg-strong);border:1px solid var(--glass-border);border-radius:14px;padding:9px 13px;max-width:85%;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
 /* ---- Inline edit of user messages (Claude-style) ---- */
 .msg-edit{background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer;opacity:0;padding:2px 6px;border-radius:6px;transition:opacity 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
 .message.user:hover .msg-edit{opacity:1}
@@ -269,8 +323,8 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .attach-chip .a-close:hover{color:var(--err)}
 /* ---- Composer card ---- */
 .composer{flex:0 0 auto;padding:4px 16px 14px}
-.composer-card{width:100%;max-width:calc(72ch + 32px);margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:6px;transition:border-color 0.15s,box-shadow 0.15s}
-.composer-card:focus-within{border-color:var(--faint);box-shadow:0 0 0 1px var(--faint)}
+.composer-card{width:100%;max-width:calc(72ch + 32px);margin:0 auto;background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:18px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--glass-shadow);transition:border-color 0.15s,box-shadow 0.15s,background 0.15s}
+.composer-card:focus-within{border-color:var(--glass-border-hover);background:var(--glass-bg-strong);box-shadow:var(--glass-shadow),0 0 0 1px rgba(255,255,255,0.10)}
 .composer-card textarea{width:100%;background:transparent;border:none;outline:none;resize:none;color:var(--text);font-size:13px;line-height:1.5;font-family:inherit;max-height:120px;overflow-y:auto;padding:2px 2px 0}
 .composer-card textarea::placeholder{color:var(--faint)}
 .composer-card textarea:disabled{opacity:0.5}
@@ -291,7 +345,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .mode-chip:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
 .mode-chip .chevron{font-size:8px;color:var(--faint);flex:0 0 auto;transition:transform 0.15s}
 .mode-chip.open .chevron{transform:rotate(180deg)}
-.mode-chip-dropdown{position:absolute;bottom:calc(100% + 8px);left:0;min-width:232px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;z-index:50;display:none;box-shadow:0 -8px 30px rgba(0,0,0,0.45)}
+.mode-chip-dropdown{position:absolute;bottom:calc(100% + 8px);left:0;min-width:232px;max-width:calc(100vw - 32px);background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:16px;padding:5px;z-index:50;display:none;box-shadow:var(--glass-shadow)}
 .mode-chip-dropdown.open{display:block}
 .mode-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s}
 .mode-item:hover{background:var(--surface2)}
@@ -328,7 +382,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-chip-progress .pct{position:absolute;top:0;left:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:var(--text)}
 /* The pill sits on the RIGHT side of the composer row, so the popup is
    right-anchored and grows leftward; clamp against the left edge. */
-.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);right:0;left:auto;min-width:250px;max-width:calc(100vw - 32px);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;max-height:320px;overflow-y:auto;z-index:50;display:none;box-shadow:0 -8px 30px rgba(0,0,0,0.45)}
+.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);right:0;left:auto;min-width:250px;max-width:calc(100vw - 32px);background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:16px;padding:5px;max-height:320px;overflow-y:auto;z-index:50;display:none;box-shadow:var(--glass-shadow)}
 .model-chip-dropdown.open{display:block}
 .mcd-header{padding:7px 10px 3px;font-size:10px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--faint)}
 .model-chip-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s}
@@ -347,8 +401,10 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .mrow-fill{height:100%;background:var(--accent);width:0;transition:width 0.3s}
 .mcd-footer{margin-top:4px;border-top:1px solid var(--border);padding:8px 10px;font-size:11.5px;color:var(--muted);cursor:pointer;transition:color 0.15s,background 0.15s;border-radius:0 0 8px 8px}
 .mcd-footer:hover{color:var(--text);background:var(--surface2)}
-.mcd-cloud-cta{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;border-radius:8px;cursor:pointer;background:linear-gradient(90deg,rgba(139,92,246,0.14),rgba(99,102,241,0.05));border:1px solid rgba(139,92,246,0.4);transition:background 0.15s}
-.mcd-cloud-cta:hover{background:linear-gradient(90deg,rgba(139,92,246,0.24),rgba(99,102,241,0.1))}
+/* Cloud CTA: the one place violet leads (a cloud/AI touch). Frosted
+   violet glass card that lifts gently on hover. */
+.mcd-cloud-cta{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;border-radius:12px;cursor:pointer;background:linear-gradient(90deg,rgba(167,139,250,0.18),rgba(99,102,241,0.06));border:1px solid rgba(167,139,250,0.42);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16);transition:background 0.15s,transform 0.15s,border-color 0.15s,box-shadow 0.15s}
+.mcd-cloud-cta:hover{background:linear-gradient(90deg,rgba(167,139,250,0.28),rgba(99,102,241,0.12));border-color:rgba(167,139,250,0.6);transform:translateY(-1px);box-shadow:0 10px 24px -12px rgba(167,139,250,0.5),inset 0 1px 0 rgba(255,255,255,0.2)}
 .mcd-cloud-cta .mcc-icon{font-size:15px;line-height:1}
 .mcd-cloud-cta .mcc-text{flex:1;display:flex;flex-direction:column;font-size:12.5px;font-weight:600;color:var(--text)}
 .mcd-cloud-cta .mcc-sub{font-size:10px;font-weight:400;color:var(--muted);margin-top:1px}
@@ -379,7 +435,10 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-card .progress-fill{height:100%;background:var(--accent);transition:width 0.3s;width:0}
 .model-card .progress-text{font-size:10px;color:var(--faint);margin-top:2px}
 /* ---- First-run welcome overlay ---- */
-.welcome-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+/* First-run takeover: must fully obscure whatever is behind it, so it
+   keeps an opaque --bg base with a faint glass sheen on top and a heavy
+   backdrop blur for depth. */
+.welcome-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(var(--glass-bg),var(--glass-bg)),var(--bg);-webkit-backdrop-filter:blur(40px) saturate(1.6);backdrop-filter:blur(40px) saturate(1.6);z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
 .welcome-overlay.open{display:flex}
 .welcome-logo-area{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:8px}
 .welcome-logo-img{width:56px;height:56px;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,0.5)}
@@ -436,6 +495,9 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 </script>
 </head>
 <body>
+<!-- Liquid Glass ambient orbs: purely decorative, behind all content.
+     Styled by .lg-ambient; disabled on the light theme. -->
+<div class="lg-ambient" aria-hidden="true"><div class="lg-orb"></div></div>
 <div class="header">
   <button class="icon-btn" onclick="toggleDrawer()" title="Chats">&#9776;</button>
   <div class="title">MoltBrowser AI</div>
