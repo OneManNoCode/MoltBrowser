@@ -1552,45 +1552,8 @@ void ToolbarView::InitLayout() {
       .SetDefault(views::kMarginsKey, gfx::Insets::VH(0, default_margin));
 
   if (location_bar_view_) {
-    // MoltBrowser: Safari-style centered omnibox. Instead of letting the
-    // location bar stretch edge-to-edge (kUnbounded), cap it at a comfortable
-    // max width and flank it with two flexible spacers that split the leftover
-    // space, so it renders as a centered pill. On narrow windows the spacers
-    // scale to zero first, then the omnibox shrinks to its minimum — nothing
-    // overlaps the toolbar buttons on either side.
-    constexpr int kMoltMaxOmniboxWidth = 640;
-    const views::FlexSpecification capped_location_bar_rule =
-        views::FlexSpecification(
-            base::BindRepeating(
-                [](const views::View* view,
-                   const views::SizeBounds& bounds) -> gfx::Size {
-                  const int height = view->GetPreferredSize().height();
-                  int width = kMoltMaxOmniboxWidth;
-                  if (bounds.width().is_bounded()) {
-                    width = std::min(width, bounds.width().value());
-                  }
-                  return gfx::Size(std::max(width, 0), height);
-                }))
-            .WithOrder(kLocationBarFlexOrder);
-
-    // Spacers grow to fill (centering the pill) but collapse to zero before
-    // the omnibox shrinks (higher order = yields first).
-    const views::FlexSpecification spacer_rule =
-        views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
-                                 views::MaximumFlexSizeRule::kUnbounded)
-            .WithWeight(1)
-            .WithOrder(kLocationBarFlexOrder + 5);
-
-    const size_t lb_index = GetIndexOf(location_bar_view_).value();
-    views::View* spacer_left =
-        AddChildViewAt(std::make_unique<views::View>(), lb_index);
-    views::View* spacer_right =
-        AddChildViewAt(std::make_unique<views::View>(), lb_index + 2);
-    spacer_left->SetProperty(views::kFlexBehaviorKey, spacer_rule);
-    spacer_right->SetProperty(views::kFlexBehaviorKey, spacer_rule);
-
     location_bar_view_->SetProperty(views::kFlexBehaviorKey,
-                                    capped_location_bar_rule);
+                                    location_bar_flex_rule);
     location_bar_view_->SetProperty(views::kMarginsKey,
                                     gfx::Insets::VH(0, location_bar_margin));
   } else {
