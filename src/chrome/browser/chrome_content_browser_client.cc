@@ -849,8 +849,8 @@ bool HandleNewTabPageLocationOverride(
   // MoltBrowser: Force redirect to MoltSearch homepage, bypassing any
   // enterprise policy or cached prefs.
   LOG(INFO) << "[MoltBrowser] Redirecting NTP from " << *url
-            << " to https://homepage.moltsearch.ai";
-  *url = GURL("https://homepage.moltsearch.ai");
+            << " to chrome://molt-home/";
+  *url = GURL("chrome://molt-home/");
   return true;
 }
 

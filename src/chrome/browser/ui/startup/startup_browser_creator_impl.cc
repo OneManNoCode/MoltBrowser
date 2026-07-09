@@ -571,7 +571,7 @@ StartupBrowserCreatorImpl::DetermineStartupTabs(
     }
 
     // MoltBrowser: Open MoltSearch instead of chrome://newtab
-    return {StartupTabs({StartupTab(GURL("https://homepage.moltsearch.ai"))}),
+    return {StartupTabs({StartupTab(GURL("chrome://molt-home/"))}),
             launch_result};
   }
 
@@ -707,7 +707,7 @@ Browser* StartupBrowserCreatorImpl::RestoreOrCreateBrowser(
   browser = OpenTabsInBrowser(
       browser, process_startup,
       (tabs.empty()
-           ? StartupTabs({StartupTab(GURL("https://homepage.moltsearch.ai"))})
+           ? StartupTabs({StartupTab(GURL("chrome://molt-home/"))})
            : tabs),
       (behavior == BrowserOpenBehavior::USE_EXISTING_AND_OVERWRITE_ACTIVE_TAB
            ? (TabOverWrite::kYes)

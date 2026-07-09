@@ -400,14 +400,14 @@ void ProfileImpl::RegisterProfilePrefs(
 #endif
   // MoltBrowser: Default homepage is homepage.moltsearch.ai
   registry->RegisterStringPref(prefs::kHomePage,
-                               "https://homepage.moltsearch.ai",
+                               "chrome://molt-home/",
                                home_page_flags);
   // MoltBrowser: Override the New Tab Page URL to our custom homepage.
   // This feeds into HandleNewTabPageLocationOverride() which is the FIRST
   // URL handler in the chain, ensuring it takes precedence over all
   // other NTP URL resolution.
   registry->RegisterStringPref(prefs::kNewTabPageLocationOverride,
-                               "https://homepage.moltsearch.ai");
+                               "chrome://molt-home/");
 
 #if BUILDFLAG(ENABLE_PRINTING)
   registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);

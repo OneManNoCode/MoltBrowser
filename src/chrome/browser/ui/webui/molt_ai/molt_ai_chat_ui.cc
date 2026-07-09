@@ -68,60 +68,80 @@ class MoltAIChatDataSource : public content::URLDataSource {
    every base var below (Black overrides the same set, so the two
    round-trip cleanly). */
 :root{
-  --bg:#181818;
-  --surface:#232323;
-  --surface2:#2d2d2d;
-  --border:#3c3c3c;
-  --text:#f2f2f2;
-  --muted:#a3a3a3;
-  --faint:#767676;
-  --accent:#e5484d;
-  --accent-hover:#f2555a;
-  --ok:#58bd7d;
+  /* Rich dark-violet frosted ground (a subtle violet/near-black
+     gradient painted on <html>), matching the mockup's --ground feel
+     but with depth so panels never read as flat black. */
+  --bg:#0a0912;
+  --bg-grad-a:#12102a;
+  --bg-grad-b:#0a0912;
+  --bg-grad-c:#0d0a18;
+  --surface:#1b1a2a;
+  --surface2:#25243a;
+  --border:rgba(255,255,255,0.14);
+  --text:#f4f5fa;
+  --muted:rgba(233,236,247,0.62);
+  --faint:rgba(233,236,247,0.40);
+  --accent:#ff5257;        /* MoltBrowser brand red */
+  --accent-hover:#ff676c;
+  --ok:#5fe3a1;
   --warn:#e0b454;
   --err:#f07070;
   /* ---- Liquid Glass tokens (dark themes) ----
      Floating panels read as frosted glass over the ambient orbs.
-     Light theme overrides these below with opaque-leaning values. */
-  --glass-bg:rgba(255,255,255,0.085);
-  --glass-bg-strong:rgba(255,255,255,0.12);
-  --glass-border:rgba(255,255,255,0.20);
-  --glass-border-hover:rgba(255,255,255,0.32);
-  --glass-blur:blur(30px) saturate(1.9);
-  --glass-shadow:0 24px 60px -16px rgba(0,0,0,0.66),inset 0 1px 0 rgba(255,255,255,0.32);
-  --glass-shadow-sm:0 14px 34px -12px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.26);
+     Light theme overrides these below with opaque-leaning values.
+     Tuned to the mockup's --glass / --glass-strong / --edge / --specular. */
+  --glass-bg:rgba(20,22,32,0.42);
+  --glass-bg-strong:rgba(24,26,38,0.62);
+  --glass-border:rgba(255,255,255,0.14);
+  --glass-border-hover:rgba(255,255,255,0.30);
+  --edge-soft:rgba(255,255,255,0.07);
+  --specular:rgba(255,255,255,0.28);
+  --glass-blur:blur(34px) saturate(1.75);
+  --glass-blur-lg:blur(52px) saturate(1.8);
+  --glass-shadow:0 24px 60px -18px rgba(0,0,0,0.70),inset 0 1px 0 var(--specular);
+  --glass-shadow-sm:0 14px 34px -12px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.24);
   --violet:#a78bfa;
-  --ambient-opacity:0.34;
+  --violet-2:#8ea2ff;
+  --brand-soft:rgba(255,82,87,0.16);
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  --ambient-opacity:0.85;
 }
 /* Black theme: pure black with slightly lifted surfaces. Overrides
    every var Gray defines differently, so switching Black->Gray (attr
    removal) restores the full gray palette and vice versa. */
 :root[data-theme="black"]{
   --bg:#000000;
-  --surface:#0e0e0e;
-  --surface2:#181818;
-  --border:#262626;
-  --text:#f2f2f2;
-  --muted:#9a9a9a;
-  --faint:#6a6a6a;
-  /* Pure-black ground: nudge glass a hair brighter and let the orbs
-     glow a touch more so panels don't read as flat black rectangles. */
-  --glass-bg:rgba(255,255,255,0.08);
-  --glass-bg-strong:rgba(255,255,255,0.115);
-  --glass-border:rgba(255,255,255,0.18);
-  --glass-border-hover:rgba(255,255,255,0.30);
-  --ambient-opacity:0.42;
+  --bg-grad-a:#0a0714;
+  --bg-grad-b:#000000;
+  --bg-grad-c:#050409;
+  --surface:#111018;
+  --surface2:#1b1a26;
+  --border:rgba(255,255,255,0.13);
+  --text:#f4f5fa;
+  --muted:rgba(233,236,247,0.58);
+  --faint:rgba(233,236,247,0.36);
+  /* Pure-black ground: keep glass frosted-dark and let the orbs
+     glow so panels never read as flat black rectangles. */
+  --glass-bg:rgba(18,20,30,0.46);
+  --glass-bg-strong:rgba(22,24,36,0.64);
+  --glass-border:rgba(255,255,255,0.13);
+  --glass-border-hover:rgba(255,255,255,0.28);
+  --specular:rgba(255,255,255,0.24);
+  --ambient-opacity:0.72;
 }
 /* White theme: pure white surfaces; accent stays Molt red (darkened
    for contrast on white). Everything keyed to the vars flips. */
 :root[data-theme="light"]{
   --bg:#ffffff;
+  --bg-grad-a:#ffffff;
+  --bg-grad-b:#ffffff;
+  --bg-grad-c:#ffffff;
   --surface:#f6f6f6;
   --surface2:#ececec;
-  --border:#dcdcdc;
+  --border:rgba(0,0,0,0.10);
   --text:#111111;
-  --muted:#666666;
-  --faint:#9a9a9a;
+  --muted:#5a5a63;
+  --faint:#8a8a93;
   --accent:#d63638;
   --accent-hover:#b32d2e;
   --ok:#1a8a45;
@@ -131,20 +151,32 @@ class MoltAIChatDataSource : public content::URLDataSource {
      panels still float and refract, but surfaces stay bright and text
      keeps AA contrast. Ambient opacity 0 disables the orb layer. */
   --glass-bg:rgba(255,255,255,0.65);
-  --glass-bg-strong:rgba(255,255,255,0.78);
+  --glass-bg-strong:rgba(255,255,255,0.80);
   --glass-border:rgba(0,0,0,0.08);
   --glass-border-hover:rgba(0,0,0,0.16);
+  --edge-soft:rgba(0,0,0,0.06);
+  --specular:rgba(255,255,255,0.9);
   --glass-blur:blur(24px) saturate(1.5);
+  --glass-blur-lg:blur(30px) saturate(1.6);
   --glass-shadow:0 18px 44px -20px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.9);
   --glass-shadow-sm:0 10px 26px -16px rgba(0,0,0,0.22),inset 0 1px 0 rgba(255,255,255,0.85);
   --violet:#7c5cff;
+  --violet-2:#6d7fff;
+  --brand-soft:rgba(214,54,56,0.12);
   --ambient-opacity:0;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 /* Ground color lives on <html> so the fixed ambient layer (z-index:-1)
    can paint above it but behind every body child, whether or not that
    child is positioned. Body itself is transparent. */
-html{background:var(--bg)}
+/* Rich dark-violet frosted ground: a subtle violet/near-black
+   gradient (not flat black) so the frosted panels have colored depth
+   to refract. Light theme collapses all three stops to white. */
+html{background:
+  radial-gradient(120% 90% at 78% 0%,var(--bg-grad-a),transparent 60%),
+  radial-gradient(120% 90% at 12% 100%,var(--bg-grad-c),transparent 62%),
+  var(--bg-grad-b);
+  background-color:var(--bg)}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:transparent;color:var(--text);height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
 button{font-family:inherit}
 /* ---- Liquid Glass ambient layer ----
@@ -153,9 +185,15 @@ button{font-family:inherit}
    layout or input. Disabled on the light theme via --ambient-opacity:0. */
 .lg-ambient{position:fixed;inset:-10%;z-index:-1;pointer-events:none;overflow:hidden;opacity:var(--ambient-opacity);transition:opacity 0.3s}
 .lg-ambient::before,.lg-ambient::after,.lg-ambient .lg-orb{content:'';position:absolute;border-radius:50%;filter:blur(80px);will-change:transform}
-.lg-ambient::before{width:52%;height:52%;top:-8%;left:-6%;background:radial-gradient(circle at center,var(--accent),transparent 68%);animation:lg-drift-a 34s ease-in-out infinite alternate}
-.lg-ambient::after{width:50%;height:50%;bottom:-10%;right:-8%;background:radial-gradient(circle at center,var(--violet),transparent 68%);animation:lg-drift-b 40s ease-in-out infinite alternate}
-.lg-ambient .lg-orb{width:46%;height:46%;top:36%;left:34%;background:radial-gradient(circle at center,#2bb6c4,transparent 70%);animation:lg-drift-c 46s ease-in-out infinite alternate}
+/* Saturated, violet-dominant environment matching the mockup's orbs:
+   a deep violet mass, a molt-red mass, and a teal mass. These are the
+   ONLY colored depth behind the frosted glass, so they lead violet
+   with red + teal accents and sit at high opacity (see --ambient-opacity).
+   The teal .lg-orb DOM node gets a second violet glow via box-shadow to
+   fill the mockup's fourth orb without adding elements. */
+.lg-ambient::before{width:60%;height:60%;top:-14%;left:-10%;background:radial-gradient(circle at 32% 32%,#4a2f8f 0%,#2a1a63 42%,transparent 72%);animation:lg-drift-a 34s ease-in-out infinite alternate}
+.lg-ambient::after{width:54%;height:54%;bottom:-14%;right:-10%;background:radial-gradient(circle at 60% 40%,#c0303f 0%,#7a2036 44%,transparent 72%);animation:lg-drift-b 40s ease-in-out infinite alternate}
+.lg-ambient .lg-orb{width:50%;height:50%;top:34%;left:30%;background:radial-gradient(circle at 44% 56%,#159aad 0%,#0f5f6e 46%,transparent 72%);box-shadow:0 0 220px 60px rgba(91,58,134,0.55);animation:lg-drift-c 46s ease-in-out infinite alternate}
 @keyframes lg-drift-a{from{transform:translate3d(0,0,0)}to{transform:translate3d(9%,7%,0)}}
 @keyframes lg-drift-b{from{transform:translate3d(0,0,0)}to{transform:translate3d(-8%,-6%,0)}}
 @keyframes lg-drift-c{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(5%,-8%,0) scale(1.08)}}
@@ -167,12 +205,15 @@ button{font-family:inherit}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* ---- Header ---- */
-.header{flex:0 0 40px;height:40px;padding:0 8px;border-bottom:1px solid var(--glass-border);background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:inset 0 1px 0 rgba(255,255,255,0.14);display:flex;align-items:center;gap:8px;position:relative;z-index:5}
-.header .title{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap}
-.header .status{font-size:10px;color:var(--faint);display:flex;align-items:center;gap:5px;transition:color 0.15s;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.header{flex:0 0 44px;height:44px;padding:0 10px;border-bottom:1px solid var(--edge-soft);background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:inset 0 1px 0 var(--specular);display:flex;align-items:center;gap:8px;position:relative;z-index:5}
+/* Conic red->violet->blue avatar tile before the title, matching the
+   mockup's .p-head .av. Rendered as a pseudo-element so no HTML changes. */
+.header .title{font-size:13.5px;font-weight:650;color:var(--text);white-space:nowrap;display:flex;align-items:center;gap:9px}
+.header .title::before{content:'';width:22px;height:22px;border-radius:8px;flex:0 0 auto;background:conic-gradient(from 200deg,#ff5257,#a78bfa,#8ea2ff,#ff5257);box-shadow:0 0 12px rgba(167,139,250,0.5),inset 0 1px 0 rgba(255,255,255,0.35)}
+.header .status{font-size:10.5px;color:var(--faint);display:flex;align-items:center;gap:5px;transition:color 0.15s;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .header .status::before{content:'';width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--faint);transition:background 0.15s}
 .header .status.ready{color:var(--muted)}
-.header .status.ready::before{background:var(--ok)}
+.header .status.ready::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}
 .header .status.loading{color:var(--warn)}
 .header .status.loading::before{background:var(--warn);animation:pulse 1s infinite}
 .header .status.error{color:var(--err)}
@@ -241,14 +282,25 @@ button{font-family:inherit}
 .agent-note{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;font-style:italic}
 /* ---- Messages ---- */
 .messages{flex:1;overflow-y:auto;padding:18px 16px 8px}
-.message{max-width:72ch;margin:0 auto 18px;font-size:13px;line-height:1.65}
+.message{max-width:72ch;margin:0 auto 14px;font-size:12.5px;line-height:1.55}
 .message .sender{display:none}
 .message .text{white-space:pre-wrap;word-wrap:break-word}
+/* Assistant bubble: translucent white glass, left-aligned, with a
+   small bottom-left radius, per the mockup's .msg.a. No backdrop-filter
+   here — messages scroll and the perf rule keeps GPU blur off list
+   rows; the luminous border + inset highlight still read as glass. */
+.message.ai{display:flex;justify-content:flex-start}
+.message.ai .text{background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:15px;border-bottom-left-radius:5px;padding:10px 13px;max-width:86%;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10)}
+.message.ai .text b{color:#c9b8ff}
+/* Light theme: frosted-white assistant bubble so it stays legible on a
+   bright ground (the 7%-white glass would vanish on white). */
+:root[data-theme="light"] .message.ai .text{background:#f4f4f7;border-color:var(--border);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9)}
+:root[data-theme="light"] .message.ai .text b{color:#6d4bd0}
 .message.user{display:flex;justify-content:flex-end;align-items:center;gap:4px}
-/* User bubble: translucent glass look WITHOUT backdrop-filter — these
-   scroll, and per the perf rule we keep GPU blur off list rows. The
-   luminous border + inset highlight still read as Liquid Glass. */
-.message.user .text{background:var(--glass-bg-strong);border:1px solid var(--glass-border);border-radius:14px;padding:9px 13px;max-width:85%;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
+/* User bubble: molt-red gradient, right-aligned, white text, small
+   bottom-right radius + soft red glow, per the mockup's .msg.u. No
+   backdrop-filter (scrolling row, per the perf rule). */
+.message.user .text{background:linear-gradient(180deg,rgba(255,82,87,0.9),rgba(224,53,59,0.85));border:1px solid rgba(255,82,87,0.5);border-radius:15px;border-bottom-right-radius:5px;padding:9px 13px;max-width:85%;color:#fff;box-shadow:0 8px 20px -8px rgba(255,82,87,0.5),inset 0 1px 0 rgba(255,255,255,0.2)}
 /* ---- Inline edit of user messages (Claude-style) ---- */
 .msg-edit{background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer;opacity:0;padding:2px 6px;border-radius:6px;transition:opacity 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
 .message.user:hover .msg-edit{opacity:1}
@@ -323,15 +375,15 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .attach-chip .a-close:hover{color:var(--err)}
 /* ---- Composer card ---- */
 .composer{flex:0 0 auto;padding:4px 16px 14px}
-.composer-card{width:100%;max-width:calc(72ch + 32px);margin:0 auto;background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:18px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--glass-shadow);transition:border-color 0.15s,box-shadow 0.15s,background 0.15s}
-.composer-card:focus-within{border-color:var(--glass-border-hover);background:var(--glass-bg-strong);box-shadow:var(--glass-shadow),0 0 0 1px rgba(255,255,255,0.10)}
+.composer-card{width:100%;max-width:calc(72ch + 32px);margin:0 auto;background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:18px;padding:11px 12px 9px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--glass-shadow-sm),inset 0 1px 0 var(--specular);transition:border-color 0.15s,box-shadow 0.15s,background 0.15s}
+.composer-card:focus-within{border-color:var(--glass-border-hover);background:var(--glass-bg-strong);box-shadow:var(--glass-shadow-sm),inset 0 1px 0 var(--specular),0 0 0 3px var(--brand-soft)}
 .composer-card textarea{width:100%;background:transparent;border:none;outline:none;resize:none;color:var(--text);font-size:13px;line-height:1.5;font-family:inherit;max-height:120px;overflow-y:auto;padding:2px 2px 0}
 .composer-card textarea::placeholder{color:var(--faint)}
 .composer-card textarea:disabled{opacity:0.5}
 .composer-row{display:flex;align-items:center;gap:6px;min-width:0}
 .composer-spacer{flex:1}
-.browse-btn{padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
-.browse-btn:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+.browse-btn{padding:5px 11px;border-radius:999px;border:1px solid var(--edge-soft);background:rgba(255,255,255,0.06);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;flex:0 0 auto}
+.browse-btn:hover{border-color:var(--glass-border);color:var(--text);background:rgba(255,255,255,0.12)}
 /* ---- Transient agent hint (empty-input nudge above the composer) ---- */
 .agent-hint{width:100%;max-width:calc(72ch + 32px);margin:0 auto 6px;font-size:11px;color:var(--muted);padding:0 4px}
 /* ---- Live dictation status (mic): subtle listening pulse ---- */
@@ -341,8 +393,10 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .dictation-hint.transcribing .dictation-dot{background:var(--warn)}
 /* ---- Agent-action mode chip (Ask first / Auto) + upward menu ---- */
 .mode-chip-wrap{position:relative;display:flex;align-items:center;flex-shrink:0}
-.mode-chip{display:flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;white-space:nowrap}
-.mode-chip:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+/* Composer pills (mode / agent / model), per the mockup's .pill:
+   translucent white glass with a soft edge. */
+.mode-chip{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,0.06);border:1px solid var(--edge-soft);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;white-space:nowrap}
+.mode-chip:hover{border-color:var(--glass-border);color:var(--text);background:rgba(255,255,255,0.12)}
 .mode-chip .chevron{font-size:8px;color:var(--faint);flex:0 0 auto;transition:transform 0.15s}
 .mode-chip.open .chevron{transform:rotate(180deg)}
 .mode-chip-dropdown{position:absolute;bottom:calc(100% + 8px);left:0;min-width:232px;max-width:calc(100vw - 32px);background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:16px;padding:5px;z-index:50;display:none;box-shadow:var(--glass-shadow)}
@@ -361,13 +415,16 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(240,112,112,0.5)}50%{box-shadow:0 0 0 6px rgba(240,112,112,0)}}
 .composer-row .cancel{padding:5px 11px;border-radius:999px;border:1px solid var(--err);background:transparent;color:var(--err);font-size:11.5px;cursor:pointer;display:none;flex:0 0 auto}
 .composer-row .cancel.active{display:block}
-.composer-row .send{width:28px;height:28px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,opacity 0.15s;flex:0 0 auto}
-.composer-row .send:hover{background:var(--accent-hover)}
-.composer-row .send:disabled{opacity:0.35;cursor:not-allowed}
+/* Round red send button with a soft red glow, per the mockup's .send. */
+.composer-row .send{width:32px;height:32px;border-radius:50%;border:none;background:linear-gradient(180deg,var(--accent),#e0353b);color:#fff;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s,opacity 0.15s,box-shadow 0.15s,transform 0.15s;flex:0 0 auto;box-shadow:0 6px 16px -5px rgba(255,82,87,0.6),inset 0 1px 0 rgba(255,255,255,0.3)}
+.composer-row .send:hover{background:linear-gradient(180deg,var(--accent-hover),#e0353b);box-shadow:0 8px 20px -5px rgba(255,82,87,0.7),inset 0 1px 0 rgba(255,255,255,0.35);transform:translateY(-1px)}
+.composer-row .send:disabled{opacity:0.35;cursor:not-allowed;box-shadow:none;transform:none}
 /* ---- Model picker pill + pop-up dropdown ---- */
 .model-chip-wrap{position:relative;display:flex;align-items:center;min-width:0;flex-shrink:1}
-.model-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;max-width:100%;min-width:0}
-.model-chip:hover{border-color:var(--faint);color:var(--text);background:var(--surface2)}
+/* Model pill: violet-tinted glass, per the mockup's .pill.model (the
+   one place violet leads in the composer row). */
+.model-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.35);color:var(--text);font-size:11.5px;font-weight:500;cursor:pointer;transition:border-color 0.15s,color 0.15s,background 0.15s;max-width:100%;min-width:0}
+.model-chip:hover{border-color:rgba(167,139,250,0.55);color:var(--text);background:rgba(167,139,250,0.2)}
 .model-chip .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .model-chip .chevron{font-size:8px;color:var(--faint);flex:0 0 auto;transition:transform 0.15s}
 .model-chip.open .chevron{transform:rotate(180deg)}
@@ -382,31 +439,47 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-chip-progress .pct{position:absolute;top:0;left:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;color:var(--text)}
 /* The pill sits on the RIGHT side of the composer row, so the popup is
    right-anchored and grows leftward; clamp against the left edge. */
-.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);right:0;left:auto;min-width:250px;max-width:calc(100vw - 32px);background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:16px;padding:5px;max-height:320px;overflow-y:auto;z-index:50;display:none;box-shadow:var(--glass-shadow)}
+/* Model picker dropdown = frosted glass slab, per the mockup's .picker
+   (heavy blur, luminous top edge, deep drop shadow, generous radius). */
+.model-chip-dropdown{position:absolute;bottom:calc(100% + 8px);right:0;left:auto;min-width:260px;max-width:calc(100vw - 32px);background:var(--glass-bg-strong);-webkit-backdrop-filter:var(--glass-blur-lg);backdrop-filter:var(--glass-blur-lg);border:1px solid var(--glass-border);border-radius:18px;padding:8px;max-height:340px;overflow-y:auto;z-index:50;display:none;box-shadow:0 30px 70px -16px rgba(0,0,0,0.75),inset 0 1px 0 var(--specular)}
 .model-chip-dropdown.open{display:block}
-.mcd-header{padding:7px 10px 3px;font-size:10px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--faint)}
-.model-chip-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background 0.15s}
-.model-chip-item:hover{background:var(--surface2)}
+/* Group labels: uppercase, tracked, faint — the mockup's .ph-lbl. */
+.mcd-header{padding:8px 12px 5px;font-size:9.5px;font-weight:600;letter-spacing:0.13em;text-transform:uppercase;color:var(--faint)}
+/* Model rows = the mockup's .mrow. */
+.model-chip-item{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:11px;cursor:pointer;transition:background 0.15s}
+.model-chip-item:hover{background:rgba(255,255,255,0.06)}
 .model-chip-item.disabled{opacity:0.45;cursor:default}
 .model-chip-item.disabled:hover{background:transparent}
 .model-chip-item .mmain{flex:1;min-width:0}
-.model-chip-item .mname{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.model-chip-item .msize{font-size:10px;color:var(--faint);margin-top:1px}
-.mcheck{font-size:12px;font-weight:700;flex:0 0 auto}
-.mcheck.on{color:var(--accent)}
+.model-chip-item .mname{font-size:12.5px;font-weight:550;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Mono quant/size subtitle, per the mockup's .mrow .nm small. */
+.model-chip-item .msize{font-size:10px;color:var(--faint);margin-top:1px;font-family:var(--mono)}
+.mcheck{font-size:13px;font-weight:700;flex:0 0 auto}
+/* Selected/loaded row shows the mockup's green check (.ck). */
+.mcheck.on{color:var(--ok)}
 .mcheck.disk{color:var(--faint)}
-.mget{font-size:10.5px;color:var(--muted);flex:0 0 auto;white-space:nowrap}
+.mget{font-size:11px;color:var(--faint);flex:0 0 auto;white-space:nowrap}
 .mpct{font-size:10.5px;color:var(--warn);flex:0 0 auto;font-variant-numeric:tabular-nums}
-.mrow-bar{height:3px;border-radius:2px;background:var(--border);overflow:hidden;margin-top:5px}
+.mrow-bar{height:3px;border-radius:2px;background:rgba(255,255,255,0.10);overflow:hidden;margin-top:5px}
 .mrow-fill{height:100%;background:var(--accent);width:0;transition:width 0.3s}
-.mcd-footer{margin-top:4px;border-top:1px solid var(--border);padding:8px 10px;font-size:11.5px;color:var(--muted);cursor:pointer;transition:color 0.15s,background 0.15s;border-radius:0 0 8px 8px}
-.mcd-footer:hover{color:var(--text);background:var(--surface2)}
+.mcd-footer{margin-top:4px;border-top:1px solid var(--edge-soft);padding:9px 12px;font-size:11.5px;color:var(--muted);cursor:pointer;transition:color 0.15s,background 0.15s;border-radius:0 0 11px 11px}
+.mcd-footer:hover{color:var(--text);background:rgba(255,255,255,0.06)}
+/* Light theme: the 6%-white hover states vanish on a bright ground, so
+   swap them for a subtle gray, and neutralize the mono subtitle color. */
+:root[data-theme="light"] .model-chip-item:hover{background:var(--surface2)}
+:root[data-theme="light"] .mcd-footer:hover{background:var(--surface2)}
+:root[data-theme="light"] .mrow-bar{background:var(--surface2)}
+:root[data-theme="light"] .model-chip:hover,
+:root[data-theme="light"] .mode-chip:hover,
+:root[data-theme="light"] .browse-btn:hover{background:var(--surface2)}
 /* Cloud CTA: the one place violet leads (a cloud/AI touch). Frosted
    violet glass card that lifts gently on hover. */
-.mcd-cloud-cta{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:6px;border-radius:12px;cursor:pointer;background:linear-gradient(90deg,rgba(167,139,250,0.18),rgba(99,102,241,0.06));border:1px solid rgba(167,139,250,0.42);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16);transition:background 0.15s,transform 0.15s,border-color 0.15s,box-shadow 0.15s}
-.mcd-cloud-cta:hover{background:linear-gradient(90deg,rgba(167,139,250,0.28),rgba(99,102,241,0.12));border-color:rgba(167,139,250,0.6);transform:translateY(-1px);box-shadow:0 10px 24px -12px rgba(167,139,250,0.5),inset 0 1px 0 rgba(255,255,255,0.2)}
-.mcd-cloud-cta .mcc-icon{font-size:15px;line-height:1}
-.mcd-cloud-cta .mcc-text{flex:1;display:flex;flex-direction:column;font-size:12.5px;font-weight:600;color:var(--text)}
+/* Cloud CTA: the mockup's violet gradient card (.cta) — violet-tinted
+   bg, violet border, icon + title + subtitle + arrow; lifts on hover. */
+.mcd-cloud-cta{display:flex;align-items:center;gap:11px;padding:11px 12px;margin-bottom:6px;border-radius:13px;cursor:pointer;background:linear-gradient(100deg,rgba(167,139,250,0.22),rgba(142,162,255,0.08));border:1px solid rgba(167,139,250,0.42);box-shadow:inset 0 1px 0 rgba(255,255,255,0.16);transition:background 0.15s,transform 0.15s,border-color 0.15s,box-shadow 0.15s}
+.mcd-cloud-cta:hover{background:linear-gradient(100deg,rgba(167,139,250,0.34),rgba(142,162,255,0.14));border-color:rgba(167,139,250,0.6);transform:translateY(-1px);box-shadow:0 10px 24px -12px rgba(167,139,250,0.5),inset 0 1px 0 rgba(255,255,255,0.2)}
+.mcd-cloud-cta .mcc-icon{font-size:16px;line-height:1}
+.mcd-cloud-cta .mcc-text{flex:1;display:flex;flex-direction:column;font-size:12.5px;font-weight:650;color:var(--text)}
 .mcd-cloud-cta .mcc-sub{font-size:10px;font-weight:400;color:var(--muted);margin-top:1px}
 .mcd-cloud-cta .mcc-arrow{color:var(--muted);font-size:14px}
 /* ---- Model management overlay ---- */

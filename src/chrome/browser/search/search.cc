@@ -173,7 +173,7 @@ struct NewTabURLDetails {
     }
 
     // MoltBrowser: Always use our custom homepage for the NTP
-    const GURL molt_ntp("https://homepage.moltsearch.ai");
+    const GURL molt_ntp("chrome://molt-home/");
     return NewTabURLDetails(molt_ntp, NEW_TAB_URL_VALID);
 
 #if BUILDFLAG(IS_ANDROID)
@@ -381,8 +381,8 @@ bool HandleNewTabURLRewrite(GURL* url,
 
   // MoltBrowser: Force rewrite to MoltSearch homepage
   LOG(INFO) << "[MoltBrowser] HandleNewTabURLRewrite: " << *url
-            << " -> https://homepage.moltsearch.ai";
-  *url = GURL("https://homepage.moltsearch.ai");
+            << " -> chrome://molt-home/";
+  *url = GURL("chrome://molt-home/");
   return true;
 }
 

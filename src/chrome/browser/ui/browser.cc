@@ -757,7 +757,7 @@ GURL Browser::GetNewTabURL() const {
   // This is the primary override — HandleNewTabURLRewrite in search.cc
   // provides a secondary rewrite for chrome://newtab/ URLs that bypass
   // this function.
-  return GURL("https://homepage.moltsearch.ai");
+  return GURL("chrome://molt-home/");
 }
 
 gfx::Image Browser::GetCurrentPageIcon() const {

@@ -65,7 +65,7 @@ void SessionStartupPref::RegisterProfilePrefs(
                                 flags);
   // MoltBrowser: Default startup URL is MoltSearch homepage.
   base::ListValue default_urls;
-  default_urls.Append("https://homepage.moltsearch.ai");
+  default_urls.Append("chrome://molt-home/");
   registry->RegisterListPref(prefs::kURLsToRestoreOnStartup,
                               std::move(default_urls), flags);
 }

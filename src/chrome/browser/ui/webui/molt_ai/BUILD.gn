@@ -23,6 +23,8 @@ source_set("molt_ai") {
     "molt_ai_update_ui.h",
     "molt_ai_ui.cc",
     "molt_ai_ui.h",
+    "molt_home_ui.cc",
+    "molt_home_ui.h",
   ]
 
   deps = [

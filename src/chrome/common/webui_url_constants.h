@@ -207,6 +207,9 @@ inline constexpr char kChromeUIMemoryInternalsHost[] = "memory-internals";
 // scheme below — see HandleMoltSchemeRewrite in chrome_content_browser_client.cc
 inline constexpr char kChromeUIMoltAIHost[] = "molt-ai";
 inline constexpr char kChromeUIMoltAIURL[] = "chrome://molt-ai/";
+// MoltBrowser new-tab / home page (Liquid Glass): chrome://molt-home/
+inline constexpr char kChromeUIMoltHomeHost[] = "molt-home";
+inline constexpr char kChromeUIMoltHomeURL[] = "chrome://molt-home/";
 inline constexpr char kChromeUIMoltAIChatHost[] = "molt-ai-chat";
 inline constexpr char kChromeUIMoltAIChatURL[] = "chrome://molt-ai-chat/";
 inline constexpr char kChromeUIMoltAISettingsHost[] = "molt-ai-settings";

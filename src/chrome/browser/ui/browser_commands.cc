@@ -1133,7 +1133,7 @@ content::WebContents& NewTab(Browser* browser, NewTabTypes context) {
           browser->tab_strip_model()->GetActiveTabGroupId()));
 
   // MoltBrowser: Open MoltSearch homepage instead of chrome://newtab
-  const GURL molt_new_tab_url("https://homepage.moltsearch.ai");
+  const GURL molt_new_tab_url("chrome://molt-home/");
 
   if (browser->SupportsWindowFeature(
           Browser::WindowFeature::kFeatureTabStrip)) {
