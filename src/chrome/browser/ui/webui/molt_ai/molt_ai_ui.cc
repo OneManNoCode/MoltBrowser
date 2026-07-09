@@ -58,15 +58,15 @@ class MoltAIDataSource : public content::URLDataSource {
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 /* Liquid Glass tokens — --accent is the single warm MoltBrowser red; violet is reserved for cloud/AI touches. */
-:root{--accent:#e5484d;--accent-hi:#f26166;--violet:#a78bfa;--glass-bg:rgba(255,255,255,0.055);--glass-bg-hi:rgba(255,255,255,0.09);--glass-border:rgba(255,255,255,0.12);--glass-border-hi:rgba(255,255,255,0.22);--glass-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20)}
+:root{--accent:#e5484d;--accent-hi:#f26166;--violet:#a78bfa;--glass-bg:rgba(255,255,255,0.085);--glass-bg-hi:rgba(255,255,255,0.13);--glass-border:rgba(255,255,255,0.20);--glass-border-hi:rgba(255,255,255,0.32);--glass-shadow:0 24px 60px -16px rgba(0,0,0,0.66),inset 0 1px 0 rgba(255,255,255,0.32)}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 20px;position:relative}
 /* Liquid Glass ambient — heavily-blurred colour orbs behind all content so the translucent panels have something to refract. Sits behind normal-flow content via z-index:-1; pointer-events:none so it never intercepts clicks. */
 .lg-ambient{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
-.lg-orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.15;will-change:transform}
+.lg-orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:0.30;will-change:transform}
 .lg-orb-red{width:46vw;height:46vw;background:radial-gradient(circle at center,#e5484d,transparent 70%);top:-8vw;left:-6vw;animation:lg-drift-a 34s ease-in-out infinite}
-.lg-orb-violet{width:42vw;height:42vw;background:radial-gradient(circle at center,#a78bfa,transparent 70%);top:34vh;right:-8vw;opacity:0.16;animation:lg-drift-b 41s ease-in-out infinite}
-.lg-orb-teal{width:40vw;height:40vw;background:radial-gradient(circle at center,#2bb6c4,transparent 70%);bottom:-10vw;left:18vw;opacity:0.13;animation:lg-drift-c 47s ease-in-out infinite}
-.lg-orb-red2{width:30vw;height:30vw;background:radial-gradient(circle at center,#e5484d,transparent 70%);bottom:6vh;right:12vw;opacity:0.10;animation:lg-drift-b 38s ease-in-out infinite reverse}
+.lg-orb-violet{width:42vw;height:42vw;background:radial-gradient(circle at center,#a78bfa,transparent 70%);top:34vh;right:-8vw;opacity:0.32;animation:lg-drift-b 41s ease-in-out infinite}
+.lg-orb-teal{width:40vw;height:40vw;background:radial-gradient(circle at center,#2bb6c4,transparent 70%);bottom:-10vw;left:18vw;opacity:0.26;animation:lg-drift-c 47s ease-in-out infinite}
+.lg-orb-red2{width:30vw;height:30vw;background:radial-gradient(circle at center,#e5484d,transparent 70%);bottom:6vh;right:12vw;opacity:0.22;animation:lg-drift-b 38s ease-in-out infinite reverse}
 @keyframes lg-drift-a{0%,100%{transform:translate(0,0)}50%{transform:translate(4vw,3vh)}}
 @keyframes lg-drift-b{0%,100%{transform:translate(0,0)}50%{transform:translate(-3vw,4vh)}}
 @keyframes lg-drift-c{0%,100%{transform:translate(0,0)}50%{transform:translate(3vw,-3vh)}}
@@ -89,8 +89,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .chat-container{width:100%;max-width:720px;flex:1;display:flex;flex-direction:column}
 .messages{flex:1;overflow-y:auto;padding:20px 0}
 .message{margin-bottom:20px;padding:16px 20px;border-radius:12px;line-height:1.6;font-size:15px;max-width:90%}
-.message.user{background:rgba(167,139,250,0.10);border:1px solid rgba(167,139,250,0.22);margin-left:auto;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20)}
-.message.ai{background:rgba(255,255,255,0.055);border:1px solid rgba(255,255,255,0.12);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20)}
+.message.user{background:rgba(167,139,250,0.10);border:1px solid rgba(167,139,250,0.22);margin-left:auto;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30)}
+.message.ai{background:rgba(255,255,255,0.085);border:1px solid rgba(255,255,255,0.12);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30)}
 .message .label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;color:#6366f1}
 .message.user .label{color:#8b5cf6}
 .model-badge{display:inline-block;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#8b5cf6;font-size:11px;margin-bottom:8px}
@@ -98,7 +98,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .message .text .cursor{display:inline-block;width:2px;height:16px;background:#6366f1;animation:blink 0.8s infinite;vertical-align:text-bottom;margin-left:1px}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .input-area{display:flex;gap:12px;padding:20px 0;border-top:1px solid rgba(255,255,255,0.08)}
-.input-area input{flex:1;padding:14px 20px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.055);color:#e0e0e0;font-size:15px;outline:none;transition:border-color 0.2s,background 0.2s;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20)}
+.input-area input{flex:1;padding:14px 20px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.085);color:#e0e0e0;font-size:15px;outline:none;transition:border-color 0.2s,background 0.2s;-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30)}
 .input-area input:focus{border-color:var(--accent,#e5484d);background:rgba(255,255,255,0.07)}
 .input-area button.send{padding:14px 28px;border-radius:16px;border:1px solid rgba(255,255,255,0.18);background:linear-gradient(135deg,var(--accent),var(--accent-hi));color:white;font-size:15px;font-weight:600;cursor:pointer;transition:opacity 0.2s,transform 0.15s;box-shadow:0 12px 30px -12px rgba(229,72,77,0.7),inset 0 1px 0 rgba(255,255,255,0.25)}
 .input-area button.send:hover{opacity:0.92;transform:translateY(-1px)}

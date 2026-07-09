@@ -83,15 +83,15 @@ class MoltAIChatDataSource : public content::URLDataSource {
   /* ---- Liquid Glass tokens (dark themes) ----
      Floating panels read as frosted glass over the ambient orbs.
      Light theme overrides these below with opaque-leaning values. */
-  --glass-bg:rgba(255,255,255,0.055);
-  --glass-bg-strong:rgba(255,255,255,0.075);
-  --glass-border:rgba(255,255,255,0.12);
-  --glass-border-hover:rgba(255,255,255,0.22);
-  --glass-blur:blur(26px) saturate(1.7);
-  --glass-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20);
-  --glass-shadow-sm:0 12px 30px -14px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.16);
+  --glass-bg:rgba(255,255,255,0.085);
+  --glass-bg-strong:rgba(255,255,255,0.12);
+  --glass-border:rgba(255,255,255,0.20);
+  --glass-border-hover:rgba(255,255,255,0.32);
+  --glass-blur:blur(30px) saturate(1.9);
+  --glass-shadow:0 24px 60px -16px rgba(0,0,0,0.66),inset 0 1px 0 rgba(255,255,255,0.32);
+  --glass-shadow-sm:0 14px 34px -12px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.26);
   --violet:#a78bfa;
-  --ambient-opacity:0.16;
+  --ambient-opacity:0.34;
 }
 /* Black theme: pure black with slightly lifted surfaces. Overrides
    every var Gray defines differently, so switching Black->Gray (attr
@@ -106,11 +106,11 @@ class MoltAIChatDataSource : public content::URLDataSource {
   --faint:#6a6a6a;
   /* Pure-black ground: nudge glass a hair brighter and let the orbs
      glow a touch more so panels don't read as flat black rectangles. */
-  --glass-bg:rgba(255,255,255,0.05);
-  --glass-bg-strong:rgba(255,255,255,0.07);
-  --glass-border:rgba(255,255,255,0.11);
-  --glass-border-hover:rgba(255,255,255,0.2);
-  --ambient-opacity:0.2;
+  --glass-bg:rgba(255,255,255,0.08);
+  --glass-bg-strong:rgba(255,255,255,0.115);
+  --glass-border:rgba(255,255,255,0.18);
+  --glass-border-hover:rgba(255,255,255,0.30);
+  --ambient-opacity:0.42;
 }
 /* White theme: pure white surfaces; accent stays Molt red (darkened
    for contrast on white). Everything keyed to the vars flips. */

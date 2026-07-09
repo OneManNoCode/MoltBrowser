@@ -1480,6 +1480,29 @@ void ToolbarView::Layout(PassKey) {
   // Call super implementation to ensure layout manager and child layouts
   // happen.
   LayoutSuperclass<AccessiblePaneView>(this);
+
+  // MoltBrowser: Safari-style EXACTLY-centered omnibox. The flex layout leaves
+  // the location bar filling the whole span (the "slot") between the left
+  // controls and the right-hand buttons. After that runs, re-lay it as a pill
+  // centered on the WINDOW's midpoint. To land dead-center without overlapping
+  // the controls on either side (MoltBrowser's right cluster is heavier than
+  // the left), the pill takes the LARGEST width that still fits centered — so
+  // it may be a touch narrower than the cap, but it is always exactly centered.
+  // Pure post-layout reposition; no flex spacers, no button juggling.
+  if (display_mode_ == DisplayMode::kNormal && location_bar_view_ &&
+      location_bar_view_->GetVisible()) {
+    constexpr int kMoltPillMaxWidth = 640;
+    const gfx::Rect slot = location_bar_view_->bounds();
+    const int centre = width() / 2;
+    // Widest pill centered on `centre` that stays within [slot.x, slot.right].
+    const int pill_w = std::min({kMoltPillMaxWidth, slot.width(),
+                                 2 * (centre - slot.x()),
+                                 2 * (slot.right() - centre)});
+    if (pill_w > 0 && pill_w < slot.width()) {
+      location_bar_view_->SetBounds(centre - pill_w / 2, slot.y(), pill_w,
+                                    slot.height());
+    }
+  }
 }
 
 void ToolbarView::OnThemeChanged() {

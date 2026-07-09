@@ -1078,10 +1078,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
    heavily-blurred radial orbs (MoltBrowser accent violet, a red, a cool teal). */
 .lg-ambient{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
   background:
-    radial-gradient(42vmax 42vmax at 12% 8%, rgba(99,102,241,0.16), transparent 60%),
-    radial-gradient(38vmax 38vmax at 88% 18%, rgba(229,72,77,0.14), transparent 62%),
-    radial-gradient(46vmax 46vmax at 72% 96%, rgba(43,182,196,0.13), transparent 60%),
-    radial-gradient(34vmax 34vmax at 24% 88%, rgba(167,139,250,0.12), transparent 60%);
+    radial-gradient(42vmax 42vmax at 12% 8%, rgba(99,102,241,0.30), transparent 60%),
+    radial-gradient(38vmax 38vmax at 88% 18%, rgba(229,72,77,0.28), transparent 62%),
+    radial-gradient(46vmax 46vmax at 72% 96%, rgba(43,182,196,0.26), transparent 60%),
+    radial-gradient(34vmax 34vmax at 24% 88%, rgba(167,139,250,0.24), transparent 60%);
   filter:blur(80px);
   animation:lgDrift 34s ease-in-out infinite alternate}
 @keyframes lgDrift{from{transform:translate3d(-2%,-1%,0) scale(1.02)}to{transform:translate3d(2%,2%,0) scale(1.08)}}
@@ -1093,7 +1093,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .nav{display:flex;gap:12px;margin-bottom:24px}
 .nav a{color:#6366f1;text-decoration:none;font-size:13px;padding:6px 12px;border:1px solid #333;border-radius:8px;transition:all 0.2s}
 .nav a:hover{border-color:#6366f1;background:#111}
-.section{background:rgba(255,255,255,0.055);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.20);transition:border-color 0.2s,transform 0.2s}
+.section{background:rgba(255,255,255,0.085);-webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:20px;margin-bottom:16px;box-shadow:0 20px 50px -18px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.30);transition:border-color 0.2s,transform 0.2s}
 .section:hover{transform:translateY(-1px);border-color:rgba(255,255,255,0.20)}
 .section h2{font-size:16px;font-weight:600;margin-bottom:16px;color:#e0e0e0;display:flex;align-items:center;gap:8px}
 .section h2 .icon{font-size:18px}
@@ -1123,7 +1123,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .btn{padding:10px 24px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s}
 .btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:white;box-shadow:0 8px 22px -8px rgba(99,102,241,0.6),inset 0 1px 0 rgba(255,255,255,0.25)}
 .btn.primary:hover{opacity:0.9;transform:translateY(-1px)}
-.btn.secondary{background:rgba(255,255,255,0.055);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);border:1px solid rgba(255,255,255,0.12);color:#cfcfe0;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
+.btn.secondary{background:rgba(255,255,255,0.085);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);border:1px solid rgba(255,255,255,0.12);color:#cfcfe0;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14)}
 .btn.secondary:hover{border-color:#6366f1;color:#e0e0e0;transform:translateY(-1px)}
 .btn.danger{background:transparent;border:1px solid #f87171;color:#f87171}
 .btn.danger:hover{background:rgba(248,113,113,0.12)}
