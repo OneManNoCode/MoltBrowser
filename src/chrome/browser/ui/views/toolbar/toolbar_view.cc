@@ -133,6 +133,7 @@
 #include "components/send_tab_to_self/features.h"
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/strings/grit/components_strings.h"
+#include "chrome/app/vector_icons/vector_icons.h"
 #include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -352,7 +353,8 @@ class TorExitCountryButton : public ToolbarButton,
     SetCallback(base::BindRepeating(&TorExitCountryButton::ButtonPressed,
                                     base::Unretained(this)));
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    SetVectorIcon(vector_icons::kGlobeIcon);
+    // No vector icon — the label carries a country flag emoji (or a globe for
+    // Auto), so the button reads "🇬🇧 GB" like the mockup, not a static globe.
     SetTooltipText(u"MoltNet privacy routing (Tor) — connect & pick exit country");
     UpdateLabel();
   }
@@ -475,8 +477,12 @@ class TorExitCountryButton : public ToolbarButton,
     // MoltBrowser: open the Liquid Glass MoltNet popover (a translucent
     // WebUI bubble). The native SimpleMenuModel path — BuildMenu(),
     // ExecuteCommand(), menu_model_ — is retained as a fallback/reference but
-    // is no longer wired to the click.
-    MoltNetBubbleView::Show(/*anchor=*/this, browser_->profile());
+    // is no longer wired to the click. Refresh the button's flag/label when the
+    // popover closes (the user may have changed the exit country inside it).
+    MoltNetBubbleView::Show(
+        /*anchor=*/this, browser_->profile(),
+        base::BindRepeating(&TorExitCountryButton::UpdateLabel,
+                            weak_factory_.GetWeakPtr()));
   }
 
   void OnTorLaunched(molt_ai::tor::TorLaunchResult /*result*/) {
@@ -487,9 +493,14 @@ class TorExitCountryButton : public ToolbarButton,
   // the uppercased ISO code (e.g. "us" -> "US").
   void UpdateLabel() {
     const std::string cc = molt_ai::tor::TorManager::Get()->GetExitCountry();
-    SetHighlight(
-        cc.empty() ? u"Auto" : base::UTF8ToUTF16(base::ToUpperASCII(cc)),
-        std::nullopt);
+    // Show the selected country's flag + ISO code (e.g. "🇬🇧 GB"); a globe +
+    // "Auto" when unconstrained. The flag emoji renders in color just like the
+    // exit-country menu items.
+    SetHighlight(cc.empty()
+                     ? u"\U0001F310 Auto"
+                     : (CountryFlagEmoji(cc) + u" " +
+                        base::UTF8ToUTF16(base::ToUpperASCII(cc))),
+                 std::nullopt);
   }
 
   const raw_ptr<Browser> browser_;
@@ -686,6 +697,27 @@ void ToolbarView::Init() {
     AddChildView(std::make_unique<ContextualTasksButton>(browser_));
   }
 
+  // MoltBrowser: MoltNet (Tor exit-country) + Import buttons live in the LEFT
+  // cluster, right before the location bar, so the two privacy/migration
+  // controls sit together on the left (cleaner than scattering them on the
+  // right). MoltNet's label shows the selected country's flag; Import uses a
+  // bookmark icon and opens the Liquid Glass import popover.
+  {
+    AddChildView(std::make_unique<TorExitCountryButton>(browser_));
+
+    auto import_button = std::make_unique<ToolbarButton>();
+    import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    import_button->SetVectorIcon(kBookmarksManagerIcon);
+    import_button->SetTooltipText(
+        u"Import bookmarks & passwords from another browser");
+    ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
+    import_button_ptr->SetCallback(base::BindRepeating(
+        [](ToolbarButton* anchor, Browser* browser) {
+          MoltImportBubbleView::Show(anchor, browser->profile());
+        },
+        base::Unretained(import_button_ptr), browser_));
+  }
+
   if (location_bar_view) {
     location_bar_view_ = AddChildView(std::move(location_bar_view));
     location_bar_ = location_bar_view_;
@@ -851,33 +883,10 @@ void ToolbarView::Init() {
     AddChildView(std::move(rec_button));
   }
 
-  // MoltBrowser: Tor exit-country button. A globe whose label shows the
-  // current exit country ("Auto" when unconstrained, else the uppercased ISO
-  // code). Left-click opens a native checkmark menu to pick the exit country,
-  // request a new identity, or open MoltNet settings (molt://ai-settings/).
-  {
-    AddChildView(std::make_unique<TorExitCountryButton>(browser_));
-  }
-
-  // MoltBrowser: Import & Migration quick-access button. Opens the Liquid Glass
-  // Import popover (a translucent WebUI bubble) anchored to the button — the
-  // sibling of the MoltNet globe's popover — so bookmarks + saved passwords
-  // from another browser are one click from the toolbar, not buried in
-  // settings.
-  {
-    auto import_button = std::make_unique<ToolbarButton>();
-    import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    import_button->SetVectorIcon(vector_icons::kFileDownloadIcon);
-    import_button->SetTooltipText(
-        u"Import bookmarks & passwords from another browser");
-    ToolbarButton* import_button_ptr =
-        AddChildView(std::move(import_button));
-    import_button_ptr->SetCallback(base::BindRepeating(
-        [](ToolbarButton* anchor, Browser* browser) {
-          MoltImportBubbleView::Show(anchor, browser->profile());
-        },
-        base::Unretained(import_button_ptr), browser_));
-  }
+  // MoltBrowser: the MoltNet (Tor exit-country) + Import buttons are created
+  // earlier, in the LEFT cluster just before the location bar, so the two
+  // privacy/migration controls sit together on the left. See MoltBrowser
+  // left-cluster block above.
 
   // MoltBrowser: Software-update button. Opens molt://update/ (the in-app
   // updater: current vs latest version + one-click update) and kicks off the

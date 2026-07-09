@@ -32,11 +32,13 @@ base::TimeTicks g_closed_at;
 }  // namespace
 
 MoltNetBubbleView::MoltNetBubbleView(views::View* anchor,
-                                     content::BrowserContext* context)
+                                     content::BrowserContext* context,
+                                     base::RepeatingClosure on_closed)
     : views::BubbleDialogDelegateView(
           views::BubbleDialogDelegateView::CreatePassKey(),
           anchor,
-          views::BubbleBorder::TOP_RIGHT) {
+          views::BubbleBorder::TOP_RIGHT),
+      on_closed_(std::move(on_closed)) {
   SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
   set_margins(gfx::Insets());
   // Punch the frame transparent so the page's CSS glass is what shows; the
@@ -63,11 +65,17 @@ MoltNetBubbleView::~MoltNetBubbleView() {
     g_instance = nullptr;
     g_closed_at = base::TimeTicks::Now();
   }
+  // Let the anchor button refresh its exit-country flag (the user may have
+  // changed the country inside the popover).
+  if (on_closed_) {
+    on_closed_.Run();
+  }
 }
 
 // static
 void MoltNetBubbleView::Show(views::View* anchor,
-                             content::BrowserContext* context) {
+                             content::BrowserContext* context,
+                             base::RepeatingClosure on_closed) {
   // Re-click on an open bubble toggles it closed.
   if (g_instance) {
     if (views::Widget* widget = g_instance->GetWidget()) {
@@ -82,7 +90,8 @@ void MoltNetBubbleView::Show(views::View* anchor,
     return;
   }
 
-  auto delegate = std::make_unique<MoltNetBubbleView>(anchor, context);
+  auto delegate =
+      std::make_unique<MoltNetBubbleView>(anchor, context, std::move(on_closed));
   views::Widget* widget =
       views::BubbleDialogDelegateView::CreateBubble(std::move(delegate));
   widget->Show();

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/no_destructor.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -40,13 +41,26 @@ std::string ExitCountryDisplayName(const std::string& cc) {
   return base::ToUpperASCII(cc);
 }
 
+// Last-picked "on" routing mode ("proxy" | "multi_hop"), session-persistent.
+// The Tor backend routes identically for both (mirrors the settings page,
+// molt_ai_settings_ui.cc HandleMoltnetConnect); the distinction is presented
+// in the UI. "direct" is derived from the not-running state. NoDestructor
+// avoids an exit-time destructor on the mutable global string.
+std::string& OnMode() {
+  static base::NoDestructor<std::string> mode("multi_hop");
+  return *mode;
+}
+
 // The single status shape every mutating call resolves, so the page can
-// re-render from one payload: { running: bool, selected: "<lc cc or ''>" }.
+// re-render from one payload:
+// { running: bool, selected: "<lc cc or ''>", mode: "direct|proxy|multi_hop" }.
 base::DictValue StatusDict() {
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+  const bool running = mgr->IsRunning();
   base::DictValue d;
-  d.Set("running", mgr->IsRunning());
+  d.Set("running", running);
   d.Set("selected", mgr->GetExitCountry());
+  d.Set("mode", running ? OnMode() : std::string("direct"));
   return d;
 }
 
@@ -71,6 +85,10 @@ void MoltNetHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "moltnet.toggle",
       base::BindRepeating(&MoltNetHandler::HandleToggle,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "moltnet.setMode",
+      base::BindRepeating(&MoltNetHandler::HandleSetMode,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "moltnet.newIdentity",
@@ -132,6 +150,42 @@ void MoltNetHandler::HandleToggle(const base::ListValue& args) {
   }
   // Launch is async; resolve once the control port is up (or the attempt
   // fails — StatusDict() reflects the real IsRunning() either way).
+  mgr->Launch(base::BindOnce(
+      [](base::WeakPtr<MoltNetHandler> self, std::string cb,
+         molt_ai::tor::TorLaunchResult) {
+        if (!self) {
+          return;
+        }
+        self->ResolveJavascriptCallback(base::Value(cb),
+                                        base::Value(StatusDict()));
+      },
+      weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltNetHandler::HandleSetMode(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+  std::string mode = (args.size() > 1 && args[1].is_string())
+                         ? args[1].GetString()
+                         : std::string("multi_hop");
+  molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
+
+  // "direct" = no privacy routing → stop any managed Tor (mirrors the settings
+  // page). "proxy" and "multi_hop" both route through Tor; we remember which
+  // the user picked so the UI shows it, but the backend path is identical.
+  if (mode == "direct") {
+    mgr->Stop();
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(StatusDict()));
+    return;
+  }
+  OnMode() = (mode == "proxy") ? "proxy" : "multi_hop";
+  if (mgr->IsRunning()) {
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(StatusDict()));
+    return;
+  }
   mgr->Launch(base::BindOnce(
       [](base::WeakPtr<MoltNetHandler> self, std::string cb,
          molt_ai::tor::TorLaunchResult) {

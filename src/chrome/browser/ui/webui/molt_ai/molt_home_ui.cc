@@ -131,10 +131,6 @@ class MoltHomeDataSource : public content::URLDataSource {
   .card.imp .ic{background:rgba(255,82,87,.2);box-shadow:inset 0 0 0 1px rgba(255,82,87,.3)}
   .card .d{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.5}
 
-  .foot{position:fixed;bottom:18px;left:0;right:0;text-align:center;z-index:1;
-    font-size:11px;color:var(--faint);letter-spacing:.02em}
-  .foot b{color:var(--muted);font-weight:600}
-
   @media (prefers-reduced-motion: reduce){.orb{animation:none}.card:hover,.search .go:hover{transform:none}}
 </style>
 </head>
@@ -168,8 +164,6 @@ class MoltHomeDataSource : public content::URLDataSource {
     </div>
   </div>
 </div>
-
-<div class="foot">MoltBrowser &middot; <b>Liquid Glass</b> &middot; on-device AI, private by default</div>
 
 <script>
 function go(u){ window.location.href = u; }

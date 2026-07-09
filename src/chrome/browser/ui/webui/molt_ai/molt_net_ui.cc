@@ -115,6 +115,16 @@ class MoltNetDataSource : public content::URLDataSource {
     background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
   .sw.on .knob{transform:translateX(19px)}
 
+  /* Routing-mode segmented control */
+  .modes{display:flex;gap:6px;padding:2px 14px 8px;flex:0 0 auto}
+  .mode{flex:1;padding:8px 4px 7px;border-radius:11px;cursor:pointer;text-align:center;
+    background:rgba(255,255,255,.05);border:1px solid var(--edge);transition:.15s}
+  .mode:hover{background:rgba(255,255,255,.10);border-color:var(--edge-hi)}
+  .mode.active{background:linear-gradient(180deg,rgba(255,103,108,.30),rgba(224,53,59,.20));
+    border-color:rgba(255,82,87,.55);box-shadow:0 0 0 1px rgba(255,82,87,.18) inset}
+  .mode .mname{font-size:11.5px;font-weight:650;color:var(--text)}
+  .mode .mdesc{font-size:9px;letter-spacing:.02em;color:var(--faint);margin-top:2px;text-transform:uppercase}
+
   .divider{height:1px;background:var(--edge);margin:0 14px;flex:0 0 auto}
   .sec{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
     padding:13px 18px 6px;flex:0 0 auto}
@@ -149,9 +159,14 @@ class MoltNetDataSource : public content::URLDataSource {
       <div><div class="title">MoltNet</div><div class="st" id="st">Checking&hellip;</div></div>
       <span class="brand" id="sub"></span>
     </div>
-    <div class="toggle-row">
-      <div><div class="lbl">Privacy routing</div><div class="sub">Route traffic through the Tor network</div></div>
-      <div class="sw" id="sw" onclick="toggleNet()"><div class="knob"></div></div>
+    <div class="sec">Routing mode</div>
+    <div class="modes" id="modes">
+      <div class="mode" data-mode="direct" onclick="setMode('direct')">
+        <div class="mname">Direct</div><div class="mdesc">No&nbsp;routing</div></div>
+      <div class="mode" data-mode="proxy" onclick="setMode('proxy')">
+        <div class="mname">Single&nbsp;proxy</div><div class="mdesc">1&nbsp;hop</div></div>
+      <div class="mode" data-mode="multi_hop" onclick="setMode('multi_hop')">
+        <div class="mname">Multi&#8209;hop</div><div class="mdesc">Tor</div></div>
     </div>
     <div class="divider"></div>
     <div class="sec">Exit country</div>
@@ -174,15 +189,21 @@ cr.webUIResponse=function(id,ok,r){var c=_pend[id];if(c){delete _pend[id];ok?c.r
 function flag(cc){ if(!cc||cc.length!==2) return '🌐';
   return String.fromCodePoint.apply(null,[cc.charCodeAt(0),cc.charCodeAt(1)].map(function(x){return 0x1F1E6+(x|32)-97;})); }
 
-var STATE={running:false,busy:false,selected:'',countries:[]};
+var STATE={running:false,busy:false,selected:'',mode:'direct',countries:[]};
 
 function render(){
   var d=document.getElementById('dot'), st=document.getElementById('st'),
-      sub=document.getElementById('sub'), sw=document.getElementById('sw');
+      sub=document.getElementById('sub');
   d.className='dot'+(STATE.busy?' busy':(STATE.running?' on':''));
   st.textContent=STATE.busy?'Connecting…':(STATE.running?'Connected':'Disconnected');
-  sub.textContent=STATE.running?(STATE.selected?flag(STATE.selected)+' '+STATE.selected.toUpperCase():'🌐 AUTO'):'';
-  sw.className='sw'+(STATE.running?' on':'');
+  // Always show the chosen exit country's flag (even when disconnected) so
+  // picking a country gives immediate feedback.
+  sub.textContent=STATE.selected?flag(STATE.selected)+' '+STATE.selected.toUpperCase():'🌐 AUTO';
+  // Highlight the active routing mode.
+  var modes=document.getElementById('modes').children;
+  for(var i=0;i<modes.length;i++){
+    modes[i].className='mode'+(modes[i].getAttribute('data-mode')===STATE.mode?' active':'');
+  }
   var list=document.getElementById('list'); list.innerHTML='';
   list.appendChild(rowEl('','🌐','Auto (recommended)'));
   STATE.countries.forEach(function(c){ list.appendChild(rowEl(c.code,flag(c.code),c.name)); });
@@ -196,12 +217,13 @@ function rowEl(code,fl,name){
   var c=document.createElement('span'); c.className='chk'; c.textContent='✓';
   r.appendChild(f); r.appendChild(n); r.appendChild(c); return r;
 }
-function apply(s){ STATE.running=!!s.running; STATE.selected=s.selected||''; STATE.busy=false; render(); }
+function apply(s){ STATE.running=!!s.running; STATE.selected=s.selected||'';
+  if(s.mode) STATE.mode=s.mode; STATE.busy=false; render(); }
 function loadCountries(){ sendWithPromise('moltnet.getExitCountries').then(function(r){
   STATE.countries=r.available||[]; if(r.selected!=null) STATE.selected=r.selected; render(); }); }
 function refresh(){ sendWithPromise('moltnet.getStatus').then(apply); }
-function toggleNet(){ STATE.busy=!STATE.running; render();
-  sendWithPromise('moltnet.toggle').then(apply); }
+function setMode(m){ STATE.mode=m; STATE.busy=(m!=='direct'&&!STATE.running); render();
+  sendWithPromise('moltnet.setMode',m).then(apply); }
 function setCountry(cc){ STATE.selected=cc; render();
   sendWithPromise('moltnet.setExitCountry',cc).then(apply); }
 function newIdentity(){ sendWithPromise('moltnet.newIdentity').then(apply); }

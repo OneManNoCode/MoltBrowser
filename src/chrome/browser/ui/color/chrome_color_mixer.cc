@@ -1165,11 +1165,17 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
     // Glass ground for the bar (bookmark bar / side panel / infobar derive
     // from kColorToolbar and follow).
     mixer[kColorToolbar] = {SkColorSetRGB(0x0B, 0x0C, 0x12)};  // #0b0c12
-    // Translucent-white floating-pill fill. rgba(255,255,255,0.08).
+    // Kill the gray hairlines that draw across the bar so it reads as one
+    // seamless sheet of dark glass instead of a bordered strip.
+    mixer[kColorToolbarContentAreaSeparator] = {SK_ColorTRANSPARENT};
+    mixer[kColorToolbarTopSeparatorFrameActive] = {SK_ColorTRANSPARENT};
+    mixer[kColorToolbarTopSeparatorFrameInactive] = {SK_ColorTRANSPARENT};
+    // Translucent-white floating-pill fill. rgba(255,255,255,0.12) — brighter
+    // so the capsule reads as floating glass, not a flat gray outline.
     mixer[kColorToolbarButtonBackgroundHighlightedDefault] = {
-        SkColorSetARGB(0x14, 0xFF, 0xFF, 0xFF)};
-    // Specular pill border. rgba(255,255,255,0.14).
-    mixer[kColorToolbarButtonBorder] = {SkColorSetARGB(0x24, 0xFF, 0xFF, 0xFF)};
+        SkColorSetARGB(0x1F, 0xFF, 0xFF, 0xFF)};
+    // Softer, brighter specular pill edge. rgba(255,255,255,0.18).
+    mixer[kColorToolbarButtonBorder] = {SkColorSetARGB(0x2E, 0xFF, 0xFF, 0xFF)};
     // Keep toolbar icons crisp light on the dark bar.
     mixer[kColorToolbarButtonIcon] = {SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF)};
     // Omnibox capsule: opaque near-black keeps subpixel text AA; specular edge

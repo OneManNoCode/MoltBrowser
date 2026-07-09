@@ -30,6 +30,7 @@ class MoltNetHandler : public content::WebUIMessageHandler {
   void HandleGetExitCountries(const base::ListValue& args);
   void HandleSetExitCountry(const base::ListValue& args);
   void HandleToggle(const base::ListValue& args);
+  void HandleSetMode(const base::ListValue& args);
   void HandleNewIdentity(const base::ListValue& args);
 
   base::WeakPtrFactory<MoltNetHandler> weak_ptr_factory_{this};

@@ -10,6 +10,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_MOLT_NET_BUBBLE_H_
 #define CHROME_BROWSER_UI_VIEWS_TOOLBAR_MOLT_NET_BUBBLE_H_
 
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
@@ -28,9 +29,15 @@ class MoltNetBubbleView : public views::BubbleDialogDelegateView {
  public:
   // Shows the popover anchored at `anchor`, or toggles it closed if already
   // open. `context` is the browser context the WebView renders under.
-  static void Show(views::View* anchor, content::BrowserContext* context);
+  // `on_closed` (optional) runs when the bubble closes — the anchor button uses
+  // it to refresh its exit-country flag/label.
+  static void Show(views::View* anchor,
+                   content::BrowserContext* context,
+                   base::RepeatingClosure on_closed = base::RepeatingClosure());
 
-  MoltNetBubbleView(views::View* anchor, content::BrowserContext* context);
+  MoltNetBubbleView(views::View* anchor,
+                    content::BrowserContext* context,
+                    base::RepeatingClosure on_closed);
   ~MoltNetBubbleView() override;
 
   MoltNetBubbleView(const MoltNetBubbleView&) = delete;
@@ -38,6 +45,7 @@ class MoltNetBubbleView : public views::BubbleDialogDelegateView {
 
  private:
   raw_ptr<views::WebView> web_view_ = nullptr;
+  base::RepeatingClosure on_closed_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_MOLT_NET_BUBBLE_H_
