@@ -92,6 +92,12 @@ void SidePanelHelper::PopulateGlobalEntries(
   // removes the native close X / pin. Scoped to this entry only; every other
   // side panel keeps its native header.
   molt_ai_entry->set_should_show_header(false);
+  // MoltBrowser: the toolbar already has a dedicated "🤖 AI mode" button
+  // (toolbar_view.cc) that toggles this panel, so suppress the DUPLICATE
+  // ephemeral side-panel action button Chromium otherwise shows in the pinned
+  // toolbar container while the panel is open — there should be exactly one
+  // AI-mode control.
+  molt_ai_entry->set_should_show_ephemerally_in_toolbar(false);
   window_registry->Register(std::move(molt_ai_entry));
 }
 

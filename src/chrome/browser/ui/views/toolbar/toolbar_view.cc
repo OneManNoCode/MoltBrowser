@@ -382,7 +382,7 @@ class TorExitCountryButton : public ToolbarButton,
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
     // No vector icon — the label carries a country flag emoji (or a globe for
     // Auto), so the button reads "🇬🇧 GB" like the mockup, not a static globe.
-    SetTooltipText(u"MoltNet privacy routing (Tor) — connect & pick exit country");
+    SetTooltipText(u"MoltNet VPN — privacy routing, connect & pick exit country");
     UpdateLabel();
   }
   TorExitCountryButton(const TorExitCountryButton&) = delete;
@@ -863,11 +863,15 @@ void ToolbarView::Init() {
     // AI button a signature violet accent (light violet label/border + faint
     // violet pill) so it reads as the hero control on the dark glass toolbar,
     // matching the Liquid Glass concept mockup.
-    molt_ai_button->SetHighlight(u"Local AI", SkColorSetRGB(0xA7, 0x8B, 0xFA));
+    molt_ai_button->SetHighlight(u"🤖 AI mode", SkColorSetRGB(0xA7, 0x8B, 0xFA));
     molt_ai_button->SetTooltipText(
-        u"Toggle MoltBrowser AI Chat — runs locally on your device (⌘⇧L)");
+        u"Toggle AI mode — MoltBrowser AI, runs locally on your device (⌘⇧L)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    molt_ai_button->SetVectorIcon(vector_icons::kChatSparkIcon);
+    // The 🤖 robot emoji in the label carries the icon (like the country flag
+    // on the MoltNet button), so no separate vector icon. This is also the
+    // SINGLE AI-mode control: the duplicate ephemeral side-panel toolbar button
+    // is suppressed via set_should_show_ephemerally_in_toolbar(false) on the
+    // kMoltAiChat entry (side_panel_helper.cc).
     AddChildView(std::move(molt_ai_button));
   }
 
@@ -881,8 +885,8 @@ void ToolbarView::Init() {
 
     rec_ptr->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     // Initial idle label.
-    rec_ptr->SetHighlight(u"Record", std::nullopt);
-    rec_ptr->SetTooltipText(u"Record this tab as a Molt automation script");
+    rec_ptr->SetHighlight(u"Agent mode", std::nullopt);
+    rec_ptr->SetTooltipText(u"Agent mode — record this tab as an automation agent script");
     rec_ptr->SetVectorIcon(vector_icons::kScreenRecordIcon);
 
     rec_ptr->SetCallback(base::BindRepeating(
@@ -905,9 +909,9 @@ void ToolbarView::Init() {
                 u"Stop recording and save this script");
             btn->SetVectorIcon(vector_icons::kStopCircleIcon);
           } else {
-            btn->SetHighlight(u"Record", std::nullopt);
+            btn->SetHighlight(u"Agent mode", std::nullopt);
             btn->SetTooltipText(
-                u"Record this tab as a Molt automation script");
+                u"Agent mode — record this tab as an automation agent script");
             btn->SetVectorIcon(vector_icons::kScreenRecordIcon);
           }
         },

@@ -155,7 +155,7 @@ class MoltHomeDataSource : public content::URLDataSource {
       <div class="d">Chat with local &amp; cloud models, grounded in the page.</div>
     </div>
     <div class="card net" onclick="go('molt://ai-settings/?section=providers')">
-      <div class="t"><span class="ic">&#128737;</span> MoltNet</div>
+      <div class="t"><span class="ic">&#128737;</span> MoltNet VPN</div>
       <div class="d">Tor routing with a pick-your-country exit relay.</div>
     </div>
     <div class="card imp" onclick="go('molt://ai-settings/?section=import')">

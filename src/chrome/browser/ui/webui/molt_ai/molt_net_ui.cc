@@ -54,7 +54,7 @@ class MoltNetDataSource : public content::URLDataSource {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MoltNet</title>
+<title>MoltNet VPN</title>
 <style>
   :root{
     --text:#f4f5fa;
@@ -63,7 +63,7 @@ class MoltNetDataSource : public content::URLDataSource {
     --accent:#ff5257;
     --accent-deep:#e0353b;
     --ok:#5fe3a1;
-    --frost:rgba(18,20,30,0.52);
+    --frost:rgba(16,18,27,0.66);
     --edge:rgba(255,255,255,0.14);
     --edge-hi:rgba(255,255,255,0.30);
     --specular:rgba(255,255,255,0.26);
@@ -156,7 +156,7 @@ class MoltNetDataSource : public content::URLDataSource {
   <div class="frost">
     <div class="hdr">
       <span class="dot" id="dot"></span>
-      <div><div class="title">MoltNet</div><div class="st" id="st">Checking&hellip;</div></div>
+      <div><div class="title">MoltNet VPN</div><div class="st" id="st">Checking&hellip;</div></div>
       <span class="brand" id="sub"></span>
     </div>
     <div class="sec">Routing mode</div>

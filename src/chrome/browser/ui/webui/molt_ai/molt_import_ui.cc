@@ -64,7 +64,7 @@ class MoltImportDataSource : public content::URLDataSource {
     --accent:#ff5257;
     --accent-deep:#e0353b;
     --ok:#5fe3a1;
-    --frost:rgba(18,20,30,0.52);
+    --frost:rgba(16,18,27,0.66);
     --edge:rgba(255,255,255,0.14);
     --edge-hi:rgba(255,255,255,0.30);
     --specular:rgba(255,255,255,0.26);
