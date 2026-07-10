@@ -32,6 +32,16 @@ class AutomationRecorderTabHelper
   // user can name + edit it.
   void Toggle(Profile* profile);
 
+  // Agent studio flow: start recording on this tab, streaming each captured
+  // step to |on_step| (so the side panel can render steps live). Unlike
+  // Toggle(), does NOT auto-save or open a manager tab on stop — the studio
+  // panel reviews the draft first. No-op if already recording.
+  void StartRecording(StepCapturedCallback on_step);
+
+  // Stop recording and return the assembled draft Script (id empty, NOT saved
+  // to disk). Returns an empty Script if not recording.
+  Script StopRecording();
+
   bool is_recording() const { return rec_ && rec_->is_recording(); }
 
   // ---- Global recording state (used by the toolbar Record button to

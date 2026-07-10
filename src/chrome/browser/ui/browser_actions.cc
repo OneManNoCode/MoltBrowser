@@ -269,7 +269,16 @@ void BrowserActions::InitializeBrowserActions() {
                               IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
                               IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
                               vector_icons::kChatSparkIcon,
-                              kActionSidePanelShowMoltAiChat, bwi, true))
+                              kActionSidePanelShowMoltAiChat, bwi, true),
+              // MoltBrowser: Agent-mode automation studio side panel. Reuses
+              // the AI chat title/icon (the native header + ephemeral toolbar
+              // chip are both suppressed on this entry, so neither is ever
+              // user-visible); the toolbar "Agent mode" button toggles it.
+              SidePanelAction(SidePanelEntryId::kMoltAgent,
+                              IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
+                              IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
+                              vector_icons::kScreenRecordIcon,
+                              kActionSidePanelShowMoltAgent, bwi, true))
           .Build());
 
   if (side_panel::history_clusters::

@@ -14,6 +14,9 @@
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_BACKGROUND_BROWSER_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_BACKGROUND_BROWSER_H_
 
+#include <map>
+#include <string>
+
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 
 class Profile;
@@ -26,10 +29,16 @@ namespace automation {
 // is minimized; otherwise it is shown so the user can watch.
 // |start_index| (default 0) lets callers pick up at a specific step —
 // used by the manager UI's "Retry from failed step" button.
-void RunScriptInBackgroundBrowser(Profile* profile,
-                                  const Script& script,
-                                  bool minimize,
-                                  size_t start_index = 0);
+// |variable_overrides| (default empty) are applied on top of the script's
+// saved default_variables AFTER it is reloaded from disk — this is how the
+// studio's "Run with these values" passes one-off {{variable}} values without
+// mutating the saved workflow. The scheduler passes none (uses saved defaults).
+void RunScriptInBackgroundBrowser(
+    Profile* profile,
+    const Script& script,
+    bool minimize,
+    size_t start_index = 0,
+    const std::map<std::string, std::string>& variable_overrides = {});
 
 }  // namespace automation
 }  // namespace molt_ai

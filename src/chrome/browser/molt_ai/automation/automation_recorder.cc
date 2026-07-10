@@ -102,32 +102,72 @@ const char kRecorderJS[] = R"JS(
     return true;
   }
 
+  // ---- Human-readable naming so steps read like plain English ----
+  function txt(s){ return (s||'').replace(/\s+/g,' ').trim(); }
+  function attr(el,n){ try { return el.getAttribute ? el.getAttribute(n) : ''; } catch(e){ return ''; } }
+  // A short, quoted name for a clickable element (its visible text/label).
+  function friendlyName(el){
+    var t = txt(attr(el,'aria-label')) || txt(el.textContent) ||
+            txt(el.value) || txt(attr(el,'title')) || txt(attr(el,'alt')) ||
+            txt(attr(el,'placeholder'));
+    if (t) return '"' + t.slice(0,40) + '"';
+    var tag = (el.tagName||'').toLowerCase();
+    return 'the ' + (tag==='a' ? 'link' : (tag==='button' ? 'button' : (tag||'element')));
+  }
+  // The human label of an input field (associated <label>, aria-label,
+  // placeholder, or name).
+  function fieldLabel(el){
+    try {
+      var lab = '';
+      if (el.id && window.CSS && CSS.escape) {
+        var l = document.querySelector('label[for="'+CSS.escape(el.id)+'"]');
+        if (l) lab = txt(l.textContent);
+      }
+      if (!lab && el.closest) { var p = el.closest('label'); if (p) lab = txt(p.textContent); }
+      lab = lab || txt(attr(el,'aria-label')) || txt(attr(el,'placeholder')) ||
+            txt(el.name) || txt(el.id);
+      return lab ? ('the "'+lab.slice(0,32)+'" field') : 'the field';
+    } catch(e){ return 'the field'; }
+  }
+
+  // Climb to the nearest actionable ancestor so clicking an icon/label INSIDE
+  // a button records the button (not the inner <span>/<svg>).
+  var kActionable = 'a,button,[role="button"],[role="link"],[role="tab"],' +
+      '[role="menuitem"],input[type="submit"],input[type="button"],' +
+      'input[type="checkbox"],input[type="radio"],[onclick],summary,label';
   document.addEventListener('click', function(e) {
-    var el = e.target;
+    var el = (e.target.closest && e.target.closest(kActionable)) || e.target;
     if (!rateLimit(el, 50)) return;
     var sels = buildSelectors(el);
     send({type: 'click', target: sels[0] || '', selector_fallbacks: sels.slice(1),
-          description: 'Click ' + (el.textContent||'').trim().slice(0,40)});
+          description: 'Click ' + friendlyName(el)});
   }, true);
 
   document.addEventListener('change', function(e) {
     var el = e.target;
     if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA'
         && el.tagName !== 'SELECT') return;
+    // Checkboxes/radios are clicks, not typed text — the click handler covers
+    // them.
+    if (el.type === 'checkbox' || el.type === 'radio') return;
     var sels = buildSelectors(el);
-    var v = el.tagName === 'SELECT'
-        ? el.options[el.selectedIndex] && el.options[el.selectedIndex].value
+    var isSel = el.tagName === 'SELECT';
+    var v = isSel
+        ? (el.options[el.selectedIndex] && el.options[el.selectedIndex].value)
         : el.value;
+    // Never record the literal password.
+    var shown = (el.type === 'password') ? '••••••' : String(v || '');
     send({type: 'type', target: sels[0] || '', selector_fallbacks: sels.slice(1),
           value: v || '',
-          description: 'Type into ' + (el.name||el.id||el.tagName)});
+          description: (isSel ? 'Choose "' : 'Type "') + shown.slice(0,40) +
+                       '" in ' + fieldLabel(el)});
   }, true);
 
   document.addEventListener('submit', function(e) {
     var el = e.target;
     var sels = buildSelectors(el);
     send({type: 'click', target: sels[0] || '', selector_fallbacks: sels.slice(1),
-          description: 'Submit form'});
+          description: 'Submit the form'});
   }, true);
 
   // Throttled scroll capture (every 500ms)

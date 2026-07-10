@@ -66,6 +66,18 @@ void AutomationSchedulerService::OnTriggerFired(const Script& script,
   ShowAutomationNotification(profile_, script.id, script.name,
                              "Scheduled run starting…");
 
+  // MoltBrowser: persist the fire time BEFORE the run so restart catch-up and
+  // interval phase-tracking work across restarts (the scheduler reads
+  // trigger.last_fired_unix). Written to disk here because the run reloads a
+  // fresh copy; its later stats-Save preserves this field.
+  if (storage_) {
+    if (auto fresh = storage_->Load(script.id)) {
+      fresh->trigger.last_fired_unix =
+          static_cast<int64_t>(fired_at.InSecondsFSinceUnixEpoch());
+      storage_->Save(*fresh);
+    }
+  }
+
   // Headless if TRUSTED+, otherwise foreground tab so user sees activity.
   bool headless = script.security.trust >= TrustLevel::TRUSTED;
   // Pass by const ref; the helper will reload a fresh copy from storage

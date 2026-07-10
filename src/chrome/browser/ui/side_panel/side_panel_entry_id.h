@@ -42,6 +42,7 @@
   V(kComments, kActionSidePanelShowComments, "Comments")                      \
   V(kGlic, kActionSidePanelShowGlic, "Glic")                                  \
   V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")               \
+  V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                  \
   /* Extensions (nothing more should be added below here) */                  \
   V(kExtension, std::nullopt, "Extension")
 

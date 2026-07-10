@@ -875,48 +875,28 @@ void ToolbarView::Init() {
     AddChildView(std::move(molt_ai_button));
   }
 
-  // MoltBrowser: Web Automation record button. Toggles recording on the
-  // currently active tab. On stop, saves the script and opens the
-  // automation manager. Label flips between "Record" (idle) and
-  // "Stop" (recording) so the user always sees the current state.
+  // MoltBrowser: "Agent mode" button — toggles the Agent automation studio side
+  // panel (kMoltAgent), which swaps with the AI chat panel. Recording start/stop
+  // plus the whole workflow library / editor / scheduler now live inside that
+  // panel, so this button just opens it (mirrors the AI mode button).
   {
-    auto rec_button = std::make_unique<ToolbarButton>();
-    ToolbarButton* rec_ptr = rec_button.get();
-
-    rec_ptr->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    // Initial idle label.
-    rec_ptr->SetHighlight(u"Agent mode", std::nullopt);
-    rec_ptr->SetTooltipText(u"Agent mode — record this tab as an automation agent script");
-    rec_ptr->SetVectorIcon(vector_icons::kScreenRecordIcon);
-
-    rec_ptr->SetCallback(base::BindRepeating(
-        [](Browser* browser, ToolbarButton* btn) {
-          if (!browser || !browser->tab_strip_model()) return;
-          using Helper = molt_ai::automation::AutomationRecorderTabHelper;
-          content::WebContents* target = Helper::GetActivelyRecordingContents();
-          if (!target) {
-            target = browser->tab_strip_model()->GetActiveWebContents();
+    auto agent_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+        [](Browser* browser) {
+          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
+          if (!side_panel_ui) {
+            return;
           }
-          if (!target) return;
-          Helper::CreateForWebContents(target);
-          auto* helper = Helper::FromWebContents(target);
-          if (helper)
-            helper->Toggle(browser->profile());
-          // Refresh label/icon to reflect new state.
-          if (Helper::IsAnyRecording()) {
-            btn->SetHighlight(u"Stop", SkColorSetRGB(0xDC, 0x26, 0x26));
-            btn->SetTooltipText(
-                u"Stop recording and save this script");
-            btn->SetVectorIcon(vector_icons::kStopCircleIcon);
-          } else {
-            btn->SetHighlight(u"Agent mode", std::nullopt);
-            btn->SetTooltipText(
-                u"Agent mode — record this tab as an automation agent script");
-            btn->SetVectorIcon(vector_icons::kScreenRecordIcon);
-          }
+          side_panel_ui->Toggle(
+              SidePanelEntryKey(SidePanelEntryId::kMoltAgent),
+              SidePanelOpenTrigger::kToolbarButton);
         },
-        browser_, rec_ptr));
-    AddChildView(std::move(rec_button));
+        browser_));
+    agent_button->SetHighlight(u"Agent mode", std::nullopt);
+    agent_button->SetTooltipText(
+        u"Toggle Agent mode — record, edit, run & schedule web automations");
+    agent_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+    agent_button->SetVectorIcon(vector_icons::kScreenRecordIcon);
+    AddChildView(std::move(agent_button));
   }
 
   // MoltBrowser: the MoltNet (Tor exit-country) + Import buttons are created

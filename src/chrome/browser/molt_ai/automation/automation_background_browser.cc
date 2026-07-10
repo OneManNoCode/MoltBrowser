@@ -114,10 +114,12 @@ class BackgroundRunHolder {
 
 }  // namespace
 
-void RunScriptInBackgroundBrowser(Profile* profile,
-                                  const Script& script,
-                                  bool minimize,
-                                  size_t start_index) {
+void RunScriptInBackgroundBrowser(
+    Profile* profile,
+    const Script& script,
+    bool minimize,
+    size_t start_index,
+    const std::map<std::string, std::string>& variable_overrides) {
   if (!profile) {
     LOG(WARNING) << "[MoltAutomation] no profile, skipping background run";
     return;
@@ -174,6 +176,14 @@ void RunScriptInBackgroundBrowser(Profile* profile,
     LOG(WARNING) << "[MoltAutomation] failed to reload script id=" << script.id;
     browser->window()->Close();
     return;
+  }
+
+  // MoltBrowser: apply one-off run-time variable overrides ("Run with these
+  // values" from the studio) ON TOP of the saved defaults, after the reload so
+  // they are not lost. The saved workflow on disk is untouched; only this run
+  // sees them. The scheduler passes no overrides → uses the saved defaults.
+  for (const auto& kv : variable_overrides) {
+    fresh->default_variables[kv.first] = kv.second;
   }
 
   // The holder self-destructs when the run finishes.

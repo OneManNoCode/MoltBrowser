@@ -103,6 +103,33 @@ void AutomationRecorderTabHelper::Toggle(Profile* profile) {
   }
 }
 
+void AutomationRecorderTabHelper::StartRecording(
+    StepCapturedCallback on_step) {
+  content::WebContents* wc = &GetWebContents();
+  if (!rec_) {
+    rec_ = std::make_unique<AutomationRecorder>(wc);
+  }
+  if (rec_->is_recording()) {
+    return;
+  }
+  LOG(INFO) << "[MoltAutomation] studio: start recording on tab";
+  rec_->Start(std::move(on_step));
+  g_recording_contents = wc;
+}
+
+Script AutomationRecorderTabHelper::StopRecording() {
+  if (!rec_ || !rec_->is_recording()) {
+    return Script();
+  }
+  if (g_recording_contents == &GetWebContents()) {
+    g_recording_contents = nullptr;
+  }
+  Script s = rec_->Stop();
+  LOG(INFO) << "[MoltAutomation] studio: stop recording, captured "
+            << static_cast<int>(s.steps.size()) << " steps (draft)";
+  return s;
+}
+
 WEB_CONTENTS_USER_DATA_KEY_IMPL(AutomationRecorderTabHelper);
 
 }  // namespace automation

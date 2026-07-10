@@ -575,7 +575,8 @@
   E(kActionSidePanelShowSideSearch) \
   E(kActionSidePanelShowUserNote) \
   E(kActionSidePanelShowMerchantTrust) \
-  E(kActionSidePanelShowMoltAiChat)
+  E(kActionSidePanelShowMoltAiChat) \
+  E(kActionSidePanelShowMoltAgent)
 
 #define TOOLBAR_PINNABLE_ACTION_IDS \
   E(kActionHome, IDC_HOME) \

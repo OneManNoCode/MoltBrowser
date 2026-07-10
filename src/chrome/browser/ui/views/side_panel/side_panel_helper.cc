@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/views/side_panel/history/history_side_panel_coordinator.h"
 #include "chrome/browser/ui/views/side_panel/history_clusters/history_clusters_side_panel_coordinator.h"
 #include "chrome/browser/ui/views/side_panel/reading_list/reading_list_side_panel_coordinator.h"
+#include "chrome/browser/molt_ai/side_panel/agent_side_panel_web_view.h"
 #include "chrome/browser/molt_ai/side_panel/ai_chat_side_panel_web_view.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/webui_browser/webui_browser.h"
@@ -99,6 +100,26 @@ void SidePanelHelper::PopulateGlobalEntries(
   // AI-mode control.
   molt_ai_entry->set_should_show_ephemerally_in_toolbar(false);
   window_registry->Register(std::move(molt_ai_entry));
+
+  // MoltBrowser: Add the Agent-mode automation studio side panel. It is a
+  // second kContent entry, so it shares the single content side panel with the
+  // AI chat entry — opening Agent mode auto-swaps out the AI chat panel and
+  // vice-versa (exactly the desired mutual exclusivity). Same header/ephemeral
+  // suppression as the chat panel: the page draws its own header and the
+  // toolbar "Agent mode" button is the one control.
+  auto molt_agent_entry = std::make_unique<SidePanelEntry>(
+      SidePanelEntry::Key(SidePanelEntry::Id::kMoltAgent),
+      base::BindRepeating(
+          [](Browser* browser, SidePanelEntryScope& scope)
+              -> std::unique_ptr<views::View> {
+            return std::make_unique<AgentSidePanelWebView>(browser);
+          },
+          base::Unretained(browser)),
+      /*default_content_width_callback=*/base::BindRepeating(
+          []() { return 480; }));
+  molt_agent_entry->set_should_show_header(false);
+  molt_agent_entry->set_should_show_ephemerally_in_toolbar(false);
+  window_registry->Register(std::move(molt_agent_entry));
 }
 
 // static
