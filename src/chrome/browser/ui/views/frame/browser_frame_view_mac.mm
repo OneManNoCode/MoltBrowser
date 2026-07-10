@@ -465,14 +465,10 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
   auto* theme_service = ThemeServiceFactory::GetForProfile(
       GetBrowserView()->browser()->profile());
 
-  // MoltBrowser: under the glass toolbar, skip the opaque frame fill for a
-  // normal window with no custom theme, so the window's NSVisualEffectView
-  // vibrancy shows through the frame / tab-strip band as real glass. A custom
-  // user theme still paints its frame (the user expects their theme image).
-  const bool glass_frame =
-      base::FeatureList::IsEnabled(features::kGlassToolbar) &&
-      GetBrowserView()->GetIsNormalType() && theme_service->UsingSystemTheme();
-  if (!glass_frame) {
+  // MoltBrowser: paint the frame / tab-strip band with the (now near-black)
+  // frame color, fully opaque, so the top chrome reads as one sheet of black
+  // glass with the toolbar. A custom user theme still paints its own frame.
+  {
     SkColor frame_color = GetFrameColor(BrowserFrameActiveState::kUseCurrent);
     canvas->DrawColor(frame_color);
   }

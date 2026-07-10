@@ -294,20 +294,18 @@ void LiveToolbarBackground::Paint(gfx::Canvas* canvas,
                                   views::View* view) const {
   SkColor toolbar_color = view->GetColorProvider()->GetColor(kColorToolbar);
 
-  // MoltBrowser: paint only a THIN translucent veil (not the opaque ground) so
-  // the window's NSVisualEffectView vibrancy shows through the toolbar as real
-  // frosted glass. The veil keeps light toolbar text/icons legible over a
-  // bright desktop and, if vibrancy is ever absent, degrades to a faint dark
-  // wash rather than a broken/see-through bar.
-  canvas->FillRect(view->GetLocalBounds(),
-                   SkColorSetA(toolbar_color, 0x59));  // ~35% dark glass veil
+  // MoltBrowser: paint the FULLY OPAQUE black-glass ground (kColorToolbar is
+  // now near-black). Not see-through — the "glass" comes from the black tint
+  // plus the specular top sheen + hairline below and the floating buttons, not
+  // from translucency. This keeps toolbar text/icons maximally legible.
+  canvas->FillRect(view->GetLocalBounds(), toolbar_color);  // opaque black glass
 
   // MoltBrowser: sell the glass with a top-down specular sheen over the dark
   // ground plus a 1px specular top hairline. Painted unconditionally (whether
   // or not a live frame reflection exists below).
   {
     SkColor4f sheen[] = {
-        SkColor4f::FromColor(SkColorSetA(SK_ColorWHITE, 0x1A)),  // ~0.10
+        SkColor4f::FromColor(SkColorSetA(SK_ColorWHITE, 0x24)),  // ~0.14
         SkColor4f::FromColor(SK_ColorTRANSPARENT)};
     SkPoint sheen_pts[] = {SkPoint::Make(0, 0),
                            SkPoint::Make(0, view->height() * 0.6f)};

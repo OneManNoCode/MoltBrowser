@@ -6187,15 +6187,9 @@ void BrowserView::FrameColorsChanged() {
     web_app_window_title_->SetBackgroundColor(frame_color);
     web_app_window_title_->SetEnabledColor(caption_color);
   }
-  // MoltBrowser: on the glass toolbar, keep the widget background TRANSPARENT so
-  // the transparent chrome region stays clear to the window's NSVisualEffectView
-  // vibrancy (real frosted glass). Web content stays opaque via its own
-  // compositor quad. Off-flag: unchanged opaque toolbar background.
-  if (base::FeatureList::IsEnabled(features::kGlassToolbar)) {
-    GetWidget()->SetBackgroundColor(SK_ColorTRANSPARENT);
-  } else {
-    GetWidget()->SetBackgroundColor(kColorToolbar);
-  }
+  // MoltBrowser: the glass toolbar is an opaque black-glass sheet, so keep the
+  // widget background opaque (near-black kColorToolbar) — no transparency.
+  GetWidget()->SetBackgroundColor(kColorToolbar);
 }
 
 void BrowserView::UpdateAccessibleNameForRootView() {

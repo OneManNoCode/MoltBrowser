@@ -333,6 +333,33 @@ std::u16string CountryFlagEmoji(const std::string& cc) {
   return out;
 }
 
+// MoltBrowser: the "Local AI" toolbar button — the hero control on the black
+// glass toolbar. It carries a violet accent (a violet border plus a subtly
+// BLENDED violet pill, and a violet ink-drop when the AI side panel is active)
+// while forcing the label text to bright white so "Local AI" stays legible in
+// every state. This avoids the violet-on-violet legibility trap of the default
+// solid-fill highlight, and matches the Liquid Glass concept mockup.
+class LocalAiToolbarButton : public ToolbarButton {
+  METADATA_HEADER(LocalAiToolbarButton, ToolbarButton)
+
+ public:
+  explicit LocalAiToolbarButton(PressedCallback callback)
+      : ToolbarButton(std::move(callback)) {}
+  LocalAiToolbarButton(const LocalAiToolbarButton&) = delete;
+  LocalAiToolbarButton& operator=(const LocalAiToolbarButton&) = delete;
+  ~LocalAiToolbarButton() override = default;
+
+ protected:
+  // Blend the highlight (violet) into the bar as a subtle tint rather than a
+  // solid slab, so it reads as premium glass, not a saturated blob.
+  bool ShouldBlendHighlightColor() const override { return true; }
+  // Keep the label crisp white over the violet tint (readable in idle AND when
+  // the AI side panel is active/toggled).
+  std::optional<SkColor> GetHighlightTextColor() const override {
+    return SK_ColorWHITE;
+  }
+};
+
 // MoltBrowser: Toolbar control for MoltNet (Tor) privacy routing. Left-click
 // opens a rich native menu with (1) a live connection-status line, (2) an
 // "Enable MoltNet Privacy Routing" toggle that launches/stops the bundled
@@ -508,6 +535,9 @@ class TorExitCountryButton : public ToolbarButton,
   const std::vector<std::string> country_codes_;
   base::WeakPtrFactory<TorExitCountryButton> weak_factory_{this};
 };
+
+BEGIN_METADATA(LocalAiToolbarButton)
+END_METADATA
 
 BEGIN_METADATA(TorExitCountryButton)
 END_METADATA
@@ -817,7 +847,7 @@ void ToolbarView::Init() {
   // where the Google avatar button used to live so the primary on-device AI
   // feature is one click away.
   {
-    auto molt_ai_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+    auto molt_ai_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
         [](Browser* browser) {
           SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
           if (!side_panel_ui) {
@@ -829,9 +859,11 @@ void ToolbarView::Init() {
         },
         browser_));
     // SetHighlight is the public API for showing a label on a ToolbarButton
-    // (SetText is intentionally private). Pass nullopt for the color to use
-    // the default theme color.
-    molt_ai_button->SetHighlight(u"Local AI", std::nullopt);
+    // (SetText is intentionally private). MoltBrowser: give the primary on-device
+    // AI button a signature violet accent (light violet label/border + faint
+    // violet pill) so it reads as the hero control on the dark glass toolbar,
+    // matching the Liquid Glass concept mockup.
+    molt_ai_button->SetHighlight(u"Local AI", SkColorSetRGB(0xA7, 0x8B, 0xFA));
     molt_ai_button->SetTooltipText(
         u"Toggle MoltBrowser AI Chat — runs locally on your device (⌘⇧L)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);

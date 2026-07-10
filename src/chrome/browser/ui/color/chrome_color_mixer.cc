@@ -1163,8 +1163,10 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
   // below still overrides for accessibility.
   if (base::FeatureList::IsEnabled(features::kGlassToolbar)) {
     // Glass ground for the bar (bookmark bar / side panel / infobar derive
-    // from kColorToolbar and follow).
-    mixer[kColorToolbar] = {SkColorSetRGB(0x0B, 0x0C, 0x12)};  // #0b0c12
+    // from kColorToolbar and follow). BLACK-tinted glass (near-black with a
+    // whisper of cool), NOT a blue-gray — the top chrome reads as one sheet of
+    // black glass.
+    mixer[kColorToolbar] = {SkColorSetRGB(0x06, 0x06, 0x08)};  // near-black
     // Kill the gray hairlines that draw across the bar so it reads as one
     // seamless sheet of dark glass instead of a bordered strip.
     mixer[kColorToolbarContentAreaSeparator] = {SK_ColorTRANSPARENT};
@@ -1185,9 +1187,9 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
     mixer[kColorLocationBarBackgroundHovered] = {
         SkColorSetRGB(0x1A, 0x1C, 0x26)};
     mixer[kColorLocationBarBorder] = {SkColorSetARGB(0x14, 0xFF, 0xFF, 0xFF)};
-    // Frame behind/around the bar → deepest ambient.
-    mixer[ui::kColorFrameActive] = {SkColorSetRGB(0x06, 0x07, 0x0C)};  // #06070c
-    mixer[ui::kColorFrameInactive] = {SkColorSetRGB(0x06, 0x07, 0x0C)};
+    // Frame behind/around the bar → deepest ambient, essentially black.
+    mixer[ui::kColorFrameActive] = {SkColorSetRGB(0x03, 0x03, 0x04)};
+    mixer[ui::kColorFrameInactive] = {SkColorSetRGB(0x03, 0x03, 0x04)};
   }
 
   // Apply high contrast recipes if necessary.

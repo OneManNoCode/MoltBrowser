@@ -204,18 +204,11 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
 #if BUILDFLAG(IS_CHROMEOS)
     chromeos::ResolveInferredOpacity(params);
 #elif BUILDFLAG(IS_MAC)
-    // MoltBrowser: the glass toolbar needs a TRANSLUCENT top-level browser
-    // window so the NSVisualEffectView vibrancy behind the (transparent)
-    // toolbar shows a real desktop backdrop blur. Scope tightly to the browser
-    // frame (TYPE_WINDOW) and the kGlassToolbar flag; popups/dialogs/bubbles
-    // keep their own opacity. Web content stays opaque via its own compositor
-    // quad, so only the transparent chrome region is see-through.
-    if (base::FeatureList::IsEnabled(features::kGlassToolbar) &&
-        params->type == views::Widget::InitParams::TYPE_WINDOW) {
-      params->opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
-    } else {
-      params->opacity = views::Widget::InitParams::WindowOpacity::kOpaque;
-    }
+    // MoltBrowser: the glass toolbar is painted as a fully opaque black-glass
+    // sheet (no window translucency / vibrancy), so the browser window stays
+    // OPAQUE. Keeping it opaque also leaves the vibrancy layer in the window
+    // bridge dormant (it is gated on a translucent window).
+    params->opacity = views::Widget::InitParams::WindowOpacity::kOpaque;
 #else
     params->opacity = views::Widget::InitParams::WindowOpacity::kOpaque;
 #endif
