@@ -891,11 +891,12 @@ void ToolbarView::Init() {
               SidePanelOpenTrigger::kToolbarButton);
         },
         browser_));
-    agent_button->SetHighlight(u"Agent mode", std::nullopt);
+    // 🎬 (record & replay) emoji in the label carries the icon, matching the
+    // AI mode robot; no separate vector icon.
+    agent_button->SetHighlight(u"🎬 Agent mode", std::nullopt);
     agent_button->SetTooltipText(
         u"Toggle Agent mode — record, edit, run & schedule web automations");
     agent_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    agent_button->SetVectorIcon(vector_icons::kScreenRecordIcon);
     AddChildView(std::move(agent_button));
   }
 

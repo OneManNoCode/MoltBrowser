@@ -228,6 +228,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
       if (auto* st = storage()) {
         if (auto s = st->Load(args[1].GetString())) {
           out = s->ToJSON();
+          // The UI reads {{variable}} defaults under "variables"; expose an
+          // alias so it round-trips (the Script model stores them under
+          // "default_variables").
+          if (const base::DictValue* dv = out.FindDict("default_variables")) {
+            out.Set("variables", dv->Clone());
+          }
         }
       }
     }
@@ -239,6 +245,13 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     base::DictValue out;
     if (args.size() >= 2 && args[1].is_dict()) {
       base::DictValue in = args[1].GetDict().Clone();
+      // The UI sends variable defaults under "variables"; Script::FromJSON
+      // reads "default_variables" — copy so they persist.
+      if (const base::DictValue* vars = in.FindDict("variables")) {
+        if (!in.FindDict("default_variables")) {
+          in.Set("default_variables", vars->Clone());
+        }
+      }
       // Assign an id for brand-new (recorded / blank) workflows.
       const std::string* existing = in.FindString("id");
       if (!existing || existing->empty()) {
@@ -1223,9 +1236,14 @@ function toggleCardMenu(card,wf){
     h('div',{'class':'menu-item danger',onClick:function(){closeCardMenu();askDelete(wf);}},['\u{1F5D1}',' Delete'])
   ]);
   card.appendChild(menu);
+  // Lift this card above the following cards so the dropdown isn't clipped
+  // behind the next workflow; if it's near the bottom, open the menu upward.
+  card.style.zIndex='60';
+  var cr=card.getBoundingClientRect();
+  if(cr.bottom+150>window.innerHeight){menu.style.top='auto';menu.style.bottom='38px';}
   openCardMenu={card:card,menu:menu};
 }
-function closeCardMenu(){if(openCardMenu){if(openCardMenu.menu.parentNode)openCardMenu.menu.parentNode.removeChild(openCardMenu.menu);openCardMenu=null;}}
+function closeCardMenu(){if(openCardMenu){if(openCardMenu.card)openCardMenu.card.style.zIndex='';if(openCardMenu.menu.parentNode)openCardMenu.menu.parentNode.removeChild(openCardMenu.menu);openCardMenu=null;}}
 document.addEventListener('click',function(e){
   if(openCardMenu&&!openCardMenu.menu.contains(e.target))closeCardMenu();
   if(addMenuOpen&&!$('addMenu').contains(e.target)&&e.target!==$('addStepBtn'))closeAddMenu();
@@ -1555,7 +1573,11 @@ function addStep(t){
 }
 
 /* editor bottom bar */
-$('edSaveBtn').addEventListener('click',function(){saveEditor();});
+$('edSaveBtn').addEventListener('click',function(){
+  saveEditor().then(function(id){
+    if(id!=null){ showView('library'); loadLibrary(); }
+  });
+});
 $('edRunBtn').addEventListener('click',function(){
   saveEditor(true).then(function(id){if(id!=null)runWorkflowFlow(id);});
 });

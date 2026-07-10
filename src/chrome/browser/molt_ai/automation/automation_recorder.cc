@@ -11,6 +11,7 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "url/gurl.h"
@@ -191,37 +192,11 @@ const char kRecorderJS[] = R"JS(
     }
   }, 600);
 
-  // ---- Recording overlay banner ----
-  // A small fixed-position chip in the bottom right so the user always
-  // sees that recording is active and how many steps were captured.
-  function renderOverlay() {
-    var el = document.getElementById('__moltRecOverlay');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = '__moltRecOverlay';
-      el.style.cssText = [
-        'position:fixed','right:14px','bottom:14px','z-index:2147483647',
-        'padding:8px 12px','border-radius:999px',
-        'background:rgba(220,38,38,0.95)','color:white',
-        'font-family:-apple-system,system-ui,sans-serif','font-size:13px',
-        'font-weight:600','box-shadow:0 4px 12px rgba(0,0,0,0.25)',
-        'pointer-events:none','user-select:none','letter-spacing:0.2px',
-      ].join(';');
-      el.innerHTML = '<span style="display:inline-block;width:8px;height:8px;'
-                      + 'border-radius:50%;background:white;margin-right:8px;'
-                      + 'animation:moltRecPulse 1.4s ease-in-out infinite"></span>'
-                      + '<span id="__moltRecCount">REC</span>';
-      var style = document.createElement('style');
-      style.textContent = '@keyframes moltRecPulse{'
-                          + '0%,100%{opacity:0.4}50%{opacity:1}}';
-      document.head && document.head.appendChild(style);
-      (document.body || document.documentElement).appendChild(el);
-    }
-    var c = document.getElementById('__moltRecCount');
-    if (c) c.textContent = 'REC · ' + window.__moltStepQueue.length;
-  }
-  setInterval(renderOverlay, 600);
-  renderOverlay();
+  // ---- Recording indicator ----
+  // The Agent side panel now shows the live step list + a "Recording" banner,
+  // so the old in-page REC chip is redundant (and could show a stale count).
+  // Remove any leftover overlay from a previous build and don't paint one.
+  (function(){ var el = document.getElementById('__moltRecOverlay'); if (el) el.remove(); })();
 
   console.log('[MoltAutomation] recorder injected');
 })();
@@ -306,6 +281,39 @@ void AutomationRecorder::PollPageQueue() {
 void AutomationRecorder::DocumentOnLoadCompletedInPrimaryMainFrame() {
   if (is_recording_)
     InjectRecorderJS();
+}
+
+void AutomationRecorder::DidFinishNavigation(
+    content::NavigationHandle* navigation_handle) {
+  if (!is_recording_ || !navigation_handle) {
+    return;
+  }
+  content::NavigationHandle* nav = navigation_handle;
+  // Only real, committed, primary-main-frame navigations to a NEW document.
+  if (!nav->IsInPrimaryMainFrame() || !nav->HasCommitted() ||
+      nav->IsSameDocument() || nav->IsErrorPage()) {
+    return;
+  }
+  // Only BROWSER-initiated navigations — typing a URL in the omnibox, a
+  // bookmark, or history. Renderer-initiated navigations (clicking a link or a
+  // button) are already captured as a CLICK step, so recording them again here
+  // would double them up. This is what makes "Go to example.com" the first
+  // recorded step when the user starts on the omnibox.
+  if (nav->IsRendererInitiated()) {
+    return;
+  }
+  GURL u = nav->GetURL();
+  if (!u.is_valid() || !u.SchemeIsHTTPOrHTTPS()) {
+    return;
+  }
+  Step step;
+  step.type = StepType::NAVIGATE;
+  step.target = u.spec();
+  step.description = "Go to " + std::string(u.host());
+  DeduplicateAndAppend(std::move(step));
+  seen_hosts_.insert(std::string(u.host()));
+  // Keep capturing on the freshly-loaded page.
+  InjectRecorderJS();
 }
 
 void AutomationRecorder::InjectRecorderJS() {

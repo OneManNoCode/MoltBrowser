@@ -27,6 +27,7 @@
 #include "content/public/browser/web_contents_observer.h"
 
 namespace content {
+class NavigationHandle;
 class WebContents;
 }  // namespace content
 
@@ -59,6 +60,10 @@ class AutomationRecorder : public content::WebContentsObserver {
 
   // content::WebContentsObserver — re-inject after navigation.
   void DocumentOnLoadCompletedInPrimaryMainFrame() override;
+  // Record browser-initiated navigations (typed URL / bookmark / history) as
+  // NAVIGATE steps, so the omnibox URL the user types becomes a recorded step.
+  void DidFinishNavigation(
+      content::NavigationHandle* navigation_handle) override;
 
   // Hook for the WebUI / IPC layer: receive a step JSON dict that the
   // injected recorder JS posted via chrome.send.
