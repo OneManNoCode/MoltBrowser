@@ -158,7 +158,15 @@ class AutomationRunner {
       std::vector<std::string> candidates,
       size_t index,
       std::string description,
+      std::string text_hint,
       base::OnceCallback<void(const std::string&)> cb);
+
+  // Text-anchor recovery: find the visible clickable element whose text matches
+  // the recorded hint (e.g. "Kids"), mark it, and return a unique selector.
+  // Falls through to AskLLMForSelector if no text match.
+  void ResolveByText(const std::string& text_hint,
+                     const std::string& description,
+                     base::OnceCallback<void(const std::string&)> cb);
 
   // Last-resort recovery: send page snippet + step description to the LLM
   // and ask for a CSS selector. Returns "" if the model fails.

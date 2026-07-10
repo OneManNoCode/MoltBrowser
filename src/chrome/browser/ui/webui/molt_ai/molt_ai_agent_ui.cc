@@ -10,11 +10,14 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <ctime>
 #include <map>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
@@ -212,7 +215,16 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     AllowJavascript();
     base::ListValue list;
     if (auto* st = storage()) {
-      for (const auto& s : st->ListAll()) {
+      std::vector<Script> scripts = st->ListAll();
+      // Newest activity first: most-recently-run, else most-recently-created,
+      // so a just-recorded or just-run workflow lands at the top.
+      std::sort(scripts.begin(), scripts.end(),
+                [](const Script& a, const Script& b) {
+                  int64_t ka = std::max(a.stats.last_run_unix, a.created_at_unix);
+                  int64_t kb = std::max(b.stats.last_run_unix, b.created_at_unix);
+                  return ka > kb;
+                });
+      for (const auto& s : scripts) {
         list.Append(WorkflowSummary(s));
       }
     }
@@ -344,6 +356,9 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         base::DictValue d;
         d.Set("id", id);
         d.Set("ok", s->stats.last_failed_step_index < 0);
+        // Which step failed (0-based; -1 if the run succeeded), so the panel
+        // can say "Failed at step N" instead of a bare "failed".
+        d.Set("failedStepIndex", s->stats.last_failed_step_index);
         d.Set("message", s->stats.last_result.empty() ? "Finished"
                                                        : s->stats.last_result);
         FireWebUIListener("run-complete", base::Value(std::move(d)));
@@ -1627,14 +1642,18 @@ cr.addWebUIListener('run-progress',function(d){
 });
 cr.addWebUIListener('run-complete',function(d){
   if(!d)return;
-  activeRun={id:d.id,done:true,ok:!!d.ok,message:d.message||(d.ok?'All done':'Run failed'),
+  var fi=(typeof d.failedStepIndex==='number')?d.failedStepIndex:-1;
+  var msg=d.message||(d.ok?'All done':'Run failed');
+  if(!d.ok && fi>=0) msg='Failed at step '+(fi+1)+' — '+(d.message||'element not found');
+  activeRun={id:d.id,done:true,ok:!!d.ok,message:msg,failedStepIndex:fi,
     stepIndex:activeRun?activeRun.stepIndex:0,total:activeRun?activeRun.total:0};
   paintRun();
+  // Keep failures visible longer so the user can read which step died.
   setTimeout(function(){
     activeRun=null;
     if(view==='library')loadLibrary();
     if(runSheet.open)paintRun();
-  },2600);
+  }, d.ok?2600:6000);
 });
 
 function tickerNode(){

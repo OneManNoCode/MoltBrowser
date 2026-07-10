@@ -60,6 +60,7 @@ const char kTypeIntoJSTemplate[] =
     R"((() => {
       const el = document.querySelector(%s);
       if (!el) return false;
+      el.scrollIntoView({block: 'center'});
       el.focus();
       const native = Object.getOwnPropertyDescriptor(
           el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
@@ -71,14 +72,53 @@ const char kTypeIntoJSTemplate[] =
       return true;
     })())";
 
-const char kScrollByJSTemplate[] =
-    "(() => { window.scrollBy(0, %d); return true; })()";
+// Scroll to a position. A value in [0,1] is a fraction of the scrollable
+// height (resolution-independent); a larger value is treated as a legacy
+// absolute pixel offset. scrollTo natively clamps so reflow can't overshoot.
+const char kScrollToJSTemplate[] =
+    R"JS((() => {
+      const v = parseFloat(%s);
+      if (!isFinite(v)) return true;
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const y = (v >= 0 && v <= 1) ? v * max : v;
+      window.scrollTo(0, y);
+      return true;
+    })())JS";
 
 const char kExtractJSTemplate[] =
     R"((() => {
       const els = Array.from(document.querySelectorAll(%s));
       return els.map(e => (e.textContent || '').trim());
     })())";
+
+// Text-anchor fallback: find the VISIBLE clickable element whose trimmed text
+// equals (then contains) the recorded hint, tag it with a unique temp
+// attribute, and return a guaranteed-unique selector the click/type JS can
+// resolve. This is what recovers "the link that says Kids" when the recorded
+// CSS selectors drift or were never unique.
+const char kFindByTextJSTemplate[] =
+    R"JS((() => {
+      try {
+        const want = %s;
+        const wl = String(want).replace(/\s+/g,' ').trim().toLowerCase();
+        if (wl.length < 1) return '';
+        const q = 'a,button,[role="button"],[role="link"],[role="tab"],' +
+                  '[role="menuitem"],input[type="submit"],input[type="button"],' +
+                  'summary,label,[onclick]';
+        const nodes = Array.from(document.querySelectorAll(q));
+        const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        const tx  = e => ((e.textContent || e.value || e.getAttribute('aria-label') || '')).replace(/\s+/g,' ').trim();
+        let cand = nodes.filter(e => vis(e) && tx(e).toLowerCase() === wl);
+        if (!cand.length && wl.length >= 2)
+          cand = nodes.filter(e => vis(e) && tx(e).toLowerCase().includes(wl));
+        if (!cand.length) return '';
+        cand.sort((a,b) => tx(a).length - tx(b).length);
+        const el = cand[0], mark = 'data-molt-target';
+        document.querySelectorAll('['+mark+']').forEach(n => n.removeAttribute(mark));
+        el.setAttribute(mark, '1');
+        return '['+mark+'="1"]';
+      } catch (e) { return ''; }
+    })())JS";
 
 // JSON-encode a string for safe embedding in JS source.
 std::string JSQuote(const std::string& s) {
@@ -301,13 +341,33 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
     // haven't exhausted them, re-dispatch after exponential backoff.
     if (current_index_ < script_.steps.size()) {
       const Step& s = script_.steps[current_index_];
-      if (step_attempt_ < s.retries) {
+      // Recorded interaction steps default to retries=0, but pages load and
+      // settle asynchronously, so an element often isn't there the instant a
+      // step runs (the classic "clicked before the page loaded"). Poll the
+      // element into existence with exponential backoff — this is what makes a
+      // click effectively "wait for the page / dynamic content".
+      int effective_retries = s.retries;
+      if (effective_retries == 0) {
+        switch (s.type) {
+          case StepType::CLICK:
+          case StepType::TYPE:
+          case StepType::KEYPRESS:
+          case StepType::WAIT_FOR:
+          case StepType::ASSERT:
+          case StepType::EXTRACT:
+            effective_retries = 10;  // ~250ms..5s backoff, ~30s total budget
+            break;
+          default:
+            break;
+        }
+      }
+      if (step_attempt_ < effective_retries) {
         step_attempt_++;
         int backoff_ms = 250 * (1 << (step_attempt_ - 1));  // 250, 500, 1000...
         if (backoff_ms > 5000) backoff_ms = 5000;
         LOG(INFO) << "[Automation] step " << current_index_
                   << " failed (" << note << "); retry "
-                  << step_attempt_ << "/" << s.retries
+                  << step_attempt_ << "/" << effective_retries
                   << " in " << backoff_ms << "ms";
         base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
             FROM_HERE,
@@ -452,10 +512,16 @@ void AutomationRunner::TryNextSelector(
     std::vector<std::string> candidates,
     size_t index,
     std::string description,
+    std::string text_hint,
     base::OnceCallback<void(const std::string&)> cb) {
   if (index >= candidates.size()) {
-    // All recorded selectors failed. Try LLM-based recovery if we have a
-    // runtime and a description to ground the request in.
+    // All recorded CSS selectors failed. Recover by matching the element's
+    // recorded VISIBLE TEXT first (cheap + far more reliable than the LLM),
+    // then fall back to LLM-based recovery.
+    if (!text_hint.empty() && target_contents_) {
+      ResolveByText(text_hint, description, std::move(cb));
+      return;
+    }
     if (ai_runtime_ && !description.empty() && target_contents_) {
       AskLLMForSelector(description, std::move(cb));
       return;
@@ -471,7 +537,7 @@ void AutomationRunner::TryNextSelector(
   EvalJS(js, base::BindOnce(
                   [](base::WeakPtr<AutomationRunner> self,
                      std::vector<std::string> cands, size_t idx,
-                     std::string desc, std::string current,
+                     std::string desc, std::string hint, std::string current,
                      base::OnceCallback<void(const std::string&)> cb,
                      base::Value v) {
                     if (!self) return;
@@ -480,10 +546,11 @@ void AutomationRunner::TryNextSelector(
                       return;
                     }
                     self->TryNextSelector(std::move(cands), idx + 1,
-                                          std::move(desc), std::move(cb));
+                                          std::move(desc), std::move(hint),
+                                          std::move(cb));
                   },
                   self, std::move(candidates), index, std::move(description),
-                  sel, std::move(cb)));
+                  std::move(text_hint), sel, std::move(cb)));
 }
 
 void AutomationRunner::ResolveSelector(
@@ -497,13 +564,31 @@ void AutomationRunner::ResolveSelector(
   for (const auto& f : s.selector_fallbacks)
     candidates.push_back(Resolve(f));
 
-  if (candidates.empty()) {
+  // Recorded visible-text anchor ("Kids") for text-match recovery. Old
+  // recordings have no extra.text — fall back to the first quoted token in the
+  // description (e.g. Click "Kids").
+  std::string text_hint;
+  if (s.extra.is_dict()) {
+    if (auto* t = s.extra.GetDict().FindString("text"))
+      text_hint = *t;
+  }
+  if (text_hint.empty()) {
+    size_t a = s.description.find('"');
+    if (a != std::string::npos) {
+      size_t b = s.description.find('"', a + 1);
+      if (b != std::string::npos)
+        text_hint = s.description.substr(a + 1, b - a - 1);
+    }
+  }
+  text_hint = Resolve(text_hint);  // {{variable}} substitution
+
+  if (candidates.empty() && text_hint.empty()) {
     std::move(cb).Run("");
     return;
   }
 
   TryNextSelector(std::move(candidates), 0, Resolve(s.description),
-                  std::move(cb));
+                  std::move(text_hint), std::move(cb));
 }
 
 namespace {
@@ -517,6 +602,37 @@ constexpr char kPageSnippetJS[] =
     "})()";
 
 }  // namespace
+
+void AutomationRunner::ResolveByText(
+    const std::string& text_hint,
+    const std::string& description,
+    base::OnceCallback<void(const std::string&)> cb) {
+  // Mark the visible clickable element whose text matches the hint and return
+  // its unique temp selector; if nothing matches, fall through to the LLM.
+  std::string js =
+      base::StringPrintf(kFindByTextJSTemplate, JSQuote(text_hint).c_str());
+  auto self = weak_factory_.GetWeakPtr();
+  EvalJS(js, base::BindOnce(
+                 [](base::WeakPtr<AutomationRunner> self, std::string desc,
+                    base::OnceCallback<void(const std::string&)> cb,
+                    base::Value v) {
+                   if (!self) {
+                     return;
+                   }
+                   std::string sel = v.is_string() ? v.GetString() : "";
+                   if (!sel.empty()) {
+                     std::move(cb).Run(sel);
+                     return;
+                   }
+                   if (self->ai_runtime_ && !desc.empty() &&
+                       self->target_contents_) {
+                     self->AskLLMForSelector(desc, std::move(cb));
+                     return;
+                   }
+                   std::move(cb).Run("");
+                 },
+                 self, description, std::move(cb)));
+}
 
 void AutomationRunner::AskLLMForSelector(
     const std::string& description,
@@ -582,7 +698,16 @@ void AutomationRunner::DoNavigate(const Step& s) {
   target_contents_->GetController().LoadURL(
       url, content::Referrer(),
       ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
-  OnStepFinished(true, "Navigated to " + url.spec());
+  // Give the navigation time to commit + begin rendering before the next step
+  // runs — otherwise a following click lands on a blank page. Late / SPA
+  // content that renders after this is covered by the next step's retry budget
+  // (see OnStepFinished). Longer than a normal step to absorb page load.
+  std::string note = "Navigated to " + url.spec();
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AutomationRunner::OnStepFinished,
+                     weak_factory_.GetWeakPtr(), true, std::move(note)),
+      base::Seconds(2));
 }
 
 void AutomationRunner::DoClick(const Step& s) {
@@ -637,13 +762,16 @@ void AutomationRunner::DoType(const Step& s) {
 }
 
 void AutomationRunner::DoScroll(const Step& s) {
-  int px = 600;
-  if (!s.value.empty()) {
-    int parsed = 0;
-    if (base::StringToInt(s.value, &parsed))
-      px = parsed;
+  std::string js;
+  if (s.value.empty()) {
+    // Free-form "scroll down" (e.g. LLM step): one screenful, viewport-based.
+    js = "(() => { window.scrollBy(0, Math.round(window.innerHeight * 0.85));"
+         " return true; })()";
+  } else {
+    // Recorded position: a fraction in [0,1] (resolution-independent) or a
+    // legacy absolute pixel offset.
+    js = base::StringPrintf(kScrollToJSTemplate, JSQuote(s.value).c_str());
   }
-  std::string js = base::StringPrintf(kScrollByJSTemplate, px);
   EvalJS(js, base::BindOnce(
                   [](base::WeakPtr<AutomationRunner> self, base::Value) {
                     if (!self) return;

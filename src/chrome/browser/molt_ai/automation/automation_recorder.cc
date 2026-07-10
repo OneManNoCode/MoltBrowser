@@ -35,40 +35,55 @@ const char kRecorderJS[] = R"JS(
     return '"' + String(s).replace(/[\\"]/g, function(c){return '\\'+c;}) + '"';
   }
 
+  function uniq(sel){ try { return document.querySelectorAll(sel).length === 1; } catch(e){ return false; } }
+  function goodId(v){ return v && /^[A-Za-z][\w-]*$/.test(v); }
+  // Build an ORDERED list of selectors, UNIQUE ones first. A selector value
+  // shared across the page (e.g. Nike's data-testid="link" on every nav link)
+  // is only kept as a weak fallback, never the primary target — that was the
+  // root cause of "Selector did not match" on replay.
   function buildSelectors(el) {
-    var out = [];
-    var attrs = ['data-testid', 'data-test', 'data-cy', 'data-qa'];
+    var strong = [];  // verified to match exactly ONE element
+    var weak = [];    // useful but not unique — kept as ordered fallbacks
+    function add(sel){
+      if (!sel) return;
+      if (uniq(sel)) { if (strong.indexOf(sel) < 0) strong.push(sel); }
+      else if (weak.indexOf(sel) < 0) weak.push(sel);
+    }
+    var tag = (el.tagName || '').toLowerCase();
+    if (goodId(el.id)) add('#' + CSS.escape(el.id));
+    // Attribute selectors, each tried bare, tag-scoped, and id-ancestor-scoped
+    // so a value shared across the page can still resolve to a unique node.
+    var attrs = ['data-testid','data-test','data-cy','data-qa','name','aria-label'];
     for (var i = 0; i < attrs.length; i++) {
       var v = el.getAttribute && el.getAttribute(attrs[i]);
-      if (v) out.push('[' + attrs[i] + '=' + quote(v) + ']');
+      if (!v) continue;
+      var b = '[' + attrs[i] + '=' + quote(v) + ']';
+      add(b);
+      add(tag + b);
+      var anc = el.closest && el.closest('[id]');
+      if (anc && anc !== el && goodId(anc.id)) add('#' + CSS.escape(anc.id) + ' ' + b);
     }
-    if (el.id) out.push('#' + CSS.escape(el.id));
-    if (el.name) out.push('[name=' + quote(el.name) + ']');
-    var aria = el.getAttribute && el.getAttribute('aria-label');
-    if (aria) out.push('[aria-label=' + quote(aria) + ']');
-    var role = el.getAttribute && el.getAttribute('role');
-    if (role && el.textContent) {
-      var t = el.textContent.trim().slice(0, 60);
-      out.push('[role=' + quote(role) + ']'
-               + ' /* ' + (t || '') + ' */');
-    }
-    // CSS path fallback (parent>parent>...>tag:nth-of-type(n))
-    var node = el;
-    var parts = [];
-    while (node && node.nodeType === 1 && node !== document.body
-           && parts.length < 5) {
-      var tag = node.tagName.toLowerCase();
-      var idx = 1;
-      var sib = node.previousElementSibling;
-      while (sib) {
-        if (sib.tagName === node.tagName) idx++;
-        sib = sib.previousElementSibling;
-      }
-      parts.unshift(tag + ':nth-of-type(' + idx + ')');
+    // Deterministic structural path, anchored to the nearest id ancestor.
+    var node = el, parts = [];
+    while (node && node.nodeType === 1 && node !== document.body && parts.length < 6) {
+      if (goodId(node.id)) { parts.unshift('#' + CSS.escape(node.id)); node = null; break; }
+      var t = node.tagName.toLowerCase(), idx = 1, sib = node.previousElementSibling;
+      while (sib) { if (sib.tagName === node.tagName) idx++; sib = sib.previousElementSibling; }
+      parts.unshift(t + ':nth-of-type(' + idx + ')');
       node = node.parentElement;
     }
-    if (parts.length) out.push(parts.join(' > '));
-    return out;
+    if (parts.length) add(parts.join(' > '));
+    var outSel = strong.concat(weak);
+    return outSel.length ? outSel : (tag ? [tag] : ['*']);
+  }
+
+  // The visible text of an element — recorded as a matching anchor so the
+  // runner can find "the link/button that says Kids" even if the selectors
+  // all drift.
+  function visibleText(el){
+    var t = txt(el.textContent) || txt(attr(el,'aria-label')) || txt(el.value) ||
+            txt(attr(el,'title')) || txt(attr(el,'alt')) || txt(attr(el,'placeholder'));
+    return t ? t.slice(0, 80) : '';
   }
 
   // Maintain an in-page queue. The C++ recorder polls this queue every
@@ -141,6 +156,7 @@ const char kRecorderJS[] = R"JS(
     if (!rateLimit(el, 50)) return;
     var sels = buildSelectors(el);
     send({type: 'click', target: sels[0] || '', selector_fallbacks: sels.slice(1),
+          text: visibleText(el),
           description: 'Click ' + friendlyName(el)});
   }, true);
 
@@ -176,8 +192,14 @@ const char kRecorderJS[] = R"JS(
   document.addEventListener('scroll', function() {
     if (scrollThrottle) return;
     scrollThrottle = setTimeout(function() {
-      send({type: 'scroll', value: String(window.scrollY),
-            description: 'Scroll to ' + window.scrollY});
+      // Record scroll as a RESOLUTION-INDEPENDENT fraction of the scrollable
+      // height (0..1), not an absolute pixel offset — so replay lands at the
+      // same relative position at any window size.
+      var max = Math.max(1, (document.documentElement.scrollHeight ||
+                             document.body.scrollHeight || 0) - window.innerHeight);
+      var frac = Math.min(1, Math.max(0, window.scrollY / max));
+      send({type: 'scroll', value: String(frac),
+            description: 'Scroll ' + Math.round(frac*100) + '% down the page'});
       scrollThrottle = null;
     }, 500);
   }, true);
@@ -350,6 +372,13 @@ void AutomationRecorder::OnStepFromInjectedJS(
     s.value = *v;
   if (auto* d = step_json.FindString("description"))
     s.description = *d;
+  // Visible-text anchor ("Kids") — stored in extra so the runner can match the
+  // element by text when the CSS selectors drift.
+  if (auto* txt = step_json.FindString("text"); txt && !txt->empty()) {
+    base::DictValue e;
+    e.Set("text", *txt);
+    s.extra = base::Value(std::move(e));
+  }
   DeduplicateAndAppend(std::move(s));
 }
 
