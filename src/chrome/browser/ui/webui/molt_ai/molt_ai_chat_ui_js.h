@@ -3264,7 +3264,8 @@ function pickAttachment() {
             attachmentPending = false;
             if (r && r.success) {
               attachmentContext =
-                  {name: f.name, text: r.text || '', truncated: !!r.truncated};
+                  {name: f.name, size: f.size, text: r.text || '',
+                   truncated: !!r.truncated};
               _renderAttachChip(f.name, f.size, 'ok',
                                 r.truncated ? '(truncated)' : '');
             } else {
@@ -3403,6 +3404,14 @@ document.addEventListener('click', function(e) {
   var wrap = document.querySelector('.mode-chip-wrap');
   if (wrap && !wrap.contains(e.target)) closeModeDropdown();
 });
+
+// Close the AI chat side panel from inside the WebUI. The panel has no
+// native window controls (it renders its own header), so ask the C++
+// handler to close the SidePanelUI. Fire-and-forget: closing tears down
+// this page, so no promise is awaited.
+function closeSidePanel() {
+  try { chrome.send('closeSidePanel', []); } catch (e) {}
+}
 
 // ---- Settings (⋯ menu) ----
 // The side-panel WebContents has no tab-strip delegate, so
@@ -3561,6 +3570,14 @@ function cancelDownload() {
 // been re-fetched, so callers (the sendMessage guard) can rely on
 // activeModelId being current. The user's pick is remembered in
 // pickedModelId even when the load fails.
+// Remember the user's last-selected model id so the next launch can
+// auto-restore it instead of resetting the chip to "Choose model".
+// Mirrors the moltTheme localStorage pattern (see applyTheme).
+function rememberLastModel(id) {
+  if (!id) return;
+  try { localStorage.setItem('moltLastModel', id); } catch (e) {}
+}
+
 function loadModel(modelId, onDone) {
   pickedModelId = modelId;
   setStatus('loading', 'Loading ' + modelId + '...');
@@ -3575,6 +3592,7 @@ function loadModel(modelId, onDone) {
   sendWithPromise('loadModel', modelId).then(function(r) {
     if (chip) chip.classList.remove('loading');
     if (r.success) {
+      rememberLastModel(modelId);
       setStatus('ready', 'Model Ready');
       clearModelSelectBanner();
       refreshModelList();
@@ -3608,6 +3626,7 @@ function loadModel(modelId, onDone) {
 function selectCloudModel(modelId) {
   activeModelId = modelId;
   pickedModelId = modelId;
+  rememberLastModel(modelId);
   // Clear any leftover local-model needs-selection/loading affordances.
   var chip = document.getElementById('modelChip');
   if (chip) {
@@ -3881,10 +3900,38 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// On startup, restore the user's last-used model so the picker no longer
+// resets to "Choose model" every launch. Only acts when nothing is already
+// active (a live-loaded local model always wins) and the remembered id is
+// still available; a since-deleted / not-installed model silently falls
+// back to "Choose model".
+function autoSelectLastModel() {
+  if (activeModelId) return;  // a loaded local or selected cloud already won
+  var savedId = null;
+  try { savedId = localStorage.getItem('moltLastModel'); } catch (e) {}
+  if (!savedId) return;
+  var m = allModels.find(function(x){ return x.model_id === savedId; });
+  if (!m) return;  // model no longer installed/available -> Choose model
+  if (m.is_cloud) {
+    // Cloud is ready-by-selection: mirror selectCloudModel()'s state set
+    // WITHOUT the dropdown toggle (the picker is closed on startup) and
+    // without re-persisting (already stored).
+    activeModelId = savedId;
+    pickedModelId = savedId;
+    sendWithPromise('loadModel', savedId).then(function(){}, function(){});
+    refreshModelChip();
+  } else if (m.is_downloaded) {
+    // Local model present on disk -> load it into memory as if picked.
+    loadModel(savedId);
+  }
+  // else: known but not downloaded -> leave the "Choose model" default.
+}
+
 // Init chip
 sendWithPromise('getModelStatus').then(function(r){
   allModels = r.models || [];
   refreshModelChip();
+  autoSelectLastModel();
 });
 
 // ---- Event Listeners ----
@@ -4263,7 +4310,15 @@ function saveCurrentConversation() {
     conversationTitle = deriveConversationTitle();
   }
   var json;
-  try { json = JSON.stringify(conversationHistory); } catch (e) { return; }
+  // Persist any attached document alongside the messages using a
+  // backward-compatible envelope so a reopened chat stays grounded in the
+  // file. With no attachment the payload stays a bare array (identical to
+  // the legacy on-disk format), so old saves and other readers are
+  // unaffected. attachmentContext.text is already capped server-side.
+  var payload = (attachmentContext && attachmentContext.text)
+      ? {v: 2, messages: conversationHistory, attachment: attachmentContext}
+      : conversationHistory;
+  try { json = JSON.stringify(payload); } catch (e) { return; }
   sendWithPromise('saveConversation', conversationId, conversationTitle, json)
       .then(function() {
         // A brand-new conversation should appear in an open drawer.
@@ -4281,13 +4336,38 @@ function loadConversationById(id) {
       return;
     }
     var msgs = [];
-    try { msgs = JSON.parse(r.history_json || '[]'); } catch (e) {}
+    var restoredAttachment = null;
+    try {
+      // Accept either the legacy bare-array format or the v2 envelope
+      // {v, messages, attachment} written by saveCurrentConversation.
+      var parsed = JSON.parse(r.history_json || '[]');
+      if (Array.isArray(parsed)) {
+        msgs = parsed;
+      } else if (parsed && Array.isArray(parsed.messages)) {
+        msgs = parsed.messages;
+        restoredAttachment = parsed.attachment || null;
+      }
+    } catch (e) {}
     if (!Array.isArray(msgs)) msgs = [];
     conversationId = r.id || id;
     conversationTitle = r.title || '';
     conversationHistory = msgs;
     pdfContext = null;
-    clearAttachment();
+    // Restore the saved attachment (and its chip) so follow-up questions in
+    // a reopened chat stay grounded in the file, instead of silently
+    // dropping it. A brand-new chat still starts clean (newChat clears it).
+    if (restoredAttachment && restoredAttachment.text) {
+      clearAttachment();
+      attachmentSeq++;
+      attachmentContext = restoredAttachment;
+      _renderAttachChip(restoredAttachment.name,
+                        restoredAttachment.size ||
+                            (restoredAttachment.text || '').length,
+                        'ok',
+                        restoredAttachment.truncated ? '(truncated)' : '');
+    } else {
+      clearAttachment();
+    }
     currentAiMessageEl = null;
     currentAiText = '';
     renderConversationDOM(msgs);

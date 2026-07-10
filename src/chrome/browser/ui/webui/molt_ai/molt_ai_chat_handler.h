@@ -114,6 +114,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // window.open there is silently dropped by views::WebView).
   // Args: [callback_id] → {success, error?}
   void HandleOpenMoltSettings(const base::ListValue& args);
+  // Close the AI chat side panel from inside the WebUI. The panel has no
+  // native header/close button (the page provides its own in-page close
+  // control), so this asks the SidePanelUI to close the kContent panel.
+  // Fire-and-forget — closing tears down this WebUI. Args: []
+  void HandleCloseSidePanel(const base::ListValue& args);
   // Open an http(s) link from a chat response in a real browser tab.
   void HandleOpenUrlInTab(const base::ListValue& args);
   // Privacy heatmap — enumerate third-party resources loaded into the

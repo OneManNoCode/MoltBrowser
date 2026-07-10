@@ -9,12 +9,15 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
+#include "components/input/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/accessibility/ax_tree_update.h"
 #include "ui/base/metadata/metadata_header_macros.h"
+#include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
 
 class Browser;
@@ -79,6 +82,27 @@ class AiChatSidePanelWebView : public views::WebView,
                                   const url::Origin& security_origin,
                                   blink::mojom::MediaStreamType type) override;
 
+  // views::WebView installs itself as the hosted WebContents' delegate but
+  // does NOT override HandleKeyboardEvent, so the default no-op drops every
+  // shortcut the renderer bounces back as unhandled — including the browser
+  // Cut/Copy/Paste/SelectAll command accelerators. That's why Cmd/Ctrl+C/V/X/A
+  // were dead in the chat composer textarea while it lived in the side panel
+  // (they work in a tab because Browser is the delegate and forwards this).
+  // Mirror SidePanelWebUIView / WebDialogView: route the event through the
+  // FocusManager so those accelerators fire.
+  bool HandleKeyboardEvent(
+      content::WebContents* source,
+      const input::NativeWebKeyboardEvent& event) override;
+
+  // views::WebView also does NOT override RunFileChooser, so the paperclip
+  // attachment picker (<input type=file>) opened no native file dialog in the
+  // side panel and the button appeared dead. Forward to FileSelectHelper
+  // exactly like Browser::RunFileChooser so the OS file picker opens.
+  void RunFileChooser(
+      content::RenderFrameHost* render_frame_host,
+      scoped_refptr<content::FileSelectListener> listener,
+      const blink::mojom::FileChooserParams& params) override;
+
  private:
   // Kick off the active-tab context push. Async: first ExecuteJS on
   // the active tab to grab innerText, then ExecuteJS on the chat
@@ -119,6 +143,11 @@ class AiChatSidePanelWebView : public views::WebView,
   // side-panel chat render an "Anonymous session" banner without having
   // to re-query the BrowserContext.
   bool last_pushed_is_anonymous_ = false;
+
+  // Routes keyboard events the renderer didn't consume back through the
+  // FocusManager so the browser Cut/Copy/Paste/SelectAll accelerators work in
+  // the chat textarea. Without it the side panel drops them.
+  views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
   base::WeakPtrFactory<AiChatSidePanelWebView> weak_factory_{this};
 };

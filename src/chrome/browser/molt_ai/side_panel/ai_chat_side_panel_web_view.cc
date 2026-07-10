@@ -14,11 +14,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/pdf/common/constants.h"
+#include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -112,6 +114,28 @@ bool AiChatSidePanelWebView::CheckMediaAccessPermission(
   return MediaCaptureDevicesDispatcher::GetInstance()
       ->CheckMediaAccessPermission(render_frame_host, security_origin, type,
                                    /*extension=*/nullptr);
+}
+
+bool AiChatSidePanelWebView::HandleKeyboardEvent(
+    content::WebContents* source,
+    const input::NativeWebKeyboardEvent& event) {
+  // Route unhandled shortcuts back through the FocusManager so the browser
+  // Cut/Copy/Paste/SelectAll accelerators fire in the chat textarea. Without
+  // this the side panel silently drops Cmd/Ctrl+C/V/X/A. Mirrors
+  // SidePanelWebUIView::HandleKeyboardEvent / WebDialogView.
+  return unhandled_keyboard_event_handler_.HandleKeyboardEvent(
+      event, GetFocusManager());
+}
+
+void AiChatSidePanelWebView::RunFileChooser(
+    content::RenderFrameHost* render_frame_host,
+    scoped_refptr<content::FileSelectListener> listener,
+    const blink::mojom::FileChooserParams& params) {
+  // Open the OS file picker for the chat's paperclip attachment input. Same
+  // path Browser::RunFileChooser takes; the base views::WebView delegate has
+  // no override, so without this the picker never appears in the side panel.
+  FileSelectHelper::RunFileChooser(render_frame_host, std::move(listener),
+                                   params);
 }
 
 void AiChatSidePanelWebView::OnTabStripModelChanged(

@@ -595,6 +595,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
         <div class="om-meta"><span id="hwGpu"></span><span id="hwRam"></span><span id="hwCores"></span></div>
       </div>
     </div>
+    <button class="icon-btn" onclick="closeSidePanel()" title="Close panel" aria-label="Close panel">&#10005;</button>
   </div>
 </div>
 <!-- Recents drawer: overlay conversation list. Backed by the

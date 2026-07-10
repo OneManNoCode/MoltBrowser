@@ -77,6 +77,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/side_panel/side_panel_entry.h"
+#include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -232,6 +235,12 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "openMoltSettings",
       base::BindRepeating(&MoltAIChatHandler::HandleOpenMoltSettings,
+                          base::Unretained(this)));
+  // Close the side panel from the in-page close control (there is no native
+  // side-panel header for the AI chat entry).
+  web_ui()->RegisterMessageCallback(
+      "closeSidePanel",
+      base::BindRepeating(&MoltAIChatHandler::HandleCloseSidePanel,
                           base::Unretained(this)));
   // Open an http(s) link from a chat response in a real browser tab
   // (the side panel swallows target=_blank). Scheme-validated here too.
@@ -4059,6 +4068,30 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
   webui_wc->GetController().LoadURL(GURL(url), content::Referrer(),
                                     ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
                                     std::string());
+}
+
+// ------------------------------------------------------------------
+// HandleCloseSidePanel: close the AI chat side panel from the in-page
+// close control. The panel's WebContents is not a tab, so
+// FindBrowserWithTab returns null — fall back to the last-active
+// browser, which hosts this panel. The AI chat entry is a kContent
+// side panel (see side_panel_helper.cc). Fire-and-forget: do NOT
+// AllowJavascript / resolve a callback because Close() tears down this
+// WebUI immediately.
+// Args: []
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleCloseSidePanel(const base::ListValue& args) {
+  content::WebContents* webui_wc = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  if (!browser) {
+    browser = chrome::FindLastActive();
+  }
+  if (!browser) {
+    return;
+  }
+  if (SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui()) {
+    side_panel_ui->Close(SidePanelEntry::PanelType::kContent);
+  }
 }
 
 // ------------------------------------------------------------------

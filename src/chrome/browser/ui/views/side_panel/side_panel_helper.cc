@@ -70,7 +70,7 @@ void SidePanelHelper::PopulateGlobalEntries(
   // MoltBrowser: Add AI Chat side panel.
   // Register directly using a lambda that captures the browser pointer.
   // This avoids needing a long-lived coordinator instance.
-  window_registry->Register(std::make_unique<SidePanelEntry>(
+  auto molt_ai_entry = std::make_unique<SidePanelEntry>(
       SidePanelEntry::Key(SidePanelEntry::Id::kMoltAiChat),
       base::BindRepeating(
           [](Browser* browser, SidePanelEntryScope& scope)
@@ -85,7 +85,14 @@ void SidePanelHelper::PopulateGlobalEntries(
       // default (upstream default is 360). Still user-resizable; a
       // user-dragged width persists per entry id and wins over this.
       /*default_content_width_callback=*/base::BindRepeating(
-          []() { return 480; })));
+          []() { return 480; }));
+  // MoltBrowser: the AI Chat page renders its OWN in-page header row
+  // (title + overflow menu + close control), so suppress the entire native
+  // side-panel header for this entry — that blanks the "AI Chat" title and
+  // removes the native close X / pin. Scoped to this entry only; every other
+  // side panel keeps its native header.
+  molt_ai_entry->set_should_show_header(false);
+  window_registry->Register(std::move(molt_ai_entry));
 }
 
 // static
