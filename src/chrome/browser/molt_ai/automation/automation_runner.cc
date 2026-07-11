@@ -10,6 +10,7 @@
 
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
@@ -19,12 +20,22 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/referrer.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -127,7 +138,90 @@ std::string JSQuote(const std::string& s) {
   return out;
 }
 
+// Encode |bitmap| to PNG and write it to |path|. Runs on a MayBlock pool
+// thread (never the UI thread). Returns true iff the file was written.
+bool EncodePngAndWrite(const SkBitmap& bitmap, const base::FilePath& path) {
+  if (bitmap.drawsNothing())
+    return false;
+  std::optional<std::vector<uint8_t>> png =
+      gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, /*discard_transparency=*/false);
+  if (!png)
+    return false;
+  return base::WriteFile(path, png.value());
+}
+
 }  // namespace
+
+// Observes the target tab after a click and fires |on_settled| once the
+// resulting navigation commits + paints, or immediately if no navigation
+// starts within the grace window, or when a hard cap elapses. This makes a
+// click that triggers a page load behave like DoNavigate: the next step waits
+// for the new page instead of racing a torn-down DOM.
+class NavigationSettleWaiter : public content::WebContentsObserver {
+ public:
+  NavigationSettleWaiter(content::WebContents* web_contents,
+                         base::TimeDelta grace,
+                         base::TimeDelta settle,
+                         base::TimeDelta max_wait,
+                         base::OnceClosure on_settled)
+      : content::WebContentsObserver(web_contents),
+        settle_(settle),
+        on_settled_(std::move(on_settled)) {
+    // No navigation within the grace window → the click didn't navigate.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&NavigationSettleWaiter::OnGraceElapsed,
+                       weak_.GetWeakPtr()),
+        grace);
+    // Hard cap so a never-finishing load can't hang the step forever.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&NavigationSettleWaiter::Fire, weak_.GetWeakPtr()),
+        max_wait);
+  }
+
+  NavigationSettleWaiter(const NavigationSettleWaiter&) = delete;
+  NavigationSettleWaiter& operator=(const NavigationSettleWaiter&) = delete;
+
+  // Note: a click is renderer-initiated, so — unlike the recorder — we must
+  // NOT filter out renderer-initiated navigations here.
+  void DidStartNavigation(content::NavigationHandle* handle) override {
+    if (handle->IsInPrimaryMainFrame() && !handle->IsSameDocument())
+      nav_started_ = true;
+  }
+
+  void DidFinishNavigation(content::NavigationHandle* handle) override {
+    if (!handle->IsInPrimaryMainFrame() || !handle->HasCommitted() ||
+        handle->IsSameDocument()) {
+      return;
+    }
+    // Let the new document paint a little before advancing.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(&NavigationSettleWaiter::Fire,
+                                  weak_.GetWeakPtr()),
+        settle_);
+  }
+
+ private:
+  void OnGraceElapsed() {
+    if (!nav_started_)
+      Fire();
+  }
+
+  void Fire() {
+    if (fired_)
+      return;
+    fired_ = true;
+    if (on_settled_)
+      std::move(on_settled_).Run();
+  }
+
+  base::TimeDelta settle_;
+  base::OnceClosure on_settled_;
+  bool nav_started_ = false;
+  bool fired_ = false;
+  base::WeakPtrFactory<NavigationSettleWaiter> weak_{this};
+};
 
 AutomationRunner::AutomationRunner(content::WebContents* target_contents,
                                     BrowserAIRuntime* ai_runtime,
@@ -156,6 +250,17 @@ void AutomationRunner::Run(Script script,
   is_running_ = true;
   cancel_requested_ = false;
   current_run_tokens_ = 0;
+  current_run_steps_.clear();
+  run_ts_ = static_cast<int64_t>(std::time(nullptr));
+  nav_waiter_.reset();
+  // Keep the tab compositing (and reporting visible to the page) for the whole
+  // run so per-step screenshots capture real pixels even when the run window is
+  // minimized in Auto mode. Released when this runner is destroyed.
+  if (target_contents_) {
+    capture_keepalive_ = target_contents_->IncrementCapturerCount(
+        gfx::Size(), /*stay_hidden=*/false, /*stay_awake=*/true,
+        /*is_activity=*/false);
+  }
   variables_.clear();
   // Seed user-supplied default variables so {{name}} substitution
   // works without an upstream EXTRACT step.
@@ -183,6 +288,9 @@ void AutomationRunner::Cancel() {
 }
 
 void AutomationRunner::ExecuteNextStep() {
+  // Guard against a stale driver post arriving after the run already ended.
+  if (!is_running_)
+    return;
   if (cancel_requested_) {
     Finish(false, "Cancelled by user");
     return;
@@ -200,6 +308,12 @@ void AutomationRunner::ExecuteNextStep() {
 
   const Step& s = script_.steps[current_index_];
   bool execute = ShouldExecuteCurrentStep();
+  // The previous step's click-settle (if any) has fully returned by now;
+  // tear it down before we dispatch the next step.
+  nav_waiter_.reset();
+  // Mark the start of this step for per-step timing (covers control-flow and
+  // action steps, and resets on each retry attempt to time the winning try).
+  step_start_ = base::TimeTicks::Now();
 
   // Control-flow steps always run for stack management. Their effect
   // when in a not-taken branch is adjusted (e.g. nested IF pushes
@@ -334,7 +448,19 @@ void AutomationRunner::OnStepTimeout() {
 }
 
 void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
+  // Ignore stale completions that arrive after the run already ended.
+  if (!is_running_)
+    return;
   step_timeout_timer_.Stop();
+  // Abandon any OTHER in-flight async work from this (now finishing / timed-out)
+  // step attempt so a late completion can't double-dispatch: a slow
+  // selector-resolve returning AFTER the step already timed out and retried
+  // would otherwise click the element twice and corrupt current_index_ /
+  // if_/loop_ stacks; a nav or click-settle firing after a terminal failure
+  // would resurrect a finished run. Everything posted below rebinds a fresh
+  // weak ptr after this point, so the retry / capture / advance path is
+  // unaffected.
+  weak_factory_.InvalidateWeakPtrs();
   EmitStepProgress(/*starting=*/false, succeeded, note);
   if (!succeeded) {
     // Retry-with-backoff: if the failed step asked for retries and we
@@ -377,20 +503,63 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
         return;
       }
     }
-    // No retries left: take a failure snapshot then finish.
-    TakeSnapshot(
-        "step_" + base::NumberToString(current_index_) + "_failed",
-        base::BindOnce(
-            [](base::WeakPtr<AutomationRunner> self, std::string note,
-               bool /*ok*/) {
-              if (!self) return;
-              self->Finish(false, note);
-            },
-            weak_factory_.GetWeakPtr(), note));
+    // No retries left: record the failed step (with a screenshot of the page
+    // as it looked at failure) for the Runs timeline, then finish.
+    CaptureStepAndThen(/*succeeded=*/false, note, /*terminal_failure=*/true);
     return;
   }
-  // Reset retry counter on successful step.
+  // Reset retry counter on successful step, record it (with a screenshot),
+  // then advance.
   step_attempt_ = 0;
+  CaptureStepAndThen(/*succeeded=*/true, note, /*terminal_failure=*/false);
+}
+
+void AutomationRunner::CaptureStepAndThen(bool succeeded,
+                                          std::string note,
+                                          bool terminal_failure) {
+  StepResult sr;
+  if (current_index_ < script_.steps.size()) {
+    sr.index = static_cast<int>(current_index_);
+    sr.type = script_.steps[current_index_].type;
+    sr.description = Resolve(script_.steps[current_index_].description);
+  }
+  sr.ok = succeeded;
+  sr.note = note;
+  sr.duration_ms = (base::TimeTicks::Now() - step_start_).InMilliseconds();
+
+  base::FilePath dir =
+      storage_ ? storage_->EnsureArtifactsDir(script_.id) : base::FilePath();
+  std::string filename;
+  base::FilePath path;
+  if (!dir.empty()) {
+    filename = "run_" + base::NumberToString(run_ts_) + "_step_" +
+               base::NumberToString(sr.index) +
+               (succeeded ? "" : "_fail") + ".png";
+    path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
+  }
+
+  auto finalize = base::BindOnce(&AutomationRunner::FinalizeStep,
+                                 weak_factory_.GetWeakPtr(), std::move(sr),
+                                 filename, note, terminal_failure);
+  if (path.empty())
+    std::move(finalize).Run(/*screenshot_ok=*/false);
+  else
+    CapturePng(path, std::move(finalize));
+}
+
+void AutomationRunner::FinalizeStep(StepResult sr,
+                                    std::string filename,
+                                    std::string note,
+                                    bool terminal_failure,
+                                    bool screenshot_ok) {
+  if (screenshot_ok)
+    sr.screenshot = filename;
+  current_run_steps_.push_back(std::move(sr));
+
+  if (terminal_failure) {
+    Finish(false, note);
+    return;
+  }
   ++current_index_;
   // Yield to message loop so the UI updates.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
@@ -399,8 +568,80 @@ void AutomationRunner::OnStepFinished(bool succeeded, const std::string& note) {
                      weak_factory_.GetWeakPtr()));
 }
 
+void AutomationRunner::CapturePng(const base::FilePath& path,
+                                  base::OnceCallback<void(bool)> done) {
+  content::RenderWidgetHostView* view =
+      target_contents_ ? target_contents_->GetRenderWidgetHostView() : nullptr;
+  if (!view || !view->IsSurfaceAvailableForCopy() ||
+      view->GetViewBounds().size().IsEmpty()) {
+    std::move(done).Run(false);
+    return;
+  }
+  // Downscale to a ~768px-wide thumbnail so per-step trace files stay small.
+  gfx::Size view_size = view->GetViewBounds().size();
+  constexpr int kMaxWidth = 768;
+  gfx::Size out_size = view_size;
+  if (view_size.width() > kMaxWidth) {
+    out_size = gfx::Size(
+        kMaxWidth,
+        std::max(1, view_size.height() * kMaxWidth / view_size.width()));
+  }
+
+  auto on_copied = base::BindOnce(
+      [](base::WeakPtr<AutomationRunner> self, base::FilePath path,
+         base::OnceCallback<void(bool)> done,
+         const content::CopyFromSurfaceResult& result) {
+        if (!self) {
+          std::move(done).Run(false);
+          return;
+        }
+        if (!result.has_value() || result.value().bitmap.drawsNothing()) {
+          std::move(done).Run(false);
+          return;
+        }
+        SkBitmap bitmap = result.value().bitmap;  // copy out before scope ends
+        base::ThreadPool::PostTaskAndReplyWithResult(
+            FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+            base::BindOnce(&EncodePngAndWrite, std::move(bitmap),
+                           std::move(path)),
+            std::move(done));
+      },
+      weak_factory_.GetWeakPtr(), path, std::move(done));
+
+  viz::CopyOutputBitmapWithMetadata empty;
+  view->CopyFromSurface(
+      gfx::Rect(),        // whole surface
+      out_size,           // scaled thumbnail
+      base::TimeDelta(),  // default timeout
+      mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(on_copied),
+                                                  base::OwnedRef(empty)));
+}
+
+void AutomationRunner::BeginClickSettle(const std::string& note) {
+  if (!target_contents_) {
+    OnStepFinished(true, note);
+    return;
+  }
+  // The settle wait can exceed the normal 5s step timeout while a page loads;
+  // re-arm generously so a slow-but-fine navigation isn't turned into a retry.
+  step_timeout_timer_.Stop();
+  step_timeout_timer_.Start(
+      FROM_HERE, base::Seconds(15),
+      base::BindOnce(&AutomationRunner::OnStepTimeout,
+                     weak_factory_.GetWeakPtr()));
+  nav_waiter_ = std::make_unique<NavigationSettleWaiter>(
+      target_contents_, /*grace=*/base::Milliseconds(350),
+      /*settle=*/base::Milliseconds(600), /*max_wait=*/base::Seconds(12),
+      base::BindOnce(&AutomationRunner::OnStepFinished,
+                     weak_factory_.GetWeakPtr(), true, note));
+}
+
 void AutomationRunner::Finish(bool success, const std::string& message) {
   is_running_ = false;
+  // Stop the step timer and abandon any lingering per-step async work so a late
+  // completion can't resurrect the finished run.
+  step_timeout_timer_.Stop();
+  weak_factory_.InvalidateWeakPtrs();
   int duration_ms = (base::TimeTicks::Now() - start_time_).InMilliseconds();
   RunResult result;
   result.success = success;
@@ -429,6 +670,8 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   rec.total_steps = static_cast<int>(script_.steps.size());
   rec.ai_tokens = current_run_tokens_;
   rec.message = message;
+  // Per-step trace (pass/fail + screenshots) for the Runs review timeline.
+  rec.steps = std::move(current_run_steps_);
   // Newest first; cap to kRunHistoryCap so .molt files don't bloat.
   script_.stats.run_history.insert(script_.stats.run_history.begin(),
                                      std::move(rec));
@@ -726,7 +969,7 @@ void AutomationRunner::DoClick(const Step& s) {
             [](base::WeakPtr<AutomationRunner> self, base::Value v) {
               if (!self) return;
               if (v.is_bool() && v.GetBool())
-                self->OnStepFinished(true, "Clicked");
+                self->BeginClickSettle("Clicked");
               else
                 self->OnStepFinished(false, "Click failed");
             },

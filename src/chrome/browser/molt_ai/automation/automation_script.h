@@ -157,6 +157,22 @@ struct SecurityPolicy {
   TrustLevel trust = TrustLevel::CASUAL;
 };
 
+// One executed step's outcome within a run. Drives the "Runs" review
+// timeline in the studio: per-step pass/fail, timing, and a screenshot
+// thumbnail captured right after the step. Field names mirror StepProgress
+// (automation_runner.h) so the runner can populate it cheaply.
+struct StepResult {
+  int index = 0;               // 0-based step number
+  StepType type = StepType::UNKNOWN;
+  std::string description;     // resolved with {{vars}} substituted
+  bool ok = false;
+  int duration_ms = 0;
+  // Filename (relative to the script's artifacts dir) of the PNG captured
+  // right after this step. Empty when no live surface was available.
+  std::string screenshot;
+  std::string note;            // e.g. "Clicked", "Selector did not match"
+};
+
 // One row in Stats::run_history. Capped to last N runs by the runner.
 struct RunRecord {
   int64_t timestamp_unix = 0;
@@ -169,6 +185,9 @@ struct RunRecord {
   int ai_tokens = 0;
   // 1-line summary ("Completed", "Selector miss on step 4", etc.).
   std::string message;
+  // Per-step outcomes for the "Runs" review timeline (screenshots + pass/
+  // fail). Populated by the runner; empty for legacy records.
+  std::vector<StepResult> steps;
 };
 
 // Run history aggregates surfaced in the manager UI.

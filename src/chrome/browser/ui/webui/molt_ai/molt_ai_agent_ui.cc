@@ -19,11 +19,16 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_background_browser.h"
@@ -163,6 +168,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     };
     bind("listWorkflows", &AgentStudioHandler::HandleListWorkflows);
     bind("getWorkflow", &AgentStudioHandler::HandleGetWorkflow);
+    bind("getRuns", &AgentStudioHandler::HandleGetRuns);
     bind("saveWorkflow", &AgentStudioHandler::HandleSaveWorkflow);
     bind("deleteWorkflow", &AgentStudioHandler::HandleDeleteWorkflow);
     bind("duplicateWorkflow", &AgentStudioHandler::HandleDuplicateWorkflow);
@@ -331,8 +337,14 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
             }
           }
           const int64_t before = s->stats.last_run_unix;
-          // Foreground (minimize=false) so the user can watch the replay.
-          RunScriptInBackgroundBrowser(profile(), *s, /*minimize=*/false,
+          // Run mode (args[3]): "watch" shows the run window so the user can
+          // watch the replay live; "auto" runs it minimized in the background.
+          // Default watch.
+          bool minimize = false;
+          if (args.size() >= 4 && args[3].is_string()) {
+            minimize = (args[3].GetString() == "auto");
+          }
+          RunScriptInBackgroundBrowser(profile(), *s, minimize,
                                        /*start_index=*/0, overrides);
           ok = true;
           // The background run writes its result to disk on finish; poll for
@@ -370,6 +382,51 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         base::BindOnce(&AgentStudioHandler::PollRunResult,
                        weak_factory_.GetWeakPtr(), id, before, attempts - 1),
         base::Milliseconds(1500));
+  }
+
+  // Returns the per-run history for one workflow, including each run's
+  // per-step pass/fail timeline + screenshot filenames, for the Runs view.
+  void HandleGetRuns(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    base::ListValue runs;
+    std::string script_id;
+    if (args.size() >= 2 && args[1].is_string()) {
+      script_id = args[1].GetString();
+      if (auto* st = storage()) {
+        if (auto s = st->Load(script_id)) {
+          for (const auto& r : s->stats.run_history) {
+            base::DictValue rd;
+            rd.Set("ts", static_cast<double>(r.timestamp_unix));
+            rd.Set("ok", r.success);
+            rd.Set("durationMs", r.duration_ms);
+            rd.Set("stepsExecuted", r.steps_executed);
+            rd.Set("totalSteps", r.total_steps);
+            rd.Set("message", r.message);
+            int failed = -1;
+            base::ListValue steps;
+            for (const auto& sr : r.steps) {
+              base::DictValue sd;
+              sd.Set("index", sr.index);
+              sd.Set("type", StepTypeToString(sr.type));
+              sd.Set("description", sr.description);
+              sd.Set("ok", sr.ok);
+              sd.Set("durationMs", sr.duration_ms);
+              if (!sr.note.empty()) sd.Set("note", sr.note);
+              if (!sr.screenshot.empty()) sd.Set("shot", sr.screenshot);
+              if (!sr.ok && failed < 0) failed = sr.index;
+              steps.Append(std::move(sd));
+            }
+            rd.Set("failedStepIndex", failed);
+            rd.Set("steps", std::move(steps));
+            runs.Append(std::move(rd));
+          }
+        }
+      }
+    }
+    out.Set("id", script_id);
+    out.Set("runs", std::move(runs));
+    ResolveDict(args, std::move(out));
   }
 
   void HandleStartRecording(const base::ListValue& args) {
@@ -508,13 +565,54 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
 // Data source — serves the studio HTML with a relaxed CSP (inline script/style
 // + no trusted-types, matching the other molt pages).
 // ---------------------------------------------------------------------------
+// Whether a query token is a safe script-id (no path separators / traversal).
+bool IsSafeToken(const std::string& s) {
+  if (s.empty() || s.size() > 128)
+    return false;
+  for (char c : s) {
+    if (!(base::IsAsciiAlpha(c) || base::IsAsciiDigit(c) || c == '_' ||
+          c == '-')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Whether a query token is a safe screenshot filename (a *.png basename).
+bool IsSafeFilename(const std::string& s) {
+  if (s.empty() || s.size() > 200)
+    return false;
+  if (s.find("..") != std::string::npos)
+    return false;
+  for (char c : s) {
+    if (!(base::IsAsciiAlpha(c) || base::IsAsciiDigit(c) || c == '_' ||
+          c == '-' || c == '.')) {
+      return false;
+    }
+  }
+  return base::EndsWith(s, ".png", base::CompareCase::SENSITIVE);
+}
+
+// Reads a file into ref-counted memory. Runs on a MayBlock pool thread.
+scoped_refptr<base::RefCountedMemory> ReadFileBytes(const base::FilePath& path) {
+  std::string data;
+  if (!base::ReadFileToString(path, &data))
+    return nullptr;
+  return base::MakeRefCounted<base::RefCountedString>(std::move(data));
+}
+
 class MoltAIAgentDataSource : public content::URLDataSource {
  public:
   MoltAIAgentDataSource() = default;
   ~MoltAIAgentDataSource() override = default;
 
   std::string GetSource() override { return "molt-ai-agent"; }
-  std::string GetMimeType(const GURL& url) override { return "text/html"; }
+  std::string GetMimeType(const GURL& url) override {
+    // Per-step screenshot thumbnails are served as PNG at /shot.
+    if (url.path() == "/shot")
+      return "image/png";
+    return "text/html";
+  }
   bool ShouldServeMimeTypeAsContentTypeHeader() override { return true; }
 
   std::string GetContentSecurityPolicy(
@@ -524,6 +622,9 @@ class MoltAIAgentDataSource : public content::URLDataSource {
         return "script-src chrome://resources 'self' 'unsafe-inline';";
       case network::mojom::CSPDirectiveName::StyleSrc:
         return "style-src 'self' 'unsafe-inline';";
+      case network::mojom::CSPDirectiveName::ImgSrc:
+        // Same-origin PNG thumbnails from /shot (plus data: for inline SVGs).
+        return "img-src 'self' data:;";
       case network::mojom::CSPDirectiveName::TrustedTypes:
         return std::string();
       case network::mojom::CSPDirectiveName::RequireTrustedTypesFor:
@@ -537,6 +638,12 @@ class MoltAIAgentDataSource : public content::URLDataSource {
       const GURL& url,
       const content::WebContents::Getter& wc_getter,
       content::URLDataSource::GotDataCallback callback) override {
+    // Serve a per-step screenshot thumbnail (chrome://molt-ai-agent/shot?
+    // s=<script_id>&f=<file.png>) as binary PNG.
+    if (url.path() == "/shot") {
+      ServeScreenshot(url, wc_getter, std::move(callback));
+      return;
+    }
     std::string html = R"HTML(
 <!DOCTYPE html>
 <html>
@@ -891,6 +998,51 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 .toast.ok{border-color:rgba(95,227,161,0.4)}
 .toast.err{border-color:rgba(240,115,111,0.4);color:var(--err)}
 
+/* ---- Run-mode chooser (Watch vs Auto) in the run sheet ---- */
+.rmode-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:4px 2px 8px}
+.rmode-lbl+.vfield,.rmode+.rmode-lbl{margin-top:14px}
+.rmode{display:flex;align-items:center;gap:11px;padding:12px;border-radius:13px;border:1px solid var(--border);cursor:pointer;margin-bottom:8px;transition:border-color .15s,background .15s}
+.rmode.sel{border-color:var(--violet);background:rgba(167,139,250,0.1);box-shadow:0 0 0 1px rgba(167,139,250,0.25)}
+.rmode-emoji{font-size:18px;flex:0 0 auto;width:22px;text-align:center}
+.rmode-tx{flex:1 1 auto;min-width:0}
+.rmode-t{font-size:13px;font-weight:650}
+.rmode-s{font-size:11.5px;color:var(--muted);margin-top:2px}
+.rmode-tick{flex:0 0 auto;color:var(--violet);opacity:0;font-weight:800}
+.rmode.sel .rmode-tick{opacity:1}
+
+/* ---- Runs (history / review) view ---- */
+.runs-head{padding:16px 16px 6px}
+.runs-title{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.runs-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.runs-empty{text-align:center;color:var(--muted);padding:40px 24px}
+.runs-empty .re-emoji{font-size:30px;margin-bottom:10px}
+.runs-empty .re-t{font-size:14px;font-weight:650;color:var(--text)}
+.runs-empty .re-sub{font-size:12px;margin-top:6px;line-height:1.5}
+.run-card{background:var(--glass);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.run-hd{display:flex;align-items:center;gap:11px;padding:12px 13px;cursor:pointer}
+.run-badge{flex:0 0 auto;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.run-badge.ok{background:rgba(95,227,161,0.16);color:var(--ok)}
+.run-badge.fail{background:rgba(240,115,111,0.16);color:var(--err)}
+.run-hmeta{flex:1 1 auto;min-width:0}
+.run-htitle{font-size:13px;font-weight:650}
+.run-hsub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.run-caret{flex:0 0 auto;color:var(--muted);transition:transform .18s}
+.run-card.open .run-caret{transform:rotate(180deg)}
+.run-steps{display:none;padding:2px 11px 11px;border-top:1px solid var(--border)}
+.run-card.open .run-steps{display:block}
+.rnstep{padding:9px 2px;border-bottom:1px solid rgba(255,255,255,0.05)}
+.rnstep:last-child{border-bottom:none}
+.rnstep-main{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.rnstep-n{flex:0 0 auto;width:19px;height:19px;border-radius:6px;background:rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--muted)}
+.rnstep-emoji{flex:0 0 auto}
+.rnstep-desc{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rnstep-badge{flex:0 0 auto;font-weight:800}
+.rnstep-badge.ok{color:var(--ok)} .rnstep-badge.fail{color:var(--err)}
+.rnstep.fail .rnstep-desc{color:var(--err)}
+.rnstep-note{font-size:11px;color:var(--muted);margin:3px 0 0 27px}
+.rnshot{display:block;margin:8px 0 2px 27px;width:calc(100% - 27px);max-width:180px;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;transition:max-width .2s}
+.rnshot.big{max-width:100%;cursor:zoom-out}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -963,6 +1115,15 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
         <button class="btn violet" id="edRunBtn">&#9654; Run</button>
         <button class="btn" id="edSchedBtn">&#9200; Schedule</button>
       </div>
+    </section>
+
+    <!-- 4. RUNS (history / review) -->
+    <section class="view" id="view-runs">
+      <div class="runs-head">
+        <div class="runs-title" id="runsTitle">Runs</div>
+        <div class="runs-sub" id="runsSub">Every time this workflow ran &mdash; step by step.</div>
+      </div>
+      <div class="scroll" id="runsList"></div>
     </section>
   </div>
 </div>
@@ -1169,16 +1330,17 @@ var openCardMenu=null;
 /* ================================ views ================================ */
 function showView(v){
   view=v;
-  ['library','recording','editor'].forEach(function(name){
+  ['library','recording','editor','runs'].forEach(function(name){
     $('view-'+name).classList.toggle('active',name===v);
   });
   var sub=v==='library'?false:true;
   $('topbar').classList.toggle('sub',sub);
-  $('topSub').textContent = v==='recording'?'Recording your task…' : v==='editor'?'Editing workflow' : 'Record, run & schedule web tasks';
+  $('topSub').textContent = v==='recording'?'Recording your task…' : v==='editor'?'Editing workflow' : v==='runs'?'Run history' : 'Record, run & schedule web tasks';
   closeCardMenu();closeAddMenu();
 }
 $('backBtn').addEventListener('click',function(){
   if(view==='editor'){showView('library');loadLibrary();}
+  else if(view==='runs'){showView('library');loadLibrary();}
   else if(view==='recording'){/* backing out of recording = discard */ discardRecording();}
 });
 
@@ -1246,6 +1408,7 @@ function toggleCardMenu(card,wf){
   if(openCardMenu&&openCardMenu.card===card){closeCardMenu();return;}
   closeCardMenu();
   var menu=h('div',{'class':'card-menu open'},[
+    h('div',{'class':'menu-item',onClick:function(){closeCardMenu();openRuns(wf.id,wf.name);}},['\u{1F553}',' View runs']),
     h('div',{'class':'menu-item',onClick:function(){closeCardMenu();askDuplicate(wf);}},['⧉',' Duplicate']),
     h('div',{'class':'menu-item',onClick:function(){closeCardMenu();askRename(wf);}},['✎',' Rename']),
     h('div',{'class':'menu-item danger',onClick:function(){closeCardMenu();askDelete(wf);}},['\u{1F5D1}',' Delete'])
@@ -1291,6 +1454,69 @@ var fileInput=h('input',{type:'file',accept:'.json,application/json',style:'disp
     rd.readAsText(f);
   }});
 document.body.appendChild(fileInput);
+
+/* ============================== RUNS (history) ============================== */
+var runsCtx={id:'',name:''};
+function shotUrl(sid,f){return '/shot?s='+encodeURIComponent(sid)+'&f='+encodeURIComponent(f);}
+function fmtDur(ms){ms=ms||0;if(ms<1000)return ms+'ms';var s=ms/1000;if(s<60)return (s<10?s.toFixed(1):Math.round(s))+'s';return Math.floor(s/60)+'m '+Math.round(s%60)+'s';}
+function openRuns(id,name){
+  runsCtx={id:id,name:name||''};
+  $('runsTitle').textContent=(name||'Workflow');
+  $('runsSub').textContent='Every run, step by step — with screenshots.';
+  showView('runs');
+  var box=$('runsList');clear(box);
+  box.appendChild(h('div',{'class':'runs-empty'},'Loading…'));
+  sendWithPromise('getRuns',id).then(function(r){
+    renderRuns((r&&r.id)||id,(r&&r.runs)||[]);
+  }).catch(function(){renderRuns(id,[]);});
+}
+function renderRuns(sid,runs){
+  var box=$('runsList');clear(box);
+  if(!runs.length){
+    box.appendChild(h('div',{'class':'runs-empty'},[
+      h('div',{'class':'re-emoji'},'\u{1F4C2}'),
+      h('div',{'class':'re-t'},'No runs yet'),
+      h('div',{'class':'re-sub'},'Press Run on this workflow — every step, with a screenshot, will show up here.')
+    ]));
+    return;
+  }
+  runs.forEach(function(run,ri){
+    var ok=!!run.ok;
+    var failedAt=(!ok&&typeof run.failedStepIndex==='number'&&run.failedStepIndex>=0)?(' · step '+(run.failedStepIndex+1)):'';
+    var head=h('div',{'class':'run-hd'},[
+      h('span',{'class':'run-badge '+(ok?'ok':'fail')},ok?'✓':'✗'),
+      h('div',{'class':'run-hmeta'},[
+        h('div',{'class':'run-htitle'},(ok?'Success':'Failed'+failedAt)),
+        h('div',{'class':'run-hsub'},[timeAgo(run.ts),' · ',fmtDur(run.durationMs),' · ',(run.stepsExecuted||0)+'/'+(run.totalSteps||0)+' steps'])
+      ]),
+      h('span',{'class':'run-caret'},'▾')
+    ]);
+    var body=h('div',{'class':'run-steps'});
+    var steps=run.steps||[];
+    if(!steps.length){
+      body.appendChild(h('div',{'class':'rnstep-note'},run.message||'No step detail recorded for this run.'));
+    }
+    steps.forEach(function(st){
+      var row=h('div',{'class':'rnstep '+(st.ok?'ok':'fail')});
+      row.appendChild(h('div',{'class':'rnstep-main'},[
+        h('span',{'class':'rnstep-n'},(st.index+1)),
+        h('span',{'class':'rnstep-emoji'},emojiFor(st.type)),
+        h('span',{'class':'rnstep-desc'},st.description||labelFor(st.type)),
+        h('span',{'class':'rnstep-badge '+(st.ok?'ok':'fail')},st.ok?'✓':'✗')
+      ]));
+      if(st.note){row.appendChild(h('div',{'class':'rnstep-note'},st.note));}
+      if(st.shot){
+        var img=h('img',{'class':'rnshot',loading:'lazy',src:shotUrl(sid,st.shot),alt:'Screenshot after step '+(st.index+1)});
+        img.addEventListener('click',function(){img.classList.toggle('big');});
+        row.appendChild(img);
+      }
+      body.appendChild(row);
+    });
+    var card=h('div',{'class':'run-card'+(ri===0?' open':'')},[head,body]);
+    head.addEventListener('click',function(){card.classList.toggle('open');});
+    box.appendChild(card);
+  });
+}
 
 /* ============================== RECORDING ============================== */
 function startRecordingFlow(){
@@ -1618,18 +1844,13 @@ function saveEditor(quiet){
 /* ============================== RUN ============================== */
 function runWorkflowFlow(id){
   sendWithPromise('getWorkflow',id).then(function(wf){
-    var vars=wf.variables||{};
-    if(Object.keys(vars).length){openRunSheet(id,wf.name,vars);}
-    else{
-      if(view==='editor'){showView('library');loadLibrary().then(function(){doRun(id,{});});}
-      else doRun(id,{});
-    }
+    openRunSheet(id,wf.name,wf.variables||{});
   }).catch(function(){toast('Couldn’t start run','err');});
 }
-function doRun(id,values){
+function doRun(id,values,mode){
   activeRun={id:id,stepIndex:0,total:0,message:'Starting…',done:false,ok:null};
   paintRun();
-  sendWithPromise('runWorkflow',id,values).catch(function(){
+  sendWithPromise('runWorkflow',id,values,mode||'watch').catch(function(){
     activeRun={id:id,done:true,ok:false,message:'Failed to start'};paintRun();
   });
 }
@@ -1702,14 +1923,29 @@ function paintRun(){
 }
 
 function openRunSheet(id,name,vars){
-  runSheet={open:true,id:id,name:name||'',vars:vars};
+  runSheet={open:true,id:id,name:name||'',vars:vars,mode:'watch'};
   $('runTitle').textContent='Run — '+(name||'workflow');
-  $('runSubT').textContent='Fill in what changes for this run, then go.';
+  $('runSubT').textContent='Choose how to run it, then go.';
   var body=$('runBody');clear(body);
+  // Run-mode chooser: Watch (visible) vs Auto (background).
+  function modeCard(m,emoji,title,sub){
+    return h('div',{'class':'rmode'+(runSheet.mode===m?' sel':''),'data-mode':m,onClick:function(){
+      runSheet.mode=m;
+      Array.prototype.forEach.call(body.querySelectorAll('.rmode'),function(el){
+        el.classList.toggle('sel',el.getAttribute('data-mode')===m);
+      });
+    }},[
+      h('span',{'class':'rmode-emoji'},emoji),
+      h('div',{'class':'rmode-tx'},[h('div',{'class':'rmode-t'},title),h('div',{'class':'rmode-s'},sub)]),
+      h('span',{'class':'rmode-tick'},'✓')
+    ]);
+  }
+  body.appendChild(h('div',{'class':'rmode-lbl'},'How should it run?'));
+  body.appendChild(modeCard('watch','\u{1F441}️','Watch it run','A window opens so you can see each step happen live.'));
+  body.appendChild(modeCard('auto','\u{1F319}','Run in background','Runs minimized and out of your way.'));
   var keys=Object.keys(vars);
-  if(!keys.length){
-    body.appendChild(h('div',{'class':'novar'},'This workflow has no fill-ins — just run it.'));
-  }else{
+  if(keys.length){
+    body.appendChild(h('div',{'class':'rmode-lbl'},'Fill in what changes for this run'));
     keys.forEach(function(k){
       body.appendChild(h('div',{'class':'vfield'},[
         h('label',{},[k.replace(/_/g,' '),h('span',{'class':'vp'},k)]),
@@ -1729,7 +1965,7 @@ function runSheetGo(){
   var values={};Object.keys(runSheet.vars).forEach(function(k){var el=$('rv_'+k);values[k]=el?el.value:'';});
   $('runLive').style.display='block';
   btn.disabled=true;btn.textContent='Running…';
-  doRun(runSheet.id,values);
+  doRun(runSheet.id,values,runSheet.mode);
 }
 function closeRunSheet(){runSheet.open=false;closeScrim('runScrim');}
 
@@ -1907,6 +2143,66 @@ if(document.readyState!=='loading')loadLibrary();
 )HTML";
     std::move(callback).Run(
         base::MakeRefCounted<base::RefCountedString>(std::move(html)));
+  }
+
+ private:
+  // Streams a validated per-step screenshot PNG back to the panel. The URL is
+  // chrome://molt-ai-agent/shot?s=<script_id>&f=<file.png>. Read happens off
+  // the UI thread; unknown/invalid requests resolve to empty bytes.
+  void ServeScreenshot(const GURL& url,
+                       const content::WebContents::Getter& wc_getter,
+                       content::URLDataSource::GotDataCallback callback) {
+    std::string script_id;
+    std::string filename;
+    for (const std::string& pair :
+         base::SplitString(url.query(), "&", base::TRIM_WHITESPACE,
+                           base::SPLIT_WANT_NONEMPTY)) {
+      size_t eq = pair.find('=');
+      if (eq == std::string::npos)
+        continue;
+      std::string key = pair.substr(0, eq);
+      std::string val = pair.substr(eq + 1);
+      if (key == "s")
+        script_id = val;
+      else if (key == "f")
+        filename = val;
+    }
+    auto empty = []() {
+      return base::MakeRefCounted<base::RefCountedBytes>();
+    };
+    if (!IsSafeToken(script_id) || !IsSafeFilename(filename)) {
+      std::move(callback).Run(empty());
+      return;
+    }
+    content::WebContents* wc = wc_getter.Run();
+    Profile* p =
+        wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
+    AutomationStorage* st = nullptr;
+    if (p) {
+      if (auto* svc = AutomationSchedulerServiceFactory::GetForProfile(p))
+        st = svc->storage();
+    }
+    if (!st) {
+      std::move(callback).Run(empty());
+      return;
+    }
+    base::FilePath dir = st->EnsureArtifactsDir(script_id);
+    if (dir.empty()) {
+      std::move(callback).Run(empty());
+      return;
+    }
+    base::FilePath path = dir.Append(base::FilePath::FromUTF8Unsafe(filename));
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&ReadFileBytes, path),
+        base::BindOnce(
+            [](content::URLDataSource::GotDataCallback cb,
+               scoped_refptr<base::RefCountedMemory> bytes) {
+              std::move(cb).Run(
+                  bytes ? bytes
+                        : base::MakeRefCounted<base::RefCountedBytes>());
+            },
+            std::move(callback)));
   }
 };
 

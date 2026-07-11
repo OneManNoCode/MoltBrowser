@@ -20,7 +20,9 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -37,6 +39,10 @@ namespace molt_ai {
 class BrowserAIRuntime;
 
 namespace automation {
+
+// Waits for a click-triggered navigation to settle before advancing the run
+// (defined in the .cc). Forward-declared so it can be held as a member.
+class NavigationSettleWaiter;
 
 // Result reported when a run finishes (success or failure).
 struct RunResult {
@@ -92,6 +98,28 @@ class AutomationRunner {
   // Step dispatch — each returns true to continue, false to abort the run.
   void ExecuteNextStep();
   void OnStepFinished(bool succeeded, const std::string& note);
+
+  // After a step reaches a terminal outcome (success, or failure with no
+  // retries left), record a StepResult for the Runs timeline — including a
+  // screenshot thumbnail captured on the current page — then either advance
+  // to the next step or Finish() the run.
+  void CaptureStepAndThen(bool succeeded, std::string note,
+                          bool terminal_failure);
+  void FinalizeStep(StepResult sr, std::string filename, std::string note,
+                    bool terminal_failure, bool screenshot_ok);
+
+  // Capture the tab's current pixels to |path| as a downscaled PNG. |done|
+  // runs on the UI thread with true iff a file was written. Best-effort:
+  // a missing live surface (minimized without a capturer, occluded, not yet
+  // composited) resolves false without failing the step.
+  void CapturePng(const base::FilePath& path,
+                  base::OnceCallback<void(bool)> done);
+
+  // A click may trigger a navigation. Wait briefly for the resulting load to
+  // settle (like DoNavigate) before advancing, so the next step doesn't run
+  // against a torn-down / mid-navigation page. If no navigation starts within
+  // a short grace window, finishes immediately.
+  void BeginClickSettle(const std::string& note);
 
   // Action executors. Each posts work and calls OnStepFinished when done.
   void DoNavigate(const Step& s);
@@ -217,6 +245,21 @@ class AutomationRunner {
   // AI_DECIDE / AI_EXTRACT call. Folded into Stats::ai_tokens_total
   // and the new RunRecord at Finish().
   int current_run_tokens_ = 0;
+
+  // Per-step trace for the Runs review timeline. Accumulated as steps reach a
+  // terminal outcome; moved into the RunRecord at Finish().
+  std::vector<StepResult> current_run_steps_;
+  // When the current step began — for per-step timing.
+  base::TimeTicks step_start_;
+  // Stable per-run id (unix seconds at Run() start), used to name the
+  // per-step screenshots (run_<ts>_step_<n>.png) in the artifacts dir.
+  int64_t run_ts_ = 0;
+  // Keeps the tab compositing (and reporting visible) for the whole run so
+  // per-step screenshots capture pixels even when the run window is minimized
+  // (Auto mode). Released when the run object is destroyed.
+  base::ScopedClosureRunner capture_keepalive_;
+  // Live during a click's post-navigation settle; reset before the next step.
+  std::unique_ptr<NavigationSettleWaiter> nav_waiter_;
 
   // Per-step timeout — fires OnStepTimeout() if the dispatched step
   // doesn't call OnStepFinished in time.

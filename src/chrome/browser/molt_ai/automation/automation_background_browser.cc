@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/base/mojom/window_show_state.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
@@ -141,6 +142,10 @@ void RunScriptInBackgroundBrowser(
   Browser::CreateParams params(Browser::TYPE_POPUP, profile,
                                /*user_gesture=*/true);
   params.trusted_source = true;
+  // Auto mode: start minimized so the run window never flashes onto the
+  // screen. Watch mode leaves the default show state (visible).
+  if (minimize)
+    params.initial_show_state = ui::mojom::WindowShowState::kMinimized;
   Browser* browser = Browser::Create(params);
   if (!browser) {
     LOG(WARNING) << "[MoltAutomation] failed to create background browser";
@@ -149,7 +154,9 @@ void RunScriptInBackgroundBrowser(
 
   NavigateParams nav(browser, start_url, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
   nav.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  nav.window_action = NavigateParams::WindowAction::kShowWindow;
+  // Don't force-show the window in Auto mode, or it flashes before Minimize().
+  nav.window_action = minimize ? NavigateParams::WindowAction::kNoAction
+                               : NavigateParams::WindowAction::kShowWindow;
   Navigate(&nav);
   content::WebContents* contents = nav.navigated_or_inserted_contents;
   if (!contents) {

@@ -285,6 +285,30 @@ SecurityPolicy SecurityFromDict(const base::DictValue& d) {
 
 namespace {
 
+base::DictValue StepResultToDict(const StepResult& r) {
+  base::DictValue d;
+  d.Set("i", r.index);
+  d.Set("type", StepTypeToString(r.type));
+  d.Set("ok", r.ok);
+  d.Set("ms", r.duration_ms);
+  if (!r.screenshot.empty()) d.Set("shot", r.screenshot);
+  if (!r.description.empty()) d.Set("desc", r.description);
+  if (!r.note.empty()) d.Set("note", r.note);
+  return d;
+}
+
+StepResult StepResultFromDict(const base::DictValue& d) {
+  StepResult r;
+  r.index = GetInt(d, "i", 0);
+  r.type = StepTypeFromString(GetString(d, "type", "unknown"));
+  if (auto v = d.FindBool("ok")) r.ok = *v;
+  r.duration_ms = GetInt(d, "ms", 0);
+  r.screenshot = GetString(d, "shot", "");
+  r.description = GetString(d, "desc", "");
+  r.note = GetString(d, "note", "");
+  return r;
+}
+
 base::DictValue RunRecordToDict(const RunRecord& r) {
   base::DictValue d;
   d.Set("ts", static_cast<double>(r.timestamp_unix));
@@ -294,6 +318,11 @@ base::DictValue RunRecordToDict(const RunRecord& r) {
   d.Set("total_steps", r.total_steps);
   if (r.ai_tokens > 0) d.Set("ai_tokens", r.ai_tokens);
   if (!r.message.empty()) d.Set("message", r.message);
+  if (!r.steps.empty()) {
+    base::ListValue l;
+    for (const auto& sr : r.steps) l.Append(StepResultToDict(sr));
+    d.Set("steps", std::move(l));
+  }
   return d;
 }
 
@@ -306,6 +335,11 @@ RunRecord RunRecordFromDict(const base::DictValue& d) {
   r.total_steps = GetInt(d, "total_steps", 0);
   r.ai_tokens = GetInt(d, "ai_tokens", 0);
   r.message = GetString(d, "message", "");
+  if (const base::ListValue* l = d.FindList("steps")) {
+    for (const auto& v : *l) {
+      if (v.is_dict()) r.steps.push_back(StepResultFromDict(v.GetDict()));
+    }
+  }
   return r;
 }
 

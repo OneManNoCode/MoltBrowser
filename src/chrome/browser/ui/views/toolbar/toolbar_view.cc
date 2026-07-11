@@ -57,6 +57,9 @@
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "base/task/single_thread_task_runner.h"
+#include "chrome/browser/ui/side_panel/side_panel_entry.h"
+#include "chrome/browser/ui/side_panel/side_panel_registry.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/tab_search_feature.h"
 #include "chrome/browser/ui/tabs/features.h"
@@ -587,6 +590,53 @@ ToolbarView::~ToolbarView() {
   }
 }
 
+// MoltBrowser: light the violet "active" ring on whichever mode button matches
+// the currently-open content side-panel entry, and clear it on the other (and
+// on both when the panel is closed). Driven by the SidePanelEntryObserver
+// callbacks below, which fire on open, AI↔Agent swap, and close.
+void ToolbarView::UpdateAiAgentModeHighlights() {
+  SidePanelUI* ui = browser_ ? browser_->GetFeatures().side_panel_ui() : nullptr;
+  std::optional<SidePanelEntryId> id =
+      ui ? ui->GetCurrentEntryId(SidePanelEntry::PanelType::kContent)
+         : std::nullopt;
+  const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
+  if (molt_ai_mode_button_) {
+    molt_ai_mode_button_->SetHighlight(
+        u"🤖 AI mode",
+        id == SidePanelEntryId::kMoltAiChat ? kViolet : std::nullopt);
+  }
+  if (agent_mode_button_) {
+    agent_mode_button_->SetHighlight(
+        u"🎬 Agent mode",
+        id == SidePanelEntryId::kMoltAgent ? kViolet : std::nullopt);
+  }
+}
+
+void ToolbarView::OnEntryShown(SidePanelEntry* entry) {
+  UpdateAiAgentModeHighlights();
+}
+
+void ToolbarView::OnEntryHidden(SidePanelEntry* entry) {
+  UpdateAiAgentModeHighlights();
+}
+
+void ToolbarView::SetUpSidePanelHighlightObservation() {
+  SidePanelRegistry* registry = SidePanelRegistry::From(browser_);
+  if (!registry) {
+    return;
+  }
+  for (SidePanelEntryId id :
+       {SidePanelEntryId::kMoltAiChat, SidePanelEntryId::kMoltAgent}) {
+    if (SidePanelEntry* entry =
+            registry->GetEntryForKey(SidePanelEntry::Key(id))) {
+      if (!side_panel_entry_observations_.IsObservingSource(entry)) {
+        side_panel_entry_observations_.AddObservation(entry);
+      }
+    }
+  }
+  UpdateAiAgentModeHighlights();  // reflect whatever is open right now
+}
+
 void ToolbarView::Init() {
 #if defined(USE_AURA)
   // Avoid generating too many occlusion tracking calculation events before this
@@ -863,7 +913,9 @@ void ToolbarView::Init() {
     // AI button a signature violet accent (light violet label/border + faint
     // violet pill) so it reads as the hero control on the dark glass toolbar,
     // matching the Liquid Glass concept mockup.
-    molt_ai_button->SetHighlight(u"🤖 AI mode", SkColorSetRGB(0xA7, 0x8B, 0xFA));
+    // Idle by default (no ring); the violet "active" ring is driven by
+    // UpdateAiAgentModeHighlights() only while the kMoltAiChat panel is open.
+    molt_ai_button->SetHighlight(u"🤖 AI mode", std::nullopt);
     molt_ai_button->SetTooltipText(
         u"Toggle AI mode — MoltBrowser AI, runs locally on your device (⌘⇧L)");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
@@ -872,7 +924,7 @@ void ToolbarView::Init() {
     // SINGLE AI-mode control: the duplicate ephemeral side-panel toolbar button
     // is suppressed via set_should_show_ephemerally_in_toolbar(false) on the
     // kMoltAiChat entry (side_panel_helper.cc).
-    AddChildView(std::move(molt_ai_button));
+    molt_ai_mode_button_ = AddChildView(std::move(molt_ai_button));
   }
 
   // MoltBrowser: "Agent mode" button — toggles the Agent automation studio side
@@ -880,7 +932,10 @@ void ToolbarView::Init() {
   // plus the whole workflow library / editor / scheduler now live inside that
   // panel, so this button just opens it (mirrors the AI mode button).
   {
-    auto agent_button = std::make_unique<ToolbarButton>(base::BindRepeating(
+    // LocalAiToolbarButton (not a plain ToolbarButton) so its violet "active"
+    // ring stays legible — it forces white label text + blends the highlight,
+    // avoiding the invisible violet-on-violet a plain ToolbarButton would draw.
+    auto agent_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
         [](Browser* browser) {
           SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
           if (!side_panel_ui) {
@@ -892,13 +947,24 @@ void ToolbarView::Init() {
         },
         browser_));
     // 🎬 (record & replay) emoji in the label carries the icon, matching the
-    // AI mode robot; no separate vector icon.
+    // AI mode robot; no separate vector icon. Idle by default; the violet ring
+    // is driven by UpdateAiAgentModeHighlights() while kMoltAgent is open.
     agent_button->SetHighlight(u"🎬 Agent mode", std::nullopt);
     agent_button->SetTooltipText(
         u"Toggle Agent mode — record, edit, run & schedule web automations");
     agent_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    AddChildView(std::move(agent_button));
+    agent_mode_button_ = AddChildView(std::move(agent_button));
   }
+
+  // MoltBrowser: attach the side-panel-entry observers that swap the violet
+  // "active" ring between the two mode buttons. The kMoltAiChat / kMoltAgent
+  // entries are registered by the SidePanelCoordinator, which is created AFTER
+  // ToolbarView, so defer the hookup to a posted task (the entries exist by
+  // then). The observation is a no-op if the entries aren't found.
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&ToolbarView::SetUpSidePanelHighlightObservation,
+                     mode_ring_weak_factory_.GetWeakPtr()));
 
   // MoltBrowser: the MoltNet (Tor exit-country) + Import buttons are created
   // earlier, in the LEFT cluster just before the location bar, so the two
