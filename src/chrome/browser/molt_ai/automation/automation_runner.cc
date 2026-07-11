@@ -55,6 +55,38 @@ const char kHasSelectorJSTemplate[] =
       } catch (e) { return false; }
     })())";
 
+// Decide whether a recorded selector should be ACCEPTED for a click/type, using
+// the recorded element label as the source of truth. Returns:
+//   'ok'    — trust this selector (unique visible match, or its element's text
+//             matches the recorded label, or there is no label to compare).
+//   'defer' — the selector is ambiguous (matches several visible elements) OR a
+//             unique match whose text has DRIFTED away from the recorded label;
+//             skip it and let the text-anchor find the right element by label.
+//   'none'  — no visible match; try the next candidate.
+// This is what stops a page-wide non-unique selector (e.g. Nike's
+// data-testid="link", present on every nav link) from silently clicking the
+// WRONG element and "succeeding". First arg is the recorded label, second the
+// selector.
+const char kSelectorAcceptJSTemplate[] =
+    R"JS((() => {
+      try {
+        const want = %s;
+        const wl = String(want || '').replace(/\s+/g,' ').trim().toLowerCase();
+        const all = Array.from(document.querySelectorAll(%s));
+        const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        const tx  = e => ((e.textContent || e.value || e.getAttribute('aria-label') || '')).replace(/\s+/g,' ').trim().toLowerCase();
+        const els = all.filter(vis);
+        if (!els.length) return 'none';
+        if (!wl) return 'ok';                         // no label — accept first visible
+        if (els.length === 1) {
+          const t = tx(els[0]);
+          if (!t) return 'ok';                        // no text (icon/radio) — trust unique selector
+          return (t === wl || t.includes(wl) || wl.includes(t)) ? 'ok' : 'defer';
+        }
+        return 'defer';                               // ambiguous + labelled — use the text anchor
+      } catch (e) { return 'none'; }
+    })())JS";
+
 // Click a selector, returns true on success.
 const char kClickSelectorJSTemplate[] =
     R"((() => {
@@ -774,7 +806,12 @@ void AutomationRunner::TryNextSelector(
   }
 
   std::string sel = candidates[index];
-  std::string js = base::StringPrintf(kHasSelectorJSTemplate,
+  // Verify the candidate against the recorded label (not just "does it match
+  // something visible"). A page-wide non-unique selector, or a unique one that
+  // has drifted onto a differently-labelled element, is deferred to the
+  // text-anchor so we click the element the user actually recorded.
+  std::string js = base::StringPrintf(kSelectorAcceptJSTemplate,
+                                       JSQuote(text_hint).c_str(),
                                        JSQuote(sel).c_str());
   auto self = weak_factory_.GetWeakPtr();
   EvalJS(js, base::BindOnce(
@@ -784,10 +821,12 @@ void AutomationRunner::TryNextSelector(
                      base::OnceCallback<void(const std::string&)> cb,
                      base::Value v) {
                     if (!self) return;
-                    if (v.is_bool() && v.GetBool()) {
+                    if (v.is_string() && v.GetString() == "ok") {
                       std::move(cb).Run(current);
                       return;
                     }
+                    // 'defer' or 'none' → keep looking; the text-anchor runs
+                    // once the recorded candidates are exhausted.
                     self->TryNextSelector(std::move(cands), idx + 1,
                                           std::move(desc), std::move(hint),
                                           std::move(cb));
