@@ -3,17 +3,28 @@
 
 #include "chrome/browser/molt_ai/automation/automation_recorder.h"
 
+#include <algorithm>
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
 #include <optional>
+#include <vector>
 
+#include "base/base64.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/thread_pool.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -151,12 +162,21 @@ const char kRecorderJS[] = R"JS(
   var kActionable = 'a,button,[role="button"],[role="link"],[role="tab"],' +
       '[role="menuitem"],input[type="submit"],input[type="button"],' +
       'input[type="checkbox"],input[type="radio"],[onclick],summary,label';
+  // Bounding rect of an element in viewport CSS px, so C++ can crop a
+  // record-time thumbnail of exactly what was clicked.
+  function elRect(el){
+    try { var r = el.getBoundingClientRect();
+      return {x: Math.round(r.left), y: Math.round(r.top),
+              w: Math.round(r.width), h: Math.round(r.height)}; }
+    catch(e){ return null; }
+  }
   document.addEventListener('click', function(e) {
     var el = (e.target.closest && e.target.closest(kActionable)) || e.target;
     if (!rateLimit(el, 50)) return;
     var sels = buildSelectors(el);
     send({type: 'click', target: sels[0] || '', selector_fallbacks: sels.slice(1),
           text: visibleText(el),
+          rect: elRect(el), dpr: window.devicePixelRatio || 1,
           description: 'Click ' + friendlyName(el)});
   }, true);
 
@@ -223,6 +243,18 @@ const char kRecorderJS[] = R"JS(
   console.log('[MoltAutomation] recorder injected');
 })();
 )JS";
+
+// Encode a captured thumbnail bitmap to a PNG data: URI. Runs on a MayBlock
+// pool thread. Returns "" on failure.
+std::string EncodeThumbDataUri(const SkBitmap& bitmap) {
+  if (bitmap.drawsNothing())
+    return std::string();
+  std::optional<std::vector<uint8_t>> png =
+      gfx::PNGCodec::EncodeBGRASkBitmap(bitmap, /*discard_transparency=*/false);
+  if (!png)
+    return std::string();
+  return "data:image/png;base64," + base::Base64Encode(png.value());
+}
 
 }  // namespace
 
@@ -379,7 +411,70 @@ void AutomationRecorder::OnStepFromInjectedJS(
     e.Set("text", *txt);
     s.extra = base::Value(std::move(e));
   }
+  // Record-time thumbnail: remember the clicked element's rect so we can crop a
+  // snapshot of exactly what was clicked after the step is appended.
+  bool is_click = (s.type == StepType::CLICK);
+  int rx = 0, ry = 0, rw = 0, rh = 0;
+  if (const base::DictValue* r = step_json.FindDict("rect")) {
+    rx = r->FindInt("x").value_or(0);
+    ry = r->FindInt("y").value_or(0);
+    rw = r->FindInt("w").value_or(0);
+    rh = r->FindInt("h").value_or(0);
+  }
   DeduplicateAndAppend(std::move(s));
+  if (is_click && rw > 0 && rh > 0 && !steps_.empty()) {
+    CaptureElementThumb(static_cast<int>(steps_.size()) - 1, rx, ry, rw, rh);
+  }
+}
+
+void AutomationRecorder::CaptureElementThumb(int index, int x, int y, int w,
+                                             int h) {
+  content::RenderWidgetHostView* view =
+      web_contents() ? web_contents()->GetRenderWidgetHostView() : nullptr;
+  if (!view || !view->IsSurfaceAvailableForCopy())
+    return;
+  gfx::Rect bounds(view->GetViewBounds().size());  // viewport, DIP, origin 0,0
+  gfx::Rect src(x - 40, y - 40, w + 80, h + 80);   // element + a little context
+  src.Intersect(bounds);
+  if (src.IsEmpty())
+    return;
+  constexpr int kMaxWidth = 280;
+  gfx::Size out = src.size();
+  if (out.width() > kMaxWidth) {
+    out = gfx::Size(kMaxWidth,
+                    std::max(1, src.height() * kMaxWidth / src.width()));
+  }
+  viz::CopyOutputBitmapWithMetadata empty;
+  auto on_copied = base::BindOnce(
+      [](base::WeakPtr<AutomationRecorder> self, int index,
+         const content::CopyFromSurfaceResult& result) {
+        if (!self)
+          return;
+        if (!result.has_value() || result.value().bitmap.drawsNothing())
+          return;
+        SkBitmap bitmap = result.value().bitmap;
+        base::ThreadPool::PostTaskAndReplyWithResult(
+            FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+            base::BindOnce(&EncodeThumbDataUri, std::move(bitmap)),
+            base::BindOnce(&AutomationRecorder::OnThumbReady, self, index));
+      },
+      weak_factory_.GetWeakPtr(), index);
+  view->CopyFromSurface(
+      src, out, base::TimeDelta(),
+      mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(on_copied),
+                                                  base::OwnedRef(empty)));
+}
+
+void AutomationRecorder::OnThumbReady(int index, std::string data_uri) {
+  if (data_uri.empty() || index < 0 ||
+      index >= static_cast<int>(steps_.size())) {
+    return;
+  }
+  base::DictValue e = steps_[index].extra.is_dict()
+                          ? steps_[index].extra.GetDict().Clone()
+                          : base::DictValue();
+  e.Set("ref_shot", std::move(data_uri));
+  steps_[index].extra = base::Value(std::move(e));
 }
 
 void AutomationRecorder::DeduplicateAndAppend(Step step) {

@@ -72,6 +72,13 @@ class AutomationRecorder : public content::WebContentsObserver {
  private:
   void InjectRecorderJS();
   void DeduplicateAndAppend(Step step);
+
+  // Capture a record-time thumbnail of the just-clicked element (the tab is
+  // visible while recording) and stash it as a data: URI in steps_[index].extra
+  // ("ref_shot"), so the editor can show what each step was recorded against.
+  // Best-effort + async; a missed capture just leaves the step without a thumb.
+  void CaptureElementThumb(int index, int x, int y, int w, int h);
+  void OnThumbReady(int index, std::string data_uri);
   // Polls the injected JS queue and routes each entry to
   // OnStepFromInjectedJS. Runs every 400ms while recording.
   void PollPageQueue();

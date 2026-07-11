@@ -127,6 +127,21 @@ base::DictValue WorkflowSummary(const Script& s) {
   d.Set("name", s.name);
   d.Set("stepCount", static_cast<int>(s.steps.size()));
   d.Set("enabled", s.enabled);
+  // The site this workflow targets (first NAVIGATE step) → favicon + hostname
+  // on the card so it's obvious at a glance which website it's for.
+  for (const auto& st : s.steps) {
+    if (st.type == StepType::NAVIGATE && !st.target.empty()) {
+      GURL g(st.target);
+      if (g.is_valid() && g.SchemeIsHTTPOrHTTPS()) {
+        d.Set("startUrl", g.spec());
+        std::string host(g.host());
+        if (host.rfind("www.", 0) == 0)
+          host = host.substr(4);
+        d.Set("host", host);
+      }
+      break;
+    }
+  }
   if (s.stats.runs > 0 && s.stats.last_run_unix > 0) {
     base::DictValue lr;
     lr.Set("ok", s.stats.last_failed_step_index < 0);
@@ -623,8 +638,9 @@ class MoltAIAgentDataSource : public content::URLDataSource {
       case network::mojom::CSPDirectiveName::StyleSrc:
         return "style-src 'self' 'unsafe-inline';";
       case network::mojom::CSPDirectiveName::ImgSrc:
-        // Same-origin PNG thumbnails from /shot (plus data: for inline SVGs).
-        return "img-src 'self' data:;";
+        // Same-origin PNG thumbnails from /shot, inline data: images, and
+        // local site favicons via chrome://favicon2 (no external fallback).
+        return "img-src 'self' chrome://favicon2 data:;";
       case network::mojom::CSPDirectiveName::TrustedTypes:
         return std::string();
       case network::mojom::CSPDirectiveName::RequireTrustedTypesFor:
@@ -998,6 +1014,20 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
 .toast.ok{border-color:rgba(95,227,161,0.4)}
 .toast.err{border-color:rgba(240,115,111,0.4);color:var(--err)}
 
+/* ---- "Which website" chip on each workflow card ---- */
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.card-head .cname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.site-chip{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;max-width:46%;padding:3px 9px 3px 4px;border-radius:999px;background:var(--surface2);border:1px solid var(--border)}
+.site-ic{position:relative;width:16px;height:16px;flex:0 0 auto}
+.site-mono{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:4px;color:#fff;font-size:9.5px;font-weight:800;line-height:1}
+.site-fav{position:absolute;inset:0;width:16px;height:16px;border-radius:4px;object-fit:contain}
+.site-host{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- Record-time reference thumbnail on editor step cards ---- */
+.eref{margin:8px 0 2px;padding:8px;border-radius:10px;background:var(--surface);border:1px solid var(--border)}
+.eref-lbl{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.eref-img{display:block;max-width:100%;width:auto;max-height:150px;border-radius:7px;border:1px solid var(--border)}
+
 /* ---- Run-mode chooser (Watch vs Auto) in the run sheet ---- */
 .rmode-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:4px 2px 8px}
 .rmode-lbl+.vfield,.rmode+.rmode-lbl{margin-top:14px}
@@ -1366,6 +1396,25 @@ function renderLibrary(list){
   list.forEach(function(wf){box.appendChild(buildCard(wf));});
   paintRun();
 }
+// Small "which website" chip (site icon + hostname) for the top-right of a
+// card. A colored monogram always renders; the real favicon (from the local
+// favicon store only — no external/Google fallback) layers on top when
+// available and covers the monogram.
+function siteChip(wf){
+  if(!wf.host) return null;
+  var url = wf.startUrl || ('https://'+wf.host+'/');
+  var letter = (wf.host.replace(/^www\./,'')[0]||'?').toUpperCase();
+  var hue = 0; for(var k=0;k<wf.host.length;k++){hue=(hue*31+wf.host.charCodeAt(k))%360;}
+  var mono = h('span',{'class':'site-mono',style:'background:hsl('+hue+',44%,42%)'},letter);
+  var fav = h('img',{'class':'site-fav',alt:'',
+    src:'chrome://favicon2/?size=32&scaleFactor=2x&pageUrl='+encodeURIComponent(url)+'&allowGoogleServerFallback=0'});
+  fav.addEventListener('load',function(){ if(fav.naturalWidth>1) mono.style.display='none'; });
+  fav.addEventListener('error',function(){ fav.style.display='none'; });
+  return h('div',{'class':'site-chip',title:(wf.startUrl||wf.host)},[
+    h('span',{'class':'site-ic'},[mono,fav]),
+    h('span',{'class':'site-host'},wf.host)
+  ]);
+}
 function buildCard(wf){
   var sub=h('div',{'class':'csub'});
   sub.appendChild(h('span',{},(wf.stepCount||0)+' step'+((wf.stepCount===1)?'':'s')));
@@ -1380,7 +1429,10 @@ function buildCard(wf){
 
   var card=h('div',{'class':'card'});
   card.setAttribute('data-wf-id',wf.id);
-  card.appendChild(h('div',{'class':'cname'},wf.name||'Untitled workflow'));
+  card.appendChild(h('div',{'class':'card-head'},[
+    h('div',{'class':'cname'},wf.name||'Untitled workflow'),
+    siteChip(wf)
+  ]));
   card.appendChild(sub);
 
   if(wf.schedule){
@@ -1663,6 +1715,17 @@ function buildEditorStep(s,i){
     h('div',{'class':'etype'},[labelFor(s.type),h('small',{},stepTitle(s))]),
     ctrls
   ]));
+
+  // Record-time reference: a thumbnail of exactly what was clicked when this
+  // step was recorded, so it's obvious which element the step targets.
+  if(s.extra && s.extra.ref_shot){
+    var refImg=h('img',{'class':'eref-img',src:s.extra.ref_shot,alt:'What was clicked when recorded',loading:'lazy'});
+    refImg.addEventListener('error',function(){refImg.style.display='none';});
+    card.appendChild(h('div',{'class':'eref'},[
+      h('div',{'class':'eref-lbl'},'\u{1F4F7} Recorded target'),
+      refImg
+    ]));
+  }
 
   // primary field OR variable editor
   if(varName==null){
