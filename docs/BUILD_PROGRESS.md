@@ -6,9 +6,53 @@
 
 ## Session State
 
-**Last Updated**: 2026-06-22
-**Current Phase**: ✅ SHIPPED — v0.2.1 at full feature parity on macOS, Linux, and Windows
-**Overall Status**: All three desktop platforms rebuilt 2026-06-22 and republished on the [v0.2.1 release](https://github.com/OneManNoCode/MoltBrowser/releases/tag/v0.2.1). Windows reached functional parity (Tor/OCR/voice) and gained an NSIS installer; a MoltNet Tor exit-country selector shipped on all three. See "Milestone: cross-platform parity rebuild" immediately below.
+**Last Updated**: 2026-07-12
+**Current Phase**: 🚀 RELEASING — cutting **macOS v0.2.5** (Agent mode). Windows/Linux binaries remain at v0.2.1; their source is already at v0.2.5 and cross-platform.
+**Overall Status**: v0.2.2 → v0.2.5 landed on `main` on macOS (built + installed + verified). The v0.2.5 release (sign → notarize → staple → upload as `/latest`) is in progress. Windows/Linux desktop binaries stay frozen at v0.2.1 until the next cross-platform build milestone (Windows self-hosted runner is paused — see CLAUDE.md). See "Milestone: v0.2.2–v0.2.5 (macOS)" immediately below; the earlier v0.2.1 parity rebuild follows it.
+
+---
+
+## Milestone: v0.2.2–v0.2.5 — Agent mode + Liquid Glass + cloud AI (macOS, 2026-06 → 2026-07)
+
+macOS-first development landed four feature releases on `main`. All source is
+cross-platform (unconditional builds, features feature-flag-enabled-by-default);
+only the macOS binary has been built/shipped so far.
+
+- **v0.2.5 — Agent mode.** A record/replay browser-automation studio in the side
+  panel (`src/chrome/browser/molt_ai/automation/`): record a task as editable
+  plain-English steps, then run it on demand / in background / on a schedule.
+  Per-step screenshots + a Runs history, Watch vs Auto run modes, label-aware
+  element matching (survives page redesigns), record-time element thumbnails, and
+  site favicon + hostname on each workflow card. Studio UI at
+  `molt://ai-agent`; toolbar "AI mode"/"Agent mode" buttons with a violet active
+  ring. Also: opaque black-glass toolbar; AI-chat panel fixes (copy/paste,
+  on-device attachment extraction, last-used-model persistence, in-WebUI close).
+- **v0.2.4 — Liquid Glass UI.** visionOS-style frosted-glass new-tab
+  (`molt://home`, local — replaced the remote page), matching AI panel + settings,
+  exactly-centered omnibox, de-Googled toolbar, MoltNet libevent launch fix, glass
+  MoltNet + Import popovers.
+- **v0.2.3 — Cloud AI + import.** Bring-your-own-key cloud models (OpenAI /
+  Anthropic / Gemini + any OpenAI-compatible endpoint; keys encrypted at
+  `molt_ai/keys`), one-click import of bookmarks + passwords from other browsers
+  (entry in the bookmarks UI), redesigned AI chat.
+- **v0.2.2** — intermediate AI-chat + settings work folded into the above.
+
+**Build gotchas surfaced this stretch** (full list in `CLAUDE.md`):
+- Editing `src/chrome/common/webui_url_constants.h` triggers a **~2h full
+  recompile** (every WebUI host/URL constant + `kMoltBrowserVersion` live there).
+- The `autoninja` wrapper can print "finished successfully" and **exit 0 on a
+  failed compile** — always `grep` the full build log for `error:`. Real product
+  code is in `Contents/Frameworks/MoltBrowser Framework.framework/…`; the
+  `Contents/MacOS/MoltBrowser` binary is a thin launcher stub (mtime/`strings`
+  meaningless) — verify freshness behaviorally (CDP `typeof <newJsFn>`).
+- Day-to-day install loop: `./scripts/dev-install-mac.sh` (stages the app,
+  carries tor/ocr/whisper/molt_models, regenerates the REQUIRED `default.metallib`
+  wiped on every rebuild, inside-out per-helper codesign with the real Developer
+  ID + allow-jit on Renderer/GPU).
+- Fork API: `base::Value` has **no** nested `List()`/`Dict()` (use
+  `base::ListValue`/`base::DictValue`); `GURL::host()` returns `std::string_view`;
+  `CopyFromSurface` is the 4-arg glic-era form; llama.cpp `.at()` aborts under
+  `-fno-exceptions`.
 
 ---
 

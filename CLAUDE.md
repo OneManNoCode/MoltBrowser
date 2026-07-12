@@ -28,6 +28,12 @@ MoltBrowser is an AI-native privacy browser built on a Chromium fork by GenEye A
 ```
 
 ### Windows (self-hosted GitHub Actions runner — NOT Docker)
+> **Status (as of 2026-07-03): this build path is paused.** The self-hosted
+> runner was on a work machine that got security-flagged, so Windows builds are
+> not currently produced this way — Windows binaries remain frozen at v0.2.1
+> while the source stays cross-platform. Re-establish a non-work runner before
+> using the flow below.
+
 Windows builds run on a self-hosted runner (the host's Windows PC), via the
 `release-windows-selfhosted.yml` workflow. Trigger it:
 ```bash
@@ -75,6 +81,15 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - `base::FilePath`: No `.clear()` → use `= base::FilePath()`. No `.empty()` → use `.value().empty()`
 - `base::ReplaceFile` instead of `base::Move`
 - `base::GetFileSize` → returns `std::optional<int64_t>` (single argument)
+- **`base::Value` in this tree has NO nested `List()`/`Dict()`** → use `base::ListValue` / `base::DictValue` (live throughout `molt_ai/automation/*`)
+- **`GURL::host()` returns `std::string_view`** here → wrap as `std::string(g.host())`, not `= g.host()`
+- **`CopyFromSurface` is the 4-arg glic-era form**: `(gfx::Rect, gfx::Size, base::TimeDelta, cb)` where `cb` takes `const content::CopyFromSurfaceResult&` (a `base::expected<viz::CopyOutputBitmapWithMetadata, …>`); wrap with `mojo::WrapCallbackWithDefaultInvokeIfNotRun`. Used for per-step + record-time screenshots.
+- **`llama.cpp .at()` aborts under `-fno-exceptions`** — audit for `.at(` when updating the vendored llama.cpp.
+
+### Build gotchas
+- **Editing `src/chrome/common/webui_url_constants.h` fans out a ~2h full recompile** on this machine (every WebUI host/URL constant + `kMoltBrowserVersion` live there). Plan version bumps accordingly.
+- After a build, **grep the full output for `error:` / "finished with an error"** — the `autoninja` wrapper can print "finished successfully" and exit 0 even on a failed compile. The real product code is in `Contents/Frameworks/MoltBrowser Framework.framework/…` (the `Contents/MacOS/MoltBrowser` binary is a thin launcher stub — its mtime/`strings` are meaningless).
+- **Local macOS build+install loop: `./scripts/dev-install-mac.sh`** — stages the out-dir app, carries the tor/ocr/whisper/molt_models payloads + regenerates the REQUIRED `default.metallib` (wiped on every rebuild), does the inside-out per-helper codesign (allow-jit on Renderer/GPU) with the real Developer ID, and installs to /Applications. This is the day-to-day loop after `autoninja … chrome`.
 
 ### WebUI Pattern
 - JS → C++: `chrome.send('methodName', [args])`
@@ -86,6 +101,21 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - Commit to `main` branch directly
 - GitHub remote: `https://github.com/OneManNoCode/MoltBrowser.git`
 - PAT requires `repo` + `workflow` scopes (for GitHub Actions)
+
+## Agent mode (automation engine)
+The v0.2.5 headline feature lives in `src/chrome/browser/molt_ai/automation/`:
+`AutomationRecorder` (captures user actions as steps), `AutomationRunner`
+(replays them; label-aware element matching + per-step screenshots),
+`AutomationScheduler` (+ service/factory), `AutomationStorage` (one `.molt`
+JSON per workflow under `~/.moltbrowser/automations/<id>.molt`),
+`automation_recorder_tab_helper`, and `automation_background_browser` (the
+throwaway run window). The studio UI is an inline WebUI in
+`src/chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.cc` served at
+`chrome://molt-ai-agent/` (user-facing `molt://ai-agent`), hosted in the side
+panel via `molt_ai/side_panel/agent_side_panel_web_view.*` — it shares one
+`kContent` side panel with AI chat, so opening one swaps out the other. The
+toolbar "AI mode" / "Agent mode" buttons (with the violet active ring) are in
+`ui/views/toolbar/toolbar_view.cc`.
 
 ## Architecture Reference
 See [ARCHITECTURE.md](ARCHITECTURE.md) for full system architecture, directory structure, and build configurations.
