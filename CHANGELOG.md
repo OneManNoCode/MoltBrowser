@@ -19,6 +19,53 @@ For longer narrative posts behind each entry see
 
 ---
 
+## 2026-07-12 — v0.2.5: Agent mode
+
+MoltBrowser learns to *do* things, not just talk about them. The headline is
+**Agent mode** — a built-in web-automation studio that lives in the side panel.
+
+### Added — Agent mode
+
+- **Record → review → run → schedule.** Click **Agent mode** and the right panel
+  becomes a studio (it swaps with AI chat; your page stays on the left). Do a
+  task on the page and every action is captured as a clear, editable step —
+  "Click *Sale*", "Type … in the search field", "Scroll". Save it, run it on
+  demand or with different values, or put it on a schedule.
+- **See every run, step by step — with screenshots.** Each run keeps a per-step
+  timeline with a screenshot of what the page looked like at each step, so it's
+  obvious what happened and exactly which step something failed on.
+- **Two run modes.** *Watch it run* opens a window so you can see each step
+  happen live, or *run in background* keeps it minimized and out of your way.
+- **Reliable replay.** Workflows find the right element by its on-screen label —
+  not a brittle CSS path — so recordings survive page redesigns. Verified
+  end-to-end on real multi-step shopping flows.
+- **Recorded-target thumbnails.** Every recorded step shows a picture of exactly
+  what you clicked, so a workflow is easy to review and edit later.
+- Each saved workflow card shows the site's **favicon + hostname**, so it's
+  obvious which website it's for.
+
+### Changed
+
+- **Opaque black-glass toolbar.** The toolbar is now a solid black-tinted glass
+  finish with floating pill buttons (replacing the earlier translucent/vibrancy
+  treatment). A single violet **AI mode** button (on-device AI) sits alongside
+  **Agent mode**, and the currently-open one is lit by a subtle ring.
+- **MoltNet VPN.** The privacy-routing control is relabelled *MoltNet VPN* and
+  moved to a left-cluster glass popover that shows the exit-country flag.
+- **Import** moved into the bookmarks UI (a two-tab Bookmarks | Import popover).
+- **AI chat panel.** Copy/paste now works in the chat box; the attachment button
+  extracts text from documents and images on-device and answers from them; chat
+  opens on your last-used model; the close button moved inside the panel.
+
+### Platforms
+
+- **macOS (Apple Silicon)** ships v0.2.5, signed + notarized, bundling an
+  on-device model. **Windows and Linux** binaries remain at v0.2.1 for now — the
+  v0.2.5 source is already cross-platform and will get parity builds at the next
+  cross-platform milestone.
+
+---
+
 ## 2026-07-09 — v0.2.4: Liquid Glass, MoltNet Tor actually works, and a de-Googled toolbar
 
 A design + fixes release on top of v0.2.3.
@@ -346,4 +393,4 @@ Days 3–5: schedule editor, manual create / import / export, trust UX.
 
 ---
 
-[unreleased]: https://github.com/OneManNoCode/MoltBrowser/compare/bd52774...HEAD
+[unreleased]: https://github.com/OneManNoCode/MoltBrowser/compare/v0.2.5...HEAD

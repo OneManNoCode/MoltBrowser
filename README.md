@@ -12,17 +12,11 @@ Built by [GenEye AI Labs Inc.](https://geneye.ai/moltbrowser)
 
 ## What's new
 
-We push to `main` every day. The latest visible work:
+- **v0.2.5 — Agent mode.** A built-in web‑automation studio in the side panel: record a task once, review it as clear, editable plain‑English steps, then run it on demand, in the background, or on a schedule. Every run keeps a step‑by‑step history with a screenshot of each step, and each recorded step shows a thumbnail of exactly what you clicked.
+- **v0.2.4** — visionOS‑style Liquid Glass UI, a local glass new‑tab page, an exactly‑centered address bar, and a fix that got MoltNet privacy routing launching again.
+- **v0.2.3** — bring‑your‑own‑key cloud models (OpenAI / Anthropic / Gemini + any OpenAI‑compatible endpoint), one‑click import of bookmarks + passwords, and a redesigned AI chat.
 
-- **2026-05-12** — AI-grouped history: `/history` clusters your reading into topic cards, sub-50ms, all local. ([post](website/updates/devblog/2026-05-12-grouped-history.md))
-- **2026-05-12** — Form filler agent: encrypted local profile, `/fill` autofills any web form, nothing ever syncs. ([post](website/updates/devblog/2026-05-12-form-filler.md))
-- **2026-05-12** — PDF chat: side panel reads PDFs via AX-tree snapshot, fully local. ([post](website/updates/devblog/2026-05-12-pdf-chat.md))
-- **2026-05-12** — Universal cookie killer, tab triage, page watchers, agent inbox tray. ([post](website/updates/devblog/2026-05-12-four-agent-features.md))
-- **2026-05-11** — Page-content chunking, memory grounding, new action verbs.
-- **2026-05-10** — Side panel grounded in the active tab, LLM emits actions directly.
-- **2026-05-08** — Personal Vector Memory: encrypted on-device semantic index.
-
-Full history: [`CHANGELOG.md`](CHANGELOG.md) — Narrative behind each entry: [`website/updates/devblog/`](website/updates/devblog/).
+Full history: [`CHANGELOG.md`](CHANGELOG.md).
 
 Want to contribute? See [`CONTRIBUTING.md`](CONTRIBUTING.md). Issues and
 PRs welcome — pick anything from the changelog "Unreleased" section or
@@ -32,19 +26,19 @@ propose your own.
 
 ## What is MoltBrowser?
 
-MoltBrowser is an open-source, AI-native web browser built on a Chromium fork with embedded local LLM inference, autonomous browsing agents, and privacy-first architecture. Unlike traditional browsers where AI is bolted on as an extension, in MoltBrowser **AI is the core runtime**.
+MoltBrowser is an open-source, AI-native web browser built on a hardened open web engine (Blink + V8) with embedded local LLM inference, browser automation, and privacy-first architecture. Unlike traditional browsers where AI is bolted on as an extension, in MoltBrowser **AI is the core runtime**.
 
 ## Key Features
 
-- **Embedded Local LLMs** — Run LLaMA, Qwen, Mistral, and Phi models directly in the browser via llama.cpp. No cloud required.
-- **Autonomous Agent Mode** — AI agents that can browse, extract data, fill forms, and complete multi-step research tasks.
-- **Chrome-Compatible** — Full Chrome extension support, identical UI patterns, zero learning curve for Chrome users.
-- **MoltShield Privacy** — Tracker blocking, fingerprint mitigation, cookie management, and anti-detection systems.
-- **MoltNet Tor Routing** — Onion-routed IP privacy with a Tor exit-country selector: pick the country your traffic exits through, straight from the AI side panel.
-- **Multi-AI Sidebar** — Built-in AI panel supporting multiple models for summarization, code generation, and research.
-- **Persona System** — Customizable AI personas (Researcher, Developer, Lawyer, etc.) that modify AI reasoning.
-- **browser.ai.* APIs** — Extension APIs for developers to build AI-powered browser extensions.
-- **Cross-Platform** — Windows, macOS, Linux, Android, iOS.
+- **Agent mode** — Record a web task once, review it as editable plain-English steps, then run it on demand, in the background, or on a schedule. Per-step screenshots, a Runs history, and label-aware replay that survives page redesigns.
+- **On-device + cloud AI** — Run local models (TinyLlama ships in the box; add LLaMA, Qwen, Mistral, Phi via llama.cpp) *or* bring your own key for OpenAI / Anthropic / Gemini and any OpenAI-compatible endpoint. Your choice per chat.
+- **Grounded attachments** — Drop in a document or image and MoltBrowser extracts its text on-device and answers from it — nothing leaves your machine.
+- **MoltShield Privacy** — Tracker blocking, fingerprint mitigation, cookie management, and cookie-consent auto-dismissal.
+- **MoltNet VPN** — Onion-routed IP privacy with an exit-country selector: pick the country your traffic exits through, right from the toolbar.
+- **Liquid Glass UI** — A visionOS-style frosted-glass new-tab page, AI panel, and settings; an opaque black-glass toolbar with floating pill buttons.
+- **One-click import** — Bring your bookmarks and saved passwords over from another browser in a click.
+- **Extension-compatible** — Supports standard web-extension APIs, plus `browser.ai.*` APIs for AI-powered extensions.
+- **Desktop** — macOS (Apple Silicon) today; Windows and Linux builds track the same source.
 
 ## Architecture
 
@@ -67,7 +61,7 @@ MoltBrowser is an open-source, AI-native web browser built on a Chromium fork wi
 | MoltShield | MoltNet | AI Sandbox                |
 +--------------------------------------------------+
 |             Browser Core Engine                  |
-| Blink | V8 | Network Stack | Chromium Base       |
+| Blink | V8 | Network Stack | Open Web Engine     |
 +--------------------------------------------------+
 ```
 
@@ -168,17 +162,17 @@ const models = await browser.ai.getModels();
 
 ## Download
 
-The macOS build is current at **v0.2.4**; the Windows and Linux desktop builds are at **v0.2.1** and get rebuilt per-platform at each milestone.
+The macOS build is current at **v0.2.5**; the Windows and Linux desktop builds are at **v0.2.1** and get rebuilt per-platform at each milestone (their source is already up to date).
 
 | Platform | Version | Download |
 |----------|---------|----------|
-| **macOS** (Apple Silicon) | **v0.2.4** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
+| **macOS** (Apple Silicon) | **v0.2.5** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
 | **Windows** (10/11 x64) | v0.2.1 | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
 | **Linux** (x64) | v0.2.1 | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.tar.gz) |
 
 Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases).
 
-> **macOS v0.2.4** adds a visionOS-style Liquid Glass UI, an exactly-centered address bar, and fixes MoltNet Tor routing (the bundled tor was missing a library and never launched). Builds on v0.2.3's bring-your-own-key cloud models, one-click browser import, and redesigned AI chat. Windows and Linux parity builds follow at the next cross-platform milestone. The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
+> **macOS v0.2.5** introduces **Agent mode** — a built-in web-automation studio: record a task, review it as editable plain-English steps, and run it on demand, in the background, or on a schedule, with a per-step screenshot history. Builds on v0.2.4's Liquid Glass UI + MoltNet fix and v0.2.3's bring-your-own-key cloud models, one-click import, and redesigned AI chat. Windows and Linux parity builds follow at the next cross-platform milestone (the v0.2.5 source is already cross-platform). The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
 
 ## Current Status
 
@@ -193,8 +187,8 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 | Cookie consent popup auto-blocking | ✅ Complete |
 | YouTube ad blocking (network + scriptlet) | ✅ Complete |
 | Fingerprint protection (Canvas, WebGL, Audio) | ✅ Complete |
-| Agent browser automation (CLICK, SCROLL, NAVIGATE) | ✅ Complete |
-| Agent testing UI (`chrome://molt-ai-agent/`) | ✅ Complete |
+| Agent mode — record → edit → run / schedule web workflows | ✅ Complete (v0.2.5) |
+| Agent mode — per-step screenshots + Runs history, Watch/Auto modes | ✅ Complete (v0.2.5) |
 | MoltNet Tor routing UI | ✅ Complete |
 | MoltNet Tor exit-country selector | ✅ Complete (v0.2.1, all platforms) |
 | Persona system (5 built-in + custom) | ✅ Complete |
@@ -214,10 +208,10 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 
 | URL | Purpose |
 |-----|---------|
-| `chrome://molt-ai/` | Full-page AI chat with model switching |
-| `chrome://molt-ai-chat/` | Side panel AI chat |
-| `chrome://molt-ai-settings/` | Settings + MoltNet privacy controls |
-| `chrome://molt-ai-agent/` | Agent testing & automation |
+| `molt://ai` | Full-page AI chat with model switching |
+| `molt://ai-chat` | Side panel AI chat |
+| `molt://ai-settings` | Settings + MoltNet privacy controls |
+| `molt://ai-agent` | Agent mode — record, run & schedule web automations |
 
 ## Privacy
 
