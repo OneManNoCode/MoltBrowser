@@ -24,6 +24,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/mojom/window_show_state.mojom.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
@@ -142,6 +143,10 @@ void RunScriptInBackgroundBrowser(
   Browser::CreateParams params(Browser::TYPE_POPUP, profile,
                                /*user_gesture=*/true);
   params.trusted_source = true;
+  // Replay at a desktop size — recordings are made on the desktop layout, and a
+  // small/odd run window can trip a site's responsive layout so the recorded
+  // (desktop) elements render hidden and won't match on replay.
+  params.initial_bounds = gfx::Rect(60, 60, 1360, 900);
   // Auto mode: start minimized so the run window never flashes onto the
   // screen. Watch mode leaves the default show state (visible).
   if (minimize)
