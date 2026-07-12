@@ -88,13 +88,25 @@ const char kRecorderJS[] = R"JS(
     return outSel.length ? outSel : (tag ? [tag] : ['*']);
   }
 
-  // The visible text of an element — recorded as a matching anchor so the
-  // runner can find "the link/button that says Kids" even if the selectors
-  // all drift.
+  // The "accessible name" of an element — recorded as a matching anchor so the
+  // runner can find "the link that says Kids" or "the Arrival airport field"
+  // even when the selectors drift. Prefer aria-label / placeholder over raw
+  // textContent, which on wrapper elements concatenates a label with its
+  // instruction text (e.g. "Aéroport d'arrivéeÀ Entrer les trois...").
   function visibleText(el){
-    var t = txt(el.textContent) || txt(attr(el,'aria-label')) || txt(el.value) ||
-            txt(attr(el,'title')) || txt(attr(el,'alt')) || txt(attr(el,'placeholder'));
-    return t ? t.slice(0, 80) : '';
+    var tag=(el.tagName||'').toLowerCase();
+    var role=(attr(el,'role')||'').toLowerCase();
+    var isField = tag==='input'||tag==='select'||tag==='textarea'||
+                  role==='combobox'||role==='textbox'||role==='searchbox';
+    var t;
+    if (isField) {
+      t = txt(attr(el,'aria-label')) || txt(attr(el,'placeholder')) ||
+          txt(el.value) || txt(attr(el,'title'));
+    } else {
+      t = txt(attr(el,'aria-label')) || txt(el.textContent) || txt(el.value) ||
+          txt(attr(el,'title')) || txt(attr(el,'alt'));
+    }
+    return t ? t.slice(0, 60) : '';
   }
 
   // Maintain an in-page queue. The C++ recorder polls this queue every
@@ -134,9 +146,7 @@ const char kRecorderJS[] = R"JS(
   function attr(el,n){ try { return el.getAttribute ? el.getAttribute(n) : ''; } catch(e){ return ''; } }
   // A short, quoted name for a clickable element (its visible text/label).
   function friendlyName(el){
-    var t = txt(attr(el,'aria-label')) || txt(el.textContent) ||
-            txt(el.value) || txt(attr(el,'title')) || txt(attr(el,'alt')) ||
-            txt(attr(el,'placeholder'));
+    var t = visibleText(el);
     if (t) return '"' + t.slice(0,40) + '"';
     var tag = (el.tagName||'').toLowerCase();
     return 'the ' + (tag==='a' ? 'link' : (tag==='button' ? 'button' : (tag||'element')));
@@ -160,8 +170,8 @@ const char kRecorderJS[] = R"JS(
   // Climb to the nearest actionable ancestor so clicking an icon/label INSIDE
   // a button records the button (not the inner <span>/<svg>).
   var kActionable = 'a,button,[role="button"],[role="link"],[role="tab"],' +
-      '[role="menuitem"],input[type="submit"],input[type="button"],' +
-      'input[type="checkbox"],input[type="radio"],[onclick],summary,label';
+      '[role="menuitem"],[role="combobox"],[role="textbox"],[role="searchbox"],' +
+      'input,select,textarea,[onclick],summary,label';
   // Bounding rect of an element in viewport CSS px, so C++ can crop a
   // record-time thumbnail of exactly what was clicked.
   function elRect(el){

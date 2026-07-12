@@ -145,20 +145,65 @@ const char kFindByTextJSTemplate[] =
         const want = %s;
         const wl = String(want).replace(/\s+/g,' ').trim().toLowerCase();
         if (wl.length < 1) return '';
+        // Include form controls + custom widgets, not just links/buttons — the
+        // recorded element is often a text field / combobox (e.g. an airport
+        // picker), and its accessible name lives in aria-label / placeholder /
+        // an associated <label>, not textContent.
         const q = 'a,button,[role="button"],[role="link"],[role="tab"],' +
-                  '[role="menuitem"],input[type="submit"],input[type="button"],' +
-                  'summary,label,[onclick]';
+                  '[role="menuitem"],[role="option"],[role="combobox"],' +
+                  '[role="textbox"],[role="searchbox"],[role="checkbox"],' +
+                  '[role="radio"],[role="switch"],input,select,textarea,' +
+                  'summary,label,[onclick],[contenteditable="true"],[tabindex]';
         const nodes = Array.from(document.querySelectorAll(q));
         const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-        const tx  = e => ((e.textContent || e.value || e.getAttribute('aria-label') || '')).replace(/\s+/g,' ').trim();
-        let cand = nodes.filter(e => vis(e) && tx(e).toLowerCase() === wl);
-        if (!cand.length && wl.length >= 2)
-          cand = nodes.filter(e => vis(e) && tx(e).toLowerCase().includes(wl));
-        if (!cand.length) return '';
-        cand.sort((a,b) => tx(a).length - tx(b).length);
-        const el = cand[0], mark = 'data-molt-target';
+        // Normalize: collapse whitespace, unify curly quotes/dashes, lowercase.
+        const norm = s => String(s || '').replace(/[‘’]/g,"'").replace(/[“”]/g,'"')
+                             .replace(/\s+/g,' ').trim().toLowerCase();
+        // Every way an element can be "named" (a labelledby ref, aria-label,
+        // placeholder, value, own text, title). Any of them may carry the label.
+        const names = e => {
+          const out = [];
+          try {
+            const lb = e.getAttribute && e.getAttribute('aria-labelledby');
+            if (lb) lb.split(/\s+/).forEach(id => { const n = document.getElementById(id); if (n) out.push(norm(n.textContent)); });
+          } catch (x) {}
+          const push = v => { const n = norm(v); if (n) out.push(n); };
+          if (e.getAttribute) { push(e.getAttribute('aria-label')); push(e.getAttribute('placeholder')); }
+          push(e.value); push(e.textContent);
+          if (e.getAttribute) { push(e.getAttribute('title')); push(e.getAttribute('alt')); push(e.getAttribute('name')); }
+          return out.filter(Boolean);
+        };
+        // Longest common CHARACTER prefix — captures the shared label
+        // ("Aéroport d'arrivée") when the recorded text and the live text agree
+        // up front but diverge after (recorded instruction vs current value),
+        // even when whitespace was mangled ("arrivéeÀ"). It also disambiguates
+        // arrival (prefix 18) from departure (diverges at char ~10).
+        const lcp = (a, b) => { const m = Math.min(a.length, b.length); let n = 0;
+          while (n < m && a[n] === b[n]) n++; return n; };
+        // Rank each element: [class, -commonPrefixLen, shortestNameLen]; min wins.
+        // class 0=exact 1=prefix 2=contains 3=long shared prefix (>=12 chars).
+        let best = null, bestKey = [99, 0, 1e9];
+        nodes.forEach(e => {
+          if (!vis(e)) return;
+          const ns = names(e); if (!ns.length) return;
+          let cls = 99, cp = 0;
+          ns.forEach(n => {
+            if (n === wl) cls = Math.min(cls, 0);
+            else if (n.startsWith(wl) || wl.startsWith(n)) cls = Math.min(cls, 1);
+            else if (n.includes(wl) || (n.length >= 3 && wl.includes(n))) cls = Math.min(cls, 2);
+            else { const p = lcp(n, wl); if (p >= 12) { cls = Math.min(cls, 3); cp = Math.max(cp, p); } }
+          });
+          if (cls >= 99) return;
+          const nl = Math.min.apply(null, ns.map(n => n.length).concat([1e9]));
+          const key = [cls, -cp, nl];
+          if (key[0] < bestKey[0] ||
+              (key[0] === bestKey[0] && (key[1] < bestKey[1] ||
+               (key[1] === bestKey[1] && key[2] < bestKey[2])))) { best = e; bestKey = key; }
+        });
+        if (!best) return '';
+        const mark = 'data-molt-target';
         document.querySelectorAll('['+mark+']').forEach(n => n.removeAttribute(mark));
-        el.setAttribute(mark, '1');
+        best.setAttribute(mark, '1');
         return '['+mark+'="1"]';
       } catch (e) { return ''; }
     })())JS";
