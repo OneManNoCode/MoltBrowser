@@ -149,12 +149,13 @@ jobs:
           ls -lh MoltBrowser-Linux-x64.*
 
       - name: Upload Linux artifacts to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ steps.tag.outputs.tag }}" \
-            dist/MoltBrowser-Linux-x64.deb \
-            dist/MoltBrowser-Linux-x64.rpm \
-            dist/MoltBrowser-Linux-x64.tar.gz \
-            --repo "${{ github.repository }}" \
-            --clobber
+        # Uses the built-in GITHUB_TOKEN (permissions: contents: write above).
+        # Avoids needing the `gh` CLI installed on the self-hosted runner.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            dist/MoltBrowser-Linux-x64.deb
+            dist/MoltBrowser-Linux-x64.rpm
+            dist/MoltBrowser-Linux-x64.tar.gz
+          fail_on_unmatched_files: true
