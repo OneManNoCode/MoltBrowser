@@ -87,9 +87,14 @@ jobs:
 
       - name: Install depot_tools
         run: |
-          git clone --depth 1 \
-            https://chromium.googlesource.com/chromium/tools/depot_tools.git \
-            "$HOME/depot_tools"
+          # Idempotent: $HOME persists on a self-hosted runner, so only clone
+          # if it isn't already there (a second run otherwise dies with
+          # "destination path already exists and is not an empty directory").
+          if [ ! -d "$HOME/depot_tools/.git" ]; then
+            git clone --depth 1 \
+              https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+              "$HOME/depot_tools"
+          fi
           echo "$HOME/depot_tools" >> $GITHUB_PATH
           # Bootstrap depot_tools' python3 etc.
           (cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true)
