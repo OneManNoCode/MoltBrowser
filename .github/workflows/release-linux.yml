@@ -129,7 +129,16 @@ jobs:
               git checkout --detach FETCH_HEAD)
           fi
           (cd src && git log -1 --format="HEAD = %H %s") | head -1
-          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow --nohooks
+          # On a WARM self-hosted runner, the previous run's overlay copy left
+          # chromium/src dirty (modified tracked files + new untracked files), and
+          # gclient sync refuses to run on a dirty tree ("You have uncommitted
+          # changes"). Reset src back to the pinned revision first — the overlay is
+          # re-applied in the next step. `clean -fd` (no -x) respects .gitignore,
+          # so the out/ build cache survives for incremental builds. No-op on a
+          # cold first run (tree is already clean).
+          git -C src reset --hard -q
+          git -C src clean -fdq
+          gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow --nohooks --force
           # Run the DEPS hooks: generates build/util/LASTCHANGE(.committime) and
           # installs the Linux sysroot + clang/rust toolchains. Without this,
           # gn gen dies at //build/timestamp.gni (LASTCHANGE.committime missing)
