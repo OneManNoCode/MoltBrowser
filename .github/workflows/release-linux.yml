@@ -33,6 +33,11 @@ on:
         description: 'Existing tag to attach binaries to (e.g., v0.2.1)'
         required: true
         type: string
+      jobs:
+        description: 'Parallel compile jobs. Keep low on RAM-limited machines (laptops): each heavy C++ TU can use 5-8 GB, so 8 jobs OOMs a 16 GB box. 4 is a safe default; 2 for 8 GB.'
+        required: false
+        default: '4'
+        type: string
 
 permissions:
   contents: write   # needed to upload assets to the release
@@ -123,8 +128,12 @@ jobs:
 
       - name: Configure + Build chrome (~3-4 hr on real Linux x86_64)
         run: |
+          # Cap parallelism to protect RAM-limited machines. On workflow_dispatch
+          # use the 'jobs' input; on tag-push (no inputs) fall back to a safe 4.
+          JOBS="${{ inputs.jobs || '4' }}"
+          echo "Building with --jobs $JOBS (nproc=$(nproc))"
           ./scripts/configure.sh --platform linux --arch x64
-          ./scripts/build.sh --jobs $(nproc)
+          ./scripts/build.sh --jobs "$JOBS"
 
       - name: Package .deb + .rpm + .tar.gz
         run: |
