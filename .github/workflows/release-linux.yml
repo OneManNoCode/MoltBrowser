@@ -55,6 +55,11 @@ jobs:
     steps:
       - name: Check out repo (no submodules — Chromium synced separately)
         uses: actions/checkout@v4
+        with:
+          # Preserve the gitignored chromium/ checkout AND out/ build dir between
+          # runs so the self-hosted runner stays warm (incremental builds, no
+          # ~30 GB re-sync each time). Default clean:true would git-clean them.
+          clean: false
 
       - name: Determine target tag
         id: tag
@@ -120,6 +125,12 @@ jobs:
           fi
           (cd src && git log -1 --format="HEAD = %H %s") | head -1
           gclient sync --revision "src@${CHROMIUM_REVISION}" --no-history --shallow --nohooks
+          # Run the DEPS hooks: generates build/util/LASTCHANGE(.committime) and
+          # installs the Linux sysroot + clang/rust toolchains. Without this,
+          # gn gen dies at //build/timestamp.gni (LASTCHANGE.committime missing)
+          # and there's no toolchain to build with. Sync used --nohooks, so we
+          # run them explicitly here (idempotent; skipped work is cheap on re-runs).
+          gclient runhooks
 
       - name: Copy MoltBrowser source overlays into chromium/src/
         run: |
