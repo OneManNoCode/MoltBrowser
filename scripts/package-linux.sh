@@ -43,6 +43,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Debian AND RPM versions must start with a digit. Callers often pass the git
+# tag verbatim (e.g. "v0.2.5"); dpkg-deb then rejects `Version: v0.2.5` with
+# "control ... near line 2 ... bad syntax". Strip a single leading "v".
+VERSION="${VERSION#v}"
+
 echo "=== MoltBrowser Linux Packaging ==="
 echo "Version: $VERSION"
 echo "Format: $FORMAT"
@@ -134,9 +139,9 @@ Architecture: amd64
 Depends: libnss3 (>= 3.26), libatk1.0-0 (>= 1.12.4), libatk-bridge2.0-0 (>= 2.5.3), libcups2 (>= 1.6.0), libdrm2 (>= 2.4.38), libgtk-3-0 (>= 3.9.10), libxkbcommon0 (>= 0.4.1), libxcomposite1 (>= 1:0.3-1), libxdamage1 (>= 1:1.1), libxrandr2 (>= 2:1.2.99.3), libgbm1 (>= 8.1~0), libpango-1.0-0 (>= 1.14.0), libasound2 (>= 1.0.17)
 Maintainer: GenEye AI Labs Inc. <support@geneye.ai>
 Description: MoltBrowser — AI-Native Privacy Browser
- MoltBrowser is a Chromium-based browser with built-in AI capabilities,
- on-device LLM inference, and privacy-first design. Features include
- MoltShield ad blocking, AI chat sidebar, and Chrome extension support.
+ MoltBrowser is a privacy-first browser with built-in AI capabilities:
+ on-device LLM inference, MoltShield ad/tracker blocking, an AI chat
+ sidebar, MoltNet privacy routing, and support for standard web extensions.
 Homepage: https://moltbrowser.com
 EOF
 
@@ -186,7 +191,7 @@ Source0:        moltbrowser-$VERSION.tar.gz
 Requires:       nss >= 3.26, atk >= 1.12.4, at-spi2-atk >= 2.5.3, cups-libs >= 1.6.0, libdrm >= 2.4.38, gtk3 >= 3.9.10, libxkbcommon >= 0.4.1, alsa-lib >= 1.0.17
 
 %description
-MoltBrowser is a Chromium-based browser with built-in AI capabilities,
+MoltBrowser is a privacy-first browser with built-in AI capabilities,
 on-device LLM inference, and privacy-first design.
 
 %install
