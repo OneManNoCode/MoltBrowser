@@ -62,6 +62,16 @@ fi
 
 mkdir -p "$DIST_DIR"
 
+# On a warm/reused workspace (self-hosted CI), Linux artifacts from prior runs
+# linger in dist/ — e.g. an old "MoltBrowser-v0.2.5-linux-x64.tar.gz" from before
+# the version was normalized. The workflow's rename glob then matches >1 file and
+# `mv` fails, so nothing uploads. Wipe our own Linux outputs first (versioned +
+# stable-named). Non-Linux artifacts (e.g. the macOS .dmg) are left untouched.
+rm -f "$DIST_DIR"/MoltBrowser-*linux-x64.* \
+      "$DIST_DIR"/MoltBrowser-Linux-x64.* \
+      "$DIST_DIR"/moltbrowser*.deb \
+      "$DIST_DIR"/moltbrowser*.rpm 2>/dev/null || true
+
 # --- Common: Stage files ---
 STAGE_DIR="$DIST_DIR/.stage-linux"
 rm -rf "$STAGE_DIR"
