@@ -38,6 +38,14 @@ on:
         required: false
         default: '4'
         type: string
+      skip_build:
+        description: 'Re-package the EXISTING build without re-compiling (packaging-only fixes finish in minutes). Needs a prior successful build on this runner. Leave false for real releases.'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write   # needed to upload assets to the release
@@ -100,6 +108,7 @@ jobs:
           (cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true)
 
       - name: Sync Chromium source (~30-60 min on first run, cached on self-hosted)
+        if: ${{ inputs.skip_build != 'true' }}
         env:
           DEPOT_TOOLS_UPDATE: "0"
           # Pin to the EXACT Chromium commit our src/ overlay matches.
@@ -147,11 +156,13 @@ jobs:
           gclient runhooks
 
       - name: Copy MoltBrowser source overlays into chromium/src/
+        if: ${{ inputs.skip_build != 'true' }}
         run: |
           # Same pattern build-linux.sh would do
           cp -r src/* chromium/src/
 
       - name: Configure + Build chrome (~3-4 hr on real Linux x86_64)
+        if: ${{ inputs.skip_build != 'true' }}
         run: |
           # Cap parallelism to protect RAM-limited machines. On workflow_dispatch
           # use the 'jobs' input; on tag-push (no inputs) fall back to a safe 4.
@@ -159,6 +170,20 @@ jobs:
           echo "Building with --jobs $JOBS (nproc=$(nproc))"
           ./scripts/configure.sh --platform linux --arch x64
           ./scripts/build.sh --jobs "$JOBS"
+
+      - name: Reuse existing build (skip_build=true — packaging-only fast path)
+        if: ${{ inputs.skip_build == 'true' }}
+        run: |
+          # Package the binary already sitting in the warm out/ dir instead of
+          # re-compiling. The overlay is already compiled INTO chrome, so we skip
+          # sync/overlay/build entirely; package-linux.sh only reads out/MoltBrowser.
+          BIN="chromium/src/out/MoltBrowser/chrome"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::skip_build=true but $BIN is missing — no prior build to package."
+            echo "Run the workflow once with skip_build=false (a full build) first."
+            exit 1
+          fi
+          echo "Reusing existing build: $BIN ($(du -h "$BIN" | cut -f1))"
 
       - name: Package .deb + .rpm + .tar.gz
         run: |
