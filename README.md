@@ -162,17 +162,17 @@ const models = await browser.ai.getModels();
 
 ## Download
 
-The macOS build is current at **v0.2.5**; the Windows and Linux desktop builds are at **v0.2.1** and get rebuilt per-platform at each milestone (their source is already up to date).
+The macOS and Linux builds are current at **v0.2.5**; the Windows desktop build is at **v0.2.1** and gets rebuilt at the next milestone (its source is already up to date).
 
 | Platform | Version | Download |
 |----------|---------|----------|
 | **macOS** (Apple Silicon) | **v0.2.5** | [MoltBrowser-macOS-arm64.dmg](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg) — signed + notarized, bundles an on-device model |
 | **Windows** (10/11 x64) | v0.2.1 | [Setup.exe](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe) (installer) · [.zip](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64.zip) (portable, unzip & run `MoltBrowser.exe`) |
-| **Linux** (x64) | v0.2.1 | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Linux-x64.tar.gz) |
+| **Linux** (x64) | **v0.2.5** | [.deb](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb) · [.rpm](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.rpm) · [.tar.gz](https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.tar.gz) — install with `sudo apt install ./MoltBrowser-Linux-x64.deb` |
 
 Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releases).
 
-> **macOS v0.2.5** introduces **Agent mode** — a built-in web-automation studio: record a task, review it as editable plain-English steps, and run it on demand, in the background, or on a schedule, with a per-step screenshot history. Builds on v0.2.4's Liquid Glass UI + MoltNet fix and v0.2.3's bring-your-own-key cloud models, one-click import, and redesigned AI chat. Windows and Linux parity builds follow at the next cross-platform milestone (the v0.2.5 source is already cross-platform). The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
+> **macOS v0.2.5** introduces **Agent mode** — a built-in web-automation studio: record a task, review it as editable plain-English steps, and run it on demand, in the background, or on a schedule, with a per-step screenshot history. Builds on v0.2.4's Liquid Glass UI + MoltNet fix and v0.2.3's bring-your-own-key cloud models, one-click import, and redesigned AI chat. Linux (.deb / .rpm / .tar.gz) is now built per-release on a self-hosted runner and is current at **v0.2.5**; the Windows parity build follows at the next milestone (the v0.2.5 source is already cross-platform). The macOS DMG ships an on-device model in the download; Linux and Windows fetch one on first run.
 
 ## Current Status
 
@@ -199,10 +199,10 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 | macOS DMG (signed + notarized + stapled) | ✅ Shipped (v0.2.1) |
 | Windows x64 (portable ZIP + NSIS installer) | ✅ Shipped (v0.2.1) |
 | Windows Tor / voice / OCR (functional parity) | ✅ Shipped (v0.2.1) |
-| Linux deb / rpm / tar.gz | ✅ Shipped (v0.2.1) |
+| Linux deb / rpm / tar.gz | ✅ Shipped (v0.2.5) |
 | Android APK scaffolding | 🔨 Scaffolding |
 | iOS IPA scaffolding | 🔨 Scaffolding |
-| CI/CD GitHub Actions (macOS native, Linux Docker, Windows self-hosted) | ✅ Complete |
+| CI/CD GitHub Actions (macOS native, Linux self-hosted, Windows self-hosted) | ✅ Complete |
 
 ### Testing Pages
 
