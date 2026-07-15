@@ -36,7 +36,9 @@ MoltImportBubbleView::MoltImportBubbleView(views::View* anchor,
     : views::BubbleDialogDelegateView(
           views::BubbleDialogDelegateView::CreatePassKey(),
           anchor,
-          views::BubbleBorder::TOP_RIGHT) {
+          // Left-cluster anchor (sibling of MoltNet): open down-and-right so the
+          // panel doesn't run off the window's left edge. See molt_net_bubble.cc.
+          views::BubbleBorder::TOP_LEFT) {
   SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
   set_margins(gfx::Insets());
   // Punch the frame transparent so the page's CSS glass is what shows; the

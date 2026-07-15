@@ -37,7 +37,11 @@ MoltNetBubbleView::MoltNetBubbleView(views::View* anchor,
     : views::BubbleDialogDelegateView(
           views::BubbleDialogDelegateView::CreatePassKey(),
           anchor,
-          views::BubbleBorder::TOP_RIGHT),
+          // The MoltNet button sits in the LEFT toolbar cluster, so anchor the
+          // bubble's top-LEFT to it and open down-and-right. TOP_RIGHT opened it
+          // leftward, running the panel off the window's left edge (clipped on
+          // Linux, where there was no room to auto-adjust). TOP_LEFT fits.
+          views::BubbleBorder::TOP_LEFT),
       on_closed_(std::move(on_closed)) {
   SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
   set_margins(gfx::Insets());
