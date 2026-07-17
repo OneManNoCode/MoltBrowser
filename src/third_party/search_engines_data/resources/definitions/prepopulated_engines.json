@@ -171,12 +171,12 @@
     },
 
     "google": {
-      "name": "MoltSearch",
-      "keyword": "moltsearch.ai",
-      "favicon_url": "https://moltsearch.ai/favicon.ico",
+      "name": "DuckDuckGo",
+      "keyword": "duckduckgo.com",
+      "favicon_url": "https://duckduckgo.com/favicon.ico",
       "base_builtin_resource_id": "SEARCH_ENGINE_GOOGLE",
-      "search_url": "https://moltsearch.ai/search?q={searchTerms}",
-      "suggest_url": "https://moltsearch.ai/suggest?q={searchTerms}",
+      "search_url": "https://duckduckgo.com/?q={searchTerms}",
+      "suggest_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
       "type": "SEARCH_ENGINE_GOOGLE",
       "preconnect_to_search_url" : "ALLOWED",
       "prefetch_likely_navigations" : "ALLOWED",
