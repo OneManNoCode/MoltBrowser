@@ -20,6 +20,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
@@ -29,6 +31,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/views/widget/widget.h"
 #include "url/gurl.h"
 
 namespace {
@@ -209,11 +212,24 @@ void MoltImportHandler::HandleOpenBookmark(const base::ListValue& args) {
     return;
   }
 
-  chrome::AddSelectedTabWithURL(browser, gurl,
-                                ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+  // Open the bookmark in the CURRENT tab (the one the popover was opened over),
+  // not a new tab — otherwise every bookmark click stacks up another tab and you
+  // end up with a chain of MoltSearch/blank tabs.
+  NavigateParams nav_params(browser, gurl, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+  nav_params.disposition = WindowOpenDisposition::CURRENT_TAB;
+  Navigate(&nav_params);
   out.Set("ok", true);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
+
+  // Dismiss the popover after opening a bookmark. It's close_on_deactivate=false
+  // (for the Keychain import flow), so it won't close on its own and would
+  // otherwise sit over the page we just navigated to. Close is async, so doing
+  // it after resolving the callback is safe.
+  if (views::Widget* bubble = views::Widget::GetTopLevelWidgetForNativeView(
+          webui_wc->GetNativeView())) {
+    bubble->Close();
+  }
 }
 
 void MoltImportHandler::HandleGetImportableBrowsers(
