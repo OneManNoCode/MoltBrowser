@@ -416,9 +416,26 @@ function openBookmark(url){
   sendWithPromise('openBookmark',url).then(function(){}).catch(function(){});
 }
 
+// Collapse duplicate bookmarks that point at the SAME url into one row — many
+// profiles have a site saved several times (repeated imports). Trailing slashes
+// are normalized so "site.com" and "site.com/" match; anything with a different
+// path/query/fragment is treated as a distinct URL and kept. The survivor keeps
+// the strongest recency signal so it still sorts correctly under Recent.
+function dedupeByUrl(list){
+  var seen={},out=[];
+  (list||[]).forEach(function(b){
+    var k=(b.url||'').replace(/\/+$/,'');
+    if(!k){out.push(b);return;}
+    var ex=seen[k];
+    if(ex){ ex.used=Math.max(ex.used||0,b.used||0);
+            ex.added=Math.max(ex.added||0,b.added||0); return; }
+    seen[k]=b;out.push(b);
+  });
+  return out;
+}
 function loadBookmarks(){
   sendWithPromise('getBookmarks').then(function(r){
-    STATE.bookmarks=(r&&r.bookmarks)?r.bookmarks:[];
+    STATE.bookmarks=dedupeByUrl((r&&r.bookmarks)?r.bookmarks:[]);
     renderBookmarks();updateHeader();
   }).catch(function(){STATE.bookmarks=[];renderBookmarks();updateHeader();});
 }
