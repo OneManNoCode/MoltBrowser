@@ -59,6 +59,15 @@ void CollectBookmarks(const bookmarks::BookmarkNode* node,
       entry.Set("url", child->url().spec());
       entry.Set("host", child->url().host());
       entry.Set("folder", folder);
+      // For the popover's "Recent" section: ms-since-epoch of last open and of
+      // add. |used| is 0 when the bookmark has never been opened.
+      entry.Set("used",
+                child->date_last_used().is_null()
+                    ? 0.0
+                    : static_cast<double>(
+                          child->date_last_used().InMillisecondsSinceUnixEpoch()));
+      entry.Set("added", static_cast<double>(
+                             child->date_added().InMillisecondsSinceUnixEpoch()));
       out->Append(std::move(entry));
     } else if (child->is_folder()) {
       CollectBookmarks(child.get(), base::UTF16ToUTF8(child->GetTitle()), out);

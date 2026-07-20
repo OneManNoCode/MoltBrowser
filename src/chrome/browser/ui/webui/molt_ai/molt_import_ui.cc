@@ -43,6 +43,12 @@ class MoltImportDataSource : public content::URLDataSource {
         network::mojom::CSPDirectiveName::RequireTrustedTypesFor) {
       return "";
     }
+    if (directive == network::mojom::CSPDirectiveName::ImgSrc) {
+      // Allow local site favicons so bookmark rows show the real site icon.
+      // No Google-server fallback (allowGoogleServerFallback=0 on the URL) —
+      // this only serves favicons already in the local database.
+      return "img-src 'self' chrome://favicon2 chrome://resources data:;";
+    }
     return content::URLDataSource::GetContentSecurityPolicy(directive);
   }
 
@@ -115,6 +121,9 @@ class MoltImportDataSource : public content::URLDataSource {
     border:1px solid transparent;transition:background .14s,border-color .14s}
   .row:hover{background:rgba(255,255,255,.06);border-color:var(--edge)}
   .row .flag{width:22px;height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+  .row .flag img.fav{width:16px;height:16px;border-radius:4px;display:block}
+  .seclabel{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+            color:var(--faint);padding:10px 12px 4px;user-select:none}
   .row .flag svg{width:20px;height:20px;display:block}
   .row .name{font-size:13px;flex:1}
   .row .chk{color:var(--faint);font-size:15px;opacity:0;flex:0 0 auto;transition:opacity .14s}
@@ -197,7 +206,7 @@ class MoltImportDataSource : public content::URLDataSource {
 
     <!-- DEFAULT view: the user's own saved bookmarks. -->
     <div class="view" id="view-bm">
-      <div class="search"><input id="bmsearch" type="text" placeholder="Search bookmarks&hellip;" autocomplete="off" spellcheck="false"></div>
+      <div class="search"><input id="bmsearch" type="text" placeholder="Search bookmarks&hellip;" autocomplete="off" spellcheck="false" autofocus></div>
       <div class="list" id="bmlist"></div>
     </div>
 
@@ -288,7 +297,11 @@ var LOGO={
     '<line x1="1.5" y1="12" x2="22.5" y2="12" stroke="#888" stroke-width="1.6"/></svg>'};
 
 var STATE={tab:'bookmarks',browsers:[],selected:'',includePasswords:false,
-           busy:false,bookmarks:[],filter:''};
+           busy:false,bookmarks:[],filter:'',recent:{}};
+// Restore which bookmarks were recently opened from this popover.
+try{ STATE.recent=JSON.parse(localStorage.getItem('molt_bm_recent')||'{}')||{}; }
+catch(e){ STATE.recent={}; }
+function focusSearch(){ var s=el('bmsearch'); if(s){ try{ s.focus(); s.select(); }catch(e){} } }
 
 function isInstalled(b){return b.installed!==false;}
 function setStatus(t){el('status').textContent=t||'';}
@@ -302,6 +315,7 @@ function setTab(t){
   el('view-bm').hidden=(t!=='bookmarks');
   el('view-im').hidden=(t!=='import');
   updateHeader();
+  if(t==='bookmarks') setTimeout(focusSearch,0);
 }
 
 function updateHeader(){
@@ -339,7 +353,15 @@ function bmRowEl(b){
   var r=document.createElement('div');r.className='row';
   r.onclick=function(){openBookmark(b.url);};
   var f=document.createElement('span');f.className='flag';
-  f.innerHTML=LOGO.globe;  // constant string only
+  f.innerHTML=LOGO.globe;  // globe fallback shown until the real favicon loads
+  if(b.url){
+    // Real site favicon from the LOCAL favicon database (no Google fallback).
+    var img=document.createElement('img');
+    img.className='fav';img.width=16;img.height=16;img.alt='';
+    img.onload=function(){f.innerHTML='';f.appendChild(img);};
+    img.src='chrome://favicon2/?size=32&scaleFactor=2x&pageUrl='+
+            encodeURIComponent(b.url)+'&allowGoogleServerFallback=0';
+  }
   var m=document.createElement('div');m.className='meta';
   var n=document.createElement('div');n.className='name';
   n.textContent=b.title||b.host||b.url||'';
@@ -349,6 +371,14 @@ function bmRowEl(b){
   r.appendChild(f);r.appendChild(m);return r;
 }
 
+// Recency score: most recent of (opened-in-this-popover, last-used, added).
+function bmRecency(b){
+  var lc=(STATE.recent&&STATE.recent[b.url])||0;
+  return Math.max(lc, b.used||0, b.added||0);
+}
+function seclabel(text){
+  var d=document.createElement('div');d.className='seclabel';d.textContent=text;return d;
+}
 function renderBookmarks(){
   var list=el('bmlist');list.innerHTML='';
   if(!STATE.bookmarks.length){
@@ -359,18 +389,30 @@ function renderBookmarks(){
     el('toimport').onclick=function(){setTab('import');};
     return;}
   var f=STATE.filter.toLowerCase();
-  var items=f?STATE.bookmarks.filter(function(b){
-    return (b.title||'').toLowerCase().indexOf(f)>=0 ||
-           (b.host||'').toLowerCase().indexOf(f)>=0;}):STATE.bookmarks;
-  if(!items.length){
-    var e2=document.createElement('div');e2.className='empty';
-    e2.textContent='No matches.';list.appendChild(e2);return;}
-  items.forEach(function(b){list.appendChild(bmRowEl(b));});
+  if(f){
+    var items=STATE.bookmarks.filter(function(b){
+      return (b.title||'').toLowerCase().indexOf(f)>=0 ||
+             (b.host||'').toLowerCase().indexOf(f)>=0;});
+    if(!items.length){
+      var e2=document.createElement('div');e2.className='empty';
+      e2.textContent='No matches.';list.appendChild(e2);return;}
+    items.forEach(function(b){list.appendChild(bmRowEl(b));});
+    return;}
+  // No search: show a "Recent" section (recently opened/used) then all.
+  var byRec=STATE.bookmarks.slice().sort(function(a,c){return bmRecency(c)-bmRecency(a);});
+  var recent=byRec.filter(function(b){return bmRecency(b)>0;}).slice(0,5);
+  if(recent.length){
+    list.appendChild(seclabel('Recent'));
+    recent.forEach(function(b){list.appendChild(bmRowEl(b));});
+    list.appendChild(seclabel('All bookmarks'));}
+  STATE.bookmarks.forEach(function(b){list.appendChild(bmRowEl(b));});
 }
 
 function openBookmark(url){
   if(!url) return;
-  // Fire-and-forget: the bubble stays open so the user can open several.
+  // Remember it as recently-opened so it floats into the "Recent" section.
+  try{ STATE.recent[url]=Date.now();
+       localStorage.setItem('molt_bm_recent',JSON.stringify(STATE.recent)); }catch(e){}
   sendWithPromise('openBookmark',url).then(function(){}).catch(function(){});
 }
 
@@ -464,6 +506,9 @@ document.addEventListener('DOMContentLoaded',function(){
     STATE.filter=s.value||'';renderBookmarks();});
   loadBookmarks();               // primary: fill the Bookmarks list
   loadBrowsers();                // secondary: pre-populate the Import tab
+  // The bubble grabs focus on activation; re-assert focus into the search box a
+  // moment later so the user can type to filter immediately.
+  setTimeout(focusSearch,60);
 });
 </script>
 </body>
