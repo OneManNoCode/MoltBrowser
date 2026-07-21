@@ -35,6 +35,8 @@ std::string StateToString(molt_ai::UpdateState s) {
       return "downloaded";
     case molt_ai::UpdateState::kInstalling:
       return "installing";
+    case molt_ai::UpdateState::kCheckFailed:
+      return "checkfailed";
     case molt_ai::UpdateState::kError:
       return "error";
   }
@@ -338,6 +340,12 @@ function render(s) {
   } else if (s.state === 'installing') {
     label = 'Installing'; status.textContent = 'Restarting to apply update…';
     checkBtn.disabled = true;
+  } else if (s.state === 'checkfailed') {
+    // Soft state: the version CHECK didn't complete (offline / rate limit).
+    // Nothing is broken and it retries automatically — so no red alarm.
+    bg = '#2a2410'; fg = '#fbbf24'; label = "Couldn't check";
+    status.textContent = s.error ||
+      "Couldn't check for updates — we'll retry automatically.";
   } else if (s.state === 'error') {
     bg = '#311616'; fg = '#f87171'; label = 'Error';
     status.textContent = s.error || 'Update failed.';

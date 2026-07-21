@@ -35,6 +35,10 @@
 #include "base/observer_list_types.h"
 #include "base/timer/timer.h"
 
+namespace net {
+class HttpResponseHeaders;
+}  // namespace net
+
 namespace network {
 class SharedURLLoaderFactory;
 class SimpleURLLoader;
@@ -51,7 +55,9 @@ enum class UpdateState {
   kDownloading,  // Downloading the new installer.
   kDownloaded,   // Installer downloaded; ready to install.
   kInstalling,   // Installer launched; app is about to quit/relaunch.
-  kError,        // Last operation failed (see error()).
+  kCheckFailed,  // Version check couldn't complete (offline/rate-limited).
+                 // Soft state: retried automatically; NOT a broken install.
+  kError,        // A download/install operation failed (see error()).
 };
 
 class UpdateManager {
@@ -121,9 +127,30 @@ class UpdateManager {
   void OnDownloadComplete(base::FilePath expected_path, base::FilePath path);
   void OnPeriodicTimer();
 
+  // Rate-limit-proof fallback when the Releases API check fails: probe the
+  // releases/latest WEB url (a 302 to .../releases/tag/<tag>, served by the
+  // site frontend with no meaningful rate limit) and read the tag from the
+  // redirect target. Headers-only; no body is downloaded.
+  void StartFallbackCheck(bool user_initiated);
+  void OnFallbackHeaders(bool user_initiated,
+                         scoped_refptr<net::HttpResponseHeaders> headers);
+
+  // Both the API and the fallback probe failed. Keep any previously-known
+  // result rather than alarming the user; only surface the soft
+  // kCheckFailed state when we have nothing better to show.
+  void ResolveCheckFailure();
+
   void SetState(UpdateState state);
   void SetError(const std::string& message);
+  // Soft failure of the version CHECK (offline, rate-limited). Unlike
+  // SetError this never means anything is broken; it retries automatically.
+  void SetCheckFailed(const std::string& message);
   void NotifyChanged();
+
+  // Canonical (versionless) release asset filename for this platform, e.g.
+  // "MoltBrowser-macOS-arm64.dmg" — the fixed names our release pipeline
+  // uploads. Empty where the canonical name isn't stable (Windows).
+  std::string PlatformAssetName() const;
 
   // Substring identifying this platform's release asset (e.g. "Setup.exe").
   // Empty if the platform is unsupported.

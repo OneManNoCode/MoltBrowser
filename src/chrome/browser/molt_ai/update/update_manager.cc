@@ -28,10 +28,12 @@
 #include "chrome/common/webui_url_constants.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -42,6 +44,20 @@ namespace {
 // non-prerelease release with its tag, notes, and per-platform assets.
 constexpr char kLatestReleaseApi[] =
     "https://api.github.com/repos/OneManNoCode/MoltBrowser/releases/latest";
+
+// Fallback probe when the API fails (it is rate-limited to 60 req/hour per
+// IP for unauthenticated callers): the releases/latest WEB url 302s to
+// .../releases/tag/<tag>, so the latest tag can be read from the redirect
+// target alone. Served by the site frontend — no meaningful rate limit.
+constexpr char kLatestReleaseWeb[] =
+    "https://github.com/OneManNoCode/MoltBrowser/releases/latest";
+constexpr char kReleaseTagPathMarker[] = "/releases/tag/";
+constexpr char kDownloadUrlBase[] =
+    "https://github.com/OneManNoCode/MoltBrowser/releases/download/";
+
+// When both the API and the fallback probe fail, retry sooner than the
+// normal background cadence so a transient blip self-heals quickly.
+constexpr base::TimeDelta kFailureRetryDelay = base::Minutes(10);
 
 // Delay the first check so it never competes with startup work.
 constexpr base::TimeDelta kInitialCheckDelay = base::Seconds(30);
@@ -125,7 +141,8 @@ void UpdateManager::CheckForUpdates(bool user_initiated) {
     return;
   }
   if (!factory_) {
-    SetError("Network not ready");
+    SetCheckFailed(
+        "Couldn't check yet — still starting up. Try again in a moment.");
     return;
   }
 
@@ -146,6 +163,10 @@ void UpdateManager::CheckForUpdates(bool user_initiated) {
                                              UpdaterAnnotation());
   loader_->SetRetryOptions(
       2, network::SimpleURLLoader::RETRY_ON_NETWORK_CHANGE);
+  // Deliver non-2xx bodies too, so a 403 rate-limit is distinguishable from
+  // a dead network (and gets logged as such) instead of both collapsing into
+  // a null body.
+  loader_->SetAllowHttpErrorResults(true);
   loader_->DownloadToString(
       factory_.get(),
       base::BindOnce(&UpdateManager::OnCheckResponse, base::Unretained(this),
@@ -155,24 +176,41 @@ void UpdateManager::CheckForUpdates(bool user_initiated) {
 
 void UpdateManager::OnCheckResponse(bool user_initiated,
                                     std::optional<std::string> body) {
+  // Capture the HTTP status for diagnosis before releasing the loader —
+  // e.g. 403 here almost always means the unauthenticated GitHub API
+  // rate limit (60 req/hour per IP), not a broken network.
+  int response_code = 0;
+  if (loader_ && loader_->ResponseInfo() && loader_->ResponseInfo()->headers) {
+    response_code = loader_->ResponseInfo()->headers->response_code();
+  }
   loader_.reset();
 
   if (!body || body->empty()) {
-    SetError("Could not reach the update server");
+    LOG(WARNING) << "[MoltUpdate] API check got no body (HTTP "
+                 << response_code << ") — trying redirect fallback";
+    StartFallbackCheck(user_initiated);
     return;
   }
 
   std::optional<base::Value> parsed =
       base::JSONReader::Read(*body, base::JSON_PARSE_RFC);
   if (!parsed || !parsed->is_dict()) {
-    SetError("Unexpected response from the update server");
+    LOG(WARNING) << "[MoltUpdate] API check unparseable (HTTP "
+                 << response_code << ") — trying redirect fallback";
+    StartFallbackCheck(user_initiated);
     return;
   }
   const base::DictValue& root = parsed->GetDict();
 
   const std::string* tag = root.FindString("tag_name");
   if (!tag || tag->empty()) {
-    SetError("Update server returned no version");
+    // Valid JSON but no tag — typically GitHub's rate-limit/error payload
+    // ({"message": "API rate limit exceeded..."}).
+    const std::string* msg = root.FindString("message");
+    LOG(WARNING) << "[MoltUpdate] API check returned no tag (HTTP "
+                 << response_code << ", message: " << (msg ? *msg : "none")
+                 << ") — trying redirect fallback";
+    StartFallbackCheck(user_initiated);
     return;
   }
   latest_tag_ = *tag;
@@ -235,6 +273,123 @@ void UpdateManager::OnCheckResponse(bool user_initiated,
   if (auto_update_ && !asset_url_.empty()) {
     DownloadUpdate();
   }
+}
+
+void UpdateManager::StartFallbackCheck(bool user_initiated) {
+  if (!factory_) {
+    ResolveCheckFailure();
+    return;
+  }
+
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = GURL(kLatestReleaseWeb);
+  request->method = "GET";
+  request->load_flags = net::LOAD_DO_NOT_SAVE_COOKIES;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+  request->headers.SetHeader(net::HttpRequestHeaders::kUserAgent,
+                             base::StrCat({"MoltBrowser/", current_version_}));
+
+  loader_ = network::SimpleURLLoader::Create(std::move(request),
+                                             UpdaterAnnotation());
+  loader_->SetRetryOptions(
+      1, network::SimpleURLLoader::RETRY_ON_NETWORK_CHANGE);
+  // Headers only: the redirect chain is followed and the final URL carries
+  // the tag; the release page body itself is never downloaded.
+  loader_->DownloadHeadersOnly(
+      factory_.get(),
+      base::BindOnce(&UpdateManager::OnFallbackHeaders,
+                     base::Unretained(this), user_initiated));
+}
+
+void UpdateManager::OnFallbackHeaders(
+    bool user_initiated,
+    scoped_refptr<net::HttpResponseHeaders> headers) {
+  std::string tag;
+  if (loader_) {
+    const std::string final_url = loader_->GetFinalURL().spec();
+    const size_t marker = final_url.find(kReleaseTagPathMarker);
+    if (marker != std::string::npos) {
+      tag = final_url.substr(marker + sizeof(kReleaseTagPathMarker) - 1);
+      // Strip any trailing path/query (defensive; not expected).
+      const size_t cut = tag.find_first_of("/?#");
+      if (cut != std::string::npos) {
+        tag = tag.substr(0, cut);
+      }
+    }
+  }
+  loader_.reset();
+
+  if (!headers || tag.empty()) {
+    ResolveCheckFailure();
+    return;
+  }
+
+  latest_tag_ = tag;
+  latest_version_ = NormalizeTag(tag);
+  release_url_ = base::StrCat(
+      {"https://github.com/OneManNoCode/MoltBrowser/releases/tag/", tag});
+
+  base::Version current(current_version_);
+  base::Version latest(latest_version_);
+  const bool newer = current.IsValid() && latest.IsValid() && current < latest;
+
+  if (!newer) {
+    LOG(INFO) << "[MoltUpdate] Up to date via redirect fallback ("
+              << current_version_ << " >= " << latest_version_ << ")";
+    SetState(UpdateState::kUpToDate);
+    return;
+  }
+
+  // Newer release found. The API (which carries notes + asset metadata)
+  // was unreachable, but our release pipeline uploads assets under fixed,
+  // versionless names — so the download URL is constructible directly.
+  const std::string asset_name = PlatformAssetName();
+  if (!asset_name.empty()) {
+    asset_name_ = asset_name;
+    asset_url_ = base::StrCat({kDownloadUrlBase, tag, "/", asset_name});
+    asset_size_ = 0;  // Unknown without the API; progress shows percent-less.
+  } else {
+    asset_url_.clear();
+    asset_name_.clear();
+    asset_size_ = 0;
+  }
+  release_notes_.clear();  // Notes need the API; the release page link stands in.
+
+  LOG(INFO) << "[MoltUpdate] Update available via redirect fallback: "
+            << latest_version_
+            << " (asset: " << (asset_name_.empty() ? "none" : asset_name_)
+            << ")";
+  SetState(UpdateState::kAvailable);
+
+  if (auto_update_ && !asset_url_.empty()) {
+    DownloadUpdate();
+  }
+}
+
+void UpdateManager::ResolveCheckFailure() {
+  // Retry sooner than the 6-hour cadence so a blip self-heals.
+  initial_check_timer_.Start(
+      FROM_HERE, kFailureRetryDelay,
+      base::BindOnce(&UpdateManager::CheckForUpdates, base::Unretained(this),
+                     /*user_initiated=*/false));
+
+  // A previous successful check already answered the only question that
+  // matters ("am I up to date?"); keep that answer instead of alarming the
+  // user over a transient network problem.
+  if (!latest_version_.empty()) {
+    base::Version current(current_version_);
+    base::Version latest(latest_version_);
+    const bool newer =
+        current.IsValid() && latest.IsValid() && current < latest;
+    LOG(WARNING) << "[MoltUpdate] Check failed; keeping last known result ("
+                 << (newer ? "update available" : "up to date") << ")";
+    SetState(newer ? UpdateState::kAvailable : UpdateState::kUpToDate);
+    return;
+  }
+
+  SetCheckFailed(base::StrCat(
+      {"Couldn't check for updates — you're on ", current_version_,
+       ". We'll retry automatically."}));
 }
 
 void UpdateManager::DownloadUpdate() {
@@ -473,6 +628,33 @@ void UpdateManager::SetError(const std::string& message) {
   LOG(WARNING) << "[MoltUpdate] " << message;
   state_ = UpdateState::kError;
   NotifyChanged();
+}
+
+void UpdateManager::SetCheckFailed(const std::string& message) {
+  error_ = message;
+  LOG(WARNING) << "[MoltUpdate] " << message;
+  state_ = UpdateState::kCheckFailed;
+  NotifyChanged();
+}
+
+std::string UpdateManager::PlatformAssetName() const {
+#if BUILDFLAG(IS_MAC)
+  return "MoltBrowser-macOS-arm64.dmg";
+#elif BUILDFLAG(IS_LINUX)
+  ScopedAllowBlockingForMolt allow_blocking;
+  if (base::PathExists(base::FilePath("/usr/bin/dpkg")) ||
+      base::PathExists(base::FilePath("/var/lib/dpkg"))) {
+    return "MoltBrowser-Linux-x64.deb";
+  }
+  if (base::PathExists(base::FilePath("/usr/bin/rpm"))) {
+    return "MoltBrowser-Linux-x64.rpm";
+  }
+  return "MoltBrowser-Linux-x64.tar.gz";
+#else
+  // Windows installer names aren't stable across releases; the API path
+  // (which lists real asset names) is required there.
+  return std::string();
+#endif
 }
 
 void UpdateManager::NotifyChanged() {
