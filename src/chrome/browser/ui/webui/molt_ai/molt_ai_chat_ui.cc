@@ -454,6 +454,8 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-chip-item .mname{font-size:12.5px;font-weight:550;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Mono quant/size subtitle, per the mockup's .mrow .nm small. */
 .model-chip-item .msize{font-size:10px;color:var(--faint);margin-top:1px;font-family:var(--mono)}
+.brandtile{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;border-radius:9px;flex:0 0 auto;overflow:hidden}
+.model-chip-item .mco{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
 .mcheck{font-size:13px;font-weight:700;flex:0 0 auto}
 /* Selected/loaded row shows the mockup's green check (.ck). */
 .mcheck.on{color:var(--ok)}
@@ -490,6 +492,9 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-card{padding:12px 16px;border-bottom:1px solid var(--surface2)}
 .model-card .name{font-size:13px;font-weight:600;color:var(--text)}
 .model-card .meta{font-size:11px;color:var(--faint);margin-top:2px}
+.model-card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.model-card .chead-txt{min-width:0}
+.model-card .mco{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.3;opacity:.92}
 .model-card .card-actions{margin-top:8px;display:flex;gap:6px;align-items:center}
 .model-card .btn{padding:4px 12px;border-radius:7px;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:border-color 0.15s,color 0.15s}
 .model-card .btn:hover{border-color:var(--faint);color:var(--text)}

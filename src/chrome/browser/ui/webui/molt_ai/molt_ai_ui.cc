@@ -114,6 +114,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card:hover{transform:translateY(-1px);border-color:var(--glass-border-hi);background:rgba(255,255,255,0.06)}
 .model-card .name{font-size:14px;font-weight:600;color:#e0e0e0}
 .model-card .meta{font-size:12px;color:#666;margin-top:2px}
+.brandtile{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;border-radius:9px;flex:0 0 auto;overflow:hidden}
+.model-card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.model-card .chead-txt{min-width:0}
+.model-card .mco{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.3;opacity:.92}
 .model-card .card-actions{margin-top:10px;display:flex;gap:8px;align-items:center}
 .model-card .btn{padding:6px 16px;border-radius:10px;font-size:12px;cursor:pointer;border:1px solid var(--glass-border);background:var(--glass-bg);color:#cfcfcf;transition:all 0.2s}
 .model-card .btn:hover{border-color:var(--glass-border-hi);color:#fff;background:var(--glass-bg-hi)}
@@ -150,8 +154,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-chip-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 0.15s}
 .model-chip-item:hover{background:rgba(255,255,255,0.08)}
 .model-chip-item.active{background:rgba(74,222,128,0.14)}
-.model-chip-item .mname{flex:1;font-size:13px;color:#e0e0e0}
+.model-chip-item .mname{font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .model-chip-item .msize{font-size:11px;color:#666}
+.model-chip-item .mco{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
 .model-chip-item .mstatus{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
 .model-chip-item .mstatus.active{background:#1a3a1a;color:#4ade80}
 .model-chip-item .mstatus.downloaded{background:#1a1a3a;color:#8b5cf6}
@@ -511,6 +516,33 @@ function toggleModelPanel() {
   }
 }
 
+// Brand tiles: maker logo + name shown above each model in the picker.
+// Inline SVG (CSP-safe, no network); glyphs hard-code their own colors.
+// "Gemma" is used instead of "Google" per the zero-"Google"-string rule.
+var MOLT_BRANDS = {
+  'Meta': {c:'#0866FF', t:'rgba(8,102,255,.15)', g:'<path d="M12 12.1C10.3 9.2 8.7 7.7 6.9 7.7 4.6 7.7 3 9.8 3 12.3s1.6 4.6 3.9 4.6c1.8 0 3.4-1.5 5.1-4.8M12 12.1c1.7-2.9 3.3-4.4 5.1-4.4 2.3 0 3.9 2.1 3.9 4.6s-1.6 4.6-3.9 4.6c-1.8 0-3.4-1.5-5.1-4.8" fill="none" stroke="#0866FF" stroke-width="2.1" stroke-linecap="round"/>'},
+  'Qwen': {c:'#7C3AED', t:'rgba(124,58,237,.16)', g:'<path d="M12 2.7l8 4.6v9.4l-8 4.6-8-4.6V7.3z" fill="none" stroke="#7C3AED" stroke-width="1.8"/><path d="M8.3 9.2l3.7 2.1 3.7-2.1M12 11.3v4.5" fill="none" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'},
+  'Gemma': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
+  'Mistral AI': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'},
+  'Microsoft': {c:'#00A4EF', t:'rgba(0,164,239,.10)', g:'<g><rect x="3.6" y="3.6" width="7.4" height="7.4" fill="#F25022"/><rect x="13" y="3.6" width="7.4" height="7.4" fill="#7FBA00"/><rect x="3.6" y="13" width="7.4" height="7.4" fill="#00A4EF"/><rect x="13" y="13" width="7.4" height="7.4" fill="#FFB900"/></g>'},
+  'OpenAI': {c:'#0FA47F', t:'rgba(15,164,127,.15)', g:'<g fill="none" stroke="#0FA47F" stroke-width="1.5"><ellipse cx="12" cy="12" rx="3.4" ry="8"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(120 12 12)"/></g>'},
+  'TinyLlama': {c:'#14B8A6', t:'rgba(20,184,166,.16)', g:'<path d="M8.6 4.4c-.6 0-1 .5-1 1.4l.3 3c-1.4.6-2.3 2-2.3 3.9v3.4c0 2.3 1.6 3.9 3.9 3.9h5c2.3 0 3.9-1.6 3.9-3.9v-3.4c0-1.9-.9-3.3-2.3-3.9l.3-3c0-.9-.4-1.4-1-1.4-.7 0-1.4.9-1.9 2.2-.9-.3-2-.3-3 0-.5-1.3-1.2-2.2-1.9-2.2z" fill="#14B8A6"/><circle cx="10" cy="13.2" r=".95" fill="#fff"/><circle cx="14" cy="13.2" r=".95" fill="#fff"/>'},
+  'Anthropic': {c:'#D97757', t:'rgba(217,119,87,.15)', g:'<g stroke="#D97757" stroke-width="2" stroke-linecap="round"><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7"/></g>'},
+  'Gemini': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
+  'Mistral': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'}
+};
+function moltBrandColor(c) { var b = MOLT_BRANDS[c]; return b ? b.c : '#94a3b8'; }
+function moltBrandTile(company) {
+  var b = MOLT_BRANDS[company];
+  if (!b) {
+    var ch = (company || '?').charAt(0).toUpperCase();
+    return '<span class="brandtile" style="background:rgba(148,163,184,.16);color:#94a3b8;' +
+           'font-weight:700;font-size:13px">' + esc(ch) + '</span>';
+  }
+  return '<span class="brandtile" style="background:' + b.t + '">' +
+         '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' + b.g + '</svg></span>';
+}
+
 function refreshModelList() {
   sendWithPromise('getModelStatus').then(function(info) {
     var list = document.getElementById('modelList');
@@ -540,8 +572,14 @@ function refreshModelList() {
       }
 
       card.innerHTML =
-        '<div class="name">' + esc(m.display_name) + '</div>' +
-        '<div class="meta">' + m.quantization + ' \u00b7 ' + sizeStr + '</div>' +
+        '<div class="card-head">' + moltBrandTile(m.company) +
+          '<div class="chead-txt">' +
+            '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+              esc(m.company || 'Local') + '</div>' +
+            '<div class="name">' + esc(m.display_name) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
         '<div style="margin-top:6px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
         '<div class="progress-wrap" id="pw-' + m.model_id + '">' +
@@ -717,10 +755,14 @@ function renderModelChipDropdown() {
     else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
     else { statusClass = 'available'; statusText = 'Download'; }
     var sizeMB = m.file_size_mb || 0;
+    var sizeStr2 = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
     item.innerHTML =
-      '<div style="flex:1">' +
-        '<div class="mname">' + (m.display_name || m.model_id) + '</div>' +
-        '<div class="msize">' + sizeMB + ' MB</div>' +
+      moltBrandTile(m.company) +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+          esc(m.company || 'Local') + '</div>' +
+        '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
+        '<div class="msize">' + (m.quantization ? esc(m.quantization) + ' · ' : '') + sizeStr2 + '</div>' +
       '</div>' +
       '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
     item.onclick = function() {
@@ -748,11 +790,13 @@ function renderModelChipDropdown() {
       item.className = 'model-chip-item';
       var isActive = activeModelId === m.model_id;
       if (isActive) item.className += ' active';
-      var sub = m.provider ? (m.provider + ' · cloud') : 'cloud';
       item.innerHTML =
-        '<div style="flex:1">' +
-          '<div class="mname">' + (m.display_name || m.model_id) + '</div>' +
-          '<div class="msize">' + sub + '</div>' +
+        moltBrandTile(m.provider) +
+        '<div style="flex:1;min-width:0">' +
+          '<div class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
+            esc(m.provider || 'Cloud') + '</div>' +
+          '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
+          '<div class="msize">cloud · via your key</div>' +
         '</div>' +
         '<span class="mstatus ' + (isActive ? 'active' : 'downloaded') + '">' +
           (isActive ? 'Active' : 'Use') + '</span>';

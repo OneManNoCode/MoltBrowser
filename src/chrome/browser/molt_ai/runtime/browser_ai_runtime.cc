@@ -47,7 +47,11 @@ constexpr int kMaxConcurrentModels = 2;
 constexpr int kDefaultContextSize = 2048;
 constexpr int kMaxTokenBuffer = 8192;
 
-// Model registry — free GGUF models from HuggingFace
+// Model registry — free, open-weight GGUF models that run 100% on-device via
+// llama.cpp (nothing is sent to the model's maker). Refreshed 2026-07 to the
+// current generation; ordered small -> large. `company` drives the brand icon
+// + maker label in the picker. NOTE: "Gemma" is used as the maker label (not
+// "Google") to honor the zero-"Google"-string product rule.
 struct ModelRegistryEntry {
   const char* model_id;
   const char* display_name;
@@ -57,62 +61,89 @@ struct ModelRegistryEntry {
   size_t ram_required_bytes;
   int param_billions;
   const char* quantization;
+  const char* company;
 };
 
+// ONE flagship per maker — the best free, open-weight, on-device model each
+// company ships (not the whole family), so the picker stays uncluttered.
+// Ordered small -> large. `company` drives the brand tile in the picker.
 const ModelRegistryEntry kModelRegistry[] = {
+    // TinyLlama — ships in the box, zero-download; runs on any machine.
     {"tinyllama-1.1b",
      "TinyLlama 1.1B Chat",
      "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
      "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-     637534208,           // ~0.6GB
+     668788096ULL,        // ~0.6GB
      2147483648ULL,       // 2GB RAM
      1,
-     "Q4_K_M"},
+     "Q4_K_M",
+     "TinyLlama"},
 
-    {"phi-3.5-mini",
-     "Phi-3.5 Mini Instruct",
-     "bartowski/Phi-3.5-mini-instruct-GGUF",
-     "Phi-3.5-mini-instruct-Q4_K_M.gguf",
-     2362232832ULL,       // ~2.2GB
-     4294967296ULL,       // 4GB RAM
-     3,
-     "Q4_K_M"},
-
-    {"mistral-7b",
-     "Mistral 7B Instruct v0.3",
-     "MistralAI/Mistral-7B-Instruct-v0.3-GGUF",
-     "Mistral-7B-Instruct-v0.3.Q4_K_M.gguf",
-     4368438272ULL,       // ~4.1GB
-     6442450944ULL,       // 6GB RAM
-     7,
-     "Q4_K_M"},
-
+    // Meta — Llama 3.1 8B (open weights); proven all-rounder.
     {"llama3.1-8b",
-     "LLaMA 3.1 8B Instruct",
+     "Llama 3.1 8B Instruct",
      "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
      "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-     4615733248ULL,       // ~4.3GB
+     4920739232ULL,       // ~4.6GB
      6442450944ULL,       // 6GB RAM
      8,
-     "Q4_K_M"},
+     "Q4_K_M",
+     "Meta"},
 
-    {"qwen2.5-7b",
-     "Qwen2.5 7B Instruct",
-     "Qwen/Qwen2.5-7B-Instruct-GGUF",
-     "qwen2.5-7b-instruct-q4_k_m.gguf",
-     4718592000ULL,       // ~4.4GB
+    // Qwen (Alibaba) — Qwen3 8B, Apache 2.0; recommended default (agentic).
+    {"qwen3-8b",
+     "Qwen3 8B",
+     "Qwen/Qwen3-8B-GGUF",
+     "Qwen3-8B-Q4_K_M.gguf",
+     5027783488ULL,       // ~4.7GB
      6442450944ULL,       // 6GB RAM
-     7,
-     "Q4_K_M"},
+     8,
+     "Q4_K_M",
+     "Qwen"},
 
-    {"gemma2-9b",
-     "Gemma 2 9B Instruct",
-     "bartowski/gemma-2-9b-it-GGUF",
-     "gemma-2-9b-it-Q4_K_M.gguf",
-     5905580032ULL,       // ~5.5GB
-     8589934592ULL,       // 8GB RAM
-     9,
-     "Q4_K_M"},
+    // Gemma (Google DeepMind) — Gemma 3 12B, open weights. Labeled "Gemma".
+    {"gemma3-12b",
+     "Gemma 3 12B",
+     "unsloth/gemma-3-12b-it-GGUF",
+     "gemma-3-12b-it-Q4_K_M.gguf",
+     7300778336ULL,       // ~6.8GB
+     10737418240ULL,      // 10GB RAM
+     12,
+     "Q4_K_M",
+     "Gemma"},
+
+    // Mistral AI — Mistral Nemo 12B (2407), Apache 2.0; 128k context.
+    {"mistral-nemo-12b",
+     "Mistral Nemo 12B",
+     "bartowski/Mistral-Nemo-Instruct-2407-GGUF",
+     "Mistral-Nemo-Instruct-2407-Q4_K_M.gguf",
+     7477208192ULL,       // ~7.0GB
+     10737418240ULL,      // 10GB RAM
+     12,
+     "Q4_K_M",
+     "Mistral AI"},
+
+    // Microsoft — Phi-4 14B, MIT.
+    {"phi-4",
+     "Phi-4 14B",
+     "bartowski/phi-4-GGUF",
+     "phi-4-Q4_K_M.gguf",
+     9053114816ULL,       // ~8.4GB
+     12884901888ULL,      // 12GB RAM
+     14,
+     "Q4_K_M",
+     "Microsoft"},
+
+    // OpenAI — gpt-oss 20B, Apache 2.0 open weights (native MXFP4 quant).
+    {"gpt-oss-20b",
+     "gpt-oss 20B",
+     "ggml-org/gpt-oss-20b-GGUF",
+     "gpt-oss-20b-MXFP4.gguf",
+     12109566624ULL,      // ~11.3GB
+     17179869184ULL,      // 16GB RAM
+     20,
+     "MXFP4",
+     "OpenAI"},
 };
 
 constexpr size_t kModelRegistrySize =
@@ -208,6 +239,7 @@ struct BrowserAIRuntime::Impl {
       info.ram_required_bytes = entry.ram_required_bytes;
       info.parameter_count_billions = entry.param_billions;
       info.quantization = entry.quantization;
+      info.company = entry.company;
 
       // Set local file path. is_downloaded is left false here and updated
       // by RefreshModelStatus() on a worker thread to keep Initialize()
@@ -929,16 +961,16 @@ std::string BrowserAIRuntime::SelectModelForTask(
         impl_->models.at("tinyllama-1.1b").is_loaded) {
       return "tinyllama-1.1b";
     }
-    if (impl_->models.count("phi-3.5-mini") &&
-        impl_->models.at("phi-3.5-mini").is_loaded) {
-      return "phi-3.5-mini";
+    if (impl_->models.count("qwen3-8b") &&
+        impl_->models.at("qwen3-8b").is_loaded) {
+      return "qwen3-8b";
     }
   }
 
   if (task_type == "research") {
-    if (impl_->models.count("qwen2.5-7b") &&
-        impl_->models.at("qwen2.5-7b").is_loaded) {
-      return "qwen2.5-7b";
+    if (impl_->models.count("qwen3-8b") &&
+        impl_->models.at("qwen3-8b").is_loaded) {
+      return "qwen3-8b";
     }
   }
 

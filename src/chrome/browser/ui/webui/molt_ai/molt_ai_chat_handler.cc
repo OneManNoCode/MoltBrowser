@@ -868,6 +868,7 @@ void MoltAIChatHandler::FinishInitChat(std::string callback_id,
     base::DictValue model_dict;
     model_dict.Set("model_id", m.model_id);
     model_dict.Set("display_name", m.display_name);
+    model_dict.Set("company", m.company);
     model_dict.Set("quantization", m.quantization);
     model_dict.Set("param_billions", m.parameter_count_billions);
     model_dict.Set("is_downloaded", m.is_downloaded);
@@ -1585,6 +1586,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
     base::DictValue d;
     d.Set("model_id", m.model_id);
     d.Set("display_name", m.display_name);
+    d.Set("company", m.company);
     d.Set("quantization", m.quantization);
     d.Set("param_billions", m.parameter_count_billions);
     d.Set("is_downloaded", m.is_downloaded);

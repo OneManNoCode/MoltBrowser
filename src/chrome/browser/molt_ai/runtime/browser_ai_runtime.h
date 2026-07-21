@@ -35,6 +35,9 @@ struct ModelInfo {
   std::string quantization;   // "Q4_K_M", "Q5_K_M", etc.
   bool is_downloaded;
   bool is_loaded;
+  std::string company;        // Model maker for attribution, e.g. "Meta",
+                              // "Alibaba", "Google", "Mistral AI", "Microsoft",
+                              // "OpenAI". Drives the brand icon in the picker.
 };
 
 // Prompt routing decision

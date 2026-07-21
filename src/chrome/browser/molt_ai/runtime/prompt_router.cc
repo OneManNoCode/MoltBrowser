@@ -17,15 +17,15 @@ PromptRouter::~PromptRouter() = default;
 
 void PromptRouter::InitializeDefaultRules() {
   rules_ = {
-      {TaskType::PAGE_SUMMARY, RouteTarget::LOCAL, "phi-3.5-mini", 2048, 1.0f},
+      {TaskType::PAGE_SUMMARY, RouteTarget::LOCAL, "qwen3-8b", 2048, 1.0f},
       {TaskType::QA_ABOUT_PAGE, RouteTarget::LOCAL, "llama3.1-8b", 4096, 0.9f},
       {TaskType::AGENT_TASK, RouteTarget::LOCAL, "llama3.1-8b", 4096, 0.8f},
       {TaskType::FORM_FILL, RouteTarget::LOCAL, "tinyllama-1.1b", 1024, 1.0f},
-      {TaskType::DATA_EXTRACTION, RouteTarget::LOCAL, "qwen2.5-7b", 2048, 0.9f},
-      {TaskType::TRANSLATION, RouteTarget::LOCAL, "qwen2.5-7b", 2048, 0.8f},
-      {TaskType::SEARCH, RouteTarget::LOCAL, "phi-3.5-mini", 1024, 0.7f},
+      {TaskType::DATA_EXTRACTION, RouteTarget::LOCAL, "qwen3-8b", 2048, 0.9f},
+      {TaskType::TRANSLATION, RouteTarget::LOCAL, "qwen3-8b", 2048, 0.8f},
+      {TaskType::SEARCH, RouteTarget::LOCAL, "qwen3-8b", 1024, 0.7f},
       {TaskType::COMPLEX_REASONING, RouteTarget::CLOUD, "llama3.1-8b", 8192, 0.3f},
-      {TaskType::CODE_GENERATION, RouteTarget::CLOUD, "qwen2.5-7b", 8192, 0.4f},
+      {TaskType::CODE_GENERATION, RouteTarget::CLOUD, "qwen3-8b", 8192, 0.4f},
       {TaskType::AI_COUNCIL, RouteTarget::HYBRID, "llama3.1-8b", 4096, 0.5f},
       {TaskType::UNKNOWN, RouteTarget::LOCAL, "llama3.1-8b", 4096, 0.6f},
   };

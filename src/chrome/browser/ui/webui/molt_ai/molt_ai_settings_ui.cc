@@ -1238,11 +1238,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <label>Default Model</label>
       <select id="defaultModel">
         <option value="tinyllama-1.1b">TinyLlama 1.1B (Fastest)</option>
-        <option value="phi-3.5-3b">Phi-3.5 3B (Balanced)</option>
-        <option value="mistral-7b">Mistral 7B (Quality)</option>
-        <option value="llama-3.1-8b">LLaMA 3.1 8B (Best)</option>
-        <option value="qwen2.5-7b">Qwen2.5 7B</option>
-        <option value="gemma-2-9b">Gemma 2 9B</option>
+        <option value="llama3.1-8b">Meta · Llama 3.1 8B</option>
+        <option value="qwen3-8b">Qwen · Qwen3 8B (Recommended)</option>
+        <option value="gemma3-12b">Gemma · Gemma 3 12B</option>
+        <option value="mistral-nemo-12b">Mistral · Mistral Nemo 12B</option>
+        <option value="phi-4">Microsoft · Phi-4 14B</option>
+        <option value="gpt-oss-20b">OpenAI · gpt-oss 20B</option>
       </select>
     </div>
     <div class="field">

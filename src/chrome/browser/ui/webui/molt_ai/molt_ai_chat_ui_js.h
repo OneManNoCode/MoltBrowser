@@ -3485,6 +3485,37 @@ function toggleModelPanel() {
   }
 }
 
+// ---- Brand tiles: a small logo icon + maker name shown above each model
+// name in the picker, so "who made it" reads at a glance (e.g. Meta ->
+// "Llama 3.1 8B Instruct"). Glyphs are self-contained inline SVG (no network,
+// CSP-safe) and hard-code their own fill/stroke so they render on any tile.
+// Note: the Gemma model is labeled "Gemma" (its brand) NOT "Google", per the
+// zero-"Google"-string product rule. Unknown makers fall back to a monogram.
+var MOLT_BRANDS = {
+  'Meta': {c:'#0866FF', t:'rgba(8,102,255,.15)', g:'<path d="M12 12.1C10.3 9.2 8.7 7.7 6.9 7.7 4.6 7.7 3 9.8 3 12.3s1.6 4.6 3.9 4.6c1.8 0 3.4-1.5 5.1-4.8M12 12.1c1.7-2.9 3.3-4.4 5.1-4.4 2.3 0 3.9 2.1 3.9 4.6s-1.6 4.6-3.9 4.6c-1.8 0-3.4-1.5-5.1-4.8" fill="none" stroke="#0866FF" stroke-width="2.1" stroke-linecap="round"/>'},
+  'Qwen': {c:'#7C3AED', t:'rgba(124,58,237,.16)', g:'<path d="M12 2.7l8 4.6v9.4l-8 4.6-8-4.6V7.3z" fill="none" stroke="#7C3AED" stroke-width="1.8"/><path d="M8.3 9.2l3.7 2.1 3.7-2.1M12 11.3v4.5" fill="none" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'},
+  'Gemma': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
+  'Mistral AI': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'},
+  'Microsoft': {c:'#00A4EF', t:'rgba(0,164,239,.10)', g:'<g><rect x="3.6" y="3.6" width="7.4" height="7.4" fill="#F25022"/><rect x="13" y="3.6" width="7.4" height="7.4" fill="#7FBA00"/><rect x="3.6" y="13" width="7.4" height="7.4" fill="#00A4EF"/><rect x="13" y="13" width="7.4" height="7.4" fill="#FFB900"/></g>'},
+  'OpenAI': {c:'#0FA47F', t:'rgba(15,164,127,.15)', g:'<g fill="none" stroke="#0FA47F" stroke-width="1.5"><ellipse cx="12" cy="12" rx="3.4" ry="8"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(120 12 12)"/></g>'},
+  'TinyLlama': {c:'#14B8A6', t:'rgba(20,184,166,.16)', g:'<path d="M8.6 4.4c-.6 0-1 .5-1 1.4l.3 3c-1.4.6-2.3 2-2.3 3.9v3.4c0 2.3 1.6 3.9 3.9 3.9h5c2.3 0 3.9-1.6 3.9-3.9v-3.4c0-1.9-.9-3.3-2.3-3.9l.3-3c0-.9-.4-1.4-1-1.4-.7 0-1.4.9-1.9 2.2-.9-.3-2-.3-3 0-.5-1.3-1.2-2.2-1.9-2.2z" fill="#14B8A6"/><circle cx="10" cy="13.2" r=".95" fill="#fff"/><circle cx="14" cy="13.2" r=".95" fill="#fff"/>'},
+  // Cloud providers (bring-your-own-key) — for the picker's "Cloud" group.
+  'Anthropic': {c:'#D97757', t:'rgba(217,119,87,.15)', g:'<g stroke="#D97757" stroke-width="2" stroke-linecap="round"><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7"/></g>'},
+  'Gemini': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
+  'Mistral': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'}
+};
+function moltBrandColor(c) { var b = MOLT_BRANDS[c]; return b ? b.c : '#94a3b8'; }
+function moltBrandTile(company) {
+  var b = MOLT_BRANDS[company];
+  if (!b) {
+    var ch = (company || '?').charAt(0).toUpperCase();
+    return '<span class="brandtile" style="background:rgba(148,163,184,.16);color:#94a3b8;' +
+           'font-weight:700;font-size:13px">' + esc(ch) + '</span>';
+  }
+  return '<span class="brandtile" style="background:' + b.t + '">' +
+         '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' + b.g + '</svg></span>';
+}
+
 function refreshModelList() {
   sendWithPromise('getModelStatus').then(function(info) {
     var list = document.getElementById('modelList');
@@ -3518,7 +3549,13 @@ function refreshModelList() {
       }
 
       card.innerHTML =
-        '<div class="name">' + esc(m.display_name) + '</div>' +
+        '<div class="card-head">' + moltBrandTile(m.company) +
+          '<div class="chead-txt">' +
+            '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+              esc(m.company || 'Local') + '</div>' +
+            '<div class="name">' + esc(m.display_name) + '</div>' +
+          '</div>' +
+        '</div>' +
         '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
         '<div style="margin-top:4px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
@@ -3795,7 +3832,10 @@ function renderModelChipDropdown() {
       if (downloadingModelId) item.className += ' disabled';
     }
     item.innerHTML =
+      moltBrandTile(m.company) +
       '<div class="mmain">' +
+        '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+          esc(m.company || 'Local') + '</div>' +
         '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
         '<div class="msize">' + esc(meta) + '</div>' +
         (isDownloading
@@ -3843,12 +3883,13 @@ function renderModelChipDropdown() {
           ? '<span class="mcheck on">\u2713</span>'
           : '<span class="mcheck disk" title="Click to use">\u2713</span>';
       if (isActive) item.className += ' active';
-      var sub = m.provider
-          ? (esc(m.provider) + ' \u00b7 cloud') : 'cloud';
       item.innerHTML =
+        moltBrandTile(m.provider) +
         '<div class="mmain">' +
+          '<div class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
+            esc(m.provider || 'Cloud') + '</div>' +
           '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
-          '<div class="msize">' + sub + '</div>' +
+          '<div class="msize">cloud \u00b7 via your key</div>' +
         '</div>' + right;
       item.onclick = function(ev) {
         if (ev) ev.stopPropagation();

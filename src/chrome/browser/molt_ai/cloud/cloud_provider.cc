@@ -104,7 +104,7 @@ std::vector<CloudProviderInfo> BuildProviders() {
        false},
       {"anthropic", "Anthropic", "https://api.anthropic.com",
        CloudFormat::kAnthropic, false},
-      {"gemini", "Google Gemini",
+      {"gemini", "Gemini",
        "https://generativelanguage.googleapis.com/v1beta",
        CloudFormat::kGemini, false},
       {"openrouter", "OpenRouter", "https://openrouter.ai/api/v1",
