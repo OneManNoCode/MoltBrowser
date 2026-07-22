@@ -9,11 +9,19 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_NET_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_NET_HANDLER_H_
 
+#include <memory>
+#include <optional>
+#include <string>
+
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 class Profile;
+
+namespace network {
+class SimpleURLLoader;
+}  // namespace network
 
 class MoltNetHandler : public content::WebUIMessageHandler {
  public:
@@ -35,6 +43,15 @@ class MoltNetHandler : public content::WebUIMessageHandler {
   void HandleSetMode(const base::ListValue& args);
   void HandleNewIdentity(const base::ListValue& args);
 
+  // Circuit-transparency panel. GetCircuit returns the current Tor path (guard
+  // -> middle -> exit with each relay's country + IP) plus the cached origin
+  // IP. VerifyExit fetches check.torproject.org/api/ip THROUGH Tor to confirm
+  // the exit IP websites actually see.
+  void HandleGetCircuit(const base::ListValue& args);
+  void HandleVerifyExit(const base::ListValue& args);
+  void OnVerifyExitDone(std::string callback_id,
+                        std::optional<std::string> body);
+
   // The profile backing this WebUI (the browser window that opened the
   // popover). Null only if the WebContents/context is gone.
   Profile* GetProfile();
@@ -50,6 +67,9 @@ class MoltNetHandler : public content::WebUIMessageHandler {
   // and keep the profile on a direct connection, so a stuck Tor never leaves
   // the browser stranded behind a dead proxy.
   void ApplyRoutingForLaunchResult(bool tor_ready);
+
+  // Loader for the (Tor-proxied) exit-verify fetch. One at a time.
+  std::unique_ptr<network::SimpleURLLoader> verify_loader_;
 
   base::WeakPtrFactory<MoltNetHandler> weak_ptr_factory_{this};
 };

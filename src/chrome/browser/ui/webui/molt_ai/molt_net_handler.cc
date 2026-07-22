@@ -4,6 +4,8 @@
 #include "chrome/browser/ui/webui/molt_ai/molt_net_handler.h"
 
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -11,13 +13,22 @@
 #include "base/check_op.h"
 #include "base/no_destructor.h"
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "net/base/load_flags.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -53,6 +64,74 @@ std::string ExitCountryDisplayName(const std::string& cc) {
 std::string& OnMode() {
   static base::NoDestructor<std::string> mode("multi_hop");
   return *mode;
+}
+
+// The user's real public IP, captured via a DIRECT fetch at the moment they
+// start connecting — before the Tor proxy is installed — so the route panel can
+// reveal it on demand without ever phoning out once traffic is on Tor. This
+// pre-Tor request is indistinguishable from any IP-check and leaks nothing
+// about Tor usage. Process-global (MoltNet is process-global).
+std::string& CachedOriginIp() {
+  static base::NoDestructor<std::string> ip;
+  return *ip;
+}
+
+net::NetworkTrafficAnnotationTag IpCheckAnnotation() {
+  return net::DefineNetworkTrafficAnnotation("moltnet_ip_check", R"(
+      semantics {
+        sender: "MoltNet private-routing panel"
+        description:
+          "Fetches the browser's public IP so the MoltNet route panel can "
+          "show the user their own IP (before routing) and the Tor exit IP "
+          "(through Tor). No user data is sent beyond the plain GET."
+        trigger:
+          "The user turns on MoltNet (real-IP capture, direct) or clicks "
+          "Verify in the route panel (exit check, through Tor)."
+        data: "None. A plain HTTPS GET; the response is the caller's own IP."
+        destination: WEBSITE
+      }
+      policy {
+        cookies_allowed: NO
+        setting: "Only fires on MoltNet connect / an explicit Verify click."
+      })");
+}
+
+// Kick a direct fetch of the user's public IP and cache it. Self-owning loader
+// (kept alive by its own reply callback) so it survives the popover closing.
+// Must be called while the profile is still on a DIRECT connection (i.e.
+// before routing is applied) for the result to be the real origin IP.
+void FetchOriginIp(Profile* profile) {
+  if (!profile) {
+    return;
+  }
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      profile->GetDefaultStoragePartition()
+          ->GetURLLoaderFactoryForBrowserProcess();
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = GURL("https://api.ipify.org?format=json");
+  request->method = "GET";
+  request->load_flags = net::LOAD_DO_NOT_SAVE_COOKIES;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+  auto loader =
+      network::SimpleURLLoader::Create(std::move(request), IpCheckAnnotation());
+  network::SimpleURLLoader* raw = loader.get();
+  raw->DownloadToString(
+      factory.get(),
+      base::BindOnce(
+          [](std::unique_ptr<network::SimpleURLLoader> owned,
+             std::optional<std::string> body) {
+            if (!body) {
+              return;
+            }
+            std::optional<base::Value> v = base::JSONReader::Read(*body, base::JSON_PARSE_RFC);
+            if (v && v->is_dict()) {
+              if (const std::string* ip = v->GetDict().FindString("ip")) {
+                CachedOriginIp() = *ip;
+              }
+            }
+          },
+          std::move(loader)),
+      /*max_body_size=*/4096);
 }
 
 // The single status shape every mutating call resolves, so the page can
@@ -135,6 +214,14 @@ void MoltNetHandler::RegisterMessages() {
       "moltnet.newIdentity",
       base::BindRepeating(&MoltNetHandler::HandleNewIdentity,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "moltnet.getCircuit",
+      base::BindRepeating(&MoltNetHandler::HandleGetCircuit,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "moltnet.verifyExit",
+      base::BindRepeating(&MoltNetHandler::HandleVerifyExit,
+                          base::Unretained(this)));
 }
 
 void MoltNetHandler::HandleGetStatus(const base::ListValue& args) {
@@ -192,6 +279,10 @@ void MoltNetHandler::HandleToggle(const base::ListValue& args) {
                               base::Value(StatusDict()));
     return;
   }
+  // Capture the real origin IP now, while still on a direct connection (the
+  // proxy is installed only in the Launch success callback below), so the
+  // route panel can reveal it without phoning out once we're on Tor.
+  FetchOriginIp(GetProfile());
   // Launch is async; its callback fires only once Tor has a usable circuit
   // (result.success) or the bootstrap timed out. Route only on success.
   mgr->Launch(base::BindOnce(
@@ -227,6 +318,12 @@ void MoltNetHandler::HandleSetMode(const base::ListValue& args) {
     return;
   }
   OnMode() = (mode == "proxy") ? "proxy" : "multi_hop";
+  // Capture the real origin IP while still direct (only when we're actually
+  // starting Tor — if it's already running the connection is already proxied,
+  // which would capture the exit IP instead of the real one).
+  if (!mgr->IsRunning()) {
+    FetchOriginIp(GetProfile());
+  }
   // Always go through Launch (even if a child is already running): its
   // callback re-confirms Tor has a usable circuit before we apply routing,
   // so a mode change during bootstrap can't enable a dead proxy.
@@ -254,4 +351,110 @@ void MoltNetHandler::HandleNewIdentity(const base::ListValue& args) {
   mgr->SetExitCountry(mgr->GetExitCountry());
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(StatusDict()));
+}
+
+void MoltNetHandler::HandleGetCircuit(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  if (!molt_ai::tor::TorManager::Get()->IsRunning()) {
+    base::DictValue out;
+    out.Set("connected", false);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  molt_ai::tor::TorService::Get()->GetCircuitsEnriched(base::BindOnce(
+      [](base::WeakPtr<MoltNetHandler> self, std::string cb,
+         std::vector<molt_ai::tor::TorCircuit> circuits) {
+        if (!self) {
+          return;
+        }
+        // Prefer a BUILT general circuit; otherwise any built one.
+        const molt_ai::tor::TorCircuit* active = nullptr;
+        for (const auto& c : circuits) {
+          if (c.state == "BUILT" && !c.hops.empty()) {
+            active = &c;
+            if (c.purpose == "GENERAL") {
+              break;
+            }
+          }
+        }
+        base::DictValue out;
+        out.Set("connected", true);
+        out.Set("origin_ip", CachedOriginIp());
+        base::ListValue hops;
+        if (active) {
+          const size_t n = active->hops.size();
+          for (size_t i = 0; i < n; ++i) {
+            const auto& h = active->hops[i];
+            base::DictValue hop;
+            hop.Set("role", i == 0 ? "guard"
+                                   : (i + 1 == n ? "exit" : "middle"));
+            hop.Set("country", base::ToUpperASCII(h.country));
+            hop.Set("ip", h.ip);
+            hop.Set("nickname", h.nickname);
+            hops.Append(std::move(hop));
+          }
+        }
+        out.Set("hops", std::move(hops));
+        self->ResolveJavascriptCallback(base::Value(cb),
+                                        base::Value(std::move(out)));
+      },
+      weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+void MoltNetHandler::HandleVerifyExit(const base::ListValue& args) {
+  AllowJavascript();
+  CHECK_GE(args.size(), 1u);
+  const std::string callback_id = args[0].GetString();
+
+  Profile* profile = GetProfile();
+  if (!profile || verify_loader_) {
+    base::DictValue out;
+    out.Set("ok", false);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  // Fetched through the PROFILE factory — which is proxied through Tor while
+  // MoltNet is on — so the reported IP is exactly what websites see, and IsTor
+  // independently confirms the traffic went through the Tor network.
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      profile->GetDefaultStoragePartition()
+          ->GetURLLoaderFactoryForBrowserProcess();
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = GURL("https://check.torproject.org/api/ip");
+  request->method = "GET";
+  request->load_flags = net::LOAD_DO_NOT_SAVE_COOKIES;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+  verify_loader_ =
+      network::SimpleURLLoader::Create(std::move(request), IpCheckAnnotation());
+  verify_loader_->DownloadToString(
+      factory.get(),
+      base::BindOnce(&MoltNetHandler::OnVerifyExitDone,
+                     weak_ptr_factory_.GetWeakPtr(), callback_id),
+      /*max_body_size=*/4096);
+}
+
+void MoltNetHandler::OnVerifyExitDone(std::string callback_id,
+                                      std::optional<std::string> body) {
+  verify_loader_.reset();
+  base::DictValue out;
+  std::optional<base::Value> parsed =
+      body ? base::JSONReader::Read(*body, base::JSON_PARSE_RFC) : std::nullopt;
+  if (parsed && parsed->is_dict()) {
+    const base::DictValue& d = parsed->GetDict();
+    out.Set("ok", true);
+    out.Set("is_tor", d.FindBool("IsTor").value_or(false));
+    if (const std::string* ip = d.FindString("IP")) {
+      out.Set("ip", *ip);
+    }
+  } else {
+    out.Set("ok", false);
+  }
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(std::move(out)));
 }

@@ -129,9 +129,7 @@ class MoltNetDataSource : public content::URLDataSource {
   .sec{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
     padding:13px 18px 6px;flex:0 0 auto}
 
-  .list{flex:1 1 auto;overflow-y:auto;padding:0 8px 4px}
-  .list::-webkit-scrollbar{width:8px}
-  .list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px;border:2px solid transparent;background-clip:content-box}
+  .list{padding:0}
   .row{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:11px;cursor:pointer;
     border:1px solid transparent;transition:background .14s,border-color .14s}
   .row:hover{background:rgba(255,255,255,.06);border-color:var(--edge)}
@@ -147,6 +145,23 @@ class MoltNetDataSource : public content::URLDataSource {
     border:1px solid var(--edge);color:var(--muted);transition:.15s;white-space:nowrap}
   .act:hover{background:rgba(255,255,255,.11);border-color:var(--edge-hi);color:var(--text)}
 
+  /* Your-route transparency panel */
+  .scroll{flex:1 1 auto;overflow-y:auto;padding:0 8px 4px}
+  .scroll::-webkit-scrollbar{width:8px}
+  .scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px;border:2px solid transparent;background-clip:content-box}
+  .route{padding:2px 4px 6px}
+  .hop{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:11px;border:1px solid transparent}
+  .hop.dev{background:rgba(255,255,255,.04);border-color:var(--edge)}
+  .hop.exit{background:rgba(255,82,87,.09);border-color:rgba(255,82,87,.24)}
+  .hop .hflag{font-size:16px;width:20px;text-align:center;flex:0 0 auto}
+  .hop .hmain{flex:1;min-width:0}
+  .hop .hrole{font-size:12.5px;color:var(--text);font-weight:600}
+  .hop .hip{font-size:10.5px;color:var(--faint);font-family:var(--mono,ui-monospace,monospace);margin-top:1px;overflow-wrap:anywhere;word-break:normal}
+  .hop .hip.reveal{color:var(--ok)}
+  .hop .hbtn{font-size:10.5px;padding:3px 10px;border-radius:8px;border:1px solid var(--edge-hi);background:transparent;color:var(--text);cursor:pointer;flex:0 0 auto;white-space:nowrap}
+  .hop .hbtn:hover{background:rgba(255,255,255,.10)}
+  .hline{width:2px;height:9px;background:rgba(255,255,255,.22);margin-left:19px}
+  .note{font-size:9.5px;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -167,8 +182,11 @@ class MoltNetDataSource : public content::URLDataSource {
         <div class="mname">Private</div><div class="mdesc">Tor&nbsp;&middot;&nbsp;3&nbsp;hops</div></div>
     </div>
     <div class="divider"></div>
-    <div class="sec">Exit country</div>
-    <div class="list" id="list"></div>
+    <div class="scroll">
+      <div id="routeWrap"></div>
+      <div class="sec">Exit country</div>
+      <div class="list" id="list"></div>
+    </div>
     <div class="foot">
       <div class="act" onclick="newIdentity()">&#128260; New&nbsp;identity</div>
       <div class="act" onclick="go('molt://ai-settings/?section=import')">&#128229; Import</div>
@@ -216,7 +234,7 @@ function rowEl(code,fl,name){
   r.appendChild(f); r.appendChild(n); r.appendChild(c); return r;
 }
 function apply(s){ STATE.running=!!s.running; STATE.selected=s.selected||'';
-  if(s.mode) STATE.mode=s.mode; STATE.busy=false; render(); }
+  if(s.mode) STATE.mode=s.mode; STATE.busy=false; render(); renderRoute(); }
 function loadCountries(){ sendWithPromise('moltnet.getExitCountries').then(function(r){
   STATE.countries=r.available||[]; if(r.selected!=null) STATE.selected=r.selected; render(); }); }
 function refresh(){ sendWithPromise('moltnet.getStatus').then(apply); }
@@ -224,8 +242,69 @@ function setMode(m){ STATE.mode=m; STATE.busy=(m!=='direct'&&!STATE.running); re
   sendWithPromise('moltnet.setMode',m).then(apply); }
 function setCountry(cc){ STATE.selected=cc; render();
   sendWithPromise('moltnet.setExitCountry',cc).then(apply); }
-function newIdentity(){ sendWithPromise('moltnet.newIdentity').then(apply); }
+function newIdentity(){ sendWithPromise('moltnet.newIdentity').then(function(s){ apply(s); renderRoute(); }); }
 function go(u){ window.location.href=u; }
+
+// ---- Your-route transparency panel ---------------------------------------
+var _originIp='', _revealed=false;
+function countryLabel(cc){ if(!cc) return ''; cc=cc.toUpperCase();
+  for(var i=0;i<STATE.countries.length;i++){ if(STATE.countries[i].code.toUpperCase()===cc) return STATE.countries[i].name; }
+  return cc; }
+function hopNode(fl,role,ipText,cls,btnLabel){
+  var d=document.createElement('div'); d.className='hop'+(cls?' '+cls:'');
+  var f=document.createElement('span'); f.className='hflag'; f.textContent=fl;
+  var m=document.createElement('div'); m.className='hmain';
+  var r=document.createElement('div'); r.className='hrole'; r.textContent=role;
+  var ip=document.createElement('div'); ip.className='hip'; ip.textContent=ipText;
+  m.appendChild(r); m.appendChild(ip);
+  d.appendChild(f); d.appendChild(m);
+  var btn=null;
+  if(btnLabel){ btn=document.createElement('div'); btn.className='hbtn'; btn.textContent=btnLabel; d.appendChild(btn); }
+  return {node:d, ipEl:ip, btn:btn};
+}
+function renderRoute(){
+  var wrap=document.getElementById('routeWrap'); if(!wrap) return;
+  if(!STATE.running){ wrap.innerHTML=''; _revealed=false; return; }
+  sendWithPromise('moltnet.getCircuit').then(function(r){
+    if(!r||!r.connected){ wrap.innerHTML=''; return; }
+    _originIp=r.origin_ip||''; wrap.innerHTML='';
+    var sec=document.createElement('div'); sec.className='sec'; sec.textContent='Your route'; wrap.appendChild(sec);
+    var route=document.createElement('div'); route.className='route';
+    // "This device" — real origin IP is captured (direct) at connect and shown
+    // only on Reveal; no network call happens on reveal.
+    var dev=hopNode('💻','This device',
+      _revealed?(_originIp||'Unknown'):'Your IP: Hidden','dev',
+      _originIp?(_revealed?'Hide':'Reveal'):'');
+    if(_revealed) dev.ipEl.className='hip reveal';
+    if(dev.btn) dev.btn.onclick=function(){ _revealed=!_revealed; renderRoute(); };
+    route.appendChild(dev.node);
+    var hops=r.hops||[];
+    hops.forEach(function(h){
+      var line=document.createElement('div'); line.className='hline'; route.appendChild(line);
+      var role=h.role==='guard'?'Guard':(h.role==='exit'?'Exit':'Middle');
+      var isExit=h.role==='exit';
+      var ipText=(h.ip||'—')+(isExit?' · websites see this IP':'');
+      var hn=hopNode(flag((h.country||'').toLowerCase()),
+        role+' · '+countryLabel(h.country), ipText, isExit?'exit':'', isExit?'Verify':'');
+      if(hn.btn) hn.btn.onclick=function(){ verifyExit(hn); };
+      route.appendChild(hn.node);
+    });
+    wrap.appendChild(route);
+    var note=document.createElement('div'); note.className='note';
+    note.textContent='No single relay sees both who you are and the site you visit.';
+    wrap.appendChild(note);
+  });
+}
+function verifyExit(hn){
+  if(hn.btn) hn.btn.textContent='…';
+  sendWithPromise('moltnet.verifyExit').then(function(r){
+    if(r&&r.ok){
+      hn.ipEl.textContent=(r.ip||'?')+(r.is_tor?' · Tor confirmed ✓':' · NOT Tor');
+      hn.ipEl.className=r.is_tor?'hip reveal':'hip';
+      if(hn.btn) hn.btn.remove();
+    } else if(hn.btn){ hn.btn.textContent='Verify'; }
+  });
+}
 
 document.addEventListener('DOMContentLoaded',function(){ loadCountries(); refresh(); });
 </script>
