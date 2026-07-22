@@ -551,10 +551,21 @@ bool TorCircuitEstablishedBlocking(const std::string& cookie_path) {
   }
 #endif  // BUILDFLAG(IS_WIN)
 
-  if (!cookie.empty())
-    ControlSendDrain(fd, "AUTHENTICATE " + HexEncodeBytes(cookie));
-  else
-    ControlSendDrain(fd, "AUTHENTICATE");
+  // Confirm AUTHENTICATE actually succeeded (250) before trusting any GETINFO
+  // reply — so a hostile local process squatting on the control port with the
+  // wrong/no cookie can't spoof "circuit-established" and trick us into
+  // "routing" through it. Auth failure is fail-closed (returns false).
+  std::string auth = ControlSendRecv(
+      fd, cookie.empty() ? std::string("AUTHENTICATE")
+                         : ("AUTHENTICATE " + HexEncodeBytes(cookie)));
+  if (auth.rfind("250", 0) != 0) {
+#if BUILDFLAG(IS_WIN)
+    closesocket(fd);
+#else
+    close(fd);
+#endif
+    return false;
+  }
 
   std::string resp = ControlSendRecv(fd, "GETINFO status/circuit-established");
   ControlSendDrain(fd, "QUIT");

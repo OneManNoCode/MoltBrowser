@@ -12,6 +12,7 @@
 #include "base/no_destructor.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -82,18 +83,20 @@ void MoltNetHandler::ApplyRoutingForCurrentTorState() {
   if (!profile) {
     return;
   }
+  PrefService* local_state = g_browser_process->local_state();
   if (molt_ai::tor::TorManager::Get()->IsRunning()) {
-    molt_ai::tor::MoltNetRouting::Enable(profile);
+    molt_ai::tor::MoltNetRouting::Enable(profile, local_state);
   } else {
-    molt_ai::tor::MoltNetRouting::Disable(profile);
+    molt_ai::tor::MoltNetRouting::Disable(profile, local_state);
   }
 }
 
 void MoltNetHandler::ApplyRoutingForLaunchResult(bool tor_ready) {
   Profile* profile = GetProfile();
+  PrefService* local_state = g_browser_process->local_state();
   if (tor_ready) {
     if (profile) {
-      molt_ai::tor::MoltNetRouting::Enable(profile);
+      molt_ai::tor::MoltNetRouting::Enable(profile, local_state);
     }
     return;
   }
@@ -103,7 +106,7 @@ void MoltNetHandler::ApplyRoutingForLaunchResult(bool tor_ready) {
   // connection so the user isn't stranded behind a dead proxy.
   molt_ai::tor::TorManager::Get()->Stop();
   if (profile) {
-    molt_ai::tor::MoltNetRouting::Disable(profile);
+    molt_ai::tor::MoltNetRouting::Disable(profile, local_state);
   }
 }
 

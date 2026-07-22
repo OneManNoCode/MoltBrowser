@@ -29,6 +29,7 @@
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/update/update_manager.h"
 #include "content/public/browser/storage_partition.h"
@@ -982,7 +983,8 @@ void ToolbarView::Init() {
     // through Tor but the daemon isn't running now, clear the stale proxy so
     // the user isn't stranded behind a dead SOCKS endpoint. Idempotent + a
     // no-op unless routing prefs are actually set (see MoltNetRouting).
-    molt_ai::tor::MoltNetRouting::ReconcileOnStartup(browser_->profile());
+    molt_ai::tor::MoltNetRouting::ReconcileOnStartup(
+        browser_->profile(), g_browser_process->local_state());
 
     molt_ai::UpdateManager::Get()->Initialize(
         browser_->profile()

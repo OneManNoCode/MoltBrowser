@@ -38,6 +38,7 @@
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
@@ -414,10 +415,11 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     if (!profile) {
       return;
     }
+    PrefService* local_state = g_browser_process->local_state();
     if (molt_ai::tor::TorManager::Get()->IsRunning()) {
-      molt_ai::tor::MoltNetRouting::Enable(profile);
+      molt_ai::tor::MoltNetRouting::Enable(profile, local_state);
     } else {
-      molt_ai::tor::MoltNetRouting::Disable(profile);
+      molt_ai::tor::MoltNetRouting::Disable(profile, local_state);
     }
   }
 
