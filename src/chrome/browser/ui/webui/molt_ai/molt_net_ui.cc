@@ -162,6 +162,8 @@ class MoltNetDataSource : public content::URLDataSource {
   .hop .hbtn:hover{background:rgba(255,255,255,.10)}
   .hline{width:2px;height:9px;background:rgba(255,255,255,.22);margin-left:19px}
   .note{font-size:9.5px;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
+  .evlink{cursor:pointer;color:var(--muted)}
+  .evlink:hover{color:var(--text)}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -284,8 +286,9 @@ function renderRoute(){
       var role=h.role==='guard'?'Guard':(h.role==='exit'?'Exit':'Middle');
       var isExit=h.role==='exit';
       var ipText=(h.ip||'—')+(isExit?' · websites see this IP':'');
+      var cname=h.country_name||countryLabel(h.country);
       var hn=hopNode(flag((h.country||'').toLowerCase()),
-        role+' · '+countryLabel(h.country), ipText, isExit?'exit':'', isExit?'Verify':'');
+        role+' · '+cname, ipText, isExit?'exit':'', isExit?'Verify':'');
       if(hn.btn) hn.btn.onclick=function(){ verifyExit(hn); };
       route.appendChild(hn.node);
     });
@@ -293,7 +296,31 @@ function renderRoute(){
     var note=document.createElement('div'); note.className='note';
     note.textContent='No single relay sees both who you are and the site you visit.';
     wrap.appendChild(note);
+    var ev=document.createElement('div'); ev.className='note evlink';
+    ev.textContent='⧉ Copy route evidence';
+    ev.onclick=function(){ copyEvidence(r, ev); };
+    wrap.appendChild(ev);
   });
+}
+// Export the current path as verifiable text: each relay's fingerprint can be
+// looked up in the PUBLIC Tor consensus (metrics.torproject.org) to prove it's
+// a real relay in the country/role shown — independent of MoltBrowser.
+function copyEvidence(r, el){
+  var t='MoltNet route evidence — '+new Date().toISOString()+'\n\n';
+  t+='Origin (your IP): '+(_originIp||'unknown')+'\n\n';
+  (r.hops||[]).forEach(function(h){
+    var role=h.role.charAt(0).toUpperCase()+h.role.slice(1);
+    t+=role+'  ·  '+(h.country_name||h.country||'?')+'  ·  '+(h.ip||'?')+
+       '\n    relay: '+(h.nickname||'?')+'   fingerprint: '+(h.fingerprint||'?')+'\n';
+  });
+  t+='\nVerify each relay is a real, published Tor relay (independent of MoltBrowser):\n'+
+     '  https://metrics.torproject.org/rs.html#search/<fingerprint>\n'+
+     '  https://onionoo.torproject.org/details?lookup=<fingerprint>\n'+
+     'Confirm the exit IP websites see + that traffic is on Tor:\n'+
+     '  https://check.torproject.org/api/ip\n';
+  var done=function(){ var o=el.textContent; el.textContent='✓ Copied — paste anywhere'; setTimeout(function(){el.textContent=o;},1800); };
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done, done); }
+  else { done(); }
 }
 function verifyExit(hn){
   if(hn.btn) hn.btn.textContent='…';

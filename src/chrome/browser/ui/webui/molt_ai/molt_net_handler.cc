@@ -13,14 +13,18 @@
 #include "base/check_op.h"
 #include "base/no_destructor.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/storage_partition.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "net/base/load_flags.h"
@@ -28,6 +32,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -134,6 +139,26 @@ void FetchOriginIp(Profile* profile) {
       /*max_body_size=*/4096);
 }
 
+// Close every existing socket on the profile AND system network contexts, so
+// connections opened DIRECT before routing turned on don't linger off-Tor —
+// they re-establish through the SOCKS proxy. Without this there's a transient
+// window where a packet capture right after Connect would still see pre-enable
+// keep-alive connections egressing from the real IP.
+void CloseDirectConnections(Profile* profile) {
+  if (profile) {
+    if (network::mojom::NetworkContext* nc =
+            profile->GetDefaultStoragePartition()->GetNetworkContext()) {
+      nc->CloseAllConnections(base::DoNothing());
+    }
+  }
+  if (SystemNetworkContextManager* sys =
+          g_browser_process->system_network_context_manager()) {
+    if (network::mojom::NetworkContext* nc = sys->GetContext()) {
+      nc->CloseAllConnections(base::DoNothing());
+    }
+  }
+}
+
 // The single status shape every mutating call resolves, so the page can
 // re-render from one payload:
 // { running: bool, selected: "<lc cc or ''>", mode: "direct|proxy|multi_hop" }.
@@ -176,6 +201,8 @@ void MoltNetHandler::ApplyRoutingForLaunchResult(bool tor_ready) {
   if (tor_ready) {
     if (profile) {
       molt_ai::tor::MoltNetRouting::Enable(profile, local_state);
+      // Drop any sockets opened before routing so nothing lingers off-Tor.
+      CloseDirectConnections(profile);
     }
     return;
   }
@@ -394,8 +421,19 @@ void MoltNetHandler::HandleGetCircuit(const base::ListValue& args) {
             hop.Set("role", i == 0 ? "guard"
                                    : (i + 1 == n ? "exit" : "middle"));
             hop.Set("country", base::ToUpperASCII(h.country));
+            // Full localized country name (e.g. "DK" -> "Denmark") for every
+            // hop, not just a flag + ISO code, so the route reads clearly.
+            if (!h.country.empty()) {
+              hop.Set("country_name",
+                      base::UTF16ToUTF8(l10n_util::GetDisplayNameForCountry(
+                          h.country, g_browser_process->GetApplicationLocale())));
+            }
             hop.Set("ip", h.ip);
             hop.Set("nickname", h.nickname);
+            // Relay fingerprint = the public identity anyone can look up in the
+            // Tor consensus (metrics.torproject.org / onionoo) to independently
+            // confirm this is a real relay in the country/role we claim.
+            hop.Set("fingerprint", h.fingerprint);
             hops.Append(std::move(hop));
           }
         }

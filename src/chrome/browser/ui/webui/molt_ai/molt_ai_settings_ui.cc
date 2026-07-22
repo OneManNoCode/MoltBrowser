@@ -38,8 +38,11 @@
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "base/functional/callback_helpers.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
+#include "chrome/browser/net/system_network_context_manager.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
@@ -418,6 +421,12 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     PrefService* local_state = g_browser_process->local_state();
     if (molt_ai::tor::TorManager::Get()->IsRunning()) {
       molt_ai::tor::MoltNetRouting::Enable(profile, local_state);
+      // Drop sockets opened before routing so nothing lingers off-Tor.
+      if (auto* nc = profile->GetDefaultStoragePartition()->GetNetworkContext())
+        nc->CloseAllConnections(base::DoNothing());
+      if (auto* sys = g_browser_process->system_network_context_manager())
+        if (auto* nc = sys->GetContext())
+          nc->CloseAllConnections(base::DoNothing());
     } else {
       molt_ai::tor::MoltNetRouting::Disable(profile, local_state);
     }
