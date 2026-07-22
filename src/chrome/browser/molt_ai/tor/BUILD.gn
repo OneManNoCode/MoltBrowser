@@ -8,6 +8,8 @@
 source_set("tor") {
   sources = [
     "exit_country_names.h",
+    "molt_net_routing.cc",
+    "molt_net_routing.h",
     "tor_manager.cc",
     "tor_manager.h",
     "tor_service.cc",
@@ -16,6 +18,12 @@ source_set("tor") {
 
   deps = [
     "//base",
+    # molt_net_routing.cc applies leak-safe proxy/WebRTC/QUIC prefs to the
+    # profile that opts into MoltNet.
+    "//chrome/browser/profiles:profile",
+    "//chrome/common",
+    "//components/prefs",
+    "//components/proxy_config",
   ]
 
   # tor_service.cc / tor_manager.cc talk to the Tor control port over

@@ -54,7 +54,7 @@ class MoltNetDataSource : public content::URLDataSource {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MoltNet VPN</title>
+<title>MoltNet — Private routing</title>
 <style>
   :root{
     --text:#f4f5fa;
@@ -156,17 +156,15 @@ class MoltNetDataSource : public content::URLDataSource {
   <div class="frost">
     <div class="hdr">
       <span class="dot" id="dot"></span>
-      <div><div class="title">MoltNet VPN</div><div class="st" id="st">Checking&hellip;</div></div>
+      <div><div class="title">MoltNet</div><div class="st" id="st">Checking&hellip;</div></div>
       <span class="brand" id="sub"></span>
     </div>
-    <div class="sec">Routing mode</div>
+    <div class="sec">Routing</div>
     <div class="modes" id="modes">
       <div class="mode" data-mode="direct" onclick="setMode('direct')">
-        <div class="mname">Direct</div><div class="mdesc">No&nbsp;routing</div></div>
-      <div class="mode" data-mode="proxy" onclick="setMode('proxy')">
-        <div class="mname">Single&nbsp;proxy</div><div class="mdesc">1&nbsp;hop</div></div>
+        <div class="mname">Direct</div><div class="mdesc">Off</div></div>
       <div class="mode" data-mode="multi_hop" onclick="setMode('multi_hop')">
-        <div class="mname">Multi&#8209;hop</div><div class="mdesc">Tor</div></div>
+        <div class="mname">Private</div><div class="mdesc">Tor&nbsp;&middot;&nbsp;3&nbsp;hops</div></div>
     </div>
     <div class="divider"></div>
     <div class="sec">Exit country</div>

@@ -38,6 +38,7 @@
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
@@ -403,6 +404,23 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     FireWebUIListener("moltnet-status", base::Value(std::move(result)));
   }
 
+  // Reconcile this profile's network routing with Tor's running state, so
+  // enabling MoltNet from Settings routes the whole browser through Tor
+  // (leak-safe) exactly like the toolbar popover. Idempotent.
+  void ApplyMoltnetRouting() {
+    content::WebContents* wc = web_ui()->GetWebContents();
+    Profile* profile =
+        wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
+    if (!profile) {
+      return;
+    }
+    if (molt_ai::tor::TorManager::Get()->IsRunning()) {
+      molt_ai::tor::MoltNetRouting::Enable(profile);
+    } else {
+      molt_ai::tor::MoltNetRouting::Disable(profile);
+    }
+  }
+
   void HandleMoltnetConnect(const base::ListValue& args) {
     AllowJavascript();
     std::string mode = "multi_hop";
@@ -414,6 +432,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     // of launching one.
     if (mode == "direct") {
       molt_ai::tor::TorManager::Get()->Stop();
+      ApplyMoltnetRouting();  // Tor down -> restore direct.
       EmitMoltnetStatus("disconnected");
       return;
     }
@@ -437,12 +456,17 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
           if (!self)
             return;
           if (!r.success) {
+            // Bootstrap timed out / Tor couldn't build a circuit — stop the
+            // stuck daemon and keep the browser on a direct connection.
+            molt_ai::tor::TorManager::Get()->Stop();
+            self->ApplyMoltnetRouting();  // now stopped -> restore direct.
             self->EmitMoltnetStatus(
                 "disconnected",
                 r.error.empty() ? std::string("Failed to launch Tor")
                                 : r.error);
             return;
           }
+          self->ApplyMoltnetRouting();  // Tor routable -> route the browser.
           self->RefreshMoltnetStatus();
         },
         weak_this));
@@ -451,6 +475,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   void HandleMoltnetDisconnect(const base::ListValue& args) {
     AllowJavascript();
     molt_ai::tor::TorManager::Get()->Stop();
+    ApplyMoltnetRouting();  // Tor down -> restore direct.
     EmitMoltnetStatus("disconnected");
   }
 

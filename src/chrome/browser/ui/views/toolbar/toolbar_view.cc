@@ -29,6 +29,7 @@
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/update/update_manager.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -385,7 +386,7 @@ class TorExitCountryButton : public ToolbarButton,
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
     // No vector icon — the label carries a country flag emoji (or a globe for
     // Auto), so the button reads "🇬🇧 GB" like the mockup, not a static globe.
-    SetTooltipText(u"MoltNet VPN — privacy routing, connect & pick exit country");
+    SetTooltipText(u"MoltNet — private routing, connect & pick exit country");
     UpdateLabel();
   }
   TorExitCountryButton(const TorExitCountryButton&) = delete;
@@ -977,6 +978,12 @@ void ToolbarView::Init() {
   // every platform. Initialize() is idempotent, so calling it per-window is
   // safe; it needs the profile's network URLLoaderFactory.
   {
+    // MoltNet startup fail-safe: if a prior session left this profile routing
+    // through Tor but the daemon isn't running now, clear the stale proxy so
+    // the user isn't stranded behind a dead SOCKS endpoint. Idempotent + a
+    // no-op unless routing prefs are actually set (see MoltNetRouting).
+    molt_ai::tor::MoltNetRouting::ReconcileOnStartup(browser_->profile());
+
     molt_ai::UpdateManager::Get()->Initialize(
         browser_->profile()
             ->GetDefaultStoragePartition()

@@ -12,7 +12,10 @@
 #include "base/no_destructor.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
 namespace {
@@ -68,6 +71,41 @@ base::DictValue StatusDict() {
 
 MoltNetHandler::MoltNetHandler() = default;
 MoltNetHandler::~MoltNetHandler() = default;
+
+Profile* MoltNetHandler::GetProfile() {
+  content::WebContents* wc = web_ui()->GetWebContents();
+  return wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
+}
+
+void MoltNetHandler::ApplyRoutingForCurrentTorState() {
+  Profile* profile = GetProfile();
+  if (!profile) {
+    return;
+  }
+  if (molt_ai::tor::TorManager::Get()->IsRunning()) {
+    molt_ai::tor::MoltNetRouting::Enable(profile);
+  } else {
+    molt_ai::tor::MoltNetRouting::Disable(profile);
+  }
+}
+
+void MoltNetHandler::ApplyRoutingForLaunchResult(bool tor_ready) {
+  Profile* profile = GetProfile();
+  if (tor_ready) {
+    if (profile) {
+      molt_ai::tor::MoltNetRouting::Enable(profile);
+    }
+    return;
+  }
+  // Tor came up on the control port but never built a usable circuit (stuck
+  // bootstrap / network blocking Tor). Do NOT route through a daemon that
+  // can't carry traffic — tear it down and keep the browser on a direct
+  // connection so the user isn't stranded behind a dead proxy.
+  molt_ai::tor::TorManager::Get()->Stop();
+  if (profile) {
+    molt_ai::tor::MoltNetRouting::Disable(profile);
+  }
+}
 
 void MoltNetHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
@@ -144,18 +182,22 @@ void MoltNetHandler::HandleToggle(const base::ListValue& args) {
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
   if (mgr->IsRunning()) {
     mgr->Stop();
+    // Tor is down now -> restore direct networking before we hand control
+    // back, so no window is left pointing at a stopped proxy.
+    ApplyRoutingForCurrentTorState();
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(StatusDict()));
     return;
   }
-  // Launch is async; resolve once the control port is up (or the attempt
-  // fails — StatusDict() reflects the real IsRunning() either way).
+  // Launch is async; its callback fires only once Tor has a usable circuit
+  // (result.success) or the bootstrap timed out. Route only on success.
   mgr->Launch(base::BindOnce(
       [](base::WeakPtr<MoltNetHandler> self, std::string cb,
-         molt_ai::tor::TorLaunchResult) {
+         molt_ai::tor::TorLaunchResult result) {
         if (!self) {
           return;
         }
+        self->ApplyRoutingForLaunchResult(result.success);
         self->ResolveJavascriptCallback(base::Value(cb),
                                         base::Value(StatusDict()));
       },
@@ -176,22 +218,22 @@ void MoltNetHandler::HandleSetMode(const base::ListValue& args) {
   // the user picked so the UI shows it, but the backend path is identical.
   if (mode == "direct") {
     mgr->Stop();
+    ApplyRoutingForCurrentTorState();  // Tor down -> restore direct.
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(StatusDict()));
     return;
   }
   OnMode() = (mode == "proxy") ? "proxy" : "multi_hop";
-  if (mgr->IsRunning()) {
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(StatusDict()));
-    return;
-  }
+  // Always go through Launch (even if a child is already running): its
+  // callback re-confirms Tor has a usable circuit before we apply routing,
+  // so a mode change during bootstrap can't enable a dead proxy.
   mgr->Launch(base::BindOnce(
       [](base::WeakPtr<MoltNetHandler> self, std::string cb,
-         molt_ai::tor::TorLaunchResult) {
+         molt_ai::tor::TorLaunchResult result) {
         if (!self) {
           return;
         }
+        self->ApplyRoutingForLaunchResult(result.success);
         self->ResolveJavascriptCallback(base::Value(cb),
                                         base::Value(StatusDict()));
       },

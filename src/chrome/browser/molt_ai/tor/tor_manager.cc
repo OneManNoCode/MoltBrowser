@@ -124,12 +124,27 @@ bool TryConnectControlPort() {
 // Body run on a thread-pool task to wait for Tor to be reachable.
 // Polls the control port until it answers (each attempt has a ~300ms
 // connect timeout) or |total_ms| elapses. Cross-platform.
-TorLaunchResult DoWaitForBootstrap(int total_ms) {
+// Forward decl (defined after the control-port helpers below).
+bool TorCircuitEstablishedBlocking(const std::string& cookie_path);
+
+// Wait until Tor can actually route (has built a usable circuit), not merely
+// until its control port answers. Two phases:
+//   1. Poll the cheap TCP control-port check until the port is up.
+//   2. Poll GETINFO status/circuit-established until it reports "1".
+// Returns success only when a circuit exists, so callers that flip on routing
+// in the success path never strand the browser behind a still-bootstrapping
+// (or stuck) daemon. On timeout, success=false + a clear error, and the caller
+// tears the daemon down. |cookie_path| is <datadir>/control_auth_cookie.
+TorLaunchResult DoWaitForBootstrap(int total_ms, std::string cookie_path) {
   TorLaunchResult r;
   const int kPollIntervalMs = 500;
   int waited = 0;
+  bool port_up = false;
   while (waited < total_ms) {
-    if (TryConnectControlPort()) {
+    if (!port_up) {
+      port_up = TryConnectControlPort();
+    }
+    if (port_up && TorCircuitEstablishedBlocking(cookie_path)) {
       r.success = true;
       return r;
     }
@@ -137,8 +152,12 @@ TorLaunchResult DoWaitForBootstrap(int total_ms) {
     waited += kPollIntervalMs;
   }
   r.success = false;
-  r.error = "Tor did not become reachable within " +
-            base::NumberToString(total_ms / 1000) + "s.";
+  r.error = port_up
+                ? ("Tor connected but couldn't build a circuit within " +
+                   base::NumberToString(total_ms / 1000) +
+                   "s (network may be blocking Tor).")
+                : ("Tor did not become reachable within " +
+                   base::NumberToString(total_ms / 1000) + "s.");
   return r;
 }
 
@@ -310,12 +329,15 @@ bool TorManager::IsUsingBundledTor() const {
 
 void TorManager::Launch(
     base::OnceCallback<void(TorLaunchResult)> on_ready) {
-  // If we already have a healthy child, just confirm it.
+  const std::string cookie_path =
+      GetDataDir().AppendASCII("control_auth_cookie").AsUTF8Unsafe();
+  // If we already have a healthy child, just confirm it can route. If it's
+  // still bootstrapping, give it up to 20s to establish a circuit.
   if (IsRunning()) {
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE,
         {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&DoWaitForBootstrap, /*total_ms=*/2000),
+        base::BindOnce(&DoWaitForBootstrap, /*total_ms=*/20000, cookie_path),
         std::move(on_ready));
     return;
   }
@@ -363,7 +385,7 @@ void TorManager::Launch(
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&DoWaitForBootstrap, /*total_ms=*/45000),
+      base::BindOnce(&DoWaitForBootstrap, /*total_ms=*/60000, cookie_path),
       base::BindOnce(
           [](base::OnceCallback<void(TorLaunchResult)> cb,
              std::string bin_path, int pid,
@@ -460,6 +482,90 @@ void ControlSendDrain(
   send(fd, cmd.data(), static_cast<int>(cmd.size()), 0);
   char buf[1024];
   recv(fd, buf, sizeof(buf), 0);
+}
+
+// Like ControlSendDrain but returns the control-port reply so callers can
+// parse a GETINFO result. One recv() is enough for the small single-line
+// replies we query (bootstrap/circuit status).
+std::string ControlSendRecv(
+#if BUILDFLAG(IS_WIN)
+    SOCKET fd,
+#else
+    int fd,
+#endif
+    const std::string& line) {
+  std::string cmd = line + "\r\n";
+  send(fd, cmd.data(), static_cast<int>(cmd.size()), 0);
+  char buf[1024];
+  int n = recv(fd, buf, sizeof(buf) - 1, 0);
+  if (n <= 0) {
+    return std::string();
+  }
+  return std::string(buf, static_cast<size_t>(n));
+}
+
+// Blocking: is Tor actually able to route yet? Connects to the control port,
+// cookie-authenticates, and asks GETINFO status/circuit-established — which is
+// "1" only once Tor has built at least one usable circuit (i.e. bootstrap is
+// effectively done and traffic can flow). This is a stronger, more honest
+// readiness signal than "the control port answered": we only flip MoltNet to
+// Connected + apply routing once traffic will actually go through. Returns
+// false on any connect/auth failure. Runs on a MayBlock() worker thread.
+bool TorCircuitEstablishedBlocking(const std::string& cookie_path) {
+  struct sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(9051);
+  addr.sin_addr.s_addr = htonl(0x7F000001);  // 127.0.0.1
+
+  std::string cookie;
+  base::ReadFileToString(base::FilePath::FromUTF8Unsafe(cookie_path), &cookie);
+
+#if BUILDFLAG(IS_WIN)
+  EnsureWinsockStarted();
+  SOCKET fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd == INVALID_SOCKET)
+    return false;
+  DWORD ms = 1000;
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+             reinterpret_cast<const char*>(&ms), sizeof(ms));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO,
+             reinterpret_cast<const char*>(&ms), sizeof(ms));
+  if (connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) !=
+      0) {
+    closesocket(fd);
+    return false;
+  }
+#else
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0)
+    return false;
+  struct timeval tv;
+  tv.tv_sec = 1;
+  tv.tv_usec = 0;
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  if (connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) !=
+      0) {
+    close(fd);
+    return false;
+  }
+#endif  // BUILDFLAG(IS_WIN)
+
+  if (!cookie.empty())
+    ControlSendDrain(fd, "AUTHENTICATE " + HexEncodeBytes(cookie));
+  else
+    ControlSendDrain(fd, "AUTHENTICATE");
+
+  std::string resp = ControlSendRecv(fd, "GETINFO status/circuit-established");
+  ControlSendDrain(fd, "QUIT");
+
+#if BUILDFLAG(IS_WIN)
+  closesocket(fd);
+#else
+  close(fd);
+#endif
+  // Reply looks like: 250-status/circuit-established=1\r\n250 OK
+  return resp.find("circuit-established=1") != std::string::npos;
 }
 
 // Blocking: connect to the control port, authenticate with the cookie
