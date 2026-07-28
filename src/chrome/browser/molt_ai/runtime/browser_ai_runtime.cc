@@ -1029,9 +1029,21 @@ bool BrowserAIRuntime::CanRunModel(const std::string& model_id) const {
 
   const ModelInfo& info = it->second;
 
-  // ResourceGovernor: model cannot exceed 50% of system RAM
-  size_t max_allowed = static_cast<size_t>(
-      impl_->hardware.total_ram_bytes * kMaxRamUsagePercent);
+  // ResourceGovernor. The old rule (model <= 50% of RAM) was far too
+  // conservative for the large flagship models on Apple-Silicon-class
+  // machines: a 24 GB Mac was refused gpt-oss (needs ~16 GB) even though the
+  // model mmaps comfortably alongside the OS + browser. On-device weights are
+  // memory-mapped and paged on demand, so a model can safely use well over
+  // half of RAM. Allow a model up to (total RAM − a fixed headroom for the OS
+  // and the browser itself), but never less than 50% of RAM — so small
+  // machines keep the conservative floor and large machines can actually run
+  // the big models they downloaded.
+  const size_t total = impl_->hardware.total_ram_bytes;
+  const size_t kHeadroom = 5ULL * 1024 * 1024 * 1024;  // 5 GiB for OS+browser
+  size_t max_allowed = static_cast<size_t>(total * kMaxRamUsagePercent);
+  if (total > kHeadroom && total - kHeadroom > max_allowed) {
+    max_allowed = total - kHeadroom;
+  }
 
   return info.ram_required_bytes <= max_allowed;
 }

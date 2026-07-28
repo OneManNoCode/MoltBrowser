@@ -1196,10 +1196,38 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                            << model_to_load;
                 molt_ai::GenerationResult fail;
                 fail.success = false;
-                fail.error_message =
-                    "Failed to load model '" + model_to_load +
-                    "'. Please download it from the Models panel or check "
-                    "~/.moltbrowser/models/";
+                // Give an accurate reason. LoadModel returns false for several
+                // distinct causes; the old catch-all "please download" message
+                // was wrong (and confusing) when the file was present but the
+                // RAM governor refused it.
+                molt_ai::ModelInfo minfo = rt->GetModelInfo(model_to_load);
+                const std::string name =
+                    minfo.display_name.empty() ? model_to_load
+                                               : minfo.display_name;
+                const auto to_gb = [](size_t b) {
+                  return std::to_string((b + 512 * 1024 * 1024) /
+                                        (1024ULL * 1024 * 1024));
+                };
+                if (minfo.model_id.empty()) {
+                  fail.error_message = "Unknown model '" + model_to_load + "'.";
+                } else if (!minfo.is_downloaded) {
+                  fail.error_message =
+                      name +
+                      " isn't downloaded yet. Pick it from the model menu to "
+                      "download it.";
+                } else if (!rt->CanRunModel(model_to_load)) {
+                  fail.error_message =
+                      name + " needs about " +
+                      to_gb(minfo.ram_required_bytes) +
+                      " GB of memory, but this device has " +
+                      to_gb(rt->GetHardwareCapability().total_ram_bytes) +
+                      " GB. Try a smaller model.";
+                } else {
+                  fail.error_message =
+                      "Couldn't load " + name +
+                      ". The file may be incomplete or incompatible — try "
+                      "deleting and re-downloading it from the model menu.";
+                }
                 // Notify UI of error
                 content::GetUIThreadTaskRunner({})->PostTask(
                     FROM_HERE,
