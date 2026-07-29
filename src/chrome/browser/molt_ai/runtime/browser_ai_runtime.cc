@@ -869,10 +869,58 @@ void BrowserAIRuntime::StreamWithPrompt(const std::string& full_prompt,
             << " n_prompt=" << n_tokens
             << " max_gen=" << max_gen << std::endl;
 
+  // ---- Output cleanup shared by every model ----
+  // (1) UTF-8 assembly: a single token can be a partial multi-byte sequence
+  //     (e.g. an emoji split across two tokens), which renders as "" if
+  //     emitted raw. Buffer bytes and only surface complete UTF-8 characters.
+  // (2) Harmony (gpt-oss) channel filtering: gpt-oss emits its private
+  //     reasoning in an "analysis" channel and the user-facing answer in a
+  //     "final" channel, wrapped in <|channel|>/<|message|>/<|start|>/<|end|>
+  //     control tokens. We surface ONLY the final channel. Models that don't
+  //     use Harmony never emit these markers, so `harmony` stays false and the
+  //     whole reply is passed through unchanged.
+  std::string utf8_pending;
+  auto utf8_safe_len = [](const std::string& s) -> size_t {
+    if (s.empty()) return 0;
+    size_t i = s.size();
+    while (i > 0 && (static_cast<unsigned char>(s[i - 1]) & 0xC0) == 0x80) {
+      --i;  // skip UTF-8 continuation bytes
+    }
+    if (i == 0) return s.size();
+    unsigned char lead = static_cast<unsigned char>(s[i - 1]);
+    size_t need = (lead < 0x80)              ? 1
+                  : ((lead & 0xE0) == 0xC0)  ? 2
+                  : ((lead & 0xF0) == 0xE0)  ? 3
+                  : ((lead & 0xF8) == 0xF0)  ? 4
+                                             : 1;
+    size_t have = s.size() - (i - 1);
+    return (have >= need) ? s.size() : (i - 1);  // hold back an incomplete char
+  };
+  auto emit = [&](const std::string& add) {
+    utf8_pending += add;
+    size_t safe = utf8_safe_len(utf8_pending);
+    if (safe > 0 && callback) {
+      callback(utf8_pending.substr(0, safe), /*is_done=*/false);
+    }
+    utf8_pending.erase(0, safe);
+  };
+  auto finish = [&]() {
+    if (!utf8_pending.empty() && callback) {
+      callback(utf8_pending, /*is_done=*/false);
+      utf8_pending.clear();
+    }
+    if (callback) callback("", /*is_done=*/true);
+  };
+
+  bool harmony = false;      // becomes true once a Harmony marker is seen
+  int hstate = 0;            // 0=outside a message, 1=reading channel name, 2=in message body
+  std::string hchannel;      // accumulated channel name for the current message
+  bool hemit = false;        // currently inside the final channel's message?
+
   // Stream tokens
   for (int i = 0; i < max_gen; ++i) {
     if (impl_->cancel_requested) {
-      if (callback) callback("", true);
+      finish();
       break;
     }
 
@@ -881,21 +929,65 @@ void BrowserAIRuntime::StreamWithPrompt(const std::string& full_prompt,
     llama_sampler_accept(sampler, new_token);
 
     // Stop on ANY end-of-generation token (EOS, <|eot_id|>, <|im_end|>,
-    // <|end|>, ...) BEFORE converting to text, so EOG token text is
-    // never emitted to the callback.
+    // <|end|>, <|return|>, ...) BEFORE converting to text, so EOG token text
+    // is never emitted to the callback.
     if (llama_vocab_is_eog(vocab, new_token)) {
-      if (callback) callback("", true);
+      finish();
       break;
     }
 
     std::string piece = TokenToPiece(vocab, new_token);
-    if (callback) callback(piece, false);
+
+    // Harmony control tokens arrive as whole special-token pieces.
+    bool is_ctrl = true;
+    if (piece == "<|channel|>") {
+      harmony = true;
+      hstate = 1;
+      hchannel.clear();
+      hemit = false;
+    } else if (piece == "<|message|>") {
+      if (harmony) {
+        hstate = 2;
+        hemit = hchannel.find("final") != std::string::npos;
+      } else {
+        is_ctrl = false;
+      }
+    } else if (piece == "<|start|>" || piece == "<|end|>" ||
+               piece == "<|return|>" || piece == "<|constrain|>" ||
+               piece == "<|call|>") {
+      if (harmony) {
+        hstate = 0;  // message boundary; next channel decides visibility
+        hemit = false;
+      } else {
+        is_ctrl = false;
+      }
+    } else {
+      is_ctrl = false;
+    }
+
+    if (!is_ctrl) {
+      if (!harmony) {
+        emit(piece);              // normal model — pass everything through
+      } else if (hstate == 1) {
+        hchannel += piece;        // building the channel name; don't surface
+      } else if (hstate == 2 && hemit) {
+        emit(piece);              // final channel body — surface it
+      }
+      // else: analysis/commentary body or a role name between messages — drop
+    }
 
     llama_batch single_batch = llama_batch_get_one(&new_token, 1);
     if (llama_decode(impl_->llama_ctx, single_batch) != 0) {
       if (callback) callback("[Error: decode failed]", true);
       break;
     }
+  }
+
+  // If we exited by exhausting the token budget (no EOG/cancel), flush any
+  // bytes still held back for UTF-8 completion. (No-op if finish() already ran.)
+  if (!utf8_pending.empty() && callback) {
+    callback(utf8_pending, /*is_done=*/false);
+    utf8_pending.clear();
   }
 
   llama_sampler_free(sampler);
