@@ -296,7 +296,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
                           molt_ai::CloudChatRequest request);
 
   raw_ptr<Profile> profile_;
-  std::unique_ptr<molt_ai::BrowserAIRuntime> runtime_;
+  // The on-device runtime is a process-wide singleton reached via
+  // GetOrCreateRuntime() -> BrowserAIRuntime::GetInstance(); this handler does
+  // NOT own it (owning it per-page caused a use-after-free on page close).
   bool model_loaded_ = false;
   // The model id most recently requested via loadModel (the chat
   // model-chip picker). The lazy-load path in HandleSendPrompt prefers

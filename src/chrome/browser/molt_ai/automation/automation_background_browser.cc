@@ -39,11 +39,11 @@ namespace {
 class BackgroundRunHolder {
  public:
   BackgroundRunHolder(Browser* browser,
-                      std::unique_ptr<molt_ai::BrowserAIRuntime> ai_runtime,
+                      molt_ai::BrowserAIRuntime* ai_runtime,
                       std::unique_ptr<AutomationStorage> storage,
                       content::WebContents* contents)
       : browser_(browser),
-        ai_runtime_(std::move(ai_runtime)),
+        ai_runtime_(ai_runtime),
         storage_(std::move(storage)),
         runner_(std::make_unique<AutomationRunner>(contents,
                                                     ai_runtime_.get(),
@@ -108,7 +108,11 @@ class BackgroundRunHolder {
   }
 
   raw_ptr<Browser> browser_;
-  std::unique_ptr<molt_ai::BrowserAIRuntime> ai_runtime_;
+  // NOT owned — the runtime is a process-wide singleton
+  // (BrowserAIRuntime::GetInstance). This holder does `delete this` when the run
+  // completes; owning the runtime here meant a background run that finished
+  // while a load/generation task was still in flight freed it under the task.
+  raw_ptr<molt_ai::BrowserAIRuntime> ai_runtime_;
   std::unique_ptr<AutomationStorage> storage_;
   std::unique_ptr<AutomationRunner> runner_;
   int64_t inbox_id_ = 0;
@@ -175,10 +179,12 @@ void RunScriptInBackgroundBrowser(
   else
     browser->window()->Show();
 
-  // Spin up a fresh BrowserAIRuntime + AutomationStorage for this run.
-  // (Profile-scoped sharing would be nice but the runtime currently
-  // is owned per-handler, so a fresh instance is consistent.)
-  auto ai_runtime = std::make_unique<molt_ai::BrowserAIRuntime>();
+  // Use the process-wide runtime singleton (shared with the chat UI). Only one
+  // model fits in RAM at a time and its load/generation are serialized
+  // internally, so sharing one instance is both cheaper and safer than the old
+  // per-run instance, which could be freed under an in-flight background task.
+  molt_ai::BrowserAIRuntime* ai_runtime = &molt_ai::BrowserAIRuntime::GetInstance();
+  ai_runtime->Initialize();
   auto storage = std::make_unique<AutomationStorage>();
   storage->EnsureDirectory();
 
@@ -199,7 +205,7 @@ void RunScriptInBackgroundBrowser(
   }
 
   // The holder self-destructs when the run finishes.
-  auto* holder = new BackgroundRunHolder(browser, std::move(ai_runtime),
+  auto* holder = new BackgroundRunHolder(browser, ai_runtime,
                                          std::move(storage), contents);
   holder->Start(std::move(*fresh), start_index);
 }

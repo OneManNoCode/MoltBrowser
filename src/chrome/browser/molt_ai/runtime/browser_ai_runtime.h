@@ -118,6 +118,17 @@ class BrowserAIRuntime {
   BrowserAIRuntime(const BrowserAIRuntime&) = delete;
   BrowserAIRuntime& operator=(const BrowserAIRuntime&) = delete;
 
+  // Process-wide singleton. The on-device model is a global resource — only one
+  // fits in RAM at a time — and model load / token generation run on background
+  // ThreadPool tasks that capture a raw pointer to the runtime. Owning it
+  // per-WebUI-page meant that closing the page (side-panel close, tab close,
+  // AI-chat <-> Agent-mode swap) while a load was in flight freed the runtime
+  // out from under the running task → use-after-free crash of the whole
+  // browser process. This instance lives for the process lifetime, so every
+  // captured pointer stays valid. All callers must route through here rather
+  // than constructing their own instance.
+  static BrowserAIRuntime& GetInstance();
+
   // ---- Lifecycle ----
 
   // Initialize the runtime with hardware detection
@@ -223,10 +234,20 @@ class BrowserAIRuntime {
   // Shared streaming core behind StreamPrompt (parse_special=false,
   // legacy raw-prompt callers) and StreamChat (parse_special=true so
   // templated control markers become real special tokens).
+  // StreamWithPrompt acquires generation_mutex then delegates to the *Locked
+  // core. StreamChat instead takes generation_mutex ITSELF and calls the
+  // *Locked core directly, so the chat-template build (which reads the model
+  // handle) and the decode happen under one continuous lock — a concurrent
+  // LoadModel can't free the model between them.
   void StreamWithPrompt(const std::string& full_prompt,
                         bool parse_special,
                         TokenCallback callback,
                         const PromptOptions& options);
+  // Caller MUST hold generation_mutex.
+  void StreamWithPromptLocked(const std::string& full_prompt,
+                              bool parse_special,
+                              TokenCallback callback,
+                              const PromptOptions& options);
 
   struct Impl;
   std::unique_ptr<Impl> impl_;

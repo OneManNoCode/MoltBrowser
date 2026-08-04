@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -18,6 +19,7 @@
 
 // Chromium includes
 #include "base/memory/raw_ptr_exclusion.h"
+#include "base/no_destructor.h"
 
 // llama.cpp headers — wired in Day 4
 #include "third_party/llama_cpp/include/llama.h"
@@ -175,9 +177,21 @@ struct BrowserAIRuntime::Impl {
   HardwareCapability hardware;
   std::unordered_map<std::string, ModelInfo> models;
   std::string active_model_id;
+  // generation_mutex guards the live llama handles (llama_ctx / llama_model_handle)
+  // during use: RunPrompt / StreamWithPrompt / StreamChat hold it for their whole
+  // run, and LoadModel/UnloadModel/Shutdown take it briefly to swap or free those
+  // handles — so a model can never be freed under an in-flight decode or a
+  // chat-template read. load_mutex serializes LoadModel/UnloadModel against each
+  // other (only one multi-GB model is ever being allocated at a time) and is held
+  // across the slow disk load WITHOUT holding generation_mutex, so a load never
+  // freezes a concurrent decode or an on-UI-thread caller. Ordering is always
+  // load_mutex -> generation_mutex; generation paths never take load_mutex.
   std::mutex generation_mutex;
+  std::mutex load_mutex;
   bool is_generating = false;
-  bool cancel_requested = false;
+  // Set from a different thread than the decode loop that reads it — must be
+  // atomic to be a well-defined cross-thread flag.
+  std::atomic<bool> cancel_requested{false};
   bool initialized = false;
   std::string model_directory;
 
@@ -271,6 +285,16 @@ struct BrowserAIRuntime::Impl {
 // Public API Implementation
 // ============================================================
 
+// static
+BrowserAIRuntime& BrowserAIRuntime::GetInstance() {
+  // Immortal, lazily-constructed, never destroyed — background load/generation
+  // tasks hold a raw pointer to it (see the note in the header). NoDestructor
+  // is thread-safe to initialize; in practice every caller reaches it from the
+  // UI thread before posting work.
+  static base::NoDestructor<BrowserAIRuntime> instance;
+  return *instance;
+}
+
 BrowserAIRuntime::BrowserAIRuntime() : impl_(std::make_unique<Impl>()) {}
 
 BrowserAIRuntime::~BrowserAIRuntime() {
@@ -318,7 +342,14 @@ bool BrowserAIRuntime::Initialize() {
 void BrowserAIRuntime::Shutdown() {
   if (!impl_->initialized) return;
 
+  // Ask any in-flight decode to stop, then take the same locks LoadModel/Unload
+  // take (load_mutex -> generation_mutex) before freeing the handles, so this
+  // can never free a model out from under a running decode. (Unreachable today —
+  // the singleton is never destroyed — but this keeps it safe if ever wired to
+  // browser/profile teardown.)
   CancelGeneration();
+  std::lock_guard<std::mutex> load_lock(impl_->load_mutex);
+  std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
 
   // Free llama.cpp resources
   impl_->FreeLlamaResources();
@@ -332,6 +363,15 @@ void BrowserAIRuntime::Shutdown() {
 }
 
 bool BrowserAIRuntime::LoadModel(const std::string& model_id) {
+  // load_mutex serializes loads/unloads (never allocate two multi-GB models at
+  // once → avoids OOM, and avoids swap races). CRUCIALLY, the slow part below —
+  // the disk read + llama_init_from_model + Metal shader compile, 14-60s — runs
+  // into LOCAL handles WITHOUT holding generation_mutex, so it never freezes an
+  // in-flight decode or an on-UI-thread caller. generation_mutex is taken only
+  // for the brief pointer swap, which waits for any active decode to finish
+  // before the old model is detached and freed → no use-after-free.
+  std::lock_guard<std::mutex> load_lock(impl_->load_mutex);
+
   auto it = impl_->models.find(model_id);
   if (it == impl_->models.end()) {
     return false;
@@ -344,7 +384,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id) {
   }
 
   if (info.is_loaded && impl_->loaded_model_id == model_id) {
-    return true;  // Already loaded
+    return true;  // Already loaded (load_mutex makes this read stable)
   }
 
   // Check if we have enough RAM
@@ -352,19 +392,13 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id) {
     return false;
   }
 
-  // If a different model is loaded, unload it first
-  if (impl_->llama_model_handle && impl_->loaded_model_id != model_id) {
-    UnloadModel(impl_->loaded_model_id);
-  }
-
-  // ---- llama.cpp model loading ----
+  // ---- llama.cpp model loading into LOCAL handles (no generation_mutex) ----
   llama_model_params model_params = llama_model_default_params();
   model_params.n_gpu_layers = -1;  // Offload all layers to GPU (Metal on macOS)
 
-  impl_->llama_model_handle = llama_model_load_from_file(
+  llama_model* new_model = llama_model_load_from_file(
       info.file_path.c_str(), model_params);
-
-  if (!impl_->llama_model_handle) {
+  if (!new_model) {
     std::cerr << "[MoltAI] Failed to load model: " << info.file_path
               << std::endl;
     return false;
@@ -383,27 +417,62 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id) {
                              : impl_->hardware.cpu_cores;
   ctx_params.n_threads_batch = ctx_params.n_threads;
 
-  impl_->llama_ctx = llama_init_from_model(
-      impl_->llama_model_handle, ctx_params);
-
-  if (!impl_->llama_ctx) {
+  llama_context* new_ctx = llama_init_from_model(new_model, ctx_params);
+  if (!new_ctx) {
     std::cerr << "[MoltAI] Failed to create context for: " << model_id
               << std::endl;
-    llama_model_free(impl_->llama_model_handle);
-    impl_->llama_model_handle = nullptr;
+    llama_model_free(new_model);
     return false;
   }
 
-  info.is_loaded = true;
-  impl_->active_model_id = model_id;
-  impl_->loaded_model_id = model_id;
+  // ---- Brief critical section: install the new handles, detach the old ----
+  // Acquiring generation_mutex waits for any in-flight decode/template read to
+  // finish; once we swap impl_->llama_ctx to the new one, every later generation
+  // reads the new handles, so the old ones are unreferenced afterwards.
+  llama_model* old_model = nullptr;
+  llama_context* old_ctx = nullptr;
+  {
+    std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
+    old_ctx = impl_->llama_ctx;
+    old_model = impl_->llama_model_handle;
+    if (!impl_->loaded_model_id.empty() &&
+        impl_->loaded_model_id != model_id) {
+      auto prev = impl_->models.find(impl_->loaded_model_id);
+      if (prev != impl_->models.end()) {
+        prev->second.is_loaded = false;
+      }
+    }
+    impl_->llama_ctx = new_ctx;
+    impl_->llama_model_handle = new_model;
+    info.is_loaded = true;
+    impl_->active_model_id = model_id;
+    impl_->loaded_model_id = model_id;
+  }
+
+  // Free the previous model OUTSIDE the lock — it is now detached (unreachable by
+  // any current or future generation), so this can't race a decode, and freeing
+  // a multi-GB model + its Metal buffers should not extend the critical section.
+  if (old_ctx) {
+    llama_free(old_ctx);
+  }
+  if (old_model) {
+    llama_model_free(old_model);
+  }
 
   std::cerr << "[MoltAI] Model loaded: " << info.display_name
-            << " (ctx=" << llama_n_ctx(impl_->llama_ctx) << ")" << std::endl;
+            << " (ctx=" << llama_n_ctx(new_ctx) << ")" << std::endl;
   return true;
 }
 
 bool BrowserAIRuntime::UnloadModel(const std::string& model_id) {
+  // Same serialization as LoadModel, same lock ordering (load_mutex ->
+  // generation_mutex): never free llama resources while a generation or a load
+  // is touching them. Callers (DeleteModel, the public API) hold neither lock,
+  // so this cannot self-deadlock. Unload is fast, so holding generation_mutex
+  // across it is fine (unlike LoadModel's slow disk read).
+  std::lock_guard<std::mutex> load_lock(impl_->load_mutex);
+  std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
+
   auto it = impl_->models.find(model_id);
   if (it == impl_->models.end()) {
     return false;
@@ -744,6 +813,14 @@ std::string BrowserAIRuntime::ApplyChatTemplate(
 void BrowserAIRuntime::StreamChat(const std::vector<ChatMessage>& messages,
                                   TokenCallback callback,
                                   const PromptOptions& options) {
+  // Hold generation_mutex across BOTH the chat-template build (which
+  // dereferences impl_->llama_model_handle in ApplyChatTemplate) AND the decode.
+  // If we released the lock between the two, a concurrent LoadModel could free
+  // the model in that gap → the template read faults (the exact reported
+  // use-after-free), or the prompt gets built against one model and decoded
+  // against another. One continuous hold closes that window.
+  std::lock_guard<std::mutex> lock(impl_->generation_mutex);
+
   const std::string full_prompt =
       ApplyChatTemplate(messages, /*add_assistant=*/true);
   if (full_prompt.empty()) {
@@ -753,19 +830,29 @@ void BrowserAIRuntime::StreamChat(const std::vector<ChatMessage>& messages,
   // parse_special=true: the template's control markers (<|im_end|>,
   // <|eot_id|>, </s>, ...) must become real special tokens, not plain
   // text — otherwise the model learns to emit them back as text.
-  StreamWithPrompt(full_prompt, /*parse_special=*/true,
-                   std::move(callback), options);
+  StreamWithPromptLocked(full_prompt, /*parse_special=*/true,
+                         std::move(callback), options);
 }
 
 void BrowserAIRuntime::StreamWithPrompt(const std::string& full_prompt,
                                         bool parse_special,
                                         TokenCallback callback,
                                         const PromptOptions& options) {
-  // Streaming inference — generates tokens one at a time and calls callback
-  // This runs synchronously; for async streaming, the caller should
-  // invoke this on a background thread.
-
+  // Public entry for raw-prompt callers (StreamPrompt). They don't touch the
+  // model handle before this point, so taking the lock here is sufficient.
   std::lock_guard<std::mutex> lock(impl_->generation_mutex);
+  StreamWithPromptLocked(full_prompt, parse_special, std::move(callback),
+                         options);
+}
+
+void BrowserAIRuntime::StreamWithPromptLocked(const std::string& full_prompt,
+                                              bool parse_special,
+                                              TokenCallback callback,
+                                              const PromptOptions& options) {
+  // Streaming inference — generates tokens one at a time and calls callback.
+  // The CALLER must already hold impl_->generation_mutex (StreamWithPrompt and
+  // StreamChat both do). Runs synchronously and can decode for many seconds, so
+  // it must be invoked on a background thread.
 
   // Select model
   std::string model_id = options.model_id;

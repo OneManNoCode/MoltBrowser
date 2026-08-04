@@ -103,10 +103,12 @@ MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
 
 MoltAIChatHandler::~MoltAIChatHandler() {
   url_loader_.reset();
-  if (runtime_) {
-    runtime_->CancelGeneration();
-    runtime_->Shutdown();
-  }
+  // Do NOT tear down the AI runtime here. It is a process-wide singleton shared
+  // with every other page and with background Agent runs; freeing its model (or
+  // cancelling generation) because THIS page closed would crash or corrupt work
+  // owned by another page. Any generation this page kicked off finishes
+  // harmlessly on its own — its token/completion callbacks are gated by our
+  // invalidated WeakPtr + IsJavascriptAllowed(), so they no-op once we're gone.
 }
 
 void MoltAIChatHandler::RegisterMessages() {
@@ -385,21 +387,25 @@ void MoltAIChatHandler::OnJavascriptAllowed() {
 }
 
 void MoltAIChatHandler::OnJavascriptDisallowed() {
+  // Invalidating our WeakPtrs is what makes any in-flight background generation
+  // safe: its UI-thread token/completion callbacks are WeakPtr-bound and simply
+  // stop firing. We deliberately do NOT cancel generation on the shared
+  // singleton runtime here — that generation may belong to another page.
   weak_ptr_factory_.InvalidateWeakPtrs();
   url_loader_.reset();
-  if (runtime_) {
-    runtime_->CancelGeneration();
-  }
 }
 
 molt_ai::BrowserAIRuntime* MoltAIChatHandler::GetOrCreateRuntime() {
-  if (!runtime_) {
-    LOG(INFO) << "[MoltAI] Creating BrowserAIRuntime...";
-    runtime_ = std::make_unique<molt_ai::BrowserAIRuntime>();
-    runtime_->Initialize();
-    LOG(INFO) << "[MoltAI] BrowserAIRuntime initialized";
-  }
-  return runtime_.get();
+  // The runtime is a process-wide singleton (BrowserAIRuntime::GetInstance).
+  // It MUST outlive this handler: model load + token generation run on
+  // background ThreadPool tasks that capture a raw pointer to it, while this
+  // handler (the WebUI page) can be torn down at any moment — side-panel close,
+  // tab close, AI-chat <-> Agent-mode swap. Owning the runtime per-handler
+  // freed it out from under a live background task → use-after-free crash of
+  // the whole browser. Initialize() is idempotent.
+  molt_ai::BrowserAIRuntime* rt = &molt_ai::BrowserAIRuntime::GetInstance();
+  rt->Initialize();
+  return rt;
 }
 
 // ------------------------------------------------------------------
@@ -1566,9 +1572,8 @@ void MoltAIChatHandler::OnCloudPromptReady(std::string callback_id,
 void MoltAIChatHandler::HandleCancelGeneration(
     const base::ListValue& args) {
   AllowJavascript();
-  if (runtime_) {
-    runtime_->CancelGeneration();
-  }
+  // User pressed Stop — cancel the on-device generation on the shared runtime.
+  GetOrCreateRuntime()->CancelGeneration();
   // Drop any in-flight cloud stream — destroying the CloudChatStream
   // cancels the underlying loader and stops all further token/done
   // callbacks (its contract). Because an explicit Cancel()/destruction
