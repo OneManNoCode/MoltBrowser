@@ -504,6 +504,13 @@ std::vector<ModelInfo> BrowserAIRuntime::GetAvailableModels() const {
   return result;
 }
 
+std::string BrowserAIRuntime::GetLoadedModelId() const {
+  // Guarded by generation_mutex — loaded_model_id is written under it during the
+  // brief model swap. Worker-thread only (see header).
+  std::lock_guard<std::mutex> lock(impl_->generation_mutex);
+  return impl_->loaded_model_id;
+}
+
 ModelInfo BrowserAIRuntime::GetModelInfo(const std::string& model_id) const {
   auto it = impl_->models.find(model_id);
   if (it != impl_->models.end()) {

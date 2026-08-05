@@ -1136,7 +1136,23 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   //   (c) else empty — the worker falls back to settings.json's
   //       default_model.
   std::string lazy_model = last_requested_model_id_;
-  if (!model_loaded_ && lazy_model.empty()) {
+
+  // The model chip's current pick is sent as model_id on EVERY send and is
+  // authoritative for local models too — not just cloud. Honor it so a chat that
+  // started on gpt-oss keeps using gpt-oss and never silently falls back to
+  // settings.default_model. That fallback was the mid-chat model swap users hit:
+  // with several models downloaded and last_requested_model_id_ still empty, the
+  // send loaded TinyLlama (the default) instead of the picked model, and the
+  // chip then re-synced to whatever actually loaded. Validate against the
+  // registry so a stale/unknown id can't wedge the send. (Cloud ids were already
+  // handled and returned above.)
+  if (!model_id.empty() &&
+      !runtime->GetModelInfo(model_id).model_id.empty()) {
+    lazy_model = model_id;
+    last_requested_model_id_ = model_id;  // keep the chip + later sends consistent
+  }
+
+  if (lazy_model.empty() && !model_loaded_) {
     // Same UI-thread disk rescan HandleGetModelStatus already does, so
     // models downloaded in an earlier session are counted.
     runtime->RefreshModelStatus();
@@ -1166,7 +1182,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
-             const std::string& lazy_model, bool needs_load,
+             const std::string& lazy_model,
              bool include_actions,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
@@ -1177,8 +1193,15 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             // settings.json's default_model.
             const std::string model_to_load =
                 lazy_model.empty() ? settings.default_model : lazy_model;
-            // Auto-load model on background thread if needed
-            if (needs_load && settings.auto_load_model) {
+            // Load/switch only when the desired model isn't the one already
+            // resident: lazy-load on first send AND switch when the user picked a
+            // different model, but never reload (or flicker) when it's already
+            // active. GetLoadedModelId is safe to call from this worker thread.
+            const std::string resident_model = rt->GetLoadedModelId();
+            const bool must_load =
+                !model_to_load.empty() && model_to_load != resident_model;
+            // Auto-load / switch model on this background thread if needed
+            if (must_load && settings.auto_load_model) {
               LOG(INFO) << "[MoltAI] Auto-loading " << model_to_load
                         << " on background thread...";
               content::GetUIThreadTaskRunner({})->PostTask(
@@ -1264,7 +1287,8 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                         }
                       },
                       weak_self, model_to_load));
-            } else if (needs_load && !settings.auto_load_model) {
+            } else if (must_load && resident_model.empty() &&
+                       !settings.auto_load_model) {
               molt_ai::GenerationResult fail;
               fail.success = false;
               fail.error_message =
@@ -1385,7 +1409,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, lazy_model, !model_loaded_, include_actions,
+          page_context, lazy_model, include_actions,
           weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,

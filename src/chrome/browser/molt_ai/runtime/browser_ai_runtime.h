@@ -204,6 +204,11 @@ class BrowserAIRuntime {
   // Select the best model for a given task type
   std::string SelectModelForTask(const std::string& task_type) const;
 
+  // The id of the model currently resident in memory ("" if none). Takes
+  // generation_mutex, so call it from a worker thread (it can briefly block
+  // behind an in-flight decode), never the UI thread.
+  std::string GetLoadedModelId() const;
+
   // ---- Page Intelligence ----
 
   // Get structured context from the current page
