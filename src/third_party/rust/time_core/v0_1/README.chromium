@@ -1,0 +1,11 @@
+Name: time-core
+URL: https://crates.io/crates/time-core
+Version: 0.1.9
+Revision: 5d8737c39b9170c36c99cfc1f9f49cf0c059c63a
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/time-core-v0_1/LICENSE-Apache
+Shipped: yes
+Security Critical: yes
+
+Description: This crate is an implementation detail and should not be relied upon directly.

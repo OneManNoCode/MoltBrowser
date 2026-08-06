@@ -1,0 +1,11 @@
+Name: jiff-tzdb
+URL: https://crates.io/crates/jiff-tzdb
+Version: 0.1.8
+Revision: bc70277861e54973e8a9be91bc92c44de56719b5
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/jiff-tzdb-v0_1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: The entire Time Zone Database embedded into your binary.

@@ -1,0 +1,11 @@
+Name: anydoc
+URL: https://crates.io/crates/anydoc
+Version: 0.1.6
+Revision: 2fc6c7ac5a4e60403eb7e2967dd631cd6c2ee95c
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Convert documents (doc, docx, odt, rtf, epub, pdf, presentations, spreadsheets, csv) to GitHub-Flavored Markdown

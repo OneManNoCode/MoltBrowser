@@ -1,0 +1,33 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from `tools/crates/gnrt/removed_Cargo.toml.hbs`
+# by `tools/crates/run_gnrt.py vendor`. Do not edit!
+#
+# This is an empty placeholder that has replaced the
+# `defmt-1.1.1` crate.
+#
+# See `//tools/crates/gnrt/removed_crate.md` to learn more.
+
+[package]
+name = "defmt"
+version = "1.1.1"
+
+[package.metadata.gnrt]
+is_placeholder = true
+
+[features]
+"alloc" = []
+"avoid-default-panic" = []
+"encoding-raw" = []
+"encoding-rzcobs" = []
+"ip_in_core" = []
+"unstable-test" = []
+
+[dependencies.bitflags]
+version = "^1"
+default_features = false
+[dependencies.defmt-macros]
+version = "=1.1.1"
+default_features = false

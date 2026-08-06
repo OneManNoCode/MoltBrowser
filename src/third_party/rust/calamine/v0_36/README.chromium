@@ -1,0 +1,11 @@
+Name: calamine
+URL: https://crates.io/crates/calamine
+Version: 0.36.1
+Revision: 0a24c2a9f1e38c0932c1299e633270dc730db505
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/calamine-v0_36/LICENSE-MIT.md
+Shipped: yes
+Security Critical: yes
+
+Description: An Excel/OpenDocument Spreadsheet reader and deserializer in pure Rust

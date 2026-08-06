@@ -1,0 +1,33 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from `tools/crates/gnrt/removed_Cargo.toml.hbs`
+# by `tools/crates/run_gnrt.py vendor`. Do not edit!
+#
+# This is an empty placeholder that has replaced the
+# `portable-atomic-1.14.0` crate.
+#
+# See `//tools/crates/gnrt/removed_crate.md` to learn more.
+
+[package]
+name = "portable-atomic"
+version = "1.14.0"
+
+[package.metadata.gnrt]
+is_placeholder = true
+
+[features]
+"critical-section" = []
+"default" = []
+"disable-fiq" = []
+"fallback" = []
+"float" = []
+"force-amo" = []
+"require-cas" = []
+"s-mode" = []
+"serde" = []
+"std" = []
+"unsafe-assume-privileged" = []
+"unsafe-assume-single-core" = []
+

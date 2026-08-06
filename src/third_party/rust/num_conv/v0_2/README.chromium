@@ -1,0 +1,14 @@
+Name: num-conv
+URL: https://crates.io/crates/num-conv
+Version: 0.2.2
+Revision: b022fe87ac3ad5b0d7606ea7465549eaa92efe97
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/num-conv-v0_2/LICENSE-Apache
+Shipped: yes
+Security Critical: yes
+
+Description: `num_conv` is a crate to convert between integer types without using `as` casts. This provides
+better certainty when refactoring, makes the exact behavior of code more explicit, and allows using
+turbofish syntax.
+

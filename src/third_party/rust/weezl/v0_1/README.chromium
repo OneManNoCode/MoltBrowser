@@ -1,0 +1,11 @@
+Name: weezl
+URL: https://crates.io/crates/weezl
+Version: 0.1.12
+Revision: c75ea1f6d935cc56bad8674396b7cb0dd7275f99
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/weezl-v0_1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Fast LZW compression and decompression.

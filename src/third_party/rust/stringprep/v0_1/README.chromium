@@ -1,0 +1,11 @@
+Name: stringprep
+URL: https://crates.io/crates/stringprep
+Version: 0.1.5
+Revision: 97e2588933017b48122e8bb574efebb7410fa71c
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/stringprep-v0_1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: An implementation of the stringprep algorithm

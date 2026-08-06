@@ -1,0 +1,11 @@
+Name: is_terminal_polyfill
+URL: https://crates.io/crates/is_terminal_polyfill
+Version: 1.70.2
+Revision: 9ed4c24ea4e9202cb38a6564368252ed35197a08
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/is_terminal_polyfill-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Polyfill for `is_terminal` stdlib feature for use with older MSRVs

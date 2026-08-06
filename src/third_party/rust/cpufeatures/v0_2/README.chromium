@@ -1,0 +1,13 @@
+Name: cpufeatures
+URL: https://crates.io/crates/cpufeatures
+Version: 0.2.17
+Revision: 9d92d5e95ab4c07c5d8bfd024bf2a17e96d20feb
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/cpufeatures-v0_2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Lightweight runtime CPU feature detection for aarch64, loongarch64, and x86/x86_64 targets, 
+with no_std support and support for mobile targets including Android and iOS
+

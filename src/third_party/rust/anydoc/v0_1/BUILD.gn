@@ -1,0 +1,136 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs by
+# tools/crates/gnrt.
+# Do not edit!
+
+import("//build/rust/cargo_crate.gni")
+
+cargo_crate("lib") {
+  crate_name = "anydoc"
+  epoch = "0.1"
+  crate_type = "rlib"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/error.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/csv.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/detect.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/doc/lists.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/doc/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/doc/sprm.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/doc/stsh.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/docx/content.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/docx/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/docx/numbering.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/docx/styles.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/epub/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/odf/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/odf/styles.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/odf/table.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/odf/text.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/pdf.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/ppt/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/ppt/styletext.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/pptx/cascade.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/pptx/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/rtf/lexer.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/rtf/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/rtf/table.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/rtf/tables.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/formats/sheet/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/lib.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/asset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/block.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/inline.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/link.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/list.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/style.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/model/table.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/package/archive.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/package/limits.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/package/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/package/path.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/package/relationships.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/package/xml.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/markdown/anchors.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/markdown/escape.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/markdown/inline.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/markdown/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/markdown/table.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/markdown/tests.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/render/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/assets.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/binary.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/chain.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/delta.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/drawingml.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/fields.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/grid.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/header.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/html.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/list.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/mc.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/numbering.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/officeart.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/text.rs",
+    "//third_party/rust/chromium_crates_io/vendor/anydoc-v0_1/src/shared/uri.rs",
+  ]
+  inputs = []
+
+  build_native_rust_unit_tests = false
+  edition = "2024"
+  cargo_pkg_name = "anydoc"
+  cargo_pkg_description = "Convert documents (doc, docx, odt, rtf, epub, pdf, presentations, spreadsheets, csv) to GitHub-Flavored Markdown"
+  cargo_pkg_repository = "https://github.com/firecrawl/anydoc"
+  cargo_pkg_version = "0.1.6"
+
+  allow_unsafe = false
+
+  deps = [
+    "//third_party/rust/calamine/v0_36:lib",
+    "//third_party/rust/cfb/v0_14:lib",
+    "//third_party/rust/csv/v1:lib",
+    "//third_party/rust/encoding_rs/v0_8:lib",
+    "//third_party/rust/flate2/v1:lib",
+    "//third_party/rust/log/v0_4:lib",
+    "//third_party/rust/pdf_inspector/v0_1:lib",
+    "//third_party/rust/quick_xml/v0_41:lib",
+    "//third_party/rust/zip/v8:lib",
+  ]
+
+  #####################################################################
+  # Tweaking which GN `config`s apply to this target.
+
+  # Config changes that apply to all `//third_party/rust` crates.
+  _configs_to_remove = [
+    # We don't need code coverage data for any `chromium_crates_io` crates.
+    "//build/config/coverage:default_coverage",
+
+    # This is third-party code, so remove `chromium_code` config.  We are not
+    # at the same time adding `//build/config/compiler:no_chromium_code`,
+    # because 1) we don't want to pull how warnings are handled by that config
+    # and 2) that config doesn't have any non-warnings-related stuff.
+    "//build/config/compiler:chromium_code",
+  ]
+  _configs_to_add = []
+
+  # Changing (if needed) which configs apply to this specific crate (based on
+  # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
+  # `gnrt_config.toml`).
+  _configs_to_remove += []
+  _configs_to_add += []
+
+  # Applying config changes.
+  library_configs -= _configs_to_remove
+  library_configs += _configs_to_add
+  executable_configs -= _configs_to_remove
+  executable_configs += _configs_to_add
+  proc_macro_configs -= _configs_to_remove
+  proc_macro_configs += _configs_to_add
+}

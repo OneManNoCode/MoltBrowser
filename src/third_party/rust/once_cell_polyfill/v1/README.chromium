@@ -1,0 +1,11 @@
+Name: once_cell_polyfill
+URL: https://crates.io/crates/once_cell_polyfill
+Version: 1.70.2
+Revision: a97fc91d318cd1142d158e7a7ea251b989280aaf
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/once_cell_polyfill-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Polyfill for `OnceCell` stdlib feature for use with older MSRVs

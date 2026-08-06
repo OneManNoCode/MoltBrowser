@@ -1,0 +1,11 @@
+Name: lopdf
+URL: https://crates.io/crates/lopdf
+Version: 0.41.0
+Revision: fff5d1c3aaff768013b3553df3659030a19184c2
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: A Rust library for PDF document manipulation.

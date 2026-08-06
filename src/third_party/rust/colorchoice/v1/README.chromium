@@ -1,0 +1,11 @@
+Name: colorchoice
+URL: https://crates.io/crates/colorchoice
+Version: 1.0.5
+Revision: 0fe6f0ff6d52e9f91d4071199bd0b24bd46f3d35
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/colorchoice-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Global override of color control

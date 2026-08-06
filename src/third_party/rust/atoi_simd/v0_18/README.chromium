@@ -1,0 +1,11 @@
+Name: atoi_simd
+URL: https://crates.io/crates/atoi_simd
+Version: 0.18.1
+Revision: f0952f7bb71ee581dcc2871841f9b2dbd241bd7e
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/atoi_simd-v0_18/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Fast `&[u8]` to integer parser

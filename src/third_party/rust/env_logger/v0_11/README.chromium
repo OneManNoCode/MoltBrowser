@@ -1,0 +1,13 @@
+Name: env_logger
+URL: https://crates.io/crates/env_logger
+Version: 0.11.11
+Revision: b4d3f2b8dd3f1c3362f07da8f6f4a30c701358cf
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/env_logger-v0_11/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: A logging implementation for `log` which is configured via an environment
+variable.
+

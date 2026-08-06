@@ -1,0 +1,11 @@
+Name: md-5
+URL: https://crates.io/crates/md-5
+Version: 0.10.6
+Revision: 026b0e81e90ba476a5d343a8e4efbc63b814737b
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/md-5-v0_10/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: MD5 hash function

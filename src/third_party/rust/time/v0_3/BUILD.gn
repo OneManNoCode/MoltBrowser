@@ -1,0 +1,181 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs by
+# tools/crates/gnrt.
+# Do not edit!
+
+import("//build/rust/cargo_crate.gni")
+
+cargo_crate("lib") {
+  crate_name = "time"
+  epoch = "0.3"
+  crate_type = "rlib"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/date.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/component_range.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/conversion_range.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/different_variant.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/format.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/indeterminate_offset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/invalid_format_description.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/invalid_variant.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/parse.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/parse_from_description.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/error/try_from_parsed.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/ext/digit_count.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/ext/instant.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/ext/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/ext/numerical_duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/ext/numerical_std_duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/ext/systemtime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/borrowed_format_item.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/component.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/format_description_v3.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/modifier.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/owned_format_item.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/format_item.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/lexer_ast.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/parse/strftime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/iso8601.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/iso8601/adt_hack.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/rfc2822.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/format_description/well_known/rfc3339.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/formatting/component_provider.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/formatting/formattable.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/formatting/iso8601.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/formatting/metadata.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/formatting/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/hint.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/instant.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/internal_macros.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/js_sys_date_offsetdatetime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/js_sys_date_timestamp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/js_sys_date_utcdatetime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/offsetdatetime_systemtime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/offsetdatetime_timestamp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/offsetdatetime_utcdatetime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/systemdatetime_timestamp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/timestamp_utcdatetime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/interop/utcdatetime_systemtime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/iter/date_iter.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/iter/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/iter/month_iter.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/iter/weekday_iter.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/lib.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/macros.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/month.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/num_fmt.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/offset_date_time.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/combinator/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/combinator/rfc/iso8601.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/combinator/rfc/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/combinator/rfc/rfc2234.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/combinator/rfc/rfc2822.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/component.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/iso8601.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/parsable.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/parsed.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/parsing/shim.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/plain_date_time.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/quickcheck.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/rand010.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/rand08.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/rand09.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/iso8601.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/rfc2822.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/rfc3339.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/timestamp/microseconds.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/timestamp/milliseconds.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/timestamp/milliseconds_i64.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/timestamp/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/timestamp/nanoseconds.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/serde/visitor.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/signed_duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/local_offset_at/imp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/local_offset_at/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/local_offset_at/unix.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/local_offset_at/wasm_js.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/local_offset_at/windows.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/refresh_tz/imp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/refresh_tz/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/sys/refresh_tz/unix.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/tests.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/time.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/timestamp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/utc_date_time.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/utc_offset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/util.rs",
+    "//third_party/rust/chromium_crates_io/vendor/time-v0_3/src/weekday.rs",
+  ]
+  inputs = []
+
+  build_native_rust_unit_tests = false
+  edition = "2024"
+  cargo_pkg_authors = "Jacob Pratt <open-source@jhpratt.dev>, Time contributors"
+  cargo_pkg_name = "time"
+  cargo_pkg_description = "Date and time library. Fully interoperable with the standard library. Mostly compatible with #![no_std]."
+  cargo_pkg_repository = "https://github.com/time-rs/time"
+  cargo_pkg_version = "0.3.55"
+
+  allow_unsafe = true
+
+  deps = [
+    "//third_party/rust/deranged/v0_5:lib",
+    "//third_party/rust/num_conv/v0_2:lib",
+    "//third_party/rust/powerfmt/v0_2:lib",
+    "//third_party/rust/time_core/v0_1:lib",
+  ]
+  features = [
+    "alloc",
+    "default",
+    "formatting",
+    "parsing",
+    "std",
+  ]
+
+  # Only for usage from third-party crates. Add the crate to
+  # //third_party/rust/chromium_crates_io/Cargo.toml to use
+  # it from first-party code.
+  visibility = [ "//third_party/rust/*" ]
+
+  #####################################################################
+  # Tweaking which GN `config`s apply to this target.
+
+  # Config changes that apply to all `//third_party/rust` crates.
+  _configs_to_remove = [
+    # We don't need code coverage data for any `chromium_crates_io` crates.
+    "//build/config/coverage:default_coverage",
+
+    # This is third-party code, so remove `chromium_code` config.  We are not
+    # at the same time adding `//build/config/compiler:no_chromium_code`,
+    # because 1) we don't want to pull how warnings are handled by that config
+    # and 2) that config doesn't have any non-warnings-related stuff.
+    "//build/config/compiler:chromium_code",
+  ]
+  _configs_to_add = []
+
+  # Changing (if needed) which configs apply to this specific crate (based on
+  # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
+  # `gnrt_config.toml`).
+  _configs_to_remove += []
+  _configs_to_add += []
+
+  # Applying config changes.
+  library_configs -= _configs_to_remove
+  library_configs += _configs_to_add
+  executable_configs -= _configs_to_remove
+  executable_configs += _configs_to_add
+  proc_macro_configs -= _configs_to_remove
+  proc_macro_configs += _configs_to_add
+}

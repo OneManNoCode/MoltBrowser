@@ -1,0 +1,11 @@
+Name: utf8parse
+URL: https://crates.io/crates/utf8parse
+Version: 0.2.2
+Revision: ebc4a4d7259678a8626f5c269ea9348dfc3e79b2
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/utf8parse-v0_2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Table-driven UTF-8 parser

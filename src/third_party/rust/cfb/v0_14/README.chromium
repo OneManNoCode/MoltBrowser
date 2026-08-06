@@ -1,0 +1,11 @@
+Name: cfb
+URL: https://crates.io/crates/cfb
+Version: 0.14.0
+Revision: 45d0d07adc8e95f9c239ac7dcc42761b1347ed3e
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/cfb-v0_14/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Read/write Compound File Binary (structured storage) files

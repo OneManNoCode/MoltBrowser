@@ -1,0 +1,11 @@
+Name: nom
+URL: https://crates.io/crates/nom
+Version: 8.0.0
+Revision: 2cec1b3e4c9ccac62c902d60c00de6d1549ccbe1
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/nom-v8/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: A byte-oriented, zero-copy, parser combinators library

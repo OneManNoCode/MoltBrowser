@@ -1,0 +1,11 @@
+Name: csv-core
+URL: https://crates.io/crates/csv-core
+Version: 0.1.13
+Revision: a0a3c9e4b493c216fb6d8284c9ac918444ba67f3
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/csv-core-v0_1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Bare bones CSV parsing with no_std support.

@@ -1,0 +1,13 @@
+Name: unicode-properties
+URL: https://crates.io/crates/unicode-properties
+Version: 0.1.4
+Revision: 5397cff4305ae3783a0770ac71c2e160fb137082
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/unicode-properties-v0_1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Query character Unicode properties according to
+UAX #44 and UTR #51.
+

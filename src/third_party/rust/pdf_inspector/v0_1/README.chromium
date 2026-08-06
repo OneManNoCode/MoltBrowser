@@ -1,0 +1,11 @@
+Name: pdf-inspector
+URL: https://crates.io/crates/pdf-inspector
+Version: 0.1.7
+Revision: 5e8f1570f6257362af257a1db7b47104cd883cb9
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/pdf-inspector-v0_1/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Fast PDF inspection, classification, and text extraction with smart scanned vs text-based detection

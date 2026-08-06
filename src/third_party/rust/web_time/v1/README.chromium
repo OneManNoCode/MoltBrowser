@@ -1,0 +1,11 @@
+Name: web-time
+URL: https://crates.io/crates/web-time
+Version: 1.1.0
+Revision: 2d200ded30bbcab66f6a4bfa277ac546685728db
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/web-time-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Drop-in replacement for std::time for Wasm in browsers

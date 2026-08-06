@@ -1,0 +1,11 @@
+Name: ecb
+URL: https://crates.io/crates/ecb
+Version: 0.1.2
+Revision: 125140e51dc007d4f6cf048166f1bc25ad537f00
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/ecb-v0_1/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Electronic Codebook (ECB) block cipher mode of operation

@@ -1,0 +1,11 @@
+Name: rayon-core
+URL: https://crates.io/crates/rayon-core
+Version: 1.13.0
+Revision: 7af20d7692d5decbcb4adcaa079cd607e3e50814
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/rayon-core-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Core APIs for Rayon

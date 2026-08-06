@@ -1,0 +1,11 @@
+Name: anstyle-query
+URL: https://crates.io/crates/anstyle-query
+Version: 1.1.5
+Revision: 368a8719474357f9d54be800b4163c9074561e37
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/anstyle-query-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Look up colored console capabilities

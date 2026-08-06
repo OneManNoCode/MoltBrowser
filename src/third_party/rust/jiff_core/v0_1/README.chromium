@@ -1,0 +1,11 @@
+Name: jiff-core
+URL: https://crates.io/crates/jiff-core
+Version: 0.1.0
+Revision: ddd26a89c7f0a6fa8008f35021462e71a8db8b40
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MIT
+License File: //third_party/rust/chromium_crates_io/vendor/jiff-core-v0_1/LICENSE-MIT
+Shipped: yes
+Security Critical: yes
+
+Description: Low level datetime primitives for the Jiff library.

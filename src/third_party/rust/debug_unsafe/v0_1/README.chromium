@@ -1,0 +1,11 @@
+Name: debug_unsafe
+URL: https://crates.io/crates/debug_unsafe
+Version: 0.1.4
+Revision: dc888dccc4cb0bd9191f84079fc50db35ac8401e
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/debug_unsafe-v0_1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Uses `debug-assertions` as a switch of safe/unsafe behaviour

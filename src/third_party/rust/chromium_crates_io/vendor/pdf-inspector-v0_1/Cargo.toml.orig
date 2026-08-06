@@ -1,0 +1,76 @@
+[package]
+name = "pdf-inspector"
+version = "0.1.7"
+edition = "2021"
+autobins = false
+authors = ["Firecrawl Team"]
+description = "Fast PDF inspection, classification, and text extraction with smart scanned vs text-based detection"
+license = "MIT"
+repository = "https://github.com/firecrawl/pdf-inspector"
+readme = "docs/rust-api.md"
+# Explicit allowlist: crates.io caps uploads at 10 MiB and tests/fixtures
+# alone exceeds that. external/bcmaps ships in the crate — tounicode.rs
+# loads it at runtime relative to CARGO_MANIFEST_DIR.
+include = [
+    "/src/**",
+    "/external/bcmaps/**",
+    "/docs/rust-api.md",
+    "/LICENSE",
+    # maturin derives the sdist file list from this allowlist; the stub must
+    # ship so wheels built from the sdist keep their type hints.
+    "/pdf_inspector.pyi",
+]
+
+[lib]
+name = "pdf_inspector"
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.25", features = ["extension-module", "abi3-py38"], optional = true }
+
+# Error handling
+thiserror = "2.0"
+
+# Logging
+log = "0.4"
+
+# Text processing
+regex = "1.10"
+once_cell = "1.19"
+unicode-normalization = "0.1"
+
+# TrueType font parsing (for Identity-H CID font cmap extraction)
+ttf-parser = "0.25"
+
+# Native builds keep lopdf's parallel parser and CLI logging. Browser WASM is
+# deliberately single-threaded so it works without cross-origin isolation.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lopdf = { version = "0.41.0", features = ["rayon"] }
+rayon = "1.10"
+env_logger = "0.11"
+
+# Browser builds use JavaScript randomness for encrypted PDFs and embed the
+# bundled CMaps because there is no filesystem at runtime.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+lopdf = { version = "0.41.0", default-features = false, features = ["wasm_js"] }
+include_dir = "0.7"
+
+[dev-dependencies]
+tempfile = "3.3"
+
+[features]
+default = []
+python = ["pyo3"]
+
+[[bin]]
+name = "pdf2md"
+path = "src/bin/pdf2md.rs"
+
+[[bin]]
+name = "detect-pdf"
+path = "src/bin/detect_pdf.rs"
+
+[[bin]]
+name = "dump_ops"
+path = "src/bin/dump_ops.rs"

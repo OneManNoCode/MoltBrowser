@@ -1,0 +1,140 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs by
+# tools/crates/gnrt.
+# Do not edit!
+
+import("//build/rust/cargo_crate.gni")
+
+cargo_crate("lib") {
+  crate_name = "ttf_parser"
+  epoch = "0.25"
+  crate_type = "rlib"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/aat.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/delta_set.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/ggg/chained_context.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/ggg/context.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/ggg/feature_variations.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/ggg/layout_table.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/ggg/lookup.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/ggg/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/language.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/lib.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/parser.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/ankr.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/avar.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cbdt.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cblc.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/argstack.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/cff1.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/cff2.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/charset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/charstring.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/dict.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/encoding.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/index.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cff/std_names.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format0.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format10.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format12.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format13.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format14.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format2.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format4.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/format6.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cmap/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/colr.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/cpal.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/feat.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/fvar.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/gdef.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/glyf.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/gpos.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/gsub.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/gvar.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/head.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/hhea.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/hmtx.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/hvar.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/kern.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/kerx.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/loca.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/math.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/maxp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/morx.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/mvar.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/name.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/os2.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/post.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/sbix.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/stat.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/svg.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/trak.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/vhea.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/vorg.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/tables/vvar.rs",
+    "//third_party/rust/chromium_crates_io/vendor/ttf-parser-v0_25/src/var_store.rs",
+  ]
+  inputs = []
+
+  build_native_rust_unit_tests = false
+  edition = "2018"
+  cargo_pkg_authors = "Caleb Maclennan <caleb@alerque.com>, Laurenz Stampfl <laurenz.stampfl@gmail.com>, Yevhenii Reizner <razrfalcon@gmail.com>, خالد حسني (Khaled Hosny) <khaled@aliftype.com>"
+  cargo_pkg_name = "ttf-parser"
+  cargo_pkg_description = "A high-level, safe, zero-allocation font parser for TrueType, OpenType, and AAT."
+  cargo_pkg_repository = "https://github.com/harfbuzz/ttf-parser"
+  cargo_pkg_version = "0.25.1"
+
+  allow_unsafe = true
+
+  features = [
+    "apple-layout",
+    "default",
+    "glyph-names",
+    "opentype-layout",
+    "std",
+    "variable-fonts",
+  ]
+
+  # Only for usage from third-party crates. Add the crate to
+  # //third_party/rust/chromium_crates_io/Cargo.toml to use
+  # it from first-party code.
+  visibility = [ "//third_party/rust/*" ]
+
+  #####################################################################
+  # Tweaking which GN `config`s apply to this target.
+
+  # Config changes that apply to all `//third_party/rust` crates.
+  _configs_to_remove = [
+    # We don't need code coverage data for any `chromium_crates_io` crates.
+    "//build/config/coverage:default_coverage",
+
+    # This is third-party code, so remove `chromium_code` config.  We are not
+    # at the same time adding `//build/config/compiler:no_chromium_code`,
+    # because 1) we don't want to pull how warnings are handled by that config
+    # and 2) that config doesn't have any non-warnings-related stuff.
+    "//build/config/compiler:chromium_code",
+  ]
+  _configs_to_add = []
+
+  # Changing (if needed) which configs apply to this specific crate (based on
+  # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
+  # `gnrt_config.toml`).
+  _configs_to_remove += []
+  _configs_to_add += []
+
+  # Applying config changes.
+  library_configs -= _configs_to_remove
+  library_configs += _configs_to_add
+  executable_configs -= _configs_to_remove
+  executable_configs += _configs_to_add
+  proc_macro_configs -= _configs_to_remove
+  proc_macro_configs += _configs_to_add
+}

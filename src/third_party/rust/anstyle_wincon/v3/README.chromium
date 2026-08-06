@@ -1,0 +1,11 @@
+Name: anstyle-wincon
+URL: https://crates.io/crates/anstyle-wincon
+Version: 3.0.11
+Revision: 368a8719474357f9d54be800b4163c9074561e37
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/anstyle-wincon-v3/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Styling legacy Windows terminals

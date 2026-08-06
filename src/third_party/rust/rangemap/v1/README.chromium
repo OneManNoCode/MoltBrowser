@@ -1,0 +1,14 @@
+Name: rangemap
+URL: https://crates.io/crates/rangemap
+Version: 1.7.1
+Revision: 414e9c7c10afbe576abd2513a4ffc71343d5c7bd
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/rangemap-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Map and set data structures whose keys are stored as ranges.
+
+Contiguous and overlapping ranges that map to the same value are coalesced into a single range.
+

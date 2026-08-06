@@ -53,6 +53,7 @@
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/anydoc/anydoc_ffi.rs.h"
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
@@ -5214,7 +5215,10 @@ constexpr size_t kMaxAttachmentChars = 48000;
 // than the .docx itself (zip bomb); bound the inflation.
 constexpr uint64_t kMaxDocxXmlBytes = 20 * 1024 * 1024;
 
-enum class AttachmentKind { kText, kDocx, kImage, kPdf, kUnsupported };
+// kRichDoc = Office / e-book / spreadsheet formats handled by the on-device
+// `anydoc` crate (structure-preserving -> Markdown). kDocx also routes through
+// anydoc but keeps the legacy flat-text scraper as a fallback.
+enum class AttachmentKind { kText, kDocx, kRichDoc, kImage, kPdf, kUnsupported };
 
 AttachmentKind DetectAttachmentKind(const std::string& lower_name,
                                     const std::string& lower_mime) {
@@ -5227,6 +5231,30 @@ AttachmentKind DetectAttachmentKind(const std::string& lower_name,
           "application/vnd.openxmlformats-officedocument."
           "wordprocessingml.document") {
     return AttachmentKind::kDocx;
+  }
+  // Office / e-book / spreadsheet formats the `anydoc` engine turns into clean
+  // Markdown on-device. (docx has its own case above with a scraper fallback.)
+  if (base::EndsWith(lower_name, ".pptx") ||
+      base::EndsWith(lower_name, ".ppt") ||
+      base::EndsWith(lower_name, ".xlsx") ||
+      base::EndsWith(lower_name, ".xls") ||
+      base::EndsWith(lower_name, ".xlsm") ||
+      base::EndsWith(lower_name, ".csv") ||
+      base::EndsWith(lower_name, ".odt") ||
+      base::EndsWith(lower_name, ".ods") ||
+      base::EndsWith(lower_name, ".odp") ||
+      base::EndsWith(lower_name, ".rtf") ||
+      base::EndsWith(lower_name, ".epub") ||
+      base::EndsWith(lower_name, ".doc") ||
+      base::StartsWith(
+          lower_mime,
+          "application/vnd.openxmlformats-officedocument.") ||
+      base::StartsWith(lower_mime, "application/vnd.oasis.opendocument.") ||
+      base::StartsWith(lower_mime, "application/vnd.ms-") ||
+      lower_mime == "text/csv" || lower_mime == "application/rtf" ||
+      lower_mime == "text/rtf" || lower_mime == "application/epub+zip" ||
+      lower_mime == "application/msword") {
+    return AttachmentKind::kRichDoc;
   }
   if (base::EndsWith(lower_name, ".png") ||
       base::EndsWith(lower_name, ".jpg") ||
@@ -5468,6 +5496,36 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
 // plus, for text-layer-less PDFs only, the raw PDF bytes (second
 // member nonempty) so the UI-thread reply can chain into the async
 // OcrService::OcrPdf fallback — mirroring HandleExtractPdfText.
+// High-fidelity on-device document -> Markdown via the vendored `anydoc` crate
+// (Office / e-book / spreadsheet / CSV -> clean GFM Markdown; tables, headings
+// and lists preserved). Fully local — no network, no cloud. Returns the
+// Markdown, or "" on any handled failure so the caller can fall back;
+// `error_out` receives anydoc's diagnostic when it fails.
+std::string ExtractWithAnydoc(const std::string& bytes,
+                              const std::string& lower_name,
+                              std::string* error_out) {
+  // Lowercase extension hint without the dot; anydoc sniffs the content first
+  // regardless, so this is only a fallback signal.
+  std::string ext;
+  const size_t dot = lower_name.find_last_of('.');
+  if (dot != std::string::npos && dot + 1 < lower_name.size()) {
+    ext = lower_name.substr(dot + 1);
+  }
+  rust::Slice<const uint8_t> slice(
+      reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
+  molt_ai::anydoc_ffi::ConvertResult r =
+      molt_ai::anydoc_ffi::convert_to_markdown(slice, rust::Str(ext));
+  if (!r.ok) {
+    if (error_out) {
+      *error_out = std::string(r.error.data(), r.error.size());
+    }
+    return std::string();
+  }
+  std::string md(r.markdown.data(), r.markdown.size());
+  TruncateAtWhitespaceBoundary(&md, kMaxAttachmentChars);
+  return md;
+}
+
 std::pair<base::DictValue, std::string> ExtractAttachmentBlocking(
     const std::string& name,
     const std::string& mime,
@@ -5494,12 +5552,32 @@ std::pair<base::DictValue, std::string> ExtractAttachmentBlocking(
       return {MakeAttachmentSuccess(std::move(bytes)), std::string()};
     }
     case AttachmentKind::kDocx: {
+      // Prefer anydoc's structure-preserving Markdown (tables/headings/lists);
+      // fall back to the legacy flat-text scraper only if anydoc can't read it.
+      std::string ad_err;
+      std::string md = ExtractWithAnydoc(bytes, lower_name, &ad_err);
+      if (!md.empty()) {
+        return {MakeAttachmentSuccess(std::move(md)), std::string()};
+      }
       std::string error;
       std::string text = ExtractDocxText(bytes, &error);
       if (text.empty()) {
-        return {MakeAttachmentError(error), std::string()};
+        return {MakeAttachmentError(error.empty() ? ad_err : error),
+                std::string()};
       }
       return {MakeAttachmentSuccess(std::move(text)), std::string()};
+    }
+    case AttachmentKind::kRichDoc: {
+      // Office / e-book / spreadsheet / CSV -> Markdown, entirely on-device.
+      std::string ad_err;
+      std::string md = ExtractWithAnydoc(bytes, lower_name, &ad_err);
+      if (md.empty()) {
+        return {MakeAttachmentError(
+                    ad_err.empty() ? "couldn't read this document on-device"
+                                   : ad_err),
+                std::string()};
+      }
+      return {MakeAttachmentSuccess(std::move(md)), std::string()};
     }
     case AttachmentKind::kImage: {
       return {OcrImageBlocking(bytes,
@@ -5525,7 +5603,8 @@ std::pair<base::DictValue, std::string> ExtractAttachmentBlocking(
   }
   return {MakeAttachmentError(
               "unsupported attachment type (mime='" + mime +
-              "') — supported: .txt/.md, .docx, .pdf, and "
+              "') — supported: .txt/.md, .pdf, Office & e-book docs "
+              "(.docx/.pptx/.xlsx/.csv/.odt/.ods/.odp/.rtf/.epub), and "
               ".png/.jpg/.jpeg/.webp images"),
           std::string()};
 }

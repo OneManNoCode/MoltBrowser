@@ -1,0 +1,11 @@
+Name: codepage
+URL: https://crates.io/crates/codepage
+Version: 0.1.2
+Revision: febb378a0507001f65234dc4ac04a1b5d552e95a
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/codepage-v0_1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Mapping between Windows code page numbers and encoding_rs character encodings

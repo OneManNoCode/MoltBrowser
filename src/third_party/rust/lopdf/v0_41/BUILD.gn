@@ -1,0 +1,143 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs by
+# tools/crates/gnrt.
+# Do not edit!
+
+import("//build/rust/cargo_crate.gni")
+
+cargo_crate("lib") {
+  crate_name = "lopdf"
+  epoch = "0.41"
+  crate_type = "rlib"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/bookmarks.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/cmap_section.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/common_data_structures/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/content.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/creator.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/datetime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/destinations.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/document.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/cmap.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/differences.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/glyphnames.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/mappings.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encodings/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/algorithms.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/crypt_filters.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/pkcs5.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/encryption/rc4.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/error.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/filters/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/filters/png.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/font.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/incremental_document.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/lib.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/load_options.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/object.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/object_stream.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/outlines.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/parser/cmap_parser.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/parser/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/parser_aux.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/processor.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/reader.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/save_options.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/toc.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/writer.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/xobject.rs",
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/xref.rs",
+  ]
+  inputs = [
+    "//third_party/rust/chromium_crates_io/vendor/lopdf-v0_41/src/../README.md",
+  ]
+
+  build_native_rust_unit_tests = false
+  edition = "2024"
+  cargo_pkg_authors =
+      "Junfeng Liu <china.liujunfeng@gmail.com>, Emulator <emulator@hotmail.it>"
+  cargo_pkg_name = "lopdf"
+  cargo_pkg_description = "A Rust library for PDF document manipulation."
+  cargo_pkg_repository = "https://github.com/J-F-Liu/lopdf.git"
+  cargo_pkg_version = "0.41.0"
+
+  allow_unsafe = false
+
+  deps = [
+    "//third_party/rust/aes/v0_8:lib",
+    "//third_party/rust/bitflags/v2:lib",
+    "//third_party/rust/cbc/v0_1:lib",
+    "//third_party/rust/chrono/v0_4:lib",
+    "//third_party/rust/ecb/v0_1:lib",
+    "//third_party/rust/encoding_rs/v0_8:lib",
+    "//third_party/rust/flate2/v1:lib",
+    "//third_party/rust/getrandom/v0_4:lib",
+    "//third_party/rust/indexmap/v2:lib",
+    "//third_party/rust/itoa/v1:lib",
+    "//third_party/rust/jiff/v0_2:lib",
+    "//third_party/rust/log/v0_4:lib",
+    "//third_party/rust/md_5/v0_10:lib",
+    "//third_party/rust/nom/v8:lib",
+    "//third_party/rust/rand/v0_10:lib",
+    "//third_party/rust/rangemap/v1:lib",
+    "//third_party/rust/rayon/v1:lib",
+    "//third_party/rust/sha2/v0_10:lib",
+    "//third_party/rust/stringprep/v0_1:lib",
+    "//third_party/rust/thiserror/v2:lib",
+    "//third_party/rust/time/v0_3:lib",
+    "//third_party/rust/ttf_parser/v0_25:lib",
+    "//third_party/rust/weezl/v0_1:lib",
+  ]
+  aliased_deps = {
+    md5 = "//third_party/rust/md_5/v0_10:lib"
+  }
+  features = [
+    "chrono",
+    "default",
+    "jiff",
+    "rayon",
+    "time",
+    "wasm_js",
+  ]
+
+  # Only for usage from third-party crates. Add the crate to
+  # //third_party/rust/chromium_crates_io/Cargo.toml to use
+  # it from first-party code.
+  visibility = [ "//third_party/rust/*" ]
+
+  #####################################################################
+  # Tweaking which GN `config`s apply to this target.
+
+  # Config changes that apply to all `//third_party/rust` crates.
+  _configs_to_remove = [
+    # We don't need code coverage data for any `chromium_crates_io` crates.
+    "//build/config/coverage:default_coverage",
+
+    # This is third-party code, so remove `chromium_code` config.  We are not
+    # at the same time adding `//build/config/compiler:no_chromium_code`,
+    # because 1) we don't want to pull how warnings are handled by that config
+    # and 2) that config doesn't have any non-warnings-related stuff.
+    "//build/config/compiler:chromium_code",
+  ]
+  _configs_to_add = []
+
+  # Changing (if needed) which configs apply to this specific crate (based on
+  # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
+  # `gnrt_config.toml`).
+  _configs_to_remove += []
+  _configs_to_add += []
+
+  # Applying config changes.
+  library_configs -= _configs_to_remove
+  library_configs += _configs_to_add
+  executable_configs -= _configs_to_remove
+  executable_configs += _configs_to_add
+  proc_macro_configs -= _configs_to_remove
+  proc_macro_configs += _configs_to_add
+}

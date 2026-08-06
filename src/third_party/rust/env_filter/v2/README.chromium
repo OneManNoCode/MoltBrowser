@@ -1,0 +1,12 @@
+Name: env_filter
+URL: https://crates.io/crates/env_filter
+Version: 2.0.0
+Revision: cc2b2efcd7454be82ca49f8ac165b3fbc3095ae3
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/env_filter-v2/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Filter log events using environment variables
+

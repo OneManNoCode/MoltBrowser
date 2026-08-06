@@ -1,0 +1,14 @@
+Name: typenum
+URL: https://crates.io/crates/typenum
+Version: 1.20.1
+Revision: 0db9a0f731981f29266b63586c29fa07e4477b1a
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/typenum-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Typenum is a Rust library for type-level numbers evaluated at
+    compile time. It currently supports bits, unsigned integers, and signed
+    integers. It also provides a type-level array of type-level numbers, but its
+    implementation is incomplete.

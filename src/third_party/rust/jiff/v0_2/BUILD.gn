@@ -1,0 +1,191 @@
+# Copyright 2023 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# @generated from third_party/rust/chromium_crates_io/BUILD.gn.hbs by
+# tools/crates/gnrt.
+# Do not edit!
+
+import("//build/rust/cargo_crate.gni")
+
+cargo_crate("lib") {
+  crate_name = "jiff"
+  epoch = "0.2"
+  crate_type = "rlib"
+  crate_root =
+      "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/lib.rs"
+  sources = [
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/date.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/datetime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/iso_week_date.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/time.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/civil/weekday.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/civil.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/friendly.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/offset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/rfc2822.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/rfc9557.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/strtime.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/temporal.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/fmt/util.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/signed_duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/span.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/timestamp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/ambiguous.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/concatenated.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/db.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/offset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/system.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/timezone.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/tz/zic.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/unit.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/util.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/error/zoned.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/buffer.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/friendly/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/friendly/parser.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/friendly/parser_label.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/friendly/printer.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/offset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/rfc2822.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/rfc9557.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/serde.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/strtime/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/strtime/parse.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/strtime/printer.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/temporal/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/temporal/parser.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/temporal/pieces.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/temporal/printer.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/fmt/util.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/lib.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/logging.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/now.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/signed_duration.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/span.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/timestamp.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/ambiguous.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/concatenated.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/bundled/disabled.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/bundled/enabled.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/bundled/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/concatenated/disabled.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/concatenated/enabled.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/concatenated/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/zoneinfo/disabled.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/zoneinfo/enabled.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/db/zoneinfo/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/offset.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/posix.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/android.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/unix.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/wasm_emscripten.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/wasm_js.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/windows/ffi.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/windows/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/system/windows/windows_zones.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/testdata.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/timezone.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/tzif.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/tz/zic.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/b.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/borrow.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/cache.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/constant.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/escape.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/fs.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/libm.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/mod.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/parse.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/round.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/sync.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/util/utf8.rs",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/zoned.rs",
+  ]
+  inputs = [
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/../CHANGELOG.md",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/../COMPARE.md",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/../DESIGN.md",
+    "//third_party/rust/chromium_crates_io/vendor/jiff-v0_2/src/../PLATFORM.md",
+  ]
+
+  build_native_rust_unit_tests = false
+  edition = "2021"
+  cargo_pkg_authors = "Andrew Gallant <jamslam@gmail.com>"
+  cargo_pkg_name = "jiff"
+  cargo_pkg_description = "A date-time library that encourages you to jump into the pit of success.  This library is heavily inspired by the Temporal project."
+  cargo_pkg_repository = "https://github.com/BurntSushi/jiff"
+  cargo_pkg_version = "0.2.35"
+
+  allow_unsafe = true
+
+  deps = [
+    "//third_party/rust/jiff_core/v0_1:lib",
+    "//third_party/rust/jiff_static/v0_2:lib",
+  ]
+  if (is_win) {
+    deps += [
+      "//third_party/rust/jiff_tzdb_platform/v0_1:lib",
+      "//third_party/rust/windows_link/v0_2:lib",
+    ]
+  }
+  aliased_deps = {
+    jcore = "//third_party/rust/jiff_core/v0_1:lib"
+  }
+  features = [
+    "alloc",
+    "default",
+    "perf-inline",
+    "std",
+    "tz-fat",
+    "tz-system",
+    "tzdb-bundle-platform",
+    "tzdb-concatenated",
+    "tzdb-zoneinfo",
+  ]
+
+  # Only for usage from third-party crates. Add the crate to
+  # //third_party/rust/chromium_crates_io/Cargo.toml to use
+  # it from first-party code.
+  visibility = [ "//third_party/rust/*" ]
+
+  #####################################################################
+  # Tweaking which GN `config`s apply to this target.
+
+  # Config changes that apply to all `//third_party/rust` crates.
+  _configs_to_remove = [
+    # We don't need code coverage data for any `chromium_crates_io` crates.
+    "//build/config/coverage:default_coverage",
+
+    # This is third-party code, so remove `chromium_code` config.  We are not
+    # at the same time adding `//build/config/compiler:no_chromium_code`,
+    # because 1) we don't want to pull how warnings are handled by that config
+    # and 2) that config doesn't have any non-warnings-related stuff.
+    "//build/config/compiler:chromium_code",
+  ]
+  _configs_to_add = []
+
+  # Changing (if needed) which configs apply to this specific crate (based on
+  # `extra_kv.configs_to_remove` and `extra_kv.configs_to_add` from
+  # `gnrt_config.toml`).
+  _configs_to_remove += []
+  _configs_to_add += []
+
+  # Applying config changes.
+  library_configs -= _configs_to_remove
+  library_configs += _configs_to_add
+  executable_configs -= _configs_to_remove
+  executable_configs += _configs_to_add
+  proc_macro_configs -= _configs_to_remove
+  proc_macro_configs += _configs_to_add
+}

@@ -1,0 +1,11 @@
+Name: anstyle-parse
+URL: https://crates.io/crates/anstyle-parse
+Version: 1.0.0
+Revision: 3048fe7820055a6c995170d822e725c62b3d63e1
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: Apache-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/anstyle-parse-v1/LICENSE-APACHE
+Shipped: yes
+Security Critical: yes
+
+Description: Parse ANSI Style Escapes
