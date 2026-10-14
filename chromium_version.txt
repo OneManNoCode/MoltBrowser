@@ -1,0 +1,14 @@
+# The Chromium revision MoltBrowser is built on. Single source of truth:
+# setup.sh, build/docker/*, every CI workflow and tools/chromium/* read this
+# file (shell code via tools/chromium/pin.sh). Never hard-code the hash
+# anywhere else.
+#
+# The src/ overlay and the patches/ series are written against exactly this
+# revision; any other revision will not compile. Move it only with
+# tools/chromium/rebase.py --apply (see docs/REBASING.md).
+#
+# CHROMIUM_VERSION is chrome/VERSION at CHROMIUM_REVISION. The current pin is
+# a trunk commit from 2026-03-10 (canary-era 148.0.7729.0), not a release
+# branch build, so it has none of the M148 branch's security merges.
+CHROMIUM_VERSION=148.0.7729.0
+CHROMIUM_REVISION=51a413be46f7632ebc3ae331c68af71daa5d6bbf

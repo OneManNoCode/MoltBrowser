@@ -15,6 +15,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 IMAGE_NAME="moltbrowser-linux"
+CHROMIUM_PIN="$("$ROOT_DIR/tools/chromium/pin.sh" revision)"
+CHROMIUM_VERSION="$("$ROOT_DIR/tools/chromium/pin.sh" version)"
 VERSION=""
 DO_PACKAGE=false
 DO_RELEASE=false
@@ -88,7 +90,14 @@ NEED_SYNC=0
 if [ "$NEED_SYNC" = "1" ]; then
   echo "Syncing Chromium source for Linux (takes ~30-60 min on first run)..."
   docker run "${DOCKER_ARGS[@]}" "$IMAGE_NAME" bash -c \
-    "cd chromium/src && gclient sync --no-history --shallow"
+    "cd chromium/src && gclient sync --revision src@$CHROMIUM_PIN --no-history --shallow"
+fi
+
+# The overlay only compiles against the pinned revision (chromium_version.txt).
+ACTUAL="$(git -C "$ROOT_DIR/chromium/src" rev-parse HEAD 2>/dev/null || echo none)"
+if [ "$ACTUAL" != "$CHROMIUM_PIN" ]; then
+  echo "WARNING: chromium/src is at $ACTUAL, not the pin $CHROMIUM_PIN ($CHROMIUM_VERSION)."
+  echo "         Run ./scripts/setup.sh --resync first, or expect compile errors."
 fi
 
 # Configure + Build

@@ -2,9 +2,10 @@
 # Copyright 2025 GenEye AI Labs Inc.
 #
 # Builds MoltBrowser on all supported platforms.
-# Manual only: this needs a pinned Chromium checkout that hosted runners
-# don't have (every job failed at `cd chromium/src`), so it ran red on
-# every push and PR. Fast PR checks live in webui-checks.yml.
+# Manual only: each job fetches Chromium at chromium_version.txt via
+# scripts/setup.sh, which needs far more disk/time than a standard hosted
+# runner has, so it ran red on every push and PR. Fast PR checks live in
+# webui-checks.yml.
 #
 # Platform matrix:
 #   - macOS arm64 (Apple Silicon) — primary
@@ -51,15 +52,12 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup depot_tools
+      # Fetches Chromium at chromium_version.txt (never tip-of-tree),
+      # syncs DEPS and applies the src/ overlay.
+      - name: Fetch pinned Chromium + apply overlay
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-
-      - name: Sync Chromium
-        run: |
-          cd chromium/src
-          gclient sync --no-history --shallow
+          ./scripts/setup.sh --target-os mac
+          echo "$PWD/depot_tools" >> "$GITHUB_PATH"
 
       - name: Configure (macOS arm64)
         run: ./scripts/configure.sh --platform macos --arch arm64
@@ -86,12 +84,12 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
-      - name: Setup depot_tools
+      # Fetches Chromium at chromium_version.txt (never tip-of-tree),
+      # syncs DEPS and applies the src/ overlay.
+      - name: Fetch pinned Chromium + apply overlay
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-      - name: Sync Chromium
-        run: cd chromium/src && gclient sync --no-history --shallow
+          ./scripts/setup.sh --target-os mac
+          echo "$PWD/depot_tools" >> "$GITHUB_PATH"
       - name: Configure (macOS x64)
         run: ./scripts/configure.sh --platform macos --arch x64
       - name: Build
@@ -123,13 +121,12 @@ jobs:
             libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev \
             libpango1.0-dev libasound2-dev libvulkan-dev
 
-      - name: Setup depot_tools
+      # Fetches Chromium at chromium_version.txt (never tip-of-tree),
+      # syncs DEPS and applies the src/ overlay.
+      - name: Fetch pinned Chromium + apply overlay
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-
-      - name: Sync Chromium
-        run: cd chromium/src && gclient sync --no-history --shallow
+          ./scripts/setup.sh --target-os linux
+          echo "$PWD/depot_tools" >> "$GITHUB_PATH"
 
       - name: Configure (Linux x64)
         run: ./scripts/configure.sh --platform linux --arch x64
@@ -158,21 +155,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup depot_tools
-        shell: bash
-        run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-
       - name: Setup VS toolchain
         shell: cmd
         run: |
           set DEPOT_TOOLS_WIN_TOOLCHAIN=0
           set vs2022_install=C:\Program Files\Microsoft Visual Studio\2022\Enterprise
 
-      - name: Sync Chromium
+      # Fetches Chromium at chromium_version.txt (never tip-of-tree),
+      # syncs DEPS and applies the src/ overlay.
+      - name: Fetch pinned Chromium + apply overlay
         shell: bash
-        run: cd chromium/src && gclient sync --no-history --shallow
+        run: |
+          ./scripts/setup.sh --target-os win
+          echo "$PWD/depot_tools" >> "$GITHUB_PATH"
 
       - name: Configure (Windows x64)
         shell: bash
@@ -216,13 +211,12 @@ jobs:
           api-level: 34
           ndk-version: 26.1.10909125
 
-      - name: Setup depot_tools
+      # Fetches Chromium at chromium_version.txt (never tip-of-tree),
+      # syncs DEPS and applies the src/ overlay.
+      - name: Fetch pinned Chromium + apply overlay
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-
-      - name: Sync Chromium
-        run: cd chromium/src && gclient sync --no-history --shallow
+          ./scripts/setup.sh --target-os android
+          echo "$PWD/depot_tools" >> "$GITHUB_PATH"
 
       - name: Configure (Android arm64)
         run: ./scripts/configure.sh --platform android --arch arm64
@@ -254,13 +248,12 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-      - name: Setup depot_tools
+      # Fetches Chromium at chromium_version.txt (never tip-of-tree),
+      # syncs DEPS and applies the src/ overlay.
+      - name: Fetch pinned Chromium + apply overlay
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo "$PWD/depot_tools" >> $GITHUB_PATH
-
-      - name: Sync Chromium
-        run: cd chromium/src && gclient sync --no-history --shallow
+          ./scripts/setup.sh --target-os ios
+          echo "$PWD/depot_tools" >> "$GITHUB_PATH"
 
       - name: Configure (iOS arm64)
         run: ./scripts/configure.sh --platform ios --arch arm64

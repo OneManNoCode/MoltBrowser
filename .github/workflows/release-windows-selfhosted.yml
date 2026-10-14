@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 1200   # half-core thermal cap makes the laptop compile slow; generous headroom
 
     env:
-      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      # CHROMIUM_REVISION is read from chromium_version.txt after checkout.
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
       BUILD_ROOT: 'C:\cr'   # short root - keeps Chromium paths under MAX_PATH
@@ -60,6 +60,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           clean: false   # keep depot_tools/ between runs (C:\cr persists on its own)
+
+      # Same values tools/chromium/pin.sh prints, parsed natively (no bash here).
+      - name: Read Chromium pin (chromium_version.txt)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pin = @{}
+          Get-Content chromium_version.txt | Where-Object { $_ -match '^(CHROMIUM_(VERSION|REVISION))=(.+)$' } | ForEach-Object {
+            $kv = $_ -split '=', 2
+            $pin[$kv[0]] = $kv[1].Trim()
+          }
+          if ($pin['CHROMIUM_REVISION'] -notmatch '^[0-9a-f]{40}$') { throw "bad CHROMIUM_REVISION in chromium_version.txt" }
+          if ($pin['CHROMIUM_VERSION'] -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "bad CHROMIUM_VERSION in chromium_version.txt" }
+          "CHROMIUM_REVISION=$($pin['CHROMIUM_REVISION'])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          "CHROMIUM_VERSION=$($pin['CHROMIUM_VERSION'])"   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          Write-Host "Chromium pin: $($pin['CHROMIUM_VERSION']) ($($pin['CHROMIUM_REVISION']))"
 
       # The runner (run.cmd) was started before Git for Windows was
       # installed, so its PATH is stale and `git` isn't visible to the
@@ -209,9 +225,24 @@ jobs:
           # tree 'dirty' - which makes `gclient sync` refuse ("You have
           # uncommitted changes"). Source + DEPS + hooks are already
           # complete, so we go straight to overlays -> gn gen -> build.
-          if ((Test-Path "$root\.molt-synced") -or (Test-Path "$root\src\third_party\depot_tools\gclient.py")) {
-            Write-Host "C:\cr\src already synced - skipping gclient sync."
+          # A warm tree is only reusable while it is at the CURRENT pin.
+          $head = ""
+          if (Test-Path "$root\src\.git") { $head = (git -C "$root\src" rev-parse HEAD) }
+          if (($head -eq $env:CHROMIUM_REVISION) -and ((Test-Path "$root\.molt-synced") -or (Test-Path "$root\src\third_party\depot_tools\gclient.py"))) {
+            Write-Host "C:\cr\src already synced at the pin - skipping gclient sync."
             exit 0
+          }
+          if ($head -and ($head -ne $env:CHROMIUM_REVISION)) {
+            # The pin moved (rebase). Drop the old overlay copies (re-applied
+            # below; out/ is gitignored and survives), then move src to the pin.
+            Write-Host "C:\cr\src is at $head; moving it to the pin $($env:CHROMIUM_REVISION)"
+            git -C "$root\src" reset -q --hard
+            git -C "$root\src" clean -fdq
+            git -C "$root\src" fetch --depth=1 --no-tags origin $env:CHROMIUM_REVISION
+            if ($LASTEXITCODE -ne 0) { throw "git fetch of the pin failed ($LASTEXITCODE)" }
+            git -C "$root\src" checkout -q --detach FETCH_HEAD
+            if ($LASTEXITCODE -ne 0) { throw "git checkout of the pin failed ($LASTEXITCODE)" }
+            Remove-Item -Force "$root\.molt-synced" -ErrorAction SilentlyContinue
           }
           New-Item -ItemType Directory -Force -Path $root | Out-Null
 
@@ -247,7 +278,8 @@ jobs:
           }
           & gclient sync --revision "src@$($env:CHROMIUM_REVISION)" --no-history --shallow
           if ($LASTEXITCODE -ne 0) { throw "gclient sync failed ($LASTEXITCODE)" }
-          New-Item -ItemType File -Force -Path "$root\.molt-synced" | Out-Null
+          if ((git -C "$root\src" rev-parse HEAD) -ne $env:CHROMIUM_REVISION) { throw "C:\cr\src is not at the pin after sync" }
+          $env:CHROMIUM_REVISION | Set-Content -Path "$root\.molt-synced" -Encoding ascii
           Write-Host "Sync complete - wrote .molt-synced sentinel."
 
       - name: Copy MoltBrowser overlays

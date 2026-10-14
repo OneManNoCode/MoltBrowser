@@ -39,7 +39,7 @@ jobs:
         shell: bash
 
     env:
-      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      # CHROMIUM_REVISION is read from chromium_version.txt after checkout.
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
       MSYS_NO_PATHCONV: "1"
@@ -48,6 +48,9 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      - name: Read Chromium pin (chromium_version.txt)
+        run: tools/chromium/pin.sh env >> "$GITHUB_ENV"
 
       - name: Free up disk
         run: |

@@ -69,6 +69,11 @@ jobs:
           # ~30 GB re-sync each time). Default clean:true would git-clean them.
           clean: false
 
+      # The EXACT Chromium commit our src/ overlay matches. Without it, fresh
+      # runs hit stale-overlay BUILD.gn errors as upstream drifts.
+      - name: Read Chromium pin (chromium_version.txt)
+        run: tools/chromium/pin.sh env >> "$GITHUB_ENV"
+
       - name: Determine target tag
         id: tag
         run: |
@@ -111,10 +116,7 @@ jobs:
         if: ${{ inputs.skip_build != 'true' }}
         env:
           DEPOT_TOOLS_UPDATE: "0"
-          # Pin to the EXACT Chromium commit our src/ overlay matches.
-          # Without this, fresh CI runs hit stale-overlay BUILD.gn
-          # errors as upstream Chromium drifts. Update when we rebase.
-          CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+          # CHROMIUM_REVISION comes from chromium_version.txt (step above).
         run: |
           set -x
           mkdir -p chromium && cd chromium

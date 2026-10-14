@@ -58,9 +58,8 @@ jobs:
     timeout-minutes: 350
 
     env:
-      # Pin to the EXACT Chromium commit our src/ overlay matches, identical to
-      # release-linux.yml. Update on rebase.
-      CHROMIUM_REVISION: "51a413be46f7632ebc3ae331c68af71daa5d6bbf"
+      # CHROMIUM_REVISION (the exact commit our src/ overlay matches) is read
+      # from chromium_version.txt right after checkout.
       DEPOT_TOOLS_UPDATE: "0"
 
     steps:
@@ -92,6 +91,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Read Chromium pin (chromium_version.txt)
+        run: tools/chromium/pin.sh env >> "$GITHUB_ENV"
 
       - name: Install depot_tools
         run: |

@@ -61,6 +61,18 @@ jobs:
           echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> $GITHUB_ENV
           echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
+      # This job reuses the runner's warm chromium/ checkout. The overlay only
+      # compiles against chromium_version.txt, so say loudly if it drifted.
+      - name: Check chromium/src is at the pinned revision
+        shell: bash
+        run: |
+          tools/chromium/pin.sh env >> "$GITHUB_ENV"
+          PIN="$(tools/chromium/pin.sh revision)"
+          HEAD_REV="$(git -C chromium/src rev-parse HEAD 2>/dev/null || echo none)"
+          if [ "$HEAD_REV" != "$PIN" ]; then
+            echo "::warning::chromium/src is at $HEAD_REV, not the pin $PIN from chromium_version.txt (run scripts/setup.sh --resync on this runner)"
+          fi
+
       - name: Sync MoltBrowser src/ → chromium/src/
         run: |
           # Copy git-tracked overrides into the Chromium build tree
@@ -116,6 +128,18 @@ jobs:
           echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> $GITHUB_ENV
           echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
+      # This job reuses the runner's warm chromium/ checkout. The overlay only
+      # compiles against chromium_version.txt, so say loudly if it drifted.
+      - name: Check chromium/src is at the pinned revision
+        shell: bash
+        run: |
+          tools/chromium/pin.sh env >> "$GITHUB_ENV"
+          PIN="$(tools/chromium/pin.sh revision)"
+          HEAD_REV="$(git -C chromium/src rev-parse HEAD 2>/dev/null || echo none)"
+          if [ "$HEAD_REV" != "$PIN" ]; then
+            echo "::warning::chromium/src is at $HEAD_REV, not the pin $PIN from chromium_version.txt (run scripts/setup.sh --resync on this runner)"
+          fi
+
       - name: Sync MoltBrowser src/ → chromium/src/
         run: rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
 
@@ -147,6 +171,18 @@ jobs:
         shell: bash
         run: |
           echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      # This job reuses the runner's warm chromium/ checkout. The overlay only
+      # compiles against chromium_version.txt, so say loudly if it drifted.
+      - name: Check chromium/src is at the pinned revision
+        shell: bash
+        run: |
+          tools/chromium/pin.sh env >> "$GITHUB_ENV"
+          PIN="$(tools/chromium/pin.sh revision)"
+          HEAD_REV="$(git -C chromium/src rev-parse HEAD 2>/dev/null || echo none)"
+          if [ "$HEAD_REV" != "$PIN" ]; then
+            echo "::warning::chromium/src is at $HEAD_REV, not the pin $PIN from chromium_version.txt (run scripts/setup.sh --resync on this runner)"
+          fi
 
       - name: Sync MoltBrowser src/ → chromium/src/
         shell: bash

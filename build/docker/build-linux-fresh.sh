@@ -27,16 +27,16 @@
 #           Re-runs are incremental and fast.
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# The EXACT Chromium base revision the MoltBrowser overlay is written against.
-# Building against any other revision will NOT compile (upstream APIs drift).
-# Bump these two together whenever the Mac tree is rebased onto a new Chromium.
-# ---------------------------------------------------------------------------
-CHROMIUM_PIN="51a413be46f7632ebc3ae331c68af71daa5d6bbf"
-CHROMIUM_VERSION="148.0.7729.0"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# ---------------------------------------------------------------------------
+# The EXACT Chromium base revision the MoltBrowser overlay is written against,
+# from chromium_version.txt (the single pin). Building against any other
+# revision will NOT compile (upstream APIs drift). See docs/REBASING.md.
+# ---------------------------------------------------------------------------
+CHROMIUM_PIN="$("$ROOT_DIR/tools/chromium/pin.sh" revision)"
+CHROMIUM_VERSION="$("$ROOT_DIR/tools/chromium/pin.sh" version)"
 IMAGE_NAME="moltbrowser-linux"
 DO_PACKAGE=false
 VERSION="0.2.5"
@@ -100,19 +100,24 @@ if [ ! -d "$ROOT_DIR/chromium/src/.git" ]; then
   run_in_docker "
     set -e
     mkdir -p chromium && cd chromium
-    if [ ! -d src ]; then
-      # 'fetch' bootstraps the checkout AND writes .gclient. --no-history keeps it shallow.
-      fetch --nohooks --no-history chromium
+    if [ ! -f .gclient ]; then
+      # Same .gclient 'fetch chromium' writes, minus its tip-of-tree clone:
+      # only the pinned revision is downloaded (shallow).
+      printf '%s\n' 'solutions = [' '  {' '    \"name\": \"src\",' \
+        '    \"url\": \"https://chromium.googlesource.com/chromium/src.git\",' \
+        '    \"managed\": False,' '    \"custom_deps\": {},' \
+        '    \"custom_vars\": {},' '  },' ']' > .gclient
     fi
     # Ensure gclient fetches Linux-specific toolchains/sysroots.
     if ! grep -q \"target_os\" .gclient; then echo \"target_os = ['linux']\" >> .gclient; fi
-    cd src
+    mkdir -p src && cd src
+    [ -d .git ] || { git init -q && git remote add origin https://chromium.googlesource.com/chromium/src.git; }
     # Pin to the exact base revision the overlay targets.
-    git fetch --depth 1 origin $CHROMIUM_PIN
+    git fetch --depth 1 --no-tags origin $CHROMIUM_PIN
     git checkout --detach $CHROMIUM_PIN
     cd /moltbrowser/chromium
     # Sync all DEPS sub-repos to match the pinned src, and run hooks.
-    gclient sync --no-history --shallow -D --force --reset
+    gclient sync --revision src@$CHROMIUM_PIN --no-history --shallow -D --force --reset
     gclient runhooks
   "
 else

@@ -1,8 +1,9 @@
 # MoltBrowser .gitignore
 
-# Chromium source (too large for git, fetched by setup.sh)
-chromium/
-depot_tools/
+# Chromium source (too large for git, fetched by setup.sh). Anchored to the
+# repo root so tools/chromium/ and src/**/chromium/ are not ignored.
+/chromium/
+/depot_tools/
 
 # Build artifacts
 out/
