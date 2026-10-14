@@ -163,6 +163,35 @@ const PAGES = [
      assert.strictEqual(window.document.querySelectorAll('#libList img[onerror]').length, 0,
                         'workflow names are text');
    }},
+  {name: 'molt://ai-automation', file: 'molt_ai_automation_ui.cc',
+   listeners: ['#new-blank-btn:click', '#sample-btn:click', '#import-btn:click',
+               '#import-input:change', '#refresh-btn:click', '#search:input',
+               '#audit-btn:click', '#modal-bg:click'],
+   noClick: ['#import-btn'],
+   responses: {
+     listScripts: {scripts: [{
+       id: 's1', name: '<img src=x onerror=alert(1)>',
+       security: {trust: 'x" onmouseover="alert(1)'},
+       trigger: {type: 'cron', expression: '0 9 * * *'},
+       steps: [{type: 'click', target: '" autofocus onfocus="alert(1)', value: "'><b>"}],
+       variables: {'a"b': 'c'},
+       stats: {runs: 1, ai_tokens_total: '<i>9</i>',
+               history: [{ok: true, dur_ms: 5, ts: 1, ai_tokens: '<i>x</i>'}]},
+     }]},
+     getAuditForScript: {entries: [{ts: '<b>t</b>', event: 'run_failed', extra: '<i>e</i>'}]},
+     auditTail: {lines: ['a', 'b']},
+   },
+   after(window) {
+     const doc = window.document;
+     const card = doc.querySelector('#list > *');
+     assert(card, 'script card rendered');
+     card.querySelector('.script-summary').click();
+     const bad = doc.querySelectorAll('#list img, #list i, #list b:not(.keep), [onmouseover], [onfocus]');
+     const injected = Array.from(bad).filter((e) => /^(IMG|I)$/.test(e.tagName) ||
+         e.hasAttribute('onmouseover') || e.hasAttribute('onfocus'));
+     assert.strictEqual(injected.length, 0, 'script data stays text: ' +
+         injected.map((e) => e.outerHTML).join(' '));
+   }},
 ];
 
 function makeTrustedTypes(window, mode, violations) {

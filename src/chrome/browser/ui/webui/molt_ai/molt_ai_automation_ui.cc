@@ -10,6 +10,8 @@
 #include <algorithm>  // for std::max
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
 #include <ctime>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -26,6 +28,7 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -464,285 +467,9 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   }
 };
 
-// ---- Data source ----
-class MoltAIAutomationDataSource : public content::URLDataSource {
- public:
-  MoltAIAutomationDataSource() = default;
-  ~MoltAIAutomationDataSource() override = default;
-
-  std::string GetSource() override { return "molt-ai-automation"; }
-
-  std::string GetMimeType(const GURL& url) override { return "text/html"; }
-
-  void StartDataRequest(
-      const GURL& url,
-      const content::WebContents::Getter& wc_getter,
-      content::URLDataSource::GotDataCallback callback) override {
-    std::string html = R"HTML(
-<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>MoltBrowser Automations</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  background:#0a0a0f;color:#e0e0e8;min-height:100vh;}
-.header{background:linear-gradient(135deg,#1a1a2e,#16213e);
-  padding:18px 28px;display:flex;align-items:center;gap:18px;
-  border-bottom:1px solid rgba(255,255,255,0.08);}
-.header h1{font-size:22px;font-weight:600;}
-.header h1 span{color:#ff4444;font-weight:700;}
-.badge{background:#ff4444;color:#fff;font-size:10px;padding:2px 8px;
-  border-radius:10px;font-weight:600;text-transform:uppercase;}
-.bar{flex:1}
-.btn{background:#ff4444;border:none;color:#fff;padding:8px 16px;
-  border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;}
-.btn:hover{background:#ff5555;}
-.btn:disabled{opacity:0.5;cursor:not-allowed;}
-.btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;}
-.btn.ghost:hover{border-color:#ff4444;color:#fff;}
-.btn.green{background:#16a34a;}
-.btn.green:hover{background:#22c55e;}
-.btn.small{padding:5px 10px;font-size:11px;border-radius:6px;}
-.container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
-.intro{color:#888;margin-bottom:24px;line-height:1.5;}
-.intro b{color:#ddd;}
-.toolbar-row{display:flex;gap:10px;margin-bottom:24px;align-items:center;}
-.toolbar-row .grow{flex:1;}
-.search-input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:8px 14px;border-radius:8px;font-size:13px;width:240px;}
-.search-input:focus{outline:none;border-color:#ff4444;}
-.script-list{display:flex;flex-direction:column;gap:12px;}
-.empty{padding:48px;text-align:center;color:#555;background:#0d0d14;
-  border:1px dashed #1a1a2a;border-radius:12px;}
-.script-card{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
-  overflow:hidden;transition:border-color 0.2s,box-shadow 0.2s;}
-.script-card.highlight{border-color:#ff4444;
-  box-shadow:0 0 0 3px rgba(255,68,68,0.2);}
-.script-summary{padding:18px 22px;display:flex;align-items:center;gap:16px;
-  cursor:pointer;user-select:none;}
-.script-summary:hover{background:rgba(255,255,255,0.02);}
-.script-summary .info{flex:1;min-width:0;}
-.script-summary .name{font-size:15px;font-weight:600;margin-bottom:4px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.script-summary .meta{font-size:12px;color:#888;}
-.script-summary .actions{display:flex;gap:8px;flex-shrink:0;}
-.script-summary .chev{color:#555;font-size:14px;transition:transform 0.2s;
-  margin-left:4px;}
-.script-card.open .chev{transform:rotate(90deg);}
-.script-detail{display:none;padding:0 22px 18px;border-top:1px solid #1a1a2a;
-  background:#08080d;}
-.script-card.open .script-detail{display:block;}
-.detail-section{margin-top:16px;}
-.detail-section h4{font-size:11px;text-transform:uppercase;
-  letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;}
-.var-grid{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;
-  align-items:center;}
-.var-grid label{font-size:12px;color:#aaa;font-family:monospace;}
-.var-grid input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
-  padding:6px 10px;border-radius:6px;font-size:12px;width:100%;
-  font-family:monospace;}
-.var-grid input:focus{outline:none;border-color:#ff4444;}
-.var-empty{color:#555;font-size:12px;font-style:italic;padding:6px 0;}
-.steps-list{font-family:monospace;font-size:11px;line-height:1.7;}
-.step-row{display:flex;gap:8px;padding:4px 8px;border-radius:4px;}
-.step-row:hover{background:rgba(255,255,255,0.03);}
-.step-num{color:#444;width:24px;text-align:right;}
-.step-type{color:#ff7799;font-weight:600;width:90px;}
-.step-target{color:#74e0a0;}
-.step-value{color:#888;}
-.dot{width:8px;height:8px;border-radius:50%;background:#3a3a3a;
-  flex-shrink:0;}
-.dot.green{background:#4ade80;}
-.dot.yellow{background:#fbbf24;}
-.dot.red{background:#f87171;}
-.section-title{font-size:13px;color:#888;text-transform:uppercase;
-  letter-spacing:1px;margin:24px 0 10px;display:flex;align-items:center;
-  gap:10px;}
-.section-title .count{background:#1a1a2a;color:#aaa;font-size:11px;
-  padding:2px 8px;border-radius:10px;}
-.audit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
-  padding:14px 18px;font-family:monospace;font-size:11px;color:#bbb;
-  max-height:240px;overflow-y:auto;line-height:1.6;}
-.toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
-  color:#4ade80;padding:12px 18px;border-radius:10px;
-  border:1px solid #2a4a2a;font-size:13px;font-weight:600;
-  transform:translateY(120px);opacity:0;transition:all 0.25s;
-  z-index:1000;}
-.toast.show{transform:translateY(0);opacity:1;}
-.toast.error{background:#3a1a1a;color:#f87171;border-color:#4a2a2a;}
-@keyframes flash{
-  0%,100%{box-shadow:0 0 0 0 rgba(255,68,68,0);}
-  50%{box-shadow:0 0 0 6px rgba(255,68,68,0.35);}
-}
-.script-card.flash{animation:flash 0.8s ease-in-out 2;}
-
-/* Day 3: schedule editor */
-.sched-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;
-  flex-wrap:wrap;}
-.sched-row label{font-size:11px;color:#888;text-transform:uppercase;
-  letter-spacing:1px;}
-.sched-row select,.sched-row input{background:#0d0d14;border:1px solid #2a2a3a;
-  color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;
-  font-family:inherit;}
-.sched-row select:focus,.sched-row input:focus{outline:none;border-color:#ff4444;}
-.sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:11px;
-  padding:4px 10px;border-radius:14px;cursor:pointer;}
-.sched-row .preset:hover{background:#ff4444;color:#fff;}
-.sched-help{font-size:11px;color:#666;margin-top:4px;font-family:monospace;}
-.next-fire{font-size:12px;color:#fbbf24;margin-top:6px;}
-.next-fire.disabled{color:#555;}
-
-/* Day 4: step editor */
-.step-edit-row{display:grid;
-  grid-template-columns:24px 100px 1fr 1fr 80px;
-  gap:6px;align-items:center;margin-bottom:6px;}
-.step-edit-row select,.step-edit-row input{background:#0d0d14;
-  border:1px solid #2a2a3a;color:#fff;padding:5px 8px;border-radius:5px;
-  font-size:11px;font-family:monospace;}
-.step-edit-row .step-num{font-family:monospace;color:#666;text-align:right;}
-.step-edit-row .step-ctrls{display:flex;gap:3px;}
-.step-edit-row .step-ctrls button{background:#1a1a2a;border:none;color:#aaa;
-  width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;
-  display:flex;align-items:center;justify-content:center;}
-.step-edit-row .step-ctrls button:hover{background:#ff4444;color:#fff;}
-.add-step-btn{background:transparent;border:1px dashed #2a2a3a;color:#888;
-  padding:8px;border-radius:6px;cursor:pointer;width:100%;font-size:12px;
-  font-family:inherit;margin-top:6px;}
-.add-step-btn:hover{border-color:#ff4444;color:#fff;}
-
-/* Day 5: trust badge */
-.trust-badge{font-size:10px;font-weight:600;text-transform:uppercase;
-  padding:2px 8px;border-radius:10px;letter-spacing:0.5px;}
-.trust-casual{background:#3a2a2a;color:#f87171;}
-.trust-approved{background:#3a3a1a;color:#fbbf24;}
-.trust-trusted{background:#1a3a2a;color:#4ade80;}
-.trust-admin{background:#2a2a3a;color:#a78bfa;}
-.promote-banner{background:linear-gradient(90deg,#16a34a,#22c55e);
-  color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;
-  margin-top:12px;display:flex;align-items:center;gap:12px;
-  box-shadow:0 0 0 1px rgba(74,222,128,0.3);}
-.promote-banner .grow{flex:1;}
-.promote-banner button{background:rgba(255,255,255,0.15);border:none;
-  color:#fff;padding:6px 12px;border-radius:5px;font-weight:600;
-  cursor:pointer;font-size:12px;}
-.promote-banner button:hover{background:rgba(255,255,255,0.25);}
-.promote-banner button.dismiss{background:transparent;}
-
-/* Day 6: history sparkline + activity timeline */
-.sparkline{display:flex;align-items:flex-end;gap:2px;height:36px;
-  padding:4px 6px;background:#08080d;border-radius:6px;
-  border:1px solid #1a1a2a;}
-.sparkline .bar{width:6px;min-width:6px;border-radius:1px;
-  background:#3a3a4a;cursor:pointer;transition:background 0.15s;}
-.sparkline .bar.ok{background:#4ade80;}
-.sparkline .bar.fail{background:#f87171;}
-.sparkline .bar:hover{filter:brightness(1.4);}
-.spark-legend{display:flex;gap:14px;font-size:11px;color:#888;
-  margin-top:6px;align-items:center;}
-.spark-legend b{color:#ddd;font-weight:500;}
-.timeline{margin-top:10px;font-family:monospace;font-size:11px;
-  max-height:280px;overflow-y:auto;background:#08080d;
-  border:1px solid #1a1a2a;border-radius:6px;padding:6px 10px;}
-.timeline-row{display:flex;gap:10px;padding:3px 4px;border-radius:3px;
-  align-items:center;}
-.timeline-row:hover{background:rgba(255,255,255,0.03);}
-.timeline-ts{color:#555;flex-shrink:0;min-width:140px;}
-.timeline-ev{flex-shrink:0;min-width:140px;font-weight:600;}
-.timeline-ev.ok{color:#4ade80;}
-.timeline-ev.fail{color:#f87171;}
-.timeline-ev.run{color:#fbbf24;}
-.timeline-ev.audit{color:#aaa;}
-.timeline-extra{color:#777;flex:1;overflow:hidden;
-  white-space:nowrap;text-overflow:ellipsis;}
-.retry-bar{background:#3a2a1a;color:#fbbf24;padding:8px 12px;
-  border-radius:6px;font-size:12px;margin-top:10px;
-  display:flex;align-items:center;gap:10px;border:1px solid #4a3a1a;}
-.retry-bar .grow{flex:1;}
-.retry-bar button{background:#fbbf24;color:#0a0a0f;border:none;
-  padding:5px 10px;border-radius:5px;font-weight:600;cursor:pointer;
-  font-size:11px;}
-.retry-bar button:hover{background:#fdd95e;}
-
-/* Day 5: confirmation modal */
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);
-  display:none;align-items:center;justify-content:center;z-index:2000;}
-.modal-bg.show{display:flex;}
-.modal{background:#0d0d14;border:1px solid #2a2a3a;border-radius:12px;
-  padding:24px;max-width:480px;width:90%;}
-.modal h3{font-size:16px;margin-bottom:10px;}
-.modal p{color:#aaa;font-size:13px;line-height:1.6;margin-bottom:16px;}
-.modal .actions{display:flex;gap:10px;justify-content:flex-end;}
-</style>
-</head>
-<body>
-
-<div class="header">
-  <h1><span>Molt</span>Automation</h1>
-  <span class="badge">Beta</span>
-  <div class="bar"></div>
-  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
-  <a href="molt://ai-agent/" style="color:#888;text-decoration:none;font-size:13px;">Agent</a>
-  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
-</div>
-
-<div class="container">
-
-  <p class="intro">
-    Record any web workflow, save it, and replay it on a schedule.
-    Each script runs <b>locally</b> with your logged-in cookies and uses
-    the <b>bundled local AI</b> for decisions like &ldquo;is this price low
-    enough?&rdquo; To record: click the <b>&#9210; Record</b> button in the
-    toolbar, perform your workflow, then click <b>&#x25A0; Stop</b>.
-    <br><br>
-    No cloud, no telemetry, no Google. Schedules survive browser restarts.
-  </p>
-
-  <div class="toolbar-row">
-    <button class="btn"        onclick="addBlank()">+ New blank</button>
-    <button class="btn ghost"  onclick="addSample()">+ Sample</button>
-    <button class="btn ghost"  onclick="document.getElementById('import-input').click()">
-      &#8682; Import
-    </button>
-    <input type="file" id="import-input" accept=".molt,.json,application/json"
-           style="display:none" onchange="onImport(event)">
-    <button class="btn ghost"  onclick="refresh()">&#x21bb; Refresh</button>
-    <div class="grow"></div>
-    <input type="text" class="search-input" id="search"
-           placeholder="Search by name..."
-           oninput="renderScripts(allScripts)">
-    <button class="btn ghost"
-            onclick="document.getElementById('audit-block').style.display='block';refreshAudit();">
-      Audit log
-    </button>
-  </div>
-
-  <div class="section-title">
-    Saved automations
-    <span class="count" id="count">0</span>
-  </div>
-  <div class="script-list" id="list">
-    <div class="empty" id="empty">
-      No automations yet. Click <b>+ Sample script</b> to create one,
-      or hit the toolbar <b>&#9210; Record</b> button on any tab to
-      capture your first workflow.
-    </div>
-  </div>
-
-  <div id="audit-block" style="display:none;">
-    <div class="section-title">Audit log (most recent first)</div>
-    <pre class="audit" id="audit"></pre>
-  </div>
-
-</div>
-
-<div class="modal-bg" id="modal-bg" onclick="closeModalIfBg(event)">
-  <div class="modal" id="modal-content"></div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script>
+constexpr char kAutomationPageJs[] = R"JS(// Automations page script, served as /app.js under the strict molt
+// WebUI CSP (molt_webui_csp.h), after the shared moltHTML() Trusted
+// Types prologue.
 var idCounter = 0;
 var pendingCbs = {};
 var allScripts = [];
@@ -767,10 +494,15 @@ function showToast(msg, isError) {
   setTimeout(function(){ t.className = 'toast' + (isError ? ' error' : ''); }, 2400);
 }
 
+// Escapes for both text and double/single-quoted attribute values: the
+// templates below put step targets/values (which come from recorded or
+// imported .molt files) inside value="..." and title="...", and every
+// HTML sink here goes through moltHTML(), whose contract is that dynamic
+// values were escaped.
 function esc(s) {
-  var d = document.createElement('div');
-  d.textContent = String(s == null ? '' : s);
-  return d.innerHTML;
+  return String(s == null ? '' : s).replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function dotClass(s) {
@@ -855,8 +587,8 @@ function buildSparklineHTML(s) {
   return '<div class="sparkline">' + bars + '</div>' +
     '<div class="spark-legend">' +
       '<span><b>' + rows.length + '</b> recent runs</span>' +
-      '<span>avg <b>' + avgDur + 'ms</b></span>' +
-      (totTok ? '<span><b>' + totTok + '</b> AI tokens</span>' : '') +
+      '<span>avg <b>' + esc(avgDur) + 'ms</b></span>' +
+      (totTok ? '<span><b>' + esc(totTok) + '</b> AI tokens</span>' : '') +
     '</div>';
 }
 
@@ -1078,10 +810,10 @@ function buildDetailHTML(s) {
     +   '<h4>Stats</h4>'
     +   buildSparklineHTML(s)
     +   '<div style="font-size:12px;color:#aaa;line-height:1.7;margin-top:6px;">'
-    +     'Runs: ' + runs + ' &middot; Successes: ' + ok
+    +     'Runs: ' + esc(runs) + ' &middot; Successes: ' + esc(ok)
     +     ' &middot; Last run: ' + esc(lastRun)
     +     (s.stats && s.stats.ai_tokens_total
-        ? ' &middot; AI tokens: ' + s.stats.ai_tokens_total : '')
+        ? ' &middot; AI tokens: ' + esc(s.stats.ai_tokens_total) : '')
     +     (s.stats && s.stats.last_result
         ? '<br>Last result: ' + esc(s.stats.last_result) : '')
     +   '</div>'
@@ -1121,12 +853,12 @@ function renderScripts(scripts) {
   var list = document.getElementById('list');
   var empty = document.getElementById('empty');
   document.getElementById('count').textContent = scripts.length;
-  list.innerHTML = '';
+  list.textContent = '';
   if (!filtered.length) {
     if (!scripts.length) { list.appendChild(empty); }
-    else { list.innerHTML =
+    else { list.innerHTML = moltHTML(
       '<div class="empty">No automations match &ldquo;' + esc(query) +
-      '&rdquo;</div>'; }
+      '&rdquo;</div>'); }
     return;
   }
 
@@ -1141,12 +873,12 @@ function renderScripts(scripts) {
         ? new Date(s.stats.last_run_unix * 1000).toLocaleString()
         : 'never';
     var trust = (s.security && s.security.trust) || 'casual';
-    card.innerHTML =
+    card.innerHTML = moltHTML(
       '<div class="script-summary">' +
         '<span class="dot ' + dotClass(s) + '"></span>' +
         '<div class="info">' +
           '<div class="name">' + esc(s.name) +
-            ' <span class="trust-badge trust-' + trust + '">' +
+            ' <span class="trust-badge trust-' + esc(trust) + '">' +
             esc(trust) + '</span></div>' +
           '<div class="meta">' + esc(triggerLabel(s)) +
           ' &middot; ' + (s.steps ? s.steps.length : 0) + ' steps' +
@@ -1161,7 +893,7 @@ function renderScripts(scripts) {
         '</div>' +
         '<span class="chev">&#10095;</span>' +
       '</div>' +
-      '<div class="script-detail">' + buildDetailHTML(s) + '</div>';
+      '<div class="script-detail">' + buildDetailHTML(s) + '</div>');
 
     var summary = card.querySelector('.script-summary');
     summary.onclick = function(e) {
@@ -1239,7 +971,8 @@ function renderScripts(scripts) {
           } else if (act === 'del') {
             s.steps.splice(idx, 1);
           }
-          card.querySelector('.step-editor').innerHTML = buildStepEditor(s);
+          card.querySelector('.step-editor').innerHTML =
+              moltHTML(buildStepEditor(s));
           // Re-bind handlers by re-rendering this card only.
           renderScripts(allScripts);
         };
@@ -1249,7 +982,8 @@ function renderScripts(scripts) {
     if (addStep) addStep.onclick = function() {
       s.steps = s.steps || [];
       s.steps.push({type:'navigate', target:'', value:'', description:''});
-      card.querySelector('.step-editor').innerHTML = buildStepEditor(s);
+      card.querySelector('.step-editor').innerHTML =
+              moltHTML(buildStepEditor(s));
       renderScripts(allScripts);
     };
     var saveSteps = card.querySelector('[data-act="save-steps"]');
@@ -1371,10 +1105,10 @@ function loadTimelineFor(card, scriptId) {
   sendWithPromise('getAuditForScript', scriptId, 200).then(function(r){
     var entries = (r.entries || []).slice().reverse();  // newest first
     if (!entries.length) {
-      el.innerHTML = '<div class="var-empty">No activity yet.</div>';
+      el.innerHTML = moltHTML('<div class="var-empty">No activity yet.</div>');
       return;
     }
-    el.innerHTML = entries.map(function(e){
+    el.innerHTML = moltHTML(entries.map(function(e){
       var cls = 'audit';
       if (e.event === 'run_succeeded')          cls = 'ok';
       else if (e.event === 'run_failed')        cls = 'fail';
@@ -1391,7 +1125,7 @@ function loadTimelineFor(card, scriptId) {
                '<span class="timeline-extra">' + esc(e.extra || '') +
                '</span>' +
              '</div>';
-    }).join('');
+    }).join(''));
   }).catch(function(err) {
     el.textContent = 'Failed to load: ' + err;
   });
@@ -1537,10 +1271,327 @@ function closeModal() {
   document.getElementById('modal-bg').classList.remove('show');
 }
 
+// Static controls: wired here because the page CSP runs no inline
+// handlers.
+document.getElementById('new-blank-btn').addEventListener('click', addBlank);
+document.getElementById('sample-btn').addEventListener('click', addSample);
+document.getElementById('import-btn').addEventListener('click', function() {
+  document.getElementById('import-input').click();
+});
+document.getElementById('import-input').addEventListener('change', onImport);
+document.getElementById('refresh-btn').addEventListener('click', function() {
+  refresh();
+});
+document.getElementById('search').addEventListener('input', function() {
+  renderScripts(allScripts);
+});
+document.getElementById('audit-btn').addEventListener('click', function() {
+  document.getElementById('audit-block').style.display = 'block';
+  refreshAudit();
+});
+document.getElementById('modal-bg').addEventListener('click',
+                                                     closeModalIfBg);
+
 refresh();
 // Auto-refresh every 30s so next-fire countdowns stay live.
 setInterval(refresh, 30000);
-</script>
+)JS";
+
+// ---- Data source ----
+class MoltAIAutomationDataSource : public content::URLDataSource {
+ public:
+  MoltAIAutomationDataSource() = default;
+  ~MoltAIAutomationDataSource() override = default;
+
+  std::string GetSource() override { return "molt-ai-automation"; }
+
+  std::string GetMimeType(const GURL& url) override {
+    return molt_webui::MimeTypeFor(url);
+  }
+
+  // Strict molt WebUI CSP; HTML only via the 'molt-html' policy.
+  std::string GetContentSecurityPolicy(
+      const network::mojom::CSPDirectiveName directive) override {
+    if (std::optional<std::string> csp =
+            molt_webui::PageContentSecurityPolicy(
+                directive, molt_webui::TrustedTypesMode::kMoltHtmlPolicy)) {
+      return *csp;
+    }
+    return content::URLDataSource::GetContentSecurityPolicy(directive);
+  }
+
+  void StartDataRequest(
+      const GURL& url,
+      const content::WebContents::Getter& wc_getter,
+      content::URLDataSource::GotDataCallback callback) override {
+    if (molt_webui::IsAppJsRequest(url)) {
+      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
+          std::string(molt_webui::kMoltTrustedHtmlJs) + kAutomationPageJs));
+      return;
+    }
+    std::string html = R"HTML(
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>MoltBrowser Automations</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#0a0a0f;color:#e0e0e8;min-height:100vh;}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);
+  padding:18px 28px;display:flex;align-items:center;gap:18px;
+  border-bottom:1px solid rgba(255,255,255,0.08);}
+.header h1{font-size:22px;font-weight:600;}
+.header h1 span{color:#ff4444;font-weight:700;}
+.badge{background:#ff4444;color:#fff;font-size:10px;padding:2px 8px;
+  border-radius:10px;font-weight:600;text-transform:uppercase;}
+.bar{flex:1}
+.btn{background:#ff4444;border:none;color:#fff;padding:8px 16px;
+  border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;}
+.btn:hover{background:#ff5555;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+.btn.ghost{background:transparent;border:1px solid #2a2a3a;color:#ccc;}
+.btn.ghost:hover{border-color:#ff4444;color:#fff;}
+.btn.green{background:#16a34a;}
+.btn.green:hover{background:#22c55e;}
+.btn.small{padding:5px 10px;font-size:11px;border-radius:6px;}
+.container{max-width:1080px;margin:0 auto;padding:32px 28px 64px;}
+.intro{color:#888;margin-bottom:24px;line-height:1.5;}
+.intro b{color:#ddd;}
+.toolbar-row{display:flex;gap:10px;margin-bottom:24px;align-items:center;}
+.toolbar-row .grow{flex:1;}
+.search-input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
+  padding:8px 14px;border-radius:8px;font-size:13px;width:240px;}
+.search-input:focus{outline:none;border-color:#ff4444;}
+.script-list{display:flex;flex-direction:column;gap:12px;}
+.empty{padding:48px;text-align:center;color:#555;background:#0d0d14;
+  border:1px dashed #1a1a2a;border-radius:12px;}
+.script-card{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
+  overflow:hidden;transition:border-color 0.2s,box-shadow 0.2s;}
+.script-card.highlight{border-color:#ff4444;
+  box-shadow:0 0 0 3px rgba(255,68,68,0.2);}
+.script-summary{padding:18px 22px;display:flex;align-items:center;gap:16px;
+  cursor:pointer;user-select:none;}
+.script-summary:hover{background:rgba(255,255,255,0.02);}
+.script-summary .info{flex:1;min-width:0;}
+.script-summary .name{font-size:15px;font-weight:600;margin-bottom:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.script-summary .meta{font-size:12px;color:#888;}
+.script-summary .actions{display:flex;gap:8px;flex-shrink:0;}
+.script-summary .chev{color:#555;font-size:14px;transition:transform 0.2s;
+  margin-left:4px;}
+.script-card.open .chev{transform:rotate(90deg);}
+.script-detail{display:none;padding:0 22px 18px;border-top:1px solid #1a1a2a;
+  background:#08080d;}
+.script-card.open .script-detail{display:block;}
+.detail-section{margin-top:16px;}
+.detail-section h4{font-size:11px;text-transform:uppercase;
+  letter-spacing:1px;color:#888;margin-bottom:8px;font-weight:600;}
+.var-grid{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;
+  align-items:center;}
+.var-grid label{font-size:12px;color:#aaa;font-family:monospace;}
+.var-grid input{background:#0d0d14;border:1px solid #2a2a3a;color:#fff;
+  padding:6px 10px;border-radius:6px;font-size:12px;width:100%;
+  font-family:monospace;}
+.var-grid input:focus{outline:none;border-color:#ff4444;}
+.var-empty{color:#555;font-size:12px;font-style:italic;padding:6px 0;}
+.steps-list{font-family:monospace;font-size:11px;line-height:1.7;}
+.step-row{display:flex;gap:8px;padding:4px 8px;border-radius:4px;}
+.step-row:hover{background:rgba(255,255,255,0.03);}
+.step-num{color:#444;width:24px;text-align:right;}
+.step-type{color:#ff7799;font-weight:600;width:90px;}
+.step-target{color:#74e0a0;}
+.step-value{color:#888;}
+.dot{width:8px;height:8px;border-radius:50%;background:#3a3a3a;
+  flex-shrink:0;}
+.dot.green{background:#4ade80;}
+.dot.yellow{background:#fbbf24;}
+.dot.red{background:#f87171;}
+.section-title{font-size:13px;color:#888;text-transform:uppercase;
+  letter-spacing:1px;margin:24px 0 10px;display:flex;align-items:center;
+  gap:10px;}
+.section-title .count{background:#1a1a2a;color:#aaa;font-size:11px;
+  padding:2px 8px;border-radius:10px;}
+.audit{background:#0d0d14;border:1px solid #1a1a2a;border-radius:12px;
+  padding:14px 18px;font-family:monospace;font-size:11px;color:#bbb;
+  max-height:240px;overflow-y:auto;line-height:1.6;}
+.toast{position:fixed;bottom:24px;right:24px;background:#1a3a1a;
+  color:#4ade80;padding:12px 18px;border-radius:10px;
+  border:1px solid #2a4a2a;font-size:13px;font-weight:600;
+  transform:translateY(120px);opacity:0;transition:all 0.25s;
+  z-index:1000;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.error{background:#3a1a1a;color:#f87171;border-color:#4a2a2a;}
+@keyframes flash{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,68,68,0);}
+  50%{box-shadow:0 0 0 6px rgba(255,68,68,0.35);}
+}
+.script-card.flash{animation:flash 0.8s ease-in-out 2;}
+
+/* Day 3: schedule editor */
+.sched-row{display:flex;gap:10px;align-items:center;margin-bottom:10px;
+  flex-wrap:wrap;}
+.sched-row label{font-size:11px;color:#888;text-transform:uppercase;
+  letter-spacing:1px;}
+.sched-row select,.sched-row input{background:#0d0d14;border:1px solid #2a2a3a;
+  color:#fff;padding:6px 10px;border-radius:6px;font-size:12px;
+  font-family:inherit;}
+.sched-row select:focus,.sched-row input:focus{outline:none;border-color:#ff4444;}
+.sched-row .preset{background:#1a1a2a;border:none;color:#aaa;font-size:11px;
+  padding:4px 10px;border-radius:14px;cursor:pointer;}
+.sched-row .preset:hover{background:#ff4444;color:#fff;}
+.sched-help{font-size:11px;color:#666;margin-top:4px;font-family:monospace;}
+.next-fire{font-size:12px;color:#fbbf24;margin-top:6px;}
+.next-fire.disabled{color:#555;}
+
+/* Day 4: step editor */
+.step-edit-row{display:grid;
+  grid-template-columns:24px 100px 1fr 1fr 80px;
+  gap:6px;align-items:center;margin-bottom:6px;}
+.step-edit-row select,.step-edit-row input{background:#0d0d14;
+  border:1px solid #2a2a3a;color:#fff;padding:5px 8px;border-radius:5px;
+  font-size:11px;font-family:monospace;}
+.step-edit-row .step-num{font-family:monospace;color:#666;text-align:right;}
+.step-edit-row .step-ctrls{display:flex;gap:3px;}
+.step-edit-row .step-ctrls button{background:#1a1a2a;border:none;color:#aaa;
+  width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:11px;
+  display:flex;align-items:center;justify-content:center;}
+.step-edit-row .step-ctrls button:hover{background:#ff4444;color:#fff;}
+.add-step-btn{background:transparent;border:1px dashed #2a2a3a;color:#888;
+  padding:8px;border-radius:6px;cursor:pointer;width:100%;font-size:12px;
+  font-family:inherit;margin-top:6px;}
+.add-step-btn:hover{border-color:#ff4444;color:#fff;}
+
+/* Day 5: trust badge */
+.trust-badge{font-size:10px;font-weight:600;text-transform:uppercase;
+  padding:2px 8px;border-radius:10px;letter-spacing:0.5px;}
+.trust-casual{background:#3a2a2a;color:#f87171;}
+.trust-approved{background:#3a3a1a;color:#fbbf24;}
+.trust-trusted{background:#1a3a2a;color:#4ade80;}
+.trust-admin{background:#2a2a3a;color:#a78bfa;}
+.promote-banner{background:linear-gradient(90deg,#16a34a,#22c55e);
+  color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;
+  margin-top:12px;display:flex;align-items:center;gap:12px;
+  box-shadow:0 0 0 1px rgba(74,222,128,0.3);}
+.promote-banner .grow{flex:1;}
+.promote-banner button{background:rgba(255,255,255,0.15);border:none;
+  color:#fff;padding:6px 12px;border-radius:5px;font-weight:600;
+  cursor:pointer;font-size:12px;}
+.promote-banner button:hover{background:rgba(255,255,255,0.25);}
+.promote-banner button.dismiss{background:transparent;}
+
+/* Day 6: history sparkline + activity timeline */
+.sparkline{display:flex;align-items:flex-end;gap:2px;height:36px;
+  padding:4px 6px;background:#08080d;border-radius:6px;
+  border:1px solid #1a1a2a;}
+.sparkline .bar{width:6px;min-width:6px;border-radius:1px;
+  background:#3a3a4a;cursor:pointer;transition:background 0.15s;}
+.sparkline .bar.ok{background:#4ade80;}
+.sparkline .bar.fail{background:#f87171;}
+.sparkline .bar:hover{filter:brightness(1.4);}
+.spark-legend{display:flex;gap:14px;font-size:11px;color:#888;
+  margin-top:6px;align-items:center;}
+.spark-legend b{color:#ddd;font-weight:500;}
+.timeline{margin-top:10px;font-family:monospace;font-size:11px;
+  max-height:280px;overflow-y:auto;background:#08080d;
+  border:1px solid #1a1a2a;border-radius:6px;padding:6px 10px;}
+.timeline-row{display:flex;gap:10px;padding:3px 4px;border-radius:3px;
+  align-items:center;}
+.timeline-row:hover{background:rgba(255,255,255,0.03);}
+.timeline-ts{color:#555;flex-shrink:0;min-width:140px;}
+.timeline-ev{flex-shrink:0;min-width:140px;font-weight:600;}
+.timeline-ev.ok{color:#4ade80;}
+.timeline-ev.fail{color:#f87171;}
+.timeline-ev.run{color:#fbbf24;}
+.timeline-ev.audit{color:#aaa;}
+.timeline-extra{color:#777;flex:1;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis;}
+.retry-bar{background:#3a2a1a;color:#fbbf24;padding:8px 12px;
+  border-radius:6px;font-size:12px;margin-top:10px;
+  display:flex;align-items:center;gap:10px;border:1px solid #4a3a1a;}
+.retry-bar .grow{flex:1;}
+.retry-bar button{background:#fbbf24;color:#0a0a0f;border:none;
+  padding:5px 10px;border-radius:5px;font-weight:600;cursor:pointer;
+  font-size:11px;}
+.retry-bar button:hover{background:#fdd95e;}
+
+/* Day 5: confirmation modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);
+  display:none;align-items:center;justify-content:center;z-index:2000;}
+.modal-bg.show{display:flex;}
+.modal{background:#0d0d14;border:1px solid #2a2a3a;border-radius:12px;
+  padding:24px;max-width:480px;width:90%;}
+.modal h3{font-size:16px;margin-bottom:10px;}
+.modal p{color:#aaa;font-size:13px;line-height:1.6;margin-bottom:16px;}
+.modal .actions{display:flex;gap:10px;justify-content:flex-end;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>Molt</span>Automation</h1>
+  <span class="badge">Beta</span>
+  <div class="bar"></div>
+  <a href="molt://ai/" style="color:#888;text-decoration:none;font-size:13px;">AI Chat</a>
+  <a href="molt://ai-agent/" style="color:#888;text-decoration:none;font-size:13px;">Agent</a>
+  <a href="molt://ai-settings/" style="color:#888;text-decoration:none;font-size:13px;">Settings</a>
+</div>
+
+<div class="container">
+
+  <p class="intro">
+    Record any web workflow, save it, and replay it on a schedule.
+    Each script runs <b>locally</b> with your logged-in cookies and uses
+    the <b>bundled local AI</b> for decisions like &ldquo;is this price low
+    enough?&rdquo; To record: click the <b>&#9210; Record</b> button in the
+    toolbar, perform your workflow, then click <b>&#x25A0; Stop</b>.
+    <br><br>
+    No cloud, no telemetry, no Google. Schedules survive browser restarts.
+  </p>
+
+  <div class="toolbar-row">
+    <button class="btn"        id="new-blank-btn">+ New blank</button>
+    <button class="btn ghost"  id="sample-btn">+ Sample</button>
+    <button class="btn ghost"  id="import-btn">
+      &#8682; Import
+    </button>
+    <input type="file" id="import-input" accept=".molt,.json,application/json"
+           style="display:none">
+    <button class="btn ghost"  id="refresh-btn">&#x21bb; Refresh</button>
+    <div class="grow"></div>
+    <input type="text" class="search-input" id="search"
+           placeholder="Search by name...">
+    <button class="btn ghost" id="audit-btn">
+      Audit log
+    </button>
+  </div>
+
+  <div class="section-title">
+    Saved automations
+    <span class="count" id="count">0</span>
+  </div>
+  <div class="script-list" id="list">
+    <div class="empty" id="empty">
+      No automations yet. Click <b>+ Sample script</b> to create one,
+      or hit the toolbar <b>&#9210; Record</b> button on any tab to
+      capture your first workflow.
+    </div>
+  </div>
+
+  <div id="audit-block" style="display:none;">
+    <div class="section-title">Audit log (most recent first)</div>
+    <pre class="audit" id="audit"></pre>
+  </div>
+
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
 </body></html>
 )HTML";
     std::move(callback).Run(
