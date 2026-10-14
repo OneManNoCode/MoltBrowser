@@ -531,9 +531,15 @@ extra_kv = { allow_unsafe = true }
 [crate.is_terminal_polyfill]
 extra_kv = { allow_unsafe = false }
 
-[crate.itertools]
+# MoltBrowser: split per epoch. v0_11 stays test-only; v0_14 is shipped as a
+# dependency of adblock (MoltShield), which an unversioned `group = 'test'`
+# would wrongly confine to tests.
+[crate."itertools@v0_11"]
 extra_kv = { allow_unsafe = true }
 group = 'test'
+
+[crate."itertools@v0_14"]
+extra_kv = { allow_unsafe = true }
 
 [crate.itoa.extra_kv]
 allow_unsafe = true
@@ -880,7 +886,14 @@ allow_unsafe = false
 [crate.termcolor.extra_kv]
 allow_unsafe = false
 
-[crate.thiserror]
+# MoltBrowser: split per epoch. adblock (MoltShield) still depends on
+# thiserror 1.x, whose build script compiles build/probe.rs and emits no
+# private.rs (that output is 2.x-only).
+[crate."thiserror@v1"]
+extra_build_script_src_roots = [ "build/probe.rs" ]
+extra_kv = { allow_unsafe = false }
+
+[crate."thiserror@v2"]
 build_script_outputs = [ "private.rs" ]
 extra_kv = { allow_unsafe = false }
 
@@ -1028,4 +1041,54 @@ allow_unsafe = true
 # zopfli ships its Apache-2.0 license as COPYING, which gnrt doesn't auto-detect.
 [crate.zopfli]
 license_files = ["COPYING"]
+extra_kv = { allow_unsafe = true }
+
+# --- MoltBrowser: adblock-rust (MoltShield ad/tracker blocker) tree ---
+# See //chrome/browser/molt_ai/shield/adblock and scripts/vendor-rust-crates.sh.
+# allow_unsafe mirrors whether each crate's sources contain `unsafe` blocks.
+[crate.adblock]
+# Flatbuffer views over the serialized engine (src/flatbuffers/unsafe_tools.rs).
+extra_kv = { allow_unsafe = true }
+
+[crate.flatbuffers]
+# The crates.io package ships no license file;
+# patches/flatbuffers-v25/0001-Add-LICENSE.patch adds upstream's Apache-2.0
+# LICENSE so README.chromium / about:credits have one.
+license_files = ["LICENSE"]
+extra_kv = { allow_unsafe = true }
+
+[crate.form_urlencoded]
+extra_kv = { allow_unsafe = true }
+
+[crate.idna]
+extra_kv = { allow_unsafe = true }
+
+[crate.idna_adapter]
+extra_kv = { allow_unsafe = false }
+
+[crate.percent-encoding]
+extra_kv = { allow_unsafe = true }
+
+[crate.precomputed-hash]
+extra_kv = { allow_unsafe = false }
+
+[crate.rustc-hash]
+extra_kv = { allow_unsafe = false }
+
+# Build-dependency of flatbuffers (its build.rs runs `$RUSTC -vV`).
+[crate.rustc_version]
+extra_kv = { allow_unsafe = false }
+
+[crate.seahash]
+# No license file in the package either; see patches/seahash-v4.
+license_files = ["LICENSE"]
+extra_kv = { allow_unsafe = true }
+
+[crate.semver]
+extra_kv = { allow_unsafe = true }
+
+[crate.url]
+extra_kv = { allow_unsafe = true }
+
+[crate.utf8_iter]
 extra_kv = { allow_unsafe = true }

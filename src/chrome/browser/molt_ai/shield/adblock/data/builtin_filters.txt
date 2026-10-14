@@ -1,0 +1,83 @@
+[Adblock Plus 2.0]
+! Title: MoltShield built-in fallback
+! Description: Compiled only until the real filter lists (EasyList,
+!   EasyPrivacy, uBlock Origin) have been downloaded once, or if every
+!   download fails. Kept deliberately small; carried over from the
+!   pre-adblock-rust MoltShield rule set.
+! License: GPLv3 (MoltBrowser)
+!
+! ---- Ad networks ----
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||googletagservices.com^
+||amazon-adsystem.com^
+||adsrvr.org^
+||adnxs.com^
+||pubmatic.com^
+||openx.net^
+||rubiconproject.com^
+||casalemedia.com^
+||indexexchange.com^
+||33across.com^
+||bidswitch.net^
+||smartadserver.com^
+||criteo.com^$third-party
+||criteo.net^$third-party
+||taboola.com^$third-party
+||outbrain.com^$third-party
+||media.net^$third-party
+||mgid.com^$third-party
+||zergnet.com^$third-party
+||popads.net^
+||popcash.net^
+||propellerads.com^
+||serving-sys.com^
+||flashtalking.com^
+||sharethrough.com^
+||ads.microsoft.com^
+||ads-api.twitter.com^
+||ads.linkedin.com^
+! ---- Trackers ----
+||google-analytics.com^
+||googletagmanager.com^$third-party
+||facebook.net^$third-party
+||pixel.facebook.com^
+||scorecardresearch.com^
+||quantserve.com^
+||comscore.com^$third-party
+||hotjar.com^$third-party
+||mixpanel.com^$third-party
+||segment.com^$third-party
+||amplitude.com^$third-party
+||fullstory.com^$third-party
+||bat.bing.com^
+||analytics.twitter.com^
+||demdex.net^
+||krxd.net^
+||bluekai.com^
+||exelator.com^
+||omtrdc.net^
+! ---- YouTube ----
+||youtube.com/pagead/
+||youtube.com/ptracking
+||youtube.com/api/stats/ads
+||youtube.com/get_midroll_info
+||youtube.com/youtubei/v1/player/ad_break
+||static.doubleclick.net^
+||s0.2mdn.net^
+youtube.com##.ytp-ad-module
+youtube.com##.ytp-ad-overlay-container
+youtube.com##.video-ads
+youtube.com##ytd-ad-slot-renderer
+youtube.com##ytd-banner-promo-renderer
+youtube.com##ytd-display-ad-renderer
+youtube.com##ytd-promoted-sparkles-web-renderer
+youtube.com##ytd-promoted-video-renderer
+youtube.com##ytd-in-feed-ad-layout-renderer
+! ---- Generic cosmetic ----
+##.adsbygoogle
+##[id^="div-gpt-ad"]
+##[id^="google_ads_"]
+##.ad-banner
+##.ad-slot

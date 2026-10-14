@@ -1,0 +1,96 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+//
+// Exercises the molt_adblock bridge through its generated C++ API exactly
+// the way the browser glue (shield/molt_shield_engine.cc) calls it.
+
+#include "shield_bench/cxx/cxx_smoke.h"
+
+#include <cstdio>
+#include <string>
+#include <vector>
+
+// cxx-build's location for the generated header of the real bridge; in
+// Chromium it is "chrome/browser/molt_ai/shield/adblock/molt_adblock.rs.h".
+#include "shield_bench/src/chrome/browser/molt_ai/shield/adblock/molt_adblock.rs.h"
+
+namespace shield_bench {
+
+namespace ffi = molt_ai::shield::ffi;
+
+namespace {
+
+int g_failures = 0;
+
+void Expect(bool ok, const char* what) {
+  std::printf("  [%s] %s\n", ok ? "ok" : "FAIL", what);
+  if (!ok) {
+    ++g_failures;
+  }
+}
+
+bool Contains(const rust::String& haystack, const char* needle) {
+  return std::string(haystack).find(needle) != std::string::npos;
+}
+
+}  // namespace
+
+int32_t run_cxx_smoke(rust::Str list_text, rust::Str resources_json) {
+  g_failures = 0;
+
+  Expect(!std::string(ffi::engine_format_key()).empty(), "engine_format_key");
+  Expect(ffi::builtin_filter_list().size() > 100, "builtin_filter_list");
+
+  // Build: builder -> engine, as MoltShieldEngine::BuildFromLists does.
+  rust::Box<ffi::EngineBuilder> builder = ffi::new_engine_builder(false);
+  uint32_t lines = builder->add_list(list_text, /*trusted=*/false);
+  lines += builder->add_list(
+      "example.com##+js(set-constant, adsEnabled, false)\n"
+      "example.com##.promo\n##.generic-ad\n",
+      /*trusted=*/true);
+  Expect(lines > 1000 && builder->rule_lines() == lines, "add_list counts");
+  rust::Box<ffi::ShieldEngine> engine = ffi::build_engine(std::move(builder));
+  Expect(engine->use_resources(resources_json) > 100, "use_resources");
+
+  ffi::CheckResult r = engine->check_request(
+      "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+      "securepubads.g.doubleclick.net", "www.cnn.com", "script",
+      /*third_party=*/true, "GET");
+  Expect(r.matched && r.should_block, "doubleclick gpt.js blocked");
+
+  r = engine->check_request("https://www.cnn.com/app.js", "www.cnn.com",
+                            "www.cnn.com", "script", false, "GET");
+  Expect(!r.should_block, "first-party script allowed");
+
+  // Serialize -> fresh engine -> deserialize (startup fast path).
+  rust::Vec<uint8_t> blob = engine->serialize();
+  rust::Box<ffi::ShieldEngine> restored = ffi::new_empty_engine();
+  Expect(restored->deserialize(
+             rust::Slice<const uint8_t>(blob.data(), blob.size())),
+         "deserialize");
+  restored->use_resources(resources_json);
+  const uint8_t junk[] = {1, 2, 3};
+  Expect(!restored->deserialize(rust::Slice<const uint8_t>(junk, 3)),
+         "deserialize rejects junk");
+  r = restored->check_request(
+      "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
+      "securepubads.g.doubleclick.net", "www.cnn.com", "script", true, "GET");
+  Expect(r.should_block, "restored engine still blocks");
+
+  ffi::CosmeticResources c =
+      restored->url_cosmetic_resources("https://www.example.com/");
+  Expect(Contains(c.hide_css, ".promo{display:none!important}"),
+         "hostname hide css");
+  Expect(Contains(c.injected_script, "setConstant("), "scriptlet injected");
+
+  std::vector<std::string> classes = {"generic-ad", "header", "x"};
+  std::vector<std::string> ids = {"main"};
+  rust::String css =
+      restored->hidden_class_id_css("https://other.test/", classes, ids);
+  Expect(Contains(css, ".generic-ad{display:none!important}"),
+         "hidden_class_id_css via CxxVector<CxxString>");
+
+  return g_failures;
+}
+
+}  // namespace shield_bench
