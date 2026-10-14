@@ -3,9 +3,13 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_ui.h"
 
+#include <optional>
+#include <string>
+
 #include "base/memory/ref_counted_memory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -13,7 +17,901 @@
 
 namespace {
 
-// Custom URL data source that serves inline HTML for the full-page AI chat.
+constexpr char kMoltAIPageJs[] = R"JS(// molt://ai full-page chat script, served as /app.js under the strict
+// molt WebUI CSP (molt_webui_csp.h), after the shared moltActions() and
+// moltHTML() prologue.
+// ============================================================
+// MoltBrowser AI Full Page — WebUI JavaScript (Day 8)
+// ============================================================
+
+var isGenerating = false;
+var currentAiEl = null;
+var currentAiText = '';
+var idCounter = 0;
+var pendingCbs = {};
+var conversationHistory = [];
+var MAX_HISTORY = 16;
+
+function sendWithPromise(method) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  var id = method + '_' + (++idCounter);
+  return new Promise(function(resolve, reject) {
+    pendingCbs[id] = {resolve: resolve, reject: reject};
+    chrome.send(method, [id].concat(args));
+  });
+}
+
+window.cr = window.cr || {};
+cr.webUIResponse = function(id, ok, resp) {
+  var cb = pendingCbs[id]; if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
+};
+var wuiListeners = {};
+cr.addWebUiListener = function(ev, fn) { (wuiListeners[ev] = wuiListeners[ev] || []).push(fn); };
+cr.webUIListenerCallback = function(ev) {
+  var a = Array.prototype.slice.call(arguments, 1);
+  (wuiListeners[ev] || []).forEach(function(fn) { fn.apply(null, a); });
+};
+
+// Text -> HTML for this page's templates (moltHTML contract: every
+// dynamic value is escaped). Quotes are escaped too so the result is
+// also safe inside a quoted attribute.
+function esc(t) {
+  var d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ---- Markdown Rendering ----
+var codeBlockId = 0;
+function renderMarkdown(text) {
+  var s = esc(text);
+  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
+    var id = 'cb-' + (++codeBlockId);
+    var langLabel = lang ? '<span style="position:absolute;top:6px;left:10px;font-size:10px;color:#666;text-transform:uppercase">' + lang + '</span>' : '';
+    return '<div class="code-wrap">' + langLabel +
+      '<button class="code-copy" data-on-click="copyCode" data-copy-target="' + id + '">Copy</button>' +
+      '<pre id="' + id + '" style="background:#1a1a2e;padding:' + (lang ? '26px 12px 12px' : '12px') + ';border-radius:8px;overflow-x:auto;font-size:13px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre></div>';
+  });
+  s = s.replace(/`([^`\n]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:13px;color:#a78bfa">$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e0e0e0">$1</strong>');
+  s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+  s = s.replace(/^### (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:#a78bfa">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div style="font-size:17px;font-weight:700;margin:14px 0 6px;color:#8b5cf6">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div style="font-size:19px;font-weight:700;margin:16px 0 8px;color:#6366f1">$1</div>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:6px;color:#6366f1">\u2022</span>$1</div>');
+  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:24px;position:relative"><span style="position:absolute;left:0;color:#6366f1;font-size:13px">$1.</span>$2</div>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
+function setStatus(cls, text) {
+  document.getElementById('statusDot').className = 'status-dot ' + cls;
+  document.getElementById('statusText').textContent = text;
+  document.getElementById('statusText').style.color = cls === 'ready' ? '#4ade80' : cls === 'error' ? '#f87171' : '#888';
+}
+
+function addUserMsg(text) {
+  var m = document.getElementById('messages');
+  var d = document.createElement('div');
+  d.className = 'message user';
+  d.innerHTML = moltHTML('<div class="label">You</div><div class="text">' + esc(text) + '</div>');
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+}
+
+function startAiMsg() {
+  var m = document.getElementById('messages');
+  var d = document.createElement('div');
+  d.className = 'message ai';
+  d.innerHTML = moltHTML('<div class="label">MoltBrowser AI</div><div class="model-badge">Local LLM</div><div class="text"><span class="cursor"></span></div>');
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+  currentAiEl = d.querySelector('.text');
+  currentAiText = '';
+}
+
+function appendTok(tok) {
+  if (!currentAiEl) return;
+  currentAiText += tok;
+  currentAiEl.innerHTML = moltHTML(renderMarkdown(currentAiText) + '<span class="cursor"></span>');
+  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+function finishAiMsg() {
+  if (currentAiEl) {
+    currentAiEl.innerHTML = moltHTML(renderMarkdown(currentAiText));
+    var actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    actions.innerHTML = moltHTML('<button class="msg-action" data-on-click="copyResponse">Copy response</button>');
+    currentAiEl.parentNode.appendChild(actions);
+  }
+  currentAiEl = null; currentAiText = '';
+}
+
+function setGen(v) {
+  isGenerating = v;
+  document.getElementById('sendBtn').disabled = v;
+  document.getElementById('prompt').disabled = v;
+  document.getElementById('cancelBtn').className = 'cancel' + (v ? ' active' : '');
+}
+
+function updateContextInfo() {
+  var el = document.getElementById('contextInfo');
+  var n = conversationHistory.length;
+  if (n === 0) { el.textContent = ''; return; }
+  var chars = 0;
+  for (var i = 0; i < n; i++) chars += conversationHistory[i].content.length;
+  el.textContent = n + ' msgs \u00b7 ~' + Math.round(chars / 4) + ' tokens';
+}
+
+function trimHistory() {
+  if (conversationHistory.length > MAX_HISTORY) {
+    conversationHistory = conversationHistory.slice(conversationHistory.length - MAX_HISTORY);
+  }
+}
+
+function doSend() {
+  if (isGenerating) return;
+  var inp = document.getElementById('prompt');
+  var t = inp.value.trim(); if (!t) return;
+  addUserMsg(t);
+  conversationHistory.push({role: 'user', content: t});
+  trimHistory();
+  inp.value = '';
+  setGen(true); startAiMsg();
+
+  // History = every message BEFORE the just-pushed user turn, as a JSON
+  // array of {role, content} objects. The C++ side (HandleSendPrompt)
+  // owns all chat templating — no model markers are assembled in JS.
+  var prevHistory = conversationHistory.length > 1
+      ? JSON.stringify(
+            conversationHistory.slice(0, conversationHistory.length - 1))
+      : '';
+
+  // args[5] = the picked model id. A "provider:model" cloud id routes to the
+  // frontier-API path; a plain id (or '') uses the local runtime.
+  sendWithPromise('sendPrompt', t, prevHistory, '', '',
+                  activeModelId || pickedModelId || '').then(function(r) {
+    var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();
+    if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
+    finishAiMsg(); setGen(false);
+    updateContextInfo();
+    if (!r.success && r.error) addErr(r.error);
+  }).catch(function(e) { finishAiMsg(); setGen(false); updateContextInfo(); addErr('Error: ' + e); });
+}
+
+function addErr(text) {
+  var m = document.getElementById('messages');
+  var d = document.createElement('div');
+  d.className = 'message ai';
+  d.innerHTML = moltHTML('<div class="label" style="color:#f87171">Error</div><div class="text" style="border-color:#f87171;color:#f87171">' + esc(text) + '</div>');
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+}
+
+function newChat() {
+  conversationHistory = [];
+  var m = document.getElementById('messages');
+  m.innerHTML = moltHTML('<div class="message ai"><div class="label">MoltBrowser AI</div>' +
+    '<div class="model-badge">Local LLM</div>' +
+    '<div class="text">New conversation started. How can I help?</div></div>');
+  updateContextInfo();
+}
+
+function cancelGeneration() { chrome.send('cancelGeneration', []); }
+
+// ---- Model Management ----
+
+function toggleModelPanel() {
+  var o = document.getElementById('modelOverlay');
+  if (o.classList.contains('open')) {
+    o.classList.remove('open');
+  } else {
+    o.classList.add('open');
+    refreshModelList();
+  }
+}
+
+// Brand tiles: maker logo + name shown above each model in the picker.
+// Inline SVG (CSP-safe, no network); glyphs hard-code their own colors.
+// "Gemma" is used instead of "Google" per the zero-"Google"-string rule.
+var MOLT_BRANDS = {
+  'Meta': {c:'#0866FF', t:'rgba(8,102,255,.15)', g:'<path d="M12 12.1C10.3 9.2 8.7 7.7 6.9 7.7 4.6 7.7 3 9.8 3 12.3s1.6 4.6 3.9 4.6c1.8 0 3.4-1.5 5.1-4.8M12 12.1c1.7-2.9 3.3-4.4 5.1-4.4 2.3 0 3.9 2.1 3.9 4.6s-1.6 4.6-3.9 4.6c-1.8 0-3.4-1.5-5.1-4.8" fill="none" stroke="#0866FF" stroke-width="2.1" stroke-linecap="round"/>'},
+  'Qwen': {c:'#7C3AED', t:'rgba(124,58,237,.16)', g:'<path d="M12 2.7l8 4.6v9.4l-8 4.6-8-4.6V7.3z" fill="none" stroke="#7C3AED" stroke-width="1.8"/><path d="M8.3 9.2l3.7 2.1 3.7-2.1M12 11.3v4.5" fill="none" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'},
+  'Gemma': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
+  'Mistral AI': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'},
+  'Microsoft': {c:'#00A4EF', t:'rgba(0,164,239,.10)', g:'<g><rect x="3.6" y="3.6" width="7.4" height="7.4" fill="#F25022"/><rect x="13" y="3.6" width="7.4" height="7.4" fill="#7FBA00"/><rect x="3.6" y="13" width="7.4" height="7.4" fill="#00A4EF"/><rect x="13" y="13" width="7.4" height="7.4" fill="#FFB900"/></g>'},
+  'OpenAI': {c:'#0FA47F', t:'rgba(15,164,127,.15)', g:'<g fill="none" stroke="#0FA47F" stroke-width="1.5"><ellipse cx="12" cy="12" rx="3.4" ry="8"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(120 12 12)"/></g>'},
+  'TinyLlama': {c:'#14B8A6', t:'rgba(20,184,166,.16)', g:'<path d="M8.6 4.4c-.6 0-1 .5-1 1.4l.3 3c-1.4.6-2.3 2-2.3 3.9v3.4c0 2.3 1.6 3.9 3.9 3.9h5c2.3 0 3.9-1.6 3.9-3.9v-3.4c0-1.9-.9-3.3-2.3-3.9l.3-3c0-.9-.4-1.4-1-1.4-.7 0-1.4.9-1.9 2.2-.9-.3-2-.3-3 0-.5-1.3-1.2-2.2-1.9-2.2z" fill="#14B8A6"/><circle cx="10" cy="13.2" r=".95" fill="#fff"/><circle cx="14" cy="13.2" r=".95" fill="#fff"/>'},
+  'Anthropic': {c:'#D97757', t:'rgba(217,119,87,.15)', g:'<g stroke="#D97757" stroke-width="2" stroke-linecap="round"><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7"/></g>'},
+  'Gemini': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
+  'Mistral': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'}
+};
+function moltBrandColor(c) { var b = MOLT_BRANDS[c]; return b ? b.c : '#94a3b8'; }
+function moltBrandTile(company) {
+  var b = MOLT_BRANDS[company];
+  if (!b) {
+    var ch = (company || '?').charAt(0).toUpperCase();
+    return '<span class="brandtile" style="background:rgba(148,163,184,.16);color:#94a3b8;' +
+           'font-weight:700;font-size:13px">' + esc(ch) + '</span>';
+  }
+  return '<span class="brandtile" style="background:' + b.t + '">' +
+         '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' + b.g + '</svg></span>';
+}
+
+function refreshModelList() {
+  sendWithPromise('getModelStatus').then(function(info) {
+    var list = document.getElementById('modelList');
+    list.textContent = '';
+    var models = info.models || [];
+    models.sort(function(a, b) { return a.file_size_mb - b.file_size_mb; });
+
+    models.forEach(function(m) {
+      var card = document.createElement('div');
+      card.className = 'model-card';
+      card.id = 'model-' + m.model_id;
+
+      var sizeMB = m.file_size_mb;
+      var sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
+      var statusBadge = '';
+      var actionBtns = '';
+
+      if (m.is_loaded) {
+        statusBadge = '<span class="badge active">Active</span>';
+      } else if (m.is_downloaded) {
+        statusBadge = '<span class="badge downloaded">Ready</span>';
+        actionBtns = '<button class="btn primary" data-on-click="loadModel" data-model-id="' + esc(m.model_id) + '">Load</button>' +
+                     '<button class="btn danger" data-on-click="deleteModel" data-model-id="' + esc(m.model_id) + '">Delete</button>';
+      } else {
+        statusBadge = '<span class="badge unavailable">Not Downloaded</span>';
+        actionBtns = '<button class="btn primary" data-on-click="downloadModel" data-model-id="' + esc(m.model_id) + '">Download (' + sizeStr + ')</button>';
+      }
+
+      card.innerHTML = moltHTML(
+        '<div class="card-head">' + moltBrandTile(m.company) +
+          '<div class="chead-txt">' +
+            '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+              esc(m.company || 'Local') + '</div>' +
+            '<div class="name">' + esc(m.display_name) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
+        '<div style="margin-top:6px">' + statusBadge + '</div>' +
+        (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
+        '<div class="progress-wrap" id="pw-' + esc(m.model_id) + '">' +
+          '<div class="progress-bar"><div class="progress-fill" id="pf-' + esc(m.model_id) + '"></div></div>' +
+          '<div class="progress-text" id="pt-' + esc(m.model_id) + '"></div>' +
+        '</div>');
+
+      list.appendChild(card);
+    });
+  });
+}
+
+function downloadModel(modelId) {
+  var pw = document.getElementById('pw-' + modelId);
+  if (pw) pw.classList.add('active');
+
+  // Show cancel button
+  var card = document.getElementById('model-' + modelId);
+  if (card) {
+    var btns = card.querySelectorAll('.card-actions .btn');
+    for (var i = 0; i < btns.length; i++) btns[i].style.display = 'none';
+    var cancelDiv = document.createElement('div');
+    cancelDiv.className = 'card-actions';
+    cancelDiv.id = 'cancel-wrap-' + modelId;
+    cancelDiv.innerHTML = moltHTML('<button class="btn danger" data-on-click="cancelDownload">Cancel Download</button>');
+    card.querySelector('.card-actions').parentNode.appendChild(cancelDiv);
+  }
+
+  sendWithPromise('downloadModel', modelId).then(function(r) {
+    if (r.success) refreshModelList();
+    else { addErr('Download failed: ' + (r.error || 'Unknown')); refreshModelList(); }
+  }).catch(function(e) { addErr('Download error: ' + e); refreshModelList(); });
+}
+
+function cancelDownload() {
+  chrome.send('cancelDownload', []);
+}
+
+function loadModel(modelId) {
+  setStatus('loading', 'Loading ' + modelId + '...');
+  sendWithPromise('loadModel', modelId).then(function(r) {
+    if (r.success) {
+      setStatus('ready', 'Model Ready');
+      refreshModelList();
+      // Refresh chip with new active model
+      sendWithPromise('getModelStatus').then(function(rr) {
+        allModels = rr.models || [];
+        refreshModelChip();
+      });
+    }
+    else setStatus('error', 'Load failed');
+  });
+}
+
+function deleteModel(modelId) {
+  sendWithPromise('deleteModel', modelId).then(function(r) {
+    if (r.success) refreshModelList();
+  });
+}
+
+// ---- Model Chip (always-visible top selector) ----
+var allModels = [];
+var activeModelId = null;
+var pickedModelId = null;
+var downloadingModelId = null;
+
+// The currently-selected cloud model dict, or null. A cloud model is active
+// purely by selection (is_loaded is always false for cloud).
+function selectedCloudModel() {
+  if (!activeModelId) return null;
+  return allModels.find(function(m){
+    return m.is_cloud && m.model_id === activeModelId;
+  }) || null;
+}
+
+// Select a cloud "provider:model" model. Nothing to download or load — the
+// backend short-circuits loadModel for cloud ids to instant-ready.
+function selectCloudModel(modelId) {
+  activeModelId = modelId;
+  pickedModelId = modelId;
+  setStatus('ready', 'Model Ready');
+  sendWithPromise('loadModel', modelId).then(function(){}, function(){});
+  refreshModelChip();
+  toggleModelDropdown();
+}
+
+function refreshModelChip() {
+  var chip = document.getElementById('modelChip');
+  var nameEl = document.getElementById('modelChipName');
+  if (!chip || !nameEl) return;
+  var active = allModels.find(function(m){ return m.is_loaded; });
+  if (active) {
+    activeModelId = active.model_id;
+    nameEl.textContent = active.display_name || active.model_id;
+    return;
+  }
+  var cloud = selectedCloudModel();
+  if (cloud) {
+    nameEl.textContent = cloud.display_name || cloud.model_id;
+    return;
+  }
+  var firstDownloaded = allModels.find(function(m){ return m.is_downloaded; });
+  if (firstDownloaded) {
+    nameEl.textContent = (firstDownloaded.display_name || firstDownloaded.model_id) + ' (click to load)';
+  } else {
+    nameEl.textContent = 'Choose Model';
+  }
+}
+
+function toggleModelDropdown(ev) {
+  if (ev) ev.stopPropagation();
+  var chip = document.getElementById('modelChip');
+  var dd = document.getElementById('modelChipDropdown');
+  if (!chip || !dd) return;
+  var willOpen = !dd.classList.contains('open');
+  dd.classList.toggle('open');
+  chip.classList.toggle('open');
+  if (willOpen) {
+    renderModelChipDropdown();
+  }
+}
+
+function renderModelChipDropdown() {
+  var dd = document.getElementById('modelChipDropdown');
+  if (!dd) return;
+  if (allModels.length === 0) {
+    dd.innerHTML = moltHTML('<div style="padding:14px;color:#666;font-size:12px;text-align:center">Loading models...</div>');
+    sendWithPromise('getModelStatus').then(function(r) {
+      allModels = r.models || [];
+      renderModelChipDropdown();
+      refreshModelChip();
+    });
+    return;
+  }
+  dd.textContent = '';
+  // Partition into local (on-device GGUF) and cloud (via the user's key)
+  // models. Cloud models carry is_cloud=true + provider from the backend.
+  var localModels = [], cloudModels = [];
+  allModels.forEach(function(m){ (m.is_cloud ? cloudModels : localModels).push(m); });
+
+  // ---- Cloud connect: the FIRST, most-prominent option so bring-your-own-
+  // key frontier models are the top action in the picker. ----
+  var cloudCta = document.createElement('div');
+  cloudCta.className = 'mcd-cloud-cta';
+  cloudCta.innerHTML = moltHTML(
+    '<span class="mcc-icon">☁️</span>' +
+    '<span class="mcc-text">' +
+      (cloudModels.length ? 'Manage cloud providers' : 'Connect a cloud model') +
+      '<span class="mcc-sub">OpenAI, Claude, Gemini &amp; more — your key</span>' +
+    '</span>' +
+    '<span class="mcc-arrow">→</span>');
+  cloudCta.onclick = function() {
+    toggleModelDropdown();
+    window.open('molt://ai-settings/?section=providers', '_blank');
+  };
+  dd.appendChild(cloudCta);
+
+  if (cloudModels.length && localModels.length) {
+    var lh = document.createElement('div');
+    lh.className = 'mcd-header';
+    lh.textContent = 'Local · Private 🔒';
+    dd.appendChild(lh);
+  }
+
+  localModels.forEach(function(m) {
+    var item = document.createElement('div');
+    item.className = 'model-chip-item';
+    var isActive = !!m.is_loaded;
+    if (isActive) item.className += ' active';
+    var statusClass, statusText;
+    if (isActive) { statusClass = 'active'; statusText = 'Active'; }
+    else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = 'Downloading'; }
+    else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
+    else { statusClass = 'available'; statusText = 'Download'; }
+    var sizeMB = m.file_size_mb || 0;
+    var sizeStr2 = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
+    item.innerHTML = moltHTML(
+      moltBrandTile(m.company) +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
+          esc(m.company || 'Local') + '</div>' +
+        '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
+        '<div class="msize">' + (m.quantization ? esc(m.quantization) + ' · ' : '') + sizeStr2 + '</div>' +
+      '</div>' +
+      '<span class="mstatus ' + statusClass + '">' + statusText + '</span>');
+    item.onclick = function() {
+      if (isActive) { toggleModelDropdown(); return; }
+      if (m.is_downloaded) {
+        loadModel(m.model_id);
+      } else {
+        downloadingModelId = m.model_id;
+        downloadModel(m.model_id);
+        document.getElementById('modelChip').classList.add('downloading');
+      }
+      toggleModelDropdown();
+    };
+    dd.appendChild(item);
+  });
+
+  // ---- Cloud group: instant-select rows (no download/load) ----
+  if (cloudModels.length) {
+    var ch = document.createElement('div');
+    ch.className = 'mcd-header';
+    ch.textContent = 'Cloud · via your key ☁️';
+    dd.appendChild(ch);
+    cloudModels.forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'model-chip-item';
+      var isActive = activeModelId === m.model_id;
+      if (isActive) item.className += ' active';
+      item.innerHTML = moltHTML(
+        moltBrandTile(m.provider) +
+        '<div style="flex:1;min-width:0">' +
+          '<div class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
+            esc(m.provider || 'Cloud') + '</div>' +
+          '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
+          '<div class="msize">cloud · via your key</div>' +
+        '</div>' +
+        '<span class="mstatus ' + (isActive ? 'active' : 'downloaded') + '">' +
+          (isActive ? 'Active' : 'Use') + '</span>');
+      item.onclick = function() {
+        if (isActive) { toggleModelDropdown(); return; }
+        selectCloudModel(m.model_id);
+      };
+      dd.appendChild(item);
+    });
+  }
+
+  // (Cloud connect/manage lives at the TOP of the dropdown now — the
+  // .mcd-cloud-cta entry above — so it's the first option the user sees.)
+}
+
+function updateModelChipProgress(percent) {
+  var fg = document.getElementById('modelChipProgressFg');
+  var pct = document.getElementById('modelChipPct');
+  if (fg) {
+    var circumference = 2 * Math.PI * 8; // r=8
+    var offset = circumference - (percent / 100) * circumference;
+    fg.style.strokeDashoffset = offset;
+    fg.style.strokeDasharray = circumference;
+  }
+  if (pct) pct.textContent = Math.round(percent) + '%';
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  var wrap = document.querySelector('.model-chip-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    var dd = document.getElementById('modelChipDropdown');
+    var chip = document.getElementById('modelChip');
+    if (dd) dd.classList.remove('open');
+    if (chip) chip.classList.remove('open');
+  }
+});
+
+// Initialize chip on page load
+sendWithPromise('getModelStatus').then(function(r) {
+  allModels = r.models || [];
+  refreshModelChip();
+});
+
+// ---- Event Listeners ----
+
+cr.addWebUiListener('ai-token', function(tok, isDone) { if (tok) appendTok(tok); });
+cr.addWebUiListener('model-status', function(st, detail) {
+  if (st === 'loading') setStatus('loading', 'Loading model...');
+  else if (st === 'ready') setStatus('ready', 'Model Ready');
+  else if (st === 'error') setStatus('error', detail || 'Error');
+});
+
+cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
+  var fill = document.getElementById('pf-' + modelId);
+  var ptext = document.getElementById('pt-' + modelId);
+  var pw = document.getElementById('pw-' + modelId);
+  if (fill && total > 0) {
+    var pct = Math.round((current / total) * 100);
+    fill.style.width = pct + '%';
+    if (pw) pw.classList.add('active');
+    var info = pct + '% (' + Math.round(current / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB)';
+    if (speed > 0) {
+      info += ' \u00b7 ' + (speed / 1048576).toFixed(1) + ' MB/s';
+      if (eta > 0) {
+        var mins = Math.floor(eta / 60);
+        var secs = Math.round(eta % 60);
+        info += ' \u00b7 ' + (mins > 0 ? mins + 'm ' : '') + secs + 's left';
+      }
+    }
+    if (ptext) ptext.textContent = info;
+  }
+  // Update chip if this is the model we're downloading
+  if (downloadingModelId === modelId && total > 0) {
+    var pct = (current / total) * 100;
+    updateModelChipProgress(pct);
+    var nameEl = document.getElementById('modelChipName');
+    var modelInfo = allModels.find(function(m){ return m.model_id === modelId; });
+    if (nameEl && modelInfo) {
+      nameEl.textContent = 'Downloading ' + (modelInfo.display_name || modelId) + '\u2026';
+    }
+  }
+});
+
+cr.addWebUiListener('download-complete', function(modelId, success) {
+  var pw = document.getElementById('pw-' + modelId);
+  if (pw) pw.classList.remove('active');
+  // Reset chip download state
+  if (downloadingModelId === modelId) {
+    downloadingModelId = null;
+    var chip = document.getElementById('modelChip');
+    if (chip) chip.classList.remove('downloading');
+    if (success) {
+      // Refresh model list and load it as active
+      sendWithPromise('getModelStatus').then(function(r) {
+        allModels = r.models || [];
+        loadModel(modelId);
+        refreshModelChip();
+      });
+    }
+  }
+  if (success) {
+    refreshModelList();
+    // Close welcome overlay if it was open
+    var wo = document.getElementById('welcomeOverlay');
+    if (wo && wo.classList.contains('open')) {
+      wo.classList.remove('open');
+      setStatus('offline', 'Model ready \u2014 type to start');
+    }
+  }
+});
+
+// Keyboard
+document.getElementById('prompt').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+});
+
+// ---- First-Run ----
+function startFirstRunDownload() {
+  var btn = document.getElementById('welcomeDownloadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Downloading...';
+  document.getElementById('welcomeProgress').classList.add('active');
+  downloadModel('tinyllama-1.1b');
+}
+
+function skipFirstRun() {
+  document.getElementById('welcomeOverlay').classList.remove('open');
+}
+
+// Hook welcome overlay into download progress
+cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
+  var wo = document.getElementById('welcomeOverlay');
+  if (wo && wo.classList.contains('open') && total > 0) {
+    var pct = Math.round((current / total) * 100);
+    document.getElementById('welcomePfill').style.width = pct + '%';
+    var info = pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
+      Math.round(total / 1048576) + ' MB';
+    if (speed > 0) {
+      info += ' \u00b7 ' + (speed / 1048576).toFixed(1) + ' MB/s';
+      if (eta > 0) {
+        var mins = Math.floor(eta / 60);
+        var secs = Math.round(eta % 60);
+        info += ' \u00b7 ' + (mins > 0 ? mins + 'm ' : '') + secs + 's left';
+      }
+    }
+    document.getElementById('welcomePtext').textContent = info;
+  }
+});
+
+// ---- Copy Code / Response ----
+
+function copyCode(id, btn) {
+  var pre = document.getElementById(id);
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(function() {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+function copyResponse(btn) {
+  var msg = btn.closest('.message');
+  if (!msg) return;
+  var textEl = msg.querySelector('.text');
+  if (!textEl) return;
+  navigator.clipboard.writeText(textEl.innerText).then(function() {
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy response'; }, 1500);
+  });
+}
+
+// ---- Search Conversation ----
+
+function toggleSearch() {
+  var bar = document.getElementById('searchBar');
+  if (bar.classList.contains('open')) {
+    bar.classList.remove('open');
+    clearSearch();
+  } else {
+    bar.classList.add('open');
+    document.getElementById('searchInput').focus();
+  }
+}
+
+function doSearch() {
+  clearSearch();
+  var query = document.getElementById('searchInput').value.trim().toLowerCase();
+  if (!query) { document.getElementById('searchCount').textContent = ''; return; }
+  var msgs = document.querySelectorAll('#messages .message .text');
+  var count = 0;
+  for (var i = 0; i < msgs.length; i++) {
+    var el = msgs[i];
+    var text = el.textContent.toLowerCase();
+    if (text.indexOf(query) >= 0) {
+      count++;
+      highlightText(el, query);
+      if (count === 1) el.scrollIntoView({behavior:'smooth', block:'center'});
+    }
+  }
+  document.getElementById('searchCount').textContent = count + ' match' + (count !== 1 ? 'es' : '');
+}
+
+// Wrap every case-insensitive occurrence of |query| inside |root|'s text
+// nodes in <span class="highlight">. Works on text nodes only, so a match
+// can never land inside markup.
+function highlightText(root, query) {
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  var nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(function(node) {
+    var text = node.nodeValue, lower = text.toLowerCase();
+    var at = lower.indexOf(query);
+    if (at < 0) return;
+    var frag = document.createDocumentFragment(), from = 0;
+    while (at >= 0) {
+      frag.appendChild(document.createTextNode(text.slice(from, at)));
+      var span = document.createElement('span');
+      span.className = 'highlight';
+      span.textContent = text.slice(at, at + query.length);
+      frag.appendChild(span);
+      from = at + query.length;
+      at = lower.indexOf(query, from);
+    }
+    frag.appendChild(document.createTextNode(text.slice(from)));
+    node.parentNode.replaceChild(frag, node);
+  });
+}
+
+function clearSearch() {
+  var highlights = document.querySelectorAll('.highlight');
+  for (var i = 0; i < highlights.length; i++) {
+    var span = highlights[i];
+    var parent = span.parentNode;
+    span.replaceWith(span.textContent);
+    if (parent) parent.normalize();
+  }
+}
+
+// ---- Import Chat History ----
+
+function importChat() {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        if (data.messages && Array.isArray(data.messages)) {
+          conversationHistory = data.messages;
+          var m = document.getElementById('messages');
+          m.textContent = '';
+          for (var i = 0; i < data.messages.length; i++) {
+            var msg = data.messages[i];
+            if (msg.role === 'user') {
+              addUserMsg(msg.content);
+            } else {
+              var d = document.createElement('div');
+              d.className = 'message ai';
+              d.innerHTML = moltHTML('<div class="label">MoltBrowser AI</div><div class="model-badge">Local LLM</div><div class="text">' + renderMarkdown(msg.content) + '</div>' +
+                '<div class="msg-actions"><button class="msg-action" data-on-click="copyResponse">Copy response</button></div>');
+              m.appendChild(d);
+            }
+          }
+          m.scrollTop = m.scrollHeight;
+          updateContextInfo();
+          addSysMsg('Imported ' + data.messages.length + ' messages from ' + file.name);
+        } else {
+          addErr('Invalid chat export file');
+        }
+      } catch (err) {
+        addErr('Failed to parse file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ---- Export Chat History ----
+
+function exportChat() {
+  if (conversationHistory.length === 0) {
+    addErr('No conversation to export');
+    return;
+  }
+  var data = JSON.stringify({
+    exported_at: new Date().toISOString(),
+    messages: conversationHistory
+  }, null, 2);
+  sendWithPromise('exportHistory', data).then(function(r) {
+    if (r.success) {
+      addSysMsg('Chat exported to: ' + r.filename);
+    } else {
+      addErr('Export failed');
+    }
+  });
+}
+
+function addSysMsg(text) {
+  var m = document.getElementById('messages');
+  var d = document.createElement('div');
+  d.className = 'message ai';
+  d.innerHTML = moltHTML('<div class="label" style="color:#4ade80">System</div><div class="text" style="border-color:#1a2e1a;color:#4ade80;font-size:13px">' + esc(text) + '</div>');
+  m.appendChild(d); m.scrollTop = m.scrollHeight;
+}
+
+// ---- Keyboard Shortcuts ----
+// Cmd/Ctrl+Shift+S = Summarize page
+// Cmd/Ctrl+Shift+E = Explain page
+// Cmd/Ctrl+Shift+X = Export chat
+// Cmd/Ctrl+Shift+N = New chat
+
+document.addEventListener('keydown', function(e) {
+  var mod = e.metaKey || e.ctrlKey;
+  if (!mod || !e.shiftKey) return;
+  if (e.key === 'S' || e.key === 's') {
+    e.preventDefault();
+    doQuickAction('summarize');
+  } else if (e.key === 'E' || e.key === 'e') {
+    e.preventDefault();
+    doQuickAction('explain');
+  } else if (e.key === 'X' || e.key === 'x') {
+    e.preventDefault();
+    exportChat();
+  } else if (e.key === 'N' || e.key === 'n') {
+    e.preventDefault();
+    newChat();
+  }
+});
+
+// Cmd/Ctrl+F for search
+document.addEventListener('keydown', function(e) {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && !e.shiftKey) {
+    e.preventDefault();
+    toggleSearch();
+  }
+  if (e.key === 'Escape') {
+    var bar = document.getElementById('searchBar');
+    if (bar.classList.contains('open')) toggleSearch();
+  }
+});
+
+function doQuickAction(action) {
+  if (isGenerating) return;
+  if (action === 'summarize') {
+    document.getElementById('prompt').value = 'Summarize this page';
+    doSend();
+  } else if (action === 'explain') {
+    document.getElementById('prompt').value = 'Explain this page in simple terms';
+    doSend();
+  }
+}
+
+// Handlers named by data-on-* attributes (the page CSP runs no inline
+// handlers; see kMoltActionsJs in molt_webui_csp.h).
+moltActions({
+  toggleModelDropdown: function(ev) { toggleModelDropdown(ev); },
+  newChat: function() { newChat(); },
+  toggleSearch: function() { toggleSearch(); },
+  exportChat: function() { exportChat(); },
+  importChat: function() { importChat(); },
+  toggleModelPanel: function() { toggleModelPanel(); },
+  openSettings: function() { window.location = 'molt://ai-settings/'; },
+  doSearch: function() { doSearch(); },
+  cancelGeneration: function() { cancelGeneration(); },
+  doSend: function() { doSend(); },
+  modelOverlayClick: function(ev) {
+    if (ev.target === this) toggleModelPanel();
+  },
+  startFirstRunDownload: function() { startFirstRunDownload(); },
+  skipFirstRun: function() { skipFirstRun(); },
+  copyCode: function() { copyCode(this.getAttribute('data-copy-target'), this); },
+  copyResponse: function() { copyResponse(this); },
+  loadModel: function() { loadModel(this.getAttribute('data-model-id')); },
+  deleteModel: function() { deleteModel(this.getAttribute('data-model-id')); },
+  downloadModel: function() { downloadModel(this.getAttribute('data-model-id')); },
+  cancelDownload: function() { cancelDownload(); },
+});
+
+// Handle ?q= parameter from omnibox @ai prefix
+var params = new URLSearchParams(window.location.search);
+var iq = params.get('q');
+
+// Init
+(function() {
+  setStatus('loading', 'Initializing...');
+  sendWithPromise('initChat').then(function(info) {
+    // Apply settings
+    if (info.max_history_messages) MAX_HISTORY = info.max_history_messages;
+
+    var hw = [];
+    if (info.has_gpu) hw.push(info.gpu_backend.toUpperCase());
+    hw.push(info.total_ram_gb + 'GB RAM');
+    hw.push(info.cpu_cores + ' cores');
+    document.getElementById('hwInfo').textContent = hw.join(' \u00b7 ');
+    if (info.model_loaded) {
+      setStatus('ready', 'Model Ready');
+    } else if (info.is_first_run) {
+      setStatus('offline', 'Setup required');
+      document.getElementById('welcomeOverlay').classList.add('open');
+    } else {
+      var dl = (info.models || []).filter(function(m) { return m.is_downloaded; });
+      if (dl.length > 0) setStatus('offline', 'Model available \u2014 type to start');
+      else setStatus('error', 'No models \u2014 click Models to download');
+    }
+    // Auto-send if we got a query from omnibox (and not first run)
+    if (iq && !info.is_first_run) {
+      document.getElementById('prompt').value = decodeURIComponent(iq);
+      doSend();
+    }
+  }).catch(function() { setStatus('error', 'Failed to initialize'); });
+})();
+)JS";
+
+// Custom URL data source that serves the full-page AI chat (HTML +
+// /app.js).
 // Uses the same chrome.send() / cr.addWebUiListener() IPC as the side panel,
 // connected to BrowserAIRuntime via MoltAIChatHandler.
 class MoltAIDataSource : public content::URLDataSource {
@@ -24,24 +922,16 @@ class MoltAIDataSource : public content::URLDataSource {
   std::string GetSource() override { return chrome::kChromeUIMoltAIHost; }
 
   std::string GetMimeType(const GURL& url) override {
-    return "text/html";
+    return molt_webui::MimeTypeFor(url);
   }
 
-  // Allow inline scripts and styles for our embedded HTML page
+  // Strict molt WebUI CSP; HTML only via the 'molt-html' policy.
   std::string GetContentSecurityPolicy(
       const network::mojom::CSPDirectiveName directive) override {
-    if (directive == network::mojom::CSPDirectiveName::ScriptSrc) {
-      return "script-src chrome://resources 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::StyleSrc) {
-      return "style-src 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::TrustedTypes) {
-      return "";
-    }
-    if (directive ==
-        network::mojom::CSPDirectiveName::RequireTrustedTypesFor) {
-      return "";
+    if (std::optional<std::string> csp =
+            molt_webui::PageContentSecurityPolicy(
+                directive, molt_webui::TrustedTypesMode::kMoltHtmlPolicy)) {
+      return *csp;
     }
     return content::URLDataSource::GetContentSecurityPolicy(directive);
   }
@@ -50,6 +940,12 @@ class MoltAIDataSource : public content::URLDataSource {
       const GURL& url,
       const content::WebContents::Getter& wc_getter,
       content::URLDataSource::GotDataCallback callback) override {
+    if (molt_webui::IsAppJsRequest(url)) {
+      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
+          std::string(molt_webui::kMoltActionsJs) +
+          molt_webui::kMoltTrustedHtmlJs + kMoltAIPageJs));
+      return;
+    }
     const std::string html = R"HTML(<!DOCTYPE html>
 <html>
 <head>
@@ -261,7 +1157,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="top-actions">
     <!-- Always-visible model selector chip -->
     <div class="model-chip-wrap">
-      <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
+      <button class="model-chip" id="modelChip" data-on-click="toggleModelDropdown">
         <span class="icon">&#129302;</span>
         <span class="model-chip-progress" id="modelChipProgress">
           <svg width="20" height="20" viewBox="0 0 20 20">
@@ -275,19 +1171,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </button>
       <div class="model-chip-dropdown" id="modelChipDropdown"></div>
     </div>
-    <button class="top-btn" onclick="newChat()">New Chat</button>
-    <button class="top-btn" onclick="toggleSearch()">Search</button>
-    <button class="top-btn" onclick="exportChat()">Export</button>
-    <button class="top-btn" onclick="importChat()">Import</button>
-    <button class="top-btn" onclick="toggleModelPanel()">Manage</button>
-    <button class="top-btn" onclick="window.location='molt://ai-settings/'">Settings</button>
+    <button class="top-btn" data-on-click="newChat">New Chat</button>
+    <button class="top-btn" data-on-click="toggleSearch">Search</button>
+    <button class="top-btn" data-on-click="exportChat">Export</button>
+    <button class="top-btn" data-on-click="importChat">Import</button>
+    <button class="top-btn" data-on-click="toggleModelPanel">Manage</button>
+    <button class="top-btn" data-on-click="openSettings">Settings</button>
   </div>
   <div class="context-info" id="contextInfo"></div>
 </div>
 <div class="search-bar" id="searchBar">
-  <input type="text" id="searchInput" placeholder="Search messages..." oninput="doSearch()">
+  <input type="text" id="searchInput" placeholder="Search messages..." data-on-input="doSearch">
   <span class="search-count" id="searchCount"></span>
-  <button class="search-close" onclick="toggleSearch()">&times;</button>
+  <button class="search-close" data-on-click="toggleSearch">&times;</button>
 </div>
 <div class="chat-container">
   <div class="messages" id="messages">
@@ -299,18 +1195,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
   <div class="input-area">
     <input type="text" id="prompt" placeholder="Ask MoltBrowser AI anything..." autofocus>
-    <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
-    <button class="send" id="sendBtn" onclick="doSend()">Send</button>
+    <button class="cancel" id="cancelBtn" data-on-click="cancelGeneration">Stop</button>
+    <button class="send" id="sendBtn" data-on-click="doSend">Send</button>
   </div>
 </div>
 
 <!-- Model Management Overlay -->
-<div class="model-overlay" id="modelOverlay" onclick="if(event.target===this)toggleModelPanel()">
+<div class="model-overlay" id="modelOverlay" data-on-click="modelOverlayClick">
   <div class="model-dialog">
     <h2>Model Management</h2>
     <div id="modelList"></div>
     <div style="margin-top:16px;text-align:right">
-      <button class="top-btn" onclick="toggleModelPanel()">Close</button>
+      <button class="top-btn" data-on-click="toggleModelPanel">Close</button>
     </div>
   </div>
 </div>
@@ -325,844 +1221,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div class="welcome-feat"><div class="fi">&#128172;</div><div class="ft">Smart Chat</div><div class="fd">Summarize, explain, write code</div></div>
     <div class="welcome-feat"><div class="fi">&#127760;</div><div class="ft">Page-Aware</div><div class="fd">AI sees what you're browsing</div></div>
   </div>
-  <button class="welcome-btn" id="welcomeDownloadBtn" onclick="startFirstRunDownload()">Download TinyLlama 1.1B (638 MB)</button>
-  <button class="welcome-skip" onclick="skipFirstRun()">I'll set up later</button>
+  <button class="welcome-btn" id="welcomeDownloadBtn" data-on-click="startFirstRunDownload">Download TinyLlama 1.1B (638 MB)</button>
+  <button class="welcome-skip" data-on-click="skipFirstRun">I'll set up later</button>
   <div class="welcome-progress" id="welcomeProgress">
     <div class="welcome-pbar"><div class="welcome-pfill" id="welcomePfill"></div></div>
     <div class="welcome-ptext" id="welcomePtext">Starting download...</div>
   </div>
 </div>
 
-<script>
-// ============================================================
-// MoltBrowser AI Full Page — WebUI JavaScript (Day 8)
-// ============================================================
-
-var isGenerating = false;
-var currentAiEl = null;
-var currentAiText = '';
-var idCounter = 0;
-var pendingCbs = {};
-var conversationHistory = [];
-var MAX_HISTORY = 16;
-
-function sendWithPromise(method) {
-  var args = Array.prototype.slice.call(arguments, 1);
-  var id = method + '_' + (++idCounter);
-  return new Promise(function(resolve, reject) {
-    pendingCbs[id] = {resolve: resolve, reject: reject};
-    chrome.send(method, [id].concat(args));
-  });
-}
-
-window.cr = window.cr || {};
-cr.webUIResponse = function(id, ok, resp) {
-  var cb = pendingCbs[id]; if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
-};
-var wuiListeners = {};
-cr.addWebUiListener = function(ev, fn) { (wuiListeners[ev] = wuiListeners[ev] || []).push(fn); };
-cr.webUIListenerCallback = function(ev) {
-  var a = Array.prototype.slice.call(arguments, 1);
-  (wuiListeners[ev] || []).forEach(function(fn) { fn.apply(null, a); });
-};
-
-function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
-
-// ---- Markdown Rendering ----
-var codeBlockId = 0;
-function renderMarkdown(text) {
-  var s = esc(text);
-  s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
-    var id = 'cb-' + (++codeBlockId);
-    var langLabel = lang ? '<span style="position:absolute;top:6px;left:10px;font-size:10px;color:#666;text-transform:uppercase">' + lang + '</span>' : '';
-    return '<div class="code-wrap">' + langLabel +
-      '<button class="code-copy" onclick="copyCode(\'' + id + '\',this)">Copy</button>' +
-      '<pre id="' + id + '" style="background:#1a1a2e;padding:' + (lang ? '26px 12px 12px' : '12px') + ';border-radius:8px;overflow-x:auto;font-size:13px;border:1px solid #2a2a4a"><code>' + code.trim() + '</code></pre></div>';
-  });
-  s = s.replace(/`([^`\n]+)`/g, '<code style="background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:13px;color:#a78bfa">$1</code>');
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:#e0e0e0">$1</strong>');
-  s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
-  s = s.replace(/^### (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:#a78bfa">$1</div>');
-  s = s.replace(/^## (.+)$/gm, '<div style="font-size:17px;font-weight:700;margin:14px 0 6px;color:#8b5cf6">$1</div>');
-  s = s.replace(/^# (.+)$/gm, '<div style="font-size:19px;font-weight:700;margin:16px 0 8px;color:#6366f1">$1</div>');
-  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:6px;color:#6366f1">\u2022</span>$1</div>');
-  s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:24px;position:relative"><span style="position:absolute;left:0;color:#6366f1;font-size:13px">$1.</span>$2</div>');
-  s = s.replace(/\n/g, '<br>');
-  return s;
-}
-
-function setStatus(cls, text) {
-  document.getElementById('statusDot').className = 'status-dot ' + cls;
-  document.getElementById('statusText').textContent = text;
-  document.getElementById('statusText').style.color = cls === 'ready' ? '#4ade80' : cls === 'error' ? '#f87171' : '#888';
-}
-
-function addUserMsg(text) {
-  var m = document.getElementById('messages');
-  var d = document.createElement('div');
-  d.className = 'message user';
-  d.innerHTML = '<div class="label">You</div><div class="text">' + esc(text) + '</div>';
-  m.appendChild(d); m.scrollTop = m.scrollHeight;
-}
-
-function startAiMsg() {
-  var m = document.getElementById('messages');
-  var d = document.createElement('div');
-  d.className = 'message ai';
-  d.innerHTML = '<div class="label">MoltBrowser AI</div><div class="model-badge">Local LLM</div><div class="text"><span class="cursor"></span></div>';
-  m.appendChild(d); m.scrollTop = m.scrollHeight;
-  currentAiEl = d.querySelector('.text');
-  currentAiText = '';
-}
-
-function appendTok(tok) {
-  if (!currentAiEl) return;
-  currentAiText += tok;
-  currentAiEl.innerHTML = renderMarkdown(currentAiText) + '<span class="cursor"></span>';
-  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-}
-
-function finishAiMsg() {
-  if (currentAiEl) {
-    currentAiEl.innerHTML = renderMarkdown(currentAiText);
-    var actions = document.createElement('div');
-    actions.className = 'msg-actions';
-    actions.innerHTML = '<button class="msg-action" onclick="copyResponse(this)">Copy response</button>';
-    currentAiEl.parentNode.appendChild(actions);
-  }
-  currentAiEl = null; currentAiText = '';
-}
-
-function setGen(v) {
-  isGenerating = v;
-  document.getElementById('sendBtn').disabled = v;
-  document.getElementById('prompt').disabled = v;
-  document.getElementById('cancelBtn').className = 'cancel' + (v ? ' active' : '');
-}
-
-function updateContextInfo() {
-  var el = document.getElementById('contextInfo');
-  var n = conversationHistory.length;
-  if (n === 0) { el.textContent = ''; return; }
-  var chars = 0;
-  for (var i = 0; i < n; i++) chars += conversationHistory[i].content.length;
-  el.textContent = n + ' msgs \u00b7 ~' + Math.round(chars / 4) + ' tokens';
-}
-
-function trimHistory() {
-  if (conversationHistory.length > MAX_HISTORY) {
-    conversationHistory = conversationHistory.slice(conversationHistory.length - MAX_HISTORY);
-  }
-}
-
-function doSend() {
-  if (isGenerating) return;
-  var inp = document.getElementById('prompt');
-  var t = inp.value.trim(); if (!t) return;
-  addUserMsg(t);
-  conversationHistory.push({role: 'user', content: t});
-  trimHistory();
-  inp.value = '';
-  setGen(true); startAiMsg();
-
-  // History = every message BEFORE the just-pushed user turn, as a JSON
-  // array of {role, content} objects. The C++ side (HandleSendPrompt)
-  // owns all chat templating — no model markers are assembled in JS.
-  var prevHistory = conversationHistory.length > 1
-      ? JSON.stringify(
-            conversationHistory.slice(0, conversationHistory.length - 1))
-      : '';
-
-  // args[5] = the picked model id. A "provider:model" cloud id routes to the
-  // frontier-API path; a plain id (or '') uses the local runtime.
-  sendWithPromise('sendPrompt', t, prevHistory, '', '',
-                  activeModelId || pickedModelId || '').then(function(r) {
-    var aiText = currentAiText.replace(/<\/s>\s*$/g, '').replace(/<\/s>/g, '').trim();
-    if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
-    finishAiMsg(); setGen(false);
-    updateContextInfo();
-    if (!r.success && r.error) addErr(r.error);
-  }).catch(function(e) { finishAiMsg(); setGen(false); updateContextInfo(); addErr('Error: ' + e); });
-}
-
-function addErr(text) {
-  var m = document.getElementById('messages');
-  var d = document.createElement('div');
-  d.className = 'message ai';
-  d.innerHTML = '<div class="label" style="color:#f87171">Error</div><div class="text" style="border-color:#f87171;color:#f87171">' + esc(text) + '</div>';
-  m.appendChild(d); m.scrollTop = m.scrollHeight;
-}
-
-function newChat() {
-  conversationHistory = [];
-  var m = document.getElementById('messages');
-  m.innerHTML = '<div class="message ai"><div class="label">MoltBrowser AI</div>' +
-    '<div class="model-badge">Local LLM</div>' +
-    '<div class="text">New conversation started. How can I help?</div></div>';
-  updateContextInfo();
-}
-
-function cancelGeneration() { chrome.send('cancelGeneration', []); }
-
-// ---- Model Management ----
-
-function toggleModelPanel() {
-  var o = document.getElementById('modelOverlay');
-  if (o.classList.contains('open')) {
-    o.classList.remove('open');
-  } else {
-    o.classList.add('open');
-    refreshModelList();
-  }
-}
-
-// Brand tiles: maker logo + name shown above each model in the picker.
-// Inline SVG (CSP-safe, no network); glyphs hard-code their own colors.
-// "Gemma" is used instead of "Google" per the zero-"Google"-string rule.
-var MOLT_BRANDS = {
-  'Meta': {c:'#0866FF', t:'rgba(8,102,255,.15)', g:'<path d="M12 12.1C10.3 9.2 8.7 7.7 6.9 7.7 4.6 7.7 3 9.8 3 12.3s1.6 4.6 3.9 4.6c1.8 0 3.4-1.5 5.1-4.8M12 12.1c1.7-2.9 3.3-4.4 5.1-4.4 2.3 0 3.9 2.1 3.9 4.6s-1.6 4.6-3.9 4.6c-1.8 0-3.4-1.5-5.1-4.8" fill="none" stroke="#0866FF" stroke-width="2.1" stroke-linecap="round"/>'},
-  'Qwen': {c:'#7C3AED', t:'rgba(124,58,237,.16)', g:'<path d="M12 2.7l8 4.6v9.4l-8 4.6-8-4.6V7.3z" fill="none" stroke="#7C3AED" stroke-width="1.8"/><path d="M8.3 9.2l3.7 2.1 3.7-2.1M12 11.3v4.5" fill="none" stroke="#7C3AED" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'},
-  'Gemma': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
-  'Mistral AI': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'},
-  'Microsoft': {c:'#00A4EF', t:'rgba(0,164,239,.10)', g:'<g><rect x="3.6" y="3.6" width="7.4" height="7.4" fill="#F25022"/><rect x="13" y="3.6" width="7.4" height="7.4" fill="#7FBA00"/><rect x="3.6" y="13" width="7.4" height="7.4" fill="#00A4EF"/><rect x="13" y="13" width="7.4" height="7.4" fill="#FFB900"/></g>'},
-  'OpenAI': {c:'#0FA47F', t:'rgba(15,164,127,.15)', g:'<g fill="none" stroke="#0FA47F" stroke-width="1.5"><ellipse cx="12" cy="12" rx="3.4" ry="8"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="3.4" ry="8" transform="rotate(120 12 12)"/></g>'},
-  'TinyLlama': {c:'#14B8A6', t:'rgba(20,184,166,.16)', g:'<path d="M8.6 4.4c-.6 0-1 .5-1 1.4l.3 3c-1.4.6-2.3 2-2.3 3.9v3.4c0 2.3 1.6 3.9 3.9 3.9h5c2.3 0 3.9-1.6 3.9-3.9v-3.4c0-1.9-.9-3.3-2.3-3.9l.3-3c0-.9-.4-1.4-1-1.4-.7 0-1.4.9-1.9 2.2-.9-.3-2-.3-3 0-.5-1.3-1.2-2.2-1.9-2.2z" fill="#14B8A6"/><circle cx="10" cy="13.2" r=".95" fill="#fff"/><circle cx="14" cy="13.2" r=".95" fill="#fff"/>'},
-  'Anthropic': {c:'#D97757', t:'rgba(217,119,87,.15)', g:'<g stroke="#D97757" stroke-width="2" stroke-linecap="round"><path d="M12 4v16M4 12h16M6.3 6.3l11.4 11.4M17.7 6.3L6.3 17.7"/></g>'},
-  'Gemini': {c:'#4285F4', t:'rgba(66,133,244,.16)', g:'<path d="M12 3c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#4285F4"/>'},
-  'Mistral': {c:'#FA500F', t:'rgba(250,80,15,.14)', g:'<g><rect x="3.5" y="5" width="17" height="3.1" rx="1" fill="#FFCC33"/><rect x="3.5" y="10.4" width="17" height="3.1" rx="1" fill="#FF7A1A"/><rect x="3.5" y="15.8" width="17" height="3.1" rx="1" fill="#F7101B"/></g>'}
-};
-function moltBrandColor(c) { var b = MOLT_BRANDS[c]; return b ? b.c : '#94a3b8'; }
-function moltBrandTile(company) {
-  var b = MOLT_BRANDS[company];
-  if (!b) {
-    var ch = (company || '?').charAt(0).toUpperCase();
-    return '<span class="brandtile" style="background:rgba(148,163,184,.16);color:#94a3b8;' +
-           'font-weight:700;font-size:13px">' + esc(ch) + '</span>';
-  }
-  return '<span class="brandtile" style="background:' + b.t + '">' +
-         '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' + b.g + '</svg></span>';
-}
-
-function refreshModelList() {
-  sendWithPromise('getModelStatus').then(function(info) {
-    var list = document.getElementById('modelList');
-    list.innerHTML = '';
-    var models = info.models || [];
-    models.sort(function(a, b) { return a.file_size_mb - b.file_size_mb; });
-
-    models.forEach(function(m) {
-      var card = document.createElement('div');
-      card.className = 'model-card';
-      card.id = 'model-' + m.model_id;
-
-      var sizeMB = m.file_size_mb;
-      var sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
-      var statusBadge = '';
-      var actionBtns = '';
-
-      if (m.is_loaded) {
-        statusBadge = '<span class="badge active">Active</span>';
-      } else if (m.is_downloaded) {
-        statusBadge = '<span class="badge downloaded">Ready</span>';
-        actionBtns = '<button class="btn primary" onclick="loadModel(\'' + m.model_id + '\')">Load</button>' +
-                     '<button class="btn danger" onclick="deleteModel(\'' + m.model_id + '\')">Delete</button>';
-      } else {
-        statusBadge = '<span class="badge unavailable">Not Downloaded</span>';
-        actionBtns = '<button class="btn primary" onclick="downloadModel(\'' + m.model_id + '\')">Download (' + sizeStr + ')</button>';
-      }
-
-      card.innerHTML =
-        '<div class="card-head">' + moltBrandTile(m.company) +
-          '<div class="chead-txt">' +
-            '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
-              esc(m.company || 'Local') + '</div>' +
-            '<div class="name">' + esc(m.display_name) + '</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
-        '<div style="margin-top:6px">' + statusBadge + '</div>' +
-        (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
-        '<div class="progress-wrap" id="pw-' + m.model_id + '">' +
-          '<div class="progress-bar"><div class="progress-fill" id="pf-' + m.model_id + '"></div></div>' +
-          '<div class="progress-text" id="pt-' + m.model_id + '"></div>' +
-        '</div>';
-
-      list.appendChild(card);
-    });
-  });
-}
-
-function downloadModel(modelId) {
-  var pw = document.getElementById('pw-' + modelId);
-  if (pw) pw.classList.add('active');
-
-  // Show cancel button
-  var card = document.getElementById('model-' + modelId);
-  if (card) {
-    var btns = card.querySelectorAll('.card-actions .btn');
-    for (var i = 0; i < btns.length; i++) btns[i].style.display = 'none';
-    var cancelDiv = document.createElement('div');
-    cancelDiv.className = 'card-actions';
-    cancelDiv.id = 'cancel-wrap-' + modelId;
-    cancelDiv.innerHTML = '<button class="btn danger" onclick="cancelDownload()">Cancel Download</button>';
-    card.querySelector('.card-actions').parentNode.appendChild(cancelDiv);
-  }
-
-  sendWithPromise('downloadModel', modelId).then(function(r) {
-    if (r.success) refreshModelList();
-    else { addErr('Download failed: ' + (r.error || 'Unknown')); refreshModelList(); }
-  }).catch(function(e) { addErr('Download error: ' + e); refreshModelList(); });
-}
-
-function cancelDownload() {
-  chrome.send('cancelDownload', []);
-}
-
-function loadModel(modelId) {
-  setStatus('loading', 'Loading ' + modelId + '...');
-  sendWithPromise('loadModel', modelId).then(function(r) {
-    if (r.success) {
-      setStatus('ready', 'Model Ready');
-      refreshModelList();
-      // Refresh chip with new active model
-      sendWithPromise('getModelStatus').then(function(rr) {
-        allModels = rr.models || [];
-        refreshModelChip();
-      });
-    }
-    else setStatus('error', 'Load failed');
-  });
-}
-
-function deleteModel(modelId) {
-  sendWithPromise('deleteModel', modelId).then(function(r) {
-    if (r.success) refreshModelList();
-  });
-}
-
-// ---- Model Chip (always-visible top selector) ----
-var allModels = [];
-var activeModelId = null;
-var pickedModelId = null;
-var downloadingModelId = null;
-
-// The currently-selected cloud model dict, or null. A cloud model is active
-// purely by selection (is_loaded is always false for cloud).
-function selectedCloudModel() {
-  if (!activeModelId) return null;
-  return allModels.find(function(m){
-    return m.is_cloud && m.model_id === activeModelId;
-  }) || null;
-}
-
-// Select a cloud "provider:model" model. Nothing to download or load — the
-// backend short-circuits loadModel for cloud ids to instant-ready.
-function selectCloudModel(modelId) {
-  activeModelId = modelId;
-  pickedModelId = modelId;
-  setStatus('ready', 'Model Ready');
-  sendWithPromise('loadModel', modelId).then(function(){}, function(){});
-  refreshModelChip();
-  toggleModelDropdown();
-}
-
-function refreshModelChip() {
-  var chip = document.getElementById('modelChip');
-  var nameEl = document.getElementById('modelChipName');
-  if (!chip || !nameEl) return;
-  var active = allModels.find(function(m){ return m.is_loaded; });
-  if (active) {
-    activeModelId = active.model_id;
-    nameEl.textContent = active.display_name || active.model_id;
-    return;
-  }
-  var cloud = selectedCloudModel();
-  if (cloud) {
-    nameEl.textContent = cloud.display_name || cloud.model_id;
-    return;
-  }
-  var firstDownloaded = allModels.find(function(m){ return m.is_downloaded; });
-  if (firstDownloaded) {
-    nameEl.textContent = (firstDownloaded.display_name || firstDownloaded.model_id) + ' (click to load)';
-  } else {
-    nameEl.textContent = 'Choose Model';
-  }
-}
-
-function toggleModelDropdown(ev) {
-  if (ev) ev.stopPropagation();
-  var chip = document.getElementById('modelChip');
-  var dd = document.getElementById('modelChipDropdown');
-  if (!chip || !dd) return;
-  var willOpen = !dd.classList.contains('open');
-  dd.classList.toggle('open');
-  chip.classList.toggle('open');
-  if (willOpen) {
-    renderModelChipDropdown();
-  }
-}
-
-function renderModelChipDropdown() {
-  var dd = document.getElementById('modelChipDropdown');
-  if (!dd) return;
-  if (allModels.length === 0) {
-    dd.innerHTML = '<div style="padding:14px;color:#666;font-size:12px;text-align:center">Loading models...</div>';
-    sendWithPromise('getModelStatus').then(function(r) {
-      allModels = r.models || [];
-      renderModelChipDropdown();
-      refreshModelChip();
-    });
-    return;
-  }
-  dd.innerHTML = '';
-  // Partition into local (on-device GGUF) and cloud (via the user's key)
-  // models. Cloud models carry is_cloud=true + provider from the backend.
-  var localModels = [], cloudModels = [];
-  allModels.forEach(function(m){ (m.is_cloud ? cloudModels : localModels).push(m); });
-
-  // ---- Cloud connect: the FIRST, most-prominent option so bring-your-own-
-  // key frontier models are the top action in the picker. ----
-  var cloudCta = document.createElement('div');
-  cloudCta.className = 'mcd-cloud-cta';
-  cloudCta.innerHTML =
-    '<span class="mcc-icon">☁️</span>' +
-    '<span class="mcc-text">' +
-      (cloudModels.length ? 'Manage cloud providers' : 'Connect a cloud model') +
-      '<span class="mcc-sub">OpenAI, Claude, Gemini &amp; more — your key</span>' +
-    '</span>' +
-    '<span class="mcc-arrow">→</span>';
-  cloudCta.onclick = function() {
-    toggleModelDropdown();
-    window.open('molt://ai-settings/?section=providers', '_blank');
-  };
-  dd.appendChild(cloudCta);
-
-  if (cloudModels.length && localModels.length) {
-    var lh = document.createElement('div');
-    lh.className = 'mcd-header';
-    lh.textContent = 'Local · Private 🔒';
-    dd.appendChild(lh);
-  }
-
-  localModels.forEach(function(m) {
-    var item = document.createElement('div');
-    item.className = 'model-chip-item';
-    var isActive = !!m.is_loaded;
-    if (isActive) item.className += ' active';
-    var statusClass, statusText;
-    if (isActive) { statusClass = 'active'; statusText = 'Active'; }
-    else if (downloadingModelId === m.model_id) { statusClass = 'downloading'; statusText = 'Downloading'; }
-    else if (m.is_downloaded) { statusClass = 'downloaded'; statusText = 'Ready'; }
-    else { statusClass = 'available'; statusText = 'Download'; }
-    var sizeMB = m.file_size_mb || 0;
-    var sizeStr2 = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
-    item.innerHTML =
-      moltBrandTile(m.company) +
-      '<div style="flex:1;min-width:0">' +
-        '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
-          esc(m.company || 'Local') + '</div>' +
-        '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
-        '<div class="msize">' + (m.quantization ? esc(m.quantization) + ' · ' : '') + sizeStr2 + '</div>' +
-      '</div>' +
-      '<span class="mstatus ' + statusClass + '">' + statusText + '</span>';
-    item.onclick = function() {
-      if (isActive) { toggleModelDropdown(); return; }
-      if (m.is_downloaded) {
-        loadModel(m.model_id);
-      } else {
-        downloadingModelId = m.model_id;
-        downloadModel(m.model_id);
-        document.getElementById('modelChip').classList.add('downloading');
-      }
-      toggleModelDropdown();
-    };
-    dd.appendChild(item);
-  });
-
-  // ---- Cloud group: instant-select rows (no download/load) ----
-  if (cloudModels.length) {
-    var ch = document.createElement('div');
-    ch.className = 'mcd-header';
-    ch.textContent = 'Cloud · via your key ☁️';
-    dd.appendChild(ch);
-    cloudModels.forEach(function(m) {
-      var item = document.createElement('div');
-      item.className = 'model-chip-item';
-      var isActive = activeModelId === m.model_id;
-      if (isActive) item.className += ' active';
-      item.innerHTML =
-        moltBrandTile(m.provider) +
-        '<div style="flex:1;min-width:0">' +
-          '<div class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
-            esc(m.provider || 'Cloud') + '</div>' +
-          '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
-          '<div class="msize">cloud · via your key</div>' +
-        '</div>' +
-        '<span class="mstatus ' + (isActive ? 'active' : 'downloaded') + '">' +
-          (isActive ? 'Active' : 'Use') + '</span>';
-      item.onclick = function() {
-        if (isActive) { toggleModelDropdown(); return; }
-        selectCloudModel(m.model_id);
-      };
-      dd.appendChild(item);
-    });
-  }
-
-  // (Cloud connect/manage lives at the TOP of the dropdown now — the
-  // .mcd-cloud-cta entry above — so it's the first option the user sees.)
-}
-
-function updateModelChipProgress(percent) {
-  var fg = document.getElementById('modelChipProgressFg');
-  var pct = document.getElementById('modelChipPct');
-  if (fg) {
-    var circumference = 2 * Math.PI * 8; // r=8
-    var offset = circumference - (percent / 100) * circumference;
-    fg.style.strokeDashoffset = offset;
-    fg.style.strokeDasharray = circumference;
-  }
-  if (pct) pct.textContent = Math.round(percent) + '%';
-}
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function(e) {
-  var wrap = document.querySelector('.model-chip-wrap');
-  if (wrap && !wrap.contains(e.target)) {
-    var dd = document.getElementById('modelChipDropdown');
-    var chip = document.getElementById('modelChip');
-    if (dd) dd.classList.remove('open');
-    if (chip) chip.classList.remove('open');
-  }
-});
-
-// Initialize chip on page load
-sendWithPromise('getModelStatus').then(function(r) {
-  allModels = r.models || [];
-  refreshModelChip();
-});
-
-// ---- Event Listeners ----
-
-cr.addWebUiListener('ai-token', function(tok, isDone) { if (tok) appendTok(tok); });
-cr.addWebUiListener('model-status', function(st, detail) {
-  if (st === 'loading') setStatus('loading', 'Loading model...');
-  else if (st === 'ready') setStatus('ready', 'Model Ready');
-  else if (st === 'error') setStatus('error', detail || 'Error');
-});
-
-cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
-  var fill = document.getElementById('pf-' + modelId);
-  var ptext = document.getElementById('pt-' + modelId);
-  var pw = document.getElementById('pw-' + modelId);
-  if (fill && total > 0) {
-    var pct = Math.round((current / total) * 100);
-    fill.style.width = pct + '%';
-    if (pw) pw.classList.add('active');
-    var info = pct + '% (' + Math.round(current / 1048576) + ' / ' + Math.round(total / 1048576) + ' MB)';
-    if (speed > 0) {
-      info += ' \u00b7 ' + (speed / 1048576).toFixed(1) + ' MB/s';
-      if (eta > 0) {
-        var mins = Math.floor(eta / 60);
-        var secs = Math.round(eta % 60);
-        info += ' \u00b7 ' + (mins > 0 ? mins + 'm ' : '') + secs + 's left';
-      }
-    }
-    if (ptext) ptext.textContent = info;
-  }
-  // Update chip if this is the model we're downloading
-  if (downloadingModelId === modelId && total > 0) {
-    var pct = (current / total) * 100;
-    updateModelChipProgress(pct);
-    var nameEl = document.getElementById('modelChipName');
-    var modelInfo = allModels.find(function(m){ return m.model_id === modelId; });
-    if (nameEl && modelInfo) {
-      nameEl.textContent = 'Downloading ' + (modelInfo.display_name || modelId) + '\u2026';
-    }
-  }
-});
-
-cr.addWebUiListener('download-complete', function(modelId, success) {
-  var pw = document.getElementById('pw-' + modelId);
-  if (pw) pw.classList.remove('active');
-  // Reset chip download state
-  if (downloadingModelId === modelId) {
-    downloadingModelId = null;
-    var chip = document.getElementById('modelChip');
-    if (chip) chip.classList.remove('downloading');
-    if (success) {
-      // Refresh model list and load it as active
-      sendWithPromise('getModelStatus').then(function(r) {
-        allModels = r.models || [];
-        loadModel(modelId);
-        refreshModelChip();
-      });
-    }
-  }
-  if (success) {
-    refreshModelList();
-    // Close welcome overlay if it was open
-    var wo = document.getElementById('welcomeOverlay');
-    if (wo && wo.classList.contains('open')) {
-      wo.classList.remove('open');
-      setStatus('offline', 'Model ready \u2014 type to start');
-    }
-  }
-});
-
-// Keyboard
-document.getElementById('prompt').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
-});
-
-// ---- First-Run ----
-function startFirstRunDownload() {
-  var btn = document.getElementById('welcomeDownloadBtn');
-  btn.disabled = true;
-  btn.textContent = 'Downloading...';
-  document.getElementById('welcomeProgress').classList.add('active');
-  downloadModel('tinyllama-1.1b');
-}
-
-function skipFirstRun() {
-  document.getElementById('welcomeOverlay').classList.remove('open');
-}
-
-// Hook welcome overlay into download progress
-cr.addWebUiListener('download-progress', function(modelId, current, total, speed, eta) {
-  var wo = document.getElementById('welcomeOverlay');
-  if (wo && wo.classList.contains('open') && total > 0) {
-    var pct = Math.round((current / total) * 100);
-    document.getElementById('welcomePfill').style.width = pct + '%';
-    var info = pct + '% \u2014 ' + Math.round(current / 1048576) + ' / ' +
-      Math.round(total / 1048576) + ' MB';
-    if (speed > 0) {
-      info += ' \u00b7 ' + (speed / 1048576).toFixed(1) + ' MB/s';
-      if (eta > 0) {
-        var mins = Math.floor(eta / 60);
-        var secs = Math.round(eta % 60);
-        info += ' \u00b7 ' + (mins > 0 ? mins + 'm ' : '') + secs + 's left';
-      }
-    }
-    document.getElementById('welcomePtext').textContent = info;
-  }
-});
-
-// ---- Copy Code / Response ----
-
-function copyCode(id, btn) {
-  var pre = document.getElementById(id);
-  if (!pre) return;
-  navigator.clipboard.writeText(pre.textContent).then(function() {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
-  });
-}
-
-function copyResponse(btn) {
-  var msg = btn.closest('.message');
-  if (!msg) return;
-  var textEl = msg.querySelector('.text');
-  if (!textEl) return;
-  navigator.clipboard.writeText(textEl.innerText).then(function() {
-    btn.textContent = 'Copied!';
-    setTimeout(function() { btn.textContent = 'Copy response'; }, 1500);
-  });
-}
-
-// ---- Search Conversation ----
-
-function toggleSearch() {
-  var bar = document.getElementById('searchBar');
-  if (bar.classList.contains('open')) {
-    bar.classList.remove('open');
-    clearSearch();
-  } else {
-    bar.classList.add('open');
-    document.getElementById('searchInput').focus();
-  }
-}
-
-function doSearch() {
-  clearSearch();
-  var query = document.getElementById('searchInput').value.trim().toLowerCase();
-  if (!query) { document.getElementById('searchCount').textContent = ''; return; }
-  var msgs = document.querySelectorAll('#messages .message .text');
-  var count = 0;
-  for (var i = 0; i < msgs.length; i++) {
-    var el = msgs[i];
-    var text = el.textContent.toLowerCase();
-    if (text.indexOf(query) >= 0) {
-      count++;
-      var re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-      el.innerHTML = el.innerHTML.replace(re, '<span class="highlight">$1</span>');
-      if (count === 1) el.scrollIntoView({behavior:'smooth', block:'center'});
-    }
-  }
-  document.getElementById('searchCount').textContent = count + ' match' + (count !== 1 ? 'es' : '');
-}
-
-function clearSearch() {
-  var highlights = document.querySelectorAll('.highlight');
-  for (var i = 0; i < highlights.length; i++) {
-    var span = highlights[i];
-    span.replaceWith(span.textContent);
-  }
-}
-
-// ---- Import Chat History ----
-
-function importChat() {
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = function(e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(ev) {
-      try {
-        var data = JSON.parse(ev.target.result);
-        if (data.messages && Array.isArray(data.messages)) {
-          conversationHistory = data.messages;
-          var m = document.getElementById('messages');
-          m.innerHTML = '';
-          for (var i = 0; i < data.messages.length; i++) {
-            var msg = data.messages[i];
-            if (msg.role === 'user') {
-              addUserMsg(msg.content);
-            } else {
-              var d = document.createElement('div');
-              d.className = 'message ai';
-              d.innerHTML = '<div class="label">MoltBrowser AI</div><div class="model-badge">Local LLM</div><div class="text">' + renderMarkdown(msg.content) + '</div>' +
-                '<div class="msg-actions"><button class="msg-action" onclick="copyResponse(this)">Copy response</button></div>';
-              m.appendChild(d);
-            }
-          }
-          m.scrollTop = m.scrollHeight;
-          updateContextInfo();
-          addSysMsg('Imported ' + data.messages.length + ' messages from ' + file.name);
-        } else {
-          addErr('Invalid chat export file');
-        }
-      } catch (err) {
-        addErr('Failed to parse file: ' + err.message);
-      }
-    };
-    reader.readAsText(file);
-  };
-  input.click();
-}
-
-// ---- Export Chat History ----
-
-function exportChat() {
-  if (conversationHistory.length === 0) {
-    addErr('No conversation to export');
-    return;
-  }
-  var data = JSON.stringify({
-    exported_at: new Date().toISOString(),
-    messages: conversationHistory
-  }, null, 2);
-  sendWithPromise('exportHistory', data).then(function(r) {
-    if (r.success) {
-      addSysMsg('Chat exported to: ' + r.filename);
-    } else {
-      addErr('Export failed');
-    }
-  });
-}
-
-function addSysMsg(text) {
-  var m = document.getElementById('messages');
-  var d = document.createElement('div');
-  d.className = 'message ai';
-  d.innerHTML = '<div class="label" style="color:#4ade80">System</div><div class="text" style="border-color:#1a2e1a;color:#4ade80;font-size:13px">' + esc(text) + '</div>';
-  m.appendChild(d); m.scrollTop = m.scrollHeight;
-}
-
-// ---- Keyboard Shortcuts ----
-// Cmd/Ctrl+Shift+S = Summarize page
-// Cmd/Ctrl+Shift+E = Explain page
-// Cmd/Ctrl+Shift+X = Export chat
-// Cmd/Ctrl+Shift+N = New chat
-
-document.addEventListener('keydown', function(e) {
-  var mod = e.metaKey || e.ctrlKey;
-  if (!mod || !e.shiftKey) return;
-  if (e.key === 'S' || e.key === 's') {
-    e.preventDefault();
-    doQuickAction('summarize');
-  } else if (e.key === 'E' || e.key === 'e') {
-    e.preventDefault();
-    doQuickAction('explain');
-  } else if (e.key === 'X' || e.key === 'x') {
-    e.preventDefault();
-    exportChat();
-  } else if (e.key === 'N' || e.key === 'n') {
-    e.preventDefault();
-    newChat();
-  }
-});
-
-// Cmd/Ctrl+F for search
-document.addEventListener('keydown', function(e) {
-  if ((e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F') && !e.shiftKey) {
-    e.preventDefault();
-    toggleSearch();
-  }
-  if (e.key === 'Escape') {
-    var bar = document.getElementById('searchBar');
-    if (bar.classList.contains('open')) toggleSearch();
-  }
-});
-
-function doQuickAction(action) {
-  if (isGenerating) return;
-  if (action === 'summarize') {
-    document.getElementById('prompt').value = 'Summarize this page';
-    doSend();
-  } else if (action === 'explain') {
-    document.getElementById('prompt').value = 'Explain this page in simple terms';
-    doSend();
-  }
-}
-
-// Handle ?q= parameter from omnibox @ai prefix
-var params = new URLSearchParams(window.location.search);
-var iq = params.get('q');
-
-// Init
-(function() {
-  setStatus('loading', 'Initializing...');
-  sendWithPromise('initChat').then(function(info) {
-    // Apply settings
-    if (info.max_history_messages) MAX_HISTORY = info.max_history_messages;
-
-    var hw = [];
-    if (info.has_gpu) hw.push(info.gpu_backend.toUpperCase());
-    hw.push(info.total_ram_gb + 'GB RAM');
-    hw.push(info.cpu_cores + ' cores');
-    document.getElementById('hwInfo').textContent = hw.join(' \u00b7 ');
-    if (info.model_loaded) {
-      setStatus('ready', 'Model Ready');
-    } else if (info.is_first_run) {
-      setStatus('offline', 'Setup required');
-      document.getElementById('welcomeOverlay').classList.add('open');
-    } else {
-      var dl = (info.models || []).filter(function(m) { return m.is_downloaded; });
-      if (dl.length > 0) setStatus('offline', 'Model available \u2014 type to start');
-      else setStatus('error', 'No models \u2014 click Models to download');
-    }
-    // Auto-send if we got a query from omnibox (and not first run)
-    if (iq && !info.is_first_run) {
-      document.getElementById('prompt').value = decodeURIComponent(iq);
-      doSend();
-    }
-  }).catch(function() { setStatus('error', 'Failed to initialize'); });
-})();
-</script>
+<script src="app.js"></script>
 </body>
 </html>)HTML";
 

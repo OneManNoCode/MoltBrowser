@@ -192,6 +192,42 @@ const PAGES = [
      assert.strictEqual(injected.length, 0, 'script data stays text: ' +
          injected.map((e) => e.outerHTML).join(' '));
    }},
+  {name: 'molt://ai', file: 'molt_ai_ui.cc',
+   listeners: ['#modelChip:click', '#sendBtn:click', '#cancelBtn:click',
+               '#searchInput:input', '#modelOverlay:click', '#welcomeDownloadBtn:click'],
+   noClick: ['#welcomeDownloadBtn'],
+   responses: {
+     initChat: {model_loaded: false, is_first_run: false, total_ram_gb: 16, cpu_cores: 8,
+                models: [{model_id: 'm1', is_downloaded: true}]},
+     getModelStatus: {models: [
+       {model_id: 'm1" data-x="1', display_name: '<b>bold</b>', company: 'Meta',
+        is_downloaded: true, file_size_mb: 100},
+       {model_id: 'm2', display_name: 'Two', company: '<i>Co</i>', file_size_mb: 2048},
+       {model_id: 'openai:<x>', is_cloud: true, provider: 'OpenAI', display_name: '<img src=x>'}]},
+     sendPrompt: {success: true},
+   },
+   after(window) {
+     const doc = window.document;
+     window.startAiMsg();
+     window.appendTok('**hi** <img src=x onerror=alert(1)> ```js\nconsole.log(1)\n```');
+     window.finishAiMsg();
+     const last = doc.querySelector('#messages .message:last-child');
+     assert(last.querySelector('strong'), 'markdown rendered');
+     assert.strictEqual(last.querySelectorAll('img').length, 0, 'model output stays text');
+     const copy = last.querySelector('button.code-copy');
+     assert(copy && copy.getAttribute('data-on-click') === 'copyCode', 'copy button wired');
+     window.toggleModelPanel();
+     return new Promise((r) => setTimeout(r, 20)).then(() => {
+       assert.strictEqual(doc.querySelectorAll('#modelList b, #modelList i, [data-x]').length, 0,
+                          'model metadata stays text');
+       const load = doc.querySelector('#modelList [data-on-click=loadModel]');
+       assert(load && load.getAttribute('data-model-id') === 'm1" data-x="1', 'model id round-trips');
+       const input = doc.getElementById('searchInput');
+       input.value = 'hi';
+       input.dispatchEvent(new window.Event('input'));
+       assert(doc.querySelector('#messages .highlight'), 'search highlights text');
+     });
+   }},
 ];
 
 function makeTrustedTypes(window, mode, violations) {
@@ -276,6 +312,8 @@ async function runPage(page) {
   window.alert = () => {};
   window.prompt = () => null;
   window.scrollTo = () => {};
+  Object.defineProperty(window.navigator, 'clipboard', {configurable: true,
+      value: {writeText: () => Promise.resolve(), readText: () => Promise.resolve('')}});
   window.HTMLElement.prototype.scrollIntoView = function() {};
   window.matchMedia = window.matchMedia || (() => ({matches: false, addListener() {}, addEventListener() {}}));
 
