@@ -200,27 +200,10 @@ source_set("molt_ai_side_panel") {
   ]
 }
 
-# MoltShield — Ad blocker + privacy engine (ABP filter syntax, EasyList/uBlock)
-source_set("molt_shield") {
-  sources = [
-    "shield/molt_shield.cc",
-    "shield/molt_shield.h",
-    "shield/filter_list_manager.cc",
-    "shield/filter_list_manager.h",
-    "shield/molt_shield_service.cc",
-    "shield/molt_shield_service.h",
-    "shield/molt_shield_throttle.cc",
-    "shield/molt_shield_throttle.h",
-  ]
-
-  deps = [
-    "//base",
-    "//net",
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
-    "//third_party/blink/public/common",
-    "//url",
-  ]
+# MoltShield — ad/tracker blocker on Brave's adblock-rust. Targets live in
+# shield/BUILD.gn; this alias keeps the ":molt_shield" name used below.
+group("molt_shield") {
+  public_deps = [ "shield" ]
 }
 
 # In-app updater. GitHub Releases is the transport; trust comes from a

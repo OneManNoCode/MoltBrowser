@@ -106,8 +106,6 @@
 #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
 #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
-#include "chrome/browser/molt_ai/shield/molt_shield_service.h"
-#include "chrome/browser/molt_ai/shield/molt_shield_throttle.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
@@ -6041,19 +6039,6 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
     result.push_back(std::move(safe_browsing_throttle));
   }
 #endif
-
-  // MoltShield: Ad blocker / tracker blocker throttle
-  {
-    GURL first_party_url;
-    if (request.request_initiator.has_value()) {
-      first_party_url = request.request_initiator->GetURL();
-    }
-    if (auto molt_throttle = molt_ai::MoltShieldURLLoaderThrottle::MaybeCreate(
-            molt_ai::GetMoltShieldInstance(), first_party_url);
-        molt_throttle) {
-      result.push_back(std::move(molt_throttle));
-    }
-  }
 
 #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
   result.push_back(
