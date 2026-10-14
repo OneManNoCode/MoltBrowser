@@ -494,7 +494,10 @@ blink::UserAgentBrandList GenerateBrandVersionList(
 
   blink::UserAgentBrandVersion greasey_bv =
       GetGreasedUserAgentBrandVersion(seed, output_version_type);
-  blink::UserAgentBrandVersion chromium_bv = {"MoltBrowser", version};
+  // MoltBrowser: keep the stock "Chromium" brand. Advertising "MoltBrowser"
+  // in Sec-CH-UA / navigator.userAgentData made every MoltBrowser user (incl.
+  // MoltNet/Tor windows) trivially distinguishable from other Chromium users.
+  blink::UserAgentBrandVersion chromium_bv = {"Chromium", version};
 
   blink::UserAgentBrandList brand_version_list = {std::move(greasey_bv),
                                                   std::move(chromium_bv)};
