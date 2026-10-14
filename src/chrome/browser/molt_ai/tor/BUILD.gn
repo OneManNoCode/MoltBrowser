@@ -5,6 +5,23 @@
 #   Phase B.1 — control-port reader (tor_service.*)
 #   Phase B.2 — subprocess launcher + GeoIP enrichment (tor_manager.*)
 
+# Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation
+# and bridge-line validation. Split out so molt_ai_unittests can test it
+# without pulling in Profile / content.
+source_set("protocol") {
+  sources = [
+    "tor_control_protocol.cc",
+    "tor_control_protocol.h",
+    "torrc_builder.cc",
+    "torrc_builder.h",
+  ]
+  deps = [
+    "//base",
+    # SAFECOOKIE control-port auth (HMAC-SHA256).
+    "//crypto",
+  ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -16,6 +33,8 @@ source_set("tor") {
     "tor_service.h",
   ]
 
+  public_deps = [ ":protocol" ]
+
   deps = [
     "//base",
     # molt_net_routing.cc applies leak-safe proxy/WebRTC/QUIC prefs to the
@@ -24,6 +43,8 @@ source_set("tor") {
     "//chrome/common",
     "//components/prefs",
     "//components/proxy_config",
+    # Random SAFECOOKIE client nonces (crypto/random.h).
+    "//crypto",
   ]
 
   # tor_service.cc / tor_manager.cc talk to the Tor control port over
@@ -31,4 +52,20 @@ source_set("tor") {
   if (is_win) {
     libs = [ "ws2_32.lib" ]
   }
+}
+
+# Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
+# generation, bridge-line validation). Picked up by
+# //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "tor_control_protocol_unittest.cc",
+    "torrc_builder_unittest.cc",
+  ]
+  deps = [
+    ":protocol",
+    "//base",
+    "//testing/gtest",
+  ]
 }
