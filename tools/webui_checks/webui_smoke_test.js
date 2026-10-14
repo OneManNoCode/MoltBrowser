@@ -153,6 +153,16 @@ const PAGES = [
      assert.strictEqual(circuit.querySelectorAll('img').length, 0, 'relay id stays in the title');
      assert(/img src=x/.test(circuit.querySelector('[title]').getAttribute('title')));
    }},
+  {name: 'molt://ai-agent', file: 'molt_ai_agent_ui.cc',
+   responses: {
+     listWorkflows: {workflows: [
+       {id: 'w1', name: '<img src=x onerror=alert(1)>', steps: 3, trigger: {type: 'manual'}}]},
+     getRuns: {runs: []},
+   },
+   after(window) {
+     assert.strictEqual(window.document.querySelectorAll('#libList img[onerror]').length, 0,
+                        'workflow names are text');
+   }},
 ];
 
 function makeTrustedTypes(window, mode, violations) {
