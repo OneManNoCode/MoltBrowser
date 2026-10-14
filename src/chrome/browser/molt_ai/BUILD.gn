@@ -15,6 +15,7 @@ source_set("molt_ai_runtime") {
 
   deps = [
     "//base",
+    "//chrome/browser/molt_ai/runtime:inference_utils",
     "//third_party/llama_cpp",
   ]
 }

@@ -175,6 +175,15 @@ source_set("ggml_cpu_arch_arm_c") {
 #   undefined symbol: ggml_vec_dot_q4_0_q8_0
 # etc., because the quantized matrix-multiply implementations live in
 # the architecture-specific TU.
+#
+# These TUs are compiled with -mavx2 -mfma -mf16c, so they raise SIGILL on
+# x64 CPUs without AVX2/FMA (pre-2013 Intel, some VMs). They contain no
+# static initializers (checked: no .init_array in the objects), so nothing
+# runs at startup; BrowserAIRuntime::Initialize() checks base::CPU and
+# refuses local models (pointing users to cloud models) before any
+# llama/ggml call. TODO: real runtime dispatch — build one CPU-backend
+# variant per ISA level (like ggml's GGML_CPU_ALL_VARIANTS/backend-dl) and
+# pick at runtime — so older CPUs can run models too.
 source_set("ggml_cpu_arch_x86") {
   sources = [
     "ggml/src/ggml-cpu/arch/x86/cpu-feats.cpp",
