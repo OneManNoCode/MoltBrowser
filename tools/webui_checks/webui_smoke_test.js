@@ -101,6 +101,39 @@ const PAGES = [
      assert.strictEqual(doc.querySelectorAll('#bmlist img[onerror], #bmlist b').length, 0);
      assert(doc.querySelector('#implist .flag svg'), 'browser logo rendered via moltHTML');
    }},
+  {name: 'molt://ai-settings', file: 'molt_ai_settings_ui.cc',
+   listeners: ['#maxTokens:input', '#temperature:input', '#backBtn:click',
+               '#moltnetEnabled:change', '#routingMode:change', '#newCircuitBtn:click',
+               '#exitCountry:change', '#importAllBtn:click', '#saveBtn:click',
+               '#resetBtn:click'],
+   noClick: ['#backBtn'],
+   responses: {
+     getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
+     resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
+     getMoltnetExitCountries: {available: [{code: 'de', name: 'Germany'}], selected: ''},
+     getImportableBrowsers: {browsers: [
+       {id: 'chrome', display_name: '<img src=x>', installed: true, has_passwords_store: true},
+       {id: 'firefox', display_name: 'Firefox', installed: true}]},
+     getProviders: {providers: [
+       {id: 'openai', display_name: 'OpenAI', default_base_url: 'https://api.openai.com/v1',
+        custom_base_url: false, connected: true, base_url: '', enabled_models: ['gpt-x']},
+       {id: 'custom', display_name: 'Custom', default_base_url: '', custom_base_url: true,
+        connected: false, base_url: '', enabled_models: []}]},
+   },
+   after(window) {
+     const doc = window.document;
+     const t = doc.getElementById('temperature');
+     t.value = '1.3';
+     t.dispatchEvent(new window.Event('input'));
+     assert.strictEqual(doc.getElementById('tempVal').textContent, '1.3');
+     assert.strictEqual(doc.querySelectorAll('#browserList img').length, 0, 'browser names are text');
+     assert(doc.querySelector('#browserList svg'), 'browser logos rendered');
+     window.cr.webUIListenerCallback('moltnet-status', {status: 'connected', relays: [
+       {country: 'de', relay_id: '"><img src=x onerror=alert(1)>', ip: '1.2.3.4'}]});
+     const circuit = doc.getElementById('circuitDisplay');
+     assert.strictEqual(circuit.querySelectorAll('img').length, 0, 'relay id stays in the title');
+     assert(/img src=x/.test(circuit.querySelector('[title]').getAttribute('title')));
+   }},
 ];
 
 function makeTrustedTypes(window, mode, violations) {
