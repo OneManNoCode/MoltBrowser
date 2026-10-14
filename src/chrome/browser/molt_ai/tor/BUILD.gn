@@ -28,8 +28,11 @@ source_set("protocol") {
 source_set("tor") {
   sources = [
     "exit_country_names.h",
+    "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
+    "molt_net_window.cc",
+    "molt_net_window.h",
     "tor_control_connection.cc",
     "tor_control_connection.h",
     "tor_manager.cc",
@@ -42,15 +45,27 @@ source_set("tor") {
 
   deps = [
     "//base",
-    # molt_net_routing.cc applies leak-safe proxy/WebRTC/QUIC prefs to the
-    # profile that opts into MoltNet.
+    # molt_net_routing.cc applies the Tor proxy + leak-safe prefs to the
+    # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/prefs",
     "//components/proxy_config",
+    "//content/public/browser",
     # Random SAFECOOKIE client nonces (crypto/random.h).
     "//crypto",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/mojom",
+    "//url",
   ]
+
+  # NOTE: molt_net_window.cc creates Browser windows and molt_net_routing.cc
+  # enumerates loaded profiles, so they include //chrome/browser/ui and
+  # //chrome/browser/profiles headers. Those targets depend on this one, so
+  # the deps can't be declared here without a cycle — the same pattern the
+  # other molt_ai UI-adjacent code uses (this tree doesn't run `gn check`).
+  # The symbols resolve when everything is linked into chrome.
 
   # tor_service.cc / tor_manager.cc talk to the Tor control port over
   # raw sockets. On Windows that means winsock2, which needs ws2_32.

@@ -1,41 +1,39 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltNetRouting — the single choke point for every network-side change
-// MoltNet makes when the user turns on private routing. Centralizing it here
-// keeps the popover, the settings page, and startup reconciliation from
-// drifting into inconsistent half-routed states, and gives a security auditor
-// one file to reason about.
+// MoltNetRouting — the single choke point for how MoltNet routes traffic.
 //
-// Lives in the low-level tor target (not the WebUI layer) so both the WebUI
-// handlers and the toolbar can call it without a GN dependency cycle.
+// Design (Tor-Browser/Brave-style identity isolation):
+//   * MoltNet browsing happens ONLY in a dedicated, non-primary
+//     off-the-record profile (molt_net_profile_id.h). It has its own
+//     in-memory cookies/cache/storage and its own NetworkContext.
+//   * The Tor SOCKS proxy and the leak-prevention prefs are applied ONLY to
+//     that profile's (in-memory) prefs. The user's regular profile, their
+//     primary incognito profile and local state (the system network context)
+//     are never proxied — so "turning MoltNet on" can no longer make a
+//     logged-in regular session egress from a Tor exit, and closing MoltNet
+//     can't strand regular browsing behind a dead proxy.
+//   * Fail-closed: the MoltNet profile's proxy is a fixed SOCKS5 server with
+//     no DIRECT fallback. If Tor is down, requests fail with a proxy error;
+//     they never go direct. A window is only opened after the profile's own
+//     NetworkContext confirms (LookUpProxyForURL) that it routes via Tor.
 //
-// Security model (rationale for each measure lives in the .cc):
-//   * Fixed SOCKS5 proxy at 127.0.0.1:9050  -> FAIL-CLOSED. If the Tor
-//     daemon is down, connections error out (ERR_PROXY_CONNECTION_FAILED)
-//     instead of silently falling back to the direct connection and leaking.
-//     The proxy is set on the profile network context AND on local state (the
-//     system/browser network context) so background browser traffic —
-//     component updater, metrics, network-time, Safe Browsing — cannot egress
-//     from the real IP while the user believes the whole browser is on Tor.
-//   * The socks5:// scheme                  -> Chromium hands the hostname to
-//     the proxy for resolution, so DNS (including .onion) is resolved by Tor,
-//     never by the local system resolver. No DNS leak on the browsing path.
-//   * Secure DNS (DoH) forced off + network prediction disabled -> speculative
-//     dns-prefetch / preconnect and any DoH lookup can't fire an out-of-band
-//     resolution that would sidestep the proxy. Turns the implicit
-//     no-DNS-leak property into an enforced one.
-//   * WebRTC "disable_non_proxied_udp"       -> STUN/TURN cannot open the
-//     direct UDP sockets that would reveal the real IP behind the proxy.
-//   (QUIC needs no separate pref: Chromium never attempts origin QUIC through
-//    a SOCKS proxy — it uses TCP to the proxy — so the fixed SOCKS proxy is
-//    itself the guard against HTTP/3 UDP egress.)
+// Leak controls applied to the MoltNet profile (rationale in the .cc):
+//   proxy = socks5://127.0.0.1:<auto port> (remote DNS, fail-closed),
+//   WebRTC = disable_non_proxied_udp, network prediction = off,
+//   HTTPS-Only mode = on.
 //
-// Profile prefs are applied to BOTH the original profile and its primary OTR
-// profile. |local_state| covers the shared system network context.
+// Lives in the low-level tor target so the WebUI handlers, the toolbar and
+// the chat handler share one implementation.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_ROUTING_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_ROUTING_H_
+
+#include <stdint.h>
+
+#include <string>
+
+#include "base/functional/callback.h"
 
 class Profile;
 class PrefService;
@@ -45,31 +43,75 @@ namespace tor {
 
 class MoltNetRouting {
  public:
-  // The local Tor SOCKS5 endpoint TorManager launches (SocksPort in the
-  // managed torrc). Kept in sync with tor_manager.cc.
-  static constexpr char kSocksProxy[] = "socks5://127.0.0.1:9050";
+  using DoneCallback = base::OnceCallback<void(bool ok, std::string error)>;
 
-  // Route this profile AND the shared system network context through Tor
-  // (leak-safe, fail-closed). |local_state| is g_browser_process->local_state()
-  // (the system context's proxy source). Call only once the Tor control port
-  // is reachable (TorManager::Launch's success callback) so we don't strand
-  // early connections behind a not-yet-ready daemon.
-  static void Enable(Profile* profile, PrefService* local_state);
+  enum class RoutingState {
+    // A regular / incognito profile. MoltNet never proxies these.
+    kNotRouted,
+    // The MoltNet profile, proxied through the running Tor.
+    kRoutedViaTor,
+    // The MoltNet profile while Tor is down: requests fail (proxy error),
+    // they never go direct.
+    kBlockedTorDown,
+    // The MoltNet profile, but a policy / extension / command-line flag
+    // controls its proxy or a leak-prevention pref, so MoltNet can't
+    // guarantee routing.
+    kProxyOverridden,
+  };
 
-  // Restore direct/default networking on the profile and the system context.
-  static void Disable(Profile* profile, PrefService* local_state);
+  struct Status {
+    RoutingState state = RoutingState::kNotRouted;
+    // True if the proxy pref of the profile shown is controlled by a policy,
+    // an extension or the command line (informational for regular profiles).
+    bool proxy_externally_controlled = false;
+  };
 
-  // True iff this profile's proxy pref currently points at our Tor SOCKS
-  // endpoint (i.e. routing is applied).
-  static bool IsEnabled(Profile* profile);
+  // The current MoltNet profile of |profile|'s original profile, or null.
+  static Profile* GetMoltNetProfile(Profile* profile);
 
-  // Startup fail-safe. The proxy pref is persisted, so a crash/quit while
-  // routing was on would otherwise leave the profile pointed at a dead Tor
-  // proxy on the next launch (every request failing). If routing prefs are
-  // set but Tor isn't running, clear them. MoltNet is session-scoped by
-  // design — the user re-enables it each session, matching the ephemeral
-  // Tor-window model. Call once per original profile at startup.
-  static void ReconcileOnStartup(Profile* profile, PrefService* local_state);
+  // Returns the MoltNet profile (creating a fresh one if needed) with routing
+  // applied for |socks_port|. Returns null and sets |error| if routing can't
+  // be guaranteed (e.g. a policy/extension controls the proxy).
+  static Profile* GetOrCreateMoltNetProfile(Profile* profile,
+                                            uint16_t socks_port,
+                                            std::string* error);
+
+  // (Re)applies the proxy + leak-prevention prefs to a MoltNet profile.
+  // Also used when Tor restarts on a different SOCKS port.
+  static bool ApplyRoutingPrefs(Profile* moltnet_profile,
+                                uint16_t socks_port,
+                                std::string* error);
+
+  // Asks the MoltNet profile's own NetworkContext how it would route a
+  // request. |done(true)| only if the answer is exactly SOCKS5
+  // 127.0.0.1:|socks_port| with no fallback.
+  static void VerifyRouting(Profile* moltnet_profile,
+                            uint16_t socks_port,
+                            DoneCallback done);
+
+  // Closes every socket and clears the host cache of the MoltNet profile's
+  // NetworkContext (used by New Identity before the profile is destroyed).
+  static void FlushNetworkState(Profile* moltnet_profile);
+
+  // Forgets |moltnet_profile| as the current MoltNet profile so the next
+  // GetOrCreateMoltNetProfile() builds a brand-new one (fresh cookies, cache
+  // and storage). Does not destroy it.
+  static void ForgetMoltNetProfile(Profile* moltnet_profile);
+
+  // Routing of the profile a UI surface is shown in.
+  static Status GetStatus(Profile* profile);
+
+  // Undoes what pre-isolation MoltNet builds wrote to the REGULAR profile and
+  // local state (socks5://127.0.0.1:9050 proxy, WebRTC/prediction/DoH
+  // overrides). Only exact matches of the legacy values are cleared, and
+  // only when the legacy Tor proxy is still present, so user choices are
+  // untouched. Idempotent; call once per original profile at startup.
+  static void MigrateLegacyRoutingPrefs(Profile* profile,
+                                        PrefService* local_state);
+
+  // Keeps the MoltNet profile pointed at Tor's current SOCKS port when Tor
+  // (re)starts. Idempotent.
+  static void EnsureTorStateObserver();
 };
 
 }  // namespace tor
