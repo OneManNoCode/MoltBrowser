@@ -105,50 +105,55 @@ function isSafeHttpUrl(u) {
 }
 
 function renderMarkdown(text) {
-  // Escape HTML first
-  var s = esc(text);
+  // Every fragment of markup this renderer generates (code, links) is
+  // swapped for an opaque placeholder as soon as it is built, and the
+  // placeholders are only expanded at the very end. Each later regex pass
+  // therefore sees escaped text plus placeholders and never our own HTML,
+  // so no pass can rewrite inside an attribute we emitted. (The previous
+  // version re-scanned generated <a href="..."> markup with the bare-URL,
+  // bold and italic rules, which let crafted model output close the href
+  // and add live attributes in this privileged page.)
+  var held = [];
+  function hold(html) {
+    held.push(html);
+    return '\u0000' + (held.length - 1) + '\u0000';
+  }
+  // Escape HTML first. NUL is reserved for placeholders.
+  var s = esc(String(text).replace(/\u0000/g, ''));
   // Code blocks (``` ... ```) with copy button
   s = s.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
     var id = 'cb-' + (++codeBlockId);
     var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:9px;color:var(--faint);text-transform:uppercase">' + lang + '</span>' : '';
-    return '<div class="code-wrap">' + langLabel +
+    return hold('<div class="code-wrap">' + langLabel +
       '<button class="code-copy" onclick="copyCode(\'' + id + '\',this)">Copy</button>' +
-      '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:12px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>';
+      '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:12px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>');
   });
   // Inline code (`...`)
-  s = s.replace(/`([^`\n]+)`/g, '<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--text)">$1</code>');
-  // esc() (textContent->innerHTML) encodes & < > but NOT double-quotes,
-  // so a url containing a `"` would break out of the href="" attribute
-  // and inject live handler attributes (e.g. onmouseover=). Quote-escape
-  // the url before it lands in an attribute.
-  function attrUrl(u) { return u.replace(/"/g, '&quot;'); }
-  // Markdown links [text](url). `s` is already HTML-escaped, so the
-  // captured url/text are entity-safe for the element body; the url is
-  // additionally quote-escaped via attrUrl() before the href attribute.
-  // Only emit an anchor for http/https urls; unsafe schemes fall back
-  // to the original literal text (no anchor). The anchor carries the
-  // chat-link class + data-molt-link marker so the delegated click
-  // handler routes it to a real browser tab via 'openUrlInTab'.
-  s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function(m, txt, url) {
-    if (!isSafeHttpUrl(url)) return m;
-    return '<a href="' + attrUrl(url) + '" class="chat-link" ' +
-           'data-molt-link="1">' + txt + '</a>';
+  s = s.replace(/`([^`\n]+)`/g, function(m, code) {
+    return hold('<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--text)">' + code + '</code>');
   });
-  // Bare-URL autolinker. Runs AFTER the markdown-link rule so it must
-  // not re-wrap urls already inside an anchor built above. A url there
-  // is immediately preceded by either href=" or > (the anchor body),
-  // so the negative lookbehind on those two chars skips them; the
-  // remaining match is a plain url at a word boundary. Trailing
-  // punctuation (.,;:!?) is left outside the link. Urls inside a code
-  // span/block (already wrapped in <code>...</code> or <pre>...</pre> by
-  // the rules above) are left untouched so code samples are not turned
-  // into clickable links or corrupted. The url is quote-escaped for the
-  // href attribute (see attrUrl above).
-  s = s.replace(/(<code[^>]*>[\s\S]*?<\/code>)|(^|[^"\/>=])(https?:\/\/[^\s<]+[^\s<.,;:!?)\]])/gi,
-    function(m, codeSpan, pre, url) {
-      if (codeSpan) return codeSpan;  // leave code content as-is
-      return pre + '<a href="' + attrUrl(url) + '" class="chat-link" ' +
-             'data-molt-link="1">' + url + '</a>';
+  // esc() (textContent->innerHTML) encodes & < > but NOT double-quotes,
+  // so quote-escape a url before it lands in the href attribute.
+  function attrUrl(u) { return u.replace(/"/g, '&quot;'); }
+  // The anchor carries the chat-link class + data-molt-link marker so the
+  // delegated click handler routes it to a real browser tab via
+  // 'openUrlInTab' (which re-checks the scheme in C++).
+  function link(url, body) {
+    return hold('<a href="' + attrUrl(url) + '" class="chat-link" ' +
+                'data-molt-link="1">' + body + '</a>');
+  }
+  // Markdown links [text](url) and bare urls, in ONE pass so a url that
+  // has already become an anchor is never matched again. Markdown links
+  // to anything but http/https stay as their literal text. A bare url
+  // leaves trailing punctuation (.,;:!?) outside the link. Urls inside
+  // code were held above and are not linkified.
+  // Neither url form may span a placeholder (\u0000), or held markup would
+  // be expanded inside the href.
+  s = s.replace(/\[([^\]\n]+)\]\(([^)\s\u0000]+)\)|(https?:\/\/[^\s<\u0000]+[^\s<\u0000.,;:!?)\]])/gi,
+    function(m, txt, url, bare) {
+      if (bare) return link(bare, bare);
+      if (!isSafeHttpUrl(url)) return m;
+      return link(url, txt);
     });
   // Bold (**...**)
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong style="color:var(--text)">$1</strong>');
@@ -159,12 +164,19 @@ function renderMarkdown(text) {
   s = s.replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;color:var(--text)">$1</div>');
   s = s.replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:14px 0 6px;color:var(--text)">$1</div>');
   // Unordered lists (- item or * item)
-  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:var(--muted)">\u2022</span>$1</div>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<div style="padding-left:16px;position:relative"><span style="position:absolute;left:4px;color:var(--muted)">•</span>$1</div>');
   // Ordered lists (1. item)
   s = s.replace(/^(\d+)\. (.+)$/gm, '<div style="padding-left:20px;position:relative"><span style="position:absolute;left:0;color:var(--muted);font-size:12px">$1.</span>$2</div>');
-  // Line breaks
+  // Line breaks (code blocks are held, so <pre> keeps its real newlines)
   s = s.replace(/\n/g, '<br>');
-  return s;
+  // Expand placeholders. A held link may itself contain a held code span,
+  // and a held fragment only ever refers to earlier ones, so this ends.
+  function expand(str) {
+    return str.replace(/\u0000(\d+)\u0000/g, function(m, i) {
+      return held[+i] === undefined ? '' : expand(held[+i]);
+    });
+  }
+  return expand(s);
 }
 
 function setStatus(state, text) {
@@ -4206,17 +4218,45 @@ function doSearch() {
   var count = 0;
   for (var i = 0; i < msgs.length; i++) {
     var el = msgs[i];
-    var html = el.innerHTML;
     var text = el.textContent.toLowerCase();
     if (text.indexOf(query) >= 0) {
       count++;
-      // Highlight matches
-      var re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-      el.innerHTML = el.innerHTML.replace(re, '<span class="highlight">$1</span>');
+      highlightTextNodes(el, query);
       if (count === 1) el.scrollIntoView({behavior:'smooth', block:'center'});
     }
   }
   document.getElementById('searchCount').textContent = count + ' match' + (count !== 1 ? 'es' : '');
+}
+
+// Wraps each case-insensitive occurrence of `query` inside the TEXT nodes
+// of `root` in a <span class="highlight">. Works on text nodes only, so a
+// match can never land inside markup or an attribute (a regex over
+// innerHTML could, and could break out of an href).
+function highlightTextNodes(root, query) {
+  var re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  var nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    var text = node.nodeValue;
+    re.lastIndex = 0;
+    var m = re.exec(text);
+    if (!m) continue;
+    var frag = document.createDocumentFragment();
+    var from = 0;
+    while (m) {
+      frag.appendChild(document.createTextNode(text.slice(from, m.index)));
+      var mark = document.createElement('span');
+      mark.className = 'highlight';
+      mark.textContent = m[0];
+      frag.appendChild(mark);
+      from = m.index + m[0].length;
+      m = re.exec(text);
+    }
+    frag.appendChild(document.createTextNode(text.slice(from)));
+    node.parentNode.replaceChild(frag, node);
+  }
 }
 
 function clearSearch() {
@@ -5132,9 +5172,11 @@ function _stopRecording() {
 
     var row = document.createElement('div');
     row.className = 'agent-step ' + (step.success ? 'ok' : 'fail');
+    // `badge` is the model's raw ACTION verb, so it is only ever text.
+    var badgeClass = /^[A-Z_]{1,24}$/.test(badge) ? badge : 'OTHER';
     row.innerHTML =
-      '<div class="agent-step-num">' + step.number + '</div>' +
-      '<span class="agent-step-badge badge-' + badge + '">' + badge + '</span>' +
+      '<div class="agent-step-num">' + (Number(step.number) || 0) + '</div>' +
+      '<span class="agent-step-badge badge-' + badgeClass + '"></span>' +
       '<div class="agent-step-body">' +
         '<div class="agent-step-target">' +
           target.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
@@ -5145,6 +5187,7 @@ function _stopRecording() {
             '</div>'
           : '') +
       '</div>';
+    row.querySelector('.agent-step-badge').textContent = badge;
     steps.appendChild(row);
     steps.scrollTop = steps.scrollHeight;
   });
