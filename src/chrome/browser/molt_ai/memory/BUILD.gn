@@ -54,6 +54,7 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "memory_embedder_unittest.cc",
+    "memory_index_unittest.cc",
   ]
   deps = [
     ":memory_core",
