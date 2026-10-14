@@ -400,10 +400,44 @@ function showToast(m, isErr) {
   setTimeout(function(){ t.className = 'toast' + (isErr ? ' error' : ''); }, 2200);
 }
 
-function esc(s) {
-  var d = document.createElement('div');
-  d.textContent = String(s == null ? '' : s);
-  return d.innerHTML;
+// Results are built with DOM APIs, never HTML strings: page titles,
+// URLs and snippets all come from pages the user visited. (The old
+// esc() escaped < > & but not quotes and was spliced into href="...".)
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = String(text);
+  return e;
+}
+
+// Only http(s) URLs become links; anything else (javascript:, data:,
+// file:, chrome:) is shown as plain text.
+function safeHttpHref(u) {
+  try {
+    var p = new URL(String(u));
+    return (p.protocol === 'http:' || p.protocol === 'https:') ? p.href : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function titleRow(url, title) {
+  var row = el('div', 'hit-title');
+  var href = safeHttpHref(url);
+  if (href) {
+    var a = el('a', null, title || url);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    row.appendChild(a);
+  } else {
+    row.textContent = title || url || '';
+  }
+  return row;
+}
+
+function showEmpty(container, text) {
+  container.replaceChildren(el('div', 'empty', text));
 }
 
 function fmtDate(unix) {
@@ -425,44 +459,52 @@ function refreshStats() {
 function renderRecents(docs) {
   document.getElementById('results-title').textContent = 'Recent pages';
   document.getElementById('timing').textContent = '';
-  var el = document.getElementById('results');
+  var results = document.getElementById('results');
   if (!docs.length) {
-    el.innerHTML = '<div class="empty">No pages captured yet. Browse a few sites '
-      + '(not bank/healthcare/login — those are skipped by default).</div>';
+    showEmpty(results, 'No pages captured yet. Browse a few sites ' +
+        '(not bank/healthcare/login — those are skipped by default).');
     return;
   }
-  el.innerHTML = docs.map(function(d){
-    return '<div class="hit">' +
-      '<div class="hit-title"><a href="' + esc(d.url) + '" target="_blank">' +
-        esc(d.title || d.url) + '</a></div>' +
-      '<div class="hit-meta">' + esc(fmtHost(d.url)) + ' &middot; ' +
-        esc(fmtDate(d.visited_at)) + ' &middot; ' +
-        (d.word_count || 0) + ' words' +
-        ' <a href="#" onclick="delDoc(' + d.doc_id + ');return false;" ' +
-        'style="color:#666;margin-left:8px;">delete</a></div>' +
-    '</div>';
-  }).join('');
+  results.replaceChildren.apply(results, docs.map(function(d){
+    var hit = el('div', 'hit');
+    hit.appendChild(titleRow(d.url, d.title));
+    var meta = el('div', 'hit-meta',
+        fmtHost(d.url) + ' \u00b7 ' + fmtDate(d.visited_at) + ' \u00b7 ' +
+        (Number(d.word_count) || 0) + ' words ');
+    var del = el('a', 'hit-delete', 'delete');
+    del.href = '#';
+    del.style.color = '#666';
+    del.style.marginLeft = '8px';
+    del.addEventListener('click', function(e) {
+      e.preventDefault();
+      delDoc(d.doc_id);
+    });
+    meta.appendChild(del);
+    hit.appendChild(meta);
+    return hit;
+  }));
 }
 
 function renderHits(hits, ms) {
   document.getElementById('results-title').textContent = 'Search results';
-  document.getElementById('timing').innerHTML =
-    'query in <b>' + ms.toFixed(1) + 'ms</b>';
-  var el = document.getElementById('results');
+  var timing = document.getElementById('timing');
+  timing.replaceChildren('query in ', el('b', null, ms.toFixed(1) + 'ms'));
+  var results = document.getElementById('results');
   if (!hits.length) {
-    el.innerHTML = '<div class="empty">No matches yet.</div>';
+    showEmpty(results, 'No matches yet.');
     return;
   }
-  el.innerHTML = hits.map(function(h){
-    return '<div class="hit">' +
-      '<div class="hit-title"><a href="' + esc(h.url) + '" target="_blank">' +
-        esc(h.title || h.url) + '</a></div>' +
-      '<div class="hit-meta">' + esc(fmtHost(h.url)) + ' &middot; ' +
-        esc(fmtDate(h.visited_at)) + ' &middot; ' +
-        '<span class="score">cosine ' + h.score.toFixed(3) + '</span></div>' +
-      '<div class="hit-snippet">' + esc(h.snippet) + '</div>' +
-    '</div>';
-  }).join('');
+  results.replaceChildren.apply(results, hits.map(function(h){
+    var hit = el('div', 'hit');
+    hit.appendChild(titleRow(h.url, h.title));
+    var meta = el('div', 'hit-meta',
+        fmtHost(h.url) + ' \u00b7 ' + fmtDate(h.visited_at) + ' \u00b7 ');
+    meta.appendChild(el('span', 'score',
+        'cosine ' + (Number(h.score) || 0).toFixed(3)));
+    hit.appendChild(meta);
+    hit.appendChild(el('div', 'hit-snippet', h.snippet));
+    return hit;
+  }));
 }
 
 function runSearch() {
