@@ -723,6 +723,16 @@ BlockResult MoltShield::ShouldBlockRequest(
 
   if (impl_->protection_level == ProtectionLevel::OFF) return result;
 
+  // Never block a top-level page the user navigated to. Tracker lists name
+  // domains to block as third-party resources; applied to a typed or
+  // clicked navigation (which has no initiator, so everything looks
+  // third-party) they made sites like hotjar.com or segment.com
+  // unreachable behind a bare ERR_BLOCKED_BY_CLIENT page. Brave and uBO
+  // only block documents for explicit $document rules, behind an
+  // interstitial; this engine supports neither yet. Ad iframes are
+  // SUBDOCUMENT and are still blocked.
+  if (resource_type == ResourceType::DOCUMENT) return result;
+
   std::string request_domain = ExtractDomain(url);
   std::string page_domain = ExtractDomain(source_url);
 
