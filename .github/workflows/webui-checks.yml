@@ -2,9 +2,14 @@ name: WebUI checks
 
 # Fast checks that need no Chromium checkout, so they can run on every
 # push and pull request on a GitHub-hosted runner:
-#   * every script embedded in the molt:// WebUI C++ sources parses
-#   * the AI chat markdown renderer only ever emits its own safe markup
+#   * every script embedded in the molt:// WebUI C++ sources parses,
+#     including each page's /app.js as served
+#   * no molt:// page needs 'unsafe-inline' again: no inline handlers or
+#     inline <script>, and HTML sinks only via the Trusted Types policy
+#   * the AI chat markdown renderers only ever emit their own safe markup
 #     (security regression test, fuzzed with an HTML5 parser)
+#   * every converted page loads in jsdom under the strict CSP with
+#     Trusted Types emulated, and its controls are wired
 
 on:
   push:
@@ -40,8 +45,10 @@ jobs:
           node-version: '22'
       - name: Embedded scripts parse
         run: python3 tools/webui_checks/check_embedded_js.py .
-      - name: Markdown renderer only emits safe markup
+      - name: No inline handlers / scripts in molt WebUI pages
+        run: python3 tools/webui_checks/check_no_inline_handlers.py .
+      - name: Markdown renderers emit only safe markup; pages load under strict CSP
         working-directory: tools/webui_checks
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm test

@@ -9,6 +9,12 @@ needs no Chromium checkout.
 Checked:
   * every <script>...</script> block inside an R"HTML(...)HTML" string
   * every R"JS(...)JS" string that is a complete program
+  * every molt WebUI page script as actually served: the /app.js a data
+    source builds by concatenating constants (shared prologue + page
+    script) is reassembled and checked as one program, and every
+    <script src="..."> in a page's HTML must be a resource its data
+    source serves (molt pages run no inline script; see
+    molt_webui_csp.h)
 
 R"JS(" strings used as base::StringPrintf templates get each %s / %d
 replaced with a placeholder value before the check. Any other R"JS(
@@ -30,6 +36,8 @@ EXTS = (".cc", ".h", ".mm")
 FRAGMENTS = {}
 
 RAW = re.compile(r'R"(HTML|JS)\((.*?)\)\1"', re.S)
+NAMED_JS = re.compile(r'char\s+(k\w+)\[\]\s*=\s*R"JS\((.*?)\)JS"', re.S)
+WEBUI = "src/chrome/browser/ui/webui/molt_ai"
 SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.S | re.I)
 
 
@@ -44,6 +52,51 @@ def node_check(code, label, failures):
             failures.append((label, "\n      ".join(msg[:6])))
     finally:
         os.unlink(tmp)
+
+
+def check_served_scripts(repo, failures):
+    """Reassemble each page's served scripts and check them as one program."""
+    root = os.path.join(repo, WEBUI)
+    consts = {}
+    files = sorted(f for f in os.listdir(root) if f.endswith(EXTS))
+    for name in files:
+        src = open(os.path.join(root, name), encoding="utf-8").read()
+        for m in NAMED_JS.finditer(src):
+            consts[m.group(1)] = m.group(2)
+    checked = 0
+    for name in files:
+        src = open(os.path.join(root, name), encoding="utf-8").read()
+        rel = f"{WEBUI}/{name}"
+        served = set()
+        # if (molt_webui::IsAppJsRequest(url)) { ... Run(... kA + kB ...); return; }
+        # and if (url.path() == "/x.js") { ... }
+        for m in re.finditer(r'if \((?:molt_webui::IsAppJsRequest\(url\)|'
+                             r'url\.path\(\) == "(/[\w.-]+\.js)")\) \{(.*?)return;',
+                             src, re.S):
+            path = m.group(1) or "/app.js"
+            parts = [p.split("::")[-1] for p in
+                     re.findall(r"\b(?:[\w]+::)*k\w+", m.group(2))]
+            parts = [p for p in parts if p in consts]
+            served.add(path)
+            checked += 1
+            node_check("".join(consts[p] for p in parts),
+                       f"{rel} ({path} = {' + '.join(parts)})", failures)
+        # molt_ai_update_ui.cc style: url.path() == "/app.js" ? kJs : kHtml
+        for m in re.finditer(r'url\.path\(\) == "(/[\w.-]+\.js)" \? std::string\((k\w+)\)',
+                             src):
+            served.add(m.group(1))
+            checked += 1
+            node_check(consts[m.group(2)], f"{rel} ({m.group(1)} = {m.group(2)})",
+                       failures)
+        for m in RAW.finditer(src):
+            if m.group(1) != "HTML":
+                continue
+            for s in re.finditer(r'<script\b[^>]*\bsrc="([^"]+)"', m.group(2)):
+                want = "/" + s.group(1).lstrip("/")
+                if want not in served:
+                    failures.append((f"{rel}", f'<script src="{s.group(1)}"> '
+                                     "is not served by this data source"))
+    return checked
 
 
 def main():
@@ -74,6 +127,7 @@ def main():
                         for i, s in enumerate(SCRIPT.finditer(body), 1):
                             checked += 1
                             node_check(s.group(1), f"{rel}:{line} (<script> #{i})", failures)
+    checked += check_served_scripts(repo, failures)
     for label, msg in failures:
         print(f"FAIL {label}\n      {msg}")
     print(f"{checked - len(failures)}/{checked} embedded scripts parse")
