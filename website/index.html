@@ -211,14 +211,14 @@
 </nav>
 
 <section class="hero">
-  <span class="version-tag" id="version-tag">v0.2.1 — Now Available</span>
+  <span class="version-tag" id="version-tag">v0.2.5 — Now Available</span>
   <h1>AI in Your Browser.<br>On Your Device.</h1>
-  <p>MoltBrowser is a privacy-first browser with built-in AI. Run large language models locally — no cloud, no tracking, no compromises.</p>
+  <p>MoltBrowser is a privacy-first browser with built-in AI. Run large language models on your own machine — no account, no tracking, and no cloud unless you choose one.</p>
   <div class="hero-actions">
     <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
        class="btn-primary" id="heroDownload"
        data-mac-arm="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-macOS-arm64.dmg"
-       data-win="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe"
+       data-win="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe"
        data-linux-deb="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span id="heroDownloadLabel">Download for Mac</span>
@@ -237,7 +237,7 @@
     <div class="feature-card">
       <div class="feature-icon">&#129302;</div>
       <h3>On-Device AI</h3>
-      <p>Run Llama, Mistral, Phi, Qwen, and more locally with Metal GPU acceleration. Your conversations never leave your machine.</p>
+      <p>Run Qwen, Llama, Gemma, Mistral, Phi, and more locally with GPU acceleration. Local-model conversations never leave your machine. Cloud models are optional and use your own key.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">&#128274;</div>
@@ -262,7 +262,7 @@
     <div class="feature-card">
       <div class="feature-icon">&#9889;</div>
       <h3>GPU Acceleration</h3>
-      <p>Hardware-accelerated inference via Metal (macOS) and Vulkan (Linux/Windows). Run 7B models at 30+ tokens/sec on Apple Silicon.</p>
+      <p>Hardware-accelerated inference via Metal (macOS) and Vulkan (Linux/Windows). 7B-class models run at interactive speed on Apple Silicon.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon">&#128172;</div>
@@ -299,11 +299,11 @@
       </a>
     </div>
     <div class="download-card available" id="card-win">
-      <h3>&#128187; Windows <span class="badge badge-green">Available</span></h3>
-      <p>Windows 10/11 x64. Installer or portable zip. Vulkan GPU acceleration on supported hardware.</p>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe"
+      <h3>&#128187; Windows <span class="badge badge-yellow">v0.2.1</span></h3>
+      <p>Windows 10/11 x64. Installer or portable zip. Vulkan GPU acceleration on supported hardware. This is an older build; v0.2.5 for Windows is in progress.</p>
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe"
          class="download-btn">Download Installer (.exe)</a>
-      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64.zip"
+      <a href="https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64.zip"
          class="download-btn"
          style="margin-top:8px;background:transparent;border:1px solid var(--text2);color:var(--text2)">
         Download Portable (.zip)
@@ -312,32 +312,32 @@
     <div class="download-card">
       <h3>&#128241; Android <span class="badge badge-gray">In Development</span></h3>
       <p>Android 7.0+. On-device AI with Vulkan GPU support.</p>
-      <span class="download-btn disabled">Coming Q3 2026</span>
+      <span class="download-btn disabled">In development</span>
     </div>
     <div class="download-card">
       <h3>&#63743; iOS <span class="badge badge-gray">In Development</span></h3>
       <p>iOS 16+. CoreML Neural Engine for fast on-device inference.</p>
-      <span class="download-btn disabled">Coming Q4 2026</span>
+      <span class="download-btn disabled">In development</span>
     </div>
   </div>
 </section>
 
 <section class="privacy" id="privacy">
   <h2>Privacy by Architecture</h2>
-  <p>MoltBrowser isn't just privacy-focused — it's architecturally incapable of leaking your AI data. All inference runs on your device.</p>
+  <p>Local AI is the default. On-device models run entirely on your CPU and GPU, and nothing you ask them is sent anywhere. Cloud models are opt-in, clearly labeled, and only reach the provider whose key you added.</p>
   <div class="privacy-points">
     <div class="privacy-point">
       <div class="icon">&#127968;</div>
       <div>
-        <h4>100% Local Inference</h4>
-        <p>LLMs run entirely on your CPU/GPU. Zero cloud calls for AI features.</p>
+        <h4>Local Inference by Default</h4>
+        <p>On-device models make zero network calls. Cloud models run only when you connect your own key.</p>
       </div>
     </div>
     <div class="privacy-point">
       <div class="icon">&#128683;</div>
       <div>
         <h4>No Telemetry</h4>
-        <p>No usage analytics, no crash reporting to third parties. De-Googled Chromium base.</p>
+        <p>No usage analytics and no crash reporting to us or third parties. No Google account, sign-in, or sync.</p>
       </div>
     </div>
     <div class="privacy-point">
@@ -362,9 +362,8 @@
     <a href="https://github.com/OneManNoCode/MoltBrowser">GitHub</a>
     <a href="https://github.com/OneManNoCode/MoltBrowser/issues">Issues</a>
     <a href="/privacy-policy.html">Privacy Policy</a>
-    <a href="/terms.html">Terms</a>
   </div>
-  <p>&copy; 2025 GenEye AI Labs Inc. All rights reserved.</p>
+  <p>&copy; 2025–2026 GenEye AI Labs Inc. Open source under GPLv3.</p>
 </footer>
 
 <script>
@@ -391,11 +390,11 @@
   if (isAndroid || isIOS) {
     // Mobile — point to GitHub releases page; mobile builds in development
     hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest';
-    label = isIOS ? 'iOS — Coming Q4 2026' : 'Android — Coming Q3 2026';
+    label = isIOS ? 'iOS — in development' : 'Android — in development';
     hero.classList.add('disabled');
   } else if (isWin) {
-    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Windows-x64-Setup.exe';
-    label = 'Download for Windows (Installer)';
+    hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.2.1/MoltBrowser-Windows-x64-Setup.exe';
+    label = 'Download for Windows (v0.2.1)';
   } else if (isLinux) {
     hero.href = 'https://github.com/OneManNoCode/MoltBrowser/releases/latest/download/MoltBrowser-Linux-x64.deb';
     label = 'Download for Linux (.deb)';
