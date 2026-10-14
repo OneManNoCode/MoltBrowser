@@ -1,0 +1,285 @@
+// Copyright 2012 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "net/socket/socks_connect_job.h"
+
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <variant>
+
+#include "base/functional/bind.h"
+#include "net/base/host_port_pair.h"
+#include "net/base/ip_address.h"
+#include "net/base/net_errors.h"
+#include "net/base/network_anonymization_key.h"
+#include "net/base/schemeful_site.h"
+#include "net/log/net_log_source_type.h"
+#include "net/log/net_log_with_source.h"
+#include "net/socket/client_socket_factory.h"
+#include "net/socket/client_socket_handle.h"
+#include "net/socket/connect_job_params.h"
+#include "net/socket/socks5_client_socket.h"
+#include "net/socket/socks_client_socket.h"
+#include "net/socket/transport_connect_job.h"
+
+namespace net {
+
+// SOCKSConnectJobs will time out if the SOCKS handshake takes longer than this.
+static constexpr base::TimeDelta kSOCKSConnectJobTimeout = base::Seconds(30);
+
+namespace {
+
+// MoltBrowser: per-site Tor circuit isolation.
+//
+// Tor puts streams with different SOCKS username/password on different
+// circuits (IsolateSOCKSAuth, on by default). Tor Browser uses the
+// first-party domain as the username; we use the top-frame site from the
+// NetworkAnonymizationKey, so two sites never share a circuit (and an exit)
+// in a MoltNet window. Only applied to SOCKS5 proxies on an IP-literal
+// loopback address (MoltNet's Tor is socks5://127.0.0.1:<port>); remote
+// SOCKS proxies never see the top-level site. A local proxy that doesn't
+// support RFC 1929 just picks "no auth" from the greeting.
+//
+// This relies on connections being partitioned by NAK
+// (net::features::kPartitionConnectionsByNetworkIsolationKey, enabled by
+// default in MoltBrowser — see net/base/features.cc); otherwise the socket
+// pool would hand the job an empty key and reuse sockets across sites.
+std::optional<std::string> TorIsolationUsername(SOCKSSocketParams& params) {
+  const HostPortPair* proxy =
+      std::get_if<HostPortPair>(&params.transport_params()->destination());
+  if (!proxy) {
+    return std::nullopt;
+  }
+  std::optional<IPAddress> proxy_ip = IPAddress::FromIPLiteral(proxy->host());
+  if (!proxy_ip || !proxy_ip->IsLoopback()) {
+    return std::nullopt;
+  }
+  const NetworkAnonymizationKey& nak = params.network_anonymization_key();
+  std::string username;
+  const std::optional<SchemefulSite>& top_frame_site = nak.GetTopFrameSite();
+  if (!top_frame_site) {
+    username = "unpartitioned";
+  } else if (top_frame_site->opaque()) {
+    username = "opaque";
+  } else {
+    username = top_frame_site->Serialize();
+  }
+  // Transient keys (opaque origins, credentialless iframes, ...) carry a
+  // nonce: keep those on their own circuits too.
+  if (const std::optional<base::UnguessableToken>& nonce = nak.GetNonce()) {
+    username += "#" + nonce->ToString();
+  }
+  // RFC 1929 limit. Real sites are far shorter.
+  if (username.size() > 255) {
+    username.resize(255);
+  }
+  return username;
+}
+
+}  // namespace
+
+SOCKSSocketParams::SOCKSSocketParams(
+    ConnectJobParams nested_params,
+    bool socks_v5,
+    const HostPortPair& host_port_pair,
+    const NetworkAnonymizationKey& network_anonymization_key,
+    const NetworkTrafficAnnotationTag& traffic_annotation)
+    : transport_params_(nested_params.take_transport()),
+      destination_(host_port_pair),
+      socks_v5_(socks_v5),
+      network_anonymization_key_(network_anonymization_key),
+      traffic_annotation_(traffic_annotation) {}
+
+SOCKSSocketParams::~SOCKSSocketParams() = default;
+
+std::unique_ptr<SOCKSConnectJob> SOCKSConnectJob::Factory::Create(
+    RequestPriority priority,
+    const SocketTag& socket_tag,
+    const CommonConnectJobParams* common_connect_job_params,
+    scoped_refptr<SOCKSSocketParams> socks_params,
+    ConnectJob::Delegate* delegate,
+    const NetLogWithSource* net_log) {
+  return std::make_unique<SOCKSConnectJob>(
+      priority, socket_tag, common_connect_job_params, std::move(socks_params),
+      delegate, net_log);
+}
+
+SOCKSConnectJob::SOCKSConnectJob(
+    RequestPriority priority,
+    const SocketTag& socket_tag,
+    const CommonConnectJobParams* common_connect_job_params,
+    scoped_refptr<SOCKSSocketParams> socks_params,
+    ConnectJob::Delegate* delegate,
+    const NetLogWithSource* net_log)
+    : ConnectJob(priority,
+                 socket_tag,
+                 base::TimeDelta(),
+                 common_connect_job_params,
+                 delegate,
+                 net_log,
+                 NetLogSourceType::SOCKS_CONNECT_JOB,
+                 NetLogEventType::SOCKS_CONNECT_JOB_CONNECT),
+      socks_params_(std::move(socks_params)) {}
+
+SOCKSConnectJob::~SOCKSConnectJob() {
+  // In the case the job was canceled, need to delete nested job first to
+  // correctly order NetLog events.
+  transport_connect_job_.reset();
+}
+
+LoadState SOCKSConnectJob::GetLoadState() const {
+  switch (next_state_) {
+    case STATE_TRANSPORT_CONNECT:
+      return LOAD_STATE_IDLE;
+    case STATE_TRANSPORT_CONNECT_COMPLETE:
+      return transport_connect_job_->GetLoadState();
+    case STATE_SOCKS_CONNECT:
+    case STATE_SOCKS_CONNECT_COMPLETE:
+      return LOAD_STATE_CONNECTING;
+    default:
+      NOTREACHED();
+  }
+}
+
+bool SOCKSConnectJob::HasEstablishedConnection() const {
+  return next_state_ == STATE_SOCKS_CONNECT ||
+         next_state_ == STATE_SOCKS_CONNECT_COMPLETE;
+}
+
+ResolveErrorInfo SOCKSConnectJob::GetResolveErrorInfo() const {
+  return resolve_error_info_;
+}
+
+base::TimeDelta SOCKSConnectJob::HandshakeTimeoutForTesting() {
+  return kSOCKSConnectJobTimeout;
+}
+
+void SOCKSConnectJob::OnIOComplete(int result) {
+  int rv = DoLoop(result);
+  if (rv != ERR_IO_PENDING)
+    NotifyDelegateOfCompletion(rv);  // Deletes |this|
+}
+
+void SOCKSConnectJob::OnConnectJobComplete(int result, ConnectJob* job) {
+  DCHECK(transport_connect_job_);
+  DCHECK_EQ(next_state_, STATE_TRANSPORT_CONNECT_COMPLETE);
+  OnIOComplete(result);
+}
+
+void SOCKSConnectJob::OnNeedsProxyAuth(
+    const HttpResponseInfo& response,
+    HttpAuthController* auth_controller,
+    base::OnceClosure restart_with_auth_callback,
+    ConnectJob* job) {
+  // A SOCKSConnectJob can't be on top of an HttpProxyConnectJob.
+  NOTREACHED();
+}
+
+int SOCKSConnectJob::DoLoop(int result) {
+  DCHECK_NE(next_state_, STATE_NONE);
+
+  int rv = result;
+  do {
+    State state = next_state_;
+    next_state_ = STATE_NONE;
+    switch (state) {
+      case STATE_TRANSPORT_CONNECT:
+        DCHECK_EQ(OK, rv);
+        rv = DoTransportConnect();
+        break;
+      case STATE_TRANSPORT_CONNECT_COMPLETE:
+        rv = DoTransportConnectComplete(rv);
+        break;
+      case STATE_SOCKS_CONNECT:
+        DCHECK_EQ(OK, rv);
+        rv = DoSOCKSConnect();
+        break;
+      case STATE_SOCKS_CONNECT_COMPLETE:
+        rv = DoSOCKSConnectComplete(rv);
+        break;
+      default:
+        NOTREACHED() << "bad state";
+    }
+  } while (rv != ERR_IO_PENDING && next_state_ != STATE_NONE);
+
+  return rv;
+}
+
+int SOCKSConnectJob::DoTransportConnect() {
+  DCHECK(!transport_connect_job_);
+
+  next_state_ = STATE_TRANSPORT_CONNECT_COMPLETE;
+  transport_connect_job_ = TransportConnectJob::Factory::CreateJob(
+      priority(), socket_tag(), common_connect_job_params(),
+      socks_params_->transport_params(), this, &net_log());
+  return transport_connect_job_->Connect();
+}
+
+int SOCKSConnectJob::DoTransportConnectComplete(int result) {
+  resolve_error_info_ = transport_connect_job_->GetResolveErrorInfo();
+  if (result != OK)
+    return ERR_PROXY_CONNECTION_FAILED;
+
+  // Start the timer to time allowed for SOCKS handshake.
+  ResetTimer(kSOCKSConnectJobTimeout);
+  next_state_ = STATE_SOCKS_CONNECT;
+  return result;
+}
+
+int SOCKSConnectJob::DoSOCKSConnect() {
+  next_state_ = STATE_SOCKS_CONNECT_COMPLETE;
+
+  // Add a SOCKS connection on top of the tcp socket.
+  if (socks_params_->is_socks_v5()) {
+    auto socks5_socket = std::make_unique<SOCKS5ClientSocket>(
+        transport_connect_job_->PassSocket(), socks_params_->destination(),
+        socks_params_->traffic_annotation());
+    // MoltBrowser: per-site circuit isolation for MoltNet's local Tor. The
+    // password is a constant; New Identity relies on NEWNYM + a fresh
+    // profile instead.
+    if (std::optional<std::string> username =
+            TorIsolationUsername(*socks_params_)) {
+      socks5_socket->SetUsernamePasswordAuth(std::move(*username), "moltnet");
+    }
+    socket_ = std::move(socks5_socket);
+  } else {
+    auto socks_socket = std::make_unique<SOCKSClientSocket>(
+        transport_connect_job_->PassSocket(), socks_params_->destination(),
+        socks_params_->network_anonymization_key(), priority(), host_resolver(),
+        socks_params_->transport_params()->secure_dns_policy(),
+        socks_params_->traffic_annotation());
+    socks_socket_ptr_ = socks_socket.get();
+    socket_ = std::move(socks_socket);
+  }
+  transport_connect_job_.reset();
+  return socket_->Connect(
+      base::BindOnce(&SOCKSConnectJob::OnIOComplete, base::Unretained(this)));
+}
+
+int SOCKSConnectJob::DoSOCKSConnectComplete(int result) {
+  if (!socks_params_->is_socks_v5())
+    resolve_error_info_ = socks_socket_ptr_->GetResolveErrorInfo();
+  if (result != OK) {
+    socket_->Disconnect();
+    return result;
+  }
+
+  SetSocket(std::move(socket_), std::nullopt /* dns_aliases */);
+  return result;
+}
+
+int SOCKSConnectJob::ConnectInternal() {
+  next_state_ = STATE_TRANSPORT_CONNECT;
+  return DoLoop(OK);
+}
+
+void SOCKSConnectJob::ChangePriorityInternal(RequestPriority priority) {
+  // Currently doesn't change host resolution request priority for SOCKS4 case.
+  if (transport_connect_job_)
+    transport_connect_job_->ChangePriority(priority);
+}
+
+}  // namespace net
