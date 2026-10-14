@@ -31,9 +31,14 @@
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
 class Profile;
+
+namespace url {
+class Origin;
+}  // namespace url
 
 namespace network {
 class SharedURLLoaderFactory;
@@ -185,17 +190,24 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // into a saved Script, written via AutomationStorage.
   // Args: [callback_id, {name, steps: [string], task}]
   void HandleSavePlanScript(const base::ListValue& args);
-  // Tier 4: Password vault.
-  //   vaultList(callback_id, [include_passwords_bool=false])
-  //   vaultAdd(callback_id, {site_host, username, password, notes?})
+  // Tier 4: Password vault (molt_ai_chat_handler_vault.cc). The chat
+  // page never receives a password; adding entries and revealing one
+  // happen on molt://ai-settings (MoltVaultHandler).
+  //   vaultList(callback_id)           → entry metadata, no secrets
   //   vaultDelete(callback_id, id)
   //   vaultFindForActive(callback_id)  → entries matching active tab
-  //   vaultAutofill(callback_id, id)   → inject creds into active tab
+  //   vaultAutofill(callback_id, id?)  → inject creds into active tab
   void HandleVaultList(const base::ListValue& args);
-  void HandleVaultAdd(const base::ListValue& args);
   void HandleVaultDelete(const base::ListValue& args);
   void HandleVaultFindForActive(const base::ListValue& args);
   void HandleVaultAutofill(const base::ListValue& args);
+  // Second half of vaultAutofill: re-verifies that |frame_id| is still
+  // the active primary main frame showing |origin|, then injects the
+  // entry's credentials into it.
+  void FillVaultEntry(const std::string& callback_id,
+                      const std::string& entry_id,
+                      const content::GlobalRenderFrameHostId& frame_id,
+                      const url::Origin& origin);
   // Tier 5: Voice mode. Client records audio via WebAudio, encodes
   // as base64-WAV, ships it here. We hand to VoiceService which
   // shells out to bundled whisper.cpp and returns transcribed text.

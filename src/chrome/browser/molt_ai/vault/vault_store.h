@@ -57,8 +57,13 @@ struct VaultEntry {
   int64_t last_used_unix = 0;      // bumped on autofill
   int64_t last_changed_unix = 0;   // bumped on password rotation
 
+  // Full on-disk form, password included. Never send this to a WebUI.
   base::DictValue ToDict() const;
   static std::optional<VaultEntry> FromDict(const base::DictValue& d);
+
+  // What a WebUI may see when listing entries: id, site_host, username,
+  // timestamps and whether there are notes. No password, no notes text.
+  base::DictValue ToMetadataDict() const;
 };
 
 class VaultStore {
@@ -95,10 +100,15 @@ class VaultStore {
   // Delete it doesn't need a secure backend.
   bool TouchLastUsed(const std::string& id);
 
-  // Convenience: every entry whose site_host matches |host| or is a
-  // suffix of it ("github.com" matches "gist.github.com"). Newest
+  // Every entry that may be offered for a page on |host| (canonical,
+  // e.g. url::Origin::host()): exact host matches first, then entries
+  // for the same registrable domain (see vault_host_match.h — those
+  // need user confirmation before filling). Within each group, newest
   // last_used_unix first.
   std::vector<VaultEntry> FindForHost(const std::string& host) const;
+
+  // The entry with this id, or std::nullopt.
+  std::optional<VaultEntry> Get(const std::string& id) const;
 
   // Wipe the vault file. True if the file is gone after the call.
   bool Clear();

@@ -319,10 +319,6 @@ void MoltAIChatHandler::RegisterMessages() {
       base::BindRepeating(&MoltAIChatHandler::HandleVaultList,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
-      "vaultAdd",
-      base::BindRepeating(&MoltAIChatHandler::HandleVaultAdd,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
       "vaultDelete",
       base::BindRepeating(&MoltAIChatHandler::HandleVaultDelete,
                           base::Unretained(this)));
@@ -4200,7 +4196,7 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
   std::string section;
   if (args.size() >= 2u && args[1].is_string()) {
     const std::string& s = args[1].GetString();
-    if (s == "providers" || s == "import") {
+    if (s == "providers" || s == "import" || s == "passwords") {
       section = s;
     }
   }

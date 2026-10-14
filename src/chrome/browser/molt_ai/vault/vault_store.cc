@@ -16,6 +16,7 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/vault/vault_host_match.h"
 #include "components/os_crypt/sync/os_crypt.h"
 
 namespace molt_ai {
@@ -60,6 +61,18 @@ base::DictValue VaultEntry::ToDict() const {
   d.Set("username", username);
   d.Set("password", password);
   d.Set("notes", notes);
+  d.Set("created_at_unix", static_cast<double>(created_at_unix));
+  d.Set("last_used_unix", static_cast<double>(last_used_unix));
+  d.Set("last_changed_unix", static_cast<double>(last_changed_unix));
+  return d;
+}
+
+base::DictValue VaultEntry::ToMetadataDict() const {
+  base::DictValue d;
+  d.Set("id", id);
+  d.Set("site_host", site_host);
+  d.Set("username", username);
+  d.Set("has_notes", !notes.empty());
   d.Set("created_at_unix", static_cast<double>(created_at_unix));
   d.Set("last_used_unix", static_cast<double>(last_used_unix));
   d.Set("last_changed_unix", static_cast<double>(last_changed_unix));
@@ -224,28 +237,39 @@ bool VaultStore::TouchLastUsed(const std::string& id) {
 
 std::vector<VaultEntry> VaultStore::FindForHost(
     const std::string& host) const {
-  std::vector<VaultEntry> matches;
-  if (host.empty()) return matches;
-  for (const auto& e : List()) {
-    if (e.site_host.empty()) continue;
-    if (e.site_host == host) {
-      matches.push_back(e);
-      continue;
-    }
-    // Suffix match — "github.com" matches "gist.github.com".
-    if (host.size() > e.site_host.size() + 1) {
-      std::string dotted = "." + e.site_host;
-      if (host.compare(host.size() - dotted.size(), dotted.size(),
-                        dotted) == 0) {
-        matches.push_back(e);
-      }
+  std::vector<VaultEntry> exact;
+  std::vector<VaultEntry> same_site;
+  if (host.empty()) return exact;
+  // No plain suffix matching: "github.com" must not match
+  // "github.com.evil.net", and a shared hosting suffix (github.io,
+  // appspot.com) must not let one tenant's page get another's login.
+  for (auto& e : List()) {
+    switch (MatchSiteHost(e.site_host, host)) {
+      case HostMatch::kExact:
+        exact.push_back(std::move(e));
+        break;
+      case HostMatch::kSameSite:
+        same_site.push_back(std::move(e));
+        break;
+      case HostMatch::kNone:
+        break;
     }
   }
-  std::sort(matches.begin(), matches.end(),
-            [](const VaultEntry& a, const VaultEntry& b) {
-              return a.last_used_unix > b.last_used_unix;
-            });
-  return matches;
+  auto newest_first = [](const VaultEntry& a, const VaultEntry& b) {
+    return a.last_used_unix > b.last_used_unix;
+  };
+  std::sort(exact.begin(), exact.end(), newest_first);
+  std::sort(same_site.begin(), same_site.end(), newest_first);
+  for (auto& e : same_site) exact.push_back(std::move(e));
+  return exact;
+}
+
+std::optional<VaultEntry> VaultStore::Get(const std::string& id) const {
+  if (id.empty()) return std::nullopt;
+  for (auto& e : List()) {
+    if (e.id == id) return std::move(e);
+  }
+  return std::nullopt;
 }
 
 bool VaultStore::Clear() {

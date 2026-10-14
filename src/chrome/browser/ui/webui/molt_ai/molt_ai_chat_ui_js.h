@@ -785,7 +785,7 @@ var HELP_TEXT =
     '`/sandbox <url>`, `/js on|off`\n' +
     '**Actions:** `/triage list`, `/watch <url> <selector>`, `/receipt`, ' +
     '`/plan <task>`, `/fill`, `/fill ai`, `/paste`, `/click .button`\n' +
-    '**Vault:** `/vault list`, `/vault fill`, `/vault generate`\n' +
+    '**Vault:** `/vault list`, `/vault find`, `/vault fill`\n' +
     '**Translate:** `/translate [lang] <text>`\n' +
     '**Digest:** `/digest` (last 24h briefing)\n\n' +
     'Or just send a message.';
@@ -2180,13 +2180,16 @@ function tryDispatchDigestCommand(text) {
 }
 
 // --------------------------------------------------------------
-// Password vault: /vault [list|find|fill|add|delete|generate]
+// Password vault: /vault [list|find|fill|delete] (+ add/reveal/generate
+// redirect to Settings)
 //
 // All credentials are OSCrypt-encrypted on disk
-// (~/.moltbrowser/vault.enc). Passwords are never echoed to chat;
-// /vault list returns usernames + sites only, and /vault fill never
-// shows the password in the message — it writes straight into the
-// active tab's login form.
+// (~/.moltbrowser/vault.enc). This page never receives a password:
+// list/find return usernames + sites only, and /vault fill writes the
+// secret straight into the active tab's login form from the browser
+// process. Adding, revealing and generating passwords happen in
+// molt://ai-settings → Passwords, so no secret ever lands in the chat
+// transcript (which is autosaved and fed back to the model).
 // --------------------------------------------------------------
 function tryDispatchVaultCommand(text) {
   var m = text.match(/^\s*\/vault\b\s*(.*)$/i);
@@ -2194,8 +2197,17 @@ function tryDispatchVaultCommand(text) {
   var rest = (m[1] || '').trim();
   var parts = rest.split(/\s+/);
   var sub = (parts[0] || 'help').toLowerCase();
-  addUserMessage(text);
+  // Never echo a password typed after "/vault add" into the transcript.
+  addUserMessage(sub === 'add' ? '/vault add …' : text);
   startAiMessage();
+
+  function openVaultSettings(why) {
+    currentAiText = why + '\n\nOpening Settings → Passwords…';
+    finishAiMessage();
+    setGenerating(false);
+    openMoltSettings('passwords');
+    return true;
+  }
 
   function fmtTime(unix){
     if (!unix) return 'never';
@@ -2210,10 +2222,11 @@ function tryDispatchVaultCommand(text) {
       '  /vault find                       — entries for active tab\'s site\n' +
       '  /vault fill                       — autofill active tab\n' +
       '  /vault fill <id>                  — autofill with specific entry\n' +
-      '  /vault add <host> <user> <pass>   — add (best done from settings)\n' +
       '  /vault delete <id>                — remove an entry\n' +
-      '  /vault generate [length]          — generate strong password\n' +
-      '\nAll entries are encrypted at rest via OSCrypt (Keychain on macOS).';
+      '  /vault add | reveal | generate    — open Settings → Passwords\n' +
+      '\nAll entries are encrypted at rest via OSCrypt (Keychain on macOS).\n' +
+      'Autofill only fills https pages for the saved site; a login saved\n' +
+      'for another host on the same site asks you first.';
     finishAiMessage();
     setGenerating(false);
     return true;
@@ -2249,10 +2262,18 @@ function tryDispatchVaultCommand(text) {
         var lines = ['Matches for ' + host + ':'];
         matches.forEach(function(m){
           lines.push('  • ' + m.username + '   [id ' + m.id.slice(0, 8) +
-                     '…]   last used: ' + fmtTime(m.last_used_unix));
+                     '…]   last used: ' + fmtTime(m.last_used_unix) +
+                     (m.match === 'same_site'
+                          ? '   (saved for ' + m.site_host +
+                            ' — asks before filling)'
+                          : ''));
         });
         lines.push('');
-        lines.push('Fill with: /vault fill ' + matches[0].id.slice(0, 8));
+        if (r.fillable) {
+          lines.push('Fill with: /vault fill ' + matches[0].id.slice(0, 8));
+        } else {
+          lines.push('This page is not https, so it can\'t be autofilled.');
+        }
         currentAiText = lines.join('\n');
       }
       finishAiMessage();
@@ -2271,6 +2292,8 @@ function tryDispatchVaultCommand(text) {
               (r.filled === 1 ? '' : 's') + ' (' +
               r.total_password_fields + ' password field' +
               (r.total_password_fields === 1 ? '' : 's') + ' on page).';
+        } else if (r.cancelled) {
+          currentAiText = 'Autofill cancelled — nothing was filled.';
         } else {
           currentAiText = '✗ ' + (r.error || 'autofill failed');
         }
@@ -2295,29 +2318,15 @@ function tryDispatchVaultCommand(text) {
     return true;
   }
 
-  if (sub === 'add') {
-    var host = parts[1], user = parts[2];
-    var pass = parts.slice(3).join(' ');
-    if (!host || !user || !pass) {
-      currentAiText = 'Usage: /vault add <host> <username> <password>';
-      finishAiMessage();
-      setGenerating(false);
-      return true;
-    }
-    sendWithPromise('vaultAdd',
-        {site_host: host, username: user, password: pass}).then(function(r) {
-      if (r.success) {
-        currentAiText = '✓ Saved credential for ' + host + ' (id ' +
-                         r.id.slice(0, 8) + '…).\n' +
-                         '  Tip: clear the chat to remove the plaintext ' +
-                         'password from screen.';
-      } else {
-        currentAiText = '✗ ' + (r.error || 'save failed');
-      }
-      finishAiMessage();
-      setGenerating(false);
-    });
-    return true;
+  if (sub === 'add' || sub === 'reveal' || sub === 'show') {
+    // Passwords are typed and shown only in Settings, never in chat.
+    var input = document.getElementById('chatInput');
+    if (input && /^\s*\/vault\s+add\b/i.test(input.value)) input.value = '';
+    return openVaultSettings(sub === 'add'
+        ? 'Passwords are added in Settings so they never appear in the ' +
+          'chat transcript. Nothing was saved from this message.'
+        : 'Saved passwords are revealed in Settings, after your ' +
+          'system password / Touch ID (or a confirmation) — never in chat.');
   }
 
   if (sub === 'delete' || sub === 'remove' || sub === 'rm') {
@@ -2350,23 +2359,9 @@ function tryDispatchVaultCommand(text) {
   }
 
   if (sub === 'generate' || sub === 'gen') {
-    // Client-side via crypto.getRandomValues — keeps the generated
-    // password out of any LLM/IPC path until the user explicitly
-    // saves it.
-    var len = parseInt(parts[1] || '20', 10);
-    if (isNaN(len) || len < 8 || len > 128) len = 20;
-    var alphabet =
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' +
-      '0123456789!@#$%^&*-_=+';
-    var buf = new Uint32Array(len);
-    crypto.getRandomValues(buf);
-    var pw = '';
-    for (var i = 0; i < len; i++) pw += alphabet[buf[i] % alphabet.length];
-    currentAiText = 'Generated password (' + len + ' chars):\n\n  ' + pw +
-                    '\n\nTip: pair with /vault add <host> <user> ' + pw;
-    finishAiMessage();
-    setGenerating(false);
-    return true;
+    return openVaultSettings('Strong passwords are generated in the ' +
+        'Settings → Passwords "Add" form, so the new password goes ' +
+        'straight into the vault instead of the chat transcript.');
   }
 
   currentAiText = 'Unknown /vault subcommand: ' + sub + '. Try /vault help.';

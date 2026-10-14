@@ -51,6 +51,7 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/profile",
+    "//chrome/browser/molt_ai/vault",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/bookmarks/browser",
@@ -61,6 +62,7 @@ source_set("molt_ai") {
     "//services/network/public/mojom",
     # HandleExtractAttachment (.docx unzip) uses zip::ZipReader.
     "//third_party/zlib/google:zip",
+    "//url",
   ]
 }
 

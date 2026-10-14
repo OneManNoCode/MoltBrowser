@@ -6,6 +6,8 @@
 
 source_set("vault") {
   sources = [
+    "vault_host_match.cc",
+    "vault_host_match.h",
     "vault_store.cc",
     "vault_store.h",
   ]
@@ -14,5 +16,20 @@ source_set("vault") {
     "//base",
     "//chrome/browser/molt_ai/keys",
     "//components/os_crypt/sync",
+    "//net",
+    "//url",
+  ]
+}
+
+# Credential host-matching tests. Linked into
+# //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "vault_host_match_unittest.cc" ]
+  deps = [
+    ":vault",
+    "//base",
+    "//testing/gtest",
+    "//url",
   ]
 }

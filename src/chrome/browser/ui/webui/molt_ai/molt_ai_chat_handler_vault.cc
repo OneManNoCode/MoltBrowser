@@ -14,40 +14,55 @@
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
-#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/vault/vault_host_match.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "url/origin.h"
 
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
+using molt_ai::chat_handler_helpers::SecureClear;
+using molt_ai::chat_handler_helpers::StringArg;
 
 // ==================================================================
-// Tier 4: Password vault
+// Tier 4: Password vault (chat side)
 //
-// Five small handlers backed by molt_ai::vault::VaultStore (OSCrypt-
-// encrypted ~/.moltbrowser/vault.enc). The store is opened
-// per-request — sub-millisecond on a small vault, and avoids holding
-// any plaintext credentials in long-lived memory.
+// Backed by molt_ai::vault::VaultStore (OSCrypt-encrypted
+// ~/.moltbrowser/vault.enc), opened per request so no plaintext
+// credentials sit in long-lived memory.
+//
+// The chat page never receives a password: list/find return metadata
+// only, and autofill sends the secret straight into the target page's
+// isolated world. Adding entries and revealing a password live in
+// molt://ai-settings (MoltVaultHandler), behind OS re-authentication.
 // ==================================================================
 
-// HandleVaultList: dump entries. Passwords are scrubbed by default;
-// callers pass include_passwords=true (boolean second arg) only when
-// they need the plaintext (e.g. the dedicated reveal view).
+namespace {
+
+void ResolveError(base::DictValue& out, const char* error) {
+  out.Set("success", false);
+  out.Set("error", error);
+}
+
+}  // namespace
+
+// vaultList(callback_id) -> {entries:[metadata], count}. Never includes
+// passwords or notes (there is no flag to ask for them any more).
 void MoltAIChatHandler::HandleVaultList(const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
-  bool include_passwords = false;
-  if (args.size() > 1 && args[1].is_bool())
-    include_passwords = args[1].GetBool();
 
   std::vector<molt_ai::vault::VaultEntry> entries;
   {
@@ -56,17 +71,10 @@ void MoltAIChatHandler::HandleVaultList(const base::ListValue& args) {
     entries = store.List();
   }
   base::ListValue arr;
-  for (const auto& e : entries) {
-    base::DictValue d;
-    d.Set("id", e.id);
-    d.Set("site_host", e.site_host);
-    d.Set("username", e.username);
-    if (include_passwords) d.Set("password", e.password);
-    d.Set("notes", e.notes);
-    d.Set("created_at_unix", static_cast<double>(e.created_at_unix));
-    d.Set("last_used_unix", static_cast<double>(e.last_used_unix));
-    d.Set("last_changed_unix", static_cast<double>(e.last_changed_unix));
-    arr.Append(std::move(d));
+  for (auto& e : entries) {
+    arr.Append(e.ToMetadataDict());
+    SecureClear(e.password);
+    SecureClear(e.notes);
   }
   base::DictValue out;
   out.Set("entries", std::move(arr));
@@ -75,59 +83,11 @@ void MoltAIChatHandler::HandleVaultList(const base::ListValue& args) {
                             base::Value(std::move(out)));
 }
 
-void MoltAIChatHandler::HandleVaultAdd(const base::ListValue& args) {
-  AllowJavascript();
-  if (!HasCallbackArgs(args, 2u, __func__)) return;
-  const std::string callback_id = args[0].GetString();
-  base::DictValue out;
-  if (!args[1].is_dict()) {
-    out.Set("success", false);
-    out.Set("error", "expected entry dict");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  const base::DictValue& d = args[1].GetDict();
-  molt_ai::vault::VaultEntry e;
-  if (auto* s = d.FindString("site_host")) e.site_host = *s;
-  if (auto* s = d.FindString("username"))  e.username = *s;
-  if (auto* s = d.FindString("password"))  e.password = *s;
-  if (auto* s = d.FindString("notes"))     e.notes = *s;
-  if (e.site_host.empty() || e.password.empty()) {
-    out.Set("success", false);
-    out.Set("error", "site_host and password required");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  std::string id;
-  bool secure_storage = true;
-  {
-    ScopedAllowBlockingForMolt allow;
-    secure_storage = molt_ai::IsSecureStorageAvailable();
-    if (secure_storage) {
-      molt_ai::vault::VaultStore store;
-      id = store.Add(std::move(e));
-    }
-  }
-  if (id.empty()) {
-    out.Set("success", false);
-    out.Set("error", secure_storage
-                         ? std::string("save failed")
-                         : molt_ai::SecureStorageUnavailableMessage());
-  } else {
-    out.Set("success", true);
-    out.Set("id", id);
-  }
-  ResolveJavascriptCallback(base::Value(callback_id),
-                            base::Value(std::move(out)));
-}
-
 void MoltAIChatHandler::HandleVaultDelete(const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
-  std::string id = args[1].is_string() ? args[1].GetString() : "";
+  const std::string id = StringArg(args, 1);
   bool ok = false;
   if (!id.empty()) {
     ScopedAllowBlockingForMolt allow;
@@ -141,19 +101,26 @@ void MoltAIChatHandler::HandleVaultDelete(const base::ListValue& args) {
                             base::Value(std::move(out)));
 }
 
+// vaultFindForActive(callback_id) -> {host, fillable, matches:[metadata +
+// match: "exact"|"same_site"]}. Exact host matches come first.
 void MoltAIChatHandler::HandleVaultFindForActive(
     const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
-  // Resolve the active tab's host.
   std::string host;
+  bool fillable = false;
   content::WebContents* webui_wc = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithTab(webui_wc);
   if (browser && browser->tab_strip_model()) {
     content::WebContents* t =
         browser->tab_strip_model()->GetActiveWebContents();
-    if (t) host = std::string(t->GetLastCommittedURL().host());
+    if (t) {
+      const url::Origin& origin =
+          t->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+      host = origin.host();
+      fillable = molt_ai::vault::IsFillableOrigin(origin);
+    }
   }
   std::vector<molt_ai::vault::VaultEntry> matches;
   {
@@ -162,16 +129,19 @@ void MoltAIChatHandler::HandleVaultFindForActive(
     matches = store.FindForHost(host);
   }
   base::ListValue arr;
-  for (const auto& e : matches) {
-    base::DictValue d;
-    d.Set("id", e.id);
-    d.Set("site_host", e.site_host);
-    d.Set("username", e.username);
-    d.Set("last_used_unix", static_cast<double>(e.last_used_unix));
+  for (auto& e : matches) {
+    base::DictValue d = e.ToMetadataDict();
+    d.Set("match", molt_ai::vault::MatchSiteHost(e.site_host, host) ==
+                           molt_ai::vault::HostMatch::kExact
+                       ? "exact"
+                       : "same_site");
     arr.Append(std::move(d));
+    SecureClear(e.password);
+    SecureClear(e.notes);
   }
   base::DictValue out;
   out.Set("host", host);
+  out.Set("fillable", fillable);
   out.Set("matches", std::move(arr));
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
@@ -181,6 +151,10 @@ namespace {
 
 // JS injection that finds the most likely login form and fills it.
 // Strategy:
+//   0. Refuse unless the document is still the origin the browser
+//      validated (creds.origin). The browser re-checks the committed
+//      origin right before sending this, but the script runs a moment
+//      later in the renderer; this closes that last gap.
 //   1. Find every visible input[type=password].
 //   2. For each, find a username field — preferring inputs in the
 //      same <form>, falling back to nearest preceding input with a
@@ -192,6 +166,10 @@ namespace {
 // Returns {filled: int, total_pwd: int, used_form: bool}.
 constexpr char kVaultAutofillJS[] = R"JS(
 (function(creds) {
+  if (window.location.origin !== creds.origin) {
+    return {filled: 0, total_pwd: 0, used_form: false,
+            error: 'the page changed before it could be filled'};
+  }
   function isVisible(el) {
     if (!el) return false;
     var r = el.getBoundingClientRect();
@@ -279,66 +257,180 @@ constexpr char kVaultAutofillJS[] = R"JS(
 
 }  // namespace
 
+// vaultAutofill(callback_id, entry_id?) — fill a saved login into the
+// active tab. Without an id, the best match for the tab is used.
+//
+//   * The tab's committed origin must be https (http only on loopback).
+//   * The entry must be for the same host (filled straight away) or the
+//     same registrable domain (filled only after the user says yes in a
+//     native, browser-drawn dialog that page script can't click). Any
+//     other entry is refused, even when picked explicitly by id.
+//   * The document is pinned when the user asks; FillVaultEntry()
+//     re-checks that the same document with the same origin is still
+//     there immediately before the password leaves the browser process.
 void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
-  std::string entry_id = args[1].is_string() ? args[1].GetString() : "";
+  const std::string entry_id = StringArg(args, 1);
   base::DictValue out;
 
   // Resolve target tab.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithTab(webui_wc);
   if (!browser || !browser->tab_strip_model()) {
-    out.Set("success", false);
-    out.Set("error", "no owning browser");
+    ResolveError(out, "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
   content::WebContents* target =
       browser->tab_strip_model()->GetActiveWebContents();
-  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
-    out.Set("success", false);
-    out.Set("error", "active tab is not an http(s) page");
+  content::RenderFrameHost* frame =
+      target ? target->GetPrimaryMainFrame() : nullptr;
+  if (!frame) {
+    ResolveError(out, "no active tab");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const url::Origin origin = frame->GetLastCommittedOrigin();
+  if (!molt_ai::vault::IsFillableOrigin(origin)) {
+    ResolveError(out,
+                 "Autofill only works on https:// pages (http:// only on "
+                 "localhost).");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  const std::string page_host = origin.host();
+
+  // Resolve the entry (metadata only; the password is re-read at fill
+  // time). If no id was supplied, take the best match for this host:
+  // exact matches sort first, then most recently used.
+  molt_ai::vault::VaultEntry chosen;
+  bool found = false;
+  {
+    ScopedAllowBlockingForMolt allow;
+    molt_ai::vault::VaultStore store;
+    if (!entry_id.empty()) {
+      if (auto e = store.Get(entry_id)) {
+        chosen = *std::move(e);
+        found = true;
+      }
+    } else {
+      std::vector<molt_ai::vault::VaultEntry> picks =
+          store.FindForHost(page_host);
+      if (!picks.empty()) {
+        chosen = std::move(picks[0]);
+        found = true;
+      }
+      for (auto& p : picks) SecureClear(p.password);
+    }
+  }
+  SecureClear(chosen.password);
+  SecureClear(chosen.notes);
+  if (!found) {
+    ResolveError(out, entry_id.empty() ? "no vault entry matches this site"
+                                       : "vault entry not found");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
 
-  // Resolve the entry. If no id supplied, pick the most-recently-
-  // used match for the active tab's host.
+  const molt_ai::vault::HostMatch match =
+      molt_ai::vault::MatchSiteHost(chosen.site_host, page_host);
+  if (match == molt_ai::vault::HostMatch::kNone) {
+    out.Set("success", false);
+    out.Set("error", base::StrCat({"This login is saved for ",
+                                   chosen.site_host, ", not ", page_host,
+                                   ". Nothing was filled."}));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
+  const content::GlobalRenderFrameHostId frame_id = frame->GetGlobalId();
+  if (match == molt_ai::vault::HostMatch::kExact) {
+    FillVaultEntry(callback_id, chosen.id, frame_id, origin);
+    return;
+  }
+
+  // Same registrable domain, different host: ask first, in browser UI.
+  const std::u16string message = base::UTF8ToUTF16(base::StrCat(
+      {"The saved login",
+       chosen.username.empty() ? "" : " for " + chosen.username,
+       " belongs to ", chosen.site_host, ", but this page is ", page_host,
+       ".\n\nFill it into ", page_host, " anyway?"}));
+  chrome::ShowQuestionMessageBoxAsync(
+      target->GetTopLevelNativeWindow(), u"Fill saved login?", message,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::string id, content::GlobalRenderFrameHostId frame_id,
+             url::Origin origin, chrome::MessageBoxResult result) {
+            if (!self) return;
+            if (result != chrome::MESSAGE_BOX_RESULT_YES) {
+              base::DictValue r;
+              r.Set("success", false);
+              r.Set("cancelled", true);
+              r.Set("error", "Autofill cancelled");
+              self->ResolveJavascriptCallback(base::Value(cb_id),
+                                              base::Value(std::move(r)));
+              return;
+            }
+            self->FillVaultEntry(cb_id, id, frame_id, origin);
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id, chosen.id, frame_id,
+          origin));
+}
+
+void MoltAIChatHandler::FillVaultEntry(
+    const std::string& callback_id,
+    const std::string& entry_id,
+    const content::GlobalRenderFrameHostId& frame_id,
+    const url::Origin& origin) {
+  base::DictValue out;
+  // The same document must still be in the tab, with the same origin, as
+  // when the user asked: never fill a tab that navigated (or a frame that
+  // was swapped) in the meantime — e.g. while the confirmation was up.
+  content::RenderFrameHost* frame = content::RenderFrameHost::FromID(frame_id);
+  if (!frame || !frame->IsActive() || !frame->IsInPrimaryMainFrame() ||
+      frame->GetLastCommittedOrigin() != origin) {
+    ResolveError(out,
+                 "The page changed since you asked to fill it. Nothing was "
+                 "filled.");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+
   molt_ai::vault::VaultEntry chosen;
+  bool found = false;
   {
     ScopedAllowBlockingForMolt allow;
     molt_ai::vault::VaultStore store;
-    std::vector<molt_ai::vault::VaultEntry> picks;
-    if (!entry_id.empty()) {
-      for (auto& e : store.List()) {
-        if (e.id == entry_id) { picks.push_back(std::move(e)); break; }
-      }
-    } else {
-      picks = store.FindForHost(
-          std::string(target->GetLastCommittedURL().host()));
+    if (auto e = store.Get(entry_id)) {
+      chosen = *std::move(e);
+      // The entry could have been edited while a confirmation was up.
+      found = molt_ai::vault::MatchSiteHost(chosen.site_host,
+                                            origin.host()) !=
+              molt_ai::vault::HostMatch::kNone;
+      if (found) store.TouchLastUsed(chosen.id);
     }
-    if (picks.empty()) {
-      out.Set("success", false);
-      out.Set("error",
-              entry_id.empty()
-                  ? "no vault entry matches this site"
-                  : "vault entry not found");
-      ResolveJavascriptCallback(base::Value(callback_id),
-                                base::Value(std::move(out)));
-      return;
-    }
-    chosen = std::move(picks[0]);
-    store.TouchLastUsed(chosen.id);
+  }
+  if (!found) {
+    SecureClear(chosen.password);
+    ResolveError(out, "vault entry not found for this site");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
   }
 
   // Compose creds JSON for the JS shim.
   base::DictValue creds;
   creds.Set("username", chosen.username);
   creds.Set("password", chosen.password);
+  creds.Set("origin", origin.Serialize());
   std::string creds_json;
   base::JSONWriter::Write(creds, &creds_json);
   std::string js = std::string(kVaultAutofillJS) + "(" + creds_json + ")";
@@ -346,10 +438,7 @@ void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
   // for the duration of the eval; nothing we can do about that. But
   // our process-side copies (creds_json, js) get scrubbed as soon as
   // the eval is dispatched. Code-review MEDIUM #7.
-
-  std::string cb_id = callback_id;
-  auto weak_this = weak_ptr_factory_.GetWeakPtr();
-  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+  frame->ExecuteJavaScriptInIsolatedWorld(
       base::UTF8ToUTF16(js),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -372,13 +461,11 @@ void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
             self->ResolveJavascriptCallback(base::Value(cb_id),
                                             base::Value(std::move(r)));
           },
-          weak_this, cb_id),
+          weak_ptr_factory_.GetWeakPtr(), callback_id),
       /*world_id=*/1);
-  // Scrub the plaintext password from our local heap. The chosen
-  // VaultEntry's own .password field also gets cleared as the local
-  // variable goes out of scope at function exit, but its std::string
-  // backing buffer survives — scrub that too.
-  molt_ai::chat_handler_helpers::SecureClear(creds_json);
-  molt_ai::chat_handler_helpers::SecureClear(js);
-  molt_ai::chat_handler_helpers::SecureClear(chosen.password);
+  // Scrub the plaintext password from our local heap.
+  SecureClear(creds_json);
+  SecureClear(js);
+  SecureClear(chosen.password);
+  if (std::string* pw = creds.FindString("password")) SecureClear(*pw);
 }
