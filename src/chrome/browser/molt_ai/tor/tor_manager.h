@@ -1,32 +1,44 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// TorManager — finds a locally-installed tor binary and runs it as a
-// child process of MoltBrowser with a managed torrc.
+// TorManager — runs and supervises MoltNet's own Tor as a child process.
 //
-// Phase B.2 scope (this file): the user installs tor themselves
-// (`brew install tor`, `apt-get install tor`, etc.) and MoltBrowser
-// auto-launches and supervises it on demand. We generate a private
-// torrc with cookie auth + a dedicated data directory so we don't
-// step on a system-managed Tor instance.
+// Hardening (see docs/MOLTNET_COMPLIANCE.md):
+//   * Only the Tor bundled with MoltBrowser is launched. A different binary
+//     requires an explicit opt-in (--moltnet-tor-binary=<absolute path>);
+//     there is no Homebrew/PATH fallback.
+//   * `SocksPort auto` + `ControlPort auto` + `ControlPortWriteToFile`: ports
+//     are picked by Tor and read back, so nothing squatting on 9050/9051 can
+//     impersonate it. A private --defaults-torrc stops a system-wide
+//     torrc-defaults from injecting options.
+//   * SAFECOOKIE auth with SERVERHASH verification on every control
+//     connection (TorControlConnection).
+//   * Ownership: `__OwningControllerProcess <browser pid>` plus TAKEOWNERSHIP
+//     on a control connection held open for Tor's lifetime, so Tor exits
+//     when the browser does (even on a crash).
+//   * The exit-country pin is session-only (never persisted) and StrictNodes
+//     is set only while a country is selected.
 //
-// Phase B.3 (later): bundle the tor binary inside MoltBrowser.app so
-// nothing has to be installed. That requires codesign + notarization
-// work in the packaging scripts, separate from this code.
-//
-// Threading: public methods are called on the UI thread. The actual
-// fork/exec runs on a MayBlock thread-pool task; completion bounces
-// back on the UI thread.
+// Threading: public methods are called on the UI thread. All file, process
+// and socket work runs on MayBlock() thread-pool tasks.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_TOR_MANAGER_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_TOR_MANAGER_H_
 
+#include <stdint.h>
+
+#include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
+#include "chrome/browser/molt_ai/tor/tor_control_connection.h"
 
 namespace base {
 template <typename T>
@@ -36,77 +48,110 @@ class NoDestructor;
 namespace molt_ai {
 namespace tor {
 
+struct TorBootstrapResult;
+struct TorSpawnResult;
+
 struct TorLaunchResult {
   bool success = false;
-  std::string error;       // human-readable on failure
-  std::string binary_path; // resolved path of the tor binary we launched
-  int pid = 0;             // child pid on success
+  std::string error;        // human-readable on failure
+  std::string binary_path;  // resolved path of the tor binary we launched
+  int pid = 0;              // child pid on success
 };
+
+// How MoltNet reaches the Tor network. Persisted (it is local configuration,
+// not browsing data) in <tor data dir>/bridges.json and re-validated on load.
+struct BridgeSettings {
+  enum class Mode {
+    kNone,       // Connect to Tor directly.
+    kSnowflake,  // Built-in snowflake bridges (bundled pt_config.json).
+    kObfs4,      // Built-in obfs4 bridges (bundled pt_config.json).
+    kCustom,     // User-pasted bridge lines (obfs4 / snowflake only).
+  };
+
+  BridgeSettings();
+  BridgeSettings(const BridgeSettings&);
+  BridgeSettings& operator=(const BridgeSettings&);
+  ~BridgeSettings();
+
+  Mode mode = Mode::kNone;
+  // Raw pasted text for kCustom (validated with ParseBridgeLines).
+  std::string custom_lines;
+};
+
+// "none" | "snowflake" | "obfs4" | "custom" (the WebUI wire format).
+std::string BridgeModeToString(BridgeSettings::Mode mode);
+std::optional<BridgeSettings::Mode> BridgeModeFromString(std::string_view s);
 
 class TorManager {
  public:
+  // Explicit opt-in to run a non-bundled tor: --moltnet-tor-binary=<abs path>.
+  static constexpr char kTorBinarySwitch[] = "moltnet-tor-binary";
+
+  using DoneCallback = base::OnceCallback<void(bool ok, std::string error)>;
+
   static TorManager* Get();
 
   TorManager(const TorManager&) = delete;
   TorManager& operator=(const TorManager&) = delete;
 
-  // Look for a tor binary. Resolution order:
-  //   1. Bundled at MoltBrowser.app/Contents/Resources/tor/tor (the
-  //      preferred path — produced by scripts/bundle-tor.sh during
-  //      build, so users don't have to install anything).
-  //   2. System paths (/opt/homebrew/bin/tor, /usr/local/bin/tor,
-  //      /usr/bin/tor, /opt/local/bin/tor). Lets power users override
-  //      the bundle with their own tor if they want.
-  // Returns empty FilePath if none found. Sync, cheap.
+  // The bundled tor (MoltBrowser.app/Contents/Resources/tor/tor on macOS,
+  // <install dir>/tor/tor[.exe] elsewhere), or the binary named by
+  // --moltnet-tor-binary. Empty if neither exists. Never searches PATH.
   base::FilePath ResolveTorBinary() const;
 
-  // Returns true iff the binary at ResolveTorBinary() came from our
-  // own .app bundle (as opposed to the user's system). Used by the
-  // UI to render "bundled tor" vs. "system tor" in /tor status.
+  // True iff ResolveTorBinary() is the bundled binary.
   bool IsUsingBundledTor() const;
 
-  // Path to the bundled tor directory (Contents/Resources/tor/). May
-  // be empty if we can't resolve the .app location. The GeoIP files
-  // live in this directory.
+  // Bundled tor directory (geoip, pluggable_transports/). May be empty.
   base::FilePath GetBundledTorDir() const;
 
-  // Returns true iff we currently have a child tor process running
-  // (or believe we do).
-  bool IsRunning() const { return child_.IsValid(); }
+  // True once our child Tor has bootstrapped: its ports are known and it had
+  // an established circuit. (A Tor that later dies keeps reporting true until
+  // Stop(); callers that need liveness probe via TorService.)
+  bool IsRunning() const;
 
-  // Spawn tor with our managed torrc. No-op (returns success) if a
-  // child is already running. The callback fires after we've polled
-  // the control port and confirmed Tor is reachable, with a generous
-  // timeout (Tor bootstrap can take ~15-30s on a cold start).
+  // True while a Launch() is in flight.
+  bool IsStarting() const { return launching_; }
+
+  // SOCKS port of the running Tor (127.0.0.1), or 0.
+  uint16_t socks_port() const { return socks_port_; }
+
+  // Control endpoint of the running Tor; invalid unless IsRunning().
+  TorControlEndpoint GetControlEndpoint() const;
+
+  // Starts Tor (no-op if already running) and calls |on_ready| once it has
+  // an established circuit, or with an error (bootstrap timeout, bad config,
+  // failed authentication). On failure the daemon is torn down. Concurrent
+  // calls are coalesced.
   void Launch(base::OnceCallback<void(TorLaunchResult)> on_ready);
 
-  // Stop our child tor. Tries control-port SIGNAL HALT first for a
-  // clean shutdown; falls back to SIGTERM after a short grace period.
+  // Stops our child Tor: closes the owning control connection (Tor exits on
+  // TAKEOWNERSHIP) and terminates the process.
   void Stop();
 
-  // ---- Exit-country selection ("VPN-style" exit relay control) ----
-  //
-  // Constrain which country Tor uses for the exit relay. |country_code|
-  // is a lowercase ISO 3166-1 alpha-2 code ("us", "de", "jp", ...).
-  // Pass "" to clear the constraint (Tor picks any exit). The code is
-  // stored in memory, best-effort persisted to a small file in the Tor
-  // data dir, and applied by rewriting the torrc (adding/removing
-  // `ExitNodes {<cc>}` + `StrictNodes 1`). If Tor is currently running
-  // we reload it in place (SIGNAL RELOAD then SIGNAL NEWNYM to rebuild
-  // circuits through the new exit); otherwise the change takes effect
-  // on the next Launch(). Called on the UI thread.
-  void SetExitCountry(const std::string& country_code);
+  // Notified (UI thread) whenever Tor starts, stops, or changes ports.
+  base::CallbackListSubscription AddStateChangedCallback(
+      base::RepeatingClosure callback);
 
-  // Current exit-country constraint, or "" if none is set. Reads the
-  // in-memory value (which is hydrated from the persisted file on first
-  // use). Lowercase ISO alpha-2.
-  std::string GetExitCountry() const;
+  // Sends SIGNAL NEWNYM (fresh circuits for new streams) and reports whether
+  // Tor acknowledged it. Fails if Tor isn't running.
+  void SendNewIdentitySignal(DoneCallback done);
 
-  // A curated list of commonly-used exit-country codes (lowercase ISO
-  // alpha-2) suitable for populating a picker UI. This is a static
-  // list, not a live query of the consensus; see the .cc note about a
-  // future GETINFO-based dynamic list.
+  // ---- Exit-country selection ----
+  // Lowercase ISO 3166-1 alpha-2, or "" for any exit. Session-only: kept in
+  // memory, never written to disk, so it resets to "any" on restart. Applied
+  // to a running Tor with SETCONF ExitNodes/StrictNodes (or RESETCONF) +
+  // NEWNYM. Pinning a country shrinks the set of exits you blend in with.
+  void SetExitCountry(const std::string& country_code,
+                      DoneCallback done = DoneCallback());
+  std::string GetExitCountry() const { return exit_country_; }
   std::vector<std::string> GetAvailableExitCountries() const;
+
+  // ---- Bridges ----
+  void GetBridgeSettings(base::OnceCallback<void(BridgeSettings)> callback);
+  // Validates (custom lines must all be valid) and persists. Takes effect the
+  // next time Tor starts.
+  void SetBridgeSettings(const BridgeSettings& settings, DoneCallback done);
 
  private:
   friend class base::NoDestructor<TorManager>;
@@ -114,34 +159,38 @@ class TorManager {
   TorManager();
   ~TorManager();
 
-  // Resolve the data directory we hand to tor as `DataDirectory ...`.
   base::FilePath GetDataDir() const;
-  base::FilePath GetTorrcPath() const;
 
-  // File under the Tor data dir where we persist the selected exit
-  // country across restarts (a single lowercase ISO code, no newline).
-  base::FilePath GetExitCountryPath() const;
-
-  // Lazily load |exit_country_| from disk on first access. Marks
-  // |exit_country_loaded_| so we only hit the disk once. const because
-  // it only mutates mutable cache fields.
-  void EnsureExitCountryLoaded() const;
-
-  // Write the managed torrc to |GetTorrcPath()|. Idempotent. Includes
-  // the ExitNodes/StrictNodes lines when |exit_country_| is non-empty.
-  bool WriteTorrc();
-
-  // Poll the control port until it answers AUTH, up to |total_ms|.
-  // Runs on a worker thread.
-  static TorLaunchResult WaitForBootstrap(int total_ms);
+  void OnSpawned(uint64_t generation,
+                 std::string binary_path,
+                 std::unique_ptr<TorSpawnResult> result);
+  void OnBootstrapped(uint64_t generation,
+                      std::string binary_path,
+                      std::unique_ptr<TorBootstrapResult> result);
+  void FinishLaunch(const TorLaunchResult& result);
+  // Kills |child_| (if any) off the UI thread and closes the owner
+  // connection. Does not touch pending launches.
+  void TearDownChild();
+  void NotifyStateChanged();
 
   base::Process child_;
+  bool launching_ = false;
+  // Bumped by Stop(); stale launch replies are discarded.
+  uint64_t generation_ = 0;
+  std::vector<base::OnceCallback<void(TorLaunchResult)>> pending_launches_;
 
-  // Selected exit-country (lowercase ISO alpha-2), or "" for "any".
-  // Mutable + the loaded flag so the const getters can hydrate from
-  // disk on first use without forcing callers through a non-const path.
-  mutable std::string exit_country_;
-  mutable bool exit_country_loaded_ = false;
+  uint16_t socks_port_ = 0;
+  uint16_t control_port_ = 0;
+  // Held open for Tor's lifetime after TAKEOWNERSHIP; closing it makes Tor
+  // exit. Only ever destroyed (on a worker thread), never used for I/O on
+  // the UI thread.
+  std::unique_ptr<TorControlConnection> owner_connection_;
+
+  // Session-only exit-country constraint ("" = any).
+  std::string exit_country_;
+
+  base::RepeatingClosureList state_callbacks_;
+  base::WeakPtrFactory<TorManager> weak_factory_{this};
 };
 
 }  // namespace tor
