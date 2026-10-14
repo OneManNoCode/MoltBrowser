@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/zlib/zlib.h"
 
 namespace molt_ai {
 namespace pdf {
@@ -23,6 +24,30 @@ std::vector<uint8_t> MakePdfWithRawStream(const std::string& content) {
   out += "1 0 obj\n<<>>\nstream\n";
   out += content;
   out += "\nendstream\nendobj\n";
+  out += "%%EOF\n";
+  return std::vector<uint8_t>(out.begin(), out.end());
+}
+
+// zlib-deflate |raw| (FlateDecode stream payload).
+std::string Deflate(const std::string& raw) {
+  uLongf out_len = compressBound(static_cast<uLong>(raw.size()));
+  std::string out(out_len, '\0');
+  int r = compress2(reinterpret_cast<Bytef*>(out.data()), &out_len,
+                    reinterpret_cast<const Bytef*>(raw.data()),
+                    static_cast<uLong>(raw.size()), Z_BEST_COMPRESSION);
+  EXPECT_EQ(r, Z_OK);
+  out.resize(out_len);
+  return out;
+}
+
+// A PDF whose streams are the given (already-encoded) payloads, in order.
+std::vector<uint8_t> MakePdfWithStreams(const std::vector<std::string>& s) {
+  std::string out = "%PDF-1.4\n";
+  for (size_t i = 0; i < s.size(); ++i) {
+    out += std::to_string(i + 1) + " 0 obj\n<</Filter /FlateDecode>>\nstream\n";
+    out += s[i];
+    out += "\nendstream\nendobj\n";
+  }
   out += "%%EOF\n";
   return std::vector<uint8_t>(out.begin(), out.end());
 }
@@ -221,6 +246,47 @@ TEST(PdfTextScraperTest, MultipleStreamsAreAllScanned) {
   raw += "%%EOF\n";
   std::vector<uint8_t> bytes(raw.begin(), raw.end());
   std::string text = ExtractText(bytes);
+  EXPECT_NE(text.find("page-one"), std::string::npos);
+  EXPECT_NE(text.find("page-two"), std::string::npos);
+}
+
+TEST(PdfTextScraperTest, ExtractsTextFromFlateStream) {
+  auto pdf = MakePdfWithStreams({Deflate("BT (deflated text) Tj ET")});
+  EXPECT_NE(ExtractText(pdf).find("deflated text"), std::string::npos);
+}
+
+TEST(PdfTextScraperTest, DecompressionBombStreamIsTruncatedNotExpanded) {
+  // ~48 MB of text-show operators deflates to well under 1 MB. The real
+  // text sits at the start, so it survives the per-stream cap; the scan
+  // must finish without inflating the whole thing.
+  std::string body = "BT (start of bomb) Tj ET\n";
+  body.append(48 * 1024 * 1024, ' ');
+  auto pdf = MakePdfWithStreams({Deflate(body)});
+  ASSERT_LT(pdf.size(), 1024u * 1024u);
+  EXPECT_NE(ExtractText(pdf).find("start of bomb"), std::string::npos);
+}
+
+TEST(PdfTextScraperTest, TotalInflateBudgetStopsScanning) {
+  // Each bomb stream hits the 16 MB per-stream cap; four of them exhaust
+  // the 64 MB total budget, so a fifth stream is never inflated/scanned.
+  static_assert(4 * kMaxStreamInflatedBytes == kMaxTotalInflatedBytes,
+                "test assumes total = 4 x per-stream cap");
+  std::string bomb = Deflate(std::string(kMaxStreamInflatedBytes + 4096, ' '));
+  auto pdf = MakePdfWithStreams(
+      {Deflate("BT (before) Tj ET"), bomb, bomb, bomb, bomb,
+       Deflate("BT (after budget) Tj ET")});
+  std::string text = ExtractText(pdf);
+  EXPECT_NE(text.find("before"), std::string::npos);
+  EXPECT_EQ(text.find("after budget"), std::string::npos);
+}
+
+TEST(PdfTextScraperTest, SmallStreamsAfterLargeOneStillScanned) {
+  // A large-but-legitimate stream (below the per-stream cap) does not
+  // block text in later streams.
+  std::string big = "BT (page-one) Tj ET\n" + std::string(2 * 1024 * 1024, ' ');
+  auto pdf = MakePdfWithStreams(
+      {Deflate(big), Deflate("BT (page-two) Tj ET")});
+  std::string text = ExtractText(pdf);
   EXPECT_NE(text.find("page-one"), std::string::npos);
   EXPECT_NE(text.find("page-two"), std::string::npos);
 }

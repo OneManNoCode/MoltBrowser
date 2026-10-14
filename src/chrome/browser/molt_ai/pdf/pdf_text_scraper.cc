@@ -3,6 +3,8 @@
 
 #include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 
@@ -23,18 +25,26 @@ size_t Find(const uint8_t* hay, size_t n, size_t from, const char* needle) {
   return std::string::npos;
 }
 
-// Try to zlib-inflate |compressed|. Returns empty string on failure.
-std::string TryInflate(const uint8_t* data, size_t len) {
-  // Output buffer grows as needed. Start ~4x source.
+// Try to zlib-inflate |compressed|, producing at most |max_out| bytes.
+// Returns empty string on failure. Output beyond |max_out| is dropped (the
+// prefix is still scanned for text): deflate reaches ~1000:1, so a few-MB
+// "decompression bomb" stream would otherwise inflate to gigabytes in the
+// browser process.
+std::string TryInflate(const uint8_t* data, size_t len, size_t max_out) {
+  if (max_out == 0 || len == 0) return {};
+  // Output buffer grows as needed. Start ~4x source, never above the cap.
   std::string out;
-  out.resize(len * 4 + 256);
+  out.resize(std::min<size_t>(len * 4 + 256, max_out));
   z_stream zs{};
   zs.next_in = const_cast<Bytef*>(data);
-  zs.avail_in = static_cast<uInt>(len);
+  zs.avail_in = static_cast<uInt>(std::min<size_t>(len, UINT32_MAX));
   if (inflateInit(&zs) != Z_OK) return {};
   size_t total = 0;
   while (true) {
-    if (total == out.size()) out.resize(out.size() * 2);
+    if (total == out.size()) {
+      if (out.size() >= max_out) break;  // cap reached — keep the prefix
+      out.resize(std::min<size_t>(out.size() * 2, max_out));
+    }
     zs.next_out = reinterpret_cast<Bytef*>(out.data() + total);
     zs.avail_out = static_cast<uInt>(out.size() - total);
     int r = inflate(&zs, Z_NO_FLUSH);
@@ -182,6 +192,9 @@ std::string ExtractText(const std::vector<uint8_t>& pdf_bytes,
   std::string out;
   out.reserve(std::min<size_t>(max_chars + 1024, 64 * 1024));
 
+  // Decompression-bomb guard: total inflated bytes across all streams.
+  size_t inflate_budget = kMaxTotalInflatedBytes;
+
   // Walk stream blocks. Each `stream\n` ... `\nendstream` chunk is a
   // candidate content stream.
   size_t pos = 0;
@@ -208,7 +221,10 @@ std::string ExtractText(const std::vector<uint8_t>& pdf_bytes,
     if (data_end > data_start) {
       size_t blen = data_end - data_start;
       // Try inflate first (most PDFs use FlateDecode). Fall back to raw.
-      std::string inflated = TryInflate(p + data_start, blen);
+      std::string inflated = TryInflate(
+          p + data_start, blen,
+          std::min(kMaxStreamInflatedBytes, inflate_budget));
+      inflate_budget -= inflated.size();
       std::string_view content =
           inflated.empty()
               ? std::string_view(reinterpret_cast<const char*>(p + data_start),
@@ -217,6 +233,7 @@ std::string ExtractText(const std::vector<uint8_t>& pdf_bytes,
       ScanContentForText(content, out, max_chars);
     }
     pos = e + 9;  // past "endstream"
+    if (inflate_budget == 0) break;  // bomb guard tripped — stop here
   }
   if (out.size() > max_chars) out.resize(max_chars);
   // Trim runs of whitespace longer than 2 to keep the text readable in

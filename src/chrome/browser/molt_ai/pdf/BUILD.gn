@@ -33,5 +33,6 @@ source_set("unit_tests") {
     ":pdf",
     "//base",
     "//testing/gtest",
+    "//third_party/zlib",
   ]
 }

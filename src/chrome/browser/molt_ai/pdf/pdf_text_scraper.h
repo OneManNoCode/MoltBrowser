@@ -33,6 +33,13 @@
 namespace molt_ai {
 namespace pdf {
 
+// Caps on zlib output, so a crafted PDF (a "decompression bomb") can't make
+// the browser process allocate gigabytes. A stream that inflates past the
+// per-stream cap is truncated (its prefix is still scanned); once the total
+// cap is spent, scanning stops.
+inline constexpr size_t kMaxStreamInflatedBytes = 16 * 1024 * 1024;
+inline constexpr size_t kMaxTotalInflatedBytes = 64 * 1024 * 1024;
+
 // Extract plain text from |pdf_bytes|. Stops collecting once |max_chars|
 // is reached. Returns empty string if the bytes don't look like a PDF
 // or no readable text was found.
