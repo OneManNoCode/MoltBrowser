@@ -1,0 +1,23 @@
+MoltBrowser patch for chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html b/chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html
+index 47591ac961f15bbe925263e50be7bfcaf8928bea..99817bf751801ad267cc1d8f2d644bca5962b816 100644
+--- a/chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html
++++ b/chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html
+@@ -280,7 +280,11 @@
+           aria-label="$i18n{editBookmarkListA11yLabel}"
+           aria-pressed="[[editing_]]"
+           on-click="onBulkEditClicked_"></cr-icon-button>
+-      </cr-icon-button>
++      <cr-icon-button id="importButton" slot="buttons"
++          iron-icon="cr:file-download"
++          title="$i18n{tooltipImportBookmarks}"
++          aria-label="$i18n{tooltipImportBookmarks}"
++          on-click="onImportClicked_"></cr-icon-button>
+     </sp-heading>
+   </div>
+ 

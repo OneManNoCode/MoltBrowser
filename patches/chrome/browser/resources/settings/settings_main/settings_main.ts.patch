@@ -1,0 +1,38 @@
+MoltBrowser patch for chrome/browser/resources/settings/settings_main/settings_main.ts
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/resources/settings/settings_main/settings_main.ts by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
+index bf151d0e0086b20e192aca343f491eb0f994c014..030207785ca7c1f2adc1a56d522e730effcd6608 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.ts
++++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
+@@ -10,6 +10,10 @@ import 'chrome://resources/cr_components/managed_footnote/managed_footnote.js';
+ import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+ import 'chrome://resources/cr_elements/cr_view_manager/cr_view_manager.js';
+ import 'chrome://resources/cr_elements/icons.html.js';
++// MoltBrowser: element deps for the "Import from another browser" CTA card
++// rendered at the top of the settings landing page (settings_main.html).
++import 'chrome://resources/cr_elements/cr_button/cr_button.js';
++import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
+ import '../about_page/about_page.js';
+ import '../ai_page/ai_page_index.js';
+ import '../appearance_page/appearance_page_index.js';
+@@ -299,6 +303,16 @@ export class SettingsMainElement extends SettingsMainElementBase {
+         !this.lastRoute_.isSubpage();
+   }
+ 
++  // MoltBrowser: show the "Import from another browser" CTA card only on the
++  // top-level settings landing page (chrome://settings/, whose effective
++  // route is getTopLevelRoute()). Hidden during search and on any subpage so
++  // it appears exactly once, as the first thing shown when the user opens
++  // settings, in both the wide and narrow (side-panel) layouts.
++  private showImportCta_(): boolean {
++    return !this.inSearchMode_ && !!this.lastRoute_ &&
++        this.lastRoute_ === this.topLevelEquivalentRoute_;
++  }
++
+   private onResetProfileBannerClose_() {
+     this.showResetProfileBanner_ = false;
+   }

@@ -1,0 +1,62 @@
+MoltBrowser patch for chrome/app/theme/chromium/product_logo_16.png
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/theme/chromium/product_logo_16.png by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/theme/chromium/product_logo_16.png b/chrome/app/theme/chromium/product_logo_16.png
+index ce9084c733b2c09069622cfabd45059146d814da..af39936169ad50e95a87a69c0d72220dde85f154 100644
+GIT binary patch
+literal 1380
+zcmeAS@N?(olHy`uVBq!ia0vp^0wB!61SBU+%rFB|Ea{HEjtmSN`?>!lvI6-E$sR$z
+z3=CCj3=9n|3=F@3LJcn%7)lKo7+xhXFj&oCU=S~uvn$XBDB+SC;hE;^%b*2hb1*Qr
+zXELw=S&Tp|1;h*t%nKM9n1M7SNNfQUTvlKKGlC6LXcAiZ38?IBW=KRygs+cPa(=E}
+zVoH8es$NBI0Z0LZO@$SZnVVXYs8ErclUHn2VXFjIVFhG^g!Ppaz)DK8ZIvQ?0~DO|
+zi&7QL^bGV2l<c?^6clWVQqrt~T->1AfjnEKjFOT9D}DX)@^Za$W4-*MbbUihOG|wN
+zBYh(yU7!lx;>x^|#0uTKVr7USFmqf|i<65o3raHc^AtelCMM;Vme?vOfh>Xph&xj&
+zG7&cA6+^uR^q@XSM&D4+Kp$>4P^%3{)XF(OC%-7TATc@B&d>&|5LpOe3q*B5W<_dF
+zgiB^_YF;tWMRtY;MkY{Q=u%j<M&j0rBn8!KqYv^hQUE|g7c2@4UOO%ueRx#aaUFbX
+zy^?`}>6oXBV~B>R=%kbR!iFNp_MV+)GTG<0NlAutR1{Z|rq*f!7EZ=T0UJFF7MTCj
+zVqxc7BjogmA&5Um$SL4kt$x<RlP1oSGB3^SJib}t`N>VHzkmPvQ&(pYe}`Y7Z4R?f
+zil<<sf*7NM$0Lg_r(+T2y~+zcliV6Cm<5D9Cy7Lch3KYAxUFB9%rVQadg;|~HQO(L
+z<ZL>`YN05T)M7X>CDd2iGWq?!mC5a8qG#<UChokp=l_eZmv{1S+bhFjvOvVCrTW+L
+zU0I$d(~8~uWan5~%nU2gTDok@m0LZV(vx&gNbRo=x00Qu(pkZEPQ)xxXXPrhoynVI
+zB5s}4_C5AfYIEkzcg^l=yT!R)`)<$waX!hE$2rk~L)d9a&%C=9CJE>6#T|}1k^Qsm
+zY`Ik4(n;|fZ(coJy{-TCF1=GC6#^`=8j*X`V^4nJUfR#Mbn@-R%fBz)d3;4pf@a(O
+znU^L9wK{}oF(}<QtF)tO;iHCNy=Y(Qy>-SLKa`(d-+J(At9);L>&#*%DTYU7N@+?w
+zGAgU*-Ctq-`<&1H%1;Z5-UekR1iaZ(|6Qy8&yg=bH*Y?_Z`ZoxjMGDS^L6t21RgT9
+zC2p$DlDU0tQt0DztByvPE?;lVeeuJI-fI14;?pKf@_ODKarrX?i_Gb_R}ZYbb^F@v
+zXEzEyJ(WIM@a2u>a?v|gJAahzyTutHv*m7^>mGxiu(frOyeoeF`CRi>-J<5#3hDTG
+zzC$ZaOs&hmr-v+8^j>^qTYW_x`)jxTYJw7#Hf?nsZ~PMW{tSr!WApy<ckjBXllA^>
+zn4Ead>$azZ6OXE~RmQh;<C`&gJ1*S5y?lARZQT#e6A5)i94foNg=K&3x|?Mpy{P=w
+z6v4>LuT8p4GaU2|a|BJ#yKAYE{zu`9n|so7IpZz|pA=CK!LJ%Rxf;$oCnc7-tUk4=
+vXM&0yhYIKOKpAy`LXJq0ZbwP(Lm%uFbW^e?epn|7Dv&%~{an^LB{Ts5&TIxZ
+
+literal 1399
+zcma))2~d+q6vr2|)nci%s35jV>xEj{7_lfp6i9#&2#2&<IZOyaA|!<50}-@ZIW#Ci
+zBAAdsIIPgBAc8=vG$DbicylJfqv|*vjw+FSUk*^xWt{0ur_-74?C#sQ`~LIZ{&of7
+z)IfVX7drreJvoRN39ZA-m^%y3ZtnB9L*vQ_iVOuHYZU;8a{-uyTZe}MNXG#%N&~=4
+z0)P{@{7Qs30Jc@(AyFh4K;jP&k~;$t4FFcK=E4?^cGZyy?^GR;(?d+{58(9^*jfTl
+zx0#~_4$a{QwS*LnW0#ehrSVN0l&fFIof@xHnxlkI>7`g@huK<XjTVjVIPsh=Hi;Gb
+z@(y&Da5(DNqnMK~qzY4|!fY+E2BvGs`-aGw4}vltkPw|OPZNY_12VKEMC;Gj`SEny
+z(sWz7S|6^)Clz*W0Iv@g2_wBZ+L>b5y0FY%BIn+wWX*bJUsA1=AsXE;eR4qhn2|de
+zp57at(HE9E5Scv~o2#>0tw}O8S&j)WqeYhuja@IRnw}i3eo|2PTzG!Cs9{9ZIF?k7
+z?yZEi8LK+Xdt@j}ZmQ{=JkvRuC^hV<FxIFi6Uq#U<;MCOXzLvmx>YI*t<;bp#o(f%
+z!xSd?lP*T9)su3SIi~mpU2LdQnJX2RSkXA`^aNxAAw(CB#+6LaPNOt2mMGDev|%s>
+z41;pH!V;SOIHvgJ&cZRK=nqlzxLjeXP?(5_&X2G2O`D<N!_~rfA*MkN8eblSqk~x9
+z(%77$2}$quW8e4Z4*2u5yK)}J7CiGyzU|BIO&9-Or_v{t8z>q5JF<J~I>s4NBjq?2
+zT!7IeSnC}_ZHHcVWkTK#uWybi9LbgpK}sPfu#n?ekN`c|ieBw8)u=5HMUvdalwpGN
+zV};FV;4yfFwfCCg6%s3qkW6MRN|#`}#b`sfMc86&=*EOCu%ivvCN6cO5EN5pOpqBf
+z>x{*1#=@qF{BtiL7KY3iUuL99jP%m+qGrRHuE}b(CB6)cml|neG`sc{e7k5zyO}>K
+zKq9F#|NH;6#oiGS1m{J_tx>&x^d@iN>gG4E8&|lrTwE|K?~MgRQFJ`T##KB0=JnLn
+z)btH!s(!>X#r!fP*-WA8r>93eT{YL8Z1bl$OV#y`cvb!KrFj~?>D9<}j-%}|Dr>u^
+z6D#XkKCHwho)So;u;%53LuU>`4kgVQp1pX1+giTtX)ruqLMHk~IrrH(*o;p@*LK$I
+z)oyFnuKWC*cjwFn;61x}?q7U~TaVx1vGJ?-?LPqX9XvN}78D#mQ7H5xcz^g2aNOck
+zbW%_(IwdSAJ-v0?0^sW>mXt|l{zOthU=TT&0zyK|E98|`)Ufb~$n8;Ie*<>xtgbop
+z!`a%pAAdS`{=&DrKy*xf!^OthOHIv}TUy&<<G^m(&%a!`TGv$D{;NXS7E1^5j1HAL
+zp|iQYi}{;UnYafeu~aJ6wd*&!Z{BKCD)%OX6!z^qckkZ2-_zUIrsSk91dF(7XZz0%
+z3~IDG<q(hW1e_Nm=?@+bJbFB&<Yeq~Spq)(WNGI9tn32^zdLmJdzWRd0DSt{@*_F9
+zdHF|=tysCr6%?zHU<%&h5+t`0A?-vG=m^t`!DB)L@Ho7OJI=!$zcC7r^YXxXZSY)&
+z!+GIw_7@2`{}8ZK6IhA+|66ciB4;ZUxc!|0VX>KfgwE#vTjPO$n}qL@8wWLjOrjDS
+I{Afr10=fgIMgRZ+
+

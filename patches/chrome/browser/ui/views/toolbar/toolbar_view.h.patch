@@ -1,0 +1,51 @@
+MoltBrowser patch for chrome/browser/ui/views/toolbar/toolbar_view.h
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/toolbar/toolbar_view.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
+index 61921cd54765d5cd37d51818306e1a3d0188da1f..5bdfc5caa68cb0552a266ce946ee1df3db1e8956 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.h
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
+@@ -10,8 +10,11 @@
+ #include <vector>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/scoped_multi_source_observation.h"
+ #include "base/scoped_observation.h"
+ #include "chrome/browser/command_observer.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_observer.h"
+ #include "chrome/browser/glic/browser_ui/glic_button_controller_delegate.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/page_action/page_action_icon_type.h"
+@@ -83,6 +86,7 @@ class ToolbarView : public views::AccessiblePaneView,
+                     public AppMenuIconController::Delegate,
+                     public ToolbarButtonProvider,
+                     public BrowserRootView::DropTarget,
++                    public SidePanelEntryObserver,
+                     public glic::GlicButtonControllerDelegate {
+   METADATA_HEADER(ToolbarView, views::AccessiblePaneView)
+ 
+@@ -383,6 +387,20 @@ class ToolbarView : public views::AccessiblePaneView,
+ 
+   bool should_display_vertical_tabs_ = false;
+   bool should_show_glic_button_ = false;
++
++  // MoltBrowser: SidePanelEntryObserver overrides + helpers that swap the
++  // violet "active" ring between the AI mode and Agent mode buttons depending
++  // on which content side-panel entry (kMoltAiChat / kMoltAgent) is open.
++  void OnEntryShown(SidePanelEntry* entry) override;
++  void OnEntryHidden(SidePanelEntry* entry) override;
++  void UpdateAiAgentModeHighlights();
++  void SetUpSidePanelHighlightObservation();
++
++  raw_ptr<ToolbarButton> molt_ai_mode_button_ = nullptr;
++  raw_ptr<ToolbarButton> agent_mode_button_ = nullptr;
++  base::ScopedMultiSourceObservation<SidePanelEntry, SidePanelEntryObserver>
++      side_panel_entry_observations_{this};
++  base::WeakPtrFactory<ToolbarView> mode_ring_weak_factory_{this};
+ };
+ 
+ extern const ui::ClassProperty<bool>* const kActionItemUnderlineIndicatorKey;

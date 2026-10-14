@@ -1,0 +1,46 @@
+MoltBrowser patch for chrome/app/certificate_manager.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/certificate_manager.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/certificate_manager.grdp b/chrome/app/certificate_manager.grdp
+index 23a87c6542a54c860d77ee38c748c4bd1e2f1d6d..562846832c9f9084a557358902522d8d93eaeb73 100644
+--- a/chrome/app/certificate_manager.grdp
++++ b/chrome/app/certificate_manager.grdp
+@@ -12,7 +12,7 @@
+       Local certificates
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_CERTIFICATES" desc="Label for the Chrome Root Store certificates tab in certificate manager.">
+-      Chrome Root Store
++      MoltBrowser Root Store
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_HASH_COPIED_TOAST" desc="Label for the hash copied toast message in certificate manager.">
+       Hash copied to clipboard
+@@ -127,14 +127,14 @@
+       Local certificates that have been added by your operating system or your administrator.
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_CERTIFICATES_DESCRIPTION" desc="Description of the Chrome Root Store certificates section of cert manager.">
+-      The Chrome Root Store contains certificates from Certificate Authorities trusted by the
+-      Chrome Root Program, and is continually reviewed on an ongoing basis.
++      The MoltBrowser Root Store contains certificates from Certificate Authorities trusted by the
++      MoltBrowser Root Program, and is continually reviewed on an ongoing basis.
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_LEARN_MORE_LINK" desc="Link to learning more about the Chrome Root Store.">
+       Learn more
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_LEARN_MORE_LINK_ARIA_LABEL" desc="Text read by screen readers when focusing on the Learn More link. If the link is activated, it will open a new tab with more information about the Chroem Root Store. This text will only be announced by screen readers and will not be visible in the UI.">
+-      Learn more about the Chrome Root Store in a new tab.
++      Learn more about the MoltBrowser Root Store in a new tab.
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_PLATFORM_CERTS_TOGGLE_LABEL" desc="Label for a toggle controlling if platform certs are imported or not.">
+       Use imported local certificates from your operating system
+@@ -160,7 +160,7 @@
+       </message>
+     </if>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_DELETE_SERVER_CERT_DESCRIPTION" desc="Contents of certificate manager dialog confirming deletion of a server certificate.">
+-        If you delete a server certificate, Chrome will no longer use it to identify servers.
++        If you delete a server certificate, MoltBrowser will no longer use it to identify servers.
+     </message>
+     <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_V2_READ_FILE_ERROR" desc="Eror message displayed in certificate manager when the user tried to import a certificate but the file could not be read.">
+       Error reading file

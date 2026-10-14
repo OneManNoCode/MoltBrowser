@@ -1,0 +1,24 @@
+MoltBrowser patch for chrome/browser/ui/browser_ui_prefs.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/browser_ui_prefs.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/browser_ui_prefs.cc b/chrome/browser/ui/browser_ui_prefs.cc
+index 771d84612a86fba2482b4ecff6f4920522343725..48bf2a63b188bbb2e23cef2f9dc384f969729009 100644
+--- a/chrome/browser/ui/browser_ui_prefs.cc
++++ b/chrome/browser/ui/browser_ui_prefs.cc
+@@ -113,9 +113,11 @@ void RegisterBrowserUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterIntegerPref(prefs::kSessionRestoreInfoBarTimesShown, 0);
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+ 
+-  registry->RegisterBooleanPref(prefs::kHomePageIsNewTabPage, true,
++  // MoltBrowser: Homepage is homepage.moltsearch.ai, not chrome://newtab
++  registry->RegisterBooleanPref(prefs::kHomePageIsNewTabPage, false,
+                                 pref_registration_flags);
+-  registry->RegisterBooleanPref(prefs::kShowHomeButton, false,
++  // MoltBrowser: Show home button by default
++  registry->RegisterBooleanPref(prefs::kShowHomeButton, true,
+                                 pref_registration_flags);
+   registry->RegisterBooleanPref(prefs::kSplitViewDragAndDropEnabled, true,
+                                 pref_registration_flags);

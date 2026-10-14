@@ -1,0 +1,36 @@
+MoltBrowser patch for chrome/browser/ui/views/frame/browser_widget.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/frame/browser_widget.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/frame/browser_widget.cc b/chrome/browser/ui/views/frame/browser_widget.cc
+index d825bc7cb582898807504ff76123b8cf7090f428..642ae1f1dc04aadb30927c5195955edacdc677fa 100644
+--- a/chrome/browser/ui/views/frame/browser_widget.cc
++++ b/chrome/browser/ui/views/frame/browser_widget.cc
+@@ -22,6 +22,7 @@
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window_state.h"
++#include "base/feature_list.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view.h"
+ #include "chrome/browser/ui/views/frame/browser_native_widget.h"
+@@ -465,6 +466,17 @@ ui::ColorProviderKey BrowserWidget::GetColorProviderKey() const {
+       return;
+     }
+ 
++    // MoltBrowser: the toolbar is designed as dark "Liquid Glass"; pin
++    // normal-window chrome to dark so every foreground token (toolbar
++    // text/icons, omnibox text, separators, menus) and the frame resolve to
++    // their dark variants automatically, matching the dark glass new-tab page
++    // and AI panel. Gated on kGlassToolbar so it's a single revertible switch.
++    if (browser_view_->GetIsNormalType() &&
++        base::FeatureList::IsEnabled(features::kGlassToolbar)) {
++      key.color_mode = ui::ColorProviderKey::ColorMode::kDark;
++      return;
++    }
++
+     const auto browser_color_scheme = theme_service->GetBrowserColorScheme();
+     if (browser_color_scheme != ThemeService::BrowserColorScheme::kSystem) {
+       key.color_mode =

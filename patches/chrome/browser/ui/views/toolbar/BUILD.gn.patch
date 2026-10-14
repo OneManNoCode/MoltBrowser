@@ -1,0 +1,38 @@
+MoltBrowser patch for chrome/browser/ui/views/toolbar/BUILD.gn
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/toolbar/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
+index 2f2dc8060681c00c5eff10947f037e1bacfa4e3c..32052a829307e80d4d39319c1eaa28af300274aa 100644
+--- a/chrome/browser/ui/views/toolbar/BUILD.gn
++++ b/chrome/browser/ui/views/toolbar/BUILD.gn
+@@ -40,6 +40,8 @@ source_set("toolbar") {
+     "toolbar_glic_button.h",
+     "toolbar_icon_container_view.h",
+     "toolbar_ink_drop_util.h",
++    "molt_import_bubble.h",
++    "molt_net_bubble.h",
+     "toolbar_view.h",
+     "webui_back_forward_control.h",
+     "webui_reload_control.h",
+@@ -128,6 +130,8 @@ source_set("impl") {
+     "toolbar_glic_actor_task_icon.cc",
+     "toolbar_glic_button.cc",
+     "toolbar_icon_container_view.cc",
++    "molt_import_bubble.cc",
++    "molt_net_bubble.cc",
+     "toolbar_ink_drop_util.cc",
+     "toolbar_view.cc",
+     "webui_back_forward_control.cc",
+@@ -160,6 +164,9 @@ source_set("impl") {
+     "//chrome/browser/extensions",
+     "//chrome/browser/feedback",
+     "//chrome/browser/media/router:media_router_feature",
++    "//chrome/browser/molt_ai/automation",
++    "//chrome/browser/molt_ai/tor",
++    "//chrome/browser/molt_ai:molt_update",
+     "//chrome/browser/performance_manager/public/user_tuning",
+     "//chrome/browser/prefs",
+     "//chrome/browser/preloading",

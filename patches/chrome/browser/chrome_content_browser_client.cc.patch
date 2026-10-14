@@ -1,0 +1,196 @@
+MoltBrowser patch for chrome/browser/chrome_content_browser_client.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/chrome_content_browser_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index f474618996d2f63e9068ff3c667c856bf638392b..fb5f8878858c59f7673bcc4300b06c4a469b7361 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -106,6 +106,8 @@
+ #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
+ #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
+ #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_service.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_throttle.h"
+ #include "chrome/browser/metrics/chrome_feature_list_creator.h"
+ #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
+ #include "chrome/browser/net/chrome_network_delegate.h"
+@@ -820,11 +822,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
+ }
+ 
+ // Handles the rewriting of the new tab page URL based on group policy.
++// MoltBrowser: Aggressively redirects all NTP variants to MoltSearch.
+ bool HandleNewTabPageLocationOverride(
+     GURL* url,
+     content::BrowserContext* browser_context) {
+-  if (!url->SchemeIs(content::kChromeUIScheme) ||
+-      url->GetHost() != chrome::kChromeUINewTabHost) {
++  if (!url->SchemeIs(content::kChromeUIScheme)) {
++    return false;
++  }
++
++  // Intercept all NTP hosts: chrome://newtab, chrome://new-tab-page,
++  // chrome://new-tab-page-third-party
++  auto host = url->host();
++  if (host != std::string_view(chrome::kChromeUINewTabHost) &&
++      host != std::string_view(chrome::kChromeUINewTabPageHost) &&
++      host != std::string_view(chrome::kChromeUINewTabPageThirdPartyHost)) {
+     return false;
+   }
+ 
+@@ -835,18 +846,98 @@ bool HandleNewTabPageLocationOverride(
+     return false;
+   }
+ 
+-  std::string ntp_location =
+-      profile->GetPrefs()->GetString(prefs::kNewTabPageLocationOverride);
+-  if (ntp_location.empty()) {
++  // MoltBrowser: Force redirect to MoltSearch homepage, bypassing any
++  // enterprise policy or cached prefs.
++  LOG(INFO) << "[MoltBrowser] Redirecting NTP from " << *url
++            << " to chrome://molt-home/";
++  *url = GURL("chrome://molt-home/");
++  return true;
++}
++
++// MoltBrowser: Rewrite user-facing molt:// URLs to internal chrome://molt-ai*
++// URLs. This lets us hide the chrome:// scheme from the user (Google
++// trademark concern) while keeping Chromium's WebUI factory working.
++//
++// Mapping:
++//   molt://ai/          -> chrome://molt-ai/
++//   molt://ai-chat/     -> chrome://molt-ai-chat/
++//   molt://ai-settings/ -> chrome://molt-ai-settings/
++//   molt://ai-agent/    -> chrome://molt-ai-agent/
++bool HandleMoltSchemeRewrite(GURL* url,
++                              content::BrowserContext* browser_context) {
++  if (!url->SchemeIs(chrome::kMoltScheme)) {
++    return false;
++  }
++
++  auto host = url->host();
++  std::string new_host;
++  if (host == std::string_view(chrome::kMoltAIHost)) {
++    new_host = chrome::kChromeUIMoltAIHost;
++  } else if (host == std::string_view(chrome::kMoltAIChatHost)) {
++    new_host = chrome::kChromeUIMoltAIChatHost;
++  } else if (host == std::string_view(chrome::kMoltAISettingsHost)) {
++    new_host = chrome::kChromeUIMoltAISettingsHost;
++  } else if (host == std::string_view(chrome::kMoltAIAgentHost)) {
++    new_host = chrome::kChromeUIMoltAIAgentHost;
++  } else if (host == std::string_view(chrome::kMoltAIAutomationHost)) {
++    new_host = chrome::kChromeUIMoltAIAutomationHost;
++  } else if (host == std::string_view(chrome::kMoltAIMemoryAliasHost)) {
++    new_host = chrome::kChromeUIMoltAIMemoryHost;
++  } else if (host == std::string_view(chrome::kMoltAIUpdateAliasHost)) {
++    new_host = chrome::kChromeUIMoltAIUpdateHost;
++  } else if (host == std::string_view(chrome::kMoltSettingsHost)) {
++    // molt://settings[/subpage][?query] -> chrome://settings[/subpage][?query].
++    // ReplaceComponents keeps the path and query below, so sub-paths such as
++    // molt://settings/privacy?panel=1 are preserved.
++    new_host = chrome::kChromeUISettingsHost;
++  } else {
++    return false;
++  }
++
++  GURL::Replacements replacements;
++  replacements.SetSchemeStr(content::kChromeUIScheme);
++  replacements.SetHostStr(new_host);
++  *url = url->ReplaceComponents(replacements);
++  LOG(INFO) << "[MoltBrowser] molt:// rewrite -> " << *url;
++  return true;
++}
++
++// Reverse rewrite — when displaying a chrome://molt-ai* URL in the omnibox,
++// show it to the user as molt://ai*.
++bool HandleMoltSchemeReverseRewrite(GURL* url,
++                                     content::BrowserContext* browser_context) {
++  if (!url->SchemeIs(content::kChromeUIScheme)) {
+     return false;
+   }
+-  url::Component scheme;
+-  if (!url::ExtractScheme(ntp_location, &scheme)) {
+-    ntp_location = base::StrCat(
+-        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
++
++  auto host = url->host();
++  std::string new_host;
++  if (host == std::string_view(chrome::kChromeUIMoltAIHost)) {
++    new_host = chrome::kMoltAIHost;
++  } else if (host == std::string_view(chrome::kChromeUIMoltAIChatHost)) {
++    new_host = chrome::kMoltAIChatHost;
++  } else if (host == std::string_view(chrome::kChromeUIMoltAISettingsHost)) {
++    new_host = chrome::kMoltAISettingsHost;
++  } else if (host == std::string_view(chrome::kChromeUIMoltAIAgentHost)) {
++    new_host = chrome::kMoltAIAgentHost;
++  } else if (host == std::string_view(chrome::kChromeUIMoltAIAutomationHost)) {
++    new_host = chrome::kMoltAIAutomationHost;
++  } else if (host == std::string_view(chrome::kChromeUIMoltAIMemoryHost)) {
++    new_host = chrome::kMoltAIMemoryAliasHost;
++  } else if (host == std::string_view(chrome::kChromeUIMoltAIUpdateHost)) {
++    new_host = chrome::kMoltAIUpdateAliasHost;
++  } else if (host == std::string_view(chrome::kChromeUISettingsHost)) {
++    // chrome://settings[/subpage][?query] displays as
++    // molt://settings[/subpage][?query] in the omnibox. Path/query preserved.
++    new_host = chrome::kMoltSettingsHost;
++  } else {
++    return false;
+   }
+ 
+-  *url = GURL(ntp_location);
++  GURL::Replacements replacements;
++  replacements.SetSchemeStr(chrome::kMoltScheme);
++  replacements.SetHostStr(new_host);
++  *url = url->ReplaceComponents(replacements);
+   return true;
+ }
+ 
+@@ -5030,6 +5121,12 @@ bool ChromeContentBrowserClient::
+ 
+ void ChromeContentBrowserClient::BrowserURLHandlerCreated(
+     BrowserURLHandler* handler) {
++  // MoltBrowser: Register molt:// scheme rewriters FIRST so molt://ai/
++  // gets translated to chrome://molt-ai/ before any other URL handler runs.
++  // The reverse rewriter shows molt://ai/ in the omnibox to the user.
++  handler->AddHandlerPair(&HandleMoltSchemeRewrite,
++                          &HandleMoltSchemeReverseRewrite);
++
+   // The group policy NTP URL handler must be registered before the other NTP
+   // URL handlers below. Also register it before the "parts" handlers, so the
+   // NTP policy takes precedence over extensions that override the NTP.
+@@ -5945,6 +6042,19 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+   }
+ #endif
+ 
++  // MoltShield: Ad blocker / tracker blocker throttle
++  {
++    GURL first_party_url;
++    if (request.request_initiator.has_value()) {
++      first_party_url = request.request_initiator->GetURL();
++    }
++    if (auto molt_throttle = molt_ai::MoltShieldURLLoaderThrottle::MaybeCreate(
++            molt_ai::GetMoltShieldInstance(), first_party_url);
++        molt_throttle) {
++      result.push_back(std::move(molt_throttle));
++    }
++  }
++
+ #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
+   result.push_back(
+       std::make_unique<captive_portal::CaptivePortalURLLoaderThrottle>(
+@@ -9085,9 +9195,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+ }
+ 
+ std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {
+-  static constexpr char kGoogleDnsResolverUrl[] =
+-      "https://dns.google/resolve?type=txt&do=1&name=";
+-  return kGoogleDnsResolverUrl;
++  // MoltBrowser: use Cloudflare DoH (privacy-first, no Google affiliation)
++  static constexpr char kMoltDnsResolverUrl[] =
++      "https://cloudflare-dns.com/dns-query?type=TXT&do=1&name=";
++  return kMoltDnsResolverUrl;
+ }
+ 
+ bool ChromeContentBrowserClient::ShouldAllowPrefetchRedirection(

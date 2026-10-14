@@ -1,0 +1,325 @@
+MoltBrowser patch for chrome/app/os_settings_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/os_settings_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/os_settings_strings.grdp b/chrome/app/os_settings_strings.grdp
+index 6d1f53f50e6beb89d807b8b8124762788f8c64b1..2e72affbb3aecfe9148a1bdba09e69d263d1d644 100644
+--- a/chrome/app/os_settings_strings.grdp
++++ b/chrome/app/os_settings_strings.grdp
+@@ -307,7 +307,7 @@
+   </message>
+   <message name="IDS_OS_SETTINGS_PROFILE_LABEL_V2" desc="Label underneath the profile's real name, listing the number of accounts">
+     {COUNT, plural,
+-     =1 {1 Google Account}
++     =1 {1 MoltBrowser Account}
+      other {<ph name="EXTRA_ACCOUNTS">$2<ex>2</ex></ph> Google Accounts}}
+   </message>
+   <message name="IDS_OS_SETTINGS_ACCOUNTS_MENU_ITEM_DESCRIPTION" desc="Description text showing number of accounts. This string shows only when there is more than 1 account. Displayed in the menu item for the Accounts page.">
+@@ -321,12 +321,12 @@
+   </message>
+   <if expr="reven">
+     <message name="IDS_OS_SETTINGS_SYNC_FEATURE_LABEL" desc="Label describing the OS sync feature.">
+-      Your apps and settings will sync across all ChromeOS Flex devices where you are signed in with your Google account. For browser sync options, go to <ph name="LINK_BEGIN">&lt;a href='#'&gt;</ph>Chrome settings<ph name="LINK_END">&lt;/a&gt;</ph>.
++      Your apps and settings will sync across all ChromeOS Flex devices where you are signed in with your Google account. For browser sync options, go to <ph name="LINK_BEGIN">&lt;a href='#'&gt;</ph>MoltBrowser settings<ph name="LINK_END">&lt;/a&gt;</ph>.
+     </message>
+   </if>
+   <if expr="not reven">
+     <message name="IDS_OS_SETTINGS_SYNC_FEATURE_LABEL" desc="Label describing the OS sync feature.">
+-      Your apps and settings will sync across all ChromeOS devices where you are signed in with your Google account. For browser sync options, go to <ph name="LINK_BEGIN">&lt;a href='#'&gt;</ph>Chrome settings<ph name="LINK_END">&lt;/a&gt;</ph>.
++      Your apps and settings will sync across all ChromeOS devices where you are signed in with your Google account. For browser sync options, go to <ph name="LINK_BEGIN">&lt;a href='#'&gt;</ph>MoltBrowser settings<ph name="LINK_END">&lt;/a&gt;</ph>.
+     </message>
+   </if>
+   <message name="IDS_OS_SETTINGS_SYNC_APPS_CHECKBOX_LABEL" desc="Label for the checkbox which enables syncing of apps across devices.">
+@@ -422,13 +422,13 @@
+     Offer to translate pages in this language
+   </message>
+   <message name="IDS_OS_SETTINGS_LANGUAGES_GOOGLE_ACCOUNT_LANGUAGE_TITLE" desc="Title for the section that informs users about the languages associated with their Google Account and what they affect.">
+-   Google Account language
++   MoltBrowser Account language
+   </message>
+   <message name="IDS_OS_SETTINGS_LANGUAGES_GOOGLE_ACCOUNT_LANGUAGE_DESCRIPTION" desc="Description for the section that informs users about the languages associated with their Google Account and what they affect.">
+-   Google sites like Gmail, Drive, and YouTube use your Google Account language unless you’ve changed the individual product language
++   Google sites like Gmail, Drive, and YouTube use your MoltBrowser Account language unless you’ve changed the individual product language
+   </message>
+   <message name="IDS_OS_SETTINGS_LANGUAGES_MANAGE_GOOGLE_ACCOUNT_LANGUAGE_LABEL" desc="Label for the button which links to the Google Account language page, allowing users to modify their Google Account languages.">
+-   Manage Google Account language
++   Manage MoltBrowser Account language
+   </message>
+   <message name="IDS_OS_SETTINGS_LANGUAGES_OFFER_TRANSLATION_LABEL" desc="Title for setting that allows the system to offer to translate websites that appear in other languages.">
+    Translation suggestion
+@@ -494,7 +494,7 @@
+     Grammar check currently available for English only
+   </message>
+   <message name="IDS_OS_SETTINGS_LANGUAGES_SPELL_CHECK_ENHANCED_LABEL" desc="Label for enhanced spell check toggle, the type of spell check that sends the text the user types to Google spelling service. It is important that it is communicated that the text the user types will be sent to Google.">
+-    Enhanced spell check in Chrome browser (text is sent to Google for spelling suggestions)
++    Enhanced spell check in MoltBrowser browser (text is sent to Google for spelling suggestions)
+   </message>
+   <message name="IDS_OS_SETTINGS_LANGUAGES_SPELL_CHECK_LANGUAGES_LIST_TITLE" desc="Title for the list of languages that support spell check, from which users can enable or disable spell check for.">
+     Spell check languages
+@@ -994,10 +994,10 @@
+     Search and suggestions
+   </message>
+   <message name="IDS_OS_SETTINGS_SEARCH_ENGINE_LABEL" desc="Label in OS settings describing search engine behavior.">
+-    Set search engine in Chrome browser settings
++    Set search engine in MoltBrowser browser settings
+   </message>
+   <message name="IDS_OS_SETTINGS_SEARCH_ENGINE_DESCRIPTION" desc="Description in the search engine dialog in OS settings explaining that search engine is used in both the Chrome browser and the ChromeOS app launcher.">
+-    Set your default search engine for Chrome browser and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> Launcher
++    Set your default search engine for MoltBrowser browser and <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> Launcher
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_GOOGLE_ASSISTANT" desc="Label for the Google Assistant button.">
+     Google Assistant
+@@ -1070,7 +1070,7 @@
+     Files
+   </message>
+   <message name="IDS_SETTINGS_DISCONNECT_GOOGLE_DRIVE" desc="Label for the checkbox which enables disconnecting from Google Drive account.">
+-    Disconnect Google Drive account
++    Disconnect Drive account
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_DRIVE_CLEAN_UP_STORAGE_ACTION" desc="Button for the Offline Storage row where users can clean their offline storage in Settings: Files: Google Drive.">
+     Clean up storage
+@@ -1127,10 +1127,10 @@
+     Remove Drive access
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_DRIVE_REMOVE_ACCESS_DIALOG_TITLE" desc="Title of the dialog that appears when the Remove Drive access button is pressed in Settings: Files: Google Drive">
+-    Remove Google Drive access?
++    Remove Drive access?
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_DRIVE_REMOVE_ACCESS_DIALOG_BODY" desc="Body text of the dialog that appears when the Remove Drive access button is pressed in Settings: Files: Google Drive">
+-    This will remove access to Google Drive on this Chromebook, including access to any files that have been made available offline
++    This will remove access to Drive on this Chromebook, including access to any files that have been made available offline
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_DRIVE_REMOVE_BUTTON_TEXT" desc="Action button text of the dialog that appears when the Remove Drive access button is pressed in Settings: Files: Google Drive">
+     Remove
+@@ -1181,7 +1181,7 @@
+     Unknown
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_DRIVE" translateable="false" desc="Label for the settings link that takes the user to the page where they can manage their Google Drive settings.">
+-    Google Drive
++    Drive
+   </message>
+   <message name="IDS_SETTINGS_DOWNLOADS_SMB_SHARES" desc="In Downloads Settings, the title of the SMB shares setting section.">
+     Network file shares
+@@ -1202,7 +1202,7 @@
+     Error mounting share. Please check your credentials and try again.
+   </message>
+   <message name="IDS_SETTINGS_IN_SESSION_AUTH_ORIGIN_NAME_PROMPT" desc="Text shown in the auth dialog to indicate we are currently authenticating for ChromeOS settings">
+-    <ph name="ORIGIN_NAME">$1<ex>Chrome</ex></ph> would like to confirm it's you
++    <ph name="ORIGIN_NAME">$1<ex>MoltBrowser</ex></ph> would like to confirm it's you
+   </message>
+   <message name="IDS_SETTINGS_IN_SESSION_AUTH_ORIGIN_NAME_PROMPT_LOCATION" desc="Location in text shown in the auth dialog to indicate we are currently authenticating for ChromeOS settings">
+     ChromeOS Settings
+@@ -1263,7 +1263,7 @@
+     Microsoft 365 files
+   </message>
+   <message name="IDS_SETTINGS_ALWAYS_MOVE_OFFICE_TO_DRIVE_PREFERENCE_LABEL" desc="Label for the preference that allows users to always copy/move files to Drive without asking for confirmation.">
+-    Ask before copying or moving Microsoft files to Google Drive
++    Ask before copying or moving Microsoft files to Drive
+   </message>
+   <message name="IDS_SETTINGS_ALWAYS_MOVE_OFFICE_TO_ONEDRIVE_PREFERENCE_LABEL" desc="Label for the preference that allows users to always copy/move files to OneDrive without asking for confirmation.">
+     Ask before copying or moving Microsoft files to Microsoft OneDrive
+@@ -1276,7 +1276,7 @@
+     Backup your local files to Drive
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_DRIVE_MIRROR_SYNC_TOGGLE_DESCRIPTION" desc="Description for backup mode which allow user to toggle of Mirror Sync." translateable="false">
+-    Backup all your files under My files to Google Drive.
++    Backup all your files under My files to Drive.
+   </message>
+ 
+   <!-- Accessibility -->
+@@ -2680,7 +2680,7 @@ Press an assigned switch or key to remove assignment.
+     Audio and captions
+   </message>
+   <message name="IDS_SETTINGS_ACCESSIBILITY_ADDITIONAL_FEATURES_TITLE" desc="In the settings tab, the title of a link that adds additional accessibility features not found in the built-in settings.">
+-    Find more accessibility tools in the Chrome Web Store
++    Find more accessibility tools in the Extension Store
+   </message>
+   <message name="IDS_SETTINGS_ACCESSIBILITY_DISABILITY_SUPPORT_TITLE" desc="In the settings tab, the title of a link that opens the disability support help center page.">
+     Contact Google Disability Support
+@@ -2832,7 +2832,7 @@ Press an assigned switch or key to remove assignment.
+     Remove this account
+   </message>
+   <message name="IDS_SETTINGS_ACCOUNT_MANAGER_ADD_ACCOUNT_LABEL_V2" desc="Label of the Add account button in Account Manager.">
+-    Add Google Account
++    Add MoltBrowser Account
+   </message>
+   <message name="IDS_SETTINGS_ACCOUNT_MANAGER_ADD_SCHOOL_ACCOUNT_LABEL" desc="Label of the button to add a school/EDU account in Account Manager.">
+     Add school account
+@@ -4733,7 +4733,7 @@ Press an assigned switch or key to remove assignment.
+     Block traffic without VPN
+   </message>
+   <message name="IDS_SETTINGS_INTERNET_NETWORK_ALWAYS_ON_VPN_LOCKDOWN_SUBLABEL" desc="Settings > Internet > VPN: Sublabel for the toggle that enables always-on VPN lockdown.">
+-    Chrome browser and Android traffic will be blocked unless a VPN is connected
++    MoltBrowser browser and Android traffic will be blocked unless a VPN is connected
+   </message>
+   <message name="IDS_SETTINGS_INTERNET_NETWORK_ALWAYS_ON_VPN_SERVICE" desc="Settings > Internet > VPN: Label for the dropdown menu determining which VPN client will be automatically started on login.">
+     VPN service
+@@ -5268,7 +5268,7 @@ Press an assigned switch or key to remove assignment.
+     Notifications
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_SECTION_TITLE" desc="The title of the Phone Hub Task Continuation section on the settings page.">
+-    Recent Chrome tabs
++    Recent MoltBrowser tabs
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_APPS_SECTION_BETA_TITLE" desc="The title of the Phone Hub Apps section in the settings page on Beta stage.">
+     Apps (Beta)
+@@ -5298,7 +5298,7 @@ Press an assigned switch or key to remove assignment.
+     View, dismiss, and reply to your phone’s notifications
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_SUMMARY" desc="Description of for the 'Phone Hub Task Continuation' setting. This feature lets users resume in-app actions and chrome tabs that are open on a connected Android phone from ChromeOS devices.">
+-    View recent Chrome tabs from your phone
++    View recent MoltBrowser tabs from your phone
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_APPS_SUMMARY" desc="Description of for the 'Phone Hub Apps' setting. This feature lets users streaming apps from a Android phone to Chrome OS device.">
+     Stream your phone's apps
+@@ -5316,10 +5316,10 @@ Press an assigned switch or key to remove assignment.
+     View your phone's photos, media, notifications, and apps
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_DISABLED_SUMMARY" desc="Description of for the 'Phone Hub Task Continuation' setting when Chrome sync is not enabled. This feature lets users resume in-app actions and chrome tabs that are open on a connected Android phone from ChromeOS devices.">
+-    Turn on <ph name="LINK1_BEGIN">&lt;a id="chromeSyncLink"&gt;</ph>Chrome Sync<ph name="LINK1_END">&lt;/a&gt;</ph> to view recent Chrome tabs. <ph name="LINK2_BEGIN">&lt;a target="_blank" id="learnMoreLink" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn More<ph name="LINK2_END">&lt;/a&gt;</ph>
++    Turn on <ph name="LINK1_BEGIN">&lt;a id="chromeSyncLink"&gt;</ph>MoltBrowser Sync<ph name="LINK1_END">&lt;/a&gt;</ph> to view recent MoltBrowser tabs. <ph name="LINK2_BEGIN">&lt;a target="_blank" id="learnMoreLink" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn More<ph name="LINK2_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_SYNC_LABEL" desc="Accessibility label (used by screen readers, not shown in UI) for a link that leads to the Chrome Sync toggle that needs to be enabled as a prerequisite for the 'Phone Hub Task Continuation' feature to be enabled. This feature lets users resume chrome tabs that are open on a connected Android phone from ChromeOS devices.">
+-    Turn on Chrome Sync to view recent Chrome tabs from your phone
++    Turn on MoltBrowser Sync to view recent MoltBrowser tabs from your phone
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_NOTIFICATION_ACCESS_SETUP_DIALOG_ACK_TITLE" desc="The title of the dialog containing the Phone Hub notification opt-in flow shown when the Phone Hub 'Notifications' toggle is switched on.">
+     View notifications from your phone on your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
+@@ -5391,10 +5391,10 @@ Press an assigned switch or key to remove assignment.
+     Sync Wi-Fi networks with your phone. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_ENABLE_WIFI_SYNC_V1_SUMMARY" desc="Description for the 'Wifi Sync' section on the settings page when the prerequisite 'Chrome Sync' setting is not activated. This feature lets the user sync wifi network configurations between ChromeOS devices and a connected Android phone. The description contains a link that leads to the toggle where the prerequisite 'Chrome Sync' feature can be turned on and a 'Learn More' link to learn more about the 'Wifi Sync' feature.">
+-    Turn on <ph name="LINK1_BEGIN">&lt;a id="chromeSyncLink"&gt;</ph>Chrome Sync<ph name="LINK1_END">&lt;/a&gt;</ph> to use Wi-Fi Sync. <ph name="LINK2_BEGIN">&lt;a id="learnMoreLink" target="_blank" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK2_END">&lt;/a&gt;</ph>
++    Turn on <ph name="LINK1_BEGIN">&lt;a id="chromeSyncLink"&gt;</ph>MoltBrowser Sync<ph name="LINK1_END">&lt;/a&gt;</ph> to use Wi-Fi Sync. <ph name="LINK2_BEGIN">&lt;a id="learnMoreLink" target="_blank" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK2_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_WIFI_SYNC_CHROME_SYNC_LABEL" desc="Accessibility label (used by screen readers, not shown in UI) for a link that leads to the Chrome Sync toggle that needs to be enabled as a prerequisite for the 'Wifi Sync' feature to be enabled. This feature lets the user sync wifi network configurations between ChromeOS devices and a connected Android phone.">
+-    Turn on Chrome Sync to use Wi-Fi Sync
++    Turn on MoltBrowser Sync to use Wi-Fi Sync
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_WIFI_SYNC_LEARN_MORE_LABEL" desc="Accessibility label (used by screen readers, not shown in UI) for a link that leads to a page with more information about the 'Wifi Sync' feature. This feature lets the user sync wifi network configurations between ChromeOS devices and a connected Android phone.">
+     Wi-Fi Sync, Learn More
+@@ -5560,7 +5560,7 @@ Press an assigned switch or key to remove assignment.
+     Connect your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> with your phone. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$2<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_OS_SETTINGS_MULTIDEVICE_NO_ELIGIBLE_HOSTS" desc="Tells the user that there is no phone with their account on it that can connect to their Chromebook.">
+-    No available devices. Add your Google Account to your phone to connect it to this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$2<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
++    No available devices. Add your MoltBrowser Account to your phone to connect it to this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$2<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_MULTIDEVICE_VERIFICATION_TEXT" desc="Text to tell user that their Chromebook needs to verify that it can connect with their phone.">
+     Waiting for verification. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
+@@ -5584,7 +5584,7 @@ Press an assigned switch or key to remove assignment.
+     Set up a <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> password
+   </message>
+   <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_SWITCH_LOCAL_PASSWORD_DESCRIPTION" desc="Description of the password authentication factor on the lock screen page.">
+-    Currently using Google Account password. You can set up a <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> password to make it easier to sign in.
++    Currently using MoltBrowser Account password. You can set up a <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> password to make it easier to sign in.
+   </message>
+   <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_LABEL" desc="Label for PIN authentication factor on the lock screen page.">
+     PIN
+@@ -5888,7 +5888,7 @@ Press an assigned switch or key to remove assignment.
+     Battery saver
+   </message>
+   <message name="IDS_SETTINGS_POWER_BATTERY_SAVER_SUBTEXT" desc="In Device Settings > Power, description of the behavior of battery saver mode">
+-    Extends battery life by reducing brightness, limiting background activity and visual effects, delaying notifications, and turning on Chrome Energy Saver.
++    Extends battery life by reducing brightness, limiting background activity and visual effects, delaying notifications, and turning on MoltBrowser Energy Saver.
+   </message>
+ 
+   <!-- Reset Page (OS settings)-->
+@@ -5905,7 +5905,7 @@ Press an assigned switch or key to remove assignment.
+     Restart your device
+   </message>
+   <message name="IDS_SETTINGS_FACTORY_RESET_DESCRIPTION" desc="Description of the factory reset option on the Chrome settings page">
+-    Remove all user accounts and reset your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new.
++    Remove all user accounts and reset your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph> device to be just like new.
+   </message>
+   <message name="IDS_OS_SETTINGS_FACTORY_RESET_DESCRIPTION" desc="Description of the factory reset option on the ChromeOS settings page">
+     Remove all user accounts and reset your Chromebook to be just like new.
+@@ -6234,7 +6234,7 @@ Press an assigned switch or key to remove assignment.
+     Unlock device only
+   </message>
+   <message name="IDS_SETTINGS_EASY_UNLOCK_UNLOCK_DEVICE_AND_ALLOW_SIGNIN" desc="This option lets the user unlock their Chromebook from their phone as well as log into their Chromebook without a password if their phone is nearby and unlocked.">
+-    Unlock device and sign in to Google Account
++    Unlock device and sign in to MoltBrowser Account
+   </message>
+ 
+   <!-- Fingerprint Page (OS settings) -->
+@@ -6610,7 +6610,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     More web app settings and permissions
+   </message>
+   <message name="IDS_OS_SETTINGS_APP_PERMISSIONS_TITLE_CHROME_APP" desc="Label for a link to more settings and permissions for an app with type Chrome app.">
+-    More Chrome app settings and permissions
++    More MoltBrowser app settings and permissions
+   </message>
+   <message name="IDS_OS_SETTINGS_OPEN_IN_APP_TITLE" desc="Label for the intent sharing option to open in a specified app.">
+     Open in <ph name="APP_NAME">$1<ex>Calculator</ex></ph> app
+@@ -6695,7 +6695,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     Notifications won't pop up on the screen. You can still see notifications by clicking the Do Not Disturb icon on the bottom right of your screen.
+   </message>
+   <message name="IDS_SETTINGS_APP_NOTIFICATIONS_LINK_TO_BROWSER_SETTINGS_DESCRIPTION" desc="In notifications OS Settings subpage, explanatory text for website notifications link.">
+-    For browser notifications, go to <ph name="LINK_BEGIN">&lt;a href="#"&gt;</ph>Chrome browser Settings<ph name="LINK_END">&lt;/a&gt;</ph>
++    For browser notifications, go to <ph name="LINK_BEGIN">&lt;a href="#"&gt;</ph>MoltBrowser browser Settings<ph name="LINK_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_APP_BADGING_TOGGLE_LABEL" desc="The label for the app badging toggle in the App Notifications page of OS Settings.">
+     App badging
+@@ -6882,7 +6882,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     Send diagnostic and usage data
+   </message>
+   <message name="IDS_OS_SETTINGS_ENABLE_LOGGING_TOGGLE_DESCRIPTION" desc="The description of the checkbox to enable/disable crash and user metrics logging in ChromeOS for user of the device.">
+-    Help improve Chrome and ChromeOS features and performance by automatically sending crash reports as well as diagnostic and usage data to Google.
++    Help improve MoltBrowser and ChromeOS features and performance by automatically sending crash reports as well as diagnostic and usage data to Google.
+   </message>
+   <message name="IDS_OS_SETTINGS_PRIVACY_TITLE" desc="Name of the privacy settings page.">
+     Privacy and security
+@@ -7071,13 +7071,13 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     Websites
+   </message>
+   <message name="IDS_OS_SETTINGS_PRIVACY_HUB_MANAGE_CAMERA_PERMISSIONS_IN_CHROME_TEXT" desc="The label of the Chrome row in the Websites section of the camera subpage. This row is displayed when camera is allowed.">
+-    Manage website camera permissions in Chrome
++    Manage website camera permissions in MoltBrowser
+   </message>
+   <message name="IDS_OS_SETTINGS_PRIVACY_HUB_MANAGE_MIC_PERMISSIONS_IN_CHROME_TEXT" desc="The label of the Chrome row in the Websites section of the microphone subpage. This row is displayed when microphone is allowed.">
+-    Manage website microphone permissions in Chrome
++    Manage website microphone permissions in MoltBrowser
+   </message>
+   <message name="IDS_OS_SETTINGS_PRIVACY_HUB_MANAGE_LOCATION_PERMISSIONS_IN_CHROME_TEXT" desc="The label of the Chrome row in the Websites section of the location subpage. This row is displayed when location is allowed.">
+-    Manage website location permissions in Chrome
++    Manage website location permissions in MoltBrowser
+   </message>
+   <message name="IDS_OS_SETTINGS_PRIVACY_HUB_NO_WEBSITE_CAN_USE_CAMERA_TEXT" desc="The text displayed in the Websites section of the camera subpage when camera is not allowed.">
+     Websites are not allowed to use your camera
+@@ -7269,13 +7269,13 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     From <ph name="APP_URL">$1<ex>https://google.com</ex></ph>
+   </message>
+   <message name="IDS_APP_MANAGEMENT_APP_DETAILS_INSTALL_SOURCE_WEB_STORE" desc="Text for Chrome Web Store installation source">
+-    Chrome Web Store
++    Extension Store
+   </message>
+   <message name="IDS_APP_MANAGEMENT_APP_DETAILS_INSTALL_SOURCE_PLAY_STORE" desc="Text for Google Play Store installation source">
+     Google Play Store
+   </message>
+   <message name="IDS_APP_MANAGEMENT_APP_DETAILS_INSTALL_SOURCE_BROWSER" desc="Text for Chrome browser installation source for Web App">
+-    Web App installed from Chrome browser
++    Web App installed from MoltBrowser browser
+   </message>
+   <message name="IDS_APP_MANAGEMENT_APP_DETAILS_TYPE_AND_SOURCE_COMBINED" desc="Full text for installation source and app type line">
+     <ph name="APP_TYPE">$1<ex>Web App</ex></ph> installed from <ph name="BEGIN_LINK">&lt;a href="#"&gt;</ph><ph name="INSTALL_SOURCE">$2<ex>Google Play Store</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>
+@@ -7357,7 +7357,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     Android App
+   </message>
+   <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_CHROME" desc="Text to explain that the type of an app is Chrome app">
+-    Chrome App
++    MoltBrowser App
+   </message>
+   <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_WEB" desc="Text to explain that the type of an app is Web app">
+     Web App
+@@ -7369,7 +7369,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+     Android app installed by your device administrator.
+   </message>
+   <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_CHROME_INSTALL_REASON_POLICY" desc="Explanation text for the chrome app installation reason, describing the type of the app, and that it is installed by the administrator.">
+-    Chrome app installed by your device administrator.
++    MoltBrowser app installed by your device administrator.
+   </message>
+   <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_WEB_INSTALL_REASON_POLICY" desc="Explanation text for the web app installation reason, describing the type of the app, and that it is installed by the administrator.">
+     Web app installed by your device administrator.

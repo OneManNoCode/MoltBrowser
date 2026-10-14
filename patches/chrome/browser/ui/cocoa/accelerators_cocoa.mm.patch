@@ -1,0 +1,19 @@
+MoltBrowser patch for chrome/browser/ui/cocoa/accelerators_cocoa.mm
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/cocoa/accelerators_cocoa.mm by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/cocoa/accelerators_cocoa.mm b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
+index 3c40f982b3ca168777df74b3f5305339c3465ebb..995cbd93e9b984f24fd9755590711e7b281c5f30 100644
+--- a/chrome/browser/ui/cocoa/accelerators_cocoa.mm
++++ b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
+@@ -114,6 +114,8 @@ const struct AcceleratorMapping {
+      ui::VKEY_I},
+ #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+     {IDC_TAB_SEARCH, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN, ui::VKEY_A},
++    {IDC_SHOW_MOLT_AI_SIDE_PANEL, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN,
++     ui::VKEY_L},
+     {IDC_CREATE_NEW_TAB_GROUP, ui::EF_CONTROL_DOWN | ui::EF_COMMAND_DOWN,
+      ui::VKEY_P},
+ };

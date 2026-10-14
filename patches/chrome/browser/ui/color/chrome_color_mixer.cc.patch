@@ -1,0 +1,61 @@
+MoltBrowser patch for chrome/browser/ui/color/chrome_color_mixer.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/color/chrome_color_mixer.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/color/chrome_color_mixer.cc b/chrome/browser/ui/color/chrome_color_mixer.cc
+index 4dedff635bacae6a3fd03b4e8081af5508913bca..e6ef3da5de76bd1ed3892e5389527ed80539dc9a 100644
+--- a/chrome/browser/ui/color/chrome_color_mixer.cc
++++ b/chrome/browser/ui/color/chrome_color_mixer.cc
+@@ -7,6 +7,7 @@
+ #include <string>
+ 
+ #include "base/feature_list.h"
++#include "chrome/browser/ui/ui_features.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "build/branding_buildflags.h"
+@@ -1155,6 +1156,42 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
+                           kColorReadAnythingBackgroundLowContrastDark,
+                           color_utils::kMinimumVisibleContrastRatio);
+ 
++  // MoltBrowser dark-glass tones. Force-dark (browser_widget.cc) already makes
++  // every foreground light; here we only deepen the surfaces dark-mode leaves
++  // too flat and set the translucent-white floating-pill fill + specular edges.
++  // Placed last in the normal-mode path so these win; the high-contrast block
++  // below still overrides for accessibility.
++  if (base::FeatureList::IsEnabled(features::kGlassToolbar)) {
++    // Glass ground for the bar (bookmark bar / side panel / infobar derive
++    // from kColorToolbar and follow). BLACK-tinted glass (near-black with a
++    // whisper of cool), NOT a blue-gray — the top chrome reads as one sheet of
++    // black glass.
++    mixer[kColorToolbar] = {SkColorSetRGB(0x06, 0x06, 0x08)};  // near-black
++    // Kill the gray hairlines that draw across the bar so it reads as one
++    // seamless sheet of dark glass instead of a bordered strip.
++    mixer[kColorToolbarContentAreaSeparator] = {SK_ColorTRANSPARENT};
++    mixer[kColorToolbarTopSeparatorFrameActive] = {SK_ColorTRANSPARENT};
++    mixer[kColorToolbarTopSeparatorFrameInactive] = {SK_ColorTRANSPARENT};
++    // Translucent-white floating-pill fill. rgba(255,255,255,0.12) — brighter
++    // so the capsule reads as floating glass, not a flat gray outline.
++    mixer[kColorToolbarButtonBackgroundHighlightedDefault] = {
++        SkColorSetARGB(0x1F, 0xFF, 0xFF, 0xFF)};
++    // Very faint specular pill edge (glass, not a gray outline). The pill reads
++    // by its translucent fill; the edge is just a whisper. rgba(255,255,255,0.07).
++    mixer[kColorToolbarButtonBorder] = {SkColorSetARGB(0x12, 0xFF, 0xFF, 0xFF)};
++    // Keep toolbar icons crisp light on the dark bar.
++    mixer[kColorToolbarButtonIcon] = {SkColorSetARGB(0xE6, 0xFF, 0xFF, 0xFF)};
++    // Omnibox capsule: opaque near-black keeps subpixel text AA; specular edge
++    // supplies the glass read.
++    mixer[kColorLocationBarBackground] = {SkColorSetRGB(0x14, 0x16, 0x1E)};
++    mixer[kColorLocationBarBackgroundHovered] = {
++        SkColorSetRGB(0x1A, 0x1C, 0x26)};
++    mixer[kColorLocationBarBorder] = {SkColorSetARGB(0x14, 0xFF, 0xFF, 0xFF)};
++    // Frame behind/around the bar → deepest ambient, essentially black.
++    mixer[ui::kColorFrameActive] = {SkColorSetRGB(0x03, 0x03, 0x04)};
++    mixer[ui::kColorFrameInactive] = {SkColorSetRGB(0x03, 0x03, 0x04)};
++  }
++
+   // Apply high contrast recipes if necessary.
+   if (!ShouldApplyHighContrastColors(key)) {
+     return;

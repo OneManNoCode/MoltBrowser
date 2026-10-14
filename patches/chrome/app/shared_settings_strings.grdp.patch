@@ -1,0 +1,82 @@
+MoltBrowser patch for chrome/app/shared_settings_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/shared_settings_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/shared_settings_strings.grdp b/chrome/app/shared_settings_strings.grdp
+index 35ef542fa88efc46344a84757a1c28ba56fb4a3a..0652a070c134e08665783b623e2d2525e607b884 100644
+--- a/chrome/app/shared_settings_strings.grdp
++++ b/chrome/app/shared_settings_strings.grdp
+@@ -101,10 +101,10 @@
+     Supported Live Caption languages
+   </message>
+   <message name="IDS_SETTINGS_CAPTIONS_MANAGE_LANGUAGES_SUBTITLE" desc="Subtitle for the caption settings section for managing language packs.">
+-    Chrome can create and translate captions for the languages shown here
++    MoltBrowser can create and translate captions for the languages shown here
+   </message>
+   <message name="IDS_SETTINGS_CAPTIONS_MANAGE_LANGUAGES_SUBTITLE_LIVE_CAPTION_ONLY" desc="Subtitle for the caption settings section for managing language packs without live translate.">
+-    Chrome can create captions for the languages shown here
++    MoltBrowser can create captions for the languages shown here
+   </message>
+   <message name="IDS_SETTINGS_CAPTIONS_LIVE_TRANSLATE_TARGET_LANGUAGE" desc="Description of the target language setting for the Live Translate feature.">
+     Translate captions to
+@@ -240,7 +240,7 @@
+     Enhanced spell check
+   </message>
+   <message name="IDS_SETTINGS_ENABLE_LOGGING_PREF" desc="The label of the checkbox to enable/disable crash and user metrics logging. This string does not need a Chromium counter-part because it will only be visible if Google-branded.">
+-    Help improve Chrome's features and performance
++    Help improve MoltBrowser's features and performance
+   </message>
+   <message name="IDS_SETTINGS_ENABLE_LOGGING_PREF_DESC" desc="The description of the checkbox to enable/disable crash and user metrics logging">
+     Automatically sends usage statistics and crash reports to Google
+@@ -259,7 +259,7 @@
+     Sync is paused
+   </message>
+   <message name="IDS_SETTINGS_PEOPLE_SIGN_IN_PROMPT" desc="The text displayed to prompt users to sign in to chrome.">
+-    Get Google smarts in Chrome
++    Get Google smarts in MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_PEOPLE_SYNC_TURN_OFF" desc="The label for the button that lets the user turn off profile syncing with their gaia account.">
+     Turn off
+@@ -289,10 +289,10 @@
+     Continue as <ph name="EMAIL">$1<ex>johndoe@gmail.com</ex></ph>
+   </message>
+   <message name="IDS_SETTINGS_ERROR_PASSWORDS_USER_ERROR_DESCRIPTION" desc="Error description of the sync/signin error header the settings page.">
+-    To use and save passwords in your Google Account, verify it's you
++    To use and save passwords in your MoltBrowser Account, verify it's you
+   </message>
+   <message name="IDS_SETTINGS_ERROR_RECOVERABILITY_DEGRADED_FOR_PASSWORDS_USER_ERROR_DESCRIPTION" desc="Error description of a sync error header of desktop settings page that prompts the user to add recovery options.">
+-    To make sure you can always use the passwords in your Google Account, verify it's you
++    To make sure you can always use the passwords in your MoltBrowser Account, verify it's you
+   </message>
+   <message name="IDS_SETTINGS_PEOPLE_ACCOUNT_AWARE_SIGNIN_ACCOUNT_ROW_SUBTITLE_WITH_EMAIL" desc="The subtitle of the avatar row shown to users who are signed in only to the web">
+     To get your passwords and more on all your devices, sign in as <ph name="EMAIL">$1<ex>johndoe@gmail.com</ex></ph>
+@@ -369,10 +369,10 @@
+     Submit
+   </message>
+   <message name="IDS_SETTINGS_ENCRYPT_WITH_GOOGLE_CREDENTIALS_LABEL" desc="Label for the radio button which, when selected, causes synced settings to be encrypted with the Google login for the current browser profile.">
+-    Encrypt synced passwords with your Google Account
++    Encrypt synced passwords with your MoltBrowser Account
+   </message>
+   <message name="IDS_SETTINGS_ENCRYPT_ACCOUNT_DATA_WITH_GOOGLE_CREDENTIALS_LABEL" desc="Label for the radio button which, when selected, causes synced settings to be encrypted with the Google login for the current browser profile.">
+-    Use Google’s default encryption for the passwords in your Google Account
++    Use Google’s default encryption for the passwords in your MoltBrowser Account
+   </message>
+   <message name="IDS_SETTINGS_BOOKMARKS_CHECKBOX_LABEL" desc="Label for the checkbox which enables or disables syncing bookmarks between multiple browser instances.">
+     Bookmarks
+@@ -423,12 +423,12 @@
+     You can turn on sync anytime in settings
+   </message>
+   <message name="IDS_SYNC_UNAVAILABLE_FOR_NON_GOOGLE_ACCOUNT" desc="Text explaining that Sync service is unavailable for Dasherless profile.">
+-    This account isn't associated with Google so features such as Chrome sync are unavailable
++    This account isn't associated with Google so features such as MoltBrowser sync are unavailable
+   </message>
+ 
+   <if expr="is_chromeos">
+     <message name="IDS_BROWSER_SETTINGS_SYNC_FEATURE_LABEL" desc="Label describing the browser sync feature.">
+-      Your data will be synced across all Chrome browsers where you have turned on sync for this account. For ChromeOS sync options, go to <ph name="LINK_BEGIN">&lt;a&gt;</ph>ChromeOS settings<ph name="LINK_END">&lt;/a&gt;</ph>.
++      Your data will be synced across all MoltBrowser browsers where you have turned on sync for this account. For ChromeOS sync options, go to <ph name="LINK_BEGIN">&lt;a&gt;</ph>ChromeOS settings<ph name="LINK_END">&lt;/a&gt;</ph>.
+     </message>
+     <message name="IDS_SETTINGS_COOKIES_CHECKBOX_LABEL" desc="Label for the checkbox which enables or disables syncing cookies between multiple browser instances.">
+       Cookies

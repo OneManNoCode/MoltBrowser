@@ -1,0 +1,35 @@
+MoltBrowser patch for chrome/browser/ui/browser_commands.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/browser_commands.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
+index b94c1ab3fa047600c95478a1309f1fb258ae946c..be72b26d750d6051a3d1c7b44b11340e1bf04e14 100644
+--- a/chrome/browser/ui/browser_commands.cc
++++ b/chrome/browser/ui/browser_commands.cc
+@@ -1132,6 +1132,9 @@ content::WebContents& NewTab(Browser* browser, NewTabTypes context) {
+       std::make_unique<NewTabGroupingUserData>(
+           browser->tab_strip_model()->GetActiveTabGroupId()));
+ 
++  // MoltBrowser: Open MoltSearch homepage instead of chrome://newtab
++  const GURL molt_new_tab_url("chrome://molt-home/");
++
+   if (browser->SupportsWindowFeature(
+           Browser::WindowFeature::kFeatureTabStrip)) {
+     std::optional<tab_groups::TabGroupId> group_id = std::nullopt;
+@@ -1141,12 +1144,12 @@ content::WebContents& NewTab(Browser* browser, NewTabTypes context) {
+       group_id = browser->tab_strip_model()->GetTabGroupForTab(index);
+     }
+ 
+-    return *AddAndReturnTabAt(browser, GURL(), -1, true, group_id);
++    return *AddAndReturnTabAt(browser, molt_new_tab_url, -1, true, group_id);
+   }
+ 
+   ScopedTabbedBrowserDisplayer displayer(browser->profile());
+   Browser* b = displayer.browser();
+-  auto* contents = AddAndReturnTabAt(b, GURL(), -1, true);
++  auto* contents = AddAndReturnTabAt(b, molt_new_tab_url, -1, true);
+   b->window()->Show();
+   // The call to AddBlankTabAt above did not set the focus to the tab as its
+   // window was not active, so we have to do it explicitly.

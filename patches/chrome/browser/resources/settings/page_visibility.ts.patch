@@ -1,0 +1,43 @@
+MoltBrowser patch for chrome/browser/resources/settings/page_visibility.ts
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/resources/settings/page_visibility.ts by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/settings/page_visibility.ts b/chrome/browser/resources/settings/page_visibility.ts
+index feff9bdf645523030d2b06eb354d09c234ae733e..047cffbc5aea0e684501e4a6f945f07fd5b01cea 100644
+--- a/chrome/browser/resources/settings/page_visibility.ts
++++ b/chrome/browser/resources/settings/page_visibility.ts
+@@ -44,7 +44,31 @@ export interface PrivacyPageVisibility {
+ 
+ function createPageVisibility(): PageVisibility|undefined {
+   if (!loadTimeData.getBoolean('isGuest')) {
+-    return undefined;
++    // MoltBrowser: In normal (non-guest) mode Chromium returns undefined here,
++    // which leaves every settings section visible — including the Google
++    // sign-in/sync "people" section. We instead return an explicit visibility
++    // map that hides ONLY the people section (Google account/sync) while
++    // keeping every other section visible. A partial object would flip all
++    // unspecified sections to hidden, so every PageVisibility field declared
++    // in the PageVisibility interface is enumerated explicitly below.
++    return {
++      a11y: true,
++      ai: true,
++      appearance: true,
++      autofill: true,
++      defaultBrowser: true,
++      downloads: true,
++      extensions: true,
++      languages: true,
++      onStartup: true,
++      people: false,
++      performance: true,
++      privacy: true,
++      reset: true,
++      safetyHub: true,
++      system: true,
++      yourSavedInfo: true,
++    };
+   }
+ 
+   // <if expr="not is_chromeos">

@@ -1,0 +1,108 @@
+MoltBrowser patch for chrome/browser/resources/settings/settings_main/settings_main.html
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/resources/settings/settings_main/settings_main.html by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
+index 5ed8fe86a817c2602eedf07863335db71cd836d4..62f96f366e7b0db4f0b9723b22d6dcba79f529e2 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.html
++++ b/chrome/browser/resources/settings/settings_main/settings_main.html
+@@ -32,6 +32,61 @@
+   cr-view-manager [hidden-by-search] {
+     display: none;
+   }
++
++  /* MoltBrowser: prominent, always-visible "Import from another browser"
++   * call-to-action. Rendered in the settings CONTENT pane (not the left
++   * menu), so it stays visible even when the AI chat side panel forces the
++   * settings page into its narrow layout and the left menu collapses behind
++   * the hamburger. Sits at the very top of the landing (top-level) page,
++   * above the first section. Width/centering mirrors
++   * .cr-centered-card-container so the card lines up with the section cards
++   * below it in both wide and narrow layouts. */
++  .import-cta-container {
++    box-sizing: border-box;
++    margin: 0 auto;
++    max-width: var(--cr-centered-card-max-width);
++    width: calc(100% * var(--cr-centered-card-width-percentage));
++  }
++
++  #importCta {
++    align-items: center;
++    background-color: var(--cr-card-background-color);
++    border-radius: var(--cr-card-border-radius, 8px);
++    box-shadow: var(--cr-card-shadow);
++    box-sizing: border-box;
++    display: flex;
++    gap: 16px;
++    margin-bottom: 12px;
++    padding: 20px 24px;
++  }
++
++  #importCta .import-cta-icon {
++    --iron-icon-height: 24px;
++    --iron-icon-width: 24px;
++    color: var(--cr-link-color);
++    flex-shrink: 0;
++  }
++
++  #importCta .import-cta-text {
++    flex: 1;
++    min-width: 0;
++  }
++
++  #importCta .import-cta-title {
++    color: var(--cr-primary-text-color);
++    font-size: 108%;
++    font-weight: 500;
++  }
++
++  #importCta .import-cta-subtext {
++    color: var(--cr-secondary-text-color);
++    margin-top: 4px;
++  }
++
++  #importCtaButton {
++    flex-shrink: 0;
++    text-decoration: none;
++  }
+ </style>
+ <div id="noSearchResults" hidden$="[[!showNoResultsFound_]]">
+   <div>$i18n{searchNoResults}</div>
+@@ -54,6 +109,35 @@
+   </settings-reset-profile-banner>
+ </template>
+ 
++<!-- MoltBrowser: one-click browser-migration CTA. Only shown on the
++     top-level landing page (not during search, not on subpages, not on
++     the About page). Opens MoltBrowser's detected-browser import flow in a
++     new tab via the registered molt:// scheme, exactly like the sidebar
++     #importBookmarksLink. Lives in the always-visible scrolling content
++     pane so users can't miss it even in the narrow side-panel layout. -->
++<template is="dom-if" if="[[showImportCta_(inSearchMode_, lastRoute_)]]"
++    restamp>
++  <div class="import-cta-container">
++    <div id="importCta">
++      <cr-icon class="import-cta-icon" icon="cr:file-download"></cr-icon>
++      <div class="import-cta-text">
++        <div class="import-cta-title">Bring your stuff over</div>
++        <div class="import-cta-subtext">
++          Import your bookmarks and passwords from Chrome, Safari, or another
++          browser — one click, no files to export.
++        </div>
++      </div>
++      <a id="importCtaButton" href="molt://ai-settings/?section=import"
++          target="_blank"
++          title="Import bookmarks &amp; passwords from another browser">
++        <cr-button class="action-button">
++          Import from another browser
++        </cr-button>
++      </a>
++    </div>
++  </div>
++</template>
++
+ <cr-view-manager id="switcher"
+     show-all$="[[shouldShowAll_(inSearchMode_, lastRoute_)]]">
+   <template is="dom-if" if="[[showPage_(pageVisibility_.people)]]">

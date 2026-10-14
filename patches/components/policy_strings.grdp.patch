@@ -1,0 +1,54 @@
+MoltBrowser patch for components/policy_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/components/policy_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/policy_strings.grdp b/components/policy_strings.grdp
+index 293e50152b9c44924616f4f009904e8a516e4a83..36ffb2bc7fbb747d2766c821eb089ef0923b9dc1 100644
+--- a/components/policy_strings.grdp
++++ b/components/policy_strings.grdp
+@@ -232,7 +232,7 @@
+     Ignored because the policy can only be set as a cloud user policy.
+   </message>
+   <message name="IDS_POLICY_CLOUD_MANAGEMENT_ENROLLMENT_ONLY_ERROR" desc="The text displayed in the status column when a policy that is effective only when the machine is enrolled with the Chrome Browser Cloud Management.">
+-    Ignored because the machine is not enrolled with Chrome Browser Cloud Management.
++    Ignored because the machine is not enrolled with MoltBrowser Browser Cloud Management.
+   </message>
+   <message name="IDS_POLICY_DEFAULT_SEARCH_DISABLED" desc="The text displayed in the status column when a policy value has been ignored because default search has not been enabled.">
+     Ignored because default search is not enabled by policy.
+@@ -297,7 +297,7 @@
+     </message>
+   </if>
+   <message name="IDS_POLICY_OFF_CWS_URL_ERROR" desc="The text displayed in the status column when the update URL points to a location other than the Chrome Webstore and the machine is not enterprise managed.">
+-    This computer is not detected as enterprise managed so policy can only automatically install extensions hosted on the Chrome Webstore. The Chrome Webstore update URL is "<ph name="CWS_UPDATE_URL">$1<ex>https://clients2.google.com/service/update2/crx</ex></ph>".
++    This computer is not detected as enterprise managed so policy can only automatically install extensions hosted on the MoltBrowser Webstore. The MoltBrowser Webstore update URL is "<ph name="CWS_UPDATE_URL">$1<ex>https://clients2.google.com/service/update2/crx</ex></ph>".
+   </message>
+   <message name="IDS_POLICY_HOMEPAGE_LOCATION_ERROR" desc="The text displayed in the status column when the homepage URL given by the HomepageLocation policy is invalid.">
+     Invalid URL. Must be a URL with a standard scheme, e.g http://example.com or https://example.com.
+@@ -778,10 +778,10 @@ Additional details:
+     This policy cannot be set to "True" and be mandatory, therefore it was changed to recommended.
+   </message>
+   <message name="IDS_POLICY_IGNORED_CHROME_PROFILE" desc="Text explaining that the policy cannot be set at the Chrome profile level and is therefore ignored.">
+-    This policy cannot be set at the Chrome profile level and will be ignored.
++    This policy cannot be set at the MoltBrowser profile level and will be ignored.
+   </message>
+   <message name="IDS_POLICY_IGNORED_UNAFFILIATED" desc="Text describing that the policy value is not applied because the user is unaffiliated.">
+-    This policy is ignored because the user is unaffiliated. For this policy to be applied, the Chrome browser and profile must be managed through the Admin console by the same organization.
++    This policy is ignored because the user is unaffiliated. For this policy to be applied, the MoltBrowser browser and profile must be managed through the Admin console by the same organization.
+   </message>
+   <message name="IDS_POLICY_IGNORED_EXTENSION" desc="Text explaining that extension policies are likely ignored by the extension.">
+     Likely ignored by the extension.
+@@ -858,10 +858,10 @@ Additional details:
+     Streamline how your organization manages policies
+   </message>
+   <message name="IDS_POLICY_BANNER_PROMOTION_DESC" desc="Description for Chrome Enterprise Core (CEC) promotion banner">
+-    Chrome Enterprise Core gives you a centralized tool for configuring browser policies from the cloud
++    MoltBrowser Enterprise Core gives you a centralized tool for configuring browser policies from the cloud
+   </message>
+   <message name="IDS_POLICY_BANNER_PROMOTION_BTN" desc="Button for Chrome Enterprise Core (CEC) promotion banner">
+-    Try Chrome Enterprise Core
++    Try MoltBrowser Enterprise Core
+   </message>
+   <message name="IDS_DEVTOOLS_BLOCKED_BY_POLICY" desc="Message shown when DevTools is blocked by policy.">
+     Your organization has blocked the use of DevTools on this page

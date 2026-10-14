@@ -1,0 +1,19 @@
+MoltBrowser patch for chrome/browser/ui/side_panel/side_panel_entry_id.h
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/side_panel/side_panel_entry_id.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/side_panel/side_panel_entry_id.h b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+index 4bcd669843672414b31e938c5e9f75d1e54824db..9ec454ec35724bebe781ddf46830714e8c95443e 100644
+--- a/chrome/browser/ui/side_panel/side_panel_entry_id.h
++++ b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+@@ -41,6 +41,8 @@
+   V(kMerchantTrust, kActionSidePanelShowMerchantTrust, "MerchantTrust")       \
+   V(kComments, kActionSidePanelShowComments, "Comments")                      \
+   V(kGlic, kActionSidePanelShowGlic, "Glic")                                  \
++  V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")               \
++  V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                  \
+   /* Extensions (nothing more should be added below here) */                  \
+   V(kExtension, std::nullopt, "Extension")
+ 

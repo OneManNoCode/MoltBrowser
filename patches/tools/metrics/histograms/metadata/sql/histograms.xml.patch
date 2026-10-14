@@ -1,0 +1,37 @@
+MoltBrowser patch for tools/metrics/histograms/metadata/sql/histograms.xml
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/tools/metrics/histograms/metadata/sql/histograms.xml by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
+index b15cb985721a7ce20ccaa51e92b0239dea687d39..d550d9a98fede960c1f0b5ab68285dc63c2cf458 100644
+--- a/tools/metrics/histograms/metadata/sql/histograms.xml
++++ b/tools/metrics/histograms/metadata/sql/histograms.xml
+@@ -36,8 +36,10 @@ chromium-metrics-reviews@google.com.
+   <variant name="AggregationService" summary="AggregationService"/>
+   <variant name="AnnotationStorage" summary="AnnotationStorage"/>
+   <variant name="BackgroundRequestQueue" summary="BackgroundRequestQueue"/>
++  <variant name="BrowserImporter" summary="Browser profile import (Login Data copy) across the Chromium family"/>
+   <variant name="BrowsingTopics" summary="BrowsingTopics"/>
+   <variant name="CdmStorage" summary="CdmStorage"/>
++  <variant name="ChromeImporter" summary="Google Chrome profile import (Login Data copy)"/>
+   <variant name="Chromoting" summary="Chromoting"/>
+   <variant name="CodeCache"/>
+   <variant name="CollaborationMessageStorage"
+@@ -52,6 +54,7 @@ chromium-metrics-reviews@google.com.
+   <variant name="DIPS" summary="DIPS"/>
+   <variant name="DownloadRecord" summary="DownloadRecord"/>
+   <variant name="FileIndexService" summary="FileIndexService"/>
++  <variant name="FirefoxImport" summary="Mozilla Firefox bookmark import (places.sqlite copy)"/>
+   <variant name="FirefoxImporter" summary="FirefoxImporter"/>
+   <variant name="FirstPartySets" summary="FirstPartySets"/>
+   <variant name="FSPContextDatabase" summary="FSPContextDatabase"/>
+@@ -74,6 +77,7 @@ chromium-metrics-reviews@google.com.
+   <variant name="PageContentStore" summary="Page Content Store"/>
+   <variant name="Passwords" summary="Passwords"/>
+   <variant name="PermissionAuditingLogs" summary="PermissionAuditingLogs"/>
++  <variant name="MoltMemory" summary="MoltBrowser personal vector memory"/>
+   <variant name="PowerBookmarks" summary="PowerBookmarks"/>
+   <variant name="Predictor" summary="Predictor"/>
+   <variant name="PrivateAggregation" summary="PrivateAggregation"/>

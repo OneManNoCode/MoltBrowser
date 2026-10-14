@@ -1,0 +1,66 @@
+MoltBrowser patch for chrome/browser/resources/settings/settings_menu/settings_menu.html
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/resources/settings/settings_menu/settings_menu.html by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+index 3cb9e3af7a3152580e121c49a6e42639d8bd4e9d..028dbef758dc38f589f77a840a16ecee3ad9e76e 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -42,18 +42,17 @@
+     </style>
+ 
+     <div role="navigation">
+-      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
++      <cr-menu-selector id="menu"
++          selectable="a:not(#extensionsLink):not(#importBookmarksLink)"
+           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
+           on-click="onLinkClick_" selected-attribute="selected">
+         <a role="menuitem"
+             id="people" href="/people" hidden="[[!pageVisibility_.people]]"
+             class="cr-nav-menu-item">
+-<if expr="not _google_chrome">
++<!-- MoltBrowser: always use the neutral person glyph. Never render the
++     branded settings-internal:google-g (blue Google "G") even on
++     _google_chrome-flavored builds. -->
+           <cr-icon icon="settings:person"></cr-icon>
+-</if>
+-<if expr="_google_chrome">
+-          <cr-icon icon="settings-internal:google-g"></cr-icon>
+-</if>
+           $i18n{peoplePageTitle}
+           <cr-ripple></cr-ripple>
+         </a>
+@@ -67,6 +66,20 @@
+           $i18n{autofillPageTitle}
+           <cr-ripple></cr-ripple>
+         </a>
++        <!-- MoltBrowser: prominent, always-visible entry point for the
++             one-click browser-migration flow. Modeled on #extensionsLink
++             (external link): the href navigates to MoltBrowser's detected-
++             browser import page in a new tab; excluded from menu selection.
++             Placed high (right after Autofill) so users migrating from
++             another browser can't miss it. -->
++        <a role="menuitem" id="importBookmarksLink" class="cr-nav-menu-item"
++            href="molt://ai-settings/?section=import" target="_blank"
++            title="Import bookmarks &amp; passwords from another browser">
++          <cr-icon icon="cr:file-download"></cr-icon>
++          <span>Import bookmarks</span>
++          <div class="cr-icon icon-external"></div>
++          <cr-ripple></cr-ripple>
++        </a>
+         <a role="menuitem" href="/privacy"
+             hidden="[[!pageVisibility_.privacy]]"
+             class="cr-nav-menu-item">
+@@ -167,7 +180,9 @@
+         </a>
+         <a role="menuitem" id="about-menu" href="/help"
+             class="cr-nav-menu-item">
+-          <cr-icon icon="cr:chrome-product"></cr-icon>
++          <!-- MoltBrowser: neutral info glyph instead of cr:chrome-product
++               (the blue Chrome/Google swirl) on the About row. -->
++          <cr-icon icon="cr:info"></cr-icon>
+           $i18n{aboutPageTitle}
+           <cr-ripple></cr-ripple>
+         </a>

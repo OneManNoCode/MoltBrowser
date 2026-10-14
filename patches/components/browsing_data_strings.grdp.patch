@@ -1,0 +1,29 @@
+MoltBrowser patch for components/browsing_data_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/components/browsing_data_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/browsing_data_strings.grdp b/components/browsing_data_strings.grdp
+index 204aeb683dce36139695acc1c8e3f77c7a980e84..dedb41d7abadfdb6f82aa8f0882f7f2584de557e 100644
+--- a/components/browsing_data_strings.grdp
++++ b/components/browsing_data_strings.grdp
+@@ -178,8 +178,8 @@
+   <message name="IDS_DEL_COOKIES_COUNTER_ADVANCED_WITH_SIGNED_IN_EXCEPTION" desc="A counter showing the number of sites that use cookies, followed by an exception message that the user will stay signed in to their Google account.">
+     {COUNT, plural,
+       =0 {None}
+-      =1 {From 1 site (you'll stay signed in to your Google Account)}
+-      other {From # sites (you'll stay signed in to your Google Account)}}
++      =1 {From 1 site (you'll stay signed in to your MoltBrowser Account)}
++      other {From # sites (you'll stay signed in to your MoltBrowser Account)}}
+   </message>
+   <message name="IDS_ANDROID_DEL_COOKIES_COUNTER_ADVANCED" desc="A counter showing the number of sites that use cookies on the advanced Clear browsing data screen on Android. It also explains that deleting these cookies will sign you out of most sites.">
+     {COUNT, plural,
+@@ -225,6 +225,6 @@
+     <ph name="TAB_COUNT">$1<ex>5 tabs</ex></ph> from <ph name="WINDOW_COUNT">$2<ex>2 windows</ex></ph> on this device
+   </message>
+   <message name="IDS_DEL_GOOGLE_COOKIES_SIGNOUT_LINK" desc="A message that will be appended to IDS_DEL_COOKIES_COUNTER_ADVANCED if the user is signed in. It informs the user that their Google cookies will only be deleted if they signed out of Chrome. This string includes a link that, when clicked on, will sign the user out of Chrome.">
+-    To delete Google cookies from this device, <ph name="BEGIN_LINK">&lt;a href="#" target="_blank" id="signOutLink"&gt;</ph>sign out of Chrome<ph name="END_LINK">&lt;/a&gt;</ph>.
++    To delete Google cookies from this device, <ph name="BEGIN_LINK">&lt;a href="#" target="_blank" id="signOutLink"&gt;</ph>sign out of MoltBrowser<ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+ </grit-part>

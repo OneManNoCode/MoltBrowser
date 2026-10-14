@@ -1,0 +1,30 @@
+MoltBrowser patch for chrome/browser/ui/browser_command_controller.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/browser_command_controller.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index 2ab2f2caa836ec20fa057717d27ce807f8c02406..b2bcd30812d309b828abe1fdac983be7b820c460 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -1080,6 +1080,11 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
+       browser_->GetFeatures().side_panel_ui()->Show(
+           SidePanelEntryId::kBookmarks, SidePanelOpenTrigger::kAppMenu);
+       break;
++    case IDC_SHOW_MOLT_AI_SIDE_PANEL:
++      browser_->GetFeatures().side_panel_ui()->Toggle(
++          SidePanelEntryKey(SidePanelEntryId::kMoltAiChat),
++          SidePanelOpenTrigger::kAppMenu);
++      break;
+     case IDC_SHOW_APP_MENU:
+       base::RecordAction(base::UserMetricsAction("Accel_Show_App_Menu"));
+       ShowAppMenu(browser_);
+@@ -1771,6 +1776,7 @@ void BrowserCommandController::InitCommandState() {
+   }
+ 
+   command_updater_.UpdateCommandEnabled(IDC_SHOW_BOOKMARK_SIDE_PANEL, true);
++  command_updater_.UpdateCommandEnabled(IDC_SHOW_MOLT_AI_SIDE_PANEL, true);
+ 
+   if (browser_->is_type_normal()) {
+     // Reading list commands.

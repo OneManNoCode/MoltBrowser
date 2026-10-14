@@ -1,0 +1,47 @@
+MoltBrowser patch for chrome/app/nearby_share_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/nearby_share_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/nearby_share_strings.grdp b/chrome/app/nearby_share_strings.grdp
+index 79bfea72b397fbaeebc74ad3ef05978424a54c04..61770870903e9a6452766f417d3893a14c396363 100644
+--- a/chrome/app/nearby_share_strings.grdp
++++ b/chrome/app/nearby_share_strings.grdp
+@@ -23,7 +23,7 @@
+     Only devices signed into <ph name="USER_EMAIL">$1<ex>example@gmail.com</ex></ph>
+   </message>
+   <message name="IDS_QUICK_SHARE_V2_VISIBILITY_CONTACTS_SUBLABEL" desc="Contacts visibility radio button sublabel.">
+-    Only your contacts with a Google Account. <ph name="LINK_BEGIN">&lt;a&gt;</ph>View contacts<ph name="LINK_END">&lt;/a&gt;</ph>
++    Only your contacts with a MoltBrowser Account. <ph name="LINK_BEGIN">&lt;a&gt;</ph>View contacts<ph name="LINK_END">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_QUICK_SHARE_V2_VISIBILITY_EVERYONE_LABEL" desc="Everyone visibility radio button label.">
+     Everyone
+@@ -43,23 +43,23 @@
+     Downloading contact list...
+   </message>
+   <message name="IDS_NEARBY_CONTACT_VISIBILITY_NO_CONTACTS_SUBTITLE" desc="Help text shown when there are no reachable contacts with a Google Account to select from. Nearby Share is the feature name.">
+-    To use Nearby Share with these contacts, add the email address linked with their Google Account to your contacts.
++    To use Nearby Share with these contacts, add the email address linked with their MoltBrowser Account to your contacts.
+   </message>
+   <message name="IDS_NEARBY_CONTACT_VISIBILITY_NO_CONTACTS_SUBTITLE_PH" desc="Feature name placeholder: Help text shown when there are no reachable contacts with a Google Account to select from.">
+-    To use <ph name="FEATURE_NAME">$1<ex>Nearby Share</ex></ph> with these contacts, add the email address linked with their Google Account to your contacts.
++    To use <ph name="FEATURE_NAME">$1<ex>Nearby Share</ex></ph> with these contacts, add the email address linked with their MoltBrowser Account to your contacts.
+   </message>
+   <message name="IDS_NEARBY_CONTACT_VISIBILITY_NO_CONTACTS_TITLE" desc="Title text shown when there are no reachable contacts with a Google Account to select from.">
+     No reachable contacts
+   </message>
+   <message name="IDS_NEARBY_CONTACT_VISIBILITY_NUM_UNREACHABLE" desc="Informational message indicating that there are contacts that are not connectable for sharing with the Nearby Share feature.">
+     {COUNT, plural,
+-      =1 {# contact is not available. To use Nearby Share with them, add the email address associated with their Google Account to your contacts.}
++      =1 {# contact is not available. To use Nearby Share with them, add the email address associated with their MoltBrowser Account to your contacts.}
+       other {# contacts are not available. To use Nearby Share with them, add the email addresses associated with their Google Accounts to your contacts.}
+     }
+   </message>
+   <message name="IDS_NEARBY_CONTACT_VISIBILITY_NUM_UNREACHABLE_PH" desc="Informational message indicating that there are contacts that are not connectable for sharing with the Nearby Share feature.">
+     {COUNT, plural,
+-      =1 {# contact is not available. To use <ph name="FEATURE_NAME">$2<ex>Nearby Share</ex></ph> with them, add the email address associated with their Google Account to your contacts.}
++      =1 {# contact is not available. To use <ph name="FEATURE_NAME">$2<ex>Nearby Share</ex></ph> with them, add the email address associated with their MoltBrowser Account to your contacts.}
+       other {# contacts are not available. To use <ph name="FEATURE_NAME">$2<ex>Nearby Share</ex></ph> with them, add the email addresses associated with their Google Accounts to your contacts.}
+     }
+   </message>

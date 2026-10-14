@@ -1,0 +1,670 @@
+MoltBrowser patch for chrome/app/settings_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/settings_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
+index fc0a1516bb7bca15ac16681c6ef461ce1e8407b7..1fbefd1af1b93bf104a18c74d1e8e1e1c4db64b3 100644
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -69,7 +69,7 @@
+   </if>
+   <if expr="is_macosx">
+     <message name="IDS_ABOUT_CHROME_AUTOUPDATE_ALL" desc="The 'Automatically update Chrome for all users.' button in the About window.  Mac-only.">
+-      Automatically update Chrome for all users
++      Automatically update MoltBrowser for all users
+     </message>
+     <message name="IDS_ABOUT_CHROME_AUTOUPDATE_ALL_IS_ON" desc="The text in About Page to indicate automatic update is turned on.  Mac-only.">
+       Automatic updates are turned on.
+@@ -84,7 +84,7 @@
+     Accessibility
+   </message>
+   <message name="IDS_SETTINGS_ACCESSIBILITY_WEB_STORE" desc="Text for an external link explaining that additional accessibility features are found on the Chrome Web Store.">
+-    Open Chrome Web Store
++    Open Extension Store
+   </message>
+   <message name="IDS_SETTINGS_MORE_FEATURES_LINK" desc="Link which opens page where users can install extensions which provide additional accessibility features.">
+     Add accessibility features
+@@ -96,7 +96,7 @@
+     Get image descriptions from Google
+   </message>
+   <message name="IDS_SETTINGS_ACCESSIBLE_IMAGE_LABELS_SUBTITLE" desc="Subtitle for screen reader image labels feature.">
+-    If an image doesn’t have a useful description, Chrome will try to provide one for you. To create descriptions, images are sent to Google.
++    If an image doesn’t have a useful description, MoltBrowser will try to provide one for you. To create descriptions, images are sent to Google.
+   </message>
+   <message name="IDS_SETTINGS_MAIN_NODE_ANNOTATIONS_DOWNLOAD_COMPLETE" desc="Success message when it has downloaded main node annotation files.">
+     Main node annotation files downloaded
+@@ -249,7 +249,7 @@
+     Reset toolbar to default settings
+   </message>
+   <message name="IDS_SETTINGS_CHROME_COLORS" desc="Text of the label describing 'Chrome Colors' theme.">
+-    Chrome Colors
++    MoltBrowser Colors
+   </message>
+   <message name="IDS_SETTINGS_COLOR_SCHEME_MODE" desc="Text of the label for selecting a color scheme mode for the browser.">
+     Mode
+@@ -343,13 +343,13 @@
+     Search settings
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_NO_RESULTS_HELP" desc="Help text for a search that has no results.">
+-    Go to <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>Google Chrome help<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> if you can't find what you're looking for
++    Go to <ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>MoltBrowser help<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> if you can't find what you're looking for
+   </message>
+   <message name="IDS_SETTINGS_SETTINGS" desc="The settings page title.">
+     Settings
+   </message>
+   <message name="IDS_SETTINGS_ALT_PAGE_TITLE" desc="The settings page title for the about page.">
+-    Settings - <ph name="SECTION_TITLE">$1<ex>About Chromium</ex></ph>
++    Settings - <ph name="SECTION_TITLE">$1<ex>About MoltBrowser</ex></ph>
+   </message>
+   <message name="IDS_SETTINGS_SUBPAGE_BUTTON" desc="Accessibility description for a button navigating the user from a settings page to one of the settings subpages.">
+     Subpage button
+@@ -424,7 +424,7 @@
+     export passwords
+   </message>
+   <message name="IDS_PASSWORDS_PAGE_DELETE_ALL_DATA_AUTHENTICATION_PROMPT_BIOMETRIC_SUFFIX" desc="Shown on MacOS after 'Google Chrome is trying to ' (or in some languages, 'Google Chrome wants to ') in a dialog message. Text for the dialog box that prompts the user for the biometric authentication before deleting all Google Password Manager data.">
+-    delete your <ph name="BRAND">$1<ex>Google Password Manager</ex></ph> data
++    delete your <ph name="BRAND">$1<ex>MoltBrowser Password Manager</ex></ph> data
+   </message>
+   <message name="IDS_SETTINGS_AUTOFILL_AND_PASSWORDS" desc="Name of the settings page which allows managing passwords, payment methods and addresses settings.">
+     Autofill and passwords
+@@ -544,7 +544,7 @@
+     This payment method will be deleted from this device
+   </message>
+   <message name="IDS_SETTINGS_PAYMENTS_MANAGE_CREDIT_CARDS" desc="Shown in the payments section of settings. Descriptive text to inform the user that credit cards can be accessed online. Has a link.">
+-   To add or manage Google Pay payment methods, visit your <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>Google Account<ph name="END_LINK">&lt;/a&gt;</ph>
++   To add or manage Google Pay payment methods, visit your <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_WALLET" desc="Label used to differentiate when an Autofill AI entity (such as vehicle information) is stored in Google Wallet.">
+     Google Wallet
+@@ -673,7 +673,7 @@
+     Warn you if a password was compromised in a data breach
+   </message>
+   <message name="IDS_SETTINGS_PASSWORDS_LEAK_DETECTION_SIGNED_OUT_ENABLED_DESC" desc="Text that describes the 'Password Leak Detection' functionality to signed-out users who have not disabled the feature. This text always follows a sentence describing the feature.">
+-    When you sign in to your Google Account, this feature is turned on.
++    When you sign in to your MoltBrowser Account, this feature is turned on.
+   </message>
+   <message name="IDS_SETTINGS_CHECK_PASSWORDS_PROGRESS" desc="Text for a label showing how many passwords were checked so far and how many passwords need to be checked in total.">
+     Checking passwords (<ph name="CHECKED_PASSWORDS">$1<ex>6</ex></ph> of <ph name="TOTAL_PASSWORDS">$2<ex>31</ex></ph>)…
+@@ -778,12 +778,12 @@
+     </message>
+   <if expr="is_win">
+     <message name="IDS_AUTOFILL_MANAGE_PASSKEYS_SUB_TITLE_WIN" desc="A warning on a page where the user can see and delete passkeys saved on their computer. It communicates that the passkeys shown are stored in Windows Hello, which is a Microsoft product name, and not in the user's Google account. For consistency, the word 'passkey' is in the glossary with translations already suggested.">
+-      These passkeys are saved to Windows Hello on this computer. They aren't saved to your Google Account.
++      These passkeys are saved to Windows Hello on this computer. They aren't saved to your MoltBrowser Account.
+     </message>
+   </if>
+   <if expr="is_macosx">
+     <message name="IDS_AUTOFILL_MANAGE_PASSKEYS_SUB_TITLE_MAC" desc="A warning on a page where the user can see and delete passkeys saved on their computer. For consistency, the word 'passkey' is in the glossary with translations already suggested.">
+-      These passkeys are only saved on this device. They aren't saved to your Google Account.
++      These passkeys are only saved on this device. They aren't saved to your MoltBrowser Account.
+     </message>
+   </if>
+     <message name="IDS_AUTOFILL_MANAGE_PASSKEYS_SEARCH" desc="The label on a field that a user can use to search within a list of passkeys. For consistency, the word 'passkey' is in the glossary with translations already suggested.">
+@@ -814,28 +814,28 @@
+   </message>
+ 
+   <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_EDIT" desc="Label for a context menu item that provides the edit option for the selected home and work address.">
+-    Edit in Google Account
++    Edit in MoltBrowser Account
+   </message>
+   <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_REMOVE" desc="Label for a context menu item that removes the selected home and work address from Chrome.">
+-    Remove from Chrome
++    Remove from MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_HOME_ADDRESS_REMOVE_CONFIRMATION_DIALOG_TITLE" desc="Title for the dialog that asks for confirmation to remove the selected home address from Chrome.">
+-    Remove your home address from Chrome autofill?
++    Remove your home address from MoltBrowser autofill?
+   </message>
+   <message name="IDS_SETTINGS_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_TITLE" desc="Title for the dialog that asks for confirmation to remove the selected work address from Chrome.">
+-    Remove your work address from Chrome autofill?
++    Remove your work address from MoltBrowser autofill?
+   </message>
+   <message name="IDS_SETTINGS_NAME_EMAIL_ADDRESS_REMOVE_CONFIRMATION_DIALOG_TITLE" desc="Title for the dialog that asks for confirmation to remove the selected name and email address from Chrome.">
+-    Remove this info from Chrome autofill?
++    Remove this info from MoltBrowser autofill?
+   </message>
+   <message name="IDS_SETTINGS_HOME_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected home address from Chrome.">
+-    Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
++    Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+   <message name="IDS_SETTINGS_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected work address from Chrome.">
+-    Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
++    Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+   <message name="IDS_SETTINGS_NAME_EMAIL_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected name and email address from Chrome.">
+-    You can edit your name in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>
++    You can edit your name in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>
+   </message>
+   <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_ACTION_OK" desc="Okay action for the dialog that asks for confirmation to remove the selected home and work address from Chrome.">
+     Remove
+@@ -862,16 +862,16 @@
+     Time range
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_WITH_SYNC" desc="Description in the footer of the Delete Browsing Data dialog when the user is syncing.">
+-    To delete browsing data from this device only, while keeping it in your Google Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>sign out<ph name="END_LINK">&lt;/a&gt;</ph>.
++    To delete browsing data from this device only, while keeping it in your MoltBrowser Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>sign out<ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_WITH_SYNC_ERROR" desc="Description in the footer of the Delete Browsing Data dialog when there is a sync error.">
+-    To delete browsing data from all of your synced devices and your Google Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>visit sync settings<ph name="END_LINK">&lt;/a&gt;</ph>.
++    To delete browsing data from all of your synced devices and your MoltBrowser Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>visit sync settings<ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_WITH_SYNC_PASSPHRASE_ERROR" desc="Description in the footer of the Delete Browsing Data dialog when there is a sync passphrase error.">
+-    To delete browsing data from all of your synced devices and your Google Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>enter your passphrase<ph name="END_LINK">&lt;/a&gt;</ph>.
++    To delete browsing data from all of your synced devices and your MoltBrowser Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>enter your passphrase<ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_WITH_SYNC_PAUSED" desc="Description in the footer of the Delete Browsing Data dialog when sync is paused.">
+-    To delete browsing data from all of your synced devices and your Google Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>sign in<ph name="END_LINK">&lt;/a&gt;</ph>.
++    To delete browsing data from all of your synced devices and your MoltBrowser Account, <ph name="BEGIN_LINK">&lt;a href="#" target=&quot;_blank&quot;&gt;</ph>sign in<ph name="END_LINK">&lt;/a&gt;</ph>.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_BROWSING_HISTORY" desc="Checkbox for deleting Browsing History">
+     Browsing history
+@@ -880,13 +880,13 @@
+     Signs you out of most sites
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC_WITH_EXCEPTION" desc="A summary for the 'Cookies and site data' option in the 'Delete Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites but your Google sign in will stay.">
+-    Signs you out of most sites. You'll stay signed in to your Google Account so your synced data can be deleted.
++    Signs you out of most sites. You'll stay signed in to your MoltBrowser Account so your synced data can be deleted.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC_SUPERVISED_PROFILE" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the the child user out of most websites but your Google account and Family Link settings will stay .">
+-    Signs you out of most sites. You'll stay signed in to your Google Account so your Family Link settings for Chrome apply.
++    Signs you out of most sites. You'll stay signed in to your MoltBrowser Account so your Family Link settings for MoltBrowser apply.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC_SIGNED_IN_PROFILE" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites but your Google sign in will stay.">
+-    Signs you out of most sites. You'll stay signed in to your Google Account.
++    Signs you out of most sites. You'll stay signed in to your MoltBrowser Account.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_BROWSING_HISTORY_SUMMARY" desc="A subtext for the basic tab explaining browsing history.">
+     Deletes history, including in the search box
+@@ -895,10 +895,10 @@
+     Deletes history from all synced devices
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_GOOGLE_SEARCH_HISTORY_GOOGLE_DSE" desc="A description explaining that search history and other forms of activity can be cleared through the Google account.">
+-    <ph name="BEGIN_LINK_SEARCH">&lt;a target="_blank" href="$1"&gt;</ph>Search history<ph name="END_LINK_SEARCH">&lt;/a&gt;</ph> and <ph name="BEGIN_LINK_GOOGLE">&lt;a target="_blank" href="$2"&gt;</ph>other forms of activity<ph name="END_LINK_GOOGLE">&lt;/a&gt;</ph> may be saved in your Google Account when you're signed in. You can delete them anytime.
++    <ph name="BEGIN_LINK_SEARCH">&lt;a target="_blank" href="$1"&gt;</ph>Search history<ph name="END_LINK_SEARCH">&lt;/a&gt;</ph> and <ph name="BEGIN_LINK_GOOGLE">&lt;a target="_blank" href="$2"&gt;</ph>other forms of activity<ph name="END_LINK_GOOGLE">&lt;/a&gt;</ph> may be saved in your MoltBrowser Account when you're signed in. You can delete them anytime.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_GOOGLE_SEARCH_HISTORY_NON_GOOGLE_DSE" desc="A description explaining that other forms of activity can be cleared through the Google account.">
+-    <ph name="BEGIN_LINK_GOOGLE">&lt;a target="_blank" href="$1"&gt;</ph>Other forms of activity<ph name="END_LINK_GOOGLE">&lt;/a&gt;</ph> may be saved in your Google Account when you're signed in. You can delete them anytime.
++    <ph name="BEGIN_LINK_GOOGLE">&lt;a target="_blank" href="$1"&gt;</ph>Other forms of activity<ph name="END_LINK_GOOGLE">&lt;/a&gt;</ph> may be saved in your MoltBrowser Account when you're signed in. You can delete them anytime.
+   </message>
+   <message name="IDS_SETTINGS_CLEAR_DOWNLOAD_HISTORY" desc="Checkbox for deleting Download History">
+     Download history
+@@ -1406,10 +1406,10 @@
+     Sites you visit can verify that you're a real person and not a bot
+   </message>
+   <message name="IDS_SETTINGS_ANTI_ABUSE_WHEN_ON_SECTION_ONE" desc="A description that informs users that Chrome saves a small amount of data when the anti-abuse features are enabled.">
+-    A site you visit can save a small amount of info with Chrome, mainly to validate you're not a bot
++    A site you visit can save a small amount of info with MoltBrowser, mainly to validate you're not a bot
+   </message>
+   <message name="IDS_SETTINGS_ANTI_ABUSE_WHEN_ON_SECTION_TWO" desc="A description that informs users how the anti-abuse features work.">
+-    As you keep browsing, sites can check with Chrome and verify with a previous site you've visited that you're likely a real person
++    As you keep browsing, sites can check with MoltBrowser and verify with a previous site you've visited that you're likely a real person
+   </message>
+   <message name="IDS_SETTINGS_ANTI_ABUSE_WHEN_ON_SECTION_THREE" desc="A description that informs users how their browsing could be helped by the anti-abuse features.">
+     Browsing is faster because a site is less likely to ask you to verify you're a real person
+@@ -1475,7 +1475,7 @@
+   <!-- Privacy Sandbox v4 - Topics Page -->
+   <!-- Where possible, these strings have been unified on Desktop & Android in privacy_sandox_strings.grdp. The strings here either only appear on one platform, or have platform specific requirements, e.g. the format of placeholders, and so cannot be unified. For the latter case, they have corresponding _CANONICAL representations used when consent is recorded on either platform, and so they must stay in sync -->
+   <message name="IDS_SETTINGS_TOPICS_PAGE_CURRENT_TOPICS_REGION_A11Y_DESCRIPTION" desc="An explanation read by screen readers that describes the list of topics.">
+-    List of topics estimated by Chrome based on your recent browsing history
++    List of topics estimated by MoltBrowser based on your recent browsing history
+   </message>
+   <message name="IDS_SETTINGS_TOPICS_PAGE_BLOCKED_TOPICS_REGION_A11Y_DESCRIPTION" desc="Read by screen readers to describe the list of blocked topics.">
+     List of topics you blocked that you don't want shared with sites
+@@ -1497,7 +1497,7 @@
+     Sites
+   </message>
+   <message name="IDS_SETTINGS_FLEDGE_PAGE_CURRENT_SITES_DESCRIPTION" desc="A paragraph beneath the 'Sites' label. It explains how users can control the sites that appear in the list. * 'block sites': When a user blocks a site, that site may no longer save info with Chrome about the user's visit. As the user continues to browse, they will not see ads suggested by the blocked site. * 'auto-deletes': We included the 'auto' to reinforce that this is part of a system and the deletion is done regularly.">
+-    You can block sites you don't want. Chrome also auto-deletes sites from the list that are older than 30 days.
++    You can block sites you don't want. MoltBrowser also auto-deletes sites from the list that are older than 30 days.
+   </message>
+   <message name="IDS_SETTINGS_FLEDGE_PAGE_CURRENT_SITES_DESCRIPTION_LEARN_MORE" desc="A button label that opens a dialog box allowing the user to learn more about the Site-suggested ads setting.">
+     Learn more
+@@ -1542,13 +1542,13 @@
+     More about site-suggested ads
+   </message>
+   <message name="IDS_SETTINGS_FLEDGE_PAGE_LEARN_MORE_BULLET_1" desc="1 of 3 paragraphs on the Learn more page for Site-suggested ads. * 'It's common...' this sentence is intended to be reassuring. Many sites the user visits are retaining some information about the user, such as their preferred language if the site has a language picker. If cookies are allowed, this info might be stored with a first-party cookie on the user's device. Sites can also store limited information with Chrome.">
+-    It's common for sites you visit to remember things you're interested in, to personalize your experience. Sites can also store information with Chrome about your interests.
++    It's common for sites you visit to remember things you're interested in, to personalize your experience. Sites can also store information with MoltBrowser about your interests.
+   </message>
+   <message name="IDS_SETTINGS_FLEDGE_PAGE_LEARN_MORE_BULLET_2" desc="2 of 3 paragraphs on the Learn more page for Site-suggested ads.">
+     For example, if you visit a site that sells long-distance running shoes, the site might decide that you're interested in running marathons. Later, if you visit a different site, that site can show you an ad for running shoes suggested by the first site.
+   </message>
+   <message name="IDS_SETTINGS_FLEDGE_PAGE_LEARN_MORE_BULLET_3" desc="3 of 3 paragraphs on the Learn more page for Site-suggested ads. * 'Auto-deletes': This could just read 'Chrome deletes...' but we include the 'auto' to suggest that the deletion happens regularly and as part of the system. * 'A site you visit again...': We want to reassure the user. We just told them sites are automatically deleted. And yet, a user might see the same site in the list month after month if they visit that site regularly.">
+-    Chrome auto-deletes sites that are older than 30 days. A site you visit again might reappear on the list. Or you can block a site from suggesting ads for you. Learn more about <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>managing your ad privacy in Chrome.<ph name="END_LINK">&lt;/a&gt;</ph>
++    MoltBrowser auto-deletes sites that are older than 30 days. A site you visit again might reappear on the list. Or you can block a site from suggesting ads for you. Learn more about <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>managing your ad privacy in MoltBrowser.<ph name="END_LINK">&lt;/a&gt;</ph>
+   </message>
+   <message name="IDS_SETTINGS_FLEDGE_PAGE_CURRENT_SITES_DESCRIPTION_LEARN_MORE_A11Y_LABEL" desc="Text read by screen readers to help users distinguish this 'Learn more' link from others that might get added to this page.">
+     Learn more about site-suggested ads
+@@ -1577,7 +1577,7 @@
+     You can always delete ad-measurement data by deleting your browsing data
+   </message>
+   <message name="IDS_SETTINGS_AD_MEASUREMENT_PAGE_CONSIDER_BULLET_2" desc="2 of 3 bullets in the 'Things to consider' section that describes the Ad measurement setting.">
+-    Chrome limits the total amount of data that sites can share through the browser to measure ad performance
++    MoltBrowser limits the total amount of data that sites can share through the browser to measure ad performance
+   </message>
+ 
+   <!-- Privacy Guide -->
+@@ -1636,7 +1636,7 @@
+     Web &#38; App Activity
+   </message>
+   <message name="IDS_SETTINGS_PRIVACY_GUIDE_COMPLETION_CARD_AI_SETTINGS_LABEL" desc="Text of the AI Innovations sublabel in the completion card of the 'Privacy Guide'.">
+-    Learn more about how AI shapes your experience and the controls provided by Chrome
++    Learn more about how AI shapes your experience and the controls provided by MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_PRIVACY_GUIDE_MSBB_CARD_HEADER" desc="Header of the 'make searches and browsing better' card in the 'Privacy Guide'.">
+     Choose your search and browsing quality
+@@ -1672,7 +1672,7 @@
+     If Google is also your default search engine, you'll see better, contextually relevant suggestions
+   </message>
+   <message name="IDS_SETTINGS_PRIVACY_GUIDE_HISTORY_SYNC_PRIVACY_DESCRIPTION1" desc="A part of the privacy description of history sync in the 'Privacy guide'.">
+-    The URLs you visit are saved to your Google Account
++    The URLs you visit are saved to your MoltBrowser Account
+   </message>
+   <message name="IDS_SETTINGS_PRIVACY_GUIDE_COOKIES_CARD_HEADER" desc="Header of the cookies card in the 'Privacy guide'.">
+     Choose your third-party cookie preferences
+@@ -1687,7 +1687,7 @@
+     Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats
+   </message>
+   <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_ENHANCED_PROTECTION_PRIVACY_DESCRIPTION3" desc="A part of the privacy description of the enhanced protection section of the safe browsing card in the 'Privacy guide'.">
+-    Temporarily links this data to your Google Account when you're signed in, to protect you across Google apps
++    Uses this data to strengthen MoltShield protection across your browsing
+   </message>
+   <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_STANDARD_PROTECTION_FEATURE_DESCRIPTION1" desc="A part of the feature description of the standard protection section of the safe browsing card in the 'Privacy guide'.">
+     Detects and warns you about dangerous events when they happen
+@@ -1697,7 +1697,7 @@
+       Sends an obfuscated portion of the URL to Google through a privacy server that hides your IP address
+     </message>
+     <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_STANDARD_PROTECTION_PRIVACY_DESCRIPTION1_PROXY" desc="A part of the privacy description of the standard protection section of the safe browsing card in the 'Privacy Guide'.">
+-      If a site tries to steal your password, or when you download a harmful file, Chrome may also send URLs, including bits of page content, to Google
++      If a site tries to steal your password, or when you download a harmful file, MoltBrowser may also send URLs, including bits of page content, to Google
+     </message>
+   </if>
+ 
+@@ -1750,7 +1750,7 @@
+     Passwords
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_CHECK_PASSWORDS_FEATURE_UNAVAILABLE" desc="Explains that the password check feature is not available in this version of the browser.">
+-    Password check is not available in Chromium
++    Password check is not available in MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_CHECK_SAFE_BROWSING_ENABLED" desc="This text points out that Safe Browsing is enabled and that the user is protected.">
+     Safe Browsing is on and protecting you from harmful sites and downloads
+@@ -1840,10 +1840,10 @@
+     Safe Browsing (protects you and your device from dangerous sites)
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENABLEPROTECTION_DESC" desc="Checkbox label: should Chrome protect user and user's device from dangerous sites">
+-    Sends URLs of some pages you visit to Google, when your security is at risk
++    Sends URLs of some pages you visit to MoltShield, when your security is at risk
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENABLE_REPORTING_DESC" desc="Description for extended safe browsing">
+-    Sends URLs of some pages you visit, limited system information, and some page content to Google, to help discover new threats and protect everyone on the web.
++    Sends URLs of some pages you visit, limited system information, and some page content to MoltShield, to help discover new threats and protect everyone on the web.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_SECTION_LABEL" desc="The section label of the safe browsing section grouping safe browsing settings">
+     Safe Browsing
+@@ -1852,7 +1852,7 @@
+     Enhanced protection
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_DESC_UPDATED" desc="Description of safe browsing enhanced protection mode">
+-    Real-time, AI-powered protection against dangerous sites, downloads, and extensions that's based on your browsing data getting sent to Google
++    Real-time, AI-powered protection against dangerous sites, downloads, and extensions that's based on your browsing data getting sent to MoltShield
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_EXPAND_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the detailed description of safe browsing enhanced protection. Only visible by screen reader software.">
+     Show enhanced protection details
+@@ -1867,22 +1867,22 @@
+     Warns you if passwords are exposed in a data breach
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_BULLET_FIVE" desc="Bullet point under the safe browsing enhanced protection mode">
+-    Sends URLs to Safe Browsing to check them. Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats. Temporarily links this data to your Google Account when you're signed in, to protect you across Google apps.
++    Sends URLs to MoltShield to check them. Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats. Uses this data to strengthen MoltShield protection across your browsing.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_TWO" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
+     In-depth scans for suspicious downloads.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_THREE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
+-    When you're signed in, protects you across Google services.
++    Strengthens MoltShield protection across your browsing.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_FOUR" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
+     Improves security for you and everyone on the web.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_ONE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
+-    Sends the URLs of sites you visit and a small sample of page content, downloads, extension activity, and system information to Google Safe Browsing to check if they're harmful.
++    Sends the URLs of sites you visit and a small sample of page content, downloads, extension activity, and system information to MoltShield to check if they're harmful.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_TWO" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
+-    When you're signed in, this data is linked to your Google Account to protect you across Google services, for example increasing protection in Gmail after a security incident.
++    This data is used to strengthen MoltShield protection across your browsing, for example increasing protection after a security incident.
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_THREE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
+     Doesn't noticeably slow down your browser or device.
+@@ -1891,14 +1891,14 @@
+     Standard protection
+   </message>
+   <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_DESC" desc="Description for safe browsing standard protection mode">
+-    Protects against sites, downloads, and extensions that are known to be dangerous. If a page does something suspicious, URLs and bits of page content are sent to Google Safe Browsing.
++    Protects against sites, downloads, and extensions that are known to be dangerous. If a page does something suspicious, URLs and bits of page content are sent to MoltShield.
+   </message>
+   <if expr="_google_chrome">
+     <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_DESC_PROXY" desc="Description for safe browsing standard protection mode">
+-      Protects against sites, downloads, and extensions that are known to be dangerous. When you visit a site, Chrome sends an obfuscated portion of the URL to Google through a privacy server that hides your IP address. If a site does something suspicious, full URLs and bits of page content are also sent.
++      Protects against sites, downloads, and extensions that are known to be dangerous. When you visit a site, MoltBrowser sends an obfuscated portion of the URL to Google through a privacy server that hides your IP address. If a site does something suspicious, full URLs and bits of page content are also sent.
+     </message>
+     <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_BULLET_TWO_PROXY" desc="Bullet point under the safe browsing standard protection mode">
+-      Sends an obfuscated portion of the URL to Google through a privacy server that hides your IP address. If a site tries to steal your password, or when you download a harmful file, Chrome may also send URLs, including bits of page content, to Google.
++      Sends an obfuscated portion of the URL to Google through a privacy server that hides your IP address. If a site tries to steal your password, or when you download a harmful file, MoltBrowser may also send URLs, including bits of page content, to Google.
+     </message>
+   </if>
+   <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_EXPAND_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the detailed description of safe browsing standard protection. Only visible by screen reader software.">
+@@ -1976,7 +1976,7 @@
+     Enhanced
+   </message>
+   <message name="IDS_SETTINGS_SECURITY_SAFE_BROWSING_TITLE" desc="Name of Safe Browsing security setting">
+-    Google Safe Browsing
++    MoltShield
+   </message>
+   <message name="IDS_SETTINGS_SECURITY_SAFE_BROWSING_DESCRIPTION" desc="Description of the Safe Browsing security setting">
+     Protects you from dangerous sites, downloads, and extensions
+@@ -2009,7 +2009,7 @@
+     Enhanced Protection
+   </message>
+   <message name="IDS_SETTINGS_SECURITY_SAFE_BROWSING_ENHANCED_SUBTITLE" desc="Description of Safe Browsing enhanced protection">
+-    Real-time, proactive protection by sending more information to Google Safe Browsing
++    Real-time, proactive protection by sending more information to MoltShield
+   </message>
+   <message name="IDS_SETTINGS_SECURITY_BUNDLE_ENHANCED_BULLET_ONE" desc="First bullet point under the security settings enhanced bundle section">
+     Protects you on the web with Google’s best security
+@@ -2152,7 +2152,7 @@
+     Manage HTTPS/SSL certificates and settings
+   </message>
+ 
+-  <!-- Chrome Root Store -->
++  <!-- MoltBrowser Root Store -->
+   <message name="IDS_SETTINGS_MANAGE_DEVICE_CERTIFICATES" desc="Text for manage device certificates button in Privacy options">
+     Manage device certificates
+   </message>
+@@ -2269,10 +2269,10 @@
+   </message>
+ 
+   <!-- Reset Settings Page -->
+-  <message name="IDS_SETTINGS_RESET_PROMPT_TITLE" desc="Title for a prompt that gives an explanation of what would be resetted by 'Reset and clean up' section of Chrome Settings. " meaning="Chrome Cleanup feature. Try to use the same translation for 'Reset' in 'Reset and cleanup' string.">
++  <message name="IDS_SETTINGS_RESET_PROMPT_TITLE" desc="Title for a prompt that gives an explanation of what would be resetted by 'Reset and clean up' section of Chrome Settings. " meaning="MoltBrowser Cleanup feature. Try to use the same translation for 'Reset' in 'Reset and cleanup' string.">
+     Reset settings?
+   </message>
+-  <message name="IDS_SETTINGS_RESET" desc="Title for an item in the 'Reset and clean up' section of Chrome Settings. If the user clicks this option, browser settings will be returned to their default values, after a confirmation by the user." meaning="Chrome Cleanup feature. Try to use the same translation for 'Reset' in 'Reset and cleanup' string.">
++  <message name="IDS_SETTINGS_RESET" desc="Title for an item in the 'Reset and clean up' section of Chrome Settings. If the user clicks this option, browser settings will be returned to their default values, after a confirmation by the user." meaning="MoltBrowser Cleanup feature. Try to use the same translation for 'Reset' in 'Reset and cleanup' string.">
+     Reset settings
+   </message>
+   <message name="IDS_SETTINGS_RESET_SETTINGS_TRIGGER" desc="The label describing the 'reset profile setting' feature">
+@@ -2282,7 +2282,7 @@
+     Some settings were reset
+   </message>
+   <message name="IDS_SETTINGS_RESET_BANNER_TEXT" desc="The text to show in a banner at the top of the chrome://settings page. The banner is displayed when Chrome detects that some settings have been tampered with and were reset to factory defaults.">
+-    Chrome detected that some of your settings were corrupted by another program and reset them to their original defaults.
++    MoltBrowser detected that some of your settings were corrupted by another program and reset them to their original defaults.
+   </message>
+   <message name="IDS_SETTINGS_RESET_BANNER_RESET_BUTTON_TEXT" desc="The text on the reset button in the Automatic Settings Reset Banner suggesting to reset ALL settings after an automatic reset of SOME settings.">
+     Reset all settings
+@@ -2291,10 +2291,10 @@
+     Learn more about resetting settings
+   </message>
+   <message name="IDS_SETTINGS_RESET_AUTOMATED_DIALOG_V2_TITLE" desc="The title of the dialog informing the user that automated resetting of some settings occurred.">
+-    Chrome reset these settings
++    MoltBrowser reset these settings
+   </message>
+   <message name="IDS_SETTINGS_RESET_AUTOMATED_DIALOG_V2_BODY" desc="The body of the dialog informing the user that automated resetting of some settings occurred.">
+-    These settings were changed from outside of Chrome. To protect you, Chrome reset them.
++    These settings were changed from outside of MoltBrowser. To protect you, MoltBrowser reset them.
+   </message>
+   <message name="IDS_SETTINGS_RESET_PINNED_TABS" desc="A string that is used to describe the pinned tabs setting.">
+     Pinned tabs
+@@ -2309,7 +2309,7 @@
+     Default Search Engine (DSE)
+   </message>
+ 
+-  <!-- Reset card title and Chrome Cleanup item on Windows -->
++  <!-- Reset card title and MoltBrowser Cleanup item on Windows -->
+   <if expr="is_win and _google_chrome">
+     <message name="IDS_SETTINGS_RESET_AND_CLEANUP" desc="Title of a section in Chrome Settings. Imperative. 'Reset' refers to resetting settings to defaults. 'Clean up' refers to cleaning up harmful software on the user's computer.">
+       Reset and clean up
+@@ -2434,10 +2434,10 @@
+     Site search
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION" desc="Explanation for 'Site Search' section. Used interchangeably with IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION_STARTER_PACK">
+-    To search a specific site or part of Chrome, type its shortcut in the address bar, followed by your preferred keyboard shortcut.
++    To search a specific site or part of MoltBrowser, type its shortcut in the address bar, followed by your preferred keyboard shortcut.
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION_STARTER_PACK" desc="Explanation for 'Site Search' section">
+-    To search a specific site or part of Chrome, type its shortcut in the address bar, followed by your preferred keyboard shortcut. For example, to search only Bookmarks, type "@bookmarks", then press Tab or Space.
++    To search a specific site or part of MoltBrowser, type its shortcut in the address bar, followed by your preferred keyboard shortcut. For example, to search only Bookmarks, type "@bookmarks", then press Tab or Space.
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_ENGINES_NO_SITES_ADDED" desc="Text shown when the 'Site Search' section is empty">
+     No sites added
+@@ -2452,7 +2452,7 @@
+     Extensions
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_ENGINES_EXTENSION_ENGINES_EXPLANATION" desc="Explanation for a section that displays search engines added by extensions">
+-    Some extensions can add search engines to Chrome
++    Some extensions can add search engines to MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_SEARCH_ENGINES_NAME" desc="Label for a table column that holds the name of a search engine or site search provider">
+     Name
+@@ -3126,7 +3126,7 @@
+   </if>
+   <if expr="is_win and _google_chrome">
+     <message name="IDS_SETTINGS_SITE_SETTINGS_PROTECTED_CONTENT_IDENTIFIERS_ALLOWED_SUB_LABEL" desc="A subtitle for the ‘Protected Content IDs’ setting, shown if user chooses to allow Protected Content IDs. This text explains that enabling protected content IDs may result in live captioning not working.">
+-      Chrome Live Caption might not work
++      MoltBrowser Live Caption might not work
+     </message>
+   </if>
+   <message name="IDS_SETTINGS_SITE_SETTINGS_PROTOCOL_HANDLERS_DESCRIPTION" desc="Description of the protocol handlers content setting.">
+@@ -3341,7 +3341,7 @@
+     Insecure content is blocked by default on secure sites
+   </message>
+   <message name="IDS_SETTINGS_SITE_SETTINGS_PDF_DOWNLOAD_PDFS" desc="Label for downloading PDF documents instead of automatically opening them in Chrome.">
+-    Download PDF files instead of automatically opening them in Chrome
++    Download PDF files instead of automatically opening them in MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_SITE_SETTINGS_RECENT_ACTIVITY" desc="Label for the section which contains the user's recent permissions changes">
+     Recent activity
+@@ -3638,7 +3638,7 @@
+     No sites added
+   </message>
+   <message name="IDS_SETTINGS_SITE_SETTINGS_BLOCK_AUTOPLAY" desc="A label for a toggle in site settings to block autoplay. If the toggle is on then Chrome will block autoplay by default and use an algorithm to determine which sites should still be able to autoplay. If the toggle is off then autoplay will be enabled for all sites.">
+-    Let Chrome choose when sites can play sound (recommended)
++    Let MoltBrowser choose when sites can play sound (recommended)
+   </message>
+   <message name="IDS_SETTINGS_SITE_SETTINGS_EMPTY_ALL_SITES_PAGE" desc="Explanation shown when there are no sites that have appeared yet on the All Sites page.">
+     Sites you visit will appear here
+@@ -3821,8 +3821,8 @@
+   </message>
+ 
+   <!-- Sync / People Page -->
+-  <message name="IDS_SETTINGS_PEOPLE" desc="Name of the settings page which manages the user's relationship to Google.">
+-    You and Google
++  <message name="IDS_SETTINGS_PEOPLE" desc="Name of the settings page which manages the user's profile.">
++    Profile
+   </message>
+   <message name="IDS_SETTINGS_CHANGE_PICTURE_PROFILE_PHOTO" desc="The text on the Google profile photo of the user.">
+     Google Profile photo
+@@ -3835,7 +3835,7 @@
+     Verify it's you
+   </message>
+   <message name="IDS_SETTINGS_TURN_OFF_SYNC_MANAGED_PROFILE_EXPLANATION" desc="The text to display in the 'Turn Sync off' dialog to stop syncing for managed profiles.">
+-    Because this account is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph> you will not be signed out of your Google Account. Your bookmarks, history, passwords, and other settings will no longer be synced. However, your previously synced data will remain stored in your Google Account and can be managed on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
++    Because this account is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph> you will not be signed out of your MoltBrowser Account. Your bookmarks, history, passwords, and other settings will no longer be synced. However, your previously synced data will remain stored in your MoltBrowser Account and can be managed on <ph name="BEGIN_LINK">&lt;a href="$2" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$2" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+   </message>
+   <message name="IDS_SETTINGS_TURN_OFF_SYNC_AND_SIGN_OUT_DIALOG_TITLE" desc="The text to display on the title of the dialog to turn off sync and sign out.">
+     Turn off sync and personalization?
+@@ -3882,10 +3882,10 @@
+       Your account
+     </message>
+     <message name="IDS_SETTINGS_ACCOUNT_DATATYPES_HEADING" desc="Heading of the section in the account settings page for managing data types.">
+-      In your Google Account
++      In your MoltBrowser Account
+     </message>
+     <message name="IDS_SETTINGS_ACCOUNT_BODY" desc="Description of the section in the account settings page for managing data types.">
+-      When on, data is saved in your Google Account and can be used on all your devices. When off, data is saved only to this device.
++      When on, data is saved in your MoltBrowser Account and can be used on all your devices. When off, data is saved only to this device.
+     </message>
+     <message name="IDS_SETTINGS_ACCOUNT_SYNC_DISABLED"  desc="Section in the account settings page informing the user when the toggles to save a specific data type to the user's Google Account are disabled as per an Enterprise policy.">
+       Managed by your organization
+@@ -3896,13 +3896,13 @@
+     <message name="IDS_SETTINGS_ACCOUNT_HISTORY_TOGGLE_SUB_LABEL_OFF" desc="Subtitle describing the effects of turning on the merged toggle in the account settings page, combining the data types history, tabs, and saved tab groups. Shown on next to the toggle that controls whether these data types should be saved in the Google Account and synced across devices. Shown only if the toggle is off.">
+       Turn on to get your browsing history and tabs from other devices
+     </message>
+-    <message name="IDS_SETTINGS_GOOGLE_SERVICES_PAGE_TITLE" desc="Name of the settings page for managing Google services.">
+-      Google services
++    <message name="IDS_SETTINGS_GOOGLE_SERVICES_PAGE_TITLE" desc="Name of the settings page for managing account services.">
++      Account services
+     </message>
+   </if>
+ 
+   <message name="IDS_SETTINGS_SYNC_DISCONNECT_EXPLANATION" desc="The text to display in the Sign out of Chrome dialog to stop syncing for non-managed profiles.">
+-    Changes to your bookmarks, history, passwords, and other settings will no longer be synced to your Google Account. However, your existing data will remain stored in your Google Account and can be managed on <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
++    Changes to your bookmarks, history, passwords, and other settings will no longer be synced to your MoltBrowser Account. However, your existing data will remain stored in your MoltBrowser Account and can be managed on <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+   </message>
+   <message name="IDS_SETTINGS_SYNC_DISCONNECT_AND_SIGN_OUT_EXPLANATION" desc="The text to display in the Sign out of Chrome dialog to stop syncing and sign-out for non-managed profiles.">
+     This will sign you out of your Google Accounts. Your bookmarks, history, passwords, and more will no longer be synced.
+@@ -3923,7 +3923,7 @@
+     Uses content on sites you visit, plus browser activity and interactions, for personalization
+   </message>
+   <message name="IDS_SETTINGS_ENCRYPT_WITH_SYNC_PASSPHRASE_LABEL" desc="Label for the radio button which, when selected, causes synced settings to be encrypted with a user-provided password.">
+-    Encrypt synced data with your own <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>sync passphrase<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>. Payment methods and addresses from Google Pay won’t be encrypted. Browsing history from Chrome won’t sync.
++    Encrypt synced data with your own <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>sync passphrase<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>. Payment methods and addresses from Google Pay won’t be encrypted. Browsing history from MoltBrowser won’t sync.
+   </message>
+   <message name="IDS_SETTINGS_PASSPHRASE_EXPLANATION_TEXT" desc="Message shown when explicit passphrase is selected.">
+     Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase or want to change this setting, you'll need to <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>reset sync<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
+@@ -3962,16 +3962,16 @@
+     Ask every time
+   </message>
+   <message name="IDS_SETTINGS_GOOGLE_ACCOUNT" desc="Label for the section that takes the user to the Google Account website from Related Google services.">
+-    Google Account
++    MoltBrowser Account
+   </message>
+   <if expr="not use_titlecase">
+     <message name="IDS_SETTINGS_MANAGE_GOOGLE_ACCOUNT" desc="Label for the button that takes the user to the Google Account website.">
+-      Manage your Google Account
++      Manage your MoltBrowser Account
+     </message>
+   </if>
+   <if expr="use_titlecase">
+     <message name="IDS_SETTINGS_MANAGE_GOOGLE_ACCOUNT" desc="Label for the button that takes the user to the Google Account website.">
+-      Manage Your Google Account
++      Manage Your MoltBrowser Account
+     </message>
+   </if>
+ 
+@@ -4061,7 +4061,7 @@
+     When you ask questions about your history, you can get answers about specific information from a page you visited
+   </message>
+   <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_CONSIDER_DATA_ENCRYPTED" desc="This is a bullet point in the ‘Things to consider’ column, which describes things users should consider about a feature. This string explains that AI features will save data to the user’s device in order to provide the feature’s respective benefit. The data will be appropriately encrypted for security. The tone should be informative.">
+-    As you browse sites, their page contents are encrypted and saved to your device. This may affect Chrome's performance
++    As you browse sites, their page contents are encrypted and saved to your device. This may affect MoltBrowser's performance
+   </message>
+   <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_CONSIDER_OUTDATED" desc="This is a bullet point in the ‘Things to consider’ column, which describes things users should consider about a feature. This string explains that history search results and answers powered by AI may become outdated since they are dependent on the user's last visit to the page contents.">
+     AI-powered history search results and answers may become outdated if site content has changed since your last visit
+@@ -4140,16 +4140,16 @@
+       Use graphics acceleration when available
+     </message>
+     <message name="IDS_SETTINGS_SYSTEM_FEATURE_NOTIFICATIONS_LABEL" desc="Label for the toggle that enables Chrome system notifications about features.">
+-      Show system notifications about Chrome features and tips
++      Show system notifications about MoltBrowser features and tips
+     </message>
+     <message name="IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_LABEL" desc="Label for the control that opens the system network proxy settings. These settings apply to the entire computer.">
+       Open your computer's proxy settings
+     </message>
+     <message name="IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_EXTENSION_LABEL" desc="Non-interactive label that describes when Chrome's proxy settings are overwritten by an extension. This is used in place of IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_LABEL above.">
+-      <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is using proxy settings from an extension
++      <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph> is using proxy settings from an extension
+     </message>
+     <message name="IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_POLICY_LABEL" desc="Non-interactive label that describes when Chrome's proxy settings are overwritten by policy. This is used in place of IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_LABEL above.">
+-      <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is using proxy settings from your administrator
++      <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph> is using proxy settings from your administrator
+     </message>
+     <message name="IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_YOUR_ORGANIZATION_LABEL" desc="Non-interactive label that describes when Chrome's proxy settings are overwritten by the user's organization. This is used in place of IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_LABEL above.">
+       Your organization
+@@ -4166,7 +4166,7 @@
+       On-device AI
+     </message>
+     <message name="IDS_SETTINGS_SYSTEM_FEATURE_ON_DEVICE_AI_ENABLED_SUB_LABEL" desc="This string describes what turning off the toggle implies.">
+-      To power features like scam detection, Chrome can use AI models that run directly on your device without sending your data to Google servers. When this is off, these features might not work. <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank" aria-description="$2"&gt;</ph>Learn more about on-device AI<ph name="END_LINK">&lt;/a&gt;</ph>
++      To power features like scam detection, MoltBrowser can use AI models that run directly on your device without sending your data to Google servers. When this is off, these features might not work. <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank" aria-description="$2"&gt;</ph>Learn more about on-device AI<ph name="END_LINK">&lt;/a&gt;</ph>
+     </message>
+   </if>
+ 
+@@ -4441,10 +4441,10 @@
+     No weak or reused passwords
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_CHECK_SUBHEADER_SIGN_IN" desc="This text conveys to the user that they currently do not have the full protection for their passwords and informs the user that additional protection (in form of Chrome checking whether saved passwords are compromised) is available by signing into Chrome. Compromised passwords are concepts in Chrome Password Manager, this should be translated the same way. It is shown only to signed-out users. This text appears in the subtitle of the passwords card on the Safety Hub page, below a title that lists already known password issues. The title above this may read e.g. '2 weak passwords', or 'No weak or reused passwords').">
+-    To check for compromised passwords, sign in to your Google Account
++    To check for compromised passwords, sign in to your MoltBrowser Account
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_CHECK_SUBHEADER_GO_TO_PASSWORD_MANAGER" desc="This text conveys to the user that they currently do not have the full protection for their passwords and informs the user that additional protection (in form of Chrome checking whether saved passwords are compromised) is available by clicking on the card containing this text, which will redirect to Google Password Manager. Compromised passwords are a concept in Chrome password manager, this should be translated the same way. This text appears in the subtitle of the passwords card one the Safety Hub page, below the title 'No weak or reused passwords'.">
+-    To check for compromised passwords, go to Google Password Manager
++    To check for compromised passwords, go to MoltBrowser Password Manager
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_CHECK_HEADER_NO_PASSWORDS" desc="This text is the header of the passwords card of SafetyHub when the user has no passwords saved in Chrome. Below this text there is a subheader that give the user more details: 'Chrome can check your passwords when you save them' or 'Your organization turned off saving passwords'. The card this text is part of is in a neutral state.">
+     No saved passwords
+@@ -4453,13 +4453,13 @@
+     Your organization turned off saving passwords
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_NAVIGATION_ARIA_LABEL" desc="Safety Check settings page (chrome://settings/safetyCheck) gives users an overview over their safety status. Password card in this page shows if there is any insecure password stored. This string is for the accesibility label for the card to call out where to navigation will happen (chrome://password-manager/passwords) if the card is clicked.">
+-    Go to Google Password Manager
++    Go to MoltBrowser Password Manager
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_SB_ON_ENHANCED_HEADER" desc="Safety Hub settings page (chrome://settings/safetyHub) gives users an overview over their safety status. Safe browsing card in this page shows the current state of Safe browsing setting (chrome://settings/security). This string is the headline of the Safe Browsing card when the current state is Enhanced protection.">
+     Enhanced Safe Browsing is on
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_SB_ON_ENHANCED_SUBHEADER" desc="Safety Hub settings page (chrome://settings/safetyHub) gives users an overview over their safety status. Safe browsing card in this page shows the current state of Safe browsing setting (chrome://settings/security). This string is the body text of the Safe Browsing card when the current state is Enhanced protection.">
+-    You have Chrome's strongest security
++    You have MoltBrowser's strongest security
+   </message>
+   <message name="IDS_SETTINGS_SAFETY_HUB_SB_ON_STANDARD_HEADER" desc="Safety Hub settings page (chrome://settings/safetyHub) gives users an overview over their safety status. Safe browsing card in this page shows the current state of Safe browsing setting (chrome://settings/security). This string is the headline of the Safe Browsing card when the current state is Standard protection.">
+     Safe Browsing is on
+@@ -4570,7 +4570,7 @@
+     AI innovations
+   </message>
+   <message name="IDS_SETTINGS_AI_PAGE_MAIN_TITLE" desc="This string is the title of a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write, Tab organizer, and more. This title is before the ‘Things to consider’ subheading and bullet points. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. The tone should be motivating.">
+-    Reimagine Chrome, supercharged with AI
++    Reimagine MoltBrowser, supercharged with AI
+   </message>
+   <message name="IDS_SETTINGS_AI_PAGE_MAIN_SUBLABEL_1" desc="This is a bullet point on a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write, Tab organizer, and more. This bullet point is after the ‘Reimagine Chrome, supercharged with AI’ title and ‘Things to consider’ subheading. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. This bullet point specifically notes that AI features are actively developing and results may include errors. The tone should be informative.">
+     These features use AI, are in early development, and won’t always get it right
+@@ -4579,7 +4579,7 @@
+     When you use these features, relevant data is sent to Google in order to create AI experiences
+   </message>
+   <message name="IDS_SETTINGS_AI_PAGE_MAIN_SUBLABEL_3" desc="This is a bullet point on a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write, Tab organizer, and more. This bullet point is after the ‘Reimagine Chrome, supercharged with AI’ title and ‘Things to consider’ subheading. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. This bullet point specifically notes that AI features are actively developing, and that humans may review feature usage and corresponding data in order to further improve the feature. The tone should be informative.">
+-    Data sent to Google may be seen by human reviewers to improve Chrome AI’s technology
++    Data sent to Google may be seen by human reviewers to improve MoltBrowser AI’s technology
+   </message>
+   <message name="IDS_SETTINGS_AI_PAGE_MAIN_MANAGED_SUBLABEL_3" desc="This is a bullet point on a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write, Tab organizer, and more. This bullet point is after the ‘Reimagine Chrome, supercharged with AI’ title and ‘Things to consider’ subheading. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. This bullet point specifically notes that AI features are actively developing, and that humans may review feature usage and corresponding data in order to further improve the feature. The tone should be informative.">
+     Your organization manages how data collected by these features may be used.
+@@ -4643,7 +4643,7 @@
+     When you compare products, the tab titles and URLs of the products are sent to Google
+   </message>
+   <message name="IDS_SETTINGS_COMPARE_CONSIDER_TABLES_IN_ACCOUNT" desc="This is a bullet point in the ‘Things to consider’ column, which describes things users should consider about a feature. This string explains that AI features will save data to the user’s Google Account in order to provide the feature’s respective benefit. The tone should be informative.">
+-    Comparison tables are saved in your Google Account
++    Comparison tables are saved in your MoltBrowser Account
+   </message>
+ 
+     <!-- Experimental settings - Password Change -->
+@@ -4651,13 +4651,13 @@
+     Automated Password Change
+   </message>
+   <message name="IDS_SETTINGS_PASSWORD_CHANGE_SUBLABEL" desc="Sublabel for password change entry in settings. The description of the feature beneath the “Automated password change” feature title. This and the bullets beneath this paragraph represent the full description of the feature. * “public” does two things: 1) it provides distance between “Chrome” and “data breach”, because we don’t want users to associate the breach with Chrome (Chrome didn’t have a data leak, 2) and related, it might reassure the user to know that Chrome is using public information to establish these lists of compromised passwords. * “Google Password Manager can offer…”: The user has to agree to have this feature update their password for them each time. So Google Password Manager is ‘offering’ to do something for the user.">
+-    If Chrome finds one of your passwords in a public data breach, Google Password Manager can offer to change your password for you if you're signed in.
++    If MoltBrowser finds one of your passwords in a public data breach, MoltBrowser Password Manager can offer to change your password for you if you're signed in.
+   </message>
+   <message name="IDS_SETTINGS_PASSWORD_CHANGE_DATA_BREACH" desc="Bullet 1 of 2 that appears beneath the “When used” subtitle. This string is repetitive of the feature description, but we want to have a complete description of what happens when the feature is used. * “Google Password Manager asks…”: This part is similar to the general feature description above, but it’s written as if the feature is being used by the user, so we use “asks” and not “can offer”. * “Strong password”: As an existing autofill feature, Google Password Manager can offer to generate and save passwords for the user. These passwords are typically stronger than passwords the user might create on their own">
+-    If one of your passwords is found in a data breach, Google Password Manager asks if you want it changed to a strong password
++    If one of your passwords is found in a data breach, MoltBrowser Password Manager asks if you want it changed to a strong password
+   </message>
+   <message name="IDS_SETTINGS_PASSWORD_CHANGE_WHERE_SAVED" desc="One of the bullet points explaining what happens when the feature is used.">
+-    You don't need to remember the password because it gets saved for you in Google Password Manager
++    You don't need to remember the password because it gets saved for you in MoltBrowser Password Manager
+   </message>
+   <message name="IDS_SETTINGS_PASSWORD_CHANGE_EXPERIMENTAL" desc="One of the things to consider when using the feature.">
+     This feature uses AI and is experimental

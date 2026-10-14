@@ -1,0 +1,54 @@
+MoltBrowser patch for chrome/browser/ui/views/omnibox/omnibox_view_views.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/omnibox/omnibox_view_views.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/omnibox/omnibox_view_views.cc b/chrome/browser/ui/views/omnibox/omnibox_view_views.cc
+index b362cb7225f618ed2e4fbed546ac35488bd9c309..029a2d950d46adbd237e2f56a80d99b09499eea4 100644
+--- a/chrome/browser/ui/views/omnibox/omnibox_view_views.cc
++++ b/chrome/browser/ui/views/omnibox/omnibox_view_views.cc
+@@ -407,39 +407,14 @@ void OmniboxViewViews::InstallPlaceholderText() {
+     // If `keyword_placeholder()` is set, then the user is in a keyword mode
+     // that has placeholder text, so display that.
+     SetPlaceholderText(controller()->edit_model()->keyword_placeholder());
+-  } else if (ShouldInstallAimPlaceholderText()) {
+-    // If the Omnibox is visibly focused w/ AI Mode enabled, display the AI Mode
+-    // placeholder text to suggest tabbing into AI Mode. Note, even if the AI
+-    // placeholder text is installed, it will only be visible if
+-    // `ShouldShowPlaceholderText()` is also true.
+-    SetPlaceholderText(
+-        l10n_util::GetStringUTF16(IDS_OMNIBOX_AIM_PLACEHOLDER_TEXT));
+-    // Override the AIM accessibility placeholder text, so that the tab icon is
+-    // not announced.
+-    GetViewAccessibility().SetPlaceholder(
+-        l10n_util::GetStringUTF8(IDS_ACC_AI_MODE_PLACEHOLDER_TEXT));
+   } else if (ShouldInstallContextualTasksPlaceholderText()) {
+     // For Contextual Tasks page, use the page title as placeholder text.
+     SetPlaceholderText(location_bar_view_->GetWebContents()->GetTitle());
+-  } else if (const auto* default_provider = controller()
+-                                                ->client()
+-                                                ->GetTemplateURLService()
+-                                                ->GetDefaultSearchProvider()) {
+-    const bool aim_popup_enabled =
+-        location_bar_view_ &&
+-        omnibox::IsAimPopupEnabled(location_bar_view_->profile());
+-    if (aim_popup_enabled &&
+-        search::DefaultSearchProviderIsGoogle(
+-            controller()->client()->GetTemplateURLService())) {
+-      SetPlaceholderText(l10n_util::GetStringFUTF16(
+-          IDS_WEBUI_OMNIBOX_PLACEHOLDER_TEXT, default_provider->short_name()));
+-    } else {
+-      // Otherwise, if a DSE is set, use the DSE placeholder text.
+-      SetPlaceholderText(l10n_util::GetStringFUTF16(
+-          IDS_OMNIBOX_PLACEHOLDER_TEXT, default_provider->short_name()));
+-    }
+   } else {
+-    SetPlaceholderText(std::u16string());
++    // MoltBrowser: Always show "Chat with MoltSearch or type a URL" — never
++    // mention Google or any other search engine. We never want users to see
++    // "Search Google" branding in any context.
++    SetPlaceholderText(u"Chat with MoltSearch or type a URL");
+   }
+ 
+   UpdatePlaceholderTextColor();

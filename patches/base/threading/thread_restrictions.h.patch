@@ -1,0 +1,27 @@
+MoltBrowser patch for base/threading/thread_restrictions.h
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/base/threading/thread_restrictions.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/base/threading/thread_restrictions.h b/base/threading/thread_restrictions.h
+index b53745dd0a4011fb15ab16d61f9a6effd5c03598..60ce35a56704e5fc0214e0162af2adda5be0e6dd 100644
+--- a/base/threading/thread_restrictions.h
++++ b/base/threading/thread_restrictions.h
+@@ -136,6 +136,8 @@ class PartnerBookmarksReader;
+ class Profile;
+ class ProfileImpl;
+ class ScopedAllowBlockingForProfile;
++// MoltBrowser: file I/O for the web automation engine (script storage).
++class ScopedAllowBlockingForMolt;
+ #if BUILDFLAG(IS_WIN)
+ class ScopedAllowBlockingForMediaFoundation;
+ #endif
+@@ -585,6 +587,7 @@ class BASE_EXPORT ScopedAllowBlocking {
+   friend class ::GaiaConfig;
+   friend class ::ProfileImpl;
+   friend class ::ScopedAllowBlockingForProfile;
++  friend class ::ScopedAllowBlockingForMolt;
+ #if BUILDFLAG(IS_WIN)
+   friend class ::ScopedAllowBlockingForMediaFoundation;
+ #endif

@@ -1,0 +1,19 @@
+MoltBrowser patch for chrome/app/access_code_cast_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/access_code_cast_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/access_code_cast_strings.grdp b/chrome/app/access_code_cast_strings.grdp
+index 79489d0e1a8f17f5ac654e1c97e01d0b6a4826ce..6537b8572b1490c3ffaf951b05b10739a6b8f10f 100644
+--- a/chrome/app/access_code_cast_strings.grdp
++++ b/chrome/app/access_code_cast_strings.grdp
+@@ -38,7 +38,7 @@
+     Something went wrong. Try again later
+   </message>
+   <message name="IDS_ACCESS_CODE_CAST_ERROR_PROFILE_SYNC" desc="Error message for profile sync error">
+-    To cast with a code, turn on Chrome browser sync settings
++    To cast with a code, turn on MoltBrowser browser sync settings
+   </message>
+   <message name="IDS_ACCESS_CODE_CAST_INPUT_ARIA_LABEL" is_accessibility_with_no_ui="true" desc="Label for the text box where users type the access code to start casting to a Chromecast device">
+     Type the access code to start casting

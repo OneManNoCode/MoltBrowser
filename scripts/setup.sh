@@ -22,6 +22,9 @@
 #                                               # in chromium/src, then
 #                                               # re-applies the overlay)
 #   ./scripts/setup.sh --no-overlay             # checkout + sync only
+#   ./scripts/setup.sh --patches                # EXPERIMENTAL: apply
+#                                               # patches/series + first-party
+#                                               # files instead of copying src/
 
 set -euo pipefail
 
@@ -38,8 +41,9 @@ while [[ $# -gt 0 ]]; do
     --target-os) TARGET_OS="$2"; shift 2 ;;
     --resync) RESYNC=true; shift ;;
     --no-overlay) APPLY_OVERLAY=false; shift ;;
+    --patches) APPLY_OVERLAY=patches; shift ;;
     -h|--help)
-      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -183,7 +187,12 @@ echo ""
 
 # Step 5: Apply the MoltBrowser overlay.
 echo "[5/5] Applying MoltBrowser overlay (src/ -> chromium/src/)..."
-if [ "$APPLY_OVERLAY" = true ]; then
+if [ "$APPLY_OVERLAY" = patches ]; then
+  # Experimental: patches/series + first-party files (docs/REBASING.md).
+  python3 "$ROOT_DIR/tools/chromium/apply_patches.py" \
+    --chromium-src "$CHROMIUM_DIR/src" --reset
+  echo "Patch series applied."
+elif [ "$APPLY_OVERLAY" = true ]; then
   cp -R "$ROOT_DIR/src/." "$CHROMIUM_DIR/src/"
   if [ ! -d "$CHROMIUM_DIR/src/chrome/browser/molt_ai" ]; then
     echo "FATAL: overlay copy failed (chrome/browser/molt_ai missing)."

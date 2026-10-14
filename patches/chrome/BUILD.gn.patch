@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/BUILD.gn
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index c8c10cdab040d39f69fa56aad12fc8b1c67854f3..44b562da9f527e97115c5eff3c9d522dab6908e3 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -4,7 +4,9 @@
+ 
+ import("//build/config/chrome_build.gni")
+ import("//build/config/chromeos/args.gni")
+-import("//build/config/chromeos/ui_mode.gni")
++# NOTE: upstream Chromium removed //build/config/chromeos/ui_mode.gni;
++# don't import it here or fresh CI checkouts of newer Chromium fail at
++# gn-gen with "Unable to load .../chromeos/ui_mode.gni".
+ import("//build/config/compiler/compiler.gni")
+ import("//build/config/compiler/pgo/pgo.gni")
+ import("//build/config/locales.gni")
+@@ -1204,6 +1206,9 @@ if (is_win) {
+     bundle_deps +=
+         [ "//third_party/search_engines_data:prepopulated_engines_bundle_data" ]
+ 
++    # llama.cpp Metal shader resources for on-device AI inference
++    bundle_deps += [ "//third_party/llama_cpp:llama_cpp_metal_resources" ]
++
+     configs += [ ":chrome_dll_symbol_order" ]
+     if (!is_component_build && !using_sanitizer) {
+       configs += [ ":chrome_dll_symbol_exports" ]

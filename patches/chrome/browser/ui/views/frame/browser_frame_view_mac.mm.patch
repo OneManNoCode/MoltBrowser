@@ -1,0 +1,45 @@
+MoltBrowser patch for chrome/browser/ui/views/frame/browser_frame_view_mac.mm
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/frame/browser_frame_view_mac.mm by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/frame/browser_frame_view_mac.mm b/chrome/browser/ui/views/frame/browser_frame_view_mac.mm
+index afe5f20869de15b0ae964916cad56e10358b4c92..da0a551ecdd2a604870584db5164594161906c03 100644
+--- a/chrome/browser/ui/views/frame/browser_frame_view_mac.mm
++++ b/chrome/browser/ui/views/frame/browser_frame_view_mac.mm
+@@ -3,11 +3,13 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/frame/browser_frame_view_mac.h"
++#include "chrome/browser/ui/ui_features.h"
+ 
+ #include <algorithm>
+ #include <vector>
+ 
+ #include "base/command_line.h"
++#include "base/feature_list.h"
+ #include "base/containers/fixed_flat_map.h"
+ #include "base/functional/bind.h"
+ #include "base/i18n/rtl.h"
+@@ -460,11 +462,17 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
+     return;
+   }
+ 
+-  SkColor frame_color = GetFrameColor(BrowserFrameActiveState::kUseCurrent);
+-  canvas->DrawColor(frame_color);
+-
+   auto* theme_service = ThemeServiceFactory::GetForProfile(
+       GetBrowserView()->browser()->profile());
++
++  // MoltBrowser: paint the frame / tab-strip band with the (now near-black)
++  // frame color, fully opaque, so the top chrome reads as one sheet of black
++  // glass with the toolbar. A custom user theme still paints its own frame.
++  {
++    SkColor frame_color = GetFrameColor(BrowserFrameActiveState::kUseCurrent);
++    canvas->DrawColor(frame_color);
++  }
++
+   if (!theme_service->UsingSystemTheme()) {
+     PaintThemedFrame(canvas);
+   }

@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/ui/actions/chrome_action_id.h
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/actions/chrome_action_id.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
+index ac894a3986296e2aad608c47d8fcdc9299fa29bf..fbe10f54cd3cc3598e474890fc3e3c1e5a0fa0ec 100644
+--- a/chrome/browser/ui/actions/chrome_action_id.h
++++ b/chrome/browser/ui/actions/chrome_action_id.h
+@@ -574,7 +574,9 @@
+   E(kActionSidePanelShowShoppingInsights) \
+   E(kActionSidePanelShowSideSearch) \
+   E(kActionSidePanelShowUserNote) \
+-  E(kActionSidePanelShowMerchantTrust)
++  E(kActionSidePanelShowMerchantTrust) \
++  E(kActionSidePanelShowMoltAiChat) \
++  E(kActionSidePanelShowMoltAgent)
+ 
+ #define TOOLBAR_PINNABLE_ACTION_IDS \
+   E(kActionHome, IDC_HOME) \

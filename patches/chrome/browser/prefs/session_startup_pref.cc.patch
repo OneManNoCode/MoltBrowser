@@ -1,0 +1,28 @@
+MoltBrowser patch for chrome/browser/prefs/session_startup_pref.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/prefs/session_startup_pref.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/prefs/session_startup_pref.cc b/chrome/browser/prefs/session_startup_pref.cc
+index dd071315efd8981c922123437115b2e7ee51ffcc..aa926758d73c0ff667a0156e154f414da52eb20f 100644
+--- a/chrome/browser/prefs/session_startup_pref.cc
++++ b/chrome/browser/prefs/session_startup_pref.cc
+@@ -59,10 +59,15 @@ void SessionStartupPref::RegisterProfilePrefs(
+ #else
+   uint32_t flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
+ #endif
++  // MoltBrowser: Default startup type is URLS with MoltSearch as the URL.
+   registry->RegisterIntegerPref(prefs::kRestoreOnStartup,
+-                                TypeToPrefValue(GetDefaultStartupType()),
++                                TypeToPrefValue(SessionStartupPref::URLS),
+                                 flags);
+-  registry->RegisterListPref(prefs::kURLsToRestoreOnStartup, flags);
++  // MoltBrowser: Default startup URL is MoltSearch homepage.
++  base::ListValue default_urls;
++  default_urls.Append("chrome://molt-home/");
++  registry->RegisterListPref(prefs::kURLsToRestoreOnStartup,
++                              std::move(default_urls), flags);
+ }
+ 
+ // static

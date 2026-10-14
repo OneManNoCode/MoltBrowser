@@ -1,0 +1,32 @@
+MoltBrowser patch for chrome/browser/resources/settings/settings_ui/settings_ui.html
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/resources/settings/settings_ui/settings_ui.html by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/settings/settings_ui/settings_ui.html b/chrome/browser/resources/settings/settings_ui/settings_ui.html
+index 7e8581d15ff0180e3ed75bbc635cc45a56606b31..de7d56f2d6a9a7c77c83dec77457ed9e3269cd90 100644
+--- a/chrome/browser/resources/settings/settings_ui/settings_ui.html
++++ b/chrome/browser/resources/settings/settings_ui/settings_ui.html
+@@ -83,9 +83,21 @@
+         narrow="{{narrow_}}"
+         narrow-threshold="980"
+         show-menu="[[narrow_]]">
++      <!-- MoltBrowser: suppress the toolbar's default product logo entirely.
++           The default cr-toolbar markup falls back to the hardcoded blue
++           Chrome swirl (//resources/images/chrome_logo_dark.svg) when the
++           product-logo slot is empty. Filling the slot with an empty element
++           overrides that fallback, so the settings header shows a clean
++           "Settings" title with NO logo (no Chromium swirl, no blurry mark). -->
++      <span slot="product-logo" aria-hidden="true"></span>
+     </cr-toolbar>
+     <cr-drawer id="drawer" on-close="onMenuClose_" heading="$i18n{settings}"
+         align="$i18n{textdirection}">
++      <!-- MoltBrowser: cr-drawer's header-icon slot falls back to the Chrome
++           swirl / current-channel-logo; fill it empty so the narrow-mode
++           drawer header shows a clean "Settings" with no logo, matching the
++           wide-mode toolbar. -->
++      <span slot="header-icon" aria-hidden="true"></span>
+       <div slot="body">
+         <template is="dom-if" id="drawerTemplate">
+           <settings-menu id="drawerMenu" on-iron-activate="onIronActivate_">

@@ -1,0 +1,579 @@
+MoltBrowser patch for chrome/browser/ui/views/toolbar/toolbar_view.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/toolbar/toolbar_view.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index 7e2880e8f281f35b4fdfda7b403ee3d2d65d34db..e2ec4f3dcd5b29976739bf92153f441785627546 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -6,7 +6,9 @@
+ 
+ #include <algorithm>
+ #include <memory>
++#include <string>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/command_line.h"
+ #include "base/containers/fixed_flat_map.h"
+@@ -18,11 +20,20 @@
+ #include "base/metrics/histogram_macros.h"
+ #include "base/metrics/user_metrics.h"
+ #include "base/metrics/user_metrics_action.h"
++#include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/actor/ui/actor_ui_metrics.h"
++#include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
++#include "chrome/browser/molt_ai/tor/exit_country_names.h"
++#include "chrome/browser/molt_ai/tor/tor_manager.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/molt_ai/tor/molt_net_routing.h"
++#include "chrome/browser/molt_ai/update/update_manager.h"
++#include "content/public/browser/storage_partition.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
+ #include "chrome/browser/command_updater.h"
+ #include "chrome/browser/glic/public/glic_enabling.h"
+@@ -48,6 +59,10 @@
+ #include "chrome/browser/ui/intent_picker_tab_helper.h"
+ #include "chrome/browser/ui/layout_constants.h"
+ #include "chrome/browser/ui/omnibox/omnibox_view.h"
++#include "base/task/single_thread_task_runner.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry.h"
++#include "chrome/browser/ui/side_panel/side_panel_registry.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/tab_search_feature.h"
+ #include "chrome/browser/ui/tabs/features.h"
+ #include "chrome/browser/ui/tabs/glic_actor_task_icon_manager_factory.h"
+@@ -75,6 +90,7 @@
+ #include "chrome/browser/ui/views/location_bar/intent_chip_button.h"
+ #include "chrome/browser/ui/views/location_bar/star_view.h"
+ #include "chrome/browser/ui/views/location_bar/webui_location_bar.h"
++#include "chrome/browser/molt_ai/tor/tor_manager.h"
+ #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
+ #include "chrome/browser/ui/views/page_action/page_action_icon_container.h"
+ #include "chrome/browser/ui/views/page_action/page_action_icon_controller.h"
+@@ -92,6 +108,8 @@
+ #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
+ #include "chrome/browser/ui/views/toolbar/home_button.h"
+ #include "chrome/browser/ui/views/toolbar/live_toolbar_background.h"
++#include "chrome/browser/ui/views/toolbar/molt_import_bubble.h"
++#include "chrome/browser/ui/views/toolbar/molt_net_bubble.h"
+ #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
+ #include "chrome/browser/ui/views/toolbar/reload_button.h"
+ #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
+@@ -120,6 +138,8 @@
+ #include "components/send_tab_to_self/features.h"
+ #include "components/signin/public/base/signin_buildflags.h"
+ #include "components/strings/grit/components_strings.h"
++#include "chrome/app/vector_icons/vector_icons.h"
++#include "components/vector_icons/vector_icons.h"
+ #include "content/public/browser/render_view_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "third_party/skia/include/core/SkPath.h"
+@@ -127,7 +147,9 @@
+ #include "ui/accessibility/ax_node_data.h"
+ #include "ui/base/interaction/element_identifier.h"
+ #include "ui/base/l10n/l10n_util.h"
++#include "ui/base/metadata/metadata_header_macros.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/base/mojom/menu_source_type.mojom.h"
+ #include "ui/base/theme_provider.h"
+ #include "ui/base/ui_base_features.h"
+ #include "ui/base/window_open_disposition.h"
+@@ -139,6 +161,7 @@
+ #include "ui/gfx/image/canvas_image_source.h"
+ #include "ui/gfx/paint_vector_icon.h"
+ #include "ui/gfx/scoped_canvas.h"
++#include "ui/menus/simple_menu_model.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/background.h"
+ #include "ui/views/cascading_property.h"
+@@ -294,6 +317,236 @@ bool IsMigratedClickToCallBubble(
+          IsPageActionMigrated(PageActionIconType::kClickToCall);
+ }
+ 
++// MoltBrowser: turn a 2-letter ISO country code into its flag emoji
++// (regional-indicator surrogate pair per letter). "us" -> 🇺🇸. Empty for a
++// malformed code.
++std::u16string CountryFlagEmoji(const std::string& cc) {
++  if (cc.size() != 2) {
++    return std::u16string();
++  }
++  std::u16string out;
++  for (char raw : cc) {
++    const char c = base::ToLowerASCII(raw);
++    if (c < 'a' || c > 'z') {
++      return std::u16string();
++    }
++    uint32_t cp = 0x1F1E6u + static_cast<uint32_t>(c - 'a');  // regional ind.
++    cp -= 0x10000u;
++    out.push_back(static_cast<char16_t>(0xD800u + (cp >> 10)));
++    out.push_back(static_cast<char16_t>(0xDC00u + (cp & 0x3FFu)));
++  }
++  return out;
++}
++
++// MoltBrowser: the "Local AI" toolbar button — the hero control on the black
++// glass toolbar. It carries a violet accent (a violet border plus a subtly
++// BLENDED violet pill, and a violet ink-drop when the AI side panel is active)
++// while forcing the label text to bright white so "Local AI" stays legible in
++// every state. This avoids the violet-on-violet legibility trap of the default
++// solid-fill highlight, and matches the Liquid Glass concept mockup.
++class LocalAiToolbarButton : public ToolbarButton {
++  METADATA_HEADER(LocalAiToolbarButton, ToolbarButton)
++
++ public:
++  explicit LocalAiToolbarButton(PressedCallback callback)
++      : ToolbarButton(std::move(callback)) {}
++  LocalAiToolbarButton(const LocalAiToolbarButton&) = delete;
++  LocalAiToolbarButton& operator=(const LocalAiToolbarButton&) = delete;
++  ~LocalAiToolbarButton() override = default;
++
++ protected:
++  // Blend the highlight (violet) into the bar as a subtle tint rather than a
++  // solid slab, so it reads as premium glass, not a saturated blob.
++  bool ShouldBlendHighlightColor() const override { return true; }
++  // Keep the label crisp white over the violet tint (readable in idle AND when
++  // the AI side panel is active/toggled).
++  std::optional<SkColor> GetHighlightTextColor() const override {
++    return SK_ColorWHITE;
++  }
++};
++
++// MoltBrowser: Toolbar control for MoltNet (Tor) privacy routing. Left-click
++// opens a rich native menu with (1) a live connection-status line, (2) an
++// "Enable MoltNet Privacy Routing" toggle that launches/stops the bundled
++// Tor, (3) an exit-country picker with flag emoji + full names, and (4) New
++// identity / Import-from-another-browser / MoltNet settings entries. The menu
++// is rebuilt on every open from TorManager, so status + selection self-heal
++// from changes in other windows or the WebUI pickers.
++class TorExitCountryButton : public ToolbarButton,
++                             public ui::SimpleMenuModel::Delegate {
++  METADATA_HEADER(TorExitCountryButton, ToolbarButton)
++
++ public:
++  explicit TorExitCountryButton(Browser* browser)
++      : browser_(browser),
++        menu_model_(this),
++        country_codes_(
++            molt_ai::tor::TorManager::Get()->GetAvailableExitCountries()) {
++    SetCallback(base::BindRepeating(&TorExitCountryButton::ButtonPressed,
++                                    base::Unretained(this)));
++    SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    // No vector icon — the label carries a country flag emoji (or a globe for
++    // Auto), so the button reads "🇬🇧 GB" like the mockup, not a static globe.
++    SetTooltipText(u"MoltNet — private routing, connect & pick exit country");
++    UpdateLabel();
++  }
++  TorExitCountryButton(const TorExitCountryButton&) = delete;
++  TorExitCountryButton& operator=(const TorExitCountryButton&) = delete;
++  ~TorExitCountryButton() override = default;
++
++  // ui::SimpleMenuModel::Delegate:
++  bool IsCommandIdChecked(int command_id) const override {
++    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
++    if (command_id == kCommandEnable) {
++      return mgr->IsRunning();
++    }
++    const std::string current = mgr->GetExitCountry();
++    if (command_id == kCommandAuto) {
++      return current.empty();
++    }
++    if (command_id >= kCommandFirstCountry &&
++        command_id < kCommandFirstCountry +
++                         static_cast<int>(country_codes_.size())) {
++      return country_codes_[static_cast<size_t>(command_id -
++                                                kCommandFirstCountry)] ==
++             current;
++    }
++    return false;
++  }
++
++  void ExecuteCommand(int command_id, int event_flags) override {
++    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
++    if (command_id == kCommandEnable) {
++      if (mgr->IsRunning()) {
++        mgr->Stop();
++      } else {
++        // Launch is async (~15-30s bootstrap). Show a pending label now;
++        // the callback re-reads the running state when Tor is up.
++        SetHighlight(u"…", std::nullopt);
++        mgr->Launch(base::BindOnce(&TorExitCountryButton::OnTorLaunched,
++                                   weak_factory_.GetWeakPtr()));
++        return;
++      }
++    } else if (command_id == kCommandAuto) {
++      mgr->SetExitCountry(std::string());
++    } else if (command_id == kCommandNewIdentity) {
++      // Re-applying the current constraint is the sanctioned new-circuit
++      // path (matches HandleMoltnetNewCircuit): rewrites torrc and, if Tor
++      // is running, sends SIGNAL RELOAD + SIGNAL NEWNYM.
++      mgr->SetExitCountry(mgr->GetExitCountry());
++    } else if (command_id == kCommandImport) {
++      chrome::AddSelectedTabWithURL(
++          browser_, GURL("molt://ai-settings/?section=import"),
++          ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++      return;
++    } else if (command_id == kCommandSettings) {
++      chrome::AddSelectedTabWithURL(browser_, GURL("molt://ai-settings/"),
++                                    ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++      return;
++    } else if (command_id >= kCommandFirstCountry) {
++      const size_t index =
++          static_cast<size_t>(command_id - kCommandFirstCountry);
++      if (index >= country_codes_.size()) {
++        return;
++      }
++      mgr->SetExitCountry(country_codes_[index]);
++    }
++    UpdateLabel();
++  }
++
++ private:
++  // Menu command ids. Countries occupy [kCommandFirstCountry, +N); the fixed
++  // commands sit well clear at 1000+.
++  static constexpr int kCommandAuto = 0;
++  static constexpr int kCommandFirstCountry = 1;
++  static constexpr int kCommandEnable = 1000;
++  static constexpr int kCommandNewIdentity = 1001;
++  static constexpr int kCommandImport = 1002;
++  static constexpr int kCommandSettings = 1003;
++
++  // Rebuild the menu each open so the status line + toggle + checkmarks
++  // reflect the live TorManager state.
++  void BuildMenu() {
++    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
++    menu_model_.Clear();
++
++    const std::string cc = mgr->GetExitCountry();
++    std::u16string status;
++    if (mgr->IsRunning()) {
++      std::u16string where =
++          cc.empty()
++              ? u"any country"
++              : (CountryFlagEmoji(cc) + u" " +
++                 base::UTF8ToUTF16(molt_ai::tor::ExitCountryDisplayName(cc)));
++      status = u"\U0001F7E2 Connected · exit " + where;
++    } else {
++      status = u"⚫ Not connected";
++    }
++    menu_model_.AddTitle(status);
++    menu_model_.AddCheckItem(kCommandEnable,
++                             u"Enable MoltNet Privacy Routing");
++    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
++
++    menu_model_.AddTitle(u"Exit country");
++    menu_model_.AddCheckItem(kCommandAuto, u"\U0001F310  Auto (recommended)");
++    for (size_t i = 0; i < country_codes_.size(); ++i) {
++      std::u16string label =
++          CountryFlagEmoji(country_codes_[i]) + u"  " +
++          base::UTF8ToUTF16(
++              molt_ai::tor::ExitCountryDisplayName(country_codes_[i]));
++      menu_model_.AddCheckItem(kCommandFirstCountry + static_cast<int>(i),
++                               label);
++    }
++    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
++    menu_model_.AddItem(kCommandNewIdentity, u"\U0001F504  New identity");
++    menu_model_.AddItem(kCommandImport,
++                        u"\U0001F4E5  Import from another browser…");
++    menu_model_.AddItem(kCommandSettings, u"⚙️  MoltNet settings…");
++  }
++
++  void ButtonPressed() {
++    UpdateLabel();
++    // MoltBrowser: open the Liquid Glass MoltNet popover (a translucent
++    // WebUI bubble). The native SimpleMenuModel path — BuildMenu(),
++    // ExecuteCommand(), menu_model_ — is retained as a fallback/reference but
++    // is no longer wired to the click. Refresh the button's flag/label when the
++    // popover closes (the user may have changed the exit country inside it).
++    MoltNetBubbleView::Show(
++        /*anchor=*/this, browser_->profile(),
++        base::BindRepeating(&TorExitCountryButton::UpdateLabel,
++                            weak_factory_.GetWeakPtr()));
++  }
++
++  void OnTorLaunched(molt_ai::tor::TorLaunchResult /*result*/) {
++    UpdateLabel();
++  }
++
++  // Label = current exit-country constraint: "" (any) -> "Auto"; otherwise
++  // the uppercased ISO code (e.g. "us" -> "US").
++  void UpdateLabel() {
++    const std::string cc = molt_ai::tor::TorManager::Get()->GetExitCountry();
++    // Show the selected country's flag + ISO code (e.g. "🇬🇧 GB"); a globe +
++    // "Auto" when unconstrained. The flag emoji renders in color just like the
++    // exit-country menu items.
++    SetHighlight(cc.empty()
++                     ? u"\U0001F310 Auto"
++                     : (CountryFlagEmoji(cc) + u" " +
++                        base::UTF8ToUTF16(base::ToUpperASCII(cc))),
++                 std::nullopt);
++  }
++
++  const raw_ptr<Browser> browser_;
++  ui::SimpleMenuModel menu_model_;
++  const std::vector<std::string> country_codes_;
++  base::WeakPtrFactory<TorExitCountryButton> weak_factory_{this};
++};
++
++BEGIN_METADATA(LocalAiToolbarButton)
++END_METADATA
++
++BEGIN_METADATA(TorExitCountryButton)
++END_METADATA
++
+ }  // namespace
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+@@ -339,6 +592,53 @@ ToolbarView::~ToolbarView() {
+   }
+ }
+ 
++// MoltBrowser: light the violet "active" ring on whichever mode button matches
++// the currently-open content side-panel entry, and clear it on the other (and
++// on both when the panel is closed). Driven by the SidePanelEntryObserver
++// callbacks below, which fire on open, AI↔Agent swap, and close.
++void ToolbarView::UpdateAiAgentModeHighlights() {
++  SidePanelUI* ui = browser_ ? browser_->GetFeatures().side_panel_ui() : nullptr;
++  std::optional<SidePanelEntryId> id =
++      ui ? ui->GetCurrentEntryId(SidePanelEntry::PanelType::kContent)
++         : std::nullopt;
++  const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
++  if (molt_ai_mode_button_) {
++    molt_ai_mode_button_->SetHighlight(
++        u"🤖 AI mode",
++        id == SidePanelEntryId::kMoltAiChat ? kViolet : std::nullopt);
++  }
++  if (agent_mode_button_) {
++    agent_mode_button_->SetHighlight(
++        u"🎬 Agent mode",
++        id == SidePanelEntryId::kMoltAgent ? kViolet : std::nullopt);
++  }
++}
++
++void ToolbarView::OnEntryShown(SidePanelEntry* entry) {
++  UpdateAiAgentModeHighlights();
++}
++
++void ToolbarView::OnEntryHidden(SidePanelEntry* entry) {
++  UpdateAiAgentModeHighlights();
++}
++
++void ToolbarView::SetUpSidePanelHighlightObservation() {
++  SidePanelRegistry* registry = SidePanelRegistry::From(browser_);
++  if (!registry) {
++    return;
++  }
++  for (SidePanelEntryId id :
++       {SidePanelEntryId::kMoltAiChat, SidePanelEntryId::kMoltAgent}) {
++    if (SidePanelEntry* entry =
++            registry->GetEntryForKey(SidePanelEntry::Key(id))) {
++      if (!side_panel_entry_observations_.IsObservingSource(entry)) {
++        side_panel_entry_observations_.AddObservation(entry);
++      }
++    }
++  }
++  UpdateAiAgentModeHighlights();  // reflect whatever is open right now
++}
++
+ void ToolbarView::Init() {
+ #if defined(USE_AURA)
+   // Avoid generating too many occlusion tracking calculation events before this
+@@ -479,6 +779,27 @@ void ToolbarView::Init() {
+     AddChildView(std::make_unique<ContextualTasksButton>(browser_));
+   }
+ 
++  // MoltBrowser: MoltNet (Tor exit-country) + Import buttons live in the LEFT
++  // cluster, right before the location bar, so the two privacy/migration
++  // controls sit together on the left (cleaner than scattering them on the
++  // right). MoltNet's label shows the selected country's flag; Import uses a
++  // bookmark icon and opens the Liquid Glass import popover.
++  {
++    AddChildView(std::make_unique<TorExitCountryButton>(browser_));
++
++    auto import_button = std::make_unique<ToolbarButton>();
++    import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    import_button->SetVectorIcon(kBookmarksManagerIcon);
++    import_button->SetTooltipText(
++        u"Bookmarks — view yours, or import from another browser");
++    ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
++    import_button_ptr->SetCallback(base::BindRepeating(
++        [](ToolbarButton* anchor, Browser* browser) {
++          MoltImportBubbleView::Show(anchor, browser->profile());
++        },
++        base::Unretained(import_button_ptr), browser_));
++  }
++
+   if (location_bar_view) {
+     location_bar_view_ = AddChildView(std::move(location_bar_view));
+     location_bar_ = location_bar_view_;
+@@ -573,22 +894,118 @@ void ToolbarView::Init() {
+     media_button_ = AddChildView(std::move(media_button));
+   }
+ 
++  // MoltBrowser: AI chat quick-access button with explicit "Local AI" label.
++  // Toggles the AI chat side panel (the redesigned chat surface). Placed
++  // where the Google avatar button used to live so the primary on-device AI
++  // feature is one click away.
++  {
++    auto molt_ai_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
++        [](Browser* browser) {
++          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
++          if (!side_panel_ui) {
++            return;
++          }
++          side_panel_ui->Toggle(
++              SidePanelEntryKey(SidePanelEntryId::kMoltAiChat),
++              SidePanelOpenTrigger::kToolbarButton);
++        },
++        browser_));
++    // SetHighlight is the public API for showing a label on a ToolbarButton
++    // (SetText is intentionally private). MoltBrowser: give the primary on-device
++    // AI button a signature violet accent (light violet label/border + faint
++    // violet pill) so it reads as the hero control on the dark glass toolbar,
++    // matching the Liquid Glass concept mockup.
++    // Idle by default (no ring); the violet "active" ring is driven by
++    // UpdateAiAgentModeHighlights() only while the kMoltAiChat panel is open.
++    molt_ai_button->SetHighlight(u"🤖 AI mode", std::nullopt);
++    molt_ai_button->SetTooltipText(
++        u"Toggle AI mode — MoltBrowser AI, runs locally on your device (⌘⇧L)");
++    molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    // The 🤖 robot emoji in the label carries the icon (like the country flag
++    // on the MoltNet button), so no separate vector icon. This is also the
++    // SINGLE AI-mode control: the duplicate ephemeral side-panel toolbar button
++    // is suppressed via set_should_show_ephemerally_in_toolbar(false) on the
++    // kMoltAiChat entry (side_panel_helper.cc).
++    molt_ai_mode_button_ = AddChildView(std::move(molt_ai_button));
++  }
++
++  // MoltBrowser: "Agent mode" button — toggles the Agent automation studio side
++  // panel (kMoltAgent), which swaps with the AI chat panel. Recording start/stop
++  // plus the whole workflow library / editor / scheduler now live inside that
++  // panel, so this button just opens it (mirrors the AI mode button).
++  {
++    // LocalAiToolbarButton (not a plain ToolbarButton) so its violet "active"
++    // ring stays legible — it forces white label text + blends the highlight,
++    // avoiding the invisible violet-on-violet a plain ToolbarButton would draw.
++    auto agent_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
++        [](Browser* browser) {
++          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
++          if (!side_panel_ui) {
++            return;
++          }
++          side_panel_ui->Toggle(
++              SidePanelEntryKey(SidePanelEntryId::kMoltAgent),
++              SidePanelOpenTrigger::kToolbarButton);
++        },
++        browser_));
++    // 🎬 (record & replay) emoji in the label carries the icon, matching the
++    // AI mode robot; no separate vector icon. Idle by default; the violet ring
++    // is driven by UpdateAiAgentModeHighlights() while kMoltAgent is open.
++    agent_button->SetHighlight(u"🎬 Agent mode", std::nullopt);
++    agent_button->SetTooltipText(
++        u"Toggle Agent mode — record, edit, run & schedule web automations");
++    agent_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    agent_mode_button_ = AddChildView(std::move(agent_button));
++  }
++
++  // MoltBrowser: attach the side-panel-entry observers that swap the violet
++  // "active" ring between the two mode buttons. The kMoltAiChat / kMoltAgent
++  // entries are registered by the SidePanelCoordinator, which is created AFTER
++  // ToolbarView, so defer the hookup to a posted task (the entries exist by
++  // then). The observation is a no-op if the entries aren't found.
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(&ToolbarView::SetUpSidePanelHighlightObservation,
++                     mode_ring_weak_factory_.GetWeakPtr()));
++
++  // MoltBrowser: the MoltNet (Tor exit-country) + Import buttons are created
++  // earlier, in the LEFT cluster just before the location bar, so the two
++  // privacy/migration controls sit together on the left. See MoltBrowser
++  // left-cluster block above.
++
++  // MoltBrowser: Software-update button. Opens molt://update/ (the in-app
++  // updater: current vs latest version + one-click update) and kicks off the
++  // cross-platform UpdateManager so fully-automatic background updates run on
++  // every platform. Initialize() is idempotent, so calling it per-window is
++  // safe; it needs the profile's network URLLoaderFactory.
++  {
++    // MoltNet startup fail-safe: if a prior session left this profile routing
++    // through Tor but the daemon isn't running now, clear the stale proxy so
++    // the user isn't stranded behind a dead SOCKS endpoint. Idempotent + a
++    // no-op unless routing prefs are actually set (see MoltNetRouting).
++    molt_ai::tor::MoltNetRouting::ReconcileOnStartup(
++        browser_->profile(), g_browser_process->local_state());
++
++    molt_ai::UpdateManager::Get()->Initialize(
++        browser_->profile()
++            ->GetDefaultStoragePartition()
++            ->GetURLLoaderFactoryForBrowserProcess());
++    auto update_button = std::make_unique<ToolbarButton>(base::BindRepeating(
++        [](Browser* browser) {
++          chrome::AddSelectedTabWithURL(browser, GURL("molt://update/"),
++                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++        },
++        browser_));
++    update_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
++    update_button->SetVectorIcon(vector_icons::kInstallDesktopIcon);
++    update_button->SetTooltipText(u"Software update");
++    AddChildView(std::move(update_button));
++  }
++
+   avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
+-  bool show_avatar_toolbar_button = true;
+-#if BUILDFLAG(IS_CHROMEOS)
+-  // ChromeOS only badges Incognito, Guest, and captive portal signin icons in
+-  // the browser window.
+-  show_avatar_toolbar_button =
+-      browser_->profile()->IsIncognitoProfile() ||
+-      browser_->profile()->IsGuestSession() ||
+-      (browser_->profile()->IsOffTheRecord() &&
+-       browser_->profile()->GetOTRProfileID().IsCaptivePortal());
+-#else
+-  // DevTools profiles are OffTheRecord, so hide it there.
+-  show_avatar_toolbar_button = browser_->profile()->IsIncognitoProfile() ||
+-                               browser_->profile()->IsGuestSession() ||
+-                               browser_->profile()->IsRegularProfile();
+-#endif
++  // MoltBrowser: Hide the Google sign-in / avatar button.
++  // MoltBrowser does not use Google account integration.
++  bool show_avatar_toolbar_button = false;
+   avatar_->SetVisible(show_avatar_toolbar_button);
+ 
+ #if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
+@@ -1171,6 +1588,29 @@ void ToolbarView::Layout(PassKey) {
+   // Call super implementation to ensure layout manager and child layouts
+   // happen.
+   LayoutSuperclass<AccessiblePaneView>(this);
++
++  // MoltBrowser: Safari-style EXACTLY-centered omnibox. The flex layout leaves
++  // the location bar filling the whole span (the "slot") between the left
++  // controls and the right-hand buttons. After that runs, re-lay it as a pill
++  // centered on the WINDOW's midpoint. To land dead-center without overlapping
++  // the controls on either side (MoltBrowser's right cluster is heavier than
++  // the left), the pill takes the LARGEST width that still fits centered — so
++  // it may be a touch narrower than the cap, but it is always exactly centered.
++  // Pure post-layout reposition; no flex spacers, no button juggling.
++  if (display_mode_ == DisplayMode::kNormal && location_bar_view_ &&
++      location_bar_view_->GetVisible()) {
++    constexpr int kMoltPillMaxWidth = 640;
++    const gfx::Rect slot = location_bar_view_->bounds();
++    const int centre = width() / 2;
++    // Widest pill centered on `centre` that stays within [slot.x, slot.right].
++    const int pill_w = std::min({kMoltPillMaxWidth, slot.width(),
++                                 2 * (centre - slot.x()),
++                                 2 * (slot.right() - centre)});
++    if (pill_w > 0 && pill_w < slot.width()) {
++      location_bar_view_->SetBounds(centre - pill_w / 2, slot.y(), pill_w,
++                                    slot.height());
++    }
++  }
+ }
+ 
+ void ToolbarView::OnThemeChanged() {

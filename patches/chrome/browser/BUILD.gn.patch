@@ -1,0 +1,28 @@
+MoltBrowser patch for chrome/browser/BUILD.gn
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index c570172694b5cf7999e59f393c535e7192c9a55b..3f6e5d79ee450f9a59ba2f4a4a51f5dd8042fcf5 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1628,6 +1628,7 @@ static_library("browser") {
+     "//chrome/browser/affiliations",
+     "//chrome/browser/ai",
+     "//chrome/browser/ai:impl",
++    "//chrome/browser/molt_ai",
+     "//chrome/browser/app_mode",
+     "//chrome/browser/autocomplete",
+     "//chrome/browser/autocomplete:aim_eligibility_service",
+@@ -8239,6 +8240,9 @@ static_library("browser") {
+     ]
+   }
+ 
++  # Re-added (matches upstream): defines PasswordFieldClassificationModel
++  # HandlerFactory, referenced by the tflite-guarded callers; omitting it
++  # broke the chrome.dll link with undefined symbols on Windows.
+   if (build_with_tflite_lib) {
+     sources += [
+       "password_manager/password_field_classification_model_handler_factory.cc",

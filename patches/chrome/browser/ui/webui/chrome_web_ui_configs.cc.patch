@@ -1,0 +1,46 @@
+MoltBrowser patch for chrome/browser/ui/webui/chrome_web_ui_configs.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/webui/chrome_web_ui_configs.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+index c1d2e75f824137c098bf51d35f889ab0c7ba18cf..ff449be474a8993b160f8c06677f0fc64644cbed 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -18,6 +18,17 @@
+ #include "chrome/browser/ui/webui/browsing_topics/browsing_topics_internals_ui.h"
+ #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals_ui.h"
+ #include "chrome/browser/ui/webui/chrome_urls/chrome_urls_ui.h"
++// MoltBrowser AI WebUI
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_home_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_net_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_import_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_settings_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_update_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_automation_ui.h"
++#include "chrome/browser/ui/webui/molt_ai/molt_ai_memory_ui.h"
+ #include "chrome/browser/ui/webui/commerce/commerce_internals_ui_config.h"
+ #include "chrome/browser/ui/webui/components/components_ui.h"
+ #include "chrome/browser/ui/webui/connectors_internals/connectors_internals_ui.h"
+@@ -271,6 +282,17 @@ void RegisterChromeWebUIConfigs() {
+   map.AddWebUIConfig(std::make_unique<MediaEngagementUIConfig>());
+   map.AddWebUIConfig(std::make_unique<MemoryInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<MetricsInternalsUIConfig>());
++  // MoltBrowser AI WebUI pages
++  map.AddWebUIConfig(std::make_unique<MoltAIUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltHomeUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltNetUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltImportUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltAIChatUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltAISettingsUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltAIAgentUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltAIAutomationUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltAIMemoryUIConfig>());
++  map.AddWebUIConfig(std::make_unique<MoltAIUpdateUIConfig>());
+   map.AddWebUIConfig(std::make_unique<NetExportUIConfig>());
+   map.AddWebUIConfig(std::make_unique<NetInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<NTPTilesInternalsUIConfig>());

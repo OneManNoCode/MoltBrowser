@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/ui/views/toolbar/toolbar_button.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/toolbar/toolbar_button.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_button.cc b/chrome/browser/ui/views/toolbar/toolbar_button.cc
+index aa7980eb189fd8a6e128d3b76e696b54fa6dcd46..08970890a6fb17041b21fdd335b89a2ce80bda0e 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_button.cc
+@@ -200,6 +200,10 @@ void ToolbarButton::UpdateColorsAndInsets() {
+     SetBackground(nullptr);
+     const auto* cp = GetColorProvider();
+     if (cp) {
++      // MoltBrowser: icon-only / nav buttons stay BARE on the dark glass
++      // toolbar (no fill, no border) so they float on the glass rather than
++      // reading as gray-outlined buttons. Only labeled feature buttons (Local
++      // AI, MoltNet, …) get a glass pill, via the highlight-animation path.
+       if (default_background_color_id_ != kChromeColorsStart) {
+         SetBackground(views::CreateBackgroundFromPainter(
+             views::Painter::CreateSolidRoundRectPainter(

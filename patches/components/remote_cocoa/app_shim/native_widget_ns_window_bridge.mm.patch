@@ -1,0 +1,44 @@
+MoltBrowser patch for components/remote_cocoa/app_shim/native_widget_ns_window_bridge.mm
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/components/remote_cocoa/app_shim/native_widget_ns_window_bridge.mm by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/remote_cocoa/app_shim/native_widget_ns_window_bridge.mm b/components/remote_cocoa/app_shim/native_widget_ns_window_bridge.mm
+index 15c81d1f61c5dd994f24a194665de639b6355460..19ecd28233da85bf827fd9a9b8c08517d68c92e9 100644
+--- a/components/remote_cocoa/app_shim/native_widget_ns_window_bridge.mm
++++ b/components/remote_cocoa/app_shim/native_widget_ns_window_bridge.mm
+@@ -538,6 +538,7 @@ void NativeWidgetNSWindowBridge::ShowEmojiPanel() {
+ 
+ void NativeWidgetNSWindowBridge::CreateWindow(
+     mojom::CreateWindowParamsPtr params) {
++  window_class_ = params->window_class;  // MoltBrowser: for vibrancy scoping.
+   SetWindow(CreateNSWindow(params.get()));
+   if (window_set_callback_) {
+     std::move(window_set_callback_).Run(ns_window());
+@@ -776,6 +777,25 @@ void NativeWidgetNSWindowBridge::CreateContentView(
+   [compositor_view setWantsLayer:YES];
+   [bridged_view_ addSubview:compositor_view];
+ 
++  // MoltBrowser: real toolbar glass. For the top-level browser window when it
++  // is translucent (the kGlassToolbar path makes it so), add a dark
++  // NSVisualEffectView vibrancy layer BELOW the compositor. It shows a real
++  // frosted-desktop blur wherever the toolbar / tab-strip chrome is transparent;
++  // the opaque web-content quad covers the rest, so the page is unaffected.
++  // Scoped to kBrowser so bubbles/menus/popups (also translucent) are untouched.
++  if (is_translucent_window_ &&
++      window_class_ == mojom::WindowClass::kBrowser) {
++    NSVisualEffectView* vibrancy =
++        [[NSVisualEffectView alloc] initWithFrame:[bridged_view_ bounds]];
++    vibrancy.material = NSVisualEffectMaterialHeaderView;
++    vibrancy.blendingMode = NSVisualEffectBlendingModeBehindWindow;
++    vibrancy.state = NSVisualEffectStateActive;
++    vibrancy.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
++    [bridged_view_ addSubview:vibrancy
++                   positioned:NSWindowBelow
++                   relativeTo:compositor_view];
++  }
++
+   [bridged_view_ setWantsLayer:YES];
+   if (corner_radius) {
+     bridged_view_.layer.cornerRadius = *corner_radius;

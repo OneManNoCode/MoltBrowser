@@ -1,0 +1,51 @@
+MoltBrowser patch for chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc b/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
+index 7adf4cfe57196d77960b19aea0b901ed6be8d784..cad19cbbad61e7fa60403822cb02cbb76a8487c0 100644
+--- a/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
++++ b/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
+@@ -10,6 +10,7 @@
+ #include "base/check.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser.h"
+@@ -61,6 +62,32 @@ SidePanelCoordinator* SidePanelCoordinator::From(
+ void SidePanelCoordinator::Init(Browser* browser) {
+   SidePanelHelper::PopulateGlobalEntries(browser,
+                                          SidePanelRegistry::From(browser));
++  // MoltBrowser: default-open the AI Chat side panel on every new
++  // browser window so users get the chat-with-the-page experience
++  // immediately (matches Edge Copilot / Comet / Perplexity UX).
++  //
++  // Why PostTask: Init() runs INSIDE BrowserView's ctor (via
++  // BrowserWindowFeatures::InitPostBrowserViewConstruction). Calling
++  // Show() synchronously here triggers
++  // SidePanel::ResetSidePanelAnimationContent() before the SidePanel
++  // view itself finishes initializing → SEGV. Deferring one turn
++  // lets the browser window finish constructing.
++  //
++  // SidePanelCoordinator is owned by BrowserWindowFeatures which is
++  // owned by Browser, so Unretained(this) is safe across a single
++  // message-loop turn — nothing can destroy us before the task fires.
++  if (browser && browser->profile() &&
++      !browser->profile()->IsGuestSession() &&
++      !browser->profile()->IsSystemProfile() &&
++      browser->is_type_normal()) {
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            [](SidePanelCoordinator* self) {
++              self->Show(SidePanelEntryId::kMoltAiChat);
++            },
++            base::Unretained(this)));
++  }
+ }
+ 
+ void SidePanelCoordinator::TearDownPreBrowserWindowDestruction() {

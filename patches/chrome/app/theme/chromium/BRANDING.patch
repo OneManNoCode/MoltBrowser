@@ -1,0 +1,30 @@
+MoltBrowser patch for chrome/app/theme/chromium/BRANDING
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/theme/chromium/BRANDING by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/theme/chromium/BRANDING b/chrome/app/theme/chromium/BRANDING
+index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..d76275709025eec3e676fcc98bf815555bdd60fd 100644
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,10 +1,10 @@
+-COMPANY_FULLNAME=The Chromium Authors
+-COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
+-COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+-MAC_BUNDLE_ID=org.chromium.Chromium
+-MAC_CREATOR_CODE=Cr24
++COMPANY_FULLNAME=GenEye AI Labs Inc.
++COMPANY_SHORTNAME=GenEye AI Labs
++PRODUCT_FULLNAME=MoltBrowser
++PRODUCT_SHORTNAME=MoltBrowser
++PRODUCT_INSTALLER_FULLNAME=MoltBrowser Installer
++PRODUCT_INSTALLER_SHORTNAME=MoltBrowser Installer
++COPYRIGHT=Copyright @LASTCHANGE_YEAR@ GenEye AI Labs Inc. All rights reserved.
++MAC_BUNDLE_ID=com.geneyeailabs.MoltBrowser
++MAC_CREATOR_CODE=Molt
+ MAC_TEAM_ID=

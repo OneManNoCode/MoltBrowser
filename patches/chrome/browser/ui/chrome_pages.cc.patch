@@ -1,0 +1,46 @@
+MoltBrowser patch for chrome/browser/ui/chrome_pages.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/chrome_pages.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/chrome_pages.cc b/chrome/browser/ui/chrome_pages.cc
+index e05fb064e75b72206b90347cc9925cc1011f0e7e..d00157a7a355f98db78ae4b15952736823e9e451 100644
+--- a/chrome/browser/ui/chrome_pages.cc
++++ b/chrome/browser/ui/chrome_pages.cc
+@@ -478,7 +478,15 @@ void ShowSettingsSubPageInTabbedBrowser(Browser* browser,
+   // a menu, ensure the web contents (and therefore the settings page that is
+   // about to be shown) is focused. (See crbug/926492 for motivation.)
+   FocusWebContents(browser);
+-  ShowSingletonTabIgnorePathOverwriteNTP(browser, GetSettingsUrl(sub_page));
++  // MoltBrowser: open Settings via the molt:// scheme so the omnibox displays
++  // "molt://settings" rather than "chrome://settings". The forward rewriter
++  // (HandleMoltSchemeRewrite) maps molt://settings[/sub-page] to the internal
++  // chrome://settings host for loading, while the navigation's virtual URL —
++  // which is what the omnibox shows — stays molt://. (A direct chrome://
++  // navigation keeps chrome:// as the virtual URL, which is why menu-opened
++  // Settings previously showed chrome://settings.)
++  ShowSingletonTabIgnorePathOverwriteNTP(
++      browser, GURL(base::StrCat({kMoltSettingsURL, sub_page})));
+ }
+ 
+ void ShowPageWithPromoForProfile(Profile* profile,
+@@ -599,7 +607,17 @@ void ShowSafeBrowsingEnhancedProtectionWithIph(
+ 
+ void ShowImportDialog(Browser* browser) {
+   base::RecordAction(UserMetricsAction("Import_ShowDlg"));
+-  ShowSettingsSubPage(browser, kImportDataSubPage);
++  // MoltBrowser: repoint the stock "Import Bookmarks and Settings…" command
++  // (IDC_IMPORT_SETTINGS, surfaced in the 3-dot Bookmarks submenu and the
++  // macOS menu-bar Bookmarks menu) to MoltBrowser's detected-browser import
++  // flow instead of Chromium's stock importer sub-page. Open the AI settings
++  // page deep-linked to the Import & Migration section. We navigate to the
++  // internal chrome://molt-ai-settings/ host; the molt:// reverse rewriter
++  // displays it as molt://ai-settings/ in the omnibox, and the ?section=import
++  // query drives the page's deep-link handler to scroll/focus #importSection.
++  GURL import_url(std::string(chrome::kChromeUIMoltAISettingsURL) +
++                  "?section=import");
++  ShowSingletonTabIgnorePathOverwriteNTP(browser, import_url);
+ }
+ 
+ void ShowAboutChrome(Browser* browser) {

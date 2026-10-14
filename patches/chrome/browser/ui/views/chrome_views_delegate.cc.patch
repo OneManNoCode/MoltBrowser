@@ -1,0 +1,37 @@
+MoltBrowser patch for chrome/browser/ui/views/chrome_views_delegate.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ui/views/chrome_views_delegate.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/chrome_views_delegate.cc b/chrome/browser/ui/views/chrome_views_delegate.cc
+index 8704f190c55a26ec3ebf577fb044ed1e2fb04044..647efe556c64fc31aad7a77bd7ba369047f98c32 100644
+--- a/chrome/browser/ui/views/chrome_views_delegate.cc
++++ b/chrome/browser/ui/views/chrome_views_delegate.cc
+@@ -3,11 +3,13 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/views/chrome_views_delegate.h"
++#include "chrome/browser/ui/ui_features.h"
+ 
+ #include <memory>
+ 
+ #include "base/check_op.h"
+ #include "build/build_config.h"
++#include "base/feature_list.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
+ #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
+@@ -201,6 +203,12 @@ void ChromeViewsDelegate::OnBeforeWidgetInit(
+   if (params->opacity == views::Widget::InitParams::WindowOpacity::kInferred) {
+ #if BUILDFLAG(IS_CHROMEOS)
+     chromeos::ResolveInferredOpacity(params);
++#elif BUILDFLAG(IS_MAC)
++    // MoltBrowser: the glass toolbar is painted as a fully opaque black-glass
++    // sheet (no window translucency / vibrancy), so the browser window stays
++    // OPAQUE. Keeping it opaque also leaves the vibrancy layer in the window
++    // bridge dormant (it is gated on a translucent window).
++    params->opacity = views::Widget::InitParams::WindowOpacity::kOpaque;
+ #else
+     params->opacity = views::Widget::InitParams::WindowOpacity::kOpaque;
+ #endif

@@ -1,0 +1,50 @@
+MoltBrowser patch for chrome/app/theme/chromium/product_logo.svg
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/app/theme/chromium/product_logo.svg by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/app/theme/chromium/product_logo.svg b/chrome/app/theme/chromium/product_logo.svg
+index 5e0b254b8dbaf68c6763ed49bda586d1197b4b6c..931fd6ddee631d0d6abf5ae4300a528b856ef56d 100644
+--- a/chrome/app/theme/chromium/product_logo.svg
++++ b/chrome/app/theme/chromium/product_logo.svg
+@@ -1 +1,37 @@
+-<svg viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#a)"><path d="M128 191.995c35.346 0 64-28.654 64-64 0-35.347-28.654-64-64-64-35.346 0-64 28.654-64 64 0 35.346 28.654 64 64 64Z" fill="#fff"/><path d="M96.01 183.41a63.681 63.681 0 0 1-23.42-23.43l-.007.004-55.425-96a128.027 128.027 0 0 0 110.841 192.018l55.436-96.018a63.985 63.985 0 0 1-16.465 18.775 64.007 64.007 0 0 1-70.96 4.651Z" fill="#669DF6"/><path d="M191.991 127.984a63.683 63.683 0 0 1-8.581 31.996l.007.004-55.426 96a128.029 128.029 0 0 0 110.872-192H127.991a64 64 0 0 1 64 64Z" fill="#AECBFA"/><path d="M128 180c28.719 0 52-23.281 52-52s-23.281-52-52-52-52 23.281-52 52 23.281 52 52 52Z" fill="#1A73E8"/><path d="M95.99 72.59a63.684 63.684 0 0 1 32.001-8.566v-.008h110.851A128.035 128.035 0 0 0 127.991.026 128.028 128.028 0 0 0 17.13 63.999l55.436 96.018a64.003 64.003 0 0 1 4.65-70.961A64 64 0 0 1 95.991 72.59Z" fill="#1967D2"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h256v256H0z"/></clipPath></defs></svg>
+\ No newline at end of file
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
++  <defs>
++    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
++      <stop offset="0%" style="stop-color:#4338ca"/>
++      <stop offset="50%" style="stop-color:#6366f1"/>
++      <stop offset="100%" style="stop-color:#a855f7"/>
++    </linearGradient>
++    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
++      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:0.3"/>
++      <stop offset="100%" style="stop-color:#c084fc;stop-opacity:0.1"/>
++    </linearGradient>
++  </defs>
++  <!-- Rounded square background -->
++  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
++  <!-- Inner glow -->
++  <rect x="40" y="40" width="944" height="944" rx="190" fill="url(#glow)"/>
++  <!-- Brain/Circuit motif - stylized M -->
++  <g transform="translate(512,480)" fill="none" stroke="white" stroke-width="48" stroke-linecap="round" stroke-linejoin="round">
++    <!-- M shape -->
++    <path d="M-240,160 L-240,-160 L-80,80 L80,-160 L80,80" opacity="0.95"/>
++    <!-- Neural connections -->
++    <circle cx="-240" cy="-160" r="20" fill="white" stroke="none" opacity="0.9"/>
++    <circle cx="-80" cy="80" r="20" fill="white" stroke="none" opacity="0.9"/>
++    <circle cx="80" cy="-160" r="20" fill="white" stroke="none" opacity="0.9"/>
++    <circle cx="80" cy="80" r="20" fill="white" stroke="none" opacity="0.9"/>
++    <!-- AI sparkle dots -->
++    <circle cx="200" cy="-120" r="14" fill="white" opacity="0.6"/>
++    <circle cx="240" cy="0" r="10" fill="white" opacity="0.4"/>
++    <circle cx="200" cy="120" r="12" fill="white" opacity="0.5"/>
++    <circle cx="-280" cy="40" r="10" fill="white" opacity="0.3"/>
++  </g>
++  <!-- "AI" text badge -->
++  <g transform="translate(512,720)">
++    <rect x="-60" y="-28" width="120" height="56" rx="28" fill="rgba(255,255,255,0.2)"/>
++    <text x="0" y="10" font-family="system-ui,-apple-system,sans-serif" font-size="36" font-weight="700" fill="white" text-anchor="middle">AI</text>
++  </g>
++</svg>

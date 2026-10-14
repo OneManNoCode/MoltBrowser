@@ -1,0 +1,19 @@
+MoltBrowser patch for components/heavy_ad_intervention_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/components/heavy_ad_intervention_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/heavy_ad_intervention_strings.grdp b/components/heavy_ad_intervention_strings.grdp
+index 6125f35fa18560995f82324142885a621a314720..f6b57eeb1b0ee575c4154b95e146d3ed86eba8d1 100644
+--- a/components/heavy_ad_intervention_strings.grdp
++++ b/components/heavy_ad_intervention_strings.grdp
+@@ -7,7 +7,7 @@
+     Ad removed.
+   </message>
+   <message name="IDS_HEAVY_AD_INTERVENTION_SUMMARY" desc="Summary in heavy ad intervention page when ad was removed for using too many system resources.">
+-    This ad used too many resources for your device, so Chrome removed it.
++    This ad used too many resources for your device, so MoltBrowser removed it.
+   </message>
+   <message name="IDS_HEAVY_AD_INTERVENTION_BUTTON_RELOAD" desc="Label for the button that reloads the page and disables the intervention">
+     Reload and show anyway

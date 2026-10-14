@@ -1,0 +1,19 @@
+MoltBrowser patch for components/error_page_strings.grdp
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/components/error_page_strings.grdp by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/error_page_strings.grdp b/components/error_page_strings.grdp
+index 9037f6eed735f94e67b59c2d403d29fbd8591c82..81883a9a13f84a65dddd1ccfa8c58e2e4f28a199 100644
+--- a/components/error_page_strings.grdp
++++ b/components/error_page_strings.grdp
+@@ -27,7 +27,7 @@
+       Load page later
+     </message>
+     <message name="IDS_ERRORPAGES_CANCEL_SAVE_PAGE_BUTTON" desc="Label for the button that will cancel the request to save the page for later. 'Cancel' is colored blue with the 'a' tag.">
+-      Chrome will let you know when this page is ready. &lt;a&gt;Cancel&lt;/a&gt;
++      MoltBrowser will let you know when this page is ready. &lt;a&gt;Cancel&lt;/a&gt;
+     </message>
+   </if>
+ 
