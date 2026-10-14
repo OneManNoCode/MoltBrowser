@@ -1,0 +1,41 @@
+Name: llama.cpp
+Short Name: llama_cpp
+URL: https://github.com/ggml-org/llama.cpp
+Version: b8284
+Revision: 00de615345c9d3ead161c15bf0cc313e46f4def6
+Update Mechanism: Manual
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+LLM inference in C/C++ (llama.cpp and the ggml tensor library), used for
+MoltBrowser's on-device model runtime. It parses untrusted model files
+(GGUF) and prompt text in the browser process, hence Security Critical.
+Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
+macOS (GGML_VERSION 0.9.7).
+
+Only the directories the build uses were vendored: common/, ggml/,
+include/ and src/ from the tag above (no tools/, examples/, tests/ or
+vendor/).
+
+Local Modifications:
+- BUILD.gn: GN build for Chromium (not upstream).
+- Removed backends no BUILD.gn file references: ggml/src/ggml-cuda,
+  ggml-hip and ggml-musa (both build ggml-cuda's sources), ggml-sycl,
+  ggml-opencl, ggml-hexagon, ggml-webgpu, ggml-virtgpu, ggml-cann,
+  ggml-zdnn and ggml-zendnn. ggml-vulkan, ggml-blas and ggml-rpc are kept
+  for possible future use; ggml-cpu and ggml-metal are built.
+  ggml/src/CMakeLists.txt still lists them and is not used by the build.
+- Patched against the tag (diff these against upstream b8284 when
+  updating; also re-check every `.at(` call, which aborts under Chromium's
+  -fno-exceptions):
+    ggml/src/ggml-backend-dl.h
+    ggml/src/ggml-backend-reg.cpp
+    ggml/src/ggml-metal/ggml-metal-ops.cpp
+    ggml/src/ggml-metal/ggml-metal.cpp
+    src/llama-adapter.cpp
+    src/llama-chat.cpp
+    src/llama-graph.h
+    src/llama-quant.cpp
