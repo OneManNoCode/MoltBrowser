@@ -33,6 +33,8 @@ source_set("molt_ai") {
     "molt_net_handler.h",
     "molt_net_ui.cc",
     "molt_net_ui.h",
+    "molt_vault_handler.cc",
+    "molt_vault_handler.h",
     "molt_webui_csp.h",
   ]
 
@@ -56,6 +58,7 @@ source_set("molt_ai") {
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/bookmarks/browser",
+    "//components/device_reauth",
     "//components/password_manager/core/browser",
     "//content/public/browser",
     "//net",

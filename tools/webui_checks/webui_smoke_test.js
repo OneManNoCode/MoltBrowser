@@ -111,6 +111,7 @@ const PAGES = [
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      getMoltnetExitCountries: {available: [{code: 'de', name: 'Germany'}], selected: ''},
+
      getImportableBrowsers: {browsers: [
        {id: 'chrome', display_name: '<img src=x>', installed: true, has_passwords_store: true},
        {id: 'firefox', display_name: 'Firefox', installed: true}]},
@@ -119,9 +120,27 @@ const PAGES = [
         custom_base_url: false, connected: true, base_url: '', enabled_models: ['gpt-x']},
        {id: 'custom', display_name: 'Custom', default_base_url: '', custom_base_url: true,
         connected: false, base_url: '', enabled_models: []}]},
+     vaultList: {success: true, secure_storage: false, message: 'No system keyring found',
+                 entries: [{id: 'a1', site_host: 'github.com', username: '<b>me</b>'},
+                           {id: 'b2', site_host: 'example.com', username: 'x'}]},
+     vaultRevealEntry: (args) => ({success: true, id: args[1], password: 'pw-' + args[1], notes: ''}),
+     vaultAdd: {success: true, id: 'c3', site_host: 'new.example'},
    },
-   after(window) {
+   listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click'],
+   async after(window) {
      const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 10));
+     assert.strictEqual(doc.querySelectorAll('#vaultList b').length, 0, 'usernames are text');
+     assert.strictEqual(doc.getElementById('vaultStorageWarn').style.display, '', 'keyring warning shown');
+     const shows = Array.from(doc.querySelectorAll('#vaultList button')).filter((b) => b.textContent === 'Show');
+     assert.strictEqual(shows.length, 2);
+     shows[0].click(); await tick();
+     shows[1].click(); await tick();
+     const revealed = Array.from(doc.querySelectorAll('#vaultList input')).filter((i) => i.value);
+     assert.strictEqual(revealed.length, 1, 'at most one password on the page');
+     assert.strictEqual(revealed[0].value, 'pw-b2');
+     doc.getElementById('vaultGenBtn').click();
+     assert.strictEqual(doc.getElementById('vaultPass').value.length, 20, 'generated password');
      const t = doc.getElementById('temperature');
      t.value = '1.3';
      t.dispatchEvent(new window.Event('input'));
@@ -264,7 +283,7 @@ async function runPage(page) {
     }
   }
   // Key controls got a listener.
-  for (const spec of page.listeners || []) {
+  for (const spec of (page.listeners || []).concat(page.listenersExtra || [])) {
     const [sel, type] = spec.split(':');
     const el = doc.querySelector(sel);
     if (!el) { errors.push(`listener check: ${sel} not found`); continue; }

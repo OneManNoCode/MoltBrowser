@@ -47,6 +47,7 @@
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -1858,6 +1859,177 @@ function disconnectProvider(id) {
   });
 }
 
+// ---- Passwords (vault) ----
+// Only metadata is ever listed. A password reaches this page solely via
+// vaultRevealEntry — after OS re-authentication (or, on Linux, a native
+// confirmation dialog) — one entry at a time. It is shown in a single
+// read-only field and wiped after 30 seconds, on Hide, or as soon as
+// another entry is revealed, so the page never holds more than one.
+var vaultRevealed = null;  // {input, timer}
+
+function hideRevealedPassword() {
+  if (!vaultRevealed) return;
+  clearTimeout(vaultRevealed.timer);
+  vaultRevealed.input.value = '';
+  if (vaultRevealed.input.parentNode) {
+    vaultRevealed.input.parentNode.removeChild(vaultRevealed.input);
+  }
+  if (vaultRevealed.extra && vaultRevealed.extra.parentNode) {
+    vaultRevealed.extra.parentNode.removeChild(vaultRevealed.extra);
+  }
+  vaultRevealed = null;
+}
+
+function vaultButton(label, cls, onClick) {
+  var b = document.createElement('button');
+  b.className = 'btn ' + cls + ' provider-btn';
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function renderVault(r) {
+  hideRevealedPassword();
+  var warn = document.getElementById('vaultStorageWarn');
+  if (r && r.secure_storage === false) {
+    warn.textContent = r.message || 'Secure key storage is unavailable.';
+    warn.style.display = '';
+  } else {
+    warn.style.display = 'none';
+  }
+  var list = document.getElementById('vaultList');
+  list.textContent = '';
+  var entries = (r && r.entries) || [];
+  if (!entries.length) {
+    var none = document.createElement('div');
+    none.className = 'desc';
+    none.textContent = 'No saved passwords yet.';
+    list.appendChild(none);
+    return;
+  }
+  entries.forEach(function(e) {
+    var row = document.createElement('div');
+    row.className = 'provider-row';
+    var head = document.createElement('div');
+    head.className = 'provider-head';
+    var name = document.createElement('span');
+    name.className = 'provider-name';
+    name.textContent = e.site_host + (e.username ? ' \u2014 ' + e.username : '');
+    head.appendChild(name);
+    var body = document.createElement('div');
+    body.className = 'provider-body provider-form';
+    head.appendChild(vaultButton('Show', 'secondary', function() {
+      revealVaultEntry(e, body);
+    }));
+    head.appendChild(vaultButton('Delete', 'danger', function() {
+      if (!window.confirm('Delete the saved password for ' + e.site_host +
+                          (e.username ? ' (' + e.username + ')' : '') + '?')) {
+        return;
+      }
+      sendWithPromise('vaultDelete', e.id).then(function(res) {
+        if (res && res.success) { showToast('Password deleted'); }
+        loadVault();
+      });
+    }));
+    row.appendChild(head);
+    row.appendChild(body);
+    list.appendChild(row);
+  });
+}
+
+function revealVaultEntry(e, body) {
+  hideRevealedPassword();
+  sendWithPromise('vaultRevealEntry', e.id).then(function(r) {
+    if (!r || !r.success) {
+      if (!(r && r.cancelled)) showToast((r && r.error) || 'Could not show it');
+      return;
+    }
+    hideRevealedPassword();
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.readOnly = true;
+    input.value = r.password;
+    r.password = '';
+    var extra = document.createElement('div');
+    extra.className = 'row';
+    extra.appendChild(vaultButton('Copy', 'secondary', function() {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(input.value).then(function() {
+          showToast('Copied');
+        });
+      }
+    }));
+    extra.appendChild(vaultButton('Hide', 'secondary', hideRevealedPassword));
+    if (r.notes) {
+      var notes = document.createElement('span');
+      notes.className = 'provider-hint';
+      notes.textContent = 'Notes: ' + r.notes;
+      extra.appendChild(notes);
+    }
+    body.appendChild(input);
+    body.appendChild(extra);
+    vaultRevealed = {input: input, extra: extra,
+                     timer: setTimeout(hideRevealedPassword, 30000)};
+  }).catch(function() { showToast('Could not show it'); });
+}
+
+function loadVault() {
+  sendWithPromise('vaultList').then(renderVault).catch(function() {
+    renderVault(null);
+  });
+}
+
+// Strong random password; never leaves this page except into the vault.
+function generatePassword(len) {
+  var alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+                 '0123456789!@#$%^&*-_=+';
+  var limit = Math.floor(0x100000000 / alphabet.length) * alphabet.length;
+  var out = '';
+  var buf = new Uint32Array(1);
+  while (out.length < len) {
+    crypto.getRandomValues(buf);
+    if (buf[0] < limit) out += alphabet[buf[0] % alphabet.length];
+  }
+  return out;
+}
+
+function addVaultEntry() {
+  var err = document.getElementById('vaultAddErr');
+  var site = document.getElementById('vaultSite');
+  var user = document.getElementById('vaultUser');
+  var pass = document.getElementById('vaultPass');
+  var notes = document.getElementById('vaultNotes');
+  err.textContent = '';
+  sendWithPromise('vaultAdd', {site_host: site.value.trim(),
+                               username: user.value.trim(),
+                               password: pass.value,
+                               notes: notes.value}).then(function(r) {
+    if (r && r.success) {
+      pass.value = '';
+      pass.type = 'password';
+      site.value = user.value = notes.value = '';
+      showToast('Password saved for ' + r.site_host);
+      loadVault();
+    } else {
+      err.textContent = (r && r.error) || 'Could not save the password';
+    }
+  }).catch(function() { err.textContent = 'Could not save the password'; });
+}
+
+document.getElementById('vaultAddBtn').addEventListener('click',
+                                                        addVaultEntry);
+document.getElementById('vaultGenBtn').addEventListener('click', function() {
+  var pass = document.getElementById('vaultPass');
+  pass.value = generatePassword(20);
+  pass.type = 'text';  // so the user can see what will be saved
+});
+document.getElementById('vaultShowNewBtn').addEventListener('click',
+    function() {
+      var pass = document.getElementById('vaultPass');
+      pass.type = pass.type === 'password' ? 'text' : 'password';
+    });
+
 // Static controls: wired here because the page CSP runs no inline
 // handlers.
 [['maxTokens', 'maxTokensVal', null], ['temperature', 'tempVal', 1],
@@ -1896,6 +2068,8 @@ loadExitCountries();
 loadImportableBrowsers();
 // Load configured cloud/frontier providers.
 loadProviders();
+// Password vault entries (metadata only).
+loadVault();
 
 // Deep link: molt://ai-settings/?section=import scrolls to (and briefly
 // highlights) the Import & Migration section. Used by the bookmarks
@@ -1906,6 +2080,7 @@ loadProviders();
   var section = deepLinkParams.get('section');
   var targetId = section === 'import' ? 'importSection'
                : section === 'providers' ? 'providersSection'
+               : section === 'passwords' ? 'passwordsSection'
                : null;
   if (targetId) {
     var el = document.getElementById(targetId);
@@ -2162,6 +2337,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div id="providersList" class="field"></div>
   </div>
 
+  <div class="section" id="passwordsSection">
+    <h2><span class="icon">&#128273;</span> Passwords</h2>
+    <div class="field">
+      <div class="desc">Logins in MoltBrowser's on-device vault, encrypted with your system keychain. To fill one into the page you're on, use <code>/vault fill</code> in the AI chat. Showing a saved password asks for your system password, Touch ID or a confirmation first.</div>
+      <div class="provider-err" id="vaultStorageWarn" style="display:none"></div>
+    </div>
+    <div id="vaultList" class="field"></div>
+    <div class="field provider-form">
+      <div class="row">
+        <input id="vaultSite" type="text" placeholder="Site (e.g. github.com)" autocomplete="off" spellcheck="false">
+        <input id="vaultUser" type="text" placeholder="Username or email" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="row">
+        <input id="vaultPass" type="password" placeholder="Password" autocomplete="new-password">
+        <button class="btn secondary" id="vaultShowNewBtn" type="button">Show</button>
+        <button class="btn secondary" id="vaultGenBtn" type="button">Generate</button>
+      </div>
+      <input id="vaultNotes" type="text" placeholder="Notes (optional)" autocomplete="off">
+      <div class="row" style="align-items:center">
+        <button class="btn primary" id="vaultAddBtn" type="button">Save password</button>
+        <span class="provider-err" id="vaultAddErr"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="section">
     <h2><span class="icon">&#128274;</span> Privacy Network (MoltNet)</h2>
     <div class="field">
@@ -2251,6 +2451,9 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
       std::make_unique<MoltAISettingsDataSource>());
 
   web_ui->AddMessageHandler(std::make_unique<MoltAISettingsHandler>());
+  // Passwords section: the only page that can add vault entries or reveal
+  // one (after OS re-authentication / native confirmation).
+  web_ui->AddMessageHandler(std::make_unique<MoltVaultHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;
