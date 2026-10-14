@@ -2998,7 +2998,10 @@ void MoltAIChatHandler::HandleQueryMemory(const base::ListValue& args) {
   }
   molt_ai::memory::MemoryService* svc =
       molt_ai::memory::MemoryServiceFactory::GetForProfile(profile);
-  if (!svc) {
+  // Memory is opt-in: never ground the AI in browsing memory the user has
+  // not turned on (pages from before the opt-in change stay on disk until
+  // cleared, but are not fed to the model).
+  if (!svc || !svc->IsEnabled()) {
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(empty)));
     return;

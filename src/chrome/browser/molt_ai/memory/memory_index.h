@@ -27,7 +27,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <vector>
 
 #include "chrome/browser/molt_ai/memory/memory_types.h"
@@ -54,9 +53,10 @@ class MemoryIndex {
   // evictions still remove the true oldest entry.
   void RemoveDoc(int64_t doc_id);
 
-  // Drop every entry whose doc_id satisfies |pred|. Same ordering
-  // guarantee as RemoveDoc. Returns the number of rows removed.
-  size_t RemoveDocsIf(const std::function<bool(int64_t doc_id)>& pred);
+  // Drop every entry belonging to any of |doc_ids| (retention sweep,
+  // domain forget). Same ordering guarantee as RemoveDoc. Returns the
+  // number of rows removed.
+  size_t RemoveDocs(const std::vector<int64_t>& doc_ids);
 
   // Drop everything (also resets evicted_count()).
   void Clear();

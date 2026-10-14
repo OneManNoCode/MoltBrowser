@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <unordered_set>
 #include <utility>
 
 namespace molt_ai {
@@ -42,11 +43,12 @@ void MemoryIndex::Add(int64_t chunk_id, int64_t doc_id,
 }
 
 void MemoryIndex::RemoveDoc(int64_t doc_id) {
-  RemoveDocsIf([doc_id](int64_t d) { return d == doc_id; });
+  RemoveDocs({doc_id});
 }
 
-size_t MemoryIndex::RemoveDocsIf(
-    const std::function<bool(int64_t doc_id)>& pred) {
+size_t MemoryIndex::RemoveDocs(const std::vector<int64_t>& doc_ids) {
+  if (doc_ids.empty() || size_ == 0) return 0;
+  const std::unordered_set<int64_t> drop(doc_ids.begin(), doc_ids.end());
   // Slow path (document delete / retention / domain forget): rebuild the
   // rows in logical (oldest-first) order without the removed docs, which
   // also un-rotates the ring so head_ returns to 0.
@@ -59,7 +61,7 @@ size_t MemoryIndex::RemoveDocsIf(
   size_t removed = 0;
   for (size_t i = 0; i < size_; ++i) {
     const size_t row = PhysicalRow(i);
-    if (pred(doc_ids_[row])) {
+    if (drop.count(doc_ids_[row])) {
       ++removed;
       continue;
     }

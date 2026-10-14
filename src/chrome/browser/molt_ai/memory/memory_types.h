@@ -21,8 +21,10 @@ namespace memory {
 // whole set takes well under 1 ms on Apple-Silicon-class CPUs.
 constexpr size_t kEmbeddingDim = 256;
 
-// Maximum number of in-memory chunks for the hot index. Older chunks
-// stay in SQLite and are paged in only when explicitly searched.
+// Maximum number of in-memory chunks for the hot index (~50 MB of
+// vectors). Only these — the newest kHotIndexCap chunks — are searched;
+// older chunks stay in SQLite (listed, deletable, subject to retention)
+// but are NOT returned by semantic search. The memory UI says so.
 constexpr size_t kHotIndexCap = 50000;
 
 // Target chunk size in characters. Tuned for human-visible paragraphs
@@ -36,7 +38,7 @@ constexpr size_t kChunkOverlapChars = 100;
 // One captured page.
 struct Document {
   int64_t doc_id = 0;          // primary key from storage, 0 = not yet saved
-  std::string url;             // full URL (plaintext; needed for indexing)
+  std::string url;             // full URL (plaintext in RAM; OSCrypt at rest)
   std::string title;
   int64_t visited_at_unix = 0;
   int word_count = 0;

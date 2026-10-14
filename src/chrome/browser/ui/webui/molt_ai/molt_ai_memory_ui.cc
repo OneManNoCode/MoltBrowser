@@ -60,6 +60,19 @@ class MoltAIMemoryHandler : public content::WebUIMessageHandler {
         "memClearAll",
         base::BindRepeating(&MoltAIMemoryHandler::HandleClearAll,
                             base::Unretained(this)));
+    // Opt-in / pause / retention controls (P17).
+    web_ui()->RegisterMessageCallback(
+        "memGetSettings",
+        base::BindRepeating(&MoltAIMemoryHandler::HandleGetSettings,
+                            base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "memSetSettings",
+        base::BindRepeating(&MoltAIMemoryHandler::HandleSetSettings,
+                            base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "memDismissNotice",
+        base::BindRepeating(&MoltAIMemoryHandler::HandleDismissNotice,
+                            base::Unretained(this)));
   }
 
  private:
@@ -125,14 +138,79 @@ class MoltAIMemoryHandler : public content::WebUIMessageHandler {
     auto weak_this = weak_factory_.GetWeakPtr();
     svc->GetStats(base::BindOnce(
         [](base::WeakPtr<MoltAIMemoryHandler> self, std::string cb_id,
-           int docs, int chunks) {
+           MemoryService::Stats stats) {
           if (!self) return;
           base::DictValue r;
-          r.Set("docs", docs);
-          r.Set("chunks", chunks);
+          r.Set("docs", stats.doc_count);
+          r.Set("chunks", stats.chunk_count);
+          // Only the newest kHotIndexCap chunks are semantically searchable;
+          // the page says so instead of implying everything is.
+          r.Set("searchable", stats.searchable_chunk_count);
           self->Reply(cb_id, base::Value(std::move(r)));
         },
         weak_this, callback_id));
+  }
+
+  // Settings snapshot. |show_opt_in_notice| is true for profiles that have
+  // pages from before memory became opt-in and haven't decided yet.
+  void ReplySettings(const std::string& callback_id) {
+    MemoryService* svc = GetService();
+    if (!svc) {
+      base::DictValue r;
+      r.Set("available", false);
+      Reply(callback_id, base::Value(std::move(r)));
+      return;
+    }
+    auto weak_this = weak_factory_.GetWeakPtr();
+    svc->GetStats(base::BindOnce(
+        [](base::WeakPtr<MoltAIMemoryHandler> self, std::string cb_id,
+           MemoryService::Stats stats) {
+          if (!self) return;
+          MemoryService* s = self->GetService();
+          base::DictValue r;
+          r.Set("available", s != nullptr);
+          if (!s) {
+            self->Reply(cb_id, base::Value(std::move(r)));
+            return;
+          }
+          r.Set("enabled", s->IsEnabled());
+          r.Set("paused", s->IsPaused());
+          r.Set("retention_days", s->GetRetentionDays());
+          r.Set("show_opt_in_notice", !s->IsOptInNoticeDismissed() &&
+                                          !s->IsEnabled() &&
+                                          stats.doc_count > 0);
+          self->Reply(cb_id, base::Value(std::move(r)));
+        },
+        weak_this, callback_id));
+  }
+
+  void HandleGetSettings(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.empty() || !args[0].is_string()) return;
+    ReplySettings(args[0].GetString());
+  }
+
+  // Args: [callback_id, {enabled?: bool, paused?: bool,
+  //                      retention_days?: int}]
+  void HandleSetSettings(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.empty() || !args[0].is_string()) return;
+    const std::string callback_id = args[0].GetString();
+    MemoryService* svc = GetService();
+    if (svc && args.size() >= 2 && args[1].is_dict()) {
+      const base::DictValue& d = args[1].GetDict();
+      if (auto v = d.FindBool("enabled")) svc->SetEnabled(*v);
+      if (auto v = d.FindBool("paused")) svc->SetPaused(*v);
+      if (auto v = d.FindInt("retention_days")) svc->SetRetentionDays(*v);
+    }
+    ReplySettings(callback_id);
+  }
+
+  void HandleDismissNotice(const base::ListValue& args) {
+    AllowJavascript();
+    if (args.empty() || !args[0].is_string()) return;
+    if (MemoryService* svc = GetService()) svc->DismissOptInNotice();
+    ReplySettings(args[0].GetString());
   }
 
   void HandleListRecent(const base::ListValue& args) {
@@ -325,6 +403,39 @@ function refreshStats() {
   sendWithPromise('memStats').then(function(r){
     document.getElementById('doc-count').textContent = r.docs;
     document.getElementById('chunk-count').textContent = r.chunks;
+    // Be explicit when older chunks fall outside the searchable window.
+    document.getElementById('searchable-note').textContent =
+        (r.searchable < r.chunks) ? '(newest ' + r.searchable + ' searchable)'
+                                  : '';
+  });
+}
+
+// ---- Opt-in / pause / retention (P17) ----
+function renderMemSettings(s) {
+  if (!s || !s.available) {
+    document.getElementById('mem-settings').hidden = true;
+    return;
+  }
+  document.getElementById('mem-enabled').checked = !!s.enabled;
+  var paused = document.getElementById('mem-paused');
+  paused.checked = !!s.paused;
+  paused.disabled = !s.enabled;
+  document.getElementById('mem-retention').value = String(s.retention_days);
+  var st = document.getElementById('mem-state');
+  st.textContent = !s.enabled ? 'Off \u2014 nothing is being recorded'
+                 : (s.paused ? 'Paused' : 'Recording');
+  st.className = 'state' + (s.enabled && !s.paused ? ' on' : '');
+  document.getElementById('optin-notice').hidden = !s.show_opt_in_notice;
+}
+
+function loadMemSettings() {
+  sendWithPromise('memGetSettings').then(renderMemSettings);
+}
+
+function setMemSettings(change) {
+  sendWithPromise('memSetSettings', change).then(function(s){
+    renderMemSettings(s);
+    refreshStats();
   });
 }
 
@@ -431,7 +542,24 @@ document.getElementById('search-btn').addEventListener('click', runSearch);
 document.getElementById('forget-domain-btn').addEventListener('click',
                                                               deleteDomain);
 document.getElementById('wipe-btn').addEventListener('click', clearAll);
+document.getElementById('mem-enabled').addEventListener('change', function(e) {
+  setMemSettings({enabled: e.target.checked});
+});
+document.getElementById('mem-paused').addEventListener('change', function(e) {
+  setMemSettings({paused: e.target.checked});
+});
+document.getElementById('mem-retention').addEventListener('change',
+    function(e) {
+      setMemSettings({retention_days: parseInt(e.target.value, 10)});
+    });
+document.getElementById('notice-enable-btn').addEventListener('click',
+    function() { setMemSettings({enabled: true}); });
+document.getElementById('notice-dismiss-btn').addEventListener('click',
+    function() {
+      sendWithPromise('memDismissNotice').then(renderMemSettings);
+    });
 
+loadMemSettings();
 refreshStats();
 loadRecents();
 // Poll stats every 5s so counts update as the user browses in
@@ -537,6 +665,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   z-index:1000;}
 .toast.show{transform:translateY(0);opacity:1;}
 .toast.error{background:#3a1a1a;color:#f87171;border-color:#4a2a2a;}
+.notice{background:#1a1730;border:1px solid #4c3d8a;border-radius:10px;
+  padding:14px 18px;margin-bottom:20px;color:#ddd;line-height:1.5;
+  font-size:13px;}
+.notice b{color:#fff;}
+.notice .row{margin-top:10px;display:flex;gap:8px;}
+.settings{background:#0d0d14;border:1px solid #1a1a2a;border-radius:10px;
+  padding:14px 18px;margin-bottom:24px;display:flex;flex-wrap:wrap;
+  gap:18px;align-items:center;font-size:13px;color:#ccc;}
+.settings label{display:flex;align-items:center;gap:8px;cursor:pointer;}
+.settings select{background:#0a0a0f;border:1px solid #2a2a3a;color:#fff;
+  padding:6px 8px;border-radius:6px;font-size:12px;}
+.settings .state{margin-left:auto;font-size:12px;color:#888;}
+.settings .state.on{color:#4ade80;}
+[hidden]{display:none !important;}
 </style>
 </head>
 <body>
@@ -551,12 +693,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 </div>
 
 <div class="container">
+  <div class="notice" id="optin-notice" hidden>
+    <b>Memory is now opt-in.</b> MoltBrowser no longer records the pages
+    you read unless you turn Memory on below. Pages captured earlier are
+    still stored on this device (encrypted) until you clear them &mdash;
+    use <i>Wipe all memory</i> to remove them.
+    <div class="row">
+      <button class="btn" id="notice-enable-btn">Turn on Memory</button>
+      <button class="btn ghost" id="notice-dismiss-btn">Keep it off</button>
+    </div>
+  </div>
+
+  <div class="settings" id="mem-settings">
+    <label><input type="checkbox" id="mem-enabled"> Record pages I read</label>
+    <label><input type="checkbox" id="mem-paused"> Pause recording</label>
+    <label>Keep pages for
+      <select id="mem-retention">
+        <option value="30">30 days</option>
+        <option value="90">90 days</option>
+        <option value="365">1 year</option>
+        <option value="0">Forever</option>
+      </select></label>
+    <span class="state" id="mem-state"></span>
+  </div>
+
   <p class="intro">
-    Every page you read is silently chunked, embedded, and stored
-    <b>on this device</b>. Ask in plain English &mdash; we look up the
-    relevant chunks in &lt;1ms with a contiguous-buffer cosine scan,
-    fetch the snippet, and rank.
-    Encrypted at rest via OS keychain. No cloud, no telemetry.
+    When Memory is on, pages you read are chunked, embedded, and stored
+    <b>on this device</b> (banking, health, login and checkout pages are
+    always skipped). Ask in plain English &mdash; we look up the relevant
+    chunks with a cosine scan over the newest 50,000 chunks, fetch the
+    snippet, and rank. URLs, titles, text and vectors are encrypted at
+    rest via the OS keychain. No cloud, no telemetry.
     <br><br>
     Try: <code>that recipe with miso</code>,
     <code>kubernetes operator bug</code>,
@@ -572,6 +739,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   <div class="stats" id="stats">
     <span><b id="doc-count">&middot;</b> documents</span>
     <span><b id="chunk-count">&middot;</b> chunks</span>
+    <span id="searchable-note"></span>
     <span id="timing"></span>
   </div>
 

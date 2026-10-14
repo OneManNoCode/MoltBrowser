@@ -96,14 +96,15 @@ TEST(MemoryIndexTest, RemoveDocDropsAllChunksOfThatDoc) {
   }
 }
 
-TEST(MemoryIndexTest, RemoveDocsIfCountsRemovedRows) {
+TEST(MemoryIndexTest, RemoveDocsCountsRemovedRows) {
   MemoryIndex index(10);
   for (int64_t i = 1; i <= 6; ++i) {
     index.Add(i, i, Axis(static_cast<size_t>(i)));
   }
-  EXPECT_EQ(index.RemoveDocsIf([](int64_t d) { return d % 2 == 0; }), 3u);
+  EXPECT_EQ(index.RemoveDocs({2, 4, 6, 42}), 3u);
   EXPECT_EQ(index.ChunkIdsOldestFirst(), (std::vector<int64_t>{1, 3, 5}));
-  EXPECT_EQ(index.RemoveDocsIf([](int64_t) { return false; }), 0u);
+  EXPECT_EQ(index.RemoveDocs({}), 0u);
+  EXPECT_EQ(index.RemoveDocs({99}), 0u);
 }
 
 TEST(MemoryIndexTest, ClearResetsEverything) {
