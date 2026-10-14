@@ -52,8 +52,8 @@ if [ "$(docker images -q $IMAGE_NAME 2>/dev/null)" = "" ] || [ "$REBUILD" = true
   echo "=== Building Docker image: $IMAGE_NAME ==="
   docker build \
     $PLATFORM_FLAG \
-    --build-arg BUILD_UID=$(id -u) \
-    --build-arg BUILD_GID=$(id -g) \
+    --build-arg BUILD_UID="$(id -u)" \
+    --build-arg BUILD_GID="$(id -g)" \
     -t "$IMAGE_NAME" \
     -f "$SCRIPT_DIR/Dockerfile.linux" \
     "$ROOT_DIR"
@@ -64,7 +64,7 @@ echo "=== Building MoltBrowser for Linux x64 ==="
 
 # Mount the repo, persist the build cache
 DOCKER_ARGS=(
-  $PLATFORM_FLAG
+  "$PLATFORM_FLAG"
   --rm
   -v "$ROOT_DIR:/moltbrowser"
   -w /moltbrowser

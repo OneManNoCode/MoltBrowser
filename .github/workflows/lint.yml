@@ -1,0 +1,68 @@
+name: Lint
+
+# Static checks that need no Chromium checkout:
+#   * actionlint on every workflow, including shellcheck on their run: blocks
+#     (blocking)
+#   * shellcheck on the build/release shell scripts (non-blocking for now:
+#     scripts owned by several people still carry a few warnings)
+#   * patches/ still reproduces the src/ overlay byte-for-byte
+#     (tools/chromium/verify_patches.py; non-blocking until the patch series
+#     becomes the build input, see docs/REBASING.md)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      # sha256 of actionlint_1.7.12_linux_amd64.tar.gz, from the release's
+      # actionlint_1.7.12_checksums.txt.
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP" actionlint
+          command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
+      - name: actionlint
+        run: '"$RUNNER_TEMP/actionlint" -color'
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true   # report-only for now; see the header
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+      - name: shellcheck (warnings and errors)
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --version | head -2
+          shellcheck -S warning scripts/*.sh build/docker/*.sh tools/chromium/*.sh
+
+  patches-in-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true   # report-only until patches/ is the build input
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+      - name: patches/ reproduces src/ (fetches upstream@pin from the GitHub mirror)
+        run: python3 tools/chromium/verify_patches.py

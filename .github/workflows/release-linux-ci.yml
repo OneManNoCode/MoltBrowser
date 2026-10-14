@@ -74,7 +74,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Free disk space (remove unused preinstalled SDKs)
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
         with:
           tool-cache: true
           android: true
@@ -88,8 +88,9 @@ jobs:
         run: df -h /
 
       - name: Check out MoltBrowser overlay (no Chromium submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - name: Read Chromium pin (chromium_version.txt)
@@ -162,10 +163,12 @@ jobs:
           ls -l chromium/src/chrome/browser/molt_ai/import/
 
       - name: Configure GN (component build = ${{ inputs.component_build }})
+        env:
+          COMPONENT_INPUT: ${{ inputs.component_build }}
         run: |
           export PATH="$HOME/depot_tools:$PATH"
           ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
-          COMPONENT="${{ inputs.component_build }}"
+          COMPONENT="$COMPONENT_INPUT"
           COMPONENT="${COMPONENT:-true}"   # push events carry no inputs → default true
           cd chromium/src
           mkdir -p out/MoltBrowser
@@ -255,21 +258,26 @@ jobs:
           WEBUI_OBJS="$("$NINJA" -C out/MoltBrowser -t targets all 2>/dev/null \
             | grep -oE '[^ ]*obj/chrome/browser/ui/webui/molt_ai/molt_ai/(molt_ai_settings_ui|molt_ai_chat_handler|molt_ai_chat_ui|molt_ai_chat_handler_tor|molt_ai_chat_handler_vault)\.o' \
             | sort -u)"
+          # Word-splitting the newline-separated lists is intended here.
+          # shellcheck disable=SC2086
           {
             echo "objs<<EOF"
             printf '%s\n' $OBJS $WEBUI_OBJS
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "Resolved object targets:"
+          # shellcheck disable=SC2086
           printf '  %s\n' $OBJS $WEBUI_OBJS
 
       - name: Compile molt_ai object files (FAILS on any compile error)
         id: compile
+        env:
+          NINJA: ${{ steps.targets.outputs.ninja }}
+          OBJS_LIST: ${{ steps.targets.outputs.objs }}
         run: |
           export PATH="$HOME/depot_tools:$PATH"
           ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
           cd chromium/src
-          NINJA="${{ steps.targets.outputs.ninja }}"
           echo "Using ninja: ${NINJA}"
 
           # Prefer the resolved explicit object-file targets. If resolution came
@@ -277,17 +285,15 @@ jobs:
           # which force-build every .o in those source_sets and still exercise
           # the Linux crypto branches. Either path is authoritative — object
           # compiles either succeed or the job fails.
-          OBJ_TARGETS=$(cat <<'EOF'
-          ${{ steps.targets.outputs.objs }}
-          EOF
-          )
-          OBJ_TARGETS=$(printf '%s\n' "$OBJ_TARGETS" | sed '/^[[:space:]]*$/d')
+          OBJ_TARGETS=$(printf '%s\n' "$OBJS_LIST" | sed '/^[[:space:]]*$/d')
 
           set +e
           if [ -n "$OBJ_TARGETS" ]; then
             echo "==> Compiling explicit molt_ai object-file targets:"
+            # shellcheck disable=SC2086
             printf '    %s\n' $OBJ_TARGETS
             echo "-----------------------------------------------------------"
+            # shellcheck disable=SC2086
             "$NINJA" -C out/MoltBrowser -k 0 $OBJ_TARGETS 2>&1 | tee /tmp/molt_ai_compile.log
             RC=${PIPESTATUS[0]}
           else
@@ -311,15 +317,17 @@ jobs:
 
       - name: Report compile result
         if: always()
+        env:
+          COMPILE_RC: ${{ steps.compile.outputs.rc }}
         run: |
           cd chromium/src 2>/dev/null || true
           {
             echo "## molt_ai Linux x64 compile checkpoint — result"
             echo ""
             echo "- Chromium revision: \`${CHROMIUM_REVISION}\`"
-            echo "- ninja exit code: \`${{ steps.compile.outputs.rc }}\`"
+            echo "- ninja exit code: \`${COMPILE_RC}\`"
             echo ""
-            if [ "${{ steps.compile.outputs.rc }}" = "0" ]; then
+            if [ "$COMPILE_RC" = "0" ]; then
               echo "### VERDICT: molt_ai Linux code COMPILES :white_check_mark:"
             else
               echo "### VERDICT: molt_ai Linux code FAILED to compile :x:"

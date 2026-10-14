@@ -76,8 +76,8 @@ if [ "$USE_DOCKER" = true ]; then
   # Build Docker image if needed
   if [ "$(docker images -q $DOCKER_IMG 2>/dev/null)" = "" ]; then
     docker build \
-      --build-arg BUILD_UID=$(id -u) \
-      --build-arg BUILD_GID=$(id -g) \
+      --build-arg BUILD_UID="$(id -u)" \
+      --build-arg BUILD_GID="$(id -g)" \
       -t "$DOCKER_IMG" \
       -f "$ROOT_DIR/build/docker/Dockerfile.linux" \
       "$ROOT_DIR"

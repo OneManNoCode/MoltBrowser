@@ -105,7 +105,7 @@ else
 
   # Create temporary directory for DMG contents
   STAGING_DIR=$(mktemp -d)
-  trap "rm -rf $STAGING_DIR" EXIT
+  trap 'rm -rf "$STAGING_DIR"' EXIT
 
   # Copy app to staging
   echo "Copying MoltBrowser.app to staging..."

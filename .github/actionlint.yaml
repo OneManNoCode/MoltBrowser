@@ -1,0 +1,6 @@
+# actionlint configuration (the lint workflow runs actionlint on every
+# workflow). Custom runner labels used by our self-hosted / larger runners.
+self-hosted-runner:
+  labels:
+    - linux-chromium-builder   # release-linux.yml self-hosted Linux builder
+    - windows-16core           # release-windows-fast.yml larger runner

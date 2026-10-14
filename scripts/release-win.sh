@@ -72,7 +72,6 @@ echo "╚═══════════════════════�
 echo ""
 
 DIST_DIR="$ROOT_DIR/dist"
-BUILD_DIR="$ROOT_DIR/chromium/src/out/MoltBrowser"
 
 if [ "$USE_DOCKER" = true ]; then
   # --- Docker cross-compilation ---
@@ -87,14 +86,14 @@ if [ "$USE_DOCKER" = true ]; then
   if [ "$(docker images -q $DOCKER_IMG 2>/dev/null)" = "" ]; then
     docker build \
       $PLATFORM_FLAG \
-      --build-arg BUILD_UID=$(id -u) \
-      --build-arg BUILD_GID=$(id -g) \
+      --build-arg BUILD_UID="$(id -u)" \
+      --build-arg BUILD_GID="$(id -g)" \
       -t "$DOCKER_IMG" \
       -f "$ROOT_DIR/build/docker/Dockerfile.windows-cross" \
       "$ROOT_DIR"
   fi
 
-  DOCKER_ARGS=($PLATFORM_FLAG --rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser -e HOME=/tmp/builder)
+  DOCKER_ARGS=("$PLATFORM_FLAG" --rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser -e HOME=/tmp/builder)
 
   if [ "$SKIP_BUILD" = false ]; then
     # Cap parallelism to prevent OOM on heavy V8/Blink files (same -j 4

@@ -38,13 +38,15 @@ on:
         default: '1'
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 350
+    permissions:
+      contents: write   # upload release assets
+      actions: write    # read tree artifacts + queue the next resume run
 
     defaults:
       run:
@@ -61,21 +63,36 @@ jobs:
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Read Chromium pin (chromium_version.txt)
         run: tools/chromium/pin.sh env >> "$GITHUB_ENV"
 
       - name: Determine target tag + attempt
         id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_ATTEMPT: ${{ inputs.attempt }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
-            echo "attempt=${{ inputs.attempt }}" >> $GITHUB_OUTPUT
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+            ATTEMPT="$INPUT_ATTEMPT"
           else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-            echo "attempt=1" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF#refs/tags/}"
+            ATTEMPT=1
           fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$TAG' is not a release tag (vX.Y.Z[-suffix])"
+            exit 1
+          fi
+          if ! [[ "$ATTEMPT" =~ ^[0-9]+$ ]]; then
+            echo "::error::attempt must be a number, got '$ATTEMPT'"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "attempt=$ATTEMPT" >> "$GITHUB_OUTPUT"
 
       - name: Free up disk on the runner
         run: |
@@ -92,7 +109,7 @@ jobs:
           git clone --depth 1 \
             https://chromium.googlesource.com/chromium/tools/depot_tools.git \
             "$HOME/depot_tools"
-          echo "$HOME/depot_tools" >> $GITHUB_PATH
+          echo "$HOME/depot_tools" >> "$GITHUB_PATH"
 
       - name: Bootstrap depot_tools
         env:
@@ -117,12 +134,12 @@ jobs:
         run: |
           set -x
           ART_ID=$(gh api --paginate \
-            "repos/${{ github.repository }}/actions/artifacts" \
-            --jq "[.artifacts[] | select(.name==\"${ARTIFACT_NAME}\" and .expired==false and .workflow_run.head_repository_id==${{ github.repository_id }})] | sort_by(.created_at) | last | .id" || echo "")
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            --jq "[.artifacts[] | select(.name==\"${ARTIFACT_NAME}\" and .expired==false and .workflow_run.head_repository_id==${GITHUB_REPOSITORY_ID})] | sort_by(.created_at) | last | .id" || echo "")
           echo "Latest ${ARTIFACT_NAME} artifact id: ${ART_ID:-none}"
           if [ -n "$ART_ID" ] && [ "$ART_ID" != "null" ]; then
             echo "Downloading tree artifact $ART_ID via gh..."
-            if gh api "repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip" > tree.zip; then
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ART_ID/zip" > tree.zip; then
               ls -lh tree.zip
               mkdir -p tree-tmp
               unzip -o -q tree.zip -d tree-tmp || true
@@ -130,7 +147,7 @@ jobs:
                 echo "Reassembling + extracting whole tree (preserves mtimes)..."
                 cat tree-tmp/chromium.tar.zst.part-* \
                   | tar --use-compress-program=zstd -xf - \
-                  && echo "restored=true" >> $GITHUB_OUTPUT \
+                  && echo "restored=true" >> "$GITHUB_OUTPUT" \
                   && echo "TREE_RESTORE_OK"
                 du -sh chromium/src 2>/dev/null || true
                 du -sh chromium/src/out/MoltBrowser 2>/dev/null || true
@@ -198,18 +215,20 @@ jobs:
         if: always()
         run: |
           if [ -f chromium/src/out/MoltBrowser/chrome.exe ]; then
-            echo "status=complete" >> $GITHUB_OUTPUT
+            echo "status=complete" >> "$GITHUB_OUTPUT"
             echo "✅ BUILD COMPLETE — chrome.exe exists"
           else
-            echo "status=partial" >> $GITHUB_OUTPUT
+            echo "status=partial" >> "$GITHUB_OUTPUT"
             echo "⏳ BUILD PARTIAL — saving tree + chaining"
           fi
 
       # ---- complete: package + ship ----
       - name: Package Windows installer
         if: always() && steps.status.outputs.status == 'complete'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          ./scripts/package-win.sh --version "${{ steps.meta.outputs.tag }}" || true
+          ./scripts/package-win.sh --version "$TAG" || true
           cd dist
           for f in MoltBrowser-*-win-x64-setup.exe; do
             mv "$f" MoltBrowser-Windows-x64-Setup.exe 2>/dev/null || true
@@ -223,14 +242,15 @@ jobs:
         if: always() && steps.status.outputs.status == 'complete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          gh release upload "${{ steps.meta.outputs.tag }}" \
+          gh release upload "$TAG" \
             dist/MoltBrowser-Windows-x64-Setup.exe \
-            --repo "${{ github.repository }}" --clobber
+            --repo "$GITHUB_REPOSITORY" --clobber
           if [ -f dist/MoltBrowser-Windows-x64.zip ]; then
-            gh release upload "${{ steps.meta.outputs.tag }}" \
+            gh release upload "$TAG" \
               dist/MoltBrowser-Windows-x64.zip \
-              --repo "${{ github.repository }}" --clobber
+              --repo "$GITHUB_REPOSITORY" --clobber
           fi
           echo "🎉 Windows build complete and uploaded!"
 
@@ -248,13 +268,17 @@ jobs:
             | split -b 1900M - chromium.tar.zst.part- || true
           ls -lh chromium.tar.zst.part-* || true
           # Verify at least one chunk exists and is non-empty
-          if ! ls -s chromium.tar.zst.part-* 2>/dev/null | grep -qv '^0 '; then
+          ok=false
+          for chunk in chromium.tar.zst.part-*; do
+            [ -s "$chunk" ] && ok=true
+          done
+          if [ "$ok" != true ]; then
             echo "::error::tree save produced no usable chunks"
           fi
 
       - name: Upload chromium tree
         if: always() && steps.status.outputs.status == 'partial'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: chromium-tree
           path: chromium.tar.zst.part-*
@@ -265,14 +289,16 @@ jobs:
         if: always() && steps.status.outputs.status == 'partial'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          ATTEMPT: ${{ steps.meta.outputs.attempt }}
         run: |
-          NEXT=$(( ${{ steps.meta.outputs.attempt }} + 1 ))
+          NEXT=$(( ATTEMPT + 1 ))
           if [ "$NEXT" -gt "${MAX_ATTEMPTS}" ]; then
             echo "::error::Reached MAX_ATTEMPTS (${MAX_ATTEMPTS})."
             exit 1
           fi
           gh workflow run release-windows.yml \
-            --repo "${{ github.repository }}" \
-            -f tag="${{ steps.meta.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            -f tag="$TAG" \
             -f attempt="$NEXT"
           echo "▶ Resume run #$NEXT queued."

@@ -14,7 +14,7 @@ name: Release
 # Required GitHub Secrets (set under Settings → Secrets and variables →
 # Actions):
 #   MAC_SIGNING_IDENTITY    "Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)"
-#   APPLE_ID                raj@geneye.ai
+#   APPLE_ID                the notarization Apple ID (a secret: never write it here)
 #   APPLE_TEAM_ID           83DA5U8N7Z
 #   APPLE_APP_PASSWORD      the app-specific notary password (xxxx-xxxx-xxxx-xxxx)
 #
@@ -40,7 +40,7 @@ on:
         default: 'macos'
 
 permissions:
-  contents: write  # needed to upload release assets
+  contents: read   # jobs that upload release assets ask for write themselves
 
 jobs:
   # -------------------------------------------------------------------
@@ -50,16 +50,19 @@ jobs:
   macos:
     if: ${{ github.event_name == 'push' || contains(github.event.inputs.platforms, 'macos') }}
     runs-on: [self-hosted, macOS, ARM64]
+    permissions:
+      contents: write   # upload release assets
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Configure environment
         run: |
-          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> $GITHUB_ENV
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       # This job reuses the runner's warm chromium/ checkout. The overlay only
       # compiles against chromium_version.txt, so say loudly if it drifted.
@@ -120,13 +123,17 @@ jobs:
   linux:
     if: ${{ github.event_name == 'workflow_dispatch' && contains(github.event.inputs.platforms, 'linux') }}
     runs-on: [self-hosted, Linux, X64]
+    permissions:
+      contents: write   # upload release assets
     timeout-minutes: 300
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
       - name: Configure environment
         run: |
-          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> $GITHUB_ENV
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       # This job reuses the runner's warm chromium/ checkout. The overlay only
       # compiles against chromium_version.txt, so say loudly if it drifted.
@@ -164,13 +171,17 @@ jobs:
   windows:
     if: ${{ github.event_name == 'workflow_dispatch' && contains(github.event.inputs.platforms, 'windows') }}
     runs-on: [self-hosted, Windows, X64]
+    permissions:
+      contents: write   # upload release assets
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
       - name: Configure environment
         shell: bash
         run: |
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       # This job reuses the runner's warm chromium/ checkout. The overlay only
       # compiles against chromium_version.txt, so say loudly if it drifted.

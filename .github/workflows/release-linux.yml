@@ -48,7 +48,7 @@ on:
           - 'true'
 
 permissions:
-  contents: write   # needed to upload assets to the release
+  contents: read
 
 jobs:
   build-linux:
@@ -59,11 +59,14 @@ jobs:
     # for self-hosted runner setup. Hetzner CCX33 (~$60/mo) makes a good one.
     runs-on: [self-hosted, linux-chromium-builder]
     timeout-minutes: 480   # 8 hr ceiling
+    permissions:
+      contents: write   # upload assets to the release
 
     steps:
       - name: Check out repo (no submodules — Chromium synced separately)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
+          persist-credentials: false
           # Preserve the gitignored chromium/ checkout AND out/ build dir between
           # runs so the self-hosted runner stays warm (incremental builds, no
           # ~30 GB re-sync each time). Default clean:true would git-clean them.
@@ -76,12 +79,20 @@ jobs:
 
       - name: Determine target tag
         id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
           else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF#refs/tags/}"
           fi
+          # Release tags only: vMAJOR.MINOR.PATCH with an optional -suffix.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$TAG' is not a release tag (vX.Y.Z[-suffix])"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux build dependencies
         run: |
@@ -108,7 +119,7 @@ jobs:
               https://chromium.googlesource.com/chromium/tools/depot_tools.git \
               "$HOME/depot_tools"
           fi
-          echo "$HOME/depot_tools" >> $GITHUB_PATH
+          echo "$HOME/depot_tools" >> "$GITHUB_PATH"
           # Bootstrap depot_tools' python3 etc.
           (cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true)
 
@@ -165,10 +176,16 @@ jobs:
 
       - name: Configure + Build chrome (~3-4 hr on real Linux x86_64)
         if: ${{ inputs.skip_build != 'true' }}
+        env:
+          JOBS_INPUT: ${{ inputs.jobs }}
         run: |
           # Cap parallelism to protect RAM-limited machines. On workflow_dispatch
           # use the 'jobs' input; on tag-push (no inputs) fall back to a safe 4.
-          JOBS="${{ inputs.jobs || '4' }}"
+          JOBS="${JOBS_INPUT:-4}"
+          if ! [[ "$JOBS" =~ ^[0-9]+$ ]]; then
+            echo "::error::jobs must be a number, got '$JOBS'"
+            exit 1
+          fi
           echo "Building with --jobs $JOBS (nproc=$(nproc))"
           ./scripts/configure.sh --platform linux --arch x64
           ./scripts/build.sh --jobs "$JOBS"
@@ -188,8 +205,10 @@ jobs:
           echo "Reusing existing build: $BIN ($(du -h "$BIN" | cut -f1))"
 
       - name: Package .deb + .rpm + .tar.gz
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          ./scripts/package-linux.sh --version "${{ steps.tag.outputs.tag }}"
+          ./scripts/package-linux.sh --version "$TAG"
 
       - name: Rename to stable asset names
         run: |
@@ -203,7 +222,7 @@ jobs:
       - name: Upload Linux artifacts to the release
         # Uses the built-in GITHUB_TOKEN (permissions: contents: write above).
         # Avoids needing the `gh` CLI installed on the self-hosted runner.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           files: |
