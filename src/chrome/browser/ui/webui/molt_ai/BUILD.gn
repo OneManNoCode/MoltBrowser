@@ -33,6 +33,7 @@ source_set("molt_ai") {
     "molt_net_handler.h",
     "molt_net_ui.cc",
     "molt_net_ui.h",
+    "molt_webui_csp.h",
   ]
 
   deps = [

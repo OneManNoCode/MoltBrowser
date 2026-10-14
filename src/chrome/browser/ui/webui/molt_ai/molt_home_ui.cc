@@ -3,8 +3,12 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_home_ui.h"
 
+#include <optional>
+#include <string>
+
 #include "base/memory/ref_counted_memory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -12,7 +16,44 @@
 
 namespace {
 
-// Serves the MoltBrowser new-tab / home page as inline HTML. Local + static —
+constexpr char kHomePageJs[] = R"JS(// MoltSearch new-tab page script. Served as /app.js under the strict
+// molt WebUI CSP (molt_webui_csp.h): no inline handlers, and the page
+// never writes HTML, so Trusted Types allow no policies at all.
+(function() {
+'use strict';
+function go(u) { window.location.href = u; }
+// Looks-like-a-URL heuristic: has a scheme, or a dot with no spaces (a host).
+function isUrl(s) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return true;
+  if (/^[^\s]+\.[^\s]{2,}([\/?#].*)?$/.test(s) && !s.includes(' ')) return true;
+  return false;
+}
+function runSearch(e) {
+  e.preventDefault();
+  var q = (document.getElementById('q').value || '').trim();
+  if (!q) return;
+  if (isUrl(q)) {
+    // Only web URLs are opened directly from this privileged page; any
+    // other scheme (javascript:, file:, data:...) is searched instead.
+    var hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(q);
+    if (!hasScheme || /^https?:\/\//i.test(q)) {
+      window.location.href = hasScheme ? q : ('https://' + q);
+      return;
+    }
+  }
+  // Private web search (no Google).
+  window.location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
+}
+document.getElementById('searchForm').addEventListener('submit', runSearch);
+document.querySelectorAll('.card[data-href]').forEach(function(card) {
+  card.addEventListener('click', function() {
+    go(card.getAttribute('data-href'));
+  });
+});
+})();
+)JS";
+
+// Serves the MoltBrowser new-tab / home page (HTML + /app.js). Local + static —
 // no remote dependency — so the new tab loads instantly and privately. The
 // search field and widget cards navigate via plain window.location (no IPC
 // handler needed): a query goes to a private web search or straight to a URL,
@@ -24,22 +65,17 @@ class MoltHomeDataSource : public content::URLDataSource {
 
   std::string GetSource() override { return chrome::kChromeUIMoltHomeHost; }
 
-  std::string GetMimeType(const GURL& url) override { return "text/html"; }
+  std::string GetMimeType(const GURL& url) override {
+    return molt_webui::MimeTypeFor(url);
+  }
 
+  // Strict molt WebUI CSP; this page never writes HTML.
   std::string GetContentSecurityPolicy(
       const network::mojom::CSPDirectiveName directive) override {
-    if (directive == network::mojom::CSPDirectiveName::ScriptSrc) {
-      return "script-src chrome://resources 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::StyleSrc) {
-      return "style-src 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::TrustedTypes) {
-      return "";
-    }
-    if (directive ==
-        network::mojom::CSPDirectiveName::RequireTrustedTypesFor) {
-      return "";
+    if (std::optional<std::string> csp =
+            molt_webui::PageContentSecurityPolicy(
+                directive, molt_webui::TrustedTypesMode::kNoPolicies)) {
+      return *csp;
     }
     return content::URLDataSource::GetContentSecurityPolicy(directive);
   }
@@ -48,6 +84,11 @@ class MoltHomeDataSource : public content::URLDataSource {
       const GURL& url,
       const content::WebContents::Getter& wc_getter,
       content::URLDataSource::GotDataCallback callback) override {
+    if (molt_webui::IsAppJsRequest(url)) {
+      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
+          std::string(kHomePageJs)));
+      return;
+    }
     const std::string html = R"HTML(<!DOCTYPE html>
 <html>
 <head>
@@ -143,49 +184,29 @@ class MoltHomeDataSource : public content::URLDataSource {
     <div class="kick">Private &middot; On-device &middot; Agentic</div>
   </div>
 
-  <form class="search" id="searchForm" onsubmit="return runSearch(event)">
+  <form class="search" id="searchForm">
     <input id="q" type="text" autocomplete="off" spellcheck="false"
            placeholder="Search the web, or ask any model&hellip;" autofocus>
     <button class="go" type="submit" aria-label="Search">&rarr;</button>
   </form>
 
   <div class="cards">
-    <div class="card ai" onclick="go('molt://ai/')">
+    <div class="card ai" data-href="molt://ai/">
       <div class="t"><span class="ic">&#10022;</span> Ask AI</div>
       <div class="d">Chat with local &amp; cloud models, grounded in the page.</div>
     </div>
-    <div class="card net" onclick="go('molt://ai-settings/?section=providers')">
+    <div class="card net" data-href="molt://ai-settings/?section=providers">
       <div class="t"><span class="ic">&#128737;</span> MoltNet</div>
       <div class="d">Private routing with a pick-your-country exit, powered by Tor.</div>
     </div>
-    <div class="card imp" onclick="go('molt://ai-settings/?section=import')">
+    <div class="card imp" data-href="molt://ai-settings/?section=import">
       <div class="t"><span class="ic">&#11015;</span> Import</div>
       <div class="d">Bring bookmarks &amp; passwords from any browser.</div>
     </div>
   </div>
 </div>
 
-<script>
-function go(u){ window.location.href = u; }
-// Looks-like-a-URL heuristic: has a scheme, or a dot with no spaces (a host).
-function isUrl(s){
-  if(/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return true;
-  if(/^[^\s]+\.[^\s]{2,}([\/?#].*)?$/.test(s) && !s.includes(' ')) return true;
-  return false;
-}
-function runSearch(e){
-  e.preventDefault();
-  var q = (document.getElementById('q').value || '').trim();
-  if(!q) return false;
-  if(isUrl(q)){
-    window.location.href = /^[a-z][a-z0-9+.-]*:\/\//i.test(q) ? q : ('https://' + q);
-  } else {
-    // Private web search (no Google).
-    window.location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
-  }
-  return false;
-}
-</script>
+<script src="app.js"></script>
 </body>
 </html>)HTML";
 
