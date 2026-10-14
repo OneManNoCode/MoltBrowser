@@ -82,6 +82,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // navigate against the currently-active tab in the Browser that
   // owns this WebUI's WebContents.
   void HandleRunMoltAction(const base::ListValue& args);
+  // Runs one of HandleRunMoltAction's direct-JS actions (select / hover /
+  // right-click / drag) in |target| and resolves |callback_id|.
+  void RunDirectPageAction(const std::string& callback_id,
+                           const std::string& type,
+                           const std::string& js,
+                           content::WebContents* target);
   // Personal Vector Memory lookup — returns top-K relevant chunks
   // from the user's full browsing history so the chat can ground
   // answers in things the user has actually read before.
@@ -236,6 +242,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Cancel the currently running agent (no-op if none running).
   // Args: []
   void HandleCancelWebAgent(const base::ListValue& args);
+  // The user's Allow / Deny answer to an 'agent-confirm' event (the agent
+  // pauses on cross-origin navigation, form submits and sensitive fields).
+  // Args: [request_id, allowed]
+  void HandleWebAgentConfirm(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,

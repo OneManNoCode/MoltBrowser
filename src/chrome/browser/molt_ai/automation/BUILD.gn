@@ -27,10 +27,6 @@ source_set("automation") {
     "automation_scheduler_factory.h",
     "automation_scheduler_service.cc",
     "automation_scheduler_service.h",
-    "automation_script.cc",
-    "automation_script.h",
-    "automation_security.cc",
-    "automation_security.h",
     "automation_storage.cc",
     "automation_storage.h",
   ]
@@ -46,6 +42,8 @@ source_set("automation") {
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    # Secret (password) steps are filled from the vault at replay; read-only.
+    "//chrome/browser/molt_ai/vault",
     "//chrome/browser/profiles:profile",
     "//components/keyed_service/content",
     "//components/keyed_service/core",
@@ -58,6 +56,46 @@ source_set("automation") {
     "//ui/gfx/codec",
     "//ui/gfx/geometry",
     "//ui/message_center/public/cpp",
+    "//url",
+  ]
+
+  # Script model + security policy are part of this target's API (its
+  # headers include them), so dependents see them too.
+  public_deps = [
+    ":automation_policy",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# The .molt script model and the trust / whitelist policy. Pure logic (base +
+# url), split out so molt_ai_unittests can cover it without pulling in the
+# browser-side dependencies of :automation.
+source_set("automation_policy") {
+  sources = [
+    "automation_script.cc",
+    "automation_script.h",
+    "automation_security.cc",
+    "automation_security.h",
+  ]
+
+  deps = [ "//url" ]
+
+  public_deps = [
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "automation_security_unittest.cc",
+  ]
+  deps = [
+    ":automation_policy",
+    "//base",
+    "//testing/gtest",
     "//url",
   ]
 }

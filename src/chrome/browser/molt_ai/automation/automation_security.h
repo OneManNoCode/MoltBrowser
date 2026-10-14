@@ -14,17 +14,45 @@
 //
 // AutomationSecurity wraps the existing ActionValidator (used by the
 // agent engine) with script-aware checks.
+//
+// Enforcement: AutomationRunner checks every NAVIGATE / CLICK / TYPE /
+// KEYPRESS step against EffectivePolicy(script) before (and, for the
+// element-level checks, right after resolving) the step. A denied step
+// fails the run with a message naming the rule; there is no in-run
+// approval prompt — "approval" is the user raising the script's trust
+// level via promoteTrust in molt://ai-automation. Saving or importing a
+// script never raises trust (ClampTrustForSave).
 
 #ifndef CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace molt_ai {
 namespace automation {
+
+// Step::extra keys for a TYPE step whose value is a secret. Its "value" is
+// never stored in the .molt file:
+//   "secret": "vault"        — replay fills it from the encrypted vault
+//                              (vault_store.h), matching the EXACT host of
+//                              the page being filled
+//   "secret_kind": "password" | "payment_card" | "one_time_code"
+//                            — only passwords can be replayed; the vault
+//                              holds no cards or one-time codes
+//   "secret_host": host the field was recorded on (informational)
+// "host" (any recorded step) is the page host the user acted on; it feeds
+// AutomationSecurity::HostsReferencedBy.
+inline constexpr char kSecretKey[] = "secret";
+inline constexpr char kSecretVault[] = "vault";
+inline constexpr char kSecretKindKey[] = "secret_kind";
+inline constexpr char kSecretHostKey[] = "secret_host";
+inline constexpr char kStepHostKey[] = "host";
 
 class AutomationSecurity {
  public:
@@ -58,6 +86,57 @@ class AutomationSecurity {
   // pop a confirmation prompt before executing.
   std::vector<std::string> ApprovalRequired(
       const SecurityPolicy& policy) const;
+
+  // True if the script may submit a form (submit-button click, Enter in a
+  // form field). "form_submit" in ApprovalRequired() means the user must
+  // have approved the script, i.e. trust >= APPROVED.
+  bool AllowSubmit(const SecurityPolicy& policy) const;
+
+  // True if the script may type into a field of |kind|. Passwords and
+  // one-time codes fall under "login", payment cards under "payment";
+  // either needs trust >= APPROVED while listed in ApprovalRequired().
+  bool AllowSensitiveField(const SecurityPolicy& policy,
+                           agent_safety::FieldKind kind) const;
+
+  // The policy a run of |script| is checked against: the stored policy,
+  // with the domain whitelist widened by HostsReferencedBy(script.steps)
+  // (older / studio-saved scripts were stored with an empty whitelist) and
+  // require_approval_for defaulted to {form_submit, payment, login} when
+  // empty.
+  static SecurityPolicy EffectivePolicy(const Script& script);
+
+  // Hosts a script's steps visibly target: static http(s) NAVIGATE URLs
+  // ({{variable}} URLs are excluded — those are what the whitelist guards)
+  // and the page host the recorder stored in each step's extra["host"].
+  static std::vector<std::string> HostsReferencedBy(
+      const std::vector<Step>& steps);
+
+  // Saving must never raise trust: |incoming| (a script about to be saved
+  // from UI-supplied JSON) keeps |existing|'s trust if the script is
+  // already on disk, else starts CASUAL. Only promoteTrust changes trust.
+  static void ClampTrustForSave(Script& incoming, const Script* existing);
+
+  // ---- Secret TYPE steps (see kSecretKey) ----
+
+  // Turns |step| into a secret step of |kind| recorded on |host|: clears
+  // its value and sets the extra keys above.
+  static void MarkStepSecret(Step& step,
+                             agent_safety::FieldKind kind,
+                             std::string_view host);
+
+  // The secret kind of a TYPE step, or kOrdinary if it is a plain one.
+  static agent_safety::FieldKind SecretStepKind(const Step& step);
+
+  // Removes plaintext secrets from a serialized script (Script::ToJSON()
+  // shape). A "type" step with a non-empty value loses it and becomes a
+  // secret step when it is already marked secret, was recorded on a
+  // password field by the old recorder (its description shows the
+  // "••••••" mask), or its selector names a password / card / one-time-code
+  // field (agent_safety::ClassifySelector). Descriptions and run-history
+  // entries that quote a removed value are redacted too. Returns true if
+  // anything changed. AutomationStorage runs this on every save, and on
+  // load (re-saving the file) so old plaintext does not linger.
+  static bool ScrubPlaintextSecrets(base::DictValue& script_json);
 
   // Promote the trust level after a successful run, following the rules:
   // - CASUAL → APPROVED after first successful run

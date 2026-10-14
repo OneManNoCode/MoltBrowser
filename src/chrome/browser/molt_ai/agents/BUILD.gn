@@ -15,4 +15,6 @@ source_set("molt_ai_agents") {
     "//ui/base",
     "//url",
   ]
+
+  public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
 }

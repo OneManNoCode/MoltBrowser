@@ -181,6 +181,12 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
         result.Set("success", false);
         result.Set("error", "invalid script");
       } else {
+        // The dict's security.trust is UI-supplied and ignored: a save keeps
+        // the trust stored on disk (set only via promoteTrust) or starts a
+        // new script at CASUAL.
+        std::optional<Script> existing = storage_.Load(script->id);
+        AutomationSecurity::ClampTrustForSave(
+            *script, existing ? &*existing : nullptr);
         result.Set("success", storage_.Save(*script));
       }
     }
@@ -373,7 +379,8 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
           base::NumberToString(static_cast<int64_t>(std::time(nullptr)));
     }
     script->stats = molt_ai::automation::Stats();
-    script->security.trust = TrustLevel::CASUAL;
+    // Imported JSON is untrusted: whatever trust it claims, it starts CASUAL.
+    AutomationSecurity::ClampTrustForSave(*script, /*existing=*/nullptr);
     bool ok = storage_.Save(*script);
     if (ok) storage_.AppendAudit(script->id, "imported", "from_ui");
     result.Set("success", ok);
@@ -420,7 +427,10 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
   // Day 5: explicit trust-level change. The UI sends the new level as a
   // string ("casual"/"approved"/"trusted"/"admin"). We accept any value
   // here since the user is the source of truth on their own machine; the
-  // security policy just gates what the runner is willing to do.
+  // security policy just gates what the runner is willing to do. This is
+  // the ONLY path that changes a stored script's trust: it is sent from the
+  // trust panel's Save / "Yes, promote" buttons, while saveScript and
+  // importScript clamp trust (AutomationSecurity::ClampTrustForSave).
   void HandlePromoteTrust(const base::ListValue& args) {
     AllowJavascript();
     CHECK_GE(args.size(), 3u);

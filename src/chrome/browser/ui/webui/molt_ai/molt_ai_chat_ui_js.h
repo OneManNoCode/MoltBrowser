@@ -511,7 +511,11 @@ var actionQueue = [];
 var actionQueueDraining = false;
 
 // Session permission mode: 'ask' shows a confirm chip before every
-// dangerous action; 'auto' executes them immediately without prompting.
+// dangerous action; 'auto' executes same-origin, non-sensitive actions
+// immediately. Even in 'auto', the C++ side (HandleRunMoltAction) refuses
+// a cross-origin navigation / link and any password, payment-card or
+// one-time-code field until the user confirms: it answers
+// {needs_confirmation:true, reason} and drainActionQueue shows the chip.
 // Set by the permission banner shown at the start of each new chat.
 var actionAutoMode = false;
 
@@ -592,18 +596,21 @@ function _renderActionLabel(action) {
              ? ' = ' + action.value : '');
 }
 
-function _renderConfirmChip(action, onAllow, onDeny) {
+// |reason| (optional) is why the browser insists on asking, e.g. "Opens a
+// different site: https://x.example" — shown as the chip title.
+function _renderConfirmChip(action, reason, onAllow, onDeny) {
   var msgs = document.getElementById('messages');
   if (!msgs) { onDeny(); return; }
   var d = document.createElement('div');
   d.className = 'molt-action-confirm';
   var label = _renderActionLabel(action);
+  var title = reason ? 'Confirm: ' + reason : 'AI proposes an action';
   // Stylesheet for this chip is added inline so it can't be skinned
   // out by site CSS injection into our message area.
   d.innerHTML =
     '<span class="ac-icon">⚡</span>' +
     '<div class="ac-body">' +
-      '<div class="ac-title">AI proposes an action</div>' +
+      '<div class="ac-title">' + esc(title) + '</div>' +
       '<div class="ac-label">' + esc(label) + '</div>' +
     '</div>' +
     '<div class="ac-buttons">' +
@@ -626,9 +633,10 @@ function _renderConfirmChip(action, onAllow, onDeny) {
 
 // Show a real-time "🌐 Navigating to …" chip so the user sees the
 // browser actually loading the page, not just a silent result chip.
+// Returns the chip element (or null) so a caller can drop it again.
 function appendNavigatingChip(url) {
   var m = document.getElementById('messages');
-  if (!m) return;
+  if (!m) return null;
   var d = document.createElement('div');
   d.className = 'molt-navigating-chip';
   d.innerHTML = '<span class="nav-icon">🌐</span>' +
@@ -636,6 +644,7 @@ function appendNavigatingChip(url) {
                 '<span class="nav-spinner"></span>';
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
+  return d;
 }
 
 function drainActionQueue() {
@@ -648,27 +657,46 @@ function drainActionQueue() {
     }
     var action = actionQueue.shift();
     var label = _renderActionLabel(action);
-    var dispatch = function() {
+    var deny = function() {
+      appendActionResult(false, label, 'denied by user');
+      loop();
+    };
+    // |confirmed| is true only after the user tapped Allow on a chip for
+    // this exact action; it is never taken from the model's token.
+    var dispatch = function(confirmed) {
       // Show real-time chip for navigate so user sees the browser move
+      var navChip = null;
       if (action.type === 'navigate') {
-        appendNavigatingChip(action.value || label);
+        navChip = appendNavigatingChip(action.value || label);
       }
-      sendWithPromise('runMoltAction', action).then(function(r) {
+      var payload = {type: action.type};
+      if (action.selector !== undefined) payload.selector = action.selector;
+      if (action.value !== undefined) payload.value = action.value;
+      if (confirmed) payload.confirmed = true;
+      sendWithPromise('runMoltAction', payload).then(function(r) {
+        if (r && r.needs_confirmation && !confirmed) {
+          // The browser found a cross-origin target or a credential /
+          // payment field: ask, even in Auto mode.
+          if (navChip && navChip.parentNode) navChip.remove();
+          _renderConfirmChip(action, r.reason || '',
+                             function() { dispatch(true); }, deny);
+          return;
+        }
         appendActionResult(r && r.success, label,
                             r ? (r.message || r.error || '') : '');
-      }).catch(function(err) {
+        loop();
+      }, function(err) {
         appendActionResult(false, label, String(err || 'failed'));
-      }).then(loop, loop);
-    };
-    // In auto mode every action runs immediately; in ask mode dangerous
-    // actions need one-tap user approval before dispatch.
-    if (!actionAutoMode && DANGEROUS_ACTION_TYPES[action.type]) {
-      _renderConfirmChip(action, dispatch, function(){
-        appendActionResult(false, label, 'denied by user');
         loop();
       });
+    };
+    // In auto mode actions run immediately (the browser still stops
+    // cross-origin / sensitive ones for a chip); in ask mode dangerous
+    // actions need one-tap user approval before dispatch.
+    if (!actionAutoMode && DANGEROUS_ACTION_TYPES[action.type]) {
+      _renderConfirmChip(action, '', function() { dispatch(true); }, deny);
     } else {
-      dispatch();
+      dispatch(false);
     }
   };
   loop();
@@ -2667,6 +2695,9 @@ function tryDispatchActionCommand(text) {
   startAiMessage();
   appendToAiMessage('Running ' + cmd + '...');
 
+  // The user typed this command themselves: that is the confirmation the
+  // browser otherwise asks for (cross-origin / credential-field actions).
+  action.confirmed = true;
   sendWithPromise('runMoltAction', action).then(function(r) {
     var msg = r.success
         ? '\u2713 ' + (r.message || (cmd + ' ok'))
@@ -2794,7 +2825,9 @@ function tryDispatchNavigateIntent(text) {
   // navigating chip with spinner, then a result chip on completion.
   addUserMessage(text);
   appendNavigatingChip(url);
-  sendWithPromise('runMoltAction', {type: 'navigate', value: url}).then(
+  // Typed by the user ("open nasa.com"), so it is already confirmed.
+  sendWithPromise('runMoltAction',
+                  {type: 'navigate', value: url, confirmed: true}).then(
       function(r) {
         appendActionResult(r && r.success, 'navigate = ' + url,
                            r ? (r.message || r.error || '') : '');
@@ -5107,6 +5140,15 @@ function _stopRecording() {
 .agent-result{font-size:11px;color:var(--text);padding:5px 8px;background:var(--surface2);
   border-radius:5px;margin-top:4px;border-left:2px solid var(--ok)}
 .agent-result.fail{background:rgba(240,112,112,0.08);border-color:var(--err);color:var(--err)}
+.agent-confirm{display:flex;flex-direction:column;gap:6px;padding:7px 8px;border-radius:6px;
+  background:var(--surface2);border-left:2px solid var(--accent);margin:2px 0}
+.agent-confirm-title{font-size:9px;font-weight:700;letter-spacing:0.5px;color:var(--muted);
+  text-transform:uppercase}
+.agent-confirm-msg{font-size:11px;color:var(--text);word-break:break-word}
+.agent-confirm-btns{display:flex;gap:6px;justify-content:flex-end}
+.agent-confirm-btns button{font-size:10px;padding:3px 10px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:var(--text)}
+.agent-confirm-btns .agent-allow{background:var(--accent);border-color:var(--accent);color:#fff}
   `;
   var s = document.createElement('style');
   s.textContent = css;
@@ -5192,6 +5234,43 @@ function _stopRecording() {
     steps.scrollTop = steps.scrollHeight;
   });
 
+  // The agent paused on a sensitive action (leaving the task's sites,
+  // submitting a form, a payment / one-time-code field). Nothing happens
+  // until the user answers; Deny stops the run. Shown in every permission
+  // mode — Auto mode never skips these.
+  cr.addWebUiListener('agent-confirm', function(req) {
+    if (!agentRunning || !req) return;
+    var steps = document.getElementById('agentSteps');
+    if (!steps) return;
+    var row = document.createElement('div');
+    row.className = 'agent-confirm';
+    row.innerHTML =
+      '<div class="agent-confirm-title">Agent needs your OK</div>' +
+      '<div class="agent-confirm-msg"></div>' +
+      '<div class="agent-confirm-btns">' +
+        '<button class="agent-deny">Deny</button>' +
+        '<button class="agent-allow">Allow</button>' +
+      '</div>';
+    // The message quotes page text / URLs — text only, never markup.
+    row.querySelector('.agent-confirm-msg').textContent =
+        String(req.message || '').substring(0, 300);
+    var answered = false;
+    function answer(allowed) {
+      if (answered) return;
+      answered = true;
+      if (row.parentNode) row.parentNode.removeChild(row);
+      chrome.send('webAgentConfirm', [Number(req.id) || 0, allowed === true]);
+    }
+    row.querySelector('.agent-allow').addEventListener('click', function() {
+      answer(true);
+    });
+    row.querySelector('.agent-deny').addEventListener('click', function() {
+      answer(false);
+    });
+    steps.appendChild(row);
+    steps.scrollTop = steps.scrollHeight;
+  });
+
   // Persist the agent outcome in the transcript — the bar itself
   // auto-collapses after 10 s, so without this the result vanishes
   // from the UI entirely. Success renders as a normal AI bubble (and
@@ -5235,6 +5314,9 @@ function _stopRecording() {
   // Finish the bar (success or failure).
   function finishBar(success, result) {
     agentRunning = false;
+    // An unanswered approval chip is moot once the run is over.
+    document.querySelectorAll('#agentSteps .agent-confirm').forEach(
+        function(el) { el.remove(); });
     var hdr = document.querySelector('.agent-bar-title');
     if (hdr) hdr.textContent = success ? '✅ AGENT DONE' : '❌ AGENT STOPPED';
     var stopBtn = document.getElementById('agentStopBtn');

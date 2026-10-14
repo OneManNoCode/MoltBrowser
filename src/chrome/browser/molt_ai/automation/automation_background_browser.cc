@@ -16,6 +16,7 @@
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
@@ -132,12 +133,14 @@ void RunScriptInBackgroundBrowser(
   }
 
   // Pick the start URL from the first NAVIGATE step, fallback to
-  // about:blank so we always have something to attach a runner to.
+  // about:blank so we always have something to attach a runner to. This
+  // load happens before the runner's policy checks, so it gets the same
+  // http(s)-only rule (a .molt file must not open javascript:/file: URLs).
   GURL start_url("about:blank");
   for (const auto& step : script.steps) {
     if (step.type == StepType::NAVIGATE && !step.target.empty()) {
       GURL g(step.target);
-      if (g.is_valid()) {
+      if (agent_safety::IsAllowedNavigationURL(g)) {
         start_url = g;
       }
       break;

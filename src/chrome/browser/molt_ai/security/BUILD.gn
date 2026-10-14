@@ -1,0 +1,35 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Shared safety rules for page-driving features: the WebAgent ReAct loop,
+# chat [[ACTION ...]] actions and automation replay. Pure logic (no content/
+# layer), so it links into the standalone molt_ai_unittests binary.
+#
+# (security/action_validator.* is built by //chrome/browser/molt_ai:
+# molt_ai_security and is unrelated to this target.)
+
+source_set("agent_safety") {
+  sources = [
+    "agent_safety.cc",
+    "agent_safety.h",
+  ]
+
+  deps = [
+    "//base",
+    "//url",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "agent_safety_unittest.cc",
+  ]
+  deps = [
+    ":agent_safety",
+    "//base",
+    "//testing/gtest",
+    "//url",
+  ]
+}

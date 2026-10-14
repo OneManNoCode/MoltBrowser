@@ -15,6 +15,8 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
@@ -167,6 +169,21 @@ const char kRecorderJS[] = R"JS(
     } catch(e){ return 'the field'; }
   }
 
+  // Password / payment-card / one-time-code fields: their value never
+  // leaves the page. Mirrors agent_safety::ClassifyField, which C++
+  // re-applies to the type/autocomplete we report. Returns '' for an
+  // ordinary field.
+  function secretKind(el){
+    var type = String(el.type || '').toLowerCase();
+    var toks = String(attr(el,'autocomplete') || '').toLowerCase().split(/\s+/);
+    if (type === 'password' || toks.indexOf('current-password') >= 0 ||
+        toks.indexOf('new-password') >= 0) return 'password';
+    for (var i = 0; i < toks.length; i++)
+      if (toks[i].indexOf('cc-') === 0) return 'payment_card';
+    if (toks.indexOf('one-time-code') >= 0) return 'one_time_code';
+    return '';
+  }
+
   // Climb to the nearest actionable ancestor so clicking an icon/label INSIDE
   // a button records the button (not the inner <span>/<svg>).
   var kActionable = 'a,button,[role="button"],[role="link"],[role="tab"],' +
@@ -180,7 +197,11 @@ const char kRecorderJS[] = R"JS(
               w: Math.round(r.width), h: Math.round(r.height)}; }
     catch(e){ return null; }
   }
+  // Every listener ignores synthetic events (e.isTrusted === false): page
+  // script can dispatch click/change/submit events at will, and recording
+  // them would let a site write steps into the user's workflow.
   document.addEventListener('click', function(e) {
+    if (!e.isTrusted) return;
     var el = (e.target.closest && e.target.closest(kActionable)) || e.target;
     if (!rateLimit(el, 50)) return;
     var sels = buildSelectors(el);
@@ -191,6 +212,7 @@ const char kRecorderJS[] = R"JS(
   }, true);
 
   document.addEventListener('change', function(e) {
+    if (!e.isTrusted) return;
     var el = e.target;
     if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA'
         && el.tagName !== 'SELECT') return;
@@ -198,19 +220,33 @@ const char kRecorderJS[] = R"JS(
     // them.
     if (el.type === 'checkbox' || el.type === 'radio') return;
     var sels = buildSelectors(el);
+    var fieldType = String(el.type || '');
+    var autocomplete = String(attr(el,'autocomplete') || '');
+    // Never record what was typed into a password / card / one-time-code
+    // field: the step is stored as a secret that replay fills from the vault.
+    var kind = secretKind(el);
+    if (kind) {
+      send({type: 'type', target: sels[0] || '', selector_fallbacks: sels.slice(1),
+            secret: kind, field_type: fieldType, autocomplete: autocomplete,
+            description: (kind === 'password' ? 'Fill your saved password in '
+                                              : 'Enter the ' +
+                              (kind === 'payment_card' ? 'card details'
+                                                       : 'one-time code') +
+                              ' in ') + fieldLabel(el)});
+      return;
+    }
     var isSel = el.tagName === 'SELECT';
     var v = isSel
         ? (el.options[el.selectedIndex] && el.options[el.selectedIndex].value)
         : el.value;
-    // Never record the literal password.
-    var shown = (el.type === 'password') ? '••••••' : String(v || '');
     send({type: 'type', target: sels[0] || '', selector_fallbacks: sels.slice(1),
-          value: v || '',
-          description: (isSel ? 'Choose "' : 'Type "') + shown.slice(0,40) +
-                       '" in ' + fieldLabel(el)});
+          value: v || '', field_type: fieldType, autocomplete: autocomplete,
+          description: (isSel ? 'Choose "' : 'Type "') +
+                       String(v || '').slice(0,40) + '" in ' + fieldLabel(el)});
   }, true);
 
   document.addEventListener('submit', function(e) {
+    if (!e.isTrusted) return;
     var el = e.target;
     var sels = buildSelectors(el);
     send({type: 'click', target: sels[0] || '', selector_fallbacks: sels.slice(1),
@@ -219,7 +255,8 @@ const char kRecorderJS[] = R"JS(
 
   // Throttled scroll capture (every 500ms)
   var scrollThrottle = null;
-  document.addEventListener('scroll', function() {
+  document.addEventListener('scroll', function(e) {
+    if (!e.isTrusted) return;
     if (scrollThrottle) return;
     scrollThrottle = setTimeout(function() {
       // Record scroll as a RESOLUTION-INDEPENDENT fraction of the scrollable
@@ -394,10 +431,13 @@ void AutomationRecorder::OnStepFromInjectedJS(
   if (!is_recording_)
     return;
   // Track host for whitelist.
+  std::string host;
   if (auto* url = step_json.FindString("url")) {
     GURL g(*url);
-    if (g.is_valid() && !g.host().empty())
-      seen_hosts_.insert(std::string(g.host()));
+    if (g.is_valid() && !g.host().empty()) {
+      host = std::string(g.host());
+      seen_hosts_.insert(host);
+    }
   }
   // Build a Step from the JSON.
   Step s;
@@ -415,11 +455,43 @@ void AutomationRecorder::OnStepFromInjectedJS(
   if (auto* d = step_json.FindString("description"))
     s.description = *d;
   // Visible-text anchor ("Kids") — stored in extra so the runner can match the
-  // element by text when the CSS selectors drift.
-  if (auto* txt = step_json.FindString("text"); txt && !txt->empty()) {
-    base::DictValue e;
+  // element by text when the CSS selectors drift. The page host feeds the
+  // workflow's site whitelist (AutomationSecurity::HostsReferencedBy).
+  base::DictValue e;
+  if (auto* txt = step_json.FindString("text"); txt && !txt->empty())
     e.Set("text", *txt);
+  if (!host.empty() && (s.type == StepType::CLICK || s.type == StepType::TYPE))
+    e.Set(kStepHostKey, host);
+  if (!e.empty())
     s.extra = base::Value(std::move(e));
+  // Secret fields: the injected JS already withholds the value; re-derive
+  // the kind here from the reported type/autocomplete (and, failing that,
+  // the selector) so a value can never be stored for one.
+  if (s.type == StepType::TYPE) {
+    const std::string* field_type = step_json.FindString("field_type");
+    const std::string* autocomplete = step_json.FindString("autocomplete");
+    agent_safety::FieldKind kind = agent_safety::ClassifyField(
+        field_type ? *field_type : std::string(),
+        autocomplete ? *autocomplete : std::string());
+    if (!agent_safety::IsSensitive(kind)) {
+      if (const std::string* secret = step_json.FindString("secret"))
+        kind = agent_safety::FieldKindFromString(*secret);
+    }
+    if (!agent_safety::IsSensitive(kind))
+      kind = agent_safety::ClassifySelector(s.target);
+    if (agent_safety::IsSensitive(kind)) {
+      const bool had_value = !s.value.empty();
+      AutomationSecurity::MarkStepSecret(s, kind, host);
+      // The description quotes the typed value for ordinary fields; never
+      // keep one built from a secret.
+      if (had_value || s.description.empty()) {
+        s.description = kind == agent_safety::FieldKind::kPassword
+                            ? "Fill your saved password"
+                            : "Enter the " + std::string(agent_safety::
+                                                             FieldKindLabel(
+                                                                 kind));
+      }
+    }
   }
   // Record-time thumbnail: remember the clicked element's rect so we can crop a
   // snapshot of exactly what was clicked after the step is appended.
@@ -499,6 +571,20 @@ void AutomationRecorder::DeduplicateAndAppend(Step step) {
     }
     if (step.type == StepType::TYPE && last.type == StepType::TYPE &&
         last.target == step.target) {
+      const bool step_secret = AutomationSecurity::SecretStepKind(step) !=
+                               agent_safety::FieldKind::kOrdinary;
+      const bool last_secret = AutomationSecurity::SecretStepKind(last) !=
+                               agent_safety::FieldKind::kOrdinary;
+      if (step_secret || last_secret) {
+        // A field that was ever secret stays secret, e.g. when a "show
+        // password" toggle flips it to type=text between edits.
+        if (step_secret) {
+          last.extra = std::move(step.extra);
+          last.description = step.description;
+        }
+        last.value.clear();
+        return;
+      }
       last.value = step.value;
       return;
     }

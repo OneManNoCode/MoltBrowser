@@ -17,6 +17,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace content {
 class WebContents;
@@ -37,12 +40,25 @@ class WebContents;
 namespace molt_ai {
 
 class BrowserAIRuntime;
+struct GenerationResult;
+struct PromptOptions;
 
 namespace automation {
 
 // Waits for a click-triggered navigation to settle before advancing the run
 // (defined in the .cc). Forward-declared so it can be held as a member.
 class NavigationSettleWaiter;
+
+// A RunPromptAsync request waiting for the in-flight one (defined in .cc).
+struct QueuedPrompt;
+
+// Step::extra key. When true, a CLICK that would follow a link to another
+// origin, or a TYPE into a password / payment-card / one-time-code field,
+// is not performed; the run stops with a message starting with
+// kNeedsConfirmationPrefix instead. The chat action path sets it until the
+// user has confirmed the action.
+inline constexpr char kAskBeforeSensitiveKey[] = "ask_before_sensitive";
+inline constexpr char kNeedsConfirmationPrefix[] = "needs_confirmation: ";
 
 // Result reported when a run finishes (success or failure).
 struct RunResult {
@@ -99,6 +115,13 @@ class AutomationRunner {
   void ExecuteNextStep();
   void OnStepFinished(bool succeeded, const std::string& note);
 
+  // Workflow security policy (automation_security.h). Checks |s| against
+  // policy_ before it touches the page; false + |why| if it must not run.
+  bool PreflightStepPolicy(const Step& s, std::string* why) const;
+  // Ends the run on the current step without retries (a policy block or a
+  // step that needs the user's confirmation), recording |reason|.
+  void BlockStep(const std::string& reason);
+
   // After a step reaches a terminal outcome (success, or failure with no
   // retries left), record a StepResult for the Runs timeline — including a
   // screenshot thumbnail captured on the current page — then either advance
@@ -141,6 +164,36 @@ class AutomationRunner {
   void DoEndLoop(const Step& s);
   void DoAssert(const Step& s);
   void DoRunJS(const Step& s);
+
+  // Second halves of DoClick / DoType: once the selector is resolved, probe
+  // what the element is (submit control, link target, field kind) and
+  // apply the policy before acting.
+  void ProbeElement(const std::string& sel,
+                    base::OnceCallback<void(agent_safety::ElementProbe)> cb);
+  void OnClickTargetResolved(bool ask_before_sensitive, const std::string& sel);
+  void OnClickProbed(const std::string& sel,
+                     bool ask_before_sensitive,
+                     agent_safety::ElementProbe probe);
+  void ClickNow(const std::string& sel);
+  void OnTypeTargetResolved(std::string value,
+                            bool ask_before_sensitive,
+                            const std::string& sel);
+  void OnTypeProbed(const std::string& sel,
+                    std::string value,
+                    bool ask_before_sensitive,
+                    agent_safety::ElementProbe probe);
+  void TypeInto(const std::string& sel, const std::string& value);
+
+  // Secret (vault) TYPE steps — see kSecretKey in automation_security.h.
+  // The password is looked up off the UI thread by the EXACT host of the
+  // page being filled and only ever written into a type=password field on
+  // that same host.
+  void OnSecretTargetResolved(const std::string& sel);
+  void OnSecretTargetProbed(const std::string& sel,
+                            agent_safety::ElementProbe probe);
+  void OnVaultPassword(const std::string& sel,
+                       const std::string& host,
+                       std::optional<std::string> password);
   // RUN_SCRIPT: inline-expand a child script's steps into the current
   // script_.steps vector at current_index_ + 1, then continue.
   void DoRunScript(const Step& s);
@@ -163,6 +216,9 @@ class AutomationRunner {
   // OnStepFinished.
   void ArmStepTimeout(const Step& s);
   void OnStepTimeout();
+  // Re-arms the current step's timeout to |budget| from now, for steps that
+  // legitimately wait longer (an OS keychain prompt, LLM inference).
+  void ExtendStepTimeout(base::TimeDelta budget);
 
   // Resolve {{variable}} placeholders in |raw| using current variables_.
   std::string Resolve(const std::string& raw) const;
@@ -202,6 +258,21 @@ class AutomationRunner {
       const std::string& description,
       base::OnceCallback<void(const std::string&)> cb);
 
+  // BrowserAIRuntime::RunPrompt blocks for the whole generation — and, while
+  // a chat reply is streaming, waits on the runtime's generation lock — so
+  // it never runs on the UI thread. RunPromptAsync posts it to a MayBlock
+  // ThreadPool worker and replies here; |reply| should be bound to
+  // weak_factory_ so a step that ended meanwhile drops the result.
+  void RunPromptAsync(std::string prompt,
+                      PromptOptions opts,
+                      base::OnceCallback<void(GenerationResult)> reply);
+  void OnPromptDone(base::OnceCallback<void(GenerationResult)> reply,
+                    GenerationResult result);
+  void OnSelectorLLMReply(base::OnceCallback<void(const std::string&)> cb,
+                          GenerationResult result);
+  void OnAIDecideReply(GenerationResult result);
+  void OnAIExtractReply(std::string store_as, GenerationResult result);
+
   void EmitStepProgress(bool starting, bool succeeded,
                         const std::string& note);
   void Finish(bool success, const std::string& message);
@@ -212,6 +283,10 @@ class AutomationRunner {
   raw_ptr<AutomationStorage> storage_;             // not owned
 
   Script script_;
+  // AutomationSecurity::EffectivePolicy(script_), fixed at Run(); RUN_SCRIPT
+  // widens its whitelist with the child script's hosts.
+  AutomationSecurity security_;
+  SecurityPolicy policy_;
   size_t current_index_ = 0;
   bool is_running_ = false;
   bool cancel_requested_ = false;
@@ -268,6 +343,16 @@ class AutomationRunner {
   StepProgressCallback on_step_;
   RunCompleteCallback on_complete_;
 
+  // True while a RunPrompt task is on a worker. A request made meanwhile (a
+  // step retried after its timeout abandoned the first one) waits in
+  // queued_prompt_ instead of stacking a second inference behind the
+  // runtime's generation lock.
+  bool llm_in_flight_ = false;
+  std::unique_ptr<QueuedPrompt> queued_prompt_;
+
+  // Only for OnPromptDone (clears llm_in_flight_, counts tokens); unlike
+  // weak_factory_ it is not invalidated at step boundaries.
+  base::WeakPtrFactory<AutomationRunner> llm_weak_factory_{this};
   base::WeakPtrFactory<AutomationRunner> weak_factory_{this};
 };
 
