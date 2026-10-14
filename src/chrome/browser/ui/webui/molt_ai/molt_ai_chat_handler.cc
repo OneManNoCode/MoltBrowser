@@ -381,6 +381,10 @@ void MoltAIChatHandler::RegisterMessages() {
       "cancelWebAgent",
       base::BindRepeating(&MoltAIChatHandler::HandleCancelWebAgent,
                           base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "webAgentConfirm",
+      base::BindRepeating(&MoltAIChatHandler::HandleWebAgentConfirm,
+                          base::Unretained(this)));
 }
 
 void MoltAIChatHandler::OnJavascriptAllowed() {
@@ -5691,6 +5695,9 @@ void MoltAIChatHandler::HandleExtractAttachment(
 //
 // JS calls: chrome.send('startWebAgent', [callback_id, goal])
 //   - Each completed step fires: FireWebUIListener('agent-step', {...})
+//   - A sensitive action (new origin, form submit, payment / one-time-code
+//     field) pauses the run and fires FireWebUIListener('agent-confirm',
+//     {id, action, message}); the UI answers via 'webAgentConfirm'.
 //   - Final result resolves: ResolveJavascriptCallback(callback_id, {...})
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
@@ -5753,6 +5760,21 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
       },
       weak_this);
 
+  // Confirm callback: the run stays paused until the user answers the
+  // Allow / Deny chip (HandleWebAgentConfirm). If the panel goes away the
+  // agent is destroyed with this handler, so nothing runs unapproved.
+  auto on_confirm = base::BindRepeating(
+      [](base::WeakPtr<MoltAIChatHandler> self,
+         const molt_ai::WebAgent::ConfirmRequest& req) {
+        if (!self || !self->IsJavascriptAllowed()) return;
+        base::DictValue d;
+        d.Set("id", req.id);
+        d.Set("action", req.action);
+        d.Set("message", req.message);
+        self->FireWebUIListener("agent-confirm", base::Value(std::move(d)));
+      },
+      weak_this);
+
   // Done callback: resolve the JS promise with the final result.
   auto on_done = base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -5767,9 +5789,11 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
       },
       weak_this, callback_id);
 
-  web_agent_->Start(goal, std::move(on_step), std::move(on_done));
+  web_agent_->Start(goal, std::move(on_step), std::move(on_done),
+                    std::move(on_confirm));
 
-  LOG(INFO) << "[MoltAI] Web agent started. Goal: " << goal;
+  // The goal can contain personal data; keep it out of release logs.
+  DVLOG(1) << "[MoltAI] Web agent started";
 }
 
 // ------------------------------------------------------------------
@@ -5782,4 +5806,25 @@ void MoltAIChatHandler::HandleCancelWebAgent(const base::ListValue& args) {
     web_agent_.reset();
     LOG(INFO) << "[MoltAI] Web agent cancelled by user";
   }
+}
+
+// ------------------------------------------------------------------
+// HandleWebAgentConfirm — the user's Allow / Deny on an 'agent-confirm'
+// chip. Stale ids (a previous run, an already-answered request) are
+// ignored by WebAgent::ResolveConfirmation.
+// JS calls: chrome.send('webAgentConfirm', [request_id, allowed])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleWebAgentConfirm(const base::ListValue& args) {
+  if (!web_agent_ || args.size() < 2) return;
+  int request_id = 0;
+  if (args[0].is_int()) {
+    request_id = args[0].GetInt();
+  } else if (args[0].is_double()) {
+    request_id = static_cast<int>(args[0].GetDouble());
+  } else {
+    return;
+  }
+  // Anything but an explicit boolean true is a denial.
+  const bool allowed = args[1].is_bool() && args[1].GetBool();
+  web_agent_->ResolveConfirmation(request_id, allowed);
 }

@@ -52,6 +52,10 @@ source_set("molt_ai_agents") {
     "//ui/base",
     "//url",
   ]
+
+  # web_agent.h exposes agent_safety types (navigation allowlist, element
+  # probe, prompt fencing).
+  public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
 }
 
 source_set("molt_ai_security") {

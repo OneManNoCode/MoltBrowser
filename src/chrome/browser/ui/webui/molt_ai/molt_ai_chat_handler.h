@@ -236,6 +236,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Cancel the currently running agent (no-op if none running).
   // Args: []
   void HandleCancelWebAgent(const base::ListValue& args);
+  // The user's Allow / Deny answer to an 'agent-confirm' event (the agent
+  // pauses on cross-origin navigation, form submits and sensitive fields).
+  // Args: [request_id, allowed]
+  void HandleWebAgentConfirm(const base::ListValue& args);
 
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,

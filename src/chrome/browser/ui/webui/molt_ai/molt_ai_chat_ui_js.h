@@ -5107,6 +5107,15 @@ function _stopRecording() {
 .agent-result{font-size:11px;color:var(--text);padding:5px 8px;background:var(--surface2);
   border-radius:5px;margin-top:4px;border-left:2px solid var(--ok)}
 .agent-result.fail{background:rgba(240,112,112,0.08);border-color:var(--err);color:var(--err)}
+.agent-confirm{display:flex;flex-direction:column;gap:6px;padding:7px 8px;border-radius:6px;
+  background:var(--surface2);border-left:2px solid var(--accent);margin:2px 0}
+.agent-confirm-title{font-size:9px;font-weight:700;letter-spacing:0.5px;color:var(--muted);
+  text-transform:uppercase}
+.agent-confirm-msg{font-size:11px;color:var(--text);word-break:break-word}
+.agent-confirm-btns{display:flex;gap:6px;justify-content:flex-end}
+.agent-confirm-btns button{font-size:10px;padding:3px 10px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:var(--text)}
+.agent-confirm-btns .agent-allow{background:var(--accent);border-color:var(--accent);color:#fff}
   `;
   var s = document.createElement('style');
   s.textContent = css;
@@ -5192,6 +5201,43 @@ function _stopRecording() {
     steps.scrollTop = steps.scrollHeight;
   });
 
+  // The agent paused on a sensitive action (leaving the task's sites,
+  // submitting a form, a payment / one-time-code field). Nothing happens
+  // until the user answers; Deny stops the run. Shown in every permission
+  // mode — Auto mode never skips these.
+  cr.addWebUiListener('agent-confirm', function(req) {
+    if (!agentRunning || !req) return;
+    var steps = document.getElementById('agentSteps');
+    if (!steps) return;
+    var row = document.createElement('div');
+    row.className = 'agent-confirm';
+    row.innerHTML =
+      '<div class="agent-confirm-title">Agent needs your OK</div>' +
+      '<div class="agent-confirm-msg"></div>' +
+      '<div class="agent-confirm-btns">' +
+        '<button class="agent-deny">Deny</button>' +
+        '<button class="agent-allow">Allow</button>' +
+      '</div>';
+    // The message quotes page text / URLs — text only, never markup.
+    row.querySelector('.agent-confirm-msg').textContent =
+        String(req.message || '').substring(0, 300);
+    var answered = false;
+    function answer(allowed) {
+      if (answered) return;
+      answered = true;
+      if (row.parentNode) row.parentNode.removeChild(row);
+      chrome.send('webAgentConfirm', [Number(req.id) || 0, allowed === true]);
+    }
+    row.querySelector('.agent-allow').addEventListener('click', function() {
+      answer(true);
+    });
+    row.querySelector('.agent-deny').addEventListener('click', function() {
+      answer(false);
+    });
+    steps.appendChild(row);
+    steps.scrollTop = steps.scrollHeight;
+  });
+
   // Persist the agent outcome in the transcript — the bar itself
   // auto-collapses after 10 s, so without this the result vanishes
   // from the UI entirely. Success renders as a normal AI bubble (and
@@ -5235,6 +5281,9 @@ function _stopRecording() {
   // Finish the bar (success or failure).
   function finishBar(success, result) {
     agentRunning = false;
+    // An unanswered approval chip is moot once the run is over.
+    document.querySelectorAll('#agentSteps .agent-confirm').forEach(
+        function(el) { el.remove(); });
     var hdr = document.querySelector('.agent-bar-title');
     if (hdr) hdr.textContent = success ? '✅ AGENT DONE' : '❌ AGENT STOPPED';
     var stopBtn = document.getElementById('agentStopBtn');
