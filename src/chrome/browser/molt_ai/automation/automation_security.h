@@ -27,13 +27,32 @@
 #define CHROME_BROWSER_MOLT_AI_AUTOMATION_AUTOMATION_SECURITY_H_
 
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace molt_ai {
 namespace automation {
+
+// Step::extra keys for a TYPE step whose value is a secret. Its "value" is
+// never stored in the .molt file:
+//   "secret": "vault"        — replay fills it from the encrypted vault
+//                              (vault_store.h), matching the EXACT host of
+//                              the page being filled
+//   "secret_kind": "password" | "payment_card" | "one_time_code"
+//                            — only passwords can be replayed; the vault
+//                              holds no cards or one-time codes
+//   "secret_host": host the field was recorded on (informational)
+// "host" (any recorded step) is the page host the user acted on; it feeds
+// AutomationSecurity::HostsReferencedBy.
+inline constexpr char kSecretKey[] = "secret";
+inline constexpr char kSecretVault[] = "vault";
+inline constexpr char kSecretKindKey[] = "secret_kind";
+inline constexpr char kSecretHostKey[] = "secret_host";
+inline constexpr char kStepHostKey[] = "host";
 
 class AutomationSecurity {
  public:
@@ -96,6 +115,28 @@ class AutomationSecurity {
   // from UI-supplied JSON) keeps |existing|'s trust if the script is
   // already on disk, else starts CASUAL. Only promoteTrust changes trust.
   static void ClampTrustForSave(Script& incoming, const Script* existing);
+
+  // ---- Secret TYPE steps (see kSecretKey) ----
+
+  // Turns |step| into a secret step of |kind| recorded on |host|: clears
+  // its value and sets the extra keys above.
+  static void MarkStepSecret(Step& step,
+                             agent_safety::FieldKind kind,
+                             std::string_view host);
+
+  // The secret kind of a TYPE step, or kOrdinary if it is a plain one.
+  static agent_safety::FieldKind SecretStepKind(const Step& step);
+
+  // Removes plaintext secrets from a serialized script (Script::ToJSON()
+  // shape). A "type" step with a non-empty value loses it and becomes a
+  // secret step when it is already marked secret, was recorded on a
+  // password field by the old recorder (its description shows the
+  // "••••••" mask), or its selector names a password / card / one-time-code
+  // field (agent_safety::ClassifySelector). Descriptions and run-history
+  // entries that quote a removed value are redacted too. Returns true if
+  // anything changed. AutomationStorage runs this on every save, and on
+  // load (re-saving the file) so old plaintext does not linger.
+  static bool ScrubPlaintextSecrets(base::DictValue& script_json);
 
   // Promote the trust level after a successful run, following the rules:
   // - CASUAL → APPROVED after first successful run

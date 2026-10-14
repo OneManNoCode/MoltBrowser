@@ -40,11 +40,14 @@ class AutomationStorage {
   std::vector<Script> ListAll();
 
   // Load one script by id. Returns nullopt if the file doesn't exist or is
-  // malformed.
+  // malformed. A file that still holds a plaintext password value (written
+  // before secret steps existed) is scrubbed and rewritten in place first
+  // (AutomationSecurity::ScrubPlaintextSecrets).
   std::optional<Script> Load(const std::string& id);
 
   // Save (create or overwrite). Returns true if the file was successfully
-  // written. The file is written atomically (.tmp + rename).
+  // written. The file is written atomically (.tmp + rename). Plaintext
+  // secret values are scrubbed from what is written.
   bool Save(const Script& script);
 
   // Delete a script + its artifacts directory.
@@ -72,6 +75,9 @@ class AutomationStorage {
   base::FilePath GetAutomationsDir() const;
   base::FilePath GetScriptPath(const std::string& id) const;
   base::FilePath GetAuditLogPath() const;
+  // Atomically writes |script_json| (pretty-printed) to |path|.
+  bool WriteScriptJson(const base::FilePath& path,
+                       const base::DictValue& script_json);
 
   base::FilePath root_override_;
 };

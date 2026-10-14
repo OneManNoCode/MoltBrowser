@@ -10,10 +10,13 @@
 #include "base/base_paths.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 
 namespace molt_ai {
@@ -128,7 +131,21 @@ std::optional<Script> AutomationStorage::Load(const std::string& id) {
   std::string contents;
   if (!base::ReadFileToString(GetScriptPath(id), &contents))
     return std::nullopt;
-  return Script::FromJSONString(contents);
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(contents, base::JSON_ALLOW_TRAILING_COMMAS);
+  if (!parsed || !parsed->is_dict())
+    return std::nullopt;
+  // Migration: recordings made before secret steps stored password values
+  // in plaintext. Scrub them and rewrite this same file so the plaintext
+  // does not linger on disk.
+  if (AutomationSecurity::ScrubPlaintextSecrets(parsed->GetDict())) {
+    if (WriteScriptJson(GetScriptPath(id), parsed->GetDict())) {
+      LOG(WARNING) << "[Automation] removed stored secret value(s) from "
+                   << id << kScriptExt;
+      AppendAudit(id, "secrets_scrubbed", "");
+    }
+  }
+  return Script::FromJSON(parsed->GetDict());
 }
 
 bool AutomationStorage::Save(const Script& script) {
@@ -138,11 +155,28 @@ bool AutomationStorage::Save(const Script& script) {
   if (!EnsureDirectory())
     return false;
 
+  // Never persist a password / card / one-time-code value, whichever UI or
+  // import path produced the script.
+  base::DictValue json = script.ToJSON();
+  if (AutomationSecurity::ScrubPlaintextSecrets(json))
+    LOG(WARNING) << "[Automation] dropped secret value(s) before saving";
+
+  if (!WriteScriptJson(GetScriptPath(script.id), json))
+    return false;
+
+  AppendAudit(script.id, "saved", "");
+  return true;
+}
+
+bool AutomationStorage::WriteScriptJson(const base::FilePath& final_path,
+                                        const base::DictValue& script_json) {
+  ScopedAllowBlockingForMolt allow_blocking;
   // Atomic write: foo.molt.tmp -> foo.molt
-  base::FilePath final_path = GetScriptPath(script.id);
   base::FilePath tmp_path = final_path.AddExtension(FILE_PATH_LITERAL(".tmp"));
 
-  std::string json = script.ToJSONString();
+  std::string json;
+  base::JSONWriter::WriteWithOptions(
+      script_json, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
   if (!base::WriteFile(tmp_path, json)) {
     LOG(ERROR) << "[Automation] Failed to write " << tmp_path.value();
     return false;
@@ -154,8 +188,6 @@ bool AutomationStorage::Save(const Script& script) {
     LOG(ERROR) << "[Automation] Rename failed err=" << rename_err;
     return false;
   }
-
-  AppendAudit(script.id, "saved", "");
   return true;
 }
 

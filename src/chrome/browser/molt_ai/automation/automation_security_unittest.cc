@@ -138,6 +138,129 @@ TEST(AutomationSecurityTest, SavingNeverRaisesTrust) {
   EXPECT_EQ(incoming.security.trust, TrustLevel::CASUAL);
 }
 
+// ---- Secret steps (S7) ----------------------------------------------------
+
+TEST(AutomationSecurityTest, MarkStepSecretDropsValueKeepsExtra) {
+  Step s = MakeStep(StepType::TYPE, "#pw", "hunter2");
+  base::DictValue extra;
+  extra.Set("text", "Password");
+  s.extra = base::Value(std::move(extra));
+  AutomationSecurity::MarkStepSecret(s, FieldKind::kPassword, "example.com");
+  EXPECT_TRUE(s.value.empty());
+  ASSERT_TRUE(s.extra.is_dict());
+  EXPECT_EQ(*s.extra.GetDict().FindString(kSecretKey), kSecretVault);
+  EXPECT_EQ(*s.extra.GetDict().FindString(kSecretKindKey), "password");
+  EXPECT_EQ(*s.extra.GetDict().FindString(kSecretHostKey), "example.com");
+  EXPECT_EQ(*s.extra.GetDict().FindString("text"), "Password");
+  EXPECT_EQ(AutomationSecurity::SecretStepKind(s), FieldKind::kPassword);
+
+  Step card = MakeStep(StepType::TYPE, "#cc");
+  AutomationSecurity::MarkStepSecret(card, FieldKind::kPaymentCard, "");
+  EXPECT_EQ(AutomationSecurity::SecretStepKind(card), FieldKind::kPaymentCard);
+  EXPECT_EQ(card.extra.GetDict().FindString(kSecretHostKey), nullptr);
+
+  EXPECT_EQ(AutomationSecurity::SecretStepKind(MakeStep(StepType::TYPE, "#q")),
+            FieldKind::kOrdinary);
+}
+
+base::DictValue TypeStepJson(std::string target,
+                             std::string value,
+                             std::string description) {
+  base::DictValue d;
+  d.Set("type", "type");
+  d.Set("target", target);
+  d.Set("value", value);
+  d.Set("description", description);
+  return d;
+}
+
+TEST(AutomationSecurityTest, ScrubMigratesLegacyPasswordSteps) {
+  base::DictValue script;
+  base::ListValue steps;
+  // Old recorder: masked description, real password in "value".
+  base::DictValue legacy = TypeStepJson(
+      "#f2", "hunter2",
+      "Type \"\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2"
+      "\xE2\x80\xA2\" in the \"Password\" field");
+  base::DictValue extra;
+  extra.Set("host", "accounts.example.com");
+  legacy.Set("extra", std::move(extra));
+  steps.Append(std::move(legacy));
+  // Selector names the password field; description quotes the value.
+  steps.Append(TypeStepJson("[name=\"passwd\"]", "s3cret!",
+                            "Type \"s3cret!\" in the field"));
+  // Ordinary field: untouched.
+  steps.Append(TypeStepJson("#q", "flights to bali", "Type a query"));
+  script.Set("steps", std::move(steps));
+
+  base::DictValue stats;
+  base::ListValue history;
+  base::DictValue run;
+  base::ListValue run_steps;
+  run_steps.Append(base::DictValue().Set("desc", "Type \"s3cret!\" in the field"));
+  run_steps.Append(base::DictValue().Set("desc", "Type a query"));
+  run.Set("steps", std::move(run_steps));
+  history.Append(std::move(run));
+  stats.Set("run_history", std::move(history));
+  script.Set("stats", std::move(stats));
+
+  ASSERT_TRUE(AutomationSecurity::ScrubPlaintextSecrets(script));
+
+  const base::ListValue& out = *script.FindList("steps");
+  const base::DictValue& s0 = out[0].GetDict();
+  EXPECT_EQ(s0.FindString("value"), nullptr);
+  EXPECT_EQ(*s0.FindDict("extra")->FindString(kSecretKey), kSecretVault);
+  EXPECT_EQ(*s0.FindDict("extra")->FindString(kSecretKindKey), "password");
+  EXPECT_EQ(*s0.FindDict("extra")->FindString(kSecretHostKey),
+            "accounts.example.com");
+
+  const base::DictValue& s1 = out[1].GetDict();
+  EXPECT_EQ(s1.FindString("value"), nullptr);
+  EXPECT_EQ(s1.FindString("description")->find("s3cret!"), std::string::npos);
+
+  const base::DictValue& s2 = out[2].GetDict();
+  EXPECT_EQ(*s2.FindString("value"), "flights to bali");
+  EXPECT_EQ(s2.FindDict("extra"), nullptr);
+
+  const base::ListValue& hist_steps = *script.FindDict("stats")
+                                           ->FindList("run_history")
+                                           ->operator[](0)
+                                           .GetDict()
+                                           .FindList("steps");
+  EXPECT_EQ(*hist_steps[0].GetDict().FindString("desc"), "[redacted]");
+  EXPECT_EQ(*hist_steps[1].GetDict().FindString("desc"), "Type a query");
+
+  // Idempotent: a second pass finds nothing left to remove.
+  EXPECT_FALSE(AutomationSecurity::ScrubPlaintextSecrets(script));
+}
+
+TEST(AutomationSecurityTest, ScrubDropsValueFromAlreadySecretStep) {
+  base::DictValue script;
+  base::ListValue steps;
+  base::DictValue step = TypeStepJson("#f9", "typed-in-editor", "Fill password");
+  base::DictValue extra;
+  extra.Set(kSecretKey, kSecretVault);
+  extra.Set(kSecretKindKey, "password");
+  step.Set("extra", std::move(extra));
+  steps.Append(std::move(step));
+  script.Set("steps", std::move(steps));
+  EXPECT_TRUE(AutomationSecurity::ScrubPlaintextSecrets(script));
+  EXPECT_EQ(script.FindList("steps")->operator[](0).GetDict().FindString(
+                "value"),
+            nullptr);
+}
+
+TEST(AutomationSecurityTest, ScrubLeavesOrdinaryScriptsAlone) {
+  base::DictValue script;
+  base::ListValue steps;
+  steps.Append(TypeStepJson("#email", "me@example.com", "Type email"));
+  steps.Append(base::DictValue().Set("type", "click").Set("target", "#pwd"));
+  script.Set("steps", std::move(steps));
+  EXPECT_FALSE(AutomationSecurity::ScrubPlaintextSecrets(script));
+  base::DictValue empty;
+  EXPECT_FALSE(AutomationSecurity::ScrubPlaintextSecrets(empty));
+}
+
 }  // namespace
 }  // namespace automation
 }  // namespace molt_ai

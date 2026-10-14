@@ -17,6 +17,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -177,6 +178,17 @@ class AutomationRunner {
                     bool ask_before_sensitive,
                     agent_safety::ElementProbe probe);
   void TypeInto(const std::string& sel, const std::string& value);
+
+  // Secret (vault) TYPE steps — see kSecretKey in automation_security.h.
+  // The password is looked up off the UI thread by the EXACT host of the
+  // page being filled and only ever written into a type=password field on
+  // that same host.
+  void OnSecretTargetResolved(const std::string& sel);
+  void OnSecretTargetProbed(const std::string& sel,
+                            agent_safety::ElementProbe probe);
+  void OnVaultPassword(const std::string& sel,
+                       const std::string& host,
+                       std::optional<std::string> password);
   // RUN_SCRIPT: inline-expand a child script's steps into the current
   // script_.steps vector at current_index_ + 1, then continue.
   void DoRunScript(const Step& s);
@@ -199,6 +211,9 @@ class AutomationRunner {
   // OnStepFinished.
   void ArmStepTimeout(const Step& s);
   void OnStepTimeout();
+  // Re-arms the current step's timeout to |budget| from now, for steps that
+  // legitimately wait longer (an OS keychain prompt, LLM inference).
+  void ExtendStepTimeout(base::TimeDelta budget);
 
   // Resolve {{variable}} placeholders in |raw| using current variables_.
   std::string Resolve(const std::string& raw) const;

@@ -70,11 +70,13 @@ FieldKind FieldKindFromString(std::string_view name);
 // "one-time code").
 std::string_view FieldKindLabel(FieldKind kind);
 
-// Heuristic for data recorded before field kinds were captured: true when a
-// CSS selector clearly names a password / card / one-time-code control, e.g.
-// `#password`, `[name="passwd"]`, `input[type="password"]`,
-// `[autocomplete="cc-number"]`. Deliberately narrow (whole identifier
-// tokens) so `#forgot-password-email` or `#passenger` do not match.
+// Heuristic for data recorded before field kinds were captured: the kind of
+// field a CSS selector clearly names, e.g. `#password`, `[name="passwd"]`,
+// `input[type="password"]` -> kPassword, `[autocomplete="cc-number"]`,
+// `#cvv` -> kPaymentCard, `#otp` -> kOneTimeCode. Deliberately narrow (whole
+// identifier tokens) so `#forgot-password-email` or `#passenger` do not
+// match.
+FieldKind ClassifySelector(std::string_view selector);
 bool SelectorLooksSensitive(std::string_view selector);
 
 // ---------------------------------------------------------------------------

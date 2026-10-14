@@ -61,6 +61,17 @@ void AddUnique(std::vector<std::string>& list, std::string item) {
     list.push_back(std::move(item));
 }
 
+// The old recorder masked the description of a type=password step with
+// this (while still storing the real value).
+constexpr char kLegacyPasswordMask[] = "\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2";  // "•••"
+
+// What a scrubbed step / run-history entry is described as.
+std::string SecretStepDescription(agent_safety::FieldKind kind) {
+  return kind == agent_safety::FieldKind::kPassword
+             ? "Fill your saved password"
+             : "Enter the " + std::string(agent_safety::FieldKindLabel(kind));
+}
+
 bool DomainMatchesWhitelist(const std::vector<std::string>& whitelist,
                              std::string_view host) {
   std::string h = base::ToLowerASCII(host);
@@ -194,6 +205,131 @@ void AutomationSecurity::ClampTrustForSave(Script& incoming,
                                            const Script* existing) {
   incoming.security.trust =
       existing ? existing->security.trust : TrustLevel::CASUAL;
+}
+
+// static
+void AutomationSecurity::MarkStepSecret(Step& step,
+                                        agent_safety::FieldKind kind,
+                                        std::string_view host) {
+  step.value.clear();
+  base::DictValue extra =
+      step.extra.is_dict() ? step.extra.GetDict().Clone() : base::DictValue();
+  extra.Set(kSecretKey, kSecretVault);
+  extra.Set(kSecretKindKey, agent_safety::FieldKindToString(kind));
+  if (!host.empty())
+    extra.Set(kSecretHostKey, host);
+  step.extra = base::Value(std::move(extra));
+}
+
+// static
+agent_safety::FieldKind AutomationSecurity::SecretStepKind(const Step& step) {
+  if (step.type != StepType::TYPE || !step.extra.is_dict())
+    return agent_safety::FieldKind::kOrdinary;
+  const base::DictValue& extra = step.extra.GetDict();
+  if (!extra.FindString(kSecretKey))
+    return agent_safety::FieldKind::kOrdinary;
+  const std::string* kind = extra.FindString(kSecretKindKey);
+  agent_safety::FieldKind k = agent_safety::FieldKindFromString(
+      kind ? std::string_view(*kind) : std::string_view());
+  // A secret step of unknown kind is treated as a password.
+  return agent_safety::IsSensitive(k) ? k : agent_safety::FieldKind::kPassword;
+}
+
+// static
+bool AutomationSecurity::ScrubPlaintextSecrets(base::DictValue& script_json) {
+  base::ListValue* steps = script_json.FindList("steps");
+  if (!steps)
+    return false;
+  std::vector<std::string> removed_values;
+  for (base::Value& v : *steps) {
+    if (!v.is_dict())
+      continue;
+    base::DictValue& d = v.GetDict();
+    const std::string* type = d.FindString("type");
+    const std::string* value = d.FindString("value");
+    if (!type || *type != "type" || !value || value->empty())
+      continue;
+
+    agent_safety::FieldKind kind = agent_safety::FieldKind::kOrdinary;
+    std::string host;
+    if (const base::DictValue* extra = d.FindDict("extra")) {
+      if (extra->FindString(kSecretKey)) {
+        const std::string* k = extra->FindString(kSecretKindKey);
+        kind = agent_safety::FieldKindFromString(
+            k ? std::string_view(*k) : std::string_view());
+        if (!agent_safety::IsSensitive(kind))
+          kind = agent_safety::FieldKind::kPassword;
+      }
+      if (const std::string* h = extra->FindString(kStepHostKey))
+        host = *h;
+    }
+    const std::string* desc = d.FindString("description");
+    if (kind == agent_safety::FieldKind::kOrdinary && desc &&
+        desc->find(kLegacyPasswordMask) != std::string::npos) {
+      kind = agent_safety::FieldKind::kPassword;
+    }
+    if (kind == agent_safety::FieldKind::kOrdinary) {
+      if (const std::string* target = d.FindString("target"))
+        kind = agent_safety::ClassifySelector(*target);
+    }
+    if (kind == agent_safety::FieldKind::kOrdinary) {
+      if (const base::ListValue* fallbacks = d.FindList("selector_fallbacks")) {
+        for (const base::Value& f : *fallbacks) {
+          if (!f.is_string())
+            continue;
+          kind = agent_safety::ClassifySelector(f.GetString());
+          if (agent_safety::IsSensitive(kind))
+            break;
+        }
+      }
+    }
+    if (!agent_safety::IsSensitive(kind))
+      continue;
+
+    const std::string secret = *value;
+    removed_values.push_back(secret);
+    if (desc && desc->find(secret) != std::string::npos)
+      d.Set("description", SecretStepDescription(kind));
+    d.Remove("value");
+    base::DictValue extra =
+        d.FindDict("extra") ? d.FindDict("extra")->Clone() : base::DictValue();
+    extra.Set(kSecretKey, kSecretVault);
+    extra.Set(kSecretKindKey, agent_safety::FieldKindToString(kind));
+    if (!host.empty() && !extra.FindString(kSecretHostKey))
+      extra.Set(kSecretHostKey, host);
+    d.Set("extra", std::move(extra));
+  }
+  if (removed_values.empty())
+    return false;
+
+  // Run history stores each step's resolved description ("desc"); redact
+  // any that quoted a removed value. Very short values are skipped so a
+  // one-character "secret" doesn't blank unrelated entries.
+  if (base::DictValue* stats = script_json.FindDict("stats")) {
+    if (base::ListValue* history = stats->FindList("run_history")) {
+      for (base::Value& run : *history) {
+        if (!run.is_dict())
+          continue;
+        base::ListValue* run_steps = run.GetDict().FindList("steps");
+        if (!run_steps)
+          continue;
+        for (base::Value& rs : *run_steps) {
+          if (!rs.is_dict())
+            continue;
+          const std::string* desc = rs.GetDict().FindString("desc");
+          if (!desc)
+            continue;
+          for (const std::string& secret : removed_values) {
+            if (secret.size() >= 3 && desc->find(secret) != std::string::npos) {
+              rs.GetDict().Set("desc", "[redacted]");
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  return true;
 }
 
 TrustLevel AutomationSecurity::ConsiderPromotion(TrustLevel current,

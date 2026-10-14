@@ -256,7 +256,7 @@ std::string_view FieldKindLabel(FieldKind kind) {
   return "form";
 }
 
-bool SelectorLooksSensitive(std::string_view selector) {
+FieldKind ClassifySelector(std::string_view selector) {
   // Tokenize into CSS identifier-ish runs ([a-z0-9_-]) so attribute names,
   // ids, classes and quoted attribute values each become one token.
   const std::string lower = ToLower(selector);
@@ -279,19 +279,23 @@ bool SelectorLooksSensitive(std::string_view selector) {
     // Passwords: `password`, `passwd`, `pwd`, `user_password`,
     // `loginpasswd`, `current-password`, `new-password`.
     if (t == "pwd" || EndsWith(t, "password") || EndsWith(t, "passwd"))
-      return true;
+      return FieldKind::kPassword;
     // Payment cards: autocomplete tokens (cc-number, cc-csc, cc-exp...)
     // and the common field names.
     if (StartsWith(t, "cc-") || t == "cardnumber" || t == "card-number" ||
         t == "card_number" || t == "creditcard" || t == "credit-card" ||
         t == "cvv" || t == "cvc") {
-      return true;
+      return FieldKind::kPaymentCard;
     }
     // One-time codes.
     if (t == "one-time-code" || t == "otp")
-      return true;
+      return FieldKind::kOneTimeCode;
   }
-  return false;
+  return FieldKind::kOrdinary;
+}
+
+bool SelectorLooksSensitive(std::string_view selector) {
+  return IsSensitive(ClassifySelector(selector));
 }
 
 // ---------------------------------------------------------------------------

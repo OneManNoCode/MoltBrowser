@@ -22,6 +22,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
@@ -109,6 +110,26 @@ const char kTypeIntoJSTemplate[] =
       const native = Object.getOwnPropertyDescriptor(
           el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
                                      : HTMLInputElement.prototype, 'value');
+      if (native && native.set) native.set.call(el, %s);
+      else el.value = %s;
+      el.dispatchEvent(new Event('input',  {bubbles: true}));
+      el.dispatchEvent(new Event('change', {bubbles: true}));
+      return true;
+    })())";
+
+// Fill a saved (vault) password. Refuses unless the element is still a
+// type=password input on the expected host, checked in the same script as
+// the write so a swapped field or a navigation in between is caught.
+// Args: selector, expected location.hostname, password (x2).
+const char kFillPasswordJSTemplate[] =
+    R"((() => {
+      const el = document.querySelector(%s);
+      if (!el || el.type !== 'password' || location.hostname !== %s)
+        return false;
+      el.scrollIntoView({block: 'center'});
+      el.focus();
+      const native =
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
       if (native && native.set) native.set.call(el, %s);
       else el.value = %s;
       el.dispatchEvent(new Event('input',  {bubbles: true}));
@@ -224,6 +245,27 @@ constexpr char kTrustAdvice[] =
 bool AsksBeforeSensitive(const Step& s) {
   return s.extra.is_dict() &&
          s.extra.GetDict().FindBool(kAskBeforeSensitiveKey).value_or(false);
+}
+
+// Runs on a MayBlock worker: VaultStore reads ~/.moltbrowser/vault.enc and
+// decrypting may wait on the OS keychain. Returns the most recently used
+// password whose site_host is exactly |host| — no subdomain / suffix
+// matching, unlike VaultStore::FindForHost. Read-only.
+std::optional<std::string> LookupVaultPassword(const std::string& host) {
+  vault::VaultStore store;
+  std::optional<std::string> password;
+  int64_t best_used = -1;
+  for (const vault::VaultEntry& e : store.List()) {
+    if (e.password.empty() ||
+        !base::EqualsCaseInsensitiveASCII(e.site_host, host)) {
+      continue;
+    }
+    if (e.last_used_unix > best_used) {
+      best_used = e.last_used_unix;
+      password = e.password;
+    }
+  }
+  return password;
 }
 
 // Encode |bitmap| to PNG and write it to |path|. Runs on a MayBlock pool
@@ -604,6 +646,14 @@ void AutomationRunner::ArmStepTimeout(const Step& s) {
   int ms = s.timeout_ms > 0 ? s.timeout_ms : 5000;
   step_timeout_timer_.Start(
       FROM_HERE, base::Milliseconds(ms),
+      base::BindOnce(&AutomationRunner::OnStepTimeout,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::ExtendStepTimeout(base::TimeDelta budget) {
+  step_timeout_timer_.Stop();
+  step_timeout_timer_.Start(
+      FROM_HERE, budget,
       base::BindOnce(&AutomationRunner::OnStepTimeout,
                      weak_factory_.GetWeakPtr()));
 }
@@ -1207,6 +1257,20 @@ void AutomationRunner::ClickNow(const std::string& sel) {
 }
 
 void AutomationRunner::DoType(const Step& s) {
+  const agent_safety::FieldKind secret = AutomationSecurity::SecretStepKind(s);
+  if (secret == agent_safety::FieldKind::kPassword) {
+    ResolveSelector(s,
+                    base::BindOnce(&AutomationRunner::OnSecretTargetResolved,
+                                   weak_factory_.GetWeakPtr()));
+    return;
+  }
+  if (agent_safety::IsSensitive(secret)) {
+    BlockStep("This step enters a " +
+              std::string(agent_safety::FieldKindLabel(secret)) +
+              ", which MoltBrowser never saves, so it cannot be replayed. "
+              "Remove the step, or enter it yourself and run the rest.");
+    return;
+  }
   ResolveSelector(s, base::BindOnce(&AutomationRunner::OnTypeTargetResolved,
                                     weak_factory_.GetWeakPtr(),
                                     Resolve(s.value), AsksBeforeSensitive(s)));
@@ -1260,6 +1324,73 @@ void AutomationRunner::TypeInto(const std::string& sel,
                    if (!self) return;
                    self->OnStepFinished(v.is_bool() && v.GetBool(),
                                         "Typed text");
+                 },
+                 weak_factory_.GetWeakPtr()));
+}
+
+void AutomationRunner::OnSecretTargetResolved(const std::string& sel) {
+  if (sel.empty()) {
+    OnStepFinished(false, "Password field not found");
+    return;
+  }
+  ProbeElement(sel, base::BindOnce(&AutomationRunner::OnSecretTargetProbed,
+                                   weak_factory_.GetWeakPtr(), sel));
+}
+
+void AutomationRunner::OnSecretTargetProbed(const std::string& sel,
+                                            agent_safety::ElementProbe probe) {
+  if (!probe.found) {
+    OnStepFinished(false, "Password field not found");
+    return;
+  }
+  if (probe.field_kind != agent_safety::FieldKind::kPassword) {
+    BlockStep("Not filling the saved password: the recorded password field "
+              "now matches a field that is not a password field.");
+    return;
+  }
+  if (!security_.AllowSensitiveField(policy_,
+                                     agent_safety::FieldKind::kPassword)) {
+    BlockStep("Blocked by this workflow's security policy: filling a saved "
+              "password." + std::string(kTrustAdvice));
+    return;
+  }
+  const GURL page =
+      target_contents_ ? target_contents_->GetLastCommittedURL() : GURL();
+  if (!page.SchemeIsHTTPOrHTTPS() || page.host().empty()) {
+    BlockStep("Not filling the saved password: this is not an http(s) page.");
+    return;
+  }
+  std::string host(page.host());
+  // Decrypting the vault can wait on an OS keychain prompt.
+  ExtendStepTimeout(base::Seconds(60));
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&LookupVaultPassword, host),
+      base::BindOnce(&AutomationRunner::OnVaultPassword,
+                     weak_factory_.GetWeakPtr(), sel, host));
+}
+
+void AutomationRunner::OnVaultPassword(const std::string& sel,
+                                       const std::string& host,
+                                       std::optional<std::string> password) {
+  if (!password) {
+    BlockStep("No saved password for " + host +
+              " in the MoltBrowser vault. Add one with \"/vault add\" in the "
+              "AI chat, then run the workflow again.");
+    return;
+  }
+  std::string pw_js = JSQuote(*password);
+  std::string js = base::StringPrintf(kFillPasswordJSTemplate,
+                                      JSQuote(sel).c_str(),
+                                      JSQuote(host).c_str(), pw_js.c_str(),
+                                      pw_js.c_str());
+  EvalJS(js, base::BindOnce(
+                 [](base::WeakPtr<AutomationRunner> self, base::Value v) {
+                   if (!self) return;
+                   bool ok = v.is_bool() && v.GetBool();
+                   // Never put the password (or its length) in a note.
+                   self->OnStepFinished(ok, ok ? "Filled saved password"
+                                               : "Password field changed");
                  },
                  weak_factory_.GetWeakPtr()));
 }

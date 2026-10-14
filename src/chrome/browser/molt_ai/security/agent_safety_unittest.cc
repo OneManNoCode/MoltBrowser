@@ -127,6 +127,15 @@ TEST(AgentSafetyTest, SelectorHeuristicMatchesCredentialControls) {
   EXPECT_TRUE(SelectorLooksSensitive("[autocomplete=one-time-code]"));
 }
 
+TEST(AgentSafetyTest, SelectorHeuristicReportsKind) {
+  EXPECT_EQ(ClassifySelector("#login [name=\"password\"]"),
+            FieldKind::kPassword);
+  EXPECT_EQ(ClassifySelector("[autocomplete=\"cc-csc\"]"),
+            FieldKind::kPaymentCard);
+  EXPECT_EQ(ClassifySelector("#otp"), FieldKind::kOneTimeCode);
+  EXPECT_EQ(ClassifySelector("#email"), FieldKind::kOrdinary);
+}
+
 TEST(AgentSafetyTest, SelectorHeuristicIgnoresLookalikes) {
   EXPECT_FALSE(SelectorLooksSensitive("#forgot-password-email"));
   EXPECT_FALSE(SelectorLooksSensitive("#passenger-name"));
