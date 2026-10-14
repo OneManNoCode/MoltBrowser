@@ -1,0 +1,31 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Std-only building blocks of the on-device runtime (context budgeting,
+# streaming output filters, prompt helpers). The runtime itself is
+# //chrome/browser/molt_ai:molt_ai_runtime, which depends on this.
+
+source_set("inference_utils") {
+  sources = [
+    "context_budget.cc",
+    "context_budget.h",
+    "prompt_utils.cc",
+    "prompt_utils.h",
+    "stream_filters.cc",
+    "stream_filters.h",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "context_budget_unittest.cc",
+    "prompt_utils_unittest.cc",
+    "stream_filters_unittest.cc",
+  ]
+  deps = [
+    ":inference_utils",
+    "//testing/gtest",
+  ]
+}
