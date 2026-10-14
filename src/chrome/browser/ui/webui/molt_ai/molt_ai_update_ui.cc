@@ -8,6 +8,7 @@
 
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/molt_ai/update/update_manager.h"
@@ -31,6 +32,8 @@ std::string StateToString(molt_ai::UpdateState s) {
       return "available";
     case molt_ai::UpdateState::kDownloading:
       return "downloading";
+    case molt_ai::UpdateState::kVerifying:
+      return "verifying";
     case molt_ai::UpdateState::kDownloaded:
       return "downloaded";
     case molt_ai::UpdateState::kInstalling:
@@ -43,6 +46,15 @@ std::string StateToString(molt_ai::UpdateState s) {
   return "idle";
 }
 
+// Only links to this project's own releases are ever shown.
+std::string OfficialReleaseUrl(const std::string& url) {
+  return base::StartsWith(url,
+                          "https://github.com/OneManNoCode/MoltBrowser/releases/",
+                          base::CompareCase::SENSITIVE)
+             ? url
+             : std::string();
+}
+
 base::DictValue BuildStateDict() {
   molt_ai::UpdateManager* mgr = molt_ai::UpdateManager::Get();
   base::DictValue d;
@@ -50,11 +62,13 @@ base::DictValue BuildStateDict() {
   d.Set("current_version", mgr->current_version());
   d.Set("latest_version", mgr->latest_version());
   d.Set("release_notes", mgr->release_notes());
-  d.Set("release_url", mgr->release_url());
+  d.Set("release_url", OfficialReleaseUrl(mgr->release_url()));
   d.Set("error", mgr->error());
   d.Set("percent", mgr->download_percent());
   d.Set("auto_update", mgr->auto_update());
   d.Set("update_available", mgr->update_available());
+  d.Set("can_auto_install", mgr->can_install_automatically());
+  d.Set("signature_verified", mgr->signature_verified());
   return d;
 }
 
@@ -108,7 +122,9 @@ class MoltAIUpdateHandler : public content::WebUIMessageHandler,
  private:
   void HandleGetState(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (args.empty() || !args[0].is_string()) {
+      return;
+    }
     const std::string callback_id = args[0].GetString();
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(BuildStateDict()));
@@ -143,41 +159,9 @@ class MoltAIUpdateHandler : public content::WebUIMessageHandler,
   }
 };
 
-// ---- Data source ----
-class MoltAIUpdateDataSource : public content::URLDataSource {
- public:
-  MoltAIUpdateDataSource() = default;
-  ~MoltAIUpdateDataSource() override = default;
-
-  std::string GetSource() override {
-    return chrome::kChromeUIMoltAIUpdateHost;
-  }
-
-  std::string GetMimeType(const GURL& url) override { return "text/html"; }
-
-  std::string GetContentSecurityPolicy(
-      const network::mojom::CSPDirectiveName directive) override {
-    if (directive == network::mojom::CSPDirectiveName::ScriptSrc) {
-      return "script-src chrome://resources 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::StyleSrc) {
-      return "style-src 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::TrustedTypes) {
-      return "";
-    }
-    if (directive ==
-        network::mojom::CSPDirectiveName::RequireTrustedTypesFor) {
-      return "";
-    }
-    return content::URLDataSource::GetContentSecurityPolicy(directive);
-  }
-
-  void StartDataRequest(
-      const GURL& url,
-      const content::WebContents::Getter& wc_getter,
-      content::URLDataSource::GotDataCallback callback) override {
-    const std::string html = R"HTML(<!DOCTYPE html>
+// ---- Page resources ----
+// Static markup; all behaviour lives in app.js below.
+constexpr char kUpdatePageHtml[] = R"HTML(<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -216,6 +200,7 @@ class MoltAIUpdateDataSource : public content::URLDataSource {
   .toggle input { width:18px; height:18px; accent-color:#6d5cff; }
   a { color:#9a8cff; }
   .muted { color:#8a8a92; font-size:12px; margin-top:10px; }
+  .ok { color:#4ade80; font-size:13px; margin-top:10px; display:none; }
 </style>
 </head>
 <body>
@@ -238,18 +223,19 @@ class MoltAIUpdateDataSource : public content::URLDataSource {
 
     <div id="status">Checking for updates&hellip;</div>
     <div class="bar" id="bar"><div id="barfill"></div></div>
+    <div class="ok" id="verified">&#10003; Signature verified: this update is signed by MoltBrowser&rsquo;s release key.</div>
     <div id="notes"></div>
 
     <div class="btns">
-      <button class="ghost" id="checkBtn" onclick="doCheck()">Check for updates</button>
-      <button class="primary" id="actionBtn" onclick="doAction()" disabled>Update now</button>
+      <button class="ghost" id="checkBtn">Check for updates</button>
+      <button class="primary" id="actionBtn" disabled>Update now</button>
     </div>
     <div class="muted" id="rellink"></div>
   </div>
 
   <div class="panel">
     <label class="toggle">
-      <input type="checkbox" id="autoUpdate" checked onchange="setAuto()">
+      <input type="checkbox" id="autoUpdate" checked>
       <span>Download &amp; install updates automatically</span>
     </label>
     <div class="muted">When on, MoltBrowser downloads new versions in the
@@ -257,7 +243,14 @@ class MoltAIUpdateDataSource : public content::URLDataSource {
   </div>
 </div>
 
-<script>
+<script src="app.js"></script>
+</body>
+</html>)HTML";
+
+constexpr char kUpdatePageJs[] = R"JS(// MoltBrowser Software Update page. Served as a separate resource so the
+// page runs under a strict CSP (no inline script) with Trusted Types
+// enforced: it only ever writes text, never HTML.
+'use strict';
 var idCounter = 0, pendingCbs = {};
 function sendWithPromise(method) {
   var args = Array.prototype.slice.call(arguments, 1);
@@ -271,11 +264,7 @@ window.cr = window.cr || {};
 cr.webUIResponse = function(id, ok, resp) {
   var cb = pendingCbs[id]; if (cb) { delete pendingCbs[id]; ok ? cb.resolve(resp) : cb.reject(resp); }
 };
-// C++ FireWebUIListener(event, v) invokes cr.webUIListenerCallback — register
-// handlers into a map it reads. (The previous document-event polyfill was
-// wrong: FireWebUIListener does NOT dispatch DOM events, so 'update-state'
-// pushes never arrived and "Check for updates" appeared to do nothing — the
-// page only ever populated from the initial getUpdateState promise.)
+// C++ FireWebUIListener(event, v) invokes cr.webUIListenerCallback.
 var webUIListeners = {};
 cr.addWebUIListener = function(event, fn) {
   (webUIListeners[event] = webUIListeners[event] || []).push(fn);
@@ -287,32 +276,47 @@ cr.webUIListenerCallback = function(event) {
 };
 
 var lastState = 'idle';
+var lastReleaseUrl = '';
+var canAutoInstall = true;
+
+function $(id) { return document.getElementById(id); }
 
 function doCheck() { chrome.send('updateCheck'); }
-function setAuto() {
-  chrome.send('updateSetAuto', [document.getElementById('autoUpdate').checked]);
-}
+function setAuto() { chrome.send('updateSetAuto', [$('autoUpdate').checked]); }
 function doAction() {
   if (lastState === 'downloaded') { chrome.send('updateInstall'); }
+  else if (!canAutoInstall && lastReleaseUrl) { window.open(lastReleaseUrl, '_blank'); }
   else { chrome.send('updateDownload'); }
+}
+
+function setReleaseLink(url) {
+  var rel = $('rellink');
+  rel.replaceChildren();
+  lastReleaseUrl = '';
+  if (url && url.indexOf('https://github.com/OneManNoCode/MoltBrowser/releases/') === 0) {
+    lastReleaseUrl = url;
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'View release on GitHub';
+    rel.appendChild(a);
+  }
 }
 
 function render(s) {
   lastState = s.state;
-  document.getElementById('current').textContent = s.current_version || '—';
-  document.getElementById('latest').textContent = s.latest_version || '—';
-  document.getElementById('autoUpdate').checked = !!s.auto_update;
+  canAutoInstall = s.can_auto_install !== false;
+  $('current').textContent = s.current_version || '—';
+  $('latest').textContent = s.latest_version || '—';
+  $('autoUpdate').checked = !!s.auto_update;
 
-  var badge = document.getElementById('badge');
-  var status = document.getElementById('status');
-  var action = document.getElementById('actionBtn');
-  var checkBtn = document.getElementById('checkBtn');
-  var bar = document.getElementById('bar');
-  var fill = document.getElementById('barfill');
-  var notes = document.getElementById('notes');
-  var rel = document.getElementById('rellink');
+  var badge = $('badge'), status = $('status'), action = $('actionBtn');
+  var checkBtn = $('checkBtn'), bar = $('bar'), fill = $('barfill');
+  var notes = $('notes'), verified = $('verified');
 
   bar.style.display = 'none';
+  verified.style.display = 'none';
   action.disabled = true;
   checkBtn.disabled = false;
   var bg = '#1f2430', fg = '#9aa4b2', label = 'Idle';
@@ -325,13 +329,18 @@ function render(s) {
     status.textContent = 'You’re running the latest version.';
   } else if (s.state === 'available') {
     bg = '#2a2410'; fg = '#fbbf24'; label = 'Update available';
-    status.textContent = 'Version ' + s.latest_version + ' is available.';
-    action.textContent = 'Download & install'; action.disabled = false;
+    status.textContent = s.error ||
+      ('Version ' + s.latest_version + ' is available.');
+    action.textContent = canAutoInstall ? 'Download & install' : 'Open release page';
+    action.disabled = !canAutoInstall && !s.release_url;
   } else if (s.state === 'downloading') {
     bg = '#1a2233'; fg = '#7aa2ff'; label = 'Downloading';
     status.textContent = 'Downloading version ' + s.latest_version + '…';
     bar.style.display = 'block';
     fill.style.width = (s.percent >= 0 ? s.percent : 30) + '%';
+  } else if (s.state === 'verifying') {
+    bg = '#1a2233'; fg = '#7aa2ff'; label = 'Verifying';
+    status.textContent = 'Checking the download against MoltBrowser’s signed release manifest…';
   } else if (s.state === 'downloaded') {
     bg = '#15301f'; fg = '#4ade80'; label = 'Ready to install';
     status.textContent = 'Version ' + s.latest_version +
@@ -342,14 +351,15 @@ function render(s) {
     checkBtn.disabled = true;
   } else if (s.state === 'checkfailed') {
     // Soft state: the version CHECK didn't complete (offline / rate limit).
-    // Nothing is broken and it retries automatically — so no red alarm.
     bg = '#2a2410'; fg = '#fbbf24'; label = "Couldn't check";
     status.textContent = s.error ||
       "Couldn't check for updates — we'll retry automatically.";
   } else if (s.state === 'error') {
     bg = '#311616'; fg = '#f87171'; label = 'Error';
     status.textContent = s.error || 'Update failed.';
-    if (s.update_available) { action.textContent = 'Retry'; action.disabled = false; }
+  }
+  if (s.signature_verified && (s.state === 'downloaded' || s.state === 'installing')) {
+    verified.style.display = 'block';
   }
   badge.style.background = bg; badge.style.color = fg; badge.textContent = label;
 
@@ -357,20 +367,61 @@ function render(s) {
     notes.style.display = 'block'; notes.textContent = s.release_notes;
   } else { notes.style.display = 'none'; }
 
-  rel.innerHTML = s.release_url ?
-    ('<a href="' + s.release_url + '" target="_blank">View release on GitHub</a>') : '';
+  setReleaseLink(s.release_url);
 }
 
+$('checkBtn').addEventListener('click', doCheck);
+$('actionBtn').addEventListener('click', doAction);
+$('autoUpdate').addEventListener('change', setAuto);
 cr.addWebUIListener('update-state', render);
 sendWithPromise('updateGetState').then(render);
 // Kick a fresh check whenever the page is opened.
 chrome.send('updateCheck');
-</script>
-</body>
-</html>)HTML";
+)JS";
 
+// ---- Data source ----
+class MoltAIUpdateDataSource : public content::URLDataSource {
+ public:
+  MoltAIUpdateDataSource() = default;
+  ~MoltAIUpdateDataSource() override = default;
+
+  std::string GetSource() override {
+    return chrome::kChromeUIMoltAIUpdateHost;
+  }
+
+  std::string GetMimeType(const GURL& url) override {
+    return url.path() == "/app.js" ? "text/javascript" : "text/html";
+  }
+
+  // Strict CSP: script only from this origin (app.js), no inline script,
+  // and Trusted Types enforced with no policies (the page never writes
+  // HTML). Inline styles stay allowed.
+  std::string GetContentSecurityPolicy(
+      const network::mojom::CSPDirectiveName directive) override {
+    if (directive == network::mojom::CSPDirectiveName::ScriptSrc) {
+      return "script-src 'self';";
+    }
+    if (directive == network::mojom::CSPDirectiveName::StyleSrc) {
+      return "style-src 'self' 'unsafe-inline';";
+    }
+    if (directive == network::mojom::CSPDirectiveName::TrustedTypes) {
+      return "trusted-types;";
+    }
+    if (directive ==
+        network::mojom::CSPDirectiveName::RequireTrustedTypesFor) {
+      return "require-trusted-types-for 'script';";
+    }
+    return content::URLDataSource::GetContentSecurityPolicy(directive);
+  }
+
+  void StartDataRequest(
+      const GURL& url,
+      const content::WebContents::Getter& wc_getter,
+      content::URLDataSource::GotDataCallback callback) override {
+    std::string data = url.path() == "/app.js" ? std::string(kUpdatePageJs)
+                                                : std::string(kUpdatePageHtml);
     std::move(callback).Run(
-        base::MakeRefCounted<base::RefCountedString>(std::move(html)));
+        base::MakeRefCounted<base::RefCountedString>(std::move(data)));
   }
 
   bool ShouldReplaceExistingSource() override { return true; }

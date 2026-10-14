@@ -219,79 +219,39 @@ source_set("molt_shield") {
   ]
 }
 
-# Auto-update — platform-specific implementations
-if (is_mac) {
-  source_set("molt_update_mac") {
-    sources = [
-      "update/sparkle_integration.h",
-      "update/sparkle_integration.mm",
-    ]
-
-    configs -= [ "//build/config/compiler:enable_arc" ]
-    configs += [ "//build/config/compiler:enable_arc" ]
-
-    deps = [
-      "//base",
-    ]
-
-    frameworks = [
-      "Foundation.framework",
-    ]
-  }
-}
-
-if (is_win) {
-  source_set("molt_update_win") {
-    sources = [
-      "update/winsparkle_integration.h",
-      "update/winsparkle_integration.cc",
-    ]
-
-    deps = [
-      "//base",
-    ]
-  }
-}
-
-if (is_linux) {
-  source_set("molt_update_linux") {
-    sources = [
-      "update/linux_update_integration.h",
-      "update/linux_update_integration.cc",
-    ]
-
-    deps = [
-      "//base",
-    ]
-  }
-}
-
-# Cross-platform update manager facade
+# In-app updater. GitHub Releases is the transport; trust comes from a
+# release manifest signed by an offline Ed25519 key (update/release_manifest.h).
 source_set("molt_update") {
   sources = [
-    "update/update_manager.h",
+    "update/release_manifest.cc",
+    "update/release_manifest.h",
     "update/update_manager.cc",
+    "update/update_manager.h",
+    "update/update_signing_keys.cc",
   ]
 
   deps = [
     "//base",
     "//chrome/browser/molt_ai/common",
     "//chrome/common",
+    "//crypto",
     "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
+    "//third_party/boringssl",
     "//url",
   ]
+}
 
-  if (is_mac) {
-    deps += [ ":molt_update_mac" ]
-  }
-  if (is_win) {
-    deps += [ ":molt_update_win" ]
-  }
-  if (is_linux) {
-    deps += [ ":molt_update_linux" ]
-  }
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("molt_update_unit_tests") {
+  testonly = true
+  sources = [ "update/release_manifest_unittest.cc" ]
+  deps = [
+    ":molt_update",
+    "//base",
+    "//testing/gtest",
+  ]
 }
 
 # Combined target for all AI modules

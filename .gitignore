@@ -62,3 +62,9 @@ signing/
 # Local caches
 .molt-*-cache/
 node_modules/
+
+# Claude Code agent worktrees
+.claude/
+
+# Release signing keys (keep OFFLINE; never commit)
+*.key
