@@ -38,7 +38,9 @@ a fix before publishing. We will keep you updated throughout.
 Only the **latest release** receives security fixes. MoltBrowser checks
 GitHub Releases for updates and offers to install them; please stay on the
 latest build, and only install MoltBrowser from this repository's
-Releases page. Signed-update verification is on the [roadmap](ROADMAP.md).
+Releases page. From v0.3.0, MoltBrowser only installs updates whose installer
+matches a release manifest signed with GenEye's offline release key
+([how it works](docs/SIGNED_UPDATES.md)).
 
 ## Scope
 

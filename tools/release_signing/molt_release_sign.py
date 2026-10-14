@@ -285,7 +285,8 @@ def cmd_sign(args):
               'their build trusts the key.', file=sys.stderr)
 
 
-def verify_files(manifest_path, sig_path, keys_b64, asset_paths=()):
+def verify_files(manifest_path, sig_path, keys_b64, asset_paths=(),
+                 require_all=False):
     with open(manifest_path, 'rb') as f:
         data = f.read()
     with open(sig_path, 'rb') as f:
@@ -315,6 +316,14 @@ def verify_files(manifest_path, sig_path, keys_b64, asset_paths=()):
                     if keys_b64 else 'no trusted key to verify with')
     m = validate_manifest(data)
     by_name = {a['name']: a for a in m['assets']}
+    given = {os.path.basename(p) for p in asset_paths} - {MANIFEST_NAME,
+                                                           SIGNATURE_NAME}
+    if require_all and set(by_name) != given:
+        missing = sorted(set(by_name) - given)
+        extra = sorted(given - set(by_name))
+        raise Error('release assets and signed manifest differ'
+                    + (f'; missing: {", ".join(missing)}' if missing else '')
+                    + (f'; unsigned: {", ".join(extra)}' if extra else ''))
     for path in asset_paths:
         name = os.path.basename(path)
         if name in (MANIFEST_NAME, SIGNATURE_NAME):
@@ -329,9 +338,12 @@ def verify_files(manifest_path, sig_path, keys_b64, asset_paths=()):
 
 def cmd_verify(args):
     keys = [args.pubkey] if args.pubkey else trusted_keys_from_source()
-    m, kid = verify_files(args.manifest, args.sig, keys, args.files)
+    m, kid = verify_files(args.manifest, args.sig, keys, args.files,
+                          require_all=args.require_all)
+    n = len([f for f in args.files if os.path.basename(f) not in
+             (MANIFEST_NAME, SIGNATURE_NAME)])
     print(f'OK: MoltBrowser {m["version"]} manifest signed by key {kid}; '
-          f'{len(args.files)} asset(s) match.')
+          f'{n} asset(s) match.')
 
 
 def main(argv=None):
@@ -353,6 +365,8 @@ def main(argv=None):
     s = sub.add_parser('verify'); s.add_argument('--manifest', default=MANIFEST_NAME)
     s.add_argument('--sig', default=SIGNATURE_NAME)
     s.add_argument('--pubkey', help='verify with this key instead of the build\'s')
+    s.add_argument('--require-all', action='store_true',
+                   help='the given files must be exactly the signed assets')
     s.add_argument('files', nargs='*'); s.set_defaults(fn=cmd_verify)
     args = p.parse_args(argv)
     try:
