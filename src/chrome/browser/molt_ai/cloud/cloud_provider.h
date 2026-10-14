@@ -62,6 +62,16 @@ const std::vector<CloudProviderInfo>& GetCloudProviders();
 // Look up a provider by id. nullptr if unknown.
 const CloudProviderInfo* FindCloudProvider(const std::string& id);
 
+// Validate a user-supplied provider base URL before any key is sent to it.
+// "" is valid (it means "use the provider's default endpoint"). Otherwise
+// the URL must be https://, except that plain http:// is allowed for a
+// loopback host (localhost, 127.0.0.0/8, [::1]) so local OpenAI-compatible
+// servers keep working. Embedded credentials, query strings and fragments
+// are rejected: the request path is appended to the base URL, and an API
+// key must never ride in a URL. On failure returns false and, if |error|
+// is non-null, sets it to a user-facing explanation.
+bool ValidateCloudBaseUrl(const std::string& base_url, std::string* error);
+
 // ==================================================================
 // Chat streaming
 // ==================================================================

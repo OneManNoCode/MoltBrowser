@@ -19,6 +19,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/load_flags.h"
+#include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -28,6 +29,7 @@
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace molt_ai {
 
@@ -134,6 +136,21 @@ std::string ResolveBaseUrl(const CloudProviderInfo& info,
     base.pop_back();
   }
   return base;
+}
+
+// Gemini puts the model id in the request path, so only allow the
+// characters real model ids use ("gemini-2.5-flash", "gemma-3-27b-it").
+// Anything else ('/', '?', '#', ':' ...) could rewrite the request URL.
+bool IsSafeGeminiModelId(const std::string& model) {
+  if (model.empty()) {
+    return false;
+  }
+  for (char c : model) {
+    if (!base::IsAsciiAlphaNumeric(c) && c != '-' && c != '.' && c != '_') {
+      return false;
+    }
+  }
+  return true;
 }
 
 // ==================================================================
@@ -634,6 +651,39 @@ const CloudProviderInfo* FindCloudProvider(const std::string& id) {
   return nullptr;
 }
 
+bool ValidateCloudBaseUrl(const std::string& base_url, std::string* error) {
+  if (base_url.empty()) {
+    return true;
+  }
+  auto fail = [error](const char* msg) {
+    if (error) {
+      *error = msg;
+    }
+    return false;
+  };
+  const GURL url(base_url);
+  if (!url.is_valid() || !url.has_host()) {
+    return fail("Base URL is not a valid http(s) URL.");
+  }
+  if (url.has_username() || url.has_password()) {
+    return fail("Base URL must not contain a username or password.");
+  }
+  if (url.has_query() || url.has_ref()) {
+    return fail("Base URL must not contain a query string or fragment.");
+  }
+  if (url.SchemeIs(url::kHttpsScheme)) {
+    return true;
+  }
+  if (url.SchemeIs(url::kHttpScheme) && net::IsLocalhost(url)) {
+    // Loopback only: the request never leaves this machine.
+    return true;
+  }
+  return fail(
+      "Base URL must use https:// so your API key is never sent in the "
+      "clear. Plain http:// is only allowed for a local server "
+      "(localhost, 127.0.0.1 or [::1]).");
+}
+
 // ==================================================================
 // StartCloudChat
 // ==================================================================
@@ -651,6 +701,11 @@ std::unique_ptr<CloudChatStream> StartCloudChat(
   std::string base = ResolveBaseUrl(*info, request.base_url);
   if (base.empty()) {
     std::move(on_done).Run(false, "No base URL configured for provider");
+    return nullptr;
+  }
+  std::string url_error;
+  if (!ValidateCloudBaseUrl(base, &url_error)) {
+    std::move(on_done).Run(false, url_error);
     return nullptr;
   }
 
@@ -679,9 +734,15 @@ std::unique_ptr<CloudChatStream> StartCloudChat(
       break;
     }
     case CloudFormat::kGemini: {
-      // key goes in the query string; SSE requested via alt=sse.
+      if (!IsSafeGeminiModelId(request.model)) {
+        std::move(on_done).Run(false, "Invalid Gemini model name");
+        return nullptr;
+      }
+      // The key goes in a header, never the URL: URLs end up in logs,
+      // net-export dumps and proxy access logs. SSE via alt=sse.
       url = base + "/models/" + request.model +
-            ":streamGenerateContent?alt=sse&key=" + request.api_key;
+            ":streamGenerateContent?alt=sse";
+      resource_request->headers.SetHeader("x-goog-api-key", request.api_key);
       body = BuildGeminiBody(request);
       break;
     }
@@ -718,6 +779,11 @@ void FetchCloudModels(
     std::move(on_done).Run(false, {}, "No base URL configured for provider");
     return;
   }
+  std::string url_error;
+  if (!ValidateCloudBaseUrl(base, &url_error)) {
+    std::move(on_done).Run(false, {}, url_error);
+    return;
+  }
 
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->method = "GET";
@@ -737,7 +803,8 @@ void FetchCloudModels(
       resource_request->headers.SetHeader("anthropic-version", "2023-06-01");
       break;
     case CloudFormat::kGemini:
-      url = base + "/models?key=" + api_key;
+      url = base + "/models";
+      resource_request->headers.SetHeader("x-goog-api-key", api_key);
       break;
   }
   resource_request->url = GURL(url);

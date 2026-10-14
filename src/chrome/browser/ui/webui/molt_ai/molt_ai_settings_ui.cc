@@ -932,6 +932,18 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       return;
     }
 
+    // Refuse before the key is ever sent anywhere: a custom endpoint must
+    // be https (or a loopback http server).
+    std::string url_error;
+    if (!molt_ai::ValidateCloudBaseUrl(base_url, &url_error)) {
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("error", url_error);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+
     Profile* profile = Profile::FromWebUI(web_ui());
     scoped_refptr<network::SharedURLLoaderFactory> factory =
         profile ? profile->GetDefaultStoragePartition()

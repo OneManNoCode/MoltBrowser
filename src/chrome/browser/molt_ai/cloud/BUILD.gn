@@ -19,3 +19,15 @@ source_set("cloud") {
     "//url",
   ]
 }
+
+# Base-URL validation tests. Linked into
+# //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "cloud_provider_unittest.cc" ]
+  deps = [
+    ":cloud",
+    "//base",
+    "//testing/gtest",
+  ]
+}
