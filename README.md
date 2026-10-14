@@ -16,7 +16,7 @@ Built by [GenEye AI Labs Inc.](https://geneye.ai/moltbrowser)
 - **v0.2.4** — visionOS‑style Liquid Glass UI, a local glass new‑tab page, an exactly‑centered address bar, and a fix that got MoltNet privacy routing launching again.
 - **v0.2.3** — bring‑your‑own‑key cloud models (OpenAI / Anthropic / Gemini + any OpenAI‑compatible endpoint), one‑click import of bookmarks + passwords, and a redesigned AI chat.
 
-Full history: [`CHANGELOG.md`](CHANGELOG.md).
+Full history: [`CHANGELOG.md`](CHANGELOG.md). What's next: [`ROADMAP.md`](ROADMAP.md).
 
 Want to contribute? See [`CONTRIBUTING.md`](CONTRIBUTING.md). Issues and
 PRs welcome — pick anything from the changelog "Unreleased" section or

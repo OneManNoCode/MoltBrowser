@@ -37,9 +37,8 @@ a fix before publishing. We will keep you updated throughout.
 
 Only the **latest release** receives security fixes. MoltBrowser checks
 GitHub Releases for updates and offers to install them; please stay on the
-latest build. Signature verification of downloaded updates is being added
-(see `docs/AUDIT-2026-10.md`, finding S3) — until it ships, only install
-MoltBrowser from this repository's Releases page.
+latest build, and only install MoltBrowser from this repository's
+Releases page. Signed-update verification is on the [roadmap](ROADMAP.md).
 
 ## Scope
 
