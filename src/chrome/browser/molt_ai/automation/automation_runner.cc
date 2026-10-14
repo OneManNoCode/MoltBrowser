@@ -37,6 +37,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai {
 namespace automation {
@@ -215,6 +216,16 @@ std::string JSQuote(const std::string& s) {
   return out;
 }
 
+// Appended to policy-block messages: how the user lifts the restriction.
+constexpr char kTrustAdvice[] =
+    " To allow it, raise this workflow's trust level to Approved in "
+    "molt://ai-automation.";
+
+bool AsksBeforeSensitive(const Step& s) {
+  return s.extra.is_dict() &&
+         s.extra.GetDict().FindBool(kAskBeforeSensitiveKey).value_or(false);
+}
+
 // Encode |bitmap| to PNG and write it to |path|. Runs on a MayBlock pool
 // thread (never the UI thread). Returns true iff the file was written.
 bool EncodePngAndWrite(const SkBitmap& bitmap, const base::FilePath& path) {
@@ -321,6 +332,7 @@ void AutomationRunner::Run(Script script,
     return;
   }
   script_ = std::move(script);
+  policy_ = AutomationSecurity::EffectivePolicy(script_);
   // Day 6: support resume-at-step. Clamp to a valid index — out-of-range
   // start values fall back to 0 to preserve the existing behavior.
   current_index_ = (start_index < script_.steps.size()) ? start_index : 0;
@@ -453,6 +465,11 @@ void AutomationRunner::ExecuteNextStep() {
   }
 
   EmitStepProgress(/*starting=*/true, /*succeeded=*/false, "");
+  std::string blocked;
+  if (!PreflightStepPolicy(s, &blocked)) {
+    BlockStep(blocked);
+    return;
+  }
   ArmStepTimeout(s);
 
   switch (s.type) {
@@ -475,6 +492,79 @@ void AutomationRunner::ExecuteNextStep() {
       OnStepFinished(false, "Unknown step type");
       break;
   }
+}
+
+bool AutomationRunner::PreflightStepPolicy(const Step& s,
+                                           std::string* why) const {
+  const std::string page =
+      target_contents_ ? target_contents_->GetLastCommittedURL().spec()
+                       : std::string();
+  const bool page_allowed = security_.AllowNavigation(policy_, page);
+  switch (s.type) {
+    case StepType::NAVIGATE: {
+      GURL url(Resolve(s.target));
+      if (!url.is_valid())
+        return true;  // DoNavigate reports "Invalid URL".
+      if (!agent_safety::IsAllowedNavigationURL(url)) {
+        *why = "Blocked: workflows can only open http:// or https:// pages.";
+        return false;
+      }
+      if (!security_.AllowNavigation(policy_, url.spec())) {
+        *why = "Blocked by this workflow's security policy: " +
+               std::string(url.host()) + " is not one of its sites." +
+               kTrustAdvice;
+        return false;
+      }
+      return true;
+    }
+    case StepType::CLICK:
+      if (security_.AllowClick(policy_, page, Resolve(s.target)))
+        return true;
+      *why = page_allowed
+                 ? std::string("Blocked by this workflow's security policy: "
+                               "clicking a submit control.")
+                 : "Blocked by this workflow's security policy: it may not "
+                   "act on " + std::string(GURL(page).host()) + ".";
+      *why += kTrustAdvice;
+      return false;
+    case StepType::TYPE:
+      if (security_.AllowType(policy_, page, Resolve(s.target),
+                              Resolve(s.value))) {
+        return true;
+      }
+      *why = page_allowed
+                 ? std::string("Blocked by this workflow's security policy: "
+                               "typing a password or card number.")
+                 : "Blocked by this workflow's security policy: it may not "
+                   "act on " + std::string(GURL(page).host()) + ".";
+      *why += kTrustAdvice;
+      return false;
+    case StepType::KEYPRESS:
+      // Keys go to whatever page is focused; same site rule as a click.
+      if (page_allowed)
+        return true;
+      *why = "Blocked by this workflow's security policy: it may not act on " +
+             std::string(GURL(page).host()) + "." + kTrustAdvice;
+      return false;
+    default:
+      return true;
+  }
+}
+
+void AutomationRunner::BlockStep(const std::string& reason) {
+  if (!is_running_)
+    return;
+  step_timeout_timer_.Stop();
+  // Drop any in-flight work of this step (see OnStepFinished).
+  weak_factory_.InvalidateWeakPtrs();
+  LOG(WARNING) << "[Automation] step " << current_index_
+               << " blocked: " << reason;
+  if (storage_)
+    storage_->AppendAudit(script_.id, "step_blocked", reason);
+  EmitStepProgress(/*starting=*/false, /*succeeded=*/false, reason);
+  step_attempt_ = 0;
+  // Terminal: a policy decision does not change on retry.
+  CaptureStepAndThen(/*succeeded=*/false, reason, /*terminal_failure=*/true);
 }
 
 bool AutomationRunner::ShouldExecuteCurrentStep() const {
@@ -1022,6 +1112,12 @@ void AutomationRunner::DoNavigate(const Step& s) {
     OnStepFinished(false, "Invalid URL");
     return;
   }
+  // Also checked in PreflightStepPolicy; repeated at the sink so no path
+  // can load javascript:, file:, data:, chrome: or molt: URLs.
+  if (!agent_safety::IsAllowedNavigationURL(url)) {
+    BlockStep("Blocked: workflows can only open http:// or https:// pages.");
+    return;
+  }
   target_contents_->GetController().LoadURL(
       url, content::Referrer(),
       ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
@@ -1038,54 +1134,134 @@ void AutomationRunner::DoNavigate(const Step& s) {
 }
 
 void AutomationRunner::DoClick(const Step& s) {
-  ResolveSelector(s, base::BindOnce(
-      [](base::WeakPtr<AutomationRunner> self,
-         base::OnceCallback<void()> retry,
-         const std::string& sel) {
-        if (!self) return;
-        if (sel.empty()) {
-          self->OnStepFinished(false, "Selector did not match");
-          return;
-        }
-        std::string js = base::StringPrintf(
-            kClickSelectorJSTemplate, JSQuote(sel).c_str());
-        self->EvalJS(js, base::BindOnce(
-            [](base::WeakPtr<AutomationRunner> self, base::Value v) {
-              if (!self) return;
-              if (v.is_bool() && v.GetBool())
-                self->BeginClickSettle("Clicked");
-              else
-                self->OnStepFinished(false, "Click failed");
-            },
-            self));
-      },
-      weak_factory_.GetWeakPtr(),
-      base::OnceCallback<void()>()));
+  ResolveSelector(s, base::BindOnce(&AutomationRunner::OnClickTargetResolved,
+                                    weak_factory_.GetWeakPtr(),
+                                    AsksBeforeSensitive(s)));
+}
+
+void AutomationRunner::ProbeElement(
+    const std::string& sel,
+    base::OnceCallback<void(agent_safety::ElementProbe)> cb) {
+  EvalJS(agent_safety::BuildElementProbeScript({sel}),
+         base::BindOnce(
+             [](base::OnceCallback<void(agent_safety::ElementProbe)> cb,
+                base::Value v) {
+               std::move(cb).Run(
+                   std::move(agent_safety::ParseElementProbes(v, 1)[0]));
+             },
+             std::move(cb)));
+}
+
+void AutomationRunner::OnClickTargetResolved(bool ask_before_sensitive,
+                                             const std::string& sel) {
+  if (sel.empty()) {
+    OnStepFinished(false, "Selector did not match");
+    return;
+  }
+  ProbeElement(sel, base::BindOnce(&AutomationRunner::OnClickProbed,
+                                   weak_factory_.GetWeakPtr(), sel,
+                                   ask_before_sensitive));
+}
+
+void AutomationRunner::OnClickProbed(const std::string& sel,
+                                     bool ask_before_sensitive,
+                                     agent_safety::ElementProbe probe) {
+  if (!probe.found) {
+    OnStepFinished(false, "Selector did not match");
+    return;
+  }
+  // "form_submit" approval: judged on what the element IS (a submit
+  // control), not on whether its selector happens to say "submit".
+  if (probe.submits_form && !security_.AllowSubmit(policy_)) {
+    BlockStep("Blocked by this workflow's security policy: submitting a "
+              "form." + std::string(kTrustAdvice));
+    return;
+  }
+  if (ask_before_sensitive && target_contents_ &&
+      target_contents_->GetPrimaryMainFrame()) {
+    GURL dest(probe.navigates_to);
+    if (agent_safety::IsAllowedNavigationURL(dest) &&
+        !target_contents_->GetPrimaryMainFrame()
+             ->GetLastCommittedOrigin()
+             .IsSameOriginWith(dest)) {
+      BlockStep(std::string(kNeedsConfirmationPrefix) + "Follow a link to " +
+                url::Origin::Create(dest).Serialize());
+      return;
+    }
+  }
+  ClickNow(sel);
+}
+
+void AutomationRunner::ClickNow(const std::string& sel) {
+  std::string js =
+      base::StringPrintf(kClickSelectorJSTemplate, JSQuote(sel).c_str());
+  EvalJS(js, base::BindOnce(
+                 [](base::WeakPtr<AutomationRunner> self, base::Value v) {
+                   if (!self) return;
+                   if (v.is_bool() && v.GetBool())
+                     self->BeginClickSettle("Clicked");
+                   else
+                     self->OnStepFinished(false, "Click failed");
+                 },
+                 weak_factory_.GetWeakPtr()));
 }
 
 void AutomationRunner::DoType(const Step& s) {
-  ResolveSelector(s, base::BindOnce(
-      [](base::WeakPtr<AutomationRunner> self, std::string value,
-         const std::string& sel) {
-        if (!self) return;
-        if (sel.empty()) {
-          self->OnStepFinished(false, "Input not found");
-          return;
-        }
-        std::string val_js = JSQuote(value);
-        std::string js = base::StringPrintf(
-            kTypeIntoJSTemplate, JSQuote(sel).c_str(),
-            val_js.c_str(), val_js.c_str());
-        self->EvalJS(js, base::BindOnce(
-            [](base::WeakPtr<AutomationRunner> self, base::Value v) {
-              if (!self) return;
-              self->OnStepFinished(v.is_bool() && v.GetBool(),
-                                    "Typed text");
-            },
-            self));
-      },
-      weak_factory_.GetWeakPtr(),
-      Resolve(s.value)));
+  ResolveSelector(s, base::BindOnce(&AutomationRunner::OnTypeTargetResolved,
+                                    weak_factory_.GetWeakPtr(),
+                                    Resolve(s.value), AsksBeforeSensitive(s)));
+}
+
+void AutomationRunner::OnTypeTargetResolved(std::string value,
+                                            bool ask_before_sensitive,
+                                            const std::string& sel) {
+  if (sel.empty()) {
+    OnStepFinished(false, "Input not found");
+    return;
+  }
+  ProbeElement(sel, base::BindOnce(&AutomationRunner::OnTypeProbed,
+                                   weak_factory_.GetWeakPtr(), sel,
+                                   std::move(value), ask_before_sensitive));
+}
+
+void AutomationRunner::OnTypeProbed(const std::string& sel,
+                                    std::string value,
+                                    bool ask_before_sensitive,
+                                    agent_safety::ElementProbe probe) {
+  if (!probe.found) {
+    OnStepFinished(false, "Input not found");
+    return;
+  }
+  if (agent_safety::IsSensitive(probe.field_kind)) {
+    const std::string label(agent_safety::FieldKindLabel(probe.field_kind));
+    if (ask_before_sensitive) {
+      BlockStep(std::string(kNeedsConfirmationPrefix) + "Type into a " +
+                label + " field");
+      return;
+    }
+    // The selector-text check in PreflightStepPolicy misses fields like
+    // "#f2"; the probe sees the real input type / autocomplete.
+    if (!security_.AllowSensitiveField(policy_, probe.field_kind)) {
+      BlockStep("Blocked by this workflow's security policy: typing into a " +
+                label + " field." + kTrustAdvice);
+      return;
+    }
+  }
+  TypeInto(sel, value);
+}
+
+void AutomationRunner::TypeInto(const std::string& sel,
+                                const std::string& value) {
+  std::string val_js = JSQuote(value);
+  std::string js = base::StringPrintf(kTypeIntoJSTemplate, JSQuote(sel).c_str(),
+                                      val_js.c_str(), val_js.c_str());
+  EvalJS(js, base::BindOnce(
+                 [](base::WeakPtr<AutomationRunner> self, base::Value v) {
+                   if (!self) return;
+                   self->OnStepFinished(v.is_bool() && v.GetBool(),
+                                        "Typed text");
+                 },
+                 weak_factory_.GetWeakPtr()));
 }
 
 void AutomationRunner::DoScroll(const Step& s) {
@@ -1329,11 +1505,15 @@ void AutomationRunner::DoKeypress(const Step& s) {
     OnStepFinished(false, "Empty keypress value");
     return;
   }
+  // Enter inside a form submits it, so it needs the same approval as a
+  // submit-button click; the check runs in-page, before any key event.
+  const bool allow_submit = security_.AllowSubmit(policy_);
   std::string js = base::StringPrintf(R"JS(
     (function() {
       var t = document.activeElement || document.body;
       if (!t) return false;
       var k = %s;
+      if (k === 'Enter' && t.form && !%s) return 'blocked_submit';
       // Map "Enter" to also call form.requestSubmit() if the target is
       // inside a form, since that's what users usually mean.
       ['keydown','keypress','keyup'].forEach(function(type) {
@@ -1349,11 +1529,17 @@ void AutomationRunner::DoKeypress(const Step& s) {
       }
       return true;
     })()
-  )JS", JSQuote(key).c_str());
+  )JS", JSQuote(key).c_str(), allow_submit ? "true" : "false");
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<AutomationRunner> self, std::string key,
          base::Value v) {
         if (!self) return;
+        if (v.is_string() && v.GetString() == "blocked_submit") {
+          self->BlockStep("Blocked by this workflow's security policy: "
+                          "pressing Enter would submit a form." +
+                          std::string(kTrustAdvice));
+          return;
+        }
         bool ok = v.is_bool() && v.GetBool();
         self->OnStepFinished(ok, ok ? "Pressed " + key : "Keypress failed");
       },
@@ -1416,6 +1602,16 @@ void AutomationRunner::DoRunScript(const Step& s) {
   if (child->steps.empty()) {
     OnStepFinished(true, "RUN_SCRIPT: " + child_id + " (empty, skipped)");
     return;
+  }
+  // The child runs under this run's trust level, but its own sites (its
+  // whitelist + the hosts its steps visibly target) are expected.
+  for (std::string& host :
+       AutomationSecurity::EffectivePolicy(*child).domain_whitelist) {
+    if (std::find(policy_.domain_whitelist.begin(),
+                  policy_.domain_whitelist.end(),
+                  host) == policy_.domain_whitelist.end()) {
+      policy_.domain_whitelist.push_back(std::move(host));
+    }
   }
   // Splice the child's steps after the current index. ExecuteNextStep
   // will advance current_index_ by 1 and pick up the first child step.

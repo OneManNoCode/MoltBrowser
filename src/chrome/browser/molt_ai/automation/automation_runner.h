@@ -28,7 +28,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace content {
 class WebContents;
@@ -43,6 +45,14 @@ namespace automation {
 // Waits for a click-triggered navigation to settle before advancing the run
 // (defined in the .cc). Forward-declared so it can be held as a member.
 class NavigationSettleWaiter;
+
+// Step::extra key. When true, a CLICK that would follow a link to another
+// origin, or a TYPE into a password / payment-card / one-time-code field,
+// is not performed; the run stops with a message starting with
+// kNeedsConfirmationPrefix instead. The chat action path sets it until the
+// user has confirmed the action.
+inline constexpr char kAskBeforeSensitiveKey[] = "ask_before_sensitive";
+inline constexpr char kNeedsConfirmationPrefix[] = "needs_confirmation: ";
 
 // Result reported when a run finishes (success or failure).
 struct RunResult {
@@ -99,6 +109,13 @@ class AutomationRunner {
   void ExecuteNextStep();
   void OnStepFinished(bool succeeded, const std::string& note);
 
+  // Workflow security policy (automation_security.h). Checks |s| against
+  // policy_ before it touches the page; false + |why| if it must not run.
+  bool PreflightStepPolicy(const Step& s, std::string* why) const;
+  // Ends the run on the current step without retries (a policy block or a
+  // step that needs the user's confirmation), recording |reason|.
+  void BlockStep(const std::string& reason);
+
   // After a step reaches a terminal outcome (success, or failure with no
   // retries left), record a StepResult for the Runs timeline — including a
   // screenshot thumbnail captured on the current page — then either advance
@@ -141,6 +158,25 @@ class AutomationRunner {
   void DoEndLoop(const Step& s);
   void DoAssert(const Step& s);
   void DoRunJS(const Step& s);
+
+  // Second halves of DoClick / DoType: once the selector is resolved, probe
+  // what the element is (submit control, link target, field kind) and
+  // apply the policy before acting.
+  void ProbeElement(const std::string& sel,
+                    base::OnceCallback<void(agent_safety::ElementProbe)> cb);
+  void OnClickTargetResolved(bool ask_before_sensitive, const std::string& sel);
+  void OnClickProbed(const std::string& sel,
+                     bool ask_before_sensitive,
+                     agent_safety::ElementProbe probe);
+  void ClickNow(const std::string& sel);
+  void OnTypeTargetResolved(std::string value,
+                            bool ask_before_sensitive,
+                            const std::string& sel);
+  void OnTypeProbed(const std::string& sel,
+                    std::string value,
+                    bool ask_before_sensitive,
+                    agent_safety::ElementProbe probe);
+  void TypeInto(const std::string& sel, const std::string& value);
   // RUN_SCRIPT: inline-expand a child script's steps into the current
   // script_.steps vector at current_index_ + 1, then continue.
   void DoRunScript(const Step& s);
@@ -212,6 +248,10 @@ class AutomationRunner {
   raw_ptr<AutomationStorage> storage_;             // not owned
 
   Script script_;
+  // AutomationSecurity::EffectivePolicy(script_), fixed at Run(); RUN_SCRIPT
+  // widens its whitelist with the child script's hosts.
+  AutomationSecurity security_;
+  SecurityPolicy policy_;
   size_t current_index_ = 0;
   bool is_running_ = false;
   bool cancel_requested_ = false;

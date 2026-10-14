@@ -37,6 +37,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
+#include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -54,6 +55,7 @@ namespace {
 
 using molt_ai::automation::AutomationRecorderTabHelper;
 using molt_ai::automation::AutomationScheduler;
+using molt_ai::automation::AutomationSecurity;
 using molt_ai::automation::AutomationSchedulerServiceFactory;
 using molt_ai::automation::AutomationStorage;
 using molt_ai::automation::RunScriptInBackgroundBrowser;
@@ -295,6 +297,20 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
         }
         if (auto* st = storage()) {
+          // The studio never edits the security policy, so whatever the
+          // dict carries is ignored: an existing workflow keeps the policy
+          // stored on disk (trust only changes via promoteTrust in
+          // molt://ai-automation); a new one gets the default CASUAL one.
+          std::optional<Script> existing = st->Load(s->id);
+          if (existing) {
+            s->security = existing->security;
+          } else {
+            s->security = molt_ai::automation::SecurityPolicy();
+            s->security.require_approval_for = {"form_submit", "payment",
+                                                "login"};
+          }
+          AutomationSecurity::ClampTrustForSave(
+              *s, existing ? &*existing : nullptr);
           st->Save(*s);
           out.Set("id", s->id);
         }
@@ -327,6 +343,8 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           s->created_at_unix = static_cast<int64_t>(std::time(nullptr));
           s->stats = molt_ai::automation::Stats();  // fresh history
           s->trigger = Trigger();                    // copy starts manual
+          // A copy is a new workflow: it earns trust on its own.
+          AutomationSecurity::ClampTrustForSave(*s, /*existing=*/nullptr);
           st->Save(*s);
           out.Set("id", s->id);
         }

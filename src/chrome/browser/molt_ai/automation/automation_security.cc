@@ -4,7 +4,9 @@
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 
 #include <algorithm>
+#include <iterator>
 #include <string_view>
+#include <utility>
 
 #include "base/strings/string_util.h"
 #include "url/gurl.h"
@@ -43,6 +45,20 @@ bool LooksLikePaymentCardValue(const std::string& value) {
     alt = !alt;
   }
   return (sum % 10) == 0;
+}
+
+// Approval categories applied when a script's require_approval_for is empty
+// (the struct default; studio-saved scripts were stored that way).
+constexpr const char* kDefaultApprovals[] = {"form_submit", "payment",
+                                             "login"};
+
+bool Contains(const std::vector<std::string>& list, std::string_view item) {
+  return std::find(list.begin(), list.end(), item) != list.end();
+}
+
+void AddUnique(std::vector<std::string>& list, std::string item) {
+  if (!item.empty() && !Contains(list, item))
+    list.push_back(std::move(item));
 }
 
 bool DomainMatchesWhitelist(const std::vector<std::string>& whitelist,
@@ -123,6 +139,61 @@ std::vector<std::string> AutomationSecurity::ApprovalRequired(
     const SecurityPolicy& policy) const {
   if (policy.trust >= TrustLevel::TRUSTED) return {};
   return policy.require_approval_for;
+}
+
+bool AutomationSecurity::AllowSubmit(const SecurityPolicy& policy) const {
+  if (policy.trust >= TrustLevel::APPROVED)
+    return true;
+  return !Contains(ApprovalRequired(policy), "form_submit");
+}
+
+bool AutomationSecurity::AllowSensitiveField(
+    const SecurityPolicy& policy,
+    agent_safety::FieldKind kind) const {
+  if (!agent_safety::IsSensitive(kind) || policy.trust >= TrustLevel::APPROVED)
+    return true;
+  const char* category =
+      kind == agent_safety::FieldKind::kPaymentCard ? "payment" : "login";
+  return !Contains(ApprovalRequired(policy), category);
+}
+
+// static
+SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
+  SecurityPolicy p = script.security;
+  for (std::string& host : HostsReferencedBy(script.steps))
+    AddUnique(p.domain_whitelist, std::move(host));
+  if (p.require_approval_for.empty()) {
+    p.require_approval_for.assign(std::begin(kDefaultApprovals),
+                                  std::end(kDefaultApprovals));
+  }
+  return p;
+}
+
+// static
+std::vector<std::string> AutomationSecurity::HostsReferencedBy(
+    const std::vector<Step>& steps) {
+  std::vector<std::string> hosts;
+  for (const Step& s : steps) {
+    if (s.type == StepType::NAVIGATE &&
+        s.target.find("{{") == std::string::npos) {
+      GURL g(s.target);
+      if (agent_safety::IsAllowedNavigationURL(g))
+        AddUnique(hosts, base::ToLowerASCII(g.host()));
+    }
+    if (s.extra.is_dict()) {
+      const std::string* host = s.extra.GetDict().FindString("host");
+      if (host && host->find("{{") == std::string::npos)
+        AddUnique(hosts, base::ToLowerASCII(*host));
+    }
+  }
+  return hosts;
+}
+
+// static
+void AutomationSecurity::ClampTrustForSave(Script& incoming,
+                                           const Script* existing) {
+  incoming.security.trust =
+      existing ? existing->security.trust : TrustLevel::CASUAL;
 }
 
 TrustLevel AutomationSecurity::ConsiderPromotion(TrustLevel current,
