@@ -49,7 +49,9 @@ PAGE_SCRIPTS = {
     "molt_ai_agent_ui.cc": {"kAgentPageJs": "none"},
     "molt_ai_automation_ui.cc": {"kAutomationPageJs": "molt-html"},
     "molt_ai_ui.cc": {"kMoltAIPageJs": "molt-html"},
-    "molt_ai_chat_ui.cc": {"kChatPagePreludeJs": "molt-html"},
+    "molt_ai_chat_ui.cc": {"kChatThemeJs": "none",
+                           "kChatPagePreludeJs": "molt-html",
+                           "kChatPageActionsJs": "molt-html"},
     "molt_ai_chat_ui_js.h": {"kMoltChatJS": "molt-html"},
     "molt_webui_csp.h": {"kMoltActionsJs": "none",
                          "kMoltTrustedHtmlJs": "none"},
@@ -96,7 +98,14 @@ def check_html(rel, src, start, body, problems):
         problems.append((rel, line_of(src, start), "unterminated inline <script>"))
 
 
+def strip_line_comments(body):
+    """Blank out whole-line // comments (keeping line numbers) so prose
+    about handlers doesn't count. Code is left untouched."""
+    return re.sub(r"(?m)^[ \t]*//.*$", "", body)
+
+
 def check_js(rel, src, start, body, problems):
+    body = strip_line_comments(body)
     for m in JS_ON_ATTR.finditer(body):
         problems.append((rel, line_of(src, start + m.start()),
                          "inline handler in JS-built markup: " +
@@ -113,6 +122,7 @@ def check_js(rel, src, start, body, problems):
 
 
 def check_sinks(rel, src, start, body, mode, problems):
+    body = strip_line_comments(body)
     for m in HTML_SINK.finditer(body):
         rest = body[m.end():m.end() + 9]
         if mode == "molt-html" and rest.startswith("moltHTML("):

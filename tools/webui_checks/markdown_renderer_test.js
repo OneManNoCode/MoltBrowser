@@ -2,10 +2,15 @@
 //
 // The chat page is a privileged WebUI, and renderMarkdown() turns model
 // output (which pages, PDFs and attachments can influence) into innerHTML.
-// This test pulls the shipped renderMarkdown() out of the C++ header,
+// Its output is passed to moltHTML(), the page's pass-through Trusted
+// Types policy (molt_webui_csp.h), so this test is what backs that
+// policy: it pulls the shipped renderMarkdown() out of the C++ header,
 // fuzzes it, and parses every result with an HTML5 parser to make sure it
 // only ever emits the tags and attributes the renderer itself writes, and
-// only http(s) links.
+// only http(s) links. The copy button carries no inline handler (the CSP
+// runs none): data-on-click must name the registered copyCode action.
+// molt://ai (molt_ai_ui.cc) has its own, older renderer; it is fuzzed the
+// same way at the end.
 //
 // Run: npm ci && npm test   (from tools/webui_checks)
 'use strict';
@@ -27,20 +32,23 @@ const renderMarkdown = new Function('esc',
     'var codeBlockId = 0;\n' + src.slice(from, to) + '\nreturn renderMarkdown;')(esc);
 
 const ALLOWED = {
-  a: ['href', 'class', 'data-molt-link'], button: ['class', 'onclick'],
+  a: ['href', 'class', 'data-molt-link'],
+  button: ['class', 'data-on-click', 'data-copy-target'],
   pre: ['id', 'style'], code: ['style'], span: ['style'], div: ['style', 'class'],
   strong: ['style'], em: [], br: [],
 };
-function violations(html) {
+function violations(html, allowedTags) {
+  const table = allowedTags || ALLOWED;
   const bad = [];
   (function walk(n) {
     if (n.tagName) {
-      const allowed = ALLOWED[n.tagName];
+      const allowed = table[n.tagName];
       if (!allowed) bad.push('tag <' + n.tagName + '>');
       for (const at of n.attrs || []) {
         if (!allowed || !allowed.includes(at.name)) bad.push(n.tagName + ' attr ' + JSON.stringify(at.name));
         if (at.name === 'href' && !/^https?:\/\//i.test(at.value)) bad.push('href ' + at.value);
-        if (at.name === 'onclick' && !/^copyCode\('cb-\d+',this\)$/.test(at.value)) bad.push('onclick ' + at.value);
+        if (at.name === 'data-on-click' && at.value !== 'copyCode') bad.push('data-on-click ' + at.value);
+        if (at.name === 'data-copy-target' && !/^cb-\d+$/.test(at.value)) bad.push('data-copy-target ' + at.value);
         if (at.name === 'class' && !/^(code-wrap|code-copy|chat-link)$/.test(at.value)) bad.push('class ' + at.value);
       }
     }
@@ -78,3 +86,32 @@ for (let i = 0; i < N; i++) {
   }
 }
 console.log('markdown renderer: behaviour checks passed; ' + N + ' fuzz inputs produced only allowed markup');
+
+// molt://ai full-page chat renderer (molt_ai_ui.cc): same treatment.
+{
+  const UI = path.join(__dirname, '../../src/chrome/browser/ui/webui/molt_ai/molt_ai_ui.cc');
+  const usrc = fs.readFileSync(UI, 'utf8');
+  const ufrom = usrc.indexOf('function renderMarkdown(text) {');
+  const uto = usrc.indexOf('function setStatus(cls, text) {');
+  assert(ufrom > 0 && uto > ufrom, 'renderMarkdown() not found in ' + UI);
+  // That page's esc(): text-node serialisation plus quote escaping.
+  const uesc = (t) => esc(t).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const uRender = new Function('esc',
+      'var codeBlockId = 0;\n' + usrc.slice(ufrom, uto) + '\nreturn renderMarkdown;')(uesc);
+  const UALLOWED = Object.assign({}, ALLOWED);
+  delete UALLOWED.a;  // this renderer makes no links
+  assert(/<strong[^>]*>hi<\/strong>/.test(uRender('**hi**')), 'molt://ai bold');
+  assert(/data-on-click="copyCode"/.test(uRender('```\nx\n```')), 'molt://ai copy button');
+  for (let i = 0; i < N; i++) {
+    let input = '';
+    const len = 2 + rnd(24);
+    for (let j = 0; j < len; j++) input += T[rnd(T.length)];
+    const bad = violations(uRender(input), UALLOWED);
+    if (bad.length) {
+      console.error('molt://ai renderer: disallowed markup for input ' + JSON.stringify(input) +
+                    ':\n  ' + bad.join('\n  '));
+      process.exit(1);
+    }
+  }
+  console.log('molt://ai renderer: ' + N + ' fuzz inputs produced only allowed markup');
+}

@@ -3,10 +3,14 @@
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_ui.h"
 
+#include <optional>
+#include <string>
+
 #include "base/memory/ref_counted_memory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_ui_js.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -15,7 +19,116 @@
 
 namespace {
 
-// Custom URL data source that serves inline HTML for the AI chat sidebar.
+constexpr char kChatThemeJs[] = R"JS(// Pre-paint theme for the AI chat panel, loaded from <head> so the
+// persisted theme applies before first paint (no flash). Default is
+// 'gray' (no attribute — the vars users know); explicit 'black' or
+// 'light' choices set the override attribute.
+try {
+  var t = localStorage.getItem('moltTheme');
+  if (t === 'light' || t === 'black')
+    document.documentElement.setAttribute('data-theme', t);
+} catch (e) {}
+)JS";
+
+constexpr char kChatPagePreludeJs[] = R"JS(// AI chat panel: tab-context contract, first part of /app.js (it used
+// to be an inline <script> right after the strip's markup).
+  // Tab-context contract. Native side calls this on every active-tab
+  // change. The same payload is also stashed at
+  // window.__moltLastTabContext for late-binding (race-free init).
+  window.__moltSetTabContext = function(ctx) {
+    window.__moltCurrentTabContext = ctx || null;
+    var bar = document.getElementById('tabContext');
+    var lbl = document.getElementById('tabContextLabel');
+    var anon = document.getElementById('anonBanner');
+    // Quick-action chips only make sense when a real page is loaded,
+    // so they follow the same visibility as the tab-context strip.
+    var qa = document.getElementById('quickActions');
+    // Anonymous session banner — shown whenever the active tab lives
+    // in an OTR profile. The native side sets is_anonymous_session
+    // on every context push so this stays in sync with tab switches.
+    if (anon) {
+      anon.style.display = (ctx && ctx.is_anonymous_session) ? 'flex'
+                                                              : 'none';
+    }
+    if (!bar || !lbl) return;
+    if (!ctx || !ctx.url ||
+        ctx.url.indexOf('chrome://') === 0 ||
+        ctx.url.indexOf('molt://')   === 0 ||
+        ctx.url === 'about:blank') {
+      bar.style.display = 'none';
+      if (qa) qa.style.display = 'none';
+      return;
+    }
+    var host = ctx.url;
+    try { host = new URL(ctx.url).host; } catch (e) {}
+    var title = ctx.title || host;
+    // Native side suffixes PDF titles with " (PDF)" so we can show a
+    // distinct icon. Simple heuristic — also accept any .pdf URL.
+    var isPdf = (/\(PDF\)$/.test(title)) ||
+                /\.pdf(\?|#|$)/i.test(ctx.url);
+    document.querySelector('#tabContext .tab-context-icon').textContent =
+        isPdf ? '\u{1F4C4}' : '\u{1F517}';  // page glyph vs. chain link
+    lbl.textContent = (isPdf ? 'Chatting with PDF: ' : 'Chatting about: ')
+                       + title +
+        (host && host !== title ? '  \u2022  ' + host : '');
+    lbl.title = ctx.url;
+    bar.style.display = 'flex';
+    if (qa) qa.style.display = 'flex';
+  };
+  if (window.__moltLastTabContext)
+    window.__moltSetTabContext(window.__moltLastTabContext);
+)JS";
+
+constexpr char kChatPageActionsJs[] = R"JS(// Handlers named by data-on-* attributes in the chat panel's markup —
+// the static HTML here and the markup built in kMoltChatJS (code copy,
+// copy response, edit message, attachment chip, model cards). The page
+// CSP runs no inline handlers; kMoltActionsJs binds these.
+moltActions({
+  toggleDrawer: function() { toggleDrawer(); },
+  newChat: function() { newChat(); },
+  toggleOverflowMenu: function(ev) { toggleOverflowMenu(ev); },
+  menuNewChat: function() { closeOverflowMenu(); newChat(); },
+  menuSearch: function() { closeOverflowMenu(); toggleSearch(); },
+  menuExport: function() { closeOverflowMenu(); exportChat(); },
+  menuImport: function() { closeOverflowMenu(); importChat(); },
+  menuModels: function() { closeOverflowMenu(); toggleModelPanel(); },
+  menuSettings: function() { closeOverflowMenu(); openMoltSettings(); },
+  setTheme: function() { setTheme(this.getAttribute('data-arg')); },
+  closeSidePanel: function() { closeSidePanel(); },
+  closeDrawer: function() { closeDrawer(); },
+  drawerNewChat: function() { closeDrawer(); newChat(); },
+  filterConvList: function() { filterConvList(); },
+  doSearch: function() { doSearch(); },
+  toggleSearch: function() { toggleSearch(); },
+  quickAction: function() { quickAction(this.getAttribute('data-arg')); },
+  toggleModeDropdown: function(ev) { toggleModeDropdown(ev); },
+  setActionMode: function() { setActionMode(this.getAttribute('data-arg')); },
+  pickAttachment: function() { pickAttachment(); },
+  toggleModelDropdown: function(ev) { toggleModelDropdown(ev); },
+  toggleMic: function() { toggleMic(); },
+  cancelGeneration: function() { cancelGeneration(); },
+  sendMessage: function() { sendMessage(); },
+  toggleModelPanel: function() { toggleModelPanel(); },
+  startFirstRunDownload: function() { startFirstRunDownload(); },
+  skipFirstRun: function() { skipFirstRun(); },
+  // Built in kMoltChatJS markup:
+  copyCode: function() {
+    copyCode(this.getAttribute('data-copy-target'), this);
+  },
+  copyResponse: function() { copyResponse(this); },
+  startEditMessage: function() { startEditMessage(this); },
+  clearAttachment: function() { clearAttachment(); },
+  loadModel: function() { loadModel(this.getAttribute('data-model-id')); },
+  deleteModel: function() { deleteModel(this.getAttribute('data-model-id')); },
+  downloadModel: function() {
+    downloadModel(this.getAttribute('data-model-id'));
+  },
+  cancelDownload: function() { cancelDownload(); },
+});
+)JS";
+
+// Custom URL data source that serves the AI chat sidebar: the HTML,
+// /app.js and the pre-paint /theme.js.
 // This version uses chrome.send() and cr.addWebUiListener() for real
 // communication with BrowserAIRuntime via MoltAIChatHandler.
 class MoltAIChatDataSource : public content::URLDataSource {
@@ -26,24 +139,16 @@ class MoltAIChatDataSource : public content::URLDataSource {
   std::string GetSource() override { return chrome::kChromeUIMoltAIChatHost; }
 
   std::string GetMimeType(const GURL& url) override {
-    return "text/html";
+    return molt_webui::MimeTypeFor(url);
   }
 
-  // Allow inline scripts and styles for our embedded HTML page
+  // Strict molt WebUI CSP; HTML only via the 'molt-html' policy.
   std::string GetContentSecurityPolicy(
       const network::mojom::CSPDirectiveName directive) override {
-    if (directive == network::mojom::CSPDirectiveName::ScriptSrc) {
-      return "script-src chrome://resources 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::StyleSrc) {
-      return "style-src 'self' 'unsafe-inline';";
-    }
-    if (directive == network::mojom::CSPDirectiveName::TrustedTypes) {
-      return "";
-    }
-    if (directive ==
-        network::mojom::CSPDirectiveName::RequireTrustedTypesFor) {
-      return "";
+    if (std::optional<std::string> csp =
+            molt_webui::PageContentSecurityPolicy(
+                directive, molt_webui::TrustedTypesMode::kMoltHtmlPolicy)) {
+      return *csp;
     }
     return content::URLDataSource::GetContentSecurityPolicy(directive);
   }
@@ -52,7 +157,19 @@ class MoltAIChatDataSource : public content::URLDataSource {
       const GURL& url,
       const content::WebContents::Getter& wc_getter,
       content::URLDataSource::GotDataCallback callback) override {
-    const std::string html = std::string(R"HTML(<!DOCTYPE html>
+    if (url.path() == "/theme.js") {
+      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
+          std::string(kChatThemeJs)));
+      return;
+    }
+    if (molt_webui::IsAppJsRequest(url)) {
+      std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
+          std::string(molt_webui::kMoltActionsJs) +
+          molt_webui::kMoltTrustedHtmlJs + kChatPagePreludeJs +
+          ::molt_ai::kMoltChatJS + kChatPageActionsJs));
+      return;
+    }
+    const std::string html = R"HTML(<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -561,62 +678,53 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .history-cluster li a:hover{color:var(--text);text-decoration:underline}
 .hist-meta{color:var(--faint);font-size:10px;flex-shrink:0;font-variant-numeric:tabular-nums}
 </style>
-<script>
-  // Apply the persisted theme before first paint to avoid a flash.
-  // Default is 'gray' (no attribute — the vars users know); explicit
-  // 'black' or 'light' choices set the override attribute.
-  try {
-    var t = localStorage.getItem('moltTheme');
-    if (t === 'light' || t === 'black')
-      document.documentElement.setAttribute('data-theme', t);
-  } catch (e) {}
-</script>
+<script src="theme.js"></script>
 </head>
 <body>
 <!-- Liquid Glass ambient orbs: purely decorative, behind all content.
      Styled by .lg-ambient; disabled on the light theme. -->
 <div class="lg-ambient" aria-hidden="true"><div class="lg-orb"></div></div>
 <div class="header">
-  <button class="icon-btn" onclick="toggleDrawer()" title="Chats">&#9776;</button>
+  <button class="icon-btn" data-on-click="toggleDrawer" title="Chats">&#9776;</button>
   <div class="title">MoltBrowser AI</div>
   <div class="status offline" id="statusIndicator">Initializing...</div>
   <div class="header-actions">
-    <button class="icon-btn" onclick="newChat()" title="New chat">&#9998;</button>
+    <button class="icon-btn" data-on-click="newChat" title="New chat">&#9998;</button>
     <div class="overflow-wrap">
-      <button class="icon-btn" onclick="toggleOverflowMenu(event)" title="More options">&#8943;</button>
+      <button class="icon-btn" data-on-click="toggleOverflowMenu" title="More options">&#8943;</button>
       <div class="overflow-menu" id="overflowMenu">
-        <div class="om-item" onclick="closeOverflowMenu();newChat()">New chat</div>
-        <div class="om-item" onclick="closeOverflowMenu();toggleSearch()">Search in chat</div>
-        <div class="om-item" onclick="closeOverflowMenu();exportChat()">Export chat</div>
-        <div class="om-item" onclick="closeOverflowMenu();importChat()">Import chat</div>
-        <div class="om-item" onclick="closeOverflowMenu();toggleModelPanel()">Manage models</div>
+        <div class="om-item" data-on-click="menuNewChat">New chat</div>
+        <div class="om-item" data-on-click="menuSearch">Search in chat</div>
+        <div class="om-item" data-on-click="menuExport">Export chat</div>
+        <div class="om-item" data-on-click="menuImport">Import chat</div>
+        <div class="om-item" data-on-click="menuModels">Manage models</div>
         <div class="om-sep"></div>
         <div class="om-label">Theme</div>
-        <div class="om-item" onclick="setTheme('gray')">Gray<span class="om-check visible" id="thCheckGray">&#10003;</span></div>
-        <div class="om-item" onclick="setTheme('black')">Black<span class="om-check" id="thCheckBlack">&#10003;</span></div>
-        <div class="om-item" onclick="setTheme('light')">White<span class="om-check" id="thCheckLight">&#10003;</span></div>
+        <div class="om-item" data-on-click="setTheme" data-arg="gray">Gray<span class="om-check visible" id="thCheckGray">&#10003;</span></div>
+        <div class="om-item" data-on-click="setTheme" data-arg="black">Black<span class="om-check" id="thCheckBlack">&#10003;</span></div>
+        <div class="om-item" data-on-click="setTheme" data-arg="light">White<span class="om-check" id="thCheckLight">&#10003;</span></div>
         <div class="om-sep"></div>
-        <div class="om-item" onclick="closeOverflowMenu();openMoltSettings()">Settings</div>
+        <div class="om-item" data-on-click="menuSettings">Settings</div>
         <div class="om-meta"><span id="hwGpu"></span><span id="hwRam"></span><span id="hwCores"></span></div>
       </div>
     </div>
-    <button class="icon-btn" onclick="closeSidePanel()" title="Close panel" aria-label="Close panel">&#10005;</button>
+    <button class="icon-btn" data-on-click="closeSidePanel" title="Close panel" aria-label="Close panel">&#10005;</button>
   </div>
 </div>
 <!-- Recents drawer: overlay conversation list. Backed by the
      listConversations / loadConversation / deleteConversation
      messages on MoltAIChatHandler; autosaved per turn from JS. -->
-<div class="drawer-scrim" id="drawerScrim" onclick="closeDrawer()"></div>
+<div class="drawer-scrim" id="drawerScrim" data-on-click="closeDrawer"></div>
 <div class="drawer" id="drawer">
-  <button class="drawer-new" onclick="closeDrawer();newChat()">+ New chat</button>
-  <div class="drawer-search"><input type="text" id="drawerSearch" placeholder="Search chats" oninput="filterConvList()"></div>
+  <button class="drawer-new" data-on-click="drawerNewChat">+ New chat</button>
+  <div class="drawer-search"><input type="text" id="drawerSearch" placeholder="Search chats" data-on-input="filterConvList"></div>
   <div class="drawer-label">Recents</div>
   <div class="conv-list" id="convList"></div>
 </div>
 <div class="search-bar" id="searchBar">
-  <input type="text" id="searchInput" placeholder="Search messages..." oninput="doSearch()">
+  <input type="text" id="searchInput" placeholder="Search messages..." data-on-input="doSearch">
   <span class="search-count" id="searchCount"></span>
-  <button class="search-close" onclick="toggleSearch()">&times;</button>
+  <button class="search-close" data-on-click="toggleSearch">&times;</button>
 </div>
 <!-- Tab context strip: shows the URL/title the chat is grounded in.
      Populated by the native AiChatSidePanelWebView via the
@@ -630,53 +738,6 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
   <span class="tab-context-icon">&#128279;</span>
   <span class="tab-context-label" id="tabContextLabel"></span>
 </div>
-<script>
-  // Tab-context contract. Native side calls this on every active-tab
-  // change. The same payload is also stashed at
-  // window.__moltLastTabContext for late-binding (race-free init).
-  window.__moltSetTabContext = function(ctx) {
-    window.__moltCurrentTabContext = ctx || null;
-    var bar = document.getElementById('tabContext');
-    var lbl = document.getElementById('tabContextLabel');
-    var anon = document.getElementById('anonBanner');
-    // Quick-action chips only make sense when a real page is loaded,
-    // so they follow the same visibility as the tab-context strip.
-    var qa = document.getElementById('quickActions');
-    // Anonymous session banner — shown whenever the active tab lives
-    // in an OTR profile. The native side sets is_anonymous_session
-    // on every context push so this stays in sync with tab switches.
-    if (anon) {
-      anon.style.display = (ctx && ctx.is_anonymous_session) ? 'flex'
-                                                              : 'none';
-    }
-    if (!bar || !lbl) return;
-    if (!ctx || !ctx.url ||
-        ctx.url.indexOf('chrome://') === 0 ||
-        ctx.url.indexOf('molt://')   === 0 ||
-        ctx.url === 'about:blank') {
-      bar.style.display = 'none';
-      if (qa) qa.style.display = 'none';
-      return;
-    }
-    var host = ctx.url;
-    try { host = new URL(ctx.url).host; } catch (e) {}
-    var title = ctx.title || host;
-    // Native side suffixes PDF titles with " (PDF)" so we can show a
-    // distinct icon. Simple heuristic — also accept any .pdf URL.
-    var isPdf = (/\(PDF\)$/.test(title)) ||
-                /\.pdf(\?|#|$)/i.test(ctx.url);
-    document.querySelector('#tabContext .tab-context-icon').innerHTML =
-        isPdf ? '&#128196;' : '&#128279;';  // page glyph vs. chain link
-    lbl.textContent = (isPdf ? 'Chatting with PDF: ' : 'Chatting about: ')
-                       + title +
-        (host && host !== title ? '  \u2022  ' + host : '');
-    lbl.title = ctx.url;
-    bar.style.display = 'flex';
-    if (qa) qa.style.display = 'flex';
-  };
-  if (window.__moltLastTabContext)
-    window.__moltSetTabContext(window.__moltLastTabContext);
-</script>
 <!-- Agent Inbox: live tray of currently-running background automations.
      Polled every 3s from JS; hidden when no runs are active. -->
 <div class="agent-inbox" id="agentInbox" style="display:none;"></div>
@@ -687,10 +748,10 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
   </div>
 </div>
 <div class="actions" id="quickActions" style="display:none">
-  <button onclick="quickAction('summarize')">Summarize</button>
-  <button onclick="quickAction('extract')">Extract data</button>
-  <button onclick="quickAction('explain')">Explain</button>
-  <button onclick="quickAction('translate')">Translate</button>
+  <button data-on-click="quickAction" data-arg="summarize">Summarize</button>
+  <button data-on-click="quickAction" data-arg="extract">Extract data</button>
+  <button data-on-click="quickAction" data-arg="explain">Explain</button>
+  <button data-on-click="quickAction" data-arg="translate">Translate</button>
 </div>
 <div class="composer">
   <div class="attach-chip-wrap" id="attachChipWrap" style="display:none"></div>
@@ -700,13 +761,13 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
     <textarea id="chatInput" rows="1" placeholder="Ask MoltBrowser AI&#8230;" autofocus></textarea>
     <div class="composer-row">
       <div class="mode-chip-wrap">
-        <button class="mode-chip" id="modeChip" onclick="toggleModeDropdown(event)" title="How agent actions run on the page">
+        <button class="mode-chip" id="modeChip" data-on-click="toggleModeDropdown" title="How agent actions run on the page">
           <span class="mode-icon" id="modeChipIcon">&#128737;</span>
           <span class="name" id="modeChipName">Ask first</span>
           <span class="chevron">&#9662;</span>
         </button>
         <div class="mode-chip-dropdown" id="modeChipDropdown">
-          <div class="mode-item" onclick="setActionMode('ask')">
+          <div class="mode-item" data-on-click="setActionMode" data-arg="ask">
             <span class="mode-item-icon">&#128737;</span>
             <div class="mode-item-main">
               <div class="mode-item-name">Ask first</div>
@@ -714,7 +775,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
             </div>
             <span class="om-check visible" id="ovCheckAsk">&#10003;</span>
           </div>
-          <div class="mode-item" onclick="setActionMode('auto')">
+          <div class="mode-item" data-on-click="setActionMode" data-arg="auto">
             <span class="mode-item-icon">&#9889;</span>
             <div class="mode-item-main">
               <div class="mode-item-name">Auto</div>
@@ -725,10 +786,10 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
         </div>
       </div>
       <button class="browse-btn" id="agentBtn" title="AI browses and acts on this page">Agent</button>
-      <button class="mic" id="attachBtn" onclick="pickAttachment()" title="Attach a file (pdf, docx, txt, md, png, jpg, webp)">&#128206;</button>
+      <button class="mic" id="attachBtn" data-on-click="pickAttachment" title="Attach a file (pdf, docx, txt, md, png, jpg, webp)">&#128206;</button>
       <div class="composer-spacer"></div>
       <div class="model-chip-wrap">
-        <button class="model-chip" id="modelChip" onclick="toggleModelDropdown(event)">
+        <button class="model-chip" id="modelChip" data-on-click="toggleModelDropdown">
           <span class="model-chip-progress" id="modelChipProgress">
             <svg width="18" height="18" viewBox="0 0 18 18">
               <circle cx="9" cy="9" r="7"></circle>
@@ -741,9 +802,9 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
         </button>
         <div class="model-chip-dropdown" id="modelChipDropdown"></div>
       </div>
-      <button class="mic" id="micBtn" onclick="toggleMic()" title="Hold or click to record (local Whisper)">🎙</button>
-      <button class="cancel" id="cancelBtn" onclick="cancelGeneration()">Stop</button>
-      <button class="send" id="sendBtn" onclick="sendMessage()" title="Send">&#8593;</button>
+      <button class="mic" id="micBtn" data-on-click="toggleMic" title="Hold or click to record (local Whisper)">🎙</button>
+      <button class="cancel" id="cancelBtn" data-on-click="cancelGeneration">Stop</button>
+      <button class="send" id="sendBtn" data-on-click="sendMessage" title="Send">&#8593;</button>
     </div>
   </div>
 </div>
@@ -752,7 +813,7 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 <div class="model-panel" id="modelPanel">
   <div class="model-panel-header">
     <h3>Model Management</h3>
-    <button class="icon-btn labeled" onclick="toggleModelPanel()">Close</button>
+    <button class="icon-btn labeled" data-on-click="toggleModelPanel">Close</button>
   </div>
   <div id="modelList"></div>
 </div>
@@ -767,17 +828,15 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
     <div><span class="feat-icon">&#128172;</span> Summarize pages, answer questions, write code</div>
     <div><span class="feat-icon">&#129302;</span> Multiple AI models to choose from</div>
   </div>
-  <button class="welcome-btn" id="welcomeDownloadBtn" onclick="startFirstRunDownload()">Download TinyLlama (638 MB)</button>
-  <button class="welcome-skip" onclick="skipFirstRun()">Skip for now</button>
+  <button class="welcome-btn" id="welcomeDownloadBtn" data-on-click="startFirstRunDownload">Download TinyLlama (638 MB)</button>
+  <button class="welcome-skip" data-on-click="skipFirstRun">Skip for now</button>
   <div class="welcome-progress" id="welcomeProgress">
     <div class="welcome-pbar"><div class="welcome-pfill" id="welcomePfill"></div></div>
     <div class="welcome-ptext" id="welcomePtext">Starting download...</div>
   </div>
 </div>
 
-<script>
-)HTML") + ::molt_ai::kMoltChatJS + R"HTML(
-</script>
+<script src="app.js"></script>
 </body>
 </html>)HTML";
 

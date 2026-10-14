@@ -8,10 +8,9 @@
 // CSS, and ~3500 lines of JS. The JS body lives here so the .cc is
 // reviewable per-feature.
 //
-// chat_ui.cc concatenates: kHtmlHead + kMoltChatJS + kHtmlTail when
-// serving the side-panel page. The boundary is the <script> open
-// tag and matching </script> close — kMoltChatJS contains ONLY the
-// JS body, never the script tags themselves.
+// chat_ui.cc serves it as part of /app.js (after the shared
+// moltActions()/moltHTML() prologue and before the page's action
+// registrations); the HTML loads it with <script src="app.js">.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_UI_JS_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_UI_JS_H_
@@ -21,6 +20,12 @@ namespace molt_ai {
 inline constexpr char kMoltChatJS[] = R"JS(
 // ============================================================
 // MoltBrowser AI Chat — WebUI JavaScript (Day 8)
+//
+// Served as part of /app.js under the strict molt WebUI CSP
+// (molt_webui_csp.h): no inline handlers — markup names its handler
+// with data-on-<event>="name" and the names are registered in
+// molt_ai_chat_ui.cc (kChatPageActionsJs) — and every HTML sink goes
+// through moltHTML(), the page's single Trusted Types policy.
 // Model management, page content extraction, context management
 // ============================================================
 
@@ -93,6 +98,25 @@ function esc(t) {
   return d.innerHTML;
 }
 
+// esc() for a double-quoted attribute value: esc() leaves quotes alone.
+// Every HTML sink on this page goes through moltHTML() (Trusted Types),
+// whose contract is that each interpolated value is escaped for where it
+// lands — esc() in text, escAttr() inside attribute values.
+function escAttr(t) {
+  return esc(String(t == null ? '' : t)).replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+}
+
+// An http(s) URL normalised for an href, or '' (javascript:, data:, ...).
+function safeHttpHref(u) {
+  try {
+    var p = new URL(String(u));
+    return (p.protocol === 'http:' || p.protocol === 'https:') ? p.href : '';
+  } catch (e) {
+    return '';
+  }
+}
+
 // ---- Markdown Rendering ----
 var codeBlockId = 0;
 
@@ -125,7 +149,7 @@ function renderMarkdown(text) {
     var id = 'cb-' + (++codeBlockId);
     var langLabel = lang ? '<span style="position:absolute;top:4px;left:8px;font-size:9px;color:var(--faint);text-transform:uppercase">' + lang + '</span>' : '';
     return hold('<div class="code-wrap">' + langLabel +
-      '<button class="code-copy" onclick="copyCode(\'' + id + '\',this)">Copy</button>' +
+      '<button class="code-copy" data-on-click="copyCode" data-copy-target="' + id + '">Copy</button>' +
       '<pre id="' + id + '" style="background:var(--surface2);padding:' + (lang ? '22px 10px 10px' : '10px') + ';border-radius:8px;overflow-x:auto;font-size:12px;border:1px solid var(--border)"><code>' + code.trim() + '</code></pre></div>');
   });
   // Inline code (`...`)
@@ -253,9 +277,9 @@ function ensureWelcomeMessage() {
   if (!m || m.children.length) return;
   var d = document.createElement('div');
   d.className = 'message ai';
-  d.innerHTML = '<div class="sender">AI Assistant</div>' +
+  d.innerHTML = moltHTML('<div class="sender">AI Assistant</div>' +
       '<div class="text"><span id="welcomeMsgText">Welcome!</span>' +
-      '<div class="welcome-hint">Type /help for commands.</div></div>';
+      '<div class="welcome-hint">Type /help for commands.</div></div>');
   m.appendChild(d);
   updateWelcomeMessage();
 }
@@ -264,16 +288,16 @@ function addUserMessage(text, attachName) {
   var m = document.getElementById('messages');
   var d = document.createElement('div');
   d.className = 'message user';
-  d.innerHTML = '<div class="sender">You</div>' +
+  d.innerHTML = moltHTML('<div class="sender">You</div>' +
       '<button class="msg-edit" title="Edit message" ' +
-          'onclick="startEditMessage(this)">&#9998;</button>' +
+          'data-on-click="startEditMessage">&#9998;</button>' +
       '<div class="text"><span class="msg-text-body">' + esc(text) +
       '</span>' +
       (attachName
           ? '<div class="attached-note">[Attached: ' + esc(attachName) +
             ']</div>'
           : '') +
-      '</div>';
+      '</div>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -304,11 +328,11 @@ function startEditMessage(btn) {
   var original = (body || textEl).textContent;
   var area = document.createElement('div');
   area.className = 'msg-edit-area';
-  area.innerHTML = '<textarea></textarea>' +
+  area.innerHTML = moltHTML('<textarea></textarea>' +
       '<div class="msg-edit-btns">' +
         '<button class="cancel-edit">Cancel</button>' +
         '<button class="save">Save &amp; resubmit</button>' +
-      '</div>';
+      '</div>');
   var ta = area.querySelector('textarea');
   ta.value = original;
   textEl.style.display = 'none';
@@ -398,7 +422,7 @@ function startAiMessage() {
   var m = document.getElementById('messages');
   var d = document.createElement('div');
   d.className = 'message ai';
-  d.innerHTML = '<div class="sender">AI Assistant</div><div class="text"><span class="cursor"></span></div>';
+  d.innerHTML = moltHTML('<div class="sender">AI Assistant</div><div class="text"><span class="cursor"></span></div>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
   currentAiMessageEl = d.querySelector('.text');
@@ -419,7 +443,7 @@ function appendToken(token) {
   scanStreamForActions();
   // Render with action tokens stripped so the user never sees them.
   var visible = currentAiText.replace(ACTION_TOKEN_REGEX, '').trim();
-  currentAiMessageEl.innerHTML = renderMarkdown(visible) + '<span class="cursor"></span>';
+  currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visible) + '<span class="cursor"></span>');
   var m = document.getElementById('messages');
   m.scrollTop = m.scrollHeight;
 }
@@ -444,11 +468,11 @@ function finishAiMessage() {
     var visibleText =
         scrubSpecialTokens(currentAiText.replace(ACTION_TOKEN_REGEX, ''))
             .trim();
-    currentAiMessageEl.innerHTML = renderMarkdown(visibleText);
+    currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visibleText));
     // Add copy response button
     var actions = document.createElement('div');
     actions.className = 'msg-actions';
-    actions.innerHTML = '<button class="msg-action" onclick="copyResponse(this)">Copy response</button>';
+    actions.innerHTML = moltHTML('<button class="msg-action" data-on-click="copyResponse">Copy response</button>');
     currentAiMessageEl.parentNode.appendChild(actions);
   }
   currentAiMessageEl = null;
@@ -465,7 +489,7 @@ function appendToAiMessage(text) {
   if (!currentAiMessageEl) startAiMessage();
   currentAiText += text;
   currentAiMessageEl.innerHTML =
-      renderMarkdown(currentAiText) + '<span class="cursor"></span>';
+      moltHTML(renderMarkdown(currentAiText) + '<span class="cursor"></span>');
   var m = document.getElementById('messages');
   if (m) m.scrollTop = m.scrollHeight;
 }
@@ -608,7 +632,7 @@ function _renderConfirmChip(action, reason, onAllow, onDeny) {
   // Stylesheet for this chip is added inline so it can't be skinned
   // out by site CSS injection into our message area.
   d.innerHTML =
-    '<span class="ac-icon">⚡</span>' +
+    moltHTML('<span class="ac-icon">⚡</span>' +
     '<div class="ac-body">' +
       '<div class="ac-title">' + esc(title) + '</div>' +
       '<div class="ac-label">' + esc(label) + '</div>' +
@@ -616,7 +640,7 @@ function _renderConfirmChip(action, reason, onAllow, onDeny) {
     '<div class="ac-buttons">' +
       '<button class="ac-deny">Deny</button>' +
       '<button class="ac-allow">Allow</button>' +
-    '</div>';
+    '</div>');
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
   // Single-use handlers; remove the chip on either path so the chat
@@ -639,9 +663,9 @@ function appendNavigatingChip(url) {
   if (!m) return null;
   var d = document.createElement('div');
   d.className = 'molt-navigating-chip';
-  d.innerHTML = '<span class="nav-icon">🌐</span>' +
+  d.innerHTML = moltHTML('<span class="nav-icon">🌐</span>' +
                 '<span class="nav-label">Navigating to ' + esc(url) + '</span>' +
-                '<span class="nav-spinner"></span>';
+                '<span class="nav-spinner"></span>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
   return d;
@@ -707,8 +731,8 @@ function appendActionResult(ok, label, detail) {
   if (!m) return;
   var d = document.createElement('div');
   d.className = 'molt-action-result ' + (ok ? 'ok' : 'fail');
-  d.innerHTML = (ok ? '&#10003; ' : '&#10007; ') + esc(label) +
-                (detail ? ' <span class="detail">(' + esc(detail) + ')</span>' : '');
+  d.innerHTML = moltHTML((ok ? '&#10003; ' : '&#10007; ') + esc(label) +
+                (detail ? ' <span class="detail">(' + esc(detail) + ')</span>' : ''));
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -797,8 +821,8 @@ function tryDispatchHelpCommand(text) {
   if (m) {
     var d = document.createElement('div');
     d.className = 'message ai';
-    d.innerHTML = '<div class="sender">AI Assistant</div>' +
-        '<div class="text">' + renderMarkdown(HELP_TEXT) + '</div>';
+    d.innerHTML = moltHTML('<div class="sender">AI Assistant</div>' +
+        '<div class="text">' + renderMarkdown(HELP_TEXT) + '</div>');
     m.appendChild(d);
     m.scrollTop = m.scrollHeight;
   }
@@ -1602,7 +1626,7 @@ function openProfileEditor() {
       return '<div class="profile-row">' +
              '<label>' + f[1] + '</label>' +
              '<input data-key="' + f[0] + '" type="text" value="' +
-                esc(p[f[0]] || '') + '">' +
+                escAttr(p[f[0]] || '') + '">' +
              '</div>';
     }).join('');
     currentAiText = '__PROFILE_EDITOR__';
@@ -1612,14 +1636,14 @@ function openProfileEditor() {
     var last = msgs[msgs.length - 1];
     if (!last) return;
     last.querySelector('.text').innerHTML =
-        '<div class="profile-editor">' +
+        moltHTML('<div class="profile-editor">' +
         '<div class="profile-help">Encrypted at rest via your OS keychain. ' +
         'Used by <code>/fill</code> to autofill forms on http(s) pages.</div>' +
         rows +
         '<div class="profile-actions">' +
         '<button class="profile-save">Save profile</button>' +
         '<button class="profile-cancel">Cancel</button>' +
-        '</div></div>';
+        '</div></div>');
     last.querySelector('.profile-save').addEventListener('click', function(){
       var dict = {};
       last.querySelectorAll('input[data-key]').forEach(function(el){
@@ -2616,7 +2640,9 @@ function renderHistoryClusters(clusters, totalDocs) {
              (clusters.length === 1 ? '' : 's') + '.</div>';
   clusters.forEach(function(cl, idx){
     var rows = cl.docs.map(function(d){
-      return '<li><a href="' + esc(d.url) + '" target="_blank">' +
+      var href = safeHttpHref(d.url);
+      return '<li>' + (href ? '<a href="' + escAttr(href) + '" target="_blank">'
+                            : '<a>') +
              esc(d.title || d.host || d.url) + '</a>' +
              '<span class="hist-meta">' + esc(d.host) + ' \u00b7 ' +
              timeAgo(d.visited_at_unix) + '</span></li>';
@@ -2632,7 +2658,7 @@ function renderHistoryClusters(clusters, totalDocs) {
   finishAiMessage();
   var msgs = document.querySelectorAll('#messages .message.ai');
   var last = msgs[msgs.length - 1];
-  if (last) last.querySelector('.text').innerHTML = html;
+  if (last) last.querySelector('.text').innerHTML = moltHTML(html);
 }
 
 function tryDispatchActionCommand(text) {
@@ -3211,7 +3237,7 @@ function addErrorMessage(text) {
   if (!m) return;
   var d = document.createElement('div');
   d.className = 'message error';
-  d.innerHTML = '<div class="text">' + esc(text) + '</div>';
+  d.innerHTML = moltHTML('<div class="text">' + esc(text) + '</div>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -3253,15 +3279,15 @@ function _renderAttachChip(name, size, state, note) {
   // a downloaded file named `x" onmouseover="...` must not be able to
   // inject attributes into this privileged WebUI page.
   var attrName = esc(name).replace(/"/g, '&quot;');
-  wrap.innerHTML = '<div class="attach-chip">' +
+  wrap.innerHTML = moltHTML('<div class="attach-chip">' +
       '<span>📎</span>' +
       '<span class="a-name" title="' + attrName + '">' + esc(name) +
       '</span>' +
       '<span class="a-size">' + _fmtBytes(size) + '</span>' +
       status +
       '<button class="a-close" title="Remove attachment" ' +
-          'onclick="clearAttachment()">✕</button>' +
-      '</div>';
+          'data-on-click="clearAttachment">✕</button>' +
+      '</div>');
   wrap.style.display = 'flex';
 }
 
@@ -3270,7 +3296,7 @@ function clearAttachment() {
   attachmentPending = false;
   attachmentContext = null;
   var wrap = document.getElementById('attachChipWrap');
-  if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
+  if (wrap) { wrap.style.display = 'none'; wrap.textContent = ''; }
 }
 
 function pickAttachment() {
@@ -3407,7 +3433,7 @@ function setActionMode(mode) {
   // Keep the composer chip label in sync with the active mode.
   var icon = document.getElementById('modeChipIcon');
   var name = document.getElementById('modeChipName');
-  if (icon) icon.innerHTML = actionAutoMode ? '&#9889;' : '&#128737;';
+  if (icon) icon.innerHTML = moltHTML(actionAutoMode ? '&#9889;' : '&#128737;');
   if (name) name.textContent = actionAutoMode ? 'Auto' : 'Ask first';
   closeModeDropdown();
 }
@@ -3477,8 +3503,8 @@ function showModelSelectBanner() {
   var d = document.createElement('div');
   d.className = 'model-select-banner';
   d.innerHTML =
-    '<span class="msb-icon">⬇</span>' +
-    '<span class="msb-text">Choose a model below to start chatting</span>';
+    moltHTML('<span class="msb-icon">⬇</span>' +
+    '<span class="msb-text">Choose a model below to start chatting</span>');
   m.insertBefore(d, m.firstChild);
 }
 
@@ -3501,7 +3527,7 @@ function newChat() {
   conversationTitle = '';
   setActionMode('ask'); // reset to safe default for new session
   var m = document.getElementById('messages');
-  if (m) m.innerHTML = '';
+  if (m) m.textContent = '';
   ensureWelcomeMessage();
   updateContextBar();
 }
@@ -3560,7 +3586,7 @@ function refreshModelList() {
   sendWithPromise('getModelStatus').then(function(info) {
     var list = document.getElementById('modelList');
     if (!list) return;
-    list.innerHTML = '';
+    list.textContent = '';
     // Same ordering as the picker: downloaded (loaded first) on top,
     // then not-downloaded; size ascending within each group.
     var models = sortModelsForPicker(info.models || []);
@@ -3581,15 +3607,15 @@ function refreshModelList() {
         actionBtns = '';
       } else if (m.is_downloaded) {
         statusBadge = '<span class="badge downloaded">Ready</span>';
-        actionBtns = '<button class="btn primary" onclick="loadModel(\'' + m.model_id + '\')">Load</button>' +
-                     '<button class="btn danger" onclick="deleteModel(\'' + m.model_id + '\')">Delete</button>';
+        actionBtns = '<button class="btn primary" data-on-click="loadModel" data-model-id="' + escAttr(m.model_id) + '">Load</button>' +
+                     '<button class="btn danger" data-on-click="deleteModel" data-model-id="' + escAttr(m.model_id) + '">Delete</button>';
       } else {
         statusBadge = '<span class="badge unavailable">Not Downloaded</span>';
-        actionBtns = '<button class="btn primary" onclick="downloadModel(\'' + m.model_id + '\')">Download (' + sizeStr + ')</button>';
+        actionBtns = '<button class="btn primary" data-on-click="downloadModel" data-model-id="' + escAttr(m.model_id) + '">Download (' + sizeStr + ')</button>';
       }
 
       card.innerHTML =
-        '<div class="card-head">' + moltBrandTile(m.company) +
+        moltHTML('<div class="card-head">' + moltBrandTile(m.company) +
           '<div class="chead-txt">' +
             '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
               esc(m.company || 'Local') + '</div>' +
@@ -3599,10 +3625,10 @@ function refreshModelList() {
         '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
         '<div style="margin-top:4px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
-        '<div class="progress-wrap" id="pw-' + m.model_id + '">' +
-          '<div class="progress-bar"><div class="progress-fill" id="pf-' + m.model_id + '"></div></div>' +
-          '<div class="progress-text" id="pt-' + m.model_id + '"></div>' +
-        '</div>';
+        '<div class="progress-wrap" id="pw-' + escAttr(m.model_id) + '">' +
+          '<div class="progress-bar"><div class="progress-fill" id="pf-' + escAttr(m.model_id) + '"></div></div>' +
+          '<div class="progress-text" id="pt-' + escAttr(m.model_id) + '"></div>' +
+        '</div>');
 
       list.appendChild(card);
     });
@@ -3622,7 +3648,7 @@ function downloadModel(modelId) {
     var cancelDiv = document.createElement('div');
     cancelDiv.className = 'card-actions';
     cancelDiv.id = 'cancel-wrap-' + modelId;
-    cancelDiv.innerHTML = '<button class="btn danger" onclick="cancelDownload()">Cancel Download</button>';
+    cancelDiv.innerHTML = moltHTML('<button class="btn danger" data-on-click="cancelDownload">Cancel Download</button>');
     card.querySelector('.card-actions').parentNode.appendChild(cancelDiv);
   }
 
@@ -3799,7 +3825,7 @@ function renderModelChipDropdown() {
   var dd = document.getElementById('modelChipDropdown');
   if (!dd) return;
   if (allModels.length === 0) {
-    dd.innerHTML = '<div style="padding:12px;color:var(--faint);font-size:11px;text-align:center">Loading\u2026</div>';
+    dd.innerHTML = moltHTML('<div style="padding:12px;color:var(--faint);font-size:11px;text-align:center">Loading\u2026</div>');
     sendWithPromise('getModelStatus').then(function(r){
       allModels = r.models || [];
       renderModelChipDropdown();
@@ -3807,7 +3833,7 @@ function renderModelChipDropdown() {
     });
     return;
   }
-  dd.innerHTML = '';
+  dd.textContent = '';
   // Partition into local (on-device GGUF) and cloud (via user's key)
   // models. Cloud models carry is_cloud=true and provider!='' from the
   // backend; they need no download/load and are always ready-to-select.
@@ -3824,12 +3850,12 @@ function renderModelChipDropdown() {
   var cloudCta = document.createElement('div');
   cloudCta.className = 'mcd-cloud-cta';
   cloudCta.innerHTML =
-    '<span class="mcc-icon">☁️</span>' +
+    moltHTML('<span class="mcc-icon">☁️</span>' +
     '<span class="mcc-text">' +
       (cloudModels.length ? 'Manage cloud providers' : 'Connect a cloud model') +
       '<span class="mcc-sub">OpenAI, Claude, Gemini &amp; more — your key</span>' +
     '</span>' +
-    '<span class="mcc-arrow">→</span>';
+    '<span class="mcc-arrow">→</span>');
   cloudCta.onclick = function() {
     toggleModelDropdown();
     openMoltSettings('providers');
@@ -3872,7 +3898,7 @@ function renderModelChipDropdown() {
       if (downloadingModelId) item.className += ' disabled';
     }
     item.innerHTML =
-      moltBrandTile(m.company) +
+      moltHTML(moltBrandTile(m.company) +
       '<div class="mmain">' +
         '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
           esc(m.company || 'Local') + '</div>' +
@@ -3880,9 +3906,9 @@ function renderModelChipDropdown() {
         '<div class="msize">' + esc(meta) + '</div>' +
         (isDownloading
             ? '<div class="mrow-bar"><div class="mrow-fill" id="chipRowFill-' +
-              m.model_id + '"></div></div>'
+              escAttr(m.model_id) + '"></div></div>'
             : '') +
-      '</div>' + right;
+      '</div>' + right);
     item.onclick = function(ev) {
       // The re-render below detaches the clicked row; without this the
       // document-level outside-click handler sees a detached target and
@@ -3924,13 +3950,13 @@ function renderModelChipDropdown() {
           : '<span class="mcheck disk" title="Click to use">\u2713</span>';
       if (isActive) item.className += ' active';
       item.innerHTML =
-        moltBrandTile(m.provider) +
+        moltHTML(moltBrandTile(m.provider) +
         '<div class="mmain">' +
           '<div class="mco" style="color:' + moltBrandColor(m.provider) + '">' +
             esc(m.provider || 'Cloud') + '</div>' +
           '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
           '<div class="msize">cloud \u00b7 via your key</div>' +
-        '</div>' + right;
+        '</div>' + right);
       item.onclick = function(ev) {
         if (ev) ev.stopPropagation();
         if (isActive) return;
@@ -4300,7 +4326,7 @@ function clearSearch() {
 function renderConversationDOM(messages) {
   var m = document.getElementById('messages');
   if (!m) return;
-  m.innerHTML = '';
+  m.textContent = '';
   for (var i = 0; i < messages.length; i++) {
     var msg = messages[i];
     if (msg.role === 'user') {
@@ -4312,8 +4338,8 @@ function renderConversationDOM(messages) {
       // tokens here too so Recents restore / import never shows them.
       var visible = scrubSpecialTokens(
           String(msg.content || '').replace(ACTION_TOKEN_REGEX, '')).trim();
-      d.innerHTML = '<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(visible) + '</div>' +
-        '<div class="msg-actions"><button class="msg-action" onclick="copyResponse(this)">Copy response</button></div>';
+      d.innerHTML = moltHTML('<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(visible) + '</div>' +
+        '<div class="msg-actions"><button class="msg-action" data-on-click="copyResponse">Copy response</button></div>');
       m.appendChild(d);
     }
   }
@@ -4366,7 +4392,7 @@ function renderConvList() {
   var q = '';
   var si = document.getElementById('drawerSearch');
   if (si) q = si.value.trim().toLowerCase();
-  list.innerHTML = '';
+  list.textContent = '';
   var shown = 0;
   for (var i = 0; i < allConversations.length; i++) {
     var c = allConversations[i];
@@ -4375,8 +4401,8 @@ function renderConvList() {
     shown++;
     var row = document.createElement('div');
     row.className = 'conv-item' + (c.id === conversationId ? ' active' : '');
-    row.innerHTML = '<span class="conv-title">' + esc(title) + '</span>' +
-                    '<button class="conv-del" title="Delete chat">🗑</button>';
+    row.innerHTML = moltHTML('<span class="conv-title">' + esc(title) + '</span>' +
+                    '<button class="conv-del" title="Delete chat">🗑</button>');
     (function(id) {
       row.onclick = function() { loadConversationById(id); };
       row.querySelector('.conv-del').onclick = function(ev) {
@@ -4387,8 +4413,8 @@ function renderConvList() {
     list.appendChild(row);
   }
   if (!shown) {
-    list.innerHTML = '<div class="conv-empty">' +
-        (q ? 'No matching chats' : 'No conversations yet') + '</div>';
+    list.innerHTML = moltHTML('<div class="conv-empty">' +
+        (q ? 'No matching chats' : 'No conversations yet') + '</div>');
   }
 }
 
@@ -4581,7 +4607,7 @@ function addSystemMessage(text) {
   if (!m) return;
   var d = document.createElement('div');
   d.className = 'message system';
-  d.innerHTML = '<div class="text">' + esc(text) + '</div>';
+  d.innerHTML = moltHTML('<div class="text">' + esc(text) + '</div>');
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
@@ -5055,7 +5081,7 @@ function _stopRecording() {
     if (!tray) return;
     if (!agents || !agents.length) {
       tray.style.display = 'none';
-      tray.innerHTML = '';
+      tray.textContent = '';
       return;
     }
     var rows = ['<div class="agent-inbox-header">' +
@@ -5072,7 +5098,8 @@ function _stopRecording() {
       // contains stray < or &.
       function esc(s) { return (s + '').replace(/&/g,'&amp;')
                                        .replace(/</g,'&lt;')
-                                       .replace(/>/g,'&gt;'); }
+                                       .replace(/>/g,'&gt;')
+                                       .replace(/"/g,'&quot;'); }
       rows.push(
         '<div class="agent-row">' +
           '<div class="agent-spinner' + cls + '"></div>' +
@@ -5082,7 +5109,7 @@ function _stopRecording() {
           '<div class="agent-note">' + esc(note) + '</div>' +
         '</div>');
     });
-    tray.innerHTML = rows.join('');
+    tray.innerHTML = moltHTML(rows.join(''));
     tray.style.display = 'flex';
   }
   function pollAgents() {
@@ -5156,12 +5183,12 @@ function _stopRecording() {
     bar.id = 'agentBar';
     bar.className = 'agent-bar';
     bar.innerHTML =
-      '<div class="agent-bar-hdr">' +
+      moltHTML('<div class="agent-bar-hdr">' +
         '<span class="agent-bar-title">&#129302; AGENT RUNNING</span>' +
         '<button class="agent-stop-btn" id="agentStopBtn">&#9632; Stop</button>' +
       '</div>' +
       '<div class="agent-steps" id="agentSteps"></div>' +
-      '<div id="agentResult" style="display:none"></div>';
+      '<div id="agentResult" style="display:none"></div>');
     var inputArea = document.getElementById('inputArea') ||
                     document.querySelector('.input-area');
     if (inputArea && inputArea.parentNode)
@@ -5182,11 +5209,11 @@ function _stopRecording() {
     agentRunning = true;
     document.getElementById('agentBar').classList.add('active');
     document.getElementById('agentSteps').innerHTML =
-      '<div class="agent-step ok">' +
+      moltHTML('<div class="agent-step ok">' +
         '<div class="agent-spinner-sm"></div>' +
         '<div class="agent-step-body"><div class="agent-step-target">Goal: ' +
           goal.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
-        '</div></div></div>';
+        '</div></div></div>');
     document.getElementById('agentResult').style.display = 'none';
     var hdr = document.querySelector('.agent-bar-title');
     if (hdr) hdr.textContent = '\u{1F916} AGENT RUNNING';
@@ -5212,7 +5239,7 @@ function _stopRecording() {
     // `badge` is the model's raw ACTION verb, so it is only ever text.
     var badgeClass = /^[A-Z_]{1,24}$/.test(badge) ? badge : 'OTHER';
     row.innerHTML =
-      '<div class="agent-step-num">' + (Number(step.number) || 0) + '</div>' +
+      moltHTML('<div class="agent-step-num">' + (Number(step.number) || 0) + '</div>' +
       '<span class="agent-step-badge badge-' + badgeClass + '"></span>' +
       '<div class="agent-step-body">' +
         '<div class="agent-step-target">' +
@@ -5223,7 +5250,7 @@ function _stopRecording() {
               reason.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
             '</div>'
           : '') +
-      '</div>';
+      '</div>');
     row.querySelector('.agent-step-badge').textContent = badge;
     steps.appendChild(row);
     steps.scrollTop = steps.scrollHeight;
@@ -5288,13 +5315,13 @@ function _stopRecording() {
     if (m) {
       var d = document.createElement('div');
       d.className = 'message ai';
-      d.innerHTML = '<div class="sender">AI Assistant</div>' +
+      d.innerHTML = moltHTML('<div class="sender">AI Assistant</div>' +
           '<div class="text">' +
           (typeof renderMarkdown === 'function'
               ? renderMarkdown(successText)
               : successText.replace(/[<>&]/g, function(c){
                   return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c]; })) +
-          '</div>';
+          '</div>');
       m.appendChild(d);
       m.scrollTop = m.scrollHeight;
     }

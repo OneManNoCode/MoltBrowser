@@ -39,8 +39,10 @@ inline bool IsAppJsRequest(const GURL& url) {
   return url.path() == kAppJsPath;
 }
 
+// Any script resource a page serves (app.js, plus e.g. the chat page's
+// pre-paint theme.js). Everything else a molt page serves is HTML.
 inline std::string MimeTypeFor(const GURL& url) {
-  return IsAppJsRequest(url) ? "text/javascript" : "text/html";
+  return url.path().ends_with(".js") ? "text/javascript" : "text/html";
 }
 
 enum class TrustedTypesMode {

@@ -228,6 +228,65 @@ const PAGES = [
        assert(doc.querySelector('#messages .highlight'), 'search highlights text');
      });
    }},
+  {name: 'molt://ai-chat', file: 'molt_ai_chat_ui.cc',
+   extraFiles: ['molt_webui_csp.h', 'molt_ai_chat_ui_js.h'],
+   preScripts: ['kChatThemeJs'],
+   listeners: ['#sendBtn:click', '#modelChip:click', '#modeChip:click', '#micBtn:click',
+               '#attachBtn:click', '#cancelBtn:click', '#drawerSearch:input',
+               '#searchInput:input', '#drawerScrim:click', '#agentBtn:click'],
+   noClick: ['#attachBtn', '#welcomeDownloadBtn', '#micBtn'],
+   responses: {
+     initChat: {model_loaded: false, is_first_run: false, total_ram_gb: 16, cpu_cores: 8,
+                models: [{model_id: 'm1', is_downloaded: true, display_name: 'M1'}]},
+     getModelStatus: {models: [
+       {model_id: 'm1" data-x="1', display_name: '<b>bold</b>', company: 'Meta',
+        is_downloaded: true, file_size_mb: 100},
+       {model_id: 'openai:<x>', is_cloud: true, provider: 'OpenAI', display_name: '<img src=x>'}]},
+     listConversations: {success: true, conversations: [
+       {id: 'c1', title: '<img src=x onerror=alert(1)>', updated_at: 1}]},
+     vaultList: {entries: [{id: 'abcdef1234567890', site_host: '<b>gh</b>', username: 'me'}]},
+     vaultFindForActive: {host: 'github.com', fillable: true, matches: [
+       {id: 'abcdef1234567890', site_host: 'gist.github.com', username: 'me', match: 'same_site'}]},
+     vaultAutofill: {success: false, cancelled: true},
+     openMoltSettings: {success: true},
+     sendPrompt: {success: true},
+   },
+   async after(window) {
+     const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 15));
+     window.startAiMessage();
+     window.appendToken('**hi** <img src=x onerror=alert(1)> [l](https://ex.com/"q) ```js\nx()\n```');
+     window.finishAiMessage();
+     const last = doc.querySelector('#messages .message.ai:last-child');
+     assert(last.querySelector('strong'), 'markdown rendered');
+     assert.strictEqual(last.querySelectorAll('img').length, 0, 'model output stays text');
+     const copy = last.querySelector('button.code-copy');
+     assert(copy && /^cb-\d+$/.test(copy.getAttribute('data-copy-target')), 'copy button wired');
+     copy.click();
+     last.querySelector('[data-on-click=copyResponse]').click();
+     // Recents drawer with a hostile title.
+     window.toggleDrawer();
+     await tick();
+     assert.strictEqual(doc.querySelectorAll('#convList img').length, 0, 'chat titles stay text');
+     // /vault commands never carry a password into the page.
+     const input = doc.getElementById('chatInput');
+     for (const cmd of ['/vault list', '/vault find', '/vault fill', '/vault add a.com me hunter2']) {
+       input.value = cmd;
+       window.sendMessage();
+       await tick();
+     }
+     assert(!/hunter2/.test(doc.getElementById('messages').textContent),
+            '/vault add never echoes the password');
+     assert(window.__sent.includes('openMoltSettings'), '/vault add opens Settings');
+     assert(!window.__sent.includes('vaultAdd'), 'chat never sends vaultAdd');
+     // Tab-context contract still installed (from app.js now).
+     window.__moltSetTabContext({url: 'https://example.com/a.pdf', title: 'Doc (PDF)'});
+     assert.strictEqual(doc.querySelector('#tabContext .tab-context-icon').textContent, '\u{1F4C4}');
+     // Model dropdown + panel render hostile metadata as text.
+     window.toggleModelPanel();
+     await tick();
+     assert.strictEqual(doc.querySelectorAll('#modelList b, [data-x]').length, 0, 'model metadata stays text');
+   }},
 ];
 
 function makeTrustedTypes(window, mode, violations) {
@@ -283,7 +342,7 @@ async function runPage(page) {
 
   const constants = Object.assign({}, raw.byName);
   for (const f of page.extraFiles || ['molt_webui_csp.h']) Object.assign(constants, rawStrings(read(f)).byName);
-  const parts = appJsParts(src);
+  const parts = (page.preScripts || []).concat(appJsParts(src));
   const js = parts.map((p) => {
     assert(p in constants, `${page.name}: app.js part ${p} not found`);
     return constants[p];
