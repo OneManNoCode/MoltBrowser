@@ -63,3 +63,17 @@ source_set("molt_ai") {
     "//third_party/zlib/google:zip",
   ]
 }
+
+# Pure-logic tests for the shared WebUI handler helpers (argument
+# validation). Linked into //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "molt_ai_chat_handler_helpers.h",
+    "molt_ai_chat_handler_helpers_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//testing/gtest",
+  ]
+}

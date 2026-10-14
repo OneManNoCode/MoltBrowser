@@ -46,6 +46,7 @@
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -57,6 +58,8 @@
 #include "build/build_config.h"
 
 namespace {
+
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 const char kSettingsFileName[] = "settings.json";
 
@@ -241,7 +244,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   void HandleGetSettings(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
     base::DictValue settings = LoadSettings();
@@ -251,7 +254,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   void HandleSaveSettings(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
     if (!args[1].is_dict()) {
@@ -280,7 +283,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   void HandleResetSettings(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
     base::DictValue defaults = GetDefaultSettings();
@@ -607,7 +610,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // here so the UI can render them greyed/disabled.
   void HandleGetImportableBrowsers(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
     base::DictValue out;
@@ -631,7 +634,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // reads the chosen browser's profile off-thread, then writes it in.
   void HandleImportFromBrowser(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 3u);
+    if (!HasCallbackArgs(args, 3u, __func__)) return;
     const std::string callback_id = args[0].GetString();
     const std::string browser_id_string =
         args[1].is_string() ? args[1].GetString() : std::string();
@@ -662,7 +665,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // generalized path so nothing breaks mid-migration.
   void HandleImportFromChrome(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) return;
     const std::string callback_id = args[0].GetString();
     const bool include_passwords = args[1].is_bool() && args[1].GetBool();
 
@@ -866,7 +869,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   //   enabled_models:[...] } ] }
   void HandleGetProviders(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     const std::string callback_id = args[0].GetString();
 
     std::map<std::string, molt_ai::ProviderConfig> stored;
@@ -910,7 +913,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // the model list. On any validation failure nothing is persisted.
   void HandleSaveProviderKey(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 3u);
+    if (!HasCallbackArgs(args, 3u, __func__)) return;
     const std::string callback_id = args[0].GetString();
     const std::string provider_id =
         args[1].is_string() ? args[1].GetString() : std::string();
@@ -1004,7 +1007,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // model in a connected provider's enabled set.
   void HandleSetModelEnabled(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 4u);
+    if (!HasCallbackArgs(args, 4u, __func__)) return;
     const std::string callback_id = args[0].GetString();
     const std::string provider_id =
         args[1].is_string() ? args[1].GetString() : std::string();
@@ -1047,7 +1050,7 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // config entirely.
   void HandleRemoveProvider(const base::ListValue& args) {
     AllowJavascript();
-    CHECK_GE(args.size(), 2u);
+    if (!HasCallbackArgs(args, 2u, __func__)) return;
     const std::string callback_id = args[0].GetString();
     const std::string provider_id =
         args[1].is_string() ? args[1].GetString() : std::string();

@@ -26,6 +26,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
+
 // ==================================================================
 // Tier 4: Password vault
 //
@@ -40,7 +42,7 @@
 // they need the plaintext (e.g. the dedicated reveal view).
 void MoltAIChatHandler::HandleVaultList(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   bool include_passwords = false;
   if (args.size() > 1 && args[1].is_bool())
@@ -74,7 +76,7 @@ void MoltAIChatHandler::HandleVaultList(const base::ListValue& args) {
 
 void MoltAIChatHandler::HandleVaultAdd(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   base::DictValue out;
   if (!args[1].is_dict()) {
@@ -116,7 +118,7 @@ void MoltAIChatHandler::HandleVaultAdd(const base::ListValue& args) {
 
 void MoltAIChatHandler::HandleVaultDelete(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string id = args[1].is_string() ? args[1].GetString() : "";
   bool ok = false;
@@ -135,7 +137,7 @@ void MoltAIChatHandler::HandleVaultDelete(const base::ListValue& args) {
 void MoltAIChatHandler::HandleVaultFindForActive(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   // Resolve the active tab's host.
   std::string host;
@@ -272,7 +274,7 @@ constexpr char kVaultAutofillJS[] = R"JS(
 
 void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string entry_id = args[1].is_string() ? args[1].GetString() : "";
   base::DictValue out;

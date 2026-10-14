@@ -425,6 +425,7 @@ namespace {
 // molt_ai_chat_handler_helpers.h when the file was subdivided
 // (code-review MEDIUM #10). The `using` declarations below keep the
 // existing call sites unchanged.
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
 using molt_ai::chat_handler_helpers::JsStringLiteral;
 using molt_ai::chat_handler_helpers::SecureClear;
 
@@ -839,7 +840,7 @@ void MoltAIChatHandler::HandleInitChat(const base::ListValue& args) {
   LOG(INFO) << "[MoltAI] HandleInitChat called with " << args.size() << " args";
   AllowJavascript();
 
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   auto* runtime = GetOrCreateRuntime();
@@ -929,7 +930,7 @@ void MoltAIChatHandler::FinishInitChat(std::string callback_id,
 void MoltAIChatHandler::HandleLoadModel(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   // Type-check second arg — a malicious renderer could send a non-
   // string here and CHECK-crash the browser. Code-review MEDIUM #8.
@@ -1022,7 +1023,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   LOG(INFO) << "[MoltAI] HandleSendPrompt called";
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string prompt_text =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -1634,7 +1635,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
     const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   auto* runtime = GetOrCreateRuntime();
@@ -1701,7 +1702,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
 void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue result;
@@ -1735,7 +1736,7 @@ void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
 void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string model_id =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -2033,7 +2034,7 @@ void MoltAIChatHandler::FinishDownload(bool success, int net_error) {
 void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string model_id =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -2080,7 +2081,7 @@ void MoltAIChatHandler::OnModelDeleted(std::string callback_id,
 void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   content::WebContents* webui_contents = web_ui()->GetWebContents();
@@ -2208,7 +2209,7 @@ void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
 void MoltAIChatHandler::HandleExportHistory(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string history_json =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -2498,7 +2499,7 @@ base::SequencedTaskRunner* MoltAIChatHandler::ConversationTaskRunner() {
 void MoltAIChatHandler::HandleListConversations(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   ConversationTaskRunner()->PostTaskAndReplyWithResult(
@@ -2511,7 +2512,7 @@ void MoltAIChatHandler::HandleListConversations(const base::ListValue& args) {
 void MoltAIChatHandler::HandleSaveConversation(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 4u);
+  if (!HasCallbackArgs(args, 4u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string id =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -2561,7 +2562,7 @@ void MoltAIChatHandler::HandleSaveConversation(const base::ListValue& args) {
 void MoltAIChatHandler::HandleLoadConversation(const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string id =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -2589,7 +2590,7 @@ void MoltAIChatHandler::HandleDeleteConversation(
     const base::ListValue& args) {
   AllowJavascript();
 
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string id =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -2648,7 +2649,7 @@ void MoltAIChatHandler::ResolveConversationCallback(std::string callback_id,
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue result;
@@ -2976,7 +2977,7 @@ void MoltAIChatHandler::RunDirectPageAction(const std::string& callback_id,
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleQueryMemory(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string query =
       args[1].is_string() ? args[1].GetString() : "";
@@ -3041,7 +3042,7 @@ void MoltAIChatHandler::HandleQueryMemory(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleListTabsInWindow(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -3093,7 +3094,7 @@ void MoltAIChatHandler::HandleListTabsInWindow(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleTriageActOnTabs(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -3203,7 +3204,7 @@ void MoltAIChatHandler::HandleTriageActOnTabs(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -3338,7 +3339,7 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleListActiveAgents(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::ListValue arr;
@@ -3372,7 +3373,7 @@ void MoltAIChatHandler::HandleListActiveAgents(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleGetMoltProfile(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue dict;
@@ -3389,7 +3390,7 @@ void MoltAIChatHandler::HandleGetMoltProfile(const base::ListValue& args) {
 
 void MoltAIChatHandler::HandleSaveMoltProfile(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -3521,7 +3522,7 @@ constexpr char kFormFillJS[] = R"JS(
 
 void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -3604,7 +3605,7 @@ void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleListMemoryDocs(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   int limit = 200;
@@ -3670,7 +3671,7 @@ void MoltAIChatHandler::HandleListMemoryDocs(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string url = args[1].is_string() ? args[1].GetString() : "";
 
@@ -3833,7 +3834,7 @@ void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSearchBookmarks(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string query = args[1].is_string() ? args[1].GetString() : "";
   int top_k = 8;
@@ -3957,7 +3958,7 @@ void MoltAIChatHandler::HandleSearchBookmarks(const base::ListValue& args) {
 void MoltAIChatHandler::HandleExtractAllTabsText(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   int max_chars_per_tab = 4000;
   if (args.size() > 1 && args[1].is_int())
@@ -4060,7 +4061,7 @@ void MoltAIChatHandler::HandleExtractAllTabsText(
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string url_str = args[1].is_string() ? args[1].GetString() : "";
 
@@ -4120,7 +4121,7 @@ void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleOpenUrlInTab(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   // Guard the type as the rest of this file does; a non-string arg then
   // cleanly fails the is_valid()/scheme check below rather than tripping
@@ -4184,7 +4185,7 @@ void MoltAIChatHandler::HandleOpenUrlInTab(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   // Optional 2nd arg: a settings section to deep-link to. The settings page
@@ -4275,7 +4276,7 @@ void MoltAIChatHandler::HandleCloseSidePanel(const base::ListValue& args) {
 void MoltAIChatHandler::HandleGetTrackerBreakdown(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -4384,7 +4385,7 @@ void MoltAIChatHandler::HandleGetTrackerBreakdown(
 void MoltAIChatHandler::HandleGetDomainReputation(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string host = (args.size() > 1 && args[1].is_string())
                          ? args[1].GetString()
@@ -4498,7 +4499,7 @@ void MoltAIChatHandler::HandleGetDomainReputation(
 void MoltAIChatHandler::HandleGetConnectionPath(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string url_str = (args.size() > 1 && args[1].is_string())
                             ? args[1].GetString()
@@ -4569,7 +4570,7 @@ void MoltAIChatHandler::HandleGetConnectionPath(
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 3u);
+  if (!HasCallbackArgs(args, 3u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   std::string host = args[1].is_string() ? args[1].GetString() : "";
   bool enabled = args[2].is_bool() ? args[2].GetBool() : true;
@@ -4669,7 +4670,7 @@ void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleAppendReceipt(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   base::DictValue out;
   if (!args[1].is_dict()) {
@@ -4777,7 +4778,7 @@ void MoltAIChatHandler::HandleAppendReceipt(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   base::DictValue out;
   if (!args[1].is_dict()) {
@@ -5017,7 +5018,7 @@ static constexpr char kFormFillByMapJS[] = R"JS(
 
 void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   base::DictValue out;
 
@@ -5150,7 +5151,7 @@ void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
 void MoltAIChatHandler::HandleApplyFormFillMap(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   base::DictValue out;
   if (!args[1].is_dict()) {
@@ -5232,7 +5233,7 @@ void MoltAIChatHandler::HandleApplyFormFillMap(
 void MoltAIChatHandler::HandleTranscribeAudio(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string b64 = args[1].is_string() ? args[1].GetString() : "";
   base::DictValue out;
@@ -5719,7 +5720,7 @@ std::pair<base::DictValue, std::string> ExtractAttachmentBlocking(
 void MoltAIChatHandler::HandleExtractAttachment(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 4u);
+  if (!HasCallbackArgs(args, 4u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string name =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -5803,10 +5804,11 @@ void MoltAIChatHandler::HandleExtractAttachment(
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
   AllowJavascript();
-  if (args.size() < 2) return;
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
 
   const std::string callback_id = args[0].GetString();
-  const std::string goal        = args[1].GetString();
+  const std::string goal =
+      molt_ai::chat_handler_helpers::StringArg(args, 1);
 
   if (goal.empty()) {
     base::DictValue err;

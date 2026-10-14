@@ -14,13 +14,60 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_HANDLER_HELPERS_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_HANDLER_HELPERS_H_
 
+#include <cstddef>
 #include <string>
+#include <string_view>
 
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/values.h"
 
 namespace molt_ai {
 namespace chat_handler_helpers {
+
+// ---- WebUI message argument validation ----
+//
+// chrome.send() arguments come straight from the WebUI renderer.
+// base::Value::GetString() / GetDict() / GetInt() CHECK on a type
+// mismatch and args[i] past the end is out of bounds, so one malformed
+// message used to be enough to crash the whole browser. Every handler
+// validates before touching |args|:
+//
+//   if (!HasCallbackArgs(args, 2u, __func__)) return;
+//   const std::string callback_id = args[0].GetString();
+//
+// and reads every other argument with an is_*() check first (or with
+// StringArg() below). When the callback id itself is missing there is
+// nothing to resolve or reject, so the message is logged and dropped.
+
+// Callback ids are "<method>_<counter>"; anything longer is not ours.
+inline constexpr size_t kMaxCallbackIdLength = 256;
+
+// True when |args| holds at least |min_size| values and args[0] is a
+// plausible callback id string. Logs and returns false otherwise.
+[[nodiscard]] inline bool HasCallbackArgs(const base::ListValue& args,
+                                          size_t min_size,
+                                          std::string_view handler) {
+  if (!args.empty() && args.size() >= min_size && args[0].is_string() &&
+      args[0].GetString().size() <= kMaxCallbackIdLength) {
+    return true;
+  }
+  LOG(WARNING) << "[MoltAI] " << handler
+               << ": dropping malformed WebUI message (" << args.size()
+               << " args)";
+  return false;
+}
+
+// args[index] when it exists and is a string, else |fallback|. Never
+// CHECKs, whatever the renderer sent.
+inline std::string StringArg(const base::ListValue& args,
+                             size_t index,
+                             std::string_view fallback = {}) {
+  if (index < args.size() && args[index].is_string()) {
+    return args[index].GetString();
+  }
+  return std::string(fallback);
+}
 
 // JSON-encode an arbitrary string so it can be safely embedded inside
 // a JS source literal passed to ExecuteJavaScriptInIsolatedWorld.

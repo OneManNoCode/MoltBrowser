@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/keyed_service/core/service_access_type.h"
@@ -35,6 +36,8 @@
 #include "url/gurl.h"
 
 namespace {
+
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 // The compact popover only shows a few hundred rows; cap the walk so a huge
 // bookmark tree can't bloat the IPC payload or the scroll list.
@@ -164,7 +167,7 @@ bool MoltImportHandler::StringToBrowserId(const std::string& s,
 
 void MoltImportHandler::HandleGetBookmarks(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -188,7 +191,7 @@ void MoltImportHandler::HandleGetBookmarks(const base::ListValue& args) {
 
 void MoltImportHandler::HandleOpenBookmark(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string url =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -244,7 +247,7 @@ void MoltImportHandler::HandleOpenBookmark(const base::ListValue& args) {
 void MoltImportHandler::HandleGetImportableBrowsers(
     const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
@@ -266,7 +269,7 @@ void MoltImportHandler::HandleGetImportableBrowsers(
 
 void MoltImportHandler::HandleImportFromBrowser(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 3u);
+  if (!HasCallbackArgs(args, 3u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string browser_id_string =
       args[1].is_string() ? args[1].GetString() : std::string();
@@ -294,7 +297,7 @@ void MoltImportHandler::HandleImportFromBrowser(const base::ListValue& args) {
 
 void MoltImportHandler::HandleImportFromChrome(const base::ListValue& args) {
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const bool include_passwords = args[1].is_bool() && args[1].GetBool();
 
