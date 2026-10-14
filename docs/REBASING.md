@@ -196,7 +196,7 @@ whole file.
 | Identical copies changed upstream | 13 of 49 | 15 of 49 |
 | DEPS file subproject moved | 1 | 1 |
 | First-party paths now upstream | 180 | 184 |
-| Removed upstream symbols still used by our code | 7 | 13 |
+| Removed upstream symbols still used by our code | 7 | 14 |
 | Included upstream headers gone | 5 | 5 |
 
 The 49 conflicts at 152 break down as 21 string files (122 hunks), Cargo.lock +
@@ -269,8 +269,11 @@ headers our code includes; heuristic, the compile is authoritative):
 
 At 155, additionally: `Browser::RequestMediaAccessPermission`,
 `Browser::CreateParams::{initial_bounds, initial_show_state, trusted_source}`,
-`Browser::is_type_normal` and `BrowserWindowFeatures::side_panel_ui` are gone,
-which hits the automation background browser and the AI-chat side panel.
+`Browser::is_type_normal` and `BrowserWindowFeatures::side_panel_ui` no longer
+appear in the headers our code includes (removed or moved elsewhere),
+which hits the automation background browser and the AI-chat side panel. (The
+scan also lists `on_confirm`, a false positive: it is only a parameter name,
+in the old `browser.h` and in our `web_agent.cc`.)
 
 The full reports regenerate in about 30 seconds:
 `tools/chromium/rebase.py 152.0.7977.168` (and `155.0.8059.87`).
