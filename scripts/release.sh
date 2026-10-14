@@ -36,7 +36,6 @@ DO_NOTARIZE=false
 DO_UPLOAD=false
 SKIP_BUILD=false
 UNIVERSAL=false
-BUNDLE_SPARKLE=true
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -48,7 +47,6 @@ while [[ $# -gt 0 ]]; do
     --upload) DO_UPLOAD=true; shift ;;
     --skip-build) SKIP_BUILD=true; shift ;;
     --universal) UNIVERSAL=true; shift ;;
-    --no-sparkle) BUNDLE_SPARKLE=false; shift ;;
     --help|-h)
       echo "MoltBrowser Release Pipeline"
       echo ""
@@ -63,7 +61,6 @@ while [[ $# -gt 0 ]]; do
       echo "  --upload       Upload to GitHub Releases"
       echo "  --skip-build   Skip the Chromium build step"
       echo "  --universal    Build universal binary (arm64 + x64)"
-      echo "  --no-sparkle   Skip bundling Sparkle.framework"
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -92,14 +89,13 @@ echo "╠═══════════════════════�
 echo "║  Version:    $VERSION"
 echo "║  Build:      $BUILD_NUM"
 echo "║  Universal:  $UNIVERSAL"
-echo "║  Sparkle:    $BUNDLE_SPARKLE"
 echo "║  Signed:     $([ -n "$SIGN_IDENTITY" ] && echo "Yes" || echo "No")"
 echo "║  Notarize:   $DO_NOTARIZE"
 echo "║  Upload:     $DO_UPLOAD"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-STEPS_TOTAL=9
+STEPS_TOTAL=8
 STEP=0
 
 # ---- Step 1: Build ----
@@ -141,17 +137,7 @@ echo ""
 echo "[$STEP/$STEPS_TOTAL] Patching Info.plist..."
 bash "$SCRIPT_DIR/patch-info-plist.sh" "$VERSION" "$BUILD_NUM"
 
-# ---- Step 3: Bundle Sparkle.framework ----
-STEP=$((STEP + 1))
-echo ""
-if [ "$BUNDLE_SPARKLE" = true ]; then
-  echo "[$STEP/$STEPS_TOTAL] Bundling Sparkle.framework..."
-  bash "$SCRIPT_DIR/bundle-sparkle.sh" --app "$APP_PATH"
-else
-  echo "[$STEP/$STEPS_TOTAL] Skipping Sparkle bundling (--no-sparkle)"
-fi
-
-# ---- Step 4: Metal shader library (default.metallib) ----
+# ---- Step 3: Metal shader library (default.metallib) ----
 # llama.cpp's Metal backend looks up default.metallib in the framework's
 # Resources/ at runtime (ggml-metal-device.m pathForResource). No GN rule
 # produces it — a fresh out dir ships without it and Metal falls back to
@@ -208,7 +194,7 @@ else
   fi
 fi
 
-# ---- Step 5: Code Sign ----
+# ---- Step 4: Code Sign ----
 STEP=$((STEP + 1))
 echo ""
 if [ -n "$SIGN_IDENTITY" ]; then
@@ -298,7 +284,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping code signing (no --identity)"
 fi
 
-# ---- Step 6: Package DMG ----
+# ---- Step 5: Package DMG ----
 STEP=$((STEP + 1))
 echo ""
 echo "[$STEP/$STEPS_TOTAL] Creating DMG..."
@@ -329,7 +315,7 @@ fi
 DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 echo "  DMG created: $DMG_PATH ($DMG_SIZE)"
 
-# ---- Step 7: Notarize ----
+# ---- Step 6: Notarize ----
 STEP=$((STEP + 1))
 echo ""
 if [ "$DO_NOTARIZE" = true ] && [ -n "$SIGN_IDENTITY" ]; then
@@ -345,7 +331,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping notarization"
 fi
 
-# ---- Step 8: Upload to GitHub Releases ----
+# ---- Step 7: Upload to GitHub Releases ----
 STEP=$((STEP + 1))
 echo ""
 if [ "$DO_UPLOAD" = true ]; then
@@ -398,9 +384,6 @@ RELEASE_EOF
       "$DMG_PATH"
 
     echo "  Release: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
-
-    # Update appcast
-    bash "$SCRIPT_DIR/generate-appcast.sh" --version "$VERSION" --build "$BUILD_NUM" --dmg "$DMG_PATH"
   else
     echo "  ERROR: gh CLI not found. Install with: brew install gh"
   fi
@@ -408,7 +391,7 @@ else
   echo "[$STEP/$STEPS_TOTAL] Skipping upload"
 fi
 
-# ---- Step 9: Generate landing page assets ----
+# ---- Step 8: Generate landing page assets ----
 STEP=$((STEP + 1))
 echo ""
 echo "[$STEP/$STEPS_TOTAL] Generating landing page download metadata..."
@@ -445,7 +428,6 @@ echo "║  Version:    $VERSION (build $BUILD_NUM)"
 echo "║  DMG:        $DMG_PATH"
 echo "║  Size:       $DMG_SIZE"
 echo "║  Universal:  $UNIVERSAL"
-echo "║  Sparkle:    $BUNDLE_SPARKLE"
 echo "║  Signed:     $([ -n "$SIGN_IDENTITY" ] && echo "Yes" || echo "No")"
 echo "║  Notarized:  $([ "$DO_NOTARIZE" = true ] && echo "Yes" || echo "No")"
 echo "║  Uploaded:   $([ "$DO_UPLOAD" = true ] && echo "Yes" || echo "No")"

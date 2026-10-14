@@ -66,11 +66,6 @@ cp "$BUILD_DIR/v8_context_snapshot.bin" "$STAGE_DIR/" 2>/dev/null || true
 cp -r "$BUILD_DIR/locales" "$STAGE_DIR/" 2>/dev/null || true
 cp -r "$BUILD_DIR/resources" "$STAGE_DIR/" 2>/dev/null || true
 
-# Copy WinSparkle DLL if available
-if [ -f "$ROOT_DIR/third_party/winsparkle/WinSparkle.dll" ]; then
-  cp "$ROOT_DIR/third_party/winsparkle/WinSparkle.dll" "$STAGE_DIR/"
-fi
-
 # Create portable zip
 ZIP_NAME="MoltBrowser-$VERSION-win-x64-portable.zip"
 echo "Creating $ZIP_NAME..."
