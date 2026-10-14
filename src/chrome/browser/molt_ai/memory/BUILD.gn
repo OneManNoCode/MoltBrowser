@@ -1,9 +1,9 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# Personal Vector Memory — passive on-device semantic index of every
-# page the user reads. Encrypted-at-rest via OSCrypt, queryable in
-# sub-millisecond time from anywhere in the browser.
+# Personal Vector Memory — opt-in on-device semantic index of pages the
+# user reads. Encrypted-at-rest via OSCrypt, queryable in sub-millisecond
+# time from anywhere in the browser.
 
 # Pure, std-only logic (embedder, hot index, text chunker). Split out so the
 # unit tests link without the profile / sql / OSCrypt stack.
@@ -21,6 +21,8 @@ source_set("memory_core") {
 
 source_set("memory") {
   sources = [
+    "memory_prefs.cc",
+    "memory_prefs.h",
     "memory_privacy.cc",
     "memory_privacy.h",
     "memory_recorder.cc",
@@ -42,6 +44,8 @@ source_set("memory") {
     "//components/keyed_service/content",
     "//components/keyed_service/core",
     "//components/os_crypt/sync",
+    "//components/pref_registry",
+    "//components/prefs",
     "//content/public/browser",
     "//crypto",
     "//sql",

@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 
+#include "chrome/browser/molt_ai/memory/memory_prefs.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_selections.h"
@@ -48,6 +49,11 @@ bool MemoryServiceFactory::ServiceIsCreatedWithBrowserContext() const {
 
 bool MemoryServiceFactory::ServiceIsNULLWhileTesting() const {
   return true;
+}
+
+void MemoryServiceFactory::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  prefs::RegisterProfilePrefs(registry);
 }
 
 }  // namespace memory
