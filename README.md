@@ -32,12 +32,12 @@ MoltBrowser is an open-source, AI-native web browser built on a hardened open we
 
 - **Agent mode** — Record a web task once, review it as editable plain-English steps, then run it on demand, in the background, or on a schedule. Per-step screenshots, a Runs history, and label-aware replay that survives page redesigns.
 - **On-device + cloud AI** — Run local models (TinyLlama ships in the box; add LLaMA, Qwen, Mistral, Phi via llama.cpp) *or* bring your own key for OpenAI / Anthropic / Gemini and any OpenAI-compatible endpoint. Your choice per chat.
-- **Grounded attachments** — Drop in a document or image and MoltBrowser extracts its text on-device and answers from it — nothing leaves your machine.
-- **MoltShield Privacy** — Tracker blocking, fingerprint mitigation, cookie management, and cookie-consent auto-dismissal.
-- **MoltNet VPN** — Onion-routed IP privacy with an exit-country selector: pick the country your traffic exits through, right from the toolbar.
+- **Grounded attachments** — Drop in a document or image and MoltBrowser extracts its text on-device and answers from it. With a local model, nothing leaves your machine.
+- **MoltShield Privacy** — Built-in tracker blocking and cookie-consent auto-dismissal. (Full-page subresource blocking with community filter lists and fingerprinting protection are in progress — see [ROADMAP.md](ROADMAP.md).)
+- **MoltNet** — One-click Tor routing that hides your IP address from the sites you visit, with an exit-country selector in the toolbar. (Not yet a replacement for Tor Browser: a separate Tor profile and anti-fingerprinting are in progress.)
 - **Liquid Glass UI** — A visionOS-style frosted-glass new-tab page, AI panel, and settings; an opaque black-glass toolbar with floating pill buttons.
 - **One-click import** — Bring your bookmarks and saved passwords over from another browser in a click.
-- **Extension-compatible** — Supports standard web-extension APIs, plus `browser.ai.*` APIs for AI-powered extensions.
+- **Extension-compatible** — Supports standard Chrome web-extension APIs. (A `browser.ai.*` / built-in AI API for pages and extensions is planned.)
 - **Desktop** — macOS (Apple Silicon) today; Windows and Linux builds track the same source.
 
 ## Architecture
@@ -181,28 +181,30 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 | Bring-your-own-key cloud models (OpenAI / Anthropic / Gemini + 7 more) | ✅ Complete (v0.2.3) |
 | One-click import from any browser (bookmarks + passwords, folders preserved) | ✅ Complete (v0.2.3) |
 | Redesigned AI chat (Recents, model picker, attachments, voice, themes) | ✅ Complete (v0.2.3) |
-| On-device LLM inference (6 models, Metal/Vulkan GPU) | ✅ Complete |
+| On-device LLM inference (7 models; Metal GPU on macOS, CPU on Windows/Linux) | ✅ Complete |
 | AI Chat (full page + side panel + omnibox) | ✅ Complete |
-| MoltShield ad/tracker blocking (ABP filter engine) | ✅ Complete |
+| MoltShield blocking of tracker/ad navigations + iframes (built-in rules) | ✅ Shipped |
+| MoltShield full subresource blocking + filter-list updates | 🔨 In progress (adblock-rust) |
 | Cookie consent popup auto-blocking | ✅ Complete |
-| YouTube ad blocking (network + scriptlet) | ✅ Complete |
-| Fingerprint protection (Canvas, WebGL, Audio) | ✅ Complete |
+| YouTube ad blocking (network + scriptlet) | 🔨 In progress |
+| Fingerprint protection (Canvas, WebGL, Audio) | 🔨 In progress |
 | Agent mode — record → edit → run / schedule web workflows | ✅ Complete (v0.2.5) |
 | Agent mode — per-step screenshots + Runs history, Watch/Auto modes | ✅ Complete (v0.2.5) |
 | MoltNet Tor routing UI | ✅ Complete |
 | MoltNet Tor exit-country selector | ✅ Complete (v0.2.1, all platforms) |
-| Persona system (5 built-in + custom) | ✅ Complete |
-| Memory engine (SQLite + embeddings) | ✅ Complete |
+| Persona system (5 built-in + custom) | 🔨 Not wired into the shipping UI |
+| Memory engine (SQLite, keyword-hash search; real embeddings planned) | ✅ Shipped |
 | Chat export/import, search, keyboard shortcuts | ✅ Complete |
 | Model downloading from HuggingFace | ✅ Complete |
-| Sparkle/WinSparkle auto-update | ✅ Complete |
+| In-app updates from GitHub Releases | ✅ Shipped (signature verification in progress) |
 | macOS DMG (signed + notarized + stapled) | ✅ Shipped (v0.2.1) |
 | Windows x64 (portable ZIP + NSIS installer) | ✅ Shipped (v0.2.1) |
 | Windows Tor / voice / OCR (functional parity) | ✅ Shipped (v0.2.1) |
 | Linux deb / rpm / tar.gz | ✅ Shipped (v0.2.5) |
 | Android APK scaffolding | 🔨 Scaffolding |
 | iOS IPA scaffolding | 🔨 Scaffolding |
-| CI/CD GitHub Actions (macOS native, Linux self-hosted, Windows self-hosted) | ✅ Complete |
+| Release automation (macOS + Linux self-hosted; Windows paused) | ✅ Partial |
+| PR checks (embedded WebUI JS + markdown-renderer security test) | ✅ New |
 
 ### Testing Pages
 
@@ -217,9 +219,9 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 
 MoltBrowser is built privacy-first:
 - **No telemetry** — Zero data collection by default
-- **Local AI** — Models run on your device, prompts never leave your machine
-- **MoltShield** — Blocks trackers, mitigates fingerprinting
-- **MoltNet** — Onion-routed IP privacy with a Tor exit-country selector
+- **Local AI** — Local models run on your device and their prompts never leave your machine; cloud models are opt-in with your own key
+- **MoltShield** — Blocks known tracker and ad domains
+- **MoltNet** — Tor routing that hides your IP from sites, with an exit-country selector
 - **Open Source** — Full transparency, auditable code
 
 ## License

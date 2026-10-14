@@ -35,9 +35,11 @@ a fix before publishing. We will keep you updated throughout.
 
 ## Supported versions
 
-Only the **latest release** receives security fixes. MoltBrowser updates
-itself (Sparkle on macOS, WinSparkle on Windows, your package manager on
-Linux); please stay on the latest build.
+Only the **latest release** receives security fixes. MoltBrowser checks
+GitHub Releases for updates and offers to install them; please stay on the
+latest build. Signature verification of downloaded updates is being added
+(see `docs/AUDIT-2026-10.md`, finding S3) — until it ships, only install
+MoltBrowser from this repository's Releases page.
 
 ## Scope
 
