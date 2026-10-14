@@ -82,6 +82,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // navigate against the currently-active tab in the Browser that
   // owns this WebUI's WebContents.
   void HandleRunMoltAction(const base::ListValue& args);
+  // Runs one of HandleRunMoltAction's direct-JS actions (select / hover /
+  // right-click / drag) in |target| and resolves |callback_id|.
+  void RunDirectPageAction(const std::string& callback_id,
+                           const std::string& type,
+                           const std::string& js,
+                           content::WebContents* target);
   // Personal Vector Memory lookup — returns top-K relevant chunks
   // from the user's full browsing history so the chat can ground
   // answers in things the user has actually read before.

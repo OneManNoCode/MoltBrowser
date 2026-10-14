@@ -75,6 +75,7 @@
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -97,6 +98,7 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/zlib/google/zip_reader.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 #include "url/url_constants.h"
 
 MoltAIChatHandler::MoltAIChatHandler(Profile* profile)
@@ -2633,6 +2635,16 @@ void MoltAIChatHandler::ResolveConversationCallback(std::string callback_id,
 //                   {type:"type", selector:"#email", value:"a@b.c"} |
 //                   {type:"scroll", value:"600"} |
 //                   {type:"navigate", value:"https://..."}])
+//
+// Safety gate (enforced here, not only in the chat JS):
+//   - navigate only accepts http(s) URLs, always.
+//   - Unless the action dict carries confirmed:true (set by the chat UI
+//     after the user tapped Allow, or for a command the user typed),
+//     a cross-origin navigate, a click that follows a link to another
+//     origin, and typing / selecting into a password, payment-card or
+//     one-time-code field are NOT performed; the result is
+//     {success:false, needs_confirmation:true, reason} and the UI asks.
+//     This holds in the chat's Auto mode too.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   AllowJavascript();
@@ -2687,6 +2699,29 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   }
 
   std::string t = *type;
+  const bool confirmed = action.FindBool("confirmed").value_or(false);
+
+  if (t == "navigate") {
+    GURL dest(value ? *value : std::string());
+    if (!molt_ai::agent_safety::IsAllowedNavigationURL(dest)) {
+      result.Set("success", false);
+      result.Set("error", "only http:// and https:// pages can be opened");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+    if (!confirmed &&
+        !target->GetPrimaryMainFrame()->GetLastCommittedOrigin()
+             .IsSameOriginWith(dest)) {
+      result.Set("success", false);
+      result.Set("needs_confirmation", true);
+      result.Set("reason", "Opens a different site: " +
+                               url::Origin::Create(dest).Serialize());
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
+  }
 
   // P2.3 / P3: select-dropdown, hover, right-click, drag are simple
   // enough to execute via direct JS injection — no need to spin up
@@ -2770,24 +2805,40 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
            "src.dispatchEvent(ev(src,'dragend',sr));"
            "return true;})()";
     }
-    std::string cb_id_copy = callback_id;
-    auto weak_this = weak_ptr_factory_.GetWeakPtr();
-    target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
-        base::UTF8ToUTF16(js),
-        base::BindOnce(
-            [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-               std::string type_str, base::Value v) {
-              if (!self) return;
-              bool ok = v.is_bool() && v.GetBool();
-              base::DictValue out;
-              out.Set("success", ok);
-              out.Set("message", ok ? type_str + " ok" :
-                                       type_str + ": selector not found");
-              self->ResolveJavascriptCallback(base::Value(cb_id),
-                                              base::Value(std::move(out)));
-            },
-            weak_this, cb_id_copy, t),
-        /*world_id=*/1);
+    if (t == "select" && !confirmed) {
+      // A <select> can be a card-expiry field (autocomplete cc-exp-*):
+      // probe it first and ask before changing a sensitive one.
+      target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+          base::UTF8ToUTF16(
+              molt_ai::agent_safety::BuildElementProbeScript({*sel})),
+          base::BindOnce(
+              [](base::WeakPtr<MoltAIChatHandler> self,
+                 base::WeakPtr<content::WebContents> wc, std::string cb_id,
+                 std::string type_str, std::string js, base::Value v) {
+                if (!self) return;
+                molt_ai::agent_safety::ElementProbe probe =
+                    molt_ai::agent_safety::ParseElementProbes(v, 1)[0];
+                if (molt_ai::agent_safety::IsSensitive(probe.field_kind)) {
+                  base::DictValue out;
+                  out.Set("success", false);
+                  out.Set("needs_confirmation", true);
+                  out.Set("reason",
+                          "Changes a " +
+                              std::string(molt_ai::agent_safety::FieldKindLabel(
+                                  probe.field_kind)) +
+                              " field");
+                  self->ResolveJavascriptCallback(base::Value(cb_id),
+                                                  base::Value(std::move(out)));
+                  return;
+                }
+                self->RunDirectPageAction(cb_id, type_str, js, wc.get());
+              },
+              weak_ptr_factory_.GetWeakPtr(), target->GetWeakPtr(),
+              callback_id, t, js),
+          /*world_id=*/1);
+      return;
+    }
+    RunDirectPageAction(callback_id, t, js, target);
     return;
   }
 
@@ -2838,6 +2889,15 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
     return;
   }
   step.timeout_ms = 8000;
+  if (!confirmed && (t == "click" || t == "type")) {
+    // The runner probes the element right before acting and stops with a
+    // needs_confirmation message on a cross-origin link or a password /
+    // card / one-time-code field (it re-checks after selector retries, so
+    // a field that appears late is still caught).
+    base::DictValue extra;
+    extra.Set(molt_ai::automation::kAskBeforeSensitiveKey, true);
+    step.extra = base::Value(std::move(extra));
+  }
   s.steps.push_back(std::move(step));
 
   // Run via a transient AutomationRunner. Storage is null — we don't
@@ -2858,6 +2918,16 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                      molt_ai::automation::RunResult r) {
                     if (!self) return;
                     base::DictValue out;
+                    std::string_view prefix(
+                        molt_ai::automation::kNeedsConfirmationPrefix);
+                    if (!r.success && r.message.starts_with(prefix)) {
+                      out.Set("success", false);
+                      out.Set("needs_confirmation", true);
+                      out.Set("reason", r.message.substr(prefix.size()));
+                      self->ResolveJavascriptCallback(
+                          base::Value(cb_id), base::Value(std::move(out)));
+                      return;
+                    }
                     out.Set("success", r.success);
                     out.Set("message", r.message);
                     out.Set("duration_ms", r.duration_ms);
@@ -2866,6 +2936,37 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
                         base::Value(std::move(out)));
                   },
                   weak_this, callback_id_copy, runner));
+}
+
+void MoltAIChatHandler::RunDirectPageAction(const std::string& callback_id,
+                                            const std::string& type,
+                                            const std::string& js,
+                                            content::WebContents* target) {
+  if (!target || !target->GetPrimaryMainFrame() ||
+      !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+    base::DictValue out;
+    out.Set("success", false);
+    out.Set("error", "the page is no longer available");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
+      base::UTF8ToUTF16(js),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::string type_str, base::Value v) {
+            if (!self) return;
+            bool ok = v.is_bool() && v.GetBool();
+            base::DictValue out;
+            out.Set("success", ok);
+            out.Set("message", ok ? type_str + " ok" :
+                                     type_str + ": selector not found");
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(out)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id, type),
+      /*world_id=*/1);
 }
 
 // ------------------------------------------------------------------
