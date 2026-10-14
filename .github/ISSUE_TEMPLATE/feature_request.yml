@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check [ROADMAP.md](https://github.com/OneManNoCode/MoltBrowser/blob/main/ROADMAP.md) and existing issues first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation you are in, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like MoltBrowser to do?
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and security considerations
+      description: Does this need network access, cloud services, or access to page or user data? How should it behave when everything stays on-device?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered

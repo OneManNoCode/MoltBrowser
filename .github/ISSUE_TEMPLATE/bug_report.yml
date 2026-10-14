@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in MoltBrowser is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Security problems do not belong here** - please
+        report them privately as described in [SECURITY.md](https://github.com/OneManNoCode/MoltBrowser/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: MoltBrowser version
+      description: From molt://ai-settings -> About, or the release tag you installed.
+      placeholder: v0.2.5
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version and hardware
+      placeholder: macOS 15.5, M2, 16 GB RAM
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - AI chat / on-device model
+        - Agent mode (automation)
+        - MoltShield (ad/tracker blocking)
+        - MoltNet (Tor routing)
+        - Import from another browser
+        - Updates / installer
+        - General browsing (Chromium)
+        - Other
+  - type: input
+    id: model
+    attributes:
+      label: Model in use (if AI-related)
+      placeholder: Qwen2.5 7B Q4_K_M, or a cloud provider
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove anything private (URLs, prompts, file names) before pasting.
+      render: text
