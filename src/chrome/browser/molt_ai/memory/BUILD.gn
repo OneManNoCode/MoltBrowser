@@ -5,7 +5,9 @@
 # page the user reads. Encrypted-at-rest via OSCrypt, queryable in
 # sub-millisecond time from anywhere in the browser.
 
-source_set("memory") {
+# Pure, std-only logic (embedder, hot index, text chunker). Split out so the
+# unit tests link without the profile / sql / OSCrypt stack.
+source_set("memory_core") {
   sources = [
     "memory_embedder.cc",
     "memory_embedder.h",
@@ -13,6 +15,12 @@ source_set("memory") {
     "memory_extractor.h",
     "memory_index.cc",
     "memory_index.h",
+    "memory_types.h",
+  ]
+}
+
+source_set("memory") {
+  sources = [
     "memory_privacy.cc",
     "memory_privacy.h",
     "memory_recorder.cc",
@@ -23,8 +31,9 @@ source_set("memory") {
     "memory_service_factory.h",
     "memory_storage.cc",
     "memory_storage.h",
-    "memory_types.h",
   ]
+
+  public_deps = [ ":memory_core" ]
 
   deps = [
     "//base",
@@ -37,5 +46,17 @@ source_set("memory") {
     "//crypto",
     "//sql",
     "//url",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "memory_embedder_unittest.cc",
+  ]
+  deps = [
+    ":memory_core",
+    "//testing/gtest",
   ]
 }

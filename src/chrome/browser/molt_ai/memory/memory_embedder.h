@@ -30,6 +30,12 @@
 namespace molt_ai {
 namespace memory {
 
+// Bumped whenever HashingEmbedder's output changes for the same input, so
+// MemoryStorage knows stored vectors are stale and re-embeds them from the
+// (encrypted) chunk text. v2: uppercase ASCII is lowercased instead of being
+// treated as a separator.
+inline constexpr int kHashingEmbedderVersion = 2;
+
 class MemoryEmbedder {
  public:
   virtual ~MemoryEmbedder() = default;

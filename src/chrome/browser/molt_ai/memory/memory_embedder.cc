@@ -31,18 +31,22 @@ inline uint64_t FnvHash(const char* data, size_t len, uint64_t salt) {
   return h;
 }
 
-// Treat ASCII letters and digits as in-token; everything else as a
-// separator. Lowercases in-place. The non-ASCII path is conservative
-// (we keep multi-byte UTF-8 bytes together as parts of one token rather
-// than try to do proper Unicode segmentation in the hot path).
-inline bool IsWordByte(unsigned char c) {
-  return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-         (c >= 0x80);  // keep utf-8 continuation bytes together
+inline unsigned char ToLowerAscii(unsigned char c) {
+  if (c >= 'A' && c <= 'Z') return static_cast<unsigned char>(c + ('a' - 'A'));
+  return c;
 }
 
-inline char ToLowerAscii(unsigned char c) {
-  if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
-  return c;
+// Treat ASCII letters and digits as in-token; everything else as a
+// separator. The byte is lowercased BEFORE classification — classifying
+// first made every uppercase letter a separator, so "NASA" embedded to
+// the zero vector and "Paris" to "aris". The non-ASCII path is
+// conservative (we keep multi-byte UTF-8 bytes together as parts of one
+// token rather than try to do proper Unicode segmentation in the hot
+// path).
+inline bool IsWordByte(unsigned char c) {
+  c = ToLowerAscii(c);
+  return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+         (c >= 0x80);  // keep utf-8 continuation bytes together
 }
 
 // Hash a single token into the accumulator. We mix in two perturbations
@@ -77,7 +81,8 @@ std::vector<float> HashingEmbedder::Embed(const std::string& text) const {
     size_t toklen = 0;
     while (i < n && IsWordByte(static_cast<unsigned char>(text[i]))) {
       if (toklen < sizeof(tok)) {
-        tok[toklen++] = ToLowerAscii(static_cast<unsigned char>(text[i]));
+        tok[toklen++] = static_cast<char>(
+            ToLowerAscii(static_cast<unsigned char>(text[i])));
       }
       ++i;
     }
