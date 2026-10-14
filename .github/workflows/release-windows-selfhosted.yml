@@ -40,7 +40,9 @@ jobs:
     runs-on: [self-hosted, windows, X64]
     timeout-minutes: 1200   # half-core thermal cap makes the laptop compile slow; generous headroom
     permissions:
-      contents: write   # upload release assets
+      contents: write       # upload release assets
+      id-token: write       # build-provenance attestation (OIDC)
+      attestations: write
 
     env:
       # CHROMIUM_REVISION is read from chromium_version.txt after checkout.
@@ -178,6 +180,12 @@ jobs:
             Write-Host "Installing VS 2022 Build Tools (C++ workload) unattended - this takes ~15-20 min..."
             $bs = Join-Path $env:TEMP "vs_buildtools.exe"
             Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bs
+            # Microsoft re-issues this bootstrapper constantly, so it cannot be
+            # pinned by hash: require a valid Authenticode signature by Microsoft.
+            $sig = Get-AuthenticodeSignature $bs
+            if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
+              throw "vs_buildtools.exe signature check failed: $($sig.Status) $($sig.SignerCertificate.Subject)"
+            }
             $vsArgs = @(
               "--quiet","--wait","--norestart","--nocache",
               "--add","Microsoft.VisualStudio.Workload.VCTools",
@@ -387,108 +395,140 @@ jobs:
           #   <DIR_EXE>\tor\tor.exe          (+ geoip, geoip6)
           #   <DIR_EXE>\ocr\tesseract.exe    (+ *.dll, tessdata\eng.traineddata)
           #   <DIR_EXE>\whisper\whisper-cli.exe (+ dlls, ggml-tiny.en.bin)
-          # Best-effort PER binary: a download failure logs ::warning:: and
-          # still ships the rest (the zip is never blocked). Downloads cache in
-          # $env:TEMP across runs. PS5.1 needs TLS1.2 forced or all the
-          # Invoke-WebRequest calls fail on a stock runner. ASCII only.
+          # Every download is pinned by SHA-256 and every failure is FATAL: a
+          # release never ships an unverified or silently missing component.
+          # Downloads cache in $env:TEMP across runs and are re-verified on
+          # every use. PS5.1 needs TLS1.2 forced or all the Invoke-WebRequest
+          # calls fail on a stock runner. ASCII only.
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           $ProgressPreference = "SilentlyContinue"
           $dl = $env:TEMP
+
+          # SHA-256 pins. An empty value is a PLACEHOLDER (the host was not
+          # reachable when these were pinned on 2026-10-14) and fails the run
+          # until someone verifies the file and fills it in.
+          $pins = @{
+            "7zr-24.08"           = "1b16c41ae39b679384b06f1492b587b650716430ff9c2e079dca2ad1f62c952d"
+            "7z2408-x64"          = "67cb9d3452c9dd974b04f4a5fd842dbcba8184f2344ff72e3662d7cdb68b099b"
+            # PLACEHOLDER: take it from sha256sums-signed-build.txt of Tor
+            # Browser 15.0.15 on archive.torproject.org after verifying that
+            # file's signature with the Tor Browser signing key.
+            "tor-15.0.15"         = ""
+            "tesseract-5.4.0.20240606" = "c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9"
+            "whisper-bin-x64-v1.9.1"   = "7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539"
+            # PLACEHOLDER: same value as EXPECTED_SHA256_WHISPER_TINY_EN in
+            # scripts/bundle-whisper.sh (see the instructions there).
+            "ggml-tiny.en.bin"    = ""
+          }
+
+          # Download $url to $out unless a cached copy already matches $sha256.
+          # A missing pin or a mismatch throws (and deletes the bad file).
+          function Get-Pinned([string]$url, [string]$out, [string]$sha256) {
+            if (-not $sha256) { throw "No SHA-256 pinned for $url - verify the file and pin it in this workflow." }
+            if ((Test-Path $out) -and ((Get-FileHash $out -Algorithm SHA256).Hash -ne $sha256)) {
+              Write-Host "Cached $out does not match its pin; downloading again."
+              Remove-Item -Force $out
+            }
+            if (-not (Test-Path $out)) {
+              Invoke-WebRequest -Uri $url -OutFile "$out.part" -UseBasicParsing -TimeoutSec 900
+              Move-Item -Force "$out.part" $out
+            }
+            $h = (Get-FileHash $out -Algorithm SHA256).Hash
+            if ($h -ne $sha256) {
+              Remove-Item -Force $out
+              throw "SHA-256 mismatch for $url : expected $sha256, got $h"
+            }
+            Write-Host "Verified $out ($h)"
+          }
 
           # Provision a full 7z.exe up front (no admin, no winget): 7zr.exe is a
           # standalone .7z extractor and the 7-Zip installer is itself a 7z SFX,
           # so 7zr unpacks it to yield 7z.exe + 7z.dll. Used both to extract the
           # Tesseract NSIS installer AND to build a spec-compliant forward-slash
           # zip (the .NET ZipFile in PS5.1/.NET Framework writes BACKSLASH entry
-          # names, which some Windows extractors mishandle). Cached in TEMP.
+          # names, which some Windows extractors mishandle). Versioned URLs from
+          # 7-Zip's official GitHub releases (www.7-zip.org/a/7zr.exe is not
+          # versioned, so it cannot be pinned). Re-extracted from the verified
+          # installer on every run, so a tampered cached 7z.exe is never used.
           $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
           if (-not (Test-Path $sevenZip)) {
-            try {
-              $szDir = Join-Path $dl "7zip-portable"
-              $sevenZip = Join-Path $szDir "7z.exe"
-              if (-not (Test-Path $sevenZip)) {
-                New-Item -ItemType Directory -Force -Path $szDir | Out-Null
-                $zr = Join-Path $dl "7zr.exe"
-                if (-not (Test-Path $zr)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile $zr }
-                $zi = Join-Path $dl "7z-inst-x64.exe"
-                if (-not (Test-Path $zi)) { Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2408-x64.exe" -OutFile $zi }
-                & $zr x $zi "-o$szDir" -y -bso0 -bsp0 | Out-Null
-              }
-            } catch { Write-Host "::warning::7-Zip provisioning failed: $($_.Exception.Message)" }
+            $szDir = Join-Path $dl "7zip-24.08"
+            $sevenZip = Join-Path $szDir "7z.exe"
+            $zr = Join-Path $dl "7zr-24.08.exe"
+            Get-Pinned "https://github.com/ip7z/7zip/releases/download/24.08/7zr.exe" $zr $pins["7zr-24.08"]
+            $zi = Join-Path $dl "7z2408-x64.exe"
+            Get-Pinned "https://github.com/ip7z/7zip/releases/download/24.08/7z2408-x64.exe" $zi $pins["7z2408-x64"]
+            if (Test-Path $szDir) { Remove-Item -Recurse -Force $szDir }
+            & $zr x $zi "-o$szDir" -y -bso0 -bsp0 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "7zr could not unpack 7-Zip ($LASTEXITCODE)" }
+            if (-not (Test-Path $sevenZip)) { throw "7-Zip provisioning failed: $sevenZip missing" }
           }
-          $have7z = (Test-Path $sevenZip)
-          Write-Host "7-Zip available: $have7z ($sevenZip)"
+          $have7z = $true
+          Write-Host "7-Zip: $sevenZip"
 
           # Tor Expert Bundle - tor.exe is statically linked (no DLLs); the
           # geoip databases live under data\ inside the tarball. tar is native.
-          try {
-            $torVer = "15.0.15"
-            $torUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/$torVer/tor-expert-bundle-windows-x86_64-$torVer.tar.gz"
-            $torTgz = Join-Path $dl "tor-eb-$torVer.tar.gz"
-            $torEx  = Join-Path $dl "tor-eb-$torVer"
-            if (-not (Test-Path $torTgz)) { Invoke-WebRequest -Uri $torUrl -OutFile $torTgz }
-            if (Test-Path $torEx) { Remove-Item $torEx -Recurse -Force }
-            New-Item -ItemType Directory -Force -Path $torEx | Out-Null
-            tar -xzf $torTgz -C $torEx
-            if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
-            $torDst = Join-Path $stage "tor"
-            New-Item -ItemType Directory -Force -Path $torDst | Out-Null
-            Copy-Item (Join-Path $torEx "tor\tor.exe")         $torDst -Force
-            Copy-Item (Join-Path $torEx "tor\tor-gencert.exe") $torDst -Force
-            Copy-Item (Join-Path $torEx "data\geoip")          $torDst -Force
-            Copy-Item (Join-Path $torEx "data\geoip6")         $torDst -Force
-            Write-Host "Bundled Tor $torVer into tor\"
-          } catch { Write-Host "::warning::Tor bundle skipped: $($_.Exception.Message)" }
+          $torVer = "15.0.15"
+          $torUrl = "https://archive.torproject.org/tor-package-archive/torbrowser/$torVer/tor-expert-bundle-windows-x86_64-$torVer.tar.gz"
+          $torTgz = Join-Path $dl "tor-eb-$torVer.tar.gz"
+          $torEx  = Join-Path $dl "tor-eb-$torVer"
+          Get-Pinned $torUrl $torTgz $pins["tor-$torVer"]
+          if (Test-Path $torEx) { Remove-Item $torEx -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $torEx | Out-Null
+          tar -xzf $torTgz -C $torEx
+          if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
+          $torDst = Join-Path $stage "tor"
+          New-Item -ItemType Directory -Force -Path $torDst | Out-Null
+          Copy-Item (Join-Path $torEx "tor\tor.exe")         $torDst -Force
+          Copy-Item (Join-Path $torEx "tor\tor-gencert.exe") $torDst -Force
+          Copy-Item (Join-Path $torEx "data\geoip")          $torDst -Force
+          Copy-Item (Join-Path $torEx "data\geoip6")         $torDst -Force
+          Write-Host "Bundled Tor $torVer into tor\"
 
           # Tesseract OCR - UB-Mannheim ships only an NSIS installer; 7-Zip
           # silent-extracts it. Copy tesseract.exe + ALL dlls (transitive
           # closure is version-fragile) + eng/osd traineddata.
-          try {
-            if (-not $have7z) { throw "7-Zip unavailable (see provisioning warning above)" }
-            $tessVer = "5.4.0.20240606"
-            $tessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVer/tesseract-ocr-w64-setup-$tessVer.exe"
-            $tessExe = Join-Path $dl "tesseract-$tessVer.exe"
-            $tessEx  = Join-Path $dl "tesseract-$tessVer"
-            if (-not (Test-Path $tessExe)) { Invoke-WebRequest -Uri $tessUrl -OutFile $tessExe }
-            if (Test-Path $tessEx) { Remove-Item $tessEx -Recurse -Force }
-            & $sevenZip x $tessExe "-o$tessEx" -y -bso0 -bsp0 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
-            $ocrDst = Join-Path $stage "ocr"
-            New-Item -ItemType Directory -Force -Path $ocrDst | Out-Null
-            Copy-Item (Join-Path $tessEx "tesseract.exe") $ocrDst -Force
-            Copy-Item (Join-Path $tessEx "*.dll")         $ocrDst -Force
-            $tdDst = Join-Path $ocrDst "tessdata"
-            New-Item -ItemType Directory -Force -Path $tdDst | Out-Null
-            Copy-Item (Join-Path $tessEx "tessdata\eng.traineddata") $tdDst -Force
-            if (Test-Path (Join-Path $tessEx "tessdata\osd.traineddata")) { Copy-Item (Join-Path $tessEx "tessdata\osd.traineddata") $tdDst -Force }
-            Write-Host "Bundled Tesseract $tessVer into ocr\"
-          } catch { Write-Host "::warning::Tesseract bundle skipped: $($_.Exception.Message)" }
+          $tessVer = "5.4.0.20240606"
+          $tessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v$tessVer/tesseract-ocr-w64-setup-$tessVer.exe"
+          $tessExe = Join-Path $dl "tesseract-$tessVer.exe"
+          $tessEx  = Join-Path $dl "tesseract-$tessVer"
+          Get-Pinned $tessUrl $tessExe $pins["tesseract-$tessVer"]
+          if (Test-Path $tessEx) { Remove-Item $tessEx -Recurse -Force }
+          & $sevenZip x $tessExe "-o$tessEx" -y -bso0 -bsp0 | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "7z failed ($LASTEXITCODE)" }
+          $ocrDst = Join-Path $stage "ocr"
+          New-Item -ItemType Directory -Force -Path $ocrDst | Out-Null
+          Copy-Item (Join-Path $tessEx "tesseract.exe") $ocrDst -Force
+          Copy-Item (Join-Path $tessEx "*.dll")         $ocrDst -Force
+          $tdDst = Join-Path $ocrDst "tessdata"
+          New-Item -ItemType Directory -Force -Path $tdDst | Out-Null
+          Copy-Item (Join-Path $tessEx "tessdata\eng.traineddata") $tdDst -Force
+          if (Test-Path (Join-Path $tessEx "tessdata\osd.traineddata")) { Copy-Item (Join-Path $tessEx "tessdata\osd.traineddata") $tdDst -Force }
+          Write-Host "Bundled Tesseract $tessVer into ocr\"
 
           # whisper.cpp - plain CPU build (portable across x64; no BLAS/CUDA
           # runtimes). Modern CLI is whisper-cli.exe (main.exe is a deprecated
           # stub). Model from HuggingFace. Files sit under Release\ in the zip.
-          try {
-            $whVer = "v1.9.1"
-            $whUrl = "https://github.com/ggml-org/whisper.cpp/releases/download/$whVer/whisper-bin-x64.zip"
-            $whZip = Join-Path $dl "whisper-$whVer.zip"
-            $whEx  = Join-Path $dl "whisper-$whVer"
-            if (-not (Test-Path $whZip)) { Invoke-WebRequest -Uri $whUrl -OutFile $whZip }
-            if (Test-Path $whEx) { Remove-Item $whEx -Recurse -Force }
-            Expand-Archive -Path $whZip -DestinationPath $whEx -Force
-            $rel = Join-Path $whEx "Release"
-            if (-not (Test-Path $rel)) { $rel = $whEx }
-            $whDst = Join-Path $stage "whisper"
-            New-Item -ItemType Directory -Force -Path $whDst | Out-Null
-            Copy-Item (Join-Path $rel "whisper-cli.exe") $whDst -Force
-            Copy-Item (Join-Path $rel "whisper.dll")     $whDst -Force
-            Copy-Item (Join-Path $rel "ggml.dll")        $whDst -Force
-            Copy-Item (Join-Path $rel "ggml-base.dll")   $whDst -Force
-            Copy-Item (Join-Path $rel "ggml-cpu-*.dll")  $whDst -Force
-            $whModelDl = Join-Path $dl "ggml-tiny.en.bin"
-            if (-not (Test-Path $whModelDl)) { Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin" -OutFile $whModelDl }
-            Copy-Item $whModelDl (Join-Path $whDst "ggml-tiny.en.bin") -Force
-            Write-Host "Bundled whisper.cpp $whVer + tiny.en into whisper\"
-          } catch { Write-Host "::warning::whisper bundle skipped: $($_.Exception.Message)" }
+          $whVer = "v1.9.1"
+          $whUrl = "https://github.com/ggml-org/whisper.cpp/releases/download/$whVer/whisper-bin-x64.zip"
+          $whZip = Join-Path $dl "whisper-$whVer.zip"
+          $whEx  = Join-Path $dl "whisper-$whVer"
+          Get-Pinned $whUrl $whZip $pins["whisper-bin-x64-$whVer"]
+          if (Test-Path $whEx) { Remove-Item $whEx -Recurse -Force }
+          Expand-Archive -Path $whZip -DestinationPath $whEx -Force
+          $rel = Join-Path $whEx "Release"
+          if (-not (Test-Path $rel)) { $rel = $whEx }
+          $whDst = Join-Path $stage "whisper"
+          New-Item -ItemType Directory -Force -Path $whDst | Out-Null
+          Copy-Item (Join-Path $rel "whisper-cli.exe") $whDst -Force
+          Copy-Item (Join-Path $rel "whisper.dll")     $whDst -Force
+          Copy-Item (Join-Path $rel "ggml.dll")        $whDst -Force
+          Copy-Item (Join-Path $rel "ggml-base.dll")   $whDst -Force
+          Copy-Item (Join-Path $rel "ggml-cpu-*.dll")  $whDst -Force
+          $whModelDl = Join-Path $dl "ggml-tiny.en.bin"
+          Get-Pinned "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin" $whModelDl $pins["ggml-tiny.en.bin"]
+          Copy-Item $whModelDl (Join-Path $whDst "ggml-tiny.en.bin") -Force
+          Write-Host "Bundled whisper.cpp $whVer + tiny.en into whisper\"
 
           $zip = Join-Path $env:GITHUB_WORKSPACE "MoltBrowser-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item -Force $zip }
@@ -505,19 +545,22 @@ jobs:
             [System.IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path $stage).Path, $zip)
           }
           Get-Item $zip | Format-List Name,Length
-          # The best-effort native tools above (tar, 7z, 7zr) can leave a
-          # nonzero $LASTEXITCODE; GitHub appends "exit $LASTEXITCODE" to the
-          # step, which would fail it despite a successful stage. Cmdlet errors
-          # throw under EAP=Stop and never reach here, so exit 0 is correct.
+          # Every native call above checks its own exit code and cmdlet errors
+          # throw under EAP=Stop, so reaching here means success; exit 0 keeps
+          # GitHub's appended "exit $LASTEXITCODE" from failing the step on a
+          # stale nonzero code.
           exit 0
 
       # Upload the portable zip immediately, decoupled from the (slower) NSIS
       # installer, so functional Windows is live the moment staging completes
       # and is never blocked by installer compression time.
-      - name: Upload portable zip to release
+      - name: Upload portable zip to the DRAFT release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ inputs.tag }}
+          # A release this creates stays a draft until the offline-signed
+          # molt-release-manifest.json + .sig are attached (see release.yml).
+          draft: true
           files: MoltBrowser-Windows-x64.zip
           fail_on_unmatched_files: true
         env:
@@ -526,9 +569,8 @@ jobs:
       # Build the NSIS setup installer from the SAME staged dir the portable
       # zip used (C:\cr\src\out\MoltBrowser\MoltBrowser-Windows-x64). Output
       # MoltBrowser-Windows-x64-Setup.exe into the workspace root, next to
-      # the zip. Best-effort makensis discovery/install; if NSIS cannot be
-      # made available we log clearly and SKIP the installer rather than
-      # failing the run (the portable zip is the guaranteed artifact).
+      # the zip. Uses an installed makensis, else a SHA-256-pinned portable
+      # NSIS; if neither works the run FAILS (no silently missing installer).
       #
       # NOTE: pure-ASCII body. Windows PowerShell 5.1 reads this BOM-less
       # script as CP1252; a stray em-dash/smart-quote becomes a fatal parse
@@ -575,8 +617,8 @@ jobs:
               $ProgressPreference = "SilentlyContinue"
               # Reuse the portable 7z the Stage step provisioned (same job/TEMP);
               # the SourceForge zip can come back as an HTML interstitial that
-              # Expand-Archive rejects, so validate size and extract with 7z.
-              $sz = "$env:TEMP\7zip-portable\7z.exe"
+              # Expand-Archive rejects; the SHA-256 pin below catches that too.
+              $sz = "$env:TEMP\7zip-24.08\7z.exe"
               if (-not (Test-Path $sz)) { $sz = "$env:ProgramFiles\7-Zip\7z.exe" }
               $nsisVer = "3.10"
               $tmpZip = Join-Path $env:TEMP "nsis-$nsisVer.zip"
@@ -591,26 +633,37 @@ jobs:
                 "https://sourceforge.net/projects/nsis/files/NSIS%203/$nsisVer/nsis-$nsisVer.zip/download"
               )
               $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-              if (-not ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb))) {
+              # SHA-256 of nsis-3.10.zip (all mirrors serve the same file).
+              $nsisSha256 = "fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110"
+              $ok = (Test-Path $tmpZip) -and ((Get-FileHash $tmpZip -Algorithm SHA256).Hash -eq $nsisSha256)
+              if (-not $ok) {
                 foreach ($u in $urls) {
+                  if (Test-Path $tmpZip) { Remove-Item -Force $tmpZip }
                   try { Invoke-WebRequest -Uri $u -OutFile $tmpZip -UseBasicParsing -MaximumRedirection 10 -UserAgent $ua -TimeoutSec 300 } catch { Write-Host "  NSIS url failed: $u"; continue }
-                  if ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb)) { Write-Host "  NSIS from: $u"; break }
+                  $h = (Get-FileHash $tmpZip -Algorithm SHA256).Hash
+                  if ($h -eq $nsisSha256) { Write-Host "  NSIS from: $u (verified)"; $ok = $true; break }
+                  Write-Host "  NSIS from $u has SHA-256 $h, not the pin - ignored"
                 }
               }
-              if (-not ((Test-Path $tmpZip) -and ((Get-Item $tmpZip).Length -gt 1mb))) { throw "NSIS download did not yield a valid zip" }
+              if (-not $ok) {
+                if (Test-Path $tmpZip) { Remove-Item -Force $tmpZip }
+                throw "no mirror served nsis-$nsisVer.zip matching its SHA-256 pin"
+              }
               if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-              if (Test-Path $sz) { & $sz x $tmpZip "-o$dest" -y -bso0 -bsp0 | Out-Null }
+              if (Test-Path $sz) {
+                & $sz x $tmpZip "-o$dest" -y -bso0 -bsp0 | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "7z could not extract NSIS ($LASTEXITCODE)" }
+              }
               else { Expand-Archive -Path $tmpZip -DestinationPath $dest -Force }
               $found = Get-ChildItem -Path $dest -Recurse -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
               if ($found) { $makensis = $found.FullName }
             } catch {
-              Write-Host "NSIS download/extract failed: $($_.Exception.Message)"
+              throw "NSIS download/extract failed: $($_.Exception.Message)"
             }
           }
 
           if (-not $makensis) {
-            Write-Host "::warning::NSIS (makensis) unavailable - skipping setup installer. Portable zip still uploads. Install NSIS on the runner (winget install NSIS.NSIS) to enable the installer."
-            exit 0
+            throw "NSIS (makensis) unavailable. Install NSIS on the runner (winget install NSIS.NSIS) or fix the pinned download above."
           }
 
           Write-Host "Using makensis: $makensis"
@@ -625,13 +678,45 @@ jobs:
           if (-not (Test-Path $outFile)) { throw "Installer not produced: $outFile" }
           Get-Item $outFile | Format-List Name,Length
 
-      - name: Upload setup installer to release
+      - name: Upload setup installer to the DRAFT release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ inputs.tag }}
-          # Installer is best-effort (skipped if NSIS unavailable) and the zip
-          # is already uploaded above, so don't fail if only the zip exists.
+          draft: true
           files: MoltBrowser-Windows-x64-Setup.exe
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # sha256sum-format sums for both assets (LF line endings), published
+      # next to them, plus a signed build-provenance attestation.
+      - name: Checksums
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $names = @("MoltBrowser-Windows-x64-Setup.exe", "MoltBrowser-Windows-x64.zip")
+          $lines = foreach ($n in $names) {
+            $f = Join-Path $env:GITHUB_WORKSPACE $n
+            if (-not (Test-Path $f)) { throw "missing release asset: $n" }
+            "{0}  {1}" -f (Get-FileHash $f -Algorithm SHA256).Hash.ToLower(), $n
+          }
+          $out = Join-Path $env:GITHUB_WORKSPACE "SHA256SUMS-windows-x64"
+          [IO.File]::WriteAllText($out, (($lines | Sort-Object) -join "`n") + "`n")
+          Get-Content $out
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: |
+            MoltBrowser-Windows-x64-Setup.exe
+            MoltBrowser-Windows-x64.zip
+
+      - name: Upload checksums to the DRAFT release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        with:
+          tag_name: ${{ inputs.tag }}
+          draft: true
+          files: SHA256SUMS-windows-x64
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

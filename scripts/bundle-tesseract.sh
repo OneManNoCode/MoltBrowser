@@ -33,12 +33,13 @@ APP_PATH=""
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-bundle-verify.sh"
 
-# Pinned SHA256 of tessdata_fast/eng.traineddata. The tessdata_fast
-# repo is single-author-maintained but git's commit chain means a
-# tampered traineddata changes the commit SHA. Verify the blob SHA
-# against `shasum -a 256` on a trusted local copy, or against the
-# GitHub blob's pinned commit. Empty = WARNING in build output.
-EXPECTED_SHA256_TESSDATA_ENG=""
+# tessdata_fast/eng.traineddata, fetched from a pinned commit of
+# tesseract-ocr/tessdata_fast (not the moving main branch) and checked
+# against its SHA-256; lib-bundle-verify.sh fails closed on a mismatch.
+# To update: pick a new commit, download eng.traineddata from it, and
+# replace both values.
+TESSDATA_COMMIT="87416418657359cb625c412a48b6e1d6d41c29bd"
+EXPECTED_SHA256_TESSDATA_ENG="7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -81,7 +82,7 @@ done
 # still want our bundled traineddata to take precedence so OCR
 # quality is consistent across machines.
 TRAINEDDATA_CACHE="$CACHE_DIR/eng.traineddata"
-TRAINEDDATA_URL="https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata"
+TRAINEDDATA_URL="https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/$TESSDATA_COMMIT/eng.traineddata"
 # tessdata_fast = best balance of model size (~10MB) vs accuracy
 # for general English text. tessdata_best is ~15MB and slower.
 if ! verify_or_redownload "$TRAINEDDATA_CACHE" \

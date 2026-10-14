@@ -45,8 +45,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 350
     permissions:
-      contents: write   # upload release assets
-      actions: write    # read tree artifacts + queue the next resume run
+      contents: write       # upload release assets
+      actions: write        # read tree artifacts + queue the next resume run
+      id-token: write       # build-provenance attestation (OIDC)
+      attestations: write
 
     defaults:
       run:
@@ -57,6 +59,7 @@ jobs:
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
       MAX_ATTEMPTS: "12"
+      MOLT_RELEASE_BUILD: "1"   # bundle downloads must match their pins
       ARTIFACT_NAME: "chromium-tree"
       MSYS_NO_PATHCONV: "1"
       MSYS2_ARG_CONV_EXCL: "*"
@@ -223,36 +226,54 @@ jobs:
           fi
 
       # ---- complete: package + ship ----
-      - name: Package Windows installer
+      - name: Package Windows installer + checksums
+        id: package
         if: always() && steps.status.outputs.status == 'complete'
         env:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          ./scripts/package-win.sh --version "$TAG" || true
+          # dist/ may hold earlier packages: never let a stale one be published.
+          rm -f dist/MoltBrowser-*-win-x64-setup.exe dist/MoltBrowser-*-win-x64-portable.zip \
+            dist/MoltBrowser-Windows-x64-Setup.exe dist/MoltBrowser-Windows-x64.zip
+          ./scripts/package-win.sh --version "$TAG"
           cd dist
-          for f in MoltBrowser-*-win-x64-setup.exe; do
-            mv "$f" MoltBrowser-Windows-x64-Setup.exe 2>/dev/null || true
-          done
-          for f in MoltBrowser-*-win-x64.zip; do
-            mv "$f" MoltBrowser-Windows-x64.zip 2>/dev/null || true
-          done
+          # Exactly one installer (required) and at most one portable zip.
+          mapfile -t setup < <(compgen -G 'MoltBrowser-*-win-x64-setup.exe')
+          if [ "${#setup[@]}" -ne 1 ]; then
+            echo "::error::expected one installer in dist/, found ${#setup[@]}: ${setup[*]}"
+            exit 1
+          fi
+          mv "${setup[0]}" MoltBrowser-Windows-x64-Setup.exe
+          mapfile -t zips < <(compgen -G 'MoltBrowser-*-win-x64-portable.zip')
+          if [ "${#zips[@]}" -gt 1 ]; then
+            echo "::error::more than one portable zip in dist/: ${zips[*]}"
+            exit 1
+          fi
+          [ "${#zips[@]}" -eq 1 ] && mv "${zips[0]}" MoltBrowser-Windows-x64.zip
           ls -lh
+          files=(MoltBrowser-Windows-x64-Setup.exe)
+          [ -f MoltBrowser-Windows-x64.zip ] && files+=(MoltBrowser-Windows-x64.zip)
+          ../scripts/release-checksums.sh SHA256SUMS-windows-x64 "${files[@]}"
+          { echo "files<<EOF"; printf 'dist/%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
-      - name: Upload installer to release
+      - name: Build provenance attestation
+        if: always() && steps.status.outputs.status == 'complete'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: ${{ steps.package.outputs.files }}
+
+      - name: Upload installer to the DRAFT release
         if: always() && steps.status.outputs.status == 'complete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
+          FILES: ${{ steps.package.outputs.files }}
         run: |
-          gh release upload "$TAG" \
-            dist/MoltBrowser-Windows-x64-Setup.exe \
+          ./scripts/release-draft.sh "$TAG" --repo "$GITHUB_REPOSITORY"
+          mapfile -t files <<< "$FILES"
+          gh release upload "$TAG" "${files[@]}" dist/SHA256SUMS-windows-x64 \
             --repo "$GITHUB_REPOSITORY" --clobber
-          if [ -f dist/MoltBrowser-Windows-x64.zip ]; then
-            gh release upload "$TAG" \
-              dist/MoltBrowser-Windows-x64.zip \
-              --repo "$GITHUB_REPOSITORY" --clobber
-          fi
-          echo "🎉 Windows build complete and uploaded!"
+          echo "Windows assets uploaded. The release stays a DRAFT until the signed manifest is attached."
 
       # ---- partial: save the WHOLE tree (chunked) + chain ----
       - name: Save chromium tree (chunked)

@@ -19,6 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# Release builds: bundle downloads must match their pins (no dev override).
+export MOLT_RELEASE_BUILD=1
 
 VERSION=""
 BUILD_NUM=""
@@ -75,22 +77,18 @@ mkdir -p "$DIST_DIR"
 RESULTS=()
 FAILED=()
 
-# Create GitHub Release first (if uploading)
+# Create the GitHub Release first (if uploading), as a DRAFT: it stays one
+# until molt-release-manifest.json + .sig, signed OFFLINE over every
+# platform's assets (tools/release_signing/molt_release_sign.py), are
+# attached. The tag v$VERSION must already be pushed (release-draft.sh).
 TAG="v${VERSION}"
 if [ "$DO_UPLOAD" = true ]; then
   cd "$ROOT_DIR"
-  git tag -f "$TAG" HEAD 2>/dev/null || true
 
   if ! gh release view "$TAG" &>/dev/null; then
-    echo "Creating GitHub Release: $TAG"
-
-    PRERELEASE=""
-    [[ "$VERSION" == *"alpha"* || "$VERSION" == *"beta"* || "$VERSION" == *"rc"* ]] && PRERELEASE="--prerelease"
-
-    gh release create "$TAG" \
-      --title "MoltBrowser v${VERSION}" \
-      $PRERELEASE \
-      --notes "$(cat <<EOF
+    echo "Creating DRAFT GitHub Release: $TAG"
+    NOTES_FILE="$(mktemp)"
+    cat > "$NOTES_FILE" <<EOF
 # MoltBrowser v${VERSION}
 
 AI-native privacy browser with on-device LLM inference.
@@ -108,9 +106,12 @@ AI-native privacy browser with on-device LLM inference.
 - **Windows**: Download installer → run setup
 
 See [moltbrowser.com](https://moltbrowser.com) for details.
+
+Verify a download with the matching \`SHA256SUMS-<platform>\` file.
 EOF
-)"
-    echo "Release created."
+    "$SCRIPT_DIR/release-draft.sh" "$TAG" --notes-file "$NOTES_FILE"
+    rm -f "$NOTES_FILE"
+    echo "Draft release created."
   fi
 fi
 

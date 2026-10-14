@@ -11,6 +11,15 @@ name: Release
 #   Either use self-hosted runners (free, runs on your machine), GitHub's
 #   Larger Runners (paid by-minute), or a dedicated CI host.
 #
+# Release integrity:
+#   * The release is created as a DRAFT and stays one until the
+#     offline-signed molt-release-manifest.json + .sig are uploaded
+#     (tools/release_signing/molt_release_sign.py, run OFFLINE). Only then
+#     publish it: the updater refuses releases without a valid signature.
+#   * Each job publishes SHA256SUMS-<platform> for its assets and a signed
+#     SLSA build-provenance attestation (gh attestation verify <file>
+#     --repo OneManNoCode/MoltBrowser).
+#
 # Required GitHub Secrets (set under Settings → Secrets and variables →
 # Actions):
 #   MAC_SIGNING_IDENTITY    "Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)"
@@ -42,6 +51,10 @@ on:
 permissions:
   contents: read   # jobs that upload release assets ask for write themselves
 
+env:
+  # Bundle downloads must match their pinned hashes; no dev override.
+  MOLT_RELEASE_BUILD: "1"
+
 jobs:
   # -------------------------------------------------------------------
   # macOS arm64 — signed + notarized DMG
@@ -51,7 +64,9 @@ jobs:
     if: ${{ github.event_name == 'push' || contains(github.event.inputs.platforms, 'macos') }}
     runs-on: [self-hosted, macOS, ARM64]
     permissions:
-      contents: write   # upload release assets
+      contents: write       # upload release assets
+      id-token: write       # build-provenance attestation (OIDC)
+      attestations: write
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -76,10 +91,10 @@ jobs:
             echo "::warning::chromium/src is at $HEAD_REV, not the pin $PIN from chromium_version.txt (run scripts/setup.sh --resync on this runner)"
           fi
 
+      # The whole overlay, like setup.sh / the Linux workflows (only copying
+      # src/chrome/ left components/, third_party/ etc. stale).
       - name: Sync MoltBrowser src/ → chromium/src/
-        run: |
-          # Copy git-tracked overrides into the Chromium build tree
-          rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
+        run: rsync -a --exclude='.git' src/ chromium/src/
 
       - name: Build chrome target
         run: autoninja -C chromium/src/out/MoltBrowser chrome
@@ -107,12 +122,21 @@ jobs:
             -srcfolder chromium/src/out/MoltBrowser/MoltBrowser.app \
             -ov -format UDZO dist/MoltBrowser-macOS-arm64.dmg
 
-      - name: Upload to GitHub Release
+      - name: Checksums
+        run: ./scripts/release-checksums.sh dist/SHA256SUMS-macos-arm64 dist/MoltBrowser-macOS-arm64.dmg
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: dist/MoltBrowser-macOS-arm64.dmg
+
+      - name: Upload to the DRAFT GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          ./scripts/release-draft.sh "$GITHUB_REF_NAME"
           gh release upload "$GITHUB_REF_NAME" \
-            dist/MoltBrowser-macOS-arm64.dmg \
+            dist/MoltBrowser-macOS-arm64.dmg dist/SHA256SUMS-macos-arm64 \
             --clobber
 
   # -------------------------------------------------------------------
@@ -124,7 +148,9 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && contains(github.event.inputs.platforms, 'linux') }}
     runs-on: [self-hosted, Linux, X64]
     permissions:
-      contents: write   # upload release assets
+      contents: write       # upload release assets
+      id-token: write       # build-provenance attestation (OIDC)
+      attestations: write
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -148,19 +174,40 @@ jobs:
           fi
 
       - name: Sync MoltBrowser src/ → chromium/src/
-        run: rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
+        run: rsync -a --exclude='.git' src/ chromium/src/
 
       - name: Build and package
         run: |
           ./scripts/release-linux.sh --version "$VERSION" --build 1
 
-      - name: Upload to GitHub Release
+      - name: Collect assets + checksums
+        id: assets
+        run: |
+          shopt -s nullglob
+          # This version only: a warm runner keeps older packages in dist/.
+          files=("dist/MoltBrowser-${VERSION}-linux-x64.tar.gz" "dist/MoltBrowser-${VERSION}-linux-x64.AppImage" "dist/moltbrowser_${VERSION}_amd64.deb" dist/moltbrowser*"-${VERSION}"-*.rpm)
+          for i in "${!files[@]}"; do [ -f "${files[$i]}" ] || unset "files[$i]"; done
+          files=("${files[@]}")
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no Linux packages in dist/"
+            exit 1
+          fi
+          ./scripts/release-checksums.sh dist/SHA256SUMS-linux-x64 "${files[@]}"
+          { echo "files<<EOF"; printf '%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: ${{ steps.assets.outputs.files }}
+
+      - name: Upload to the DRAFT GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FILES: ${{ steps.assets.outputs.files }}
         run: |
-          for f in dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.AppImage; do
-            [ -f "$f" ] && gh release upload "$GITHUB_REF_NAME" "$f" --clobber
-          done
+          ./scripts/release-draft.sh "$GITHUB_REF_NAME"
+          mapfile -t files <<< "$FILES"
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" dist/SHA256SUMS-linux-x64 --clobber
 
   # -------------------------------------------------------------------
   # Windows x64 — NSIS Setup.exe
@@ -172,7 +219,9 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && contains(github.event.inputs.platforms, 'windows') }}
     runs-on: [self-hosted, Windows, X64]
     permissions:
-      contents: write   # upload release assets
+      contents: write       # upload release assets
+      id-token: write       # build-provenance attestation (OIDC)
+      attestations: write
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -197,18 +246,40 @@ jobs:
 
       - name: Sync MoltBrowser src/ → chromium/src/
         shell: bash
-        run: rsync -av --exclude='.git' src/chrome/ chromium/src/chrome/
+        run: rsync -a --exclude='.git' src/ chromium/src/
 
       - name: Build and package
         shell: bash
         run: |
           ./scripts/release-win.sh --version "$VERSION" --build 1
 
-      - name: Upload to GitHub Release
+      - name: Collect assets + checksums
+        id: assets
+        shell: bash
+        run: |
+          shopt -s nullglob
+          # This version only: a warm runner keeps older packages in dist/.
+          files=("dist/MoltBrowser-${VERSION}-win-x64-setup.exe" "dist/MoltBrowser-${VERSION}-win-x64-portable.zip")
+          for i in "${!files[@]}"; do [ -f "${files[$i]}" ] || unset "files[$i]"; done
+          files=("${files[@]}")
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no Windows packages in dist/"
+            exit 1
+          fi
+          ./scripts/release-checksums.sh dist/SHA256SUMS-windows-x64 "${files[@]}"
+          { echo "files<<EOF"; printf '%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: ${{ steps.assets.outputs.files }}
+
+      - name: Upload to the DRAFT GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FILES: ${{ steps.assets.outputs.files }}
         run: |
-          for f in dist/MoltBrowser-Windows-x64-Setup.exe; do
-            [ -f "$f" ] && gh release upload "$GITHUB_REF_NAME" "$f" --clobber
-          done
+          ./scripts/release-draft.sh "$GITHUB_REF_NAME"
+          mapfile -t files <<< "$FILES"
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" dist/SHA256SUMS-windows-x64 --clobber

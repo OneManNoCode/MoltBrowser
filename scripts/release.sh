@@ -26,6 +26,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+# Release builds: bundle downloads must match their pins (no dev override).
+export MOLT_RELEASE_BUILD=1
 
 # Defaults
 VERSION=""
@@ -339,20 +341,16 @@ if [ "$DO_UPLOAD" = true ]; then
   if command -v gh &> /dev/null; then
     cd "$REPO_DIR"
 
-    # Create release tag
-    git tag -f "v${VERSION}" HEAD
+    # Checksums for what we publish (one file per platform; see
+    # scripts/release-checksums.sh).
+    SUMS_PATH="$REPO_DIR/dist/SHA256SUMS-macos-$([ "$UNIVERSAL" = true ] && echo universal || echo arm64)"
+    bash "$SCRIPT_DIR/release-checksums.sh" "$SUMS_PATH" "$DMG_PATH"
 
-    # Determine if this is a prerelease
-    PRERELEASE_FLAG=""
-    if [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"rc"* ]]; then
-      PRERELEASE_FLAG="--prerelease"
-    fi
-
-    # Create GitHub release
-    gh release create "v${VERSION}" \
-      --title "MoltBrowser v${VERSION}" \
-      $PRERELEASE_FLAG \
-      --notes "$(cat <<RELEASE_EOF
+    # The release is created as a DRAFT (scripts/release-draft.sh) from the
+    # already-pushed tag v${VERSION} and stays a draft until the signed
+    # manifest is attached. An existing release just gets the new assets.
+    NOTES_FILE="$(mktemp)"
+    cat > "$NOTES_FILE" <<RELEASE_EOF
 # MoltBrowser v${VERSION}
 
 AI-native privacy browser with on-device LLM inference.
@@ -379,11 +377,16 @@ AI-native privacy browser with on-device LLM inference.
 
 ## Downloads
 - **macOS**: \`${DMG_NAME}.dmg\` ($(du -sh "$DMG_PATH" 2>/dev/null | cut -f1 || echo "N/A"))
+- Checksums: \`$(basename "$SUMS_PATH")\`
 RELEASE_EOF
-)" \
-      "$DMG_PATH"
+    bash "$SCRIPT_DIR/release-draft.sh" "v${VERSION}" --notes-file "$NOTES_FILE"
+    rm -f "$NOTES_FILE"
+    gh release upload "v${VERSION}" "$DMG_PATH" "$SUMS_PATH" --clobber
 
-    echo "  Release: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
+    echo "  DRAFT release: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
+    echo "  It stays a draft until molt-release-manifest.json + .sig, signed OFFLINE"
+    echo "  with tools/release_signing/molt_release_sign.py over ALL platform assets,"
+    echo "  are attached. Then: gh release edit v${VERSION} --draft=false"
   else
     echo "  ERROR: gh CLI not found. Install with: brew install gh"
   fi

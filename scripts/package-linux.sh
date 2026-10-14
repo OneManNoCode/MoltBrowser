@@ -265,6 +265,15 @@ build_flatpak() {
   FLATPAK_DIR="$ROOT_DIR/installer/linux/flatpak"
   mkdir -p "$FLATPAK_DIR"
 
+  # The manifest pins the release tarball by SHA-256 (flatpak-builder
+  # refuses a mismatch). It exists when the tar format ran first ("all").
+  TAR_SHA256="FIXME_BUILD_THE_TAR_FORMAT_FIRST"
+  if [ -f "$DIST_DIR/MoltBrowser-$VERSION-linux-x64.tar.gz" ]; then
+    TAR_SHA256="$(sha256sum "$DIST_DIR/MoltBrowser-$VERSION-linux-x64.tar.gz" | cut -d' ' -f1)"
+  else
+    echo "WARNING: no tarball for $VERSION in dist/; the Flatpak manifest's sha256 is a placeholder."
+  fi
+
   cat > "$FLATPAK_DIR/com.geneye.MoltBrowser.yml" << EOF
 app-id: com.geneye.MoltBrowser
 runtime: org.freedesktop.Platform
@@ -292,7 +301,7 @@ modules:
     sources:
       - type: archive
         url: https://github.com/OneManNoCode/MoltBrowser/releases/download/v${VERSION}/MoltBrowser-${VERSION}-linux-x64.tar.gz
-        sha256: FIXME_REPLACE_WITH_ACTUAL_SHA256
+        sha256: ${TAR_SHA256}
 EOF
 
   echo "Flatpak manifest: $FLATPAK_DIR/com.geneye.MoltBrowser.yml"

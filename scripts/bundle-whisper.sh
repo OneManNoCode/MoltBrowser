@@ -38,15 +38,20 @@ source "$SCRIPT_DIR/lib-bundle-verify.sh"
 # tags are mutable on the server side — a compromised github.com could
 # repoint v1.7.5 to a malicious commit. The commit SHA is content-
 # addressed (changing any byte changes the SHA), so verifying we got
-# the expected commit forecloses that attack.
+# the expected commit forecloses that attack. A mismatch is fatal; so is
+# a tag with no pinned commit (see lib-bundle-verify.sh for the dev-only
+# override).
 #
-# To populate: `git rev-parse refs/tags/v1.7.5^{commit}` in a trusted
-# checkout, paste the 40-char hex below. Empty = WARNING in output.
-EXPECTED_COMMIT_WHISPER_V1_7_5=""
+# v1.7.5 resolves to this commit (git ls-remote of the tag, 2026-10-14).
+EXPECTED_COMMIT_WHISPER_V1_7_5="51c6961c7b64b406833f4b6a4a20e67142f69225"
 
-# Pinned SHA256 of ggml-tiny.en.bin from the official HuggingFace
-# mirror. Get from the HuggingFace model card or `shasum -a 256` on
-# a trusted local copy.
+# Pinned SHA256 of ggml-tiny.en.bin from the official HuggingFace repo.
+# PLACEHOLDER: huggingface.co was unreachable when the pins were set, so
+# this is empty and bundling FAILS CLOSED until it is filled in. To fill:
+# download MODEL_URL (below) on a trusted machine, check its SHA-1 equals
+# c78c86eb1a8faa21b369bcd33207cc90d64ae9df (the value whisper.cpp
+# publishes in models/README.md) and that its SHA-256 matches the LFS
+# "SHA256" shown on the file's huggingface.co page, then paste the SHA-256.
 EXPECTED_SHA256_WHISPER_TINY_EN=""
 
 while [[ $# -gt 0 ]]; do
@@ -111,10 +116,14 @@ fi
 # Verify the cloned commit matches the pinned SHA. Git tags are
 # mutable; commit SHAs are not.
 ACTUAL_COMMIT="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
-if [[ -n "$EXPECTED_COMMIT_WHISPER_V1_7_5" ]]; then
-  if [[ "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT_WHISPER_V1_7_5" ]]; then
+EXPECTED_COMMIT=""
+if [[ "$WHISPER_TAG" == "v1.7.5" ]]; then
+  EXPECTED_COMMIT="$EXPECTED_COMMIT_WHISPER_V1_7_5"
+fi
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+  if [[ "$ACTUAL_COMMIT" != "$EXPECTED_COMMIT" ]]; then
     echo "[bundle-whisper] FATAL: whisper.cpp commit mismatch"
-    echo "[bundle-whisper]   expected $EXPECTED_COMMIT_WHISPER_V1_7_5"
+    echo "[bundle-whisper]   expected $EXPECTED_COMMIT"
     echo "[bundle-whisper]   actual   $ACTUAL_COMMIT"
     echo "[bundle-whisper] either the upstream tag was repointed or the"
     echo "[bundle-whisper] pinned SHA needs updating (verify in a trusted"
@@ -124,10 +133,16 @@ if [[ -n "$EXPECTED_COMMIT_WHISPER_V1_7_5" ]]; then
   fi
   echo "[bundle-whisper] OK: whisper.cpp commit $ACTUAL_COMMIT"
 else
-  echo "[bundle-whisper] WARNING: no pinned commit SHA for $WHISPER_TAG"
-  echo "[bundle-whisper]          actual = $ACTUAL_COMMIT"
-  echo "[bundle-whisper]          paste this into EXPECTED_COMMIT_WHISPER_V1_7_5"
-  echo "[bundle-whisper]          after verifying in a trusted checkout."
+  echo "[bundle-whisper] no pinned commit SHA for $WHISPER_TAG (actual = $ACTUAL_COMMIT)"
+  if unpinned_allowed; then
+    echo "[bundle-whisper] WARNING: building it UNVERIFIED because"
+    echo "[bundle-whisper]          MOLT_ALLOW_UNPINNED_DOWNLOADS=1. Dev builds only."
+  else
+    echo "[bundle-whisper] FATAL: refusing an unpinned whisper.cpp tag. Verify the"
+    echo "[bundle-whisper]        commit in a trusted checkout and pin it at the top"
+    echo "[bundle-whisper]        of $0 (dev-only override: MOLT_ALLOW_UNPINNED_DOWNLOADS=1)."
+    exit 1
+  fi
 fi
 
 # Use whisper.cpp's CMake build. -DGGML_METAL=1 lets it use Apple

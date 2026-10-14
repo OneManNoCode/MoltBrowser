@@ -19,6 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# Release builds: bundle downloads must match their pins (no dev override).
+export MOLT_RELEASE_BUILD=1
 
 VERSION=""
 BUILD_NUM=""
@@ -131,32 +133,27 @@ if [ "$DO_UPLOAD" = true ]; then
   echo "[4/4] Uploading to GitHub Releases..."
   cd "$ROOT_DIR"
 
-  # Collect all Linux artifacts
+  # This version's Linux packages only (dist/ keeps older builds around).
   ARTIFACTS=()
-  for f in "$DIST_DIR/"*linux* "$DIST_DIR/"moltbrowser_*; do
+  for f in "$DIST_DIR/MoltBrowser-$VERSION-linux-x64".* \
+           "$DIST_DIR/moltbrowser_${VERSION}_amd64.deb" \
+           "$DIST_DIR/moltbrowser-$VERSION"-*.rpm; do
     [ -f "$f" ] && ARTIFACTS+=("$f")
   done
 
   if [ ${#ARTIFACTS[@]} -eq 0 ]; then
-    echo "ERROR: No Linux artifacts found in $DIST_DIR/"
+    echo "ERROR: No Linux artifacts for $VERSION found in $DIST_DIR/"
     exit 1
   fi
 
   TAG="v${VERSION}"
+  SUMS="$DIST_DIR/SHA256SUMS-linux-x64"
+  "$SCRIPT_DIR/release-checksums.sh" "$SUMS" "${ARTIFACTS[@]}"
 
-  # Check if release exists
-  if gh release view "$TAG" &>/dev/null; then
-    echo "  Release $TAG exists — uploading additional assets..."
-    gh release upload "$TAG" "${ARTIFACTS[@]}" --clobber
-  else
-    echo "  Creating release $TAG..."
-    git tag -f "$TAG" HEAD
-    gh release create "$TAG" \
-      --title "MoltBrowser v${VERSION}" \
-      --notes "Linux release for MoltBrowser v${VERSION}" \
-      "${ARTIFACTS[@]}"
-  fi
-  echo "  Uploaded ${#ARTIFACTS[@]} files."
+  # DRAFT until the offline-signed manifest is attached (release-draft.sh).
+  "$SCRIPT_DIR/release-draft.sh" "$TAG"
+  gh release upload "$TAG" "${ARTIFACTS[@]}" "$SUMS" --clobber
+  echo "  Uploaded ${#ARTIFACTS[@]} files + $(basename "$SUMS") to the draft release $TAG."
 else
   echo "[4/4] Skipping upload"
 fi

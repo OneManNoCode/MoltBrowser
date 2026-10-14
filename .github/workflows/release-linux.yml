@@ -60,7 +60,13 @@ jobs:
     runs-on: [self-hosted, linux-chromium-builder]
     timeout-minutes: 480   # 8 hr ceiling
     permissions:
-      contents: write   # upload assets to the release
+      contents: write       # upload assets to the release
+      id-token: write       # build-provenance attestation (OIDC)
+      attestations: write
+
+    env:
+      # Bundle downloads must match their pinned hashes; no dev override.
+      MOLT_RELEASE_BUILD: "1"
 
     steps:
       - name: Check out repo (no submodules — Chromium synced separately)
@@ -208,25 +214,57 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          # dist/ survives on the warm runner: drop earlier packages so a
+          # stale one can never be renamed and published as this release.
+          rm -f dist/MoltBrowser-Linux-x64.* dist/moltbrowser*.deb \
+            dist/moltbrowser*.rpm dist/MoltBrowser-*-linux-x64.tar.gz
           ./scripts/package-linux.sh --version "$TAG"
 
       - name: Rename to stable asset names
         run: |
           cd dist
-          # Find each artifact regardless of how package-linux.sh names it
-          mv moltbrowser*amd64.deb            MoltBrowser-Linux-x64.deb            || true
-          mv moltbrowser*x86_64.rpm           MoltBrowser-Linux-x64.rpm            || true
-          mv MoltBrowser-*-linux-x64.tar.gz   MoltBrowser-Linux-x64.tar.gz         || true
+          # Exactly one match each, or fail (a silent miss used to upload
+          # whatever an earlier run left behind).
+          rename_one() {
+            local matches
+            mapfile -t matches < <(compgen -G "$1")
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::expected one '$1' in dist/, found ${#matches[@]}: ${matches[*]}"
+              exit 1
+            fi
+            mv "${matches[0]}" "$2"
+          }
+          rename_one 'moltbrowser*amd64.deb'          MoltBrowser-Linux-x64.deb
+          rename_one 'moltbrowser*x86_64.rpm'         MoltBrowser-Linux-x64.rpm
+          rename_one 'MoltBrowser-*-linux-x64.tar.gz' MoltBrowser-Linux-x64.tar.gz
           ls -lh MoltBrowser-Linux-x64.*
 
-      - name: Upload Linux artifacts to the release
+      - name: Checksums
+        run: |
+          ./scripts/release-checksums.sh dist/SHA256SUMS-linux-x64 \
+            dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm \
+            dist/MoltBrowser-Linux-x64.tar.gz
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: |
+            dist/MoltBrowser-Linux-x64.deb
+            dist/MoltBrowser-Linux-x64.rpm
+            dist/MoltBrowser-Linux-x64.tar.gz
+
+      - name: Upload Linux artifacts to the release (DRAFT until signed)
         # Uses the built-in GITHUB_TOKEN (permissions: contents: write above).
         # Avoids needing the `gh` CLI installed on the self-hosted runner.
+        # draft: a release this creates stays a draft until the offline-signed
+        # molt-release-manifest.json + .sig are attached (see release.yml).
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
+          draft: true
           files: |
             dist/MoltBrowser-Linux-x64.deb
             dist/MoltBrowser-Linux-x64.rpm
             dist/MoltBrowser-Linux-x64.tar.gz
+            dist/SHA256SUMS-linux-x64
           fail_on_unmatched_files: true
