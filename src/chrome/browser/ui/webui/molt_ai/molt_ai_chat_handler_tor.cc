@@ -23,22 +23,19 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/tor/exit_country_names.h"
+#include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_commands.h"
-#include "components/prefs/pref_service.h"
-#include "components/proxy_config/proxy_config_dictionary.h"
-#include "components/proxy_config/proxy_config_pref_names.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "url/gurl.h"
 
 // ------------------------------------------------------------------
-// HandleGetTorStatus: Phase B.1 of the privacy tentpole.
-// Probes the local Tor control port (127.0.0.1:9051) and reports
-// version + running state. Honest about scope — if tor isn't
-// installed/configured we tell the user how to fix it.
+// HandleGetTorStatus: reports whether MoltNet's own Tor is running (an
+// authenticated probe of its control port — never a system Tor on
+// 127.0.0.1:9051) plus where the binary comes from.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
   AllowJavascript();
@@ -77,9 +74,9 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
           //     not to install via brew.
           if (resolved_path.empty()) {
             out.Set("install_hint",
-                    "No tor binary is bundled with this build. Rebuild "
-                    "after running scripts/bundle-tor.sh (or use a fresh "
-                    "release DMG, which ships with Tor inside).");
+                    "No tor binary is bundled with this build. Use a "
+                    "release build (Tor ships inside), or start MoltBrowser "
+                    "with --moltnet-tor-binary=<absolute path to tor>.");
           } else {
             out.Set("install_hint",
                     "Tor binary is available at " + resolved_path +
@@ -174,7 +171,8 @@ void MoltAIChatHandler::HandleStopTor(const base::ListValue& args) {
   AllowJavascript();
   CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
-  molt_ai::tor::TorManager::Get()->Stop();
+  // Closes MoltNet windows too: with Tor gone they could only show errors.
+  molt_ai::tor::MoltNetWindow::TurnOff();
   base::DictValue out;
   out.Set("success", true);
   ResolveJavascriptCallback(base::Value(callback_id),
@@ -186,37 +184,8 @@ void MoltAIChatHandler::HandleStopTor(const base::ListValue& args) {
 //   { selected: "<cc or ''>",
 //     available: [ { code: "<cc>", name: "<display name>" }, ... ] }
 // The available list comes from TorManager's curated static list
-// (lowercase ISO alpha-2); we map each code to a human-readable name
-// here in the UI layer (the backend stays code-only). Unknown codes
-// fall back to their uppercased form so the picker never shows a blank.
+// (lowercase ISO alpha-2), named via the shared exit_country_names.h.
 // ------------------------------------------------------------------
-namespace {
-
-// Display names for the curated exit-country codes. Keep in sync with
-// TorManager::GetAvailableExitCountries(); any code not found here is
-// rendered as its uppercased ISO code (e.g. "xx" -> "XX").
-std::string ExitCountryDisplayName(const std::string& cc) {
-  static const auto* const kNames =
-      new std::map<std::string, std::string>{
-          {"us", "United States"}, {"gb", "United Kingdom"},
-          {"de", "Germany"},       {"fr", "France"},
-          {"nl", "Netherlands"},   {"ch", "Switzerland"},
-          {"se", "Sweden"},        {"no", "Norway"},
-          {"fi", "Finland"},       {"ca", "Canada"},
-          {"jp", "Japan"},         {"sg", "Singapore"},
-          {"au", "Australia"},     {"es", "Spain"},
-          {"it", "Italy"},         {"at", "Austria"},
-          {"pl", "Poland"},        {"cz", "Czechia"},
-          {"ro", "Romania"},       {"is", "Iceland"},
-      };
-  auto it = kNames->find(cc);
-  if (it != kNames->end())
-    return it->second;
-  return base::ToUpperASCII(cc);
-}
-
-}  // namespace
-
 void MoltAIChatHandler::HandleGetTorExitCountries(
     const base::ListValue& args) {
   AllowJavascript();
@@ -230,7 +199,7 @@ void MoltAIChatHandler::HandleGetTorExitCountries(
   for (const std::string& cc : mgr->GetAvailableExitCountries()) {
     base::DictValue entry;
     entry.Set("code", cc);
-    entry.Set("name", ExitCountryDisplayName(cc));
+    entry.Set("name", molt_ai::tor::ExitCountryDisplayName(cc));
     available.Append(std::move(entry));
   }
   out.Set("available", std::move(available));
@@ -240,10 +209,9 @@ void MoltAIChatHandler::HandleGetTorExitCountries(
 
 // ------------------------------------------------------------------
 // HandleSetTorExitCountry: constrain (or clear) the Tor exit relay's
-// country. Arg 1 is a lowercase ISO alpha-2 code, or "" for "any".
-// TorManager rewrites the torrc and, if Tor is running, reloads it in
-// place to rebuild circuits through the new exit. Resolves
-//   { success: true, selected: "<cc or ''>" }.
+// country. Arg 1 is a lowercase ISO alpha-2 code, or "" for "any". The pin
+// is session-only and, if Tor is running, applied live via SETCONF +
+// NEWNYM. Resolves { success, selected[, error] }.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSetTorExitCountry(
     const base::ListValue& args) {
@@ -257,26 +225,29 @@ void MoltAIChatHandler::HandleSetTorExitCountry(
   // regardless of what the UI sent.
   cc = base::ToLowerASCII(cc);
 
-  molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
-  mgr->SetExitCountry(cc);
-
-  base::DictValue out;
-  out.Set("success", true);
-  out.Set("selected", mgr->GetExitCountry());
-  ResolveJavascriptCallback(base::Value(callback_id),
-                            base::Value(std::move(out)));
+  // Session-only; applied live (SETCONF + NEWNYM) if Tor is running.
+  molt_ai::tor::TorManager::Get()->SetExitCountry(
+      cc, base::BindOnce(
+              [](base::WeakPtr<MoltAIChatHandler> self, std::string cb, bool ok,
+                 std::string error) {
+                if (!self) return;
+                base::DictValue out;
+                out.Set("success", ok);
+                out.Set("selected",
+                        molt_ai::tor::TorManager::Get()->GetExitCountry());
+                if (!ok) out.Set("error", error);
+                self->ResolveJavascriptCallback(base::Value(cb),
+                                                base::Value(std::move(out)));
+              },
+              weak_ptr_factory_.GetWeakPtr(), callback_id));
 }
 
 // ------------------------------------------------------------------
-// HandleOpenTorTab: configure the primary OTR profile's proxy pref
-// to route through Tor's SOCKS5 port (127.0.0.1:9050), then open
-// |url| in a new OTR window. Any subsequent tab opened in that same
-// OTR profile shares the proxy. To revert, the user runs /tor close
-// which clears the pref.
-//
-// This is the v1 routing approach — coarse-grained (whole-profile)
-// but honest. Per-tab routing within a single profile would require
-// a custom NetworkContext, which is the Phase B.3 polish.
+// HandleOpenTorTab (/tor open <url>): opens |url| in a MoltNet window —
+// the isolated Tor profile, verified to route through Tor before anything
+// loads. It never proxies (or opens the page in) the primary incognito
+// profile, whose cookies are shared with the user's other private windows.
+// Resolves { success, url } or { success: false, error }.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleOpenTorTab(const base::ListValue& args) {
   AllowJavascript();
@@ -304,33 +275,21 @@ void MoltAIChatHandler::HandleOpenTorTab(const base::ListValue& args) {
   }
   Profile* profile = Profile::FromBrowserContext(
       web_ui()->GetWebContents()->GetBrowserContext());
-  if (!profile) {
-    out.Set("success", false);
-    out.Set("error", "no profile");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  Profile* original = profile->GetOriginalProfile();
-  Profile* otr = original->GetPrimaryOTRProfile(/*create_if_needed=*/true);
-  if (!otr) {
-    out.Set("success", false);
-    out.Set("error", "could not create OTR profile");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  // Configure SOCKS5 proxy on the OTR profile's prefs. The proxy
-  // string format is "socks5://host:port".
-  base::Value proxy_dict(ProxyConfigDictionary::CreateFixedServers(
-      "socks5://127.0.0.1:9050", /*bypass_list=*/std::string()));
-  otr->GetPrefs()->Set(proxy_config::prefs::kProxy, proxy_dict);
-
-  chrome::OpenURLOffTheRecord(original, g);
-
-  out.Set("success", true);
-  out.Set("url", g.spec());
-  out.Set("proxy", "socks5://127.0.0.1:9050");
-  ResolveJavascriptCallback(base::Value(callback_id),
-                            base::Value(std::move(out)));
+  molt_ai::tor::MoltNetWindow::Open(
+      profile, g,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+             std::string url, bool ok, std::string error) {
+            if (!self) return;
+            base::DictValue result;
+            result.Set("success", ok);
+            if (ok) {
+              result.Set("url", url);
+            } else {
+              result.Set("error", error);
+            }
+            self->ResolveJavascriptCallback(base::Value(cb),
+                                            base::Value(std::move(result)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id, g.spec()));
 }

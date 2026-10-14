@@ -162,6 +162,9 @@ class MoltNetDataSource : public content::URLDataSource {
   .hop .hbtn:hover{background:rgba(255,255,255,.10)}
   .hline{width:2px;height:9px;background:rgba(255,255,255,.22);margin-left:19px}
   .note{font-size:9.5px;color:var(--faint);padding:2px 8px 6px;line-height:1.4}
+  .note.warn{color:#ffb4b4;padding-top:0}
+  .note.warn:empty{display:none}
+  #where{padding:0 18px 8px;font-size:10.5px}
   .evlink{cursor:pointer;color:var(--muted)}
   .evlink:hover{color:var(--text)}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
@@ -176,22 +179,25 @@ class MoltNetDataSource : public content::URLDataSource {
       <div><div class="title">MoltNet</div><div class="st" id="st">Checking&hellip;</div></div>
       <span class="brand" id="sub"></span>
     </div>
-    <div class="sec">Routing</div>
+    <div class="sec">Tor routing</div>
     <div class="modes" id="modes">
       <div class="mode" data-mode="direct" onclick="setMode('direct')">
-        <div class="mname">Direct</div><div class="mdesc">Off</div></div>
+        <div class="mname">Off</div><div class="mdesc">Tor stopped</div></div>
       <div class="mode" data-mode="multi_hop" onclick="setMode('multi_hop')">
-        <div class="mname">Private</div><div class="mdesc">Tor&nbsp;&middot;&nbsp;3&nbsp;hops</div></div>
+        <div class="mname">On</div><div class="mdesc">Tor&nbsp;&middot;&nbsp;own&nbsp;window</div></div>
     </div>
+    <div class="note" id="where"></div>
+    <div class="note warn" id="err"></div>
     <div class="divider"></div>
     <div class="scroll">
       <div id="routeWrap"></div>
       <div class="sec">Exit country</div>
+      <div class="note">Pinning a country shrinks the set of exits you blend in with, which reduces anonymity. The choice resets when MoltBrowser restarts.</div>
       <div class="list" id="list"></div>
     </div>
     <div class="foot">
+      <div class="act" onclick="openWindow()">&#129477; New&nbsp;Tor&nbsp;window</div>
       <div class="act" onclick="newIdentity()">&#128260; New&nbsp;identity</div>
-      <div class="act" onclick="go('molt://ai-settings/?section=import')">&#128229; Import</div>
       <div class="act" onclick="go('molt://ai-settings/')">&#9881;&#65039; Settings</div>
     </div>
   </div>
@@ -207,20 +213,42 @@ cr.webUIResponse=function(id,ok,r){var c=_pend[id];if(c){delete _pend[id];ok?c.r
 function flag(cc){ if(!cc||cc.length!==2) return '🌐';
   return String.fromCodePoint.apply(null,[cc.charCodeAt(0),cc.charCodeAt(1)].map(function(x){return 0x1F1E6+(x|32)-97;})); }
 
-var STATE={running:false,busy:false,selected:'',mode:'direct',countries:[]};
+// |routing| is about THIS window: a MoltNet window is routed via Tor, a
+// regular window never is (MoltNet browsing happens in its own windows).
+var STATE={running:false,starting:false,busy:false,selected:'',mode:'direct',
+  routing:'not_routed',inMolt:false,proxyExt:false,error:'',countries:[]};
 
+function statusText(){
+  if(STATE.busy||STATE.starting) return 'Connecting to Tor…';
+  if(STATE.routing==='tor') return 'Private via Tor';
+  if(STATE.routing==='blocked') return 'Tor stopped — window blocked';
+  if(STATE.routing==='overridden') return 'Proxy overridden — not protected';
+  return STATE.running?'This window: not routed':'Off · not routed';
+}
+function whereText(){
+  if(STATE.inMolt){
+    if(STATE.routing==='tor') return 'This MoltNet window sends all its traffic through Tor. Its cookies and site data are discarded when the last MoltNet window closes.';
+    if(STATE.routing==='blocked') return 'Tor is not running, so this window can\'t load pages. It never falls back to your direct connection.';
+    return 'A policy, extension or command-line flag controls the proxy here, so MoltNet can\'t guarantee Tor routing. Close this window.';
+  }
+  var t='This window uses your normal connection. MoltNet browsing happens in separate Tor windows with their own cookies.';
+  if(STATE.proxyExt) t+=' (This window\'s proxy is set by a policy or extension.)';
+  return t;
+}
 function render(){
   var d=document.getElementById('dot'), st=document.getElementById('st'),
       sub=document.getElementById('sub');
-  d.className='dot'+(STATE.busy?' busy':(STATE.running?' on':''));
-  st.textContent=STATE.busy?'Connecting…':(STATE.running?'Connected':'Disconnected');
-  // Always show the chosen exit country's flag (even when disconnected) so
-  // picking a country gives immediate feedback.
+  var bad=(STATE.routing==='blocked'||STATE.routing==='overridden');
+  d.className='dot'+((STATE.busy||STATE.starting||bad)?' busy':(STATE.routing==='tor'?' on':''));
+  st.textContent=statusText();
   sub.textContent=STATE.selected?flag(STATE.selected)+' '+STATE.selected.toUpperCase():'🌐 AUTO';
-  // Highlight the active routing mode.
+  document.getElementById('where').textContent=whereText();
+  document.getElementById('err').textContent=STATE.error||'';
+  var on=STATE.running||STATE.starting||STATE.busy;
   var modes=document.getElementById('modes').children;
   for(var i=0;i<modes.length;i++){
-    modes[i].className='mode'+(modes[i].getAttribute('data-mode')===STATE.mode?' active':'');
+    var m=modes[i].getAttribute('data-mode');
+    modes[i].className='mode'+(((m==='direct')!==on)?' active':'');
   }
   var list=document.getElementById('list'); list.innerHTML='';
   list.appendChild(rowEl('','🌐','Auto (recommended)'));
@@ -235,20 +263,26 @@ function rowEl(code,fl,name){
   var c=document.createElement('span'); c.className='chk'; c.textContent='✓';
   r.appendChild(f); r.appendChild(n); r.appendChild(c); return r;
 }
-function apply(s){ STATE.running=!!s.running; STATE.selected=s.selected||'';
-  if(s.mode) STATE.mode=s.mode; STATE.busy=false; render(); renderRoute(); }
+function apply(s){ if(!s) return;
+  STATE.running=!!s.running; STATE.starting=!!s.starting; STATE.selected=s.selected||'';
+  if(s.mode) STATE.mode=s.mode; STATE.routing=s.routing||'not_routed';
+  STATE.inMolt=!!s.in_moltnet_window; STATE.proxyExt=!!s.proxy_externally_controlled;
+  STATE.error=s.error||''; STATE.busy=false; render(); renderRoute(); }
 function loadCountries(){ sendWithPromise('moltnet.getExitCountries').then(function(r){
   STATE.countries=r.available||[]; if(r.selected!=null) STATE.selected=r.selected; render(); }); }
 function refresh(){ sendWithPromise('moltnet.getStatus').then(apply); }
-function setMode(m){ STATE.mode=m; STATE.busy=(m!=='direct'&&!STATE.running); render();
-  sendWithPromise('moltnet.setMode',m).then(apply); }
+function busy(){ STATE.busy=true; STATE.error=''; render(); }
+function setMode(m){ if(m!=='direct'){ openWindow(); return; }
+  sendWithPromise('moltnet.setMode','direct').then(apply); }
+function openWindow(){ busy(); sendWithPromise('moltnet.openWindow').then(apply); }
 function setCountry(cc){ STATE.selected=cc; render();
   sendWithPromise('moltnet.setExitCountry',cc).then(apply); }
-function newIdentity(){ sendWithPromise('moltnet.newIdentity').then(function(s){ apply(s); renderRoute(); }); }
+function newIdentity(){ busy(); sendWithPromise('moltnet.newIdentity').then(apply); }
 function go(u){ window.location.href=u; }
 
-// ---- Your-route transparency panel ---------------------------------------
-var _originIp='', _revealed=false;
+// ---- Route transparency panel --------------------------------------------
+// Relay data comes from Tor's own control port. The user's real IP is never
+// looked up or shown.
 function countryLabel(cc){ if(!cc) return ''; cc=cc.toUpperCase();
   for(var i=0;i<STATE.countries.length;i++){ if(STATE.countries[i].code.toUpperCase()===cc) return STATE.countries[i].name; }
   return cc; }
@@ -266,35 +300,28 @@ function hopNode(fl,role,ipText,cls,btnLabel){
 }
 function renderRoute(){
   var wrap=document.getElementById('routeWrap'); if(!wrap) return;
-  if(!STATE.running){ wrap.innerHTML=''; _revealed=false; return; }
+  if(!STATE.running){ wrap.innerHTML=''; return; }
   sendWithPromise('moltnet.getCircuit').then(function(r){
     if(!r||!r.connected){ wrap.innerHTML=''; return; }
-    _originIp=r.origin_ip||''; wrap.innerHTML='';
-    var sec=document.createElement('div'); sec.className='sec'; sec.textContent='Your route'; wrap.appendChild(sec);
+    wrap.innerHTML='';
+    var sec=document.createElement('div'); sec.className='sec'; sec.textContent='Current Tor route'; wrap.appendChild(sec);
     var route=document.createElement('div'); route.className='route';
-    // "This device" — real origin IP is captured (direct) at connect and shown
-    // only on Reveal; no network call happens on reveal.
-    var dev=hopNode('💻','This device',
-      _revealed?(_originIp||'Unknown'):'Your IP: Hidden','dev',
-      _originIp?(_revealed?'Hide':'Reveal'):'');
-    if(_revealed) dev.ipEl.className='hip reveal';
-    if(dev.btn) dev.btn.onclick=function(){ _revealed=!_revealed; renderRoute(); };
-    route.appendChild(dev.node);
     var hops=r.hops||[];
-    hops.forEach(function(h){
-      var line=document.createElement('div'); line.className='hline'; route.appendChild(line);
+    hops.forEach(function(h,i){
+      if(i>0){ var line=document.createElement('div'); line.className='hline'; route.appendChild(line); }
       var role=h.role==='guard'?'Guard':(h.role==='exit'?'Exit':'Middle');
       var isExit=h.role==='exit';
       var ipText=(h.ip||'—')+(isExit?' · websites see this IP':'');
       var cname=h.country_name||countryLabel(h.country);
+      var canVerify=isExit&&STATE.inMolt&&STATE.routing==='tor';
       var hn=hopNode(flag((h.country||'').toLowerCase()),
-        role+' · '+cname, ipText, isExit?'exit':'', isExit?'Verify':'');
+        role+' · '+cname, ipText, isExit?'exit':'', canVerify?'Verify':'');
       if(hn.btn) hn.btn.onclick=function(){ verifyExit(hn); };
       route.appendChild(hn.node);
     });
     wrap.appendChild(route);
     var note=document.createElement('div'); note.className='note';
-    note.textContent='No single relay sees both who you are and the site you visit.';
+    note.textContent='No single relay sees both who you are and the site you visit. Sites can see they are being visited over Tor.';
     wrap.appendChild(note);
     var ev=document.createElement('div'); ev.className='note evlink';
     ev.textContent='⧉ Copy route evidence';
@@ -303,11 +330,11 @@ function renderRoute(){
   });
 }
 // Export the current path as verifiable text: each relay's fingerprint can be
-// looked up in the PUBLIC Tor consensus (metrics.torproject.org) to prove it's
-// a real relay in the country/role shown — independent of MoltBrowser.
+// looked up in the PUBLIC Tor consensus (metrics.torproject.org) to check
+// it's a real relay in the country/role shown — independent of MoltBrowser.
+// Contains only public relay data; never the user's own IP.
 function copyEvidence(r, el){
   var t='MoltNet route evidence — '+new Date().toISOString()+'\n\n';
-  t+='Origin (your IP): '+(_originIp||'unknown')+'\n\n';
   (r.hops||[]).forEach(function(h){
     var role=h.role.charAt(0).toUpperCase()+h.role.slice(1);
     t+=role+'  ·  '+(h.country_name||h.country||'?')+'  ·  '+(h.ip||'?')+
@@ -316,7 +343,7 @@ function copyEvidence(r, el){
   t+='\nVerify each relay is a real, published Tor relay (independent of MoltBrowser):\n'+
      '  https://metrics.torproject.org/rs.html#search/<fingerprint>\n'+
      '  https://onionoo.torproject.org/details?lookup=<fingerprint>\n'+
-     'Confirm the exit IP websites see + that traffic is on Tor:\n'+
+     'From a MoltNet window, confirm the exit IP websites see + that traffic is on Tor:\n'+
      '  https://check.torproject.org/api/ip\n';
   var done=function(){ var o=el.textContent; el.textContent='✓ Copied — paste anywhere'; setTimeout(function(){el.textContent=o;},1800); };
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done, done); }

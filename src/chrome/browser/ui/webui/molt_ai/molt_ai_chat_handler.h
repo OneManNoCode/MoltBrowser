@@ -148,11 +148,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Selective JS off — toggle JavaScript content-setting for |host|.
   // Args: [callback_id, host, enabled_bool]
   void HandleSetJsForDomain(const base::ListValue& args);
-  // Tor (Phase B.1): probe local Tor on 127.0.0.1:9051 and read
-  // current circuit info from its control port. Routing through Tor
-  // ships in Phase B.2 — this batch is the visualization foundation
-  // (talk to Tor, show real circuits) plus the response shape that
-  // routing will plug into without UI changes.
+  // MoltNet (Tor): status/circuits of MoltNet's own Tor, read over its
+  // SAFECOOKIE-authenticated control port (see molt_ai_chat_handler_tor.cc).
   // Args: [callback_id]
   void HandleGetTorStatus(const base::ListValue& args);
   void HandleGetTorCircuits(const base::ListValue& args);
@@ -163,9 +160,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Phase B.2: stop the managed tor child.
   // Args: [callback_id]
   void HandleStopTor(const base::ListValue& args);
-  // Phase B.2: open |url| in an OTR window whose SOCKS5 proxy is set
-  // to route through the local Tor instance on 127.0.0.1:9050. All
-  // tabs in that OTR profile share the proxy.
+  // Open |url| in a MoltNet window (the isolated, Tor-routed profile;
+  // see molt_ai/tor/molt_net_window.h).
   // Args: [callback_id, url]
   void HandleOpenTorTab(const base::ListValue& args);
   // Exit-country selector (VPN-style exit relay control). Returns the

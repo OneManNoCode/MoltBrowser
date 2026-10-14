@@ -8,6 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -36,6 +37,12 @@ void MemoryRecorderTabHelper::CapturePage() {
 
   Profile* profile = Profile::FromBrowserContext(wc->GetBrowserContext());
   if (!profile) return;
+  // Never index MoltNet (Tor) browsing. MemoryServiceFactory already returns
+  // null for every off-the-record profile (kOriginalOnly), so this is
+  // defense in depth: Tor pages must not end up in the on-disk memory index.
+  if (profile->IsOffTheRecord() || molt_ai::tor::IsMoltNetProfile(profile)) {
+    return;
+  }
   MemoryService* svc = MemoryServiceFactory::GetForProfile(profile);
   if (!svc) return;
 

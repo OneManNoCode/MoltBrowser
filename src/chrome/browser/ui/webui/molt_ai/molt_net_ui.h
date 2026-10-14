@@ -1,12 +1,13 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// chrome://molt-net/ — MoltNet (Tor privacy routing) control surface.
-// A local, self-contained "Liquid Glass" page: a connection status row, an
-// enable toggle, and the exit-country picker (flags + names). Served as inline
-// HTML via URLDataSource with a small WebUIMessageHandler that drives the same
-// TorManager the toolbar globe menu uses. Hosted inside a translucent toolbar
-// bubble (see MoltNetBubbleView); also resolves as a full tab for verification.
+// chrome://molt-net/ — MoltNet (Tor) control surface.
+// A local, self-contained "Liquid Glass" page: the routing status of the
+// window it's shown in (MoltNet window: "Private via Tor"; regular window:
+// "not routed"), on/off + "new Tor window" + New Identity, the Tor route
+// (from Tor's control port) and the exit-country picker. Served as inline
+// HTML via URLDataSource with MoltNetHandler. Hosted inside a translucent
+// toolbar bubble (see MoltNetBubbleView); also resolves as a full tab.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_NET_UI_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_NET_UI_H_
