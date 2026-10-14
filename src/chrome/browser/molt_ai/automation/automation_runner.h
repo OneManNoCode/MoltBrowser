@@ -40,12 +40,17 @@ class WebContents;
 namespace molt_ai {
 
 class BrowserAIRuntime;
+struct GenerationResult;
+struct PromptOptions;
 
 namespace automation {
 
 // Waits for a click-triggered navigation to settle before advancing the run
 // (defined in the .cc). Forward-declared so it can be held as a member.
 class NavigationSettleWaiter;
+
+// A RunPromptAsync request waiting for the in-flight one (defined in .cc).
+struct QueuedPrompt;
 
 // Step::extra key. When true, a CLICK that would follow a link to another
 // origin, or a TYPE into a password / payment-card / one-time-code field,
@@ -253,6 +258,21 @@ class AutomationRunner {
       const std::string& description,
       base::OnceCallback<void(const std::string&)> cb);
 
+  // BrowserAIRuntime::RunPrompt blocks for the whole generation — and, while
+  // a chat reply is streaming, waits on the runtime's generation lock — so
+  // it never runs on the UI thread. RunPromptAsync posts it to a MayBlock
+  // ThreadPool worker and replies here; |reply| should be bound to
+  // weak_factory_ so a step that ended meanwhile drops the result.
+  void RunPromptAsync(std::string prompt,
+                      PromptOptions opts,
+                      base::OnceCallback<void(GenerationResult)> reply);
+  void OnPromptDone(base::OnceCallback<void(GenerationResult)> reply,
+                    GenerationResult result);
+  void OnSelectorLLMReply(base::OnceCallback<void(const std::string&)> cb,
+                          GenerationResult result);
+  void OnAIDecideReply(GenerationResult result);
+  void OnAIExtractReply(std::string store_as, GenerationResult result);
+
   void EmitStepProgress(bool starting, bool succeeded,
                         const std::string& note);
   void Finish(bool success, const std::string& message);
@@ -323,6 +343,16 @@ class AutomationRunner {
   StepProgressCallback on_step_;
   RunCompleteCallback on_complete_;
 
+  // True while a RunPrompt task is on a worker. A request made meanwhile (a
+  // step retried after its timeout abandoned the first one) waits in
+  // queued_prompt_ instead of stacking a second inference behind the
+  // runtime's generation lock.
+  bool llm_in_flight_ = false;
+  std::unique_ptr<QueuedPrompt> queued_prompt_;
+
+  // Only for OnPromptDone (clears llm_in_flight_, counts tokens); unlike
+  // weak_factory_ it is not invalidated at step boundaries.
+  base::WeakPtrFactory<AutomationRunner> llm_weak_factory_{this};
   base::WeakPtrFactory<AutomationRunner> weak_factory_{this};
 };
 
