@@ -1683,11 +1683,31 @@ void AutomationRunner::DoRunJS(const Step& s) {
     OnStepFinished(false, "RUN_JS requires Trusted script");
     return;
   }
-  std::string js = Resolve(s.value);
-  if (js.empty()) {
+  // The author's code runs verbatim. {{variables}} are NOT substituted into
+  // it: their values often come from the page (EXTRACT / AI_EXTRACT), and
+  // splicing them into source turned page text into code. They reach the
+  // code as data instead, as the JSON-encoded `vars` object
+  // (agent_safety::BuildRunJsSource).
+  const std::string& code = s.value;
+  if (code.empty()) {
     OnStepFinished(false, "Empty JS");
     return;
   }
+  for (const auto& kv : variables_) {
+    if (code.find("{{" + kv.first + "}}") != std::string::npos) {
+      BlockStep("RUN_JS no longer fills in {{" + kv.first +
+                "}}; read the value as vars[" + JSQuote(kv.first) +
+                "] in the code instead.");
+      return;
+    }
+  }
+  base::DictValue vars;
+  for (const auto& [name, value] : variables_)
+    vars.Set(name, value.Clone());
+  std::string vars_json;
+  if (!base::JSONWriter::Write(vars, &vars_json))
+    vars_json = "{}";
+  std::string js = agent_safety::BuildRunJsSource(code, vars_json);
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<AutomationRunner> self, std::string store_as,
          base::Value v) {
