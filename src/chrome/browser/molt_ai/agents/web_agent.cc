@@ -265,6 +265,42 @@ void WebAgent::OnLLMDecision(std::string response) {
 void WebAgent::DispatchAction() {
   if (cancelled_) return;
 
+  const std::string& a = pending_step_.action;
+  if (a == "CLICK" || a == "TYPE" || a == "FILL_FORM") {
+    // The page may have changed origin since the last observation (a
+    // redirect or script navigation after a click), so check again right
+    // before acting on it.
+    url::Origin current;
+    if (web_contents_ && web_contents_->GetPrimaryMainFrame())
+      current = web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+    if (!IsWebOrigin(current)) {
+      // Never drive molt:// / chrome:// pages (settings, vault, ...).
+      OnActionDone(false,
+                   "Blocked: the agent only acts on http(s) web pages");
+      return;
+    }
+    if (!IsOriginAllowed(current)) {
+      RequestConfirmation(
+          "CONTINUE",
+          "Keep working on " + current.Serialize() + " (the page moved there)",
+          base::BindOnce(&WebAgent::AllowOriginAndDispatch,
+                         weak_factory_.GetWeakPtr(), current));
+      return;
+    }
+    action_origin_ = current;
+  }
+  RunAction();
+}
+
+void WebAgent::AllowOriginAndDispatch(const url::Origin& origin) {
+  AllowOrigin(origin);
+  action_origin_ = origin;
+  RunAction();
+}
+
+void WebAgent::RunAction() {
+  if (cancelled_) return;
+
   DVLOG(1) << "[WebAgent] step=" << (iteration_ + 1)
            << " action=" << pending_step_.action;
 
@@ -407,6 +443,7 @@ void WebAgent::ClickNow() {
   std::string js = base::StringPrintf(
       R"JS((() => {
         try {
+          if (location.origin !== %s) return 'origin_changed';
           const el = document.querySelector(%s);
           if (!el) return 'not_found';
           el.scrollIntoView({block:'center',behavior:'instant'});
@@ -414,6 +451,7 @@ void WebAgent::ClickNow() {
           return 'clicked';
         } catch(e) { return 'error:'+e.message; }
       })())JS",
+      JSQ(action_origin_.Serialize()).c_str(),
       JSQ(pending_step_.target).c_str());
 
   EvalJS(js, base::BindOnce(
@@ -467,6 +505,7 @@ void WebAgent::TypeNow() {
   std::string js = base::StringPrintf(
       R"JS((() => {
         try {
+          if (location.origin !== %s) return 'origin_changed';
           const el = document.querySelector(%s);
           if (!el) return 'not_found';
           if (el.type === 'password') return 'refused_password';
@@ -481,6 +520,7 @@ void WebAgent::TypeNow() {
           return 'typed';
         } catch(e) { return 'error:'+e.message; }
       })())JS",
+      JSQ(action_origin_.Serialize()).c_str(),
       JSQ(pending_step_.target).c_str(),
       JSQ(pending_step_.value).c_str(),
       JSQ(pending_step_.value).c_str());
@@ -573,6 +613,7 @@ void WebAgent::FillNow(FieldList fields, std::string note) {
   // Password fields are skipped here too, atomically with the write.
   std::string js = base::StringPrintf(
       R"JS((() => {
+        if (location.origin !== %s) return 'origin_changed';
         const fields = %s;
         let filled = 0;
         fields.forEach(function(f){
@@ -592,11 +633,15 @@ void WebAgent::FillNow(FieldList fields, std::string note) {
         });
         return filled;
       })())JS",
-      fields_json.c_str());
+      JSQ(action_origin_.Serialize()).c_str(), fields_json.c_str());
 
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, std::string note, base::Value v) {
         if (!self) return;
+        if (v.is_string() && v.GetString() == "origin_changed") {
+          self->OnActionDone(false, "Not filled: the page changed site");
+          return;
+        }
         int n = v.is_int() ? v.GetInt() : 0;
         self->OnActionDone(n > 0, "Filled " + base::NumberToString(n) +
                                       " fields" + note);

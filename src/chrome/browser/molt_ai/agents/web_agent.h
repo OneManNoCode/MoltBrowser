@@ -121,7 +121,9 @@ class WebAgent : public content::WebContentsObserver {
   void IterateOnce();     // Entry: kick off one LLM round-trip
   void AskLLM();         // Post RunPrompt to ThreadPool
   void OnLLMDecision(std::string response); // Parse LLM output → pending_step_
-  void DispatchAction(); // Route pending_step_ to the right executor
+  void DispatchAction(); // Origin check, then RunAction()
+  void AllowOriginAndDispatch(const url::Origin& origin);
+  void RunAction();      // Route pending_step_ to the right executor
 
   // -- Executors ----------------------------------------------------
   void DoNavigate();          // http(s) + origin check, then LoadAndWait
@@ -197,6 +199,9 @@ class WebAgent : public content::WebContentsObserver {
 
   // Origins this run may act on without asking (see the safety model).
   std::vector<url::Origin> allowed_origins_;
+  // Origin of the page the current CLICK / TYPE / FILL_FORM was approved
+  // for; the write scripts refuse to act if location.origin differs.
+  url::Origin action_origin_;
 
   // The action the run is paused on, if any.
   base::OnceClosure pending_confirm_;
