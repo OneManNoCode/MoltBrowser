@@ -1,0 +1,11 @@
+{
+  "name": "moltbrowser-webui-checks",
+  "private": true,
+  "description": "Checks for MoltBrowser's embedded WebUI code that run without a Chromium checkout.",
+  "scripts": {
+    "test": "node markdown_renderer_test.js"
+  },
+  "devDependencies": {
+    "parse5": "7.1.2"
+  }
+}

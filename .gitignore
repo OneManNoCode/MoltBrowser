@@ -46,3 +46,19 @@ __pycache__/
 *.tmp
 *.log
 branding/models/*.gguf
+
+# Release output (multi-hundred-MB installers)
+dist/
+
+# Signing material — NEVER commit certificates or keystores
+signing/
+*.pfx
+*.p12
+*.p8
+*.jks
+*.keystore
+*.mobileprovision
+
+# Local caches
+.molt-*-cache/
+node_modules/

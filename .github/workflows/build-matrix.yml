@@ -2,7 +2,9 @@
 # Copyright 2025 GenEye AI Labs Inc.
 #
 # Builds MoltBrowser on all supported platforms.
-# Triggers on pushes to main and pull requests.
+# Manual only: this needs a pinned Chromium checkout that hosted runners
+# don't have (every job failed at `cd chromium/src`), so it ran red on
+# every push and PR. Fast PR checks live in webui-checks.yml.
 #
 # Platform matrix:
 #   - macOS arm64 (Apple Silicon) — primary
@@ -17,18 +19,14 @@
 name: Build Matrix
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       platforms:
         description: 'Comma-separated platforms to build (all,macos,linux,windows,android,ios)'
         default: 'all'
+
+permissions:
+  contents: read
 
 # Cancel in-progress runs for the same branch
 concurrency:

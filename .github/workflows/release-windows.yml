@@ -20,9 +20,10 @@ name: Release Windows build
 # Public repos get unlimited free Actions + artifact storage → $0.
 # Expected ~3 chained runs (cold ~40%, warm ~75%, warm finish).
 
+# Manual only. Windows builds are paused (see CLAUDE.md), and an automatic
+# run on every v* tag could publish a build restored from an unvetted
+# artifact (see the restore step below).
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
@@ -103,6 +104,8 @@ jobs:
       # as <2GB chunks (chromium.tar.zst.part-*). Reassemble + extract;
       # tar preserves source mtimes so the resumed build is truly
       # incremental.
+      # Only trust tree artifacts built in this repository itself: a
+      # fork PR run can upload an artifact with the same name.
       - name: Restore chromium tree (if any)
         id: restore
         continue-on-error: true
@@ -112,7 +115,7 @@ jobs:
           set -x
           ART_ID=$(gh api --paginate \
             "repos/${{ github.repository }}/actions/artifacts" \
-            --jq "[.artifacts[] | select(.name==\"${ARTIFACT_NAME}\" and .expired==false)] | sort_by(.created_at) | last | .id" || echo "")
+            --jq "[.artifacts[] | select(.name==\"${ARTIFACT_NAME}\" and .expired==false and .workflow_run.head_repository_id==${{ github.repository_id }})] | sort_by(.created_at) | last | .id" || echo "")
           echo "Latest ${ARTIFACT_NAME} artifact id: ${ART_ID:-none}"
           if [ -n "$ART_ID" ] && [ "$ART_ID" != "null" ]; then
             echo "Downloading tree artifact $ART_ID via gh..."
