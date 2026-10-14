@@ -9,6 +9,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
+#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "components/os_crypt/sync/os_crypt.h"
 
 namespace molt_ai {
@@ -63,6 +64,12 @@ base::DictValue MoltProfileStore::Load() const {
 }
 
 bool MoltProfileStore::Save(const base::DictValue& dict) {
+  if (!molt_ai::IsSecureStorageAvailable()) {
+    LOG(WARNING) << "[MoltProfileStore] refusing to store profile: no "
+                    "secure OS key storage (OSCrypt would use a hard-coded "
+                    "key)";
+    return false;
+  }
   base::FilePath path = GetProfilePath();
   // Make sure ~/.moltbrowser/ exists.
   base::FilePath dir = path.DirName();

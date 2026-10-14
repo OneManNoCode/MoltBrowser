@@ -75,19 +75,24 @@ class VaultStore {
   std::vector<VaultEntry> List() const;
 
   // Insert a new entry. Assigns a fresh id and timestamps. Returns
-  // the assigned id, empty string on failure.
+  // the assigned id, empty string on failure — including when there is
+  // no real OS key store (molt_ai::IsSecureStorageAvailable()), since
+  // OSCrypt would then encrypt with a hard-coded key.
   std::string Add(VaultEntry entry);
 
   // Replace an existing entry by id. Bumps last_changed_unix if the
-  // password changed. Returns false if the id isn't found.
+  // password changed. Returns false if the id isn't found, or (like
+  // Add) when there is no real OS key store.
   bool Update(const std::string& id, VaultEntry entry);
 
-  // Remove the entry with this id. True if it was there.
+  // Remove the entry with this id. True if it was there. Allowed
+  // without a secure backend: it only drops data already on disk.
   bool Delete(const std::string& id);
 
   // Bump last_used_unix on the entry with this id. Cheap convenience
   // for the autofill path — caller doesn't have to round-trip a
-  // full Update.
+  // full Update. Rewrites only data that is already stored, so like
+  // Delete it doesn't need a secure backend.
   bool TouchLastUsed(const std::string& id);
 
   // Convenience: every entry whose site_host matches |host| or is a
@@ -106,8 +111,11 @@ class VaultStore {
   // Read+decrypt the whole vault. Returns std::nullopt if the file
   // exists but won't decrypt (corrupt / wrong keychain).
   std::optional<std::vector<VaultEntry>> ReadDecrypted() const;
-  // Encrypt+write the whole vault. Atomic via .tmp + rename.
-  bool WriteEncrypted(const std::vector<VaultEntry>& entries);
+  // Encrypt+write the whole vault. Atomic via .tmp + rename. When
+  // |adds_secrets| is true the write is refused unless a real OS key
+  // store backs OSCrypt.
+  bool WriteEncrypted(const std::vector<VaultEntry>& entries,
+                      bool adds_secrets);
 
   base::FilePath root_override_;
 };

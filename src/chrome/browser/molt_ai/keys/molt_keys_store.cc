@@ -13,6 +13,7 @@
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "components/os_crypt/sync/os_crypt.h"
 
 namespace molt_ai {
@@ -116,8 +117,17 @@ std::optional<base::DictValue> ReadDecrypted() {
   return std::move(*parsed).TakeDict();
 }
 
+// Whether a write may go ahead without a real OS-backed key. Only writes
+// that remove data from an already-readable file may.
+enum class WriteKind { kStoresSecrets, kRemovalOnly };
+
 // Encrypt+write the whole dict. Atomic via .tmp + ReplaceFile.
-bool WriteEncrypted(const base::DictValue& dict) {
+bool WriteEncrypted(const base::DictValue& dict, WriteKind kind) {
+  if (kind == WriteKind::kStoresSecrets && !IsSecureStorageAvailable()) {
+    LOG(WARNING) << "[MoltKeysStore] refusing to store keys: no secure "
+                    "OS key storage (OSCrypt would use a hard-coded key)";
+    return false;
+  }
   base::FilePath path = GetKeysPath();
   base::FilePath dir = path.DirName();
   if (!base::DirectoryExists(dir) && !base::CreateDirectory(dir)) {
@@ -147,6 +157,27 @@ bool WriteEncrypted(const base::DictValue& dict) {
 }
 
 }  // namespace
+
+bool IsSecureStorageAvailable() {
+  // On Linux this is false when OSCrypt has no libsecret/KWallet backend
+  // (or --password-store=basic) and would encrypt with the hard-coded v10
+  // key; on macOS when the Keychain is unavailable; on Windows when only
+  // a mock key exists.
+  return OSCrypt::IsEncryptionAvailable();
+}
+
+std::string SecureStorageUnavailableMessage() {
+#if BUILDFLAG(IS_LINUX)
+  return "No system keyring found; install/unlock GNOME Keyring or KWallet "
+         "to store keys securely.";
+#elif BUILDFLAG(IS_MAC)
+  return "The macOS Keychain is unavailable or locked; unlock it to store "
+         "keys securely.";
+#else
+  return "Secure OS key storage is unavailable, so keys can't be stored "
+         "securely.";
+#endif
+}
 
 ProviderConfig::ProviderConfig() = default;
 ProviderConfig::ProviderConfig(const ProviderConfig&) = default;
@@ -186,19 +217,19 @@ std::optional<ProviderConfig> MoltKeysStore::Get(
 }
 
 // static
-void MoltKeysStore::Save(const std::string& provider_id,
+bool MoltKeysStore::Save(const std::string& provider_id,
                          const ProviderConfig& cfg) {
   if (provider_id.empty()) {
-    return;
+    return false;
   }
   std::optional<base::DictValue> dict = ReadDecrypted();
   // A decrypt failure must not silently wipe other providers' keys.
   if (!dict) {
     LOG(WARNING) << "[MoltKeysStore] Save aborted: existing store unreadable";
-    return;
+    return false;
   }
   dict->Set(provider_id, ConfigToDict(cfg));
-  WriteEncrypted(*dict);
+  return WriteEncrypted(*dict, WriteKind::kStoresSecrets);
 }
 
 // static
@@ -208,7 +239,7 @@ void MoltKeysStore::Remove(const std::string& provider_id) {
     return;
   }
   if (dict->Remove(provider_id)) {
-    WriteEncrypted(*dict);
+    WriteEncrypted(*dict, WriteKind::kRemovalOnly);
   }
 }
 

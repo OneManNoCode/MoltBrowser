@@ -3403,13 +3403,19 @@ void MoltAIChatHandler::HandleSaveMoltProfile(const base::ListValue& args) {
   }
   base::DictValue dict = args[1].GetDict().Clone();
   bool ok = false;
+  std::string error;
   {
     ScopedAllowBlockingForMolt allow;
     molt_ai::profile::MoltProfileStore store;
     ok = store.Save(dict);
+    if (!ok) {
+      error = molt_ai::IsSecureStorageAvailable()
+                  ? std::string("failed to save profile")
+                  : molt_ai::SecureStorageUnavailableMessage();
+    }
   }
   out.Set("success", ok);
-  if (!ok) out.Set("error", "failed to save profile");
+  if (!ok) out.Set("error", error);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }

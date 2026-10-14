@@ -17,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -100,14 +101,20 @@ void MoltAIChatHandler::HandleVaultAdd(const base::ListValue& args) {
     return;
   }
   std::string id;
+  bool secure_storage = true;
   {
     ScopedAllowBlockingForMolt allow;
-    molt_ai::vault::VaultStore store;
-    id = store.Add(std::move(e));
+    secure_storage = molt_ai::IsSecureStorageAvailable();
+    if (secure_storage) {
+      molt_ai::vault::VaultStore store;
+      id = store.Add(std::move(e));
+    }
   }
   if (id.empty()) {
     out.Set("success", false);
-    out.Set("error", "save failed");
+    out.Set("error", secure_storage
+                         ? std::string("save failed")
+                         : molt_ai::SecureStorageUnavailableMessage());
   } else {
     out.Set("success", true);
     out.Set("id", id);

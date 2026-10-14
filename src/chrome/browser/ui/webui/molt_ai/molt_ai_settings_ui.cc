@@ -933,9 +933,20 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     }
 
     // Refuse before the key is ever sent anywhere: a custom endpoint must
-    // be https (or a loopback http server).
+    // be https (or a loopback http server), and there must be a real OS
+    // key store to keep the key in (not OSCrypt's hard-coded fallback).
     std::string url_error;
-    if (!molt_ai::ValidateCloudBaseUrl(base_url, &url_error)) {
+    {
+      ScopedAllowBlockingForMolt allow;
+      if (!molt_ai::IsSecureStorageAvailable()) {
+        url_error = molt_ai::SecureStorageUnavailableMessage();
+      }
+    }
+    if (url_error.empty() &&
+        !molt_ai::ValidateCloudBaseUrl(base_url, &url_error)) {
+      url_error = url_error.empty() ? "Invalid base URL" : url_error;
+    }
+    if (!url_error.empty()) {
       base::DictValue result;
       result.Set("success", false);
       result.Set("error", url_error);
@@ -990,6 +1001,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     molt_ai::ProviderConfig cfg;
     cfg.api_key = api_key;
     cfg.base_url = base_url;
+    bool saved = false;
+    std::string save_error;
     {
       ScopedAllowBlockingForMolt allow;
       std::optional<molt_ai::ProviderConfig> existing =
@@ -997,7 +1010,19 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       if (existing) {
         cfg.enabled_models = existing->enabled_models;
       }
-      molt_ai::MoltKeysStore::Save(provider_id, cfg);
+      saved = molt_ai::MoltKeysStore::Save(provider_id, cfg);
+      if (!saved) {
+        save_error = molt_ai::IsSecureStorageAvailable()
+                         ? std::string("Could not save the API key")
+                         : molt_ai::SecureStorageUnavailableMessage();
+      }
+    }
+    if (!saved) {
+      result.Set("success", false);
+      result.Set("error", save_error);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
     }
 
     result.Set("success", true);
@@ -1046,7 +1071,15 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       } else if (!enabled && it != list.end()) {
         list.erase(it);
       }
-      molt_ai::MoltKeysStore::Save(provider_id, *cfg);
+      if (!molt_ai::MoltKeysStore::Save(provider_id, *cfg)) {
+        result.Set("success", false);
+        result.Set("error", molt_ai::IsSecureStorageAvailable()
+                                ? std::string("Could not save the change")
+                                : molt_ai::SecureStorageUnavailableMessage());
+        ResolveJavascriptCallback(base::Value(callback_id),
+                                  base::Value(std::move(result)));
+        return;
+      }
       result.Set("success", true);
       base::ListValue enabled_list;
       for (const std::string& m : list) {

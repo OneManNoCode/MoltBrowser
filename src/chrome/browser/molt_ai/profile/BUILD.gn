@@ -12,6 +12,7 @@ source_set("profile") {
 
   deps = [
     "//base",
+    "//chrome/browser/molt_ai/keys",
     "//components/os_crypt/sync",
   ]
 }

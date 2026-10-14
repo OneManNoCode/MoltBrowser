@@ -15,6 +15,7 @@
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "components/os_crypt/sync/os_crypt.h"
 
 namespace molt_ai {
@@ -132,7 +133,13 @@ std::optional<std::vector<VaultEntry>> VaultStore::ReadDecrypted() const {
   return out;
 }
 
-bool VaultStore::WriteEncrypted(const std::vector<VaultEntry>& entries) {
+bool VaultStore::WriteEncrypted(const std::vector<VaultEntry>& entries,
+                                bool adds_secrets) {
+  if (adds_secrets && !molt_ai::IsSecureStorageAvailable()) {
+    LOG(WARNING) << "[VaultStore] refusing to store credentials: no secure "
+                    "OS key storage (OSCrypt would use a hard-coded key)";
+    return false;
+  }
   base::FilePath path = GetVaultPath();
   base::FilePath dir = path.DirName();
   if (!base::DirectoryExists(dir) && !base::CreateDirectory(dir)) {
@@ -172,7 +179,7 @@ std::string VaultStore::Add(VaultEntry entry) {
   if (entry.last_changed_unix == 0) entry.last_changed_unix = entry.created_at_unix;
   std::string assigned = entry.id;
   v->push_back(std::move(entry));
-  if (!WriteEncrypted(*v)) return {};
+  if (!WriteEncrypted(*v, /*adds_secrets=*/true)) return {};
   return assigned;
 }
 
@@ -189,7 +196,7 @@ bool VaultStore::Update(const std::string& id, VaultEntry entry) {
     entry.id = id;
     entry.created_at_unix = e.created_at_unix;
     e = std::move(entry);
-    return WriteEncrypted(*v);
+    return WriteEncrypted(*v, /*adds_secrets=*/true);
   }
   return false;
 }
@@ -201,7 +208,7 @@ bool VaultStore::Delete(const std::string& id) {
                            [&](const VaultEntry& e){ return e.id == id; });
   if (it == v->end()) return false;
   v->erase(it, v->end());
-  return WriteEncrypted(*v);
+  return WriteEncrypted(*v, /*adds_secrets=*/false);
 }
 
 bool VaultStore::TouchLastUsed(const std::string& id) {
@@ -210,7 +217,7 @@ bool VaultStore::TouchLastUsed(const std::string& id) {
   for (auto& e : *v) {
     if (e.id != id) continue;
     e.last_used_unix = Now();
-    return WriteEncrypted(*v);
+    return WriteEncrypted(*v, /*adds_secrets=*/false);
   }
   return false;
 }

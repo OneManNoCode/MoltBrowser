@@ -62,6 +62,21 @@ struct ProviderConfig {
   std::vector<std::string> enabled_models;
 };
 
+// True when OSCrypt is backed by a real OS secret store (macOS Keychain,
+// Windows DPAPI, GNOME Keyring / KWallet on Linux). On Linux with no
+// keyring OSCrypt silently falls back to a hard-coded key ("v10"), which
+// is obfuscation, not encryption — anyone who can read the file can
+// decrypt it. MoltBrowser's secret stores (keys.enc, vault.enc,
+// profile.enc) refuse to write new secrets while this is false; files
+// written earlier stay readable, and removing entries is still allowed.
+// May block on the OS keyring the first time: call under
+// ScopedAllowBlockingForMolt like the stores themselves.
+bool IsSecureStorageAvailable();
+
+// User-facing explanation to surface when IsSecureStorageAvailable() is
+// false.
+std::string SecureStorageUnavailableMessage();
+
 // All static — the store is stateless apart from the on-disk file and
 // an optional test-root override. Every call reads or writes the whole
 // keys.enc; no long-lived plaintext is held in memory.
@@ -76,10 +91,12 @@ class MoltKeysStore {
   static std::optional<ProviderConfig> Get(const std::string& provider_id);
 
   // Insert-or-replace the config for `provider_id`. Rewrites the whole
-  // file.
-  static void Save(const std::string& provider_id, const ProviderConfig& cfg);
+  // file. Returns false (and writes nothing) if the existing store can't
+  // be read, the write fails, or IsSecureStorageAvailable() is false.
+  static bool Save(const std::string& provider_id, const ProviderConfig& cfg);
 
-  // Remove `provider_id` if present. No-op if absent.
+  // Remove `provider_id` if present. No-op if absent. Works without a
+  // secure backend too: it only ever drops data that is already on disk.
   static void Remove(const std::string& provider_id);
 
   // Test seam — redirects the store root away from ~/.moltbrowser.

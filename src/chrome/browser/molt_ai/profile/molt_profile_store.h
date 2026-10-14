@@ -53,7 +53,9 @@ class MoltProfileStore {
   base::DictValue Load() const;
 
   // Writes |dict| as the new profile, atomically (.tmp + rename).
-  // Returns true on success.
+  // Returns true on success. Refuses (returns false) when there is no
+  // real OS key store behind OSCrypt — see
+  // molt_ai::IsSecureStorageAvailable().
   bool Save(const base::DictValue& dict);
 
   // Wipes the profile file. Returns true if the file is gone after
