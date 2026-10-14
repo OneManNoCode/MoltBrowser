@@ -85,6 +85,22 @@ const PAGES = [
                         'result text is not parsed as HTML');
    }},
   {name: 'molt://ai-update', file: 'molt_ai_update_ui.cc', listeners: []},
+  {name: 'molt://import', file: 'molt_import_ui.cc',
+   listeners: ['#tab-bm:click', '#tab-im:click', '#sw:click', '#go:click',
+               '#manage:click', '#bmsearch:input'],
+   responses: {
+     getBookmarks: {bookmarks: [
+       {title: '<img src=x onerror=alert(1)>', url: 'https://a.example/', host: 'a.example'}]},
+     getImportableBrowsers: {browsers: [
+       {id: 'chrome', display_name: 'Chrome', installed: true},
+       {id: 'evil<svg>', display_name: '<b>x</b>', installed: false}]},
+   },
+   after(window) {
+     const doc = window.document;
+     assert(window.__sent.includes('getBookmarks'), 'bookmarks requested on load');
+     assert.strictEqual(doc.querySelectorAll('#bmlist img[onerror], #bmlist b').length, 0);
+     assert(doc.querySelector('#implist .flag svg'), 'browser logo rendered via moltHTML');
+   }},
 ];
 
 function makeTrustedTypes(window, mode, violations) {
@@ -173,6 +189,7 @@ async function runPage(page) {
   window.matchMedia = window.matchMedia || (() => ({matches: false, addListener() {}, addEventListener() {}}));
 
   const sent = [];
+  window.__sent = sent;
   const responses = page.responses || {};
   window.chrome = {send(method, args) {
     sent.push(method);
@@ -226,7 +243,11 @@ async function runPage(page) {
   }
   // Click every clickable control in the initial DOM; nothing may throw.
   if (!page.skipClickAll) {
-    const clickable = doc.querySelectorAll('[data-on-click], button, .card[data-href], a[href="#"]');
+    // Everything that has a click listener (direct or via moltActions).
+    const clickable = Array.from(doc.querySelectorAll('*')).filter((el) => {
+      const t = listened.get(el);
+      return t && t.has('click');
+    });
     for (const el of clickable) {
       if ((page.noClick || []).some((sel) => el.matches(sel))) continue;
       try { el.click(); } catch (e) { errors.push(`click ${el.outerHTML.slice(0, 60)}: ${e}`); }
