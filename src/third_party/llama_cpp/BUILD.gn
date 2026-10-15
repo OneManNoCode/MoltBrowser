@@ -51,6 +51,21 @@ config("llama_cpp_version_headers") {
   include_dirs = [ "chromium" ]
 }
 
+# CFI: Chromium's official Linux x64 build (configs/linux-x64.gn sets
+# is_official_build) turns on Control Flow Integrity with indirect-call checks
+# (use_cfi_icall). ggml calls its per-type kernels through generic function
+# pointer types (ggml_vec_dot_t, ggml_from_float_t, ...) that do not match the
+# kernels' own types (e.g. ggml_vec_dot_f16 takes non-const ggml_fp16_t *,
+# ggml_vec_dot_t passes const void *), so the first matmul on F16 data traps
+# and takes the browser process down. Pointer generalization
+# (cfi_icall_generalize_pointers) is not enough because the mismatch includes
+# const. Exempt the whole library: a function defined in an exempt TU carries
+# no CFI type info, so llama.cpp's own indirect calls into ggml (e.g. functions
+# fetched with ggml_backend_reg_get_proc_address) must be exempt too. Every
+# source_set below adds it; it is a no-op where CFI is off (mac, Windows,
+# non-official builds).
+_llama_cpp_cfi_configs = [ "//build/config/sanitizers:cfi_icall_disable" ]
+
 # llama.cpp uses C++ exceptions which Chromium disables by default.
 # Remove the global no_exceptions config and enable exceptions.
 # NOTE: on Windows the toolchain is clang-cl (MSVC-compatible driver),
@@ -78,6 +93,7 @@ source_set("ggml_c") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
   configs += [ ":llama_cpp_version_headers" ]
 
   cflags_c = [
@@ -100,6 +116,7 @@ source_set("ggml_cpp") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   # ggml-backend-reg.cpp uses try/catch
   configs -= [ "//build/config/compiler:no_exceptions" ]
@@ -119,6 +136,7 @@ source_set("ggml_cpu_c") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   cflags_c = [
     "-std=c11",
@@ -145,6 +163,7 @@ source_set("ggml_cpu_cpp") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   cflags_cc = [
     "-std=c++17",
@@ -160,6 +179,7 @@ source_set("ggml_cpu_arch_arm") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   cflags_cc = [
     "-std=c++17",
@@ -174,6 +194,7 @@ source_set("ggml_cpu_arch_arm_c") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   cflags_c = [
     "-std=c11",
@@ -203,6 +224,7 @@ source_set("ggml_cpu_arch_x86") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   cflags_cc = [
     "-std=c++17",
@@ -223,6 +245,7 @@ source_set("ggml_cpu_arch_x86_c") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   cflags_c = [
     "-std=c11",
@@ -323,6 +346,7 @@ if (is_mac) {
     ]
 
     public_configs = [ ":llama_cpp_config" ]
+    configs += _llama_cpp_cfi_configs
 
     cflags_cc = [
       "-std=c++17",
@@ -340,6 +364,7 @@ if (is_mac) {
     ]
 
     public_configs = [ ":llama_cpp_config" ]
+    configs += _llama_cpp_cfi_configs
 
     # Disable ARC for this third-party code that uses manual retain/release
     configs -= [ "//build/config/compiler:enable_arc" ]
@@ -551,6 +576,7 @@ source_set("llama_models") {
 
   public_deps = [ ":ggml" ]
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   configs -= [ "//build/config/compiler:no_exceptions" ]
   configs += [ ":llama_exceptions" ]
@@ -607,6 +633,7 @@ source_set("llama_cpp") {
     ":llama_models",
   ]
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
   configs += [ ":llama_cpp_version_headers" ]
 
   # Remove Chromium's global no_exceptions config and enable exceptions
@@ -636,6 +663,7 @@ source_set("llama_common") {
 
   public_deps = [ ":llama_cpp" ]
   public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
 
   configs -= [ "//build/config/compiler:no_exceptions" ]
   configs += [ ":llama_exceptions" ]
