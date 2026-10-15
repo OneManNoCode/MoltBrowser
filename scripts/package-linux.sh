@@ -165,7 +165,7 @@ Description: MoltBrowser — AI-Native Privacy Browser
  .
  MoltNet windows route through Tor using the distribution's tor package
  (recommended); without it MoltNet is unavailable.
-Homepage: https://moltbrowser.com
+Homepage: https://github.com/OneManNoCode/MoltBrowser
 EOF
 
   # Post-install: update icon cache + desktop database
@@ -208,7 +208,7 @@ Version:        $(echo "$VERSION" | tr '-' '.')
 Release:        1%{?dist}
 Summary:        AI-Native Privacy Browser
 License:        GPLv3
-URL:            https://moltbrowser.com
+URL:            https://github.com/OneManNoCode/MoltBrowser
 Source0:        moltbrowser-$VERSION.tar.gz
 
 Requires:       nss >= 3.26, atk >= 1.12.4, at-spi2-atk >= 2.5.3, cups-libs >= 1.6.0, libdrm >= 2.4.38, gtk3 >= 3.9.10, libxkbcommon >= 0.4.1, alsa-lib >= 1.0.17

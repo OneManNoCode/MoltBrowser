@@ -143,7 +143,7 @@ if [ "$DO_SIGN" = true ]; then
   elif command -v osslsigncode &>/dev/null; then
     # Cross-platform signing with osslsigncode
     osslsigncode sign -pkcs12 "$SIGN_CERT" \
-      -n "MoltBrowser" -i "https://moltbrowser.com" \
+      -n "MoltBrowser" -i "https://github.com/OneManNoCode/MoltBrowser" \
       -ts "http://timestamp.digicert.com" \
       -h sha256 \
       -in "$EXE" -out "${EXE}.signed"

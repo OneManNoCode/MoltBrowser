@@ -105,7 +105,7 @@ AI-native privacy browser with on-device LLM inference.
 - **Linux**: Download .deb/.tar.gz → install
 - **Windows**: Download installer → run setup
 
-See [moltbrowser.com](https://moltbrowser.com) for details.
+See [the MoltBrowser repository](https://github.com/OneManNoCode/MoltBrowser) for details.
 
 Verify a download with the matching \`SHA256SUMS-<platform>\` file.
 EOF

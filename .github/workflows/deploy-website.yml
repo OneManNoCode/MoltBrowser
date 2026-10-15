@@ -1,12 +1,12 @@
 name: Deploy website to GitHub Pages
 
-# Auto-publishes website/ to GitHub Pages on every push to main.
-# The CNAME inside website/ pins the site to moltbrowser.com.
+# Auto-publishes website/ to GitHub Pages on every push to main, at
+# https://onemannocode.github.io/MoltBrowser/ (links in website/ are relative
+# so they work under that /MoltBrowser/ path).
 # Setup needed once in repo Settings → Pages:
 #   Source: GitHub Actions
-# And in DNS:
-#   moltbrowser.com  CNAME  onemannocode.github.io
-#   www.moltbrowser.com  CNAME  onemannocode.github.io
+# No custom domain: GenEye does not own moltbrowser.com. Only add a CNAME
+# file here for a domain GenEye controls, or the site would redirect there.
 
 on:
   push:

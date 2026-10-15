@@ -57,7 +57,7 @@
 !define APP_NAME      "MoltBrowser"
 !define APP_EXE       "MoltBrowser.exe"
 !define PUBLISHER     "GenEye AI Labs Inc."
-!define WEBSITE       "https://moltbrowser.com"
+!define WEBSITE       "https://github.com/OneManNoCode/MoltBrowser"
 !define UNINST_KEY    "Software\Microsoft\Windows\CurrentVersion\Uninstall\MoltBrowser"
 
 Name "${APP_NAME} ${VERSION}"
@@ -93,7 +93,7 @@ SetCompressor zlib
 ; Finish page: offer to launch the browser.
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT "Launch ${APP_NAME}"
-!define MUI_FINISHPAGE_LINK "Visit moltbrowser.com"
+!define MUI_FINISHPAGE_LINK "MoltBrowser on GitHub"
 !define MUI_FINISHPAGE_LINK_LOCATION "${WEBSITE}"
 !insertmacro MUI_PAGE_FINISH
 
