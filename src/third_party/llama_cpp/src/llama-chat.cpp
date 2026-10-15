@@ -25,6 +25,25 @@ static std::string trim(const std::string & str) {
     return str.substr(start, end - start);
 }
 
+// MoltBrowser: Gemma 4's strip_thinking() template macro: drop every
+// "<|channel>...<channel|>" block (the model's thoughts) from a model turn.
+static std::string gemma4_strip_thinking(const std::string & text) {
+    static const std::string open  = "<|channel>";
+    static const std::string close = "<channel|>";
+    std::string result;
+    size_t pos = 0;
+    while (true) {
+        const size_t end = text.find(close, pos);
+        const std::string part = text.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+        result += part.substr(0, part.find(open));
+        if (end == std::string::npos) {
+            break;
+        }
+        pos = end + close.size();
+    }
+    return trim(result);
+}
+
 static const std::map<std::string, llm_chat_template> LLM_CHAT_TEMPLATES = {
     { "chatml",            LLM_CHAT_TEMPLATE_CHATML            },
     { "llama2",            LLM_CHAT_TEMPLATE_LLAMA_2           },
@@ -42,6 +61,7 @@ static const std::map<std::string, llm_chat_template> LLM_CHAT_TEMPLATES = {
     { "zephyr",            LLM_CHAT_TEMPLATE_ZEPHYR            },
     { "monarch",           LLM_CHAT_TEMPLATE_MONARCH           },
     { "gemma",             LLM_CHAT_TEMPLATE_GEMMA             },
+    { "gemma4",            LLM_CHAT_TEMPLATE_GEMMA4            }, // MoltBrowser
     { "orion",             LLM_CHAT_TEMPLATE_ORION             },
     { "openchat",          LLM_CHAT_TEMPLATE_OPENCHAT          },
     { "vicuna",            LLM_CHAT_TEMPLATE_VICUNA            },
@@ -162,6 +182,9 @@ llm_chat_template llm_chat_detect_template(const std::string & tmpl) {
         return LLM_CHAT_TEMPLATE_ZEPHYR;
     } else if (tmpl_contains("bos_token + message['role']")) {
         return LLM_CHAT_TEMPLATE_MONARCH;
+    } else if (tmpl_contains("<|turn>") && tmpl_contains("<turn|>")) {
+        // MoltBrowser: google/gemma-4 (see LLM_CHAT_TEMPLATE_GEMMA4 below)
+        return LLM_CHAT_TEMPLATE_GEMMA4;
     } else if (tmpl_contains("<start_of_turn>")) {
         return LLM_CHAT_TEMPLATE_GEMMA;
     } else if (tmpl_contains("'\\n\\nAssistant: ' + eos_token")) {
@@ -407,6 +430,31 @@ int32_t llm_chat_apply_template(
         }
         if (add_ass) {
             ss << "<start_of_turn>model\n";
+        }
+    } else if (tmpl == LLM_CHAT_TEMPLATE_GEMMA4) {
+        // MoltBrowser: google/gemma-4, text only (no tools or media) with
+        // thinking off. Same text as the Jinja template shipped in Gemma 4
+        // GGUFs, minus its leading bos_token (the tokenizer adds BOS):
+        //   <|turn>system\n{system}<turn|>\n          (if messages[0] is system)
+        //   <|turn>{user|model}\n{content}<turn|>\n   (per message)
+        //   <|turn>model\n<|channel>thought\n<channel|>  (generation prompt)
+        // Contents are trimmed; model turns also drop thought blocks.
+        for (size_t i = 0; i < chat.size(); i++) {
+            std::string role(chat[i]->role);
+            std::string content;
+            if (role == "assistant") {
+                role = "model";
+                content = gemma4_strip_thinking(chat[i]->content);
+            } else {
+                if (i == 0 && role == "developer") {
+                    role = "system";
+                }
+                content = trim(chat[i]->content);
+            }
+            ss << "<|turn>" << role << "\n" << content << "<turn|>\n";
+        }
+        if (add_ass) {
+            ss << "<|turn>model\n<|channel>thought\n<channel|>";
         }
     } else if (tmpl == LLM_CHAT_TEMPLATE_ORION) {
         // OrionStarAI/Orion-14B-Chat
