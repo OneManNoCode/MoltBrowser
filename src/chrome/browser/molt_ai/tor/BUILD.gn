@@ -1,34 +1,91 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# Tor integration for MoltBrowser.
-#   Phase B.1 — control-port reader (tor_service.*)
-#   Phase B.2 — subprocess launcher + GeoIP enrichment (tor_manager.*)
+# Tor integration for MoltBrowser (MoltNet).
+#   tor_manager.*            — runs/supervises the bundled tor (auto ports,
+#                              TAKEOWNERSHIP, bridges, exit country)
+#   tor_control_connection.* — SAFECOOKIE-authenticated control client
+#   tor_service.*            — read-only circuit/status queries
+#   molt_net_routing.*       — the isolated MoltNet (Tor) profile
+
+# Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation
+# and bridge-line validation. Split out so molt_ai_unittests can test it
+# without pulling in Profile / content.
+source_set("protocol") {
+  sources = [
+    "tor_control_protocol.cc",
+    "tor_control_protocol.h",
+    "torrc_builder.cc",
+    "torrc_builder.h",
+  ]
+  deps = [
+    "//base",
+    # SAFECOOKIE control-port auth (HMAC-SHA256).
+    "//crypto",
+  ]
+}
 
 source_set("tor") {
   sources = [
     "exit_country_names.h",
+    "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
+    "molt_net_window.cc",
+    "molt_net_window.h",
+    "tor_control_connection.cc",
+    "tor_control_connection.h",
     "tor_manager.cc",
     "tor_manager.h",
     "tor_service.cc",
     "tor_service.h",
   ]
 
+  public_deps = [ ":protocol" ]
+
   deps = [
     "//base",
-    # molt_net_routing.cc applies leak-safe proxy/WebRTC/QUIC prefs to the
-    # profile that opts into MoltNet.
+    # molt_net_routing.cc applies the Tor proxy + leak-safe prefs to the
+    # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/prefs",
     "//components/proxy_config",
+    "//content/public/browser",
+    # Random SAFECOOKIE client nonces (crypto/random.h).
+    "//crypto",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/mojom",
+    "//url",
   ]
+
+  # NOTE: molt_net_window.cc creates Browser windows and molt_net_routing.cc
+  # enumerates loaded profiles, so they include //chrome/browser/ui and
+  # //chrome/browser/profiles headers. Those targets depend on this one, so
+  # the deps can't be declared here without a cycle — the same pattern the
+  # other molt_ai UI-adjacent code uses (this tree doesn't run `gn check`).
+  # The symbols resolve when everything is linked into chrome.
 
   # tor_service.cc / tor_manager.cc talk to the Tor control port over
   # raw sockets. On Windows that means winsock2, which needs ws2_32.
   if (is_win) {
     libs = [ "ws2_32.lib" ]
   }
+}
+
+# Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
+# generation, bridge-line validation). Picked up by
+# //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "tor_control_protocol_unittest.cc",
+    "torrc_builder_unittest.cc",
+  ]
+  deps = [
+    ":protocol",
+    "//base",
+    "//testing/gtest",
+  ]
 }

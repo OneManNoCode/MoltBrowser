@@ -1629,6 +1629,8 @@ static_library("browser") {
     "//chrome/browser/ai",
     "//chrome/browser/ai:impl",
     "//chrome/browser/molt_ai",
+    # MoltBrowser: privacy-by-default prefs (hooked from profile_impl.cc).
+    "//chrome/browser/molt_ai/privacy",
     "//chrome/browser/app_mode",
     "//chrome/browser/autocomplete",
     "//chrome/browser/autocomplete:aim_eligibility_service",

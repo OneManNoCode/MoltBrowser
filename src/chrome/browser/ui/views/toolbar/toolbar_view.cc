@@ -30,7 +30,9 @@
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
+#include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/update/update_manager.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -365,13 +367,12 @@ class LocalAiToolbarButton : public ToolbarButton {
   }
 };
 
-// MoltBrowser: Toolbar control for MoltNet (Tor) privacy routing. Left-click
-// opens a rich native menu with (1) a live connection-status line, (2) an
-// "Enable MoltNet Privacy Routing" toggle that launches/stops the bundled
-// Tor, (3) an exit-country picker with flag emoji + full names, and (4) New
-// identity / Import-from-another-browser / MoltNet settings entries. The menu
-// is rebuilt on every open from TorManager, so status + selection self-heal
-// from changes in other windows or the WebUI pickers.
+// MoltBrowser: Toolbar control for MoltNet (Tor). Left-click opens the
+// Liquid Glass MoltNet popover (MoltNetBubbleView). The label reflects THIS
+// window's routing — a MoltNet window shows "🧅 Tor", a regular window shows
+// "🧅 MoltNet" because it is never routed (MoltNet browsing happens in its
+// own isolated Tor windows). The native SimpleMenuModel below is retained as
+// a fallback; it drives the same MoltNetWindow / TorManager entry points.
 class TorExitCountryButton : public ToolbarButton,
                              public ui::SimpleMenuModel::Delegate {
   METADATA_HEADER(TorExitCountryButton, ToolbarButton)
@@ -385,9 +386,11 @@ class TorExitCountryButton : public ToolbarButton,
     SetCallback(base::BindRepeating(&TorExitCountryButton::ButtonPressed,
                                     base::Unretained(this)));
     SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    // No vector icon — the label carries a country flag emoji (or a globe for
-    // Auto), so the button reads "🇬🇧 GB" like the mockup, not a static globe.
-    SetTooltipText(u"MoltNet — private routing, connect & pick exit country");
+    // Keep the label in sync when Tor starts/stops (from any window).
+    tor_state_subscription_ =
+        molt_ai::tor::TorManager::Get()->AddStateChangedCallback(
+            base::BindRepeating(&TorExitCountryButton::UpdateLabel,
+                                base::Unretained(this)));
     UpdateLabel();
   }
   TorExitCountryButton(const TorExitCountryButton&) = delete;
@@ -417,23 +420,27 @@ class TorExitCountryButton : public ToolbarButton,
   void ExecuteCommand(int command_id, int event_flags) override {
     molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
     if (command_id == kCommandEnable) {
-      if (mgr->IsRunning()) {
-        mgr->Stop();
+      if (mgr->IsRunning() || mgr->IsStarting()) {
+        // Closes MoltNet windows and stops Tor; regular windows were never
+        // proxied, so nothing else changes.
+        molt_ai::tor::MoltNetWindow::TurnOff();
       } else {
-        // Launch is async (~15-30s bootstrap). Show a pending label now;
-        // the callback re-reads the running state when Tor is up.
-        SetHighlight(u"…", std::nullopt);
-        mgr->Launch(base::BindOnce(&TorExitCountryButton::OnTorLaunched,
-                                   weak_factory_.GetWeakPtr()));
+        // Tor bootstrap (~15-30s), then a new isolated MoltNet window.
+        SetHighlight(u"\U0001F9C5 …", std::nullopt);
+        molt_ai::tor::MoltNetWindow::Open(
+            browser_->profile(), GURL(),
+            base::BindOnce(&TorExitCountryButton::OnMoltNetDone,
+                           weak_factory_.GetWeakPtr()));
         return;
       }
     } else if (command_id == kCommandAuto) {
       mgr->SetExitCountry(std::string());
     } else if (command_id == kCommandNewIdentity) {
-      // Re-applying the current constraint is the sanctioned new-circuit
-      // path (matches HandleMoltnetNewCircuit): rewrites torrc and, if Tor
-      // is running, sends SIGNAL RELOAD + SIGNAL NEWNYM.
-      mgr->SetExitCountry(mgr->GetExitCountry());
+      molt_ai::tor::MoltNetWindow::NewIdentity(
+          browser_->profile(),
+          base::BindOnce(&TorExitCountryButton::OnMoltNetDone,
+                         weak_factory_.GetWeakPtr()));
+      return;
     } else if (command_id == kCommandImport) {
       chrome::AddSelectedTabWithURL(
           browser_, GURL("molt://ai-settings/?section=import"),
@@ -465,29 +472,15 @@ class TorExitCountryButton : public ToolbarButton,
   static constexpr int kCommandSettings = 1003;
 
   // Rebuild the menu each open so the status line + toggle + checkmarks
-  // reflect the live TorManager state.
+  // reflect the live state of THIS window.
   void BuildMenu() {
     molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
     menu_model_.Clear();
-
-    const std::string cc = mgr->GetExitCountry();
-    std::u16string status;
-    if (mgr->IsRunning()) {
-      std::u16string where =
-          cc.empty()
-              ? u"any country"
-              : (CountryFlagEmoji(cc) + u" " +
-                 base::UTF8ToUTF16(molt_ai::tor::ExitCountryDisplayName(cc)));
-      status = u"\U0001F7E2 Connected · exit " + where;
-    } else {
-      status = u"⚫ Not connected";
-    }
-    menu_model_.AddTitle(status);
-    menu_model_.AddCheckItem(kCommandEnable,
-                             u"Enable MoltNet Privacy Routing");
+    menu_model_.AddTitle(StatusLine());
+    menu_model_.AddCheckItem(kCommandEnable, u"Enable MoltNet (Tor windows)");
     menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
 
-    menu_model_.AddTitle(u"Exit country");
+    menu_model_.AddTitle(u"Exit country (pinning reduces anonymity)");
     menu_model_.AddCheckItem(kCommandAuto, u"\U0001F310  Auto (recommended)");
     for (size_t i = 0; i < country_codes_.size(); ++i) {
       std::u16string label =
@@ -498,10 +491,28 @@ class TorExitCountryButton : public ToolbarButton,
                                label);
     }
     menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
-    menu_model_.AddItem(kCommandNewIdentity, u"\U0001F504  New identity");
+    if (mgr->IsRunning()) {
+      menu_model_.AddItem(kCommandNewIdentity, u"\U0001F504  New identity");
+    }
     menu_model_.AddItem(kCommandImport,
                         u"\U0001F4E5  Import from another browser…");
     menu_model_.AddItem(kCommandSettings, u"⚙️  MoltNet settings…");
+  }
+
+  // Routing of THIS window, never the process-wide Tor state alone.
+  std::u16string StatusLine() const {
+    using molt_ai::tor::MoltNetRouting;
+    switch (MoltNetRouting::GetStatus(browser_->profile()).state) {
+      case MoltNetRouting::RoutingState::kRoutedViaTor:
+        return u"\U0001F7E2 Private via Tor";
+      case MoltNetRouting::RoutingState::kBlockedTorDown:
+        return u"\U0001F534 Tor stopped — this window is blocked";
+      case MoltNetRouting::RoutingState::kProxyOverridden:
+        return u"⚠️ Proxy overridden — not protected";
+      case MoltNetRouting::RoutingState::kNotRouted:
+        break;
+    }
+    return u"⚫ This window is not routed through Tor";
   }
 
   void ButtonPressed() {
@@ -517,27 +528,44 @@ class TorExitCountryButton : public ToolbarButton,
                             weak_factory_.GetWeakPtr()));
   }
 
-  void OnTorLaunched(molt_ai::tor::TorLaunchResult /*result*/) {
-    UpdateLabel();
-  }
+  void OnMoltNetDone(bool /*ok*/, std::string /*error*/) { UpdateLabel(); }
 
-  // Label = current exit-country constraint: "" (any) -> "Auto"; otherwise
-  // the uppercased ISO code (e.g. "us" -> "US").
+  // "🧅 Tor 🇬🇧" in a MoltNet window, "🧅 MoltNet" in a regular one.
   void UpdateLabel() {
+    using molt_ai::tor::MoltNetRouting;
+    const MoltNetRouting::RoutingState state =
+        MoltNetRouting::GetStatus(browser_->profile()).state;
     const std::string cc = molt_ai::tor::TorManager::Get()->GetExitCountry();
-    // Show the selected country's flag + ISO code (e.g. "🇬🇧 GB"); a globe +
-    // "Auto" when unconstrained. The flag emoji renders in color just like the
-    // exit-country menu items.
-    SetHighlight(cc.empty()
-                     ? u"\U0001F310 Auto"
-                     : (CountryFlagEmoji(cc) + u" " +
-                        base::UTF8ToUTF16(base::ToUpperASCII(cc))),
-                 std::nullopt);
+    std::u16string label;
+    switch (state) {
+      case MoltNetRouting::RoutingState::kRoutedViaTor:
+        label = u"\U0001F9C5 Tor";
+        if (!cc.empty()) {
+          label += u" " + CountryFlagEmoji(cc);
+        }
+        SetTooltipText(u"MoltNet — this window is routed through Tor");
+        break;
+      case MoltNetRouting::RoutingState::kBlockedTorDown:
+      case MoltNetRouting::RoutingState::kProxyOverridden:
+        label = u"⚠️ Tor";
+        SetTooltipText(
+            u"MoltNet — Tor isn't usable; this window is blocked, not "
+            u"routed directly");
+        break;
+      case MoltNetRouting::RoutingState::kNotRouted:
+        label = u"\U0001F9C5 MoltNet";
+        SetTooltipText(
+            u"MoltNet — this window is NOT routed through Tor. Open a "
+            u"MoltNet window for private browsing over Tor.");
+        break;
+    }
+    SetHighlight(label, std::nullopt);
   }
 
   const raw_ptr<Browser> browser_;
   ui::SimpleMenuModel menu_model_;
   const std::vector<std::string> country_codes_;
+  base::CallbackListSubscription tor_state_subscription_;
   base::WeakPtrFactory<TorExitCountryButton> weak_factory_{this};
 };
 
@@ -979,12 +1007,14 @@ void ToolbarView::Init() {
   // every platform. Initialize() is idempotent, so calling it per-window is
   // safe; it needs the profile's network URLLoaderFactory.
   {
-    // MoltNet startup fail-safe: if a prior session left this profile routing
-    // through Tor but the daemon isn't running now, clear the stale proxy so
-    // the user isn't stranded behind a dead SOCKS endpoint. Idempotent + a
-    // no-op unless routing prefs are actually set (see MoltNetRouting).
-    molt_ai::tor::MoltNetRouting::ReconcileOnStartup(
-        browser_->profile(), g_browser_process->local_state());
+    // MoltNet migration: builds before the isolated-profile redesign wrote a
+    // Tor proxy (+ WebRTC/prediction/DoH overrides) into the REGULAR profile
+    // and local state. Clear exactly those legacy values. Idempotent; a
+    // no-op once cleaned (MoltNet never writes them there any more).
+    if (!molt_ai::tor::IsMoltNetProfile(browser_->profile())) {
+      molt_ai::tor::MoltNetRouting::MigrateLegacyRoutingPrefs(
+          browser_->profile(), g_browser_process->local_state());
+    }
 
     molt_ai::UpdateManager::Get()->Initialize(
         browser_->profile()

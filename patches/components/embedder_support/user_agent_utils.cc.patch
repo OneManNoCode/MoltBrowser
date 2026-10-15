@@ -5,15 +5,16 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 557eadb18229e4adb2f0092593877254e2f1fe7c..e1bfdf982718ba5818c9e236c5f5fceed68d0010 100644
+index 557eadb18229e4adb2f0092593877254e2f1fe7c..3ce0a8584f6d55899beaa662f48507070cdc952e 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -494,7 +494,7 @@ blink::UserAgentBrandList GenerateBrandVersionList(
+@@ -494,6 +494,9 @@ blink::UserAgentBrandList GenerateBrandVersionList(
  
    blink::UserAgentBrandVersion greasey_bv =
        GetGreasedUserAgentBrandVersion(seed, output_version_type);
--  blink::UserAgentBrandVersion chromium_bv = {"Chromium", version};
-+  blink::UserAgentBrandVersion chromium_bv = {"MoltBrowser", version};
++  // MoltBrowser: keep the stock "Chromium" brand. Advertising "MoltBrowser"
++  // in Sec-CH-UA / navigator.userAgentData made every MoltBrowser user (incl.
++  // MoltNet/Tor windows) trivially distinguishable from other Chromium users.
+   blink::UserAgentBrandVersion chromium_bv = {"Chromium", version};
  
    blink::UserAgentBrandList brand_version_list = {std::move(greasey_bv),
-                                                   std::move(chromium_bv)};

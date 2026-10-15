@@ -41,9 +41,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_settings_handler.h"
 #include "base/functional/callback_helpers.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/molt_ai/tor/molt_net_routing.h"
-#include "chrome/browser/net/system_network_context_manager.h"
-#include "services/network/public/mojom/network_context.mojom.h"
+#include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/password_manager/profile_password_store_factory.h"
@@ -143,6 +141,20 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
         base::BindRepeating(
             &MoltAISettingsHandler::HandleGetMoltnetExitCountries,
             base::Unretained(this)));
+    // Re-reads Tor's real state so the toggle reflects it on page load.
+    web_ui()->RegisterMessageCallback(
+        "moltnetRefresh",
+        base::BindRepeating(&MoltAISettingsHandler::HandleMoltnetRefresh,
+                            base::Unretained(this)));
+    // Bridges (snowflake / obfs4 / pasted lines) for networks that block Tor.
+    web_ui()->RegisterMessageCallback(
+        "getMoltnetBridges",
+        base::BindRepeating(&MoltAISettingsHandler::HandleGetMoltnetBridges,
+                            base::Unretained(this)));
+    web_ui()->RegisterMessageCallback(
+        "setMoltnetBridges",
+        base::BindRepeating(&MoltAISettingsHandler::HandleSetMoltnetBridges,
+                            base::Unretained(this)));
     // Import & Migration — drives molt_ai::BrowserImporter to detect
     // installed browsers, read a chosen profile, and write its
     // bookmarks/passwords into this profile.
@@ -414,101 +426,88 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     FireWebUIListener("moltnet-status", base::Value(std::move(result)));
   }
 
-  // Reconcile this profile's network routing with Tor's running state, so
-  // enabling MoltNet from Settings routes the whole browser through Tor
-  // (leak-safe) exactly like the toolbar popover. Idempotent.
-  void ApplyMoltnetRouting() {
+  Profile* GetProfile() {
     content::WebContents* wc = web_ui()->GetWebContents();
-    Profile* profile =
-        wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
-    if (!profile) {
-      return;
-    }
-    PrefService* local_state = g_browser_process->local_state();
-    if (molt_ai::tor::TorManager::Get()->IsRunning()) {
-      molt_ai::tor::MoltNetRouting::Enable(profile, local_state);
-      // Drop sockets opened before routing so nothing lingers off-Tor.
-      if (auto* nc = profile->GetDefaultStoragePartition()->GetNetworkContext())
-        nc->CloseAllConnections(base::DoNothing());
-      if (auto* sys = g_browser_process->system_network_context_manager())
-        if (auto* nc = sys->GetContext())
-          nc->CloseAllConnections(base::DoNothing());
-    } else {
-      molt_ai::tor::MoltNetRouting::Disable(profile, local_state);
-    }
+    return wc ? Profile::FromBrowserContext(wc->GetBrowserContext()) : nullptr;
   }
 
+  // MoltNet routes ONLY its own windows (an isolated Tor profile). Enabling
+  // it here starts Tor and opens a MoltNet window; this settings page and
+  // every regular window stay on the normal connection. Failure never falls
+  // back to anything: no window opens.
   void HandleMoltnetConnect(const base::ListValue& args) {
     AllowJavascript();
     std::string mode = "multi_hop";
     if (args.size() > 0 && args[0].is_string()) {
       mode = args[0].GetString();
     }
-
-    // "direct" means no privacy routing — stop any managed Tor instead
-    // of launching one.
     if (mode == "direct") {
-      molt_ai::tor::TorManager::Get()->Stop();
-      ApplyMoltnetRouting();  // Tor down -> restore direct.
+      molt_ai::tor::MoltNetWindow::TurnOff();
       EmitMoltnetStatus("disconnected");
       return;
     }
-
     if (!IsTorAvailable()) {
       EmitMoltnetStatus(
           "disconnected",
           "No tor binary available (bundled tor missing from this build).");
       return;
     }
-
-    // Show "connecting" immediately, then actually launch Tor. Launch()
-    // resolves only after the control port answers (bootstrap can take
-    // ~15-30s), at which point we report the real running state +
-    // circuits.
     EmitMoltnetStatus("connecting");
     auto weak_this = weak_ptr_factory_.GetWeakPtr();
-    molt_ai::tor::TorManager::Get()->Launch(base::BindOnce(
-        [](base::WeakPtr<MoltAISettingsHandler> self,
-           molt_ai::tor::TorLaunchResult r) {
-          if (!self)
-            return;
-          if (!r.success) {
-            // Bootstrap timed out / Tor couldn't build a circuit — stop the
-            // stuck daemon and keep the browser on a direct connection.
-            molt_ai::tor::TorManager::Get()->Stop();
-            self->ApplyMoltnetRouting();  // now stopped -> restore direct.
-            self->EmitMoltnetStatus(
-                "disconnected",
-                r.error.empty() ? std::string("Failed to launch Tor")
-                                : r.error);
-            return;
-          }
-          self->ApplyMoltnetRouting();  // Tor routable -> route the browser.
-          self->RefreshMoltnetStatus();
-        },
-        weak_this));
+    molt_ai::tor::MoltNetWindow::Open(
+        GetProfile(), GURL(),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAISettingsHandler> self, bool ok,
+               std::string error) {
+              if (!self)
+                return;
+              if (!ok) {
+                self->EmitMoltnetStatus(
+                    molt_ai::tor::TorManager::Get()->IsRunning()
+                        ? "connected"
+                        : "disconnected",
+                    error.empty() ? std::string("Failed to start MoltNet")
+                                  : error);
+                return;
+              }
+              self->RefreshMoltnetStatus();
+            },
+            weak_this));
+  }
+
+  void HandleMoltnetRefresh(const base::ListValue& args) {
+    RefreshMoltnetStatus();
   }
 
   void HandleMoltnetDisconnect(const base::ListValue& args) {
     AllowJavascript();
-    molt_ai::tor::TorManager::Get()->Stop();
-    ApplyMoltnetRouting();  // Tor down -> restore direct.
+    molt_ai::tor::MoltNetWindow::TurnOff();
     EmitMoltnetStatus("disconnected");
   }
 
+  // New identity: closes MoltNet windows, discards the MoltNet profile
+  // (cookies/cache/storage), SIGNAL NEWNYM (checked), reopens a window.
   void HandleMoltnetNewCircuit(const base::ListValue& args) {
     AllowJavascript();
-    molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
-    if (!mgr->IsRunning()) {
+    if (!molt_ai::tor::TorManager::Get()->IsRunning()) {
       EmitMoltnetStatus("disconnected");
       return;
     }
-    // There is no standalone NEWNYM entry point in the public API; the
-    // backend rebuilds circuits (SIGNAL RELOAD + SIGNAL NEWNYM) as part
-    // of SetExitCountry(). Re-applying the *current* exit country is the
-    // supported way to force a fresh circuit without changing the exit.
-    mgr->SetExitCountry(mgr->GetExitCountry());
-    RefreshMoltnetStatus();
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
+    molt_ai::tor::MoltNetWindow::NewIdentity(
+        GetProfile(),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAISettingsHandler> self, bool ok,
+               std::string error) {
+              if (!self)
+                return;
+              if (!ok) {
+                self->EmitMoltnetStatus("connected", error);
+                return;
+              }
+              self->RefreshMoltnetStatus();
+            },
+            weak_this));
   }
 
   void HandleMoltnetSetExitCountry(const base::ListValue& args) {
@@ -517,19 +516,88 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     if (args.size() > 0 && args[0].is_string()) {
       country = args[0].GetString();
     }
-    // TorManager validates/normalizes, but lowercase here too so we match
-    // the chat handler's contract exactly.
+    // Session-only pin; applied live (SETCONF + NEWNYM) if Tor is running.
+    auto weak_this = weak_ptr_factory_.GetWeakPtr();
     molt_ai::tor::TorManager::Get()->SetExitCountry(
-        base::ToLowerASCII(country));
-    RefreshMoltnetStatus();
+        base::ToLowerASCII(country),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAISettingsHandler> self, bool ok,
+               std::string error) {
+              if (self) {
+                self->RefreshMoltnetStatus();
+              }
+            },
+            weak_this));
+  }
+
+  // { mode: "none|snowflake|obfs4|custom", custom_lines: "..." }
+  void HandleGetMoltnetBridges(const base::ListValue& args) {
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
+    AllowJavascript();
+    const std::string callback_id = args[0].GetString();
+    molt_ai::tor::TorManager::Get()->GetBridgeSettings(base::BindOnce(
+        [](base::WeakPtr<MoltAISettingsHandler> self, std::string cb,
+           molt_ai::tor::BridgeSettings settings) {
+          if (!self)
+            return;
+          base::DictValue out;
+          out.Set("mode", molt_ai::tor::BridgeModeToString(settings.mode));
+          out.Set("custom_lines", settings.custom_lines);
+          self->ResolveJavascriptCallback(base::Value(cb),
+                                          base::Value(std::move(out)));
+        },
+        weak_ptr_factory_.GetWeakPtr(), callback_id));
+  }
+
+  // Args: [callback_id, mode, custom_lines]. Custom lines are validated
+  // strictly (obfs4 / snowflake only, no torrc injection); an invalid set is
+  // rejected as a whole with a line-numbered error. Resolves {ok, error}.
+  void HandleSetMoltnetBridges(const base::ListValue& args) {
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
+    AllowJavascript();
+    const std::string callback_id = args[0].GetString();
+    std::optional<molt_ai::tor::BridgeSettings::Mode> mode =
+        (args.size() > 1 && args[1].is_string())
+            ? molt_ai::tor::BridgeModeFromString(args[1].GetString())
+            : std::nullopt;
+    if (!mode) {
+      base::DictValue out;
+      out.Set("ok", false);
+      out.Set("error", "Unknown bridge mode.");
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(out)));
+      return;
+    }
+    molt_ai::tor::BridgeSettings settings;
+    settings.mode = *mode;
+    if (args.size() > 2 && args[2].is_string() &&
+        *mode == molt_ai::tor::BridgeSettings::Mode::kCustom) {
+      settings.custom_lines = args[2].GetString();
+    }
+    molt_ai::tor::TorManager::Get()->SetBridgeSettings(
+        settings,
+        base::BindOnce(
+            [](base::WeakPtr<MoltAISettingsHandler> self, std::string cb,
+               bool ok, std::string error) {
+              if (!self)
+                return;
+              base::DictValue out;
+              out.Set("ok", ok);
+              if (!ok) {
+                out.Set("error", error);
+              }
+              self->ResolveJavascriptCallback(base::Value(cb),
+                                              base::Value(std::move(out)));
+            },
+            weak_ptr_factory_.GetWeakPtr(), callback_id));
   }
 
   // Mirrors the chat panel's getTorExitCountries: returns the real
   // curated list (lowercase ISO codes) + the currently-selected exit,
   // each with a display name, so the picker is data-driven.
   void HandleGetMoltnetExitCountries(const base::ListValue& args) {
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
     const std::string callback_id = args[0].GetString();
 
     molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
@@ -1506,21 +1574,43 @@ function toggleMoltNet(enabled) {
   var status = document.getElementById('moltnetStatus');
   status.style.display = enabled ? 'block' : 'none';
   if (enabled) {
-    chrome.send('moltnetConnect', [document.getElementById('routingMode').value]);
+    chrome.send('moltnetConnect', ['multi_hop']);
   } else {
     chrome.send('moltnetDisconnect');
     updateMoltNetUI({status: 'disconnected', relays: []});
   }
 }
 
-function setRoutingMode(mode) {
-  if (document.getElementById('moltnetEnabled').checked) {
-    chrome.send('moltnetConnect', [mode]);
-  }
-}
-
 function newCircuit() {
   chrome.send('moltnetNewCircuit');
+}
+
+// ---- Bridges ----
+function onBridgeModeChange() {
+  var mode = document.getElementById('bridgeMode').value;
+  document.getElementById('bridgeLines').style.display =
+      mode === 'custom' ? 'block' : 'none';
+  document.getElementById('bridgeStatus').textContent = '';
+}
+
+function loadBridges() {
+  sendWithPromise('getMoltnetBridges').then(function(b) {
+    document.getElementById('bridgeMode').value = (b && b.mode) || 'none';
+    document.getElementById('bridgeLines').value = (b && b.custom_lines) || '';
+    onBridgeModeChange();
+  });
+}
+
+function saveBridges() {
+  var mode = document.getElementById('bridgeMode').value;
+  var lines = document.getElementById('bridgeLines').value;
+  var st = document.getElementById('bridgeStatus');
+  st.textContent = 'Saving...';
+  sendWithPromise('setMoltnetBridges', mode, lines).then(function(r) {
+    st.textContent = r && r.ok
+        ? 'Saved. Applies the next time MoltNet connects.'
+        : ('Not saved: ' + ((r && r.error) || 'invalid bridges'));
+  });
 }
 
 function setExitCountry(cc) {
@@ -1552,10 +1642,18 @@ function updateMoltNetUI(data) {
   var ip = document.getElementById('moltnetIP');
   var circuit = document.getElementById('circuitDisplay');
 
+  // Reflect Tor's real state in the toggle (e.g. on page load).
+  var on = data.status === 'connected' || data.status === 'connecting';
+  document.getElementById('moltnetEnabled').checked = on;
+  // Keep the box visible when there's an error detail to show.
+  document.getElementById('moltnetStatus').style.display =
+      (on || data.apparent_ip) ? 'block' : 'none';
   if (data.status === 'connected') {
     badge.style.background = '#1a3a1a';
     badge.style.color = '#4ade80';
-    badge.textContent = 'Connected';
+    badge.textContent = 'Tor running \u00b7 MoltNet windows only';
+    // apparent_ip is the exit relay's IP (from Tor's control port), or an
+    // error detail.
     ip.textContent = data.apparent_ip || '';
   } else if (data.status === 'connecting') {
     badge.style.background = '#3a3a1a';
@@ -1564,8 +1662,8 @@ function updateMoltNetUI(data) {
   } else {
     badge.style.background = '#2a1a1a';
     badge.style.color = '#f87171';
-    badge.textContent = 'Disconnected';
-    ip.textContent = '';
+    badge.textContent = 'Off';
+    ip.textContent = data.apparent_ip || '';
   }
 
   if (data.relays && data.relays.length > 0) {
@@ -2049,8 +2147,10 @@ document.getElementById('backBtn').addEventListener('click', function(e) {
 });
 document.getElementById('moltnetEnabled').addEventListener('change',
     function() { toggleMoltNet(this.checked); });
-document.getElementById('routingMode').addEventListener('change',
-    function() { setRoutingMode(this.value); });
+document.getElementById('bridgeMode').addEventListener('change',
+                                                      onBridgeModeChange);
+document.getElementById('saveBridgesBtn').addEventListener('click',
+                                                          saveBridges);
 document.getElementById('newCircuitBtn').addEventListener('click', newCircuit);
 document.getElementById('exitCountry').addEventListener('change',
     function() { setExitCountry(this.value); });
@@ -2065,6 +2165,8 @@ sendWithPromise('getSettings').then(function(s) {
 });
 // Drive the exit-country picker from the real backend list.
 loadExitCountries();
+loadBridges();
+chrome.send('moltnetRefresh');
 // Detect installed browsers for the Import & Migration section.
 loadImportableBrowsers();
 // Load configured cloud/frontier providers.
@@ -2370,17 +2472,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <label class="toggle">
         <input type="checkbox" id="moltnetEnabled">
         <span class="track"></span>
-        <span class="label">Enable MoltNet Privacy Routing</span>
+        <span class="label">Enable MoltNet (Tor)</span>
       </label>
-      <div class="desc">Route traffic through encrypted relay nodes to hide your IP address</div>
-    </div>
-    <div class="field">
-      <label>Routing Mode</label>
-      <select id="routingMode">
-        <option value="direct">Direct (No Privacy Routing)</option>
-        <option value="proxy">Single Proxy</option>
-        <option value="multi_hop" selected>Multi-Hop (Tor)</option>
-      </select>
+      <div class="desc">Opens a separate MoltNet window whose traffic goes through the 3-hop Tor network, with its own cookies and site data (discarded when the last MoltNet window closes). Your regular windows are never routed through Tor. If Tor stops, MoltNet windows show an error instead of connecting directly.</div>
     </div>
     <div id="moltnetStatus" style="display:none">
       <div class="field">
@@ -2397,11 +2491,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         </div>
       </div>
       <div class="field" style="display:flex;gap:10px">
-        <button class="btn secondary" id="newCircuitBtn" style="font-size:12px;padding:6px 16px">New Circuit</button>
+        <button class="btn secondary" id="newCircuitBtn" style="font-size:12px;padding:6px 16px">New Identity</button>
         <select id="exitCountry" style="background:#111;border:1px solid #333;color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px">
           <option value="">Any country</option>
         </select>
       </div>
+      <div class="desc">New Identity closes your MoltNet windows, discards their cookies and site data, and asks Tor for new circuits. Pinning an exit country shrinks the set of exits you blend in with, which reduces anonymity; the choice resets when MoltBrowser restarts.</div>
+    </div>
+    <div class="field">
+      <label>Bridges (if Tor is blocked or monitored where you are)</label>
+      <select id="bridgeMode">
+        <option value="none">None &mdash; connect to Tor directly</option>
+        <option value="snowflake">Snowflake (built-in)</option>
+        <option value="obfs4">obfs4 (built-in)</option>
+        <option value="custom">Custom bridges&hellip;</option>
+      </select>
+      <textarea id="bridgeLines" rows="4" style="display:none;margin-top:8px;font-family:monospace;font-size:12px" placeholder="obfs4 192.0.2.1:443 FINGERPRINT cert=... iat-mode=0"></textarea>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="btn secondary" id="saveBridgesBtn" style="font-size:12px;padding:6px 16px">Save bridges</button>
+        <span id="bridgeStatus" class="desc"></span>
+      </div>
+      <div class="desc">One obfs4 or snowflake bridge per line (from bridges.torproject.org). Bridge settings apply the next time MoltNet connects.</div>
     </div>
   </div>
 

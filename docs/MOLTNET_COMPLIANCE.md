@@ -1,152 +1,218 @@
-# How we verify MoltNet's Tor routing
+# How MoltNet routes through Tor, and how to check it
 
-*MoltBrowser transparency page. Last reviewed 2026-07.*
+*MoltBrowser transparency page. Last reviewed 2026-10.*
 
-MoltNet routes your whole browser through the 3-hop Tor network. Rather than ask
-you to take that on faith, we ran an internal check and are publishing exactly
-what we tested, what we found, how you can verify it yourself — and what MoltNet
-does **not** protect you from.
-
-We've tried hard not to oversell. Tor routing hides your IP address behind three
-relays run by different volunteers, so no single one sees both who you are and
-where you go. It is **not** total anonymity. The limitations in §4 are as
-important as the evidence in §2.
+MoltNet sends the traffic of **MoltNet windows** through the 3-hop Tor network.
+This page describes the design, what has and has not been verified, how you can
+check it yourself, and what MoltNet does **not** protect you from.
 
 > **How we talk about it.** We don't call MoltNet a "VPN," and we avoid
-> *anonymous*, *untraceable*, and *military-grade* — they'd be misleading.
-> MoltNet is **private IP routing over the Tor network**: it hides your IP and
-> location. That's the honest description.
+> *anonymous*, *untraceable*, and *military-grade*. MoltNet is **private IP
+> routing over the Tor network for the windows you open with it**. It hides your
+> IP address and location from the sites you visit in those windows and from
+> your network. It is not Tor Browser (§5).
 
-## What we found — in one paragraph
+## Status in one paragraph
 
-In our testing, MoltNet does what it says at the layers we checked: the three
-relays it shows are real, currently-running Tor relays; your browser's traffic
-egresses through a Tor exit; and if Tor goes down the browser **errors instead
-of quietly connecting directly**. The known leak paths (WebRTC, DNS, prefetch,
-HTTP/3) are closed in the shipped configuration. We have **not** yet commissioned
-an independent third-party audit (§5 says what that would add), and §3 shows how
-you can verify our claims yourself, without trusting us.
+MoltNet was redesigned in October 2026. It no longer routes your whole browser:
+it opens **separate MoltNet windows** in an isolated profile, and only those
+windows use Tor. The redesign has been reviewed in code and its Tor control-port
+layer has been tested against a real Tor (§3), but **the new design has not yet
+been tested end-to-end in a built browser**. The July 2026 test results that
+used to be on this page were for the old whole-browser design and no longer
+apply. Until the checks in §4 have been run on a release build, treat the
+claims below as the design intent, not as measured results.
 
-| Check | Result |
+## 1. What MoltNet does
+
+1. **Separate Tor windows.** "Enable MoltNet" starts MoltBrowser's own Tor and
+   opens a MoltNet window. Every tab in a MoltNet window goes through Tor.
+   Your regular windows and your normal private (incognito) windows are never
+   routed through Tor, and they are never touched by MoltNet's proxy settings.
+2. **A separate identity.** MoltNet windows use their own off-the-record
+   profile: cookies, cache and site storage are kept in memory, separate from
+   your regular and incognito windows, and discarded when the last MoltNet
+   window closes. Pages visited in MoltNet windows are not added to MoltBrowser's
+   on-device memory index.
+3. **New Identity.** Closes the MoltNet windows, drops their connections and
+   DNS cache, discards the MoltNet profile (fresh cookies, cache and storage),
+   asks Tor for new circuits (`SIGNAL NEWNYM`, and the reply is checked) and
+   opens a fresh MoltNet window. If Tor rejects the request, you see an error.
+4. **One circuit per site.** Each MoltNet connection tells Tor which top-level
+   site it belongs to (as the SOCKS username), so Tor puts different sites on
+   different circuits and exits (`IsolateSOCKSAuth`). A site's embedded
+   third-party content shares that site's circuit, as in Tor Browser.
+5. **A visible route.** The MoltNet panel shows the guard, middle and exit relay
+   of the current circuit (nickname, country, IP, fingerprint), read from Tor's
+   own control port. It never looks up or shows your real IP. In a MoltNet
+   window, *Verify* fetches `check.torproject.org` through Tor.
+6. **Bridges.** If Tor is blocked or watched where you are, Settings → MoltNet
+   offers the built-in snowflake or obfs4 bridges, or bridge lines you paste
+   from bridges.torproject.org.
+7. **Exit country (optional).** You can pin the exit to a country. This shrinks
+   the set of exits you share with other Tor users, which **reduces anonymity**;
+   the choice is not saved and resets when MoltBrowser restarts.
+
+## 2. How it is built
+
+**Isolation.** MoltNet windows run in a non-primary off-the-record profile
+(`OTRProfileID::CreateUnique("MoltNet::Tor")`) with its own network context.
+The Tor proxy and the leak-prevention settings below are written only to that
+profile's in-memory preferences. Earlier versions wrote the proxy into the
+regular profile and into the browser-wide (local state) settings; on startup
+MoltBrowser now removes exactly those old values.
+
+**Fail-closed.** The MoltNet profile's proxy is `socks5://127.0.0.1:<port>` with
+no direct fallback, so if Tor stops, pages in MoltNet windows fail with a proxy
+error instead of loading directly. A MoltNet window is only opened after (a) Tor
+reports an established circuit, (b) the proxy and leak settings are confirmed
+to be MoltNet's own (a policy, extension or command-line flag that overrides
+them blocks MoltNet with an error), and (c) the MoltNet profile's network
+context itself confirms it would send requests to exactly that SOCKS5 endpoint.
+MoltNet windows are never restored after a restart.
+
+**Leak controls on the MoltNet profile.**
+
+| Setting | Why |
 |---|---|
-| The relays shown are real, published, running Tor relays | ✅ Confirmed |
-| Your browsing egresses through a Tor exit | ✅ Confirmed |
-| Fail-closed — Tor down means an error, never a direct connection | ✅ Confirmed |
-| Leak-prevention settings applied (WebRTC / DNS / prefetch / DoH) | ✅ Confirmed |
-| Independent third-party audit + full wire-level capture | ⏳ Not yet done — see §5 |
+| `socks5://` proxy | hostnames are resolved by Tor, not your DNS resolver |
+| WebRTC `disable_non_proxied_udp` | WebRTC can't open direct UDP that would reveal your IP |
+| Network prediction off | no DNS prefetch / preconnect outside the proxy |
+| HTTPS-Only mode on | warns before any plain-HTTP page, which the exit relay could read or modify |
+| Connections partitioned by top-level site | no socket reuse across sites; enables per-site circuits |
 
-## 1. What MoltNet actually offers
+**MoltBrowser's own Tor.** MoltNet runs only the Tor bundled with MoltBrowser
+(a different Tor binary requires the explicit `--moltnet-tor-binary=<path>`
+switch; there is no Homebrew/PATH fallback). Tor picks its own SOCKS and control
+ports (`auto`), writes them to a private file, and every control connection uses
+SAFECOOKIE authentication, checking Tor's proof (`SERVERHASH`) before sending
+ours, so a program squatting on a port cannot impersonate Tor. Tor is told to
+exit when MoltBrowser exits (`__OwningControllerProcess` + `TAKEOWNERSHIP`).
+A system-wide `torrc-defaults` is ignored. Pasted bridge lines are validated
+strictly (only obfs4/snowflake, fixed character sets) so they cannot inject
+other Tor options.
 
-1. **Your whole browser through 3-hop Tor** (guard → middle → exit) — not one
-   proxied tab. *Scope note: Guest windows and secondary private windows are the
-   exception (§4).*
-2. **A visible route, with a country you can pick.** The panel names the three
-   relays your traffic uses — nickname, country, IP.
-3. **Leak-safe and fail-closed.** Steps to stop your IP leaking via WebRTC, DNS,
-   or speculative connections; if Tor is unavailable the browser errors.
-4. **Distributed trust, on purpose.** Real 3-hop Tor: no single relay sees both
-   your IP and your destination. That's why we don't call it a VPN.
+**Supply chain.** Release builds refuse to bundle a Tor download whose SHA-256
+is not pinned in `scripts/bundle-tor.sh`. The bump to Tor 15.0.15 left the pins
+empty on purpose (the Tor archive was unreachable when the version was bumped),
+so release builds fail until they are filled in using the gpg-verified steps
+documented in that script.
 
-Tor picks your relays randomly and rotates them, so your circuit differs every
-session. (Any specific relay you see in the panel can be looked up in the public
-Tor directory — see §3.)
+## 3. What has been verified, and how
 
-## 2. What we tested, and what we found
+| Check | How | Result |
+|---|---|---|
+| Control-protocol parsing, SAFECOOKIE HMAC, torrc generation, bridge validation | 22 unit tests (`molt_ai_unittests`); HMAC vectors computed independently with Python `hmac` and `openssl` | Pass (built standalone; not yet built in the Chromium tree) |
+| The generated torrc (incl. bridges + exit pin) is valid | `tor --verify-config`, Tor 0.4.9.11 | Pass |
+| SAFECOOKIE against a real Tor; wrong cookie rejected via SERVERHASH; `TAKEOWNERSHIP` makes Tor exit when MoltBrowser's connection closes; `SETCONF`/`RESETCONF`/`NEWNYM` accepted | Standalone harness around the shipped control-connection code, Tor 0.4.9.11 | Pass |
+| Tor accepts MoltBrowser's SOCKS5 username/password greeting and records a per-site username | Byte-for-byte replay against Tor 0.4.9.11 | Pass |
+| Isolation, fail-closed behaviour, leak controls, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
+| Independent third-party audit | — | **Not done** |
 
-**2(a) The relays it shows are real, running Tor nodes.** We looked up each
-relay's fingerprint in the Tor Project's *public* relay directory (onionoo) and
-compared it to the panel. All three were genuine, currently-published, running
-nodes; nickname, country, IP, and role all matched exactly (the guard carries
-Tor's Guard flag, the exit the Exit flag). Nothing was fabricated. *(This proves
-the relays are real; 2(b)/2(c) add that your traffic used them.)*
+## 4. Check it yourself (do this on every release build)
 
-**2(b) Your browsing actually exits through Tor.** We loaded
-`check.torproject.org` in the browser with MoltNet on; it reported `IsTor: true`
-and a Tor exit IP, not the real one.
+Do all of this in a MoltNet window unless the step says otherwise.
 
-**2(c) It's fail-closed — nothing slips out directly.** With MoltNet on, a fresh
-page load made **no direct connection** to the site — every connection went to
-the local Tor entry (`127.0.0.1:9050`). With Tor stopped, the browser **errored**
-rather than connecting directly. Routing only switches on once Tor confirms a
-working circuit.
+1. **You are on Tor.** Open `check.torproject.org`: it must say you are using
+   Tor and show an IP that isn't yours. The panel's *Verify* must show the
+   same exit IP.
+2. **Regular windows are untouched.** In a regular window, the same page must
+   show your normal IP and "not using Tor"; the toolbar shows "MoltNet", not
+   "Tor".
+3. **No IP, DNS, WebRTC or IPv6 leak.** ipleak.net, browserleaks.com/ip,
+   browserleaks.com/webrtc, dnsleaktest.com (extended), test-ipv6.com: none may
+   show your real IPv4/IPv6 address, your ISP's DNS resolver, or a local IP.
+4. **Watch the wire (decisive).** While loading a site in a MoltNet window:
+   `sudo tcpdump -n host <that site's IP>` must show nothing, and
+   `sudo tcpdump -n udp port 53 or udp port 443` must show nothing caused by the
+   page; only the Tor guard (or bridge) should be contacted.
+5. **Fail-closed.** Turn MoltNet off from a regular window, or kill the `tor`
+   process: pages in an open MoltNet window must fail with a proxy error,
+   never load directly. Restart MoltBrowser: no MoltNet window comes back.
+6. **Separate identity.** Log in to a site in a regular window; open it in a
+   MoltNet window: you must not be logged in. Set a cookie in a MoltNet window,
+   close all MoltNet windows, open a new one: the cookie must be gone.
+7. **New Identity.** Note the exit IP, press *New Identity*: the MoltNet windows
+   close, a new one opens, cookies are gone, and the exit IP normally changes.
+8. **Per-site circuits.** Open two different sites in MoltNet tabs and compare
+   the exit IP each one sees (e.g. two different IP-echo sites): they should
+   normally differ. In Tor's log with `SafeLogging 0` + `Log info`, streams for
+   different sites carry different SOCKS usernames.
+9. **Overrides are refused.** Start MoltBrowser with `--proxy-server=...` (or an
+   extension/policy proxy): opening a MoltNet window must fail with an error.
+10. **The relays are real.** *Copy route evidence* in the panel, then look up
+    each fingerprint on metrics.torproject.org or
+    `onionoo.torproject.org/details?lookup=<fingerprint>`.
 
-**2(d) The leak-prevention settings are actually on.** Verified on disk: proxy
-(browser + system) = `socks5://127.0.0.1:9050`; WebRTC =
-`disable_non_proxied_udp`; prefetch/preconnect = disabled; Secure DNS (DoH) =
-off. The four classic proxy-leak holes are closed; DNS resolves through Tor.
+## 5. What MoltNet does *not* do
 
-**2(e) Old connections are dropped when you turn it on.** Enabling MoltNet closes
-existing connections so they re-open through Tor instead of lingering on the
-direct path. *(Added after our first test caught a few background connections
-lingering briefly — they now drop to zero on enable.)*
+1. **It is not Tor Browser.** MoltNet windows still look like MoltBrowser on
+   your real operating system. There is no fingerprinting uniformity: no
+   letterboxing, and screen size, fonts, canvas/WebGL, time zone, language and
+   the OS in the user agent are your real ones. Sites can recognise and link
+   your visits by fingerprint. If your safety depends on not being identified,
+   use Tor Browser.
+2. **It doesn't hide who you are from sites you log into.**
+3. **The exit relay can see unencrypted traffic.** HTTPS-Only mode warns you
+   before plain HTTP; don't click through.
+4. **It won't beat an observer who watches both ends** and correlates timing.
+5. **Some sites block Tor**, and Tor is slower.
+6. **Only MoltNet windows are covered.** Regular windows, incognito windows,
+   browser background traffic (updates, component downloads, Safe Browsing
+   lookups made by the browser itself), and apps opened from a MoltNet window
+   (downloads opened externally, `mailto:` and other external links) do not go
+   through Tor.
+7. **Known gaps we have not closed yet:**
+   - Browser-level services in MoltNet windows have not been audited
+     individually: Safe Browsing's real-time hash-prefix checks, the AI side
+     panel (cloud AI providers), and other features may make requests outside
+     the MoltNet profile's network context.
+   - Requests to `localhost` / loopback addresses bypass the proxy (they stay on
+     your machine, but a page can probe local services).
+   - If Tor stops, another local program could take over its old port; MoltNet
+     windows would then talk to that program. Close MoltNet windows when you
+     turn MoltNet off.
+   - Linux builds don't bundle Tor yet (use `--moltnet-tor-binary`), and the
+     Windows packaging doesn't yet ship the pluggable transports, so bridges
+     there need a manual install.
+   - The Tor 15.0.15 SHA-256 pins in `scripts/bundle-tor.sh` are empty; release
+     builds fail until they are filled in.
+   - Bridges have been validated as configuration only; connecting through
+     snowflake/obfs4 has not been tested yet.
 
-## 3. Don't trust us — verify it yourself
+## 6. Privacy defaults for regular windows
 
-The website tests are necessary but not enough on their own; the decisive checks
-are the packet capture and the fail-closed test.
+Independently of MoltNet, regular profiles now start from more private
+defaults. These are *defaults*: if you already chose a different value, yours
+is kept, and you can change any of them in Settings.
 
-- **Check 0 — the relays are real.** In the MoltNet panel, click *⧉ Copy route
-  evidence*, then:
-  `curl 'https://onionoo.torproject.org/details?lookup=<FINGERPRINT>&fields=nickname,country_name,or_addresses,flags,running'`
-  — GOOD if it returns `running=true` and the same nickname/country/IP with the
-  expected flag. (Or the friendly page: metrics.torproject.org/rs.html.)
-- **Check 1 — you're on Tor.** Visit `check.torproject.org` → it says you're on
-  Tor with an IP that isn't yours. "New identity" should change the exit IP.
-- **Checks 2–5 — no IP/DNS/WebRTC/IPv6 leak.** ipleak.net, browserleaks.com/ip,
-  dnsleaktest.com (Extended), browserleaks.com/webrtc, test-ipv6.com — GOOD if
-  none shows your real home/ISP IP or IPv6 and WebRTC reveals no local IP. (DNS
-  resolving via the exit's upstream is fine; your *own* ISP resolver appearing
-  is the problem.)
-- **Check 6 — watch the wire (decisive).**
-  `sudo tcpdump -n host <a-site-you-just-visited>` → expect ZERO packets;
-  `sudo tcpdump -n udp port 53` → expect ZERO plain DNS. Only the Tor guard (or
-  the local Tor entry) should be contacted.
-- **Check 7 — fail-closed.** Quit Tor and try to browse → pages fail with a proxy
-  error; the browser does not quietly reconnect directly.
+- Third-party cookies blocked.
+- WebRTC only uses the default public network interface (no local or
+  VPN-hidden interface addresses in WebRTC candidates).
+- Network prediction (prefetch / preconnect / prerender) off.
+- Do Not Track off — sites ignore it and it is one more fingerprinting signal.
+- HTTPS-First (balanced) mode on, once, for profiles that never changed the
+  HTTPS-First setting.
+- Connections partitioned by top-level site.
+- The `Sec-CH-UA` brand list says "Chromium", like other Chromium-based
+  browsers, instead of advertising MoltBrowser.
 
-## 4. What MoltNet does *not* do — read this part
+**Global Privacy Control** is not offered: the Chromium version MoltBrowser is
+built on has no `Sec-GPC` / `navigator.globalPrivacyControl` support, and
+adding it correctly needs engine changes we haven't made.
 
-Tor routing hides your IP address. It is not total anonymity.
+## 7. Bottom line
 
-1. **It doesn't make you anonymous to sites you log into.** Sign in or type your
-   name/email/phone and the site knows who you are, Tor or not.
-2. **It is not Tor Browser** (the biggest one). MoltNet hides your *IP*, but
-   MoltBrowser is a normal Chromium-based browser with **no fingerprinting
-   defenses** — your browser fingerprint can still make you recognizable and link
-   your sessions. If your safety depends on being un-trackable, use the Tor
-   Browser, which is built for that.
-3. **The exit relay can see unencrypted traffic.** Tor encrypts between hops; the
-   exit decrypts before the site. On plain `http://` the exit could read/tamper —
-   always prefer HTTPS, even on Tor.
-4. **It won't beat a global observer** who can watch both ends and correlate
-   timing. Tor doesn't defend against that.
-5. **Some sites block or CAPTCHA Tor** (shared exit IPs).
-6. **It's slower** — traffic bounces through volunteer relays worldwide.
-7. **Guest windows and secondary private windows aren't covered.** Whole-browser
-   routing covers your normal windows and background traffic, but not a Guest
-   window or a second incognito context.
-
-**Where it genuinely helps:** real, free, distributed-trust Tor routing built
-into the browser — the guard sees your IP but not your destination; the exit sees
-your destination but not your IP. For hiding your IP and location from the sites
-you visit and from your ISP, that's a strong, honest tool.
-
-## 5. The honest bottom line
-
-Based on our own testing, MoltNet's 3-hop Tor routing works as described: the
-relays are real, your traffic exits through Tor, it fails closed rather than
-leaking, and the known leak paths are shut. We fixed the one issue we found (a
-few background connections lingering briefly on enable). We're publishing this so
-the claim isn't just marketing.
-
-We want to be equally clear about what this **isn't**: our own internal review,
-not an independent third-party audit. A formal external audit would add wire-level
-packet capture across every browser context, pin the observed exit to the exact
-relay, and check background/OS traffic while idle. We haven't done that yet; when
-we do, we'll publish it here too.
+MoltNet's new design keeps Tor browsing in separate windows with their own
+identity, fails closed, and only talks to MoltBrowser's own, authenticated Tor.
+It hides your IP address in those windows; it does not make you anonymous the
+way Tor Browser does. The control-port layer has been tested against a real
+Tor; the browser-level behaviour has not yet been tested on a build, and no
+independent audit has been done. We will publish those results here when we
+have them.
 
 ---
 
-*The MoltBrowser team. Relay details come from the Tor Project's public directory
-(onionoo / metrics.torproject.org). Leak-test sites are run by third parties.
-MoltBrowser is not affiliated with or endorsed by the Tor Project. Powered by Tor.*
+*The MoltBrowser team. Relay details come from the Tor Project's public
+directory (onionoo / metrics.torproject.org). Leak-test sites are run by third
+parties. MoltBrowser is not affiliated with or endorsed by the Tor Project.*

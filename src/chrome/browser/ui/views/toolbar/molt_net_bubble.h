@@ -2,8 +2,10 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // A translucent "Liquid Glass" bubble anchored to the toolbar MoltNet globe.
-// Hosts the chrome://molt-net/ WebUI (status + enable toggle + exit-country
-// picker) in a WebView whose widget, frame, and web contents are all made
+// Hosts the chrome://molt-net/ WebUI (this window's routing status, MoltNet
+// on/off, New Identity, exit-country picker) in a WebView — created in the
+// window's own profile, so the page reports that window's routing — whose
+// widget, frame, and web contents are all made
 // transparent so the page's CSS glass reads through. Replaces the native
 // SimpleMenuModel menu the globe button used to open.
 

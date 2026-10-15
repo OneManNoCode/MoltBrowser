@@ -1,0 +1,187 @@
+MoltBrowser patch for net/socket/socks5_client_socket.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/net/socket/socks5_client_socket.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/socks5_client_socket.cc b/net/socket/socks5_client_socket.cc
+index 3eeeb7e204c3d0040ae9277fc1eecb4fb5b684de..941856793713e9a3bc2f8906f843426eb6f39b2f 100644
+--- a/net/socket/socks5_client_socket.cc
++++ b/net/socket/socks5_client_socket.cc
+@@ -8,6 +8,7 @@
+ 
+ #include <array>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/compiler_specific.h"
+ #include "base/format_macros.h"
+@@ -50,6 +51,22 @@ SOCKS5ClientSocket::~SOCKS5ClientSocket() {
+   Disconnect();
+ }
+ 
++// MoltBrowser: see header. Invalid lengths leave auth disabled, so the
++// socket behaves exactly like upstream.
++void SOCKS5ClientSocket::SetUsernamePasswordAuth(std::string username,
++                                                 std::string password) {
++  DCHECK_EQ(STATE_NONE, next_state_);
++  DCHECK(!completed_handshake_);
++  if (username.empty() || username.size() > 0xFF || password.empty() ||
++      password.size() > 0xFF) {
++    auth_username_.clear();
++    auth_password_.clear();
++    return;
++  }
++  auth_username_ = std::move(username);
++  auth_password_ = std::move(password);
++}
++
+ int SOCKS5ClientSocket::Connect(CompletionOnceCallback callback) {
+   DCHECK(transport_socket_);
+   DCHECK_EQ(STATE_NONE, next_state_);
+@@ -224,6 +241,21 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
+         net_log_.EndEventWithNetErrorCode(NetLogEventType::SOCKS5_GREET_READ,
+                                           rv);
+         break;
++      // MoltBrowser: RFC 1929 sub-negotiation (no dedicated NetLog events).
++      case STATE_AUTH_WRITE:
++        DCHECK_EQ(OK, rv);
++        rv = DoAuthWrite();
++        break;
++      case STATE_AUTH_WRITE_COMPLETE:
++        rv = DoAuthWriteComplete(rv);
++        break;
++      case STATE_AUTH_READ:
++        DCHECK_EQ(OK, rv);
++        rv = DoAuthRead();
++        break;
++      case STATE_AUTH_READ_COMPLETE:
++        rv = DoAuthReadComplete(rv);
++        break;
+       case STATE_HANDSHAKE_WRITE:
+         DCHECK_EQ(OK, rv);
+         net_log_.BeginEvent(NetLogEventType::SOCKS5_HANDSHAKE_WRITE);
+@@ -254,6 +286,15 @@ int SOCKS5ClientSocket::DoLoop(int last_io_result) {
+ static constexpr std::array<uint8_t, 3> kSOCKS5GreetWriteData{
+     0x05, 0x01, 0x00};  // no authentication
+ 
++// MoltBrowser: offer "no authentication" (0x00) and RFC 1929
++// username/password (0x02). Proxies that don't do 0x02 pick 0x00, so this
++// stays compatible; Tor picks 0x02 (unless PreferSOCKSNoAuth is set).
++static constexpr std::array<uint8_t, 4> kSOCKS5GreetWriteDataWithAuth{
++    0x05, 0x02, 0x00, 0x02};
++static constexpr uint8_t kSOCKS5MethodNoAuth = 0x00;
++static constexpr uint8_t kSOCKS5MethodUsernamePassword = 0x02;
++static constexpr uint8_t kSOCKS5UsernamePasswordVersion = 0x01;
++
+ int SOCKS5ClientSocket::DoGreetWrite() {
+   // Since we only have 1 byte to send the hostname length in, if the
+   // URL has a hostname longer than 255 characters we can't send it.
+@@ -263,10 +304,15 @@ int SOCKS5ClientSocket::DoGreetWrite() {
+   }
+ 
+   if (!write_buf_) {
++    // MoltBrowser: also offer username/password when credentials are set.
+     auto greet_buffer =
+-        base::MakeRefCounted<WrappedIOBuffer>(kSOCKS5GreetWriteData);
++        auth_username_.empty()
++            ? base::MakeRefCounted<WrappedIOBuffer>(kSOCKS5GreetWriteData)
++            : base::MakeRefCounted<WrappedIOBuffer>(
++                  kSOCKS5GreetWriteDataWithAuth);
++    const int greet_size = greet_buffer->size();
+     write_buf_ = base::MakeRefCounted<DrainableIOBuffer>(
+-        std::move(greet_buffer), greet_buffer->size());
++        std::move(greet_buffer), greet_size);
+   }
+ 
+   next_state_ = STATE_GREET_WRITE_COMPLETE;
+@@ -323,12 +369,88 @@ int SOCKS5ClientSocket::DoGreetReadComplete(int result) {
+                                    "version", read_data[0]);
+     return ERR_SOCKS_CONNECTION_FAILED;
+   }
+-  if (read_data[1] != 0x00) {
++  // MoltBrowser: accept username/password only if we offered it.
++  const bool use_auth = read_data[1] == kSOCKS5MethodUsernamePassword &&
++                        !auth_username_.empty();
++  if (read_data[1] != kSOCKS5MethodNoAuth && !use_auth) {
+     net_log_.AddEventWithIntParams(NetLogEventType::SOCKS_UNEXPECTED_AUTH,
+                                    "method", read_data[1]);
+     return ERR_SOCKS_CONNECTION_FAILED;
+   }
+ 
++  read_buf_.reset();
++  next_state_ = use_auth ? STATE_AUTH_WRITE : STATE_HANDSHAKE_WRITE;
++  return OK;
++}
++
++// MoltBrowser: RFC 1929 request: VER(0x01) ULEN UNAME PLEN PASSWD.
++int SOCKS5ClientSocket::DoAuthWrite() {
++  next_state_ = STATE_AUTH_WRITE_COMPLETE;
++  if (!write_buf_) {
++    std::vector<uint8_t> request;
++    request.reserve(3 + auth_username_.size() + auth_password_.size());
++    request.push_back(kSOCKS5UsernamePasswordVersion);
++    request.push_back(base::checked_cast<uint8_t>(auth_username_.size()));
++    request.insert(request.end(), auth_username_.begin(),
++                   auth_username_.end());
++    request.push_back(base::checked_cast<uint8_t>(auth_password_.size()));
++    request.insert(request.end(), auth_password_.begin(),
++                   auth_password_.end());
++    auto buffer = base::MakeRefCounted<VectorIOBuffer>(std::move(request));
++    const int size = buffer->size();
++    write_buf_ =
++        base::MakeRefCounted<DrainableIOBuffer>(std::move(buffer), size);
++  }
++  return transport_socket_->Write(write_buf_.get(),
++                                  write_buf_->BytesRemaining(), io_callback_,
++                                  traffic_annotation_);
++}
++
++int SOCKS5ClientSocket::DoAuthWriteComplete(int result) {
++  if (result < 0) {
++    return result;
++  }
++  write_buf_->DidConsume(result);
++  if (write_buf_->BytesRemaining() == 0) {
++    write_buf_.reset();
++    next_state_ = STATE_AUTH_READ;
++  } else {
++    next_state_ = STATE_AUTH_WRITE;
++  }
++  return OK;
++}
++
++// MoltBrowser: RFC 1929 reply: VER(0x01) STATUS(0x00 = success).
++int SOCKS5ClientSocket::DoAuthRead() {
++  next_state_ = STATE_AUTH_READ_COMPLETE;
++  if (!read_buf_) {
++    read_buf_ = base::MakeRefCounted<GrowableIOBuffer>();
++    read_buf_->SetCapacity(2);
++  }
++  return transport_socket_->Read(read_buf_.get(),
++                                 read_buf_->RemainingCapacity(), io_callback_);
++}
++
++int SOCKS5ClientSocket::DoAuthReadComplete(int result) {
++  if (result < 0) {
++    return result;
++  }
++  if (result == 0) {
++    net_log_.AddEvent(
++        NetLogEventType::SOCKS_UNEXPECTEDLY_CLOSED_DURING_GREETING);
++    return ERR_SOCKS_CONNECTION_FAILED;
++  }
++  read_buf_->set_offset(read_buf_->offset() + result);
++  if (read_buf_->RemainingCapacity() > 0) {
++    next_state_ = STATE_AUTH_READ;
++    return OK;
++  }
++  base::span<uint8_t> read_data = read_buf_->span_before_offset();
++  if (read_data[0] != kSOCKS5UsernamePasswordVersion || read_data[1] != 0x00) {
++    net_log_.AddEventWithIntParams(NetLogEventType::SOCKS_UNEXPECTED_AUTH,
++                                   "method", kSOCKS5MethodUsernamePassword);
++    return ERR_SOCKS_CONNECTION_FAILED;
++  }
+   read_buf_.reset();
+   next_state_ = STATE_HANDSHAKE_WRITE;
+   return OK;

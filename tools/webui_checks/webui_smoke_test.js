@@ -122,9 +122,50 @@ const PAGES = [
      assert.strictEqual(doc.querySelectorAll('#bmlist img[onerror], #bmlist b').length, 0);
      assert(doc.querySelector('#implist .flag svg'), 'browser logo rendered via moltHTML');
    }},
+  {name: 'molt://net', file: 'molt_net_ui.cc',
+   listeners: ['#openWindowBtn:click', '#newIdentityBtn:click', '#settingsBtn:click'],
+   noClick: ['#settingsBtn'],
+   responses: {
+     'moltnet.getStatus': {running: true, starting: false, selected: '', mode: 'multi_hop',
+                           routing: 'tor', in_moltnet_window: true,
+                           proxy_externally_controlled: false},
+     'moltnet.getExitCountries': {available: [
+       {code: 'de', name: '<img src=x onerror=alert(1)>'}], selected: ''},
+     'moltnet.getCircuit': {connected: true, hops: [
+       {role: 'guard', country: 'DE', country_name: '<b>Germany</b>', ip: '192.0.2.1',
+        nickname: '<img src=x onerror=alert(1)>', fingerprint: 'A'.repeat(40)},
+       {role: 'middle', country: 'NL', ip: '192.0.2.2', nickname: 'm', fingerprint: 'B'.repeat(40)},
+       {role: 'exit', country: 'SE', ip: '192.0.2.3', nickname: 'e', fingerprint: 'C'.repeat(40)}]},
+     'moltnet.openWindow': {running: true, routing: 'not_routed',
+                            error: '<img src=x onerror=alert(1)>'},
+     'moltnet.newIdentity': {running: true, routing: 'tor', in_moltnet_window: true},
+     'moltnet.setMode': {running: false, routing: 'not_routed'},
+     'moltnet.setExitCountry': {running: true, selected: 'de', routing: 'tor', in_moltnet_window: true},
+     'moltnet.verifyExit': {ok: true, ip: '192.0.2.3', is_tor: true},
+   },
+   async after(window) {
+     const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 15));
+     await tick();
+     assert.strictEqual(doc.getElementById('st').textContent, 'Private via Tor',
+                        'status reflects this window\'s routing');
+     assert(!/Your IP|origin/i.test(doc.body.textContent), 'no real-IP display');
+     assert(!window.__sent.some((m) => /ipify/i.test(m)), 'no IP lookup');
+     assert.strictEqual(doc.querySelectorAll('img, b').length, 0, 'relay/country data stays text');
+     const verify = Array.from(doc.querySelectorAll('.hbtn')).find((b) => b.textContent === 'Verify');
+     assert(verify, 'exit can be verified from a MoltNet window');
+     verify.click(); await tick();
+     assert(/Tor confirmed/.test(doc.getElementById('routeWrap').textContent));
+     doc.getElementById('openWindowBtn').click(); await tick();
+     assert.strictEqual(doc.getElementById('err').textContent, '<img src=x onerror=alert(1)>',
+                        'errors are shown as text');
+     doc.querySelector('#list .row:nth-child(2)').click(); await tick();
+     assert(window.__sent.includes('moltnet.setExitCountry'));
+   }},
   {name: 'molt://ai-settings', file: 'molt_ai_settings_ui.cc',
    listeners: ['#maxTokens:input', '#temperature:input', '#backBtn:click',
-               '#moltnetEnabled:change', '#routingMode:change', '#newCircuitBtn:click',
+               '#moltnetEnabled:change', '#newCircuitBtn:click',
+               '#bridgeMode:change', '#saveBridgesBtn:click',
                '#exitCountry:change', '#importAllBtn:click', '#saveBtn:click',
                '#resetBtn:click'],
    noClick: ['#backBtn'],
@@ -132,6 +173,8 @@ const PAGES = [
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      getMoltnetExitCountries: {available: [{code: 'de', name: 'Germany'}], selected: ''},
+     getMoltnetBridges: {mode: 'custom', custom_lines: '<img src=x onerror=alert(1)>'},
+     setMoltnetBridges: {ok: false, error: '<b>Line 1: bad</b>'},
 
      getImportableBrowsers: {browsers: [
        {id: 'chrome', display_name: '<img src=x>', installed: true, has_passwords_store: true},
@@ -184,6 +227,11 @@ const PAGES = [
      assert.strictEqual(doc.getElementById('tempVal').textContent, '1.3');
      assert.strictEqual(doc.querySelectorAll('#browserList img').length, 0, 'browser names are text');
      assert(doc.querySelector('#browserList svg'), 'browser logos rendered');
+     assert.strictEqual(doc.getElementById('bridgeLines').style.display, 'block',
+                        'custom bridge lines shown for custom mode');
+     doc.getElementById('saveBridgesBtn').click(); await tick();
+     assert(window.__sent.includes('setMoltnetBridges'), 'bridges saved via setMoltnetBridges');
+     assert.strictEqual(doc.querySelectorAll('#bridgeStatus b').length, 0, 'bridge errors are text');
      window.cr.webUIListenerCallback('moltnet-status', {status: 'connected', relays: [
        {country: 'de', relay_id: '"><img src=x onerror=alert(1)>', ip: '1.2.3.4'}]});
      const circuit = doc.getElementById('circuitDisplay');

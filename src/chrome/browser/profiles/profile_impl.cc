@@ -63,6 +63,7 @@
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
 #include "chrome/browser/k_anonymity_service/k_anonymity_service_factory.h"
+#include "chrome/browser/molt_ai/privacy/molt_privacy_prefs.h"
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
 #include "chrome/browser/origin_trials/origin_trials_factory.h"
@@ -649,6 +650,10 @@ void ProfileImpl::LoadPrefsForNormalStartup(bool async_prefs) {
   ::RegisterProfilePrefs(is_signin_profile,
                          g_browser_process->GetApplicationLocale(),
                          pref_registry_.get());
+  // MoltBrowser: privacy-by-default values (3P cookies blocked, WebRTC
+  // default_public_interface_only, prediction off, DNT off). Changes only
+  // DEFAULTS, so explicit user choices are kept.
+  molt_ai::privacy::SetPrivacyPrefDefaults(pref_registry_.get());
 
   mojo::PendingRemote<prefs::mojom::TrackedPreferenceValidationDelegate>
       pref_validation_delegate;
@@ -688,6 +693,10 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
   // modification.
   if (!prefs->HasPrefPath(prefs::kProfileCreationTime))
     prefs->SetTime(prefs::kProfileCreationTime, path_creation_time_);
+
+  // MoltBrowser: one-time privacy migrations (HTTPS-First balanced mode for
+  // profiles that never touched the HTTPS-First settings).
+  molt_ai::privacy::ApplyPrivacyPrefMigrations(prefs);
 
   pref_change_registrar_.Init(prefs);
   pref_change_registrar_.Add(

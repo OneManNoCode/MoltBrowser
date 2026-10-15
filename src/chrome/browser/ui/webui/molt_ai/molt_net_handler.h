@@ -1,10 +1,10 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// WebUIMessageHandler backing chrome://molt-net/. Bridges the glass popover's
-// chrome.send() calls to the process-global molt_ai::tor::TorManager — the
-// same backend the toolbar globe menu drives. No mojo, no Profile plumbing:
-// every call goes through TorManager::Get().
+// WebUIMessageHandler backing chrome://molt-net/ (the toolbar MoltNet
+// popover). It reports the routing of the window it is shown in — a MoltNet
+// window is "Private via Tor", a regular window is "Not routed" — and drives
+// MoltNetWindow / TorManager. It never proxies the profile it runs in.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_NET_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_NET_HANDLER_H_
@@ -35,38 +35,35 @@ class MoltNetHandler : public content::WebUIMessageHandler {
   void RegisterMessages() override;
 
  private:
-  // Each takes [callback_id, ...args] and resolves the promise on the JS side.
+  // Each takes [callback_id, ...args] and resolves the promise on the JS side
+  // with the status dict (see StatusDict in the .cc), plus "error" on failure.
   void HandleGetStatus(const base::ListValue& args);
   void HandleGetExitCountries(const base::ListValue& args);
   void HandleSetExitCountry(const base::ListValue& args);
+  // On: start Tor and open a MoltNet window. Off: close MoltNet windows and
+  // stop Tor.
   void HandleToggle(const base::ListValue& args);
+  // Legacy mode switch: "direct" == off, anything else == open a window.
   void HandleSetMode(const base::ListValue& args);
+  void HandleOpenWindow(const base::ListValue& args);
   void HandleNewIdentity(const base::ListValue& args);
 
-  // Circuit-transparency panel. GetCircuit returns the current Tor path (guard
-  // -> middle -> exit with each relay's country + IP) plus the cached origin
-  // IP. VerifyExit fetches check.torproject.org/api/ip THROUGH Tor to confirm
-  // the exit IP websites actually see.
+  // Circuit-transparency panel. GetCircuit returns the current Tor path
+  // (guard -> middle -> exit with each relay's country + IP, from Tor's own
+  // control port). VerifyExit fetches check.torproject.org/api/ip THROUGH
+  // the MoltNet profile (i.e. through Tor) to confirm the exit IP websites
+  // see. Nothing here ever looks up the user's real IP.
   void HandleGetCircuit(const base::ListValue& args);
   void HandleVerifyExit(const base::ListValue& args);
   void OnVerifyExitDone(std::string callback_id,
                         std::optional<std::string> body);
 
-  // The profile backing this WebUI (the browser window that opened the
-  // popover). Null only if the WebContents/context is gone.
+  // The profile backing this WebUI (the window that opened the popover).
   Profile* GetProfile();
 
-  // Idempotently reconcile this profile's network routing with the Tor
-  // daemon's actual running state: Tor up -> apply leak-safe routing; Tor
-  // down -> restore direct. Used on the synchronous stop paths.
-  void ApplyRoutingForCurrentTorState();
-
-  // Called from TorManager::Launch's callback. |tor_ready| is true only once
-  // Tor has an established circuit (can actually carry traffic). Ready ->
-  // apply routing; NOT ready (bootstrap failed/timed out) -> stop the daemon
-  // and keep the profile on a direct connection, so a stuck Tor never leaves
-  // the browser stranded behind a dead proxy.
-  void ApplyRoutingForLaunchResult(bool tor_ready);
+  // Resolves |callback_id| with the current status plus |error| (if any).
+  void ResolveWithStatus(const std::string& callback_id,
+                         const std::string& error);
 
   // Loader for the (Tor-proxied) exit-verify fetch. One at a time.
   std::unique_ptr<network::SimpleURLLoader> verify_loader_;

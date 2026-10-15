@@ -150,7 +150,7 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
     echo "=== Bundling Tor ==="
     "$SCRIPT_DIR/bundle-tor.sh" --app "$APP" || {
       echo "[build] WARNING: tor bundling failed. The app builds fine"
-      echo "[build] but /tor launch will fall back to system tor if any."
+      echo "[build] but MoltNet won't work (no system-tor fallback)."
     }
     echo ""
     # Phase Tier-5: bundle whisper.cpp for the voice-mode mic button.

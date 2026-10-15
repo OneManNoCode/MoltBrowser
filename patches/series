@@ -42,6 +42,7 @@ chrome/browser/chrome_content_browser_client.cc.patch
 chrome/browser/prefs/session_startup_pref.cc.patch
 chrome/browser/profiles/BUILD.gn.patch
 chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc.patch
+chrome/browser/profiles/profile.cc.patch
 chrome/browser/profiles/profile_impl.cc.patch
 chrome/browser/resources/new_tab_page/new_tab_page.html.patch
 chrome/browser/resources/settings/page_visibility.ts.patch
@@ -129,6 +130,10 @@ components/supervised_user_strings.grdp.patch
 components/sync/service/sync_prefs.cc.patch
 components/sync_ui_strings.grdp.patch
 content/common/url_schemes.cc.patch
+net/base/features.cc.patch
+net/socket/socks5_client_socket.cc.patch
+net/socket/socks5_client_socket.h.patch
+net/socket/socks_connect_job.cc.patch
 third_party/rust/chromium_crates_io/Cargo.lock.patch
 third_party/rust/chromium_crates_io/Cargo.toml.patch
 third_party/rust/chromium_crates_io/gnrt_config.toml.patch

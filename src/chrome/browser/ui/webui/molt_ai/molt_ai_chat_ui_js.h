@@ -1205,13 +1205,10 @@ function tryDispatchHopsCommand(text) {
 }
 
 // --------------------------------------------------------------
-// Tor (Phase B.1): /tor [status|circuit|circuits|help]
-// Talks to a locally-running Tor over its control port (127.0.0.1:9051).
-// Honest about scope: this batch ships the visualizer + the protocol
-// integration. Routing through Tor lands in Phase B.2 — until then,
-// /tor status shows whether local Tor is running and /tor circuit
-// shows the live circuit list (guard / middle / exit hops with their
-// nicknames).
+// MoltNet (Tor): /tor [status|circuit|circuits|launch|open|close|help]
+// Talks only to MoltNet's own Tor (SAFECOOKIE-authenticated control port
+// on an auto-selected port). /tor open loads a URL in a MoltNet window —
+// the isolated Tor profile — never in the regular or incognito profile.
 // --------------------------------------------------------------
 function renderTorCircuits(circuits) {
   if (!circuits || !circuits.length) {
@@ -1268,8 +1265,8 @@ function tryDispatchTorCommand(text) {
       '  /tor status            — is Tor available? running? bundled or system?\n' +
       '  /tor circuit           — live circuit hops with country flags\n' +
       '  /tor launch            — start the bundled tor (no install needed)\n' +
-      '  /tor open <url>        — open URL in OTR session routed through Tor\n' +
-      '  /tor close             — stop the managed tor child process\n' +
+      '  /tor open <url>        — open URL in a MoltNet (Tor) window\n' +
+      '  /tor close             — close MoltNet windows and stop tor\n' +
       '\n' +
       'MoltBrowser ships with tor bundled inside the app. Run\n' +
       '/tor launch to start it, /tor open <url> to use it.\n' +
@@ -1286,7 +1283,7 @@ function tryDispatchTorCommand(text) {
         currentAiText = '✓ Tor launched.\n' +
                         '  Binary: ' + (r.binary_path || '?') + '\n' +
                         '  PID:    ' + (r.pid || '?') + '\n\n' +
-                        'Use /tor open <url> to route a tab through it.';
+                        'Use /tor open <url> to open a page in a MoltNet window.';
       } else {
         currentAiText = '✗ ' + (r.error || 'launch failed');
       }
@@ -1297,8 +1294,7 @@ function tryDispatchTorCommand(text) {
   }
   if (sub === 'close' || sub === 'stop' || sub === 'kill') {
     sendWithPromise('stopTor').then(function() {
-      currentAiText = '✓ Sent SIGTERM to managed tor child. ' +
-                      'External tor (if any) is unaffected.';
+      currentAiText = '✓ Closed MoltNet windows and stopped MoltNet\'s tor.';
       finishAiMessage();
       setGenerating(false);
     });
@@ -1317,14 +1313,13 @@ function tryDispatchTorCommand(text) {
       setGenerating(false);
       return true;
     }
-    appendToAiMessage('Configuring SOCKS5 proxy on OTR profile and ' +
-                       'opening ' + url + '...');
+    appendToAiMessage('Starting Tor (if needed) and opening ' + url +
+                       ' in a MoltNet window...');
     sendWithPromise('openTorTab', url).then(function(r) {
       if (r.success) {
-        currentAiText = '✓ Opened ' + r.url + ' in an OTR window ' +
-                        'routed through ' + r.proxy + '.\n\n' +
-                        'All tabs in that OTR window now use Tor. ' +
-                        'Close the window to revert.';
+        currentAiText = '✓ Opened ' + r.url + ' in a MoltNet window.\n\n' +
+                        'Only MoltNet windows use Tor; they have their own ' +
+                        'cookies, discarded when the last one closes.';
       } else {
         currentAiText = '✗ ' + (r.error || 'open-tor-tab failed');
       }
@@ -1343,7 +1338,7 @@ function tryDispatchTorCommand(text) {
     return true;
   }
   // status (default)
-  appendToAiMessage('Probing local Tor on 127.0.0.1:9051...');
+  appendToAiMessage('Checking MoltNet\'s Tor...');
   sendWithPromise('getTorStatus').then(function(r) {
     if (!r.running) {
       var src = r.binary_source || 'none';
@@ -1376,8 +1371,8 @@ function tryDispatchTorCommand(text) {
       lines.push('');
       lines.push(renderTorCircuits(c && c.circuits));
       lines.push('');
-      lines.push('Routing your tabs through these circuits lands in ' +
-                 'Phase B.2. Today: visualization layer.');
+      lines.push('Only MoltNet windows are routed through Tor ' +
+                 '(/tor open <url>).');
       currentAiText = lines.join('\n');
       finishAiMessage();
       setGenerating(false);
