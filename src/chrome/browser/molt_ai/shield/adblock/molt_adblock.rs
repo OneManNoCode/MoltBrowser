@@ -22,6 +22,7 @@
 mod css;
 mod engine;
 mod preprocess;
+mod procedural;
 mod removeparam;
 
 use std::sync::Once;
@@ -55,13 +56,20 @@ mod ffi {
     /// Cosmetic resources for one document URL.
     struct CosmeticResources {
         /// User stylesheet: one `sel{display:none!important}` rule per
-        /// vetted selector.
+        /// vetted selector, then `sel{prop:value!important}` rules from
+        /// `:style()` filters on plain selectors.
         hide_css: String,
         /// Scriptlets to run in the main world at document start (an IIFE);
         /// arguments are JSON-escaped by adblock-rust. Empty if none.
         injected_script: String,
         /// `$generichide`: skip the generic class/id pass for this page.
         generichide: bool,
+        /// Procedural/action filters for the renderer's procedural engine:
+        /// a vetted JSON array (data, never script). Empty if none.
+        procedural_json: String,
+        /// Sanitized `prop:value!important;...` blocks referenced by index
+        /// from `procedural_json` `:style()` actions.
+        procedural_styles: Vec<String>,
         procedural_count: u32,
     }
 
@@ -209,6 +217,8 @@ impl ShieldEngine {
             hide_css: c.hide_css,
             injected_script: c.injected_script,
             generichide: c.generichide,
+            procedural_json: c.procedural_json,
+            procedural_styles: c.procedural_styles,
             procedural_count: c.procedural_count,
         }
     }

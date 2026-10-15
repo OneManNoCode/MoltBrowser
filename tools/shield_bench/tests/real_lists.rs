@@ -271,3 +271,105 @@ fn builtin_params_do_not_duplicate_list_rules() {
     assert!(remaining < all, "{remaining} vs {all}");
     assert!(remaining >= 20, "utm_* should remain built in: {remaining}");
 }
+
+/// Hosts named by procedural/action cosmetic rules in the default lists
+/// (first plain hostname of each rule).
+fn procedural_hosts() -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("lists");
+    let mut hosts = std::collections::BTreeSet::new();
+    for (name, _) in LISTS {
+        let Ok(text) = std::fs::read_to_string(dir.join(name)) else { continue };
+        for line in text.lines() {
+            let Some(sep) = line.find("##").or_else(|| line.find("#?#")) else { continue };
+            let body = &line[sep..];
+            let procedural = [
+                ":has-text(", ":upward(", ":matches-css", ":xpath(", ":min-text-length(",
+                ":matches-attr(", ":matches-path(", ":remove()", ":style(", ":remove-attr(",
+                ":remove-class(", ":-abp-contains(",
+            ]
+            .iter()
+            .any(|op| body.contains(op));
+            if !procedural || sep == 0 || line.starts_with('!') || body.starts_with("##+js") {
+                continue;
+            }
+            if let Some(host) = line[..sep]
+                .split(',')
+                .find(|h| !h.starts_with('~') && !h.ends_with(".*") && h.contains('.'))
+            {
+                hosts.insert(host.to_string());
+            }
+        }
+    }
+    hosts.into_iter().collect()
+}
+
+#[test]
+fn procedural_filters_from_real_lists() {
+    let e = engine_or_skip!();
+    let hosts = procedural_hosts();
+    assert!(hosts.len() > 100, "{}", hosts.len());
+    let (mut count, mut dropped, mut pages_with_js, mut style_rules) = (0u64, 0u64, 0u64, 0u64);
+    // Every page's procedural input, for the JS engine's corpus test
+    // (tools/shield_bench/procedural_filters_test.js).
+    let mut corpus = Vec::new();
+    for host in &hosts {
+        let c = e.cosmetic(&format!("https://{host}/"));
+        count += u64::from(c.procedural_count);
+        dropped += u64::from(c.procedural_dropped);
+        style_rules += c.hide_css.lines().filter(|l| !l.ends_with("{display:none!important}")).count()
+            as u64;
+        if c.procedural_count == 0 {
+            assert!(c.procedural_json.is_empty());
+            continue;
+        }
+        pages_with_js += 1;
+        let v: serde_json::Value = serde_json::from_str(&c.procedural_json).expect("valid JSON");
+        corpus.push(serde_json::json!({
+            "host": host,
+            "filters": v.clone(),
+            "styles": c.procedural_styles.clone(),
+        }));
+        let filters = v.as_array().expect("array");
+        assert_eq!(filters.len(), c.procedural_count as usize);
+        for f in filters {
+            assert!(!f["selector"].as_array().expect("ops").is_empty(), "{f}");
+            if let Some(i) = f["action"]["arg"].as_u64().filter(|_| f["action"]["type"] == "style") {
+                assert!((i as usize) < c.procedural_styles.len(), "{f}");
+            }
+        }
+        // The hide stylesheet no longer carries procedural selectors.
+        for line in c.hide_css.lines() {
+            assert!(!line.contains(":has-text(") && !line.contains(":upward("), "{line}");
+            assert_eq!(line.matches('{').count(), 1, "{line}");
+        }
+        for s in &c.procedural_styles {
+            assert!(s.ends_with("!important") && !s.contains(['{', '}', '\\']), "{s}");
+        }
+    }
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/procedural_corpus.json");
+    std::fs::write(&out, serde_json::Value::Array(corpus).to_string()).expect("write corpus");
+    eprintln!(
+        "procedural: {} hosts, {pages_with_js} with procedural filters, {count} filters applied, \
+         {dropped} dropped ({:.1}%), {style_rules} :style() rules as CSS",
+        hosts.len(),
+        100.0 * dropped as f64 / (count + dropped).max(1) as f64
+    );
+    assert!(count > 300, "{count}");
+    // Most real-world procedural filters are supported and pass vetting.
+    assert!(dropped * 10 < count, "dropped {dropped} of {}", count + dropped);
+}
+
+#[test]
+fn procedural_real_rule_shapes() {
+    let e = engine_or_skip!();
+    // uBO filters: `bestbuy.com#?#div[data-testid="Row_testID"]:has(span:has-text(Sponsored))`
+    let c = e.cosmetic("https://www.bestbuy.com/");
+    assert!(
+        c.procedural_json.contains(
+            r#"{"selector":[{"arg":"div[data-testid=\"Row_testID\"]","type":"css-selector"},{"arg":[{"arg":" span","type":"css-selector"},{"arg":{"text":"Sponsored"},"type":"has-text"}],"type":"has"}]}"#
+        ),
+        "{}",
+        c.procedural_json
+    );
+    assert!(!c.hide_css.contains(":has-text("));
+}

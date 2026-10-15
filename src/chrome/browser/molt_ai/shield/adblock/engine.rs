@@ -17,6 +17,7 @@ use base64::Engine as _;
 
 use crate::css;
 use crate::preprocess::{self, PreprocessEnv};
+use crate::procedural;
 use crate::removeparam;
 
 /// Version of the adblock-rust crate this bridge is built against. The
@@ -157,17 +158,28 @@ pub struct CheckOutcome {
 /// Cosmetic resources for a document URL.
 #[derive(Debug, Default, Clone)]
 pub struct CosmeticOutcome {
-    /// `sel{display:none!important}` rules (hostname-specific + generic
-    /// complex selectors), vetted by `css::is_safe_selector`.
+    /// User stylesheet: `sel{display:none!important}` rules (hostname-
+    /// specific + generic complex selectors), vetted by
+    /// `css::is_safe_selector`, then `sel{prop:value!important}` rules from
+    /// `:style()` filters with a plain selector (see procedural.rs).
     pub hide_css: String,
     /// Scriptlet bundle to run in the page's main world at document start,
     /// wrapped in an IIFE. Empty if there's nothing to inject.
     pub injected_script: String,
     /// `$generichide`: don't query generic class/id rules for this page.
     pub generichide: bool,
-    /// Procedural/action filters (`:has-text()`, `:remove()`, …) matched for
-    /// this URL. MoltShield doesn't execute them yet; reported for stats.
+    /// Procedural and action filters (`:has-text()`, `:upward()`,
+    /// `:remove()`, ...) for the renderer's procedural engine, as vetted
+    /// JSON (format in procedural.rs). Empty if none.
+    pub procedural_json: String,
+    /// Sanitized declaration blocks the procedural filters' `:style()`
+    /// actions refer to by index.
+    pub procedural_styles: Vec<String>,
+    /// Filters in `procedural_json`.
     pub procedural_count: u32,
+    /// Procedural/action filters for this URL dropped as unsupported or
+    /// unsafe.
+    pub procedural_dropped: u32,
 }
 
 pub struct ShieldEngine {
@@ -292,13 +304,22 @@ impl ShieldEngine {
 
     pub fn cosmetic(&self, url: &str) -> CosmeticOutcome {
         let r = self.engine.url_cosmetic_resources(url);
-        let mut selectors: Vec<&str> = r.hide_selectors.iter().map(String::as_str).collect();
+        let p = procedural::process(
+            r.hide_selectors.iter().map(String::as_str),
+            r.procedural_actions.iter().map(String::as_str),
+        );
+        let mut selectors: Vec<&str> = p.plain_hide_selectors.iter().map(String::as_str).collect();
         selectors.sort_unstable();
+        let mut hide_css = css::hide_stylesheet(selectors);
+        hide_css.push_str(&p.style_css);
         CosmeticOutcome {
-            hide_css: css::hide_stylesheet(selectors),
+            hide_css,
             injected_script: wrap_scriptlets(&r.injected_script),
             generichide: r.generichide,
-            procedural_count: u32::try_from(r.procedural_actions.len()).unwrap_or(u32::MAX),
+            procedural_json: p.filters_json,
+            procedural_styles: p.styles,
+            procedural_count: p.count,
+            procedural_dropped: p.dropped,
         }
     }
 

@@ -46,7 +46,9 @@ int32_t run_cxx_smoke(rust::Str list_text, rust::Str resources_json) {
   uint32_t lines = builder->add_list(list_text, /*trusted=*/false);
   lines += builder->add_list(
       "example.com##+js(set-constant, adsEnabled, false)\n"
-      "example.com##.promo\n##.generic-ad\n",
+      "example.com##.promo\n##.generic-ad\n"
+      "example.com##.card:has-text(Sponsored)\n"
+      "example.com##.tile:has-text(Ad):style(opacity: 0)\n",
       /*trusted=*/true);
   Expect(lines > 1000 && builder->rule_lines() == lines, "add_list counts");
   rust::Box<ffi::ShieldEngine> engine = ffi::build_engine(std::move(builder));
@@ -82,6 +84,12 @@ int32_t run_cxx_smoke(rust::Str list_text, rust::Str resources_json) {
   Expect(Contains(c.hide_css, ".promo{display:none!important}"),
          "hostname hide css");
   Expect(Contains(c.injected_script, "setConstant("), "scriptlet injected");
+  Expect(Contains(c.procedural_json, "\"has-text\"") &&
+             !Contains(c.hide_css, ":has-text(") && c.procedural_count == 2,
+         "procedural filters split from the stylesheet");
+  Expect(c.procedural_styles.size() == 1 &&
+             std::string(c.procedural_styles[0]) == "opacity:0!important",
+         "procedural styles via rust::Vec<rust::String>");
 
   std::vector<std::string> classes = {"generic-ad", "header", "x"};
   std::vector<std::string> ids = {"main"};
