@@ -42,6 +42,7 @@ chrome/browser/chrome_browser_main_mac.mm.patch
 chrome/browser/chrome_content_browser_client.cc.patch
 chrome/browser/flag-metadata.json.patch
 chrome/browser/flag-never-expire-list.json.patch
+chrome/browser/metrics/chrome_feature_list_creator.cc.patch
 chrome/browser/prefs/session_startup_pref.cc.patch
 chrome/browser/profiles/BUILD.gn.patch
 chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc.patch

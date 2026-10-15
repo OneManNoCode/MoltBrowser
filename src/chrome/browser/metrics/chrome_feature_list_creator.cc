@@ -21,6 +21,7 @@
 #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/metrics/chrome_metrics_services_manager_client.h"
+#include "chrome/browser/molt_ai/privacy/molt_feature_overrides.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/common/chrome_paths.h"
@@ -90,6 +91,13 @@ GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
       overrides.emplace_back(info.feature, info.override_state);
     }
   }
+
+  // MoltBrowser: features that only reach Google in a build without API keys
+  // are off by default. Registered here, after --enable-features (which
+  // chrome://flags writes) and before the field trial testing config, so the
+  // user can still turn them on and testing-config studies that touch them are
+  // skipped. See chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
+  molt_ai::privacy::AppendDefaultFeatureOverrides(overrides);
   return overrides;
 }
 
