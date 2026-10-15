@@ -147,6 +147,26 @@ repo/
 - Per-site Shields toggle (content setting), per-tab counts, breakage report in
   molt://ai-settings; consent-banner auto-reject (`molt_ai/consent/`).
 - Rust side tested/benchmarked standalone in `tools/shield_bench/`.
+- Kill switches (`chrome/common/molt_ai/shield/molt_shield_features.h`): each
+  hook has its own `base::Feature`, enabled by default and checked where the
+  hook is installed. Disabled means the hook is not installed at all (no proxy,
+  throttle, tab observer or renderer agent), not that it allows everything.
+  Changes in chrome://flags take effect after a relaunch.
+
+  | chrome://flags | Feature (`--disable-features=`) | Turns off |
+  |---|---|---|
+  | `#molt-shield-request-proxy` | `MoltShieldRequestProxy` | the proxying URLLoaderFactory (subresources, workers) |
+  | `#molt-shield-frame-blocking` | `MoltShieldFrameBlocking` | ad-iframe blocking in the NavigationThrottle |
+  | `#molt-shield-websocket` | `MoltShieldWebSocket` | WebSocket interception (`WillInterceptWebSocket` stays false) |
+  | `#molt-shield-keepalive` | `MoltShieldKeepAlive` | the keepalive (beacon) URLLoaderThrottle |
+  | `#molt-shield-cosmetics` | `MoltShieldCosmetics` | cosmetic filters + scriptlets, including the renderer `CosmeticFilterAgent` |
+  | `#molt-shield-consent-killer` | `MoltShieldConsentKiller` | the consent-banner auto-reject |
+
+  `--disable-molt-shield` turns off all six for one run (it is copied to
+  renderers), and the engine and list updater never start. Example:
+  `--disable-features=MoltShieldRequestProxy,MoltShieldWebSocket`.
+  molt://ai-settings shows which hooks are off. The flags entries are one macro
+  in `molt_ai/shield/molt_shield_about_flags.h` expanded in `about_flags.cc`.
 
 ### Agent mode (shipping — record/replay automation, v0.2.5)
 - Lives in `src/chrome/browser/molt_ai/automation/`. `AutomationRecorder`
