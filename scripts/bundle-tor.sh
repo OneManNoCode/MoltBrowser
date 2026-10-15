@@ -30,8 +30,10 @@
 #
 # Integrity: the tarball MUST match the SHA256 pinned below. With no pin
 # (or a --tor-version other than the pinned one) the script FAILS, unless a
-# developer explicitly sets MOLT_ALLOW_UNPINNED_TOR=1 for a local build —
-# never for anything shipped.
+# developer explicitly sets MOLT_ALLOW_UNPINNED_TOR=1 (or the repo-wide
+# MOLT_ALLOW_UNPINNED_DOWNLOADS=1) for a local build. Both are ignored when
+# MOLT_RELEASE_BUILD=1 (set by the release scripts/workflows), so a release
+# can never ship an unverified Tor.
 
 set -e
 
@@ -141,25 +143,35 @@ fi
 
 # Refuse to bundle an unverified Tor. Developers can opt out for a local
 # build only, and the override is loud.
-ALLOW_UNPINNED="${MOLT_ALLOW_UNPINNED_TOR:-0}"
+ALLOW_UNPINNED=0
+if [[ "${MOLT_RELEASE_BUILD:-0}" != "1" ]] && \
+   { [[ "${MOLT_ALLOW_UNPINNED_TOR:-0}" == "1" ]] || unpinned_allowed; }; then
+  ALLOW_UNPINNED=1
+fi
 if [[ -z "$EXPECTED_SHA" ]]; then
   if [[ "$ALLOW_UNPINNED" == "1" ]]; then
-    echo "[bundle-tor] WARNING: MOLT_ALLOW_UNPINNED_TOR=1 — bundling an"
+    echo "[bundle-tor] WARNING: unpinned-download override set — bundling an"
     echo "[bundle-tor]          UNVERIFIED tor ${TOR_VERSION} (${ARCH})."
     echo "[bundle-tor]          Local development only. Never ship this."
   else
     echo "[bundle-tor] FATAL: no pinned SHA256 for ${ARCHIVE_NAME}."
     echo "[bundle-tor]        Pin it in scripts/bundle-tor.sh (instructions"
-    echo "[bundle-tor]        above EXPECTED_SHA256_TOR_*), or set"
-    echo "[bundle-tor]        MOLT_ALLOW_UNPINNED_TOR=1 for a local dev build."
+    echo "[bundle-tor]        above EXPECTED_SHA256_TOR_*)."
+    if [[ "${MOLT_RELEASE_BUILD:-0}" == "1" ]]; then
+      echo "[bundle-tor]        (MOLT_RELEASE_BUILD=1: no override possible.)"
+    else
+      echo "[bundle-tor]        Dev-only override: MOLT_ALLOW_UNPINNED_TOR=1"
+    fi
     exit 1
   fi
 fi
 
 # Download with integrity check. verify_or_redownload re-checks the
 # cached file on every run, redownloads if tampered locally, and
-# fails hard if the fresh download mismatches the pinned SHA.
-if ! verify_or_redownload "$ARCHIVE_PATH" "$EXPECTED_SHA" "$ARCHIVE_URL"; then
+# fails hard if the fresh download mismatches the pinned SHA. The shared
+# lib applies the same unpinned policy; hand it our decision.
+if ! MOLT_ALLOW_UNPINNED_DOWNLOADS="$ALLOW_UNPINNED" \
+     verify_or_redownload "$ARCHIVE_PATH" "$EXPECTED_SHA" "$ARCHIVE_URL"; then
   echo "[bundle-tor] FATAL: tor bundle verification failed."
   exit 1
 fi
