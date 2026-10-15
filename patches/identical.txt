@@ -32,6 +32,7 @@ components/javascript_dialogs_strings.grdp
 components/live_caption_strings.grdp
 components/login_dialog_strings.grdp
 components/media_message_center_strings.grdp
+components/omnibox/browser/search_provider.cc
 components/paint_preview_strings.grdp
 components/print_media_strings.grdp
 components/printing_component_strings.grdp
