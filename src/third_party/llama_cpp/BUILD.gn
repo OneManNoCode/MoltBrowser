@@ -25,8 +25,6 @@ config("llama_cpp_config") {
   defines = [
     "GGML_USE_CPU",
     "NDEBUG",
-    "GGML_VERSION=\"0.9.7\"",
-    "GGML_COMMIT=\"00de615\"",
   ]
 
   if (is_mac) {
@@ -41,6 +39,16 @@ config("llama_cpp_config") {
       "Accelerate.framework",
     ]
   }
+}
+
+# ggml/src/ggml.c includes "ggml-version.h" and src/llama.cpp includes
+# "llama-version.h"; upstream CMake generates both from the *.h.in templates
+# next to those files. chromium/ holds checked-in equivalents with the values
+# for the vendored tag; update them (and README.chromium) with every llama.cpp
+# update. Private to this file so the version macros don't leak to dependents.
+config("llama_cpp_version_headers") {
+  visibility = [ ":*" ]
+  include_dirs = [ "chromium" ]
 }
 
 # llama.cpp uses C++ exceptions which Chromium disables by default.
@@ -70,6 +78,7 @@ source_set("ggml_c") {
   ]
 
   public_configs = [ ":llama_cpp_config" ]
+  configs += [ ":llama_cpp_version_headers" ]
 
   cflags_c = [
     "-std=c11",
@@ -82,6 +91,7 @@ source_set("ggml_cpp") {
   sources = [
     "ggml/src/ggml.cpp",
     "ggml/src/ggml-backend.cpp",
+    "ggml/src/ggml-backend-meta.cpp",
     "ggml/src/ggml-backend-reg.cpp",
     "ggml/src/ggml-backend-dl.cpp",
     "ggml/src/ggml-opt.cpp",
@@ -130,6 +140,8 @@ source_set("ggml_cpu_cpp") {
     "ggml/src/ggml-cpu/llamafile/sgemm.cpp",
     "ggml/src/ggml-cpu/amx/amx.cpp",
     "ggml/src/ggml-cpu/amx/mmq.cpp",
+    "ggml/src/ggml-cpu/tiled/tiled.cpp",
+    "ggml/src/ggml-cpu/tiled/tiled-kernel.cpp",
   ]
 
   public_configs = [ ":llama_cpp_config" ]
@@ -226,15 +238,74 @@ source_set("ggml_cpu_arch_x86_c") {
 # removal and the .m source files are macOS-specific, so the whole block
 # is guarded by is_mac to keep gn-gen valid on Linux/Windows builds.
 if (is_mac) {
-  # Metal shader resources — bundle into the .app framework so
-  # ggml_metal_library_init() can find ggml-metal.metal at runtime.
-  bundle_data("llama_cpp_metal_resources") {
+  # Metal shader sources, bundled into the framework's Resources/. At runtime
+  # ggml_metal_library_init() loads Resources/default.metallib (built from
+  # these same files by scripts/release.sh and scripts/dev-install-mac.sh; the
+  # shipped app needs it, run-time compilation fails under the hardened
+  # runtime). Without a metallib it compiles Resources/kernels/<kind>.metal,
+  # resolving includes from kernels/ and its parent directory, so keep this
+  # layout: kernels/ holds the kernel sources and the headers they include,
+  # ggml-common.h and ggml-metal-impl.h sit one level up.
+  bundle_data("llama_cpp_metal_kernel_resources") {
     sources = [
-      "ggml/src/ggml-metal/ggml-metal.metal",
+      "ggml/src/ggml-metal/kernels/argsort.metal",
+      "ggml/src/ggml-metal/kernels/binbcast.metal",
+      "ggml/src/ggml-metal/kernels/common.h",
+      "ggml/src/ggml-metal/kernels/conv.metal",
+      "ggml/src/ggml-metal/kernels/dequantize.h",
+      "ggml/src/ggml-metal/kernels/fa_aux.metal",
+      "ggml/src/ggml-metal/kernels/fa_common.metal",
+      "ggml/src/ggml-metal/kernels/fa_f16.metal",
+      "ggml/src/ggml-metal/kernels/fa_f32.metal",
+      "ggml/src/ggml-metal/kernels/fa_q4_0.metal",
+      "ggml/src/ggml-metal/kernels/fa_q4_1.metal",
+      "ggml/src/ggml-metal/kernels/fa_q5_0.metal",
+      "ggml/src/ggml-metal/kernels/fa_q5_1.metal",
+      "ggml/src/ggml-metal/kernels/fa_q8_0.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_common.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_f16.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_f32.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_q4_0.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_q4_1.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_q5_0.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_q5_1.metal",
+      "ggml/src/ggml-metal/kernels/fa_vec_q8_0.metal",
+      "ggml/src/ggml-metal/kernels/gated_delta_net.metal",
+      "ggml/src/ggml-metal/kernels/misc.metal",
+      "ggml/src/ggml-metal/kernels/mul_mm.metal",
+      "ggml/src/ggml-metal/kernels/mul_mv.metal",
+      "ggml/src/ggml-metal/kernels/mul_mv_mma.metal",
+      "ggml/src/ggml-metal/kernels/norm.metal",
+      "ggml/src/ggml-metal/kernels/pool.metal",
+      "ggml/src/ggml-metal/kernels/quantize.h",
+      "ggml/src/ggml-metal/kernels/quantize.metal",
+      "ggml/src/ggml-metal/kernels/reduce.metal",
+      "ggml/src/ggml-metal/kernels/rope.metal",
+      "ggml/src/ggml-metal/kernels/softmax.metal",
+      "ggml/src/ggml-metal/kernels/solve_tri.metal",
+      "ggml/src/ggml-metal/kernels/ssm.metal",
+      "ggml/src/ggml-metal/kernels/tri.metal",
+      "ggml/src/ggml-metal/kernels/unary.metal",
+      "ggml/src/ggml-metal/kernels/upscale.metal",
+      "ggml/src/ggml-metal/kernels/wkv.metal",
+    ]
+    outputs = [ "{{bundle_resources_dir}}/kernels/{{source_file_part}}" ]
+  }
+
+  bundle_data("llama_cpp_metal_header_resources") {
+    sources = [
       "ggml/src/ggml-common.h",
       "ggml/src/ggml-metal/ggml-metal-impl.h",
     ]
     outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+  }
+
+  # Referenced from //chrome:chrome_framework (bundle_deps).
+  group("llama_cpp_metal_resources") {
+    public_deps = [
+      ":llama_cpp_metal_header_resources",
+      ":llama_cpp_metal_kernel_resources",
+    ]
   }
 
   # Metal backend C++ sources.
@@ -246,7 +317,9 @@ if (is_mac) {
       "ggml/src/ggml-metal/ggml-metal.cpp",
       "ggml/src/ggml-metal/ggml-metal-common.cpp",
       "ggml/src/ggml-metal/ggml-metal-device.cpp",
+      "ggml/src/ggml-metal/ggml-metal-fusion.cpp",
       "ggml/src/ggml-metal/ggml-metal-ops.cpp",
+      "ggml/src/ggml-metal/ggml-metal-tuning.cpp",
     ]
 
     public_configs = [ ":llama_cpp_config" ]
@@ -322,22 +395,32 @@ source_set("llama_models") {
     "src/models/baichuan.cpp",
     "src/models/bailingmoe.cpp",
     "src/models/bailingmoe2.cpp",
+    "src/models/bailingmoe3.cpp",
     "src/models/bert.cpp",
     "src/models/bitnet.cpp",
     "src/models/bloom.cpp",
     "src/models/chameleon.cpp",
     "src/models/chatglm.cpp",
+    "src/models/clef.cpp",
+    "src/models/clip.cpp",
     "src/models/codeshell.cpp",
     "src/models/cogvlm.cpp",
-    "src/models/cohere2-iswa.cpp",
+    "src/models/cohere2.cpp",
+    "src/models/cohere2moe.cpp",
     "src/models/command-r.cpp",
     "src/models/dbrx.cpp",
     "src/models/deci.cpp",
     "src/models/deepseek.cpp",
     "src/models/deepseek2.cpp",
+    "src/models/deepseek2ocr.cpp",
+    "src/models/deepseek32.cpp",
+    "src/models/deepseek4.cpp",
     "src/models/delta-net-base.cpp",
+    "src/models/dflash.cpp",
     "src/models/dots1.cpp",
+    "src/models/dots3note.cpp",
     "src/models/dream.cpp",
+    "src/models/eagle3.cpp",
     "src/models/ernie4-5-moe.cpp",
     "src/models/ernie4-5.cpp",
     "src/models/eurobert.cpp",
@@ -347,56 +430,89 @@ source_set("llama_models") {
     "src/models/falcon-h1.cpp",
     "src/models/falcon.cpp",
     "src/models/gemma-embedding.cpp",
+    "src/models/gemma-embedding2.cpp",
     "src/models/gemma.cpp",
-    "src/models/gemma2-iswa.cpp",
+    "src/models/gemma2.cpp",
     "src/models/gemma3.cpp",
-    "src/models/gemma3n-iswa.cpp",
+    "src/models/gemma3n.cpp",
+    "src/models/gemma4-assistant.cpp",
+    "src/models/gemma4.cpp",
+    "src/models/glm-dsa.cpp",
     "src/models/glm4-moe.cpp",
     "src/models/glm4.cpp",
+    "src/models/glm5-next.cpp",
     "src/models/gpt2.cpp",
     "src/models/gptneox.cpp",
     "src/models/granite-hybrid.cpp",
+    "src/models/granite-moe.cpp",
+    "src/models/granite-swa.cpp",
+    "src/models/granite-switch.cpp",
     "src/models/granite.cpp",
     "src/models/grok.cpp",
     "src/models/grovemoe.cpp",
+    "src/models/hrm-text.cpp",
     "src/models/hunyuan-dense.cpp",
     "src/models/hunyuan-moe.cpp",
+    "src/models/hunyuan-vl.cpp",
+    "src/models/hy-v3.cpp",
+    "src/models/hy-v4.cpp",
     "src/models/internlm2.cpp",
     "src/models/jais.cpp",
     "src/models/jais2.cpp",
     "src/models/jamba.cpp",
+    "src/models/jina-bert-v2.cpp",
+    "src/models/jina-bert-v3.cpp",
+    "src/models/k2-horizon.cpp",
+    "src/models/kimi-k3.cpp",
     "src/models/kimi-linear.cpp",
+    "src/models/laguna.cpp",
     "src/models/lfm2.cpp",
+    "src/models/lfm2moe.cpp",
     "src/models/llada-moe.cpp",
     "src/models/llada.cpp",
-    "src/models/llama-iswa.cpp",
+    "src/models/llama-embed.cpp",
     "src/models/llama.cpp",
+    "src/models/llama4.cpp",
     "src/models/maincoder.cpp",
     "src/models/mamba-base.cpp",
     "src/models/mamba.cpp",
-    "src/models/mimo2-iswa.cpp",
+    "src/models/mamba2.cpp",
+    "src/models/maple.cpp",
+    "src/models/mellum.cpp",
+    "src/models/mimo2.cpp",
+    "src/models/minicpm.cpp",
     "src/models/minicpm3.cpp",
+    "src/models/minimax-01.cpp",
     "src/models/minimax-m2.cpp",
+    "src/models/minimax-m3.cpp",
     "src/models/mistral3.cpp",
+    "src/models/mistral4.cpp",
     "src/models/modern-bert.cpp",
     "src/models/mpt.cpp",
+    "src/models/muse-glimmer.cpp",
+    "src/models/nanbeige.cpp",
+    "src/models/nemotron-h-moe.cpp",
     "src/models/nemotron-h.cpp",
     "src/models/nemotron.cpp",
     "src/models/neo-bert.cpp",
+    "src/models/nomic-bert-moe.cpp",
+    "src/models/nomic-bert.cpp",
     "src/models/olmo.cpp",
     "src/models/olmo2.cpp",
     "src/models/olmoe.cpp",
-    "src/models/openai-moe-iswa.cpp",
+    "src/models/openai-moe.cpp",
     "src/models/openelm.cpp",
     "src/models/orion.cpp",
     "src/models/paddleocr.cpp",
-    "src/models/pangu-embedded.cpp",
+    "src/models/pangu-embed.cpp",
     "src/models/phi2.cpp",
     "src/models/phi3.cpp",
+    "src/models/phimoe.cpp",
     "src/models/plamo.cpp",
     "src/models/plamo2.cpp",
     "src/models/plamo3.cpp",
     "src/models/plm.cpp",
+    "src/models/pockettts.cpp",
     "src/models/qwen.cpp",
     "src/models/qwen2.cpp",
     "src/models/qwen2moe.cpp",
@@ -406,8 +522,10 @@ source_set("llama_models") {
     "src/models/qwen35moe.cpp",
     "src/models/qwen3moe.cpp",
     "src/models/qwen3next.cpp",
-    "src/models/qwen3vl-moe.cpp",
+    "src/models/qwen3tts.cpp",
     "src/models/qwen3vl.cpp",
+    "src/models/qwen3vlmoe.cpp",
+    "src/models/qwen4exp.cpp",
     "src/models/refact.cpp",
     "src/models/rnd1.cpp",
     "src/models/rwkv6-base.cpp",
@@ -418,12 +536,15 @@ source_set("llama_models") {
     "src/models/seed-oss.cpp",
     "src/models/smallthinker.cpp",
     "src/models/smollm3.cpp",
+    "src/models/spark2-5.cpp",
     "src/models/stablelm.cpp",
     "src/models/starcoder.cpp",
     "src/models/starcoder2.cpp",
-    "src/models/step35-iswa.cpp",
-    "src/models/t5-dec.cpp",
-    "src/models/t5-enc.cpp",
+    "src/models/step35.cpp",
+    "src/models/t5.cpp",
+    "src/models/t5encoder.cpp",
+    "src/models/talkie.cpp",
+    "src/models/vllm-decision2.cpp",
     "src/models/wavtokenizer-dec.cpp",
     "src/models/xverse.cpp",
   ]
@@ -459,15 +580,21 @@ source_set("llama_cpp") {
     "src/llama-impl.cpp",
     "src/llama-io.cpp",
     "src/llama-kv-cache.cpp",
+    "src/llama-kv-cache-dsa.cpp",
+    "src/llama-kv-cache-dsa-iswa.cpp",
+    "src/llama-kv-cache-dsv4.cpp",
     "src/llama-kv-cache-iswa.cpp",
+    "src/llama-kv-cache-msa.cpp",
     "src/llama-memory.cpp",
     "src/llama-memory-hybrid.cpp",
+    "src/llama-memory-hybrid-idx.cpp",
     "src/llama-memory-hybrid-iswa.cpp",
     "src/llama-memory-recurrent.cpp",
     "src/llama-mmap.cpp",
     "src/llama-model.cpp",
     "src/llama-model-loader.cpp",
     "src/llama-model-saver.cpp",
+    "src/llama-moe-cache.cpp",
     "src/llama-quant.cpp",
     "src/llama-sampler.cpp",
     "src/llama-vocab.cpp",
@@ -480,6 +607,7 @@ source_set("llama_cpp") {
     ":llama_models",
   ]
   public_configs = [ ":llama_cpp_config" ]
+  configs += [ ":llama_cpp_version_headers" ]
 
   # Remove Chromium's global no_exceptions config and enable exceptions
   configs -= [ "//build/config/compiler:no_exceptions" ]
@@ -492,6 +620,11 @@ source_set("llama_cpp") {
 }
 
 # Common utilities (sampling, CLI helpers, etc.)
+# NOTE: nothing depends on this target (the runtime only uses llama.h) and it
+# is not buildable as is: common/jinja/value.h uses typeid, which Chromium's
+# -fno-rtti rejects, and the list below has never covered all of common/ (no
+# sampling.cpp, jinja/*.cpp, ...). Same situation at b8284 (where arg.cpp and
+# json-schema-to-grammar.cpp also needed vendor/nlohmann, not vendored).
 source_set("llama_common") {
   sources = [
     "common/common.cpp",
