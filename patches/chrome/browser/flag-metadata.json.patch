@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
-index 3429b1bd4726f6b3963215de005008d6d69181de..f433549191d908f68c82bd5b5e12a1ae219a99fc 100644
+index 3429b1bd4726f6b3963215de005008d6d69181de..eccd053e11bd04f351b4ffdda8ee831e10d978e3 100644
 --- a/chrome/browser/flag-metadata.json
 +++ b/chrome/browser/flag-metadata.json
-@@ -6779,6 +6779,37 @@
+@@ -6779,6 +6779,42 @@
      "owners": ["bgeffon@chromium.org", "pasko@chromium.org"],
      "expiry_milestone": 150
    },
@@ -30,6 +30,11 @@ index 3429b1bd4726f6b3963215de005008d6d69181de..f433549191d908f68c82bd5b5e12a1ae
 +  },
 +  {
 +    "name": "molt-shield-keepalive",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-removeparam",
 +    "owners": [ "moltbrowser" ],
 +    "expiry_milestone": -1
 +  },

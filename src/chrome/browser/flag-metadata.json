@@ -6801,6 +6801,11 @@
     "expiry_milestone": -1
   },
   {
+    "name": "molt-shield-removeparam",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     "name": "molt-shield-request-proxy",
     "owners": [ "moltbrowser" ],
     "expiry_milestone": -1

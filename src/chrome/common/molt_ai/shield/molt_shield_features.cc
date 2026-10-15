@@ -15,6 +15,7 @@ BASE_FEATURE(kMoltShieldWebSocket, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kMoltShieldKeepAlive, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kMoltShieldCosmetics, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kMoltShieldConsentKiller, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kMoltShieldRemoveParam, base::FEATURE_ENABLED_BY_DEFAULT);
 
 namespace {
 
@@ -30,6 +31,7 @@ constexpr Hook kHooks[] = {
     {&kMoltShieldKeepAlive, flags::kKeepAlive},
     {&kMoltShieldCosmetics, flags::kCosmetics},
     {&kMoltShieldConsentKiller, flags::kConsentKiller},
+    {&kMoltShieldRemoveParam, flags::kRemoveParam},
 };
 
 bool Enabled(const base::Feature& feature) {
@@ -67,6 +69,10 @@ bool IsCosmeticsEnabled() {
 
 bool IsConsentKillerEnabled() {
   return Enabled(kMoltShieldConsentKiller);
+}
+
+bool IsRemoveParamEnabled() {
+  return Enabled(kMoltShieldRemoveParam);
 }
 
 std::vector<std::string_view> FlagNamesOfDisabledHooks() {

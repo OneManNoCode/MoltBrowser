@@ -124,6 +124,7 @@
   "molt-shield-cosmetics",
   "molt-shield-frame-blocking",
   "molt-shield-keepalive",
+  "molt-shield-removeparam",
   "molt-shield-request-proxy",
   "molt-shield-websocket",
   "omaha-min-sdk-version-android",
