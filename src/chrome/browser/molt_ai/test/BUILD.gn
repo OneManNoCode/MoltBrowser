@@ -26,6 +26,7 @@ test("molt_ai_unittests") {
     # Each module under molt_ai/ that has tests adds itself here.
     "//chrome/browser/molt_ai/automation:unit_tests",
     "//chrome/browser/molt_ai/cloud:unit_tests",
+    "//chrome/browser/molt_ai/common:unit_tests",
     "//chrome/browser/molt_ai/memory:unit_tests",
     "//chrome/browser/molt_ai/models:unit_tests",
     "//chrome/browser/molt_ai/pdf:unit_tests",
