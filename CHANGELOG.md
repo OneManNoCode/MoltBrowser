@@ -37,6 +37,23 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   requires https; keys and passwords aren't stored without a real system
   keychain; cloud endpoints must use https; the Gemini key is no longer put
   in URLs.
+- **Web pages can't open internal pages.** A site could open `molt://`
+  pages (settings, or the AI chat with a prompt already filled in) through
+  `target=_blank`, `window.open` or a middle-click; only the browser UI and
+  other internal pages can open them now.
+- **Helper programs can't be swapped.** Tor, OCR and voice only run from the
+  app's own folder or, on Linux, a root-owned system copy; never from
+  Homebrew, `/usr/local` or PATH. The updater launches its install helpers
+  by full path.
+- **Hostile pages and model files can't crash the browser.** The agent's
+  page reader parses in linear time, off the UI thread, and reads at most
+  2 MiB of HTML (a crafted page could hang it for minutes or crash it).
+  llama.cpp's GGUF and tokenizer fixes are in (see On-device AI), and a
+  malformed model's tokenizer returns an error instead of aborting.
+- On Linux without a system keyring, secrets are never written under
+  Chromium's built-in fallback key; MoltBrowser asks you to install or
+  unlock GNOME Keyring or KWallet. Existing data stays readable and moves to
+  the keyring on the next save.
 - Malformed messages to internal pages no longer crash the browser; AI
   automation steps no longer freeze it.
 
@@ -56,6 +73,28 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   from incognito.
 - Cloud AI replies are labeled with the provider, and each provider asks for
   consent once, listing what context is sent.
+- **Fingerprinting protection in the engine.** In normal and incognito
+  windows, canvas, WebGL and Web Audio readback get tiny per-site,
+  per-session noise, and `hardwareConcurrency` varies per site, so a
+  fingerprint taken on one site doesn't match another or tomorrow's. MoltNet
+  windows also look the same for everyone: UTC, en-US, letterboxed screen
+  size, 4 cores, no WebGL renderer string. Limits are listed in
+  `docs/FINGERPRINTING.md`. Kill switch:
+  `chrome://flags/#molt-fingerprinting-protection`.
+- **`.onion` sites.** They open only in MoltNet windows, where `http://`
+  onion sites load under HTTPS-Only. Regular windows never look up, load or
+  search-suggest an onion address; they offer to open it in MoltNet. A
+  site's Onion-Location is offered as a bar, never followed automatically.
+- **Linux MoltNet uses your distribution's `tor`** (packages now recommend
+  it), with a clear "install the tor package" message when it's missing.
+- **Less background traffic to Google.** Autofill no longer sends form
+  signatures, Translate no longer downloads its ranking model, error pages
+  no longer probe Google DNS or gstatic, and the password leak check (which
+  can't work without a Google API key) is off by default. Chromium's
+  built-in experiment config can no longer switch these, or features
+  MoltBrowser turned off, back on. Everything the browser still contacts on
+  its own is listed in `docs/NETWORK_TRAFFIC.md`, and the privacy policy
+  now names each host.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
@@ -65,7 +104,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   counts. ~6 µs per request (the old matcher took 5–17 ms).
 - Typing a tracker company's site (e.g. hotjar.com) no longer lands on a
   blocked page.
-- The cookie-banner killer only ever clicks "reject", inside consent dialogs.
+- **Tracking parameters are stripped** (fbclid, gclid, msclkid, utm_* and
+  uBlock Origin's `$removeparam` rules, honoring its exceptions) from links
+  you open, before the request leaves the browser, and from page requests.
+  Kill switch: `chrome://flags/#molt-shield-removeparam`.
+- **Procedural cosmetic filters work** (`:has-text()`, `:upward()`,
+  `:matches-css()`, `:xpath()`, `:remove()`, `:style()` and more). They
+  run in an isolated world; list text is vetted and never executed.
+- The cookie-banner killer only ever clicks "reject", and only inside known
+  consent platforms; an opt-in uBlock "Cookie Notices" list covers the rest.
+  Scriptlet arguments were audited and can't break out into page script.
 
 ### On-device AI
 - Context windows sized to the model and your RAM (was a fixed 2k); the
@@ -74,8 +122,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   models unload when idle or under memory pressure; CPUs without AVX2 get a
   clear message instead of a crash.
 - Model downloads are hash-verified and resume correctly (resuming used to
-  corrupt files); Llama/Gemma licence terms are shown before download.
-- Page context now reaches the side-panel chat and refreshes as you browse.
+  corrupt files); every model shows its licence with a link, and Llama/Gemma
+  terms must be accepted before download.
+- Page context reaches the side-panel chat and always matches the tab's
+  current page (it used to answer from the previous page after you
+  navigated).
+- **llama.cpp updated to b11641**: Gemma 4 support (Gemma 4 E4B joins the
+  catalog once its download is pinned) and upstream fixes for GGUF and
+  tokenizer parsing (integer overflows, size checks, out-of-bounds reads).
+- Fixed a crash on the first on-device reply in official Linux builds: a
+  Control Flow Integrity check tripped on llama.cpp's internal calls. Found
+  and fixed in an emulated official build; to be confirmed on a real one.
+- Memory search matches words regardless of case in Latin, Greek, Cyrillic
+  and Armenian scripts; existing memories are re-indexed once.
 
 ### Engineering
 - Chromium is pinned in one place (`chromium_version.txt`); copied upstream
@@ -84,7 +143,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (fuzzed markdown renderer, jsdom smoke test of every page) and linting;
   releases are drafts until signed and publish checksums + build provenance.
 - Full GPLv3 licence text, llama.cpp licence notice, Code of Conduct,
-  issue/PR templates; unused code and Sparkle leftovers removed.
+  issue/PR templates; unused code and Sparkle leftovers removed, including
+  the never-wired `browser.ai.*` stub (whose permission check allowed every
+  caller), the prompt router, personas, the old agent engine and the model
+  manager.
 
 ---
 
