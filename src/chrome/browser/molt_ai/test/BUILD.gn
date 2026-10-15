@@ -33,6 +33,7 @@ test("molt_ai_unittests") {
     "//chrome/browser/molt_ai/runtime:unit_tests",
     "//chrome/browser/molt_ai/shield:unit_tests",
     "//chrome/browser/molt_ai/vault:unit_tests",
+    "//chrome/browser/molt_ai:molt_ai_dom_unit_tests",
     "//chrome/browser/molt_ai:molt_update_unit_tests",
     "//chrome/browser/molt_ai/security:unit_tests",
     "//chrome/browser/molt_ai/tor:unit_tests",

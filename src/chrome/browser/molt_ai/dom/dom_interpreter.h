@@ -4,6 +4,7 @@
 #ifndef MOLT_AI_DOM_DOM_INTERPRETER_H_
 #define MOLT_AI_DOM_DOM_INTERPRETER_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -108,10 +109,22 @@ struct StructuredPage {
 //   - Content hierarchy
 //   - Data tables
 // ============================================================
+//
+// All extraction runs in time linear in the input (no std::regex), so it is
+// safe on hostile pages; still, callers run it off the UI thread on HTML
+// capped with CapHtmlForParsing() (see DOMContentBridge).
+// ============================================================
 class DOMInterpreter {
  public:
+  // Most HTML bytes ParseHTML() is given by DOMContentBridge (S5).
+  static constexpr size_t kMaxParseHtmlBytes = 2 * 1024 * 1024;
+
   DOMInterpreter();
   ~DOMInterpreter();
+
+  // |html| cut to at most kMaxParseHtmlBytes, at a UTF-8 character
+  // boundary.
+  static std::string CapHtmlForParsing(std::string html);
 
   // Parse raw HTML into structured page representation
   StructuredPage ParseHTML(const std::string& html,

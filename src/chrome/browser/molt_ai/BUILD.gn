@@ -18,18 +18,37 @@ source_set("molt_ai_runtime") {
   ]
 }
 
-source_set("molt_ai_dom") {
+# HTML -> StructuredPage, linear time (no std::regex). Std-only, so the
+# standalone unit-test binary links it.
+source_set("molt_ai_dom_interpreter") {
   sources = [
     "dom/dom_interpreter.cc",
     "dom/dom_interpreter.h",
+  ]
+}
+
+source_set("molt_ai_dom") {
+  sources = [
     "dom/dom_content_bridge.cc",
     "dom/dom_content_bridge.h",
   ]
+
+  public_deps = [ ":molt_ai_dom_interpreter" ]
 
   deps = [
     "//base",
     "//content/public/browser",
     "//url",
+  ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("molt_ai_dom_unit_tests") {
+  testonly = true
+  sources = [ "dom/dom_interpreter_unittest.cc" ]
+  deps = [
+    ":molt_ai_dom_interpreter",
+    "//testing/gtest",
   ]
 }
 
