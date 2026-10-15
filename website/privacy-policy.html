@@ -30,7 +30,7 @@
   <li><strong>Browsing history</strong> — We have no access to any pages you visit.</li>
   <li><strong>Telemetry</strong> — MoltBrowser sends no usage analytics, crash reports, or diagnostic data to our servers.</li>
   <li><strong>Keystrokes or form data</strong> — Nothing you type is transmitted to us.</li>
-  <li><strong>Google services</strong> — MoltBrowser is de-Googled. No Google API keys, no Safe Browsing calls, no sync.</li>
+  <li><strong>Google accounts</strong> — MoltBrowser has no Google sign-in, no sync and no Google API keys. Some of Chromium's own background services still contact Google; section 3 lists each one.</li>
 </ul>
 
 <h2>2. Data That Stays On Your Device</h2>
@@ -44,12 +44,21 @@
 <h2>3. Network Requests MoltBrowser Makes</h2>
 <p>Besides the websites you visit, MoltBrowser itself contacts these services. None of these requests carries cookies or an account identifier.</p>
 <ul>
-  <li><strong>Update checks</strong> — MoltBrowser asks GitHub (<code>api.github.com</code>, <code>github.com</code>) for the latest release a few times a day and downloads updates from GitHub. The request includes your MoltBrowser version in its user agent. From v0.3.0, an update is only installed if it matches a release manifest signed with our offline release key.</li>
+  <li><strong>Update checks</strong> — MoltBrowser asks GitHub (<code>api.github.com</code>, <code>github.com</code>) for the latest release a few times a day and downloads updates from GitHub's download servers (<code>*.githubusercontent.com</code>). The request includes your MoltBrowser version in its user agent. From v0.3.0, an update is only installed if it matches a release manifest signed with our offline release key.</li>
   <li><strong>Filter list updates</strong> (from v0.3.0) — MoltShield downloads public ad- and tracker-blocking lists about once a day from their publishers (<code>easylist.to</code>, <code>ublockorigin.github.io</code>, falling back to their GitHub mirrors at <code>raw.githubusercontent.com</code>). Optional lists you turn on may come from <code>secure.fanboy.co.nz</code>.</li>
-  <li><strong>AI model downloads</strong> — only when you choose to download an on-device model, from Hugging Face (<code>huggingface.co</code>).</li>
-  <li><strong>Cloud AI providers</strong> — only if you connect your own API key and send a message to a cloud model. That message, plus any page, tab or attachment context you include, goes directly to the provider you chose under its privacy policy. MoltBrowser marks every message sent to a cloud provider.</li>
-  <li><strong>MoltNet</strong> — when you open a MoltNet window, its traffic goes through the Tor network.</li>
-  <li><strong>Chromium background services</strong> — MoltBrowser is built on Chromium. Some of Chromium's own background services (for example component and certificate-revocation updates) may still contact Google's servers without any account information. We are auditing and removing these; see our <a href="https://github.com/OneManNoCode/MoltBrowser/blob/main/ROADMAP.md">public roadmap</a>.</li>
+  <li><strong>AI model downloads</strong> — only when you choose to download an on-device model, from Hugging Face (<code>huggingface.co</code> and its download servers).</li>
+  <li><strong>Search</strong> — the default search engine is DuckDuckGo. Your searches go to DuckDuckGo, and while you type in the address bar, what you type is sent to DuckDuckGo to show suggestions. You can change the search engine, or turn suggestions off, in Settings.</li>
+  <li><strong>Cloud AI providers</strong> — only if you connect your own API key and send a message to a cloud model (for example OpenAI, Anthropic, Google Gemini, Mistral or OpenRouter). That message, plus any page, tab or attachment context you include, goes directly to the provider you chose under its privacy policy. MoltBrowser marks every message sent to a cloud provider.</li>
+  <li><strong>MoltNet</strong> — when you open a MoltNet window, its traffic goes through the Tor network. If you click Verify in the MoltNet panel, MoltBrowser loads <code>check.torproject.org</code> through Tor to show the address websites see.</li>
+  <li><strong>Chromium background services</strong> — MoltBrowser is built on Chromium, and some of Chromium's own services still contact Google, without cookies or account information:
+    <ul>
+      <li>security updates for the browser's components, such as certificate revocation lists and the list of trusted certificate authorities (<code>update.googleapis.com</code> and Google's download servers);</li>
+      <li>the current time, used to check certificate dates if your computer's clock is wrong (<code>clients2.google.com</code>);</li>
+      <li>Safe Browsing: list updates (<code>safebrowsing.googleapis.com</code>) and a check when you download a program, which includes that file's download address (<code>sb-ssl.google.com</code>). Without a Google API key these checks don't currently protect you; we are deciding whether to turn them off or replace them;</li>
+      <li>spell-check dictionaries (<code>redirector.gvt1.com</code>), when a dictionary for your language is first needed;</li>
+      <li>the list of languages Translate supports (<code>translate.googleapis.com</code>), when Translate offers to translate a page.</li>
+    </ul>
+    The full list, with what each request contains and how to turn it off, is in <a href="https://github.com/OneManNoCode/MoltBrowser/blob/main/docs/NETWORK_TRAFFIC.md">NETWORK_TRAFFIC.md</a>.</li>
   <li><strong>Chrome extensions</strong> — extensions you install may make their own requests under their own privacy policies.</li>
 </ul>
 
