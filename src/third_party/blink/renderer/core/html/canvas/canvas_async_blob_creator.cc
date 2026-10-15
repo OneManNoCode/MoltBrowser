@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
@@ -177,7 +178,9 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
   // We use pixmap to access the image pixels. Make the image unaccelerated if
   // necessary. May return nullptr if GPU context lost or readback buffer
   // allocation failed.
-  image_ = image->MakeUnaccelerated();
+  // MoltBrowser: per-site fingerprinting noise (toBlob, convertToBlob).
+  image_ =
+      molt_fingerprinting::FarbleSnapshot(context, image->MakeUnaccelerated());
 
   if (image_) {
     skia_image_ = image_->PaintImageForCurrentFrame().GetSwSkImage();

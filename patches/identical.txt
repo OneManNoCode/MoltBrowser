@@ -55,9 +55,6 @@ third_party/blink/renderer/core/events/mouse_event.cc
 third_party/blink/renderer/core/execution_context/navigator_base.cc
 third_party/blink/renderer/core/frame/local_dom_window.cc
 third_party/blink/renderer/core/frame/screen.cc
-third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
-third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 third_party/blink/renderer/modules/webaudio/analyser_node.cc
 third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
