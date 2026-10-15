@@ -3,6 +3,7 @@
 #include "ggml-backend-dl.h"
 #include "ggml-impl.h"
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <memory>

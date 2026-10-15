@@ -4,10 +4,11 @@
 #include "llama-mmap.h"
 #include "llama-model.h"
 
-#include <map>
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+#include <iterator>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 

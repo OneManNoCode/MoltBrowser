@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <utility>  // for std::swap (needed with Chromium's C++ modules)
 
 // threadgroups needed to fill the GPU
 // TODO: dedup

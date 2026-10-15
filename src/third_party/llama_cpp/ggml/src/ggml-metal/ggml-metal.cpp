@@ -9,6 +9,7 @@
 #include "ggml-metal-ops.h"
 #include "ggml-metal-tuning.h"
 
+#include <memory>
 #include <mutex>
 #include <string>
 
