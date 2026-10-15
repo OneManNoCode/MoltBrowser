@@ -1,0 +1,25 @@
+MoltBrowser patch for chrome/browser/profiles/profile.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/profiles/profile.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/profiles/profile.cc b/chrome/browser/profiles/profile.cc
+index 9fbd8722baf2ce422c1c12b84780e9ec5111555d..91663dcbe89f8d0b22e039e0942b5cff3a4b60fe 100644
+--- a/chrome/browser/profiles/profile.cc
++++ b/chrome/browser/profiles/profile.cc
+@@ -118,6 +118,14 @@ bool Profile::OTRProfileID::AllowsBrowserWindows() const {
+                        base::CompareCase::SENSITIVE)) {
+     return true;
+   }
++  // MoltBrowser: MoltNet (Tor) windows run in their own non-primary OTR
++  // profile so the Tor proxy never touches the user's regular profile or
++  // primary incognito (see chrome/browser/molt_ai/tor/molt_net_profile_id.h;
++  // the prefix must match kMoltNetOtrProfilePrefix there).
++  if (base::StartsWith(profile_id_, "MoltNet::Tor",
++                       base::CompareCase::SENSITIVE)) {
++    return true;
++  }
+ #if BUILDFLAG(IS_CHROMEOS)
+   if (base::StartsWith(profile_id_, kCaptivePortalOTRProfileIDPrefix,
+                        base::CompareCase::SENSITIVE)) {

@@ -1,0 +1,105 @@
+MoltBrowser patch for net/socket/socks_connect_job.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/net/socket/socks_connect_job.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/socks_connect_job.cc b/net/socket/socks_connect_job.cc
+index a7af8f25be2ec7814c8d2f2f279b916813fe3f8c..966ff6de1cabe88f2887e91b0613abf7bb359089 100644
+--- a/net/socket/socks_connect_job.cc
++++ b/net/socket/socks_connect_job.cc
+@@ -5,10 +5,17 @@
+ #include "net/socket/socks_connect_job.h"
+ 
+ #include <memory>
++#include <optional>
++#include <string>
+ #include <utility>
++#include <variant>
+ 
+ #include "base/functional/bind.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/ip_address.h"
+ #include "net/base/net_errors.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/schemeful_site.h"
+ #include "net/log/net_log_source_type.h"
+ #include "net/log/net_log_with_source.h"
+ #include "net/socket/client_socket_factory.h"
+@@ -23,6 +30,57 @@ namespace net {
+ // SOCKSConnectJobs will time out if the SOCKS handshake takes longer than this.
+ static constexpr base::TimeDelta kSOCKSConnectJobTimeout = base::Seconds(30);
+ 
++namespace {
++
++// MoltBrowser: per-site Tor circuit isolation.
++//
++// Tor puts streams with different SOCKS username/password on different
++// circuits (IsolateSOCKSAuth, on by default). Tor Browser uses the
++// first-party domain as the username; we use the top-frame site from the
++// NetworkAnonymizationKey, so two sites never share a circuit (and an exit)
++// in a MoltNet window. Only applied to SOCKS5 proxies on an IP-literal
++// loopback address (MoltNet's Tor is socks5://127.0.0.1:<port>); remote
++// SOCKS proxies never see the top-level site. A local proxy that doesn't
++// support RFC 1929 just picks "no auth" from the greeting.
++//
++// This relies on connections being partitioned by NAK
++// (net::features::kPartitionConnectionsByNetworkIsolationKey, enabled by
++// default in MoltBrowser — see net/base/features.cc); otherwise the socket
++// pool would hand the job an empty key and reuse sockets across sites.
++std::optional<std::string> TorIsolationUsername(SOCKSSocketParams& params) {
++  const HostPortPair* proxy =
++      std::get_if<HostPortPair>(&params.transport_params()->destination());
++  if (!proxy) {
++    return std::nullopt;
++  }
++  std::optional<IPAddress> proxy_ip = IPAddress::FromIPLiteral(proxy->host());
++  if (!proxy_ip || !proxy_ip->IsLoopback()) {
++    return std::nullopt;
++  }
++  const NetworkAnonymizationKey& nak = params.network_anonymization_key();
++  std::string username;
++  const std::optional<SchemefulSite>& top_frame_site = nak.GetTopFrameSite();
++  if (!top_frame_site) {
++    username = "unpartitioned";
++  } else if (top_frame_site->opaque()) {
++    username = "opaque";
++  } else {
++    username = top_frame_site->Serialize();
++  }
++  // Transient keys (opaque origins, credentialless iframes, ...) carry a
++  // nonce: keep those on their own circuits too.
++  if (const std::optional<base::UnguessableToken>& nonce = nak.GetNonce()) {
++    username += "#" + nonce->ToString();
++  }
++  // RFC 1929 limit. Real sites are far shorter.
++  if (username.size() > 255) {
++    username.resize(255);
++  }
++  return username;
++}
++
++}  // namespace
++
+ SOCKSSocketParams::SOCKSSocketParams(
+     ConnectJobParams nested_params,
+     bool socks_v5,
+@@ -176,9 +234,17 @@ int SOCKSConnectJob::DoSOCKSConnect() {
+ 
+   // Add a SOCKS connection on top of the tcp socket.
+   if (socks_params_->is_socks_v5()) {
+-    socket_ = std::make_unique<SOCKS5ClientSocket>(
++    auto socks5_socket = std::make_unique<SOCKS5ClientSocket>(
+         transport_connect_job_->PassSocket(), socks_params_->destination(),
+         socks_params_->traffic_annotation());
++    // MoltBrowser: per-site circuit isolation for MoltNet's local Tor. The
++    // password is a constant; New Identity relies on NEWNYM + a fresh
++    // profile instead.
++    if (std::optional<std::string> username =
++            TorIsolationUsername(*socks_params_)) {
++      socks5_socket->SetUsernamePasswordAuth(std::move(*username), "moltnet");
++    }
++    socket_ = std::move(socks5_socket);
+   } else {
+     auto socks_socket = std::make_unique<SOCKSClientSocket>(
+         transport_connect_job_->PassSocket(), socks_params_->destination(),

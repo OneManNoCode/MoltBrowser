@@ -5,10 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
-index db97dc1e4813e3dcdfc8173241c17328e4e040cf..60309161b3b1185b050e47395ff1c67913850d65 100644
+index db97dc1e4813e3dcdfc8173241c17328e4e040cf..45963d9460353fba74829f04a6b9803e000dfa21 100644
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
-@@ -398,10 +398,16 @@ void ProfileImpl::RegisterProfilePrefs(
+@@ -63,6 +63,7 @@
+ #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
+ #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
+ #include "chrome/browser/k_anonymity_service/k_anonymity_service_factory.h"
++#include "chrome/browser/molt_ai/privacy/molt_privacy_prefs.h"
+ #include "chrome/browser/notifications/platform_notification_service_factory.h"
+ #include "chrome/browser/notifications/platform_notification_service_impl.h"
+ #include "chrome/browser/origin_trials/origin_trials_factory.h"
+@@ -398,10 +399,16 @@ void ProfileImpl::RegisterProfilePrefs(
  #else
    uint32_t home_page_flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
  #endif
@@ -27,3 +35,25 @@ index db97dc1e4813e3dcdfc8173241c17328e4e040cf..60309161b3b1185b050e47395ff1c679
  
  #if BUILDFLAG(ENABLE_PRINTING)
    registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);
+@@ -643,6 +650,10 @@ void ProfileImpl::LoadPrefsForNormalStartup(bool async_prefs) {
+   ::RegisterProfilePrefs(is_signin_profile,
+                          g_browser_process->GetApplicationLocale(),
+                          pref_registry_.get());
++  // MoltBrowser: privacy-by-default values (3P cookies blocked, WebRTC
++  // default_public_interface_only, prediction off, DNT off). Changes only
++  // DEFAULTS, so explicit user choices are kept.
++  molt_ai::privacy::SetPrivacyPrefDefaults(pref_registry_.get());
+ 
+   mojo::PendingRemote<prefs::mojom::TrackedPreferenceValidationDelegate>
+       pref_validation_delegate;
+@@ -683,6 +694,10 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
+   if (!prefs->HasPrefPath(prefs::kProfileCreationTime))
+     prefs->SetTime(prefs::kProfileCreationTime, path_creation_time_);
+ 
++  // MoltBrowser: one-time privacy migrations (HTTPS-First balanced mode for
++  // profiles that never touched the HTTPS-First settings).
++  molt_ai::privacy::ApplyPrivacyPrefMigrations(prefs);
++
+   pref_change_registrar_.Init(prefs);
+   pref_change_registrar_.Add(
+       prefs::kSupervisedUserId,

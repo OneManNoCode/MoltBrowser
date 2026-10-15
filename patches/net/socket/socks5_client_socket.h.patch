@@ -1,0 +1,61 @@
+MoltBrowser patch for net/socket/socks5_client_socket.h
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/net/socket/socks5_client_socket.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/socket/socks5_client_socket.h b/net/socket/socks5_client_socket.h
+index fe8da4858d69292f2baea559afe1392618e8c68b..651ee4481e02ae491beec37d8712b71978af839b 100644
+--- a/net/socket/socks5_client_socket.h
++++ b/net/socket/socks5_client_socket.h
+@@ -47,6 +47,14 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+   // On destruction Disconnect() is called.
+   ~SOCKS5ClientSocket() override;
+ 
++  // MoltBrowser: optional RFC 1929 username/password sub-negotiation. When
++  // set (before Connect()), the greeting offers "no authentication" AND
++  // "username/password"; if the proxy selects the latter, these credentials
++  // are sent. Tor isolates circuits by SOCKS credentials (IsolateSOCKSAuth),
++  // so SOCKSConnectJob passes the top-level site here for loopback SOCKS5
++  // proxies (MoltNet's Tor). Each value must be 1..255 bytes.
++  void SetUsernamePasswordAuth(std::string username, std::string password);
++
+   // StreamSocket implementation.
+ 
+   // Does the SOCKS handshake and completes the protocol.
+@@ -82,6 +90,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+     STATE_GREET_WRITE_COMPLETE,
+     STATE_GREET_READ,
+     STATE_GREET_READ_COMPLETE,
++    // MoltBrowser: RFC 1929 username/password sub-negotiation.
++    STATE_AUTH_WRITE,
++    STATE_AUTH_WRITE_COMPLETE,
++    STATE_AUTH_READ,
++    STATE_AUTH_READ_COMPLETE,
+     STATE_HANDSHAKE_WRITE,
+     STATE_HANDSHAKE_WRITE_COMPLETE,
+     STATE_HANDSHAKE_READ,
+@@ -116,6 +129,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+   int DoGreetReadComplete(int result);
+   int DoGreetWrite();
+   int DoGreetWriteComplete(int result);
++  // MoltBrowser: RFC 1929 states.
++  int DoAuthWrite();
++  int DoAuthWriteComplete(int result);
++  int DoAuthRead();
++  int DoAuthReadComplete(int result);
+ 
+   // Creates a DrainableIOBuffer containing the SOCKS handshake.
+   scoped_refptr<DrainableIOBuffer> BuildHandshakeWriteBuffer() const;
+@@ -145,6 +163,11 @@ class NET_EXPORT_PRIVATE SOCKS5ClientSocket : public StreamSocket {
+ 
+   const HostPortPair destination_;
+ 
++  // MoltBrowser: RFC 1929 credentials; empty = offer "no auth" only (the
++  // upstream behavior).
++  std::string auth_username_;
++  std::string auth_password_;
++
+   NetLogWithSource net_log_;
+ 
+   // Traffic annotation for socket control.

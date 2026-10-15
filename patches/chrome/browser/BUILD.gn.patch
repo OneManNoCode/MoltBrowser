@@ -5,18 +5,20 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index c570172694b5cf7999e59f393c535e7192c9a55b..3f6e5d79ee450f9a59ba2f4a4a51f5dd8042fcf5 100644
+index c570172694b5cf7999e59f393c535e7192c9a55b..5871c7cf6c498da266d516a429de030cbae3256a 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1628,6 +1628,7 @@ static_library("browser") {
+@@ -1628,6 +1628,9 @@ static_library("browser") {
      "//chrome/browser/affiliations",
      "//chrome/browser/ai",
      "//chrome/browser/ai:impl",
 +    "//chrome/browser/molt_ai",
++    # MoltBrowser: privacy-by-default prefs (hooked from profile_impl.cc).
++    "//chrome/browser/molt_ai/privacy",
      "//chrome/browser/app_mode",
      "//chrome/browser/autocomplete",
      "//chrome/browser/autocomplete:aim_eligibility_service",
-@@ -8239,6 +8240,9 @@ static_library("browser") {
+@@ -8239,6 +8242,9 @@ static_library("browser") {
      ]
    }
  
