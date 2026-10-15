@@ -60,6 +60,7 @@
 #include "chrome/renderer/loadtimes_extension_bindings.h"
 #include "chrome/renderer/media/flash_embed_rewrite.h"
 #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
+#include "chrome/renderer/molt_ai/shield/cosmetic_filter_agent.h"  // MoltBrowser
 #include "chrome/renderer/net/net_error_helper.h"
 #include "chrome/renderer/net_benchmarking_extension.h"
 #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
@@ -603,6 +604,9 @@ void ChromeContentRendererClient::RenderFrameCreated(
   service_manager::BinderRegistry* registry = render_frame_observer->registry();
 
   new prerender::NoStatePrefetchRenderFrameObserver(render_frame);
+
+  // MoltBrowser: MoltShield hide CSS + scriptlets at document start.
+  new molt_ai::shield::CosmeticFilterAgent(render_frame);
 
   auto content_settings_delegate =
       std::make_unique<ChromeContentSettingsAgentDelegate>(render_frame);

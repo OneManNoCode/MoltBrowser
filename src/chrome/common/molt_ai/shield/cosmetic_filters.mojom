@@ -1,0 +1,39 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+// MoltShield cosmetic filtering (element hiding + scriptlets).
+module molt_shield.mojom;
+
+import "url/mojom/url.mojom";
+
+// Cosmetic resources for one document, computed by the browser's
+// adblock-rust engine from filter lists.
+struct CosmeticResources {
+  // User stylesheet: one `selector{display:none!important}` rule per line.
+  // Selectors are vetted browser-side (no `{`, `}`, `;`, comments, url()).
+  string hide_css;
+  // Scriptlet bundle (an IIFE) to run in the page's MAIN world at document
+  // start. Scriptlet arguments are JSON-escaped by adblock-rust.
+  string scriptlet_js;
+  // `$generichide`: don't query generic class/id rules for this document.
+  bool generichide;
+};
+
+// Renderer side, per frame, channel-associated so the browser's message —
+// sent at ReadyToCommitNavigation — is ordered before the commit and the
+// renderer has the resources when the new document element is created.
+interface CosmeticFiltersAgent {
+  // `host` is unbound when `resources.generichide` is set.
+  ApplyDocumentResources(url.mojom.Url document_url,
+                         CosmeticResources resources,
+                         pending_remote<CosmeticFiltersHost>? host);
+};
+
+// Browser side, scoped to one document.
+interface CosmeticFiltersHost {
+  // CSS for generic `##.class` / `###id` rules matching classes and ids
+  // seen in the document (deduplicated and capped renderer-side; bounded
+  // again browser-side). Only tokens not sent before are passed.
+  HiddenClassIdSelectors(array<string> classes, array<string> ids)
+      => (string css);
+};

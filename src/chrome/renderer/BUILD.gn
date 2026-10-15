@@ -144,6 +144,9 @@ static_library("renderer") {
     "//chrome/common/request_header_integrity:buildflags",
     "//chrome/common/search:mojo_bindings",
     "//chrome/renderer/actor",
+
+    # MoltBrowser: MoltShield cosmetic filtering (CosmeticFilterAgent).
+    "//chrome/renderer/molt_ai/shield",
     "//chrome/services/speech/buildflags",
     "//components/autofill/content/renderer",
     "//components/autofill/core/common:features",

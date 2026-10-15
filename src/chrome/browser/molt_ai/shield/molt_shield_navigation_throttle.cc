@@ -9,6 +9,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_request_utils.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
@@ -62,6 +63,10 @@ void MoltShieldNavigationThrottle::MaybeAdd(
   if (!AreShieldsUpForSite(web_contents->GetBrowserContext(), top_frame_url)) {
     return;
   }
+
+  // Delivers the cosmetics at ReadyToCommitNavigation and keeps per-tab
+  // counts.
+  MoltShieldTabHelper::CreateForWebContents(web_contents);
 
   registry.AddThrottle(std::make_unique<MoltShieldNavigationThrottle>(
       registry, /*check_frame=*/!is_top_level,
