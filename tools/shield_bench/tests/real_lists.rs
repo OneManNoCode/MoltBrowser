@@ -113,9 +113,15 @@ fn youtube_gets_scriptlets_and_hiding() {
     assert!(c.injected_script.starts_with("(function() {"));
     assert!(c.injected_script.contains("const scriptletGlobals = {};"));
     assert!(!c.hide_css.is_empty());
+    // One rule per line, one declaration block each: hide rules, then
+    // `:style()` rules (sanitized, !important).
     for line in c.hide_css.lines() {
-        assert!(line.ends_with("{display:none!important}"), "{line}");
+        assert!(
+            line.ends_with("{display:none!important}") || line.ends_with("!important}"),
+            "{line}"
+        );
         assert_eq!(line.matches('{').count(), 1, "{line}");
+        assert_eq!(line.matches('}').count(), 1, "{line}");
     }
 }
 
