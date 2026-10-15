@@ -27,10 +27,9 @@ or profile leaves the machine.
 | Multi-field fill primitive | `WebAgent::DoFillForm()` (selector=value pairs), `DoType()` (querySelector + set value + input/change events) | `agents/web_agent.cc` |
 | Robust field setting | `AutomationRunner`: label-aware matching + selector fallbacks (`data-testid → id → name → aria-label → path`), React-safe event dispatch, per-step screenshots | `chrome/browser/molt_ai/automation/automation_runner.*` |
 | Structured LLM extraction | `AI_EXTRACT` step (LLM → schema-typed JSON from current page) + `AI_DECIDE` | `automation/automation_script.h` |
-| Action vocabulary + guards | `agent_engine` `ActionType{FILL_FORM, TYPE_TEXT, …}`, `AgentTaskOptions{allow_form_fill, allowed_domains}` | `agents/agent_engine.h` |
-| Reasoning + page context | `BrowserAIRuntime::StreamChat/RunPrompt`, `GetPageContext()` → `PageContext` | `runtime/browser_ai_runtime.h` |
+| Action vocabulary + guards | `WebAgent` actions (`DoFillForm`, `DoType`, …) with per-run origin scope + confirmations; `agent_safety` field classification (`ClassifyField`, `IsSensitive`, `SelectorLooksSensitive`) and untrusted-text fencing | `agents/web_agent.h`, `security/agent_safety.h` |
+| Reasoning + page context | `BrowserAIRuntime::StreamChat/RunPrompt`; page structure via `DOMContentBridge::GetStructuredPage()` → `StructuredPage` | `runtime/browser_ai_runtime.h`, `dom/dom_content_bridge.h` |
 | Résumé → text | Attachment extraction (doc/image → on-device text → grounded answers) | AI chat side panel |
-| Task routing slot | `prompt_router` `TaskType::FORM_FILL` (bump target model → `qwen3-8b`) | `runtime/prompt_router.cc` |
 | Run history / trace | Automation run output + per-step screenshots/trace viewer | Agent studio |
 
 ## 3. What's new (the actual work)
@@ -46,8 +45,7 @@ or profile leaves the machine.
    `keys.enc`): name, email, phone, address, links (LinkedIn/GitHub/portfolio), work
    history, education, and a résumé (extracted text + file path for file-upload
    fields). Populated from (a) a settings form, (b) a parsed résumé upload, or (c)
-   chat ("remember my email is …"). This is the *data the agent fills from* —
-   distinct from `PersonaSystem` (which is AI tone/role, not autofill data).
+   chat ("remember my email is …"). This is the *data the agent fills from*.
 3. **`FillPlanner`** — takes `{form schema + relevant profile subset + user
    instruction}`, asks the local LLM for a strict-JSON **FillPlan**:
    `[{selector, label, value, confidence, source, needs_user}]`. Never fabricates —
