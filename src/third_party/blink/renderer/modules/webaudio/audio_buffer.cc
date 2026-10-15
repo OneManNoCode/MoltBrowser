@@ -33,6 +33,7 @@
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
@@ -209,7 +210,14 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
     return NotShared<DOMFloat32Array>(nullptr);
   }
 
-  return getChannelData(channel_index);
+  // MoltBrowser: per-site fingerprinting noise, in place (this is the live
+  // channel array). Idempotent: repeated calls don't compound, and samples
+  // the page writes itself move by less than 2^-15 at most.
+  NotShared<DOMFloat32Array> data = getChannelData(channel_index);
+  molt_fingerprinting::FarbleAudio(
+      molt_fingerprinting::ContextOfCurrentCall(exception_state.GetIsolate()),
+      data->AsSpan());
+  return data;
 }
 
 NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
@@ -263,6 +271,10 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
   DCHECK(dst.data());
 
   dst.first(count).copy_from(src.subspan(buffer_offset, count));
+  // MoltBrowser: per-site fingerprinting noise on the copy.
+  molt_fingerprinting::FarbleAudio(
+      molt_fingerprinting::ContextOfCurrentCall(exception_state.GetIsolate()),
+      dst.first(count));
 }
 
 void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,

@@ -25,7 +25,10 @@
 
 #include "third_party/blink/renderer/modules/webaudio/analyser_node.h"
 
+#include <algorithm>  // MoltBrowser
+
 #include "third_party/blink/renderer/bindings/modules/v8/v8_analyser_options.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/webaudio/analyser_handler.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
@@ -116,22 +119,39 @@ double AnalyserNode::smoothingTimeConstant() const {
   return GetAnalyserHandler().SmoothingTimeConstant();
 }
 
+// MoltBrowser: each getter adds per-site fingerprinting noise to the part of
+// the array it wrote (frequencyBinCount or fftSize values).
 void AnalyserNode::getFloatFrequencyData(NotShared<DOMFloat32Array> array) {
   GetAnalyserHandler().GetFloatFrequencyData(array.Get(),
                                              context()->currentTime());
+  molt_fingerprinting::FarbleAudio(GetExecutionContext(),
+                                   array->AsSpan().first(std::min<size_t>(
+                                       array->length(), frequencyBinCount())));
 }
 
 void AnalyserNode::getByteFrequencyData(NotShared<DOMUint8Array> array) {
   GetAnalyserHandler().GetByteFrequencyData(array.Get(),
                                             context()->currentTime());
+  molt_fingerprinting::FarbleAnalyserBytes(
+      GetExecutionContext(),
+      array->AsSpan().first(
+          std::min<size_t>(array->length(), frequencyBinCount())),
+      /*neutral=*/0);
 }
 
 void AnalyserNode::getFloatTimeDomainData(NotShared<DOMFloat32Array> array) {
   GetAnalyserHandler().GetFloatTimeDomainData(array.Get());
+  molt_fingerprinting::FarbleAudio(
+      GetExecutionContext(),
+      array->AsSpan().first(std::min<size_t>(array->length(), fftSize())));
 }
 
 void AnalyserNode::getByteTimeDomainData(NotShared<DOMUint8Array> array) {
   GetAnalyserHandler().GetByteTimeDomainData(array.Get());
+  molt_fingerprinting::FarbleAnalyserBytes(
+      GetExecutionContext(),
+      array->AsSpan().first(std::min<size_t>(array->length(), fftSize())),
+      /*neutral=*/128);
 }
 
 void AnalyserNode::ReportDidCreate() {
