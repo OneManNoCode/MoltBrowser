@@ -106,6 +106,7 @@
 #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
 #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
@@ -3171,6 +3172,10 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     };
     command_line->CopySwitchesFrom(browser_command_line,
                                    kMoltShieldSwitchNames);
+
+    // MoltBrowser: fingerprinting protection mode + per-profile session seed.
+    molt_ai::fingerprinting::AppendRendererSwitches(
+        content::RenderProcessHost::FromID(child_process_id), command_line);
   } else if (process_type == switches::kUtilityProcess) {
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     static const char* const kSwitchNames[] = {

@@ -54,6 +54,10 @@ source_set("tor") {
     # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",
     "//chrome/common",
+
+    # MoltNet's uniform Accept-Language (fingerprinting protection).
+    "//chrome/common/molt_ai/fingerprinting",
+    "//components/language/core/browser",
     "//components/prefs",
     "//components/proxy_config",
     "//content/public/browser",

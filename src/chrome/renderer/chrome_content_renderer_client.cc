@@ -60,6 +60,7 @@
 #include "chrome/renderer/loadtimes_extension_bindings.h"
 #include "chrome/renderer/media/flash_embed_rewrite.h"
 #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
+#include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"  // MoltBrowser
 #include "chrome/renderer/molt_ai/shield/cosmetic_filter_agent.h"  // MoltBrowser
 #include "chrome/renderer/net/net_error_helper.h"
 #include "chrome/renderer/net_benchmarking_extension.h"
@@ -381,6 +382,9 @@ ChromeContentRendererClient::~ChromeContentRendererClient() = default;
 
 void ChromeContentRendererClient::RenderThreadStarted() {
   RenderThread* thread = RenderThread::Get();
+
+  // MoltBrowser: fingerprinting protection, before any frame or worker exists.
+  molt_ai::fingerprinting::ConfigureRendererProcess();
 
   main_thread_profiler_->SetAuxUnwinderFactory(base::BindRepeating(
       &CreateV8Unwinder, base::Unretained(v8::Isolate::GetCurrent())));

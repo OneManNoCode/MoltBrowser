@@ -264,6 +264,10 @@ group("molt_ai") {
     "tor:onion",
     # ssl/https_upgrades_interceptor.cc exempts .onion (onion_util.h).
     "tor:protocol",
+
+    # Fingerprinting protection: session seed + renderer switches (the engine
+    # is in Blink, //third_party/blink/renderer/core/molt_fingerprinting).
+    "fingerprinting",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)

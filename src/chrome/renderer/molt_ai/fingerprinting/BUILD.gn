@@ -1,0 +1,18 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Renderer half of MoltBrowser's fingerprinting protection: hands the
+# browser's mode + session seed to Blink at renderer start
+# (ChromeContentRendererClient::RenderThreadStarted).
+
+source_set("fingerprinting") {
+  sources = [
+    "molt_fingerprinting_renderer.cc",
+    "molt_fingerprinting_renderer.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/common/molt_ai/fingerprinting",
+    "//third_party/blink/public:blink",
+  ]
+}

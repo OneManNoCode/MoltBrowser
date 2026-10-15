@@ -6780,6 +6780,12 @@
     "expiry_milestone": 150
   },
   {
+    // MoltBrowser: fingerprinting protection kill switch; never expires.
+    "name": "molt-fingerprinting-protection",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     // MoltBrowser: MoltShield kill switches; they must never expire.
     "name": "molt-shield-consent-killer",
     "owners": [ "moltbrowser" ],

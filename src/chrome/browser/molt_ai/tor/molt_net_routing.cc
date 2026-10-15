@@ -20,7 +20,9 @@
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
 #include "chrome/common/pref_names.h"
+#include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
@@ -57,6 +59,11 @@ constexpr char kLegacyDohModeOff[] = "off";
 // Any http(s) URL works for the routing self-check; the lookup never leaves
 // the network service (no request is made).
 constexpr char kRoutingProbeUrl[] = "https://check.torproject.org/";
+
+// Uniform language for every MoltNet window (fingerprinting protection). Off-
+// the-record profiles only send the first entry, so pages see "en-US" in both
+// Accept-Language and navigator.language(s).
+constexpr char kMoltNetAcceptLanguages[] = "en-US,en";
 
 // The current MoltNet OTR profile id, attached to the ORIGINAL profile.
 const void* const kMoltNetProfileDataKey = &kMoltNetProfileDataKey;
@@ -290,6 +297,13 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   // HTTPS-Only (strict): the exit relay could otherwise read/modify
   // plain-HTTP traffic. Users get a warning interstitial before any HTTP.
   prefs->SetBoolean(prefs::kHttpsOnlyModeEnabled, true);
+  // Uniformity: the same languages for everyone. (The renderer side -- UTC,
+  // the en-US Intl locale, letterboxed screen metrics -- is configured per
+  // renderer process; see chrome/browser/molt_ai/fingerprinting.)
+  if (fingerprinting::IsFingerprintingProtectionEnabled()) {
+    prefs->SetString(language::prefs::kAcceptLanguages,
+                     kMoltNetAcceptLanguages);
+  }
 
   if (ProxyExternallyControlled(prefs) || !ProxyPointsAtTor(prefs, socks_port)) {
     *error =
