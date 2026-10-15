@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,6 +47,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -65,6 +67,9 @@ using molt_ai::automation::Script;
 using molt_ai::automation::Step;
 using molt_ai::automation::StepType;
 using molt_ai::automation::StepTypeToString;
+using molt_ai::automation::TrustLevel;
+using molt_ai::automation::TrustLevelFromString;
+using molt_ai::automation::TrustLevelToString;
 using molt_ai::automation::Trigger;
 using molt_ai::automation::TriggerType;
 
@@ -131,6 +136,7 @@ base::DictValue WorkflowSummary(const Script& s) {
   d.Set("name", s.name);
   d.Set("stepCount", static_cast<int>(s.steps.size()));
   d.Set("enabled", s.enabled);
+  d.Set("trust", TrustLevelToString(s.security.trust));
   // The site this workflow targets (first NAVIGATE step) → favicon + hostname
   // on the card so it's obvious at a glance which website it's for.
   for (const auto& st : s.steps) {
@@ -196,6 +202,7 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     bind("stopRecording", &AgentStudioHandler::HandleStopRecording);
     bind("saveSchedule", &AgentStudioHandler::HandleSaveSchedule);
     bind("cancelRun", &AgentStudioHandler::HandleCancelRun);
+    bind("promoteTrust", &AgentStudioHandler::HandlePromoteTrust);
   }
 
  private:
@@ -304,17 +311,37 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
           // stored on disk (trust only changes via promoteTrust in
           // molt://ai-automation); a new one gets the default CASUAL one.
           std::optional<Script> existing = st->Load(s->id);
+          bool recorded_here = false;
           if (existing) {
             s->security = existing->security;
           } else {
             s->security = molt_ai::automation::SecurityPolicy();
             s->security.require_approval_for = {"form_submit", "payment",
                                                 "login"};
+            // First save of a draft that stopRecording produced in this
+            // panel (the id was minted server-side and is used once).
+            recorded_here = recorded_ids_.erase(s->id) > 0;
           }
           AutomationSecurity::ClampTrustForSave(
               *s, existing ? &*existing : nullptr);
-          st->Save(*s);
-          out.Set("id", s->id);
+          if (recorded_here) {
+            // The user just performed these steps themselves, on these
+            // sites; replaying them — including the form they submitted or
+            // the saved password they used — is the point of recording.
+            // APPROVED allows exactly that and no more: actions stay on
+            // the sites the steps target, other sites / RUN_JS / headless
+            // runs still need Trusted. Imports and duplicates never get
+            // here and start CASUAL.
+            s->security.trust = TrustLevel::APPROVED;
+          }
+          if (st->Save(*s)) {
+            if (recorded_here) {
+              st->AppendAudit(s->id, "trust_changed",
+                              "casual -> approved (recorded in Agent studio)");
+            }
+            out.Set("id", s->id);
+            out.Set("trust", TrustLevelToString(s->security.trust));
+          }
         }
       }
     }
@@ -405,7 +432,18 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         d.Set("ok", s->stats.last_failed_step_index < 0);
         // Which step failed (0-based; -1 if the run succeeded), so the panel
         // can say "Failed at step N" instead of a bare "failed".
-        d.Set("failedStepIndex", s->stats.last_failed_step_index);
+        const int failed = s->stats.last_failed_step_index;
+        d.Set("failedStepIndex", failed);
+        if (failed >= 0 && failed < static_cast<int>(s->steps.size())) {
+          const Step& fs = s->steps[failed];
+          d.Set("failedStep", fs.description.empty()
+                                  ? StepTypeToString(fs.type)
+                                  : fs.description);
+        }
+        // Stopped by the trust level, and trusting the workflow would let
+        // it through: the panel offers "Trust & re-run".
+        d.Set("needsTrust", s->stats.last_run_needs_trust &&
+                                s->security.trust < TrustLevel::APPROVED);
         d.Set("message", s->stats.last_result.empty() ? "Finished"
                                                        : s->stats.last_result);
         FireWebUIListener("run-complete", base::Value(std::move(d)));
@@ -499,6 +537,14 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
         if (draft.name.empty()) {
           draft.name = "New workflow";
         }
+        // Mint the id now and remember it: the first saveWorkflow with this
+        // id is a recording the user made here (see HandleSaveWorkflow).
+        std::string id = NewWorkflowId() + "_rec";
+        while (recorded_ids_.count(id) || (storage() && storage()->Load(id))) {
+          id += "_";
+        }
+        draft.id = id;
+        recorded_ids_.insert(id);
         out.Set("draft", draft.ToJSON());
       }
     }
@@ -571,6 +617,41 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     ResolveDict(args, std::move(out));
   }
 
+  // The studio's Trust / Undo control: [callback_id, id, "approved" |
+  // "casual"]. Goes through AutomationStorage::SetTrustLevel, the same
+  // path as molt://ai-automation's promoteTrust. Honoured only while the
+  // panel has a fresh user activation (a real click on the button: the
+  // WebUI message pipe is frame-associated, so the click's activation
+  // reaches the browser first), and only between CASUAL and APPROVED —
+  // Trusted / Admin are managed in molt://ai-automation.
+  void HandlePromoteTrust(const base::ListValue& args) {
+    AllowJavascript();
+    base::DictValue out;
+    out.Set("ok", false);
+    content::RenderFrameHost* rfh = web_ui()->GetRenderFrameHost();
+    if (!rfh || !rfh->HasTransientUserActivation()) {
+      out.Set("error", "Click the button to change trust");
+      ResolveDict(args, std::move(out));
+      return;
+    }
+    AutomationStorage* st = storage();
+    if (st && args.size() >= 3 && args[1].is_string() && args[2].is_string()) {
+      const std::string& id = args[1].GetString();
+      const std::string& level_str = args[2].GetString();
+      std::optional<Script> s = st->Load(id);
+      if (!s) {
+        out.Set("error", "Workflow not found");
+      } else if ((level_str != "approved" && level_str != "casual") ||
+                 s->security.trust > TrustLevel::APPROVED) {
+        out.Set("error", "Manage this workflow's trust in molt://ai-automation");
+      } else if (st->SetTrustLevel(id, TrustLevelFromString(level_str))) {
+        out.Set("ok", true);
+        out.Set("trust", level_str);
+      }
+    }
+    ResolveDict(args, std::move(out));
+  }
+
   void HandleCancelRun(const base::ListValue& args) {
     AllowJavascript();
     // Background runs self-close on completion; there is no cross-process
@@ -592,6 +673,10 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     st.Set("count", total);
     FireWebUIListener("recorder-state", base::Value(std::move(st)));
   }
+
+  // Draft ids minted by stopRecording in this panel and not yet saved (see
+  // HandleSaveWorkflow: their first save starts APPROVED).
+  std::set<std::string> recorded_ids_;
 
   base::WeakPtrFactory<AgentStudioHandler> weak_factory_{this};
 };
@@ -684,6 +769,31 @@ function h(tag,attrs,kids){
   return e;
 }
 function clear(el){while(el.firstChild)el.removeChild(el.firstChild);}
+
+/* ---- trust (who may submit forms) ----
+   A workflow's trust level gates form submits, Enter-in-a-form and saved-
+   password fills on its own sites. Workflows recorded here start trusted;
+   blank and imported ones start untrusted. Changes go through
+   'promoteTrust', which the browser only honours on a real click, so call
+   setTrust() straight from click handlers. */
+var TRUST_EXPLAIN='Lets it submit forms, press Enter in forms and fill your saved password — only on the sites its steps use. Imported workflows always start untrusted.';
+function isTrusted(level){return !!level&&level!=='casual';}
+function siteOfSteps(steps){
+  for(var i=0;i<(steps||[]).length;i++){
+    if(steps[i].type==='navigate'&&steps[i].target){
+      try{return new URL(steps[i].target).hostname.replace(/^www\./,'');}catch(e){}
+    }
+  }
+  return '';
+}
+function trustLabel(host){return 'Trust this workflow to submit forms'+(host?' on '+host:'');}
+function setTrust(id,level){
+  return sendWithPromise('promoteTrust',id,level).then(function(r){
+    if(!r||!r.ok){toast((r&&r.error)||'Couldn’t change trust','err');return false;}
+    toast(level==='approved'?'Workflow trusted':'Trust removed','ok');
+    return true;
+  }).catch(function(){toast('Couldn’t change trust','err');return false;});
+}
 
 var STEP_EMOJI={navigate:'\u{1F310}',click:'\u{1F446}',type:'⌨️',scroll:'\u{1F4DC}',keypress:'⏎',
   wait:'⏳',wait_for:'⏳',extract:'\u{1F4CB}',ai_decide:'\u{1F9E0}',ai_extract:'\u{1F9E0}',assert:'✅',notify:'\u{1F514}'};
@@ -869,6 +979,10 @@ function buildCard(wf){
   var sub=h('div',{'class':'csub'});
   sub.appendChild(h('span',{},(wf.stepCount||0)+' step'+((wf.stepCount===1)?'':'s')));
   sub.appendChild(h('span',{'class':'dotsep'},'·'));
+  sub.appendChild(isTrusted(wf.trust)
+    ? h('span',{'class':'tbadge on',title:TRUST_EXPLAIN},'✓ trusted')
+    : h('span',{'class':'tbadge',title:'Can’t submit forms until you trust it'},'not trusted'));
+  sub.appendChild(h('span',{'class':'dotsep'},'·'));
   if(!wf.lastRun){
     sub.appendChild(h('span',{'class':'stat never'},'never run'));
   }else if(wf.lastRun.ok){
@@ -909,7 +1023,18 @@ function buildCard(wf){
 function toggleCardMenu(card,wf){
   if(openCardMenu&&openCardMenu.card===card){closeCardMenu();return;}
   closeCardMenu();
+  var trustItem=null;
+  if(!isTrusted(wf.trust)){
+    trustItem=h('div',{'class':'menu-item',title:TRUST_EXPLAIN,onClick:function(){
+      closeCardMenu();setTrust(wf.id,'approved').then(function(ok){if(ok)loadLibrary();});
+    }},['\u{1F6E1}️',' '+trustLabel(wf.host)]);
+  }else if(wf.trust==='approved'){
+    trustItem=h('div',{'class':'menu-item',onClick:function(){
+      closeCardMenu();setTrust(wf.id,'casual').then(function(ok){if(ok)loadLibrary();});
+    }},['\u{1F6E1}️',' Stop trusting it']);
+  }
   var menu=h('div',{'class':'card-menu open'},[
+    trustItem,
     h('div',{'class':'menu-item',onClick:function(){closeCardMenu();openRuns(wf.id,wf.name);}},['\u{1F553}',' View runs']),
     h('div',{'class':'menu-item',onClick:function(){closeCardMenu();askDuplicate(wf);}},['⧉',' Duplicate']),
     h('div',{'class':'menu-item',onClick:function(){closeCardMenu();askRename(wf);}},['✎',' Rename']),
@@ -1079,7 +1204,8 @@ $('stopBtn').addEventListener('click',function(){
       name:draft.name||'Recorded workflow',
       steps:steps,
       variables:draft.variables||{},
-      trigger:{type:'manual',expression:''}
+      trigger:{type:'manual',expression:''},
+      recordedId:draft.id||null
     });
     toast(steps.length+' step'+(steps.length===1?'':'s')+' captured','ok');
   }).catch(function(){
@@ -1100,7 +1226,8 @@ function openEditor(id){
       id:wf.id,name:wf.name||'Untitled workflow',
       steps:wf.steps||[],variables:wf.variables||{},
       trigger:wf.trigger||{type:'manual',expression:''},
-      stats:wf.stats||null
+      stats:wf.stats||null,
+      trust:(wf.security&&wf.security.trust)||'casual'
     });
   }).catch(function(){toast('Couldn’t open workflow','err');});
 }
@@ -1110,7 +1237,9 @@ function openEditorDraft(wf){
     steps:(wf.steps||[]).map(function(s){return Object.assign({},s);}),
     variables:Object.assign({},wf.variables||{}),
     trigger:wf.trigger||{type:'manual',expression:''},
-    stats:wf.stats||null
+    stats:wf.stats||null,
+    trust:wf.trust||null,
+    recordedId:wf.recordedId||null
   };
   $('edName').value=editorState.name;
   renderEditorMeta();renderEditorSteps();
@@ -1131,6 +1260,40 @@ function renderEditorMeta(){
     m.appendChild(h('span',{'class':'dotsep',style:'color:var(--dim)'},'·'));
     m.appendChild(h('span',{style:'color:var(--warn)'},'unsaved'));
   }
+  renderTrustPanel();
+}
+function renderTrustPanel(){
+  var box=$('edTrust');clear(box);
+  var es=editorState, host=siteOfSteps(es.steps);
+  if(es.id==null){
+    // Unsaved: say what the first save will do.
+    box.appendChild(h('div',{'class':'trust-panel'},[
+      h('div',{'class':'tp-h'},es.recordedId
+        ?['✓ ','Recorded by you — it will be trusted to replay this'+(host?' on '+host:'')]
+        :['\u{1F6E1}️ ','Not trusted — you can trust it after saving']),
+      h('div',{'class':'tp-s'},TRUST_EXPLAIN)
+    ]));
+    return;
+  }
+  if(isTrusted(es.trust)){
+    var undo=es.trust==='approved'
+      ? h('button',{'class':'mini tp-undo',onClick:function(){
+          setTrust(es.id,'casual').then(function(ok){if(ok){es.trust='casual';renderTrustPanel();}});
+        }},'Undo')
+      : null;
+    box.appendChild(h('div',{'class':'trust-panel'},[
+      h('div',{'class':'tp-h'},['✓ ','Trusted to submit forms'+(host?' on '+host:''),undo]),
+      h('div',{'class':'tp-s'},es.trust==='approved'?TRUST_EXPLAIN:'Trust level “'+es.trust+'” — manage it in molt://ai-automation.')
+    ]));
+    return;
+  }
+  box.appendChild(h('div',{'class':'trust-panel'},[
+    h('div',{'class':'tp-h'},['\u{1F6E1}️ ','Not trusted — runs stop at form submits']),
+    h('div',{'class':'tp-s'},TRUST_EXPLAIN),
+    h('button',{'class':'btn violet',onClick:function(){
+      setTrust(es.id,'approved').then(function(ok){if(ok){es.trust='approved';renderTrustPanel();}});
+    }},trustLabel(host))
+  ]));
 }
 
 function renderEditorSteps(){
@@ -1343,12 +1506,17 @@ function collectWorkflow(){
   var w={name:(editorState.name||'Untitled workflow'),steps:editorState.steps,
     variables:editorState.variables,trigger:editorState.trigger||{type:'manual',expression:''}};
   if(editorState.id!=null)w.id=editorState.id;
+  else if(editorState.recordedId)w.id=editorState.recordedId;
   return w;
 }
 function saveEditor(quiet){
   var w=collectWorkflow();
   return sendWithPromise('saveWorkflow',w).then(function(r){
-    if(r&&r.id!=null){editorState.id=r.id;renderEditorMeta();}
+    if(r&&r.id!=null){
+      editorState.id=r.id;
+      if(r.trust)editorState.trust=r.trust;
+      renderEditorMeta();
+    }
     if(!quiet)toast('Saved','ok');
     return editorState.id;
   }).catch(function(){toast('Couldn’t save','err');return null;});
@@ -1360,7 +1528,9 @@ function runWorkflowFlow(id){
     openRunSheet(id,wf.name,wf.variables||{});
   }).catch(function(){toast('Couldn’t start run','err');});
 }
+var lastRunArgs={};   // id -> {values, mode}, for "Trust & re-run"
 function doRun(id,values,mode){
+  lastRunArgs[id]={values:values||{},mode:mode||'watch'};
   activeRun={id:id,stepIndex:0,total:0,message:'Starting…',done:false,ok:null};
   paintRun();
   sendWithPromise('runWorkflow',id,values,mode||'watch').catch(function(){
@@ -1378,11 +1548,17 @@ cr.addWebUIListener('run-complete',function(d){
   if(!d)return;
   var fi=(typeof d.failedStepIndex==='number')?d.failedStepIndex:-1;
   var msg=d.message||(d.ok?'All done':'Run failed');
-  if(!d.ok && fi>=0) msg='Failed at step '+(fi+1)+' — '+(d.message||'element not found');
+  if(!d.ok && fi>=0){
+    var which=d.failedStep?(' “'+d.failedStep+'”'):'';
+    msg=(d.needsTrust?'Stopped at step ':'Failed at step ')+(fi+1)+which+' — '+(d.message||'element not found');
+  }
   activeRun={id:d.id,done:true,ok:!!d.ok,message:msg,failedStepIndex:fi,
+    needsTrust:!d.ok&&!!d.needsTrust,
     stepIndex:activeRun?activeRun.stepIndex:0,total:activeRun?activeRun.total:0};
   paintRun();
-  // Keep failures visible longer so the user can read which step died.
+  // Keep failures visible longer so the user can read which step died; a
+  // trust block stays until the user acts on it (or starts another run).
+  if(activeRun.needsTrust)return;
   setTimeout(function(){
     activeRun=null;
     if(view==='library')loadLibrary();
@@ -1394,9 +1570,30 @@ function tickerNode(){
   var ar=activeRun;
   var pct=ar.total?Math.round(((ar.done?ar.total:ar.stepIndex)/ar.total)*100):(ar.done?100:8);
   if(ar.done){
+    var trustAct=null;
+    if(ar.needsTrust){
+      var rid=ar.id;
+      trustAct=h('div',{'class':'trust-act'},[
+        h('button',{'class':'btn ghost',onClick:function(e){
+          e.stopPropagation();activeRun=null;paintRun();if(view==='library')loadLibrary();
+        }},'Dismiss'),
+        h('button',{'class':'btn violet',title:TRUST_EXPLAIN,onClick:function(e){
+          e.stopPropagation();
+          // Straight from the click: the browser checks for a user gesture.
+          setTrust(rid,'approved').then(function(ok){
+            if(!ok)return;
+            var a=lastRunArgs[rid]||{values:{},mode:'watch'};
+            var fb=$('runFootBtn');
+            if(runSheet.open&&String(runSheet.id)===String(rid)&&fb){fb.disabled=true;fb.textContent='Running…';}
+            doRun(rid,a.values,a.mode);
+          });
+        }},'Trust & re-run')
+      ]);
+    }
     return h('div',{},[
       h('div',{'class':'run-done '+(ar.ok?'ok':'fail')},[(ar.ok?'✓':'✗'),' ',ar.message]),
-      h('div',{'class':'pbar'},h('i',{style:'width:100%;background:'+(ar.ok?'var(--ok)':'var(--err)')}))
+      h('div',{'class':'pbar'},h('i',{style:'width:100%;background:'+(ar.ok?'var(--ok)':'var(--err)')})),
+      trustAct
     ]);
   }
   return h('div',{},[
@@ -1885,6 +2082,16 @@ button,input,textarea,select{font-family:inherit}
 .pbar i{display:block;height:100%;width:0;border-radius:3px;background:linear-gradient(90deg,var(--violet),var(--violet-2));transition:width .3s ease}
 .run-done{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin-top:9px}
 .run-done.ok{color:var(--ok)} .run-done.fail{color:var(--err)}
+/* trust: badge on cards, panel in the editor, "Trust & re-run" after a block */
+.tbadge{font-weight:600;color:var(--faint)} .tbadge.on{color:var(--violet)}
+.trust-panel{margin:10px 2px 2px;padding:10px 12px;border-radius:12px;background:var(--surface);
+  border:1px solid var(--border);font-size:12px;color:var(--muted);line-height:1.45}
+.trust-panel .tp-h{display:flex;align-items:center;gap:7px;font-weight:600;color:var(--text)}
+.trust-panel .tp-h .tp-undo{margin-left:auto}
+.trust-panel .tp-s{margin-top:4px;font-size:11.5px;color:var(--faint)}
+.trust-panel .btn{margin-top:9px;width:100%;font-size:12px;padding:8px 10px}
+.trust-act{display:flex;gap:7px;margin-top:9px}
+.trust-act .btn{flex:1;font-size:12px;padding:8px 10px}
 
 /* empty state */
 .empty{text-align:center;padding:40px 22px;animation:rise .3s ease both}
@@ -2173,6 +2380,7 @@ textarea.inp{resize:vertical;min-height:52px;line-height:1.45;font-family:inheri
         <div class="ed-name-wrap">
           <input class="ed-name" id="edName" placeholder="Name this workflow" spellcheck="false">
           <div class="ed-meta" id="edMeta"></div>
+          <div id="edTrust"></div>
         </div>
         <div id="edSteps"></div>
         <div class="addwrap">

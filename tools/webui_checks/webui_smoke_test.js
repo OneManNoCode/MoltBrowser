@@ -64,6 +64,9 @@ function trustedTypesMode(src) {
   throw new Error('page has no Trusted Types mode');
 }
 
+// promoteTrust calls the Agent studio makes ([id, level] each).
+const agentTrustCalls = [];
+
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
    listeners: ['#searchForm:submit', '.card.ai:click', '.card.net:click']},
@@ -156,12 +159,62 @@ const PAGES = [
   {name: 'molt://ai-agent', file: 'molt_ai_agent_ui.cc',
    responses: {
      listWorkflows: {workflows: [
-       {id: 'w1', name: '<img src=x onerror=alert(1)>', steps: 3, trigger: {type: 'manual'}}]},
+       {id: 'w1', name: '<img src=x onerror=alert(1)>', stepCount: 3, trust: 'casual',
+        host: 'example.com', trigger: {type: 'manual'}}]},
      getRuns: {runs: []},
+     getWorkflow: {id: 'w1', name: 'W', variables: {}, security: {trust: 'casual'},
+                   steps: [{type: 'navigate', target: 'https://www.example.com/'},
+                           {type: 'click', target: '#buy', description: 'Click "Buy"'}]},
+     promoteTrust: (args) => { agentTrustCalls.push([args[1], args[2]]); return {ok: true, trust: args[2]}; },
    },
-   after(window) {
-     assert.strictEqual(window.document.querySelectorAll('#libList img[onerror]').length, 0,
+   async after(window) {
+     const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 15));
+     assert.strictEqual(doc.querySelectorAll('#libList img[onerror]').length, 0,
                         'workflow names are text');
+     // Trust level on the card; the card menu offers the trust action.
+     const card = doc.querySelector('#libList .card');
+     assert(/not trusted/.test(card.querySelector('.csub').textContent), 'trust shown on the card');
+     card.querySelector('.kebab').click();
+     const item = Array.from(card.querySelectorAll('.menu-item')).find(
+         (m) => m.textContent.includes('Trust this workflow to submit forms on example.com'));
+     assert(item, 'card menu offers "Trust this workflow…"');
+     item.click();
+     assert.deepStrictEqual(agentTrustCalls.pop(), ['w1', 'approved'], 'sent from the click');
+     await tick();
+     // Workflow detail: panel with the action and a one-line explanation.
+     window.openEditor('w1');
+     await tick();
+     const panel = doc.getElementById('edTrust');
+     assert(/only on the sites its steps use/.test(panel.textContent), 'explains what changes');
+     const btn = Array.from(panel.querySelectorAll('button')).find(
+         (b) => b.textContent === 'Trust this workflow to submit forms on example.com');
+     assert(btn, 'editor trust button');
+     btn.click();
+     assert.deepStrictEqual(agentTrustCalls.pop(), ['w1', 'approved']);
+     await tick();
+     assert(/Trusted to submit forms on example\.com/.test(panel.textContent), 'panel updates');
+     // A run stopped by trust names the step and offers "Trust & re-run".
+     window.doRun('w1', {q: 'x'}, 'auto');
+     window.cr.webUIListenerCallback('run-complete', {
+       id: 'w1', ok: false, failedStepIndex: 1, failedStep: 'Click "Buy"', needsTrust: true,
+       message: 'Blocked: submitting a form needs a trusted workflow.'});
+     const done = doc.querySelector('#libList .card .run-done');
+     assert(done && done.textContent.includes('Stopped at step 2 “Click "Buy"”'), 'blocked step named');
+     const rerun = Array.from(doc.querySelectorAll('#libList button')).find(
+         (b) => b.textContent === 'Trust & re-run');
+     assert(rerun, '"Trust & re-run" offered');
+     const before = window.__sent.filter((m) => m === 'runWorkflow').length;
+     rerun.click();
+     assert.deepStrictEqual(agentTrustCalls.pop(), ['w1', 'approved']);
+     await tick();
+     assert.strictEqual(window.__sent.filter((m) => m === 'runWorkflow').length, before + 1,
+                        're-run after trusting');
+     // Leave an empty editor for the click-everything pass below: it clicks
+     // controls in DOM order, so a populated step list would see its later
+     // buttons clicked after "Delete step" had already detached them.
+     window.openEditorDraft({name: 'x', steps: [], variables: {}});
+     window.showView('library');
    }},
   {name: 'molt://ai-automation', file: 'molt_ai_automation_ui.cc',
    listeners: ['#new-blank-btn:click', '#sample-btn:click', '#import-btn:click',
