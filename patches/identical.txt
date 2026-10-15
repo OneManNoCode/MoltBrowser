@@ -11,6 +11,9 @@ chrome/app/sharesheet_strings.grdp
 chrome/app/shortcut_input_strings.grdp
 chrome/app/vr_strings.grdp
 chrome/app/whats_new_strings.grdp
+chrome/browser/about_flags.cc
+chrome/browser/flag-metadata.json
+chrome/browser/flag-never-expire-list.json
 components/android_system_error_page_strings.grdp
 components/blocked_content_strings.grdp
 components/bookmark_bar_strings.grdp
