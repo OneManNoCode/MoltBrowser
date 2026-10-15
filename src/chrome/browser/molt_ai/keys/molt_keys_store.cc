@@ -138,7 +138,12 @@ bool WriteEncrypted(const base::DictValue& dict, WriteKind kind) {
     return false;
   }
   std::string ciphertext;
-  bool encrypted = OSCrypt::EncryptString(plaintext, &ciphertext);
+  // A removal only rewrites what is already on disk, possibly under the
+  // hard-coded key it was written with; anything that stores a secret must
+  // be encrypted with an OS-backed key.
+  bool encrypted = kind == WriteKind::kStoresSecrets
+                       ? EncryptSecretForStorage(plaintext, &ciphertext)
+                       : OSCrypt::EncryptString(plaintext, &ciphertext);
   ScrubString(plaintext);
   if (!encrypted) {
     LOG(WARNING) << "[MoltKeysStore] encrypt failed";
@@ -168,15 +173,43 @@ bool IsSecureStorageAvailable() {
 
 std::string SecureStorageUnavailableMessage() {
 #if BUILDFLAG(IS_LINUX)
-  return "No system keyring found; install/unlock GNOME Keyring or KWallet "
-         "to store keys securely.";
+  return "No system keyring is available. Install or unlock GNOME Keyring "
+         "or KWallet to store secrets.";
 #elif BUILDFLAG(IS_MAC)
-  return "The macOS Keychain is unavailable or locked; unlock it to store "
-         "keys securely.";
+  return "The macOS Keychain is unavailable or locked. Unlock it to store "
+         "secrets.";
 #else
-  return "Secure OS key storage is unavailable, so keys can't be stored "
-         "securely.";
+  return "Secure OS key storage is unavailable, so secrets can't be stored.";
 #endif
+}
+
+bool IsLinuxKeyringCiphertext(const std::string& ciphertext) {
+  // os_crypt_linux.cc: "v11" = AES key derived from the keyring password,
+  // "v10" = the hard-coded "peanuts" key.
+  return ciphertext.size() > 3 && ciphertext.compare(0, 3, "v11") == 0;
+}
+
+bool EncryptSecretForStorage(const std::string& plaintext,
+                             std::string* ciphertext) {
+  ciphertext->clear();
+  if (plaintext.empty() || !IsSecureStorageAvailable()) {
+    return false;
+  }
+  std::string out;
+  if (!OSCrypt::EncryptString(plaintext, &out)) {
+    return false;
+  }
+#if BUILDFLAG(IS_LINUX)
+  // OSCrypt picks the key per call and silently falls back to the
+  // hard-coded one; check what it actually used, not just what it reported.
+  if (!IsLinuxKeyringCiphertext(out)) {
+    LOG(WARNING) << "[MoltSecretStore] OSCrypt used its hard-coded key; "
+                    "not storing the secret";
+    return false;
+  }
+#endif
+  *ciphertext = std::move(out);
+  return true;
 }
 
 ProviderConfig::ProviderConfig() = default;
