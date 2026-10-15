@@ -107,6 +107,60 @@ TEST(MoltShieldRequestUtilsTest, MakeCheckInput) {
                    .has_value());
 }
 
+TEST(MoltShieldRequestUtilsTest, IsSafeParamStrip) {
+  const GURL original("https://shop.example/p/1?id=7&fbclid=IwAR0#reviews");
+  EXPECT_TRUE(IsSafeParamStrip(original,
+                               GURL("https://shop.example/p/1?id=7#reviews")));
+  EXPECT_TRUE(IsSafeParamStrip(GURL("https://a.example/?utm_source=x"),
+                               GURL("https://a.example/")));
+  // Anything beyond dropping query parameters is refused.
+  EXPECT_FALSE(IsSafeParamStrip(original, original));
+  EXPECT_FALSE(IsSafeParamStrip(
+      original, GURL("https://evil.example/p/1?id=7#reviews")));
+  EXPECT_FALSE(IsSafeParamStrip(
+      original, GURL("http://shop.example/p/1?id=7#reviews")));
+  EXPECT_FALSE(IsSafeParamStrip(
+      original, GURL("https://shop.example:444/p/1?id=7#reviews")));
+  EXPECT_FALSE(
+      IsSafeParamStrip(original, GURL("https://shop.example/p/?id=7#reviews")));
+  EXPECT_FALSE(
+      IsSafeParamStrip(original, GURL("https://shop.example/p/1?id=7")));
+  EXPECT_FALSE(IsSafeParamStrip(GURL("https://a.example/p"),
+                                GURL("https://a.example/")));
+  EXPECT_FALSE(IsSafeParamStrip(original, GURL()));
+  EXPECT_FALSE(IsSafeParamStrip(GURL("ftp://a.example/?fbclid=1"),
+                                GURL("ftp://a.example/")));
+}
+
+TEST(MoltShieldRequestUtilsTest, WhereParamsMayBeStripped) {
+  EXPECT_TRUE(CanStripParamsFromSubresource(RequestDestination::kEmpty,
+                                            /*keepalive=*/false));
+  EXPECT_TRUE(
+      CanStripParamsFromSubresource(RequestDestination::kScript, false));
+  EXPECT_TRUE(CanStripParamsFromSubresource(RequestDestination::kImage, false));
+  EXPECT_FALSE(CanStripParamsFromSubresource(RequestDestination::kEmpty,
+                                             /*keepalive=*/true));
+  EXPECT_FALSE(
+      CanStripParamsFromSubresource(RequestDestination::kServiceWorker, false));
+  EXPECT_FALSE(
+      CanStripParamsFromSubresource(RequestDestination::kWorker, false));
+  EXPECT_FALSE(
+      CanStripParamsFromSubresource(RequestDestination::kSharedWorker, false));
+  EXPECT_FALSE(
+      CanStripParamsFromSubresource(RequestDestination::kDocument, false));
+  EXPECT_FALSE(
+      CanStripParamsFromSubresource(RequestDestination::kIframe, false));
+
+  EXPECT_TRUE(CanStripParamsFromNavigation(
+      "GET", GURL("https://a.example/?fbclid=1")));
+  EXPECT_FALSE(CanStripParamsFromNavigation(
+      "POST", GURL("https://a.example/?fbclid=1")));
+  EXPECT_FALSE(
+      CanStripParamsFromNavigation("GET", GURL("https://a.example/page")));
+  EXPECT_FALSE(CanStripParamsFromNavigation(
+      "GET", GURL("chrome://settings/?fbclid=1")));
+}
+
 TEST(MoltShieldRequestUtilsTest, LooksLikeFilterList) {
   EXPECT_TRUE(LooksLikeFilterList(ListWithFilters(kMinFilterLines)));
   EXPECT_FALSE(LooksLikeFilterList(ListWithFilters(kMinFilterLines - 1)));

@@ -173,6 +173,10 @@ void MoltShieldService::RecordCosmetic(const CosmeticData& data) {
   }
 }
 
+void MoltShieldService::RecordParamsStripped() {
+  params_stripped_.fetch_add(1, std::memory_order_relaxed);
+}
+
 ShieldStats MoltShieldService::GetStats() const {
   ShieldStats stats;
   stats.total_requests_checked = total_requests_checked_.load();
@@ -182,6 +186,7 @@ ShieldStats MoltShieldService::GetStats() const {
   stats.websockets_blocked = websockets_blocked_.load();
   stats.cosmetic_rules_applied = cosmetic_rules_applied_.load();
   stats.scriptlets_injected = scriptlets_injected_.load();
+  stats.params_stripped = params_stripped_.load();
   return stats;
 }
 

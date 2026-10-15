@@ -75,6 +75,8 @@ struct ShieldStats {
   int64_t websockets_blocked = 0;
   int64_t cosmetic_rules_applied = 0;  // Documents given hide CSS.
   int64_t scriptlets_injected = 0;     // Documents given scriptlets.
+  int64_t params_stripped = 0;  // Requests/navigations with tracking
+                                // parameters removed.
 };
 
 // Status of one filter list, for the UI and breakage reports.
