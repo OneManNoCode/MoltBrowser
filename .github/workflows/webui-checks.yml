@@ -10,6 +10,8 @@ name: WebUI checks
 #     (security regression test, fuzzed with an HTML5 parser)
 #   * every converted page loads in jsdom under the strict CSP with
 #     Trusted Types emulated, and its controls are wired
+#   * MoltShield's page scripts behave: the procedural cosmetic filter
+#     engine (renderer) and the consent killer, in jsdom
 
 on:
   push:
@@ -17,15 +19,19 @@ on:
     paths:
       - 'src/chrome/browser/ui/webui/molt_ai/**'
       - 'src/chrome/browser/molt_ai/**'
+      - 'src/chrome/renderer/molt_ai/**'
       - 'src/chrome/browser/ui/views/toolbar/**'
       - 'tools/webui_checks/**'
+      - 'tools/shield_bench/*.js'
       - '.github/workflows/webui-checks.yml'
   pull_request:
     paths:
       - 'src/chrome/browser/ui/webui/molt_ai/**'
       - 'src/chrome/browser/molt_ai/**'
+      - 'src/chrome/renderer/molt_ai/**'
       - 'src/chrome/browser/ui/views/toolbar/**'
       - 'tools/webui_checks/**'
+      - 'tools/shield_bench/*.js'
       - '.github/workflows/webui-checks.yml'
   workflow_dispatch:
 
@@ -52,3 +58,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm test
+      - name: MoltShield page scripts (procedural filters, consent killer) in jsdom
+        run: |
+          node tools/shield_bench/procedural_filters_test.js
+          node tools/shield_bench/consent_killer_test.js
