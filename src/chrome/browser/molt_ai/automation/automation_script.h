@@ -202,6 +202,11 @@ struct Stats {
   // or -1 if the last run succeeded / the script hasn't run. Used by the
   // "Retry from failed step" button.
   int last_failed_step_index = -1;
+  // True when the most recent run stopped on a step that the workflow's
+  // trust level blocked and trusting it (APPROVED) would allow — a form
+  // submit, Enter in a form, a password / card field. The Agent studio
+  // offers "Trust & re-run" for it.
+  bool last_run_needs_trust = false;
   // Day 6: cumulative AI token usage across every run of this script.
   // Useful to spot scripts whose AI_DECIDE/AI_EXTRACT prompts grew too
   // expensive over time.

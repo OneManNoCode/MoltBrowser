@@ -443,25 +443,19 @@ class MoltAIAutomationHandler : public content::WebUIMessageHandler {
     const std::string trust_str =
         args[2].is_string() ? args[2].GetString() : "casual";
 
-    auto script = storage_.Load(id);
     base::DictValue result;
-    if (!script) {
+    if (!storage_.Load(id)) {
       result.Set("success", false);
       result.Set("error", "script not found");
       ResolveJavascriptCallback(base::Value(callback_id),
                                 base::Value(std::move(result)));
       return;
     }
-    TrustLevel before = script->security.trust;
-    script->security.trust =
+    const TrustLevel level =
         molt_ai::automation::TrustLevelFromString(trust_str);
-    bool ok = storage_.Save(*script);
-    if (ok) {
-      storage_.AppendAudit(id, "trust_changed",
-                            TrustLevelToString(before) + " -> " + trust_str);
-    }
+    bool ok = storage_.SetTrustLevel(id, level);
     result.Set("success", ok);
-    result.Set("trust", TrustLevelToString(script->security.trust));
+    result.Set("trust", TrustLevelToString(level));
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
   }

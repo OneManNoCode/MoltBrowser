@@ -355,6 +355,8 @@ base::DictValue StatsToDict(const Stats& s) {
   // older .molt files stay terse.
   if (s.last_failed_step_index >= 0)
     d.Set("last_failed_step_index", s.last_failed_step_index);
+  if (s.last_run_needs_trust)
+    d.Set("last_run_needs_trust", true);
   if (s.ai_tokens_total > 0)
     d.Set("ai_tokens_total", static_cast<double>(s.ai_tokens_total));
   if (!s.run_history.empty()) {
@@ -373,6 +375,7 @@ Stats StatsFromDict(const base::DictValue& d) {
   s.last_run_duration_ms = GetInt(d, "last_run_duration_ms", 0);
   s.last_result = GetString(d, "last_result", "");
   s.last_failed_step_index = GetInt(d, "last_failed_step_index", -1);
+  s.last_run_needs_trust = GetBool(d, "last_run_needs_trust", false);
   s.ai_tokens_total = GetInt64(d, "ai_tokens_total", 0);
   if (const base::ListValue* hist = d.FindList("run_history")) {
     for (const auto& v : *hist) {

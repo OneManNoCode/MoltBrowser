@@ -53,6 +53,14 @@ class AutomationStorage {
   // Delete a script + its artifacts directory.
   bool Delete(const std::string& id);
 
+  // The promoteTrust path: sets the stored script's trust level and writes
+  // a "trust_changed" audit line. Callers are UI handlers acting on a user
+  // click (molt://ai-automation's trust panel, the Agent studio's Trust
+  // button); saving / importing never changes trust (see
+  // AutomationSecurity::ClampTrustForSave). Returns false if the script is
+  // missing or could not be saved.
+  bool SetTrustLevel(const std::string& id, TrustLevel level);
+
   // -------- Audit log --------
   // Append a single line to ~/.moltbrowser/automations/audit.log.
   // Format: ISO8601 | script_id | event | extra

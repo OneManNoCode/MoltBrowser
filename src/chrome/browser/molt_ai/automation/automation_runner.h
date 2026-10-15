@@ -117,10 +117,16 @@ class AutomationRunner {
 
   // Workflow security policy (automation_security.h). Checks |s| against
   // policy_ before it touches the page; false + |why| if it must not run.
-  bool PreflightStepPolicy(const Step& s, std::string* why) const;
+  // |needs_trust| is set when trusting the workflow (APPROVED) would allow
+  // the step.
+  bool PreflightStepPolicy(const Step& s,
+                           std::string* why,
+                           bool* needs_trust) const;
   // Ends the run on the current step without retries (a policy block or a
   // step that needs the user's confirmation), recording |reason|.
-  void BlockStep(const std::string& reason);
+  // |needs_trust| marks a block that trusting the workflow lifts; it is
+  // saved as Stats::last_run_needs_trust.
+  void BlockStep(const std::string& reason, bool needs_trust = false);
 
   // After a step reaches a terminal outcome (success, or failure with no
   // retries left), record a StepResult for the Runs timeline — including a
@@ -290,6 +296,8 @@ class AutomationRunner {
   // widens its whitelist with the child script's hosts.
   AutomationSecurity security_;
   SecurityPolicy policy_;
+  // The run was stopped by a block that trusting the workflow would lift.
+  bool blocked_needs_trust_ = false;
   size_t current_index_ = 0;
   bool is_running_ = false;
   bool cancel_requested_ = false;

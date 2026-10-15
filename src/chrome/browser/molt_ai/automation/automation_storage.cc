@@ -205,6 +205,20 @@ bool AutomationStorage::Delete(const std::string& id) {
   return deleted_script;
 }
 
+bool AutomationStorage::SetTrustLevel(const std::string& id,
+                                      TrustLevel level) {
+  std::optional<Script> script = Load(id);
+  if (!script)
+    return false;
+  const TrustLevel before = script->security.trust;
+  script->security.trust = level;
+  if (!Save(*script))
+    return false;
+  AppendAudit(id, "trust_changed",
+              TrustLevelToString(before) + " -> " + TrustLevelToString(level));
+  return true;
+}
+
 void AutomationStorage::AppendAudit(const std::string& script_id,
                                      const std::string& event,
                                      const std::string& extra) {

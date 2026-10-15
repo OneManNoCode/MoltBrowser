@@ -241,10 +241,17 @@ std::string JSQuote(const std::string& s) {
 // behind a chat reply). The step's own timeout_ms wins if larger.
 constexpr base::TimeDelta kLLMStepBudget = base::Seconds(120);
 
-// Appended to policy-block messages: how the user lifts the restriction.
-constexpr char kTrustAdvice[] =
-    " To allow it, raise this workflow's trust level to Approved in "
-    "molt://ai-automation.";
+// Appended to blocks that trusting the workflow (trust >= APPROVED) lifts.
+// Those runs are flagged (Stats::last_run_needs_trust) so the Agent studio
+// can offer "Trust & re-run".
+constexpr char kNeedsTrustAdvice[] =
+    " Trust this workflow to allow it (Agent panel, or Approved in "
+    "molt://ai-automation).";
+// Appended to blocks on a site the workflow does not target: trusting it
+// does not lift those; only the Trusted level may act anywhere.
+constexpr char kOtherSiteAdvice[] =
+    " Only workflows set to Trusted in molt://ai-automation may act on "
+    "other sites.";
 
 bool AsksBeforeSensitive(const Step& s) {
   return s.extra.is_dict() &&
@@ -385,6 +392,7 @@ void AutomationRunner::Run(Script script,
   }
   script_ = std::move(script);
   policy_ = AutomationSecurity::EffectivePolicy(script_);
+  blocked_needs_trust_ = false;
   // Day 6: support resume-at-step. Clamp to a valid index — out-of-range
   // start values fall back to 0 to preserve the existing behavior.
   current_index_ = (start_index < script_.steps.size()) ? start_index : 0;
@@ -518,8 +526,9 @@ void AutomationRunner::ExecuteNextStep() {
 
   EmitStepProgress(/*starting=*/true, /*succeeded=*/false, "");
   std::string blocked;
-  if (!PreflightStepPolicy(s, &blocked)) {
-    BlockStep(blocked);
+  bool needs_trust = false;
+  if (!PreflightStepPolicy(s, &blocked, &needs_trust)) {
+    BlockStep(blocked, needs_trust);
     return;
   }
   ArmStepTimeout(s);
@@ -547,11 +556,16 @@ void AutomationRunner::ExecuteNextStep() {
 }
 
 bool AutomationRunner::PreflightStepPolicy(const Step& s,
-                                           std::string* why) const {
+                                           std::string* why,
+                                           bool* needs_trust) const {
   const std::string page =
       target_contents_ ? target_contents_->GetLastCommittedURL().spec()
                        : std::string();
   const bool page_allowed = security_.AllowNavigation(policy_, page);
+  const std::string other_site =
+      "Blocked: this workflow may not act on " +
+      std::string(GURL(page).host()) + "." + kOtherSiteAdvice;
+  *needs_trust = false;
   switch (s.type) {
     case StepType::NAVIGATE: {
       GURL url(Resolve(s.target));
@@ -562,9 +576,8 @@ bool AutomationRunner::PreflightStepPolicy(const Step& s,
         return false;
       }
       if (!security_.AllowNavigation(policy_, url.spec())) {
-        *why = "Blocked by this workflow's security policy: " +
-               std::string(url.host()) + " is not one of its sites." +
-               kTrustAdvice;
+        *why = "Blocked: " + std::string(url.host()) +
+               " is not one of this workflow's sites." + kOtherSiteAdvice;
         return false;
       }
       return true;
@@ -572,40 +585,43 @@ bool AutomationRunner::PreflightStepPolicy(const Step& s,
     case StepType::CLICK:
       if (security_.AllowClick(policy_, page, Resolve(s.target)))
         return true;
-      *why = page_allowed
-                 ? std::string("Blocked by this workflow's security policy: "
-                               "clicking a submit control.")
-                 : "Blocked by this workflow's security policy: it may not "
-                   "act on " + std::string(GURL(page).host()) + ".";
-      *why += kTrustAdvice;
+      if (!page_allowed) {
+        *why = other_site;
+      } else {
+        *why = std::string("Blocked: clicking a submit control needs a "
+                           "trusted workflow.") + kNeedsTrustAdvice;
+        *needs_trust = true;
+      }
       return false;
     case StepType::TYPE:
       if (security_.AllowType(policy_, page, Resolve(s.target),
                               Resolve(s.value))) {
         return true;
       }
-      *why = page_allowed
-                 ? std::string("Blocked by this workflow's security policy: "
-                               "typing a password or card number.")
-                 : "Blocked by this workflow's security policy: it may not "
-                   "act on " + std::string(GURL(page).host()) + ".";
-      *why += kTrustAdvice;
+      if (!page_allowed) {
+        *why = other_site;
+      } else {
+        *why = std::string("Blocked: typing a password or card number needs "
+                           "a trusted workflow.") + kNeedsTrustAdvice;
+        *needs_trust = true;
+      }
       return false;
     case StepType::KEYPRESS:
       // Keys go to whatever page is focused; same site rule as a click.
       if (page_allowed)
         return true;
-      *why = "Blocked by this workflow's security policy: it may not act on " +
-             std::string(GURL(page).host()) + "." + kTrustAdvice;
+      *why = other_site;
       return false;
     default:
       return true;
   }
 }
 
-void AutomationRunner::BlockStep(const std::string& reason) {
+void AutomationRunner::BlockStep(const std::string& reason,
+                                 bool needs_trust) {
   if (!is_running_)
     return;
+  blocked_needs_trust_ = needs_trust;
   step_timeout_timer_.Stop();
   // Drop any in-flight work of this step (see OnStepFinished).
   weak_factory_.InvalidateWeakPtrs();
@@ -887,6 +903,7 @@ void AutomationRunner::Finish(bool success, const std::string& message) {
   // "retry from step N" button. -1 = run succeeded / no failure.
   script_.stats.last_failed_step_index =
       success ? -1 : static_cast<int>(current_index_);
+  script_.stats.last_run_needs_trust = !success && blocked_needs_trust_;
   // Day 6: cumulative + per-run AI token usage.
   script_.stats.ai_tokens_total += current_run_tokens_;
   RunRecord rec;
@@ -1306,8 +1323,9 @@ void AutomationRunner::OnClickProbed(const std::string& sel,
   // "form_submit" approval: judged on what the element IS (a submit
   // control), not on whether its selector happens to say "submit".
   if (probe.submits_form && !security_.AllowSubmit(policy_)) {
-    BlockStep("Blocked by this workflow's security policy: submitting a "
-              "form." + std::string(kTrustAdvice));
+    BlockStep("Blocked: submitting a form needs a trusted workflow." +
+                  std::string(kNeedsTrustAdvice),
+              /*needs_trust=*/true);
     return;
   }
   if (ask_before_sensitive && target_contents_ &&
@@ -1389,8 +1407,9 @@ void AutomationRunner::OnTypeProbed(const std::string& sel,
     // The selector-text check in PreflightStepPolicy misses fields like
     // "#f2"; the probe sees the real input type / autocomplete.
     if (!security_.AllowSensitiveField(policy_, probe.field_kind)) {
-      BlockStep("Blocked by this workflow's security policy: typing into a " +
-                label + " field." + kTrustAdvice);
+      BlockStep("Blocked: typing into a " + label +
+                    " field needs a trusted workflow." + kNeedsTrustAdvice,
+                /*needs_trust=*/true);
       return;
     }
   }
@@ -1433,8 +1452,9 @@ void AutomationRunner::OnSecretTargetProbed(const std::string& sel,
   }
   if (!security_.AllowSensitiveField(policy_,
                                      agent_safety::FieldKind::kPassword)) {
-    BlockStep("Blocked by this workflow's security policy: filling a saved "
-              "password." + std::string(kTrustAdvice));
+    BlockStep("Blocked: filling your saved password needs a trusted "
+              "workflow." + std::string(kNeedsTrustAdvice),
+              /*needs_trust=*/true);
     return;
   }
   const GURL page =
@@ -1767,9 +1787,10 @@ void AutomationRunner::DoKeypress(const Step& s) {
          base::Value v) {
         if (!self) return;
         if (v.is_string() && v.GetString() == "blocked_submit") {
-          self->BlockStep("Blocked by this workflow's security policy: "
-                          "pressing Enter would submit a form." +
-                          std::string(kTrustAdvice));
+          self->BlockStep("Blocked: pressing Enter would submit a form, which "
+                          "needs a trusted workflow." +
+                              std::string(kNeedsTrustAdvice),
+                          /*needs_trust=*/true);
           return;
         }
         bool ok = v.is_bool() && v.GetBool();
