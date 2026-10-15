@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/input/input_device_capabilities.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/pointer_lock_controller.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
@@ -215,6 +216,13 @@ void MouseEvent::SetCoordinatesFromWebPointerProperties(
         frame->View()->ConvertFromRootFrame(root_frame_point);
     inverse_zoom_factor = 1.0f / frame->LayoutZoomFactor();
     client_point = gfx::ScalePoint(frame_point, inverse_zoom_factor);
+  }
+  // MoltBrowser: in MoltNet windows screenX/Y are relative to the viewport,
+  // as if the window sat at (0, 0) without browser chrome.
+  if (std::optional<gfx::PointF> uniform =
+          molt_fingerprinting::UniformScreenPoint(
+              dom_window, web_pointer_properties.PositionInWidget())) {
+    screen_point = *uniform;
   }
 
   initializer->setScreenX(screen_point.x());

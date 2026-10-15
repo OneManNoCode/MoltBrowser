@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "ui/display/screen_info.h"
 #include "ui/display/screen_infos.h"
@@ -100,6 +101,10 @@ unsigned Screen::colorDepth() const {
   if (!DomWindow()) {
     return unknown_color_depth;
   }
+  // MoltBrowser: MoltNet windows all report the same depth.
+  if (molt_fingerprinting::IsUniform()) {
+    return molt_fingerprinting::kUniformColorDepth;
+  }
   return GetScreenInfo().depth == 0
              ? unknown_color_depth
              : base::saturated_cast<unsigned>(GetScreenInfo().depth);
@@ -151,6 +156,10 @@ bool Screen::isExtended() const {
   if (!DomWindow()) {
     return false;
   }
+  // MoltBrowser: MoltNet windows never reveal a multi-monitor setup.
+  if (molt_fingerprinting::IsUniform()) {
+    return false;
+  }
   auto* context = GetExecutionContext();
   if (!context->IsFeatureEnabled(
           network::mojom::PermissionsPolicyFeature::kWindowManagement)) {
@@ -164,6 +173,12 @@ gfx::Rect Screen::GetRect(bool available) const {
   if (!DomWindow())
     return gfx::Rect();
   LocalFrame* frame = DomWindow()->GetFrame();
+  // MoltBrowser: in MoltNet windows width/height/avail* all report the
+  // viewport rounded down to letterbox steps, at (0, 0).
+  if (std::optional<gfx::Rect> uniform =
+          molt_fingerprinting::UniformScreenRect(frame)) {
+    return *uniform;
+  }
   const display::ScreenInfo& screen_info = GetScreenInfo();
   gfx::Rect rect = available ? screen_info.available_rect : screen_info.rect;
   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk())

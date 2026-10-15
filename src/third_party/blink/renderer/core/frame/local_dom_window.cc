@@ -126,6 +126,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
@@ -1581,6 +1582,10 @@ int LocalDOMWindow::outerHeight() const {
   if (frame->IsInFencedFrameTree()) {
     return innerHeight();
   }
+  // MoltBrowser: MoltNet windows hide the size of the browser chrome.
+  if (molt_fingerprinting::IsUniform()) {
+    return innerHeight();
+  }
 
   Page* page = frame->GetPage();
   if (!page)
@@ -1604,6 +1609,10 @@ int LocalDOMWindow::outerWidth() const {
   // FencedFrames should return innerWidth to prevent passing
   // arbitrary data through the window width.
   if (frame->IsInFencedFrameTree()) {
+    return innerWidth();
+  }
+  // MoltBrowser: MoltNet windows hide the size of the browser chrome.
+  if (molt_fingerprinting::IsUniform()) {
     return innerWidth();
   }
 
@@ -1671,6 +1680,10 @@ int LocalDOMWindow::screenX() const {
   LocalFrame* frame = GetFrame();
   if (!frame)
     return 0;
+  // MoltBrowser: MoltNet windows don't reveal where they are on screen.
+  if (molt_fingerprinting::IsUniform()) {
+    return 0;
+  }
 
   Page* page = frame->GetPage();
   if (!page)
@@ -1689,6 +1702,10 @@ int LocalDOMWindow::screenY() const {
   LocalFrame* frame = GetFrame();
   if (!frame)
     return 0;
+  // MoltBrowser: MoltNet windows don't reveal where they are on screen.
+  if (molt_fingerprinting::IsUniform()) {
+    return 0;
+  }
 
   Page* page = frame->GetPage();
   if (!page)

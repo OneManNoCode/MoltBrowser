@@ -51,6 +51,3 @@ components/version_ui_strings.grdp
 components/wallet_strings.grdp
 components/webapps_strings.grdp
 components/webxr_strings.grdp
-third_party/blink/renderer/core/events/mouse_event.cc
-third_party/blink/renderer/core/frame/local_dom_window.cc
-third_party/blink/renderer/core/frame/screen.cc
