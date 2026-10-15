@@ -1,0 +1,22 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Privacy-by-default pref values for regular profiles (third-party cookies
+# blocked, WebRTC default_public_interface_only, prediction off, DNT off,
+# HTTPS-First balanced). Hooked from chrome/browser/profiles/profile_impl.cc.
+
+source_set("privacy") {
+  sources = [
+    "molt_privacy_prefs.cc",
+    "molt_privacy_prefs.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/common",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//components/pref_registry",
+    "//components/prefs",
+  ]
+}
