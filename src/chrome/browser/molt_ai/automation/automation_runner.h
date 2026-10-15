@@ -221,7 +221,10 @@ class AutomationRunner {
   void ExtendStepTimeout(base::TimeDelta budget);
 
   // Resolve {{variable}} placeholders in |raw| using current variables_.
-  std::string Resolve(const std::string& raw) const;
+  // With |fence_values|, each substituted value is wrapped in
+  // agent_safety::FenceUntrustedText — for LLM prompts, where a value
+  // captured from a page (EXTRACT / AI_EXTRACT) must read as data.
+  std::string Resolve(const std::string& raw, bool fence_values = false) const;
 
   // Run JS in the active frame and pass the result to |cb|. The expression
   // must produce a JSON-serialisable value.
