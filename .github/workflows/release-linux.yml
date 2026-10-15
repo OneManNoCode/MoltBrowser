@@ -127,7 +127,7 @@ jobs:
           fi
           echo "$HOME/depot_tools" >> "$GITHUB_PATH"
           # Bootstrap depot_tools' python3 etc.
-          (cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true)
+          ( cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 ) || true
 
       - name: Sync Chromium source (~30-60 min on first run, cached on self-hosted)
         if: ${{ inputs.skip_build != 'true' }}
