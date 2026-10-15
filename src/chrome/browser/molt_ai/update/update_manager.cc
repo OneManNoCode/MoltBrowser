@@ -816,7 +816,18 @@ fi
       L" -ArgumentList '/S' -Wait }; ",
       L"Start-Process -FilePath ", PowerShellQuote(exe.value()),
   });
-  base::CommandLine cmd(base::FilePath(FILE_PATH_LITERAL("powershell.exe")));
+  // Launch PowerShell by its full path. A bare "powershell.exe" is searched
+  // for in the browser's own directory and the current directory before
+  // System32, so a planted copy there would run the update.
+  base::FilePath system_dir;
+  if (!base::PathService::Get(base::DIR_SYSTEM, &system_dir)) {
+    return false;
+  }
+  const base::FilePath powershell =
+      system_dir.Append(FILE_PATH_LITERAL("WindowsPowerShell"))
+          .Append(FILE_PATH_LITERAL("v1.0"))
+          .Append(FILE_PATH_LITERAL("powershell.exe"));
+  base::CommandLine cmd(powershell);
   cmd.AppendArg("-NoProfile");
   cmd.AppendArg("-WindowStyle");
   cmd.AppendArg("Hidden");
@@ -831,7 +842,11 @@ fi
   base::PathService::Get(base::FILE_EXE, &exe);
   // $1 pid, $2 package, $3 browser exe, $4 expected sha256. No --force:
   // package managers keep their downgrade protection.
+  // PATH is reset first, so pkexec, dpkg and the rest always come from the
+  // system directories, never from a user-writable PATH entry such as
+  // ~/.local/bin.
   static constexpr char kScript[] = R"SH(
+PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH
 pid="$1"; f="$2"; exe="$3"; want="$4"
 while kill -0 "$pid" 2>/dev/null; do sleep 1; done
 got=$(sha256sum "$f" | cut -d' ' -f1)
