@@ -18,11 +18,11 @@
       <li>MoltShield built-in ad and tracker blocking</li>
       <li>Page-aware AI context — summarize, explain, extract from any page</li>
       <li>Full Chrome extension compatibility</li>
-      <li>Zero telemetry, zero cloud data — everything stays on your machine</li>
+      <li>No telemetry; on-device AI by default, cloud models only with your own key</li>
     </ul>
   </description>
   <launchable type="desktop-id">moltbrowser.desktop</launchable>
-  <url type="homepage">https://moltbrowser.com</url>
+  <url type="homepage">https://github.com/OneManNoCode/MoltBrowser</url>
   <url type="bugtracker">https://github.com/OneManNoCode/MoltBrowser/issues</url>
   <url type="help">https://github.com/OneManNoCode/MoltBrowser/wiki</url>
   <developer_name>GenEye AI Labs Inc.</developer_name>
