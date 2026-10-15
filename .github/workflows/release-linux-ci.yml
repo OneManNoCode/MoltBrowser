@@ -102,7 +102,7 @@ jobs:
             https://chromium.googlesource.com/chromium/tools/depot_tools.git \
             "$HOME/depot_tools"
           echo "$HOME/depot_tools" >> "$GITHUB_PATH"
-          ( cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 || true )
+          ( cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 ) || true
 
       - name: Install Linux build dependencies
         run: |
@@ -167,7 +167,7 @@ jobs:
           COMPONENT_INPUT: ${{ inputs.component_build }}
         run: |
           export PATH="$HOME/depot_tools:$PATH"
-          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 ) || true
           COMPONENT="$COMPONENT_INPUT"
           COMPONENT="${COMPONENT:-true}"   # push events carry no inputs → default true
           cd chromium/src
@@ -225,7 +225,7 @@ jobs:
         id: targets
         run: |
           export PATH="$HOME/depot_tools:$PATH"
-          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 ) || true
           cd chromium/src
           # Find the checkout's own ninja (no depot_tools python bootstrap needed).
           NINJA=""
@@ -276,7 +276,7 @@ jobs:
           OBJS_LIST: ${{ steps.targets.outputs.objs }}
         run: |
           export PATH="$HOME/depot_tools:$PATH"
-          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 || true )
+          ( cd "$HOME/depot_tools" && ./gclient --version >/dev/null 2>&1 ) || true
           cd chromium/src
           echo "Using ninja: ${NINJA}"
 

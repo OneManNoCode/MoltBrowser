@@ -16,7 +16,7 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 MODEL_DIR="$REPO_DIR/branding/models"
 MODEL_FILE="$MODEL_DIR/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 MODEL_URL="https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-EXPECTED_SIZE_MB=638  # Approximate
+EXPECTED_SIZE_MB=638  # approximate, for the progress message
 
 mkdir -p "$MODEL_DIR"
 
@@ -26,7 +26,7 @@ if [ -f "$MODEL_FILE" ]; then
   exit 0
 fi
 
-echo "Downloading TinyLlama 1.1B Chat (Q4_K_M, ~638MB)..."
+echo "Downloading TinyLlama 1.1B Chat (Q4_K_M, ~${EXPECTED_SIZE_MB}MB)..."
 echo "Source: $MODEL_URL"
 echo ""
 
