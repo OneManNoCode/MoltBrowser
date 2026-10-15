@@ -63,6 +63,11 @@ struct CosmeticData {
   std::string hide_css;         // Vetted `sel{display:none!important}` rules.
   std::string scriptlet_js;     // Main-world IIFE; args JSON-escaped.
   bool generichide = false;     // Skip the generic class/id pass.
+  // Procedural/action filters for the renderer's procedural engine (vetted
+  // JSON data, never script; empty if none) and the sanitized declaration
+  // blocks their :style() actions refer to by index.
+  std::string procedural_json;
+  std::vector<std::string> procedural_styles;
 };
 
 // Session counters surfaced in the MoltShield settings section. Field names

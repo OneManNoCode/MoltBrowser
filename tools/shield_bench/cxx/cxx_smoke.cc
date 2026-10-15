@@ -90,6 +90,14 @@ int32_t run_cxx_smoke(rust::Str list_text, rust::Str resources_json) {
   Expect(c.procedural_styles.size() == 1 &&
              std::string(c.procedural_styles[0]) == "opacity:0!important",
          "procedural styles via rust::Vec<rust::String>");
+  // As MoltShieldEngine::Cosmetic copies them out.
+  std::vector<std::string> styles;
+  styles.reserve(c.procedural_styles.size());
+  for (const rust::String& style : c.procedural_styles) {
+    styles.emplace_back(style);
+  }
+  Expect(styles == std::vector<std::string>{"opacity:0!important"},
+         "procedural styles copied to std::vector<std::string>");
 
   std::vector<std::string> classes = {"generic-ad", "header", "x"};
   std::vector<std::string> ids = {"main"};

@@ -1,14 +1,18 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# Renderer half of MoltShield cosmetic filtering (hide CSS + scriptlets at
-# document start). Created per frame from
+# Renderer half of MoltShield cosmetic filtering (hide CSS + scriptlets +
+# procedural filters at document start). Created per frame from
 # ChromeContentRendererClient::RenderFrameCreated.
+#
+# procedural_filters_js.h is adapted from brave-core (MPL-2.0) and keeps its
+# MPL-2.0 header.
 
 source_set("shield") {
   sources = [
     "cosmetic_filter_agent.cc",
     "cosmetic_filter_agent.h",
+    "procedural_filters_js.h",
   ]
   deps = [
     "//base",
@@ -19,5 +23,6 @@ source_set("shield") {
     "//third_party/blink/public:blink",
     "//third_party/blink/public/common",
     "//url",
+    "//v8",
   ]
 }
