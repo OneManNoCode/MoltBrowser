@@ -137,6 +137,8 @@ net/base/features.cc.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch
+third_party/blink/public/BUILD.gn.patch
+third_party/blink/renderer/core/BUILD.gn.patch
 third_party/rust/chromium_crates_io/Cargo.lock.patch
 third_party/rust/chromium_crates_io/Cargo.toml.patch
 third_party/rust/chromium_crates_io/gnrt_config.toml.patch

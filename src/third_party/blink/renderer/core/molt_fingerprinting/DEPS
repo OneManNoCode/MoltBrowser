@@ -1,6 +1,7 @@
 include_rules = [
     "+base/check.h",
     "+base/containers/span.h",
+    "+base/no_destructor.h",
     "+base/numerics/safe_conversions.h",
     "+build/build_config.h",
     "+crypto/hmac.h",

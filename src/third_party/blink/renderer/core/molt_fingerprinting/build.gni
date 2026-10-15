@@ -1,0 +1,12 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+# Blink glue for MoltBrowser fingerprinting protection, compiled into the core
+# component (//third_party/blink/renderer/core:core). The pure math lives in
+# the :farbling target next to this file.
+blink_core_sources_molt_fingerprinting = [
+  "molt_fingerprinting.cc",
+  "molt_fingerprinting.h",
+]
+
+blink_core_tests_molt_fingerprinting = [ "molt_fingerprinting_test.cc" ]

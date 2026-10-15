@@ -341,6 +341,9 @@ source_set("blink_headers") {
     "web/web_media_inspector.h",
     "web/web_message_port_converter.h",
     "web/web_meta_element.h",
+
+    # MoltBrowser: fingerprinting protection entry point.
+    "web/web_molt_fingerprinting.h",
     "web/web_navigation_control.h",
     "web/web_navigation_params.h",
     "web/web_navigation_policy.h",
