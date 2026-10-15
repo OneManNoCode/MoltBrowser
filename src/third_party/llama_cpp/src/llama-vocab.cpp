@@ -4661,6 +4661,17 @@ llama_token llama_token_fim_sep(const struct llama_vocab * vocab) {
 // tokenization
 //
 
+// MoltBrowser: these three are called from code built with -fno-exceptions
+// (Chromium's default; only the llama.cpp targets enable exceptions), where an
+// exception escaping the C API terminates the browser process. Tokenization
+// can throw on malformed vocab data from an untrusted GGUF, e.g. the UGM
+// tokenizer's "Index out of array bounds ..." checks or byte_to_token()'s
+// map::at() for an SPM/BPE vocab without byte tokens, and detokenization
+// throws std::out_of_range for a token id outside the vocab. They only read
+// the vocab, so it is safe to turn the exception into an error return.
+// llama_tokenize/llama_detokenize report it as INT32_MIN (the value
+// llama_vocab::tokenize already uses for "result does not fit"), never as a
+// "buffer too small" size; llama_token_to_piece reports an empty piece.
 int32_t llama_tokenize(
     const struct llama_vocab * vocab,
                   const char * text,
@@ -4669,7 +4680,12 @@ int32_t llama_tokenize(
                      int32_t   n_tokens_max,
                         bool   add_special,
                         bool   parse_special) {
-    return vocab->tokenize(text, text_len, tokens, n_tokens_max, add_special, parse_special);
+    try {
+        return vocab->tokenize(text, text_len, tokens, n_tokens_max, add_special, parse_special);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: tokenization failed: %s\n", __func__, err.what());
+        return std::numeric_limits<int32_t>::min();
+    }
 }
 
 int32_t llama_token_to_piece(
@@ -4679,7 +4695,12 @@ int32_t llama_token_to_piece(
                      int32_t   length,
                      int32_t   lstrip,
                         bool   special) {
-    return vocab->token_to_piece(token, buf, length, lstrip, special);
+    try {
+        return vocab->token_to_piece(token, buf, length, lstrip, special);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: invalid token %d: %s\n", __func__, token, err.what());
+        return 0;
+    }
 }
 
 int32_t llama_detokenize(
@@ -4690,5 +4711,10 @@ int32_t llama_detokenize(
                      int32_t   text_len_max,
                         bool   remove_special,
                         bool   unparse_special) {
-    return vocab->detokenize(tokens, n_tokens, text, text_len_max, remove_special, unparse_special);
+    try {
+        return vocab->detokenize(tokens, n_tokens, text, text_len_max, remove_special, unparse_special);
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: detokenization failed: %s\n", __func__, err.what());
+        return std::numeric_limits<int32_t>::min();
+    }
 }
