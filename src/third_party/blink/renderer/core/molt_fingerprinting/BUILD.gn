@@ -1,0 +1,38 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltBrowser fingerprinting protection, Blink side (see
+# molt_fingerprinting.h and docs/FINGERPRINTING.md).
+#
+#   :farbling   - the pure math (key derivation, PRF, pixel/audio noise,
+#                 letterbox buckets). Depends only on //base and //crypto, so
+#                 it is linked into Blink core *and* tested standalone.
+#   build.gni   - the Blink glue (molt_fingerprinting.{h,cc}), compiled into
+#                 the core component like every other core subdirectory.
+
+source_set("farbling") {
+  sources = [
+    "farbling.cc",
+    "farbling.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [ "//crypto" ]
+  visibility = [
+    ":*",
+    "//chrome/browser/molt_ai/test:*",
+    "//third_party/blink/renderer/core:*",
+  ]
+}
+
+# Pure-logic tests. Linked into blink_unittests (through
+# //third_party/blink/renderer/core:unit_tests) and into the lightweight
+# molt_ai_unittests binary (//chrome/browser/molt_ai/test).
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "farbling_unittest.cc" ]
+  deps = [
+    ":farbling",
+    "//base",
+    "//testing/gtest",
+  ]
+}
