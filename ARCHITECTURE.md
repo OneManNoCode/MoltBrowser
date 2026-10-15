@@ -89,7 +89,7 @@ repo/
  |    |    +-- personas/               # PersonaSystem
  |    |    +-- security/               # ActionValidator
  |    |    +-- shield/                 # MoltShield (ad/tracker blocker)
- |    |    +-- update/                 # UpdateManager, Sparkle, WinSparkle, Linux
+ |    |    +-- update/                 # UpdateManager, signed release manifests
  |    |    +-- side_panel/             # AI chat side panel coordinator
  |    |    +-- api/                    # browser.ai JavaScript API
  |    |    +-- android/                # Android scaffolding
@@ -112,7 +112,6 @@ repo/
  +-- installer/                        # NSIS (Windows), desktop files (Linux)
  +-- branding/                         # App icon, iconset
  +-- website/                          # Landing page, downloads.json
- +-- update/                           # Sparkle appcast, release notes
  +-- dist/                             # Build artifacts (gitignored)
 ```
 

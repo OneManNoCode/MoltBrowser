@@ -13,9 +13,78 @@ For longer narrative posts behind each entry see
 
 ---
 
-## [Unreleased]
+## [Unreleased] — v0.3.0 "Private by default" (in release testing)
 
-(In-flight on `main` — will be folded into the next versioned build.)
+The result of a full security and privacy audit (October 2026). Everything
+below is code complete and in release testing; it ships once it passes a
+full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
+
+### Security
+- **Signed updates.** The updater only installs an installer whose size and
+  SHA-256 match a release manifest signed with GenEye's offline Ed25519 key.
+  No downgrades; the hash is re-checked at install; on macOS the new app
+  must carry GenEye's code signature. Runbook: `docs/SIGNED_UPDATES.md`.
+- **Locked-down internal pages.** Every `molt://` page runs with no inline
+  script and Trusted Types enforced. AI output can no longer inject markup
+  into the chat panel. The chat page never holds saved passwords; revealing
+  one happens in Settings behind Touch ID / the system password.
+- **Agent safety.** The web agent, chat actions and Agent-mode replay only
+  open http(s) pages, stay on the sites you approved, treat page text as
+  data, and ask before submitting forms or touching password/card fields.
+  Recorded workflows store vault references instead of what you typed, and
+  per-workflow trust is shown and changed in the Agent studio.
+- **Safer secrets and cloud keys.** Vault autofill checks the site and
+  requires https; keys and passwords aren't stored without a real system
+  keychain; cloud endpoints must use https; the Gemini key is no longer put
+  in URLs.
+- Malformed messages to internal pages no longer crash the browser; AI
+  automation steps no longer freeze it.
+
+### Privacy
+- **MoltNet in its own window.** Tor browsing opens in a separate,
+  throwaway profile that never shares cookies or storage with your regular
+  browsing and never falls back to a direct connection. Per-site Tor
+  circuits, a real New Identity, HTTPS-Only, bridge (obfs4/snowflake)
+  support, and no more third-party IP lookup.
+- **Private-by-default settings.** Third-party cookies blocked, HTTPS-First,
+  WebRTC limited to the public interface, network prediction off,
+  connections partitioned per site, and requests carry the stock Chromium
+  brand so MoltBrowser users don't stand out.
+- **AI memory is opt-in** (off by default, existing users included), with a
+  pause switch and retention setting, encrypted at rest, and never recording
+  MoltNet browsing. Chat history is per profile, encrypted, and never saved
+  from incognito.
+- Cloud AI replies are labeled with the provider, and each provider asks for
+  consent once, listing what context is sent.
+
+### MoltShield
+- **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
+  Origin lists (~151k rules, daily updates). Now covers scripts, images,
+  XHR/fetch, WebSockets and beacons, not just pages and frames; adds
+  cosmetic filtering, scriptlets, a per-site Shields toggle and blocked
+  counts. ~6 µs per request (the old matcher took 5–17 ms).
+- Typing a tracker company's site (e.g. hotjar.com) no longer lands on a
+  blocked page.
+- The cookie-banner killer only ever clicks "reject", inside consent dialogs.
+
+### On-device AI
+- Context windows sized to the model and your RAM (was a fixed 2k); the
+  system prompt is never cut; multi-turn chat reuses the prompt cache.
+- Reasoning models show only the answer; Stop cancels only its own chat;
+  models unload when idle or under memory pressure; CPUs without AVX2 get a
+  clear message instead of a crash.
+- Model downloads are hash-verified and resume correctly (resuming used to
+  corrupt files); Llama/Gemma licence terms are shown before download.
+- Page context now reaches the side-panel chat and refreshes as you browse.
+
+### Engineering
+- Chromium is pinned in one place (`chromium_version.txt`); copied upstream
+  files are tracked as a patch series with rebase tooling (`docs/REBASING.md`).
+- CI: actions pinned to commits, least-privilege tokens, new WebUI checks
+  (fuzzed markdown renderer, jsdom smoke test of every page) and linting;
+  releases are drafts until signed and publish checksums + build provenance.
+- Full GPLv3 licence text, llama.cpp licence notice, Code of Conduct,
+  issue/PR templates; unused code and Sparkle leftovers removed.
 
 ---
 

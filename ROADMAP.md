@@ -8,7 +8,7 @@ works for you, not for an ad network.
 This roadmap is public so you can see what we're building, hold us to it,
 and pick something to help with. Status is updated as work lands.
 
-**Status key:** ✅ shipped · 🔨 in progress · 📋 planned
+**Status key:** ✅ done · 🧪 code complete, in release testing for v0.3 · 🔨 in progress · 📋 planned
 
 ---
 
@@ -32,15 +32,15 @@ and pick something to help with. Status is updated as work lands.
 
 | | Item |
 |---|---|
-| 🔨 | **Current Chromium engine.** Move from the current development snapshot to the latest stable / Extended Stable Chromium, and adopt a patch series so every Chrome security release ships in MoltBrowser within days. |
-| 📋 | **Signed updates.** Verify every downloaded update against a pinned signing key and the OS code-signing check before installing. |
-| ✅ | **AI chat rendering hardened** against markup injection from model output, with a fuzzing regression test in CI. |
-| 📋 | **Locked-down internal pages.** No inline script, Trusted Types enforced, and secrets never handed to the chat page. |
-| 📋 | **Agent guardrails.** Web pages can never instruct the agent. Navigation is limited to http(s) and to the sites you approve, and the agent asks before submitting forms, crossing to another site, or touching credentials. |
-| 📋 | **Vault-backed secrets in Agent mode.** Recorded workflows reference your encrypted vault instead of storing what you typed. |
-| 📋 | **Smooth automations.** AI-assisted workflow steps run off the UI thread, so the browser never pauses during a run. |
-| 📋 | **MoltNet in its own window.** Tor browsing gets a separate, throwaway profile (its own cookies, storage and cache) that never falls back to a direct connection. Requests no longer carry a MoltBrowser brand. |
-| ✅ | **MoltShield no longer blocks sites you navigate to on purpose.** |
+| 🔨 | **Current Chromium engine.** Move from the current development snapshot to the latest stable / Extended Stable Chromium, and adopt a patch series so every Chrome security release ships in MoltBrowser within days. *The patch series and rebase tooling are done ([REBASING.md](docs/REBASING.md)); the rebase onto Extended Stable 152 is next, on a build machine.* |
+| 🧪 | **Signed updates.** Verify every downloaded update against a pinned signing key and the OS code-signing check before installing. |
+| 🧪 | **AI chat rendering hardened** against markup injection from model output, with a fuzzing regression test in CI. |
+| 🧪 | **Locked-down internal pages.** No inline script, Trusted Types enforced, and secrets never handed to the chat page. |
+| 🧪 | **Agent guardrails.** Web pages can never instruct the agent. Navigation is limited to http(s) and to the sites you approve, and the agent asks before submitting forms, crossing to another site, or touching credentials. |
+| 🧪 | **Vault-backed secrets in Agent mode.** Recorded workflows reference your encrypted vault instead of storing what you typed. |
+| 🧪 | **Smooth automations.** AI-assisted workflow steps run off the UI thread, so the browser never pauses during a run. |
+| 🧪 | **MoltNet in its own window.** Tor browsing gets a separate, throwaway profile (its own cookies, storage and cache) that never falls back to a direct connection. Requests no longer carry a MoltBrowser brand. |
+| 🧪 | **MoltShield no longer blocks sites you navigate to on purpose.** |
 | ✅ | **Working PR checks** that run without a Chromium checkout. |
 | ✅ | **Security policy** with a private disclosure channel ([SECURITY.md](SECURITY.md)). |
 
@@ -48,14 +48,14 @@ and pick something to help with. Status is updated as work lands.
 
 | | Item |
 |---|---|
-| 📋 | **MoltShield on adblock-rust** (Brave's engine, MPL-2.0). Blocks every request type, uses the EasyList / EasyPrivacy / uBlock filter lists with signed updates, cosmetic filtering and scriptlets, a per-site Shields toggle, and blocked counts. |
-| 📋 | **Private-by-default settings.** Third-party cookies blocked, HTTPS-First, Global Privacy Control, tracking-parameter stripping, no network prediction. |
-| 📋 | **Fingerprinting protection** in the engine, not in page scripts: per-site, per-session randomization (Brave-style) in normal windows, and uniformity (UTC, en-US, letterboxing) in MoltNet windows. |
-| 📋 | **Tor-grade MoltNet.** A real "New identity", a separate Tor circuit per site, HTTPS-Only, bridges (snowflake / obfs4) for censored networks, a verified Tor binary, and `.onion` support. |
+| 🧪 | **MoltShield on adblock-rust** (Brave's engine, MPL-2.0). Blocks every request type, uses the EasyList / EasyPrivacy / uBlock filter lists with signed updates, cosmetic filtering and scriptlets, a per-site Shields toggle, and blocked counts. |
+| 🧪 | **Private-by-default settings.** Third-party cookies blocked, HTTPS-First, Global Privacy Control, tracking-parameter stripping, no network prediction. *(Global Privacy Control arrives with the engine rebase; parameter stripping with MoltShield's `$removeparam` support.)* |
+| 📋 | **Fingerprinting protection** in the engine, not in page scripts: per-site, per-session randomization (Brave-style) in normal windows, and uniformity (UTC, en-US, letterboxing) in MoltNet windows. *Not started yet: this is the largest remaining privacy gap.* |
+| 🔨 | **Tor-grade MoltNet.** A real "New identity", a separate Tor circuit per site, HTTPS-Only, bridges (snowflake / obfs4) for censored networks, a verified Tor binary, and `.onion` support. *In v0.3: real New Identity, per-site circuits, HTTPS-Only, bridges. Still to do: pinned Tor binary hashes, Linux packaging, `.onion` UX.* |
 | 📋 | **De-Googled background traffic.** Audit and remove remaining Google service calls, and add phishing / malware protection that doesn't send your browsing to Google. |
-| 📋 | **Better on-device AI.** Context windows sized to the model, faster multi-turn chat, reasoning models that show only the answer, and a refreshed model catalog by RAM tier with verified downloads. |
-| 📋 | **AI memory you control.** Opt-in with a pause switch and retention setting, never records MoltNet browsing, and encrypted at rest. |
-| 📋 | **Clear cloud labeling.** Every message sent to a cloud model is marked, and you see exactly what page or tab context goes with it. |
+| 🧪 | **Better on-device AI.** Context windows sized to the model, faster multi-turn chat, reasoning models that show only the answer, and a refreshed model catalog by RAM tier with verified downloads. |
+| 🧪 | **AI memory you control.** Opt-in with a pause switch and retention setting, never records MoltNet browsing, and encrypted at rest. |
+| 🧪 | **Clear cloud labeling.** Every message sent to a cloud model is marked, and you see exactly what page or tab context goes with it. |
 
 ## Later — leapfrog (this quarter and beyond)
 
@@ -67,7 +67,7 @@ and pick something to help with. Status is updated as work lands.
 | 📋 | **Semantic history search** with real on-device embeddings. |
 | 📋 | **On-device translation.** |
 | 📋 | **GPU inference on Windows and Linux** (Vulkan), with automatic CPU fallback. |
-| 📋 | **Signed builds everywhere.** A signed Windows v0.3, signed apt/rpm repositories, published checksums, SBOM and build provenance. |
+| 🔨 | **Signed builds everywhere.** A signed Windows v0.3, signed apt/rpm repositories, published checksums, SBOM and build provenance. *Checksums and build provenance are done; Windows signing and apt/rpm repositories are next.* |
 | 📋 | **Android**, built from Chromium for Android with MoltBrowser's features. |
 | 📋 | **Independent security audit and bug bounty** before 1.0. |
 

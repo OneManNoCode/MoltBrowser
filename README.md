@@ -18,6 +18,8 @@ Built by [GenEye AI Labs Inc.](https://geneye.ai/moltbrowser)
 
 Full history: [`CHANGELOG.md`](CHANGELOG.md). What's next: [`ROADMAP.md`](ROADMAP.md).
 
+- **Coming in v0.3 "Private by default"** (in release testing): signed updates, MoltShield rebuilt on Brave's adblock-rust, MoltNet in its own isolated Tor window, private-by-default settings, opt-in encrypted AI memory, and locked-down internal pages. See the [changelog](CHANGELOG.md).
+
 Want to contribute? See [`CONTRIBUTING.md`](CONTRIBUTING.md). Issues and
 PRs welcome — pick anything from the changelog "Unreleased" section or
 propose your own.
@@ -184,19 +186,20 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 | On-device LLM inference (7 models; Metal GPU on macOS, CPU on Windows/Linux) | ✅ Complete |
 | AI Chat (full page + side panel + omnibox) | ✅ Complete |
 | MoltShield blocking of tracker/ad navigations + iframes (built-in rules) | ✅ Shipped |
-| MoltShield full subresource blocking + filter-list updates | 🔨 In progress (adblock-rust) |
+| MoltShield on adblock-rust: full subresource blocking, EasyList/uBO lists, cosmetics, per-site toggle | 🧪 v0.3 (in release testing) |
 | Cookie consent popup auto-blocking | ✅ Complete |
-| YouTube ad blocking (network + scriptlet) | 🔨 In progress |
-| Fingerprint protection (Canvas, WebGL, Audio) | 🔨 In progress |
+| YouTube ad blocking (network + scriptlet) | 🧪 v0.3 (in release testing) |
+| Fingerprint protection (engine-level randomization / Tor-window uniformity) | 📋 Planned |
 | Agent mode — record → edit → run / schedule web workflows | ✅ Complete (v0.2.5) |
 | Agent mode — per-step screenshots + Runs history, Watch/Auto modes | ✅ Complete (v0.2.5) |
 | MoltNet Tor routing UI | ✅ Complete |
+| MoltNet in its own isolated Tor window, per-site circuits, New Identity, bridges | 🧪 v0.3 (in release testing) |
 | MoltNet Tor exit-country selector | ✅ Complete (v0.2.1, all platforms) |
 | Persona system (5 built-in + custom) | 🔨 Not wired into the shipping UI |
-| Memory engine (SQLite, keyword-hash search; real embeddings planned) | ✅ Shipped |
+| Memory engine (SQLite, keyword-hash search; real embeddings planned) | ✅ Shipped — opt-in + encrypted in v0.3 |
 | Chat export/import, search, keyboard shortcuts | ✅ Complete |
 | Model downloading from HuggingFace | ✅ Complete |
-| In-app updates from GitHub Releases | ✅ Shipped (signature verification in progress) |
+| In-app updates from GitHub Releases | ✅ Shipped — offline-signed and verified from v0.3 |
 | macOS DMG (signed + notarized + stapled) | ✅ Shipped (v0.2.1) |
 | Windows x64 (portable ZIP + NSIS installer) | ✅ Shipped (v0.2.1) |
 | Windows Tor / voice / OCR (functional parity) | ✅ Shipped (v0.2.1) |
@@ -204,7 +207,8 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 | Android APK scaffolding | 🔨 Scaffolding |
 | iOS IPA scaffolding | 🔨 Scaffolding |
 | Release automation (macOS + Linux self-hosted; Windows paused) | ✅ Partial |
-| PR checks (embedded WebUI JS + markdown-renderer security test) | ✅ New |
+| PR checks (WebUI JS, strict-CSP smoke test, renderer fuzzing, workflow lint) | ✅ New |
+| Private-by-default settings, locked-down internal pages, agent guardrails | 🧪 v0.3 (in release testing) |
 
 ### Testing Pages
 
