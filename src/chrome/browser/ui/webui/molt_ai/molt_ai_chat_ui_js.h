@@ -5267,12 +5267,12 @@ function _stopRecording() {
     var row = document.createElement('div');
     row.className = 'agent-confirm';
     row.innerHTML =
-      '<div class="agent-confirm-title">Agent needs your OK</div>' +
+      moltHTML('<div class="agent-confirm-title">Agent needs your OK</div>' +
       '<div class="agent-confirm-msg"></div>' +
       '<div class="agent-confirm-btns">' +
         '<button class="agent-deny">Deny</button>' +
         '<button class="agent-allow">Allow</button>' +
-      '</div>';
+      '</div>');
     // The message quotes page text / URLs — text only, never markup.
     row.querySelector('.agent-confirm-msg').textContent =
         String(req.message || '').substring(0, 300);

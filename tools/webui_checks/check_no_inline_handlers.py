@@ -99,9 +99,9 @@ def check_html(rel, src, start, body, problems):
 
 
 def strip_line_comments(body):
-    """Blank out whole-line // comments (keeping line numbers) so prose
+    """Blank out whole-line // comments (keeping offsets) so prose
     about handlers doesn't count. Code is left untouched."""
-    return re.sub(r"(?m)^[ \t]*//.*$", "", body)
+    return re.sub(r"(?m)^[ \t]*//.*$", lambda m: " " * len(m.group(0)), body)
 
 
 def check_js(rel, src, start, body, problems):
