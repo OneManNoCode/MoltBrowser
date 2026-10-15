@@ -25,6 +25,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
@@ -71,6 +72,7 @@
 #include "ui/base/page_transition_types.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
+#include "chrome/browser/molt_ai/memory/conversation_store.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
@@ -130,6 +132,11 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "cancelGeneration",
       base::BindRepeating(&MoltAIChatHandler::HandleCancelGeneration,
+                          base::Unretained(this)));
+  // First-use consent for sending chat context to a cloud provider (P18).
+  web_ui()->RegisterMessageCallback(
+      "grantCloudConsent",
+      base::BindRepeating(&MoltAIChatHandler::HandleGrantCloudConsent,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "getModelStatus",
@@ -392,8 +399,12 @@ void MoltAIChatHandler::OnJavascriptAllowed() {
 void MoltAIChatHandler::OnJavascriptDisallowed() {
   // Invalidating our WeakPtrs is what makes any in-flight background generation
   // safe: its UI-thread token/completion callbacks are WeakPtr-bound and simply
-  // stop firing. We deliberately do NOT cancel generation on the shared
-  // singleton runtime here — that generation may belong to another page.
+  // stop firing. Only THIS page's own request is cancelled (nobody will read
+  // its output); generations owned by other pages are untouched.
+  if (active_request_id_) {
+    molt_ai::BrowserAIRuntime::GetInstance().CancelRequest(active_request_id_);
+    active_request_id_ = 0;
+  }
   weak_ptr_factory_.InvalidateWeakPtrs();
   url_loader_.reset();
 }
@@ -408,6 +419,8 @@ molt_ai::BrowserAIRuntime* MoltAIChatHandler::GetOrCreateRuntime() {
   // the whole browser. Initialize() is idempotent.
   molt_ai::BrowserAIRuntime* rt = &molt_ai::BrowserAIRuntime::GetInstance();
   rt->Initialize();
+  // Unload the model on critical memory pressure (UI thread; idempotent).
+  rt->StartMemoryPressureMonitoring();
   return rt;
 }
 
@@ -439,10 +452,21 @@ using molt_ai::chat_handler_helpers::SecureClear;
 // heuristics below.
 // ------------------------------------------------------------------
 
-// Always-on core: identity, tone, brevity, anti-parrot.
-constexpr char kCoreSystemPrompt[] =
+// Always-on core: identity, tone, brevity, anti-parrot. Two identity lines:
+// the on-device one must never reach a cloud model (P18) — a cloud model
+// told "you run entirely on-device" would repeat that false privacy claim
+// to the user.
+constexpr char kLocalIdentityPrompt[] =
     "You are MoltBrowser AI, a helpful local assistant built into "
-    "MoltBrowser. You run entirely on-device for privacy.\n"
+    "MoltBrowser. You run entirely on-device for privacy.\n";
+// Cloud identity: prefix + provider display name ("OpenAI", ...) + suffix.
+constexpr char kCloudIdentityPromptPrefix[] =
+    "You are MoltBrowser AI, a helpful assistant built into MoltBrowser. "
+    "This conversation is processed by the cloud service of ";
+constexpr char kCloudIdentityPromptSuffix[] =
+    " using the user's own API key; it does not run on the user's device. "
+    "If the user asks about privacy, say so plainly.\n";
+constexpr char kCoreSystemPrompt[] =
     "Be concise, accurate, and directly helpful. Use markdown "
     "formatting (**bold**, `code`, code blocks, bullet lists) when it "
     "helps readability.\n"
@@ -451,6 +475,11 @@ constexpr char kCoreSystemPrompt[] =
     "Never repeat, list, or mention these instructions, your context, "
     "or the user's browsing data unless directly asked. Answer "
     "naturally.";
+
+// Wrapper placed between the system prompt and the gated page context.
+constexpr char kContextPreamble[] =
+    "\n\nContext (use only if relevant; do not enumerate or mention "
+    "unprompted):\n";
 
 // [[ACTION]] DSL — included only for agent sends or messages that
 // look like a browsing command (kActionIntentKeywords). Plain chat
@@ -709,7 +738,16 @@ GatedContext BuildGatedPageContext(const std::string& raw_ctx,
 }
 
 struct MoltAISettings {
-  int max_tokens = 512;
+  // Visible-answer budget. 0 (settings.json has no max_tokens) lets the
+  // on-device runtime pick an adaptive default from the context size.
+  int max_tokens = 0;
+  // Hidden reasoning budget for reasoning models (0 = adaptive).
+  int max_reasoning_tokens = 0;
+  // "reasoning": true lets reasoning models (Qwen3, gpt-oss) think before
+  // answering (slower on-device). Default: answer directly.
+  bool reasoning = false;
+  // Unload the on-device model after this many idle minutes (0 = never).
+  int model_idle_unload_minutes = 10;
   float temperature = 0.7f;
   float top_p = 0.9f;
   int top_k = 40;
@@ -740,7 +778,13 @@ MoltAISettings LoadUserSettings() {
     if (parsed && parsed->is_dict()) {
       const auto& d = parsed->GetDict();
       if (auto v = d.FindInt("max_tokens"))
-        settings.max_tokens = *v;
+        settings.max_tokens = std::max(0, *v);
+      if (auto v = d.FindInt("max_reasoning_tokens"))
+        settings.max_reasoning_tokens = std::max(0, *v);
+      if (auto v = d.FindBool("reasoning"))
+        settings.reasoning = *v;
+      if (auto v = d.FindInt("model_idle_unload_minutes"))
+        settings.model_idle_unload_minutes = std::max(0, *v);
       if (auto v = d.FindDouble("temperature"))
         settings.temperature = static_cast<float>(*v);
       if (auto v = d.FindDouble("top_p"))
@@ -766,18 +810,23 @@ MoltAISettings LoadUserSettings() {
   return settings;
 }
 
-// Assemble the ordered (role, content) message list shared by the local
-// and cloud send paths: a system message (core prompt + user's custom
-// system_prompt + optional [[ACTION]] DSL + gated context), the capped
-// conversation history, then the user turn. Returns pairs so the caller
-// can map them to either molt_ai::ChatMessage or molt_ai::CloudMessage.
-std::vector<std::pair<std::string, std::string>> BuildChatMessages(
-    const MoltAISettings& settings,
-    const std::string& prompt,
-    const std::string& history,
-    const std::string& page_ctx,
-    bool include_actions) {
-  std::string system_msg = kCoreSystemPrompt;
+// System prompt shared by the local and cloud send paths: identity (local
+// vs. cloud — never claim on-device to a cloud model), core rules, the
+// user's custom settings.json system_prompt, and the [[ACTION]] DSL when
+// requested. The gated page context is NOT part of it: the local runtime
+// budgets context separately (it may be trimmed; the system prompt never
+// is), and the cloud path appends it below.
+std::string BuildSystemPrompt(const MoltAISettings& settings,
+                              bool include_actions,
+                              const std::string& cloud_provider_name) {
+  std::string system_msg;
+  if (cloud_provider_name.empty()) {
+    system_msg = kLocalIdentityPrompt;
+  } else {
+    system_msg = std::string(kCloudIdentityPromptPrefix) +
+                 cloud_provider_name + kCloudIdentityPromptSuffix;
+  }
+  system_msg += kCoreSystemPrompt;
   if (!settings.system_prompt.empty()) {
     system_msg += "\n\n";
     system_msg += settings.system_prompt;
@@ -786,44 +835,101 @@ std::vector<std::pair<std::string, std::string>> BuildChatMessages(
     system_msg += "\n\n";
     system_msg += kActionDslPrompt;
   }
+  return system_msg;
+}
+
+// Parse the JS history (JSON array of {role, content}), keeping the most
+// recent settings.max_history_messages user/assistant entries. Malformed
+// input degrades to no history (legacy callers pass '').
+std::vector<std::pair<std::string, std::string>> ParseHistory(
+    const MoltAISettings& settings,
+    const std::string& history) {
+  std::vector<std::pair<std::string, std::string>> out;
+  if (history.empty()) return out;
+  auto parsed = base::JSONReader::Read(history, base::JSON_PARSE_RFC);
+  if (!parsed || !parsed->is_list()) {
+    LOG(WARNING) << "[MoltAI] sendPrompt history is not a valid JSON "
+                    "array — ignoring history";
+    return out;
+  }
+  const auto& list = parsed->GetList();
+  size_t start = 0;
+  if (settings.max_history_messages > 0 &&
+      list.size() > static_cast<size_t>(settings.max_history_messages)) {
+    start = list.size() - static_cast<size_t>(settings.max_history_messages);
+  }
+  for (size_t i = start; i < list.size(); ++i) {
+    if (!list[i].is_dict()) continue;
+    const auto& d = list[i].GetDict();
+    const std::string* role = d.FindString("role");
+    const std::string* content = d.FindString("content");
+    if (!role || !content || content->empty()) continue;
+    if (*role != "user" && *role != "assistant") continue;
+    out.emplace_back(*role, *content);
+  }
+  return out;
+}
+
+// Ordered (role, content) list for the cloud path: system message (cloud
+// identity + rules + gated context), capped history, then the user turn.
+std::vector<std::pair<std::string, std::string>> BuildCloudChatMessages(
+    const MoltAISettings& settings,
+    const std::string& provider_name,
+    const std::string& prompt,
+    const std::string& history,
+    const std::string& page_ctx,
+    bool include_actions) {
+  std::string system_msg =
+      BuildSystemPrompt(settings, include_actions, provider_name);
   if (!page_ctx.empty()) {
-    system_msg +=
-        "\n\nContext (use only if relevant; do not enumerate "
-        "or mention unprompted):\n" +
-        page_ctx;
+    system_msg += kContextPreamble + page_ctx;
   }
-
   std::vector<std::pair<std::string, std::string>> messages;
-  messages.emplace_back("system", system_msg);
-
-  if (!history.empty()) {
-    auto parsed = base::JSONReader::Read(history, base::JSON_PARSE_RFC);
-    if (parsed && parsed->is_list()) {
-      const auto& list = parsed->GetList();
-      size_t start = 0;
-      if (settings.max_history_messages > 0 &&
-          list.size() >
-              static_cast<size_t>(settings.max_history_messages)) {
-        start = list.size() -
-                static_cast<size_t>(settings.max_history_messages);
-      }
-      for (size_t i = start; i < list.size(); ++i) {
-        if (!list[i].is_dict()) continue;
-        const auto& d = list[i].GetDict();
-        const std::string* role = d.FindString("role");
-        const std::string* content = d.FindString("content");
-        if (!role || !content || content->empty()) continue;
-        if (*role != "user" && *role != "assistant") continue;
-        messages.emplace_back(*role, *content);
-      }
-    } else {
-      LOG(WARNING) << "[MoltAI] sendPrompt history is not a valid JSON "
-                      "array — ignoring history";
-    }
+  messages.emplace_back("system", std::move(system_msg));
+  for (auto& m : ParseHistory(settings, history)) {
+    messages.push_back(std::move(m));
   }
-
   messages.emplace_back("user", prompt);
   return messages;
+}
+
+// ---- Cloud consent (P18) -------------------------------------------------
+// One record per provider the user agreed to share chat context with:
+//   <profile>/MoltAI/cloud_consent.json = {"<provider_id>": {granted_at}}
+// Blocking file IO: worker threads only.
+base::FilePath GetCloudConsentPath(const base::FilePath& profile_dir) {
+  return profile_dir.AppendASCII("MoltAI").AppendASCII("cloud_consent.json");
+}
+
+base::DictValue ReadCloudConsents(const base::FilePath& path) {
+  std::string contents;
+  if (!base::ReadFileToString(path, &contents)) return base::DictValue();
+  auto parsed = base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
+  if (!parsed || !parsed->is_dict()) return base::DictValue();
+  return std::move(parsed->GetDict());
+}
+
+bool HasCloudConsent(const base::FilePath& path,
+                     const std::string& provider_id) {
+  return ReadCloudConsents(path).FindDict(provider_id) != nullptr;
+}
+
+bool GrantCloudConsentOnWorker(const base::FilePath& path,
+                               const std::string& provider_id) {
+  base::DictValue all = ReadCloudConsents(path);
+  base::DictValue record;
+  record.Set("granted_at", base::Time::Now().InMillisecondsFSinceUnixEpoch());
+  all.Set(provider_id, std::move(record));
+  std::string serialized;
+  if (!base::JSONWriter::Write(all, &serialized)) return false;
+  if (!base::CreateDirectory(path.DirName())) return false;
+  const base::FilePath tmp = path.AddExtension(FILE_PATH_LITERAL("tmp"));
+  if (!base::WriteFile(tmp, serialized) ||
+      !base::ReplaceFile(tmp, path, nullptr)) {
+    base::DeleteFile(tmp);
+    return false;
+  }
+  return true;
 }
 }  // namespace
 
@@ -970,16 +1076,21 @@ void MoltAIChatHandler::HandleLoadModel(const base::ListValue& args) {
       {base::TaskPriority::USER_BLOCKING, base::MayBlock(),
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
       base::BindOnce(
-          [](molt_ai::BrowserAIRuntime* rt, const std::string& mid) -> bool {
-            return rt->LoadModel(mid);
+          [](molt_ai::BrowserAIRuntime* rt,
+             const std::string& mid) -> std::string {
+            // "" on success, else a user-facing reason (not downloaded,
+            // not enough free memory, unsupported CPU, bad file).
+            std::string error;
+            if (rt->LoadModel(mid, &error)) return std::string();
+            return error.empty() ? std::string("Failed to load model")
+                                 : error;
           },
           base::Unretained(runtime), model_id),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-             std::string mid, bool success) {
+             std::string mid, std::string error) {
             if (!self) return;
-            self->OnModelLoaded(std::move(cb_id), success,
-                                success ? "" : "Failed to load model");
+            self->OnModelLoaded(std::move(cb_id), error.empty(), error);
           },
           weak_ptr_factory_.GetWeakPtr(), callback_id, model_id));
 }
@@ -1071,6 +1182,15 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
     model_id = args[5].GetString();
   }
 
+  // Optional 7th arg: the chat's conversation id. Consecutive local sends of
+  // the same conversation reuse the model's KV cache for their common
+  // prompt prefix. Absent (slash commands, legacy callers) = no reuse.
+  std::string conversation_key;
+  if (args.size() >= 7u && args[6].is_string() &&
+      !args[6].GetString().empty() && args[6].GetString().size() <= 64) {
+    conversation_key = "chat:" + args[6].GetString();
+  }
+
   if (prompt_text.empty()) {
     base::DictValue err;
     err.Set("success", false);
@@ -1125,13 +1245,25 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   // reusing the exact same gated system prompt + history assembled here.
   // The local runtime is never touched for a cloud send.
   if (molt_ai::IsCloudModelId(model_id)) {
+    base::DictValue attached;
+    attached.Set("page", gated.page_included);
+    attached.Set("pdf", gated.pdf_included);
+    attached.Set("attachment", gated.attachment_included);
+    attached.Set("memory", gated.memory_included);
+    attached.Set("history", !history_text.empty());
+    // /ask-tabs builds its own context from every open tab.
+    attached.Set("tabs", page_context.rfind("Cross-tab Q&A", 0) == 0);
     StartCloudPrompt(callback_id, model_id, prompt_text, history_text,
-                     page_context, include_actions);
+                     page_context, include_actions, std::move(attached));
     return;
   }
 
   auto* runtime = GetOrCreateRuntime();
   active_prompt_callback_id_ = callback_id;
+  // Per-request cancellation (A6): Stop cancels only this request, and a
+  // Stop pressed while the model is still loading is not lost.
+  const uint64_t request_id = runtime->NewRequestId();
+  active_request_id_ = request_id;
 
   // Lazy-load preference for when no model is loaded yet (consumed by
   // the worker below):
@@ -1186,208 +1318,118 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
-             const std::string& lazy_model,
-             bool include_actions,
+             const std::string& lazy_model, bool include_actions,
+             uint64_t request_id, const std::string& conversation_key,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
+            // The request id is ours to release whatever happens below.
+            base::ScopedClosureRunner release_request(base::BindOnce(
+                &molt_ai::BrowserAIRuntime::FinishRequest,
+                base::Unretained(rt), request_id));
+            auto cancelled_result = []() {
+              molt_ai::GenerationResult r;
+              r.was_cancelled = true;
+              return r;
+            };
+            auto post_status = [weak_self](std::string status,
+                                           std::string detail) {
+              content::GetUIThreadTaskRunner({})->PostTask(
+                  FROM_HERE,
+                  base::BindOnce(
+                      [](base::WeakPtr<MoltAIChatHandler> self,
+                         std::string s, std::string d) {
+                        if (self && self->IsJavascriptAllowed()) {
+                          self->FireWebUIListener("model-status",
+                                                  base::Value(s),
+                                                  base::Value(d));
+                        }
+                      },
+                      weak_self, std::move(status), std::move(detail)));
+            };
+
+            // Stop pressed before the worker even started.
+            if (rt->IsRequestCancelled(request_id)) return cancelled_result();
+
             // Load settings on worker thread — file I/O is allowed here.
             MoltAISettings settings = LoadUserSettings();
+            rt->SetIdleUnloadTimeout(
+                base::Minutes(settings.model_idle_unload_minutes));
             // Lazy-load target: the caller-computed preference (last
             // explicit pick, else sole downloaded model) wins over
             // settings.json's default_model.
             const std::string model_to_load =
                 lazy_model.empty() ? settings.default_model : lazy_model;
             // Load/switch only when the desired model isn't the one already
-            // resident: lazy-load on first send AND switch when the user picked a
-            // different model, but never reload (or flicker) when it's already
-            // active. GetLoadedModelId is safe to call from this worker thread.
+            // resident: lazy-load on first send AND switch when the user
+            // picked a different model (or it was unloaded while idle /
+            // under memory pressure), but never reload when it's active.
             const std::string resident_model = rt->GetLoadedModelId();
             const bool must_load =
                 !model_to_load.empty() && model_to_load != resident_model;
-            // Auto-load / switch model on this background thread if needed
             if (must_load && settings.auto_load_model) {
               LOG(INFO) << "[MoltAI] Auto-loading " << model_to_load
                         << " on background thread...";
-              content::GetUIThreadTaskRunner({})->PostTask(
-                  FROM_HERE,
-                  base::BindOnce(
-                      [](base::WeakPtr<MoltAIChatHandler> self,
-                         std::string model_name) {
-                        if (self && self->IsJavascriptAllowed()) {
-                          self->FireWebUIListener(
-                              "model-status",
-                              base::Value("loading"),
-                              base::Value("Loading " + model_name +
-                                          " model..."));
-                        }
-                      },
-                      weak_self, model_to_load));
-
-              bool loaded = rt->LoadModel(model_to_load);
-              if (!loaded) {
+              post_status("loading", "Loading " + model_to_load + " model...");
+              std::string load_error;
+              if (!rt->LoadModel(model_to_load, &load_error)) {
                 LOG(ERROR) << "[MoltAI] Failed to load model: "
-                           << model_to_load;
+                           << model_to_load << ": " << load_error;
                 molt_ai::GenerationResult fail;
-                fail.success = false;
-                // Give an accurate reason. LoadModel returns false for several
-                // distinct causes; the old catch-all "please download" message
-                // was wrong (and confusing) when the file was present but the
-                // RAM governor refused it.
-                molt_ai::ModelInfo minfo = rt->GetModelInfo(model_to_load);
-                const std::string name =
-                    minfo.display_name.empty() ? model_to_load
-                                               : minfo.display_name;
-                const auto to_gb = [](size_t b) {
-                  return std::to_string((b + 512 * 1024 * 1024) /
-                                        (1024ULL * 1024 * 1024));
-                };
-                if (minfo.model_id.empty()) {
-                  fail.error_message = "Unknown model '" + model_to_load + "'.";
-                } else if (!minfo.is_downloaded) {
-                  fail.error_message =
-                      name +
-                      " isn't downloaded yet. Pick it from the model menu to "
-                      "download it.";
-                } else if (!rt->CanRunModel(model_to_load)) {
-                  fail.error_message =
-                      name + " needs about " +
-                      to_gb(minfo.ram_required_bytes) +
-                      " GB of memory, but this device has " +
-                      to_gb(rt->GetHardwareCapability().total_ram_bytes) +
-                      " GB. Try a smaller model.";
-                } else {
-                  fail.error_message =
-                      "Couldn't load " + name +
-                      ". The file may be incomplete or incompatible — try "
-                      "deleting and re-downloading it from the model menu.";
-                }
-                // Notify UI of error
-                content::GetUIThreadTaskRunner({})->PostTask(
-                    FROM_HERE,
-                    base::BindOnce(
-                        [](base::WeakPtr<MoltAIChatHandler> self,
-                           std::string err) {
-                          if (self && self->IsJavascriptAllowed()) {
-                            self->FireWebUIListener(
-                                "model-status", base::Value("error"),
-                                base::Value(err));
-                          }
-                        },
-                        weak_self, fail.error_message));
+                // LoadModel explains itself: not downloaded, not enough
+                // free memory right now, unsupported CPU, bad file.
+                fail.error_message = load_error.empty()
+                                         ? "Couldn't load " + model_to_load
+                                         : load_error;
+                post_status("error", fail.error_message);
                 return fail;
               }
               LOG(INFO) << "[MoltAI] " << model_to_load
                         << " loaded successfully";
-
-              content::GetUIThreadTaskRunner({})->PostTask(
-                  FROM_HERE,
-                  base::BindOnce(
-                      [](base::WeakPtr<MoltAIChatHandler> self,
-                         std::string model_name) {
-                        if (self && self->IsJavascriptAllowed()) {
-                          self->FireWebUIListener(
-                              "model-status", base::Value("ready"),
-                              base::Value(model_name));
-                        }
-                      },
-                      weak_self, model_to_load));
+              post_status("ready", model_to_load);
             } else if (must_load && resident_model.empty() &&
                        !settings.auto_load_model) {
               molt_ai::GenerationResult fail;
-              fail.success = false;
               fail.error_message =
                   "No model loaded. Open the Models panel to load a model.";
               return fail;
             }
 
+            // A Stop pressed during the (possibly minute-long) load.
+            if (rt->IsRequestCancelled(request_id)) return cancelled_result();
+
             molt_ai::PromptOptions opts;
-            opts.max_tokens = settings.max_tokens;
+            opts.max_tokens = settings.max_tokens;  // 0 = adaptive
+            opts.max_reasoning_tokens = settings.max_reasoning_tokens;
+            opts.reasoning = settings.reasoning ? molt_ai::ReasoningMode::kOn
+                                                : molt_ai::ReasoningMode::kOff;
             opts.temperature = settings.temperature;
             opts.top_p = settings.top_p;
             opts.top_k = settings.top_k;
             opts.stream = true;
+            opts.request_id = request_id;
+            opts.conversation_key = conversation_key;
 
-            // Build the message list for template-aware prompting. The
-            // model's own chat template (GGUF tokenizer.chat_template)
-            // decides how the turns are marked up, so no hardcoded
-            // '<|system|>' zephyr strings here anymore.
-            //
-            // System message = compact core (always) + the user's
-            // custom settings.json system_prompt (when set) + the
-            // [[ACTION]] DSL (agent / action-intent sends only) + the
-            // gated context, wrapped so the model doesn't parrot it.
-            std::string system_msg = kCoreSystemPrompt;
-            if (!settings.system_prompt.empty()) {
-              system_msg += "\n\n";
-              system_msg += settings.system_prompt;
+            // Structured request: the runtime applies the model's own chat
+            // template and fits the window — whole oldest turns first, then
+            // the page context; the system prompt is never cut.
+            molt_ai::ChatPrompt chat;
+            chat.system_prompt = BuildSystemPrompt(settings, include_actions,
+                                                   /*cloud_provider_name=*/"");
+            chat.context_preamble = kContextPreamble;
+            chat.context = page_ctx;
+            for (auto& [role, content] : ParseHistory(settings, history)) {
+              chat.history.push_back({std::move(role), std::move(content)});
             }
-            if (include_actions) {
-              system_msg += "\n\n";
-              system_msg += kActionDslPrompt;
-            }
-            if (!page_ctx.empty()) {
-              system_msg +=
-                  "\n\nContext (use only if relevant; do not enumerate "
-                  "or mention unprompted):\n" +
-                  page_ctx;
-            }
-
-            std::vector<molt_ai::ChatMessage> messages;
-            messages.push_back({"system", system_msg});
-
-            // Optional conversation history: JSON array of
-            // {role:'user'|'assistant', content} objects. Malformed
-            // input degrades to no history (backward compatible with
-            // legacy callers that pass '').
-            if (!history.empty()) {
-              auto parsed = base::JSONReader::Read(
-                  history, base::JSON_PARSE_RFC);
-              if (parsed && parsed->is_list()) {
-                const auto& list = parsed->GetList();
-                // Defensive cap: trimHistory bounds this JS-side, but
-                // re-enforce settings.max_history_messages here by
-                // keeping only the most recent entries.
-                size_t start = 0;
-                if (settings.max_history_messages > 0 &&
-                    list.size() > static_cast<size_t>(
-                                      settings.max_history_messages)) {
-                  start = list.size() -
-                          static_cast<size_t>(settings.max_history_messages);
-                }
-                for (size_t i = start; i < list.size(); ++i) {
-                  if (!list[i].is_dict()) continue;
-                  const auto& d = list[i].GetDict();
-                  const std::string* role = d.FindString("role");
-                  const std::string* content = d.FindString("content");
-                  if (!role || !content || content->empty()) continue;
-                  if (*role != "user" && *role != "assistant") continue;
-                  messages.push_back({*role, *content});
-                }
-              } else {
-                LOG(WARNING) << "[MoltAI] sendPrompt history is not a "
-                                "valid JSON array — ignoring history";
-              }
-            }
-
-            messages.push_back({"user", prompt});
+            chat.user_message = prompt;
 
             LOG(INFO) << "[MoltAI] Starting inference ("
-                      << messages.size() << " messages)...";
+                      << chat.history.size() + 2 << " messages)...";
 
-            // Use StreamChat to send tokens one at a time.
-            // Each token is posted back to the UI thread.
-            std::string full_text;
-            rt->StreamChat(
-                messages,
-                [&full_text, weak_self](const std::string& token,
-                                        bool is_done) {
-                  full_text += token;
-                  // Skip sending EOS token to JS — it's not user-visible
-                  std::string display_tok = token;
-                  if (display_tok == "</s>" || display_tok == "</s>\n") {
-                    display_tok = "";
-                  }
-                  // Post token back to UI thread for FireWebUIListener
+            // Stream visible tokens (reasoning / Harmony analysis already
+            // filtered out by the runtime) to the UI thread.
+            molt_ai::GenerationResult result = rt->StreamChat(
+                chat,
+                [weak_self](const std::string& token, bool is_done) {
                   content::GetUIThreadTaskRunner({})->PostTask(
                       FROM_HERE,
                       base::BindOnce(
@@ -1399,33 +1441,35 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
                                   base::Value(done));
                             }
                           },
-                          weak_self, display_tok, is_done));
+                          weak_self, token, is_done));
                 },
                 opts);
 
             LOG(INFO) << "[MoltAI] Inference complete, generated "
-                      << full_text.size() << " chars";
-
-            molt_ai::GenerationResult result;
-            result.text = full_text;
-            result.success = !full_text.empty();
-            result.was_cancelled = false;
+                      << result.text.size() << " chars"
+                      << (result.was_cancelled ? " (stopped)" : "");
+            // A stopped reply keeps what was streamed; it isn't an error.
+            result.success =
+                result.error_message.empty() && !result.text.empty();
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, lazy_model, include_actions,
-          weak_ptr_factory_.GetWeakPtr()),
+          page_context, lazy_model, include_actions, request_id,
+          conversation_key, weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-             molt_ai::GenerationResult result) {
+             uint64_t request_id, molt_ai::GenerationResult result) {
             if (!self) return;
+            if (self->active_request_id_ == request_id) {
+              self->active_request_id_ = 0;
+            }
             if (result.success) {
               self->model_loaded_ = true;
             }
             self->OnPromptComplete(std::move(cb_id), result.success,
                                    result.text, result.error_message);
           },
-          weak_ptr_factory_.GetWeakPtr(), callback_id));
+          weak_ptr_factory_.GetWeakPtr(), callback_id, request_id));
 }
 
 void MoltAIChatHandler::OnPromptComplete(std::string callback_id,
@@ -1466,7 +1510,8 @@ void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
                                          std::string prompt_text,
                                          std::string history_text,
                                          std::string page_context,
-                                         bool include_actions) {
+                                         bool include_actions,
+                                         base::DictValue attached) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   active_prompt_callback_id_ = callback_id;
   cloud_accumulated_text_.clear();
@@ -1474,76 +1519,110 @@ void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
   std::string provider_id;
   std::string model;
   molt_ai::SplitCloudModelId(model_id, &provider_id, &model);
+  const molt_ai::CloudProviderInfo* provider_info =
+      molt_ai::FindCloudProvider(provider_id);
+  const std::string provider_name =
+      provider_info ? provider_info->display_name : provider_id;
+  const base::FilePath consent_path = GetCloudConsentPath(profile_->GetPath());
 
-  // settings.json + keys.enc are blocking disk/keychain reads, so the
-  // conversation + provider-key assembly happens on a worker. The api_key
-  // rides inside the returned CloudChatRequest (in-process only, never
-  // logged, never sent to JS). The actual network stream is kicked off
-  // back on the UI thread in OnCloudPromptReady.
+  // settings.json + keys.enc + the consent record are blocking disk/keychain
+  // reads, so the conversation + provider-key assembly happens on a worker.
+  // The api_key rides inside the returned CloudChatRequest (in-process only,
+  // never logged, never sent to JS). The actual network stream is kicked
+  // off back on the UI thread in OnCloudPromptReady.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::TaskPriority::USER_BLOCKING, base::MayBlock(),
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
       base::BindOnce(
-          [](std::string provider_id, std::string model, std::string prompt,
-             std::string history, std::string page_ctx,
-             bool include_actions)
-              -> std::pair<bool, molt_ai::CloudChatRequest> {
+          [](std::string provider_id, std::string provider_name,
+             std::string model, std::string prompt, std::string history,
+             std::string page_ctx, bool include_actions,
+             base::FilePath consent_path) -> CloudPromptPrep {
+            CloudPromptPrep prep;
+            // Nothing is assembled (let alone sent) before the user has
+            // agreed to share with this provider (P18).
+            prep.consented = HasCloudConsent(consent_path, provider_id);
+            if (!prep.consented) return prep;
             MoltAISettings settings = LoadUserSettings();
             std::optional<molt_ai::ProviderConfig> cfg =
                 molt_ai::MoltKeysStore::Get(provider_id);
-            molt_ai::CloudChatRequest req;
+            molt_ai::CloudChatRequest& req = prep.request;
             req.provider_id = provider_id;
             req.model = model;
-            req.max_tokens = settings.max_tokens;
+            // 0 means "adaptive" for the local runtime; cloud APIs need a
+            // concrete cap.
+            req.max_tokens =
+                settings.max_tokens > 0 ? settings.max_tokens : 1024;
             req.temperature = settings.temperature;
-            const bool cfg_found = cfg && !cfg->api_key.empty();
-            if (cfg_found) {
+            prep.cfg_found = cfg && !cfg->api_key.empty();
+            if (prep.cfg_found) {
               req.api_key = cfg->api_key;
               req.base_url = cfg->base_url;
             }
-            for (auto& msg : BuildChatMessages(settings, prompt, history,
-                                               page_ctx, include_actions)) {
+            for (auto& msg : BuildCloudChatMessages(
+                     settings, provider_name, prompt, history, page_ctx,
+                     include_actions)) {
               req.messages.push_back(
                   {std::move(msg.first), std::move(msg.second)});
             }
-            return std::make_pair(cfg_found, std::move(req));
+            return prep;
           },
-          provider_id, model, std::move(prompt_text), std::move(history_text),
-          std::move(page_context), include_actions),
+          provider_id, provider_name, model, std::move(prompt_text),
+          std::move(history_text), std::move(page_context), include_actions,
+          consent_path),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
-             std::string pid, std::string mdl,
-             std::pair<bool, molt_ai::CloudChatRequest> built) {
+             std::string pid, std::string mdl, base::DictValue attached,
+             CloudPromptPrep prep) {
             if (!self) {
               return;
             }
             self->OnCloudPromptReady(std::move(cb), std::move(pid),
-                                     std::move(mdl), built.first,
-                                     std::move(built.second));
+                                     std::move(mdl), std::move(attached),
+                                     std::move(prep));
           },
-          weak_ptr_factory_.GetWeakPtr(), callback_id, provider_id, model));
+          weak_ptr_factory_.GetWeakPtr(), callback_id, provider_id, model,
+          std::move(attached)));
 }
 
 void MoltAIChatHandler::OnCloudPromptReady(std::string callback_id,
                                            std::string provider_id,
                                            std::string model,
-                                           bool cfg_found,
-                                           molt_ai::CloudChatRequest request) {
+                                           base::DictValue attached,
+                                           CloudPromptPrep prep) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!IsJavascriptAllowed()) {
     return;
   }
 
-  if (!cfg_found) {
-    const molt_ai::CloudProviderInfo* info =
-        molt_ai::FindCloudProvider(provider_id);
-    const std::string name = info ? info->display_name : provider_id;
+  const molt_ai::CloudProviderInfo* info =
+      molt_ai::FindCloudProvider(provider_id);
+  const std::string name = info ? info->display_name : provider_id;
+
+  if (!prep.consented) {
+    // First use of this provider: the page asks the user (listing exactly
+    // which context kinds get attached) and calls grantCloudConsent before
+    // re-sending. Nothing has left the device.
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("consent_required", true);
+    result.Set("provider_id", provider_id);
+    result.Set("provider_name", name);
+    result.Set("attached", std::move(attached));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    active_prompt_callback_id_.clear();
+    return;
+  }
+
+  if (!prep.cfg_found) {
     OnPromptComplete(std::move(callback_id), /*success=*/false, std::string(),
                      "No API key configured for " + name +
                          ". Add it in AI Settings → Connect AI Providers.");
     return;
   }
+  molt_ai::CloudChatRequest request = std::move(prep.request);
 
   scoped_refptr<network::SharedURLLoaderFactory> factory =
       GetUrlLoaderFactory();
@@ -1552,6 +1631,10 @@ void MoltAIChatHandler::OnCloudPromptReady(std::string callback_id,
                      "No network context available");
     return;
   }
+
+  // Tell the page this reply comes from a cloud provider so the bubble is
+  // labeled "Sent to <provider>" (P18).
+  FireWebUIListener("ai-cloud-reply", base::Value(name), base::Value(model));
 
   cloud_accumulated_text_.clear();
   const base::WeakPtr<MoltAIChatHandler> weak =
@@ -1600,8 +1683,13 @@ void MoltAIChatHandler::OnCloudPromptReady(std::string callback_id,
 void MoltAIChatHandler::HandleCancelGeneration(
     const base::ListValue& args) {
   AllowJavascript();
-  // User pressed Stop — cancel the on-device generation on the shared runtime.
-  GetOrCreateRuntime()->CancelGeneration();
+  // User pressed Stop — cancel THIS page's on-device request only (A6).
+  // Other pages and background Agent runs share the runtime and keep going;
+  // a Stop that lands while the model is still loading or while the request
+  // waits behind another generation is remembered by the runtime.
+  if (active_request_id_) {
+    GetOrCreateRuntime()->CancelRequest(active_request_id_);
+  }
   // Drop any in-flight cloud stream — destroying the CloudChatStream
   // cancels the underlying loader and stops all further token/done
   // callbacks (its contract). Because an explicit Cancel()/destruction
@@ -1621,6 +1709,40 @@ void MoltAIChatHandler::HandleCancelGeneration(
                        std::string());
     }
   }
+}
+
+// ------------------------------------------------------------------
+// HandleGrantCloudConsent: record that the user agreed to send chat
+// context to a cloud provider (after the first-use dialog listed what
+// gets attached). JS: chrome.send('grantCloudConsent',
+//                                 [callback_id, provider_id])
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleGrantCloudConsent(const base::ListValue& args) {
+  AllowJavascript();
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
+  const std::string callback_id = args[0].GetString();
+  const std::string provider_id = StringArg(args, 1);
+  if (!molt_ai::FindCloudProvider(provider_id) || !profile_) {
+    base::DictValue result;
+    result.Set("success", false);
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+      base::BindOnce(&GrantCloudConsentOnWorker,
+                     GetCloudConsentPath(profile_->GetPath()), provider_id),
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+             bool ok) {
+            if (!self || !self->IsJavascriptAllowed()) return;
+            base::DictValue result;
+            result.Set("success", ok);
+            self->ResolveJavascriptCallback(base::Value(cb),
+                                            base::Value(std::move(result)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id));
 }
 
 // ------------------------------------------------------------------
@@ -2272,11 +2394,12 @@ void MoltAIChatHandler::OnHistoryExported(std::string callback_id,
 }
 
 // ------------------------------------------------------------------
-// Conversation store: list/save/load/delete named conversations.
-// One JSON file per conversation at
-// ~/.moltbrowser/conversations/<id>.json:
-//   {id, title, updated_at (double ms since epoch),
-//    messages:[{role, content}, ...]}
+// Conversation store: list/save/load/delete named conversations (A5).
+// Stored per profile and OSCrypt-encrypted by
+// molt_ai::memory::ConversationStore under <profile>/MoltAI/Conversations;
+// legacy plaintext files from the shared ~/.moltbrowser/conversations are
+// migrated (encrypted, then deleted) on first access. Off-the-record
+// profiles never read or write the store.
 // JS: chrome.send('listConversations',  [callback_id])
 //     chrome.send('saveConversation',   [callback_id, id, title,
 //                                        history_json])
@@ -2285,8 +2408,6 @@ void MoltAIChatHandler::OnHistoryExported(std::string callback_id,
 // ------------------------------------------------------------------
 namespace {
 
-// Same on-disk size cap as HandleExportHistory.
-constexpr size_t kMaxConversationBytes = 16 << 20;
 // The sidebar Recents list is capped server-side.
 constexpr size_t kMaxConversationListEntries = 100;
 // Titles are display-only; keep them short on disk. The contract caps
@@ -2295,191 +2416,30 @@ constexpr size_t kMaxConversationListEntries = 100;
 // bytes for CJK) must never be truncated here.
 constexpr size_t kMaxConversationTitleBytes = 320;
 
-// Path-traversal defense: a conversation id must match
-// [a-zA-Z0-9_-]{1,64}. Checked BEFORE any path construction.
-bool IsValidConversationId(const std::string& id) {
-  if (id.empty() || id.size() > 64) {
-    return false;
-  }
-  for (char c : id) {
-    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                    (c >= '0' && c <= '9') || c == '_' || c == '-';
-    if (!ok) {
-      return false;
-    }
-  }
-  return true;
+using molt_ai::memory::ConversationStore;
+
+// Runs |op| against the profile's store on the conversation sequence,
+// after the one-time legacy migration.
+base::DictValue WithConversationStore(
+    base::FilePath profile_dir,
+    base::OnceCallback<base::DictValue(const ConversationStore&)> op) {
+  ConversationStore store(profile_dir);
+  store.MigrateLegacy(ConversationStore::LegacyDir());
+  return std::move(op).Run(store);
 }
 
-base::FilePath GetConversationsDir() {
-  base::FilePath home_dir;
-  base::PathService::Get(base::DIR_HOME, &home_dir);
-  return home_dir.Append(base::FilePath::FromUTF8Unsafe(".moltbrowser"))
-      .Append(base::FilePath::FromUTF8Unsafe("conversations"));
-}
-
-// ---- ThreadPool worker bodies (blocking file IO). Each returns the
-// dict that resolves the JS promise on the UI thread. ----------------
-
-base::DictValue ListConversationsOnWorker(base::FilePath dir) {
-  base::DictValue result;
-  result.Set("success", true);
-  base::ListValue conversations;
-  if (!base::DirectoryExists(dir)) {
-    // Missing/empty dir is not an error — just no conversations yet.
-    result.Set("conversations", std::move(conversations));
-    return result;
-  }
-
-  struct Entry {
-    double updated_at = 0.0;
-    base::DictValue dict;
-  };
-  std::vector<Entry> entries;
-
-  base::FileEnumerator e(dir, /*recursive=*/false,
-                         base::FileEnumerator::FILES,
-                         FILE_PATH_LITERAL("*.json"));
-  for (auto path = e.Next(); !path.value().empty(); path = e.Next()) {
-    // Only trust files whose basename is a well-formed conversation id.
-    const std::string stem = path.BaseName().RemoveExtension().AsUTF8Unsafe();
-    if (!IsValidConversationId(stem)) {
-      continue;
-    }
-    auto size = base::GetFileSize(path);
-    if (!size || *size > static_cast<int64_t>(kMaxConversationBytes)) {
-      continue;
-    }
-    std::string contents;
-    if (!base::ReadFileToString(path, &contents)) {
-      continue;
-    }
-    auto parsed = base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
-    if (!parsed || !parsed->is_dict()) {
-      continue;  // Skip corrupt files rather than failing the whole list.
-    }
-    const auto& d = parsed->GetDict();
-    const std::string* id = d.FindString("id");
-    const std::string* title = d.FindString("title");
-    const double updated_at = d.FindDouble("updated_at").value_or(0.0);
-    int message_count = 0;
-    if (const base::ListValue* messages = d.FindList("messages")) {
-      message_count = static_cast<int>(messages->size());
-    }
-
-    Entry entry;
-    entry.updated_at = updated_at;
-    entry.dict.Set("id", (id && !id->empty()) ? *id : stem);
-    entry.dict.Set("title", title ? *title : std::string());
-    entry.dict.Set("updated_at", updated_at);
-    entry.dict.Set("message_count", message_count);
-    entries.push_back(std::move(entry));
-  }
-
-  std::stable_sort(entries.begin(), entries.end(),
-                   [](const Entry& a, const Entry& b) {
-                     return a.updated_at > b.updated_at;
-                   });
-  if (entries.size() > kMaxConversationListEntries) {
-    entries.resize(kMaxConversationListEntries);
-  }
-  for (auto& entry : entries) {
-    conversations.Append(std::move(entry.dict));
-  }
-  result.Set("conversations", std::move(conversations));
-  return result;
-}
-
-base::DictValue SaveConversationOnWorker(base::FilePath path,
-                                         std::string id,
-                                         std::string title,
-                                         std::string history_json) {
-  base::DictValue result;
-  // Parse first and re-serialize inside the wrapper so the on-disk file
-  // is always valid JSON, whatever the renderer sent.
-  auto parsed = base::JSONReader::Read(history_json, base::JSON_PARSE_RFC);
-  if (!parsed || !parsed->is_list()) {
-    result.Set("success", false);
-    result.Set("error", "history_json is not a valid JSON array");
-    return result;
-  }
-
-  base::DictValue wrapper;
-  wrapper.Set("id", id);
-  wrapper.Set("title", title);
-  wrapper.Set("updated_at",
-              base::Time::Now().InMillisecondsFSinceUnixEpoch());
-  wrapper.Set("messages", std::move(*parsed));
-
-  std::string serialized;
-  if (!base::JSONWriter::Write(wrapper, &serialized)) {
-    result.Set("success", false);
-    result.Set("error", "failed to serialize conversation");
-    return result;
-  }
-
-  base::FilePath dir = path.DirName();
-  if (!base::DirectoryExists(dir)) {
-    base::CreateDirectory(dir);
-  }
-  // Write to a temp file then rename, so a crash mid-autosave can never
-  // truncate the only copy of a conversation (same .partial -> final
-  // pattern the model downloader uses).
-  base::FilePath tmp = path.AddExtension(FILE_PATH_LITERAL("tmp"));
-  if (!base::WriteFile(tmp, serialized) ||
-      !base::ReplaceFile(tmp, path, nullptr)) {
-    base::DeleteFile(tmp);
-    result.Set("success", false);
-    result.Set("error", "failed to write conversation file");
-    return result;
-  }
-  result.Set("success", true);
-  return result;
-}
-
-base::DictValue LoadConversationOnWorker(base::FilePath path,
-                                         std::string id) {
-  base::DictValue result;
-  result.Set("id", id);
-  auto size = base::GetFileSize(path);
-  if (size && *size > static_cast<int64_t>(kMaxConversationBytes)) {
-    result.Set("success", false);
-    result.Set("error", "conversation file too large");
-    return result;
-  }
-  std::string contents;
-  if (!base::ReadFileToString(path, &contents)) {
-    result.Set("success", false);
-    result.Set("error", "conversation not found");
-    return result;
-  }
-  auto parsed = base::JSONReader::Read(contents, base::JSON_PARSE_RFC);
-  if (!parsed || !parsed->is_dict()) {
-    result.Set("success", false);
-    result.Set("error", "conversation file is corrupt");
-    return result;
-  }
-  const auto& d = parsed->GetDict();
-  const std::string* title = d.FindString("title");
-  result.Set("title", title ? *title : std::string());
-  std::string history_json = "[]";
-  if (const base::ListValue* messages = d.FindList("messages")) {
-    base::JSONWriter::Write(*messages, &history_json);
-  }
-  result.Set("history_json", history_json);
-  result.Set("success", true);
-  return result;
-}
-
-base::DictValue DeleteConversationOnWorker(base::FilePath path) {
-  base::DictValue result;
-  if (base::DeleteFile(path)) {
-    result.Set("success", true);
+base::DictValue OffTheRecordResult(bool is_list) {
+  base::DictValue r;
+  if (is_list) {
+    // Private windows show no saved history.
+    r.Set("success", true);
+    r.Set("conversations", base::ListValue());
   } else {
-    result.Set("success", false);
-    result.Set("error", "failed to delete conversation");
+    r.Set("success", false);
+    r.Set("error", "Conversations aren't saved in private windows.");
+    r.Set("off_the_record", true);
   }
-  return result;
+  return r;
 }
 
 }  // namespace
@@ -2492,17 +2452,33 @@ base::SequencedTaskRunner* MoltAIChatHandler::ConversationTaskRunner() {
   return conversation_task_runner_.get();
 }
 
+void MoltAIChatHandler::RunConversationOp(
+    std::string callback_id,
+    bool is_list,
+    base::OnceCallback<base::DictValue(const ConversationStore&)> op) {
+  if (!profile_ || profile_->IsOffTheRecord()) {
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(OffTheRecordResult(is_list)));
+    return;
+  }
+  ConversationTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(&WithConversationStore, profile_->GetPath(),
+                     std::move(op)),
+      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback_id)));
+}
+
 void MoltAIChatHandler::HandleListConversations(const base::ListValue& args) {
   AllowJavascript();
 
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
-  ConversationTaskRunner()->PostTaskAndReplyWithResult(
-      FROM_HERE,
-      base::BindOnce(&ListConversationsOnWorker, GetConversationsDir()),
-      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
-                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+  RunConversationOp(callback_id, /*is_list=*/true,
+                    base::BindOnce([](const ConversationStore& store) {
+                      return store.List(kMaxConversationListEntries);
+                    }));
 }
 
 void MoltAIChatHandler::HandleSaveConversation(const base::ListValue& args) {
@@ -2514,20 +2490,21 @@ void MoltAIChatHandler::HandleSaveConversation(const base::ListValue& args) {
       args[1].is_string() ? args[1].GetString() : std::string();
   std::string title =
       args[2].is_string() ? args[2].GetString() : std::string();
-  const std::string history_json =
+  std::string history_json =
       args[3].is_string() ? args[3].GetString() : std::string();
 
-  base::DictValue error;
-  if (!IsValidConversationId(id)) {
+  if (!ConversationStore::IsValidId(id)) {
+    base::DictValue error;
     error.Set("success", false);
     error.Set("error", "invalid conversation id");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(error)));
     return;
   }
-  // Same size cap as HandleExportHistory. Truncating JSON would only
-  // produce an unparseable payload, so oversized input is rejected.
-  if (history_json.size() > kMaxConversationBytes) {
+  // Truncating JSON would only produce an unparseable payload, so
+  // oversized input is rejected (also re-checked by the store).
+  if (history_json.size() > ConversationStore::kMaxConversationBytes) {
+    base::DictValue error;
     error.Set("success", false);
     error.Set("error", "history_json exceeds 16 MiB cap");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -2544,15 +2521,14 @@ void MoltAIChatHandler::HandleSaveConversation(const base::ListValue& args) {
     title.resize(cut);
   }
 
-  base::FilePath path = GetConversationsDir().Append(
-      base::FilePath::FromUTF8Unsafe(id + ".json"));
-
-  ConversationTaskRunner()->PostTaskAndReplyWithResult(
-      FROM_HERE,
-      base::BindOnce(&SaveConversationOnWorker, path, id, title,
-                     history_json),
-      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
-                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+  RunConversationOp(
+      callback_id, /*is_list=*/false,
+      base::BindOnce(
+          [](std::string id, std::string title, std::string json,
+             const ConversationStore& store) {
+            return store.Save(id, title, json);
+          },
+          id, std::move(title), std::move(history_json)));
 }
 
 void MoltAIChatHandler::HandleLoadConversation(const base::ListValue& args) {
@@ -2563,23 +2539,12 @@ void MoltAIChatHandler::HandleLoadConversation(const base::ListValue& args) {
   const std::string id =
       args[1].is_string() ? args[1].GetString() : std::string();
 
-  if (!IsValidConversationId(id)) {
-    base::DictValue error;
-    error.Set("success", false);
-    error.Set("error", "invalid conversation id");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(error)));
-    return;
-  }
-
-  base::FilePath path = GetConversationsDir().Append(
-      base::FilePath::FromUTF8Unsafe(id + ".json"));
-
-  ConversationTaskRunner()->PostTaskAndReplyWithResult(
-      FROM_HERE,
-      base::BindOnce(&LoadConversationOnWorker, path, id),
-      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
-                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+  RunConversationOp(callback_id, /*is_list=*/false,
+                    base::BindOnce(
+                        [](std::string id, const ConversationStore& store) {
+                          return store.Load(id);
+                        },
+                        id));
 }
 
 void MoltAIChatHandler::HandleDeleteConversation(
@@ -2591,23 +2556,12 @@ void MoltAIChatHandler::HandleDeleteConversation(
   const std::string id =
       args[1].is_string() ? args[1].GetString() : std::string();
 
-  if (!IsValidConversationId(id)) {
-    base::DictValue error;
-    error.Set("success", false);
-    error.Set("error", "invalid conversation id");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(error)));
-    return;
-  }
-
-  base::FilePath path = GetConversationsDir().Append(
-      base::FilePath::FromUTF8Unsafe(id + ".json"));
-
-  ConversationTaskRunner()->PostTaskAndReplyWithResult(
-      FROM_HERE,
-      base::BindOnce(&DeleteConversationOnWorker, path),
-      base::BindOnce(&MoltAIChatHandler::ResolveConversationCallback,
-                     weak_ptr_factory_.GetWeakPtr(), callback_id));
+  RunConversationOp(callback_id, /*is_list=*/false,
+                    base::BindOnce(
+                        [](std::string id, const ConversationStore& store) {
+                          return store.Delete(id);
+                        },
+                        id));
 }
 
 void MoltAIChatHandler::ResolveConversationCallback(std::string callback_id,

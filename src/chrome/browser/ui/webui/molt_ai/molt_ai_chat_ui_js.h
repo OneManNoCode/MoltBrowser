@@ -48,20 +48,41 @@ var conversationHistory = [];
 var MAX_HISTORY_MESSAGES = 16; // 8 user + 8 assistant exchanges
 
 // Conversation persistence for the Recents drawer. `conversationId`
-// stays null until the first autosave creates the on-disk file
-// (~/.moltbrowser/conversations/<id>.json via saveConversation).
+// stays null until the first autosave creates the record (per-profile,
+// encrypted on disk by saveConversation; never saved in private windows).
+// It is also the KV-cache reuse key sent with each local prompt.
 var conversationId = null;
 var conversationTitle = '';
 
 // cr.sendWithPromise polyfill
 var pendingCallbacks = {};
 
-function sendWithPromise(method) {
-  var args = Array.prototype.slice.call(arguments, 1);
+function rawSendWithPromise(method, args) {
   var id = method + '_' + (++promptIdCounter);
   return new Promise(function(resolve, reject) {
     pendingCallbacks[id] = {resolve: resolve, reject: reject};
     chrome.send(method, [id].concat(args));
+  });
+}
+
+function sendWithPromise(method) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  var p = rawSendWithPromise(method, args);
+  if (method !== 'sendPrompt') return p;
+  // Cloud first-use consent (P18): the backend refuses to send anything to a
+  // provider the user hasn't approved and returns consent_required. Every
+  // sendPrompt caller (chat, quick actions, slash commands) goes through
+  // here, so the dialog is shown once, then the same request is re-sent.
+  return p.then(function(r) {
+    if (!r || !r.consent_required) return r;
+    return askCloudConsent(r).then(function(ok) {
+      if (!ok) {
+        return {success: false,
+                error: 'Nothing was sent to ' + r.provider_name + '.'};
+      }
+      return rawSendWithPromise('grantCloudConsent', [r.provider_id])
+          .then(function() { return rawSendWithPromise('sendPrompt', args); });
+    });
   });
 }
 
@@ -736,6 +757,90 @@ function appendActionResult(ok, label, detail) {
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
 }
+
+// --------------------------------------------------------------
+// Cloud honesty (P18): first-use consent per provider + a per-reply
+// "Sent to <provider>" label. Local replies never get the label.
+// --------------------------------------------------------------
+function ensureCloudStyles() {
+  if (document.getElementById('molt-cloud-styles')) return;
+  var s = document.createElement('style');
+  s.id = 'molt-cloud-styles';
+  s.textContent =
+      '.molt-cloud-consent .cc-body{white-space:normal}' +
+      '.molt-cloud-consent ul{margin:4px 0 0 16px;padding:0}' +
+      '.molt-cloud-consent li{margin:2px 0}' +
+      '.molt-cloud-consent li.now{font-weight:600}' +
+      '.message.ai.cloud-reply{flex-wrap:wrap}' +
+      '.cloud-badge{flex-basis:100%;order:-1;font-size:10px;' +
+      'color:var(--muted);margin:0 0 3px 4px}';
+  document.head.appendChild(s);
+}
+
+// Resolves true when the user allows sending to r.provider_name.
+// r.attached flags what THIS message would carry; the list shows every
+// kind of context a cloud send can include so the choice is informed.
+function askCloudConsent(r) {
+  ensureCloudStyles();
+  return new Promise(function(resolve) {
+    var msgs = document.getElementById('messages');
+    if (!msgs) { resolve(false); return; }
+    var a = r.attached || {};
+    var items = [
+      ['history', 'Your message and the conversation so far'],
+      ['page', 'Excerpts of the page you are viewing (when your message ' +
+               'refers to it, or you use Summarize/Explain/Translate)'],
+      ['tabs', 'Text from your open tabs (only with /ask-tabs)'],
+      ['memory', 'Snippets from Memory, your browsing history (only when ' +
+                 'Memory is on and your message refers to past reading)'],
+      ['attachment', 'Documents you attach or load with /pdf'],
+    ];
+    var list = items.map(function(it) {
+      var now = (it[0] === 'attachment') ? (a.attachment || a.pdf) : a[it[0]];
+      return '<li' + (now ? ' class="now"' : '') + '>' + esc(it[1]) +
+             (now ? ' — included in this message' : '') + '</li>';
+    }).join('');
+    var d = document.createElement('div');
+    d.className = 'molt-action-confirm molt-cloud-consent';
+    d.innerHTML = moltHTML(
+        '<span class="ac-icon">☁️</span>' +
+        '<div class="ac-body cc-body">' +
+          '<div class="ac-title">Send to ' + esc(r.provider_name) + '?</div>' +
+          '<div>This chat would leave your device: it goes to ' +
+          esc(r.provider_name) + ' with your API key, under their privacy ' +
+          'policy. Depending on what you ask, it can include:</div>' +
+          '<ul>' + list + '</ul>' +
+        '</div>' +
+        '<div class="ac-buttons">' +
+          '<button class="ac-deny">Cancel</button>' +
+          '<button class="ac-allow">Allow</button>' +
+        '</div>');
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+    var settle = function(ok) {
+      return function() {
+        try { d.parentNode && d.parentNode.removeChild(d); } catch (e) {}
+        resolve(ok);
+      };
+    };
+    d.querySelector('.ac-allow').onclick = settle(true);
+    d.querySelector('.ac-deny').onclick = settle(false);
+  });
+}
+
+// Fired by the backend right before a cloud reply streams in.
+cr.addWebUiListener('ai-cloud-reply', function(providerName, model) {
+  if (!currentAiMessageEl || !currentAiMessageEl.parentNode) return;
+  ensureCloudStyles();
+  var row = currentAiMessageEl.parentNode;
+  if (row.querySelector('.cloud-badge')) return;
+  row.classList.add('cloud-reply');
+  var b = document.createElement('div');
+  b.className = 'cloud-badge';
+  b.textContent = '☁ Sent to ' + providerName +
+                  (model ? ' · ' + model : '');
+  row.insertBefore(b, row.firstChild);
+});
 
 function setGenerating(val) {
   isGenerating = val;
@@ -3199,11 +3304,11 @@ function sendMessage() {
             }).join('\n');
       }
       return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx,
-                             origin, sendModelId);
+                             origin, sendModelId, conversationId || '');
     }, function() {
       // queryMemory failed (no service yet, etc.) — proceed without it.
       return sendWithPromise('sendPrompt', text, historyForPrompt, pageCtx,
-                             origin, sendModelId);
+                             origin, sendModelId, conversationId || '');
     });
   }).then(function(result) {
     // Same scrub finishAiMessage applies to the visible bubble — the

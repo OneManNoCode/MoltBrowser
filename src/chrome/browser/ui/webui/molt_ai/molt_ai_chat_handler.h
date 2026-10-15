@@ -23,6 +23,7 @@
 #include <string>
 
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -35,6 +36,10 @@
 #include "content/public/browser/web_ui_message_handler.h"
 
 class Profile;
+
+namespace molt_ai::memory {
+class ConversationStore;
+}  // namespace molt_ai::memory
 
 namespace url {
 class Origin;
@@ -64,6 +69,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleSendPrompt(const base::ListValue& args);
   void HandleLoadModel(const base::ListValue& args);
   void HandleCancelGeneration(const base::ListValue& args);
+  // Record first-use consent for a cloud provider (P18).
+  // Args: [callback_id, provider_id] -> {success}
+  void HandleGrantCloudConsent(const base::ListValue& args);
   void HandleGetModelStatus(const base::ListValue& args);
   void HandleGetPageContext(const base::ListValue& args);
   void HandleDownloadModel(const base::ListValue& args);
@@ -71,9 +79,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleGetPageContent(const base::ListValue& args);
   void HandleCancelDownload(const base::ListValue& args);
   void HandleExportHistory(const base::ListValue& args);
-  // Conversation store (sidebar Recents). One JSON file per
-  // conversation at ~/.moltbrowser/conversations/<id>.json:
-  //   {id, title, updated_at (ms since epoch), messages:[{role,content}]}
+  // Conversation store (sidebar Recents): per-profile, OSCrypt-encrypted
+  // (molt_ai::memory::ConversationStore); nothing is read or written for
+  // off-the-record profiles.
   //   listConversations(callback_id)         → {success, conversations:[…]}
   //   saveConversation(callback_id, id, title, history_json)
   //   loadConversation(callback_id, id)      → {success, id, title,
@@ -283,6 +291,15 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Lazily-created single sequence for conversation-store file IO (keeps
   // same-id autosaves ordered).
   base::SequencedTaskRunner* ConversationTaskRunner();
+  // Runs |op| on the conversation sequence against this profile's store
+  // (after the one-time legacy migration) and resolves |callback_id| with
+  // its result. Off-the-record: resolves immediately without touching
+  // disk (an empty list when |is_list|, else an error).
+  void RunConversationOp(
+      std::string callback_id,
+      bool is_list,
+      base::OnceCallback<base::DictValue(
+          const molt_ai::memory::ConversationStore&)> op);
   void OnPageContentExtracted(std::string callback_id, base::Value result);
 
   // Ensure BrowserAIRuntime is created and initialized
@@ -297,21 +314,33 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // same gated system prompt + history + user message as the local
   // path (settings + key read off-thread), then streams via
   // molt_ai::StartCloudChat with all callbacks on the UI thread.
+  // |attached| lists which context kinds this send carries ({page, pdf,
+  // attachment, memory, history} -> bool); it is echoed to the page when
+  // first-use consent is required.
   void StartCloudPrompt(std::string callback_id,
                         std::string model_id,
                         std::string prompt_text,
                         std::string history_text,
                         std::string page_context,
-                        bool include_actions);
+                        bool include_actions,
+                        base::DictValue attached);
+  // Worker result for StartCloudPrompt.
+  struct CloudPromptPrep {
+    // False until the user accepted the first-use dialog for this provider;
+    // nothing is assembled or sent before that.
+    bool consented = false;
+    // False when the provider has no stored key.
+    bool cfg_found = false;
+    molt_ai::CloudChatRequest request;
+  };
   // UI-thread continuation of StartCloudPrompt after the off-thread
-  // settings + provider-config read. |messages| is the fully assembled
-  // conversation; |cfg_found| is false when the provider has no stored
-  // key. Kicks off the actual network stream.
+  // consent + settings + provider-config read. Kicks off the actual
+  // network stream, or asks the page for consent.
   void OnCloudPromptReady(std::string callback_id,
                           std::string provider_id,
                           std::string model,
-                          bool cfg_found,
-                          molt_ai::CloudChatRequest request);
+                          base::DictValue attached,
+                          CloudPromptPrep prep);
 
   raw_ptr<Profile> profile_;
   // The on-device runtime is a process-wide singleton reached via
@@ -325,6 +354,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // falling back to a different model.
   std::string last_requested_model_id_;
   std::string active_prompt_callback_id_;
+  // Runtime request id of this page's in-flight local generation (0 if
+  // none). Stop cancels only this one (A6).
+  uint64_t active_request_id_ = 0;
 
   // Model download state
   std::unique_ptr<network::SimpleURLLoader> url_loader_;

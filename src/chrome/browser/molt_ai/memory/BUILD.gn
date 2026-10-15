@@ -21,6 +21,10 @@ source_set("memory_core") {
 
 source_set("memory") {
   sources = [
+    # The AI chat's saved conversations: here because this target is where
+    # OSCrypt is visible to MoltBrowser code.
+    "conversation_store.cc",
+    "conversation_store.h",
     "memory_prefs.cc",
     "memory_prefs.h",
     "memory_privacy.cc",
