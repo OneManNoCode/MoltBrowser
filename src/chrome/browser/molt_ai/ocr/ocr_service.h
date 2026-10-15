@@ -9,10 +9,13 @@
 // input natively via its embedded Leptonica + Poppler dependency
 // (the macOS Homebrew formula bundles Leptonica with PDF support).
 //
-// Resolution order mirrors VoiceService:
-//   1. MoltBrowser.app/Contents/Resources/ocr/tesseract  (bundled)
-//   2. /opt/homebrew/bin/tesseract, /usr/local/bin/tesseract,
-//      /usr/bin/tesseract  (system fallback)
+// Resolution (FindHelperBinary, helper_binary.h — same as VoiceService and
+// TorManager):
+//   1. the bundled copy: MoltBrowser.app/Contents/Resources/ocr/tesseract on
+//      macOS, <install dir>/ocr/tesseract[.exe] on Linux and Windows;
+//   2. Linux only: /usr/bin/tesseract, if root owns it and every directory
+//      above it.
+// No Homebrew, /usr/local, /opt/local or PATH fallback (audit S18).
 //
 // Threading: blocking subprocess on a MayBlock thread-pool task.
 
@@ -24,6 +27,7 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "chrome/browser/molt_ai/common/helper_binary.h"
 
 namespace base {
 template <typename T>
@@ -73,10 +77,9 @@ class OcrService {
   OcrService();
   ~OcrService();
 
-  // Expected path of the bundled tesseract binary next to the bundle dir
-  // (platform-correct filename: tesseract.exe on Windows, tesseract
-  // elsewhere). Empty FilePath if there is no bundle dir on this platform.
-  base::FilePath BundledTesseractPath() const;
+  // The tesseract to run (bundled, else on Linux a root-owned
+  // /usr/bin/tesseract), or why there is none.
+  molt_ai::HelperBinary FindTesseract() const;
 };
 
 }  // namespace ocr

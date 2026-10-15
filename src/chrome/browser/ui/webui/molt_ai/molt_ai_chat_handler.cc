@@ -5566,8 +5566,9 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
   const base::FilePath bin = svc->ResolveTesseractBinary();
   if (bin.value().empty()) {
     return MakeAttachmentError(
-        "no OCR binary available — run scripts/bundle-tesseract.sh or "
-        "install tesseract.");
+        "no OCR binary available — this build doesn't bundle tesseract "
+        "(scripts/bundle-tesseract.sh); on Linux, install the "
+        "tesseract-ocr package.");
   }
   base::FilePath tessdata;
   if (svc->IsUsingBundledTesseract()) {

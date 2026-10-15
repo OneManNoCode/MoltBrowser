@@ -8,11 +8,13 @@
 #   tor_service.*            — read-only circuit/status queries
 #   molt_net_routing.*       — the isolated MoltNet (Tor) profile
 
-# Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation
-# and bridge-line validation. Split out so molt_ai_unittests can test it
-# without pulling in Profile / content.
+# Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
+# bridge-line validation and .onion / Onion-Location checks. Split out so
+# molt_ai_unittests can test it without pulling in Profile / content.
 source_set("protocol") {
   sources = [
+    "onion_util.cc",
+    "onion_util.h",
     "tor_control_protocol.cc",
     "tor_control_protocol.h",
     "torrc_builder.cc",
@@ -45,6 +47,9 @@ source_set("tor") {
 
   deps = [
     "//base",
+    # Which tor binary may run: bundled, or a root-owned system tor on Linux
+    # (audit S18).
+    "//chrome/browser/molt_ai/common:helper_binary",
     # molt_net_routing.cc applies the Tor proxy + leak-safe prefs to the
     # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",
@@ -74,18 +79,74 @@ source_set("tor") {
   }
 }
 
+# Onion-Location glue (GURL + net::HttpResponseHeaders) around onion_util,
+# kept out of :onion so molt_ai_unittests can test it.
+source_set("onion_location") {
+  sources = [
+    "onion_location.cc",
+    "onion_location.h",
+  ]
+  deps = [
+    ":protocol",
+    "//net",
+    "//url",
+  ]
+}
+
+# .onion UX: the navigation throttle that keeps onion names off the network in
+# regular windows (registered first in chrome_content_browser_client.cc), its
+# "Open in a MoltNet window" interstitial, and the Onion-Location infobar.
+source_set("onion") {
+  sources = [
+    "onion_blocking_page.cc",
+    "onion_blocking_page.h",
+    "onion_location_tab_helper.cc",
+    "onion_location_tab_helper.h",
+    "onion_navigation_throttle.cc",
+    "onion_navigation_throttle.h",
+  ]
+
+  deps = [
+    ":onion_location",
+    ":protocol",
+    ":tor",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common",
+    "//components/infobars/content",
+    "//components/infobars/core",
+    "//components/security_interstitials/content:security_interstitial_page",
+    "//components/security_interstitials/core",
+    "//content/public/browser",
+    "//net",
+    "//ui/base",
+    "//url",
+  ]
+
+  # As in :tor: onion_blocking_page.cc reads g_browser_process and
+  # onion_location_tab_helper.cc uses //chrome/browser/infobars
+  # (CreateConfirmInfoBar); those depend on //chrome/browser, which depends
+  # on this target, so the symbols resolve at link time (no gn check here).
+  # tab_helpers.cc attaches OnionLocationTabHelper.
+}
+
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
-# generation, bridge-line validation). Picked up by
+# generation, bridge-line validation, .onion / Onion-Location). Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "onion_location_unittest.cc",
+    "onion_util_unittest.cc",
     "tor_control_protocol_unittest.cc",
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":onion_location",
     ":protocol",
     "//base",
+    "//net",
     "//testing/gtest",
+    "//url",
   ]
 }

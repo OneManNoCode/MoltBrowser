@@ -4,9 +4,12 @@
 // TorManager — runs and supervises MoltNet's own Tor as a child process.
 //
 // Hardening (see docs/MOLTNET_COMPLIANCE.md):
-//   * Only the Tor bundled with MoltBrowser is launched. A different binary
-//     requires an explicit opt-in (--moltnet-tor-binary=<absolute path>);
-//     there is no Homebrew/PATH fallback.
+//   * Only the Tor bundled with MoltBrowser is launched, or on Linux (whose
+//     packages don't bundle Tor) the distribution's /usr/bin/tor or
+//     /usr/sbin/tor if root owns it and every directory above it. A
+//     different binary requires an explicit opt-in
+//     (--moltnet-tor-binary=<absolute path>); there is no Homebrew/PATH
+//     fallback. All candidates go through FindHelperBinary (audit S18).
 //   * `SocksPort auto` + `ControlPort auto` + `ControlPortWriteToFile`: ports
 //     are picked by Tor and read back, so nothing squatting on 9050/9051 can
 //     impersonate it. A private --defaults-torrc stops a system-wide
@@ -58,6 +61,22 @@ struct TorLaunchResult {
   int pid = 0;              // child pid on success
 };
 
+// The tor binary MoltNet would run (TorManager::FindTorBinary()).
+struct TorBinaryInfo {
+  TorBinaryInfo();
+  TorBinaryInfo(const TorBinaryInfo&);
+  TorBinaryInfo& operator=(const TorBinaryInfo&);
+  ~TorBinaryInfo();
+
+  // Canonical path (symlinks resolved); empty if there is no usable tor.
+  base::FilePath path;
+  // True iff |path| is the tor bundled with MoltBrowser.
+  bool bundled = false;
+  // When |path| is empty: a user-facing explanation of what to do, e.g.
+  // "Tor isn't installed. Install the tor package ..." on Linux.
+  std::string error;
+};
+
 // How MoltNet reaches the Tor network. Persisted (it is local configuration,
 // not browsing data) in <tor data dir>/bridges.json and re-validated on load.
 struct BridgeSettings {
@@ -94,12 +113,19 @@ class TorManager {
   TorManager(const TorManager&) = delete;
   TorManager& operator=(const TorManager&) = delete;
 
-  // The bundled tor (MoltBrowser.app/Contents/Resources/tor/tor on macOS,
-  // <install dir>/tor/tor[.exe] elsewhere), or the binary named by
-  // --moltnet-tor-binary. Empty if neither exists. Never searches PATH.
+  // The tor MoltNet runs: the binary named by --moltnet-tor-binary when that
+  // switch is present (and only then); otherwise the bundled tor
+  // (MoltBrowser.app/Contents/Resources/tor/tor on macOS,
+  // <install dir>/tor/tor[.exe] elsewhere), then on Linux a root-owned
+  // /usr/bin/tor or /usr/sbin/tor. Every candidate must pass
+  // FindHelperBinary's checks. Never searches PATH or Homebrew. A few
+  // stat() calls; fine on the UI thread.
+  TorBinaryInfo FindTorBinary() const;
+
+  // FindTorBinary().path: empty if there is no usable tor.
   base::FilePath ResolveTorBinary() const;
 
-  // True iff ResolveTorBinary() is the bundled binary.
+  // True iff FindTorBinary() is the bundled binary.
   bool IsUsingBundledTor() const;
 
   // Bundled tor directory (geoip, pluggable_transports/). May be empty.

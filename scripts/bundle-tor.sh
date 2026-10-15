@@ -4,10 +4,12 @@
 #
 # Downloads the official Tor Expert Bundle from torproject.org and
 # places the tor binary, GeoIP data and the pluggable transports inside
-# MoltBrowser.app. MoltBrowser only ever runs this bundled tor (a
+# MoltBrowser.app. On macOS MoltBrowser only ever runs this bundled tor (a
 # different binary needs the explicit --moltnet-tor-binary=<path> switch;
 # there is no Homebrew/PATH fallback), so this script is the supply chain
-# for MoltNet and refuses to bundle an unverified download.
+# for MoltNet and refuses to bundle an unverified download. (Linux packages
+# don't bundle tor: they declare "Recommends: tor" and MoltNet uses the
+# distribution's root-owned /usr/bin/tor; see TorManager::FindTorBinary.)
 #
 # Bundle layout inside the .app:
 #   MoltBrowser.app/Contents/Resources/tor/tor       (binary)

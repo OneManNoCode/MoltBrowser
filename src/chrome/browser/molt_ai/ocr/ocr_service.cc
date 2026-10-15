@@ -5,10 +5,6 @@
 
 #include "build/build_config.h"
 
-#if !BUILDFLAG(IS_WIN)
-#include <unistd.h>
-#endif
-
 #include <utility>
 
 #include "base/command_line.h"
@@ -20,6 +16,7 @@
 #include "base/process/launch.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/common/helper_binary.h"
 
 namespace molt_ai {
 namespace ocr {
@@ -33,12 +30,13 @@ OcrResult::~OcrResult() = default;
 
 namespace {
 
-const char* const kCandidatePaths[] = {
-    "/opt/homebrew/bin/tesseract",
-    "/usr/local/bin/tesseract",
-    "/usr/bin/tesseract",
-    "/opt/local/bin/tesseract",
-};
+// Linux only: the distribution's tesseract-ocr package, accepted only if root
+// owns it and every directory above it (helper_binary.h). There is no
+// Homebrew / /usr/local / /opt/local / PATH fallback any more (audit S18):
+// those are writable without root, and tesseract is fed the user's PDFs.
+std::vector<std::string> SystemTesseractPaths() {
+  return {"/usr/bin/tesseract"};
+}
 
 OcrResult RunTesseractBlocking(std::string pdf_bytes,
                                 base::FilePath bin,
@@ -141,67 +139,42 @@ base::FilePath OcrService::GetBundledOcrDir() const {
   base::FilePath exe;
   if (!base::PathService::Get(base::FILE_EXE, &exe)) return base::FilePath();
   return exe.DirName().DirName().AppendASCII("Resources").AppendASCII("ocr");
-#elif BUILDFLAG(IS_WIN)
-  // Windows ships a flat install dir, so the bundle lives next to the
-  // executable: <DIR_EXE>\ocr\ (binary tesseract.exe + tessdata\).
-  // DIR_EXE is the directory containing the running executable.
+#else
+  // Windows and Linux ship a flat install dir, so the bundle lives next to
+  // the executable: <DIR_EXE>/ocr/ (tesseract[.exe] + tessdata/). DIR_EXE is
+  // the directory containing the running executable.
   base::FilePath exe_dir;
   if (!base::PathService::Get(base::DIR_EXE, &exe_dir)) return base::FilePath();
   return exe_dir.Append(FILE_PATH_LITERAL("ocr"));
-#else
-  return base::FilePath();
 #endif
 }
 
-base::FilePath OcrService::BundledTesseractPath() const {
-  base::FilePath dir = GetBundledOcrDir();
-  if (dir.value().empty()) return base::FilePath();
+molt_ai::HelperBinary OcrService::FindTesseract() const {
 #if BUILDFLAG(IS_WIN)
-  return dir.Append(FILE_PATH_LITERAL("tesseract.exe"));
+  const base::FilePath name(FILE_PATH_LITERAL("tesseract.exe"));
 #else
-  return dir.AppendASCII("tesseract");
+  const base::FilePath name(FILE_PATH_LITERAL("tesseract"));
 #endif
+  return molt_ai::FindHelperBinary(GetBundledOcrDir(), {name},
+                                   SystemTesseractPaths());
 }
 
 base::FilePath OcrService::ResolveTesseractBinary() const {
-  // Prefer the binary bundled next to the executable. access()/X_OK are
-  // POSIX-only, so existence is checked with base::PathExists and the
-  // executable-bit check is guarded to non-Windows platforms.
-  base::FilePath bundled = BundledTesseractPath();
-  if (!bundled.value().empty() && base::PathExists(bundled)
-#if !BUILDFLAG(IS_WIN)
-      && access(bundled.value().c_str(), X_OK) == 0
-#endif
-  ) {
-    return bundled;
-  }
-#if BUILDFLAG(IS_WIN)
-  // The POSIX candidate paths (/usr/bin, ...) never exist on Windows.
-  // Fall back to a bare "tesseract.exe" and let the OS PATH search in
-  // base::LaunchProcess resolve it if the user installed tesseract.
-  return base::FilePath(FILE_PATH_LITERAL("tesseract.exe"));
-#else
-  for (const char* p : kCandidatePaths) {
-    base::FilePath fp = base::FilePath::FromUTF8Unsafe(p);
-    if (base::PathExists(fp) && access(fp.value().c_str(), X_OK) == 0) {
-      return fp;
-    }
-  }
-  return base::FilePath();
-#endif
+  return FindTesseract().path;
 }
 
 bool OcrService::IsUsingBundledTesseract() const {
-  base::FilePath bundled = BundledTesseractPath();
-  base::FilePath resolved = ResolveTesseractBinary();
-  return !bundled.value().empty() && !resolved.value().empty() &&
-         resolved.value() == bundled.value();
+  return FindTesseract().bundled;
 }
 
 void OcrService::OcrPdf(std::string pdf_bytes, size_t max_chars,
                          base::OnceCallback<void(OcrResult)> on_done) {
-  base::FilePath bin = ResolveTesseractBinary();
-  bool bundled = IsUsingBundledTesseract();
+  const molt_ai::HelperBinary found = FindTesseract();
+  if (!found.found()) {
+    LOG(WARNING) << "[MoltOCR] no usable tesseract: " << found.error;
+  }
+  const base::FilePath& bin = found.path;
+  const bool bundled = found.bundled;
   base::FilePath tessdata;
   if (bundled) {
     // bundle-tesseract.sh drops eng.traineddata into

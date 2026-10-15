@@ -27,6 +27,10 @@
 class GURL;
 class Profile;
 
+namespace content {
+class WebContents;
+}  // namespace content
+
 namespace molt_ai {
 namespace tor {
 
@@ -39,6 +43,15 @@ class MoltNetWindow {
   // (Tor couldn't start, a policy controls the proxy, routing couldn't be
   // verified, ...). Nothing is ever opened on a direct connection.
   static void Open(Profile* from, const GURL& url, DoneCallback done);
+
+  // Open() on behalf of a user's click in browser-controlled UI shown for
+  // |source| (the .onion interstitial, the Onion-Location infobar). A
+  // failure is reported in a dialog over |source|'s window. |done| (may be
+  // null) runs afterwards either way. Never call this for anything a web
+  // page can trigger on its own.
+  static void OpenForUserClick(content::WebContents* source,
+                               const GURL& url,
+                               DoneCallback done = DoneCallback());
 
   // Closes every MoltNet window belonging to |from|'s original profile.
   static void CloseAll(Profile* from);

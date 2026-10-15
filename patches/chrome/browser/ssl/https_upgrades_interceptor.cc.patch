@@ -1,0 +1,36 @@
+MoltBrowser patch for chrome/browser/ssl/https_upgrades_interceptor.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/ssl/https_upgrades_interceptor.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ssl/https_upgrades_interceptor.cc b/chrome/browser/ssl/https_upgrades_interceptor.cc
+index 8411cccdc023aac8b17d4282a99d17b847eba066..bfd07c29a73a3e4c4301fb46ca9fe5467883a4ca 100644
+--- a/chrome/browser/ssl/https_upgrades_interceptor.cc
++++ b/chrome/browser/ssl/https_upgrades_interceptor.cc
+@@ -12,6 +12,7 @@
+ #include "build/buildflag.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "chrome/browser/molt_ai/tor/onion_util.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/renderer_host/chrome_navigation_ui_data.h"
+@@ -342,6 +343,17 @@ void HttpsUpgradesInterceptor::MaybeCreateLoader(
+     return;
+   }
+ 
++  // MoltBrowser: exclude Tor onion services (RFC 7686) in every mode,
++  // including HTTPS-Only (MoltNet windows turn it on). An onion connection is
++  // end-to-end encrypted and authenticated by the onion address itself, and
++  // most onion sites don't serve HTTPS, so upgrading http://*.onion (or
++  // warning about it) would only break them. Outside MoltNet windows a .onion
++  // navigation never gets here: OnionNavigationThrottle cancels it first.
++  if (molt_ai::tor::IsOnionHost(tentative_resource_request.url.host())) {
++    std::move(callback).Run({});
++    return;
++  }
++
+   // For non-strict modes (and Incognito), skip attempting to upgrade non-unique
+   // hostnames as they can't get publicly-trusted certificates.
+   //

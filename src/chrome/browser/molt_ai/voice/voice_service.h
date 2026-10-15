@@ -9,12 +9,14 @@
 // system-installed) `whisper-cli` binary, and returns the
 // transcription as plaintext.
 //
-// Resolution order for the binary:
-//   1. MoltBrowser.app/Contents/Resources/whisper/whisper-cli
-//      (bundled via scripts/bundle-whisper.sh)
-//   2. /opt/homebrew/bin/whisper-cli, /usr/local/bin/whisper-cli,
-//      /usr/bin/whisper-cli  (system install fallback)
-// Same fall-through pattern as TorManager.
+// Resolution (FindHelperBinary, helper_binary.h — same as TorManager and
+// OcrService):
+//   1. the bundled copy (scripts/bundle-whisper.sh):
+//      MoltBrowser.app/Contents/Resources/whisper/whisper-cli on macOS,
+//      <install dir>/whisper/whisper-cli[.exe] on Linux and Windows;
+//   2. Linux only: /usr/bin/whisper-cli, if root owns it and every
+//      directory above it.
+// No Homebrew, /usr/local or PATH fallback (audit S18).
 //
 // Privacy: all audio stays on the user's machine. We write to a
 // dedicated temp file under TMPDIR with a random suffix, delete it
@@ -30,6 +32,7 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "chrome/browser/molt_ai/common/helper_binary.h"
 
 namespace base {
 template <typename T>
@@ -80,10 +83,9 @@ class VoiceService {
   VoiceService();
   ~VoiceService();
 
-  // Expected path of the bundled whisper binary next to the bundle dir
-  // (whisper-cli.exe/whisper.exe on Windows, whisper-cli elsewhere).
-  // Empty FilePath if there is no bundle dir on this platform.
-  base::FilePath BundledWhisperPath() const;
+  // The whisper-cli to run (bundled, else on Linux a root-owned
+  // /usr/bin/whisper-cli), or why there is none.
+  molt_ai::HelperBinary FindWhisper() const;
 };
 
 }  // namespace voice

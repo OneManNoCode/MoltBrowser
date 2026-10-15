@@ -58,6 +58,7 @@ chrome/browser/resources/settings/settings_ui/settings_ui.html.patch
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html.patch
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.ts.patch
 chrome/browser/search/search.cc.patch
+chrome/browser/ssl/https_upgrades_interceptor.cc.patch
 chrome/browser/ui/BUILD.gn.patch
 chrome/browser/ui/actions/chrome_action_id.h.patch
 chrome/browser/ui/browser.cc.patch
@@ -106,11 +107,13 @@ components/error_page_strings.grdp.patch
 components/facilitated_payments_strings.grdp.patch
 components/heavy_ad_intervention_strings.grdp.patch
 components/history_strings.grdp.patch
+components/infobars/core/infobar_delegate.h.patch
 components/management_strings.grdp.patch
 components/new_or_sad_tab_strings.grdp.patch
 components/omnibox/browser/BUILD.gn.patch
 components/omnibox/browser/aim_eligibility_service_features.cc.patch
 components/omnibox/browser/autocomplete_controller.cc.patch
+components/omnibox/browser/search_provider.cc.patch
 components/omnibox/common/omnibox_features.cc.patch
 components/omnibox_pedal_ui_strings.grdp.patch
 components/omnibox_strings.grdp.patch
@@ -135,6 +138,7 @@ components/sync/service/sync_prefs.cc.patch
 components/sync_ui_strings.grdp.patch
 content/common/url_schemes.cc.patch
 net/base/features.cc.patch
+net/dns/host_resolver_manager.cc.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch

@@ -111,6 +111,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
@@ -5639,6 +5640,10 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
 
 void ChromeContentBrowserClient::CreateThrottlesForNavigation(
     content::NavigationThrottleRegistry& registry) {
+  // MoltNet: outside MoltNet windows, stop .onion navigations before any
+  // other throttle (some send the URL to a server) or the request can see
+  // the onion name.
+  molt_ai::tor::OnionNavigationThrottle::MaybeCreateAndAdd(registry);
   CreateAndAddChromeThrottlesForNavigation(registry);
   // MoltShield: ad frames (collapsed) + cosmetic filtering. Never blocks
   // top-level documents.

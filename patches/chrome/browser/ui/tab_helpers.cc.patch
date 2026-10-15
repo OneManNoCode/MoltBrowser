@@ -5,20 +5,21 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 6c3874b43f7fe707addcee98190657e282f52b57..e908c5c5701cdf90c0c2b791bf632a591e296e29 100644
+index 6c3874b43f7fe707addcee98190657e282f52b57..2cde12217299c6a00d60cd82e8cb81d18f61a7a6 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -44,6 +44,9 @@
+@@ -44,6 +44,10 @@
  #include "chrome/browser/lookalikes/safety_tip_web_contents_observer.h"
  #include "chrome/browser/media/media_engagement_service.h"
  #include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_observer.h"
 +#include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 +#include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 +#include "chrome/browser/molt_ai/memory/memory_recorder.h"
++#include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
  #include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
  #include "chrome/browser/net/net_error_tab_helper.h"
  #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
-@@ -620,6 +623,22 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
+@@ -620,6 +624,26 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
    vr::VrTabHelper::CreateForWebContents(web_contents);
    OneTimePermissionsTrackerHelper::CreateForWebContents(web_contents);
  
@@ -37,6 +38,10 @@ index 6c3874b43f7fe707addcee98190657e282f52b57..e908c5c5701cdf90c0c2b791bf632a59
 +  // patterns and overlays a /simplify+/sandbox hint chip.
 +  molt_ai::anti_rage::AntiRageTabHelper::CreateForWebContents(
 +      web_contents);
++
++  // MoltBrowser: offers a site's Onion-Location as an infobar (never an
++  // automatic redirect).
++  molt_ai::tor::OnionLocationTabHelper::CreateForWebContents(web_contents);
 +
    // NO! Do not just add your tab helper here. This is a large alphabetized
    // block; please insert your tab helper above in alphabetical order.
