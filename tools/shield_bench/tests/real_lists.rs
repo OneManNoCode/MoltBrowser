@@ -373,3 +373,45 @@ fn procedural_real_rule_shapes() {
     );
     assert!(!c.hide_css.contains(":has-text("));
 }
+
+/// Writes target/scriptlet_corpus.json for tools/shield_bench/scriptlets_test.js:
+/// the real scriptlet bundles of a few sites, and one built from hostile
+/// arguments (audit B7), to be parsed and run in jsdom.
+#[test]
+fn scriptlet_bundles_for_jsdom() {
+    let e = engine_or_skip!();
+    let mut corpus = Vec::new();
+    for url in [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.reddit.com/",
+        "https://www.twitch.tv/",
+    ] {
+        let script = e.cosmetic(url).injected_script;
+        assert!(!script.is_empty(), "{url}");
+        corpus.push(serde_json::json!({"name": url, "script": script}));
+    }
+    let hostile = [
+        r#"x"});window.__moltPwned=1;//"#,
+        r#"x\"});window.__moltPwned=1;//"#,
+        "</script><script>window.__moltPwned=1</script>",
+        "*/window.__moltPwned=1/*",
+        "${window.__moltPwned=1}`+(window.__moltPwned=1)+`",
+        "})();window.__moltPwned=1;(function(){",
+        "\\u0022);window.__moltPwned=1;//",
+    ];
+    let mut list = String::new();
+    for (i, h) in hostile.iter().enumerate() {
+        list.push_str(&format!("hostile.example##+js(set-constant, p{i}, {h})\n"));
+        list.push_str(&format!("hostile.example##+js(abort-on-property-read, {h})\n"));
+        list.push_str(&format!("hostile.example##+js(remove-attr, {h}, {h})\n"));
+    }
+    let mut b = EngineBuilder::new(false);
+    b.add_list(&list, true);
+    let mut hostile_engine = b.build();
+    hostile_engine.use_resources_json(DEFAULT_RESOURCES_JSON);
+    let script = hostile_engine.cosmetic("https://hostile.example/").injected_script;
+    assert!(script.matches("setConstant(").count() >= hostile.len(), "{script}");
+    corpus.push(serde_json::json!({"name": "hostile", "script": script}));
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/scriptlet_corpus.json");
+    std::fs::write(out, serde_json::Value::Array(corpus).to_string()).expect("write corpus");
+}

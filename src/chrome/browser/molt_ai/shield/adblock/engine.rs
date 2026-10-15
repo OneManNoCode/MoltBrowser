@@ -245,12 +245,23 @@ impl ShieldEngine {
     /// Loads scriptlet/redirect resources (adblock-rust `Resource` JSON).
     /// Returns how many were accepted; 0 leaves the current set in place.
     ///
-    /// Legacy *template* scriptlets are refused: adblock-rust substitutes
-    /// their `{{N}}` placeholders with arguments that are escaped for a
-    /// double-quoted context only, so a template that quotes `'{{1}}'` would
-    /// let a filter argument break out into script. Function-style resources
-    /// (all of uBO's current ones) are invoked as `fn("arg", …)` with
-    /// JSON-escaped arguments and are safe.
+    /// Scriptlet argument safety (audit B7). adblock-rust 0.13.3 builds a
+    /// `##+js(name, args…)` injection one of two ways:
+    ///  * function-style resources (`function name(…) {…}`, all of uBO's
+    ///    scriptlets) are invoked as `name("arg", …)`, each argument a
+    ///    JSON-escaped string literal (`"`, `\` and every C0 control
+    ///    escaped; U+2028/9 are legal in JS strings) -- an argument can't
+    ///    leave its literal;
+    ///  * any other JS resource is a *template*: its `{{1}}`…`{{9}}`
+    ///    placeholders are replaced by arguments escaped for a double-quoted
+    ///    context only, so a template quoting `'{{1}}'` or using a bare
+    ///    `{{1}}` would let list text become script.
+    /// So template resources, and any JS resource containing a `{{N}}`
+    /// placeholder, are refused. The remaining non-function JS resources
+    /// (uBO's redirect surrogates, e.g. noop.js) take no arguments and are
+    /// injected verbatim. Scriptlet code itself only comes from this bundle
+    /// (built in, not downloaded); `trusted-*` scriptlets need
+    /// TRUSTED_LIST_PERMISSION, which only uBO's own lists get.
     pub fn use_resources_json(&mut self, json: &str) -> usize {
         if json.len() > MAX_RESOURCES_JSON_BYTES {
             return 0;
@@ -360,12 +371,17 @@ fn is_acceptable_resource(r: &Resource) -> bool {
         ResourceType::Template => false,
         ResourceType::Mime(MimeType::ApplicationJavascript) => {
             match base64::engine::general_purpose::STANDARD.decode(r.content.as_bytes()) {
-                Ok(bytes) => !bytes.windows(5).any(|w| w == b"{{1}}"),
+                Ok(bytes) => !has_template_placeholder(&bytes),
                 Err(_) => false,
             }
         }
         _ => true,
     }
+}
+
+/// True if `bytes` contains a `{{1}}`…`{{9}}` scriptlet template placeholder.
+fn has_template_placeholder(bytes: &[u8]) -> bool {
+    bytes.windows(5).any(|w| w[..2] == *b"{{" && matches!(w[2], b'1'..=b'9') && w[3..] == *b"}}")
 }
 
 /// Wraps adblock-rust's scriptlet bundle for main-world injection. uBO's
@@ -594,6 +610,52 @@ mod tests {
             script.contains(r#"setConstant("foo", "x\"});alert(1);//")"#),
             "{script}"
         );
+    }
+
+    /// The argument list of the first `name(...)` invocation in `script`,
+    /// parsed as a JSON array: succeeds only if every argument is a plain
+    /// JSON (hence JS) string literal.
+    fn invocation_args(script: &str, name: &str) -> Vec<String> {
+        let start = script.find(&format!("\n{name}(")).expect("invocation") + name.len() + 2;
+        let end = start + script[start..].find(")\n} catch").expect("end of invocation");
+        serde_json::from_str(&format!("[{}]", &script[start..end])).expect("JSON string literals")
+    }
+
+    #[test]
+    fn hostile_scriptlet_arguments_stay_string_literals() {
+        // Audit B7: whatever a list puts in an argument comes out as the
+        // same string value, in a literal it can't leave.
+        for hostile in [
+            r#"x"});alert(1);//"#,
+            r#"x"}); alert(1); //"#,
+            "a\\b\\",
+            "</script><script>alert(1)</script>",
+            "*/alert(1)/*",
+            "${alert(1)}`+alert(1)+`",
+            "\\u0022);alert(1);//",
+            "x\u{2028}\u{2029}y\tz",
+            "})();alert(1);(function(){",
+        ] {
+            let list = format!("example.com##+js(set-constant, foo, {hostile})\n");
+            let e = engine_with(&list);
+            let script = e.cosmetic("https://example.com/").injected_script;
+            assert_eq!(invocation_args(&script, "setConstant"), ["foo", hostile], "{script}");
+        }
+    }
+
+    #[test]
+    fn template_placeholders_refused_in_any_position() {
+        assert!(has_template_placeholder(b"var a = '{{2}}';"));
+        assert!(has_template_placeholder(b"x{{9}}"));
+        assert!(!has_template_placeholder(b"{{0}} {{x}} {1} {{10"));
+        let mut e = ShieldEngine::empty();
+        let content = base64::engine::general_purpose::STANDARD.encode("(function(){ x = '{{3}}'; })();");
+        let json = format!(
+            "[{{\"name\":\"t3.js\",\"aliases\":[],\"kind\":{{\"mime\":\"application/javascript\"}},\"content\":\"{content}\"}}]"
+        );
+        assert_eq!(e.use_resources_json(&json), 0);
+        // The bundled resources have none.
+        assert!(e.use_resources_json(DEFAULT_RESOURCES_JSON) > 100);
     }
 
     #[test]
