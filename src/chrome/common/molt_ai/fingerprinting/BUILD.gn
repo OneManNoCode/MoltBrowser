@@ -1,0 +1,27 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Shared by the browser half (//chrome/browser/molt_ai/fingerprinting, which
+# puts the switches on renderer command lines) and the renderer half
+# (//chrome/renderer/molt_ai/fingerprinting, which hands them to Blink) of
+# MoltBrowser's fingerprinting protection.
+
+source_set("fingerprinting") {
+  sources = [
+    "molt_fingerprinting_features.cc",
+    "molt_fingerprinting_features.h",
+    "molt_fingerprinting_switches.cc",
+    "molt_fingerprinting_switches.h",
+  ]
+  public_deps = [ "//base" ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_fingerprinting_switches_unittest.cc" ]
+  deps = [
+    ":fingerprinting",
+    "//testing/gtest",
+  ]
+}

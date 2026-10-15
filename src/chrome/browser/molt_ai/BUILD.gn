@@ -260,6 +260,10 @@ group("molt_ai") {
     ":molt_update",
     "automation:automation",
     "common:common",
+
+    # Fingerprinting protection: session seed + renderer switches (the engine
+    # is in Blink, //third_party/blink/renderer/core/molt_fingerprinting).
+    "fingerprinting",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)

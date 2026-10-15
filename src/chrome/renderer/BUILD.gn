@@ -145,6 +145,9 @@ static_library("renderer") {
     "//chrome/common/search:mojo_bindings",
     "//chrome/renderer/actor",
 
+    # MoltBrowser: fingerprinting protection (configures Blink at start-up).
+    "//chrome/renderer/molt_ai/fingerprinting",
+
     # MoltBrowser: MoltShield cosmetic filtering (CosmeticFilterAgent).
     "//chrome/renderer/molt_ai/shield",
     "//chrome/services/speech/buildflags",

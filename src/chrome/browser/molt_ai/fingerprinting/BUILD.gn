@@ -1,0 +1,24 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Browser half of MoltBrowser's fingerprinting protection: the per-profile
+# session seed and the renderer switches (hooked from
+# ChromeContentBrowserClient::AppendExtraCommandLineSwitches). The engine
+# itself lives in Blink: //third_party/blink/renderer/core/molt_fingerprinting.
+
+source_set("fingerprinting") {
+  sources = [
+    "molt_fingerprinting_browser.cc",
+    "molt_fingerprinting_browser.h",
+  ]
+  public_deps = [ "//chrome/common/molt_ai/fingerprinting" ]
+  deps = [
+    "//base",
+
+    # molt_net_profile_id.h (is this the MoltNet profile?).
+    "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/profiles:profile",
+    "//content/public/browser",
+    "//crypto",
+  ]
+}
