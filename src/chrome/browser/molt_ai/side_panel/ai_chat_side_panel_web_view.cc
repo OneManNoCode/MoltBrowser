@@ -21,6 +21,8 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/pdf/common/constants.h"
 #include "content/public/browser/file_select_listener.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -70,6 +72,17 @@ std::string FlattenAxTreeText(const ui::AXTreeUpdate& update, int cap) {
     }
   }
   return out;
+}
+
+// Identifies the document a context push describes: the unique ID of the
+// tab's last committed NavigationEntry (unique across tabs; a new one for
+// every new-document or history-creating navigation). The chat handler's
+// getPageContext reports the same value for the active tab, so the chat can
+// tell whether the text it holds belongs to the page shown right now.
+int CommittedEntryId(content::WebContents* contents) {
+  content::NavigationEntry* entry =
+      contents->GetController().GetLastCommittedEntry();
+  return entry ? entry->GetUniqueID() : 0;
 }
 
 }  // namespace
@@ -229,6 +242,7 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
 
   std::string url = active->GetLastCommittedURL().spec();
   std::string title = base::UTF16ToUTF8(active->GetTitle());
+  const int entry_id = CommittedEntryId(active);
   // Stash the OTR flag on the instance so InjectContextIntoChat can
   // include it in the JSON payload — saves threading another argument
   // through every capture path.
@@ -244,8 +258,19 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
   // to ExecuteJS in their isolated worlds anyway. Push the metadata
   // immediately with empty text.
   if (!active->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
-    InjectContextIntoChat(url, title, std::string());
+    InjectContextIntoChat(url, title, std::string(), entry_id,
+                          /*text_pending=*/false);
     return;
+  }
+
+  // A different document from the one the chat holds (tab switch, new
+  // page, SPA route change): drop the previous page's text now rather
+  // than when the capture below replies, so the chat can never pair the
+  // old text with the new page (A7). Same document (load finished, chat
+  // page reloaded): keep the text until the fresh capture replaces it.
+  if (entry_id != last_injected_entry_id_ || url != last_injected_url_) {
+    InjectContextIntoChat(url, title, std::string(), entry_id,
+                          /*text_pending=*/true);
   }
 
   // PDF chat: PDFs render inside an isolated <embed> whose innerText is
@@ -256,7 +281,8 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
   if (active->GetContentsMimeType() == pdf::kPDFMimeType) {
     active->RequestAXTreeSnapshot(
         base::BindOnce(&AiChatSidePanelWebView::OnAxTreeCaptured,
-                       weak_factory_.GetWeakPtr(), my_gen, url, title),
+                       weak_factory_.GetWeakPtr(), my_gen, url, title,
+                       entry_id),
         ui::kAXModeWebContentsOnly,
         /*max_nodes=*/50000,
         /*timeout=*/base::TimeDelta(),
@@ -277,13 +303,15 @@ void AiChatSidePanelWebView::PushActiveTabContext() {
   active->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
       js,
       base::BindOnce(&AiChatSidePanelWebView::OnActiveTabTextCaptured,
-                     weak_factory_.GetWeakPtr(), my_gen, url, title),
+                     weak_factory_.GetWeakPtr(), my_gen, url, title,
+                     entry_id),
       /*world_id=*/1);
 }
 
 void AiChatSidePanelWebView::OnAxTreeCaptured(int64_t generation,
                                                 std::string url,
                                                 std::string title,
+                                                int entry_id,
                                                 ui::AXTreeUpdate& update) {
   if (generation != generation_)
     return;
@@ -292,24 +320,29 @@ void AiChatSidePanelWebView::OnAxTreeCaptured(int64_t generation,
   // distinct from a normal web-page context chip.
   std::string prefixed_title = title.empty() ? std::string("PDF document")
                                               : (title + " (PDF)");
-  InjectContextIntoChat(url, prefixed_title, text);
+  InjectContextIntoChat(url, prefixed_title, text, entry_id,
+                        /*text_pending=*/false);
 }
 
 void AiChatSidePanelWebView::OnActiveTabTextCaptured(int64_t generation,
                                                        std::string url,
                                                        std::string title,
+                                                       int entry_id,
                                                        base::Value page_text) {
-  // Drop the reply if the user switched tabs while we were capturing.
+  // Drop the reply if the user switched tabs or the tab navigated while we
+  // were capturing (every such change bumps the generation).
   if (generation != generation_)
     return;
   std::string text = page_text.is_string() ? page_text.GetString()
                                             : std::string();
-  InjectContextIntoChat(url, title, text);
+  InjectContextIntoChat(url, title, text, entry_id, /*text_pending=*/false);
 }
 
 void AiChatSidePanelWebView::InjectContextIntoChat(const std::string& url,
                                                      const std::string& title,
-                                                     const std::string& text) {
+                                                     const std::string& text,
+                                                     int entry_id,
+                                                     bool text_pending) {
   if (!web_contents() || !web_contents()->GetPrimaryMainFrame())
     return;
   content::RenderFrameHost* chat_frame = web_contents()->GetPrimaryMainFrame();
@@ -329,11 +362,17 @@ void AiChatSidePanelWebView::InjectContextIntoChat(const std::string& url,
   ctx.Set("url", url);
   ctx.Set("title", title);
   ctx.Set("text", text);
+  // Which document |text| was read from (see CommittedEntryId), and
+  // whether its text is still being captured.
+  ctx.Set("nav_entry_id", entry_id);
+  ctx.Set("text_pending", text_pending);
   ctx.Set("is_anonymous_session", last_pushed_is_anonymous_);
 
   std::string json;
   if (!base::JSONWriter::Write(ctx, &json))
     return;
+  last_injected_entry_id_ = entry_id;
+  last_injected_url_ = url;
 
   // Idempotent injection: stash on window.__moltLastTabContext so the
   // chat page can pick it up on its own init (race-free), and call

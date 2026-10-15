@@ -3258,8 +3258,15 @@ function sendMessage() {
     if (ctx && ctx.has_context) {
       pageCtx = ctx.title + ' (' + ctx.url + ')';
     }
+    // Page text pushed by the side panel. Use it only if it was read from
+    // the document the tab shows now (same committed navigation entry and
+    // URL); otherwise it belongs to the previous page (A7). When the native
+    // side can't name the active tab, the side panel's own push is the
+    // only (and current) source.
     var sp = window.__moltCurrentTabContext;
-    if (sp && sp.text && sp.text.length > 0) {
+    var spIsCurrent = !!sp && !(ctx && ctx.has_context &&
+        (sp.url !== ctx.url || sp.nav_entry_id !== ctx.nav_entry_id));
+    if (spIsCurrent && sp.text && sp.text.length > 0) {
       var chunks = chunkPageText(sp.text, 600);
       var top = rankChunksByQuery(chunks, text, 5);
       if (top.length) {
