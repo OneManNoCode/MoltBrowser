@@ -415,3 +415,31 @@ fn scriptlet_bundles_for_jsdom() {
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/scriptlet_corpus.json");
     std::fs::write(out, serde_json::Value::Array(corpus).to_string()).expect("write corpus");
 }
+
+/// uBO's opt-in "Cookie Notices" list (catalog id ublock-cookies): list-based
+/// consent handling with curated per-site rejects, which needs the trusted
+/// permission the catalog gives uBO's lists.
+#[test]
+fn cookie_notices_list_rejects_on_known_sites() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("lists");
+    let Ok(cookies) = std::fs::read_to_string(dir.join("ubo-cookies.txt")) else {
+        eprintln!("skipping: run tools/shield_bench/fetch_lists.sh first");
+        return;
+    };
+    let build = |trusted: bool| {
+        let mut b = EngineBuilder::new(false);
+        let lines = b.add_list(&cookies, trusted);
+        assert!(lines > 2000, "{lines}");
+        let mut e = b.build();
+        e.use_resources_json(DEFAULT_RESOURCES_JSON);
+        e
+    };
+    let trusted = build(true);
+    // `www.google.*##+js(trusted-click-element, button#W0wltc, , 500)`
+    let c = trusted.cosmetic("https://www.google.com/search?q=x");
+    assert!(c.injected_script.contains("trustedClickElement("), "{}", c.injected_script.len());
+    assert!(c.injected_script.contains(r#""button#W0wltc""#));
+    // Without the permission (were it ever marked untrusted) nothing clicks.
+    let untrusted = build(false);
+    assert!(!untrusted.cosmetic("https://www.google.com/").injected_script.contains("trustedClick"));
+}

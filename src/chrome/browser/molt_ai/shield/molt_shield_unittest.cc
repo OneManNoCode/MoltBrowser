@@ -338,6 +338,10 @@ TEST(MoltShieldCatalogTest, DefaultsAndOverrides) {
   EXPECT_EQ(nullptr, FindFilterList("nope"));
   EXPECT_TRUE(FindFilterList("ublock-filters")->trusted);
   EXPECT_FALSE(FindFilterList("easylist")->trusted);
+  // uBO's cookie list needs trusted-click-element; it is opt-in.
+  ASSERT_NE(nullptr, FindFilterList("ublock-cookies"));
+  EXPECT_TRUE(FindFilterList("ublock-cookies")->trusted);
+  EXPECT_FALSE(FindFilterList("ublock-cookies")->enabled_by_default);
 
   StoreState state;
   std::vector<ListSpec> specs = EnabledListSpecs(state);
