@@ -565,12 +565,23 @@ fn parse_selector(
                             }
                         }
                     } else {
+                        end_compound(&mut css);
                         flush_css(&mut ops, &mut css, ctx)?;
                         // `:not(x)` tests the element itself; `:has(x)` (and
                         // `:if-not(x)`, i.e. `:not(:has(x))`) its relatives.
                         let inner_ctx =
                             if name == "not" { Context::SelfElement } else { Context::Relative };
-                        let inner = parse_selector(arg, depth + 1, inner_ctx, filter)?;
+                        let mut inner = parse_selector(arg, depth + 1, inner_ctx, filter)?;
+                        // `:has(:has-text(x))`: relative to the element, an
+                        // operator with no selector before it applies to
+                        // every descendant.
+                        let starts_with_css = inner
+                            .first()
+                            .and_then(|op| op.get("type"))
+                            .is_some_and(|t| t == "css-selector");
+                        if inner_ctx == Context::Relative && !starts_with_css {
+                            inner.insert(0, json!({"type": "css-selector", "arg": " *"}));
+                        }
                         let op = match name {
                             "not" => json!({"type": "not", "arg": inner}),
                             "if-not" => {
@@ -586,6 +597,7 @@ fn parse_selector(
                 }
                 if STRING_OPS.contains(&name) {
                     css.push_str(&sel[seg_start..i]);
+                    end_compound(&mut css);
                     flush_css(&mut ops, &mut css, ctx)?;
                     match string_op(name, arg)? {
                         StringOp::Op(op) => ops.push(op),
@@ -622,6 +634,16 @@ fn parse_selector(
         return None;
     }
     Some(ops)
+}
+
+/// An operator right after a combinator or whitespace (`.a > :has-text(x)`,
+/// `div :has-text(x)`) applies to any element there: make that explicit.
+fn end_compound(css: &mut String) {
+    if css.ends_with(|c: char| c.is_ascii_whitespace() || matches!(c, '>' | '+' | '~'))
+        && !css.trim().is_empty()
+    {
+        css.push('*');
+    }
 }
 
 /// Turns pending CSS text into css-selector op(s). The first part of a
@@ -1085,6 +1107,21 @@ mod tests {
         assert_eq!(
             ops("p:-abp-contains(Ad):not(p:has-text(/MAHA/i))").unwrap(),
             r#"{"selector":[{"arg":"p","type":"css-selector"},{"arg":{"text":"Ad"},"type":"has-text"},{"arg":[{"arg":"p","type":"css-selector"},{"arg":{"flags":"i","re":"MAHA"},"type":"has-text"}],"type":"not"}]}"#
+        );
+        // After a combinator or whitespace, an operator applies to any
+        // element there.
+        assert_eq!(
+            ops(".video-holder > center > :has-text(/^Advertisement$/)").unwrap(),
+            r#"{"selector":[{"arg":".video-holder > center > *","type":"css-selector"},{"arg":{"flags":"","re":"^Advertisement$"},"type":"has-text"}]}"#
+        );
+        assert_eq!(
+            ops("div :has-text(Ad)").unwrap(),
+            r#"{"selector":[{"arg":"div *","type":"css-selector"},{"arg":{"text":"Ad"},"type":"has-text"}]}"#
+        );
+        // An operator first inside :has() applies to every descendant.
+        assert_eq!(
+            ops("li:has(:has-text(Ad))").unwrap(),
+            r#"{"selector":[{"arg":"li","type":"css-selector"},{"arg":[{"arg":" *","type":"css-selector"},{"arg":{"text":"Ad"},"type":"has-text"}],"type":"has"}]}"#
         );
         // Native :has()/:not() stay in the CSS part; -abp-has is renamed.
         assert_eq!(
