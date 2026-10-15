@@ -5,23 +5,28 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index 1245672c684a659fefa0f2cfc781f3a3efb09788..c859c5b24947714a1dbf186d814223956101f80f 100644
+index 1245672c684a659fefa0f2cfc781f3a3efb09788..5cb83ec83b0ff0c9c579160a971608dab6d08cbf 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -45,6 +45,7 @@
+@@ -45,6 +45,8 @@
  #include "chrome/browser/media/router/discovery/access_code/access_code_cast_constants.h"
  #include "chrome/browser/media/router/discovery/access_code/access_code_cast_feature.h"
  #include "chrome/browser/media/webrtc/desktop_media_picker.h"
++#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_about_flags.h"  // MoltBrowser
 +#include "chrome/browser/molt_ai/shield/molt_shield_about_flags.h"  // MoltBrowser
  #include "chrome/browser/navigation_predictor/navigation_predictor_features.h"
  #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
  #include "chrome/browser/net/stub_resolver_config_reader.h"
-@@ -13154,6 +13155,9 @@ const FeatureEntry kFeatureEntries[] = {
+@@ -13154,6 +13156,13 @@ const FeatureEntry kFeatureEntries[] = {
       flag_descriptions::kAutofillEnableOmniboxAutofillDescription, kOsDesktop,
       FEATURE_VALUE_TYPE(autofill::features::kAutofillEnableOmniboxAutofill)},
  
 +    // MoltBrowser: MoltShield kill switches (#molt-shield-*).
 +    MOLT_SHIELD_FEATURE_ENTRIES,
++
++    // MoltBrowser: fingerprinting protection kill switch
++    // (#molt-fingerprinting-protection).
++    MOLT_FINGERPRINTING_FEATURE_ENTRIES,
 +
      // Add new entries above this line.
      // NOTE: Adding a new flag requires adding a corresponding entry to enum

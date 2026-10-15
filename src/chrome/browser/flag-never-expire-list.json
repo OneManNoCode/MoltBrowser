@@ -120,6 +120,7 @@
   "memlog-sampling-rate",
   "memlog-stack-mode",
   "minutes-delay-to-restore-gaia-cookies-if-deleted",
+  "molt-fingerprinting-protection",
   "molt-shield-consent-killer",
   "molt-shield-cosmetics",
   "molt-shield-frame-blocking",

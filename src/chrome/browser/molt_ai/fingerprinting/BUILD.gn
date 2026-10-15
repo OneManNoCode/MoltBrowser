@@ -8,6 +8,8 @@
 
 source_set("fingerprinting") {
   sources = [
+    # chrome://flags entry for the kill switch (about_flags.cc).
+    "molt_fingerprinting_about_flags.h",
     "molt_fingerprinting_browser.cc",
     "molt_fingerprinting_browser.h",
   ]

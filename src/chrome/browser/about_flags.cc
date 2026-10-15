@@ -45,6 +45,7 @@
 #include "chrome/browser/media/router/discovery/access_code/access_code_cast_constants.h"
 #include "chrome/browser/media/router/discovery/access_code/access_code_cast_feature.h"
 #include "chrome/browser/media/webrtc/desktop_media_picker.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_about_flags.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/shield/molt_shield_about_flags.h"  // MoltBrowser
 #include "chrome/browser/navigation_predictor/navigation_predictor_features.h"
 #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
@@ -13157,6 +13158,10 @@ const FeatureEntry kFeatureEntries[] = {
 
     // MoltBrowser: MoltShield kill switches (#molt-shield-*).
     MOLT_SHIELD_FEATURE_ENTRIES,
+
+    // MoltBrowser: fingerprinting protection kill switch
+    // (#molt-fingerprinting-protection).
+    MOLT_FINGERPRINTING_FEATURE_ENTRIES,
 
     // Add new entries above this line.
     // NOTE: Adding a new flag requires adding a corresponding entry to enum
