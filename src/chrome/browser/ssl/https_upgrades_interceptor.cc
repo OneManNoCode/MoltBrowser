@@ -12,6 +12,7 @@
 #include "build/buildflag.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/tor/onion_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/chrome_navigation_ui_data.h"
@@ -338,6 +339,17 @@ void HttpsUpgradesInterceptor::MaybeCreateLoader(
   if (net::IsLocalhost(tentative_resource_request.url)) {
     RecordNavigationRequestSecurityLevel(
         NavigationRequestSecurityLevel::kLocalhost);
+    std::move(callback).Run({});
+    return;
+  }
+
+  // MoltBrowser: exclude Tor onion services (RFC 7686) in every mode,
+  // including HTTPS-Only (MoltNet windows turn it on). An onion connection is
+  // end-to-end encrypted and authenticated by the onion address itself, and
+  // most onion sites don't serve HTTPS, so upgrading http://*.onion (or
+  // warning about it) would only break them. Outside MoltNet windows a .onion
+  // navigation never gets here: OnionNavigationThrottle cancels it first.
+  if (molt_ai::tor::IsOnionHost(tentative_resource_request.url.host())) {
     std::move(callback).Run({});
     return;
   }

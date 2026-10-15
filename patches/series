@@ -57,6 +57,7 @@ chrome/browser/resources/settings/settings_ui/settings_ui.html.patch
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.html.patch
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list.ts.patch
 chrome/browser/search/search.cc.patch
+chrome/browser/ssl/https_upgrades_interceptor.cc.patch
 chrome/browser/ui/BUILD.gn.patch
 chrome/browser/ui/actions/chrome_action_id.h.patch
 chrome/browser/ui/browser.cc.patch

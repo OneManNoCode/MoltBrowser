@@ -262,6 +262,8 @@ group("molt_ai") {
     "common:common",
     # chrome_content_browser_client.cc registers OnionNavigationThrottle.
     "tor:onion",
+    # ssl/https_upgrades_interceptor.cc exempts .onion (onion_util.h).
+    "tor:protocol",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)
