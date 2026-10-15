@@ -5,19 +5,21 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index f474618996d2f63e9068ff3c667c856bf638392b..fb5f8878858c59f7673bcc4300b06c4a469b7361 100644
+index f474618996d2f63e9068ff3c667c856bf638392b..1933976fbea9812fb72001b992b7d4a6811a6e00 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -106,6 +106,8 @@
+@@ -106,6 +106,10 @@
  #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
  #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
  #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
-+#include "chrome/browser/molt_ai/shield/molt_shield_service.h"
-+#include "chrome/browser/molt_ai/shield/molt_shield_throttle.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
  #include "chrome/browser/metrics/chrome_feature_list_creator.h"
  #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
  #include "chrome/browser/net/chrome_network_delegate.h"
-@@ -820,11 +822,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
+@@ -820,11 +824,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
  }
  
  // Handles the rewriting of the new tab page URL based on group policy.
@@ -40,7 +42,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..fb5f8878858c59f7673bcc4300b06c4a
      return false;
    }
  
-@@ -835,18 +846,98 @@ bool HandleNewTabPageLocationOverride(
+@@ -835,18 +848,98 @@ bool HandleNewTabPageLocationOverride(
      return false;
    }
  
@@ -147,7 +149,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..fb5f8878858c59f7673bcc4300b06c4a
    return true;
  }
  
-@@ -5030,6 +5121,12 @@ bool ChromeContentBrowserClient::
+@@ -5030,6 +5123,12 @@ bool ChromeContentBrowserClient::
  
  void ChromeContentBrowserClient::BrowserURLHandlerCreated(
      BrowserURLHandler* handler) {
@@ -160,27 +162,87 @@ index f474618996d2f63e9068ff3c667c856bf638392b..fb5f8878858c59f7673bcc4300b06c4a
    // The group policy NTP URL handler must be registered before the other NTP
    // URL handlers below. Also register it before the "parts" handlers, so the
    // NTP policy takes precedence over extensions that override the NTP.
-@@ -5945,6 +6042,19 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
-   }
- #endif
+@@ -5531,6 +5630,9 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
+ void ChromeContentBrowserClient::CreateThrottlesForNavigation(
+     content::NavigationThrottleRegistry& registry) {
+   CreateAndAddChromeThrottlesForNavigation(registry);
++  // MoltShield: ad frames (collapsed) + cosmetic filtering. Never blocks
++  // top-level documents.
++  molt_ai::shield::MoltShieldNavigationThrottle::MaybeAdd(registry);
+ }
  
-+  // MoltShield: Ad blocker / tracker blocker throttle
-+  {
-+    GURL first_party_url;
-+    if (request.request_initiator.has_value()) {
-+      first_party_url = request.request_initiator->GetURL();
-+    }
-+    if (auto molt_throttle = molt_ai::MoltShieldURLLoaderThrottle::MaybeCreate(
-+            molt_ai::GetMoltShieldInstance(), first_party_url);
-+        molt_throttle) {
-+      result.push_back(std::move(molt_throttle));
-+    }
+ std::vector<std::unique_ptr<content::CommitDeferringCondition>>
+@@ -6039,6 +6141,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
+     result.push_back(std::move(google_throttle));
+   }
+ 
++  // MoltShield: beacons / keepalive fetches that outlive their document.
++  if (auto molt_shield_throttle =
++          molt_ai::shield::MoltShieldURLLoaderThrottle::MaybeCreateForKeepAlive(
++              browser_context, frame_tree_node_id)) {
++    result.push_back(std::move(molt_shield_throttle));
 +  }
 +
- #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
-   result.push_back(
-       std::make_unique<captive_portal::CaptivePortalURLLoaderThrottle>(
-@@ -9085,9 +9195,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+   return result;
+ }
+ 
+@@ -6548,6 +6657,14 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+       frame, factory_builder, header_client);
+ #endif
+ 
++  // MoltShield: every subresource request (scripts, images, XHR/fetch, CSS,
++  // media, beacons, worker/service-worker loads) through the ad/tracker
++  // blocker. After the webRequest/signin proxies so their redirects are
++  // vetted too.
++  molt_ai::shield::MoltShieldProxyingURLLoaderFactory::MaybeProxy(
++      browser_context, frame, type, request_initiator, isolation_info,
++      factory_builder);
++
+   // WARNING: This must be the last interceptor in the chain as the proxying
+   // URLLoaderFactory installed by this needs to be the one actually sending
+   // packets over the network (to effectively target `bound_network`).
+@@ -6610,6 +6727,10 @@ ChromeContentBrowserClient::
+ 
+ bool ChromeContentBrowserClient::WillInterceptWebSocket(
+     content::RenderFrameHost* frame) {
++  // MoltShield: see CreateWebSocket().
++  if (molt_ai::shield::ShouldInterceptWebSocket(frame)) {
++    return true;
++  }
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   if (!frame) {
+     return false;
+@@ -6639,6 +6760,29 @@ void ChromeContentBrowserClient::CreateWebSocket(
+     const std::optional<std::string>& user_agent,
+     mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
+         handshake_client) {
++  // MoltShield: the wrapped factory vets the URL (off the UI thread) right
++  // before connecting, so it composes with the webRequest proxy below. When
++  // MoltShield is the only interceptor, connect directly as content would.
++  factory =
++      molt_ai::shield::MaybeWrapWebSocketFactory(frame, std::move(factory));
++  {
++    bool extensions_intercept = false;
++#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
++    const auto* molt_web_request_api =
++        frame ? extensions::BrowserContextKeyedAPIFactory<
++                    extensions::WebRequestAPI>::Get(frame->GetBrowserContext())
++              : nullptr;
++    extensions_intercept =
++        molt_web_request_api &&
++        (molt_web_request_api->MayHaveProxies() ||
++         molt_web_request_api->IsAvailableToWebViewEmbedderFrame(frame));
++#endif
++    if (!extensions_intercept) {
++      molt_ai::shield::ConnectWebSocket(std::move(factory), url, user_agent,
++                                        std::move(handshake_client));
++      return;
++    }
++  }
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
+   if (!frame) {
+@@ -9085,9 +9229,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {

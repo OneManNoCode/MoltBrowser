@@ -1,0 +1,20 @@
+MoltBrowser patch for chrome/renderer/BUILD.gn
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/renderer/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
+index af0a28b5941025a1206f533f99441c7d17a7a8df..ffde35ba7bd00c093a4294226651e4cde900e7c9 100644
+--- a/chrome/renderer/BUILD.gn
++++ b/chrome/renderer/BUILD.gn
+@@ -144,6 +144,9 @@ static_library("renderer") {
+     "//chrome/common/request_header_integrity:buildflags",
+     "//chrome/common/search:mojo_bindings",
+     "//chrome/renderer/actor",
++
++    # MoltBrowser: MoltShield cosmetic filtering (CosmeticFilterAgent).
++    "//chrome/renderer/molt_ai/shield",
+     "//chrome/services/speech/buildflags",
+     "//components/autofill/content/renderer",
+     "//components/autofill/core/common:features",

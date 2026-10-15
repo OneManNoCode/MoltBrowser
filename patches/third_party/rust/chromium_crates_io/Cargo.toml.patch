@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/rust/chromium_crates_io/Cargo.toml b/third_party/rust/chromium_crates_io/Cargo.toml
-index 2a894f12da5224176f904a0dbe2a2a73a46d534b..9dfecd1d5f829e6f2998622f75ff528c9bc7fe88 100644
+index 2a894f12da5224176f904a0dbe2a2a73a46d534b..56a1d691286ffb5b854b5d467f26aecbb3f3b8c0 100644
 --- a/third_party/rust/chromium_crates_io/Cargo.toml
 +++ b/third_party/rust/chromium_crates_io/Cargo.toml
 @@ -17,6 +17,7 @@ version = "0.1.0"
@@ -16,3 +16,25 @@ index 2a894f12da5224176f904a0dbe2a2a73a46d534b..9dfecd1d5f829e6f2998622f75ff528c
  anyhow = "1.0.98"
  base64 = "0.22"
  bitflags = "2"
+@@ -49,6 +50,21 @@ static_assertions = "1"
+ strum = "0.27.2"
+ xml = "1.2.0"
+ 
++# MoltBrowser: MoltShield's ad/tracker blocking engine (Brave's adblock-rust,
++# MPL-2.0), used by //chrome/browser/molt_ai/shield/adblock. Pinned exactly:
++# the serialized-engine cache format is only stable within one version (see
++# ADBLOCK_CRATE_VERSION in shield/adblock/engine.rs). Default features off:
++#  - no `embedded-domain-resolver`: Chromium's registry_controlled_domains is
++#    installed via adblock::url_parser::set_domain_resolver instead of the
++#    crate's own public-suffix list;
++#  - no `single-thread`: keeps `Engine: Send + Sync` so it can be compiled on
++#    a worker thread and moved to MoltShield's engine sequence.
++# No feature pulls in networking. Vendor with scripts/vendor-rust-crates.sh.
++[dependencies.adblock]
++version = "=0.13.3"
++default-features = false
++features = ["full-regex-handling"]
++
+ [dependencies.bytemuck]
+ version = "1"
+ features = ["nightly_portable_simd"]  # For std::simd coverage.
