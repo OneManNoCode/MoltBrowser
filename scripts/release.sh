@@ -143,7 +143,7 @@ bash "$SCRIPT_DIR/patch-info-plist.sh" "$VERSION" "$BUILD_NUM"
 # llama.cpp's Metal backend looks up default.metallib in the framework's
 # Resources/ at runtime (ggml-metal-device.m pathForResource). No GN rule
 # produces it — a fresh out dir ships without it and Metal falls back to
-# JIT-compiling ggml-metal.metal, which fails under the hardened runtime.
+# JIT-compiling the kernel sources, which fails under the hardened runtime.
 # v0.2.2 shipped with model loading broken on macOS because this file was
 # missing. Compile it here, BEFORE code signing, so the framework seal
 # covers it (dropping it in after signing invalidates the signature).
@@ -168,20 +168,9 @@ else
     echo "     Cannot install default.metallib — DO NOT SHIP THIS BUILD."
     exit 1
   fi
-  GGML_SRC="$REPO_DIR/src/third_party/llama_cpp/ggml/src"
-  METAL_WORKDIR=$(mktemp -d)
-  if (cp "$GGML_SRC/ggml-metal/ggml-metal.metal" \
-         "$GGML_SRC/ggml-common.h" \
-         "$GGML_SRC/ggml-metal/ggml-metal-impl.h" \
-         "$METAL_WORKDIR/" \
-      && cd "$METAL_WORKDIR" \
-      && xcrun -sdk macosx metal -O2 -fno-fast-math -I . -c ggml-metal.metal -o ggml-metal.air \
-      && xcrun -sdk macosx metallib ggml-metal.air -o default.metallib); then
-    cp "$METAL_WORKDIR/default.metallib" "$FRAMEWORK_RES/default.metallib"
-    rm -rf "$METAL_WORKDIR"
+  if "$SCRIPT_DIR/build-ggml-metallib.sh" "$FRAMEWORK_RES/default.metallib"; then
     echo "  default.metallib installed: $FRAMEWORK_RES/default.metallib"
   else
-    rm -rf "$METAL_WORKDIR"
     echo ""
     echo "  ╔══════════════════════════════════════════════════════════════════╗"
     echo "  ║  ❌ FATAL: Metal shader compilation FAILED                        ║"

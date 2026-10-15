@@ -1,8 +1,8 @@
 Name: llama.cpp
 Short Name: llama_cpp
 URL: https://github.com/ggml-org/llama.cpp
-Version: b8284
-Revision: 00de615345c9d3ead161c15bf0cc313e46f4def6
+Version: b11641
+Revision: 843e7dcc15098dd6b3aaf33b4847052293d8ef1a
 Update Mechanism: Manual
 License: MIT
 License File: LICENSE
@@ -14,28 +14,61 @@ LLM inference in C/C++ (llama.cpp and the ggml tensor library), used for
 MoltBrowser's on-device model runtime. It parses untrusted model files
 (GGUF) and prompt text in the browser process, hence Security Critical.
 Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
-macOS (GGML_VERSION 0.9.7).
+macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev).
 
 Only the directories the build uses were vendored: common/, ggml/,
 include/ and src/ from the tag above (no tools/, examples/, tests/ or
 vendor/).
 
+Exceptions: BUILD.gn builds ggml_cpp, llama_models, llama_cpp and
+llama_common with exceptions; everything else, including the ggml-cpu
+and ggml-metal sources and all MoltBrowser callers, is built with
+Chromium's -fno-exceptions. So a `throw` or `.at(` miss in ggml-cpu or
+ggml-metal aborts (none in the files BUILD.gn builds at b11641; only
+the unbuilt ggml-cpu/spacemit/ has some), and an exception that
+escapes a llama_* C function into a caller terminates the browser
+process. Model loading and context creation catch everything upstream;
+see the llama-vocab.cpp patch below for tokenization.
+
 Local Modifications:
 - BUILD.gn: GN build for Chromium (not upstream).
+- chromium/ggml-version.h, chromium/llama-version.h: stand-ins for the
+  headers upstream CMake generates from ggml/src/ggml-version.h.in and
+  src/llama-version.h.in. Update their values with every update.
 - Removed backends no BUILD.gn file references: ggml/src/ggml-cuda,
   ggml-hip and ggml-musa (both build ggml-cuda's sources), ggml-sycl,
   ggml-opencl, ggml-hexagon, ggml-webgpu, ggml-virtgpu, ggml-cann,
-  ggml-zdnn and ggml-zendnn. ggml-vulkan, ggml-blas and ggml-rpc are kept
-  for possible future use; ggml-cpu and ggml-metal are built.
-  ggml/src/CMakeLists.txt still lists them and is not used by the build.
-- Patched against the tag (diff these against upstream b8284 when
-  updating; also re-check every `.at(` call, which aborts under Chromium's
-  -fno-exceptions):
-    ggml/src/ggml-backend-dl.h
-    ggml/src/ggml-backend-reg.cpp
-    ggml/src/ggml-metal/ggml-metal-ops.cpp
-    ggml/src/ggml-metal/ggml-metal.cpp
-    src/llama-adapter.cpp
-    src/llama-chat.cpp
-    src/llama-graph.h
-    src/llama-quant.cpp
+  ggml-zdnn, ggml-zendnn, ggml-et and ggml-openvino. ggml-vulkan,
+  ggml-blas and ggml-rpc are kept for possible future use; ggml-cpu and
+  ggml-metal are built. ggml/src/CMakeLists.txt still lists them and is
+  not used by the build.
+- Patched against the tag (diff these against upstream b11641 when
+  updating; every patch is marked "MoltBrowser" in the source except the
+  added #includes):
+    ggml/src/ggml-backend-dl.h: #include <memory>.
+    ggml/src/ggml-backend-reg.cpp: #include <cstdlib>.
+    ggml/src/ggml-metal/ggml-metal-ops.cpp: #include <utility> (std::swap
+      with Chromium's C++ modules).
+    ggml/src/ggml-metal/ggml-metal.cpp: #include <memory>.
+    src/llama-adapter.cpp: #include <iterator>.
+    src/llama-chat.cpp: llm_chat_template_from_str() uses find() instead
+      of map::at(), so a template that is not a bare name is not
+      signalled with std::out_of_range.
+    src/llama-chat.cpp, src/llama-chat.h: built-in Gemma 4 chat format
+      (LLM_CHAT_TEMPLATE_GEMMA4, "gemma4"; text only, thinking off).
+      Upstream formats Gemma 4 only through common/'s Jinja engine, which
+      is not built. Matches upstream's Jinja rendering byte for byte for
+      the Gemma 4 templates in upstream's models/ directory.
+    src/llama-vocab.cpp: llama_tokenize(), llama_token_to_piece() and
+      llama_detokenize() catch std::exception and return an error
+      (INT32_MIN, 0, INT32_MIN) instead of letting it escape into
+      -fno-exceptions callers.
+    src/llama.cpp, src/llama-quant.cpp: static_cast instead of
+      dynamic_cast<llama_model_base *> (Chromium builds with -fno-rtti;
+      every model type derives from llama_model_base).
+    src/llama-memory-hybrid-idx.cpp: struct kpool_layout defined before
+      the constructor (as C++23, which Chromium uses, libc++ rejects the
+      constexpr ~unique_ptr of an incomplete type there).
+- Patches dropped at b11641 because upstream now has them:
+  src/llama-graph.h (#include <cstdlib>), src/llama-quant.cpp
+  (#include <algorithm>).

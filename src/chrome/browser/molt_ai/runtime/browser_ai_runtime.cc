@@ -124,9 +124,13 @@ const ModelRegistryEntry kModelRegistry[] = {
      "",
      true},
 
-    // Gemma — Gemma 4 E4B. TODO(pin): GGUF repo/file unconfirmed AND the
-    // vendored llama.cpp (00de615) has no gemma4 architecture yet, so this
-    // also needs a llama.cpp update; license terms to be confirmed. Hidden.
+    // Gemma — Gemma 4 E4B. Hidden until pinned. Runtime support is in place:
+    // the vendored llama.cpp (b11641) has the gemma4 architecture, and
+    // llama_chat_apply_template() formats Gemma 4 chats (local llama-chat.cpp
+    // patch, see third_party/llama_cpp/README.chromium); not yet run with
+    // real Gemma 4 weights. TODO(pin): only the pin is missing: confirm the
+    // GGUF repo and file name, then fill revision/sha256/size
+    // (tools/models/pin_models.py --write); license terms to be confirmed.
     {"gemma4-e4b",
      "Gemma 4 E4B",
      "unsloth/gemma-4-E4B-it-GGUF",  // TODO(pin): confirm repo name
@@ -300,6 +304,9 @@ std::vector<llama_token> Tokenize(const llama_vocab* vocab,
                          static_cast<int32_t>(text.size()), tokens.data(),
                          static_cast<int32_t>(tokens.size()), add_special,
                          parse_special);
+  // INT32_MIN is an error (tokenization failed, e.g. malformed vocab data),
+  // not a "buffer too small" size; negating it would overflow.
+  if (n == INT32_MIN) return {};
   if (n < 0) {
     tokens.resize(static_cast<size_t>(-n));
     n = llama_tokenize(vocab, text.c_str(), static_cast<int32_t>(text.size()),
@@ -319,6 +326,7 @@ std::string Detokenize(const llama_vocab* vocab,
                            static_cast<int32_t>(buf.size()),
                            /*remove_special=*/false,
                            /*unparse_special=*/false);
+  if (n == INT32_MIN) return std::string();  // error, see Tokenize()
   if (n < 0) {
     buf.resize(static_cast<size_t>(-n));
     n = llama_detokenize(vocab, tokens.data(),

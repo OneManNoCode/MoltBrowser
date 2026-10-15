@@ -13,7 +13,9 @@
 #    the --deep base pass goes FIRST to catch bare Mach-O helpers.
 #  - default.metallib is wiped from the out-dir framework on EVERY rebuild;
 #    without it llama.cpp Metal init fails and NO model can load. We compile
-#    it on demand and cache at build/cache/default.metallib.
+#    it on demand (scripts/build-ggml-metallib.sh) and cache it at
+#    build/cache/ggml-metal-<hash of the Metal sources>.metallib, so a
+#    llama.cpp update never reuses a metallib built from other kernels.
 #  - tor/ocr/whisper/molt_models are packaging-time payloads, not build
 #    outputs; carried over from the previously installed app.
 set -euo pipefail
@@ -23,7 +25,7 @@ OUT_APP="$REPO_DIR/chromium/src/out/MoltBrowser/MoltBrowser.app"
 STAGE="$(mktemp -d)/MoltBrowser.app"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)}"
 ENT_DIR="$REPO_DIR/chromium/src/chrome/app"
-METALLIB_CACHE="$REPO_DIR/build/cache/default.metallib"
+METALLIB_CACHE="$REPO_DIR/build/cache/ggml-metal-$("$REPO_DIR/scripts/build-ggml-metallib.sh" --print-hash).metallib"
 
 echo "[1/7] Stage out-dir app"
 ditto "$OUT_APP" "$STAGE"
@@ -35,19 +37,13 @@ for d in tor ocr whisper molt_models; do
 done
 
 echo "[3/7] Ensure default.metallib (llama.cpp Metal)"
-FWRES=$(dirname "$(find "$STAGE/Contents/Frameworks" -name "ggml-metal.metal" | head -1)")
+# Resources/ of the framework: the dir //third_party/llama_cpp bundles
+# ggml-metal-impl.h into (next to kernels/).
+FWRES=$(dirname "$(find "$STAGE/Contents/Frameworks" -name "ggml-metal-impl.h" | head -1)")
 if [ ! -f "$FWRES/default.metallib" ]; then
   if [ ! -f "$METALLIB_CACHE" ]; then
     echo "  compiling metallib from ggml sources..."
-    W=$(mktemp -d)
-    cp "$REPO_DIR/src/third_party/llama_cpp/ggml/src/ggml-metal/ggml-metal.metal" \
-       "$REPO_DIR/src/third_party/llama_cpp/ggml/src/ggml-common.h" \
-       "$REPO_DIR/src/third_party/llama_cpp/ggml/src/ggml-metal/ggml-metal-impl.h" "$W/"
-    (cd "$W" && xcrun -sdk macosx metal -O2 -fno-fast-math -I . -c ggml-metal.metal -o ggml-metal.air \
-      && xcrun -sdk macosx metallib ggml-metal.air -o default.metallib)
-    mkdir -p "$(dirname "$METALLIB_CACHE")"
-    cp "$W/default.metallib" "$METALLIB_CACHE"
-    rm -rf "$W"
+    "$REPO_DIR/scripts/build-ggml-metallib.sh" "$METALLIB_CACHE"
   fi
   cp "$METALLIB_CACHE" "$FWRES/default.metallib"
   echo "  + default.metallib"

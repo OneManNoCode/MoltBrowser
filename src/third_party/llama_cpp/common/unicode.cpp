@@ -1,8 +1,10 @@
 #include "unicode.h"
+
+#include <algorithm>
 #include <cassert>
 #include <stdexcept>
-#include <vector>
 #include <string>
+#include <vector>
 
 // implementation adopted from src/unicode.cpp
 
@@ -24,16 +26,16 @@ utf8_parse_result common_parse_utf8_codepoint(std::string_view input, size_t off
 
     // Invalid: continuation byte as first byte
     if (!(input[offset] & 0x40)) {
-        return utf8_parse_result(utf8_parse_result::INVALID);
+        return utf8_parse_result(utf8_parse_result::INVALID, 0, 1);
     }
 
     // 2-byte sequence
     if (!(input[offset] & 0x20)) {
         if (offset + 1 >= input.size()) {
-            return utf8_parse_result(utf8_parse_result::INCOMPLETE);
+            return utf8_parse_result(utf8_parse_result::INCOMPLETE, 0, 1);
         }
         if ((input[offset + 1] & 0xc0) != 0x80) {
-            return utf8_parse_result(utf8_parse_result::INVALID);
+            return utf8_parse_result(utf8_parse_result::INVALID, 0, 1);
         }
         auto result = ((input[offset] & 0x1f) << 6) | (input[offset + 1] & 0x3f);
         return utf8_parse_result(utf8_parse_result::SUCCESS, result, 2);
@@ -41,11 +43,14 @@ utf8_parse_result common_parse_utf8_codepoint(std::string_view input, size_t off
 
     // 3-byte sequence
     if (!(input[offset] & 0x10)) {
-        if (offset + 2 >= input.size()) {
-            return utf8_parse_result(utf8_parse_result::INCOMPLETE);
-        }
-        if ((input[offset + 1] & 0xc0) != 0x80 || (input[offset + 2] & 0xc0) != 0x80) {
-            return utf8_parse_result(utf8_parse_result::INVALID);
+        // Check one byte at a time so a bad byte is reported before a short input
+        for (size_t i = 1; i < 3; i++) {
+            if (offset + i >= input.size()) {
+                return utf8_parse_result(utf8_parse_result::INCOMPLETE, 0, i);
+            }
+            if ((input[offset + i] & 0xc0) != 0x80) {
+                return utf8_parse_result(utf8_parse_result::INVALID, 0, i);
+            }
         }
         auto result = ((input[offset] & 0x0f) << 12) | ((input[offset + 1] & 0x3f) << 6) | (input[offset + 2] & 0x3f);
         return utf8_parse_result(utf8_parse_result::SUCCESS, result, 3);
@@ -53,18 +58,34 @@ utf8_parse_result common_parse_utf8_codepoint(std::string_view input, size_t off
 
     // 4-byte sequence
     if (!(input[offset] & 0x08)) {
-        if (offset + 3 >= input.size()) {
-            return utf8_parse_result(utf8_parse_result::INCOMPLETE);
-        }
-        if ((input[offset + 1] & 0xc0) != 0x80 || (input[offset + 2] & 0xc0) != 0x80 || (input[offset + 3] & 0xc0) != 0x80) {
-            return utf8_parse_result(utf8_parse_result::INVALID);
+        for (size_t i = 1; i < 4; i++) {
+            if (offset + i >= input.size()) {
+                return utf8_parse_result(utf8_parse_result::INCOMPLETE, 0, i);
+            }
+            if ((input[offset + i] & 0xc0) != 0x80) {
+                return utf8_parse_result(utf8_parse_result::INVALID, 0, i);
+            }
         }
         auto result = ((input[offset] & 0x07) << 18) | ((input[offset + 1] & 0x3f) << 12) | ((input[offset + 2] & 0x3f) << 6) | (input[offset + 3] & 0x3f);
         return utf8_parse_result(utf8_parse_result::SUCCESS, result, 4);
     }
 
     // Invalid first byte
-    return utf8_parse_result(utf8_parse_result::INVALID);
+    return utf8_parse_result(utf8_parse_result::INVALID, 0, 1);
+}
+
+bool common_utf8_is_complete(const std::string & s) {
+    if (s.empty()) {
+        return true;
+    }
+    for (int i = 1; i <= std::min(4, (int)s.size()); i++) {
+        unsigned char c = s[s.size() - i];
+        if ((c & 0xC0) != 0x80) {
+            int expected = (c >= 0xF0) ? 4 : (c >= 0xE0) ? 3 : (c >= 0xC0) ? 2 : 1;
+            return i >= expected;
+        }
+    }
+    return false;
 }
 
 std::string common_unicode_cpts_to_utf8(const std::vector<uint32_t> & cps) {
