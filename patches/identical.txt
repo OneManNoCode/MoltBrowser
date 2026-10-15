@@ -11,6 +11,7 @@ chrome/app/sharesheet_strings.grdp
 chrome/app/shortcut_input_strings.grdp
 chrome/app/vr_strings.grdp
 chrome/app/whats_new_strings.grdp
+chrome/browser/ssl/https_upgrades_interceptor.cc
 components/android_system_error_page_strings.grdp
 components/blocked_content_strings.grdp
 components/bookmark_bar_strings.grdp
