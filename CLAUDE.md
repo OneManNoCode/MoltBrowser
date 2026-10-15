@@ -91,16 +91,55 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - After a build, **grep the full output for `error:` / "finished with an error"** — the `autoninja` wrapper can print "finished successfully" and exit 0 even on a failed compile. The real product code is in `Contents/Frameworks/MoltBrowser Framework.framework/…` (the `Contents/MacOS/MoltBrowser` binary is a thin launcher stub — its mtime/`strings` are meaningless).
 - **Local macOS build+install loop: `./scripts/dev-install-mac.sh`** — stages the out-dir app, carries the tor/ocr/whisper/molt_models payloads + regenerates the REQUIRED `default.metallib` (wiped on every rebuild), does the inside-out per-helper codesign (allow-jit on Renderer/GPU) with the real Developer ID, and installs to /Applications. This is the day-to-day loop after `autoninja … chrome`.
 
-### WebUI Pattern
+### WebUI Pattern (strict CSP — see `ui/webui/molt_ai/molt_webui_csp.h`)
 - JS → C++: `chrome.send('methodName', [args])`
 - C++ → JS: `FireWebUIListener("event-name", value)` or `ResolveJavascriptCallback(callback_id, value)`
 - Register handlers: `web_ui->AddMessageHandler(std::make_unique<Handler>())`
-- All WebUI HTML/CSS/JS is inline in C++ raw strings via URLDataSource
+- Each page's URLDataSource serves the HTML at `/` and its script at `/app.js`
+  (`<script src="app.js">`); both still live as C++ raw strings. CSP is
+  `script-src 'self'` + `require-trusted-types-for 'script'` via
+  `molt_webui::PageContentSecurityPolicy()` — **no inline `<script>`, no
+  `onclick=` attributes, no `'unsafe-inline'` for scripts**.
+- Events: `data-on-click="name"` in markup + `moltActions({name: fn})` in JS.
+  HTML strings only through `moltHTML()` (the single `molt-html` Trusted Types
+  policy); prefer DOM APIs + `textContent`. Escape everything page- or
+  model-derived.
+- Handlers validate arguments with `HasCallbackArgs()` / `StringArg()`
+  (`molt_ai_chat_handler_helpers.h`) — never `CHECK` on renderer input.
+- Before committing WebUI changes run: `python3 tools/webui_checks/check_embedded_js.py .`,
+  `python3 tools/webui_checks/check_no_inline_handlers.py .`, and
+  `cd tools/webui_checks && npm ci && npm test` (markdown-renderer fuzz +
+  jsdom smoke test of every page). CI runs the same (`webui-checks.yml`).
 
 ### Git Workflow
-- Commit to `main` branch directly
+- `main` is branch-protected: work on a branch and merge through a pull request
 - GitHub remote: `https://github.com/OneManNoCode/MoltBrowser.git`
 - PAT requires `repo` + `workflow` scopes (for GitHub Actions)
+
+### Chromium pin + patch series
+- The Chromium revision lives ONLY in `chromium_version.txt` (read via
+  `tools/chromium/pin.sh`). Copied upstream files in `src/` are mirrored as a
+  patch series in `patches/`. After editing any upstream file in `src/`, run
+  `python3 tools/chromium/overlay_to_patches.py` then
+  `python3 tools/chromium/verify_patches.py`. Rebasing onto a new Chromium
+  release: `tools/chromium/rebase.py` + `docs/REBASING.md` (target: Extended
+  Stable; ship each Chrome security release within 7 days).
+
+### Releases are signed offline
+- The updater installs only installers matching `molt-release-manifest.json`
+  signed by a key in `src/chrome/browser/molt_ai/update/update_signing_keys.cc`.
+  Releases are created as drafts; the owner signs offline with
+  `tools/release_signing/molt_release_sign.py` and publishes via
+  `scripts/publish-release-signature.sh`. Never publish without the manifest
+  + `.sig`. Runbook: `docs/SIGNED_UPDATES.md`. The private key never touches
+  CI, a cloud machine or this repo.
+
+### Checks that need no Chromium checkout
+- WebUI checks above; `molt_ai_unittests` targets can often be compiled
+  standalone against small base/crypto stand-ins for quick verification.
+- MoltShield engine: `cd tools/shield_bench && ./fetch_lists.sh && cargo test --release && cargo run --release`.
+- Rust crates (adblock for MoltShield) are vendored with gnrt on the build
+  machine: `scripts/vendor-rust-crates.sh`.
 
 ## Agent mode (automation engine)
 The v0.2.5 headline feature lives in `src/chrome/browser/molt_ai/automation/`:
@@ -113,7 +152,13 @@ throwaway run window). The studio UI is an inline WebUI in
 `src/chrome/browser/ui/webui/molt_ai/molt_ai_agent_ui.cc` served at
 `chrome://molt-ai-agent/` (user-facing `molt://ai-agent`), hosted in the side
 panel via `molt_ai/side_panel/agent_side_panel_web_view.*` — it shares one
-`kContent` side panel with AI chat, so opening one swaps out the other. The
+`kContent` side panel with AI chat, so opening one swaps out the other.
+Every navigation/click/type an agent, chat action or replay performs goes
+through `molt_ai/security/agent_safety.*` (http(s)-only, origin scope,
+credential-field detection, untrusted-text fencing) and the workflow trust
+policy in `automation_security.*` (recorded workflows start Approved on their
+recorded sites; imports start Casual; trust changes need a real user click).
+Recorded secrets are vault references, never stored values. The
 toolbar "AI mode" / "Agent mode" buttons (with the violet active ring) are in
 `ui/views/toolbar/toolbar_view.cc`.
 

@@ -41,9 +41,14 @@ MoltBrowser
  |    +-- URL tracking param stripping
  |    +-- Cookie policy enforcement
  |
- +-- MoltNet (privacy routing)
- |    +-- Tor integration (runtime, SOCKS5)
- |    +-- Circuit management (SIGNAL NEWNYM, exit country)
+ +-- MoltNet (Tor windows, molt_ai/tor)
+ |    +-- Dedicated off-the-record "MoltNet::Tor" profile per session; the
+ |    |   regular profile is never proxied; window opens only after its
+ |    |   network context proves it routes via the bundled tor's SOCKS port
+ |    +-- Per-site circuits (SOCKS5 username = top-frame site)
+ |    +-- SAFECOOKIE control auth + TAKEOWNERSHIP; New Identity discards the
+ |    |   profile, flushes connections/DNS, NEWNYM
+ |    +-- Bridges (obfs4 / snowflake); see docs/MOLTNET_COMPLIANCE.md
  |
  +-- AgentEngine (LEGACY/experimental autonomous ReAct agent — molt_ai/agents;
  |    NOT the shipping "Agent mode" studio above, which is record/replay)
@@ -62,10 +67,12 @@ MoltBrowser
  +-- OmniboxAI (@ai prefix, ? prefix)
  |    +-- AiPromptProvider -> chrome://molt-ai/?q=...
  |
- +-- UpdateManager (cross-platform)
-      +-- Sparkle (macOS)
-      +-- WinSparkle (Windows)
-      +-- LinuxUpdateIntegration (AppImage/Flatpak/deb/rpm)
+ +-- UpdateManager (cross-platform, molt_ai/update)
+      +-- GitHub Releases as transport; trust = offline Ed25519-signed
+      |   release manifest (release_manifest.*, update_signing_keys.cc)
+      +-- Size + SHA-256 checked after download and again at install;
+          no downgrades; macOS also requires GenEye's Team ID code signature
+          (docs/SIGNED_UPDATES.md)
 ```
 
 ## Directory Structure
@@ -172,9 +179,9 @@ repo/
 - Upgrade path to MiniLM (all-MiniLM-L6-v2) via ONNX Runtime
 
 ### Cross-Platform
-- **macOS**: Metal GPU, Sparkle auto-update, DMG packaging, notarization
-- **Windows**: Vulkan GPU, WinSparkle auto-update, NSIS installer
-- **Linux**: Vulkan GPU, package manager detection, deb/rpm/AppImage/Flatpak
+- **macOS**: Metal GPU, signed in-app updates, DMG packaging, notarization
+- **Windows**: CPU inference today (Vulkan planned), signed in-app updates, NSIS installer
+- **Linux**: CPU inference today (Vulkan planned), signed in-app updates via deb/rpm
 - **Android**: Vulkan GPU, WebView-based AI chat, APK packaging
 - **iOS**: CoreML + Metal, WKWebView, IPA packaging
 
@@ -182,10 +189,10 @@ repo/
 
 | Platform | Config File | GPU Backend | Update Mechanism |
 |----------|-------------|-------------|------------------|
-| macOS arm64 | `configs/macos-arm64.gn` | Metal | Sparkle |
-| macOS x64 | `configs/macos-x64.gn` | Metal | Sparkle |
-| Linux x64 | `configs/linux-x64.gn` | Vulkan | AppImage/Flatpak/apt |
-| Windows x64 | `configs/windows-x64.gn` | Vulkan | WinSparkle |
+| macOS arm64 | `configs/macos-arm64.gn` | Metal | In-app (signed manifest) |
+| macOS x64 | `configs/macos-x64.gn` | Metal | In-app (signed manifest) |
+| Linux x64 | `configs/linux-x64.gn` | CPU (Vulkan planned) | In-app (signed manifest) |
+| Windows x64 | `configs/windows-x64.gn` | CPU (Vulkan planned) | In-app (signed manifest) |
 | Android arm64 | `configs/android-arm64.gn` | Vulkan | Play Store |
 | Android arm | `configs/android-arm.gn` | CPU only | Play Store |
 | iOS arm64 | `configs/ios-arm64.gn` | CoreML+Metal | App Store |
