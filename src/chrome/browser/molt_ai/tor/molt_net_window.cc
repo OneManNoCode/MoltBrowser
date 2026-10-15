@@ -85,7 +85,7 @@ class MoltNetProfileReaper : public BrowserListObserver {
 };
 
 void EnsureReaper() {
-  static base::NoDestructor<MoltNetProfileReaper> reaper;
+  [[maybe_unused]] static base::NoDestructor<MoltNetProfileReaper> reaper;
 }
 
 // Closes MoltNet windows; |original| == nullptr means every profile.

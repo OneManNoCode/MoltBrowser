@@ -324,7 +324,7 @@ std::unique_ptr<TorSpawnResult> SpawnTorBlocking(SpawnSpec spec) {
   return result;
 }
 
-std::string Seconds(int ms) {
+std::string SecondsText(int ms) {
   return base::NumberToString(ms / 1000) + "s";
 }
 
@@ -401,7 +401,7 @@ std::unique_ptr<TorBootstrapResult> BootstrapBlocking(
     }
     base::PlatformThread::Sleep(base::Milliseconds(kPollIntervalMs));
   }
-  result->error = last_error + " within " + Seconds(total_ms) + ".";
+  result->error = last_error + " within " + SecondsText(total_ms) + ".";
   return result;
 }
 
@@ -432,7 +432,7 @@ TorLaunchResult CheckCircuitBlocking(TorControlEndpoint endpoint,
     }
     base::PlatformThread::Sleep(base::Milliseconds(kPollIntervalMs));
   }
-  result.error = error + " within " + Seconds(total_ms) + ".";
+  result.error = error + " within " + SecondsText(total_ms) + ".";
   return result;
 }
 

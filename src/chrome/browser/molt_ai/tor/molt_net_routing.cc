@@ -417,8 +417,8 @@ void MoltNetRouting::MigrateLegacyRoutingPrefs(Profile* profile,
 
 // static
 void MoltNetRouting::EnsureTorStateObserver() {
-  static base::NoDestructor<base::CallbackListSubscription> subscription(
-      TorManager::Get()->AddStateChangedCallback(
+  [[maybe_unused]] static base::NoDestructor<base::CallbackListSubscription>
+      subscription(TorManager::Get()->AddStateChangedCallback(
           base::BindRepeating(&OnTorStateChanged)));
 }
 
