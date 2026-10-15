@@ -28,6 +28,7 @@ components/flags_strings.grdp
 components/fullscreen_control_strings.grdp
 components/global_media_controls_strings.grdp
 components/history_clusters_strings.grdp
+components/infobars/core/infobar_delegate.h
 components/javascript_dialogs_strings.grdp
 components/live_caption_strings.grdp
 components/login_dialog_strings.grdp
