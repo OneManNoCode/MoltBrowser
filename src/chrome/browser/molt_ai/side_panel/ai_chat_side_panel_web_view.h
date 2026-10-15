@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_MOLT_AI_SIDE_PANEL_AI_CHAT_SIDE_PANEL_WEB_VIEW_H_
 
 #include <cstdint>  // for uint32_t — required on Linux under -fmodules
+#include <memory>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
@@ -30,15 +31,17 @@ class Profile;
 //
 // In addition to hosting the chat, this view observes the owning
 // Browser's TabStripModel and grounds the chat in the active tab:
-//   - On every active-tab change it asynchronously captures the page
-//     text (document.body.innerText, capped at ~5KB), then pushes
-//     {url, title, text} into the chat WebUI as
-//     `window.__moltSetTabContext(ctx)`. The same payload is also
-//     stashed on `window.__moltLastTabContext` for race-free
-//     late-binding from the chat HTML's init script.
-//   - A monotonic generation counter is bumped on every active-tab
-//     change so stale text-capture replies for a previously-active
-//     tab are silently dropped.
+//   - On every active-tab change, and whenever the active tab itself
+//     navigates (new primary page, its load completing, or a same-document
+//     SPA navigation), it asynchronously captures the page text
+//     (document.body.innerText, capped), then pushes {url, title, text}
+//     into the chat WebUI's MAIN world as `window.__moltSetTabContext(ctx)`
+//     (the page's own function; an isolated world can't see it). The same
+//     payload is stashed on `window.__moltLastTabContext` for race-free
+//     late-binding from the chat page's init script, and the push is
+//     repeated once the chat page itself has loaded.
+//   - A monotonic generation counter is bumped on every push so stale
+//     text-capture replies for a previous page are silently dropped.
 class AiChatSidePanelWebView : public views::WebView,
                                 public TabStripModelObserver {
   METADATA_HEADER(AiChatSidePanelWebView, views::WebView)
@@ -104,6 +107,9 @@ class AiChatSidePanelWebView : public views::WebView,
       const blink::mojom::FileChooserParams& params) override;
 
  private:
+  class ActiveTabObserver;
+  class ChatPageObserver;
+
   // Kick off the active-tab context push. Async: first ExecuteJS on
   // the active tab to grab innerText, then ExecuteJS on the chat
   // WebUI to deliver the {url, title, text} payload.
@@ -132,8 +138,17 @@ class AiChatSidePanelWebView : public views::WebView,
                               const std::string& title,
                               const std::string& text);
 
+  // Retargets |active_tab_observer_| to the current active tab.
+  void ObserveActiveTab();
+
   const raw_ptr<Profile> profile_;
   raw_ptr<Browser> browser_ = nullptr;  // null when constructed without one
+  // Re-pushes context when the active tab navigates (A7: previously the
+  // chat kept answering about the previous page until a tab switch).
+  std::unique_ptr<ActiveTabObserver> active_tab_observer_;
+  // Re-pushes context once the chat page has loaded (a push before that
+  // has nowhere to go).
+  std::unique_ptr<ChatPageObserver> chat_page_observer_;
   // Bumped on every active-tab change. Async text captures carry the
   // counter from when they were started; replies for old generations
   // are dropped on arrival.

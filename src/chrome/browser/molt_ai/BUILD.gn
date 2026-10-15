@@ -194,6 +194,7 @@ source_set("molt_ai_side_panel") {
     "//chrome/browser/ui",
     "//components/pdf/common:constants",
     "//content/public/browser",
+    "//content/public/common",
     "//ui/accessibility",
     "//ui/base",
     "//ui/views",

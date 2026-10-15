@@ -21,8 +21,11 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/pdf/common/constants.h"
 #include "content/public/browser/file_select_listener.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/url_constants.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -34,6 +37,7 @@ namespace {
 
 // The URL for the AI chat WebUI interface.
 constexpr char kAiChatWebUIURL[] = "chrome://molt-ai-chat/";
+constexpr char kAiChatWebUIHost[] = "molt-ai-chat";
 
 // How much innerText we capture from the active tab. 50 KB lets us
 // hold the full visible content of long articles / docs / search
@@ -70,12 +74,70 @@ std::string FlattenAxTreeText(const ui::AXTreeUpdate& update, int cap) {
 
 }  // namespace
 
+// Follows whichever tab is active and re-grounds the chat when that tab
+// navigates in place (A7). Without this the chat kept the previous page's
+// text until the user switched tabs or reopened the panel.
+class AiChatSidePanelWebView::ActiveTabObserver
+    : public content::WebContentsObserver {
+ public:
+  explicit ActiveTabObserver(AiChatSidePanelWebView* owner) : owner_(owner) {}
+
+  void SetTab(content::WebContents* tab) {
+    if (web_contents() != tab) Observe(tab);
+  }
+
+  // content::WebContentsObserver:
+  // A new primary page committed: push its url/title right away (this also
+  // replaces the previous page's text) ...
+  void PrimaryPageChanged(content::Page& page) override {
+    owner_->PushActiveTabContext();
+  }
+  // ... and again once its document has loaded, when innerText is ready.
+  void DocumentOnLoadCompletedInPrimaryMainFrame() override {
+    owner_->PushActiveTabContext();
+  }
+  // Same-document navigations (SPA route changes, history.pushState)
+  // change the content without a new primary page.
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted() &&
+        navigation->IsSameDocument() && !navigation->IsErrorPage()) {
+      owner_->PushActiveTabContext();
+    }
+  }
+
+ private:
+  const raw_ptr<AiChatSidePanelWebView> owner_;
+};
+
+// Watches the chat page itself: context pushed before it finished loading
+// had no page to land in, so push again once it has.
+class AiChatSidePanelWebView::ChatPageObserver
+    : public content::WebContentsObserver {
+ public:
+  ChatPageObserver(AiChatSidePanelWebView* owner,
+                   content::WebContents* chat_contents)
+      : content::WebContentsObserver(chat_contents), owner_(owner) {}
+
+  // content::WebContentsObserver:
+  void DocumentOnLoadCompletedInPrimaryMainFrame() override {
+    owner_->PushActiveTabContext();
+  }
+
+ private:
+  const raw_ptr<AiChatSidePanelWebView> owner_;
+};
+
 AiChatSidePanelWebView::AiChatSidePanelWebView(Browser* browser)
     : views::WebView(browser ? browser->profile() : nullptr),
       profile_(browser ? browser->profile() : nullptr),
       browser_(browser) {
   LoadInitialURL(GURL(kAiChatWebUIURL));
   if (browser_ && browser_->tab_strip_model()) {
+    active_tab_observer_ = std::make_unique<ActiveTabObserver>(this);
+    if (web_contents()) {
+      chat_page_observer_ =
+          std::make_unique<ChatPageObserver>(this, web_contents());
+    }
     browser_->tab_strip_model()->AddObserver(this);
     PushActiveTabContext();
   }
@@ -89,6 +151,9 @@ AiChatSidePanelWebView::AiChatSidePanelWebView(Profile* profile)
 AiChatSidePanelWebView::~AiChatSidePanelWebView() {
   if (browser_ && browser_->tab_strip_model())
     browser_->tab_strip_model()->RemoveObserver(this);
+  // Stop observing before the rest of the view is torn down.
+  chat_page_observer_.reset();
+  active_tab_observer_.reset();
 }
 
 void AiChatSidePanelWebView::RequestMediaAccessPermission(
@@ -146,9 +211,17 @@ void AiChatSidePanelWebView::OnTabStripModelChanged(
     PushActiveTabContext();
 }
 
+void AiChatSidePanelWebView::ObserveActiveTab() {
+  if (!active_tab_observer_ || !browser_ || !browser_->tab_strip_model())
+    return;
+  active_tab_observer_->SetTab(
+      browser_->tab_strip_model()->GetActiveWebContents());
+}
+
 void AiChatSidePanelWebView::PushActiveTabContext() {
   if (!browser_ || !browser_->tab_strip_model())
     return;
+  ObserveActiveTab();
   content::WebContents* active =
       browser_->tab_strip_model()->GetActiveWebContents();
   if (!active || !active->GetPrimaryMainFrame())
@@ -239,6 +312,16 @@ void AiChatSidePanelWebView::InjectContextIntoChat(const std::string& url,
                                                      const std::string& text) {
   if (!web_contents() || !web_contents()->GetPrimaryMainFrame())
     return;
+  content::RenderFrameHost* chat_frame = web_contents()->GetPrimaryMainFrame();
+  // Main-world execution is only permitted (CHECKed) for WebUI-bound
+  // frames, and before the chat page has committed there is no page to
+  // receive the context — ChatPageObserver pushes again after it loads.
+  const GURL& chat_url = chat_frame->GetLastCommittedURL();
+  if (!chat_frame->IsRenderFrameLive() ||
+      !chat_url.SchemeIs(content::kChromeUIScheme) ||
+      chat_url.host() != kAiChatWebUIHost) {
+    return;
+  }
 
   // Build a JSON-safe context payload. This fork uses base::DictValue
   // (not base::Value::Dict) — same pattern as automation_script.cc.
@@ -254,7 +337,10 @@ void AiChatSidePanelWebView::InjectContextIntoChat(const std::string& url,
 
   // Idempotent injection: stash on window.__moltLastTabContext so the
   // chat page can pick it up on its own init (race-free), and call
-  // window.__moltSetTabContext if it's already defined.
+  // window.__moltSetTabContext if it's already defined. This must run in
+  // the page's MAIN world: those are the page's own globals, invisible to
+  // an isolated world (the previous isolated-world injection never reached
+  // the chat, so the side panel had no page context at all).
   std::string js =
       "(function(c) {"
       "  window.__moltLastTabContext = c;"
@@ -262,10 +348,7 @@ void AiChatSidePanelWebView::InjectContextIntoChat(const std::string& url,
       "    try { window.__moltSetTabContext(c); } catch (e) {}"
       "  }"
       "})(" + json + ");";
-  web_contents()->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
-      base::UTF8ToUTF16(js),
-      base::DoNothing(),
-      /*world_id=*/1);
+  chat_frame->ExecuteJavaScript(base::UTF8ToUTF16(js), base::DoNothing());
 }
 
 BEGIN_METADATA(AiChatSidePanelWebView)
