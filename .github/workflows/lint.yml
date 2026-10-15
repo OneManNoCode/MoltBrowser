@@ -28,7 +28,7 @@ jobs:
       # actionlint_1.7.12_checksums.txt.
       ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Install actionlint (pinned, checksum-verified)
@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 10
     continue-on-error: true   # report-only for now; see the header
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: shellcheck (warnings and errors)
@@ -61,7 +61,7 @@ jobs:
     timeout-minutes: 15
     continue-on-error: true   # report-only until patches/ is the build input
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: patches/ reproduces src/ (fetches upstream@pin from the GitHub mirror)

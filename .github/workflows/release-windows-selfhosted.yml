@@ -63,7 +63,7 @@ jobs:
         run: powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force"
 
       - name: Check out repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           clean: false   # keep depot_tools/ between runs (C:\cr persists on its own)
@@ -555,7 +555,7 @@ jobs:
       # installer, so functional Windows is live the moment staging completes
       # and is never blocked by installer compression time.
       - name: Upload portable zip to the DRAFT release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ inputs.tag }}
           # A release this creates stays a draft until the offline-signed
@@ -679,7 +679,7 @@ jobs:
           Get-Item $outFile | Format-List Name,Length
 
       - name: Upload setup installer to the DRAFT release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ inputs.tag }}
           draft: true
@@ -712,7 +712,7 @@ jobs:
             MoltBrowser-Windows-x64.zip
 
       - name: Upload checksums to the DRAFT release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ inputs.tag }}
           draft: true
