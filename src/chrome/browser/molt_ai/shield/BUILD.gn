@@ -35,16 +35,28 @@ source_set("shield") {
     "filter_list_manager.h",
     "molt_shield_engine.cc",
     "molt_shield_engine.h",
+    "molt_shield_navigation_throttle.cc",
+    "molt_shield_navigation_throttle.h",
+    "molt_shield_proxying_url_loader_factory.cc",
+    "molt_shield_proxying_url_loader_factory.h",
     "molt_shield_service.cc",
     "molt_shield_service.h",
     "molt_shield_site_settings.cc",
     "molt_shield_site_settings.h",
+    "molt_shield_url_loader_throttle.cc",
+    "molt_shield_url_loader_throttle.h",
+    "molt_shield_websocket.cc",
+    "molt_shield_websocket.h",
   ]
   public_deps = [
     ":core",
     "//build/rust:cxx_cppdeps",
     "//chrome/browser/profiles:profile",
     "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//third_party/blink/public/common",
   ]
   deps = [
     "adblock:molt_adblock",
@@ -52,9 +64,8 @@ source_set("shield") {
     "//chrome/common:constants",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
+    "//mojo/public/cpp/system",
     "//net",
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
   ]
 }
 
