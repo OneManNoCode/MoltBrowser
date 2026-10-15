@@ -1,0 +1,54 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltShield's ad/tracker blocking engine: Brave's adblock-rust (MPL-2.0),
+# vendored via gnrt into //third_party/rust/adblock, behind a small cxx
+# bridge. Same pattern as //chrome/browser/molt_ai/anydoc.
+#
+# The crate's embedded public-suffix list is disabled; domain resolution
+# calls back into //net's registry_controlled_domains (domain_resolver.cc).
+# Bundled data (uBO scriptlet resources, fallback list) is compiled in with
+# include_str!, hence `inputs`.
+#
+# Rust side is unit-tested and benchmarked against real filter lists with
+# plain cargo in tools/shield_bench (no Chromium checkout needed).
+
+import("//build/rust/rust_static_library.gni")
+
+rust_static_library("molt_adblock") {
+  allow_unsafe = true  # The cxx-generated bridge glue uses `unsafe`.
+  crate_root = "molt_adblock.rs"
+  sources = [
+    "css.rs",
+    "engine.rs",
+    "molt_adblock.rs",
+    "preprocess.rs",
+  ]
+  inputs = [
+    "data/builtin_filters.txt",
+    "data/ubo_resources.json",
+  ]
+  cxx_bindings = [ "molt_adblock.rs" ]
+  public_deps = [ ":domain_resolver" ]
+  deps = [
+    "//third_party/rust/adblock/v0_13:lib",
+    "//third_party/rust/base64/v0_22:lib",
+    "//third_party/rust/serde_json/v1:lib",
+  ]
+  visibility = [ "//chrome/browser/molt_ai/shield:*" ]
+}
+
+# C++ callee of the bridge's `extern "C++"` block. Only uses rust::Str, so it
+# doesn't need the generated bridge header (which would be a dependency
+# cycle with :molt_adblock).
+source_set("domain_resolver") {
+  visibility = [ ":*" ]
+  sources = [
+    "domain_resolver.cc",
+    "domain_resolver.h",
+  ]
+  deps = [
+    "//build/rust:cxx_cppdeps",
+    "//net",
+  ]
+}

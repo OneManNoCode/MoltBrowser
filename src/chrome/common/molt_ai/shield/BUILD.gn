@@ -1,0 +1,13 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Browser <-> renderer interface for MoltShield cosmetic filtering.
+# Browser: //chrome/browser/molt_ai/shield (MoltShieldTabHelper).
+# Renderer: //chrome/renderer/molt_ai/shield (CosmeticFilterAgent).
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojom") {
+  sources = [ "cosmetic_filters.mojom" ]
+  public_deps = [ "//url/mojom:url_mojom_gurl" ]
+}

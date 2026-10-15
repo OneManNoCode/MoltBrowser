@@ -1,0 +1,22 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Renderer half of MoltShield cosmetic filtering (hide CSS + scriptlets at
+# document start). Created per frame from
+# ChromeContentRendererClient::RenderFrameCreated.
+
+source_set("shield") {
+  sources = [
+    "cosmetic_filter_agent.cc",
+    "cosmetic_filter_agent.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/common/molt_ai/shield:mojom",
+    "//content/public/renderer",
+    "//mojo/public/cpp/bindings",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}

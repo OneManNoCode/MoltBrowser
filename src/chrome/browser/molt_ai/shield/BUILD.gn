@@ -1,0 +1,104 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltShield — MoltBrowser's ad/tracker blocker, on Brave's adblock-rust
+# engine (adblock/). See molt_shield_service.h for the threading model.
+
+# Pure logic with no //content or profile dependencies, so the standalone
+# molt_ai_unittests binary can link it.
+source_set("core") {
+  sources = [
+    "filter_list_catalog.cc",
+    "filter_list_catalog.h",
+    "list_signature_verifier.h",
+    "molt_shield_request_utils.cc",
+    "molt_shield_request_utils.h",
+    "molt_shield_store.cc",
+    "molt_shield_store.h",
+    "molt_shield_types.cc",
+    "molt_shield_types.h",
+  ]
+  public_deps = [
+    "//base",
+    "//services/network/public/mojom:url_loader_base",
+    "//url",
+  ]
+  deps = [
+    "//crypto",
+    "//net",
+  ]
+}
+
+source_set("shield") {
+  sources = [
+    "filter_list_manager.cc",
+    "filter_list_manager.h",
+    "molt_shield_engine.cc",
+    "molt_shield_engine.h",
+    "molt_shield_navigation_throttle.cc",
+    "molt_shield_navigation_throttle.h",
+    "molt_shield_proxying_url_loader_factory.cc",
+    "molt_shield_proxying_url_loader_factory.h",
+    "molt_shield_service.cc",
+    "molt_shield_service.h",
+    "molt_shield_site_settings.cc",
+    "molt_shield_site_settings.h",
+    "molt_shield_tab_helper.cc",
+    "molt_shield_tab_helper.h",
+    "molt_shield_url_loader_throttle.cc",
+    "molt_shield_url_loader_throttle.h",
+    "molt_shield_websocket.cc",
+    "molt_shield_websocket.h",
+  ]
+  public_deps = [
+    ":core",
+    "//build/rust:cxx_cppdeps",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common/molt_ai/shield:mojom",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//third_party/blink/public/common",
+  ]
+  deps = [
+    "adblock:molt_adblock",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/common:constants",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//mojo/public/cpp/system",
+    "//net",
+  ]
+}
+
+# MoltShield section of molt://ai-settings (handler + section script).
+source_set("settings_handler") {
+  sources = [
+    "molt_shield_settings_handler.cc",
+    "molt_shield_settings_handler.h",
+  ]
+  public_deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+  deps = [
+    ":shield",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common",
+    "//net",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_shield_unittest.cc" ]
+  deps = [
+    ":core",
+    "//base",
+    "//base/test:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}

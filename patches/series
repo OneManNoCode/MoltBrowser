@@ -88,6 +88,8 @@ chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc.patch
 chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc.patch
 chrome/common/chrome_content_client.cc.patch
 chrome/common/webui_url_constants.h.patch
+chrome/renderer/BUILD.gn.patch
+chrome/renderer/chrome_content_renderer_client.cc.patch
 components/arc_strings.grdp.patch
 components/autofill_payments_strings.grdp.patch
 components/autofill_strings.grdp.patch

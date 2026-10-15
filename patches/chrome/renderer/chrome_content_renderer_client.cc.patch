@@ -1,0 +1,28 @@
+MoltBrowser patch for chrome/renderer/chrome_content_renderer_client.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/renderer/chrome_content_renderer_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
+index abe1dbb4ec313cd2b13d0cf8b0c6da39c5a57c65..937fcc8f16c776f81973fbfdd8ffa62c8dfc4b0f 100644
+--- a/chrome/renderer/chrome_content_renderer_client.cc
++++ b/chrome/renderer/chrome_content_renderer_client.cc
+@@ -60,6 +60,7 @@
+ #include "chrome/renderer/loadtimes_extension_bindings.h"
+ #include "chrome/renderer/media/flash_embed_rewrite.h"
+ #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
++#include "chrome/renderer/molt_ai/shield/cosmetic_filter_agent.h"  // MoltBrowser
+ #include "chrome/renderer/net/net_error_helper.h"
+ #include "chrome/renderer/net_benchmarking_extension.h"
+ #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
+@@ -604,6 +605,9 @@ void ChromeContentRendererClient::RenderFrameCreated(
+ 
+   new prerender::NoStatePrefetchRenderFrameObserver(render_frame);
+ 
++  // MoltBrowser: MoltShield hide CSS + scriptlets at document start.
++  new molt_ai::shield::CosmeticFilterAgent(render_frame);
++
+   auto content_settings_delegate =
+       std::make_unique<ChromeContentSettingsAgentDelegate>(render_frame);
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)

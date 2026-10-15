@@ -38,6 +38,7 @@
 #include "chrome/browser/molt_ai/import/browser_importer.h"
 #include "chrome/browser/molt_ai/import/chrome_importer.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_settings_handler.h"
 #include "base/functional/callback_helpers.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
@@ -2132,7 +2133,8 @@ class MoltAISettingsDataSource : public content::URLDataSource {
       content::URLDataSource::GotDataCallback callback) override {
     if (molt_webui::IsAppJsRequest(url)) {
       std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
-          std::string(molt_webui::kMoltTrustedHtmlJs) + kSettingsPageJs));
+          std::string(molt_webui::kMoltTrustedHtmlJs) + kSettingsPageJs +
+          molt_ai::shield::kMoltShieldSettingsJs));
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
@@ -2403,6 +2405,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
   </div>
 
+  <div class="section" id="shieldSection">
+    <h2><span class="icon">&#128737;</span> MoltShield &mdash; Ads &amp; Trackers</h2>
+    <div class="field">
+      <div class="desc">Built-in blocker (adblock-rust) with EasyList, EasyPrivacy and uBlock Origin lists. Lists update daily through this profile's network (over Tor when MoltNet is on).</div>
+    </div>
+    <div id="shieldGlobals"></div>
+    <div class="field"><div class="desc" id="shieldStats"></div></div>
+    <div class="field">
+      <label>Current tabs</label>
+      <div id="shieldTabs"></div>
+      <textarea id="shieldReport" readonly rows="8" style="display:none;width:100%;margin-top:8px;background:#111;color:#ccc;border:1px solid #333;border-radius:6px;font-family:monospace;font-size:12px"></textarea>
+    </div>
+    <div class="field">
+      <label>Sites with Shields down</label>
+      <div id="shieldExceptions"></div>
+    </div>
+    <div class="field">
+      <label>Filter lists</label>
+      <div id="shieldLists"></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="btn secondary" id="shieldUpdateBtn" style="font-size:12px;padding:6px 16px">Update lists now</button>
+        <span class="desc" id="shieldUpdateStatus"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="section" id="importSection">
     <h2><span class="icon">&#128229;</span> Import &amp; Migration</h2>
     <div class="field">
@@ -2454,6 +2482,9 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
   // Passwords section: the only page that can add vault entries or reveal
   // one (after OS re-authentication / native confirmation).
   web_ui->AddMessageHandler(std::make_unique<MoltVaultHandler>());
+  // MoltShield section (id="shieldSection").
+  web_ui->AddMessageHandler(
+      std::make_unique<molt_ai::shield::MoltShieldSettingsHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;

@@ -67,6 +67,24 @@ function trustedTypesMode(src) {
 // promoteTrust calls the Agent studio makes ([id, level] each).
 const agentTrustCalls = [];
 
+// molt://ai-settings MoltShield section state, with hostile strings where
+// list/tab metadata comes from the network or pages.
+const SHIELD_STATE = {
+  enabled: true, cosmetic: true, consentKiller: false, ready: true,
+  updating: false, lastUpdateCheck: 1760000000000, engine: 'adblock-rust-0.13.3/molt-1',
+  stats: {checked: 1200, blocked: 300, ads: 120, redirects: 4, websockets: 1,
+          cosmetic: 9, scriptlets: 2},
+  lists: [
+    {id: 'easylist', title: 'EasyList <b>', enabled: true, cached: true, rules: 77000,
+     version: '202610142210', fetchedAt: 1760000000000, checkedAt: 1760000000000, error: ''},
+    {id: 'fanboy-annoyance', title: "Fanboy's Annoyance", enabled: false, cached: false,
+     rules: 0, version: '', fetchedAt: 0, checkedAt: 0, error: 'HTTP 503'},
+  ],
+  tabs: [{key: 7, site: 'example.com', title: '<img src=x onerror=alert(1)>',
+          blocked: 12, shieldsUp: true}],
+  exceptions: ['https://[*.]broken.example'],
+};
+
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
    listeners: ['#searchForm:submit', '.card.ai:click', '.card.net:click']},
@@ -128,11 +146,27 @@ const PAGES = [
                            {id: 'b2', site_host: 'example.com', username: 'x'}]},
      vaultRevealEntry: (args) => ({success: true, id: args[1], password: 'pw-' + args[1], notes: ''}),
      vaultAdd: {success: true, id: 'c3', site_host: 'new.example'},
+     // MoltShield section (script: kMoltShieldSettingsJs).
+     shieldGetState: SHIELD_STATE,
+     shieldSetGlobal: SHIELD_STATE,
+     shieldSetListEnabled: SHIELD_STATE,
+     shieldUpdateNow: SHIELD_STATE,
+     shieldSetTabShields: SHIELD_STATE,
+     shieldRemoveException: SHIELD_STATE,
+     shieldReportBreakage: {report: 'MoltShield breakage report\nSite: <b>x</b>\n'},
    },
-   listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click'],
+   extraFiles: ['molt_webui_csp.h',
+                '../../../molt_ai/shield/molt_shield_settings_handler.cc'],
+   listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click',
+                    '#shieldUpdateBtn:click'],
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 10));
+     // MoltShield: hostile list/tab metadata renders as text, never markup.
+     assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
+     assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));
+     assert.strictEqual(doc.querySelectorAll('#shieldLists input[type=checkbox]').length, 2);
+     assert.strictEqual(doc.querySelectorAll('#shieldGlobals input[type=checkbox]').length, 3);
      assert.strictEqual(doc.querySelectorAll('#vaultList b').length, 0, 'usernames are text');
      assert.strictEqual(doc.getElementById('vaultStorageWarn').style.display, '', 'keyring warning shown');
      const shows = Array.from(doc.querySelectorAll('#vaultList button')).filter((b) => b.textContent === 'Show');

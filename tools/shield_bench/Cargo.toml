@@ -1,0 +1,50 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# shield_bench — standalone (no Chromium checkout) test + benchmark harness
+# for MoltShield's adblock bridge. NOT shipped.
+#
+# It compiles the real bridge crate
+#   src/chrome/browser/molt_ai/shield/adblock/molt_adblock.rs
+# (Rust side AND the cxx-generated C++ side) against the real adblock crate
+# from crates.io, with the same feature set as
+# src/third_party/rust/chromium_crates_io/Cargo.toml. Chromium's
+# registry_controlled_domains is stood in for by cxx/test_domain_resolver.cc.
+#
+#   ./fetch_lists.sh                  # real EasyList/EasyPrivacy/uBO lists
+#   cargo test --release              # bridge unit tests + real-list tests
+#   cargo run --release               # benchmark + C++ (cxx) smoke test
+#
+# Regenerate the bundled uBO resources with gen_ubo_resources.mjs.
+
+[package]
+name = "shield_bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-3.0-only"
+
+# Standalone: never part of an enclosing workspace.
+[workspace]
+
+[lib]
+name = "molt_adblock"
+path = "../../src/chrome/browser/molt_ai/shield/adblock/molt_adblock.rs"
+
+[[bin]]
+name = "shield_bench"
+path = "src/main.rs"
+
+[dependencies]
+# Keep identical to the chromium_crates_io entry.
+adblock = { version = "=0.13.3", default-features = false, features = ["full-regex-handling"] }
+base64 = "0.22"
+serde_json = "1"
+# Chromium's vendored cxx version at the pin.
+cxx = "=1.0.194"
+
+[build-dependencies]
+cxx-build = "=1.0.194"
+
+[profile.release]
+debug = 1
