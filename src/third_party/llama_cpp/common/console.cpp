@@ -1,4 +1,5 @@
 #include "console.h"
+#include "common.h"
 #include "log.h"
 #include <vector>
 #include <iostream>
@@ -700,13 +701,13 @@ namespace console {
         std::vector<std::string> entries;
         size_t viewing_idx = SIZE_MAX;
         std::string backup_line; // current line before viewing history
-        void add(const std::string & line) {
+        void add(std::string_view line) {
             if (line.empty()) {
                 return;
             }
             // avoid duplicates with the last entry
             if (entries.empty() || entries.back() != line) {
-                entries.push_back(line);
+                entries.emplace_back(line);
             }
             // also clear viewing state
             end_viewing();
@@ -1018,6 +1019,7 @@ namespace console {
                     line.clear();
                     pop_cursor();
                 }
+                line += '\n';
                 has_more = false;
             }
         } else {
@@ -1031,11 +1033,12 @@ namespace console {
 
         if (!end_of_stream && !line.empty()) {
             // remove the trailing newline for history storage
+            std::string_view hline = line;
             if (!line.empty() && line.back() == '\n') {
-                line.pop_back();
+                hline.remove_suffix(1);
             }
             // TODO: maybe support multiline history entries?
-            history.add(line);
+            history.add(hline);
         }
 
         fflush(out);
@@ -1048,13 +1051,10 @@ namespace console {
         if (!std::getline(std::wcin, wline)) {
             // Input stream is bad or EOF received
             line.clear();
-            GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
             return false;
         }
 
-        int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wline[0], (int)wline.size(), NULL, 0, NULL, NULL);
-        line.resize(size_needed);
-        WideCharToMultiByte(CP_UTF8, 0, &wline[0], (int)wline.size(), &line[0], size_needed, NULL, NULL);
+        line = wstring_to_utf8(wline);
 #else
         if (!std::getline(std::cin, line)) {
             // Input stream is bad or EOF received
@@ -1065,7 +1065,7 @@ namespace console {
         if (!line.empty()) {
             char last = line.back();
             if (last == '/') { // Always return control on '/' symbol
-                line.pop_back();
+                line.back() = '\n';
                 return false;
             }
             if (last == '\\') { // '\\' changes the default action

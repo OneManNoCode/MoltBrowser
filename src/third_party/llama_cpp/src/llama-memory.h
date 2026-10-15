@@ -1,6 +1,7 @@
 #pragma once
 
 #include "llama.h"
+#include "llama-graph.h"
 
 #include <map>
 #include <memory>
@@ -20,6 +21,10 @@ struct llama_memory_params {
 
     // use full-size SWA cache
     bool swa_full;
+
+    llama_context_type ctx_type;
+
+    llama_memory_t mem_other;
 };
 
 enum llama_memory_status {
@@ -73,11 +78,14 @@ struct llama_memory_i {
     // return negative value to indicate that the layer il should not reuse memory
     using layer_reuse_cb = std::function<int32_t(int32_t il)>;
 
+    using layer_share_cb = std::function<int32_t(int32_t il)>;
+
     virtual ~llama_memory_i() = default;
 
     // split the input batch into a set of ubatches and verify that they can fit into the cache
     // return a context object containing the ubatches and memory state required to process them
     // check the llama_memory_context_i::get_status() for the result
+    // embd_all: keep all the tokens of a sequence in one ubatch (all tokens are output, or the attention is non-causal)
     virtual llama_memory_context_ptr init_batch(
             llama_batch_allocr & balloc,
             uint32_t n_ubatch,
