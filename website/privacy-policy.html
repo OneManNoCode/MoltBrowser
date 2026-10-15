@@ -20,7 +20,7 @@
 <body>
 
 <h1>Privacy Policy</h1>
-<span class="date">Effective: March 17, 2026</span>
+<span class="date">Effective: October 15, 2026</span>
 
 <p>GenEye AI Labs Inc. ("we", "us") builds MoltBrowser with privacy as a core architectural principle, not just a policy. This document explains what data MoltBrowser collects (almost nothing) and how it handles your information.</p>
 
@@ -42,12 +42,15 @@
 </ul>
 
 <h2>3. Network Requests MoltBrowser Makes</h2>
-<p>MoltBrowser makes the following network requests, all to public infrastructure:</p>
+<p>Besides the websites you visit, MoltBrowser itself contacts these services. None of these requests carries cookies or an account identifier.</p>
 <ul>
-  <li><strong>Model downloads</strong> — When you choose to download an AI model, MoltBrowser fetches it from Hugging Face or the model's public CDN.</li>
-  <li><strong>Auto-update checks</strong> — MoltBrowser periodically checks <code>moltbrowser.com/updates/appcast.xml</code> for new versions. This request contains only your current version number and OS. No personally identifiable information is sent.</li>
-  <li><strong>Filter list updates</strong> — MoltShield downloads public ad-blocking filter lists (EasyList, EasyPrivacy) from their official sources.</li>
-  <li><strong>Chrome extensions</strong> — If you install extensions, they may make their own network requests per their own privacy policies.</li>
+  <li><strong>Update checks</strong> — MoltBrowser asks GitHub (<code>api.github.com</code>, <code>github.com</code>) for the latest release a few times a day and downloads updates from GitHub. The request includes your MoltBrowser version in its user agent. From v0.3.0, an update is only installed if it matches a release manifest signed with our offline release key.</li>
+  <li><strong>Filter list updates</strong> (from v0.3.0) — MoltShield downloads public ad- and tracker-blocking lists about once a day from their publishers (<code>easylist.to</code>, <code>ublockorigin.github.io</code>, falling back to their GitHub mirrors at <code>raw.githubusercontent.com</code>). Optional lists you turn on may come from <code>secure.fanboy.co.nz</code>.</li>
+  <li><strong>AI model downloads</strong> — only when you choose to download an on-device model, from Hugging Face (<code>huggingface.co</code>).</li>
+  <li><strong>Cloud AI providers</strong> — only if you connect your own API key and send a message to a cloud model. That message, plus any page, tab or attachment context you include, goes directly to the provider you chose under its privacy policy. MoltBrowser marks every message sent to a cloud provider.</li>
+  <li><strong>MoltNet</strong> — when you open a MoltNet window, its traffic goes through the Tor network.</li>
+  <li><strong>Chromium background services</strong> — MoltBrowser is built on Chromium. Some of Chromium's own background services (for example component and certificate-revocation updates) may still contact Google's servers without any account information. We are auditing and removing these; see our <a href="https://github.com/OneManNoCode/MoltBrowser/blob/main/ROADMAP.md">public roadmap</a>.</li>
+  <li><strong>Chrome extensions</strong> — extensions you install may make their own requests under their own privacy policies.</li>
 </ul>
 
 <h2>4. Third-Party Extensions</h2>

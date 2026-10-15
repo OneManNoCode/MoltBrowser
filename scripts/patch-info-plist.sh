@@ -1,6 +1,7 @@
 #!/bin/bash
-# Patch MoltBrowser's Info.plist with Sparkle auto-update keys
-# and MoltBrowser version info.
+# Patch MoltBrowser's Info.plist with version and branding info.
+# (Updates are handled in-app by molt_ai/update with signed release
+# manifests; no Sparkle keys are written. See docs/SIGNED_UPDATES.md.)
 #
 # Run after build, before signing.
 #
@@ -33,23 +34,6 @@ echo "Version: $VERSION (build $BUILD_NUM)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" "$PLIST" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" "$PLIST"
 
-# Sparkle feed URL
-FEED_URL="https://moltbrowser.com/updates/appcast.xml"
-/usr/libexec/PlistBuddy -c "Set :SUFeedURL $FEED_URL" "$PLIST" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $FEED_URL" "$PLIST"
-
-# Enable Sparkle automatic checks
-/usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks true" "$PLIST" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$PLIST"
-
-# Check interval (daily = 86400 seconds)
-/usr/libexec/PlistBuddy -c "Set :SUScheduledCheckInterval 86400" "$PLIST" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval integer 86400" "$PLIST"
-
-# Allow automatic downloads
-/usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$PLIST" 2>/dev/null || \
-  /usr/libexec/PlistBuddy -c "Add :SUAutomaticallyUpdate bool false" "$PLIST"
-
 # MoltBrowser branding
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName MoltBrowser" "$PLIST" 2>/dev/null || \
   /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string MoltBrowser" "$PLIST"
@@ -59,8 +43,5 @@ FEED_URL="https://moltbrowser.com/updates/appcast.xml"
 
 echo "  CFBundleShortVersionString = $VERSION"
 echo "  CFBundleVersion = $BUILD_NUM"
-echo "  SUFeedURL = $FEED_URL"
-echo "  SUEnableAutomaticChecks = true"
-echo "  SUScheduledCheckInterval = 86400"
 echo ""
 echo "Done!"
