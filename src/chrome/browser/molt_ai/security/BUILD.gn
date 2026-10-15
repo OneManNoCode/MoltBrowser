@@ -17,14 +17,43 @@ source_set("agent_safety") {
   ]
 }
 
+# Who may open chrome:// / molt:// pages (S19). Pure logic, unit-tested.
+source_set("webui_navigation_policy") {
+  sources = [
+    "webui_navigation_policy.cc",
+    "webui_navigation_policy.h",
+  ]
+
+  deps = [ "//url" ]
+}
+
+# The NavigationThrottle that applies it; added by
+# ChromeContentBrowserClient::CreateThrottlesForNavigation.
+source_set("webui_navigation_throttle") {
+  sources = [
+    "webui_navigation_throttle.cc",
+    "webui_navigation_throttle.h",
+  ]
+
+  public_deps = [ "//content/public/browser" ]
+
+  deps = [
+    ":webui_navigation_policy",
+    "//base",
+    "//url",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "agent_safety_unittest.cc",
+    "webui_navigation_policy_unittest.cc",
   ]
   deps = [
     ":agent_safety",
+    ":webui_navigation_policy",
     "//base",
     "//testing/gtest",
     "//url",
