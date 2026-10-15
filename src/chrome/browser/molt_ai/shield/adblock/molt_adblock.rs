@@ -22,6 +22,7 @@
 mod css;
 mod engine;
 mod preprocess;
+mod removeparam;
 
 use std::sync::Once;
 
@@ -29,6 +30,7 @@ pub use engine::{
     BUILTIN_FILTER_LIST, CheckOutcome, CosmeticOutcome, DEFAULT_RESOURCES_JSON, EngineBuilder,
     ShieldEngine,
 };
+pub use removeparam::BUILTIN_TRACKING_PARAMS;
 
 #[cxx::bridge(namespace = "molt_ai::shield::ffi")]
 mod ffi {
@@ -43,7 +45,10 @@ mod ffi {
         should_block: bool,
         /// `data:` URL to serve instead (`$redirect=`), or empty.
         redirect: String,
-        /// URL without `$removeparam` parameters, or empty if unchanged.
+        /// URL without `$removeparam` / built-in tracking parameters, or
+        /// empty if unchanged. Only the query differs from the request URL.
+        /// Reported even when `should_block` (navigations are stripped but
+        /// never blocked); callers that block ignore it.
         rewritten_url: String,
     }
 

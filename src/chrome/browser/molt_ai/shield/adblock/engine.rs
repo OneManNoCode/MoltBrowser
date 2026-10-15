@@ -7,7 +7,7 @@
 // benchmarked with plain cargo (tools/shield_bench); molt_adblock.rs adapts
 // it to C++.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use adblock::Engine;
 use adblock::lists::{FilterSet, ParseOptions};
@@ -17,6 +17,7 @@ use base64::Engine as _;
 
 use crate::css;
 use crate::preprocess::{self, PreprocessEnv};
+use crate::removeparam;
 
 /// Version of the adblock-rust crate this bridge is built against. The
 /// serialized engine format is only guaranteed stable within one version, so
@@ -26,7 +27,12 @@ pub const ADBLOCK_CRATE_VERSION: &str = "0.13.3";
 
 /// Bumped whenever MoltBrowser changes how it builds engines (preprocessing,
 /// permissions, …) so stale caches are rebuilt from list text.
-pub const MOLT_ENGINE_FORMAT: u32 = 1;
+/// 2: built-in tracking parameters + removeparam exception engine, and the
+///    serialized form became a container (see `ShieldEngine::serialize`).
+pub const MOLT_ENGINE_FORMAT: u32 = 2;
+
+/// Header of a serialized `ShieldEngine`.
+const SERIALIZED_MAGIC: &[u8; 8] = b"MOLTSE02";
 
 /// Scriptlet permission granted to "trusted" lists (uBlock Origin's own
 /// lists), allowing `trusted-*` scriptlets such as `trusted-set-cookie`.
@@ -57,6 +63,12 @@ pub struct EngineBuilder {
     set: FilterSet,
     env: PreprocessEnv,
     rule_lines: u32,
+    /// `$removeparam=name` filters the lists apply everywhere.
+    generic_params: BTreeSet<String>,
+    /// `@@...$removeparam` filters, as blocking filters (see removeparam.rs).
+    param_exceptions: Vec<String>,
+    /// `||domain^` forms of generic `to=` removeparam filters.
+    param_to_filters: Vec<String>,
 }
 
 impl EngineBuilder {
@@ -65,6 +77,9 @@ impl EngineBuilder {
             set: FilterSet::new(false),
             env: PreprocessEnv::molt(is_mobile),
             rule_lines: 0,
+            generic_params: BTreeSet::new(),
+            param_exceptions: Vec::new(),
+            param_to_filters: Vec::new(),
         }
     }
 
@@ -73,6 +88,10 @@ impl EngineBuilder {
     pub fn add_list(&mut self, text: &str, trusted: bool) -> u32 {
         let processed = preprocess::preprocess(text, &self.env);
         let lines = preprocess::count_filter_lines(&processed);
+        let scan = removeparam::scan_list(&processed);
+        self.generic_params.extend(scan.generic_params);
+        self.param_exceptions.extend(scan.exception_filters);
+        self.param_to_filters.extend(scan.to_filters);
         let permissions = if trusted { TRUSTED_LIST_PERMISSION } else { PermissionMask::default() };
         self.set.add_filter_list(
             processed.into_owned(),
@@ -86,9 +105,31 @@ impl EngineBuilder {
         self.rule_lines
     }
 
-    pub fn build(self) -> ShieldEngine {
+    /// How many built-in tracking-parameter filters `build()` will add: the
+    /// ones the lists added so far don't already apply everywhere.
+    pub fn builtin_params(&self) -> u32 {
+        removeparam::builtin_list(&self.generic_params).1
+    }
+
+    pub fn build(mut self) -> ShieldEngine {
         crate::ensure_domain_resolver();
-        ShieldEngine { engine: Engine::new_with_filter_set(self.set) }
+        // Built-in tracking parameters, minus the ones the lists already
+        // strip everywhere (no double work per request).
+        let (builtin, n) = removeparam::builtin_list(&self.generic_params);
+        if n > 0 {
+            self.set.add_filter_list(builtin, ParseOptions::default());
+        }
+        if !self.param_to_filters.is_empty() {
+            self.set.add_filter_list(self.param_to_filters.join("\n"), ParseOptions::default());
+        }
+        let mut exceptions = FilterSet::new(false);
+        if !self.param_exceptions.is_empty() {
+            exceptions.add_filter_list(self.param_exceptions.join("\n"), ParseOptions::default());
+        }
+        ShieldEngine {
+            engine: Engine::new_with_filter_set(self.set),
+            param_exceptions: Engine::new_with_filter_set(exceptions),
+        }
     }
 }
 
@@ -105,7 +146,11 @@ pub struct CheckOutcome {
     pub should_block: bool,
     /// `data:` URL to serve instead of the resource (`$redirect`), if any.
     pub redirect: Option<String>,
-    /// URL with `$removeparam` parameters stripped, if it changed.
+    /// URL with `$removeparam` (and built-in tracking) parameters stripped,
+    /// if it changed; only differs from `url` in its query. None if a
+    /// removeparam exception (`@@...$removeparam`) matches or an
+    /// `$important` filter matched. Independent of `should_block`: callers
+    /// that block the request ignore it.
     pub rewritten_url: Option<String>,
 }
 
@@ -127,16 +172,39 @@ pub struct CosmeticOutcome {
 
 pub struct ShieldEngine {
     engine: Engine,
+    /// Removeparam exceptions as blocking filters: a match vetoes a rewrite.
+    param_exceptions: Engine,
+}
+
+/// Splits a little-endian u64 length-prefixed chunk off `data`.
+fn take_chunk(data: &[u8]) -> Option<(&[u8], &[u8])> {
+    let (len, rest) = data.split_first_chunk::<8>()?;
+    let len = usize::try_from(u64::from_le_bytes(*len)).ok()?;
+    if len > rest.len() {
+        return None;
+    }
+    Some(rest.split_at(len))
 }
 
 impl ShieldEngine {
     pub fn empty() -> Self {
         crate::ensure_domain_resolver();
-        ShieldEngine { engine: Engine::default() }
+        ShieldEngine { engine: Engine::default(), param_exceptions: Engine::default() }
     }
 
+    /// `SERIALIZED_MAGIC`, then the main engine and the removeparam
+    /// exception engine as u64-length-prefixed adblock-rust blobs.
     pub fn serialize(&self) -> Vec<u8> {
-        self.engine.serialize()
+        let main = self.engine.serialize();
+        let exceptions = self.param_exceptions.serialize();
+        let len = SERIALIZED_MAGIC.len() + 16 + main.len() + exceptions.len();
+        let mut out = Vec::with_capacity(len);
+        out.extend_from_slice(SERIALIZED_MAGIC);
+        for chunk in [&main, &exceptions] {
+            out.extend_from_slice(&(chunk.len() as u64).to_le_bytes());
+            out.extend_from_slice(chunk);
+        }
+        out
     }
 
     /// Replaces this engine's filters with a serialized engine. Resources set
@@ -144,7 +212,22 @@ impl ShieldEngine {
     /// on a corrupt or version-mismatched blob.
     pub fn deserialize(&mut self, data: &[u8]) -> bool {
         crate::ensure_domain_resolver();
-        self.engine.deserialize(data).is_ok()
+        let Some(rest) = data.strip_prefix(SERIALIZED_MAGIC) else { return false };
+        let Some((main, rest)) = take_chunk(rest) else { return false };
+        let Some((exceptions, rest)) = take_chunk(rest) else { return false };
+        if !rest.is_empty() {
+            return false;
+        }
+        let mut param_exceptions = Engine::default();
+        if param_exceptions.deserialize(exceptions).is_err() {
+            return false;
+        }
+        // Last fallible step: on failure nothing has changed.
+        if self.engine.deserialize(main).is_err() {
+            return false;
+        }
+        self.param_exceptions = param_exceptions;
+        true
     }
 
     /// Loads scriptlet/redirect resources (adblock-rust `Resource` JSON).
@@ -188,13 +271,22 @@ impl ShieldEngine {
         let request =
             Request::preparsed(url, hostname, source_hostname, request_type, third_party, method);
         let r = self.engine.check_network_request(&request);
+        let should_block = r.should_block();
+        // A rewrite must only drop query parameters, and is vetoed by
+        // removeparam exceptions (checked only when there is one: rare). It
+        // is reported whether or not the request is blocked, as adblock-rust
+        // does: navigations are never blocked but still get stripped.
+        let rewritten_url = r.rewritten_url.filter(|rewritten| {
+            removeparam::is_param_only_rewrite(url, rewritten)
+                && self.param_exceptions.check_network_request(&request).filter.is_none()
+        });
         CheckOutcome {
             matched: r.filter.is_some(),
             important: r.important,
             exception: r.exception.is_some(),
-            should_block: r.should_block(),
+            should_block,
             redirect: r.redirect.filter(|d| d.starts_with("data:")),
-            rewritten_url: r.rewritten_url,
+            rewritten_url,
         }
     }
 
@@ -324,6 +416,118 @@ mod tests {
         let r = check(&e, "https://a.test/p?utm_source=x&id=1", "a.test", "xmlhttprequest", false);
         assert_eq!(r.rewritten_url.as_deref(), Some("https://a.test/p?id=1"));
         assert!(!r.should_block);
+    }
+
+    fn doc(e: &ShieldEngine, url: &str) -> CheckOutcome {
+        // Navigations are checked in their own context (MoltShield's
+        // navigation interceptor passes the target as source, first-party).
+        let host = url.split('/').nth(2).unwrap_or("");
+        e.check(url, host, host, "document", false, "GET")
+    }
+
+    #[test]
+    fn builtin_tracking_params_strip_navigations_only() {
+        let e = engine_with("||ads.example^\n");
+        let url = "https://shop.test/item?id=7&utm_source=news&utm_medium=email&gclid=abc#reviews";
+        assert_eq!(
+            doc(&e, url).rewritten_url.as_deref(),
+            Some("https://shop.test/item?id=7#reviews")
+        );
+        let r = e.check(url, "shop.test", "news.test", "sub_frame", true, "GET");
+        assert_eq!(r.rewritten_url.as_deref(), Some("https://shop.test/item?id=7#reviews"));
+        // Not subresources: first-party APIs may take campaign parameters.
+        assert!(check(&e, url, "shop.test", "xmlhttprequest", false).rewritten_url.is_none());
+        assert!(check(&e, url, "shop.test", "image", false).rewritten_url.is_none());
+        // Exact, case-sensitive names; empty values are kept (as uBO does).
+        let kept = "https://a.test/?UTM_SOURCE=x&utm_sourcex=1&fbclid=";
+        assert!(doc(&e, kept).rewritten_url.is_none());
+        assert_eq!(
+            doc(&e, "https://a.test/?fbclid=IwAR0").rewritten_url.as_deref(),
+            Some("https://a.test/")
+        );
+    }
+
+    #[test]
+    fn builtin_params_skip_what_lists_provide() {
+        let mut b = EngineBuilder::new(false);
+        let all = removeparam::BUILTIN_TRACKING_PARAMS.len() as u32;
+        assert_eq!(b.builtin_params(), all);
+        b.add_list(
+            "$removeparam=fbclid\n$removeparam=utm_source\n||x.example^$removeparam=gclid\n",
+            false,
+        );
+        assert_eq!(b.builtin_params(), all - 2);
+        let mut e = b.build();
+        e.use_resources_json(DEFAULT_RESOURCES_JSON);
+        // The list's generic rules also cover XHR (adblock-rust's default
+        // removeparam types); the site-specific gclid rule doesn't count as
+        // generic, so the built-in gclid filter is still there.
+        assert_eq!(
+            check(&e, "https://a.test/api?fbclid=1&q=2", "a.test", "xmlhttprequest", false)
+                .rewritten_url
+                .as_deref(),
+            Some("https://a.test/api?q=2")
+        );
+        let r = doc(&e, "https://a.test/?gclid=1");
+        assert_eq!(r.rewritten_url.as_deref(), Some("https://a.test/"));
+    }
+
+    #[test]
+    fn removeparam_exceptions_veto_rewrites() {
+        let e = engine_with(
+            "$removeparam=fbclid\n@@||web.archive.org/*/http$removeparam\n\
+             @@||wrap.test^$removeparam=fbclid,doc\n",
+        );
+        let archived = "https://web.archive.org/web/2020/https://a.test/?fbclid=1";
+        assert!(doc(&e, archived).rewritten_url.is_none());
+        assert!(check(&e, archived, "web.archive.org", "xmlhttprequest", false)
+            .rewritten_url
+            .is_none());
+        // Typed exception: documents only.
+        assert!(doc(&e, "https://wrap.test/?fbclid=1&utm_source=x").rewritten_url.is_none());
+        assert!(check(&e, "https://wrap.test/?fbclid=1", "wrap.test", "xmlhttprequest", false)
+            .rewritten_url
+            .is_some());
+        // Elsewhere unaffected.
+        assert!(doc(&e, "https://a.test/?fbclid=1").rewritten_url.is_some());
+        // Survives serialization.
+        let mut e2 = ShieldEngine::empty();
+        assert!(e2.deserialize(&e.serialize()));
+        assert!(doc(&e2, archived).rewritten_url.is_none());
+        assert!(doc(&e2, "https://a.test/?fbclid=1").rewritten_url.is_some());
+    }
+
+    #[test]
+    fn rewrite_is_independent_of_blocking() {
+        // A navigation to a listed domain is never blocked by MoltShield but
+        // must still lose its tracking parameters.
+        let e = engine_with("||t.example^$document\n$removeparam=fbclid\n");
+        let r = doc(&e, "https://t.example/p?fbclid=1");
+        assert!(r.should_block);
+        assert_eq!(r.rewritten_url.as_deref(), Some("https://t.example/p"));
+        // ... except under $important, where adblock-rust skips removeparam.
+        let e = engine_with("||t.example^$document,important\n$removeparam=fbclid\n");
+        assert!(doc(&e, "https://t.example/p?fbclid=1").rewritten_url.is_none());
+    }
+
+    #[test]
+    fn rejects_truncated_or_foreign_blobs() {
+        let e = engine_with("||ads.example^\n$removeparam=fbclid\n");
+        let blob = e.serialize();
+        assert!(blob.starts_with(SERIALIZED_MAGIC));
+        let mut e2 = ShieldEngine::empty();
+        assert!(!e2.deserialize(&blob[..blob.len() - 1]));
+        let mut extra = blob.clone();
+        extra.push(0);
+        assert!(!e2.deserialize(&extra));
+        // A bare adblock-rust blob (the format-1 cache) is refused.
+        assert!(!e2.deserialize(&e.engine.serialize()));
+        let mut huge = SERIALIZED_MAGIC.to_vec();
+        huge.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert!(!e2.deserialize(&huge));
+        assert!(!check(&e2, "https://ads.example/x", "a.test", "image", true).should_block);
+        assert!(e2.deserialize(&blob));
+        assert!(check(&e2, "https://ads.example/x", "a.test", "image", true).should_block);
     }
 
     #[test]

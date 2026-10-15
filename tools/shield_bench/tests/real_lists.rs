@@ -163,3 +163,111 @@ fn serialized_engine_matches_original() {
     }
     assert!(compared > 10_000);
 }
+
+/// A navigation, checked in its own context the way MoltShield's navigation
+/// interceptor does (source = target host, first-party).
+fn navigate(e: &ShieldEngine, url: &str) -> Option<String> {
+    let host = host_of(url);
+    e.check(url, host, host, "document", false, "GET").rewritten_url
+}
+
+#[test]
+fn removeparam_strips_click_ids_and_campaign_params_from_navigations() {
+    let e = engine_or_skip!();
+    for (url, want) in [
+        // uBO privacy (generic) + MoltShield built-in utm_* together.
+        (
+            "https://www.example.com/article?id=5&utm_source=news&utm_medium=email&fbclid=IwAR0",
+            "https://www.example.com/article?id=5",
+        ),
+        ("https://shop.example/p?gclid=Cj0KCQ&color=red", "https://shop.example/p?color=red"),
+        ("https://news.example/?mc_eid=12ab34&msclkid=99", "https://news.example/"),
+        // `$removeparam=s,to=twitter.com|x.com` etc.: inert in adblock-rust,
+        // applied through MoltShield's `||x.com^` conversion.
+        ("https://x.com/someone/status/1?s=20&ref_src=twsrc", "https://x.com/someone/status/1"),
+        // `...,to=aboutamazon.com|amazon.*|amzn.to`: plain domains only (the
+        // `amazon.*` entity isn't converted, so amazon.de keeps it).
+        ("https://amzn.to/3xYz?asc_source=a&tag=b", "https://amzn.to/3xYz?tag=b"),
+        // `||youtu.be^$removeparam=si`
+        ("https://youtu.be/dQw4w9WgXcQ?si=Ab12Cd34", "https://youtu.be/dQw4w9WgXcQ"),
+    ] {
+        assert_eq!(navigate(e, url).as_deref(), Some(want), "{url}");
+    }
+}
+
+#[test]
+fn removeparam_leaves_functional_parameters_alone() {
+    let e = engine_or_skip!();
+    for url in [
+        // `s` is only stripped on twitter.com / x.com (`to=`), not from
+        // every WordPress search.
+        "https://blog.example.org/?s=privacy+browser",
+        "https://www.google.com/search?q=adblock&hl=en",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42",
+        "https://en.wikipedia.org/w/index.php?title=Special:Search&search=tracking",
+        // Empty values are kept, names are case-sensitive.
+        "https://a.example/?fbclid=&UTM_SOURCE=x",
+        "https://www.amazon.de/dp/B0?asc_source=a",
+    ] {
+        assert_eq!(navigate(e, url), None, "{url}");
+    }
+}
+
+#[test]
+fn removeparam_honors_ubo_exceptions() {
+    let e = engine_or_skip!();
+    // `@@||web.archive.org/*/http$removeparam`: the archived URL is part of
+    // the path; editing it would break the archive lookup.
+    assert_eq!(
+        navigate(e, "https://web.archive.org/web/2024/https://news.example/?fbclid=1&utm_source=x"),
+        None
+    );
+    // `@@||urldefense.com^$removeparam`
+    assert_eq!(navigate(e, "https://urldefense.com/v3/__https://a.example/?utm_source=x__;"), None);
+}
+
+#[test]
+fn removeparam_on_subresources_uses_list_rules_only() {
+    let e = engine_or_skip!();
+    // uBO privacy's generic `$removeparam=fbclid` covers fetch/XHR too.
+    let url = "https://www.example.com/api/item?fbclid=IwAR0&id=3";
+    let r = check(e, url, "www.example.com", "xmlhttprequest");
+    assert!(!r.should_block, "{r:?}");
+    assert_eq!(r.rewritten_url.as_deref(), Some("https://www.example.com/api/item?id=3"), "{r:?}");
+    // EasyPrivacy blocks cxense outright (uBO also strips its widget
+    // parameters; the proxy ignores rewrites of blocked requests).
+    let r = check(
+        e,
+        "https://api.cxense.com/public/widget/data?widgetId=w1&sid=s2&json=1",
+        "www.example.com",
+        "xmlhttprequest",
+    );
+    assert!(r.should_block, "{r:?}");
+    // The built-in utm_* list is navigation-only.
+    let r = check(
+        e,
+        "https://www.example.com/api/signup?utm_source=ad",
+        "www.example.com",
+        "xmlhttprequest",
+    );
+    assert_eq!(r.rewritten_url, None);
+    // Images aren't a removeparam type by default.
+    let r = check(e, "https://cdn.example.net/x.png?fbclid=1", "www.example.com", "image");
+    assert_eq!(r.rewritten_url, None);
+}
+
+#[test]
+fn builtin_params_do_not_duplicate_list_rules() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("lists");
+    let Ok(privacy) = std::fs::read_to_string(dir.join("ubo-privacy.txt")) else {
+        eprintln!("skipping: run tools/shield_bench/fetch_lists.sh first");
+        return;
+    };
+    let mut b = EngineBuilder::new(false);
+    let all = b.builtin_params();
+    b.add_list(&privacy, true);
+    let remaining = b.builtin_params();
+    // fbclid, gclid, msclkid, mc_eid, ... come from the list; utm_* don't.
+    assert!(remaining < all, "{remaining} vs {all}");
+    assert!(remaining >= 20, "utm_* should remain built in: {remaining}");
+}

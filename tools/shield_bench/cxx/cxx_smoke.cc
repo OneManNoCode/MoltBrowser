@@ -90,6 +90,20 @@ int32_t run_cxx_smoke(rust::Str list_text, rust::Str resources_json) {
   Expect(Contains(css, ".generic-ad{display:none!important}"),
          "hidden_class_id_css via CxxVector<CxxString>");
 
+  // Navigation removeparam (built-in utm_* list), as
+  // MoltShieldNavigationInterceptor asks for it: own host as source,
+  // first-party, type "document".
+  r = restored->check_request(
+      "https://www.example.com/a?utm_source=x&id=1", "www.example.com",
+      "www.example.com", "document", /*third_party=*/false, "GET");
+  Expect(!r.should_block &&
+             std::string(r.rewritten_url) == "https://www.example.com/a?id=1",
+         "navigation removeparam rewrite");
+  r = restored->check_request("https://www.example.com/a?id=1",
+                              "www.example.com", "www.example.com",
+                              "document", false, "GET");
+  Expect(r.rewritten_url.empty(), "no rewrite without tracking params");
+
   return g_failures;
 }
 
