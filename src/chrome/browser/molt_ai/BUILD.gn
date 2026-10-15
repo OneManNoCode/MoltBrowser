@@ -33,10 +33,9 @@ source_set("molt_ai_dom") {
   ]
 }
 
-# WebAgent — autonomous ReAct-loop browsing agent.
-# Replaces the dead agent_engine.cc (delisted 2026-05-20 in code review
-# CRITICAL #1 — prompt injection via unescaped JS concatenation).
-# All JS in this new agent is built through base::JSONWriter / JSQ().
+# WebAgent — autonomous ReAct-loop browsing agent (it replaced the old
+# AgentEngine, whose sources are gone). All JS in this agent is built
+# through base::JSONWriter / JSQ().
 source_set("molt_ai_agents") {
   sources = [
     "agents/web_agent.cc",
@@ -55,17 +54,6 @@ source_set("molt_ai_agents") {
   # web_agent.h exposes agent_safety types (navigation allowlist, element
   # probe, prompt fencing).
   public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
-}
-
-source_set("molt_ai_security") {
-  sources = [
-    "security/action_validator.cc",
-    "security/action_validator.h",
-  ]
-
-  deps = [
-    "//base",
-  ]
 }
 
 source_set("molt_ai_embeddings") {
@@ -224,7 +212,6 @@ group("molt_ai") {
     ":molt_ai_runtime",
     ":molt_ai_dom",
     ":molt_ai_agents",
-    ":molt_ai_security",
     ":molt_ai_memory",
     ":molt_ai_models",
     ":molt_ai_embeddings",

@@ -69,14 +69,6 @@ StructuredPage DOMInterpreter::ParseHTML(const std::string& html,
   return page;
 }
 
-StructuredPage DOMInterpreter::ParseTab(int tab_id) const {
-  // TODO: Integration with Chromium's content layer
-  // Will use RenderFrameHost::ExecuteJavaScript() to extract DOM
-  // or access the DOM tree directly through the content API
-  StructuredPage page;
-  return page;
-}
-
 std::vector<ButtonInfo> DOMInterpreter::ExtractButtons(
     const std::string& html) const {
   std::vector<ButtonInfo> buttons;
@@ -273,21 +265,6 @@ std::string DOMInterpreter::ExtractMainContent(const std::string& html) const {
   content = CleanWhitespace(content);
 
   return content;
-}
-
-std::string DOMInterpreter::ExtractBySelector(
-    const std::string& html, const std::string& selector) const {
-  // TODO: Full CSS selector support
-  // For now, support simple tag and class selectors
-  // Production will use Chromium's Blink CSS selector engine
-  return "";
-}
-
-std::string DOMInterpreter::GetElementAtPosition(int tab_id,
-                                                   int x, int y) const {
-  // TODO: Integration with Chromium's hit testing
-  // Uses RenderWidgetHost::GetRenderWidgetHostViewAtPoint()
-  return "";
 }
 
 std::string DOMInterpreter::TruncateToTokenLimit(const std::string& content,

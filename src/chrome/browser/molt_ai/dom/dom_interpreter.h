@@ -117,9 +117,6 @@ class DOMInterpreter {
   StructuredPage ParseHTML(const std::string& html,
                            const std::string& url) const;
 
-  // Parse DOM from a live browser tab (integrates with Chromium content layer)
-  StructuredPage ParseTab(int tab_id) const;
-
   // Extract only interactive elements (for agent actions)
   std::vector<ButtonInfo> ExtractButtons(const std::string& html) const;
   std::vector<LinkInfo> ExtractLinks(const std::string& html) const;
@@ -127,13 +124,6 @@ class DOMInterpreter {
 
   // Extract main content text (article body, removing nav/ads/footer)
   std::string ExtractMainContent(const std::string& html) const;
-
-  // Extract structured data from specific CSS selectors
-  std::string ExtractBySelector(const std::string& html,
-                                 const std::string& selector) const;
-
-  // Get element at coordinates (for agent click targeting)
-  std::string GetElementAtPosition(int tab_id, int x, int y) const;
 
   // Truncate content to fit within token limit
   static std::string TruncateToTokenLimit(const std::string& content,

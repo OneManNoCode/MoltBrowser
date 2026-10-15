@@ -4,9 +4,6 @@
 # Shared safety rules for page-driving features: the WebAgent ReAct loop,
 # chat [[ACTION ...]] actions and automation replay. Pure logic (no content/
 # layer), so it links into the standalone molt_ai_unittests binary.
-#
-# (security/action_validator.* is built by //chrome/browser/molt_ai:
-# molt_ai_security and is unrelated to this target.)
 
 source_set("agent_safety") {
   sources = [
