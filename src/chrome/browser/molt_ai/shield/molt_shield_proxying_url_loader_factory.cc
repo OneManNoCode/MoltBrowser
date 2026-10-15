@@ -14,6 +14,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -373,6 +374,11 @@ void MoltShieldProxyingURLLoaderFactory::MaybeProxy(
     const net::IsolationInfo& isolation_info,
     network::URLLoaderFactoryBuilder& factory_builder) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  // Kill switch (chrome://flags/#molt-shield-request-proxy or
+  // --disable-molt-shield): no proxy is installed at all.
+  if (!molt_shield::IsRequestProxyEnabled()) {
+    return;
+  }
   if (!browser_context || !ShouldProxy(type)) {
     return;
   }

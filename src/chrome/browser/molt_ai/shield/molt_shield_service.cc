@@ -15,6 +15,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_request_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/browser/browser_thread.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
@@ -71,19 +72,30 @@ void MoltShieldService::Initialize() {
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
   engine_.emplace(engine_task_runner_);
 
-  // First task on the engine sequence: every Check() posted after this
-  // waits for the engine instead of being answered "allow".
-  engine_.AsyncCall(&MoltShieldEngine::Startup)
-      .WithArgs(dir_)
-      .Then(base::BindOnce(&MoltShieldService::OnStartupLoaded,
-                           weak_factory_.GetWeakPtr()));
-
   lists_ = std::make_unique<FilterListManager>(
       dir_, file_task_runner_,
       base::BindRepeating(&MoltShieldService::GetLoaderFactory,
                           base::Unretained(this)),
       base::BindRepeating(&MoltShieldService::OnListPassDone,
                           weak_factory_.GetWeakPtr()));
+
+  // --disable-molt-shield: the hooks are already bypassed; also never load
+  // the engine or start the list updater (no disk or network activity). The
+  // settings page still works and says why everything is off.
+  if (molt_shield::IsMoltShieldDisabledByCommandLine()) {
+    disabled_by_command_line_ = true;
+    ApplySettingsToAtomics();
+    LOG(WARNING) << "[MoltShield] disabled by --"
+                 << molt_shield::switches::kDisableMoltShield;
+    return;
+  }
+
+  // First task on the engine sequence: every Check() posted after this
+  // waits for the engine instead of being answered "allow".
+  engine_.AsyncCall(&MoltShieldEngine::Startup)
+      .WithArgs(dir_)
+      .Then(base::BindOnce(&MoltShieldService::OnStartupLoaded,
+                           weak_factory_.GetWeakPtr()));
 }
 
 void MoltShieldService::OnStartupLoaded(
@@ -103,7 +115,8 @@ void MoltShieldService::OnStartupLoaded(
 
 void MoltShieldService::ApplySettingsToAtomics() {
   const ShieldSettings& s = lists_->state().settings;
-  enabled_.store(s.enabled, std::memory_order_relaxed);
+  enabled_.store(s.enabled && !disabled_by_command_line_,
+                 std::memory_order_relaxed);
   cosmetic_enabled_.store(s.cosmetic, std::memory_order_relaxed);
   consent_killer_enabled_.store(s.consent_killer, std::memory_order_relaxed);
 }
@@ -174,6 +187,9 @@ ShieldStats MoltShieldService::GetStats() const {
 
 void MoltShieldService::SetEnabled(bool enabled) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!CanChangeSettings()) {
+    return;
+  }
   lists_->mutable_settings().enabled = enabled;
   lists_->SaveState();
   ApplySettingsToAtomics();
@@ -181,6 +197,9 @@ void MoltShieldService::SetEnabled(bool enabled) {
 
 void MoltShieldService::SetCosmeticEnabled(bool enabled) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!CanChangeSettings()) {
+    return;
+  }
   lists_->mutable_settings().cosmetic = enabled;
   lists_->SaveState();
   ApplySettingsToAtomics();
@@ -188,6 +207,9 @@ void MoltShieldService::SetCosmeticEnabled(bool enabled) {
 
 void MoltShieldService::SetConsentKillerEnabled(bool enabled) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!CanChangeSettings()) {
+    return;
+  }
   lists_->mutable_settings().consent_killer = enabled;
   lists_->SaveState();
   ApplySettingsToAtomics();
@@ -229,11 +251,22 @@ std::vector<ListStatus> MoltShieldService::GetListStatus() const {
 }
 
 void MoltShieldService::SetListEnabled(const std::string& id, bool enabled) {
-  lists_->SetListEnabled(id, enabled);
+  if (CanChangeSettings()) {
+    lists_->SetListEnabled(id, enabled);
+  }
 }
 
 void MoltShieldService::UpdateListsNow() {
-  lists_->UpdateNow();
+  if (CanChangeSettings()) {
+    lists_->UpdateNow();
+  }
+}
+
+bool MoltShieldService::CanChangeSettings() const {
+  // The persisted state arrives with the engine (OnStartupLoaded), and never
+  // under --disable-molt-shield. Saving before that would overwrite it with
+  // defaults, and an update pass would hit the network.
+  return engine_ready_;
 }
 
 bool MoltShieldService::IsUpdating() const {

@@ -10,6 +10,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_request_utils.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
@@ -79,7 +80,10 @@ void CheckThenConnect(
 
 bool ShouldInterceptWebSocket(content::RenderFrameHost* frame) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!frame) {
+  // Kill switch (chrome://flags/#molt-shield-websocket or
+  // --disable-molt-shield): never intercept, so content (or the extensions
+  // proxy) creates the socket exactly as without MoltShield.
+  if (!molt_shield::IsWebSocketEnabled() || !frame) {
     return false;
   }
   MoltShieldService* service = MoltShieldService::Get();

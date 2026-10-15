@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index abe1dbb4ec313cd2b13d0cf8b0c6da39c5a57c65..937fcc8f16c776f81973fbfdd8ffa62c8dfc4b0f 100644
+index abe1dbb4ec313cd2b13d0cf8b0c6da39c5a57c65..1c03a9626920e40fe4eee19e16aeeecbb3cca028 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
 @@ -60,6 +60,7 @@
@@ -16,12 +16,13 @@ index abe1dbb4ec313cd2b13d0cf8b0c6da39c5a57c65..937fcc8f16c776f81973fbfdd8ffa62c
  #include "chrome/renderer/net/net_error_helper.h"
  #include "chrome/renderer/net_benchmarking_extension.h"
  #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
-@@ -604,6 +605,9 @@ void ChromeContentRendererClient::RenderFrameCreated(
+@@ -604,6 +605,10 @@ void ChromeContentRendererClient::RenderFrameCreated(
  
    new prerender::NoStatePrefetchRenderFrameObserver(render_frame);
  
-+  // MoltBrowser: MoltShield hide CSS + scriptlets at document start.
-+  new molt_ai::shield::CosmeticFilterAgent(render_frame);
++  // MoltBrowser: MoltShield hide CSS + scriptlets at document start (unless
++  // its kill switch is off).
++  molt_ai::shield::CosmeticFilterAgent::MaybeCreate(render_frame);
 +
    auto content_settings_delegate =
        std::make_unique<ChromeContentSettingsAgentDelegate>(render_frame);

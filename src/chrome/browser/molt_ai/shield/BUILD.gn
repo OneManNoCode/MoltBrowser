@@ -54,6 +54,7 @@ source_set("shield") {
     ":core",
     "//build/rust:cxx_cppdeps",
     "//chrome/browser/profiles:profile",
+    "//chrome/common/molt_ai/shield:features",
     "//chrome/common/molt_ai/shield:mojom",
     "//content/public/browser",
     "//mojo/public/cpp/bindings",
@@ -93,11 +94,15 @@ source_set("settings_handler") {
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "molt_shield_unittest.cc" ]
+  sources = [
+    "molt_shield_kill_switch_unittest.cc",
+    "molt_shield_unittest.cc",
+  ]
   deps = [
     ":core",
     "//base",
     "//base/test:test_support",
+    "//chrome/common/molt_ai/shield:features",
     "//testing/gtest",
     "//url",
   ]

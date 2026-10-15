@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_store.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/common/webui_url_constants.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/reload_type.h"
@@ -114,6 +116,15 @@ base::DictValue MoltShieldSettingsHandler::BuildState() {
   state.Set("updating", service->IsUpdating());
   state.Set("lastUpdateCheck", ToJsTime(service->last_update_check()));
   state.Set("engine", service->EngineVersion());
+
+  // Runtime kill switches (molt_shield_features.h).
+  state.Set("disabledByCommandLine",
+            molt_shield::IsMoltShieldDisabledByCommandLine());
+  base::ListValue hooks_off;
+  for (std::string_view flag : molt_shield::FlagNamesOfDisabledHooks()) {
+    hooks_off.Append(flag);
+  }
+  state.Set("hooksOff", std::move(hooks_off));
 
   const ShieldStats stats = service->GetStats();
   base::DictValue s;
@@ -328,9 +339,24 @@ const char kMoltShieldSettingsJs[] = R"JS(
     });
   }
 
+  function renderKillSwitches(box) {
+    var text = '';
+    if (state.disabledByCommandLine) {
+      text = 'MoltShield is off for this run: the browser was started with ' +
+             '--disable-molt-shield. Its settings can be changed again ' +
+             'after a restart without that switch.';
+    } else if (state.hooksOff && state.hooksOff.length) {
+      text = 'Parts of MoltShield are turned off in chrome://flags (' +
+             state.hooksOff.join(', ') + '). The switches below do not ' +
+             'turn them back on.';
+    }
+    if (text) box.appendChild(el('div', 'desc shield-killswitch', text));
+  }
+
   function renderGlobals() {
     var box = document.getElementById('shieldGlobals');
     box.replaceChildren();
+    renderKillSwitches(box);
     var rows = [
       ['enabled', 'Block ads & trackers (all sites)', state.enabled],
       ['cosmetic', 'Hide ad elements and run anti-ad scriptlets',
@@ -378,7 +404,8 @@ const char kMoltShieldSettingsJs[] = R"JS(
     document.getElementById('shieldUpdateStatus').textContent =
         (state.updating ? 'Updating… ' : '') + 'Last check: ' +
         fmtTime(state.lastUpdateCheck) + ' · engine ' + state.engine +
-        (state.ready ? '' : ' (loading)');
+        (state.disabledByCommandLine ? ' (not loaded: --disable-molt-shield)'
+                                     : (state.ready ? '' : ' (loading)'));
   }
 
   function renderTabs() {
@@ -454,6 +481,12 @@ const char kMoltShieldSettingsJs[] = R"JS(
     renderLists();
     renderTabs();
     renderExceptions();
+    if (state.disabledByCommandLine) {
+      // The browser ignores changes this run; say so instead of pretending.
+      section.querySelectorAll('input, button').forEach(function(c) {
+        c.disabled = true;
+      });
+    }
   }
 
   document.getElementById('shieldUpdateBtn').addEventListener('click',

@@ -10,6 +10,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -36,6 +37,11 @@ MoltShieldURLLoaderThrottle::MaybeCreateForKeepAlive(
     content::BrowserContext* browser_context,
     content::FrameTreeNodeId frame_tree_node_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  // Kill switch (chrome://flags/#molt-shield-keepalive or
+  // --disable-molt-shield): no throttle.
+  if (!molt_shield::IsKeepAliveEnabled()) {
+    return nullptr;
+  }
   MoltShieldService* service = MoltShieldService::Get();
   if (browser_context) {
     service->RegisterProfile(Profile::FromBrowserContext(browser_context));

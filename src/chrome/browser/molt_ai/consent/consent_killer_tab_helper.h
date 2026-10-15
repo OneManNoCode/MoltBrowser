@@ -21,7 +21,8 @@
 // +4000 ms timers.
 //
 // Off when MoltShield's "consent killer" switch is off or Shields are down
-// for the site.
+// for the site. With the kMoltShieldConsentKiller kill switch off (or
+// --disable-molt-shield) the helper never observes its tab at all.
 
 #ifndef CHROME_BROWSER_MOLT_AI_CONSENT_CONSENT_KILLER_TAB_HELPER_H_
 #define CHROME_BROWSER_MOLT_AI_CONSENT_CONSENT_KILLER_TAB_HELPER_H_

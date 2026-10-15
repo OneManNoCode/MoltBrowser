@@ -10,6 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -279,8 +280,14 @@ bool ConsentKillerTabHelper::IsKnownCmpHost(std::string_view host) {
 }
 
 ConsentKillerTabHelper::ConsentKillerTabHelper(content::WebContents* contents)
-    : content::WebContentsObserver(contents),
-      content::WebContentsUserData<ConsentKillerTabHelper>(*contents) {}
+    : content::WebContentsUserData<ConsentKillerTabHelper>(*contents) {
+  // Kill switch (chrome://flags/#molt-shield-consent-killer or
+  // --disable-molt-shield): never observe the tab, so nothing is injected
+  // and the MoltShield service isn't even created on our behalf.
+  if (molt_shield::IsConsentKillerEnabled()) {
+    Observe(contents);
+  }
+}
 
 ConsentKillerTabHelper::~ConsentKillerTabHelper() = default;
 

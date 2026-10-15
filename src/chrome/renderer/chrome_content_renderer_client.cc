@@ -605,8 +605,9 @@ void ChromeContentRendererClient::RenderFrameCreated(
 
   new prerender::NoStatePrefetchRenderFrameObserver(render_frame);
 
-  // MoltBrowser: MoltShield hide CSS + scriptlets at document start.
-  new molt_ai::shield::CosmeticFilterAgent(render_frame);
+  // MoltBrowser: MoltShield hide CSS + scriptlets at document start (unless
+  // its kill switch is off).
+  molt_ai::shield::CosmeticFilterAgent::MaybeCreate(render_frame);
 
   auto content_settings_delegate =
       std::make_unique<ChromeContentSettingsAgentDelegate>(render_frame);

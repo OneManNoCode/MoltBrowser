@@ -11,6 +11,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/render_frame_host.h"
@@ -35,6 +36,14 @@ NAVIGATION_HANDLE_USER_DATA_KEY_IMPL(ShieldNavigationData);
 // static
 void MoltShieldNavigationThrottle::MaybeAdd(
     content::NavigationThrottleRegistry& registry) {
+  // Kill switches (chrome://flags/#molt-shield-frame-blocking,
+  // #molt-shield-cosmetics, --disable-molt-shield): with both off no
+  // throttle (and no tab helper) is added.
+  const bool frame_blocking = molt_shield::IsFrameBlockingEnabled();
+  const bool cosmetics = molt_shield::IsCosmeticsEnabled();
+  if (!frame_blocking && !cosmetics) {
+    return;
+  }
   content::NavigationHandle& handle = registry.GetNavigationHandle();
   if (!registry.IsHTTPOrHTTPS() || handle.IsSameDocument()) {
     return;
@@ -63,14 +72,18 @@ void MoltShieldNavigationThrottle::MaybeAdd(
   if (!AreShieldsUpForSite(web_contents->GetBrowserContext(), top_frame_url)) {
     return;
   }
+  const bool check_frame = frame_blocking && !is_top_level;
+  const bool want_cosmetics = cosmetics && service->IsCosmeticEnabled();
+  if (!check_frame && !want_cosmetics) {
+    return;
+  }
 
   // Delivers the cosmetics at ReadyToCommitNavigation and keeps per-tab
   // counts.
   MoltShieldTabHelper::CreateForWebContents(web_contents);
 
   registry.AddThrottle(std::make_unique<MoltShieldNavigationThrottle>(
-      registry, /*check_frame=*/!is_top_level,
-      /*want_cosmetics=*/service->IsCosmeticEnabled()));
+      registry, check_frame, want_cosmetics));
 }
 
 MoltShieldNavigationThrottle::MoltShieldNavigationThrottle(

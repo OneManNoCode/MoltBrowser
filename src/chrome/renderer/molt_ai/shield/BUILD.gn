@@ -12,6 +12,7 @@ source_set("shield") {
   ]
   deps = [
     "//base",
+    "//chrome/common/molt_ai/shield:features",
     "//chrome/common/molt_ai/shield:mojom",
     "//content/public/renderer",
     "//mojo/public/cpp/bindings",

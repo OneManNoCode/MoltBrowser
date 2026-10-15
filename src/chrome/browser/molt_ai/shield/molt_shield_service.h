@@ -109,6 +109,8 @@ class MoltShieldService : public ProfileObserver {
   void UpdateListsNow();
   bool IsUpdating() const;
   bool IsReady() const { return engine_ready_; }
+  // --disable-molt-shield: nothing was started this run.
+  bool disabled_by_command_line() const { return disabled_by_command_line_; }
   base::Time last_update_check() const;
 
   // "adblock-rust X / molt-N" for reports.
@@ -130,6 +132,9 @@ class MoltShieldService : public ProfileObserver {
   void OnRebuilt(std::unique_ptr<MoltShieldEngine::Compiled> compiled);
   void OnEngineSwapped(MoltShieldEngine::Summary summary);
   void ApplySettingsToAtomics();
+  // False until the persisted state is loaded (never, under
+  // --disable-molt-shield); setters are no-ops until then.
+  bool CanChangeSettings() const;
   scoped_refptr<network::SharedURLLoaderFactory> GetLoaderFactory();
 
   base::FilePath dir_;
@@ -139,6 +144,7 @@ class MoltShieldService : public ProfileObserver {
   std::unique_ptr<FilterListManager> lists_;
 
   bool engine_ready_ = false;
+  bool disabled_by_command_line_ = false;
   bool rebuild_in_flight_ = false;
   bool rebuild_pending_ = false;
 

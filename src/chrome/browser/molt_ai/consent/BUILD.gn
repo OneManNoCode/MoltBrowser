@@ -15,6 +15,7 @@ source_set("consent") {
     "//base",
     # Consent killer switch + per-site Shields state.
     "//chrome/browser/molt_ai/shield",
+    "//chrome/common/molt_ai/shield:features",
     "//content/public/browser",
     "//url",
   ]

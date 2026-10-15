@@ -110,6 +110,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
@@ -3160,6 +3161,14 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     };
 
     command_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
+
+    // MoltBrowser: --disable-molt-shield also keeps the renderer's
+    // CosmeticFilterAgent from being created.
+    static const char* const kMoltShieldSwitchNames[] = {
+        molt_shield::switches::kDisableMoltShield,
+    };
+    command_line->CopySwitchesFrom(browser_command_line,
+                                   kMoltShieldSwitchNames);
   } else if (process_type == switches::kUtilityProcess) {
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     static const char* const kSwitchNames[] = {

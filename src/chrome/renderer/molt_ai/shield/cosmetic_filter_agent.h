@@ -38,6 +38,12 @@ namespace molt_ai::shield {
 class CosmeticFilterAgent : public content::RenderFrameObserver,
                             public molt_shield::mojom::CosmeticFiltersAgent {
  public:
+  // Creates the agent for `render_frame` unless the kMoltShieldCosmetics kill
+  // switch (chrome://flags/#molt-shield-cosmetics) is off or
+  // --disable-molt-shield is set, in which case nothing is attached to the
+  // frame.
+  static void MaybeCreate(content::RenderFrame* render_frame);
+
   // Self-owned: deleted when the frame goes away.
   explicit CosmeticFilterAgent(content::RenderFrame* render_frame);
   CosmeticFilterAgent(const CosmeticFilterAgent&) = delete;

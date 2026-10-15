@@ -8,6 +8,7 @@
 
 #include "base/functional/bind.h"
 #include "base/strings/string_split.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -34,6 +35,14 @@ bool SameDocumentUrl(const GURL& a, const GURL& b) {
 }
 
 }  // namespace
+
+// static
+void CosmeticFilterAgent::MaybeCreate(content::RenderFrame* render_frame) {
+  if (!molt_shield::IsCosmeticsEnabled()) {
+    return;
+  }
+  new CosmeticFilterAgent(render_frame);  // Self-owned.
+}
 
 CosmeticFilterAgent::CosmeticFilterAgent(content::RenderFrame* render_frame)
     : content::RenderFrameObserver(render_frame) {

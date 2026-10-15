@@ -83,6 +83,8 @@ const SHIELD_STATE = {
   tabs: [{key: 7, site: 'example.com', title: '<img src=x onerror=alert(1)>',
           blocked: 12, shieldsUp: true}],
   exceptions: ['https://[*.]broken.example'],
+  // Kill switches: one hook turned off in chrome://flags.
+  disabledByCommandLine: false, hooksOff: ['molt-shield-websocket'],
 };
 
 const PAGES = [
@@ -210,6 +212,10 @@ const PAGES = [
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));
      assert.strictEqual(doc.querySelectorAll('#shieldLists input[type=checkbox]').length, 2);
      assert.strictEqual(doc.querySelectorAll('#shieldGlobals input[type=checkbox]').length, 3);
+     assert(doc.querySelector('#shieldGlobals .shield-killswitch').textContent
+                .includes('molt-shield-websocket'), 'kill-switch notice shown');
+     assert.strictEqual(doc.querySelectorAll('#shieldSection input:disabled').length, 0,
+                        'controls stay usable unless --disable-molt-shield');
      assert.strictEqual(doc.querySelectorAll('#vaultList b').length, 0, 'usernames are text');
      assert.strictEqual(doc.getElementById('vaultStorageWarn').style.display, '', 'keyring warning shown');
      const shows = Array.from(doc.querySelectorAll('#vaultList button')).filter((b) => b.textContent === 'Show');
