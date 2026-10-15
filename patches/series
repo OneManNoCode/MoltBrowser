@@ -112,6 +112,7 @@ components/new_or_sad_tab_strings.grdp.patch
 components/omnibox/browser/BUILD.gn.patch
 components/omnibox/browser/aim_eligibility_service_features.cc.patch
 components/omnibox/browser/autocomplete_controller.cc.patch
+components/omnibox/browser/search_provider.cc.patch
 components/omnibox/common/omnibox_features.cc.patch
 components/omnibox_pedal_ui_strings.grdp.patch
 components/omnibox_strings.grdp.patch
