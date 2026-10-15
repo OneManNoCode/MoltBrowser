@@ -56,29 +56,6 @@ source_set("molt_ai_agents") {
   public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
 }
 
-source_set("molt_ai_embeddings") {
-  sources = [
-    "embeddings/minilm_embedder.cc",
-    "embeddings/minilm_embedder.h",
-  ]
-
-  deps = [
-    "//base",
-  ]
-}
-
-source_set("molt_ai_memory") {
-  sources = [
-    "memory/memory_engine.cc",
-    "memory/memory_engine.h",
-  ]
-
-  deps = [
-    ":molt_ai_embeddings",
-    "//base",
-  ]
-}
-
 # AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
 # (registered directly in autocomplete_controller.cc)
 
@@ -195,8 +172,6 @@ group("molt_ai") {
     ":molt_ai_runtime",
     ":molt_ai_dom",
     ":molt_ai_agents",
-    ":molt_ai_memory",
-    ":molt_ai_embeddings",
     ":molt_ai_import",
     ":molt_shield",
     ":molt_update",
