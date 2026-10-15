@@ -9,6 +9,7 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -72,6 +73,9 @@ void NavigatorBase::Trace(Visitor* visitor) const {
 unsigned int NavigatorBase::hardwareConcurrency() const {
   unsigned int hardware_concurrency =
       NavigatorConcurrentHardware::hardwareConcurrency();
+  // MoltBrowser: per-site value in [2, real]; one fixed value in MoltNet.
+  hardware_concurrency = molt_fingerprinting::HardwareConcurrency(
+      GetExecutionContext(), hardware_concurrency);
 
   probe::ApplyHardwareConcurrencyOverride(
       probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
