@@ -8,11 +8,13 @@
 #   tor_service.*            — read-only circuit/status queries
 #   molt_net_routing.*       — the isolated MoltNet (Tor) profile
 
-# Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation
-# and bridge-line validation. Split out so molt_ai_unittests can test it
-# without pulling in Profile / content.
+# Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
+# bridge-line validation and .onion / Onion-Location checks. Split out so
+# molt_ai_unittests can test it without pulling in Profile / content.
 source_set("protocol") {
   sources = [
+    "onion_util.cc",
+    "onion_util.h",
     "tor_control_protocol.cc",
     "tor_control_protocol.h",
     "torrc_builder.cc",
@@ -75,11 +77,12 @@ source_set("tor") {
 }
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
-# generation, bridge-line validation). Picked up by
+# generation, bridge-line validation, .onion / Onion-Location). Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "onion_util_unittest.cc",
     "tor_control_protocol_unittest.cc",
     "torrc_builder_unittest.cc",
   ]
