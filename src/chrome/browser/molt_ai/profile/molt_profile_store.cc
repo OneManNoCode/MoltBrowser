@@ -82,7 +82,9 @@ bool MoltProfileStore::Save(const base::DictValue& dict) {
     return false;
   }
   std::string ciphertext;
-  if (!OSCrypt::EncryptString(plaintext, &ciphertext)) {
+  // Fails unless an OS-backed key encrypted it (never OSCrypt's hard-coded
+  // Linux fallback key).
+  if (!molt_ai::EncryptSecretForStorage(plaintext, &ciphertext)) {
     LOG(WARNING) << "[MoltProfileStore] encrypt failed";
     return false;
   }

@@ -107,6 +107,7 @@
 #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
+#include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
@@ -5653,6 +5654,8 @@ void ChromeContentBrowserClient::CreateThrottlesForNavigation(
   // MoltShield: ad frames (collapsed) + cosmetic filtering. Never blocks
   // top-level documents.
   molt_ai::shield::MoltShieldNavigationThrottle::MaybeAdd(registry);
+  // MoltBrowser: web pages may not open chrome:// pages via molt:// (S19).
+  molt_ai::security::WebUINavigationThrottle::MaybeAdd(registry);
 }
 
 std::vector<std::unique_ptr<content::CommitDeferringCondition>>

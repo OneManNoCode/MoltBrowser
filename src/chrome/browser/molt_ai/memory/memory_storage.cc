@@ -195,7 +195,14 @@ bool MemoryStorage::EnsureSchema(const MemoryEmbedder& embedder,
         !meta.SetValue(kEmbedderVersionMetaKey,
                        static_cast<int64_t>(kHashingEmbedderVersion)) ||
         !tx.Commit()) {
-      LOG(WARNING) << "[MoltMemory] re-embedding failed; keeping old vectors";
+      // Don't run with old vectors: queries and new chunks would use the
+      // new embedder, so old and new vectors would silently mix. The
+      // transaction rolled back; memory is off this session and the
+      // re-embed is retried on the next launch.
+      LOG(ERROR) << "[MoltMemory] re-embedding for embedder v"
+                 << kHashingEmbedderVersion
+                 << " failed; memory disabled this session";
+      return false;
     }
   }
   return true;

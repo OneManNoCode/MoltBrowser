@@ -82,7 +82,9 @@ struct ModelRegistryEntry {
   int param_billions;
   const char* quantization;
   const char* company;
-  const char* license_id;    // "" = no acceptance needed (Apache/MIT)
+  // Key into kLicenses: the terms the weights are distributed under. Shown
+  // in the model picker; some must also be accepted before download.
+  const char* license;
   // Hidden entries are not offered anywhere until they are pinned (repo,
   // revision and hash confirmed).
   bool hidden;
@@ -104,7 +106,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      1,
      "Q4_K_M",
      "TinyLlama",
-     "",
+     "apache-2.0",
      false},
 
     // Qwen (Alibaba) — Qwen3.5 4B. TODO(pin): the exact GGUF repo/file for
@@ -121,7 +123,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      4,
      "Q4_K_M",
      "Qwen",
-     "",
+     "",  // TODO(pin): confirm the terms; until then "see the model card"
      true},
 
     // Gemma — Gemma 4 E4B. Hidden until pinned. Runtime support is in place:
@@ -172,7 +174,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      8,
      "Q4_K_M",
      "Qwen",
-     "",
+     "apache-2.0",
      false},
 
     // Gemma (Google DeepMind) — Gemma 3 12B, open weights. Labeled "Gemma".
@@ -202,7 +204,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      12,
      "Q4_K_M",
      "Mistral AI",
-     "",
+     "apache-2.0",
      false},
 
     // Microsoft — Phi-4 14B, MIT.
@@ -217,7 +219,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      14,
      "Q4_K_M",
      "Microsoft",
-     "",
+     "mit",
      false},
 
     // OpenAI — gpt-oss 20B, Apache 2.0 open weights (native MXFP4 quant).
@@ -232,26 +234,33 @@ const ModelRegistryEntry kModelRegistry[] = {
      20,
      "MXFP4",
      "OpenAI",
-     "",
+     "apache-2.0",
      false},
 };
 
 constexpr size_t kModelRegistrySize =
     sizeof(kModelRegistry) / sizeof(kModelRegistry[0]);
 
-// Terms the user must accept (once per license) before downloading. The
-// links avoid vendor domains that would break the zero-"Google"-string
-// product rule; the Hugging Face model card shows the full Gemma terms.
+// The terms each model's weights are distributed under, shown in the model
+// picker (A13). Those with requires_acceptance must also be accepted (once
+// per license, recorded per model) before downloading; their ids are what
+// accepted_licenses.json stores, so they must not change. The links avoid
+// vendor domains that would break the zero-"Google"-string product rule;
+// the Hugging Face model card shows the full Gemma terms.
 struct LicenseEntry {
   const char* id;
   const char* name;
   const char* url;
+  bool requires_acceptance;
 };
 const LicenseEntry kLicenses[] = {
+    {"apache-2.0", "Apache License 2.0",
+     "https://www.apache.org/licenses/LICENSE-2.0", false},
+    {"mit", "MIT License", "https://opensource.org/license/mit", false},
     {"llama3.1", "Llama 3.1 Community License",
-     "https://www.llama.com/llama3_1/license/"},
+     "https://www.llama.com/llama3_1/license/", true},
     {"gemma", "Gemma Terms of Use",
-     "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF"},
+     "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF", true},
 };
 
 const LicenseEntry* FindLicense(const std::string& id) {
@@ -496,10 +505,18 @@ struct BrowserAIRuntime::Impl {
       info.parameter_count_billions = entry.param_billions;
       info.quantization = entry.quantization;
       info.company = entry.company;
-      if (const LicenseEntry* lic = FindLicense(entry.license_id)) {
-        info.license_id = lic->id;
+      if (const LicenseEntry* lic = FindLicense(entry.license)) {
         info.license_name = lic->name;
         info.license_url = lic->url;
+        if (lic->requires_acceptance) {
+          info.license_id = lic->id;
+        }
+      } else {
+        // Terms not recorded yet: point at the model card rather than
+        // showing nothing.
+        info.license_name = "See the model card";
+        info.license_url =
+            std::string("https://huggingface.co/") + entry.huggingface_id;
       }
 
       // Set local file path. is_downloaded is left false here and updated
@@ -1670,103 +1687,6 @@ GenerationResult BrowserAIRuntime::StreamChat(const ChatPrompt& chat,
             << (outcome.cancelled ? " (cancelled)" : "") << std::endl;
   TouchActivity();
   return result;
-}
-
-RouteTarget BrowserAIRuntime::RoutePrompt(const std::string& prompt,
-                                           const PageContext& context) const {
-  // Routing decision matrix from V4 spec:
-  // - Page summarization -> LOCAL
-  // - Q&A about page -> LOCAL
-  // - Agent tasks -> LOCAL
-  // - Form fill -> LOCAL
-  // - Complex reasoning -> CLOUD
-  // - Code generation -> CLOUD
-  // - AI Council debate -> HYBRID
-  // - Offline -> LOCAL
-  //
-  // HARD RULE: If PII detected in prompt -> force LOCAL
-
-  // Check for PII indicators (force local routing)
-  const std::vector<std::string> pii_indicators = {
-      "password", "ssn", "social security", "credit card",
-      "bank account", "passport", "driver's license"
-  };
-  for (const auto& indicator : pii_indicators) {
-    if (prompt.find(indicator) != std::string::npos) {
-      return RouteTarget::LOCAL;
-    }
-  }
-
-  // Check prompt length/complexity for routing
-  if (prompt.length() > 2000) {
-    return RouteTarget::CLOUD;  // Complex prompts may need larger models
-  }
-
-  // Default: prefer local inference
-  return RouteTarget::LOCAL;
-}
-
-std::string BrowserAIRuntime::SelectModelForTask(
-    const std::string& task_type) const {
-  // Task-to-model routing from V4 spec:
-  // Research -> Qwen
-  // Reasoning -> LLaMA
-  // Summarization -> small fast model (TinyLlama/Phi)
-  // Code -> LLaMA or Qwen
-  std::lock_guard<std::mutex> lock(impl_->models_mutex);
-  auto loaded = [&](const char* id) {
-    auto it = impl_->models.find(id);
-    return it != impl_->models.end() && it->second.is_loaded;
-  };
-
-  if (task_type == "summarization" || task_type == "quick") {
-    // Prefer smallest loaded model
-    if (loaded("tinyllama-1.1b")) return "tinyllama-1.1b";
-    if (loaded("qwen3-8b")) return "qwen3-8b";
-  }
-
-  if (task_type == "research") {
-    if (loaded("qwen3-8b")) return "qwen3-8b";
-  }
-
-  if (task_type == "reasoning" || task_type == "code") {
-    if (loaded("llama3.1-8b")) return "llama3.1-8b";
-  }
-
-  // Fallback: return whatever is loaded
-  return impl_->active_model_id;
-}
-
-PageContext BrowserAIRuntime::GetPageContext(int tab_id) const {
-  // TODO: Integration with Chromium's content layer
-  // Will use RenderFrameHost to extract DOM content
-  PageContext ctx;
-  ctx.url = "";
-  ctx.title = "";
-  return ctx;
-}
-
-GenerationResult BrowserAIRuntime::SummarizePage(int tab_id,
-                                                   const PromptOptions& options) {
-  PageContext context = GetPageContext(tab_id);
-
-  std::string prompt = "Summarize the following web page:\n\n"
-                       "Title: " + context.title + "\n"
-                       "URL: " + context.url + "\n\n"
-                       "Content:\n" + context.main_content;
-
-  PromptOptions opts = options;
-  if (opts.model_id.empty()) {
-    opts.model_id = SelectModelForTask("summarization");
-  }
-
-  return RunPrompt(prompt, opts);
-}
-
-std::string BrowserAIRuntime::ExtractData(int tab_id,
-                                           const std::string& selector) {
-  // TODO: Use DOMInterpreter to extract structured data
-  return "{}";
 }
 
 HardwareCapability BrowserAIRuntime::GetHardwareCapability() const {

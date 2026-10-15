@@ -69,7 +69,9 @@ the project's license. `git commit -s` adds the line for you.
 
 - AI modules are isolated in `chrome/browser/molt_ai/`
 - All AI operations must go through the `BrowserAIRuntime` class
-- Agent actions must pass through the `ActionValidator` security layer
+- Agent, chat-action and automation page actions must go through
+  `molt_ai/security/agent_safety.*` (and, for workflows, the trust policy in
+  `molt_ai/automation/automation_security.*`)
 - Privacy-sensitive operations require MoltShield integration
 - Local LLM inference uses the llama.cpp runtime exclusively
 

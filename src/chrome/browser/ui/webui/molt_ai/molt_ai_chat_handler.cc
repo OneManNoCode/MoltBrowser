@@ -89,6 +89,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -445,6 +446,15 @@ namespace {
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 using molt_ai::chat_handler_helpers::JsStringLiteral;
 using molt_ai::chat_handler_helpers::SecureClear;
+
+// Unique ID of the tab's last committed NavigationEntry: identifies the
+// document page context was read from. Same value as the side panel's
+// context pushes (AiChatSidePanelWebView).
+int CommittedEntryId(content::WebContents* contents) {
+  content::NavigationEntry* entry =
+      contents->GetController().GetLastCommittedEntry();
+  return entry ? entry->GetUniqueID() : 0;
+}
 using molt_ai::chat_handler_helpers::StringArg;
 
 // ------------------------------------------------------------------
@@ -1003,7 +1013,9 @@ void MoltAIChatHandler::FinishInitChat(std::string callback_id,
     // S13: false until the registry entry is pinned (revision + SHA-256);
     // the picker labels such downloads "unverified".
     model_dict.Set("verified", m.is_verified());
+    // A13: every model's licence, shown (with a link) in the picker.
     model_dict.Set("license_name", m.license_name);
+    model_dict.Set("license_url", m.license_url);
     model_list.Append(std::move(model_dict));
   }
 
@@ -1793,6 +1805,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
           static_cast<int>(m.file_size_bytes / (1024 * 1024)));
     d.Set("verified", m.is_verified());
     d.Set("license_name", m.license_name);
+    d.Set("license_url", m.license_url);
     model_list.Append(std::move(d));
     if (m.is_loaded) {
       loaded_model = m.display_name;
@@ -1840,25 +1853,37 @@ void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
 
   base::DictValue result;
 
-  // Find the browser that owns this WebUI and get the active tab
-  content::WebContents* webui_contents = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
-  if (browser && browser->tab_strip_model()) {
-    content::WebContents* active_tab =
-        browser->tab_strip_model()->GetActiveWebContents();
-    if (active_tab && active_tab != webui_contents) {
-      result.Set("url", active_tab->GetLastCommittedURL().spec());
-      result.Set("title", base::UTF16ToUTF8(active_tab->GetTitle()));
-      result.Set("has_context", true);
-    } else {
-      result.Set("has_context", false);
-    }
+  // The active tab's current committed document. nav_entry_id lets the chat
+  // check that page text it holds (pushed by the side panel) is for this
+  // document and not the previous one (A7).
+  if (content::WebContents* active_tab = GetActiveTabForChat()) {
+    result.Set("url", active_tab->GetLastCommittedURL().spec());
+    result.Set("title", base::UTF16ToUTF8(active_tab->GetTitle()));
+    result.Set("nav_entry_id", CommittedEntryId(active_tab));
+    result.Set("has_context", true);
   } else {
     result.Set("has_context", false);
   }
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));
+}
+
+content::WebContents* MoltAIChatHandler::GetActiveTabForChat() {
+  content::WebContents* webui_contents = web_ui()->GetWebContents();
+  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
+  if (!browser) {
+    // Side panel: not a tab, but it lives in its browser's window. Not
+    // FindLastActive(): another window's tab would be the wrong page.
+    browser =
+        chrome::FindBrowserWithWindow(webui_contents->GetTopLevelNativeWindow());
+  }
+  if (!browser || !browser->tab_strip_model()) {
+    return nullptr;
+  }
+  content::WebContents* active_tab =
+      browser->tab_strip_model()->GetActiveWebContents();
+  return active_tab == webui_contents ? nullptr : active_tab;
 }
 
 // ------------------------------------------------------------------
@@ -2276,34 +2301,9 @@ void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
-  content::WebContents* webui_contents = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
-
-  if (!browser || !browser->tab_strip_model()) {
-    base::DictValue result;
-    result.Set("has_content", false);
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
-    return;
-  }
-
-  content::WebContents* active_tab =
-      browser->tab_strip_model()->GetActiveWebContents();
-
-  if (!active_tab || active_tab == webui_contents) {
-    base::DictValue result;
-    result.Set("has_content", false);
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
-    return;
-  }
-
-  // Store tab info before async JS call
-  std::string url = active_tab->GetLastCommittedURL().spec();
-  std::string title = base::UTF16ToUTF8(active_tab->GetTitle());
-
-  // Inject JS to extract page text (limited to 4000 chars for context window)
-  content::RenderFrameHost* rfh = active_tab->GetPrimaryMainFrame();
+  content::WebContents* active_tab = GetActiveTabForChat();
+  content::RenderFrameHost* rfh =
+      active_tab ? active_tab->GetPrimaryMainFrame() : nullptr;
   if (!rfh) {
     base::DictValue result;
     result.Set("has_content", false);
@@ -2312,36 +2312,46 @@ void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
     return;
   }
 
-  rfh->ExecuteJavaScriptForTests(
+  // The document the text will come from. The reply reports these, not
+  // whatever the tab shows when it arrives (A7).
+  std::string url = active_tab->GetLastCommittedURL().spec();
+  std::string title = base::UTF16ToUTF8(active_tab->GetTitle());
+  const int nav_entry_id = CommittedEntryId(active_tab);
+
+  // Extract page text (limited to 4000 chars for the context window) in an
+  // isolated world, like the side panel's capture.
+  rfh->ExecuteJavaScriptInIsolatedWorld(
       u"(function(){"
       u"var text = document.body ? document.body.innerText : '';"
       u"return text.substring(0, 4000);"
       u"})()",
       base::BindOnce(&MoltAIChatHandler::OnPageContentExtracted,
-                     weak_ptr_factory_.GetWeakPtr(), callback_id),
+                     weak_ptr_factory_.GetWeakPtr(), callback_id,
+                     std::move(url), std::move(title), nav_entry_id),
       content::ISOLATED_WORLD_ID_CONTENT_END);
 }
 
 void MoltAIChatHandler::OnPageContentExtracted(std::string callback_id,
+                                                std::string url,
+                                                std::string title,
+                                                int nav_entry_id,
                                                 base::Value result) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!IsJavascriptAllowed()) return;
 
   base::DictValue response;
 
-  // Get the page URL/title from the active tab again
-  content::WebContents* webui_contents = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
-  if (browser && browser->tab_strip_model()) {
-    content::WebContents* active_tab =
-        browser->tab_strip_model()->GetActiveWebContents();
-    if (active_tab && active_tab != webui_contents) {
-      response.Set("url", active_tab->GetLastCommittedURL().spec());
-      response.Set("title", base::UTF16ToUTF8(active_tab->GetTitle()));
-    }
-  }
+  // Only answer from this text if the active tab still shows the document
+  // it was read from; after a navigation or tab switch it is another page's.
+  content::WebContents* active_tab = GetActiveTabForChat();
+  const bool same_document =
+      active_tab && CommittedEntryId(active_tab) == nav_entry_id &&
+      active_tab->GetLastCommittedURL().spec() == url;
 
-  if (result.is_string() && !result.GetString().empty()) {
+  if (same_document && result.is_string() && !result.GetString().empty()) {
+    response.Set("url", std::move(url));
+    response.Set("title", std::move(title));
+    response.Set("nav_entry_id", nav_entry_id);
     response.Set("has_content", true);
     response.Set("content", result.GetString());
   } else {

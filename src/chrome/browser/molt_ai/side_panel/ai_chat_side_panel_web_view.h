@@ -42,6 +42,12 @@ class Profile;
 //     repeated once the chat page itself has loaded.
 //   - A monotonic generation counter is bumped on every push so stale
 //     text-capture replies for a previous page are silently dropped.
+//   - Every payload carries nav_entry_id, the unique ID of the tab's last
+//     committed NavigationEntry. When the active document changes, the
+//     chat gets the new url/title with empty text at once (text_pending),
+//     so it never holds the previous page's text under the new page; the
+//     chat also compares nav_entry_id with getPageContext before using
+//     the text.
 class AiChatSidePanelWebView : public views::WebView,
                                 public TabStripModelObserver {
   METADATA_HEADER(AiChatSidePanelWebView, views::WebView)
@@ -122,6 +128,7 @@ class AiChatSidePanelWebView : public views::WebView,
   void OnActiveTabTextCaptured(int64_t generation,
                                 std::string url,
                                 std::string title,
+                                int entry_id,
                                 base::Value page_text);
 
   // PDF variant of the reply step: receives an AX tree snapshot and
@@ -131,12 +138,16 @@ class AiChatSidePanelWebView : public views::WebView,
   void OnAxTreeCaptured(int64_t generation,
                          std::string url,
                          std::string title,
+                         int entry_id,
                          ui::AXTreeUpdate& update);
 
-  // Inject the {url, title, text} dict into the chat WebUI as JSON.
+  // Inject the {url, title, text, nav_entry_id, text_pending} dict into the
+  // chat WebUI as JSON. |entry_id| identifies the document |text| came from.
   void InjectContextIntoChat(const std::string& url,
                               const std::string& title,
-                              const std::string& text);
+                              const std::string& text,
+                              int entry_id,
+                              bool text_pending);
 
   // Retargets |active_tab_observer_| to the current active tab.
   void ObserveActiveTab();
@@ -153,6 +164,11 @@ class AiChatSidePanelWebView : public views::WebView,
   // counter from when they were started; replies for old generations
   // are dropped on arrival.
   int64_t generation_ = 0;
+
+  // The document (nav_entry_id + URL) of the last context delivered to the
+  // chat page; -1 until something was delivered.
+  int last_injected_entry_id_ = -1;
+  std::string last_injected_url_;
 
   // Set in PushActiveTabContext, read in InjectContextIntoChat. Lets the
   // side-panel chat render an "Anonymous session" banner without having
