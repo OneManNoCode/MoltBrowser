@@ -82,7 +82,9 @@ struct ModelRegistryEntry {
   int param_billions;
   const char* quantization;
   const char* company;
-  const char* license_id;    // "" = no acceptance needed (Apache/MIT)
+  // Key into kLicenses: the terms the weights are distributed under. Shown
+  // in the model picker; some must also be accepted before download.
+  const char* license;
   // Hidden entries are not offered anywhere until they are pinned (repo,
   // revision and hash confirmed).
   bool hidden;
@@ -104,7 +106,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      1,
      "Q4_K_M",
      "TinyLlama",
-     "",
+     "apache-2.0",
      false},
 
     // Qwen (Alibaba) — Qwen3.5 4B. TODO(pin): the exact GGUF repo/file for
@@ -121,7 +123,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      4,
      "Q4_K_M",
      "Qwen",
-     "",
+     "",  // TODO(pin): confirm the terms; until then "see the model card"
      true},
 
     // Gemma — Gemma 4 E4B. TODO(pin): GGUF repo/file unconfirmed AND the
@@ -168,7 +170,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      8,
      "Q4_K_M",
      "Qwen",
-     "",
+     "apache-2.0",
      false},
 
     // Gemma (Google DeepMind) — Gemma 3 12B, open weights. Labeled "Gemma".
@@ -198,7 +200,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      12,
      "Q4_K_M",
      "Mistral AI",
-     "",
+     "apache-2.0",
      false},
 
     // Microsoft — Phi-4 14B, MIT.
@@ -213,7 +215,7 @@ const ModelRegistryEntry kModelRegistry[] = {
      14,
      "Q4_K_M",
      "Microsoft",
-     "",
+     "mit",
      false},
 
     // OpenAI — gpt-oss 20B, Apache 2.0 open weights (native MXFP4 quant).
@@ -228,26 +230,33 @@ const ModelRegistryEntry kModelRegistry[] = {
      20,
      "MXFP4",
      "OpenAI",
-     "",
+     "apache-2.0",
      false},
 };
 
 constexpr size_t kModelRegistrySize =
     sizeof(kModelRegistry) / sizeof(kModelRegistry[0]);
 
-// Terms the user must accept (once per license) before downloading. The
-// links avoid vendor domains that would break the zero-"Google"-string
-// product rule; the Hugging Face model card shows the full Gemma terms.
+// The terms each model's weights are distributed under, shown in the model
+// picker (A13). Those with requires_acceptance must also be accepted (once
+// per license, recorded per model) before downloading; their ids are what
+// accepted_licenses.json stores, so they must not change. The links avoid
+// vendor domains that would break the zero-"Google"-string product rule;
+// the Hugging Face model card shows the full Gemma terms.
 struct LicenseEntry {
   const char* id;
   const char* name;
   const char* url;
+  bool requires_acceptance;
 };
 const LicenseEntry kLicenses[] = {
+    {"apache-2.0", "Apache License 2.0",
+     "https://www.apache.org/licenses/LICENSE-2.0", false},
+    {"mit", "MIT License", "https://opensource.org/license/mit", false},
     {"llama3.1", "Llama 3.1 Community License",
-     "https://www.llama.com/llama3_1/license/"},
+     "https://www.llama.com/llama3_1/license/", true},
     {"gemma", "Gemma Terms of Use",
-     "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF"},
+     "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF", true},
 };
 
 const LicenseEntry* FindLicense(const std::string& id) {
@@ -488,10 +497,18 @@ struct BrowserAIRuntime::Impl {
       info.parameter_count_billions = entry.param_billions;
       info.quantization = entry.quantization;
       info.company = entry.company;
-      if (const LicenseEntry* lic = FindLicense(entry.license_id)) {
-        info.license_id = lic->id;
+      if (const LicenseEntry* lic = FindLicense(entry.license)) {
         info.license_name = lic->name;
         info.license_url = lic->url;
+        if (lic->requires_acceptance) {
+          info.license_id = lic->id;
+        }
+      } else {
+        // Terms not recorded yet: point at the model card rather than
+        // showing nothing.
+        info.license_name = "See the model card";
+        info.license_url =
+            std::string("https://huggingface.co/") + entry.huggingface_id;
       }
 
       // Set local file path. is_downloaded is left false here and updated

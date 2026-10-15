@@ -1013,7 +1013,9 @@ void MoltAIChatHandler::FinishInitChat(std::string callback_id,
     // S13: false until the registry entry is pinned (revision + SHA-256);
     // the picker labels such downloads "unverified".
     model_dict.Set("verified", m.is_verified());
+    // A13: every model's licence, shown (with a link) in the picker.
     model_dict.Set("license_name", m.license_name);
+    model_dict.Set("license_url", m.license_url);
     model_list.Append(std::move(model_dict));
   }
 
@@ -1803,6 +1805,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
           static_cast<int>(m.file_size_bytes / (1024 * 1024)));
     d.Set("verified", m.is_verified());
     d.Set("license_name", m.license_name);
+    d.Set("license_url", m.license_url);
     model_list.Append(std::move(d));
     if (m.is_loaded) {
       loaded_model = m.display_name;

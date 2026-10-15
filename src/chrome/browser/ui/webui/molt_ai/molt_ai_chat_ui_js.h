@@ -3730,6 +3730,7 @@ function refreshModelList() {
           '</div>' +
         '</div>' +
         '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
+        modelLicenseLine(m) +
         '<div style="margin-top:4px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
         '<div class="progress-wrap" id="pw-' + escAttr(m.model_id) + '">' +
@@ -3785,6 +3786,46 @@ function downloadModel(modelId) {
 
 function cancelDownload() {
   chrome.send('cancelDownload', []);
+}
+
+// A13: every local model shows the licence its weights come under, with a
+// link to the full terms (opened in a real tab by the browser, which only
+// accepts http(s)). Both values come from the C++ model registry; they are
+// still escaped here like any other data.
+function modelLicenseLine(m) {
+  if (!m || !m.license_name) return '';
+  var href = safeHttpHref(m.license_url);
+  if (!href) {
+    return '<div class="mlicense">Licence: ' + esc(m.license_name) + '</div>';
+  }
+  return '<div class="mlicense">Licence: <button type="button" ' +
+         'class="mlicense-link" data-on-click="openModelLicense" ' +
+         'data-license-url="' + escAttr(href) + '">' +
+         esc(m.license_name) + '</button></div>';
+}
+
+function openModelLicense(url) {
+  var href = safeHttpHref(url);
+  if (href) sendWithPromise('openUrlInTab', href);
+}
+
+// Same, as a DOM node for the model menu rows: clicking it opens the terms
+// without also selecting/downloading the row's model.
+function modelLicenseNode(m) {
+  if (!m || !m.license_name) return null;
+  var href = safeHttpHref(m.license_url);
+  var el = document.createElement(href ? 'button' : 'span');
+  el.className = 'mlic';
+  el.textContent = m.license_name;
+  if (href) {
+    el.type = 'button';
+    el.title = 'Open the licence terms';
+    el.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      openModelLicense(href);
+    });
+  }
+  return el;
 }
 
 // License gate for models whose terms must be accepted (Llama, Gemma).
@@ -4068,6 +4109,9 @@ function renderModelChipDropdown() {
               escAttr(m.model_id) + '"></div></div>'
             : '') +
       '</div>' + right);
+    var licNode = modelLicenseNode(m);
+    var mainCol = item.querySelector('.mmain');
+    if (licNode && mainCol) mainCol.appendChild(licNode);
     item.onclick = function(ev) {
       // The re-render below detaches the clicked row; without this the
       // document-level outside-click handler sees a detached target and
