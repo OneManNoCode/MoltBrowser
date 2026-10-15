@@ -48,8 +48,11 @@ matches a release manifest signed with GenEye's offline release key
 
 - anonymity leaks while MoltNet (Tor) is on: real IP, DNS, WebRTC, QUIC,
   or any request that bypasses the Tor proxy
-- fingerprinting or cross-site tracking that MoltShield claims to block but
-  does not
+- fingerprinting or cross-site tracking that MoltShield or the
+  fingerprinting protection claims to block but does not
+  ([what it covers](docs/FINGERPRINTING.md))
+- a web page opening a `molt://` page, or `.onion` names leaking outside
+  MoltNet windows
 - privileged `molt://` pages: XSS, unvalidated `chrome.send` handlers,
   path traversal, or anything a web page can reach
 - prompt injection that makes the AI or Agent mode act without the user's

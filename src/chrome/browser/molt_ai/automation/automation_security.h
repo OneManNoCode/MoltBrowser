@@ -12,8 +12,8 @@
 //   ADMIN    → user explicitly toggled. Plus access local AI for arbitrary
 //              decisions and chain other automations.
 //
-// AutomationSecurity wraps the existing ActionValidator (used by the
-// agent engine) with script-aware checks.
+// AutomationSecurity adds script-aware checks on top of the shared page-
+// driving rules in molt_ai/security/agent_safety.h.
 //
 // Enforcement: AutomationRunner checks every NAVIGATE / CLICK / TYPE /
 // KEYPRESS step against EffectivePolicy(script) before (and, for the

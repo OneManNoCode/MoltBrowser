@@ -303,7 +303,18 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
       bool is_list,
       base::OnceCallback<base::DictValue(
           const molt_ai::memory::ConversationStore&)> op);
-  void OnPageContentExtracted(std::string callback_id, base::Value result);
+  // |url| / |title| / |nav_entry_id| describe the document the capture was
+  // started on; the reply is dropped if the tab moved on meanwhile.
+  void OnPageContentExtracted(std::string callback_id,
+                              std::string url,
+                              std::string title,
+                              int nav_entry_id,
+                              base::Value result);
+
+  // The page this chat is about: the active tab of the window the chat is
+  // in. Null when the chat itself is that tab, or the window can't be
+  // found. Works for the side panel too (its WebContents is not a tab).
+  content::WebContents* GetActiveTabForChat();
 
   // Ensure BrowserAIRuntime is created and initialized
   molt_ai::BrowserAIRuntime* GetOrCreateRuntime();

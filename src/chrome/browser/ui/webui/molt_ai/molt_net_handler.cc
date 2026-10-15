@@ -73,9 +73,12 @@ std::string RoutingString(MoltNetRouting::RoutingState state) {
 
 // The single status shape every call resolves with:
 // { running, starting, selected, mode, routing, in_moltnet_window,
-//   proxy_externally_controlled }.
+//   proxy_externally_controlled[, error] }.
 // |routing| describes the window the popover is shown in, not the process:
 // a regular window is "not_routed" even while Tor runs for MoltNet windows.
+// |error| is set up front when there is no tor MoltNet can run, so the
+// popover says what to do ("Install the tor package" on Linux) before the
+// user tries.
 base::DictValue StatusDict(Profile* profile) {
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
   const MoltNetRouting::Status status = MoltNetRouting::GetStatus(profile);
@@ -87,6 +90,12 @@ base::DictValue StatusDict(Profile* profile) {
   d.Set("routing", RoutingString(status.state));
   d.Set("in_moltnet_window", molt_ai::tor::IsMoltNetProfile(profile));
   d.Set("proxy_externally_controlled", status.proxy_externally_controlled);
+  if (!mgr->IsRunning() && !mgr->IsStarting()) {
+    const std::string missing = mgr->FindTorBinary().error;
+    if (!missing.empty()) {
+      d.Set("error", missing);
+    }
+  }
   return d;
 }
 

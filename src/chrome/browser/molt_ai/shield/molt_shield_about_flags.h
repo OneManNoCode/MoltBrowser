@@ -47,7 +47,13 @@
      "MoltShield: auto-reject cookie banners",                                \
      "Kill switch. When disabled, MoltShield never injects its "              \
      "cookie-consent auto-reject script.",                                    \
-     kOsAll, FEATURE_VALUE_TYPE(molt_shield::kMoltShieldConsentKiller)}
+     kOsAll, FEATURE_VALUE_TYPE(molt_shield::kMoltShieldConsentKiller)},      \
+    {molt_shield::flags::kRemoveParam,                                        \
+     "MoltShield: strip tracking parameters",                                 \
+     "Kill switch. When disabled, MoltShield no longer removes tracking "     \
+     "parameters (utm_*, fbclid, gclid, ... and list $removeparam rules) "    \
+     "from navigations and page requests. Blocking is unaffected.",           \
+     kOsAll, FEATURE_VALUE_TYPE(molt_shield::kMoltShieldRemoveParam)}
 // clang-format on
 
 #endif  // CHROME_BROWSER_MOLT_AI_SHIELD_MOLT_SHIELD_ABOUT_FLAGS_H_

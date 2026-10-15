@@ -5,13 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
-index 3429b1bd4726f6b3963215de005008d6d69181de..f433549191d908f68c82bd5b5e12a1ae219a99fc 100644
+index 3429b1bd4726f6b3963215de005008d6d69181de..61486823908c26ba3f28c37dee14892126a7ffb1 100644
 --- a/chrome/browser/flag-metadata.json
 +++ b/chrome/browser/flag-metadata.json
-@@ -6779,6 +6779,37 @@
+@@ -6779,6 +6779,48 @@
      "owners": ["bgeffon@chromium.org", "pasko@chromium.org"],
      "expiry_milestone": 150
    },
++  {
++    // MoltBrowser: fingerprinting protection kill switch; never expires.
++    "name": "molt-fingerprinting-protection",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
 +  {
 +    // MoltBrowser: MoltShield kill switches; they must never expire.
 +    "name": "molt-shield-consent-killer",
@@ -30,6 +36,11 @@ index 3429b1bd4726f6b3963215de005008d6d69181de..f433549191d908f68c82bd5b5e12a1ae
 +  },
 +  {
 +    "name": "molt-shield-keepalive",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-removeparam",
 +    "owners": [ "moltbrowser" ],
 +    "expiry_milestone": -1
 +  },

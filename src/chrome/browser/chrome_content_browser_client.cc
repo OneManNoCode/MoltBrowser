@@ -106,10 +106,14 @@
 #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
 #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
+#include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
@@ -3169,6 +3173,10 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     };
     command_line->CopySwitchesFrom(browser_command_line,
                                    kMoltShieldSwitchNames);
+
+    // MoltBrowser: fingerprinting protection mode + per-profile session seed.
+    molt_ai::fingerprinting::AppendRendererSwitches(
+        content::RenderProcessHost::FromID(child_process_id), command_line);
   } else if (process_type == switches::kUtilityProcess) {
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     static const char* const kSwitchNames[] = {
@@ -5638,10 +5646,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
 
 void ChromeContentBrowserClient::CreateThrottlesForNavigation(
     content::NavigationThrottleRegistry& registry) {
+  // MoltNet: outside MoltNet windows, stop .onion navigations before any
+  // other throttle (some send the URL to a server) or the request can see
+  // the onion name.
+  molt_ai::tor::OnionNavigationThrottle::MaybeCreateAndAdd(registry);
   CreateAndAddChromeThrottlesForNavigation(registry);
   // MoltShield: ad frames (collapsed) + cosmetic filtering. Never blocks
   // top-level documents.
   molt_ai::shield::MoltShieldNavigationThrottle::MaybeAdd(registry);
+  // MoltBrowser: web pages may not open chrome:// pages via molt:// (S19).
+  molt_ai::security::WebUINavigationThrottle::MaybeAdd(registry);
 }
 
 std::vector<std::unique_ptr<content::CommitDeferringCondition>>
@@ -6718,6 +6732,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
     if (https_upgrades_interceptor) {
       interceptors.push_back(std::move(https_upgrades_interceptor));
     }
+  }
+
+  // MoltShield: strips tracking parameters (utm_*, fbclid, $removeparam)
+  // from navigations with an internal redirect, on every leg. Never blocks.
+  if (auto molt_shield_interceptor =
+          molt_ai::shield::MoltShieldNavigationInterceptor::MaybeCreate(
+              frame_tree_node_id)) {
+    interceptors.push_back(std::move(molt_shield_interceptor));
   }
 
   return interceptors;

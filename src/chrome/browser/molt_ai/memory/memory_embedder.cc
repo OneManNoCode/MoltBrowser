@@ -4,7 +4,6 @@
 #include "chrome/browser/molt_ai/memory/memory_embedder.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 
@@ -31,24 +30,6 @@ inline uint64_t FnvHash(const char* data, size_t len, uint64_t salt) {
   return h;
 }
 
-inline unsigned char ToLowerAscii(unsigned char c) {
-  if (c >= 'A' && c <= 'Z') return static_cast<unsigned char>(c + ('a' - 'A'));
-  return c;
-}
-
-// Treat ASCII letters and digits as in-token; everything else as a
-// separator. The byte is lowercased BEFORE classification — classifying
-// first made every uppercase letter a separator, so "NASA" embedded to
-// the zero vector and "Paris" to "aris". The non-ASCII path is
-// conservative (we keep multi-byte UTF-8 bytes together as parts of one
-// token rather than try to do proper Unicode segmentation in the hot
-// path).
-inline bool IsWordByte(unsigned char c) {
-  c = ToLowerAscii(c);
-  return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-         (c >= 0x80);  // keep utf-8 continuation bytes together
-}
-
 // Hash a single token into the accumulator. We mix in two perturbations
 // to spread word features (offset 1) vs. character-bigram features
 // (offset 3) so they don't cancel each other.
@@ -62,51 +43,262 @@ inline void HashToken(const char* tok, size_t len, std::vector<float>* out,
   (*out)[dim] += sign;
 }
 
+// ---- Tokenizer -----------------------------------------------------
+//
+// Text is split into words on UTF-8 code points, not bytes:
+//   - ASCII letters and digits are word characters, other ASCII is a
+//     separator (as before, so ASCII-only text embeds exactly as in v2);
+//   - non-ASCII letters, marks and digits of every script are word
+//     characters; common Unicode spaces, punctuation and symbols (NBSP,
+//     dashes, curly quotes, ellipsis, CJK punctuation, emoji, ...) are
+//     separators, so "naïve—café" is two words like "naïve café";
+//   - soft hyphens, ZWJ/ZWNJ, variation selectors and BOMs are dropped
+//     without splitting the word;
+//   - case is folded (ASCII, Latin-1, Latin Extended-A/B, Latin Extended
+//     Additional, Greek, Cyrillic, Armenian; fullwidth Latin letters and
+//     digits fold to ASCII) so "ÄRGER" matches "ärger";
+//   - a malformed UTF-8 byte stays in the word as that raw byte rather
+//     than being dropped.
+
+constexpr char32_t kMalformed = 0xFFFFFFFF;
+
+// Decodes the UTF-8 sequence starting at text[i] into *len bytes. Returns
+// kMalformed (with *len == 1) for anything that isn't a well-formed,
+// shortest-form, non-surrogate sequence.
+char32_t DecodeUtf8(const std::string& text, size_t i, size_t* len) {
+  const unsigned char c0 = static_cast<unsigned char>(text[i]);
+  *len = 1;
+  if (c0 < 0x80) return c0;
+  size_t n;
+  char32_t cp;
+  char32_t min;
+  if ((c0 & 0xE0) == 0xC0) {
+    n = 2;
+    cp = c0 & 0x1F;
+    min = 0x80;
+  } else if ((c0 & 0xF0) == 0xE0) {
+    n = 3;
+    cp = c0 & 0x0F;
+    min = 0x800;
+  } else if ((c0 & 0xF8) == 0xF0) {
+    n = 4;
+    cp = c0 & 0x07;
+    min = 0x10000;
+  } else {
+    return kMalformed;
+  }
+  if (n > text.size() - i) return kMalformed;
+  for (size_t k = 1; k < n; ++k) {
+    const unsigned char ck = static_cast<unsigned char>(text[i + k]);
+    if ((ck & 0xC0) != 0x80) return kMalformed;
+    cp = (cp << 6) | (ck & 0x3F);
+  }
+  if (cp < min || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+    return kMalformed;
+  }
+  *len = n;
+  return cp;
+}
+
+// Appends |cp| (a valid scalar value) to |out| as UTF-8; returns the length.
+size_t EncodeUtf8(char32_t cp, char* out) {
+  if (cp < 0x80) {
+    out[0] = static_cast<char>(cp);
+    return 1;
+  }
+  if (cp < 0x800) {
+    out[0] = static_cast<char>(0xC0 | (cp >> 6));
+    out[1] = static_cast<char>(0x80 | (cp & 0x3F));
+    return 2;
+  }
+  if (cp < 0x10000) {
+    out[0] = static_cast<char>(0xE0 | (cp >> 12));
+    out[1] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+    out[2] = static_cast<char>(0x80 | (cp & 0x3F));
+    return 3;
+  }
+  out[0] = static_cast<char>(0xF0 | (cp >> 18));
+  out[1] = static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+  out[2] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+  out[3] = static_cast<char>(0x80 | (cp & 0x3F));
+  return 4;
+}
+
+enum class CharClass { kSeparator, kWord, kIgnorable };
+
+bool InRange(char32_t c, char32_t lo, char32_t hi) {
+  return c >= lo && c <= hi;
+}
+
+CharClass Classify(char32_t c) {
+  if (c < 0x80) {
+    return (InRange(c, 'a', 'z') || InRange(c, 'A', 'Z') ||
+            InRange(c, '0', '9'))
+               ? CharClass::kWord
+               : CharClass::kSeparator;
+  }
+  if (c <= 0xBF) {
+    // C1 controls, NBSP and Latin-1 punctuation/symbols, except the
+    // letters ª µ º and the soft hyphen.
+    if (c == 0xAA || c == 0xB5 || c == 0xBA) return CharClass::kWord;
+    if (c == 0xAD) return CharClass::kIgnorable;
+    return CharClass::kSeparator;
+  }
+  if (c == 0xD7 || c == 0xF7) return CharClass::kSeparator;  // × ÷
+  if (c == 0x200C || c == 0x200D || c == 0xFEFF ||
+      InRange(c, 0xFE00, 0xFE0F) || InRange(c, 0xE0000, 0xE007F)) {
+    return CharClass::kIgnorable;  // ZWNJ, ZWJ, BOM, variation selectors
+  }
+  if (InRange(c, 0x2000, 0x206F) ||   // General Punctuation
+      InRange(c, 0x20A0, 0x20CF) ||   // Currency Symbols
+      InRange(c, 0x2190, 0x2BFF) ||   // arrows, math, technical, shapes
+      InRange(c, 0x2E00, 0x2E7F) ||   // Supplemental Punctuation
+      InRange(c, 0x3000, 0x303F) ||   // CJK Symbols and Punctuation
+      InRange(c, 0xFE10, 0xFE1F) ||   // Vertical Forms
+      InRange(c, 0xFE30, 0xFE6F) ||   // CJK Compatibility / Small Forms
+      InRange(c, 0xFF01, 0xFF0F) || InRange(c, 0xFF1A, 0xFF20) ||
+      InRange(c, 0xFF3B, 0xFF40) || InRange(c, 0xFF5B, 0xFF65) ||
+      InRange(c, 0xFFF0, 0xFFFF) ||   // Specials (U+FFFD)
+      InRange(c, 0x1F000, 0x1FAFF)) {  // emoji and other pictographs
+    return CharClass::kSeparator;
+  }
+  return CharClass::kWord;
+}
+
+// Simple (one-to-one) lowercase mapping for the scripts listed above.
+char32_t FoldCase(char32_t c) {
+  if (c < 0x80) return InRange(c, 'A', 'Z') ? c + 0x20 : c;
+  if (c < 0x100) {
+    return (InRange(c, 0xC0, 0xDE) && c != 0xD7) ? c + 0x20 : c;
+  }
+  if (c <= 0x17F) {  // Latin Extended-A
+    if (c == 0x130) return 'i';  // İ
+    if (c == 0x131 || c == 0x138 || c == 0x149 || c == 0x17F) return c;
+    if (c == 0x178) return 0xFF;  // Ÿ
+    if (InRange(c, 0x139, 0x148) || InRange(c, 0x179, 0x17E)) {
+      return (c & 1) ? c + 1 : c;  // odd code points are capitals here
+    }
+    return (c & 1) ? c : c + 1;
+  }
+  if (c <= 0x24F) {  // Latin Extended-B: the regular pairs only
+    if (InRange(c, 0x1CD, 0x1DC)) return (c & 1) ? c + 1 : c;
+    if (InRange(c, 0x1DE, 0x1EF) || InRange(c, 0x1F8, 0x21F) ||
+        InRange(c, 0x222, 0x233)) {
+      return (c & 1) ? c : c + 1;
+    }
+    return c;
+  }
+  if (c <= 0x3FF) {  // Greek
+    if (c == 0x386) return 0x3AC;
+    if (InRange(c, 0x388, 0x38A)) return c + 0x25;
+    if (c == 0x38C) return 0x3CC;
+    if (c == 0x38E || c == 0x38F) return c + 0x3F;
+    if (InRange(c, 0x391, 0x3AB) && c != 0x3A2) return c + 0x20;
+    if (c == 0x3C2) return 0x3C3;  // final sigma matches sigma
+    return c;
+  }
+  if (c <= 0x52F) {  // Cyrillic + Supplement
+    if (InRange(c, 0x400, 0x40F)) return c + 0x50;
+    if (InRange(c, 0x410, 0x42F)) return c + 0x20;
+    if (c == 0x4C0) return 0x4CF;
+    if (InRange(c, 0x4C1, 0x4CE)) return (c & 1) ? c + 1 : c;
+    if (InRange(c, 0x460, 0x481) || InRange(c, 0x48A, 0x4BF) ||
+        InRange(c, 0x4D0, 0x52F)) {
+      return (c & 1) ? c : c + 1;
+    }
+    return c;
+  }
+  if (InRange(c, 0x531, 0x556)) return c + 0x30;  // Armenian
+  if (InRange(c, 0x1E00, 0x1EFF)) {  // Latin Extended Additional
+    if (c == 0x1E9E) return 0xDF;  // capital sharp s
+    if (InRange(c, 0x1E96, 0x1E9F)) return c;
+    return (c & 1) ? c : c + 1;
+  }
+  // Fullwidth forms fold to ASCII so "ＮＡＳＡ" matches "nasa".
+  if (InRange(c, 0xFF10, 0xFF19)) return c - 0xFF10 + '0';
+  if (InRange(c, 0xFF21, 0xFF3A)) return c - 0xFF21 + 'a';
+  if (InRange(c, 0xFF41, 0xFF5A)) return c - 0xFF41 + 'a';
+  return c;
+}
+
+// Longest token prefix that is hashed, in bytes (as in v2).
+constexpr size_t kMaxTokenBytes = 64;
+
+// Accumulates one word as folded UTF-8 and remembers where each code point
+// starts, so character bigrams are taken over code points, not bytes.
+class TokenBuilder {
+ public:
+  // Appends |bytes| (one code point, or one malformed byte) unless the
+  // token is full; once one doesn't fit, the rest of the word is skipped
+  // so the token stays a prefix of the word.
+  void Append(const char* bytes, size_t n) {
+    if (full_ || len_ + n > kMaxTokenBytes) {
+      full_ = true;
+      return;
+    }
+    starts_[count_++] = static_cast<uint8_t>(len_);
+    for (size_t k = 0; k < n; ++k) buf_[len_++] = bytes[k];
+  }
+
+  void Flush(std::vector<float>* v) {
+    if (len_ > 0) {
+      // Word-level feature.
+      HashToken(buf_, len_, v, /*salt=*/1);
+      // Character-bigram features ride along with a different salt so
+      // the model can rescue queries that miss the exact word form
+      // ("recipe" vs "recipes" share several bigrams).
+      for (size_t k = 0; k + 1 < count_; ++k) {
+        const size_t begin = starts_[k];
+        const size_t end = k + 2 < count_ ? starts_[k + 2] : len_;
+        HashToken(buf_ + begin, end - begin, v, /*salt=*/3);
+      }
+    }
+    len_ = 0;
+    count_ = 0;
+    full_ = false;
+  }
+
+ private:
+  char buf_[kMaxTokenBytes];
+  uint8_t starts_[kMaxTokenBytes];
+  size_t len_ = 0;
+  size_t count_ = 0;
+  bool full_ = false;
+};
+
 }  // namespace
 
 std::vector<float> HashingEmbedder::Embed(const std::string& text) const {
   std::vector<float> v(kEmbeddingDim, 0.0f);
   if (text.empty()) return v;
 
-  // Lowercase + token-split pass with no allocation: walk the string
-  // once, find [start,end) runs of word bytes, hash them.
-  size_t n = text.size();
+  // One pass, no allocation: decode code points, fold case, and hash each
+  // run of word characters as it ends.
+  TokenBuilder token;
   size_t i = 0;
-  // Reuse a small local buffer for the lowercased token so we don't
-  // touch the heap.
-  char tok[64];
-  while (i < n) {
-    while (i < n && !IsWordByte(static_cast<unsigned char>(text[i]))) ++i;
-    size_t start = i;
-    size_t toklen = 0;
-    while (i < n && IsWordByte(static_cast<unsigned char>(text[i]))) {
-      if (toklen < sizeof(tok)) {
-        tok[toklen++] = static_cast<char>(
-            ToLowerAscii(static_cast<unsigned char>(text[i])));
-      }
-      ++i;
-    }
-    if (toklen == 0) continue;
-
-    // Word-level feature.
-    HashToken(tok, toklen, &v, /*salt=*/1);
-
-    // Character-bigram features ride along with a different salt so
-    // the model can rescue queries that miss the exact word form
-    // ("recipe" vs "recipes" share several bigrams).
-    if (toklen >= 2) {
-      for (size_t b = 0; b + 1 < toklen; ++b) {
-        HashToken(tok + b, 2, &v, /*salt=*/3);
+  while (i < text.size()) {
+    size_t len = 1;
+    const char32_t cp = DecodeUtf8(text, i, &len);
+    if (cp == kMalformed) {
+      token.Append(&text[i], 1);
+    } else {
+      switch (Classify(cp)) {
+        case CharClass::kSeparator:
+          token.Flush(&v);
+          break;
+        case CharClass::kWord: {
+          char utf8[4];
+          const size_t n = EncodeUtf8(FoldCase(cp), utf8);
+          token.Append(utf8, n);
+          break;
+        }
+        case CharClass::kIgnorable:
+          break;
       }
     }
-
-    // Word-pair (bigram of words). Capture phrase context. We
-    // approximate by hashing the prefix of the previous token + this
-    // one — but the previous-token state would require carrying a
-    // buffer. Skipped for v1; word + char-bigram already gives a
-    // reasonable separability for short queries.
-    (void)start;
+    i += len;
   }
+  token.Flush(&v);
 
   // L2 normalize so cosine == dot product.
   double sq = 0.0;

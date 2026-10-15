@@ -9,8 +9,6 @@ source_set("molt_ai_runtime") {
   sources = [
     "runtime/browser_ai_runtime.cc",
     "runtime/browser_ai_runtime.h",
-    "runtime/prompt_router.cc",
-    "runtime/prompt_router.h",
   ]
 
   deps = [
@@ -20,13 +18,22 @@ source_set("molt_ai_runtime") {
   ]
 }
 
-source_set("molt_ai_dom") {
+# HTML -> StructuredPage, linear time (no std::regex). Std-only, so the
+# standalone unit-test binary links it.
+source_set("molt_ai_dom_interpreter") {
   sources = [
     "dom/dom_interpreter.cc",
     "dom/dom_interpreter.h",
+  ]
+}
+
+source_set("molt_ai_dom") {
+  sources = [
     "dom/dom_content_bridge.cc",
     "dom/dom_content_bridge.h",
   ]
+
+  public_deps = [ ":molt_ai_dom_interpreter" ]
 
   deps = [
     "//base",
@@ -35,10 +42,19 @@ source_set("molt_ai_dom") {
   ]
 }
 
-# WebAgent — autonomous ReAct-loop browsing agent.
-# Replaces the dead agent_engine.cc (delisted 2026-05-20 in code review
-# CRITICAL #1 — prompt injection via unescaped JS concatenation).
-# All JS in this new agent is built through base::JSONWriter / JSQ().
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("molt_ai_dom_unit_tests") {
+  testonly = true
+  sources = [ "dom/dom_interpreter_unittest.cc" ]
+  deps = [
+    ":molt_ai_dom_interpreter",
+    "//testing/gtest",
+  ]
+}
+
+# WebAgent — autonomous ReAct-loop browsing agent (it replaced the old
+# AgentEngine, whose sources are gone). All JS in this agent is built
+# through base::JSONWriter / JSQ().
 source_set("molt_ai_agents") {
   sources = [
     "agents/web_agent.cc",
@@ -57,80 +73,6 @@ source_set("molt_ai_agents") {
   # web_agent.h exposes agent_safety types (navigation allowlist, element
   # probe, prompt fencing).
   public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
-}
-
-source_set("molt_ai_security") {
-  sources = [
-    "security/action_validator.cc",
-    "security/action_validator.h",
-  ]
-
-  deps = [
-    "//base",
-  ]
-}
-
-source_set("molt_ai_embeddings") {
-  sources = [
-    "embeddings/minilm_embedder.cc",
-    "embeddings/minilm_embedder.h",
-  ]
-
-  deps = [
-    "//base",
-  ]
-}
-
-source_set("molt_ai_memory") {
-  sources = [
-    "memory/memory_engine.cc",
-    "memory/memory_engine.h",
-  ]
-
-  deps = [
-    ":molt_ai_embeddings",
-    "//base",
-  ]
-}
-
-source_set("molt_ai_personas") {
-  sources = [
-    "personas/persona_system.cc",
-    "personas/persona_system.h",
-  ]
-
-  deps = [
-    "//base",
-  ]
-}
-
-source_set("molt_ai_models") {
-  sources = [
-    "models/model_manager.cc",
-    "models/model_manager.h",
-    "models/model_downloader.cc",
-    "models/model_downloader.h",
-  ]
-
-  deps = [
-    ":molt_ai_runtime",
-    "//base",
-    "//net",
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
-  ]
-}
-
-source_set("molt_ai_api") {
-  sources = [
-    "api/browser_ai_api.cc",
-    "api/browser_ai_api.h",
-  ]
-
-  deps = [
-    ":molt_ai_runtime",
-    "//base",
-  ]
 }
 
 # AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
@@ -249,17 +191,23 @@ group("molt_ai") {
     ":molt_ai_runtime",
     ":molt_ai_dom",
     ":molt_ai_agents",
-    ":molt_ai_security",
-    ":molt_ai_memory",
-    ":molt_ai_personas",
-    ":molt_ai_models",
-    ":molt_ai_api",
-    ":molt_ai_embeddings",
     ":molt_ai_import",
     ":molt_shield",
     ":molt_update",
     "automation:automation",
     "common:common",
+    # chrome_content_browser_client.cc registers OnionNavigationThrottle.
+    "tor:onion",
+    # ssl/https_upgrades_interceptor.cc exempts .onion (onion_util.h).
+    "tor:protocol",
+
+    # Fingerprinting protection: session seed + renderer switches (the engine
+    # is in Blink, //third_party/blink/renderer/core/molt_fingerprinting).
+    "fingerprinting",
+
+    # S19: keeps web pages from opening chrome:// / molt:// pages; used by
+    # chrome_content_browser_client.cc.
+    "security:webui_navigation_throttle",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)

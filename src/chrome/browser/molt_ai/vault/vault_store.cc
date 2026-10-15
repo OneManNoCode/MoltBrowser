@@ -165,7 +165,13 @@ bool VaultStore::WriteEncrypted(const std::vector<VaultEntry>& entries,
   std::string plaintext;
   if (!base::JSONWriter::Write(list, &plaintext)) return false;
   std::string ciphertext;
-  if (!OSCrypt::EncryptString(plaintext, &ciphertext)) {
+  // New or changed credentials need an OS-backed key; a delete / last-used
+  // bump only rewrites what is already on disk.
+  const bool encrypted =
+      adds_secrets
+          ? molt_ai::EncryptSecretForStorage(plaintext, &ciphertext)
+          : OSCrypt::EncryptString(plaintext, &ciphertext);
+  if (!encrypted) {
     LOG(WARNING) << "[VaultStore] encrypt failed";
     return false;
   }

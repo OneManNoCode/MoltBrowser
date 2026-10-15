@@ -78,9 +78,10 @@ void MoltShieldTabHelper::ReadyToCommitNavigation(
   frame->GetRemoteAssociatedInterfaces()->GetInterface(&agent);
   agent->ApplyDocumentResources(
       stash->url,
-      molt_shield::mojom::CosmeticResources::New(stash->data.hide_css,
-                                                 stash->data.scriptlet_js,
-                                                 stash->data.generichide),
+      molt_shield::mojom::CosmeticResources::New(
+          stash->data.hide_css, stash->data.scriptlet_js,
+          stash->data.generichide, stash->data.procedural_json,
+          stash->data.procedural_styles),
       std::move(host));
   MoltShieldService::Get()->RecordCosmetic(stash->data);
 }

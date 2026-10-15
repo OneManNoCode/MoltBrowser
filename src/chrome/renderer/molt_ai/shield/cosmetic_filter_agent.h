@@ -12,7 +12,13 @@
 //     can't remove it; user !important beats author !important), and
 //   * runs the scriptlets in the page's MAIN world via
 //     WebLocalFrame::ExecuteScript (not a <script> element, so the page's CSP
-//     can't block it and nothing is left in the DOM).
+//     can't block it and nothing is left in the DOM), and
+//   * starts the procedural filter engine (procedural_filters_js.h) in its
+//     own ISOLATED world, where the page can neither see nor patch it. The
+//     engine is a constant script; the vetted filter JSON is handed to it
+//     as a string value. It marks matching elements with a random
+//     per-document attribute that a user stylesheet hides or styles, and
+//     re-evaluates after DOM mutations.
 // Then, unless the page is `$generichide`, it collects the classes and ids
 // in the document at DOMContentLoaded, at load, and once shortly after, and
 // asks the browser which generic `##.class` / `###id` rules apply.
@@ -22,6 +28,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
@@ -32,6 +39,10 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "url/gurl.h"
+
+namespace blink {
+class WebLocalFrame;
+}  // namespace blink
 
 namespace molt_ai::shield {
 
@@ -71,6 +82,9 @@ class CosmeticFilterAgent : public content::RenderFrameObserver,
   void ScanClassesAndIds();
   void OnHiddenCss(uint64_t document_sequence, const std::string& css);
   void InsertUserStyleSheet(const std::string& css);
+  void RunProceduralFilters(blink::WebLocalFrame* frame,
+                            const std::string& filters_json,
+                            const std::vector<std::string>& styles);
 
   mojo::AssociatedReceiverSet<molt_shield::mojom::CosmeticFiltersAgent>
       receivers_;

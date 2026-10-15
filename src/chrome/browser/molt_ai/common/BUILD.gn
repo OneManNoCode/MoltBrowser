@@ -12,3 +12,40 @@ source_set("common") {
     "//base",
   ]
 }
+
+# Which helper executables (tor, tesseract, whisper-cli) MoltBrowser may run
+# (audit S18). trusted_binary.* is the pure POSIX policy (no //base) that
+# molt_ai_unittests tests against a fake filesystem; helper_binary.* is the
+# base::FilePath front end every caller uses.
+source_set("trusted_binary") {
+  sources = []
+  if (is_posix) {
+    sources += [
+      "trusted_binary.cc",
+      "trusted_binary.h",
+    ]
+  }
+}
+
+source_set("helper_binary") {
+  sources = [
+    "helper_binary.cc",
+    "helper_binary.h",
+  ]
+  deps = [
+    ":common",
+    ":trusted_binary",
+    "//base",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = []
+  deps = [ "//testing/gtest" ]
+  if (is_posix) {
+    sources += [ "trusted_binary_unittest.cc" ]
+    deps += [ ":trusted_binary" ]
+  }
+}

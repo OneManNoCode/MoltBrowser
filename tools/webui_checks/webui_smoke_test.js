@@ -67,6 +67,46 @@ function trustedTypesMode(src) {
 // promoteTrust calls the Agent studio makes ([id, level] each).
 const agentTrustCalls = [];
 
+// URLs the model pickers asked the browser to open (openUrlInTab).
+const openedUrls = [];
+
+// Model licence display (A13), shared by molt://ai and molt://ai-chat: the
+// licence name is text, only an http(s) licence URL becomes a link, the
+// link opens through openUrlInTab, and in the model menu it doesn't also
+// select or download the row's model.
+async function checkModelLicences(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const links = doc.querySelectorAll('#modelList [data-on-click=openModelLicense]');
+  assert.strictEqual(links.length, 1, 'only the http(s) licence is a link');
+  assert.strictEqual(links[0].textContent, '<img src=x onerror=alert(1)>',
+                     'licence name stays text');
+  assert(/^https:\/\/example\.com\/terms/.test(links[0].getAttribute('data-license-url')));
+  assert(Array.from(doc.querySelectorAll('#modelList .mlicense'))
+             .some((d) => d.textContent === 'Licence: MIT License'),
+         'licence without a usable link is still named');
+  assert.strictEqual(doc.querySelectorAll('#modelList img').length, 0);
+  openedUrls.length = 0;
+  links[0].click();
+  await tick();
+  assert.strictEqual(openedUrls.length, 1, 'licence link opens a tab');
+  assert(/^https:\/\/example\.com\/terms/.test(openedUrls[0]), openedUrls[0]);
+
+  window.allModels = [];
+  window.renderModelChipDropdown();
+  await tick();
+  const rowLinks = doc.querySelectorAll('#modelChipDropdown button.mlic');
+  assert.strictEqual(rowLinks.length, 1, 'model menu row links its licence');
+  assert.strictEqual(doc.querySelectorAll('#modelChipDropdown img').length, 0);
+  const sentBefore = window.__sent.length;
+  rowLinks[0].click();
+  await tick();
+  assert.strictEqual(openedUrls.length, 2);
+  assert(!window.__sent.slice(sentBefore).some(
+             (m) => m === 'downloadModel' || m === 'loadModel'),
+         'licence click does not pick the model');
+}
+
 // molt://ai-settings MoltShield section state, with hostile strings where
 // list/tab metadata comes from the network or pages.
 const SHIELD_STATE = {
@@ -342,12 +382,16 @@ const PAGES = [
                 models: [{model_id: 'm1', is_downloaded: true}]},
      getModelStatus: {models: [
        {model_id: 'm1" data-x="1', display_name: '<b>bold</b>', company: 'Meta',
-        is_downloaded: true, file_size_mb: 100},
-       {model_id: 'm2', display_name: 'Two', company: '<i>Co</i>', file_size_mb: 2048},
+        is_downloaded: true, file_size_mb: 100,
+        license_name: '<img src=x onerror=alert(1)>',
+        license_url: 'https://example.com/terms"><b>x</b>'},
+       {model_id: 'm2', display_name: 'Two', company: '<i>Co</i>', file_size_mb: 2048,
+        license_name: 'MIT License', license_url: 'javascript:alert(1)'},
        {model_id: 'openai:<x>', is_cloud: true, provider: 'OpenAI', display_name: '<img src=x>'}]},
      sendPrompt: {success: true},
+     openUrlInTab: (args) => { openedUrls.push(args[1]); return {success: true}; },
    },
-   after(window) {
+   async after(window) {
      const doc = window.document;
      window.startAiMsg();
      window.appendTok('**hi** <img src=x onerror=alert(1)> ```js\nconsole.log(1)\n```');
@@ -358,16 +402,16 @@ const PAGES = [
      const copy = last.querySelector('button.code-copy');
      assert(copy && copy.getAttribute('data-on-click') === 'copyCode', 'copy button wired');
      window.toggleModelPanel();
-     return new Promise((r) => setTimeout(r, 20)).then(() => {
-       assert.strictEqual(doc.querySelectorAll('#modelList b, #modelList i, [data-x]').length, 0,
-                          'model metadata stays text');
-       const load = doc.querySelector('#modelList [data-on-click=loadModel]');
-       assert(load && load.getAttribute('data-model-id') === 'm1" data-x="1', 'model id round-trips');
-       const input = doc.getElementById('searchInput');
-       input.value = 'hi';
-       input.dispatchEvent(new window.Event('input'));
-       assert(doc.querySelector('#messages .highlight'), 'search highlights text');
-     });
+     await new Promise((r) => setTimeout(r, 20));
+     assert.strictEqual(doc.querySelectorAll('#modelList b, #modelList i, [data-x]').length, 0,
+                        'model metadata stays text');
+     const load = doc.querySelector('#modelList [data-on-click=loadModel]');
+     assert(load && load.getAttribute('data-model-id') === 'm1" data-x="1', 'model id round-trips');
+     await checkModelLicences(window);
+     const input = doc.getElementById('searchInput');
+     input.value = 'hi';
+     input.dispatchEvent(new window.Event('input'));
+     assert(doc.querySelector('#messages .highlight'), 'search highlights text');
    }},
   {name: 'molt://ai-chat', file: 'molt_ai_chat_ui.cc',
    extraFiles: ['molt_webui_csp.h', 'molt_ai_chat_ui_js.h'],
@@ -381,8 +425,13 @@ const PAGES = [
                 models: [{model_id: 'm1', is_downloaded: true, display_name: 'M1'}]},
      getModelStatus: {models: [
        {model_id: 'm1" data-x="1', display_name: '<b>bold</b>', company: 'Meta',
-        is_downloaded: true, file_size_mb: 100},
+        is_downloaded: true, file_size_mb: 100,
+        license_name: '<img src=x onerror=alert(1)>',
+        license_url: 'https://example.com/terms"><b>x</b>'},
+       {model_id: 'm2', display_name: 'Two', company: 'Microsoft', file_size_mb: 2048,
+        license_name: 'MIT License', license_url: 'javascript:alert(1)'},
        {model_id: 'openai:<x>', is_cloud: true, provider: 'OpenAI', display_name: '<img src=x>'}]},
+     openUrlInTab: (args) => { openedUrls.push(args[1]); return {success: true}; },
      listConversations: {success: true, conversations: [
        {id: 'c1', title: '<img src=x onerror=alert(1)>', updated_at: 1}]},
      vaultList: {entries: [{id: 'abcdef1234567890', site_host: '<b>gh</b>', username: 'me'}]},
@@ -427,6 +476,7 @@ const PAGES = [
      window.toggleModelPanel();
      await tick();
      assert.strictEqual(doc.querySelectorAll('#modelList b, [data-x]').length, 0, 'model metadata stays text');
+     await checkModelLicences(window);
    }},
 ];
 

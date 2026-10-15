@@ -12,6 +12,18 @@
 //   * Network prediction (DNS prefetch / preconnect / prerender) off
 //   * Do Not Track off — DNT is ignored by sites and is one more
 //     fingerprinting bit (explicit; it is also upstream's default)
+//   * "Alternate error pages" off — this pref gates the DNS probe that
+//     queries Google Public DNS (8.8.8.8 / 8.8.4.4) for google.com after a
+//     DNS error, and captive-portal checks against
+//     (connectivitycheck.)gstatic.com/generate_204 after SSL errors and
+//     timeouts. Error pages still show; they are just less specific.
+//   * Password leak detection off — for signed-out users the check is
+//     authenticated only by the Google API key, which MoltBrowser does not
+//     have, so it sends hashed credential material to
+//     passwordsleakcheck-pa.googleapis.com with a placeholder key that
+//     Google is expected to reject (docs/NETWORK_TRAFFIC.md lists it for
+//     the traffic capture). Turn this default back on if GenEye ever ships
+//     an API key.
 //
 // HTTPS-First "balanced" mode can't be expressed as a default (Chromium
 // only honors kHttpsFirstBalancedMode once a user value exists), so

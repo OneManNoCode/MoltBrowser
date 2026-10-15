@@ -26,15 +26,24 @@ test("molt_ai_unittests") {
     # Each module under molt_ai/ that has tests adds itself here.
     "//chrome/browser/molt_ai/automation:unit_tests",
     "//chrome/browser/molt_ai/cloud:unit_tests",
+    "//chrome/browser/molt_ai/common:unit_tests",
+    "//chrome/browser/molt_ai/keys:unit_tests",
     "//chrome/browser/molt_ai/memory:unit_tests",
     "//chrome/browser/molt_ai/models:unit_tests",
     "//chrome/browser/molt_ai/pdf:unit_tests",
+    "//chrome/browser/molt_ai/privacy:unit_tests",
     "//chrome/browser/molt_ai/runtime:unit_tests",
     "//chrome/browser/molt_ai/shield:unit_tests",
     "//chrome/browser/molt_ai/vault:unit_tests",
+    "//chrome/browser/molt_ai:molt_ai_dom_unit_tests",
     "//chrome/browser/molt_ai:molt_update_unit_tests",
     "//chrome/browser/molt_ai/security:unit_tests",
     "//chrome/browser/molt_ai/tor:unit_tests",
     "//chrome/browser/ui/webui/molt_ai:unit_tests",
+
+    # Fingerprinting protection: switch encoding, and the pure Blink-side
+    # math (it depends only on //base and //crypto, so it runs here too).
+    "//chrome/common/molt_ai/fingerprinting:unit_tests",
+    "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
   ]
 }

@@ -3,7 +3,12 @@
 #
 # Privacy-by-default pref values for regular profiles (third-party cookies
 # blocked, WebRTC default_public_interface_only, prediction off, DNT off,
-# HTTPS-First balanced). Hooked from chrome/browser/profiles/profile_impl.cc.
+# HTTPS-First balanced, no navigation-error probes to Google, no keyless
+# password leak checks). Hooked from chrome/browser/profiles/profile_impl.cc.
+#
+# Default feature overrides (features that only talk to Google in a keyless
+# build). Hooked from chrome/browser/metrics/chrome_feature_list_creator.cc.
+# See docs/NETWORK_TRAFFIC.md.
 
 source_set("privacy") {
   sources = [
@@ -16,7 +21,45 @@ source_set("privacy") {
     "//chrome/common",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
+    "//components/embedder_support",
+    "//components/password_manager/core/common",
     "//components/pref_registry",
     "//components/prefs",
+  ]
+
+  # //chrome/browser depends on this target only; it reaches the feature
+  # overrides through here.
+  public_deps = [ ":feature_overrides" ]
+}
+
+# Kept separate (and light) so the standalone molt_ai_unittests binary can
+# link it without chrome/common.
+source_set("feature_overrides") {
+  sources = [
+    "molt_feature_overrides.cc",
+    "molt_feature_overrides.h",
+  ]
+
+  deps = [
+    "//components/autofill/core/common:features",
+    "//components/omnibox/common",
+    "//components/translate/core/browser",
+  ]
+
+  public_deps = [ "//base" ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_feature_overrides_unittest.cc" ]
+  deps = [
+    ":feature_overrides",
+    "//base",
+    "//base/test:test_support",
+    "//components/autofill/core/common:features",
+    "//components/omnibox/common",
+    "//components/translate/core/browser",
+    "//testing/gtest",
   ]
 }

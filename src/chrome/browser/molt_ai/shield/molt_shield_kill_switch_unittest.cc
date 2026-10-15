@@ -21,13 +21,15 @@ namespace {
 bool AllHooksEnabled() {
   return IsRequestProxyEnabled() && IsFrameBlockingEnabled() &&
          IsWebSocketEnabled() && IsKeepAliveEnabled() &&
-         IsCosmeticsEnabled() && IsConsentKillerEnabled();
+         IsCosmeticsEnabled() && IsConsentKillerEnabled() &&
+         IsRemoveParamEnabled();
 }
 
 bool AnyHookEnabled() {
   return IsRequestProxyEnabled() || IsFrameBlockingEnabled() ||
          IsWebSocketEnabled() || IsKeepAliveEnabled() ||
-         IsCosmeticsEnabled() || IsConsentKillerEnabled();
+         IsCosmeticsEnabled() || IsConsentKillerEnabled() ||
+         IsRemoveParamEnabled();
 }
 
 TEST(MoltShieldKillSwitchTest, FeatureNamesAreStable) {
@@ -37,6 +39,7 @@ TEST(MoltShieldKillSwitchTest, FeatureNamesAreStable) {
   EXPECT_STREQ(kMoltShieldKeepAlive.name, "MoltShieldKeepAlive");
   EXPECT_STREQ(kMoltShieldCosmetics.name, "MoltShieldCosmetics");
   EXPECT_STREQ(kMoltShieldConsentKiller.name, "MoltShieldConsentKiller");
+  EXPECT_STREQ(kMoltShieldRemoveParam.name, "MoltShieldRemoveParam");
   EXPECT_STREQ(switches::kDisableMoltShield, "disable-molt-shield");
 }
 
@@ -55,6 +58,7 @@ TEST(MoltShieldKillSwitchTest, FeatureTurnsOffOnlyItsHook) {
   EXPECT_TRUE(IsKeepAliveEnabled());
   EXPECT_TRUE(IsCosmeticsEnabled());
   EXPECT_TRUE(IsConsentKillerEnabled());
+  EXPECT_TRUE(IsRemoveParamEnabled());
   EXPECT_FALSE(IsMoltShieldDisabledByCommandLine());
   EXPECT_EQ(FlagNamesOfDisabledHooks(),
             std::vector<std::string_view>{"molt-shield-websocket"});
@@ -75,6 +79,8 @@ TEST(MoltShieldKillSwitchTest, EachFeatureMapsToItsFlag) {
       {kMoltShieldCosmetics, "molt-shield-cosmetics", &IsCosmeticsEnabled},
       {kMoltShieldConsentKiller, "molt-shield-consent-killer",
        &IsConsentKillerEnabled},
+      {kMoltShieldRemoveParam, "molt-shield-removeparam",
+       &IsRemoveParamEnabled},
   };
   for (const auto& c : kCases) {
     SCOPED_TRACE(c.flag);
@@ -96,7 +102,8 @@ TEST(MoltShieldKillSwitchTest, CommandLineSwitchTurnsEverythingOff) {
   base::test::ScopedFeatureList features;
   features.InitWithFeatures(
       {kMoltShieldRequestProxy, kMoltShieldFrameBlocking, kMoltShieldWebSocket,
-       kMoltShieldKeepAlive, kMoltShieldCosmetics, kMoltShieldConsentKiller},
+       kMoltShieldKeepAlive, kMoltShieldCosmetics, kMoltShieldConsentKiller,
+       kMoltShieldRemoveParam},
       {});
   EXPECT_FALSE(AnyHookEnabled());
 }

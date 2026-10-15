@@ -4,6 +4,7 @@
 #ifndef MOLT_AI_DOM_DOM_INTERPRETER_H_
 #define MOLT_AI_DOM_DOM_INTERPRETER_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -108,17 +109,26 @@ struct StructuredPage {
 //   - Content hierarchy
 //   - Data tables
 // ============================================================
+//
+// All extraction runs in time linear in the input (no std::regex), so it is
+// safe on hostile pages; still, callers run it off the UI thread on HTML
+// capped with CapHtmlForParsing() (see DOMContentBridge).
+// ============================================================
 class DOMInterpreter {
  public:
+  // Most HTML bytes ParseHTML() is given by DOMContentBridge (S5).
+  static constexpr size_t kMaxParseHtmlBytes = 2 * 1024 * 1024;
+
   DOMInterpreter();
   ~DOMInterpreter();
+
+  // |html| cut to at most kMaxParseHtmlBytes, at a UTF-8 character
+  // boundary.
+  static std::string CapHtmlForParsing(std::string html);
 
   // Parse raw HTML into structured page representation
   StructuredPage ParseHTML(const std::string& html,
                            const std::string& url) const;
-
-  // Parse DOM from a live browser tab (integrates with Chromium content layer)
-  StructuredPage ParseTab(int tab_id) const;
 
   // Extract only interactive elements (for agent actions)
   std::vector<ButtonInfo> ExtractButtons(const std::string& html) const;
@@ -127,13 +137,6 @@ class DOMInterpreter {
 
   // Extract main content text (article body, removing nav/ads/footer)
   std::string ExtractMainContent(const std::string& html) const;
-
-  // Extract structured data from specific CSS selectors
-  std::string ExtractBySelector(const std::string& html,
-                                 const std::string& selector) const;
-
-  // Get element at coordinates (for agent click targeting)
-  std::string GetElementAtPosition(int tab_id, int x, int y) const;
 
   // Truncate content to fit within token limit
   static std::string TruncateToTokenLimit(const std::string& content,

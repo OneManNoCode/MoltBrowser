@@ -23,6 +23,8 @@ rust_static_library("molt_adblock") {
     "engine.rs",
     "molt_adblock.rs",
     "preprocess.rs",
+    "procedural.rs",
+    "removeparam.rs",
   ]
   inputs = [
     "data/builtin_filters.txt",

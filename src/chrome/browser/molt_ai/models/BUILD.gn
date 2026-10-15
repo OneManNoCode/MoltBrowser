@@ -3,8 +3,6 @@
 #
 # On-device model downloads: pinned Hugging Face revisions, streamed
 # SHA-256 verification, correct resume (S13). Used by the AI chat handler.
-# (model_manager.* / model_downloader.* in this directory are the older,
-# uncalled implementations still listed in ../BUILD.gn:molt_ai_models.)
 
 source_set("download_policy") {
   sources = [

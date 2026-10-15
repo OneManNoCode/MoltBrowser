@@ -3,12 +3,26 @@
 
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 
+#include <utility>
+
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/thread_pool.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 
 namespace molt_ai {
+
+namespace {
+
+// Runs on the thread pool: page HTML can be megabytes (S5).
+StructuredPage ParseCapped(std::string html, std::string url) {
+  return DOMInterpreter().ParseHTML(
+      DOMInterpreter::CapHtmlForParsing(std::move(html)), url);
+}
+
+}  // namespace
 
 DOMContentBridge::DOMContentBridge(content::WebContents* web_contents)
     : web_contents_(web_contents) {}
@@ -21,9 +35,16 @@ void DOMContentBridge::GetPageHTML(HTMLCallback callback) {
     return;
   }
 
-  // Execute JavaScript to get the full page HTML
+  // The page HTML, cut in the page to DOMInterpreter's cap (in UTF-16 code
+  // units, so at least that many bytes survive) so a huge document isn't
+  // copied through IPC only to be cut here.
   web_contents_->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
-      u"document.documentElement.outerHTML",
+      u"(function(){var e=document.documentElement;"
+      u"var h=e?e.outerHTML:'';return h.length>" +
+          base::NumberToString16(DOMInterpreter::kMaxParseHtmlBytes) +
+          u"?h.slice(0," +
+          base::NumberToString16(DOMInterpreter::kMaxParseHtmlBytes) +
+          u"):h;})()",
       base::BindOnce(
           [](HTMLCallback cb, base::Value result) {
             if (result.is_string()) {
@@ -73,14 +94,20 @@ std::string DOMContentBridge::GetPageURL() const {
 void DOMContentBridge::GetStructuredPage(StructuredPageCallback callback) {
   std::string url = GetPageURL();
 
+  // Parse off the UI thread, at most kMaxParseHtmlBytes of it (S5). The
+  // parse touches nothing but its arguments, so shutdown needn't wait for
+  // it; |callback| runs back on this (UI) sequence.
   GetPageHTML(base::BindOnce(
-      [](StructuredPageCallback cb, const std::string& page_url,
+      [](StructuredPageCallback cb, std::string page_url,
          const std::string& html) {
-        DOMInterpreter interpreter;
-        StructuredPage page = interpreter.ParseHTML(html, page_url);
-        std::move(cb).Run(page);
+        base::ThreadPool::PostTaskAndReplyWithResult(
+            FROM_HERE,
+            {base::TaskPriority::USER_VISIBLE,
+             base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+            base::BindOnce(&ParseCapped, html, std::move(page_url)),
+            std::move(cb));
       },
-      std::move(callback), url));
+      std::move(callback), std::move(url)));
 }
 
 void DOMContentBridge::GetElementAtPoint(int x, int y, TextCallback callback) {

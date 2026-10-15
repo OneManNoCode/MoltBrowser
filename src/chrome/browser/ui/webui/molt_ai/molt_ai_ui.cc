@@ -61,6 +61,55 @@ function esc(t) {
   return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// An http(s) URL normalised for opening, or '' (javascript:, data:, ...).
+function safeHttpHref(u) {
+  try {
+    var p = new URL(String(u));
+    return (p.protocol === 'http:' || p.protocol === 'https:') ? p.href : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+// A13: the licence a local model's weights come under, with a link to the
+// full terms (opened in a real tab by the browser, http(s) only). The
+// values come from the C++ model registry and are escaped like any data.
+function modelLicenseLine(m) {
+  if (!m || !m.license_name) return '';
+  var href = safeHttpHref(m.license_url);
+  if (!href) {
+    return '<div class="mlicense">Licence: ' + esc(m.license_name) + '</div>';
+  }
+  return '<div class="mlicense">Licence: <button type="button" ' +
+         'class="mlicense-link" data-on-click="openModelLicense" ' +
+         'data-license-url="' + esc(href) + '">' + esc(m.license_name) +
+         '</button></div>';
+}
+
+function openModelLicense(url) {
+  var href = safeHttpHref(url);
+  if (href) sendWithPromise('openUrlInTab', href);
+}
+
+// Same, as a DOM node for the model menu rows; clicking it opens the terms
+// without also selecting/downloading the row's model.
+function modelLicenseNode(m) {
+  if (!m || !m.license_name) return null;
+  var href = safeHttpHref(m.license_url);
+  var el = document.createElement(href ? 'button' : 'span');
+  el.className = 'mlic';
+  el.textContent = m.license_name;
+  if (href) {
+    el.type = 'button';
+    el.title = 'Open the licence terms';
+    el.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      openModelLicense(href);
+    });
+  }
+  return el;
+}
+
 // ---- Markdown Rendering ----
 var codeBlockId = 0;
 function renderMarkdown(text) {
@@ -273,6 +322,7 @@ function refreshModelList() {
           '</div>' +
         '</div>' +
         '<div class="meta">' + (m.quantization ? esc(m.quantization) + ' \u00b7 ' : '') + sizeStr + '</div>' +
+        modelLicenseLine(m) +
         '<div style="margin-top:6px">' + statusBadge + '</div>' +
         (actionBtns ? '<div class="card-actions">' + actionBtns + '</div>' : '') +
         '<div class="progress-wrap" id="pw-' + esc(m.model_id) + '">' +
@@ -451,13 +501,16 @@ function renderModelChipDropdown() {
     var sizeStr2 = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
     item.innerHTML = moltHTML(
       moltBrandTile(m.company) +
-      '<div style="flex:1;min-width:0">' +
+      '<div class="mmain" style="flex:1;min-width:0">' +
         '<div class="mco" style="color:' + moltBrandColor(m.company) + '">' +
           esc(m.company || 'Local') + '</div>' +
         '<div class="mname">' + esc(m.display_name || m.model_id) + '</div>' +
         '<div class="msize">' + (m.quantization ? esc(m.quantization) + ' · ' : '') + sizeStr2 + '</div>' +
       '</div>' +
       '<span class="mstatus ' + statusClass + '">' + statusText + '</span>');
+    var licNode = modelLicenseNode(m);
+    var mainCol = item.querySelector('.mmain');
+    if (licNode && mainCol) mainCol.appendChild(licNode);
     item.onclick = function() {
       if (isActive) { toggleModelDropdown(); return; }
       if (m.is_downloaded) {
@@ -873,6 +926,9 @@ moltActions({
   deleteModel: function() { deleteModel(this.getAttribute('data-model-id')); },
   downloadModel: function() { downloadModel(this.getAttribute('data-model-id')); },
   cancelDownload: function() { cancelDownload(); },
+  openModelLicense: function() {
+    openModelLicense(this.getAttribute('data-license-url'));
+  },
 });
 
 // Handle ?q= parameter from omnibox @ai prefix
@@ -1010,6 +1066,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-card:hover{transform:translateY(-1px);border-color:var(--glass-border-hi);background:rgba(255,255,255,0.06)}
 .model-card .name{font-size:14px;font-weight:600;color:#e0e0e0}
 .model-card .meta{font-size:12px;color:#666;margin-top:2px}
+.model-card .mlicense{font-size:12px;color:#666;margin-top:2px}
+.model-card .mlicense-link{padding:0;border:0;background:none;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
 .brandtile{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;border-radius:9px;flex:0 0 auto;overflow:hidden}
 .model-card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .model-card .chead-txt{min-width:0}
@@ -1052,6 +1110,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .model-chip-item.active{background:rgba(74,222,128,0.14)}
 .model-chip-item .mname{font-size:13px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .model-chip-item .msize{font-size:11px;color:#666}
+.model-chip-item .mlic{display:block;max-width:100%;padding:0;border:0;background:none;font:inherit;font-size:11px;color:#666;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-chip-item button.mlic{cursor:pointer;text-decoration:underline}
 .model-chip-item .mco{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
 .model-chip-item .mstatus{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
 .model-chip-item .mstatus.active{background:#1a3a1a;color:#4ade80}

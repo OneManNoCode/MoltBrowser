@@ -18,7 +18,7 @@ Built by [GenEye AI Labs Inc.](https://geneye.ai/moltbrowser)
 
 Full history: [`CHANGELOG.md`](CHANGELOG.md). What's next: [`ROADMAP.md`](ROADMAP.md).
 
-- **Coming in v0.3 "Private by default"** (in release testing): signed updates, MoltShield rebuilt on Brave's adblock-rust, MoltNet in its own isolated Tor window, private-by-default settings, opt-in encrypted AI memory, and locked-down internal pages. See the [changelog](CHANGELOG.md).
+- **Coming in v0.3 "Private by default"** (in release testing): signed updates, MoltShield rebuilt on Brave's adblock-rust with tracking-parameter stripping, fingerprinting protection in the engine, MoltNet in its own isolated Tor window with `.onion` support, private-by-default settings, opt-in encrypted AI memory, Gemma 4 support, and locked-down internal pages. See the [changelog](CHANGELOG.md).
 
 Want to contribute? See [`CONTRIBUTING.md`](CONTRIBUTING.md). Issues and
 PRs welcome — pick anything from the changelog "Unreleased" section or
@@ -35,11 +35,11 @@ MoltBrowser is an open-source, AI-native web browser built on a hardened open we
 - **Agent mode** — Record a web task once, review it as editable plain-English steps, then run it on demand, in the background, or on a schedule. Per-step screenshots, a Runs history, and label-aware replay that survives page redesigns.
 - **On-device + cloud AI** — Run local models (TinyLlama ships in the box; add LLaMA, Qwen, Mistral, Phi via llama.cpp) *or* bring your own key for OpenAI / Anthropic / Gemini and any OpenAI-compatible endpoint. Your choice per chat.
 - **Grounded attachments** — Drop in a document or image and MoltBrowser extracts its text on-device and answers from it. With a local model, nothing leaves your machine.
-- **MoltShield Privacy** — Built-in tracker blocking and cookie-consent auto-dismissal. (Full-page subresource blocking with community filter lists and fingerprinting protection are in progress — see [ROADMAP.md](ROADMAP.md).)
-- **MoltNet** — One-click Tor routing that hides your IP address from the sites you visit, with an exit-country selector in the toolbar. (Not yet a replacement for Tor Browser: a separate Tor profile and anti-fingerprinting are in progress.)
+- **MoltShield Privacy** — Built-in tracker blocking and cookie-consent auto-dismissal. (v0.3, in release testing, adds full subresource blocking with community filter lists, tracking-parameter stripping and engine-level fingerprinting protection — see [ROADMAP.md](ROADMAP.md).)
+- **MoltNet** — One-click Tor routing that hides your IP address from the sites you visit, with an exit-country selector in the toolbar. (v0.3, in release testing, moves it to a separate Tor profile with `.onion` support and fingerprinting uniformity. It is not yet a replacement for Tor Browser.)
 - **Liquid Glass UI** — A visionOS-style frosted-glass new-tab page, AI panel, and settings; an opaque black-glass toolbar with floating pill buttons.
 - **One-click import** — Bring your bookmarks and saved passwords over from another browser in a click.
-- **Extension-compatible** — Supports standard Chrome web-extension APIs. (A `browser.ai.*` / built-in AI API for pages and extensions is planned.)
+- **Extension-compatible** — Supports standard Chrome web-extension APIs. (Web-standard built-in AI APIs for pages and extensions are planned.)
 - **Desktop** — macOS (Apple Silicon) today; Windows and Linux builds track the same source.
 
 ## Architecture
@@ -47,20 +47,22 @@ MoltBrowser is an open-source, AI-native web browser built on a hardened open we
 ```
 +--------------------------------------------------+
 |                Browser UI Layer                  |
-|  Omnibox AI | Sidebar Agent | Page AI | Personas |
+|  Omnibox AI | AI chat (page + side panel)        |
+|  Agent mode studio                               |
 +--------------------------------------------------+
 |           Browser Intelligence Layer             |
-| Agent Engine | Task Planner | Memory Engine      |
-| DOM Interpreter | Tab Context Manager            |
+| Web agent + Agent mode (record / replay)         |
+| Memory service | DOM interpreter | page context  |
 +--------------------------------------------------+
 |               LLM Runtime Layer                  |
-| llama.cpp runtime | model manager | prompt router |
+| llama.cpp runtime | model downloads | cloud keys |
 +--------------------------------------------------+
 |                Model Layer                       |
-| LLaMA 3 | Qwen 2 | Mistral | Phi-3 | Gemma     |
+| Llama | Qwen | Mistral | Phi | Gemma | gpt-oss   |
 +--------------------------------------------------+
 |              Privacy & Security                  |
-| MoltShield | MoltNet | AI Sandbox                |
+| MoltShield | MoltNet | fingerprinting protection |
+| agent safety | signed updates                    |
 +--------------------------------------------------+
 |             Browser Core Engine                  |
 | Blink | V8 | Network Stack | Open Web Engine     |
@@ -125,42 +127,32 @@ cd MoltBrowser
 ```
 moltbrowser/
   chromium/src/              # Chromium source tree
-    chrome/browser/molt_ai/  # Core AI runtime modules
-      agents/                # Agent Engine, Task Planner
-      dom/                   # DOM Interpreter
-      memory/                # Memory Engine, vector store
-      models/                # Model Manager, downloader
-      personas/              # Persona system
-      security/              # AI Sandbox, action validator
-      ui/                    # AI sidebar, model manager UI
+    chrome/browser/molt_ai/  # MoltBrowser's own browser-process code
+      agents/                # Web agent
+      automation/            # Agent mode: recorder, runner, scheduler
+      dom/                   # DOM interpreter (page reader)
+      fingerprinting/        # Fingerprinting protection (browser side)
+      memory/                # Opt-in AI memory
+      models/                # Verified model downloads
+      runtime/               # On-device LLM runtime (llama.cpp)
+      security/              # Agent safety, internal-page guards
+      shield/                # MoltShield (adblock-rust)
+      tor/                   # MoltNet
+      update/                # Signed updates
+    third_party/blink/renderer/core/molt_fingerprinting/  # Engine side
     third_party/llama_cpp/   # Vendored llama.cpp
   docs/                      # Documentation
   scripts/                   # Build and setup scripts
-  sdk/                       # Extension SDK
   build-system/              # Build configurations
 ```
 
-## browser.ai.* Extension API
+## Built-in AI APIs (planned)
 
-```javascript
-// Run a prompt against local LLM
-const response = await browser.ai.run("Explain this code", {
-  model: "llama3-8b",
-  maxTokens: 500
-});
-
-// Get page summary
-const summary = await browser.ai.pageSummary();
-
-// Run an autonomous agent task
-const result = await browser.ai.agentTask("Find the best price for iPhone 16");
-
-// Extract structured data from page
-const data = await browser.ai.extractData("table.pricing");
-
-// List available models
-const models = await browser.ai.getModels();
-```
+Pages and extensions can't call MoltBrowser's AI yet. The plan is the web
+standards Chrome is shipping (the Prompt, Summarizer, Writer, Rewriter and
+Translator APIs), backed by the on-device model you choose and running fully
+offline. See [ROADMAP.md](ROADMAP.md). An earlier `browser.ai.*` sketch was
+never wired up and has been removed.
 
 ## Download
 
@@ -189,13 +181,13 @@ Or browse the [releases page](https://github.com/OneManNoCode/MoltBrowser/releas
 | MoltShield on adblock-rust: full subresource blocking, EasyList/uBO lists, cosmetics, per-site toggle | 🧪 v0.3 (in release testing) |
 | Cookie consent popup auto-blocking | ✅ Complete |
 | YouTube ad blocking (network + scriptlet) | 🧪 v0.3 (in release testing) |
-| Fingerprint protection (engine-level randomization / Tor-window uniformity) | 📋 Planned |
+| Fingerprint protection (engine-level randomization / Tor-window uniformity) | 🧪 v0.3 (in release testing) |
+| Tracking-parameter stripping (utm_*, fbclid, gclid, uBO `$removeparam`) | 🧪 v0.3 (in release testing) |
 | Agent mode — record → edit → run / schedule web workflows | ✅ Complete (v0.2.5) |
 | Agent mode — per-step screenshots + Runs history, Watch/Auto modes | ✅ Complete (v0.2.5) |
 | MoltNet Tor routing UI | ✅ Complete |
-| MoltNet in its own isolated Tor window, per-site circuits, New Identity, bridges | 🧪 v0.3 (in release testing) |
+| MoltNet in its own isolated Tor window, per-site circuits, New Identity, bridges, `.onion` | 🧪 v0.3 (in release testing) |
 | MoltNet Tor exit-country selector | ✅ Complete (v0.2.1, all platforms) |
-| Persona system (5 built-in + custom) | 🔨 Not wired into the shipping UI |
 | Memory engine (SQLite, keyword-hash search; real embeddings planned) | ✅ Shipped — opt-in + encrypted in v0.3 |
 | Chat export/import, search, keyboard shortcuts | ✅ Complete |
 | Model downloading from HuggingFace | ✅ Complete |

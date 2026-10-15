@@ -206,6 +206,7 @@ void MoltShieldNavigationThrottle::OnCosmeticsTimeout() {
 void MoltShieldNavigationThrottle::StashCosmetics() {
   if (!cosmetics_ || (cosmetics_->hide_css.empty() &&
                       cosmetics_->scriptlet_js.empty() &&
+                      cosmetics_->procedural_json.empty() &&
                       cosmetics_->generichide)) {
     return;
   }

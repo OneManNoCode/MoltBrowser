@@ -38,6 +38,8 @@ source_set("shield") {
     "molt_shield_about_flags.h",
     "molt_shield_engine.cc",
     "molt_shield_engine.h",
+    "molt_shield_navigation_interceptor.cc",
+    "molt_shield_navigation_interceptor.h",
     "molt_shield_navigation_throttle.cc",
     "molt_shield_navigation_throttle.h",
     "molt_shield_proxying_url_loader_factory.cc",

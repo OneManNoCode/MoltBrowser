@@ -19,6 +19,15 @@
 # Usage:
 #   ./scripts/package-linux.sh [--version VERSION] [--format FORMAT]
 #   FORMAT: all, tar, deb, rpm, appimage, flatpak
+#
+# Tor: Linux packages don't bundle tor. The .deb and .rpm declare a weak
+# dependency ("Recommends: tor", installed by default by apt and dnf) and
+# MoltNet runs the distribution's /usr/bin/tor (or /usr/sbin/tor) only if
+# root owns it and every directory above it (TorManager::FindTorBinary).
+# Without it, MoltNet says "Install the tor package". MoltNet starts its own
+# tor process as the user with a private torrc and data directory; it does
+# not use or need the tor.service system daemon that Debian's tor package
+# enables.
 
 set -e
 
@@ -147,11 +156,15 @@ Section: web
 Priority: optional
 Architecture: amd64
 Depends: libnss3 (>= 3.26), libatk1.0-0 (>= 1.12.4), libatk-bridge2.0-0 (>= 2.5.3), libcups2 (>= 1.6.0), libdrm2 (>= 2.4.38), libgtk-3-0 (>= 3.9.10), libxkbcommon0 (>= 0.4.1), libxcomposite1 (>= 1:0.3-1), libxdamage1 (>= 1:1.1), libxrandr2 (>= 2:1.2.99.3), libgbm1 (>= 8.1~0), libpango-1.0-0 (>= 1.14.0), libasound2 (>= 1.0.17)
+Recommends: tor
 Maintainer: GenEye AI Labs Inc. <support@geneye.ai>
 Description: MoltBrowser — AI-Native Privacy Browser
  MoltBrowser is a privacy-first browser with built-in AI capabilities:
  on-device LLM inference, MoltShield ad/tracker blocking, an AI chat
  sidebar, MoltNet privacy routing, and support for standard web extensions.
+ .
+ MoltNet windows route through Tor using the distribution's tor package
+ (recommended); without it MoltNet is unavailable.
 Homepage: https://moltbrowser.com
 EOF
 
@@ -199,10 +212,16 @@ URL:            https://moltbrowser.com
 Source0:        moltbrowser-$VERSION.tar.gz
 
 Requires:       nss >= 3.26, atk >= 1.12.4, at-spi2-atk >= 2.5.3, cups-libs >= 1.6.0, libdrm >= 2.4.38, gtk3 >= 3.9.10, libxkbcommon >= 0.4.1, alsa-lib >= 1.0.17
+# Weak dependency (rpm >= 4.12; dnf installs it by default). MoltNet runs
+# the distribution's root-owned /usr/bin/tor; Linux packages don't bundle it.
+Recommends:     tor
 
 %description
 MoltBrowser is a privacy-first browser with built-in AI capabilities,
 on-device LLM inference, and privacy-first design.
+
+MoltNet windows route through Tor using the distribution's tor package
+(recommended); without it MoltNet is unavailable.
 
 %install
 cd %{_sourcedir}

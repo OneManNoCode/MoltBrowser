@@ -29,11 +29,30 @@ pub fn is_safe_selector(selector: &str) -> bool {
     if trimmed.starts_with('@') {
         return false;
     }
+    // `;` is harmless inside a quoted attribute value (uBO's anti-adblock
+    // fixes match `body[style="opacity: 0;"]`), and refused elsewhere.
+    let mut quote = 0u8;
+    let mut escaped = false;
     for b in selector.bytes() {
         match b {
-            b'{' | b'}' | b';' | b'<' | b'\0' | b'\n' | b'\r' => return false,
+            b'{' | b'}' | b'<' | b'\0' | b'\n' | b'\r' => return false,
+            b';' if quote == 0 => return false,
             _ => {}
         }
+        if escaped {
+            escaped = false;
+        } else if b == b'\\' {
+            escaped = true;
+        } else if quote != 0 {
+            if b == quote {
+                quote = 0;
+            }
+        } else if b == b'"' || b == b'\'' {
+            quote = b;
+        }
+    }
+    if quote != 0 {
+        return false;
     }
     // Comments could swallow the rule's declaration block; url()/image-set()
     // make no sense in a selector and are the obvious exfiltration vector.
@@ -77,6 +96,13 @@ mod tests {
         assert!(!is_safe_selector("@import url(//evil)"));
         assert!(!is_safe_selector("a /* x"));
         assert!(!is_safe_selector("a[style*=\"url(\"]"));
+        // `;` only inside quotes; unbalanced quotes are refused.
+        assert!(is_safe_selector("body[style=\"opacity: 0;\"]"));
+        assert!(is_safe_selector("html[style='overflow: hidden;']"));
+        assert!(!is_safe_selector("a;b"));
+        assert!(!is_safe_selector("a[title=\"x\"];b"));
+        assert!(!is_safe_selector("a[title=\"x;]"));
+        assert!(!is_safe_selector("a[title=\"\\\";\"];b"));
         assert!(!is_safe_selector(""));
         assert!(!is_safe_selector(&"a".repeat(MAX_SELECTOR_LEN + 1)));
     }

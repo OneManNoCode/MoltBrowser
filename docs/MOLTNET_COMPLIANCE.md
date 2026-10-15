@@ -52,6 +52,21 @@ claims below as the design intent, not as measured results.
 7. **Exit country (optional).** You can pin the exit to a country. This shrinks
    the set of exits you share with other Tor users, which **reduces anonymity**;
    the choice is not saved and resets when MoltBrowser restarts.
+8. **Onion services (`.onion`).** In a MoltNet window, onion sites load through
+   Tor like any other site; `http://` onion addresses are not upgraded or
+   blocked by HTTPS-Only, because an onion connection is already encrypted
+   end to end. When an `https://` site announces an onion version
+   (`Onion-Location` header), a bar offers *Open .onion version*; MoltBrowser
+   never switches on its own.
+9. **Onion addresses stay out of regular windows.** A regular or incognito
+   window can't reach onion services, so it doesn't try: opening a `.onion`
+   address there shows "This is a Tor onion site" with a button to open it in
+   a MoltNet window (nothing opens until you click). The onion name is never
+   looked up in DNS (also when a page in a regular window tries to load
+   something from an onion address) and is not sent to your search engine's
+   suggestions while you type it. While MoltNet is running, sites that
+   announce an onion version also get an *Open in MoltNet window* bar in
+   regular windows.
 
 ## 2. How it is built
 
@@ -78,25 +93,52 @@ MoltNet windows are never restored after a restart.
 | `socks5://` proxy | hostnames are resolved by Tor, not your DNS resolver |
 | WebRTC `disable_non_proxied_udp` | WebRTC can't open direct UDP that would reveal your IP |
 | Network prediction off | no DNS prefetch / preconnect outside the proxy |
-| HTTPS-Only mode on | warns before any plain-HTTP page, which the exit relay could read or modify |
+| HTTPS-Only mode on | warns before any plain-HTTP page, which the exit relay could read or modify (not for `.onion`, which never leaves Tor) |
 | Connections partitioned by top-level site | no socket reuse across sites; enables per-site circuits |
 
-**MoltBrowser's own Tor.** MoltNet runs only the Tor bundled with MoltBrowser
-(a different Tor binary requires the explicit `--moltnet-tor-binary=<path>`
-switch; there is no Homebrew/PATH fallback). Tor picks its own SOCKS and control
-ports (`auto`), writes them to a private file, and every control connection uses
-SAFECOOKIE authentication, checking Tor's proof (`SERVERHASH`) before sending
-ours, so a program squatting on a port cannot impersonate Tor. Tor is told to
-exit when MoltBrowser exits (`__OwningControllerProcess` + `TAKEOWNERSHIP`).
-A system-wide `torrc-defaults` is ignored. Pasted bridge lines are validated
-strictly (only obfs4/snowflake, fixed character sets) so they cannot inject
-other Tor options.
+**Onion addresses.** RFC 7686 reserves `.onion` for Tor, and the Chromium
+version MoltBrowser is built on doesn't special-case it, so MoltBrowser does,
+in three places outside MoltNet's Tor connection: a navigation check that runs
+before any other one stops `.onion` navigations in non-MoltNet windows (the
+page shown instead is a browser interstitial, so a website can't press its
+button, and the button only acts on a real click); the host resolver refuses
+every `.onion` name (no DNS, DNS-over-HTTPS, mDNS or hosts-file lookup, which
+also covers images, scripts, preconnects and prefetches); and the address bar
+doesn't send onion addresses to the search engine's suggestion service. In
+MoltNet windows the onion name goes to Tor inside the SOCKS5 request and is
+never resolved locally. `Onion-Location` is honored only on `https` pages that
+aren't onion sites themselves, only once per response, and only for a
+syntactically strict absolute `http(s)` URL whose host is a v3 onion address.
 
-**Supply chain.** Release builds refuse to bundle a Tor download whose SHA-256
-is not pinned in `scripts/bundle-tor.sh`. The bump to Tor 15.0.15 left the pins
-empty on purpose (the Tor archive was unreachable when the version was bumped),
-so release builds fail until they are filled in using the gpg-verified steps
-documented in that script.
+**MoltBrowser's own Tor.** MoltNet runs only the Tor bundled with MoltBrowser
+or, on Linux (whose packages don't bundle Tor), the distribution's `tor`
+package at `/usr/bin/tor` or `/usr/sbin/tor`, and that one only if `root` owns
+the file and every folder above it and none of them can be changed by other
+users. A different Tor binary requires the explicit
+`--moltnet-tor-binary=<path>` switch (owned by you or `root`, not writable by
+others); there is no Homebrew/PATH fallback. If no usable Tor is found,
+MoltNet says so; on Linux: "Install the tor package". MoltNet starts its own
+Tor process as you, with its own configuration and data folder, so a system
+Tor's settings and its `tor` service (which Debian enables) are not used. Tor
+picks its own SOCKS and control ports (`auto`), writes them to a private file,
+and every control connection uses SAFECOOKIE authentication, checking Tor's
+proof (`SERVERHASH`) before sending ours, so a program squatting on a port
+cannot impersonate Tor. Tor is told to exit when MoltBrowser exits
+(`__OwningControllerProcess` + `TAKEOWNERSHIP`). A system-wide
+`torrc-defaults` is ignored. Pasted bridge lines are validated strictly (only
+obfs4/snowflake, fixed character sets) so they cannot inject other Tor
+options. The same ownership checks apply to the OCR (tesseract) and
+voice (whisper) helpers: the bundled copy, or on Linux a `root`-owned
+`/usr/bin/tesseract` or `/usr/bin/whisper-cli`; never Homebrew, `/usr/local`
+or `PATH`.
+
+**Supply chain.** On Linux, Tor comes from your distribution's signed packages
+(MoltBrowser's `.deb`/`.rpm` declare `Recommends: tor`); MoltBrowser doesn't
+pin its version. Elsewhere, release builds refuse to bundle a Tor download
+whose SHA-256 is not pinned in `scripts/bundle-tor.sh`. The bump to Tor 15.0.15
+left the pins empty on purpose (the Tor archive was unreachable when the
+version was bumped), so release builds fail until they are filled in using the
+gpg-verified steps documented in that script.
 
 ## 3. What has been verified, and how
 
@@ -106,6 +148,9 @@ documented in that script.
 | The generated torrc (incl. bridges + exit pin) is valid | `tor --verify-config`, Tor 0.4.9.11 | Pass |
 | SAFECOOKIE against a real Tor; wrong cookie rejected via SERVERHASH; `TAKEOWNERSHIP` makes Tor exit when MoltBrowser's connection closes; `SETCONF`/`RESETCONF`/`NEWNYM` accepted | Standalone harness around the shipped control-connection code, Tor 0.4.9.11 | Pass |
 | Tor accepts MoltBrowser's SOCKS5 username/password greeting and records a per-site username | Byte-for-byte replay against Tor 0.4.9.11 | Pass |
+| `.onion` detection, v3 address and `Onion-Location` validation | 6 unit tests (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
+| Helper-binary checks (bundled copy; root-owned system Tor on Linux; rejects user-owned, group/world-writable, setuid, symlink escapes) | 13 unit tests incl. real-filesystem cases (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
+| `.onion` blocked and offered in regular windows, no DNS query, `Onion-Location` bar, `http://` onion under HTTPS-Only | Needs a Chromium build | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | Independent third-party audit | — | **Not done** |
 
@@ -143,6 +188,16 @@ Do all of this in a MoltNet window unless the step says otherwise.
 10. **The relays are real.** *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.
+11. **Onion sites.** In a MoltNet window, open an onion address both as
+    `https://` and as `http://`: both must load, with no HTTPS-Only warning
+    for `http://`. Open `https://www.torproject.org`: a bar must offer the
+    onion version, and nothing may change until you click it.
+12. **No onion names outside Tor (regular window).** Run
+    `sudo tcpdump -n -l port 53 | grep -i onion`, then type an onion address
+    in a regular window's address bar and press Enter: the "Tor onion site"
+    page must appear and tcpdump must print nothing. The button must open the
+    address in a MoltNet window. With DNS-over-HTTPS on, no DoH request may be
+    made for it (check `chrome://net-export`).
 
 ## 5. What MoltNet does *not* do
 
@@ -172,9 +227,19 @@ Do all of this in a MoltNet window unless the step says otherwise.
    - If Tor stops, another local program could take over its old port; MoltNet
      windows would then talk to that program. Close MoltNet windows when you
      turn MoltNet off.
-   - Linux builds don't bundle Tor yet (use `--moltnet-tor-binary`), and the
-     Windows packaging doesn't yet ship the pluggable transports, so bridges
-     there need a manual install.
+   - Linux packages use the distribution's Tor, without pluggable transports
+     or the built-in bridge list, so bridges (snowflake / obfs4) don't work
+     with it yet, and the sandboxed Flatpak can't use a system Tor at all.
+     The Windows packaging doesn't yet ship the pluggable transports either,
+     so bridges there need a manual install.
+   - If your regular windows use a proxy server (system, policy or
+     extension), a page there that loads an image or script from an onion
+     address still sends that request to the proxy (only navigations and DNS
+     lookups are blocked outside MoltNet).
+   - Onion sites are not treated as secure contexts, so the address bar shows
+     "Not secure" on `http://` onion sites and some web features stay off
+     there. `<meta http-equiv="onion-location">` is not supported (only the
+     header).
    - The Tor 15.0.15 SHA-256 pins in `scripts/bundle-tor.sh` are empty; release
      builds fail until they are filled in.
    - Bridges have been validated as configuration only; connecting through

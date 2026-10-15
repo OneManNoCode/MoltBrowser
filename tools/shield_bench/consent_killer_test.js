@@ -54,12 +54,42 @@ test('Cookiebot: Deny, never Customize', async () => {
   t.run();
   return t.w.clicked.join('|') === 'Deny';
 });
-test('generic cookie dialog by text, skipping Manage settings', async () => {
-  const t = makeDom(`<div role="dialog"><p>We and our partners use cookies</p>
+test('known CMP container by text, skipping Manage settings', async () => {
+  const t = makeDom(`<div class="cc-window"><p>We and our partners use cookies</p>
     <button>Manage settings</button><button>Accept all</button>
     <button>Reject all</button></div>`);
   t.run();
   return t.w.clicked.join('|') === 'Reject all';
+});
+test('Klaro container text fallback', async () => {
+  const t = makeDom(`<div class="klaro"><div class="cookie-notice">We use cookies
+    <button class="cm-btn">Learn more</button><button class="cm-btn">Decline</button>
+    </div></div>`);
+  t.run();
+  return t.w.clicked.join('|') === 'Decline';
+});
+test("a site's own cookie dialog (no known CMP) is left alone", async () => {
+  const t = makeDom(`<div role="dialog" aria-modal="true"><p>We and our
+    partners use cookies</p><button>Reject all</button></div>`);
+  t.run();
+  await sleep(300);
+  return t.w.clicked.length === 0;
+});
+test('site dialog about partners/privacy: Decline is never clicked', async () => {
+  const t = makeDom(`<div role="alertdialog" aria-modal="true">
+    <p>Acme Corp invited you to become partners. Review their privacy and
+    tracking terms.</p><button>Decline</button><button>Accept invitation</button>
+    </div>`);
+  t.run();
+  await sleep(300);
+  return t.w.clicked.length === 0;
+});
+test('site-named #cookie-banner is not a known CMP', async () => {
+  const t = makeDom(`<div id="cookie-banner" class="cookie-banner">This site
+    uses cookies <button>Reject all</button></div>`);
+  t.run();
+  await sleep(300);
+  return t.w.clicked.length === 0;
 });
 test('non-consent dialog is left alone', async () => {
   const t = makeDom(`<div role="dialog"><p>Subscribe to our newsletter!</p>
@@ -117,16 +147,16 @@ test('repurposed vendor id that accepts is not clicked', async () => {
   return t.w.clicked.length === 0;
 });
 test('hidden reject button is not clicked', async () => {
-  const t = makeDom(`<div role="dialog">cookies <button style="display:none">Reject all</button>
+  const t = makeDom(`<div id="didomi-notice">cookies <button style="display:none">Reject all</button>
     <button>Only necessary</button></div>`);
   t.run();
   return t.w.clicked.join('|') === 'Only necessary';
 });
 test('runs once per page (idempotent) and stops after a click', async () => {
-  const t = makeDom(`<div role="dialog">cookies <button>Reject all</button></div>`);
+  const t = makeDom(`<div class="cc-window">cookies <button>Reject all</button></div>`);
   t.run(); t.run();
   const d = t.w.document.createElement('div');
-  d.innerHTML = `<div role="dialog">cookies <button>Decline all</button></div>`;
+  d.innerHTML = `<div class="cc-window">cookies <button>Decline all</button></div>`;
   t.w.document.body.appendChild(d);
   await sleep(400);
   return t.w.clicked.join('|') === 'Reject all';

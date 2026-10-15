@@ -124,6 +124,9 @@ moltActions({
     downloadModel(this.getAttribute('data-model-id'));
   },
   cancelDownload: function() { cancelDownload(); },
+  openModelLicense: function() {
+    openModelLicense(this.getAttribute('data-license-url'));
+  },
 });
 )JS";
 
@@ -571,6 +574,9 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-chip-item .mname{font-size:12.5px;font-weight:550;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Mono quant/size subtitle, per the mockup's .mrow .nm small. */
 .model-chip-item .msize{font-size:10px;color:var(--faint);margin-top:1px;font-family:var(--mono)}
+/* Licence of the model's weights (A13); a link button inside the row. */
+.model-chip-item .mlic{display:block;max-width:100%;margin-top:1px;padding:0;border:0;background:none;font:inherit;font-size:10px;color:var(--faint);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-chip-item button.mlic{cursor:pointer;text-decoration:underline}
 .brandtile{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;min-width:30px;border-radius:9px;flex:0 0 auto;overflow:hidden}
 .model-chip-item .mco{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92}
 .mcheck{font-size:13px;font-weight:700;flex:0 0 auto}
@@ -609,6 +615,8 @@ a.chat-link{color:var(--accent);text-decoration:underline;cursor:pointer;word-br
 .model-card{padding:12px 16px;border-bottom:1px solid var(--surface2)}
 .model-card .name{font-size:13px;font-weight:600;color:var(--text)}
 .model-card .meta{font-size:11px;color:var(--faint);margin-top:2px}
+.model-card .mlicense{font-size:11px;color:var(--faint);margin-top:2px}
+.model-card .mlicense-link{padding:0;border:0;background:none;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
 .model-card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:7px}
 .model-card .chead-txt{min-width:0}
 .model-card .mco{font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.3;opacity:.92}

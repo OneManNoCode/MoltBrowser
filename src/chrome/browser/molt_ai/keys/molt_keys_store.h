@@ -71,11 +71,28 @@ struct ProviderConfig {
 // written earlier stay readable, and removing entries is still allowed.
 // May block on the OS keyring the first time: call under
 // ScopedAllowBlockingForMolt like the stores themselves.
+//
+// At the pinned Chromium, OSCrypt::IsEncryptionAvailable() is exactly that
+// test on every platform: Linux derives the "v11" keyring key (false when no
+// backend was selected or the keyring returned no password), macOS derives
+// the Keychain key, Windows has a DPAPI-wrapped key.
 bool IsSecureStorageAvailable();
 
 // User-facing explanation to surface when IsSecureStorageAvailable() is
 // false.
 std::string SecureStorageUnavailableMessage();
+
+// Encrypts |plaintext| (non-empty) for one of the secret stores. Succeeds
+// only when the result is protected by an OS-backed key: the check above
+// must pass and, on Linux, the output must carry OSCrypt's keyring prefix
+// ("v11"), never the hard-coded-key prefix ("v10"). On failure |ciphertext|
+// is left empty and nothing should be written.
+bool EncryptSecretForStorage(const std::string& plaintext,
+                             std::string* ciphertext);
+
+// Pure helper behind the Linux check above: true if |ciphertext| is OSCrypt
+// Linux output made with the keyring key. Exposed for tests.
+bool IsLinuxKeyringCiphertext(const std::string& ciphertext);
 
 // All static — the store is stateless apart from the on-disk file and
 // an optional test-root override. Every call reads or writes the whole

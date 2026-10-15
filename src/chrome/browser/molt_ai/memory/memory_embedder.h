@@ -7,8 +7,9 @@
 // Two implementations:
 //
 //   1. HashingEmbedder (default, sub-millisecond)
-//      Uses the signed feature-hashing trick over word + character
-//      bigrams. Deterministic, no model dependency, ~30µs for a
+//      Uses the signed feature-hashing trick over case-folded words +
+//      character bigrams (UTF-8 aware, see memory_embedder.cc).
+//      Deterministic, no model dependency, ~30µs for a
 //      typical 600-char chunk. Quality is approximately "fuzzy keyword
 //      overlap" — much better than substring search, much worse than
 //      a real transformer embedding, but the latency budget is the
@@ -31,10 +32,16 @@ namespace molt_ai {
 namespace memory {
 
 // Bumped whenever HashingEmbedder's output changes for the same input, so
-// MemoryStorage knows stored vectors are stale and re-embeds them from the
-// (encrypted) chunk text. v2: uppercase ASCII is lowercased instead of being
-// treated as a separator.
-inline constexpr int kHashingEmbedderVersion = 2;
+// MemoryStorage knows stored vectors are stale and re-embeds them all from
+// the (encrypted) chunk text when the DB is opened; vectors from two
+// versions are never mixed in one index.
+//   v2: uppercase ASCII is lowercased instead of being treated as a
+//       separator.
+//   v3: the tokenizer works on UTF-8 code points: Unicode spaces and
+//       punctuation separate words, non-ASCII letters are case-folded,
+//       character bigrams are taken over code points. ASCII-only text
+//       embeds exactly as in v2.
+inline constexpr int kHashingEmbedderVersion = 3;
 
 class MemoryEmbedder {
  public:

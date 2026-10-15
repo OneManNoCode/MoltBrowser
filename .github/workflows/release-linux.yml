@@ -70,7 +70,7 @@ jobs:
 
     steps:
       - name: Check out repo (no submodules — Chromium synced separately)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           # Preserve the gitignored chromium/ checkout AND out/ build dir between
@@ -258,7 +258,7 @@ jobs:
         # Avoids needing the `gh` CLI installed on the self-hosted runner.
         # draft: a release this creates stays a draft until the offline-signed
         # molt-release-manifest.json + .sig are attached (see release.yml).
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           draft: true

@@ -84,12 +84,14 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - **`base::Value` in this tree has NO nested `List()`/`Dict()`** → use `base::ListValue` / `base::DictValue` (live throughout `molt_ai/automation/*`)
 - **`GURL::host()` returns `std::string_view`** here → wrap as `std::string(g.host())`, not `= g.host()`
 - **`CopyFromSurface` is the 4-arg glic-era form**: `(gfx::Rect, gfx::Size, base::TimeDelta, cb)` where `cb` takes `const content::CopyFromSurfaceResult&` (a `base::expected<viz::CopyOutputBitmapWithMetadata, …>`); wrap with `mojo::WrapCallbackWithDefaultInvokeIfNotRun`. Used for per-step + record-time screenshots.
-- **`llama.cpp .at()` aborts under `-fno-exceptions`** — audit for `.at(` when updating the vendored llama.cpp.
+- **Never let an exception escape a `llama_*` call.** The llama.cpp targets build *with* exceptions; the Chromium code calling them doesn't, so an escaping exception aborts the browser. Check every C API you start using, and re-audit when updating the vendored llama.cpp (local patches are listed in `src/third_party/llama_cpp/README.chromium`).
+- **No `std::regex` on page content** — it's quadratic on hostile input and a regex error aborts under `-fno-exceptions`. Write a linear scanner (see `molt_ai/dom/dom_interpreter.cc`).
+- **Helper binaries go through `molt_ai/common/helper_binary.h`** (bundled copy, or a root-owned system copy on Linux) — never Homebrew, `/usr/local` or PATH. Launch system tools by absolute path.
 
 ### Build gotchas
 - **Editing `src/chrome/common/webui_url_constants.h` fans out a ~2h full recompile** on this machine (every WebUI host/URL constant + `kMoltBrowserVersion` live there). Plan version bumps accordingly.
 - After a build, **grep the full output for `error:` / "finished with an error"** — the `autoninja` wrapper can print "finished successfully" and exit 0 even on a failed compile. The real product code is in `Contents/Frameworks/MoltBrowser Framework.framework/…` (the `Contents/MacOS/MoltBrowser` binary is a thin launcher stub — its mtime/`strings` are meaningless).
-- **Local macOS build+install loop: `./scripts/dev-install-mac.sh`** — stages the out-dir app, carries the tor/ocr/whisper/molt_models payloads + regenerates the REQUIRED `default.metallib` (wiped on every rebuild), does the inside-out per-helper codesign (allow-jit on Renderer/GPU) with the real Developer ID, and installs to /Applications. This is the day-to-day loop after `autoninja … chrome`.
+- **Local macOS build+install loop: `./scripts/dev-install-mac.sh`** — stages the out-dir app, carries the tor/ocr/whisper/molt_models payloads + regenerates the REQUIRED `default.metallib` (wiped on every rebuild; built from llama.cpp's split kernels by `scripts/build-ggml-metallib.sh`), does the inside-out per-helper codesign (allow-jit on Renderer/GPU) with the real Developer ID, and installs to /Applications. This is the day-to-day loop after `autoninja … chrome`.
 
 ### WebUI Pattern (strict CSP — see `ui/webui/molt_ai/molt_webui_csp.h`)
 - JS → C++: `chrome.send('methodName', [args])`

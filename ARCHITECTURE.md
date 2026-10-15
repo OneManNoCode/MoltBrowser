@@ -7,10 +7,9 @@ MoltBrowser is an AI-native privacy browser built on a Chromium fork (v0.2.5; ma
 ```
 MoltBrowser
  |
- +-- BrowserAIRuntime — on-device (llama.cpp, Metal/Vulkan) + cloud
- |    +-- PromptRouter (persona-aware routing)
- |    +-- ModelManager (download, load, switch GGUF models)
- |    +-- ModelDownloader (HuggingFace Hub, SimpleURLLoader)
+ +-- BrowserAIRuntime — on-device (llama.cpp b11641, Metal on macOS, CPU
+ |    |   elsewhere) + cloud
+ |    +-- Model catalog + ModelDownloadJob (pinned revision, size, SHA-256)
  |    +-- CloudProvider (molt_ai/cloud) — OpenAI / Anthropic / Gemini +
  |    |    any OpenAI-compatible endpoint; keys in molt_ai/keys (keys.enc)
  |
@@ -33,13 +32,14 @@ MoltBrowser
  +-- Import (molt_ai/import) — bookmarks + passwords from other browsers
  |    +-- Safe Storage keychain decrypt; entry in the bookmarks UI
  |
- +-- MoltShield (privacy engine)
- |    +-- ABP filter parser (EasyList, uBlock, Fanboy)
- |    +-- Cookie consent auto-blocking
- |    +-- YouTube ad blocking (network + cosmetic + scriptlet)
- |    +-- Fingerprint protection (Canvas, WebGL, Audio)
- |    +-- URL tracking param stripping
- |    +-- Cookie policy enforcement
+ +-- MoltShield (privacy engine, molt_ai/shield) — see "MoltShield" below
+ |    +-- Brave's adblock-rust: EasyList, EasyPrivacy, uBlock Origin lists
+ |    +-- Subresource/frame/WebSocket/beacon blocking, cosmetic + procedural
+ |    |   filters, scriptlets, tracking-parameter stripping
+ |    +-- Cookie consent auto-reject (known consent platforms only)
+ |
+ +-- Fingerprinting protection (Blink core/molt_fingerprinting + molt_ai/
+ |    fingerprinting) — per-site, per-session farbling; MoltNet uniformity
  |
  +-- MoltNet (Tor windows, molt_ai/tor)
  |    +-- Dedicated off-the-record "MoltNet::Tor" profile per session; the
@@ -49,20 +49,23 @@ MoltBrowser
  |    +-- SAFECOOKIE control auth + TAKEOWNERSHIP; New Identity discards the
  |    |   profile, flushes connections/DNS, NEWNYM
  |    +-- Bridges (obfs4 / snowflake); see docs/MOLTNET_COMPLIANCE.md
+ |    +-- .onion only in MoltNet windows (OnionNavigationThrottle + the host
+ |    |   resolver refuse it elsewhere); Onion-Location offered as an infobar
+ |    +-- tor binary: bundled, or on Linux a root-owned /usr/bin|/usr/sbin/tor
  |
- +-- AgentEngine (LEGACY/experimental autonomous ReAct agent — molt_ai/agents;
- |    NOT the shipping "Agent mode" studio above, which is record/replay)
- |    +-- ReAct loop (GOAL -> PLAN -> ACT -> OBSERVE -> REASON)
- |    +-- ActionValidator (security sandbox)
- |    +-- DOMInterpreter / DOMContentBridge (page structure + live tab JS)
+ +-- WebAgent (molt_ai/agents) — chat-driven page actions, gated by
+ |    molt_ai/security/agent_safety
+ |    +-- DOMInterpreter (linear-time, thread pool, 2 MiB cap) /
+ |        DOMContentBridge (isolated-world page reads)
  |
- +-- MemoryEngine (SQLite + vector search)
- |    +-- Short-term session memory
- |    +-- Long-term persistent memory
- |    +-- Hash-based embeddings (MiniLM upgrade path)
+ +-- MemoryService (molt_ai/memory) — opt-in, encrypted SQLite store +
+ |    in-memory index, HashingEmbedder v3 (Unicode-aware keyword hashing)
  |
- +-- PersonaSystem (5 built-in + custom)
- |    +-- JSON persistence (~/.moltbrowser/personas.json)
+ +-- Security (molt_ai/security, molt_ai/common)
+ |    +-- agent_safety (http(s)-only, origin scope, credential fields, fenced
+ |    |   page text) + automation_security (workflow trust)
+ |    +-- WebUINavigationThrottle: web pages can't open chrome:// or molt://
+ |    +-- trusted_binary / helper_binary: which tor/OCR/whisper may run
  |
  +-- OmniboxAI (@ai prefix, ? prefix)
  |    +-- AiPromptProvider -> chrome://molt-ai/?q=...
@@ -81,17 +84,20 @@ MoltBrowser
 repo/
  +-- src/                              # Git-tracked source (copied to chromium/src for build)
  |    +-- chrome/browser/molt_ai/      # Core AI modules
- |    |    +-- runtime/                # BrowserAIRuntime, PromptRouter
- |    |    +-- models/                 # ModelManager, ModelDownloader
- |    |    +-- agents/                 # AgentEngine, ActionValidator
+ |    |    +-- runtime/                # BrowserAIRuntime, model catalog
+ |    |    +-- models/                 # ModelDownloadJob (verified downloads)
+ |    |    +-- agents/                 # WebAgent
+ |    |    +-- automation/             # Agent mode (record/replay)
  |    |    +-- dom/                    # DOMInterpreter, DOMContentBridge
- |    |    +-- memory/                 # MemoryEngine (SQLite)
- |    |    +-- personas/               # PersonaSystem
- |    |    +-- security/               # ActionValidator
+ |    |    +-- memory/                 # MemoryService, storage, index, embedder
+ |    |    +-- security/               # agent_safety, WebUINavigationThrottle
+ |    |    +-- common/                 # trusted helper-binary checks
+ |    |    +-- fingerprinting/         # session seed + renderer switches
+ |    |    +-- privacy/                # private-by-default prefs, feature overrides
  |    |    +-- shield/                 # MoltShield (ad/tracker blocker)
+ |    |    +-- tor/                    # MoltNet, .onion, Onion-Location
  |    |    +-- update/                 # UpdateManager, signed release manifests
  |    |    +-- side_panel/             # AI chat side panel coordinator
- |    |    +-- api/                    # browser.ai JavaScript API
  |    |    +-- android/                # Android scaffolding
  |    |    +-- ios/                    # iOS scaffolding
  |    +-- chrome/browser/ui/webui/molt_ai/  # WebUI pages
@@ -102,7 +108,8 @@ repo/
  |    |    +-- molt_ai_agent_ui.*      # chrome://molt-ai-agent/
  |    +-- chrome/common/
  |    |    +-- webui_url_constants.h   # URL registrations
- |    +-- third_party/llama_cpp/       # LLM inference engine (GGUF)
+ |    +-- third_party/llama_cpp/       # LLM inference engine (GGUF), see README.chromium
+ |    +-- third_party/blink/renderer/core/molt_fingerprinting/  # farbling engine
  |    +-- components/omnibox/          # AI omnibox provider
  |
  +-- chromium/                         # Full Chromium source (gitignored)
@@ -120,10 +127,14 @@ repo/
 ### On-Device Inference
 - **llama.cpp** for LLM inference — supports 100+ model architectures
 - **Metal** GPU acceleration on macOS (Apple Silicon)
-- **Vulkan** GPU acceleration on Linux/Windows/Android
-- **CoreML** for iOS Neural Engine
-- Models stored as GGUF files in `~/.moltbrowser/models/`
-- 6 pre-configured models (TinyLlama 1.1B to Gemma 2 9B)
+- CPU inference on Linux/Windows today (Vulkan planned)
+- Models stored as GGUF files in `~/.moltbrowser/models/`, downloaded with a
+  pinned revision, size and SHA-256
+- Vendored llama.cpp b11641 (`src/third_party/llama_cpp/README.chromium` lists
+  the local patches). Its targets build with exceptions; Chromium code calling
+  it doesn't, so no exception may escape a `llama_*` call. On macOS the Metal
+  kernels are compiled into `default.metallib` by
+  `scripts/build-ggml-metallib.sh`.
 
 ### WebUI Architecture
 - All UI is inline HTML/CSS/JS in C++ raw strings (no separate resource files)
@@ -143,7 +154,15 @@ repo/
   loads), NavigationThrottle (ad frames collapsed; top-level documents never
   blocked), WebSocket interception, keepalive throttle.
 - Cosmetic filtering + uBO scriptlets at document start via a renderer
-  `CosmeticFilterAgent` (user stylesheet + main-world script).
+  `CosmeticFilterAgent` (user stylesheet + main-world script), plus
+  procedural filters (`:has-text()`, `:upward()`, ...) parsed and vetted in
+  Rust (`adblock/procedural.rs`) and run by a JS engine in an isolated world
+  (`chrome/renderer/molt_ai/shield/procedural_filters_js.h`, MPL-2.0, adapted
+  from brave-core).
+- Tracking-parameter stripping (`$removeparam` + a built-in list):
+  navigations via `MoltShieldNavigationInterceptor` (an internal 307 on every
+  GET leg), subresources rewritten in the proxy before they start (same
+  origin and path only).
 - Per-site Shields toggle (content setting), per-tab counts, breakage report in
   molt://ai-settings; consent-banner auto-reject (`molt_ai/consent/`).
 - Rust side tested/benchmarked standalone in `tools/shield_bench/`.
@@ -161,8 +180,9 @@ repo/
   | `#molt-shield-keepalive` | `MoltShieldKeepAlive` | the keepalive (beacon) URLLoaderThrottle |
   | `#molt-shield-cosmetics` | `MoltShieldCosmetics` | cosmetic filters + scriptlets, including the renderer `CosmeticFilterAgent` |
   | `#molt-shield-consent-killer` | `MoltShieldConsentKiller` | the consent-banner auto-reject |
+  | `#molt-shield-removeparam` | `MoltShieldRemoveParam` | tracking-parameter stripping (navigations and subresources) |
 
-  `--disable-molt-shield` turns off all six for one run (it is copied to
+  `--disable-molt-shield` turns off all seven for one run (it is copied to
   renderers), and the engine and list updater never start. Example:
   `--disable-features=MoltShieldRequestProxy,MoltShieldWebSocket`.
   molt://ai-settings shows which hooks are off. The flags entries are one macro
@@ -183,19 +203,22 @@ repo/
   (`molt_ai/side_panel/agent_side_panel_web_view`), sharing one `kContent` panel
   with AI chat (opening one swaps the other).
 
-### AgentEngine (legacy/experimental autonomous ReAct agent)
-- The older autonomous agent in `molt_ai/agents/` — **not** the shipping Agent
-  mode above. Kept for experimentation; not wired to the primary UI.
-- ReAct loop: up to 20 iterations, 2-minute timeout
-- Actions: CLICK, SCROLL, NAVIGATE, FILL_FORM, TYPE_TEXT, EXTRACT_DATA, OPEN_TAB, CLOSE_TAB, WAIT
-- All actions go through ActionValidator (domain whitelist, no credentials)
-- DOMContentBridge uses `ExecuteJavaScriptInIsolatedWorld` for safe page interaction
+### Fingerprinting protection
+- Engine side in Blink: `third_party/blink/renderer/core/molt_fingerprinting/`
+  (pure noise maths in `farbling.*`, glue in `molt_fingerprinting.*`), called
+  from short `MoltBrowser:` hooks in the canvas, WebGL, Web Audio, navigator,
+  screen, window and mouse-event code.
+- Browser side: a random 32-byte seed per profile, kept in memory, passed to
+  renderers with a mode (`farble` for normal/incognito, `uniform` for MoltNet)
+  as command-line switches (`molt_ai/fingerprinting/`). The per-site key is
+  HMAC-SHA256(seed, top-level site).
+- Kill switch: `#molt-fingerprinting-protection` (`MoltFingerprintingProtection`).
+  Design, exact surface and known limits: `docs/FINGERPRINTING.md`.
 
 ### Memory
-- SQLite database at `~/.moltbrowser/memory.db`
-- In-memory cache for fast reads, synced with SQLite on writes
-- Hash-based embeddings (384-dim) for basic semantic search
-- Upgrade path to MiniLM (all-MiniLM-L6-v2) via ONNX Runtime
+- Opt-in; encrypted SQLite store per profile, in-memory index, and
+  `HashingEmbedder` v3 (Unicode-aware keyword hashing, not a neural
+  embedding). Never records MoltNet browsing.
 
 ### Cross-Platform
 - **macOS**: Metal GPU, signed in-app updates, DMG packaging, notarization
