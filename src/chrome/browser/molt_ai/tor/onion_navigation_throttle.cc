@@ -11,12 +11,14 @@
 #include "chrome/browser/molt_ai/tor/onion_blocking_page.h"
 #include "chrome/browser/molt_ai/tor/onion_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ssl/typed_navigation_upgrade_throttle.h"
 #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace molt_ai {
 namespace tor {
@@ -47,21 +49,21 @@ OnionNavigationThrottle::~OnionNavigationThrottle() = default;
 
 content::NavigationThrottle::ThrottleCheckResult
 OnionNavigationThrottle::WillStartRequest() {
-  return Check();
+  return Check(/*is_redirect=*/false);
 }
 
 content::NavigationThrottle::ThrottleCheckResult
 OnionNavigationThrottle::WillRedirectRequest() {
   // A page (or an HTTPS upgrade) may redirect to an onion URL.
-  return Check();
+  return Check(/*is_redirect=*/true);
 }
 
 const char* OnionNavigationThrottle::GetNameForLogging() {
   return "MoltOnionNavigationThrottle";
 }
 
-content::NavigationThrottle::ThrottleCheckResult
-OnionNavigationThrottle::Check() {
+content::NavigationThrottle::ThrottleCheckResult OnionNavigationThrottle::Check(
+    bool is_redirect) {
   content::NavigationHandle* handle = navigation_handle();
   const GURL& url = handle->GetURL();
   if (!IsOnionHost(url.host())) {
@@ -70,11 +72,23 @@ OnionNavigationThrottle::Check() {
   if (!handle->IsInPrimaryMainFrame() || !url.SchemeIsHTTPOrHTTPS()) {
     return ThrottleCheckResult(BLOCK_REQUEST, net::ERR_BLOCKED_BY_CLIENT);
   }
+  // A host typed into the omnibox without a scheme is tried as https://
+  // first, and most onion services only serve http://: offer the address as
+  // typed. (In a MoltNet window, http://*.onion isn't upgraded; see
+  // https_upgrades_interceptor.cc.) A redirect's scheme is kept as sent.
+  GURL onion_url = url;
+  if (!is_redirect &&
+      TypedNavigationUpgradeThrottle::IsNavigationUsingHttpsAsDefaultScheme(
+          *handle)) {
+    GURL::Replacements replacements;
+    replacements.SetSchemeStr(url::kHttpScheme);
+    onion_url = url.ReplaceComponents(replacements);
+  }
   // Same pattern as the HTTPS-Only Mode interstitial: commit the blocking
   // page's HTML as this navigation's error page and let
   // SecurityInterstitialTabHelper own the page and route its buttons.
   auto page =
-      std::make_unique<OnionBlockingPage>(handle->GetWebContents(), url);
+      std::make_unique<OnionBlockingPage>(handle->GetWebContents(), onion_url);
   std::string html = page->GetHTMLContents();
   security_interstitials::SecurityInterstitialTabHelper::AssociateBlockingPage(
       handle, std::move(page));

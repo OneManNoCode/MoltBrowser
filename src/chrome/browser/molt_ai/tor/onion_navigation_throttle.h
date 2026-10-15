@@ -51,7 +51,7 @@ class OnionNavigationThrottle : public content::NavigationThrottle {
   const char* GetNameForLogging() override;
 
  private:
-  ThrottleCheckResult Check();
+  ThrottleCheckResult Check(bool is_redirect);
 };
 
 }  // namespace tor
