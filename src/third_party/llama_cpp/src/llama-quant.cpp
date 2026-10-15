@@ -980,7 +980,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
     auto mparams = llama_model_default_params();
     std::unique_ptr<llama_model> model_ptr(llama_model_create(ml, mparams));
 
-    auto * model = dynamic_cast<llama_model_base *>(model_ptr.get());
+    // MoltBrowser: Chromium builds with -fno-rtti, so no dynamic_cast. Every
+    // type llama_model_create() returns derives from llama_model_base.
+    auto * model = static_cast<llama_model_base *>(model_ptr.get());
     if (model == nullptr) {
         GGML_ABORT("fatal error: model does not implement llama_model_base");
     }

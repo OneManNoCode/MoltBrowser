@@ -329,7 +329,11 @@ static std::pair<int, llama_model *> llama_model_load(struct gguf_context * meta
             return {-1, nullptr};
         }
 
-        auto * model = dynamic_cast<llama_model_base *>(model_ptr.get());
+        // MoltBrowser: Chromium builds with -fno-rtti, so no dynamic_cast.
+        // Every type llama_model_create() returns derives from llama_model_base
+        // (llama-model.h: "model must inherit from this"), and a null
+        // model_ptr still yields null here.
+        auto * model = static_cast<llama_model_base *>(model_ptr.get());
         if (model == nullptr) {
             GGML_ABORT("fatal error: model does not implement llama_model_base");
         }
