@@ -323,6 +323,23 @@ void RecordDnsClientCapabilityMetrics(const DnsClient* dns_client) {
   base::UmaHistogramEnumeration("Net.DNS.DnsConfig.DnsClientCapability",
                                 capability);
 }
+
+// MoltBrowser: true iff |hostname| is in the special-use ".onion" domain
+// (RFC 7686): "onion" or any name ending in ".onion", ASCII
+// case-insensitively, ignoring trailing dots. Mirrors
+// molt_ai::tor::IsOnionHost() (chrome/browser/molt_ai/tor/onion_util.h),
+// which //net can't depend on.
+bool IsOnionHostname(std::string_view hostname) {
+  while (!hostname.empty() && hostname.back() == '.') {
+    hostname.remove_suffix(1);
+  }
+  static constexpr std::string_view kOnion = "onion";
+  if (!base::EndsWith(hostname, kOnion, base::CompareCase::INSENSITIVE_ASCII)) {
+    return false;
+  }
+  return hostname.size() == kOnion.size() ||
+         hostname[hostname.size() - kOnion.size() - 1] == '.';
+}
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -849,6 +866,17 @@ HostCache::Entry HostResolverManager::ResolveLocally(
             ? dns_names_util::IsValidDnsName(job_key.host.GetHostname())
             : IsCanonicalizedHostCompliant(job_key.host.GetHostname());
     if (!is_valid_hostname) {
+      return HostCache::Entry(ERR_NAME_NOT_RESOLVED,
+                              HostCache::Entry::SOURCE_UNKNOWN);
+    }
+    // MoltBrowser: RFC 7686 section 2 - an application that doesn't speak
+    // Tor must not resolve .onion names, so never send one to DNS, DoH,
+    // mDNS or the hosts file. MoltNet reaches onion services through Tor's
+    // SOCKS5 proxy, which resolves the name inside Tor and never asks this
+    // resolver; everything else (navigations are already stopped by
+    // OnionNavigationThrottle, but also subresources, preconnects, prefetches,
+    // NetworkContext::ResolveHost) fails here without a lookup.
+    if (IsOnionHostname(job_key.host.GetHostname())) {
       return HostCache::Entry(ERR_NAME_NOT_RESOLVED,
                               HostCache::Entry::SOURCE_UNKNOWN);
     }

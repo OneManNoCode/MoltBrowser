@@ -51,4 +51,3 @@ components/version_ui_strings.grdp
 components/wallet_strings.grdp
 components/webapps_strings.grdp
 components/webxr_strings.grdp
-net/dns/host_resolver_manager.cc

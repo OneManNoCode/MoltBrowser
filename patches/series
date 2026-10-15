@@ -134,6 +134,7 @@ components/sync/service/sync_prefs.cc.patch
 components/sync_ui_strings.grdp.patch
 content/common/url_schemes.cc.patch
 net/base/features.cc.patch
+net/dns/host_resolver_manager.cc.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch
