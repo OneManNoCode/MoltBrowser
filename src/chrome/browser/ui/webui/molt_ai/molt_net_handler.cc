@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/check_op.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/strings/string_util.h"
@@ -22,6 +21,7 @@
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -35,6 +35,7 @@
 
 namespace {
 
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
 using molt_ai::tor::MoltNetRouting;
 
 net::NetworkTrafficAnnotationTag ExitCheckAnnotation() {
@@ -148,14 +149,14 @@ void MoltNetHandler::RegisterMessages() {
 }
 
 void MoltNetHandler::HandleGetStatus(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   ResolveWithStatus(args[0].GetString(), std::string());
 }
 
 void MoltNetHandler::HandleGetExitCountries(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
 
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
@@ -174,8 +175,8 @@ void MoltNetHandler::HandleGetExitCountries(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleSetExitCountry(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   // Arg 1 is a lowercase ISO alpha-2 code, or "" for Auto/any. Session-only.
   std::string cc = (args.size() > 1 && args[1].is_string())
@@ -193,8 +194,8 @@ void MoltNetHandler::HandleSetExitCountry(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleToggle(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
   if (mgr->IsRunning() || mgr->IsStarting()) {
@@ -209,8 +210,8 @@ void MoltNetHandler::HandleToggle(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleSetMode(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string mode = (args.size() > 1 && args[1].is_string())
                                ? args[1].GetString()
                                : std::string("multi_hop");
@@ -223,8 +224,8 @@ void MoltNetHandler::HandleSetMode(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleOpenWindow(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   // Bootstrap can take a while; the page shows "Connecting…" meanwhile.
   molt_ai::tor::MoltNetWindow::Open(
@@ -240,8 +241,8 @@ void MoltNetHandler::HandleOpenWindow(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleNewIdentity(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   // Closes the MoltNet windows (this popover may die with its window — the
   // weak pointer handles that), discards the MoltNet profile, NEWNYM, and
@@ -259,8 +260,8 @@ void MoltNetHandler::HandleNewIdentity(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleGetCircuit(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
 
   if (!molt_ai::tor::TorManager::Get()->IsRunning()) {
@@ -319,8 +320,8 @@ void MoltNetHandler::HandleGetCircuit(const base::ListValue& args) {
 }
 
 void MoltNetHandler::HandleVerifyExit(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
 
   // Only ever through the MoltNet profile, and only once it is verifiably

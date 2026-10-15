@@ -29,8 +29,11 @@
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/web_ui.h"
 #include "url/gurl.h"
+
+using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 // ------------------------------------------------------------------
 // HandleGetTorStatus: reports whether MoltNet's own Tor is running (an
@@ -38,8 +41,8 @@
 // 127.0.0.1:9051) plus where the binary comes from.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
   std::string cb = callback_id;
@@ -101,8 +104,8 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
 // (artichoke, F3Netze, niftyforestbear, etc.).
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleGetTorCircuits(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
   std::string cb = callback_id;
@@ -147,8 +150,8 @@ void MoltAIChatHandler::HandleGetTorCircuits(const base::ListValue& args) {
 // 45s for the control port to come up before reporting success.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleLaunchTor(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
   std::string cb = callback_id;
@@ -168,8 +171,8 @@ void MoltAIChatHandler::HandleLaunchTor(const base::ListValue& args) {
 }
 
 void MoltAIChatHandler::HandleStopTor(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   // Closes MoltNet windows too: with Tor gone they could only show errors.
   molt_ai::tor::MoltNetWindow::TurnOff();
@@ -188,8 +191,8 @@ void MoltAIChatHandler::HandleStopTor(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleGetTorExitCountries(
     const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
 
   molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();
@@ -215,8 +218,8 @@ void MoltAIChatHandler::HandleGetTorExitCountries(
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleSetTorExitCountry(
     const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 1u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 1u);
   const std::string callback_id = args[0].GetString();
   std::string cc = (args.size() > 1 && args[1].is_string())
                        ? args[1].GetString()
@@ -250,8 +253,8 @@ void MoltAIChatHandler::HandleSetTorExitCountry(
 // Resolves { success, url } or { success: false, error }.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleOpenTorTab(const base::ListValue& args) {
+  if (!HasCallbackArgs(args, 2u, __func__)) return;
   AllowJavascript();
-  CHECK_GE(args.size(), 2u);
   const std::string callback_id = args[0].GetString();
   std::string url_str = args[1].is_string() ? args[1].GetString() : "";
   base::DictValue out;
