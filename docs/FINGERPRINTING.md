@@ -226,8 +226,7 @@ Honest list; anything not in the table above is not covered.
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 
-**Known attacks on the noise** (they apply to farbling in general, Brave's
-included):
+**Known attacks on the noise:**
 
 * *Detection*: drawing known colours and reading them back reveals that
   noise is present. That is one bit shared by every MoltBrowser user, not an
@@ -235,7 +234,12 @@ included):
 * *Oracle*: a page can `putImageData` chosen colours, read them back, learn
   its own site's colour mapping and invert it for its fingerprint canvas. The
   per-site key keeps this per site, but a page determined to see the true
-  pixels on its own site can.
+  pixels on its own site can, and a fingerprinting script written for
+  MoltBrowser could then link sites. This is the price of value-only noise
+  (same answer for every read). Designs that seed the noise from the whole
+  canvas's content, as Brave does, make the oracle much harder but give
+  different answers for sub-rectangle reads and drift on read-modify-write
+  loops. Revisit if scripts start doing this.
 * *Coarse quantisation*: the noise is at most 1 per channel, so a script that
   compares canvases with a robust/perceptual hash instead of exact bytes can
   ignore it. Audio: masking the low mantissa bits removes the noise, but also
