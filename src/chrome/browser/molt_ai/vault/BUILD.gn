@@ -21,14 +21,19 @@ source_set("vault") {
   ]
 }
 
-# Credential host-matching tests. Linked into
+# Credential host-matching and keyring-state (S16) tests. Linked into
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "vault_host_match_unittest.cc" ]
+  sources = [
+    "vault_host_match_unittest.cc",
+    "vault_store_unittest.cc",
+  ]
   deps = [
     ":vault",
     "//base",
+    "//chrome/browser/molt_ai/keys",
+    "//components/os_crypt/sync:test_support",
     "//testing/gtest",
     "//url",
   ]

@@ -15,3 +15,17 @@ source_set("keys") {
     "//components/os_crypt/sync",
   ]
 }
+
+# Keyring-state tests (S16): refusal without an OS-backed key; files written
+# under the hard-coded key stay readable. Linked into
+# //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_keys_store_unittest.cc" ]
+  deps = [
+    ":keys",
+    "//base",
+    "//components/os_crypt/sync:test_support",
+    "//testing/gtest",
+  ]
+}
