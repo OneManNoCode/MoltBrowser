@@ -9,8 +9,6 @@ source_set("molt_ai_runtime") {
   sources = [
     "runtime/browser_ai_runtime.cc",
     "runtime/browser_ai_runtime.h",
-    "runtime/prompt_router.cc",
-    "runtime/prompt_router.h",
   ]
 
   deps = [
@@ -93,17 +91,6 @@ source_set("molt_ai_memory") {
   ]
 }
 
-source_set("molt_ai_personas") {
-  sources = [
-    "personas/persona_system.cc",
-    "personas/persona_system.h",
-  ]
-
-  deps = [
-    "//base",
-  ]
-}
-
 source_set("molt_ai_models") {
   sources = [
     "models/model_manager.cc",
@@ -118,18 +105,6 @@ source_set("molt_ai_models") {
     "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
-  ]
-}
-
-source_set("molt_ai_api") {
-  sources = [
-    "api/browser_ai_api.cc",
-    "api/browser_ai_api.h",
-  ]
-
-  deps = [
-    ":molt_ai_runtime",
-    "//base",
   ]
 }
 
@@ -251,9 +226,7 @@ group("molt_ai") {
     ":molt_ai_agents",
     ":molt_ai_security",
     ":molt_ai_memory",
-    ":molt_ai_personas",
     ":molt_ai_models",
-    ":molt_ai_api",
     ":molt_ai_embeddings",
     ":molt_ai_import",
     ":molt_shield",

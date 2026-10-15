@@ -59,14 +59,6 @@ struct ModelInfo {
   bool is_verified() const { return !sha256.empty(); }
 };
 
-// Prompt routing decision
-enum class RouteTarget {
-  LOCAL,    // Route to local LLM
-  CLOUD,    // Route to cloud API
-  HYBRID,   // Use both local and cloud
-  OFFLINE   // Force local (no network)
-};
-
 // Whether a reasoning-capable model should think before answering.
 //  kOff:  ask it not to (Qwen3 "/no_think", gpt-oss "Reasoning: low");
 //         any reasoning it still emits is hidden.
@@ -121,9 +113,7 @@ struct PromptOptions {
   float top_p = 0.9f;
   int top_k = 40;
   std::string system_prompt;
-  std::string persona_id;        // Apply persona context
   bool stream = true;
-  RouteTarget route = RouteTarget::LOCAL;
   int timeout_ms = 30000;
   // Per-request cancellation handle from NewRequestId(). 0 = the runtime
   // allocates a private one (only CancelGeneration() can stop it).
@@ -146,18 +136,6 @@ struct GenerationResult {
   bool was_cancelled = false;
   bool success = false;
   std::string error_message;
-};
-
-// Page context for AI reasoning
-struct PageContext {
-  std::string url;
-  std::string title;
-  std::string main_content;
-  std::vector<std::string> headings;
-  std::vector<std::string> links;
-  std::vector<std::string> buttons;
-  std::string selected_text;
-  std::string meta_description;
 };
 
 // Result of the "can this model load right now?" RAM check.
@@ -305,31 +283,10 @@ class BrowserAIRuntime {
   // Cancels every in-flight request (shutdown / legacy callers).
   void CancelGeneration();
 
-  // ---- Routing ----
-
-  // Determine the best route for a given prompt
-  RouteTarget RoutePrompt(const std::string& prompt,
-                          const PageContext& context) const;
-
-  // Select the best model for a given task type
-  std::string SelectModelForTask(const std::string& task_type) const;
-
   // The id of the model currently resident in memory ("" if none). Takes
   // generation_mutex, so call it from a worker thread (it can briefly block
   // behind an in-flight decode), never the UI thread.
   std::string GetLoadedModelId() const;
-
-  // ---- Page Intelligence ----
-
-  // Get structured context from the current page
-  PageContext GetPageContext(int tab_id) const;
-
-  // Generate a summary of the current page
-  GenerationResult SummarizePage(int tab_id,
-                                 const PromptOptions& options = {});
-
-  // Extract structured data from page elements
-  std::string ExtractData(int tab_id, const std::string& selector);
 
   // ---- Hardware ----
 
