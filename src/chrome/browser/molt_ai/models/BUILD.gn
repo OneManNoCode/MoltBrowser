@@ -1,0 +1,40 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# On-device model downloads: pinned Hugging Face revisions, streamed
+# SHA-256 verification, correct resume (S13). Used by the AI chat handler.
+# (model_manager.* / model_downloader.* in this directory are the older,
+# uncalled implementations still listed in ../BUILD.gn:molt_ai_models.)
+
+source_set("download_policy") {
+  sources = [
+    "download_policy.cc",
+    "download_policy.h",
+  ]
+}
+
+source_set("download") {
+  sources = [
+    "model_download_job.cc",
+    "model_download_job.h",
+  ]
+  public_deps = [ ":download_policy" ]
+  deps = [
+    "//base",
+    "//crypto",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "download_policy_unittest.cc" ]
+  deps = [
+    ":download_policy",
+    "//testing/gtest",
+  ]
+}

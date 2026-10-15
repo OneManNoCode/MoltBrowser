@@ -3755,6 +3755,17 @@ function downloadModel(modelId) {
   sendWithPromise('downloadModel', modelId).then(function(r) {
     if (r.success) {
       refreshModelList();
+    } else if (r.license_required) {
+      // Llama / Gemma terms must be accepted before the download (S13).
+      refreshModelList();
+      askModelLicense(r).then(function(ok) {
+        if (!ok) return;
+        sendWithPromise('acceptModelLicense', modelId, r.license_id)
+            .then(function(a) {
+              if (a && a.success) downloadModel(modelId);
+              else addErrorMessage('Could not record the license acceptance.');
+            });
+      });
     } else {
       addErrorMessage('Download failed: ' + (r.error || 'Unknown error'));
       refreshModelList();
@@ -3767,6 +3778,43 @@ function downloadModel(modelId) {
 
 function cancelDownload() {
   chrome.send('cancelDownload', []);
+}
+
+// License gate for models whose terms must be accepted (Llama, Gemma).
+// Resolves true when the user accepts. The terms open in a real tab.
+function askModelLicense(r) {
+  return new Promise(function(resolve) {
+    var msgs = document.getElementById('messages');
+    if (!msgs) { resolve(false); return; }
+    var d = document.createElement('div');
+    d.className = 'molt-action-confirm';
+    d.innerHTML = moltHTML(
+        '<span class="ac-icon">\u{1F4DC}</span>' +
+        '<div class="ac-body">' +
+          '<div class="ac-title">License required</div>' +
+          '<div class="ac-label" style="white-space:normal">' +
+            'This model is distributed under the ' + esc(r.license_name) +
+            '. Read the terms before downloading.</div>' +
+        '</div>' +
+        '<div class="ac-buttons">' +
+          '<button class="ac-terms">Read terms</button>' +
+          '<button class="ac-deny">Cancel</button>' +
+          '<button class="ac-allow">Accept</button>' +
+        '</div>');
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+    var settle = function(ok) {
+      return function() {
+        try { d.parentNode && d.parentNode.removeChild(d); } catch (e) {}
+        resolve(ok);
+      };
+    };
+    d.querySelector('.ac-terms').onclick = function() {
+      sendWithPromise('openUrlInTab', r.license_url);
+    };
+    d.querySelector('.ac-allow').onclick = settle(true);
+    d.querySelector('.ac-deny').onclick = settle(false);
+  });
 }
 
 // onDone (optional) fires with true/false AFTER the model state has
@@ -3977,6 +4025,10 @@ function renderModelChipDropdown() {
     var sizeMB = m.file_size_mb || 0;
     var sizeStr = sizeMB > 1024 ? (sizeMB / 1024).toFixed(1) + ' GB' : sizeMB + ' MB';
     var meta = (m.quantization ? m.quantization + ' \u00b7 ' : '') + sizeStr;
+    // No pinned SHA-256 for this file yet (S13): say so before download.
+    if (m.verified === false && !m.is_downloaded) {
+      meta += ' \u00b7 unverified download';
+    }
     // Right-hand affordance per state:
     //   loaded          \u2192 accent check (selected)
     //   downloading     \u2192 live % (see the download-progress listener)

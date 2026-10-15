@@ -31,6 +31,7 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
+#include "chrome/browser/molt_ai/models/model_download_job.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -75,6 +76,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleGetModelStatus(const base::ListValue& args);
   void HandleGetPageContext(const base::ListValue& args);
   void HandleDownloadModel(const base::ListValue& args);
+  // Args: [callback_id, model_id, license_id] -> {success}
+  void HandleAcceptModelLicense(const base::ListValue& args);
   void HandleDeleteModel(const base::ListValue& args);
   void HandleGetPageContent(const base::ListValue& args);
   void HandleCancelDownload(const base::ListValue& args);
@@ -271,13 +274,13 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void OnPromptComplete(std::string callback_id, bool success,
                         const std::string& full_text,
                         const std::string& error);
-  void OnDownloadProgress(uint64_t current);
-  void OnDownloadComplete(base::FilePath path);
+  void OnDownloadProgress(int64_t received, int64_t total);
+  void OnDownloadFinished(molt_ai::models::ModelDownloadJob::Result result);
   void OnDownloadPrecheckComplete(std::string callback_id,
                                   std::string model_id,
                                   molt_ai::ModelInfo info,
                                   base::DictValue precheck);
-  void FinishDownload(bool success, int net_error);
+  void FinishDownload(bool success, bool verified, std::string error);
   void OnModelDeleted(std::string callback_id, std::string model_id,
                       bool success);
   void OnHistoryExported(std::string callback_id,
@@ -358,8 +361,8 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // none). Stop cancels only this one (A6).
   uint64_t active_request_id_ = 0;
 
-  // Model download state
-  std::unique_ptr<network::SimpleURLLoader> url_loader_;
+  // Model download state (one download at a time).
+  std::unique_ptr<molt_ai::models::ModelDownloadJob> download_job_;
   // PDF extraction transient state (separate loader so it doesn't race
   // with a concurrent model download).
   std::unique_ptr<network::SimpleURLLoader> pdf_loader_;
@@ -368,8 +371,6 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   std::string download_callback_id_;
   std::string downloading_model_id_;
   uint64_t download_total_bytes_ = 0;
-  uint64_t download_resume_bytes_ = 0;
-  base::FilePath download_final_path_;
   base::TimeTicks download_start_time_;
   uint64_t download_last_bytes_ = 0;
   base::TimeTicks download_last_time_;

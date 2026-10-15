@@ -27,6 +27,7 @@ test("molt_ai_unittests") {
     "//chrome/browser/molt_ai/automation:unit_tests",
     "//chrome/browser/molt_ai/cloud:unit_tests",
     "//chrome/browser/molt_ai/memory:unit_tests",
+    "//chrome/browser/molt_ai/models:unit_tests",
     "//chrome/browser/molt_ai/pdf:unit_tests",
     "//chrome/browser/molt_ai/runtime:unit_tests",
     "//chrome/browser/molt_ai/shield:unit_tests",
