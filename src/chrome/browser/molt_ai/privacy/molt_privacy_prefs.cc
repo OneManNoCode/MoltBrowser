@@ -7,6 +7,8 @@
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/embedder_support/pref_names.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 
@@ -35,6 +37,13 @@ void SetPrivacyPrefDefaults(user_prefs::PrefRegistrySyncable* registry) {
   registry->SetDefaultPrefValue(prefs::kNetworkPredictionOptions,
                                 base::Value(kNetworkPredictionDisabled));
   registry->SetDefaultPrefValue(prefs::kEnableDoNotTrack, base::Value(false));
+  // Registered by ProfileNetworkContextService::RegisterProfilePrefs().
+  registry->SetDefaultPrefValue(embedder_support::kAlternateErrorPagesEnabled,
+                                base::Value(false));
+  // Registered by password_manager::PasswordManager::RegisterProfilePrefs().
+  registry->SetDefaultPrefValue(
+      password_manager::prefs::kPasswordLeakDetectionEnabled,
+      base::Value(false));
 }
 
 void ApplyPrivacyPrefMigrations(PrefService* prefs) {
