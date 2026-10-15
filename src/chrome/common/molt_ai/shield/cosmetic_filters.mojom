@@ -17,6 +17,14 @@ struct CosmeticResources {
   string scriptlet_js;
   // `$generichide`: don't query generic class/id rules for this document.
   bool generichide;
+  // Procedural/action filters (`:has-text()`, `:upward()`, `:remove()`, ...)
+  // as a JSON array, vetted browser-side (shield/adblock/procedural.rs). The
+  // renderer passes it as a string value to a fixed engine running in an
+  // isolated world; it is data, never evaluated as script. Empty if none.
+  string procedural_json;
+  // Sanitized `prop:value!important;...` declaration blocks that
+  // `procedural_json` :style() actions refer to by index.
+  array<string> procedural_styles;
 };
 
 // Renderer side, per frame, channel-associated so the browser's message —

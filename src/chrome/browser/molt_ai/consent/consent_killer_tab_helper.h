@@ -11,11 +11,16 @@
 //      Quantcast, Didomi, Usercentrics, Sourcepoint, ...), searching open
 //      shadow roots too (Usercentrics mounts in one);
 //   2. otherwise looks for a "Reject all / Only necessary"-style button by
-//      text — but only inside a consent container (role=dialog/alertdialog,
-//      aria-modal, or a known CMP id/class, whose text is about cookies or
-//      consent), or anywhere in a known CMP frame/consent page;
+//      text -- but only inside the container of a known CMP framework
+//      (OneTrust, Cookiebot, Didomi, ... whose text is about cookies or
+//      consent), or anywhere in a known CMP frame/consent page. Never in a
+//      site's own dialogs (role=dialog, aria-modal) or site-named banners:
+//      it can't click arbitrary page buttons;
 //   3. never clicks Customize/Settings/Preferences/Manage-style buttons, nor
 //      anything that accepts.
+// Site-specific handling beyond that is list-based: uBO's opt-in
+// "Cookie Notices" list (catalog id ublock-cookies) hides banners and
+// rejects on ~900 known sites with curated `trusted-click-element` rules.
 // It runs immediately and then on DOM mutations (throttled), and gives up
 // after a few seconds or once something was clicked — no fixed +600/+1800/
 // +4000 ms timers.

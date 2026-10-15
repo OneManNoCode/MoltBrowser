@@ -50,6 +50,34 @@ std::optional<CheckInput> MakeCheckInput(
     std::string_view request_type,
     std::string_view method);
 
+// ---- Tracking-parameter stripping ($removeparam) ---------------------------
+
+// True if `stripped` (the engine's rewrite of `original`) may be loaded
+// instead of `original`: both valid http(s), same origin, path and
+// fragment, and `stripped` is shorter -- only query parameters were
+// dropped. Guards every place MoltShield acts on a rewrite.
+bool IsSafeParamStrip(const GURL& original, const GURL& stripped);
+
+// Subresource requests whose URL the proxying factory may strip before the
+// request starts. Not worker / shared-worker / service-worker scripts (the
+// script URL is the worker's identity, e.g. for service-worker
+// registration and update checks) and not keepalive requests (beacons are
+// also seen by the keepalive throttle, which can't rewrite, so leave both
+// paths consistent).
+bool CanStripParamsFromSubresource(
+    network::mojom::RequestDestination destination,
+    bool keepalive);
+
+// Navigations that MoltShieldNavigationInterceptor may redirect to a
+// stripped URL: GET (an internal 307 would re-send a POST body) to an
+// http(s) URL that has a query.
+bool CanStripParamsFromNavigation(std::string_view method, const GURL& url);
+
+// Upper bound on internal redirects one navigation gets from parameter
+// stripping (a server that keeps re-adding parameters gives up sooner, see
+// MoltShieldNavigationInterceptor).
+inline constexpr int kMaxParamStripsPerNavigation = 4;
+
 // ---- Filter lists -------------------------------------------------------
 
 // Bounds for a downloaded list.

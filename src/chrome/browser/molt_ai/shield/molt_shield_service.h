@@ -88,6 +88,7 @@ class MoltShieldService : public ProfileObserver {
   // Counters.
   void RecordCheck(const CheckResult& result, std::string_view request_type);
   void RecordCosmetic(const CosmeticData& data);
+  void RecordParamsStripped();
   ShieldStats GetStats() const;
 
   // ---- UI thread ----------------------------------------------------------
@@ -163,6 +164,7 @@ class MoltShieldService : public ProfileObserver {
   std::atomic<int64_t> websockets_blocked_{0};
   std::atomic<int64_t> cosmetic_rules_applied_{0};
   std::atomic<int64_t> scriptlets_injected_{0};
+  std::atomic<int64_t> params_stripped_{0};
 
   base::WeakPtrFactory<MoltShieldService> weak_factory_{this};
 };

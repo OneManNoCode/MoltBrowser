@@ -19,7 +19,10 @@
 // Lives on the UI thread. Each check is posted to MoltShield's engine
 // sequence and the request is started (or failed with
 // ERR_BLOCKED_BY_CLIENT, or answered with a surrogate for `$redirect`
-// rules) when the verdict comes back — the UI thread never matches.
+// rules) when the verdict comes back — the UI thread never matches. A
+// request that goes ahead is started without the tracking parameters the
+// engine says to strip (`$removeparam`), transparently: see
+// InProgressRequest::MaybeStripParams.
 //
 // Navigations (documents and frames) are not handled here; see
 // molt_shield_navigation_throttle.h. Top-level documents are never blocked.

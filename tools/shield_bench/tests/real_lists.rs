@@ -113,9 +113,15 @@ fn youtube_gets_scriptlets_and_hiding() {
     assert!(c.injected_script.starts_with("(function() {"));
     assert!(c.injected_script.contains("const scriptletGlobals = {};"));
     assert!(!c.hide_css.is_empty());
+    // One rule per line, one declaration block each: hide rules, then
+    // `:style()` rules (sanitized, !important).
     for line in c.hide_css.lines() {
-        assert!(line.ends_with("{display:none!important}"), "{line}");
+        assert!(
+            line.ends_with("{display:none!important}") || line.ends_with("!important}"),
+            "{line}"
+        );
         assert_eq!(line.matches('{').count(), 1, "{line}");
+        assert_eq!(line.matches('}').count(), 1, "{line}");
     }
 }
 
@@ -162,4 +168,284 @@ fn serialized_engine_matches_original() {
         compared += 1;
     }
     assert!(compared > 10_000);
+}
+
+/// A navigation, checked in its own context the way MoltShield's navigation
+/// interceptor does (source = target host, first-party).
+fn navigate(e: &ShieldEngine, url: &str) -> Option<String> {
+    let host = host_of(url);
+    e.check(url, host, host, "document", false, "GET").rewritten_url
+}
+
+#[test]
+fn removeparam_strips_click_ids_and_campaign_params_from_navigations() {
+    let e = engine_or_skip!();
+    for (url, want) in [
+        // uBO privacy (generic) + MoltShield built-in utm_* together.
+        (
+            "https://www.example.com/article?id=5&utm_source=news&utm_medium=email&fbclid=IwAR0",
+            "https://www.example.com/article?id=5",
+        ),
+        ("https://shop.example/p?gclid=Cj0KCQ&color=red", "https://shop.example/p?color=red"),
+        ("https://news.example/?mc_eid=12ab34&msclkid=99", "https://news.example/"),
+        // `$removeparam=s,to=twitter.com|x.com` etc.: inert in adblock-rust,
+        // applied through MoltShield's `||x.com^` conversion.
+        ("https://x.com/someone/status/1?s=20&ref_src=twsrc", "https://x.com/someone/status/1"),
+        // `...,to=aboutamazon.com|amazon.*|amzn.to`: plain domains only (the
+        // `amazon.*` entity isn't converted, so amazon.de keeps it).
+        ("https://amzn.to/3xYz?asc_source=a&tag=b", "https://amzn.to/3xYz?tag=b"),
+        // `||youtu.be^$removeparam=si`
+        ("https://youtu.be/dQw4w9WgXcQ?si=Ab12Cd34", "https://youtu.be/dQw4w9WgXcQ"),
+    ] {
+        assert_eq!(navigate(e, url).as_deref(), Some(want), "{url}");
+    }
+}
+
+#[test]
+fn removeparam_leaves_functional_parameters_alone() {
+    let e = engine_or_skip!();
+    for url in [
+        // `s` is only stripped on twitter.com / x.com (`to=`), not from
+        // every WordPress search.
+        "https://blog.example.org/?s=privacy+browser",
+        "https://www.google.com/search?q=adblock&hl=en",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42",
+        "https://en.wikipedia.org/w/index.php?title=Special:Search&search=tracking",
+        // Empty values are kept, names are case-sensitive.
+        "https://a.example/?fbclid=&UTM_SOURCE=x",
+        "https://www.amazon.de/dp/B0?asc_source=a",
+    ] {
+        assert_eq!(navigate(e, url), None, "{url}");
+    }
+}
+
+#[test]
+fn removeparam_honors_ubo_exceptions() {
+    let e = engine_or_skip!();
+    // `@@||web.archive.org/*/http$removeparam`: the archived URL is part of
+    // the path; editing it would break the archive lookup.
+    assert_eq!(
+        navigate(e, "https://web.archive.org/web/2024/https://news.example/?fbclid=1&utm_source=x"),
+        None
+    );
+    // `@@||urldefense.com^$removeparam`
+    assert_eq!(navigate(e, "https://urldefense.com/v3/__https://a.example/?utm_source=x__;"), None);
+}
+
+#[test]
+fn removeparam_on_subresources_uses_list_rules_only() {
+    let e = engine_or_skip!();
+    // uBO privacy's generic `$removeparam=fbclid` covers fetch/XHR too.
+    let url = "https://www.example.com/api/item?fbclid=IwAR0&id=3";
+    let r = check(e, url, "www.example.com", "xmlhttprequest");
+    assert!(!r.should_block, "{r:?}");
+    assert_eq!(r.rewritten_url.as_deref(), Some("https://www.example.com/api/item?id=3"), "{r:?}");
+    // EasyPrivacy blocks cxense outright (uBO also strips its widget
+    // parameters; the proxy ignores rewrites of blocked requests).
+    let r = check(
+        e,
+        "https://api.cxense.com/public/widget/data?widgetId=w1&sid=s2&json=1",
+        "www.example.com",
+        "xmlhttprequest",
+    );
+    assert!(r.should_block, "{r:?}");
+    // The built-in utm_* list is navigation-only.
+    let r = check(
+        e,
+        "https://www.example.com/api/signup?utm_source=ad",
+        "www.example.com",
+        "xmlhttprequest",
+    );
+    assert_eq!(r.rewritten_url, None);
+    // Images aren't a removeparam type by default.
+    let r = check(e, "https://cdn.example.net/x.png?fbclid=1", "www.example.com", "image");
+    assert_eq!(r.rewritten_url, None);
+}
+
+#[test]
+fn builtin_params_do_not_duplicate_list_rules() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("lists");
+    let Ok(privacy) = std::fs::read_to_string(dir.join("ubo-privacy.txt")) else {
+        eprintln!("skipping: run tools/shield_bench/fetch_lists.sh first");
+        return;
+    };
+    let mut b = EngineBuilder::new(false);
+    let all = b.builtin_params();
+    b.add_list(&privacy, true);
+    let remaining = b.builtin_params();
+    // fbclid, gclid, msclkid, mc_eid, ... come from the list; utm_* don't.
+    assert!(remaining < all, "{remaining} vs {all}");
+    assert!(remaining >= 20, "utm_* should remain built in: {remaining}");
+}
+
+/// Hosts named by procedural/action cosmetic rules in the default lists
+/// (first plain hostname of each rule).
+fn procedural_hosts() -> Vec<String> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("lists");
+    let mut hosts = std::collections::BTreeSet::new();
+    for (name, _) in LISTS {
+        let Ok(text) = std::fs::read_to_string(dir.join(name)) else { continue };
+        for line in text.lines() {
+            let Some(sep) = line.find("##").or_else(|| line.find("#?#")) else { continue };
+            let body = &line[sep..];
+            let procedural = [
+                ":has-text(", ":upward(", ":matches-css", ":xpath(", ":min-text-length(",
+                ":matches-attr(", ":matches-path(", ":remove()", ":style(", ":remove-attr(",
+                ":remove-class(", ":-abp-contains(",
+            ]
+            .iter()
+            .any(|op| body.contains(op));
+            if !procedural || sep == 0 || line.starts_with('!') || body.starts_with("##+js") {
+                continue;
+            }
+            if let Some(host) = line[..sep]
+                .split(',')
+                .find(|h| !h.starts_with('~') && !h.ends_with(".*") && h.contains('.'))
+            {
+                hosts.insert(host.to_string());
+            }
+        }
+    }
+    hosts.into_iter().collect()
+}
+
+#[test]
+fn procedural_filters_from_real_lists() {
+    let e = engine_or_skip!();
+    let hosts = procedural_hosts();
+    assert!(hosts.len() > 100, "{}", hosts.len());
+    let (mut count, mut dropped, mut pages_with_js, mut style_rules) = (0u64, 0u64, 0u64, 0u64);
+    // Every page's procedural input, for the JS engine's corpus test
+    // (tools/shield_bench/procedural_filters_test.js).
+    let mut corpus = Vec::new();
+    for host in &hosts {
+        let c = e.cosmetic(&format!("https://{host}/"));
+        count += u64::from(c.procedural_count);
+        dropped += u64::from(c.procedural_dropped);
+        style_rules += c.hide_css.lines().filter(|l| !l.ends_with("{display:none!important}")).count()
+            as u64;
+        if c.procedural_count == 0 {
+            assert!(c.procedural_json.is_empty());
+            continue;
+        }
+        pages_with_js += 1;
+        let v: serde_json::Value = serde_json::from_str(&c.procedural_json).expect("valid JSON");
+        corpus.push(serde_json::json!({
+            "host": host,
+            "filters": v.clone(),
+            "styles": c.procedural_styles.clone(),
+        }));
+        let filters = v.as_array().expect("array");
+        assert_eq!(filters.len(), c.procedural_count as usize);
+        for f in filters {
+            assert!(!f["selector"].as_array().expect("ops").is_empty(), "{f}");
+            if let Some(i) = f["action"]["arg"].as_u64().filter(|_| f["action"]["type"] == "style") {
+                assert!((i as usize) < c.procedural_styles.len(), "{f}");
+            }
+        }
+        // The hide stylesheet no longer carries procedural selectors.
+        for line in c.hide_css.lines() {
+            assert!(!line.contains(":has-text(") && !line.contains(":upward("), "{line}");
+            assert_eq!(line.matches('{').count(), 1, "{line}");
+        }
+        for s in &c.procedural_styles {
+            assert!(s.ends_with("!important") && !s.contains(['{', '}', '\\']), "{s}");
+        }
+    }
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/procedural_corpus.json");
+    std::fs::write(&out, serde_json::Value::Array(corpus).to_string()).expect("write corpus");
+    eprintln!(
+        "procedural: {} hosts, {pages_with_js} with procedural filters, {count} filters applied, \
+         {dropped} dropped ({:.1}%), {style_rules} :style() rules as CSS",
+        hosts.len(),
+        100.0 * dropped as f64 / (count + dropped).max(1) as f64
+    );
+    assert!(count > 300, "{count}");
+    // Most real-world procedural filters are supported and pass vetting.
+    assert!(dropped * 10 < count, "dropped {dropped} of {}", count + dropped);
+}
+
+#[test]
+fn procedural_real_rule_shapes() {
+    let e = engine_or_skip!();
+    // uBO filters: `bestbuy.com#?#div[data-testid="Row_testID"]:has(span:has-text(Sponsored))`
+    let c = e.cosmetic("https://www.bestbuy.com/");
+    assert!(
+        c.procedural_json.contains(
+            r#"{"selector":[{"arg":"div[data-testid=\"Row_testID\"]","type":"css-selector"},{"arg":[{"arg":" span","type":"css-selector"},{"arg":{"text":"Sponsored"},"type":"has-text"}],"type":"has"}]}"#
+        ),
+        "{}",
+        c.procedural_json
+    );
+    assert!(!c.hide_css.contains(":has-text("));
+}
+
+/// Writes target/scriptlet_corpus.json for tools/shield_bench/scriptlets_test.js:
+/// the real scriptlet bundles of a few sites, and one built from hostile
+/// arguments (audit B7), to be parsed and run in jsdom.
+#[test]
+fn scriptlet_bundles_for_jsdom() {
+    let e = engine_or_skip!();
+    let mut corpus = Vec::new();
+    for url in [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.reddit.com/",
+        "https://www.twitch.tv/",
+    ] {
+        let script = e.cosmetic(url).injected_script;
+        assert!(!script.is_empty(), "{url}");
+        corpus.push(serde_json::json!({"name": url, "script": script}));
+    }
+    let hostile = [
+        r#"x"});window.__moltPwned=1;//"#,
+        r#"x\"});window.__moltPwned=1;//"#,
+        "</script><script>window.__moltPwned=1</script>",
+        "*/window.__moltPwned=1/*",
+        "${window.__moltPwned=1}`+(window.__moltPwned=1)+`",
+        "})();window.__moltPwned=1;(function(){",
+        "\\u0022);window.__moltPwned=1;//",
+    ];
+    let mut list = String::new();
+    for (i, h) in hostile.iter().enumerate() {
+        list.push_str(&format!("hostile.example##+js(set-constant, p{i}, {h})\n"));
+        list.push_str(&format!("hostile.example##+js(abort-on-property-read, {h})\n"));
+        list.push_str(&format!("hostile.example##+js(remove-attr, {h}, {h})\n"));
+    }
+    let mut b = EngineBuilder::new(false);
+    b.add_list(&list, true);
+    let mut hostile_engine = b.build();
+    hostile_engine.use_resources_json(DEFAULT_RESOURCES_JSON);
+    let script = hostile_engine.cosmetic("https://hostile.example/").injected_script;
+    assert!(script.matches("setConstant(").count() >= hostile.len(), "{script}");
+    corpus.push(serde_json::json!({"name": "hostile", "script": script}));
+    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/scriptlet_corpus.json");
+    std::fs::write(out, serde_json::Value::Array(corpus).to_string()).expect("write corpus");
+}
+
+/// uBO's opt-in "Cookie Notices" list (catalog id ublock-cookies): list-based
+/// consent handling with curated per-site rejects, which needs the trusted
+/// permission the catalog gives uBO's lists.
+#[test]
+fn cookie_notices_list_rejects_on_known_sites() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("lists");
+    let Ok(cookies) = std::fs::read_to_string(dir.join("ubo-cookies.txt")) else {
+        eprintln!("skipping: run tools/shield_bench/fetch_lists.sh first");
+        return;
+    };
+    let build = |trusted: bool| {
+        let mut b = EngineBuilder::new(false);
+        let lines = b.add_list(&cookies, trusted);
+        assert!(lines > 2000, "{lines}");
+        let mut e = b.build();
+        e.use_resources_json(DEFAULT_RESOURCES_JSON);
+        e
+    };
+    let trusted = build(true);
+    // `www.google.*##+js(trusted-click-element, button#W0wltc, , 500)`
+    let c = trusted.cosmetic("https://www.google.com/search?q=x");
+    assert!(c.injected_script.contains("trustedClickElement("), "{}", c.injected_script.len());
+    assert!(c.injected_script.contains(r#""button#W0wltc""#));
+    // Without the permission (were it ever marked untrusted) nothing clicks.
+    let untrusted = build(false);
+    assert!(!untrusted.cosmetic("https://www.google.com/").injected_script.contains("trustedClick"));
 }

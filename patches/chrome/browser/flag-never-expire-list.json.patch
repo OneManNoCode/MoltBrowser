@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-never-expire-list.json b/chrome/browser/flag-never-expire-list.json
-index 3beb256808ce12e8926b400860bde5794d5af545..df4078107945a1c05b5b137eb2441cc3f1089323 100644
+index 3beb256808ce12e8926b400860bde5794d5af545..4aa59d4c4b5fd8384a2f5e2fe064e944f3463a0f 100644
 --- a/chrome/browser/flag-never-expire-list.json
 +++ b/chrome/browser/flag-never-expire-list.json
-@@ -120,6 +120,12 @@
+@@ -120,6 +120,13 @@
    "memlog-sampling-rate",
    "memlog-stack-mode",
    "minutes-delay-to-restore-gaia-cookies-if-deleted",
@@ -16,6 +16,7 @@ index 3beb256808ce12e8926b400860bde5794d5af545..df4078107945a1c05b5b137eb2441cc3
 +  "molt-shield-cosmetics",
 +  "molt-shield-frame-blocking",
 +  "molt-shield-keepalive",
++  "molt-shield-removeparam",
 +  "molt-shield-request-proxy",
 +  "molt-shield-websocket",
    "omaha-min-sdk-version-android",

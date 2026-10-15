@@ -30,6 +30,7 @@
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "url/gurl.h"
 #include "url/url_constants.h"
 
 namespace molt_ai::shield {
@@ -233,6 +234,7 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
   void OnStartChecked(CheckResult result) {
     MoltShieldService::Get()->RecordCheck(result, request_type_);
     if (!result.should_block) {
+      MaybeStripParams(result.rewritten_url);
       StartTarget();
       return;
     }
@@ -261,6 +263,29 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
     }
     target_client_->OnReceiveRedirect(redirect_info, std::move(head));
     client_receiver_.Resume();
+  }
+
+  // $removeparam and the built-in tracking parameters: the request is
+  // started with the stripped URL instead. The renderer is not told -- no
+  // synthesized redirect -- so the request keeps its mode, credentials,
+  // headers, body and redirect mode, and as only the query changes it stays
+  // same-origin: CORS checks and response tainting are exactly those of the
+  // original URL, `fetch(url, {redirect: 'error'})` and streaming upload
+  // bodies keep working, the body is sent once, and nothing can loop.
+  // Only the initial URL is stripped; server redirects are only checked for
+  // blocking (OnRedirectChecked).
+  void MaybeStripParams(const std::string& rewritten_url) {
+    if (rewritten_url.empty() || !molt_shield::IsRemoveParamEnabled() ||
+        !CanStripParamsFromSubresource(request_.destination,
+                                       request_.keepalive)) {
+      return;
+    }
+    GURL stripped(rewritten_url);
+    if (!IsSafeParamStrip(request_.url, stripped)) {
+      return;
+    }
+    request_.url = std::move(stripped);
+    MoltShieldService::Get()->RecordParamsStripped();
   }
 
   void StartTarget() {
@@ -346,7 +371,8 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
   const raw_ptr<MoltShieldProxyingURLLoaderFactory> factory_;
   const int32_t request_id_;
   const uint32_t options_;
-  const network::ResourceRequest request_;
+  // Not const: MaybeStripParams() may replace the URL before the start.
+  network::ResourceRequest request_;
   const std::string request_type_;
   const net::MutableNetworkTrafficAnnotationTag traffic_annotation_;
   bool completed_ = false;

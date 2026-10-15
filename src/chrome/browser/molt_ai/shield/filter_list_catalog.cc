@@ -43,6 +43,14 @@ constexpr FilterListEntry kCatalog[] = {
      "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/"
      "quick-fixes.txt",
      true, true},
+    // Cookie banners, list-based: cosmetic hiding plus curated per-site
+    // `trusted-click-element` rejects (needs trusted). Opt-in, as in uBO;
+    // the consent killer covers known CMP frameworks by default.
+    {"ublock-cookies", "uBlock filters – Cookie Notices",
+     "https://ublockorigin.github.io/uAssets/filters/annoyances-cookies.txt",
+     "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/"
+     "annoyances-cookies.txt",
+     true, false},
     {"fanboy-cookiemonster", "EasyList Cookie List",
      "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
      /*fallback_url=*/"", false, false},

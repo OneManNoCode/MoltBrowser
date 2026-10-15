@@ -28,6 +28,8 @@ fetch ubo-filters.txt     https://raw.githubusercontent.com/uBlockOrigin/uAssets
 fetch ubo-privacy.txt     https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt
 fetch ubo-badware.txt     https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt
 fetch ubo-quick-fixes.txt https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt
+# Opt-in in the catalog (ublock-cookies); tested, not benchmarked.
+fetch ubo-cookies.txt     https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances-cookies.txt
 # ~240k requests recorded on top sites, from adblock-rust's own benchmarks.
 fetch requests.json       https://raw.githubusercontent.com/brave/adblock-rust/v0.13.3/data/requests.json
 

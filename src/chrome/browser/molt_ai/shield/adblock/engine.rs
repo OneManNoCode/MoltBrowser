@@ -7,7 +7,7 @@
 // benchmarked with plain cargo (tools/shield_bench); molt_adblock.rs adapts
 // it to C++.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use adblock::Engine;
 use adblock::lists::{FilterSet, ParseOptions};
@@ -17,6 +17,8 @@ use base64::Engine as _;
 
 use crate::css;
 use crate::preprocess::{self, PreprocessEnv};
+use crate::procedural;
+use crate::removeparam;
 
 /// Version of the adblock-rust crate this bridge is built against. The
 /// serialized engine format is only guaranteed stable within one version, so
@@ -26,7 +28,12 @@ pub const ADBLOCK_CRATE_VERSION: &str = "0.13.3";
 
 /// Bumped whenever MoltBrowser changes how it builds engines (preprocessing,
 /// permissions, …) so stale caches are rebuilt from list text.
-pub const MOLT_ENGINE_FORMAT: u32 = 1;
+/// 2: built-in tracking parameters + removeparam exception engine, and the
+///    serialized form became a container (see `ShieldEngine::serialize`).
+pub const MOLT_ENGINE_FORMAT: u32 = 2;
+
+/// Header of a serialized `ShieldEngine`.
+const SERIALIZED_MAGIC: &[u8; 8] = b"MOLTSE02";
 
 /// Scriptlet permission granted to "trusted" lists (uBlock Origin's own
 /// lists), allowing `trusted-*` scriptlets such as `trusted-set-cookie`.
@@ -57,6 +64,12 @@ pub struct EngineBuilder {
     set: FilterSet,
     env: PreprocessEnv,
     rule_lines: u32,
+    /// `$removeparam=name` filters the lists apply everywhere.
+    generic_params: BTreeSet<String>,
+    /// `@@...$removeparam` filters, as blocking filters (see removeparam.rs).
+    param_exceptions: Vec<String>,
+    /// `||domain^` forms of generic `to=` removeparam filters.
+    param_to_filters: Vec<String>,
 }
 
 impl EngineBuilder {
@@ -65,6 +78,9 @@ impl EngineBuilder {
             set: FilterSet::new(false),
             env: PreprocessEnv::molt(is_mobile),
             rule_lines: 0,
+            generic_params: BTreeSet::new(),
+            param_exceptions: Vec::new(),
+            param_to_filters: Vec::new(),
         }
     }
 
@@ -73,6 +89,10 @@ impl EngineBuilder {
     pub fn add_list(&mut self, text: &str, trusted: bool) -> u32 {
         let processed = preprocess::preprocess(text, &self.env);
         let lines = preprocess::count_filter_lines(&processed);
+        let scan = removeparam::scan_list(&processed);
+        self.generic_params.extend(scan.generic_params);
+        self.param_exceptions.extend(scan.exception_filters);
+        self.param_to_filters.extend(scan.to_filters);
         let permissions = if trusted { TRUSTED_LIST_PERMISSION } else { PermissionMask::default() };
         self.set.add_filter_list(
             processed.into_owned(),
@@ -86,9 +106,31 @@ impl EngineBuilder {
         self.rule_lines
     }
 
-    pub fn build(self) -> ShieldEngine {
+    /// How many built-in tracking-parameter filters `build()` will add: the
+    /// ones the lists added so far don't already apply everywhere.
+    pub fn builtin_params(&self) -> u32 {
+        removeparam::builtin_list(&self.generic_params).1
+    }
+
+    pub fn build(mut self) -> ShieldEngine {
         crate::ensure_domain_resolver();
-        ShieldEngine { engine: Engine::new_with_filter_set(self.set) }
+        // Built-in tracking parameters, minus the ones the lists already
+        // strip everywhere (no double work per request).
+        let (builtin, n) = removeparam::builtin_list(&self.generic_params);
+        if n > 0 {
+            self.set.add_filter_list(builtin, ParseOptions::default());
+        }
+        if !self.param_to_filters.is_empty() {
+            self.set.add_filter_list(self.param_to_filters.join("\n"), ParseOptions::default());
+        }
+        let mut exceptions = FilterSet::new(false);
+        if !self.param_exceptions.is_empty() {
+            exceptions.add_filter_list(self.param_exceptions.join("\n"), ParseOptions::default());
+        }
+        ShieldEngine {
+            engine: Engine::new_with_filter_set(self.set),
+            param_exceptions: Engine::new_with_filter_set(exceptions),
+        }
     }
 }
 
@@ -105,38 +147,76 @@ pub struct CheckOutcome {
     pub should_block: bool,
     /// `data:` URL to serve instead of the resource (`$redirect`), if any.
     pub redirect: Option<String>,
-    /// URL with `$removeparam` parameters stripped, if it changed.
+    /// URL with `$removeparam` (and built-in tracking) parameters stripped,
+    /// if it changed; only differs from `url` in its query. None if a
+    /// removeparam exception (`@@...$removeparam`) matches or an
+    /// `$important` filter matched. Independent of `should_block`: callers
+    /// that block the request ignore it.
     pub rewritten_url: Option<String>,
 }
 
 /// Cosmetic resources for a document URL.
 #[derive(Debug, Default, Clone)]
 pub struct CosmeticOutcome {
-    /// `sel{display:none!important}` rules (hostname-specific + generic
-    /// complex selectors), vetted by `css::is_safe_selector`.
+    /// User stylesheet: `sel{display:none!important}` rules (hostname-
+    /// specific + generic complex selectors), vetted by
+    /// `css::is_safe_selector`, then `sel{prop:value!important}` rules from
+    /// `:style()` filters with a plain selector (see procedural.rs).
     pub hide_css: String,
     /// Scriptlet bundle to run in the page's main world at document start,
     /// wrapped in an IIFE. Empty if there's nothing to inject.
     pub injected_script: String,
     /// `$generichide`: don't query generic class/id rules for this page.
     pub generichide: bool,
-    /// Procedural/action filters (`:has-text()`, `:remove()`, …) matched for
-    /// this URL. MoltShield doesn't execute them yet; reported for stats.
+    /// Procedural and action filters (`:has-text()`, `:upward()`,
+    /// `:remove()`, ...) for the renderer's procedural engine, as vetted
+    /// JSON (format in procedural.rs). Empty if none.
+    pub procedural_json: String,
+    /// Sanitized declaration blocks the procedural filters' `:style()`
+    /// actions refer to by index.
+    pub procedural_styles: Vec<String>,
+    /// Filters in `procedural_json`.
     pub procedural_count: u32,
+    /// Procedural/action filters for this URL dropped as unsupported or
+    /// unsafe.
+    pub procedural_dropped: u32,
 }
 
 pub struct ShieldEngine {
     engine: Engine,
+    /// Removeparam exceptions as blocking filters: a match vetoes a rewrite.
+    param_exceptions: Engine,
+}
+
+/// Splits a little-endian u64 length-prefixed chunk off `data`.
+fn take_chunk(data: &[u8]) -> Option<(&[u8], &[u8])> {
+    let (len, rest) = data.split_first_chunk::<8>()?;
+    let len = usize::try_from(u64::from_le_bytes(*len)).ok()?;
+    if len > rest.len() {
+        return None;
+    }
+    Some(rest.split_at(len))
 }
 
 impl ShieldEngine {
     pub fn empty() -> Self {
         crate::ensure_domain_resolver();
-        ShieldEngine { engine: Engine::default() }
+        ShieldEngine { engine: Engine::default(), param_exceptions: Engine::default() }
     }
 
+    /// `SERIALIZED_MAGIC`, then the main engine and the removeparam
+    /// exception engine as u64-length-prefixed adblock-rust blobs.
     pub fn serialize(&self) -> Vec<u8> {
-        self.engine.serialize()
+        let main = self.engine.serialize();
+        let exceptions = self.param_exceptions.serialize();
+        let len = SERIALIZED_MAGIC.len() + 16 + main.len() + exceptions.len();
+        let mut out = Vec::with_capacity(len);
+        out.extend_from_slice(SERIALIZED_MAGIC);
+        for chunk in [&main, &exceptions] {
+            out.extend_from_slice(&(chunk.len() as u64).to_le_bytes());
+            out.extend_from_slice(chunk);
+        }
+        out
     }
 
     /// Replaces this engine's filters with a serialized engine. Resources set
@@ -144,18 +224,44 @@ impl ShieldEngine {
     /// on a corrupt or version-mismatched blob.
     pub fn deserialize(&mut self, data: &[u8]) -> bool {
         crate::ensure_domain_resolver();
-        self.engine.deserialize(data).is_ok()
+        let Some(rest) = data.strip_prefix(SERIALIZED_MAGIC) else { return false };
+        let Some((main, rest)) = take_chunk(rest) else { return false };
+        let Some((exceptions, rest)) = take_chunk(rest) else { return false };
+        if !rest.is_empty() {
+            return false;
+        }
+        let mut param_exceptions = Engine::default();
+        if param_exceptions.deserialize(exceptions).is_err() {
+            return false;
+        }
+        // Last fallible step: on failure nothing has changed.
+        if self.engine.deserialize(main).is_err() {
+            return false;
+        }
+        self.param_exceptions = param_exceptions;
+        true
     }
 
     /// Loads scriptlet/redirect resources (adblock-rust `Resource` JSON).
     /// Returns how many were accepted; 0 leaves the current set in place.
     ///
-    /// Legacy *template* scriptlets are refused: adblock-rust substitutes
-    /// their `{{N}}` placeholders with arguments that are escaped for a
-    /// double-quoted context only, so a template that quotes `'{{1}}'` would
-    /// let a filter argument break out into script. Function-style resources
-    /// (all of uBO's current ones) are invoked as `fn("arg", …)` with
-    /// JSON-escaped arguments and are safe.
+    /// Scriptlet argument safety (audit B7). adblock-rust 0.13.3 builds a
+    /// `##+js(name, args…)` injection one of two ways:
+    ///  * function-style resources (`function name(…) {…}`, all of uBO's
+    ///    scriptlets) are invoked as `name("arg", …)`, each argument a
+    ///    JSON-escaped string literal (`"`, `\` and every C0 control
+    ///    escaped; U+2028/9 are legal in JS strings) -- an argument can't
+    ///    leave its literal;
+    ///  * any other JS resource is a *template*: its `{{1}}`…`{{9}}`
+    ///    placeholders are replaced by arguments escaped for a double-quoted
+    ///    context only, so a template quoting `'{{1}}'` or using a bare
+    ///    `{{1}}` would let list text become script.
+    /// So template resources, and any JS resource containing a `{{N}}`
+    /// placeholder, are refused. The remaining non-function JS resources
+    /// (uBO's redirect surrogates, e.g. noop.js) take no arguments and are
+    /// injected verbatim. Scriptlet code itself only comes from this bundle
+    /// (built in, not downloaded); `trusted-*` scriptlets need
+    /// TRUSTED_LIST_PERMISSION, which only uBO's own lists get.
     pub fn use_resources_json(&mut self, json: &str) -> usize {
         if json.len() > MAX_RESOURCES_JSON_BYTES {
             return 0;
@@ -188,25 +294,43 @@ impl ShieldEngine {
         let request =
             Request::preparsed(url, hostname, source_hostname, request_type, third_party, method);
         let r = self.engine.check_network_request(&request);
+        let should_block = r.should_block();
+        // A rewrite must only drop query parameters, and is vetoed by
+        // removeparam exceptions (checked only when there is one: rare). It
+        // is reported whether or not the request is blocked, as adblock-rust
+        // does: navigations are never blocked but still get stripped.
+        let rewritten_url = r.rewritten_url.filter(|rewritten| {
+            removeparam::is_param_only_rewrite(url, rewritten)
+                && self.param_exceptions.check_network_request(&request).filter.is_none()
+        });
         CheckOutcome {
             matched: r.filter.is_some(),
             important: r.important,
             exception: r.exception.is_some(),
-            should_block: r.should_block(),
+            should_block,
             redirect: r.redirect.filter(|d| d.starts_with("data:")),
-            rewritten_url: r.rewritten_url,
+            rewritten_url,
         }
     }
 
     pub fn cosmetic(&self, url: &str) -> CosmeticOutcome {
         let r = self.engine.url_cosmetic_resources(url);
-        let mut selectors: Vec<&str> = r.hide_selectors.iter().map(String::as_str).collect();
+        let p = procedural::process(
+            r.hide_selectors.iter().map(String::as_str),
+            r.procedural_actions.iter().map(String::as_str),
+        );
+        let mut selectors: Vec<&str> = p.plain_hide_selectors.iter().map(String::as_str).collect();
         selectors.sort_unstable();
+        let mut hide_css = css::hide_stylesheet(selectors);
+        hide_css.push_str(&p.style_css);
         CosmeticOutcome {
-            hide_css: css::hide_stylesheet(selectors),
+            hide_css,
             injected_script: wrap_scriptlets(&r.injected_script),
             generichide: r.generichide,
-            procedural_count: u32::try_from(r.procedural_actions.len()).unwrap_or(u32::MAX),
+            procedural_json: p.filters_json,
+            procedural_styles: p.styles,
+            procedural_count: p.count,
+            procedural_dropped: p.dropped,
         }
     }
 
@@ -247,12 +371,17 @@ fn is_acceptable_resource(r: &Resource) -> bool {
         ResourceType::Template => false,
         ResourceType::Mime(MimeType::ApplicationJavascript) => {
             match base64::engine::general_purpose::STANDARD.decode(r.content.as_bytes()) {
-                Ok(bytes) => !bytes.windows(5).any(|w| w == b"{{1}}"),
+                Ok(bytes) => !has_template_placeholder(&bytes),
                 Err(_) => false,
             }
         }
         _ => true,
     }
+}
+
+/// True if `bytes` contains a `{{1}}`…`{{9}}` scriptlet template placeholder.
+fn has_template_placeholder(bytes: &[u8]) -> bool {
+    bytes.windows(5).any(|w| w[..2] == *b"{{" && matches!(w[2], b'1'..=b'9') && w[3..] == *b"}}")
 }
 
 /// Wraps adblock-rust's scriptlet bundle for main-world injection. uBO's
@@ -326,6 +455,118 @@ mod tests {
         assert!(!r.should_block);
     }
 
+    fn doc(e: &ShieldEngine, url: &str) -> CheckOutcome {
+        // Navigations are checked in their own context (MoltShield's
+        // navigation interceptor passes the target as source, first-party).
+        let host = url.split('/').nth(2).unwrap_or("");
+        e.check(url, host, host, "document", false, "GET")
+    }
+
+    #[test]
+    fn builtin_tracking_params_strip_navigations_only() {
+        let e = engine_with("||ads.example^\n");
+        let url = "https://shop.test/item?id=7&utm_source=news&utm_medium=email&gclid=abc#reviews";
+        assert_eq!(
+            doc(&e, url).rewritten_url.as_deref(),
+            Some("https://shop.test/item?id=7#reviews")
+        );
+        let r = e.check(url, "shop.test", "news.test", "sub_frame", true, "GET");
+        assert_eq!(r.rewritten_url.as_deref(), Some("https://shop.test/item?id=7#reviews"));
+        // Not subresources: first-party APIs may take campaign parameters.
+        assert!(check(&e, url, "shop.test", "xmlhttprequest", false).rewritten_url.is_none());
+        assert!(check(&e, url, "shop.test", "image", false).rewritten_url.is_none());
+        // Exact, case-sensitive names; empty values are kept (as uBO does).
+        let kept = "https://a.test/?UTM_SOURCE=x&utm_sourcex=1&fbclid=";
+        assert!(doc(&e, kept).rewritten_url.is_none());
+        assert_eq!(
+            doc(&e, "https://a.test/?fbclid=IwAR0").rewritten_url.as_deref(),
+            Some("https://a.test/")
+        );
+    }
+
+    #[test]
+    fn builtin_params_skip_what_lists_provide() {
+        let mut b = EngineBuilder::new(false);
+        let all = removeparam::BUILTIN_TRACKING_PARAMS.len() as u32;
+        assert_eq!(b.builtin_params(), all);
+        b.add_list(
+            "$removeparam=fbclid\n$removeparam=utm_source\n||x.example^$removeparam=gclid\n",
+            false,
+        );
+        assert_eq!(b.builtin_params(), all - 2);
+        let mut e = b.build();
+        e.use_resources_json(DEFAULT_RESOURCES_JSON);
+        // The list's generic rules also cover XHR (adblock-rust's default
+        // removeparam types); the site-specific gclid rule doesn't count as
+        // generic, so the built-in gclid filter is still there.
+        assert_eq!(
+            check(&e, "https://a.test/api?fbclid=1&q=2", "a.test", "xmlhttprequest", false)
+                .rewritten_url
+                .as_deref(),
+            Some("https://a.test/api?q=2")
+        );
+        let r = doc(&e, "https://a.test/?gclid=1");
+        assert_eq!(r.rewritten_url.as_deref(), Some("https://a.test/"));
+    }
+
+    #[test]
+    fn removeparam_exceptions_veto_rewrites() {
+        let e = engine_with(
+            "$removeparam=fbclid\n@@||web.archive.org/*/http$removeparam\n\
+             @@||wrap.test^$removeparam=fbclid,doc\n",
+        );
+        let archived = "https://web.archive.org/web/2020/https://a.test/?fbclid=1";
+        assert!(doc(&e, archived).rewritten_url.is_none());
+        assert!(check(&e, archived, "web.archive.org", "xmlhttprequest", false)
+            .rewritten_url
+            .is_none());
+        // Typed exception: documents only.
+        assert!(doc(&e, "https://wrap.test/?fbclid=1&utm_source=x").rewritten_url.is_none());
+        assert!(check(&e, "https://wrap.test/?fbclid=1", "wrap.test", "xmlhttprequest", false)
+            .rewritten_url
+            .is_some());
+        // Elsewhere unaffected.
+        assert!(doc(&e, "https://a.test/?fbclid=1").rewritten_url.is_some());
+        // Survives serialization.
+        let mut e2 = ShieldEngine::empty();
+        assert!(e2.deserialize(&e.serialize()));
+        assert!(doc(&e2, archived).rewritten_url.is_none());
+        assert!(doc(&e2, "https://a.test/?fbclid=1").rewritten_url.is_some());
+    }
+
+    #[test]
+    fn rewrite_is_independent_of_blocking() {
+        // A navigation to a listed domain is never blocked by MoltShield but
+        // must still lose its tracking parameters.
+        let e = engine_with("||t.example^$document\n$removeparam=fbclid\n");
+        let r = doc(&e, "https://t.example/p?fbclid=1");
+        assert!(r.should_block);
+        assert_eq!(r.rewritten_url.as_deref(), Some("https://t.example/p"));
+        // ... except under $important, where adblock-rust skips removeparam.
+        let e = engine_with("||t.example^$document,important\n$removeparam=fbclid\n");
+        assert!(doc(&e, "https://t.example/p?fbclid=1").rewritten_url.is_none());
+    }
+
+    #[test]
+    fn rejects_truncated_or_foreign_blobs() {
+        let e = engine_with("||ads.example^\n$removeparam=fbclid\n");
+        let blob = e.serialize();
+        assert!(blob.starts_with(SERIALIZED_MAGIC));
+        let mut e2 = ShieldEngine::empty();
+        assert!(!e2.deserialize(&blob[..blob.len() - 1]));
+        let mut extra = blob.clone();
+        extra.push(0);
+        assert!(!e2.deserialize(&extra));
+        // A bare adblock-rust blob (the format-1 cache) is refused.
+        assert!(!e2.deserialize(&e.engine.serialize()));
+        let mut huge = SERIALIZED_MAGIC.to_vec();
+        huge.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert!(!e2.deserialize(&huge));
+        assert!(!check(&e2, "https://ads.example/x", "a.test", "image", true).should_block);
+        assert!(e2.deserialize(&blob));
+        assert!(check(&e2, "https://ads.example/x", "a.test", "image", true).should_block);
+    }
+
     #[test]
     fn serialize_roundtrip() {
         let e = engine_with("||ads.example^\nexample.com##.sponsored\n");
@@ -369,6 +610,52 @@ mod tests {
             script.contains(r#"setConstant("foo", "x\"});alert(1);//")"#),
             "{script}"
         );
+    }
+
+    /// The argument list of the first `name(...)` invocation in `script`,
+    /// parsed as a JSON array: succeeds only if every argument is a plain
+    /// JSON (hence JS) string literal.
+    fn invocation_args(script: &str, name: &str) -> Vec<String> {
+        let start = script.find(&format!("\n{name}(")).expect("invocation") + name.len() + 2;
+        let end = start + script[start..].find(")\n} catch").expect("end of invocation");
+        serde_json::from_str(&format!("[{}]", &script[start..end])).expect("JSON string literals")
+    }
+
+    #[test]
+    fn hostile_scriptlet_arguments_stay_string_literals() {
+        // Audit B7: whatever a list puts in an argument comes out as the
+        // same string value, in a literal it can't leave.
+        for hostile in [
+            r#"x"});alert(1);//"#,
+            r#"x"}); alert(1); //"#,
+            "a\\b\\",
+            "</script><script>alert(1)</script>",
+            "*/alert(1)/*",
+            "${alert(1)}`+alert(1)+`",
+            "\\u0022);alert(1);//",
+            "x\u{2028}\u{2029}y\tz",
+            "})();alert(1);(function(){",
+        ] {
+            let list = format!("example.com##+js(set-constant, foo, {hostile})\n");
+            let e = engine_with(&list);
+            let script = e.cosmetic("https://example.com/").injected_script;
+            assert_eq!(invocation_args(&script, "setConstant"), ["foo", hostile], "{script}");
+        }
+    }
+
+    #[test]
+    fn template_placeholders_refused_in_any_position() {
+        assert!(has_template_placeholder(b"var a = '{{2}}';"));
+        assert!(has_template_placeholder(b"x{{9}}"));
+        assert!(!has_template_placeholder(b"{{0}} {{x}} {1} {{10"));
+        let mut e = ShieldEngine::empty();
+        let content = base64::engine::general_purpose::STANDARD.encode("(function(){ x = '{{3}}'; })();");
+        let json = format!(
+            "[{{\"name\":\"t3.js\",\"aliases\":[],\"kind\":{{\"mime\":\"application/javascript\"}},\"content\":\"{content}\"}}]"
+        );
+        assert_eq!(e.use_resources_json(&json), 0);
+        // The bundled resources have none.
+        assert!(e.use_resources_json(DEFAULT_RESOURCES_JSON) > 100);
     }
 
     #[test]

@@ -106,6 +106,7 @@
 #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
 #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
@@ -6718,6 +6719,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
     if (https_upgrades_interceptor) {
       interceptors.push_back(std::move(https_upgrades_interceptor));
     }
+  }
+
+  // MoltShield: strips tracking parameters (utm_*, fbclid, $removeparam)
+  // from navigations with an internal redirect, on every leg. Never blocks.
+  if (auto molt_shield_interceptor =
+          molt_ai::shield::MoltShieldNavigationInterceptor::MaybeCreate(
+              frame_tree_node_id)) {
+    interceptors.push_back(std::move(molt_shield_interceptor));
   }
 
   return interceptors;

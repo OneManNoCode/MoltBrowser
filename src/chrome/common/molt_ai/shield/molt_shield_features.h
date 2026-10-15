@@ -12,6 +12,7 @@
 //   chrome://flags/#molt-shield-keepalive        MoltShieldKeepAlive
 //   chrome://flags/#molt-shield-cosmetics        MoltShieldCosmetics
 //   chrome://flags/#molt-shield-consent-killer   MoltShieldConsentKiller
+//   chrome://flags/#molt-shield-removeparam      MoltShieldRemoveParam
 //
 // or on the command line, e.g. --disable-features=MoltShieldRequestProxy.
 // --disable-molt-shield turns every hook off (and keeps the engine and list
@@ -50,6 +51,10 @@ BASE_DECLARE_FEATURE(kMoltShieldKeepAlive);
 BASE_DECLARE_FEATURE(kMoltShieldCosmetics);
 // Cookie-consent auto-reject (ConsentKillerTabHelper).
 BASE_DECLARE_FEATURE(kMoltShieldConsentKiller);
+// Tracking-parameter stripping ($removeparam + the built-in list): the
+// navigation interceptor's internal redirect and the proxy's subresource
+// rewrite. Blocking is unaffected.
+BASE_DECLARE_FEATURE(kMoltShieldRemoveParam);
 
 // chrome://flags internal names (about_flags.cc entries come from
 // chrome/browser/molt_ai/shield/molt_shield_about_flags.h).
@@ -60,6 +65,7 @@ inline constexpr char kWebSocket[] = "molt-shield-websocket";
 inline constexpr char kKeepAlive[] = "molt-shield-keepalive";
 inline constexpr char kCosmetics[] = "molt-shield-cosmetics";
 inline constexpr char kConsentKiller[] = "molt-shield-consent-killer";
+inline constexpr char kRemoveParam[] = "molt-shield-removeparam";
 }  // namespace flags
 
 // True when --disable-molt-shield is on this process's command line.
@@ -74,6 +80,7 @@ bool IsWebSocketEnabled();
 bool IsKeepAliveEnabled();
 bool IsCosmeticsEnabled();
 bool IsConsentKillerEnabled();
+bool IsRemoveParamEnabled();
 
 // chrome://flags names of the hooks whose feature is disabled (through
 // chrome://flags or --disable-features), for the settings page.

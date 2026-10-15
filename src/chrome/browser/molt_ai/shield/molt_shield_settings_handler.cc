@@ -135,6 +135,7 @@ base::DictValue MoltShieldSettingsHandler::BuildState() {
   s.Set("websockets", static_cast<double>(stats.websockets_blocked));
   s.Set("cosmetic", static_cast<double>(stats.cosmetic_rules_applied));
   s.Set("scriptlets", static_cast<double>(stats.scriptlets_injected));
+  s.Set("paramsStripped", static_cast<double>(stats.params_stripped));
   state.Set("stats", std::move(s));
 
   base::ListValue lists;
@@ -381,7 +382,8 @@ const char kMoltShieldSettingsJs[] = R"JS(
         fmtNum(s.redirects) + ' neutered with a stub, ' +
         fmtNum(s.websockets) + ' WebSockets); cosmetic filters on ' +
         fmtNum(s.cosmetic) + ' pages, scriptlets on ' +
-        fmtNum(s.scriptlets) + '.';
+        fmtNum(s.scriptlets) + '; tracking parameters stripped from ' +
+        fmtNum(s.paramsStripped) + ' URLs.';
   }
 
   function renderLists() {

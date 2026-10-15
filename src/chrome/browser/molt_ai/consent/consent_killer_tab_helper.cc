@@ -65,21 +65,23 @@ constexpr char kKillerJS[] = R"JS(
     '#cmpwelcomebtnno',
     '.iubenda-cs-reject-btn',
     '#hs-eu-decline-button',
+    '#cookiescript_reject',
   ];
 
-  // Where the text fallback may look (outside CMP documents): modal
-  // dialogs and known consent containers, and only if they talk about
-  // cookies/consent.
+  // Where the text fallback may look (outside CMP documents): the
+  // containers of known consent-management frameworks, and only if they
+  // talk about cookies/consent. Never a site's own dialogs (role=dialog,
+  // aria-modal) or site-chosen ids such as #cookie-banner: a "Decline" or
+  // "Reject" there could be anything (an invitation, a review, an order).
   var CONTAINER_SELECTORS = [
-    '[role="dialog"]', '[role="alertdialog"]', '[aria-modal="true"]',
     '#onetrust-banner-sdk', '#onetrust-pc-sdk', '#CybotCookiebotDialog',
     '.qc-cmp2-container', '#qc-cmp2-ui', '#didomi-host', '#didomi-notice',
     '.cky-consent-container', '.osano-cm-dialog', '#truste-consent-track',
     '.truste_box_overlay', '#sp_message_container', '.cmplz-cookiebanner',
     '.fc-consent-root', '#cmpbox', '#usercentrics-root',
     '#usercentrics-cmp-ui', '.cc-window', '#cookie-law-info-bar',
-    '#CookieConsent', '#cookiebanner', '#cookie-banner', '.cookie-banner',
-    '.iubenda-cs-container', '#hs-eu-cookie-confirmation',
+    '.iubenda-cs-container', '#hs-eu-cookie-confirmation', '.klaro',
+    '.cookiefirst-root', '#BorlabsCookieBox', '#cookiescript_injected',
   ].join(',');
   var CONSENT_TEXT = new RegExp(
       'cookie|consent|gdpr|privacy|personal data|tracking|partners|' +

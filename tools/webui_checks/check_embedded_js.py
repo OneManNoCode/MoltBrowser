@@ -29,6 +29,7 @@ import sys
 import tempfile
 
 ROOTS = ["src/chrome/browser/ui/webui/molt_ai", "src/chrome/browser/molt_ai",
+         "src/chrome/renderer/molt_ai",
          "src/chrome/browser/ui/views/toolbar"]
 EXTS = (".cc", ".h", ".mm")
 # path:ordinal -> why it is not a standalone program. Ordinal counts

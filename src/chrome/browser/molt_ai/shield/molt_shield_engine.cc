@@ -159,6 +159,11 @@ CosmeticData MoltShieldEngine::Cosmetic(const GURL& document_url) const {
   data.hide_css = std::string(r.hide_css);
   data.scriptlet_js = std::string(r.injected_script);
   data.generichide = r.generichide;
+  data.procedural_json = std::string(r.procedural_json);
+  data.procedural_styles.reserve(r.procedural_styles.size());
+  for (const rust::String& style : r.procedural_styles) {
+    data.procedural_styles.emplace_back(style);
+  }
   return data;
 }
 

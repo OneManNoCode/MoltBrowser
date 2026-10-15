@@ -99,6 +99,42 @@ std::optional<CheckInput> MakeCheckInput(
   return input;
 }
 
+bool IsSafeParamStrip(const GURL& original, const GURL& stripped) {
+  return original.is_valid() && stripped.is_valid() &&
+         original.SchemeIsHTTPOrHTTPS() && original.has_query() &&
+         stripped.spec().size() < original.spec().size() &&
+         url::Origin::Create(original).IsSameOriginWith(
+             url::Origin::Create(stripped)) &&
+         original.path() == stripped.path() &&
+         original.has_ref() == stripped.has_ref() &&
+         original.ref() == stripped.ref();
+}
+
+bool CanStripParamsFromSubresource(RequestDestination destination,
+                                   bool keepalive) {
+  if (keepalive) {
+    return false;
+  }
+  switch (destination) {
+    case RequestDestination::kWorker:
+    case RequestDestination::kSharedWorker:
+    case RequestDestination::kServiceWorker:
+    // Documents and frames are navigations (MoltShieldNavigationInterceptor).
+    case RequestDestination::kDocument:
+    case RequestDestination::kIframe:
+    case RequestDestination::kFrame:
+    case RequestDestination::kFencedframe:
+      return false;
+    default:
+      return true;
+  }
+}
+
+bool CanStripParamsFromNavigation(std::string_view method, const GURL& url) {
+  return method == "GET" && url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
+         url.has_query();
+}
+
 bool LooksLikeFilterList(std::string_view text) {
   if (text.empty() || static_cast<int64_t>(text.size()) > kMaxListBytes) {
     return false;

@@ -15,6 +15,11 @@
 //    only if they aren't ready by response time (bounded wait). They're
 //    stashed on the NavigationHandle for MoltShieldTabHelper to send to the
 //    renderer at ReadyToCommitNavigation, ahead of the commit IPC.
+//
+// Tracking parameters are stripped from navigations by
+// MoltShieldNavigationInterceptor (an internal redirect, which a
+// NavigationThrottle can't produce); this throttle sees the stripped URL in
+// WillRedirectRequest like any redirect.
 
 #ifndef CHROME_BROWSER_MOLT_AI_SHIELD_MOLT_SHIELD_NAVIGATION_THROTTLE_H_
 #define CHROME_BROWSER_MOLT_AI_SHIELD_MOLT_SHIELD_NAVIGATION_THROTTLE_H_

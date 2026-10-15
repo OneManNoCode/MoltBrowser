@@ -7,8 +7,10 @@
 //
 // Measures: engine build time + memory, serialized size, deserialize time,
 // per-request matching latency over adblock-rust's real-world request corpus
-// (data/requests.json, ~240k requests from top sites), cosmetic lookups, and
-// the generic class/id query. Then drives the bridge's generated C++ API.
+// (data/requests.json, ~240k requests from top sites), `$removeparam` on
+// navigations (the corpus' documents, plus link-decorated variants),
+// cosmetic lookups, and the generic class/id query. Then drives the bridge's
+// generated C++ API.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -88,6 +90,26 @@ fn load_requests(path: &Path) -> Vec<Req> {
     out
 }
 
+/// Top-level document URLs from the corpus (what the navigation interceptor
+/// sees), deduplicated.
+fn load_documents(path: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        if v["cpt"].as_str() != Some("document") {
+            continue;
+        }
+        if let Some(url) = v["url"].as_str().and_then(adblock::url_parser::parse_url) {
+            if seen.insert(url.url.clone()) {
+                out.push(url.url.clone());
+            }
+        }
+    }
+    out
+}
+
 fn pct(sorted: &[Duration], p: f64) -> Duration {
     if sorted.is_empty() {
         return Duration::ZERO;
@@ -96,15 +118,16 @@ fn pct(sorted: &[Duration], p: f64) -> Duration {
     sorted[idx]
 }
 
-fn build(lists: &[(String, bool)]) -> (ShieldEngine, u32) {
+fn build(lists: &[(String, bool)]) -> (ShieldEngine, u32, u32) {
     let mut b = EngineBuilder::new(false);
     for (text, trusted) in lists {
         b.add_list(text, *trusted);
     }
     let lines = b.rule_lines();
+    let builtin_params = b.builtin_params();
     let mut e = b.build();
     e.use_resources_json(DEFAULT_RESOURCES_JSON);
-    (e, lines)
+    (e, lines, builtin_params)
 }
 
 fn main() {
@@ -135,11 +158,13 @@ fn main() {
     let mut build_times = Vec::new();
     let mut engine = None;
     let mut rule_lines = 0;
+    let mut builtin_params = 0;
     for _ in 0..3 {
         let t = Instant::now();
-        let (e, n) = build(&lists);
+        let (e, n, b) = build(&lists);
         build_times.push(t.elapsed());
         rule_lines = n;
+        builtin_params = b;
         engine = Some(e);
     }
     build_times.sort();
@@ -156,6 +181,11 @@ fn main() {
         build_times[2].as_secs_f64() * 1e3,
         vm_kb("VmHWM:") / 1024,
         rss_engine / 1024
+    );
+    println!(
+        "removeparam: {} of {} built-in tracking parameters added (the rest come from the lists)",
+        builtin_params,
+        molt_adblock::BUILTIN_TRACKING_PARAMS.len()
     );
 
     // ---- Serialize / deserialize ----
@@ -223,6 +253,40 @@ fn main() {
             redirected,
             rewritten
         );
+    }
+
+    // ---- Navigations ($removeparam on top-level documents) ----
+    let docs = load_documents(&dir.join("requests.json"));
+    if !docs.is_empty() {
+        let mut synthetic = Vec::new();
+        for (i, d) in docs.iter().take(2000).enumerate() {
+            // Link-decorated variants, as a click from social/ads/email would produce.
+            let sep = if d.contains('?') { '&' } else { '?' };
+            let deco = ["fbclid=IwAR0x", "utm_source=news&utm_medium=email", "gclid=Cj0K"][i % 3];
+            synthetic.push(format!("{d}{sep}{deco}"));
+        }
+        for (label, set) in [("corpus documents", &docs), ("link-decorated", &synthetic)] {
+            let mut times = Vec::with_capacity(set.len());
+            let mut rewritten = 0usize;
+            for url in set.iter() {
+                let host = url.split('/').nth(2).unwrap_or("");
+                let t = Instant::now();
+                let o = restored.check(url, host, host, "document", false, "GET");
+                times.push(t.elapsed());
+                rewritten += o.rewritten_url.is_some() as usize;
+            }
+            times.sort();
+            let mean = times.iter().sum::<Duration>().as_secs_f64() * 1e6 / set.len() as f64;
+            println!(
+                "navigation removeparam ({label}): {} URLs, {} rewritten ({:.1}%), \
+                 mean {:.2} us, p99 {:.2} us",
+                set.len(),
+                rewritten,
+                100.0 * rewritten as f64 / set.len() as f64,
+                mean,
+                pct(&times, 0.99).as_secs_f64() * 1e6
+            );
+        }
     }
 
     // ---- Cosmetic ----
