@@ -79,6 +79,35 @@ source_set("tor") {
   }
 }
 
+# .onion in regular windows: the navigation throttle that keeps onion names
+# off the network (registered first in chrome_content_browser_client.cc) and
+# its "Open in a MoltNet window" interstitial.
+source_set("onion") {
+  sources = [
+    "onion_blocking_page.cc",
+    "onion_blocking_page.h",
+    "onion_navigation_throttle.cc",
+    "onion_navigation_throttle.h",
+  ]
+
+  deps = [
+    ":protocol",
+    ":tor",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common",
+    "//components/security_interstitials/content:security_interstitial_page",
+    "//components/security_interstitials/core",
+    "//content/public/browser",
+    "//net",
+    "//url",
+  ]
+
+  # As in :tor: onion_blocking_page.cc shows a dialog via
+  # chrome/browser/ui/simple_message_box.h (and reads g_browser_process);
+  # those targets depend on this one, so the symbols resolve at link time.
+}
+
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
 # generation, bridge-line validation, .onion / Onion-Location). Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.

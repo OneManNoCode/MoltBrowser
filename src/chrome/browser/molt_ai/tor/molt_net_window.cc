@@ -10,6 +10,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/no_destructor.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
@@ -26,6 +27,8 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/simple_message_box.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/base/base_window.h"
 #include "url/gurl.h"
 
@@ -176,6 +179,35 @@ void MoltNetWindow::Open(Profile* from, const GURL& url, DoneCallback done) {
   TorManager::Get()->Launch(base::BindOnce(
       &OnTorReady, from->GetOriginalProfile()->GetPath(), url,
       std::move(done)));
+}
+
+// static
+void MoltNetWindow::OpenForUserClick(content::WebContents* source,
+                                     const GURL& url,
+                                     DoneCallback done) {
+  if (!source) {
+    if (done) {
+      std::move(done).Run(false, "No window.");
+    }
+    return;
+  }
+  Open(Profile::FromBrowserContext(source->GetBrowserContext()), url,
+       base::BindOnce(
+           [](base::WeakPtr<content::WebContents> weak_source,
+              DoneCallback then, bool ok, std::string error) {
+             if (!ok && weak_source) {
+               chrome::ShowWarningMessageBoxAsync(
+                   weak_source->GetTopLevelNativeWindow(),
+                   u"Couldn't open a MoltNet window",
+                   base::UTF8ToUTF16(
+                       error.empty() ? std::string("MoltNet couldn't start.")
+                                     : error));
+             }
+             if (then) {
+               std::move(then).Run(ok, std::move(error));
+             }
+           },
+           source->GetWeakPtr(), std::move(done)));
 }
 
 // static

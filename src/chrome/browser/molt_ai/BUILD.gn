@@ -260,6 +260,8 @@ group("molt_ai") {
     ":molt_update",
     "automation:automation",
     "common:common",
+    # chrome_content_browser_client.cc registers OnionNavigationThrottle.
+    "tor:onion",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)
