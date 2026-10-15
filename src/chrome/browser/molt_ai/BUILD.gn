@@ -79,23 +79,6 @@ source_set("molt_ai_memory") {
   ]
 }
 
-source_set("molt_ai_models") {
-  sources = [
-    "models/model_manager.cc",
-    "models/model_manager.h",
-    "models/model_downloader.cc",
-    "models/model_downloader.h",
-  ]
-
-  deps = [
-    ":molt_ai_runtime",
-    "//base",
-    "//net",
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
-  ]
-}
-
 # AI Omnibox provider is in //components/omnibox/browser/ai_prompt_provider.*
 # (registered directly in autocomplete_controller.cc)
 
@@ -213,7 +196,6 @@ group("molt_ai") {
     ":molt_ai_dom",
     ":molt_ai_agents",
     ":molt_ai_memory",
-    ":molt_ai_models",
     ":molt_ai_embeddings",
     ":molt_ai_import",
     ":molt_shield",

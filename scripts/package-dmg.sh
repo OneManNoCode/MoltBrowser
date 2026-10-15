@@ -51,9 +51,10 @@ fi
 mkdir -p "$DMG_DIR"
 
 # Bundle TinyLlama 1.1B model into the app for first-run AI experience.
-# This ships ~638MB so users have AI working out of the box without
-# downloading anything. ModelManager.cc detects bundled models in
-# Contents/Resources/molt_models/ and uses them automatically.
+# This ships ~638MB. NOTE: BrowserAIRuntime currently only looks in
+# ~/.moltbrowser/models/, so it does not pick up this copy in
+# Contents/Resources/molt_models/ (the lookup that did lived in the old
+# ModelManager, which was never called and has been removed).
 BUNDLED_MODEL="$REPO_DIR/branding/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 if [ -f "$BUNDLED_MODEL" ]; then
   MODEL_DEST="$APP_PATH/Contents/Resources/molt_models"
