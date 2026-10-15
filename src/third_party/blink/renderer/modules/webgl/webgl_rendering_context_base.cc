@@ -75,6 +75,7 @@
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
@@ -5133,6 +5134,12 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
     }
     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
   }
+  // MoltBrowser: per-site fingerprinting noise on RGBA / UNSIGNED_BYTE reads.
+  molt_fingerprinting::FarbleReadPixels(
+      Host()->GetTopExecutionContext(),
+      format == GL_RGBA && type == GL_UNSIGNED_BYTE, width, height,
+      GetPackPixelStoreParams(),
+      pixels->ByteSpanMaybeShared().subspan(offset_in_bytes.ValueOrDie()));
 }
 
 void WebGLRenderingContextBase::RenderbufferStorageImpl(

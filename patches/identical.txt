@@ -57,5 +57,3 @@ third_party/blink/renderer/core/frame/local_dom_window.cc
 third_party/blink/renderer/core/frame/screen.cc
 third_party/blink/renderer/modules/webaudio/analyser_node.cc
 third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
-third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc

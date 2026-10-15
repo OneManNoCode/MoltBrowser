@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.h"
 
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+
 namespace blink {
 
 WebGLDebugRendererInfo::WebGLDebugRendererInfo(
@@ -37,7 +39,9 @@ WebGLExtensionName WebGLDebugRendererInfo::GetName() const {
 }
 
 bool WebGLDebugRendererInfo::Supported(WebGLRenderingContextBase*) {
-  return true;
+  // MoltBrowser: MoltNet windows never expose the unmasked GPU vendor and
+  // renderer strings (the extension is simply unavailable there).
+  return !molt_fingerprinting::IsUniform();
 }
 
 const char* WebGLDebugRendererInfo::ExtensionName() {
