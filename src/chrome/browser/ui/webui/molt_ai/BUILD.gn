@@ -54,6 +54,7 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/profile",
+    "//chrome/browser/molt_ai/shield:settings_handler",
     "//chrome/browser/molt_ai/vault",
     "//chrome/browser/profiles:profile",
     "//chrome/common",

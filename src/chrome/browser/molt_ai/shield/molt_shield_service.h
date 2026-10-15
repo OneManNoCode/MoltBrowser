@@ -101,6 +101,9 @@ class MoltShieldService : public ProfileObserver {
   // original profile; updates never use a separate or system context.
   void RegisterProfile(Profile* profile);
 
+  // Persisted switches (as stored, not combined with `enabled`).
+  const ShieldSettings& settings() const;
+
   std::vector<ListStatus> GetListStatus() const;
   void SetListEnabled(const std::string& id, bool enabled);
   void UpdateListsNow();

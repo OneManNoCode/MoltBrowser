@@ -220,6 +220,10 @@ MoltShieldService::GetLoaderFactory() {
   return update_profile_ ? update_profile_->GetURLLoaderFactory() : nullptr;
 }
 
+const ShieldSettings& MoltShieldService::settings() const {
+  return lists_->state().settings;
+}
+
 std::vector<ListStatus> MoltShieldService::GetListStatus() const {
   return lists_->GetListStatus();
 }

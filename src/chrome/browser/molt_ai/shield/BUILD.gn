@@ -72,6 +72,24 @@ source_set("shield") {
   ]
 }
 
+# MoltShield section of molt://ai-settings (handler + section script).
+source_set("settings_handler") {
+  sources = [
+    "molt_shield_settings_handler.cc",
+    "molt_shield_settings_handler.h",
+  ]
+  public_deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+  deps = [
+    ":shield",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common",
+    "//net",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true

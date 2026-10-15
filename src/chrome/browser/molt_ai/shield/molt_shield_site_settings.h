@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "content/public/browser/page_user_data.h"
@@ -43,6 +44,11 @@ void SetShieldsUpForSite(content::BrowserContext* context,
 // Sites with Shields down, as content-settings patterns for display.
 std::vector<std::string> GetShieldsDownSites(content::BrowserContext* context);
 
+// Removes a Shields-down exception by the pattern GetShieldsDownSites()
+// returned. Invalid patterns are ignored.
+void RemoveShieldsDownException(content::BrowserContext* context,
+                                std::string_view pattern);
+
 // Requests blocked while a page was loaded (primary, prerendered or in the
 // back/forward cache), so counts follow the page.
 class ShieldPageData : public content::PageUserData<ShieldPageData> {
@@ -66,7 +72,7 @@ class ShieldPageData : public content::PageUserData<ShieldPageData> {
 // the frame is gone).
 void RecordBlockedForFrame(content::RenderFrameHost* frame);
 
-// Blocked count of the primary page of the tab showing `frame`'s page.
+// Requests blocked while `page` was loaded (0 if none recorded).
 int64_t GetBlockedCountForPage(content::Page& page);
 
 }  // namespace molt_ai::shield

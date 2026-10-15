@@ -77,6 +77,18 @@ std::vector<std::string> GetShieldsDownSites(content::BrowserContext* context) {
   return sites;
 }
 
+void RemoveShieldsDownException(content::BrowserContext* context,
+                                std::string_view pattern) {
+  HostContentSettingsMap* map =
+      context ? HostContentSettingsMapFactory::GetForProfile(context) : nullptr;
+  ContentSettingsPattern primary = ContentSettingsPattern::FromString(pattern);
+  if (!map || !primary.IsValid() || primary.MatchesAllHosts()) {
+    return;
+  }
+  map->SetContentSettingCustomScope(primary, ContentSettingsPattern::Wildcard(),
+                                    kShieldsSetting, CONTENT_SETTING_DEFAULT);
+}
+
 ShieldPageData::ShieldPageData(content::Page& page) : PageUserData(page) {}
 ShieldPageData::~ShieldPageData() = default;
 PAGE_USER_DATA_KEY_IMPL(ShieldPageData);
