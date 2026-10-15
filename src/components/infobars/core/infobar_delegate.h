@@ -216,6 +216,10 @@ class InfoBarDelegate {
     AUTOFILL_AI_SAVE_ENTITY_INFOBAR_DELEGATE_IOS = 132,
     JS_OPTIMIZATIONS_INFOBAR_DELEGATE = 133,
     WEB_APP_BLOCKED_MIGRATION_INFOBAR_DELEGATE = 134,
+
+    // MoltBrowser identifiers start at 1000, well clear of upstream's, so
+    // rebases never collide.
+    MOLT_ONION_LOCATION_INFOBAR_DELEGATE = 1000,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/enums.xml:InfoBarIdentifier)
 

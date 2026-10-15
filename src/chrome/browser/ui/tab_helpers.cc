@@ -47,6 +47,7 @@
 #include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 #include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 #include "chrome/browser/molt_ai/memory/memory_recorder.h"
+#include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
 #include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
@@ -638,6 +639,10 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
   // patterns and overlays a /simplify+/sandbox hint chip.
   molt_ai::anti_rage::AntiRageTabHelper::CreateForWebContents(
       web_contents);
+
+  // MoltBrowser: offers a site's Onion-Location as an infobar (never an
+  // automatic redirect).
+  molt_ai::tor::OnionLocationTabHelper::CreateForWebContents(web_contents);
 
   // NO! Do not just add your tab helper here. This is a large alphabetized
   // block; please insert your tab helper above in alphabetical order.

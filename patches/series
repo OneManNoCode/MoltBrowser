@@ -106,6 +106,7 @@ components/error_page_strings.grdp.patch
 components/facilitated_payments_strings.grdp.patch
 components/heavy_ad_intervention_strings.grdp.patch
 components/history_strings.grdp.patch
+components/infobars/core/infobar_delegate.h.patch
 components/management_strings.grdp.patch
 components/new_or_sad_tab_strings.grdp.patch
 components/omnibox/browser/BUILD.gn.patch
