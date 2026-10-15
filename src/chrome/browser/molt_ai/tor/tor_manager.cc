@@ -28,6 +28,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/common/helper_binary.h"
 #include "chrome/browser/molt_ai/tor/tor_control_protocol.h"
 #include "chrome/browser/molt_ai/tor/torrc_builder.h"
 
@@ -107,14 +108,45 @@ base::FilePath BundledTorBinaryName() {
 #endif
 }
 
-bool IsExecutableFile(const base::FilePath& path) {
-  if (path.empty() || !base::PathExists(path) || base::DirectoryExists(path)) {
-    return false;
-  }
-#if BUILDFLAG(IS_WIN)
-  return true;
+// Linux distribution packages (MoltBrowser's .deb/.rpm say "Recommends:
+// tor"). Used only when no tor is bundled, and only if root owns the file and
+// every directory above it (helper_binary.h). Never PATH, /usr/local or
+// Homebrew.
+std::vector<std::string> SystemTorPaths() {
+#if BUILDFLAG(IS_LINUX)
+  return {"/usr/bin/tor", "/usr/sbin/tor"};
 #else
-  return access(path.value().c_str(), X_OK) == 0;
+  return {};
+#endif
+}
+
+// A bundled pluggable transport that passes the bundled-binary checks.
+bool HasBundledTransport(const base::FilePath& pt_dir, const char* name) {
+  return molt_ai::FindHelperBinary(pt_dir, {base::FilePath::FromASCII(name)},
+                                   /*linux_system_paths=*/{})
+      .found();
+}
+
+// What the user should do when there is no tor MoltNet can run.
+std::string TorUnavailableMessage(const molt_ai::HelperBinary& found,
+                                  bool explicit_switch) {
+  if (explicit_switch) {
+    return "MoltNet can't use the tor binary given with --" +
+           std::string(TorManager::kTorBinarySwitch) + ": " + found.error + ".";
+  }
+#if BUILDFLAG(IS_LINUX)
+  if (found.rejected_existing) {
+    return "MoltNet found a tor binary it won't run (" + found.error +
+           "). Install or reinstall the tor package from your "
+           "distribution, then try again.";
+  }
+  return "Tor isn't installed. Install the tor package (for example "
+         "\"sudo apt install tor\" or \"sudo dnf install tor\"), then try "
+         "again.";
+#else
+  return "This build of MoltBrowser has no usable bundled Tor (" + found.error +
+         "). Reinstall MoltBrowser. (Advanced: start it with "
+         "--moltnet-tor-binary=<absolute path to tor>.)";
 #endif
 }
 
@@ -261,10 +293,10 @@ std::unique_ptr<TorSpawnResult> SpawnTorBlocking(SpawnSpec spec) {
       options.geoip6_file = geo6.AsUTF8Unsafe();
     }
     pt_dir = spec.bundled_dir.AppendASCII(kPtDirName);
-    if (IsExecutableFile(pt_dir.AppendASCII(kLyrebirdName))) {
+    if (HasBundledTransport(pt_dir, kLyrebirdName)) {
       options.lyrebird_exec = kLyrebirdExec;
     }
-    if (IsExecutableFile(pt_dir.AppendASCII(kSnowflakeName))) {
+    if (HasBundledTransport(pt_dir, kSnowflakeName)) {
       options.snowflake_exec = kSnowflakeExec;
     }
   }
@@ -475,6 +507,11 @@ BridgeSettings::BridgeSettings(const BridgeSettings&) = default;
 BridgeSettings& BridgeSettings::operator=(const BridgeSettings&) = default;
 BridgeSettings::~BridgeSettings() = default;
 
+TorBinaryInfo::TorBinaryInfo() = default;
+TorBinaryInfo::TorBinaryInfo(const TorBinaryInfo&) = default;
+TorBinaryInfo& TorBinaryInfo::operator=(const TorBinaryInfo&) = default;
+TorBinaryInfo::~TorBinaryInfo() = default;
+
 std::string BridgeModeToString(BridgeSettings::Mode mode) {
   switch (mode) {
     case BridgeSettings::Mode::kNone:
@@ -542,30 +579,35 @@ base::FilePath TorManager::GetBundledTorDir() const {
 #endif
 }
 
-base::FilePath TorManager::ResolveTorBinary() const {
-  // An explicit, absolute user override is the only way to run a tor that
-  // didn't ship with MoltBrowser. No Homebrew / PATH search: a binary found
-  // that way is whatever happens to be installed, not what we tested.
+TorBinaryInfo TorManager::FindTorBinary() const {
+  TorBinaryInfo info;
+  // An explicit, absolute user override replaces the search entirely. No
+  // Homebrew / PATH search: a binary found that way is whatever happens to
+  // be installed (or planted), not what we tested.
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(kTorBinarySwitch)) {
-    base::FilePath custom = command_line->GetSwitchValuePath(kTorBinarySwitch);
-    return custom.IsAbsolute() && IsExecutableFile(custom) ? custom
-                                                           : base::FilePath();
+  const bool explicit_switch = command_line->HasSwitch(kTorBinarySwitch);
+  const molt_ai::HelperBinary found =
+      explicit_switch
+          ? molt_ai::CheckExplicitHelperBinary(
+                command_line->GetSwitchValuePath(kTorBinarySwitch))
+          : molt_ai::FindHelperBinary(
+                GetBundledTorDir(), {BundledTorBinaryName()}, SystemTorPaths());
+  if (!found.found()) {
+    info.error = TorUnavailableMessage(found, explicit_switch);
+    return info;
   }
-  base::FilePath dir = GetBundledTorDir();
-  if (dir.empty()) {
-    return base::FilePath();
-  }
-  base::FilePath bundled = dir.Append(BundledTorBinaryName());
-  return IsExecutableFile(bundled) ? bundled : base::FilePath();
+  info.path = found.path;
+  info.bundled = found.bundled;
+  return info;
+}
+
+base::FilePath TorManager::ResolveTorBinary() const {
+  return FindTorBinary().path;
 }
 
 bool TorManager::IsUsingBundledTor() const {
-  base::FilePath dir = GetBundledTorDir();
-  base::FilePath resolved = ResolveTorBinary();
-  return !dir.empty() && !resolved.empty() &&
-         resolved == dir.Append(BundledTorBinaryName());
+  return FindTorBinary().bundled;
 }
 
 bool TorManager::IsRunning() const {
@@ -605,15 +647,16 @@ void TorManager::Launch(base::OnceCallback<void(TorLaunchResult)> on_ready) {
   }
   launching_ = true;
 
-  base::FilePath binary = ResolveTorBinary();
-  if (binary.empty()) {
+  const TorBinaryInfo tor = FindTorBinary();
+  if (tor.path.empty()) {
     TorLaunchResult result;
-    result.error =
-        "This build of MoltBrowser has no bundled Tor. (Advanced: start "
-        "MoltBrowser with --moltnet-tor-binary=<absolute path to tor> to use "
-        "your own.)";
+    result.error = tor.error;
     FinishLaunch(result);
     return;
+  }
+  const base::FilePath& binary = tor.path;
+  if (!tor.bundled) {
+    LOG(INFO) << "[MoltTor] no bundled tor; using " << binary;
   }
   // A child that never finished bootstrapping (or an earlier failure) must
   // not linger.

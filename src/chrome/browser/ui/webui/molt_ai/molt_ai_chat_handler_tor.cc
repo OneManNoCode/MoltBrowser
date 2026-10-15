@@ -48,13 +48,14 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
   std::string cb = callback_id;
   // Snapshot binary resolution now so we can include it in the
   // response regardless of whether Tor is currently running.
-  base::FilePath resolved_bin =
-      molt_ai::tor::TorManager::Get()->ResolveTorBinary();
-  bool is_bundled = molt_ai::tor::TorManager::Get()->IsUsingBundledTor();
-  std::string resolved_path = resolved_bin.AsUTF8Unsafe();
+  const molt_ai::tor::TorBinaryInfo tor =
+      molt_ai::tor::TorManager::Get()->FindTorBinary();
+  bool is_bundled = tor.bundled;
+  std::string resolved_path = tor.path.AsUTF8Unsafe();
+  std::string missing_hint = tor.error;
   molt_ai::tor::TorService::Get()->Probe(base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
-         std::string resolved_path, bool is_bundled,
+         std::string resolved_path, bool is_bundled, std::string missing_hint,
          molt_ai::tor::TorStatus s) {
         if (!self) return;
         base::DictValue out;
@@ -73,13 +74,11 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
           // Two cases:
           //   - We have a binary (bundled or system) but Tor isn't
           //     running yet — tell the user to /tor launch.
-          //   - We have nothing — tell them to rebuild with bundling,
-          //     not to install via brew.
+          //   - We have nothing — TorManager says what to do ("Install the
+          //     tor package" on Linux, a bundled build elsewhere), never to
+          //     install via brew.
           if (resolved_path.empty()) {
-            out.Set("install_hint",
-                    "No tor binary is bundled with this build. Use a "
-                    "release build (Tor ships inside), or start MoltBrowser "
-                    "with --moltnet-tor-binary=<absolute path to tor>.");
+            out.Set("install_hint", missing_hint);
           } else {
             out.Set("install_hint",
                     "Tor binary is available at " + resolved_path +
@@ -89,7 +88,7 @@ void MoltAIChatHandler::HandleGetTorStatus(const base::ListValue& args) {
         self->ResolveJavascriptCallback(base::Value(cb),
                                         base::Value(std::move(out)));
       },
-      weak_this, cb, resolved_path, is_bundled));
+      weak_this, cb, resolved_path, is_bundled, missing_hint));
 }
 
 // ------------------------------------------------------------------

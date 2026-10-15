@@ -47,6 +47,9 @@ source_set("tor") {
 
   deps = [
     "//base",
+    # Which tor binary may run: bundled, or a root-owned system tor on Linux
+    # (audit S18).
+    "//chrome/browser/molt_ai/common:helper_binary",
     # molt_net_routing.cc applies the Tor proxy + leak-safe prefs to the
     # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",

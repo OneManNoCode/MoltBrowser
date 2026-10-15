@@ -321,15 +321,13 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // each action ends by re-querying the real state and broadcasting it
   // with FireWebUIListener, rather than resolving a per-call promise.
 
-  // True iff a tor binary is actually resolvable (bundled inside the
-  // .app on macOS/Windows, or a system install). This is exactly how the
-  // backend decides what it can launch — no per-platform hardcoding, no
-  // "unsupported on Windows" special case.
-  bool IsTorAvailable() const {
-    return !molt_ai::tor::TorManager::Get()
-                ->ResolveTorBinary()
-                .value()
-                .empty();
+  // Empty iff MoltNet has a tor it can run (bundled inside the .app on
+  // macOS / next to the executable on Windows, or on Linux a root-owned
+  // /usr/bin/tor from the tor package). Otherwise what the user should do,
+  // e.g. "Install the tor package" on Linux. This is exactly how the backend
+  // decides what it can launch.
+  std::string TorUnavailableReason() const {
+    return molt_ai::tor::TorManager::Get()->FindTorBinary().error;
   }
 
   // Probe the live Tor and, if it's up, fetch the enriched circuit list,
@@ -338,10 +336,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // "connecting") immediately; pass "" to report whatever Probe finds.
   void RefreshMoltnetStatus(const std::string& forced_status = "") {
     AllowJavascript();
-    if (!IsTorAvailable()) {
-      EmitMoltnetStatus(
-          "disconnected",
-          "No tor binary available (bundled tor missing from this build).");
+    if (const std::string reason = TorUnavailableReason(); !reason.empty()) {
+      EmitMoltnetStatus("disconnected", reason);
       return;
     }
     auto weak_this = weak_ptr_factory_.GetWeakPtr();
@@ -446,10 +442,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       EmitMoltnetStatus("disconnected");
       return;
     }
-    if (!IsTorAvailable()) {
-      EmitMoltnetStatus(
-          "disconnected",
-          "No tor binary available (bundled tor missing from this build).");
+    if (const std::string reason = TorUnavailableReason(); !reason.empty()) {
+      EmitMoltnetStatus("disconnected", reason);
       return;
     }
     EmitMoltnetStatus("connecting");
