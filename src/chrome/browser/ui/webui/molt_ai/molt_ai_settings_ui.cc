@@ -531,8 +531,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
 
   // { mode: "none|snowflake|obfs4|custom", custom_lines: "..." }
   void HandleGetMoltnetBridges(const base::ListValue& args) {
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
     const std::string callback_id = args[0].GetString();
     molt_ai::tor::TorManager::Get()->GetBridgeSettings(base::BindOnce(
         [](base::WeakPtr<MoltAISettingsHandler> self, std::string cb,
@@ -552,8 +552,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // strictly (obfs4 / snowflake only, no torrc injection); an invalid set is
   // rejected as a whole with a line-numbered error. Resolves {ok, error}.
   void HandleSetMoltnetBridges(const base::ListValue& args) {
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
     const std::string callback_id = args[0].GetString();
     std::optional<molt_ai::tor::BridgeSettings::Mode> mode =
         (args.size() > 1 && args[1].is_string())
@@ -595,8 +595,8 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
   // curated list (lowercase ISO codes) + the currently-selected exit,
   // each with a display name, so the picker is data-driven.
   void HandleGetMoltnetExitCountries(const base::ListValue& args) {
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
     AllowJavascript();
-    CHECK_GE(args.size(), 1u);
     const std::string callback_id = args[0].GetString();
 
     molt_ai::tor::TorManager* mgr = molt_ai::tor::TorManager::Get();

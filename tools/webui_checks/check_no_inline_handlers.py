@@ -29,10 +29,7 @@ WEBUI_DIR = "src/chrome/browser/ui/webui/molt_ai"
 
 # Pages whose conversion is owned by someone else and still pending.
 # Listed explicitly so the remaining debt stays visible in CI output.
-PENDING = {
-    "molt_net_ui.cc": "MoltNet/Tor page, owned by the Tor work; still uses "
-                      "inline handlers + 'unsafe-inline'",
-}
+PENDING = {}
 
 # Page scripts (served as /app.js) and their Trusted Types mode:
 #   "none"      trusted-types (no policies): no HTML sinks at all
@@ -45,6 +42,7 @@ PAGE_SCRIPTS = {
     "molt_ai_memory_ui.cc": {"kMemoryPageJs": "none"},
     "molt_ai_update_ui.cc": {"kUpdatePageJs": "none"},
     "molt_import_ui.cc": {"kImportPageJs": "molt-html"},
+    "molt_net_ui.cc": {"kNetPageJs": "none"},
     "molt_ai_settings_ui.cc": {"kSettingsPageJs": "molt-html"},
     "molt_ai_agent_ui.cc": {"kAgentPageJs": "none"},
     "molt_ai_automation_ui.cc": {"kAutomationPageJs": "molt-html"},
