@@ -13,6 +13,8 @@ source_set("consent") {
 
   deps = [
     "//base",
+    # Consent killer switch + per-site Shields state.
+    "//chrome/browser/molt_ai/shield",
     "//content/public/browser",
     "//url",
   ]

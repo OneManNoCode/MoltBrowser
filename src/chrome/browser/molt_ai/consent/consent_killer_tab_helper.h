@@ -1,29 +1,38 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// ConsentKillerTabHelper — per-tab WebContentsObserver that injects
-// a rule-based GDPR / cookie-modal dismisser as soon as the main
-// frame finishes loading. Two tiers:
-//   1. Curated CSS selectors for the most-deployed CMP vendors
-//      (OneTrust, Cookiebot, TrustArc, Quantcast, Didomi, CookieYes,
-//      Osano) plus generic aria-label / data-testid patterns.
-//   2. Text-based fallback that scans visible <button> + role=button
-//      elements for "Reject all" / "Decline all" / "Only necessary"
-//      labels.
-// Together these handle the long tail of consent modals without
-// a per-site rule list or a cloud lookup. The killer is idempotent
-// (sets window.__moltConsentKilled after first hit), and re-runs
-// at 600ms + 1800ms + 4000ms after page load to catch late-injected
-// CMPs.
+// ConsentKillerTabHelper — auto-rejects GDPR / cookie consent dialogs.
+//
+// Injected (isolated world) at DOMContentLoaded into the primary main frame
+// and into frames served by known consent-platform (CMP) hosts — Sourcepoint,
+// TrustArc etc. render their dialog in a cross-origin iframe the main-frame
+// script can't reach. The script:
+//   1. clicks a curated vendor *reject* button (OneTrust, Cookiebot,
+//      Quantcast, Didomi, Usercentrics, Sourcepoint, ...), searching open
+//      shadow roots too (Usercentrics mounts in one);
+//   2. otherwise looks for a "Reject all / Only necessary"-style button by
+//      text — but only inside a consent container (role=dialog/alertdialog,
+//      aria-modal, or a known CMP id/class, whose text is about cookies or
+//      consent), or anywhere in a known CMP frame/consent page;
+//   3. never clicks Customize/Settings/Preferences/Manage-style buttons, nor
+//      anything that accepts.
+// It runs immediately and then on DOM mutations (throttled), and gives up
+// after a few seconds or once something was clicked — no fixed +600/+1800/
+// +4000 ms timers.
+//
+// Off when MoltShield's "consent killer" switch is off or Shields are down
+// for the site.
 
 #ifndef CHROME_BROWSER_MOLT_AI_CONSENT_CONSENT_KILLER_TAB_HELPER_H_
 #define CHROME_BROWSER_MOLT_AI_CONSENT_CONSENT_KILLER_TAB_HELPER_H_
 
-#include "base/memory/weak_ptr.h"
+#include <string_view>
+
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
 namespace content {
+class RenderFrameHost;
 class WebContents;
 }  // namespace content
 
@@ -37,14 +46,16 @@ class ConsentKillerTabHelper
   ~ConsentKillerTabHelper() override;
 
   // content::WebContentsObserver:
-  void DocumentOnLoadCompletedInPrimaryMainFrame() override;
+  void DOMContentLoaded(content::RenderFrameHost* render_frame_host) override;
+
+  // True if `host` belongs to a consent platform that renders its dialog in
+  // its own (usually cross-origin) document. Exposed for tests.
+  static bool IsKnownCmpHost(std::string_view host);
 
  private:
   friend class content::WebContentsUserData<ConsentKillerTabHelper>;
   explicit ConsentKillerTabHelper(content::WebContents* contents);
-  void InjectKiller();
 
-  base::WeakPtrFactory<ConsentKillerTabHelper> weak_factory_{this};
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 
