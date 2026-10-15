@@ -1,0 +1,48 @@
+MoltBrowser patch for chrome/browser/flag-metadata.json
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/chrome/browser/flag-metadata.json by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
+index 3429b1bd4726f6b3963215de005008d6d69181de..f433549191d908f68c82bd5b5e12a1ae219a99fc 100644
+--- a/chrome/browser/flag-metadata.json
++++ b/chrome/browser/flag-metadata.json
+@@ -6779,6 +6779,37 @@
+     "owners": ["bgeffon@chromium.org", "pasko@chromium.org"],
+     "expiry_milestone": 150
+   },
++  {
++    // MoltBrowser: MoltShield kill switches; they must never expire.
++    "name": "molt-shield-consent-killer",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-cosmetics",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-frame-blocking",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-keepalive",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-request-proxy",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
++  {
++    "name": "molt-shield-websocket",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
+   {
+     "name": "most-visited-tiles-customization",
+     "owners": [ "clank-start@google.com", "huangs@google.com" ],

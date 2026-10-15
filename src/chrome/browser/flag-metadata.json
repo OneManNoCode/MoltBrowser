@@ -6780,6 +6780,37 @@
     "expiry_milestone": 150
   },
   {
+    // MoltBrowser: MoltShield kill switches; they must never expire.
+    "name": "molt-shield-consent-killer",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
+    "name": "molt-shield-cosmetics",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
+    "name": "molt-shield-frame-blocking",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
+    "name": "molt-shield-keepalive",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
+    "name": "molt-shield-request-proxy",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
+    "name": "molt-shield-websocket",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     "name": "most-visited-tiles-customization",
     "owners": [ "clank-start@google.com", "huangs@google.com" ],
     "expiry_milestone": 145

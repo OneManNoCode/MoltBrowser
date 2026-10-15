@@ -33,6 +33,9 @@ source_set("shield") {
   sources = [
     "filter_list_manager.cc",
     "filter_list_manager.h",
+
+    # chrome://flags entries for the kill switches (about_flags.cc).
+    "molt_shield_about_flags.h",
     "molt_shield_engine.cc",
     "molt_shield_engine.h",
     "molt_shield_navigation_throttle.cc",
