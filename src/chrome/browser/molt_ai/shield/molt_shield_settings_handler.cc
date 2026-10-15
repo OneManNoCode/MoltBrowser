@@ -56,7 +56,7 @@ std::optional<std::string> StringArg(const base::ListValue& args, size_t i) {
 }
 
 double ToJsTime(base::Time t) {
-  return t.is_null() ? 0 : t.InMillisecondsFSinceUnixEpoch();
+  return t.is_null() ? 0 : t.InMillisecondsFSinceUnixEpochIgnoringNull();
 }
 
 std::string SiteOf(const GURL& url) {

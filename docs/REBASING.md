@@ -264,7 +264,7 @@ headers our code includes; heuristic, the compile is authoritative):
 | `components/os_crypt/sync/os_crypt.h` removed (move to `os_crypt_async`) | 4 files, e.g. `molt_ai/keys/molt_keys_store.cc` |
 | `crypto::kdf::DeriveKeyPbkdf2HmacSha1` -> `Pbkdf2HmacSha1(Pbkdf2HmacSha1Params)` | `molt_ai/import/browser_importer.cc:335` |
 | `SidePanelEntry::PanelType` -> `SidePanelType` (the shared `kContent` panel) | `ui/views/toolbar/toolbar_view.cc:602` |
-| `URLLoaderThrottle` request-header out-params (`modified_request_headers`, `to_be_removed_request_headers`, `modified_cors_exempt_request_headers`) replaced (likely by `HttpRequestHeadersUpdateParams`) | `molt_ai/shield/molt_shield_throttle.cc:98-100` |
+| `URLLoaderThrottle` request-header out-params (`modified_request_headers`, `to_be_removed_request_headers`, `modified_cors_exempt_request_headers`) replaced (likely by `HttpRequestHeadersUpdateParams`) | `molt_ai/shield/molt_shield_url_loader_throttle.cc` (`WillRedirectRequest`) |
 | `sql::Database::set_preload` removed | `molt_ai/memory/memory_storage.cc:51` |
 
 At 155, additionally: `Browser::RequestMediaAccessPermission`,

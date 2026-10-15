@@ -126,13 +126,21 @@ repo/
 - Dark theme with gradient branding throughout
 
 ### MoltShield
-- Full ABP filter syntax parser (network + cosmetic + scriptlet rules)
-- 132 built-in blocked domains (O(1) hash lookup)
-- YouTube-specific blocking (network intercept + scriptlet injection)
-- Cookie consent auto-blocking (80+ CSS rules + auto-decline JS)
-- URL tracking parameter stripping (utm_*, gclid, fbclid, etc.)
-- Fingerprint protection (Canvas noise, WebGL spoofing, AudioBuffer noise)
-- URLLoaderThrottle intercepts all network requests before they proceed
+- Engine: Brave's adblock-rust (MPL-2.0) behind a cxx bridge
+  (`molt_ai/shield/adblock/`), domain resolution via Chromium's
+  registry_controlled_domains. Lives on a dedicated sequence; rebuilds compile
+  off-thread and are swapped in; serialized engine cached for fast startup.
+- Lists: EasyList, EasyPrivacy, uBlock Origin filters/privacy/badware/
+  quick-fixes (Fanboy lists opt-in), fetched through the profile network
+  context (Tor under MoltNet), daily with jitter, ETag + sha256 tracked.
+- Coverage: proxying URLLoaderFactory (all subresources, worker/service-worker
+  loads), NavigationThrottle (ad frames collapsed; top-level documents never
+  blocked), WebSocket interception, keepalive throttle.
+- Cosmetic filtering + uBO scriptlets at document start via a renderer
+  `CosmeticFilterAgent` (user stylesheet + main-world script).
+- Per-site Shields toggle (content setting), per-tab counts, breakage report in
+  molt://ai-settings; consent-banner auto-reject (`molt_ai/consent/`).
+- Rust side tested/benchmarked standalone in `tools/shield_bench/`.
 
 ### Agent mode (shipping — record/replay automation, v0.2.5)
 - Lives in `src/chrome/browser/molt_ai/automation/`. `AutomationRecorder`
