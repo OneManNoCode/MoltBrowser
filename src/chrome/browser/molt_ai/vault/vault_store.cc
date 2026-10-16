@@ -16,8 +16,8 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 #include "chrome/browser/molt_ai/vault/vault_host_match.h"
-#include "components/os_crypt/sync/os_crypt.h"
 
 namespace molt_ai {
 namespace vault {
@@ -127,7 +127,7 @@ std::optional<std::vector<VaultEntry>> VaultStore::ReadDecrypted() const {
   }
   if (ciphertext.empty()) return std::vector<VaultEntry>{};
   std::string plaintext;
-  if (!OSCrypt::DecryptString(ciphertext, &plaintext)) {
+  if (!molt_ai::molt_os_crypt::DecryptString(ciphertext, &plaintext)) {
     LOG(WARNING) << "[VaultStore] decrypt failed";
     return std::nullopt;
   }
@@ -150,7 +150,7 @@ bool VaultStore::WriteEncrypted(const std::vector<VaultEntry>& entries,
                                 bool adds_secrets) {
   if (adds_secrets && !molt_ai::IsSecureStorageAvailable()) {
     LOG(WARNING) << "[VaultStore] refusing to store credentials: no secure "
-                    "OS key storage (OSCrypt would use a hard-coded key)";
+                    "OS key storage (no keyring key, or not ready yet)";
     return false;
   }
   base::FilePath path = GetVaultPath();
@@ -170,7 +170,7 @@ bool VaultStore::WriteEncrypted(const std::vector<VaultEntry>& entries,
   const bool encrypted =
       adds_secrets
           ? molt_ai::EncryptSecretForStorage(plaintext, &ciphertext)
-          : OSCrypt::EncryptString(plaintext, &ciphertext);
+          : molt_ai::molt_os_crypt::EncryptString(plaintext, &ciphertext);
   if (!encrypted) {
     LOG(WARNING) << "[VaultStore] encrypt failed";
     return false;

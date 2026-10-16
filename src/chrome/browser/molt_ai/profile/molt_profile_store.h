@@ -3,15 +3,17 @@
 //
 // MoltProfileStore — encrypted on-device profile for the Form Filler
 // Agent. Stores a single JSON blob (name, email, phone, address fields)
-// at ~/.moltbrowser/profile.enc encrypted via OSCrypt (uses the OS
-// keychain on macOS / DPAPI on Windows / libsecret on Linux). The blob
-// is small so we read/write the whole thing on every change; no
-// streaming or partial-update path is needed.
+// at ~/.moltbrowser/profile.enc, encrypted with the os_crypt_async Encryptor
+// through molt_os_crypt (OS Keychain on macOS / DPAPI on Windows / Secret
+// Service or KWallet on Linux). The blob is small so we read/write the whole
+// thing on every change; no streaming or partial-update path is needed.
 //
 // A profile.enc that exists but can't be read (the OS keyring is locked
-// or was reset, the file came from another machine, or it is corrupt) is
-// never overwritten by a plain Save(): the save is refused and the file is
-// left as it is, so the profile comes back once the keyring is unlocked.
+// or was reset, the Encryptor isn't ready yet early in startup, the file
+// came from another machine, or it is corrupt) is never overwritten by a
+// plain Save(): the save is refused and the file is left as it is, so the
+// profile comes back once the keyring is unlocked (and MoltBrowser
+// restarted: the Encryptor is fixed for the session).
 // Replacing it takes an explicit user choice
 // (SaveKeepingUnreadableAsBackup), and even then the old file is renamed
 // to a timestamped backup next to it, never deleted.
@@ -53,7 +55,8 @@ enum class ProfileReadStatus {
   kOk,      // Read, decrypted and parsed.
   kAbsent,  // No profile yet: no file, or an empty one.
   // A profile exists but couldn't be read: the OS keyring is locked or
-  // unavailable, the key changed, or the file is corrupt.
+  // unavailable (or the Encryptor isn't ready yet), the key changed, or the
+  // file is corrupt.
   kUnreadable,
 };
 
@@ -69,8 +72,8 @@ struct ProfileLoadResult {
 
 enum class ProfileSaveResult {
   kSaved,
-  // No real OS key store behind OSCrypt (molt_ai::IsSecureStorageAvailable()
-  // is false); nothing written.
+  // No real OS key store behind the Encryptor, or it isn't ready yet
+  // (molt_ai::IsSecureStorageAvailable() is false); nothing written.
   kNoSecureStorage,
   // profile.enc exists but couldn't be read; it was left untouched.
   kExistingUnreadable,
@@ -95,8 +98,8 @@ class MoltProfileStore {
   ProfileLoadResult LoadWithStatus() const;
 
   // Writes |dict| as the new profile, atomically (.tmp + rename). Refuses
-  // (kNoSecureStorage) when there is no real OS key store behind OSCrypt —
-  // see molt_ai::IsSecureStorageAvailable() — and refuses
+  // (kNoSecureStorage) when there is no real OS key store behind the
+  // Encryptor — see molt_ai::IsSecureStorageAvailable() — and refuses
   // (kExistingUnreadable) to replace a profile.enc it can't read.
   ProfileSaveResult Save(const base::DictValue& dict);
 

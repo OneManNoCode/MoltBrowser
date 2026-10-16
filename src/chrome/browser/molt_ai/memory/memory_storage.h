@@ -5,21 +5,25 @@
 //
 // Security
 //   - DB file lives at <profile>/MoltMemory/memory.db with mode 0600.
-//   - Every field derived from what the user read is wrapped with OSCrypt
-//     (macOS Keychain / Linux keyring / Windows DPAPI-derived key): URL,
-//     title, chunk text AND the embedding vector (a hashed bag-of-words
-//     vector leaks which words a page contained). Schema v1 stored URLs
-//     and embeddings in plaintext; Open() migrates such a DB in place,
-//     recomputing the embeddings from the decrypted chunk text with the
-//     current embedder, then VACUUMs so the old plaintext doesn't linger
-//     in free pages.
+//   - Every field derived from what the user read is encrypted with the
+//     os_crypt_async Encryptor through molt_os_crypt (macOS Keychain /
+//     Linux keyring, or Linux's hard-coded fallback key without one /
+//     Windows DPAPI-derived key; files the old OSCrypt wrote still decrypt):
+//     URL, title, chunk text AND the embedding vector (a hashed
+//     bag-of-words vector leaks which words a page contained). Schema v1
+//     stored URLs and embeddings in plaintext; Open() migrates such a DB in
+//     place, recomputing the embeddings from the decrypted chunk text with
+//     the current embedder, then VACUUMs so the old plaintext doesn't
+//     linger in free pages.
 //   - URL lookups (revisit de-duplication) use an HMAC-SHA256 of the URL
 //     keyed with a random per-database secret that is itself stored
-//     OSCrypt-wrapped in the meta table, so the DB can't be probed with a
+//     encrypted in the meta table, so the DB can't be probed with a
 //     dictionary of known URLs.
-//   - If OSCrypt fails, writes fail rather than persisting plaintext, and a
-//     migration that can't encrypt is rolled back (the DB stays at v1 and
+//   - If encryption fails, writes fail rather than persisting plaintext, and
+//     a migration that can't encrypt is rolled back (the DB stays at v1 and
 //     Open() fails — memory is unavailable for the session, nothing lost).
+//     Open() before the Encryptor is ready fails the same way, so
+//     MemoryService only opens the DB once molt_os_crypt is ready.
 //   - A DB whose compatible version is newer than this code is wiped
 //     rather than misread.
 //
@@ -126,7 +130,7 @@ class MemoryStorage {
   std::vector<uint8_t> KeyedContentHash(
       const std::vector<uint8_t>& content_hash) const;
 
-  // Helpers that wrap OSCrypt. Encrypt returns false on failure (callers
+  // Helpers around molt_os_crypt. Encrypt returns false on failure (callers
   // must then refuse to persist); Decrypt returns the plaintext or "" if the
   // ciphertext can't be unwrapped (e.g. a different user copied the file).
   bool Encrypt(const std::string& plaintext, std::string* ciphertext) const;

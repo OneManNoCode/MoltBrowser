@@ -38,7 +38,7 @@ constexpr size_t kChunkOverlapChars = 100;
 // One captured page.
 struct Document {
   int64_t doc_id = 0;          // primary key from storage, 0 = not yet saved
-  std::string url;             // full URL (plaintext in RAM; OSCrypt at rest)
+  std::string url;             // full URL (plaintext in RAM; encrypted at rest)
   std::string title;
   int64_t visited_at_unix = 0;
   int word_count = 0;

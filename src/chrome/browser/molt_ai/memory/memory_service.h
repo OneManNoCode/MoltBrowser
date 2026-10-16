@@ -15,6 +15,10 @@
 // touches the DB, the hot index or the embedder (text normalization,
 // chunking, embedding, cosine search, encryption) runs on |worker_|; the
 // UI thread only reads prefs and posts tasks.
+//
+// The DB is opened once molt_os_crypt has its Encryptor (early in startup).
+// Until then memory behaves as if it couldn't be opened: queries return
+// nothing, pages aren't recorded, deletes report failure.
 
 #ifndef CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
@@ -100,6 +104,8 @@ class MemoryService : public KeyedService {
   // Worker-confined state (storage + index + embedder). Defined in the .cc.
   struct Backend;
 
+  // Posts the DB open to the worker; runs once molt_os_crypt is ready.
+  void StartBackend();
   void OnPrefsChanged();
   void EnforceRetention();
 

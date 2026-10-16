@@ -2,7 +2,8 @@
 # Licensed under GPLv3. See LICENSE file.
 #
 # MoltBrowser local profile — encrypted JSON blob backing the Form
-# Filler Agent. Stored at ~/.moltbrowser/profile.enc via OSCrypt.
+# Filler Agent. Stored at ~/.moltbrowser/profile.enc, encrypted through
+# molt_ai/keys:os_crypt (the os_crypt_async Encryptor).
 
 source_set("profile") {
   sources = [
@@ -13,7 +14,7 @@ source_set("profile") {
   deps = [
     "//base",
     "//chrome/browser/molt_ai/keys",
-    "//components/os_crypt/sync",
+    "//chrome/browser/molt_ai/keys:os_crypt",
   ]
 }
 
@@ -26,7 +27,8 @@ source_set("unit_tests") {
     ":profile",
     "//base",
     "//chrome/browser/molt_ai/keys",
-    "//components/os_crypt/sync:test_support",
+    "//chrome/browser/molt_ai/keys:os_crypt",
+    "//chrome/browser/molt_ai/keys:test_support",
     "//testing/gtest",
   ]
 }

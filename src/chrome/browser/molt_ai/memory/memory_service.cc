@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 #include "chrome/browser/molt_ai/memory/memory_embedder.h"
 #include "chrome/browser/molt_ai/memory/memory_extractor.h"
 #include "chrome/browser/molt_ai/memory/memory_index.h"
@@ -156,13 +157,12 @@ MemoryService::MemoryService(Profile* profile)
           {base::TaskPriority::BEST_EFFORT, base::MayBlock(),
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})),
       backend_(std::make_unique<Backend>()) {
-  // Open (and, for a pre-v2 DB, migrate) storage and hydrate the index on
-  // the worker. Later tasks queue behind this one on the same sequence, so
-  // nothing needs to wait for a "ready" signal.
-  worker_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&Backend::Start, base::Unretained(backend_.get()),
-                     profile_->GetPath().AppendASCII("MoltMemory")));
+  // Opening the DB needs the Encryptor (the URL key is stored encrypted), so
+  // wait for molt_os_crypt; MoltOSCryptStartupFactory starts it with the
+  // profile. Until then the backend isn't open: queries come back empty and
+  // pages aren't recorded.
+  molt_os_crypt::RunWhenReady(
+      base::BindOnce(&MemoryService::StartBackend, weak_factory_.GetWeakPtr()));
 
   pref_registrar_.Init(profile_->GetPrefs());
   pref_registrar_.Add(prefs::kEnabled,
@@ -171,12 +171,25 @@ MemoryService::MemoryService(Profile* profile)
   pref_registrar_.Add(prefs::kRetentionDays,
                       base::BindRepeating(&MemoryService::OnPrefsChanged,
                                           base::Unretained(this)));
-  EnforceRetention();
   retention_timer_.Start(FROM_HERE, kRetentionSweepInterval, this,
                          &MemoryService::EnforceRetention);
 }
 
 MemoryService::~MemoryService() = default;
+
+void MemoryService::StartBackend() {
+  if (!backend_) {
+    return;  // shut down meanwhile
+  }
+  // Open (and, for a pre-v2 DB, migrate) storage and hydrate the index on
+  // the worker. Later tasks queue behind this one on the same sequence.
+  worker_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&Backend::Start, base::Unretained(backend_.get()),
+                     profile_->GetPath().AppendASCII("MoltMemory")));
+  // The startup retention sweep, now that there is a DB to sweep.
+  EnforceRetention();
+}
 
 void MemoryService::Shutdown() {
   retention_timer_.Stop();

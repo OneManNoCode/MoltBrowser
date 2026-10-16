@@ -11,15 +11,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
-#include "components/os_crypt/sync/os_crypt_mocker.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
 namespace profile {
 namespace {
 
-// Not an OSCrypt blob of a JSON dict on any platform: a truncated or
-// corrupt file.
+// Not an encrypted JSON dict on any platform: a truncated or corrupt file.
 constexpr char kCorrupt[] = "\x01\x02 not a profile";
 
 base::DictValue MakeProfile(const std::string& name) {
@@ -41,8 +41,6 @@ class MoltProfileStoreTest : public testing::Test {
     store_.SetRootForTesting(temp_dir_.GetPath());
   }
 
-  void TearDown() override { OSCryptMocker::TearDown(); }
-
   base::FilePath ProfilePath() const {
     return temp_dir_.GetPath().AppendASCII("profile.enc");
   }
@@ -53,22 +51,17 @@ class MoltProfileStoreTest : public testing::Test {
     return contents;
   }
 
-  // A real OS-backed key (a mock keyring / keychain / DPAPI key).
-  // Returns false where this build has no OSCrypt mock to install.
-  bool UseOsKey() {
-    OSCryptMocker::TearDown();  // Linux: forget a cached "no backend".
-    OSCryptMocker::SetUp();
-    return IsSecureStorageAvailable();
-  }
+  // A real OS-backed key (a fake keyring / Keychain / DPAPI key).
+  void UseOsKey() { encryptor_.Set(test::MakeOsKeyEncryptor()); }
 
   base::ScopedTempDir temp_dir_;
   MoltProfileStore store_;
+  // Starts "not ready": no Encryptor yet.
+  molt_os_crypt::ScopedEncryptorForTesting encryptor_{nullptr};
 };
 
 TEST_F(MoltProfileStoreTest, SavesAndLoadsWithOsKey) {
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
+  UseOsKey();
   EXPECT_EQ(store_.LoadWithStatus().status, ProfileReadStatus::kAbsent);
   ASSERT_EQ(store_.Save(MakeProfile("Ada")), ProfileSaveResult::kSaved);
 
@@ -89,9 +82,7 @@ TEST_F(MoltProfileStoreTest, SavesAndLoadsWithOsKey) {
 }
 
 TEST_F(MoltProfileStoreTest, EmptyFileCountsAsNoProfile) {
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
+  UseOsKey();
   ASSERT_TRUE(base::WriteFile(ProfilePath(), ""));
   EXPECT_EQ(store_.LoadWithStatus().status, ProfileReadStatus::kAbsent);
   EXPECT_EQ(store_.Save(MakeProfile("Ada")), ProfileSaveResult::kSaved);
@@ -101,9 +92,7 @@ TEST_F(MoltProfileStoreTest, EmptyFileCountsAsNoProfile) {
 // The data-loss bug: a profile.enc that can't be read was replaced by
 // whatever the (empty) editor saved.
 TEST_F(MoltProfileStoreTest, NeverOverwritesAnUnreadableProfile) {
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
+  UseOsKey();
   ASSERT_TRUE(base::WriteFile(ProfilePath(), kCorrupt));
 
   ProfileLoadResult loaded = store_.LoadWithStatus();
@@ -118,9 +107,7 @@ TEST_F(MoltProfileStoreTest, NeverOverwritesAnUnreadableProfile) {
 }
 
 TEST_F(MoltProfileStoreTest, StartingOverKeepsTheUnreadableFileAsABackup) {
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
+  UseOsKey();
   ASSERT_TRUE(base::WriteFile(ProfilePath(), kCorrupt));
 
   base::FilePath backup;
@@ -152,62 +139,70 @@ TEST_F(MoltProfileStoreTest, StartingOverKeepsTheUnreadableFileAsABackup) {
 }
 
 TEST_F(MoltProfileStoreTest, ClearRemovesTheProfile) {
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
+  UseOsKey();
   ASSERT_EQ(store_.Save(MakeProfile("Ada")), ProfileSaveResult::kSaved);
   EXPECT_TRUE(store_.Clear());
   EXPECT_FALSE(base::PathExists(ProfilePath()));
   EXPECT_TRUE(store_.Clear());
 }
 
+// The keyring goes away (locked, or not answering at startup), or the
+// Encryptor isn't there yet: the profile reads as unreadable, saving is
+// refused, and the file is left alone until the key is back.
+TEST_F(MoltProfileStoreTest, LockedKeyringLeavesTheProfileAlone) {
+  UseOsKey();
+  ASSERT_EQ(store_.Save(MakeProfile("Ada")), ProfileSaveResult::kSaved);
+  const std::string saved = ReadProfileFile();
+
+  for (bool locked : {true, false}) {
+    SCOPED_TRACE(locked ? "locked" : "not ready");
+    encryptor_.Set(locked ? test::MakeLockedOsKeyEncryptor()
+                          : scoped_refptr<os_crypt_async::Encryptor>());
+    ASSERT_FALSE(IsSecureStorageAvailable());
+    EXPECT_EQ(store_.LoadWithStatus().status, ProfileReadStatus::kUnreadable);
+    EXPECT_EQ(store_.Save(MakeProfile("Grace")),
+              ProfileSaveResult::kNoSecureStorage);
+    base::FilePath backup;
+    EXPECT_EQ(
+        store_.SaveKeepingUnreadableAsBackup(MakeProfile("Grace"), &backup),
+        ProfileSaveResult::kNoSecureStorage);
+    EXPECT_TRUE(backup.empty());
+    EXPECT_EQ(ReadProfileFile(), saved);
+  }
+
+  // Unlocked again: the profile is back.
+  UseOsKey();
+  EXPECT_EQ(NameOf(store_.Load()), "Ada");
+}
+
 #if BUILDFLAG(IS_LINUX)
 
 // profile.enc written on a machine (or keyring) with another key: OSCrypt
 // "v11" = AES-128-CBC under PBKDF2("another machine's keyring") of
-// {"full_name":"Ada Lovelace","email":"ada@example.com"}. Under the mock
-// keyring's key it fails to decrypt.
+// {"full_name":"Ada Lovelace","email":"ada@example.com"}. Under the test
+// keyring key (and the empty-password fallback key) it fails to decrypt.
 constexpr char kOtherKeyringProfileHex[] =
     "76313151f8cf32405da2507c26b783b8f6368b34e70942c4636e3c333fb43d576749"
     "7ba5d3a2bf2247026bf736bd66657a3628d77bbb828f94e9bf5a655894ee315cd1";
-
-TEST_F(MoltProfileStoreTest, LockedKeyringLeavesTheProfileAlone) {
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
-  ASSERT_EQ(store_.Save(MakeProfile("Ada")), ProfileSaveResult::kSaved);
-  const std::string saved = ReadProfileFile();
-
-  // The keyring goes away (locked, or not running at startup).
-  OSCryptMocker::TearDown();
-  ASSERT_FALSE(IsSecureStorageAvailable());
-  EXPECT_EQ(store_.LoadWithStatus().status, ProfileReadStatus::kUnreadable);
-  EXPECT_EQ(store_.Save(MakeProfile("Grace")),
-            ProfileSaveResult::kNoSecureStorage);
-  base::FilePath backup;
-  EXPECT_EQ(store_.SaveKeepingUnreadableAsBackup(MakeProfile("Grace"),
-                                                 &backup),
-            ProfileSaveResult::kNoSecureStorage);
-  EXPECT_TRUE(backup.empty());
-  EXPECT_EQ(ReadProfileFile(), saved);
-
-  // Unlocked again: the profile is back.
-  ASSERT_TRUE(UseOsKey());
-  EXPECT_EQ(NameOf(store_.Load()), "Ada");
-}
 
 TEST_F(MoltProfileStoreTest, ProfileFromAnotherKeyringIsNotOverwritten) {
   std::string other;
   ASSERT_TRUE(base::HexStringToString(kOtherKeyringProfileHex, &other));
   ASSERT_TRUE(base::WriteFile(ProfilePath(), other));
-  if (!UseOsKey()) {
-    GTEST_SKIP() << "no OSCrypt mock in this configuration";
-  }
+  UseOsKey();
 
   EXPECT_EQ(store_.LoadWithStatus().status, ProfileReadStatus::kUnreadable);
   EXPECT_EQ(store_.Save(MakeProfile("Grace")),
             ProfileSaveResult::kExistingUnreadable);
   EXPECT_EQ(ReadProfileFile(), other);
+}
+
+// Without a keyring the profile isn't saved under the hard-coded key.
+TEST_F(MoltProfileStoreTest, NoKeyringRefusesToSave) {
+  encryptor_.Set(test::MakeHardCodedKeyEncryptor());
+  EXPECT_EQ(store_.Save(MakeProfile("Ada")),
+            ProfileSaveResult::kNoSecureStorage);
+  EXPECT_FALSE(base::PathExists(ProfilePath()));
 }
 
 #endif  // BUILDFLAG(IS_LINUX)
