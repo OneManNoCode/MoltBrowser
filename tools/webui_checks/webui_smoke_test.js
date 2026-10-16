@@ -550,11 +550,14 @@ const PAGES = [
             '/vault add never echoes the password');
      assert(window.__sent.includes('openMoltSettings'), '/vault add opens Settings');
      assert(!window.__sent.includes('vaultAdd'), 'chat never sends vaultAdd');
+     // A command that finishes synchronously (/vault add opens Settings and
+     // is done) must not leave the chat marked busy.
+     assert(!input.disabled, 'chat input usable again after /vault add');
+     assert(doc.getElementById('sendBtn').style.display !== 'none',
+            'Send button back after /vault add');
      // /profile with an unreadable profile.enc: the editor says so, a save
      // is refused without touching it, and only an explicit "start over"
-     // asks for the backup path. (/vault add above finishes synchronously
-     // and sendMessage() then leaves the chat marked busy; reset that.)
-     window.setGenerating(false);
+     // asks for the backup path.
      input.value = '/profile';
      window.sendMessage();
      await tick();
