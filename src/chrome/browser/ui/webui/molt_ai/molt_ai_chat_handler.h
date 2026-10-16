@@ -297,10 +297,15 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Runs |op| on the conversation sequence against this profile's store
   // (after the one-time legacy migration) and resolves |callback_id| with
   // its result. Off-the-record: resolves immediately without touching
-  // disk (an empty list when |is_list|, else an error).
+  // disk (an empty list when |is_list|, else an error). Waits for
+  // molt_ai::molt_os_crypt to be ready first.
   void RunConversationOp(
       std::string callback_id,
       bool is_list,
+      base::OnceCallback<base::DictValue(
+          const molt_ai::memory::ConversationStore&)> op);
+  void PostConversationOp(
+      std::string callback_id,
       base::OnceCallback<base::DictValue(
           const molt_ai::memory::ConversationStore&)> op);
   // |url| / |title| / |nav_entry_id| describe the document the capture was

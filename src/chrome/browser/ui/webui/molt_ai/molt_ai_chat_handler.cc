@@ -72,6 +72,7 @@
 #include "ui/base/page_transition_types.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 #include "chrome/browser/molt_ai/memory/conversation_store.h"
 #include "chrome/browser/molt_ai/models/download_policy.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
@@ -2552,6 +2553,18 @@ void MoltAIChatHandler::RunConversationOp(
                               base::Value(OffTheRecordResult(is_list)));
     return;
   }
+  // Until os_crypt_async has handed out its Encryptor (early in startup,
+  // when the first window's chat panel already asks for Recents) the store
+  // can neither decrypt nor encrypt. Wait for it rather than answer "no
+  // conversations" or fail an autosave. Queued ops run in order.
+  molt_ai::molt_os_crypt::RunWhenReady(base::BindOnce(
+      &MoltAIChatHandler::PostConversationOp, weak_ptr_factory_.GetWeakPtr(),
+      std::move(callback_id), std::move(op)));
+}
+
+void MoltAIChatHandler::PostConversationOp(
+    std::string callback_id,
+    base::OnceCallback<base::DictValue(const ConversationStore&)> op) {
   ConversationTaskRunner()->PostTaskAndReplyWithResult(
       FROM_HERE,
       base::BindOnce(&WithConversationStore, profile_->GetPath(),

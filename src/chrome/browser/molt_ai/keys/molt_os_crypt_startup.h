@@ -7,9 +7,9 @@
 // or system) is created. That happens after BrowserProcessImpl has created
 // OSCryptAsync in PreMainMessageLoopRun(). It builds no service.
 //
-// It is registered through MemoryServiceFactory's DependsOn(), which
-// EnsureBrowserContextKeyedServiceFactoriesBuilt() already reaches, so no
-// upstream file has to name it.
+// EnsureBrowserContextKeyedServiceFactoriesBuilt() registers it
+// (chrome_browser_main_extra_parts_profiles.cc), and MemoryServiceFactory
+// also DependsOn() it.
 
 #ifndef CHROME_BROWSER_MOLT_AI_KEYS_MOLT_OS_CRYPT_STARTUP_H_
 #define CHROME_BROWSER_MOLT_AI_KEYS_MOLT_OS_CRYPT_STARTUP_H_

@@ -264,11 +264,11 @@ headers our code includes; heuristic, the compile is authoritative):
 | `chrome/browser/ui/browser_finder.h` removed | 5 files, e.g. `molt_ai/automation/automation_recorder_tab_helper.cc` |
 | `browser_navigator.h`, `browser_navigator_params.h` moved to `chrome/browser/ui/navigator/` | `molt_ai/automation/automation_background_browser.cc` and 1 more |
 | `profile_password_store_factory.h` moved to `chrome/browser/password_manager/factories/` | `ui/webui/molt_ai/molt_ai_settings_ui.cc` and 1 more |
-| `components/os_crypt/sync/os_crypt.h` removed (move to `os_crypt_async`) | 4 files, e.g. `molt_ai/keys/molt_keys_store.cc` |
+| `components/os_crypt/sync/os_crypt.h` removed (move to `os_crypt_async`) | 4 files, e.g. `molt_ai/keys/molt_keys_store.cc` (done: `molt_ai/keys/molt_os_crypt`) |
 | `crypto::kdf::DeriveKeyPbkdf2HmacSha1` -> `Pbkdf2HmacSha1(Pbkdf2HmacSha1Params)` | `molt_ai/import/browser_importer.cc:335` |
 | `SidePanelEntry::PanelType` -> `SidePanelType` (the shared `kContent` panel) | `ui/views/toolbar/toolbar_view.cc:602` |
 | `URLLoaderThrottle` request-header out-params (`modified_request_headers`, `to_be_removed_request_headers`, `modified_cors_exempt_request_headers`) replaced (likely by `HttpRequestHeadersUpdateParams`) | `molt_ai/shield/molt_shield_url_loader_throttle.cc` (`WillRedirectRequest`) |
-| `sql::Database::set_preload` removed | `molt_ai/memory/memory_storage.cc:51` |
+| `sql::Database::set_preload` removed | `molt_ai/memory/memory_storage.cc:51` (done: dropped, it was a page-cache hint) |
 
 At 155, additionally: `Browser::RequestMediaAccessPermission`,
 `Browser::CreateParams::{initial_bounds, initial_show_state, trusted_source}`,
@@ -319,6 +319,14 @@ compiled yet.
   regex-automata and version_check test-only; we ship them, so their
   BUILD.gn files are patched (`testonly` dropped). encoding_rs 0.8 (dropped
   upstream) is vendored by us again.
+- **Encryption.** OSCrypt (sync) is gone at 152. MoltBrowser's stores use
+  `molt_ai/keys/molt_os_crypt`, a shim over the `os_crypt_async` Encryptor
+  that `MoltOSCryptStartupFactory` fetches when the first profile is
+  created; until it arrives, every store fails closed (chat history and
+  memory wait for it). The 152 key providers use the same tags and keys as
+  OSCrypt did (Linux v10/v11, macOS v10 Keychain, Windows v10 DPAPI), so
+  existing files open; on Linux the secret stores accept v11 and the secret
+  portal's v12, never the hard-coded v10.
 - **Removed APIs.** `BrowserList` / `browser_finder.h` → `GlobalBrowserCollection`
   / `ProfileBrowserCollection`; `Browser::profile()` → `GetProfile()`;
   `URLLoader::FollowRedirect` and `URLLoaderThrottle::WillRedirectRequest`

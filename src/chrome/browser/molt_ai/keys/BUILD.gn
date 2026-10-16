@@ -23,7 +23,9 @@ source_set("os_crypt") {
 }
 
 # Calls molt_os_crypt::Init(g_browser_process->os_crypt_async()) when the
-# first profile is created. Registered via MemoryServiceFactory::DependsOn().
+# first profile is created. Registered in
+# chrome_browser_main_extra_parts_profiles.cc (and via
+# MemoryServiceFactory::DependsOn()).
 # Not linked into molt_ai_unittests (it needs g_browser_process).
 source_set("os_crypt_startup") {
   sources = [

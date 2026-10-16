@@ -20,6 +20,15 @@ below is code complete and in release testing; it ships once it passes a
 full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 
 ### Security
+- **Current Chromium.** Rebased from a March 2026 trunk build (148.0.7729.0,
+  which had none of the M148 security fixes) onto Extended Stable
+  **152.0.7977.169**; from now on each Chrome security release ships within
+  7 days (`docs/REBASING.md`).
+- MoltBrowser's encrypted stores (API keys, password vault, form-filler
+  profile, chat history, AI memory) moved from the synchronous OSCrypt,
+  which Chromium 152 removed, to `os_crypt_async`. Existing files open
+  unchanged. On Linux the XDG secret portal key (Flatpak/Snap) counts as a
+  keyring key; a keyring unlocked after startup needs a browser restart.
 - **Signed updates.** The updater only installs an installer whose size and
   SHA-256 match a release manifest signed with GenEye's offline Ed25519 key.
   No downgrades; the hash is re-checked at install; on macOS the new app
@@ -90,7 +99,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   `AudioWorklet` input; MoltNet windows also farble canvas video exports
   (`captureStream`, `VideoFrame`). Turning Shields off for a site turns the
   noise off there too, and the session seed is no longer visible on renderer
-  command lines.
+  command lines. Chromium 152's HTML-in-canvas origin trial, which would let
+  a site read rendered page content back through WebGPU without the noise,
+  stays off.
+- **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
+  `navigator.globalPrivacyControl` is true
+  (`chrome://flags/#enable-global-privacy-control` turns it off).
 - **`.onion` sites.** They open only in MoltNet windows, where `http://`
   onion sites load under HTTPS-Only. Regular windows never look up, load or
   search-suggest an onion address; they offer to open it in MoltNet. A

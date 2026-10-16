@@ -675,6 +675,7 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/media/router",
     "//chrome/browser/media/webrtc",
     "//chrome/browser/molt_ai/automation",
+    "//chrome/browser/molt_ai/keys:os_crypt_startup",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/notebooks",
     "//chrome/browser/notifications",
