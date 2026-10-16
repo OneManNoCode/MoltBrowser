@@ -3,17 +3,25 @@
 //
 // MoltBrowser fingerprinting protection: the Blink side.
 //
-// Upstream Blink calls into this file from a handful of one-to-three-line
+// Upstream Blink calls into this file from a handful of one-to-four-line
 // hooks (each marked "MoltBrowser:"):
 //
 //   canvas   HTMLCanvasElement::ToDataURLInternal       -> FarbleSnapshot
 //            CanvasAsyncBlobCreator ctor (toBlob,
 //              OffscreenCanvas.convertToBlob)            -> FarbleSnapshot
 //            BaseRenderingContext2D::getImageDataInternal -> FarblePixmap
+//            HTMLCanvasElement::NotifyListenersCanvasChanged
+//              (captureStream frames)                    -> FarbleForExport
 //   webgl    WebGLRenderingContextBase::ReadPixelsHelper -> FarbleReadPixels
+//            WebGL2RenderingContextBase::readPixels(offset)
+//              (into a PIXEL_PACK buffer)  -> FarblePixelPackBuffer
 //            WebGLDebugRendererInfo::Supported           -> IsUniform
+//   webcodecs VideoFrame::Create from a CanvasImageSource -> FarbleForExport
+//   webgpu   GPUQueue::copyExternalImageToTexture        -> FarbleForExport
 //   audio    AudioBuffer::getChannelData/copyFromChannel -> FarbleAudio
 //            AnalyserNode::get{Float,Byte}{Frequency,TimeDomain}Data
+//            AudioWorkletProcessor::Process (inputs)     -> FarbleAudio
+//            ThreadedWorkletMessagingProxy::Initialize   -> ProvideToWorklet
 //   navigator NavigatorBase::hardwareConcurrency        -> HardwareConcurrency
 //   MoltNet  Screen::GetRect/colorDepth/isExtended,
 //            LocalDOMWindow::outer{Width,Height}/screen{X,Y},
@@ -27,17 +35,33 @@
 //     key);
 //   * dedicated workers (nested too): the site of the top-level frame's
 //     origin, which Blink already threads through to every dedicated worker;
-//   * shared and service workers: Blink doesn't know their top-level site, so
-//     they get a random key of their own (unlinkable, but not stable across
-//     worker restarts) -- see docs/FINGERPRINTING.md;
+//   * first-party shared and service workers (their storage key is not
+//     partitioned, so its top-level site is the worker's own site): that
+//     site. Third-party ones get a random key of their own (unlinkable, but
+//     not stable across worker restarts) -- see docs/FINGERPRINTING.md;
+//   * worklets: the key of the document that created them, handed over at
+//     creation (ProvideToWorklet);
 //   * contexts whose top-level site isn't http(s) (chrome://, extensions)
-//     are never farbled; opaque top-level sites get a random key.
+//     are never farbled; opaque top-level sites get a random key;
+//   * in kFarble mode, top-level sites the user turned MoltShield off for
+//     ("Shields off", SetUnfarbledSites) are not farbled. MoltNet (kUniform)
+//     ignores that list.
+//
+// The process gets its mode at start (command line) and its session seed a
+// moment later over a channel-associated mojo message that is ordered
+// before any navigation commit or service worker start. A context that
+// needs a key before the seed has arrived (in practice only a shared worker
+// racing the renderer's start-up) gets a random key for its lifetime: its
+// values are unlinkable, just not stable.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLT_FINGERPRINTING_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLT_FINGERPRINTING_H_
 
 #include <cstdint>
 #include <optional>
+
+#include <string>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "base/memory/scoped_refptr.h"
@@ -49,6 +73,10 @@
 
 class SkPixmap;
 
+namespace gpu::gles2 {
+class GLES2Interface;
+}  // namespace gpu::gles2
+
 namespace v8 {
 class Isolate;
 }  // namespace v8
@@ -56,27 +84,46 @@ class Isolate;
 namespace blink {
 
 class ExecutionContext;
+class Image;
 class LocalDOMWindow;
 class LocalFrame;
 class StaticBitmapImage;
+class WorkerClients;
 
 namespace molt_fingerprinting {
 
 enum class Mode { kOff, kFarble, kUniform };
 
-// Process configuration, set once by WebMoltFingerprinting::Configure() on
-// the main thread before any script runs (workers start later and only read
-// it). In kUniform mode this also pins the time zone (Etc/UTC) and the ICU /
-// Intl default locale (en-US) for the whole process.
-CORE_EXPORT void Configure(Mode mode, base::span<const uint8_t> session_seed);
+// Process mode, set once by WebMoltFingerprinting::Configure() on the main
+// thread before any script runs (workers start later and only read it). In
+// kUniform mode this also pins the time zone (Etc/UTC) and the ICU / Intl
+// default locale (en-US) for the whole process.
+CORE_EXPORT void Configure(Mode mode);
+// The profile's session seed (main thread). Only the first call with exactly
+// kSessionSeedSize bytes has an effect; it is ignored when the mode is kOff.
+CORE_EXPORT void SetSessionSeed(base::span<const uint8_t> session_seed);
+// Top-level sites ("https://example.com", as BlinkSchemefulSite serializes
+// them) with MoltShield turned off by the user: kFarble mode doesn't farble
+// documents and workers of those sites. Replaces the previous list; any
+// thread may read it concurrently.
+CORE_EXPORT void SetUnfarbledSites(std::vector<std::string> sites);
 CORE_EXPORT Mode GetMode();
 // True in MoltNet renderer processes.
 CORE_EXPORT bool IsUniform();
 CORE_EXPORT void ResetForTesting();
 
 // The farbler for `context`, or nullopt when nothing should be farbled there
-// (protection off, non-web context). Main thread or the context's thread.
+// (protection off, non-web context, Shields off for the site). Main thread
+// or the context's thread.
 CORE_EXPORT std::optional<Farbler> FarblerFor(ExecutionContext* context);
+CORE_EXPORT bool IsFarbled(ExecutionContext* context);
+
+// --- Worklets ---------------------------------------------------------------
+
+// Called on the main thread when `window` creates a threaded worklet (e.g.
+// an AudioWorklet): the worklet will farble with `window`'s key, decided now.
+CORE_EXPORT void ProvideToWorklet(LocalDOMWindow& window,
+                                  WorkerClients* worker_clients);
 
 // --- Canvas -----------------------------------------------------------------
 
@@ -86,6 +133,22 @@ CORE_EXPORT std::optional<Farbler> FarblerFor(ExecutionContext* context);
 CORE_EXPORT scoped_refptr<StaticBitmapImage> FarbleSnapshot(
     ExecutionContext* context,
     scoped_refptr<StaticBitmapImage> image);
+// Canvas (and image) pixels leaving towards a video or GPU pipeline:
+// VideoFrame construction, captureStream frames, WebGPU
+// copyExternalImageToTexture. Returns `image` itself when nothing is
+// farbled, else a raster copy with the noise applied and the *same* alpha
+// type: 8-bit premultiplied images are farbled as stored (never moving a
+// channel above alpha), float premultiplied ones unpremultiplied and then
+// premultiplied again. Any thread with a context.
+CORE_EXPORT scoped_refptr<StaticBitmapImage> FarbleForExport(
+    ExecutionContext* context,
+    scoped_refptr<StaticBitmapImage> image);
+CORE_EXPORT scoped_refptr<Image> FarbleForExport(ExecutionContext* context,
+                                                 scoped_refptr<Image> image);
+// The copy FarbleForExport makes, or null if `image` can't be read back.
+CORE_EXPORT scoped_refptr<StaticBitmapImage> FarbleForExportWith(
+    const Farbler& farbler,
+    Image& image);
 // getImageData: farbles the freshly read, unpremultiplied ImageData pixels in
 // place (RGBA/BGRA 8-bit, F16, F32; other formats are left alone).
 CORE_EXPORT void FarblePixmap(ExecutionContext* context,
@@ -95,15 +158,51 @@ CORE_EXPORT void FarblePixmapWith(const Farbler& farbler,
 
 // --- WebGL ------------------------------------------------------------------
 
-// readPixels into client memory. Only RGBA / UNSIGNED_BYTE reads are farbled
-// (`is_rgba8`); the pack parameters give the row layout of `destination`.
+// readPixels into client memory. Farbled: RED, RG, RGB and RGBA with
+// UNSIGNED_BYTE (FarbleUnorm8), FLOAT (FarbleFloat32) and HALF_FLOAT /
+// HALF_FLOAT_OES (FarbleFloat16). Other formats and types (integer, packed
+// 16-bit, 10/11-bit, norm16, ALPHA, LUMINANCE) are left alone. The pack
+// parameters give the row layout of `destination`.
 CORE_EXPORT void FarbleReadPixels(
     ExecutionContext* context,
-    bool is_rgba8,
+    GLenum format,
+    GLenum type,
     int width,
     int height,
     const WebGLImageConversion::PixelStoreParams& pack,
     base::span<uint8_t> destination);
+CORE_EXPORT void FarbleReadPixelsWith(
+    const Farbler& farbler,
+    GLenum format,
+    GLenum type,
+    int width,
+    int height,
+    const WebGLImageConversion::PixelStoreParams& pack,
+    base::span<uint8_t> destination);
+// WebGL2 readPixels into the bound PIXEL_PACK_BUFFER at `offset`, called
+// right after the read: maps the rows just written (read + write, at most a
+// few MiB at a time), farbles them as above and writes them back, so
+// getBufferSubData, copyBufferSubData and texture uploads from the buffer
+// all see farbled pixels. Costs a synchronous round trip to the GPU process
+// per farbled read.
+CORE_EXPORT void FarblePixelPackBuffer(
+    ExecutionContext* context,
+    gpu::gles2::GLES2Interface* gl,
+    GLenum format,
+    GLenum type,
+    int width,
+    int height,
+    const WebGLImageConversion::PixelStoreParams& pack,
+    int64_t offset);
+CORE_EXPORT void FarblePixelPackBufferWith(
+    const Farbler& farbler,
+    gpu::gles2::GLES2Interface* gl,
+    GLenum format,
+    GLenum type,
+    int width,
+    int height,
+    const WebGLImageConversion::PixelStoreParams& pack,
+    int64_t offset);
 
 // --- Web Audio --------------------------------------------------------------
 

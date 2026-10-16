@@ -3,6 +3,7 @@
 
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -10,9 +11,15 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/no_destructor.h"
+#include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/synchronization/lock.h"
 #include "crypto/random.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
+#include "net/cookies/site_for_cookies.h"
+#include "third_party/blink/public/platform/web_worker_fetch_context.h"
 #include "third_party/blink/public/web/web_molt_fingerprinting.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -21,7 +28,10 @@
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timezone/timezone_controller.h"
+#include "third_party/blink/renderer/core/workers/worker_clients.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+#include "third_party/blink/renderer/core/workers/worklet_global_scope.h"
+#include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -41,8 +51,7 @@
 namespace blink {
 
 // static
-void WebMoltFingerprinting::Configure(Mode mode,
-                                      base::span<const uint8_t> session_seed) {
+void WebMoltFingerprinting::Configure(Mode mode) {
   molt_fingerprinting::Mode internal = molt_fingerprinting::Mode::kOff;
   switch (mode) {
     case Mode::kOff:
@@ -55,18 +64,50 @@ void WebMoltFingerprinting::Configure(Mode mode,
       internal = molt_fingerprinting::Mode::kUniform;
       break;
   }
-  molt_fingerprinting::Configure(internal, session_seed);
+  molt_fingerprinting::Configure(internal);
+}
+
+// static
+void WebMoltFingerprinting::SetSessionSeed(
+    base::span<const uint8_t> session_seed) {
+  molt_fingerprinting::SetSessionSeed(session_seed);
+}
+
+// static
+void WebMoltFingerprinting::SetUnfarbledSites(
+    const std::vector<std::string>& sites) {
+  molt_fingerprinting::SetUnfarbledSites(sites);
 }
 
 namespace molt_fingerprinting {
 
 namespace {
 
-// Written once on the main thread (Configure) before any worker exists and
-// published with release/acquire through g_mode.
+// g_mode is written once on the main thread before any worker exists
+// (Configure); g_seed is written once, at any time (SetSessionSeed). Both
+// are published with release/acquire (through g_mode and g_have_seed) and
+// never change afterwards.
 std::array<uint8_t, kSessionSeedSize> g_seed = {};
 std::atomic<Mode> g_mode{Mode::kOff};
 std::atomic<bool> g_configured{false};
+std::atomic<bool> g_have_seed{false};
+
+// Top-level sites with Shields off. Read from any thread.
+struct UnfarbledSites {
+  base::Lock lock;
+  std::vector<std::string> sorted;  // Guarded by `lock`.
+};
+
+UnfarbledSites& GetUnfarbledSites() {
+  static base::NoDestructor<UnfarbledSites> sites;
+  return *sites;
+}
+
+bool IsSiteUnfarbled(const std::string& site) {
+  UnfarbledSites& sites = GetUnfarbledSites();
+  base::AutoLock auto_lock(sites.lock);
+  return std::binary_search(sites.sorted.begin(), sites.sorted.end(), site);
+}
 
 // Per-execution-context cache of the derived key.
 class MoltFarblingState final : public GarbageCollected<MoltFarblingState>,
@@ -94,31 +135,64 @@ class MoltFarblingState final : public GarbageCollected<MoltFarblingState>,
   // `site_and_partition` identifies what `key` was derived for; a null
   // string means `key` is a random per-context key.
   bool has_key = false;
+  // The key was needed before the session seed arrived: the random key is
+  // kept for the context's whole life, so its values stay consistent.
+  bool pinned_random = false;
   String site_and_partition;
   SiteKey key = {};
 };
 
 const char MoltFarblingState::kSupplementName[] = "MoltFarblingState";
 
-enum class SiteKind { kNone, kWeb, kOpaque };
+// The key a worklet farbles with, decided by its document at creation. Made
+// on the main thread, then only read on the worklet's thread (the usual
+// WorkerClients pattern).
+class MoltFarblingWorkletKey final
+    : public GarbageCollected<MoltFarblingWorkletKey>,
+      public Supplement<WorkerClients> {
+ public:
+  static const char kSupplementName[];
+
+  MoltFarblingWorkletKey(WorkerClients& clients, const SiteKey& key)
+      : Supplement<WorkerClients>(clients), key_(key) {}
+
+  const SiteKey& key() const { return key_; }
+
+  void Trace(Visitor* visitor) const override {
+    Supplement<WorkerClients>::Trace(visitor);
+  }
+
+ private:
+  const SiteKey key_;
+};
+
+const char MoltFarblingWorkletKey::kSupplementName[] = "MoltFarblingWorkletKey";
+
+enum class SiteKind { kNone, kWeb, kOpaque, kHandedOver };
 
 struct ResolvedSite {
   SiteKind kind = SiteKind::kNone;
   std::string site;
   std::string partition;
+  SiteKey handed_over_key = {};
 };
 
 ResolvedSite FromSchemefulSite(const BlinkSchemefulSite& site,
                                std::string partition) {
+  ResolvedSite resolved;
   if (site.IsOpaque()) {
-    return {SiteKind::kOpaque, std::string(), std::string()};
+    resolved.kind = SiteKind::kOpaque;
+    return resolved;
   }
   const String serialized = site.Serialize();
   if (!serialized.StartsWith("https://") && !serialized.StartsWith("http://")) {
     // chrome://, chrome-extension://, file://, ...: internal or local pages.
-    return {};
+    return resolved;
   }
-  return {SiteKind::kWeb, serialized.Utf8(), std::move(partition)};
+  resolved.kind = SiteKind::kWeb;
+  resolved.site = serialized.Utf8();
+  resolved.partition = std::move(partition);
+  return resolved;
 }
 
 ResolvedSite ResolveSite(ExecutionContext& context) {
@@ -138,11 +212,82 @@ ResolvedSite ResolveSite(ExecutionContext& context) {
           BlinkSchemefulSite(scoped_refptr<const SecurityOrigin>(top)),
           std::string());
     }
-    // Shared and service workers: no top-level site known in Blink.
-    return {SiteKind::kOpaque, std::string(), std::string()};
+    // Shared and service workers: their site for cookies is their storage
+    // key's top-level site when the key is first-party (the top-level site
+    // is then the worker's own site), and null when it is third-party
+    // (partitioned under a top-level site Blink isn't told).
+    if (const WebWorkerFetchContext* fetch_context =
+            worker->web_worker_fetch_context()) {
+      const net::SiteForCookies site_for_cookies =
+          fetch_context->SiteForCookies();
+      if (!site_for_cookies.IsNull()) {
+        return FromSchemefulSite(BlinkSchemefulSite(site_for_cookies.site()),
+                                 std::string());
+      }
+    }
+    ResolvedSite third_party;
+    third_party.kind = SiteKind::kOpaque;
+    return third_party;
   }
-  // Worklets etc. expose none of the farbled APIs.
+  if (auto* worklet = DynamicTo<WorkletGlobalScope>(context)) {
+    WorkerClients* clients = worklet->Clients();
+    const MoltFarblingWorkletKey* handed_over =
+        clients
+            ? Supplement<WorkerClients>::From<MoltFarblingWorkletKey>(*clients)
+            : nullptr;
+    ResolvedSite resolved;
+    if (handed_over) {
+      resolved.kind = SiteKind::kHandedOver;
+      resolved.handed_over_key = handed_over->key();
+    }
+    return resolved;
+  }
   return {};
+}
+
+std::optional<SiteKey> SiteKeyFor(ExecutionContext* context) {
+  if (!context || GetMode() == Mode::kOff) {
+    return std::nullopt;
+  }
+  const ResolvedSite resolved = ResolveSite(*context);
+  switch (resolved.kind) {
+    case SiteKind::kNone:
+      return std::nullopt;
+    case SiteKind::kHandedOver:
+      return resolved.handed_over_key;
+    case SiteKind::kWeb:
+      // MoltNet keeps farbling where Shields are off: there the point is to
+      // look like every other MoltNet user.
+      if (GetMode() == Mode::kFarble && IsSiteUnfarbled(resolved.site)) {
+        return std::nullopt;
+      }
+      break;
+    case SiteKind::kOpaque:
+      break;
+  }
+  MoltFarblingState& state = MoltFarblingState::From(*context);
+  if (state.pinned_random) {
+    return state.key;
+  }
+  const bool have_seed = g_have_seed.load(std::memory_order_acquire);
+  if (resolved.kind == SiteKind::kOpaque || !have_seed) {
+    if (!state.has_key || !state.site_and_partition.IsNull()) {
+      crypto::RandBytes(state.key);
+      state.site_and_partition = String();
+      state.has_key = true;
+    }
+    state.pinned_random = !have_seed;
+    return state.key;
+  }
+  // The site of a context can change when Blink reuses the initial empty
+  // document's window for the first navigation, so compare every time.
+  const String id = String::FromUTF8(resolved.site + '\n' + resolved.partition);
+  if (!state.has_key || state.site_and_partition != id) {
+    state.key = DeriveSiteKey(g_seed, resolved.site, resolved.partition);
+    state.site_and_partition = id;
+    state.has_key = true;
+  }
+  return state.key;
 }
 
 SkColorType ReadbackColorType(SkColorType source) {
@@ -158,18 +303,212 @@ SkColorType ReadbackColorType(SkColorType source) {
   }
 }
 
+// 8-bit premultiplied rows, farbled as stored.
+void FarblePremulPixmapWith(const Farbler& farbler, const SkPixmap& pixmap) {
+  if (!pixmap.addr() || pixmap.width() <= 0 || pixmap.height() <= 0) {
+    return;
+  }
+  ChannelOrder order = ChannelOrder::kRGBA;
+  switch (pixmap.colorType()) {
+    case kRGBA_8888_SkColorType:
+      break;
+    case kBGRA_8888_SkColorType:
+      order = ChannelOrder::kBGRA;
+      break;
+    default:
+      return;
+  }
+  const base::span<uint8_t> all = gfx::SkPixmapToWritableSpan(pixmap);
+  const size_t row_bytes = pixmap.rowBytes();
+  const size_t row_size = static_cast<size_t>(pixmap.width()) * 4;
+  for (int y = 0; y < pixmap.height(); ++y) {
+    const size_t start = static_cast<size_t>(y) * row_bytes;
+    if (start > all.size() || all.size() - start < row_size) {
+      return;
+    }
+    farbler.FarbleRGBA8Premul(all.subspan(start, row_size), order);
+  }
+}
+
 }  // namespace
 
-void Configure(Mode mode, base::span<const uint8_t> session_seed) {
+scoped_refptr<StaticBitmapImage> FarbleForExportWith(const Farbler& farbler,
+                                                     Image& image) {
+  PaintImage paint_image = image.PaintImageForCurrentFrame();
+  if (!paint_image || paint_image.IsPaintWorklet()) {
+    return nullptr;
+  }
+  const SkImageInfo source_info = paint_image.GetSkImageInfo();
+  if (source_info.isEmpty()) {
+    return nullptr;
+  }
+  const SkColorType color_type = ReadbackColorType(source_info.colorType());
+  SkAlphaType alpha_type = source_info.alphaType();
+  if (alpha_type == kUnknown_SkAlphaType) {
+    alpha_type = kPremul_SkAlphaType;
+  }
+  // 8-bit premultiplied data is farbled as stored; float data is farbled
+  // unpremultiplied and premultiplied again below.
+  const bool premul_8bit =
+      alpha_type == kPremul_SkAlphaType && color_type == kN32_SkColorType;
+  const SkAlphaType read_alpha_type =
+      alpha_type == kPremul_SkAlphaType && !premul_8bit ? kUnpremul_SkAlphaType
+                                                        : alpha_type;
+  const SkImageInfo info =
+      SkImageInfo::Make(source_info.width(), source_info.height(), color_type,
+                        read_alpha_type, source_info.refColorSpace());
+  const size_t row_bytes = info.minRowBytes();
+  const size_t size = info.computeByteSize(row_bytes);
+  if (SkImageInfo::ByteSizeOverflowed(size)) {
+    return nullptr;
+  }
+  sk_sp<SkData> data = SkData::MakeUninitialized(size);
+  if (!data ||
+      !paint_image.readPixels(info, data->writable_data(), row_bytes, 0, 0)) {
+    return nullptr;
+  }
+  const SkPixmap pixmap(info, data->writable_data(), row_bytes);
+  if (premul_8bit) {
+    FarblePremulPixmapWith(farbler, pixmap);
+  } else {
+    FarblePixmapWith(farbler, pixmap);
+  }
+  SkImageInfo out_info = info;
+  if (read_alpha_type != alpha_type) {
+    out_info = info.makeAlphaType(alpha_type);
+    sk_sp<SkData> premultiplied = SkData::MakeUninitialized(size);
+    if (!premultiplied ||
+        !pixmap.readPixels(out_info, premultiplied->writable_data(),
+                           row_bytes)) {
+      return nullptr;
+    }
+    data = std::move(premultiplied);
+  }
+  sk_sp<SkImage> farbled =
+      SkImages::RasterFromData(out_info, std::move(data), row_bytes);
+  if (!farbled) {
+    return nullptr;
+  }
+  return UnacceleratedStaticBitmapImage::Create(std::move(farbled),
+                                                image.Orientation());
+}
+
+namespace {
+
+// The noise and bytes per pixel for a WebGL readPixels format / type, or
+// nullopt for formats that aren't farbled.
+struct ReadLayout {
+  enum class Kind { kUnorm8, kFloat16, kFloat32 };
+  Kind kind;
+  size_t channels;
+  size_t bytes_per_pixel;
+};
+
+std::optional<ReadLayout> ReadLayoutFor(GLenum format, GLenum type) {
+  size_t channels = 0;
+  switch (format) {
+    case GL_RED:
+      channels = 1;
+      break;
+    case GL_RG:
+      channels = 2;
+      break;
+    case GL_RGB:
+      channels = 3;
+      break;
+    case GL_RGBA:
+      channels = 4;
+      break;
+    default:
+      return std::nullopt;
+  }
+  switch (type) {
+    case GL_UNSIGNED_BYTE:
+      return ReadLayout{ReadLayout::Kind::kUnorm8, channels, channels};
+    case GL_HALF_FLOAT:
+    case GL_HALF_FLOAT_OES:
+      return ReadLayout{ReadLayout::Kind::kFloat16, channels, 2 * channels};
+    case GL_FLOAT:
+      return ReadLayout{ReadLayout::Kind::kFloat32, channels, 4 * channels};
+    default:
+      return std::nullopt;
+  }
+}
+
+void FarbleReadRow(const Farbler& farbler,
+                   const ReadLayout& layout,
+                   base::span<uint8_t> row) {
+  switch (layout.kind) {
+    case ReadLayout::Kind::kUnorm8:
+      farbler.FarbleUnorm8(row, layout.channels);
+      break;
+    case ReadLayout::Kind::kFloat16:
+      farbler.FarbleFloat16(row);
+      break;
+    case ReadLayout::Kind::kFloat32:
+      farbler.FarbleFloat32(row);
+      break;
+  }
+}
+
+// Where the rows of a packed readPixels result are, relative to the start of
+// the destination (GL ES 3.0 section 4.3.2 with the pack parameters).
+struct PackedRows {
+  size_t first = 0;     // Offset of the first pixel of the first row.
+  size_t stride = 0;    // Distance between rows.
+  size_t row_size = 0;  // Bytes of pixels in a row.
+};
+
+std::optional<PackedRows> PackedRowsFor(
+    const ReadLayout& layout,
+    int width,
+    int height,
+    const WebGLImageConversion::PixelStoreParams& pack) {
+  if (width <= 0 || height <= 0) {
+    return std::nullopt;
+  }
+  const size_t row_pixels = pack.row_length > 0
+                                ? static_cast<size_t>(pack.row_length)
+                                : static_cast<size_t>(width);
+  const size_t alignment =
+      pack.alignment > 0 ? static_cast<size_t>(pack.alignment) : 1;
+  // Rows are padded to `alignment`; for the power-of-two alignments and
+  // component sizes WebGL allows this is exactly the spec's rule.
+  base::CheckedNumeric<size_t> stride = row_pixels;
+  stride *= layout.bytes_per_pixel;
+  stride += alignment - 1;
+  stride /= alignment;
+  stride *= alignment;
+  base::CheckedNumeric<size_t> first =
+      static_cast<size_t>(pack.skip_rows > 0 ? pack.skip_rows : 0);
+  first *= stride;
+  first += base::CheckedNumeric<size_t>(static_cast<size_t>(
+               pack.skip_pixels > 0 ? pack.skip_pixels : 0)) *
+           layout.bytes_per_pixel;
+  base::CheckedNumeric<size_t> row_size = static_cast<size_t>(width);
+  row_size *= layout.bytes_per_pixel;
+  PackedRows rows;
+  if (!stride.AssignIfValid(&rows.stride) ||
+      !first.AssignIfValid(&rows.first) ||
+      !row_size.AssignIfValid(&rows.row_size) || rows.stride == 0) {
+    return std::nullopt;
+  }
+  return rows;
+}
+
+// Largest PIXEL_PACK buffer range mapped at once (whole rows; one row can be
+// larger).
+constexpr size_t kMaxPackBufferMapBytes = 4 * 1024 * 1024;
+
+}  // namespace
+
+void Configure(Mode mode) {
   DCHECK(IsMainThread());
   if (g_configured.exchange(true)) {
     return;
   }
-  if (mode == Mode::kOff || session_seed.size() != kSessionSeedSize) {
+  if (mode == Mode::kOff) {
     return;
-  }
-  for (size_t i = 0; i < kSessionSeedSize; ++i) {
-    g_seed[i] = session_seed[i];
   }
   g_mode.store(mode, std::memory_order_release);
 
@@ -190,6 +529,26 @@ void Configure(Mode mode, base::span<const uint8_t> session_seed) {
   }
 }
 
+void SetSessionSeed(base::span<const uint8_t> session_seed) {
+  DCHECK(IsMainThread());
+  if (GetMode() == Mode::kOff || session_seed.size() != kSessionSeedSize ||
+      g_have_seed.load(std::memory_order_acquire)) {
+    return;
+  }
+  for (size_t i = 0; i < kSessionSeedSize; ++i) {
+    g_seed[i] = session_seed[i];
+  }
+  g_have_seed.store(true, std::memory_order_release);
+}
+
+void SetUnfarbledSites(std::vector<std::string> sites) {
+  std::sort(sites.begin(), sites.end());
+  sites.erase(std::unique(sites.begin(), sites.end()), sites.end());
+  UnfarbledSites& unfarbled = GetUnfarbledSites();
+  base::AutoLock auto_lock(unfarbled.lock);
+  unfarbled.sorted.swap(sites);
+}
+
 Mode GetMode() {
   return g_mode.load(std::memory_order_acquire);
 }
@@ -201,34 +560,31 @@ bool IsUniform() {
 void ResetForTesting() {
   g_mode.store(Mode::kOff, std::memory_order_release);
   g_configured.store(false);
+  g_have_seed.store(false, std::memory_order_release);
+  g_seed = {};
+  SetUnfarbledSites({});
 }
 
 std::optional<Farbler> FarblerFor(ExecutionContext* context) {
-  if (!context || GetMode() == Mode::kOff) {
-    return std::nullopt;
+  if (const std::optional<SiteKey> key = SiteKeyFor(context)) {
+    return Farbler(*key);
   }
-  const ResolvedSite resolved = ResolveSite(*context);
-  if (resolved.kind == SiteKind::kNone) {
-    return std::nullopt;
+  return std::nullopt;
+}
+
+bool IsFarbled(ExecutionContext* context) {
+  return SiteKeyFor(context).has_value();
+}
+
+void ProvideToWorklet(LocalDOMWindow& window, WorkerClients* worker_clients) {
+  if (!worker_clients) {
+    return;
   }
-  MoltFarblingState& state = MoltFarblingState::From(*context);
-  if (resolved.kind == SiteKind::kOpaque) {
-    if (!state.has_key || !state.site_and_partition.IsNull()) {
-      crypto::RandBytes(state.key);
-      state.site_and_partition = String();
-      state.has_key = true;
-    }
-    return Farbler(state.key);
+  if (const std::optional<SiteKey> key = SiteKeyFor(&window)) {
+    Supplement<WorkerClients>::ProvideTo(
+        *worker_clients,
+        MakeGarbageCollected<MoltFarblingWorkletKey>(*worker_clients, *key));
   }
-  // The site of a context can change when Blink reuses the initial empty
-  // document's window for the first navigation, so compare every time.
-  const String id = String::FromUTF8(resolved.site + '\n' + resolved.partition);
-  if (!state.has_key || state.site_and_partition != id) {
-    state.key = DeriveSiteKey(g_seed, resolved.site, resolved.partition);
-    state.site_and_partition = id;
-    state.has_key = true;
-  }
-  return Farbler(state.key);
 }
 
 void FarblePixmapWith(const Farbler& farbler, const SkPixmap& pixmap) {
@@ -328,39 +684,160 @@ scoped_refptr<StaticBitmapImage> FarbleSnapshot(
                                                 image->Orientation());
 }
 
+scoped_refptr<StaticBitmapImage> FarbleForExport(
+    ExecutionContext* context,
+    scoped_refptr<StaticBitmapImage> image) {
+  if (!image) {
+    return image;
+  }
+  const std::optional<Farbler> farbler = FarblerFor(context);
+  if (!farbler) {
+    return image;
+  }
+  scoped_refptr<StaticBitmapImage> farbled =
+      FarbleForExportWith(*farbler, *image);
+  return farbled ? farbled : image;
+}
+
+scoped_refptr<Image> FarbleForExport(ExecutionContext* context,
+                                     scoped_refptr<Image> image) {
+  if (!image) {
+    return image;
+  }
+  const std::optional<Farbler> farbler = FarblerFor(context);
+  if (!farbler) {
+    return image;
+  }
+  scoped_refptr<StaticBitmapImage> farbled =
+      FarbleForExportWith(*farbler, *image);
+  if (!farbled) {
+    return image;
+  }
+  return farbled;
+}
+
 void FarbleReadPixels(ExecutionContext* context,
-                      bool is_rgba8,
+                      GLenum format,
+                      GLenum type,
                       int width,
                       int height,
                       const WebGLImageConversion::PixelStoreParams& pack,
                       base::span<uint8_t> destination) {
-  if (!is_rgba8 || width <= 0 || height <= 0) {
+  if (!ReadLayoutFor(format, type) || width <= 0 || height <= 0) {
     return;
   }
-  const std::optional<Farbler> farbler = FarblerFor(context);
-  if (!farbler) {
+  if (const std::optional<Farbler> farbler = FarblerFor(context)) {
+    FarbleReadPixelsWith(*farbler, format, type, width, height, pack,
+                         destination);
+  }
+}
+
+void FarbleReadPixelsWith(const Farbler& farbler,
+                          GLenum format,
+                          GLenum type,
+                          int width,
+                          int height,
+                          const WebGLImageConversion::PixelStoreParams& pack,
+                          base::span<uint8_t> destination) {
+  const std::optional<ReadLayout> layout = ReadLayoutFor(format, type);
+  if (!layout) {
     return;
   }
-  // Row layout per the pack parameters (WebGL has already checked that the
-  // destination is large enough; we re-check every row anyway).
-  const size_t row_size = static_cast<size_t>(width) * 4;
-  const size_t row_pixels = pack.row_length > 0
-                                ? static_cast<size_t>(pack.row_length)
-                                : static_cast<size_t>(width);
-  const size_t alignment =
-      pack.alignment > 0 ? static_cast<size_t>(pack.alignment) : 1;
-  const size_t unpadded = row_pixels * 4;
-  const size_t stride = (unpadded + alignment - 1) / alignment * alignment;
-  const size_t first =
-      static_cast<size_t>(pack.skip_rows > 0 ? pack.skip_rows : 0) * stride +
-      static_cast<size_t>(pack.skip_pixels > 0 ? pack.skip_pixels : 0) * 4;
+  const std::optional<PackedRows> rows =
+      PackedRowsFor(*layout, width, height, pack);
+  if (!rows) {
+    return;
+  }
+  // WebGL has already checked that the destination is large enough; we
+  // re-check every row anyway.
+  size_t start = rows->first;
   for (int y = 0; y < height; ++y) {
-    const size_t start = first + static_cast<size_t>(y) * stride;
-    if (start > destination.size() || destination.size() - start < row_size) {
+    if (start > destination.size() ||
+        destination.size() - start < rows->row_size) {
       return;
     }
-    farbler->FarbleRGBA8(destination.subspan(start, row_size),
-                         ChannelOrder::kRGBA);
+    FarbleReadRow(farbler, *layout, destination.subspan(start, rows->row_size));
+    if (!base::CheckAdd(start, rows->stride).AssignIfValid(&start)) {
+      return;
+    }
+  }
+}
+
+void FarblePixelPackBuffer(ExecutionContext* context,
+                           gpu::gles2::GLES2Interface* gl,
+                           GLenum format,
+                           GLenum type,
+                           int width,
+                           int height,
+                           const WebGLImageConversion::PixelStoreParams& pack,
+                           int64_t offset) {
+  if (!gl || !ReadLayoutFor(format, type) || width <= 0 || height <= 0) {
+    return;
+  }
+  if (const std::optional<Farbler> farbler = FarblerFor(context)) {
+    FarblePixelPackBufferWith(*farbler, gl, format, type, width, height, pack,
+                              offset);
+  }
+}
+
+void FarblePixelPackBufferWith(
+    const Farbler& farbler,
+    gpu::gles2::GLES2Interface* gl,
+    GLenum format,
+    GLenum type,
+    int width,
+    int height,
+    const WebGLImageConversion::PixelStoreParams& pack,
+    int64_t offset) {
+  if (!gl || offset < 0) {
+    return;
+  }
+  const std::optional<ReadLayout> layout = ReadLayoutFor(format, type);
+  if (!layout) {
+    return;
+  }
+  const std::optional<PackedRows> rows =
+      PackedRowsFor(*layout, width, height, pack);
+  if (!rows) {
+    return;
+  }
+  // Whole rows, a few MiB at a time, so one huge read never needs one huge
+  // shared-memory mapping. The padding between rows is mapped too and
+  // written back unchanged.
+  const size_t rows_per_map =
+      std::max<size_t>(1, kMaxPackBufferMapBytes / rows->stride);
+  const size_t total_rows = static_cast<size_t>(height);
+  for (size_t y0 = 0; y0 < total_rows; y0 += rows_per_map) {
+    const size_t count = std::min(rows_per_map, total_rows - y0);
+    base::CheckedNumeric<size_t> start = y0;
+    start *= rows->stride;
+    start += rows->first;
+    base::CheckedNumeric<GLintptr> map_offset = offset;
+    map_offset += start;
+    base::CheckedNumeric<size_t> map_size = count - 1;
+    map_size *= rows->stride;
+    map_size += rows->row_size;
+    GLintptr gl_offset = 0;
+    size_t size = 0;
+    GLsizeiptr gl_size = 0;
+    if (!map_offset.AssignIfValid(&gl_offset) ||
+        !map_size.AssignIfValid(&size) ||
+        !base::CheckedNumeric<GLsizeiptr>(size).AssignIfValid(&gl_size)) {
+      return;
+    }
+    void* mapped = gl->MapBufferRange(GL_PIXEL_PACK_BUFFER, gl_offset, gl_size,
+                                      GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
+    if (!mapped) {
+      return;
+    }
+    // SAFETY: MapBufferRange() returned a mapping of exactly `size` bytes.
+    const base::span<uint8_t> chunk = UNSAFE_BUFFERS(
+        base::span<uint8_t>(static_cast<uint8_t*>(mapped), size));
+    for (size_t r = 0; r < count; ++r) {
+      FarbleReadRow(farbler, *layout,
+                    chunk.subspan(r * rows->stride, rows->row_size));
+    }
+    gl->UnmapBuffer(GL_PIXEL_PACK_BUFFER);
   }
 }
 

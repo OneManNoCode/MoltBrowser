@@ -5134,10 +5134,9 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
     }
     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
   }
-  // MoltBrowser: per-site fingerprinting noise on RGBA / UNSIGNED_BYTE reads.
+  // MoltBrowser: per-site fingerprinting noise on 8-bit and float reads.
   molt_fingerprinting::FarbleReadPixels(
-      Host()->GetTopExecutionContext(),
-      format == GL_RGBA && type == GL_UNSIGNED_BYTE, width, height,
+      Host()->GetTopExecutionContext(), format, type, width, height,
       GetPackPixelStoreParams(),
       pixels->ByteSpanMaybeShared().subspan(offset_in_bytes.ValueOrDie()));
 }

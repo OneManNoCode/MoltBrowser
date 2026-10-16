@@ -27,8 +27,8 @@ void ConfigureRendererProcess() {
   blink::WebMoltFingerprinting::Configure(
       mode == RendererMode::kUniform
           ? blink::WebMoltFingerprinting::Mode::kUniform
-          : blink::WebMoltFingerprinting::Mode::kFarble,
-      *seed);
+          : blink::WebMoltFingerprinting::Mode::kFarble);
+  blink::WebMoltFingerprinting::SetSessionSeed(*seed);
 }
 
 }  // namespace molt_ai::fingerprinting
