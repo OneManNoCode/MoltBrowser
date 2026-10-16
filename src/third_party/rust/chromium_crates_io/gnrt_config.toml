@@ -120,26 +120,20 @@ extra_kv = { allow_unsafe = true }
 [crate.adler2.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.aes]
 extra_kv = { allow_unsafe = true }
 
-[crate.aho-corasick]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.ahash]
 group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
+# MoltBrowser: shipped (via regex, used by anydoc's pdf-inspector and
+# env_filter and by adblock), so not `group = 'test'` as upstream has it.
 [crate.aho-corasick]
-group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
 [crate.android_system_properties]
 extra_kv = { allow_unsafe = true }
 
@@ -268,18 +262,14 @@ extra_kv = { allow_unsafe = false }
 [crate.cfg-if.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.chacha20]
-extra_input_roots = ['../README.md']
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.cfg_aliases]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
+[crate.chacha20]
+extra_input_roots = ['../README.md']
+extra_kv = { allow_unsafe = true }
+
 [crate.chrono]
 extra_kv = { allow_unsafe = true }
 
@@ -299,27 +289,20 @@ extra_kv = { allow_unsafe = false }
 [crate.clap_lex.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.codepage]
-extra_kv = { allow_unsafe = false }
-
-||||||| upstream@pin
-=======
 [crate.cobs]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
+[crate.codepage]
+extra_kv = { allow_unsafe = false }
+
 [crate.codespan-reporting.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.colorchoice]
 extra_input_roots = ['../README.md']
 extra_kv = { allow_unsafe = false }
 
-||||||| upstream@pin
-=======
 [crate.const_format]
 group = 'test'
 allow_first_party_usage = false
@@ -334,7 +317,6 @@ group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
 [crate.core-foundation-sys]
 extra_kv = { allow_unsafe = true }
 
@@ -348,7 +330,6 @@ extra_kv = { allow_unsafe = true }
 [crate.crc32fast.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.crossbeam-deque]
 extra_kv = { allow_unsafe = true }
 
@@ -356,7 +337,7 @@ extra_kv = { allow_unsafe = true }
 extra_kv = { allow_unsafe = true }
 
 [crate.crossbeam-utils]
-extra_build_script_src_roots = ['../build-common.rs', '../no_atomic.rs']
+extra_build_script_input_roots = ['../build-common.rs', '../no_atomic.rs']
 extra_kv = { allow_unsafe = true }
 
 [crate.crypto-common]
@@ -368,8 +349,6 @@ extra_kv = { allow_unsafe = true }
 [crate.csv-core]
 extra_kv = { allow_unsafe = false }
 
-||||||| upstream@pin
-=======
 [crate.ctor]
 extra_kv = { allow_unsafe = false }
 
@@ -377,7 +356,6 @@ extra_kv = { allow_unsafe = false }
 extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
 [crate.cxx]
 extra_kv = { allow_unsafe = true }
 remove_deps = ['cc', 'link-cplusplus']
@@ -421,27 +399,24 @@ allow_unsafe = false
 [crate.displaydoc.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.ecb]
-extra_kv = { allow_unsafe = false }
-
-[crate.either.extra_kv]
-allow_unsafe = true
-||||||| upstream@pin
-[crate.either.extra_kv]
-allow_unsafe = true
-=======
 [crate.dtor]
 extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = false }
->>>>>>> upstream@new
 
 [crate.dtor-proc-macro]
 extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = false }
 
+[crate.ecb]
+extra_kv = { allow_unsafe = false }
+
 [crate.either.extra_kv]
 allow_unsafe = true
+
+# MoltBrowser: upstream stopped vendoring encoding_rs at 152; anydoc's
+# tree (anydoc, calamine, codepage, lopdf, quick-xml) still needs it.
+[crate.encoding_rs]
+extra_kv = { allow_unsafe = true }
 
 [crate.env_filter]
 extra_input_roots = ['../README.md']
@@ -454,22 +429,18 @@ extra_kv = { allow_unsafe = false }
 [crate.equivalent.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.fast-float2]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.erased-serde]
 group = 'test'
 allow_first_party_usage = false
+extra_kv = { allow_unsafe = true }
+
+[crate.fast-float2]
 extra_kv = { allow_unsafe = true }
 
 [crate.fastbloom]
 extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
 [crate.fdeflate.extra_kv]
 allow_unsafe = false
 # Web tests (aka WPT tests, also formerly known as Layout Tests) require fast
@@ -508,20 +479,13 @@ allow_unsafe = true
 [crate.font-types.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.generic-array]
-extra_kv = { allow_unsafe = true }
-
-[crate.getrandom]
-extra_input_roots = ['../README.md']
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.fs2]
 group = 'test'
 allow_first_party_usage = false
 remove_deps = ['winapi']
+extra_kv = { allow_unsafe = true }
+
+[crate.generic-array]
 extra_kv = { allow_unsafe = true }
 
 [crate.getrandom]
@@ -542,7 +506,6 @@ extra_kv = { allow_unsafe = true }
 [crate.harfrust]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
 [crate.hashbrown.extra_kv]
 # `hashbrown` crate is implicitly trusted because it comes from
 # https://github.com/rust-lang/ (and we already implicitly trust maintainers of
@@ -675,13 +638,7 @@ extra_kv = { allow_unsafe = true }
 [crate.is_terminal_polyfill]
 extra_kv = { allow_unsafe = false }
 
-# MoltBrowser: split per epoch. v0_11 stays test-only; v0_14 is shipped as a
-# dependency of adblock (MoltShield), which an unversioned `group = 'test'`
-# would wrongly confine to tests.
-[crate."itertools@v0_11"]
-extra_kv = { allow_unsafe = true }
-
-[crate."itertools@v0_14"]
+[crate.itertools]
 extra_kv = { allow_unsafe = true }
 
 [crate.itoa.extra_kv]
@@ -690,7 +647,6 @@ allow_unsafe = true
 [crate.ixdtf.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.jiff]
 extra_input_roots = ['../CHANGELOG.md', '../COMPARE.md', '../DESIGN.md', '../PLATFORM.md']
 extra_kv = { allow_unsafe = true }
@@ -707,12 +663,9 @@ extra_kv = { allow_unsafe = false }
 [crate.jiff-tzdb-platform]
 extra_kv = { allow_unsafe = false }
 
-||||||| upstream@pin
-=======
 [crate.jpeg-encoder]
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
 [crate.jxl.extra_kv]
 allow_unsafe = true
 # JXL decoding requires optimizations even in Debug builds for reasonable performance.
@@ -789,20 +742,16 @@ extra_kv = { allow_unsafe = true }
 [crate.log.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.lopdf]
 extra_input_roots = ['../README.md']
+extra_kv = { allow_unsafe = false }
+
+[crate.mach2]
 extra_kv = { allow_unsafe = false }
 
 [crate.md-5]
 extra_kv = { allow_unsafe = true }
 
-||||||| upstream@pin
-=======
-[crate.mach2]
-extra_kv = { allow_unsafe = false }
-
->>>>>>> upstream@new
 [crate.memchr.extra_kv]
 allow_unsafe = true
 
@@ -832,32 +781,24 @@ extra_kv = { allow_unsafe = true }
 [crate.murmur3]
 extra_kv = { allow_unsafe = false }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.nom]
-extra_input_roots = ['../doc/nom_recipes.md']
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.nix]
 group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
+[crate.nom]
+extra_input_roots = ['../doc/nom_recipes.md']
+extra_kv = { allow_unsafe = true }
+
 [crate.num-bigint.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.num-conv]
-extra_kv = { allow_unsafe = false }
-
-||||||| upstream@pin
-=======
 [crate.num-complex]
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
+[crate.num-conv]
+extra_kv = { allow_unsafe = false }
+
 [crate.num-derive]
 extra_kv = { allow_unsafe = false }
 
@@ -877,25 +818,6 @@ group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.once_cell_polyfill]
-extra_input_roots = ['../README.md']
-extra_kv = { allow_unsafe = false }
-
-[crate.opusic-sys]
-extra_kv = { allow_unsafe = true, extra_deps = ["//third_party/opus:opus"] }
-remove_build_rs = true
-# Opusic-sys is vendored with a copy of libopus, which we don't need.
-remove_vendored_files = ["opus", "opus.patch", "build.rs"]
-ban_features = ["bundled"]
-||||||| upstream@pin
-[crate.opusic-sys]
-extra_kv = { allow_unsafe = true, extra_deps = ["//third_party/opus:opus"] }
-remove_build_rs = true
-# Opusic-sys is vendored with a copy of libopus, which we don't need.
-remove_vendored_files = ["opus", "opus.patch", "build.rs"]
-ban_features = ["bundled"]
-=======
 [crate.num_enum_derive]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = false }
@@ -907,7 +829,10 @@ extra_kv = { allow_unsafe = true }
 
 [crate.once_cell]
 extra_kv = { allow_unsafe = true }
->>>>>>> upstream@new
+
+[crate.once_cell_polyfill]
+extra_input_roots = ['../README.md']
+extra_kv = { allow_unsafe = false }
 
 [crate.ordered-float]
 extra_kv = { allow_unsafe = true }
@@ -938,16 +863,12 @@ extra_kv = { allow_unsafe = true }
 [crate.potential_utf.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.powerfmt]
 extra_kv = { allow_unsafe = true }
 
-||||||| upstream@pin
-=======
 [crate.primal-check]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
 [crate.proc-macro-error-attr2]
 extra_kv = { allow_unsafe = false }
 
@@ -979,12 +900,16 @@ extra_kv = { allow_unsafe = true }
 [crate.quote.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.rand]
 extra_kv = { allow_unsafe = true }
 
-[crate.rand_core]
+# MoltBrowser: split per epoch. v0_10 (rand/getrandom/chacha20 in
+# anydoc's tree) doc-includes its README; upstream's v0_9 does not.
+[crate."rand_core@v0_10"]
 extra_input_roots = ['../README.md']
+extra_kv = { allow_unsafe = false }
+
+[crate."rand_core@v0_9"]
 extra_kv = { allow_unsafe = false }
 
 [crate.rangemap]
@@ -997,22 +922,10 @@ extra_kv = { allow_unsafe = true }
 [crate.rayon-core]
 extra_kv = { allow_unsafe = true }
 
-||||||| upstream@pin
-=======
-[crate.rand_core]
-extra_kv = { allow_unsafe = false }
-
->>>>>>> upstream@new
 [crate.read-fonts]
 extra_input_roots = ['../generated', '../data/generated']
 extra_kv = { allow_unsafe = false }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.regex]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.ref-cast]
 build_script_outputs = [ "private.rs" ]
 extra_kv = { allow_unsafe = true }
@@ -1020,12 +933,14 @@ extra_kv = { allow_unsafe = true }
 [crate.ref-cast-impl]
 extra_kv = { allow_unsafe = false }
 
+# MoltBrowser: shipped (anydoc's pdf-inspector and env_filter, and
+# adblock's `full-regex-handling`), so not `group = 'test'` as upstream
+# has it. regex-automata and version_check (test-only upstream too) have no
+# explicit group, so they become shipped through their dependents.
 [crate.regex]
-group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
 [crate.regex-automata.extra_kv]
 allow_unsafe = true
 
@@ -1081,12 +996,6 @@ allow_unsafe = true
 [crate.serde_json_lenient.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.sha2]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.serial_test]
 extra_kv = { allow_unsafe = false }
 
@@ -1096,12 +1005,14 @@ extra_kv = { allow_unsafe = false }
 [crate.sfv]
 extra_kv = { allow_unsafe = false }
 
+[crate.sha2]
+extra_kv = { allow_unsafe = true }
+
 [crate.shared-brotli-patch-decoder]
 extra_kv = { allow_unsafe = true, extra_deps = ["//third_party/brotli:dec"] }
 remove_build_rs = true
 remove_deps = ['cc'] # Only used in build.rs
 
->>>>>>> upstream@new
 [crate.simd-adler32.extra_kv]
 allow_unsafe = true
 allow_unstable_features = ["stdarch_arm_neon_intrinsics"]
@@ -1136,16 +1047,12 @@ allow_unsafe = false
 [crate.strck.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.stringprep]
-extra_kv = { allow_unsafe = false }
-
-||||||| upstream@pin
-=======
 [crate.strength_reduce]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
+[crate.stringprep]
+extra_kv = { allow_unsafe = false }
+
 [crate.strsim.extra_kv]
 allow_unsafe = false
 
@@ -1200,37 +1107,29 @@ allow_unsafe = false
 [crate.termcolor.extra_kv]
 allow_unsafe = false
 
+[crate.thiserror-impl]
+extra_kv = { allow_unsafe = false }
+
 # MoltBrowser: split per epoch. adblock (MoltShield) still depends on
 # thiserror 1.x, whose build script compiles build/probe.rs and emits no
 # private.rs (that output is 2.x-only).
 [crate."thiserror@v1"]
-extra_build_script_src_roots = [ "build/probe.rs" ]
+extra_build_script_input_roots = [ "../build/probe.rs" ]
 extra_kv = { allow_unsafe = false }
 
 [crate."thiserror@v2"]
 build_script_outputs = [ "private.rs" ]
 extra_kv = { allow_unsafe = false }
 
-[crate.thiserror-impl]
-extra_kv = { allow_unsafe = false }
-
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.time]
 extra_kv = { allow_unsafe = true }
 
 [crate.time-core]
 extra_kv = { allow_unsafe = false }
 
-[crate.timezone_provider.extra_kv]
-allow_unsafe = true
-||||||| upstream@pin
-[crate.timezone_provider.extra_kv]
-allow_unsafe = true
-=======
 [crate.timezone_provider]
 extra_input_roots = ["**/*.data"]
 extra_kv = { allow_unsafe = true }
->>>>>>> upstream@new
 
 [crate.tinystr.extra_kv]
 allow_unsafe = true
@@ -1244,19 +1143,15 @@ extra_kv = { allow_unsafe = false }
 [crate.toktrie.extra_kv]
 allow_unsafe = true
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.ttf-parser]
+[crate.transpose]
 extra_kv = { allow_unsafe = true }
 
-||||||| upstream@pin
-=======
-[crate.transpose]
+[crate.ttf-parser]
 extra_kv = { allow_unsafe = true }
 
 [crate.tuple_list]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
 [crate.typed-arena]
 extra_kv = { allow_unsafe = true }
 
@@ -1270,18 +1165,12 @@ extra_kv = { allow_unsafe = false }
 extra_input_roots = ['../README.md']
 extra_kv = { allow_unsafe = true }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.typenum]
-extra_kv = { allow_unsafe = false }
-
-[crate.unicode-bidi]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.typeid]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
+
+[crate.typenum]
+extra_kv = { allow_unsafe = false }
 
 [crate.typewit]
 allow_first_party_usage = false
@@ -1293,7 +1182,9 @@ extra_input_roots = ["../README.md"]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
+[crate.unicode-bidi]
+extra_kv = { allow_unsafe = true }
+
 [crate.unicode-ident.extra_kv]
 allow_unsafe = true
 
@@ -1306,12 +1197,6 @@ extra_kv = { allow_unsafe = false }
 [crate.unicode-width.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.utf8parse]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.unicode-xid]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = false }
@@ -1324,22 +1209,12 @@ extra_kv = { allow_unsafe = true }
 # Crate exists to encapsulate common UTF8 decoding code
 allow_unsafe = true
 
->>>>>>> upstream@new
+[crate.utf8parse]
+extra_kv = { allow_unsafe = true }
+
 [crate.uuid]
 extra_kv = { allow_unsafe = true }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.version_check]
-extra_kv = { allow_unsafe = false }
-
-[crate.web-time]
-extra_kv = { allow_unsafe = false }
-
-[crate.weezl]
-extra_kv = { allow_unsafe = false }
-
-||||||| upstream@pin
-=======
 [crate.version_check]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = false }
@@ -1353,6 +1228,12 @@ group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
+[crate.web-time]
+extra_kv = { allow_unsafe = false }
+
+[crate.weezl]
+extra_kv = { allow_unsafe = false }
+
 [crate.wide]
 group = 'test'
 allow_first_party_usage = false
@@ -1360,7 +1241,6 @@ license = "Zlib"
 license_files = ["LICENSE-ZLIB.md"]
 extra_kv = { allow_unsafe = true }
 
->>>>>>> upstream@new
 [crate.winapi-util.extra_kv]
 allow_unsafe = true
 
@@ -1437,32 +1317,25 @@ allow_unsafe = true
 [crate.zerovec-derive.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate."zip@v7"]
-extra_kv = { allow_unsafe = true }
-
-# MoltBrowser: zip v8 (pulled by anydoc/calamine) doc-includes its README.
-[crate."zip@v8"]
+[crate.zip]
 extra_input_roots = ['../README.md']
 extra_kv = { allow_unsafe = true }
 
 [crate.zlib-rs]
 extra_kv = { allow_unsafe = true }
-||||||| upstream@pin
-[crate.zip.extra_kv]
-allow_unsafe = true
-=======
-[crate.zip]
-extra_input_roots = ['../README.md']
-extra_kv = { allow_unsafe = true }
->>>>>>> upstream@new
 
 [crate.zmij]
 extra_kv = { allow_unsafe = true }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.zoneinfo64.extra_kv]
-allow_unsafe = true
+[crate.zoneinfo64]
+extra_input_roots = ["data/zoneinfo64.res"]
+extra_kv = { allow_unsafe = true }
+
+[crate.zune-core]
+extra_kv = { allow_unsafe = false }
+
+[crate.zune-jpeg]
+extra_kv = { allow_unsafe = true }
 
 # --- MoltBrowser: anydoc (on-device document -> Markdown) dependency tree ---
 # zopfli ships its Apache-2.0 license as COPYING, which gnrt doesn't auto-detect.
@@ -1475,6 +1348,10 @@ extra_kv = { allow_unsafe = true }
 # allow_unsafe mirrors whether each crate's sources contain `unsafe` blocks.
 [crate.adblock]
 # Flatbuffer views over the serialized engine (src/flatbuffers/unsafe_tools.rs).
+extra_kv = { allow_unsafe = true }
+
+# Upstream stopped vendoring arrayvec at 152; adblock needs 0.7.
+[crate.arrayvec]
 extra_kv = { allow_unsafe = true }
 
 [crate.flatbuffers]
@@ -1516,20 +1393,3 @@ extra_kv = { allow_unsafe = true }
 
 [crate.url]
 extra_kv = { allow_unsafe = true }
-
-[crate.utf8_iter]
-extra_kv = { allow_unsafe = true }
-||||||| upstream@pin
-[crate.zoneinfo64.extra_kv]
-allow_unsafe = true
-=======
-[crate.zoneinfo64]
-extra_input_roots = ["data/zoneinfo64.res"]
-extra_kv = { allow_unsafe = true }
-
-[crate.zune-core]
-extra_kv = { allow_unsafe = false }
-
-[crate.zune-jpeg]
-extra_kv = { allow_unsafe = true }
->>>>>>> upstream@new

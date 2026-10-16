@@ -16,7 +16,6 @@ version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -27,16 +26,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aho-corasick"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -56,7 +45,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -96,7 +84,7 @@ name = "anstyle-query"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "windows-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -106,7 +94,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -138,7 +126,7 @@ dependencies = [
  "log",
  "pdf-inspector",
  "quick-xml",
- "zip 8.6.0",
+ "zip",
 ]
 
 [[package]]
@@ -162,12 +150,6 @@ version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "autocfg"
-version = "1.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "atoi_simd"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,14 +160,12 @@ dependencies = [
 
 [[package]]
 name = "autocfg"
-version = "1.5.0"
-||||||| upstream@pin
-name = "autocfg"
-version = "1.5.0"
-=======
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "backtrace"
 version = "0.3.76"
->>>>>>> upstream@new
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "addr2line",
@@ -248,6 +228,11 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "bitflags"
@@ -323,7 +308,7 @@ dependencies = [
  "log",
  "quick-xml",
  "serde",
- "zip 8.6.0",
+ "zip",
 ]
 
 [[package]]
@@ -368,25 +353,21 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
+name = "cfg_aliases"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "chacha20"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
- "rand_core",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
-name = "cfg_aliases"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
->>>>>>> upstream@new
 name = "chromium"
 version = "0.1.0"
 dependencies = [
@@ -394,7 +375,7 @@ dependencies = [
  "anydoc",
  "anyhow",
  "base64",
- "bitflags",
+ "bitflags 2.13.1",
  "bytemuck",
  "bytes",
  "chrono",
@@ -452,15 +433,9 @@ dependencies = [
  "temporal_capi",
  "temporal_rs",
  "xml",
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
- "zip 7.2.0",
-||||||| upstream@pin
- "zip",
-=======
  "zeroize",
  "zip",
  "zune-jpeg",
->>>>>>> upstream@new
 ]
 
 [[package]]
@@ -535,14 +510,11 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-||||||| upstream@pin
-=======
 name = "const_format"
 version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -570,7 +542,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -608,7 +579,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "crossbeam-deque"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -659,8 +629,6 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
 name = "ctor"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -675,7 +643,6 @@ version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
->>>>>>> upstream@new
 name = "cxx"
 version = "1.0.197"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -832,17 +799,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "ecb"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "cipher",
-]
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "dtor"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -856,7 +812,14 @@ version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
->>>>>>> upstream@new
+name = "ecb"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "cipher",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -870,6 +833,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "embedded-io"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "encoding_rs"
+version = "0.8.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "cfg-if",
+]
 
 [[package]]
 name = "env_filter"
@@ -898,14 +869,6 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "fast-float2"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "erased-serde"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -914,6 +877,11 @@ dependencies = [
  "serde_core",
  "typeid",
 ]
+
+[[package]]
+name = "fast-float2"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "fastbloom"
@@ -926,7 +894,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "fdeflate"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -982,35 +949,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "generic-array"
-version = "0.14.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "typenum",
- "version_check",
-]
-
-[[package]]
-name = "getrandom"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "cfg-if",
- "js-sys",
- "libc",
- "r-efi",
- "rand_core",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "hashbrown"
-version = "0.15.5"
-||||||| upstream@pin
-name = "hashbrown"
-version = "0.15.5"
-=======
 name = "fs2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1041,6 +979,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-array"
+version = "0.14.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "typenum",
+ "version_check",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1057,8 +1004,11 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
+ "rand_core 0.10.1",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1069,10 +1019,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "harfrust"
 version = "0.12.0"
->>>>>>> upstream@new
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "bytemuck",
  "read-fonts",
  "smallvec",
@@ -1399,19 +1348,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "incremental-font-transfer"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "font-types",
- "read-fonts",
- "shared-brotli-patch-decoder",
- "skera",
- "skrifa",
- "write-fonts",
-]
-
-[[package]]
 name = "include_dir"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1426,6 +1362,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "incremental-font-transfer"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "font-types",
+ "read-fonts",
+ "shared-brotli-patch-decoder",
+ "skera",
+ "skrifa",
+ "write-fonts",
 ]
 
 [[package]]
@@ -1467,11 +1416,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "ixdtf"
 version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "jpeg-encoder"
-version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -1521,6 +1465,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "jiff-tzdb",
 ]
+
+[[package]]
+name = "jpeg-encoder"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "js-sys"
@@ -1646,7 +1595,7 @@ dependencies = [
  "num_enum",
  "once_cell",
  "postcard",
- "rand_core",
+ "rand_core 0.9.5",
  "rustversion",
  "serde",
  "serial_test",
@@ -1724,19 +1673,18 @@ version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "lopdf"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "aes",
- "bitflags 2.11.0",
+ "bitflags 2.13.1",
  "cbc",
  "chrono",
  "ecb",
  "encoding_rs",
  "flate2",
- "getrandom",
+ "getrandom 0.4.3",
  "indexmap",
  "itoa",
  "jiff",
@@ -1755,6 +1703,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mach2"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1764,17 +1720,6 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
-name = "mach2"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "libc",
-]
-
-[[package]]
->>>>>>> upstream@new
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1837,7 +1782,18 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
+name = "nix"
+version = "0.30.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "bitflags 2.13.1",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+ "memoffset",
+]
+
+[[package]]
 name = "nom"
 version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1846,21 +1802,6 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
-name = "nix"
-version = "0.30.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "bitflags",
- "cfg-if",
- "cfg_aliases",
- "libc",
- "memoffset",
-]
-
-[[package]]
->>>>>>> upstream@new
 name = "num-bigint"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1870,14 +1811,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "num-conv"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "num-complex"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1886,7 +1819,11 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
+name = "num-conv"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "num-derive"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1942,21 +1879,8 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "once_cell_polyfill"
-version = "1.70.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "opusic-sys"
-version = "0.5.8"
-||||||| upstream@pin
-name = "opusic-sys"
-version = "0.5.8"
-=======
 name = "object"
 version = "0.37.3"
->>>>>>> upstream@new
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "memchr",
@@ -1965,6 +1889,11 @@ dependencies = [
 [[package]]
 name = "once_cell"
 version = "1.21.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "once_cell_polyfill"
+version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -1997,7 +1926,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "pdf-inspector"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2015,19 +1943,16 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
->>>>>>> upstream@new
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "crc32fast",
  "fdeflate",
  "flate2",
@@ -2035,7 +1960,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "portable-atomic"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2049,8 +1973,6 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
 name = "postcard"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2062,7 +1984,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2073,14 +1994,11 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-||||||| upstream@pin
-=======
 name = "primal-check"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2089,7 +2007,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "proc-macro-error-attr2"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2166,7 +2083,11 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
+name = "r-efi"
+version = "5.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2177,9 +2098,14 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "chacha20",
- "getrandom",
- "rand_core",
+ "getrandom 0.4.3",
+ "rand_core 0.10.1",
 ]
+
+[[package]]
+name = "rand_core"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "rand_core"
@@ -2210,24 +2136,6 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
-name = "r-efi"
-version = "5.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "r-efi"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "rand_core"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
->>>>>>> upstream@new
 name = "read-fonts"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2242,7 +2150,7 @@ name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
 ]
 
 [[package]]
@@ -2275,23 +2183,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "regex"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
 name = "regex-automata"
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-version = "0.4.18"
-||||||| upstream@pin
-version = "0.4.14"
-=======
 version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
@@ -2303,13 +2195,7 @@ dependencies = [
 [[package]]
 name = "regex-lite"
 version = "0.1.9"
->>>>>>> upstream@new
 source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-syntax",
-]
 
 [[package]]
 name = "regex-syntax"
@@ -2431,19 +2317,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "sha2"
-version = "0.10.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "digest",
-]
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "serial_test"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2474,6 +2347,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest",
+]
+
+[[package]]
 name = "shared-brotli-patch-decoder"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2483,7 +2366,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2552,7 +2434,11 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
+name = "strength_reduce"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "stringprep"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2563,14 +2449,6 @@ dependencies = [
 ]
 
 [[package]]
-||||||| upstream@pin
-=======
-name = "strength_reduce"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
->>>>>>> upstream@new
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2668,7 +2546,7 @@ name = "symphonia-core"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "bitflags",
+ "bitflags 2.13.1",
  "bytemuck",
  "lazy_static",
  "log",
@@ -2841,14 +2719,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "ttf-parser"
-version = "0.25.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "transpose"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2858,12 +2728,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ttf-parser"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "tuple_list"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
->>>>>>> upstream@new
 name = "typed-arena"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2892,21 +2766,13 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "typenum"
-version = "1.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "unicode-bidi"
-version = "0.3.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "typeid"
 version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "typenum"
+version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -2923,7 +2789,11 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
+name = "unicode-bidi"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2947,14 +2817,6 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "utf8parse"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2970,7 +2832,11 @@ version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
->>>>>>> upstream@new
+name = "utf8parse"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "uuid"
 version = "1.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2982,14 +2848,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-name = "version_check"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-||||||| upstream@pin
-=======
 name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3016,7 +2874,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "wasm-bindgen"
 version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3058,7 +2915,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
 name = "web-time"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3073,8 +2929,6 @@ version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-||||||| upstream@pin
-=======
 name = "wide"
 version = "0.7.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3098,12 +2952,11 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
->>>>>>> upstream@new
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "windows-sys",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3204,6 +3057,14 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "windows-targets",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
@@ -3211,49 +3072,21 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< src/third_party/rust/chromium_crates_io/Cargo.lock (MoltBrowser)
-||||||| upstream@pin
-name = "windows_aarch64_gnullvm"
+name = "windows-targets"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "windows_aarch64_gnullvm",
+ "windows_aarch64_msvc",
+ "windows_i686_gnu",
+ "windows_i686_gnullvm",
+ "windows_i686_msvc",
+ "windows_x86_64_gnu",
+ "windows_x86_64_gnullvm",
+ "windows_x86_64_msvc",
+]
 
 [[package]]
-name = "windows_aarch64_msvc"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "windows_i686_gnu"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "windows_i686_gnullvm"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "windows_i686_msvc"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "windows_x86_64_gnu"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "windows_x86_64_gnullvm"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "windows_x86_64_msvc"
-version = "0.52.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-=======
 name = "windows-threading"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3317,7 +3150,6 @@ dependencies = [
 ]
 
 [[package]]
->>>>>>> upstream@new
 name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3441,18 +3273,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "zip"
-version = "8.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "crc32fast",
- "flate2",
- "indexmap",
- "memchr",
- "typed-path",
 ]
 
 [[package]]
