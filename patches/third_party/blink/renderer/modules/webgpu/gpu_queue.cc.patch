@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/modules/webgpu/gpu_queue.cc
+Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Generated from src/third_party/blink/renderer/modules/webgpu/gpu_queue.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_queue.cc b/third_party/blink/renderer/modules/webgpu/gpu_queue.cc
+index 90b32ee5f26389eb5964158996ba216e8f08b88f..fd7356583a5c1d9e8fd9441dc8dd04d926c5121e 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_queue.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_queue.cc
+@@ -25,6 +25,7 @@
+ #include "third_party/blink/renderer/core/html/canvas/predefined_color_space.h"
+ #include "third_party/blink/renderer/core/html/html_image_element.h"
+ #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
+ #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
+ #include "third_party/blink/renderer/modules/webcodecs/video_frame.h"
+@@ -748,6 +749,10 @@ void GPUQueue::copyExternalImageToTexture(
+     return;
+   }
+ 
++  // MoltBrowser: canvas and image pixels enter WebGPU with the per-site
++  // fingerprinting noise.
++  source.image = molt_fingerprinting::FarbleForExport(
++      device()->GetExecutionContext(), std::move(source.image));
+   if (!CopyFromCanvasSourceImage(source.image.get(), origin_in_external_image,
+                                  dawn_copy_size, dawn_destination,
+                                  destination->premultipliedAlpha(), color_space,

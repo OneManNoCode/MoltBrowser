@@ -25,6 +25,7 @@
 #include "third_party/blink/renderer/core/html/canvas/predefined_color_space.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/modules/webcodecs/video_frame.h"
@@ -748,6 +749,10 @@ void GPUQueue::copyExternalImageToTexture(
     return;
   }
 
+  // MoltBrowser: canvas and image pixels enter WebGPU with the per-site
+  // fingerprinting noise.
+  source.image = molt_fingerprinting::FarbleForExport(
+      device()->GetExecutionContext(), std::move(source.image));
   if (!CopyFromCanvasSourceImage(source.image.get(), origin_in_external_image,
                                  dawn_copy_size, dawn_destination,
                                  destination->premultipliedAlpha(), color_space,

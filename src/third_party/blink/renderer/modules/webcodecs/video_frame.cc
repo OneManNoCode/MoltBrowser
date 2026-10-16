@@ -46,6 +46,7 @@
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_factories.h"
 #include "third_party/blink/renderer/modules/webcodecs/array_buffer_util.h"
@@ -764,6 +765,10 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
                                       "Invalid source state");
     return nullptr;
   }
+  // MoltBrowser: canvas and image pixels enter the frame with the per-site
+  // fingerprinting noise, so copyTo(), encoders and every other sink see it.
+  image = molt_fingerprinting::FarbleForExport(
+      ExecutionContext::From(script_state), std::move(image));
 
   const auto timestamp = base::Microseconds(
       (init && init->hasTimestamp()) ? init->timestamp() : 0);
