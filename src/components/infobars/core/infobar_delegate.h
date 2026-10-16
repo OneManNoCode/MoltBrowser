@@ -207,19 +207,15 @@ class InfoBarDelegate {
     AUTOFILL_AI_SAVE_ENTITY_INFOBAR_DELEGATE_IOS = 132,
     JS_OPTIMIZATIONS_INFOBAR_DELEGATE = 133,
     WEB_APP_BLOCKED_MIGRATION_INFOBAR_DELEGATE = 134,
-<<<<<<< src/components/infobars/core/infobar_delegate.h (MoltBrowser)
-
-    // MoltBrowser identifiers start at 1000, well clear of upstream's, so
-    // rebases never collide.
-    MOLT_ONION_LOCATION_INFOBAR_DELEGATE = 1000,
-||||||| upstream@pin
-=======
     OSCRYPTASYNC_AVAILABILITY_INFOBAR_DELEGATE = 135,
     AUTOFILL_AI_PRE_FETCH_FAILURE_INFOBAR_DELEGATE_IOS = 136,
     SIGNIN_QRCODE_INFOBAR_DELEGATE = 137,
     FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS = 138,
     PASSWORD_SAVED_INFOBAR_DELEGATE_IOS = 139,
->>>>>>> upstream@new
+
+    // MoltBrowser identifiers start at 1000, well clear of upstream's, so
+    // rebases never collide.
+    MOLT_ONION_LOCATION_INFOBAR_DELEGATE = 1000,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/enums.xml:InfoBarIdentifier)
 

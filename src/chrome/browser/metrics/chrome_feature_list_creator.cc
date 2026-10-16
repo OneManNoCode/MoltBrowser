@@ -53,101 +53,6 @@
 #include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-<<<<<<< src/chrome/browser/metrics/chrome_feature_list_creator.cc (MoltBrowser)
-namespace {
-
-// Returns a list of extra switch-dependent feature overrides to be applied
-// during FeatureList initialization. Combines the overrides defined at the
-// content layer with additional chrome layer overrides. The overrides
-// specified in this list each cause a feature's state to be overridden based on
-// the presence of a command line switch.
-std::vector<base::FeatureList::FeatureOverrideInfo>
-GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
-  std::vector<base::FeatureList::FeatureOverrideInfo> overrides =
-      content::GetSwitchDependentFeatureOverrides(command_line);
-
-  // Describes a switch-dependent override. See also content layer overrides.
-  struct SwitchDependentFeatureOverrideInfo {
-    // Switch that the override depends upon. The override will be registered if
-    // this switch is present.
-    const char* switch_name;
-    // Feature to override.
-    const std::reference_wrapper<const base::Feature> feature;
-    // State to override the feature with.
-    base::FeatureList::OverrideState override_state;
-  } chrome_layer_override_info[] = {
-      // Override for --privacy-sandbox-ads-apis.
-      {switches::kEnablePrivacySandboxAdsApis,
-       std::cref(privacy_sandbox::kOverridePrivacySandboxSettingsLocalTesting),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-      // Override for --devtools-greendev-ui.
-      {switches::kEnableDevToolsGreenDevUi,
-       std::cref(features::kDevToolsGreenDevUi),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-  };
-
-  for (const auto& info : chrome_layer_override_info) {
-    if (command_line.HasSwitch(info.switch_name)) {
-      overrides.emplace_back(info.feature, info.override_state);
-    }
-  }
-
-  // MoltBrowser: features that only reach Google in a build without API keys
-  // are off by default. Registered here, after --enable-features (which
-  // chrome://flags writes) and before the field trial testing config, so the
-  // user can still turn them on and testing-config studies that touch them are
-  // skipped. See chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
-  molt_ai::privacy::AppendDefaultFeatureOverrides(overrides);
-  return overrides;
-}
-
-}  // namespace
-
-||||||| upstream@pin
-namespace {
-
-// Returns a list of extra switch-dependent feature overrides to be applied
-// during FeatureList initialization. Combines the overrides defined at the
-// content layer with additional chrome layer overrides. The overrides
-// specified in this list each cause a feature's state to be overridden based on
-// the presence of a command line switch.
-std::vector<base::FeatureList::FeatureOverrideInfo>
-GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
-  std::vector<base::FeatureList::FeatureOverrideInfo> overrides =
-      content::GetSwitchDependentFeatureOverrides(command_line);
-
-  // Describes a switch-dependent override. See also content layer overrides.
-  struct SwitchDependentFeatureOverrideInfo {
-    // Switch that the override depends upon. The override will be registered if
-    // this switch is present.
-    const char* switch_name;
-    // Feature to override.
-    const std::reference_wrapper<const base::Feature> feature;
-    // State to override the feature with.
-    base::FeatureList::OverrideState override_state;
-  } chrome_layer_override_info[] = {
-      // Override for --privacy-sandbox-ads-apis.
-      {switches::kEnablePrivacySandboxAdsApis,
-       std::cref(privacy_sandbox::kOverridePrivacySandboxSettingsLocalTesting),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-      // Override for --devtools-greendev-ui.
-      {switches::kEnableDevToolsGreenDevUi,
-       std::cref(features::kDevToolsGreenDevUi),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-  };
-
-  for (const auto& info : chrome_layer_override_info) {
-    if (command_line.HasSwitch(info.switch_name)) {
-      overrides.emplace_back(info.feature, info.override_state);
-    }
-  }
-  return overrides;
-}
-
-}  // namespace
-
-=======
->>>>>>> upstream@new
 // static
 ChromeFeatureListCreator* ChromeFeatureListCreator::GetInstance() {
   static base::NoDestructor<ChromeFeatureListCreator> instance;
@@ -334,11 +239,19 @@ void ChromeFeatureListCreator::SetUpFieldTrials() {
 
   variations::VariationsService* variations_service =
       metrics_services_manager_->GetVariationsService();
-  variations_service->SetUpFieldTrials(
-      variation_ids,
+  std::vector<base::FeatureList::FeatureOverrideInfo> extra_overrides =
       content::GetSwitchDependentFeatureOverrides(
-          *base::CommandLine::ForCurrentProcess()),
-      std::move(feature_list), browser_field_trials_.get());
+          *base::CommandLine::ForCurrentProcess());
+  // MoltBrowser: features that only reach Google in a build without API keys
+  // are off by default. Registered as extra overrides, which apply after
+  // --enable-features (which chrome://flags writes) and before the field trial
+  // testing config, so the user can still turn them on and testing-config
+  // studies that touch them are skipped. See
+  // chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
+  molt_ai::privacy::AppendDefaultFeatureOverrides(extra_overrides);
+  variations_service->SetUpFieldTrials(variation_ids, extra_overrides,
+                                       std::move(feature_list),
+                                       browser_field_trials_.get());
   variations::InitCrashKeys();
 }
 

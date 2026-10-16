@@ -63,10 +63,6 @@ source_set("configs") {
     "//chrome/browser/ui/webui/accessibility",
     "//chrome/browser/ui/webui/actor_internals",
     "//chrome/browser/ui/webui/autofill_and_password_manager_internals",
-<<<<<<< src/chrome/browser/ui/webui/BUILD.gn (MoltBrowser)
-    "//chrome/browser/ui/webui/molt_ai",
-||||||| upstream@pin
-=======
     "//chrome/browser/ui/webui/chrome_urls",
     "//chrome/browser/ui/webui/commerce:commerce_internals_ui_config",
     "//chrome/browser/ui/webui/components",
@@ -80,7 +76,6 @@ source_set("configs") {
     "//chrome/browser/ui/webui/family_link_user_internals",
     "//chrome/browser/ui/webui/flags",
     "//chrome/browser/ui/webui/history_clusters",
->>>>>>> upstream@new
     "//chrome/browser/ui/webui/internal_debug_pages_disabled",
     "//chrome/browser/ui/webui/interstitials",
     "//chrome/browser/ui/webui/local_state",
@@ -88,6 +83,7 @@ source_set("configs") {
     "//chrome/browser/ui/webui/management",
     "//chrome/browser/ui/webui/media",
     "//chrome/browser/ui/webui/metrics_internals",
+    "//chrome/browser/ui/webui/molt_ai",
     "//chrome/browser/ui/webui/net_internals",
     "//chrome/browser/ui/webui/omnibox",
     "//chrome/browser/ui/webui/personal_context_internals",

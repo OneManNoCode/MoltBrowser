@@ -879,7 +879,6 @@ GURL ReplaceURLHostAndPath(const GURL& url,
 bool HandleNewTabPageLocationOverride(
     GURL* url,
     content::BrowserContext* browser_context) {
-<<<<<<< src/chrome/browser/chrome_content_browser_client.cc (MoltBrowser)
   if (!url->SchemeIs(content::kChromeUIScheme)) {
     return false;
   }
@@ -890,13 +889,6 @@ bool HandleNewTabPageLocationOverride(
   if (host != std::string_view(chrome::kChromeUINewTabHost) &&
       host != std::string_view(chrome::kChromeUINewTabPageHost) &&
       host != std::string_view(chrome::kChromeUINewTabPageThirdPartyHost)) {
-||||||| upstream@pin
-  if (!url->SchemeIs(content::kChromeUIScheme) ||
-      url->GetHost() != chrome::kChromeUINewTabHost) {
-=======
-  if (!url->SchemeIs(content::kChromeUIScheme) ||
-      url->host() != chrome::kChromeUINewTabHost) {
->>>>>>> upstream@new
     return false;
   }
 
@@ -7017,8 +7009,8 @@ void ChromeContentBrowserClient::CreateWebSocket(
     const net::SiteForCookies& site_for_cookies,
     const std::optional<std::string>& user_agent,
     mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
-<<<<<<< src/chrome/browser/chrome_content_browser_client.cc (MoltBrowser)
-        handshake_client) {
+        handshake_client,
+    content::ContentBrowserClient::WebSocketOptions options) {
   // MoltNet: dropping the handshake client fails the page's connection.
   if (molt_ai::tor::IsOnionWebSocketBlocked(frame, url)) {
     return;
@@ -7031,27 +7023,23 @@ void ChromeContentBrowserClient::CreateWebSocket(
   {
     bool extensions_intercept = false;
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+    // Same test as the webRequest branch of WillInterceptWebSocket().
     const auto* molt_web_request_api =
         frame ? extensions::BrowserContextKeyedAPIFactory<
                     extensions::WebRequestAPI>::Get(frame->GetBrowserContext())
               : nullptr;
-    extensions_intercept =
-        molt_web_request_api &&
-        (molt_web_request_api->MayHaveProxies() ||
-         molt_web_request_api->IsAvailableToWebViewEmbedderFrame(frame));
+    extensions_intercept = molt_web_request_api &&
+                           molt_web_request_api->MayHaveProxiesForFrame(frame);
 #endif
     if (!extensions_intercept) {
+      // `options.header_client` is what content's own direct path passes
+      // (enterprise custom headers).
       molt_ai::shield::ConnectWebSocket(std::move(factory), url, user_agent,
-                                        std::move(handshake_client));
+                                        std::move(handshake_client),
+                                        std::move(options.header_client));
       return;
     }
   }
-||||||| upstream@pin
-        handshake_client) {
-=======
-        handshake_client,
-    content::ContentBrowserClient::WebSocketOptions options) {
->>>>>>> upstream@new
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
   if (!frame) {

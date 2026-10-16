@@ -271,14 +271,8 @@ StartupTabs StartupTabProviderImpl::GetNewTabPageTabsForState(
     const SessionStartupPref& pref) {
   StartupTabs tabs;
   if (!pref.ShouldRestoreLastSession()) {
-<<<<<<< src/chrome/browser/ui/startup/startup_tab_provider.cc (MoltBrowser)
     // MoltBrowser: Open MoltSearch homepage instead of chrome://newtab
     tabs.emplace_back(GURL("chrome://molt-home/"));
-||||||| upstream@pin
-    tabs.emplace_back(GURL(chrome::kChromeUINewTabURL));
-=======
-    tabs.emplace_back(chrome::ChromeUINewTabURLAsGURL());
->>>>>>> upstream@new
   }
   return tabs;
 }

@@ -177,6 +177,8 @@ static_library("browser") {
     "actions/omnibox_pedal_provider.h",
     "actions/tab_switch_action.cc",
     "actions/tab_switch_action.h",
+    "ai_prompt_provider.cc",
+    "ai_prompt_provider.h",
     "aim_eligibility_service.cc",
     "aim_eligibility_service.h",
     "answers_cache.cc",
@@ -224,8 +226,6 @@ static_library("browser") {
     "bookmark_provider.h",
     "bookmark_scoring_signals_annotator.cc",
     "bookmark_scoring_signals_annotator.h",
-    "ai_prompt_provider.cc",
-    "ai_prompt_provider.h",
     "builtin_provider.cc",
     "builtin_provider.h",
     "calculator_provider.cc",
@@ -500,57 +500,6 @@ static_library("browser") {
     deps += [ ":vector_icons" ]
   }
 
-<<<<<<< src/components/omnibox/browser/BUILD.gn (MoltBrowser)
-  # Re-added (matches upstream): build_with_tflite_lib IS a valid GN var
-  # here, and these impl sources define AutocompleteScoringModelService /
-  # OnDeviceTailModelService etc. that the (tflite-guarded) callers
-  # reference. Omitting them broke the chrome.dll link with undefined
-  # symbols on Windows.
-  if (build_with_tflite_lib) {
-    sources += [
-      "autocomplete_scoring_model_executor.cc",
-      "autocomplete_scoring_model_executor.h",
-      "autocomplete_scoring_model_handler.cc",
-      "autocomplete_scoring_model_handler.h",
-      "autocomplete_scoring_model_service.cc",
-      "autocomplete_scoring_model_service.h",
-      "on_device_tail_model_executor.cc",
-      "on_device_tail_model_executor.h",
-      "on_device_tail_model_service.cc",
-      "on_device_tail_model_service.h",
-    ]
-    public_deps += [
-      "//third_party/tflite",
-      "//third_party/tflite:tflite_public_headers",
-      "//third_party/tflite_support",
-      "//third_party/tflite_support:tflite_support_proto",
-    ]
-  }
-
-||||||| upstream@pin
-  if (build_with_tflite_lib) {
-    sources += [
-      "autocomplete_scoring_model_executor.cc",
-      "autocomplete_scoring_model_executor.h",
-      "autocomplete_scoring_model_handler.cc",
-      "autocomplete_scoring_model_handler.h",
-      "autocomplete_scoring_model_service.cc",
-      "autocomplete_scoring_model_service.h",
-      "on_device_tail_model_executor.cc",
-      "on_device_tail_model_executor.h",
-      "on_device_tail_model_service.cc",
-      "on_device_tail_model_service.h",
-    ]
-    public_deps += [
-      "//third_party/tflite",
-      "//third_party/tflite:tflite_public_headers",
-      "//third_party/tflite_support",
-      "//third_party/tflite_support:tflite_support_proto",
-    ]
-  }
-
-=======
->>>>>>> upstream@new
   if (enable_extensions_core) {
     deps += [
       "//extensions/common:common_constants",
@@ -910,22 +859,6 @@ static_library("test_support") {
     "//ui/gfx",
   ]
 
-<<<<<<< src/components/omnibox/browser/BUILD.gn (MoltBrowser)
-  # NOTE: second build_with_tflite_lib block — same removal reason as
-  # the one earlier in this file. Upstream Chromium removed the variable.
-
-||||||| upstream@pin
-  if (build_with_tflite_lib) {
-    sources += [
-      "fake_autocomplete_scoring_model_service.cc",
-      "fake_autocomplete_scoring_model_service.h",
-      "fake_on_device_tail_model_service.cc",
-      "fake_on_device_tail_model_service.h",
-    ]
-  }
-
-=======
->>>>>>> upstream@new
   if (toolkit_views) {
     # Needed to get the TOOLKIT_VIEWS define.
     deps += [ "//ui/views" ]
@@ -1133,21 +1066,6 @@ source_set("unit_tests") {
     deps += [ "//chromeos/constants" ]
   }
 
-<<<<<<< src/components/omnibox/browser/BUILD.gn (MoltBrowser)
-  # NOTE: third build_with_tflite_lib block — same removal reason.
-
-||||||| upstream@pin
-  if (build_with_tflite_lib) {
-    sources += [
-      "autocomplete_scoring_model_executor_unittest.cc",
-      "autocomplete_scoring_model_handler_unittest.cc",
-      "on_device_tail_model_executor_unittest.cc",
-      "on_device_tail_model_service_unittest.cc",
-    ]
-  }
-
-=======
->>>>>>> upstream@new
   if (enable_extensions) {
     deps += [ "//extensions/common:extension_features" ]
   }

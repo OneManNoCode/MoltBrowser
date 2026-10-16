@@ -623,14 +623,8 @@ StartupBrowserCreatorImpl::DetermineStartupTabs(
       return {std::move(tabs), launch_result};
     }
 
-<<<<<<< src/chrome/browser/ui/startup/startup_browser_creator_impl.cc (MoltBrowser)
     // MoltBrowser: Open MoltSearch instead of chrome://newtab
     return {StartupTabs({StartupTab(GURL("chrome://molt-home/"))}),
-||||||| upstream@pin
-    return {StartupTabs({StartupTab(GURL(chrome::kChromeUINewTabURL))}),
-=======
-    return {StartupTabs({StartupTab(chrome::ChromeUINewTabURLAsGURL())}),
->>>>>>> upstream@new
             launch_result};
   }
 
@@ -771,13 +765,7 @@ Browser* StartupBrowserCreatorImpl::RestoreOrCreateBrowser(
   browser = OpenTabsInBrowser(
       browser, process_startup,
       (tabs.empty()
-<<<<<<< src/chrome/browser/ui/startup/startup_browser_creator_impl.cc (MoltBrowser)
            ? StartupTabs({StartupTab(GURL("chrome://molt-home/"))})
-||||||| upstream@pin
-           ? StartupTabs({StartupTab(GURL(chrome::kChromeUINewTabURL))})
-=======
-           ? StartupTabs({StartupTab(chrome::ChromeUINewTabURLAsGURL())})
->>>>>>> upstream@new
            : tabs),
       (behavior == BrowserOpenBehavior::USE_EXISTING_AND_OVERWRITE_ACTIVE_TAB
            ? (TabOverWrite::kYes)

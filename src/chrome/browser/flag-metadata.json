@@ -7057,12 +7057,6 @@
     "expiry_milestone": 160
   },
   {
-<<<<<<< src/chrome/browser/flag-metadata.json (MoltBrowser)
-    "name": "mojo-use-eventfd",
-    "owners": ["bgeffon@chromium.org", "pasko@chromium.org"],
-    "expiry_milestone": 150
-  },
-  {
     // MoltBrowser: fingerprinting protection kill switch; never expires.
     "name": "molt-fingerprinting-protection",
     "owners": [ "moltbrowser" ],
@@ -7105,14 +7099,6 @@
     "expiry_milestone": -1
   },
   {
-||||||| upstream@pin
-    "name": "mojo-use-eventfd",
-    "owners": ["bgeffon@chromium.org", "pasko@chromium.org"],
-    "expiry_milestone": 150
-  },
-  {
-=======
->>>>>>> upstream@new
     "name": "most-visited-tiles-customization",
     "owners": [ "clank-start@google.com", "huangs@google.com" ],
     "expiry_milestone": 145

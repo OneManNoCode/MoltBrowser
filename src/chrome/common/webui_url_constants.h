@@ -266,7 +266,7 @@ inline constexpr char kMoltSettingsURL[] = "molt://settings/";
 
 // MoltBrowser product version — single source of truth for the in-app
 // updater's "current version". Chromium's version_info reports the upstream
-// 148.x.x.x, not ours, so the updater compares THIS against the GitHub
+// Chromium version, not ours, so the updater compares THIS against the GitHub
 // release tag. Bump on each release (keep in sync with release.sh --version).
 inline constexpr char kMoltBrowserVersion[] = "0.2.5";
 inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
