@@ -1997,14 +1997,8 @@ void BrowserCommandController::InitCommandState() {
                                            true);
   }
 
-<<<<<<< src/chrome/browser/ui/browser_command_controller.cc (MoltBrowser)
-  command_updater_.UpdateCommandEnabled(IDC_SHOW_BOOKMARK_SIDE_PANEL, true);
-  command_updater_.UpdateCommandEnabled(IDC_SHOW_MOLT_AI_SIDE_PANEL, true);
-||||||| upstream@pin
-  command_updater_.UpdateCommandEnabled(IDC_SHOW_BOOKMARK_SIDE_PANEL, true);
-=======
   command_updater_->UpdateCommandEnabled(IDC_SHOW_BOOKMARK_SIDE_PANEL, true);
->>>>>>> upstream@new
+  command_updater_->UpdateCommandEnabled(IDC_SHOW_MOLT_AI_SIDE_PANEL, true);
 
   if (browser_->is_type_normal()) {
     // Reading list commands.

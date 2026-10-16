@@ -6,6 +6,7 @@
 
 #include "chrome/browser/history_clusters/history_clusters_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -17,14 +18,10 @@
 #include "chrome/browser/ui/views/side_panel/history/history_side_panel_coordinator.h"
 #include "chrome/browser/ui/views/side_panel/history_clusters/history_clusters_side_panel_coordinator.h"
 #include "chrome/browser/ui/views/side_panel/reading_list/reading_list_side_panel_coordinator.h"
-<<<<<<< src/chrome/browser/ui/views/side_panel/side_panel_helper.cc (MoltBrowser)
 #include "chrome/browser/molt_ai/side_panel/agent_side_panel_web_view.h"
 #include "chrome/browser/molt_ai/side_panel/ai_chat_side_panel_web_view.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
-||||||| upstream@pin
-=======
 #include "chrome/browser/ui/views/side_panel/tabs_from_other_devices/tabs_from_other_devices_side_panel_coordinator.h"
->>>>>>> upstream@new
 #include "chrome/browser/ui/webui_browser/webui_browser.h"
 #include "ui/views/view.h"
 #include "components/history_clusters/core/features.h"
@@ -77,6 +74,9 @@ void SidePanelHelper::PopulateGlobalEntries(
         window_registry);
   }
 
+  // MoltBrowser: the AI Chat and Agent side panel views still take a Browser*.
+  Browser* const molt_browser = browser->GetBrowserForMigrationOnly();
+
   // MoltBrowser: Add AI Chat side panel.
   // Register directly using a lambda that captures the browser pointer.
   // This avoids needing a long-lived coordinator instance.
@@ -90,7 +90,7 @@ void SidePanelHelper::PopulateGlobalEntries(
             // into the chat WebUI for grounding.
             return std::make_unique<AiChatSidePanelWebView>(browser);
           },
-          base::Unretained(browser)),
+          base::Unretained(molt_browser)),
       // MoltBrowser: the redesigned chat UI is laid out for a 480px
       // default (upstream default is 360). Still user-resizable; a
       // user-dragged width persists per entry id and wins over this.
@@ -123,7 +123,7 @@ void SidePanelHelper::PopulateGlobalEntries(
               -> std::unique_ptr<views::View> {
             return std::make_unique<AgentSidePanelWebView>(browser);
           },
-          base::Unretained(browser)),
+          base::Unretained(molt_browser)),
       /*default_content_width_callback=*/base::BindRepeating(
           []() { return 480; }));
   molt_agent_entry->set_should_show_header(false);

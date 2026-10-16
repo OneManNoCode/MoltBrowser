@@ -53,11 +53,12 @@ BASE_FEATURE(kImportExportFlags, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kInfoBarInlineLinks, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTabStripDeclutter, base::FEATURE_DISABLED_BY_DEFAULT);
-<<<<<<< src/chrome/browser/ui/ui_features.cc (MoltBrowser)
+// MoltBrowser: the black-glass toolbar look (dark-glass colors in
+// chrome_color_mixer.cc, toolbar sheen in toolbar_view.cc, omnibox capsule in
+// location_bar_view.cc, forced-dark frame in browser_widget.cc). Upstream's
+// own experimental kGlassToolbar was removed by M152; MoltBrowser keeps the
+// name as its single revertible switch, on by default.
 BASE_FEATURE(kGlassToolbar, base::FEATURE_ENABLED_BY_DEFAULT);
-||||||| upstream@pin
-BASE_FEATURE(kGlassToolbar, base::FEATURE_DISABLED_BY_DEFAULT);
-=======
 BASE_FEATURE(kToolbarGlowUp, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(bool,
                    kToolbarGlowUpReloadEnabled,
@@ -78,7 +79,6 @@ bool IsTabStripDeclutterEnabled() {
   return base::FeatureList::IsEnabled(kDesktopGlowUp) ||
          base::FeatureList::IsEnabled(kTabStripDeclutter);
 }
->>>>>>> upstream@new
 
 bool IsToolbarGlowUpEnabled() {
   return base::FeatureList::IsEnabled(kDesktopGlowUp) ||

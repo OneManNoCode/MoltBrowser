@@ -10,23 +10,12 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.h (MoltBrowser)
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_multi_source_observation.h"
-||||||| upstream@pin
-=======
-#include "base/memory/weak_ptr.h"
->>>>>>> upstream@new
 #include "base/scoped_observation.h"
 #include "chrome/browser/command_observer.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.h (MoltBrowser)
 #include "chrome/browser/ui/side_panel/side_panel_entry_observer.h"
-#include "chrome/browser/glic/browser_ui/glic_button_controller_delegate.h"
-||||||| upstream@pin
-#include "chrome/browser/glic/browser_ui/glic_button_controller_delegate.h"
-=======
 #include "chrome/browser/glic/browser_ui/glic_split_button_delegate.h"
->>>>>>> upstream@new
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "chrome/browser/ui/toolbar/app_menu_icon_controller.h"
@@ -109,14 +98,8 @@ class ToolbarView : public views::AccessiblePaneView,
                     public AppMenuIconController::Delegate,
                     public ToolbarButtonProvider,
                     public BrowserRootView::DropTarget,
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.h (MoltBrowser)
                     public SidePanelEntryObserver,
-                    public glic::GlicButtonControllerDelegate {
-||||||| upstream@pin
-                    public glic::GlicButtonControllerDelegate {
-=======
                     public glic::GlicSplitButtonDelegate {
->>>>>>> upstream@new
   METADATA_HEADER(ToolbarView, views::AccessiblePaneView)
 
  public:
@@ -478,7 +461,9 @@ class ToolbarView : public views::AccessiblePaneView,
 
   bool should_display_vertical_tabs_ = false;
   bool should_show_glic_button_ = false;
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.h (MoltBrowser)
+  bool should_show_glic_actor_ = false;
+
+  bool was_mouse_down_ = false;
 
   // MoltBrowser: SidePanelEntryObserver overrides + helpers that swap the
   // violet "active" ring between the AI mode and Agent mode buttons depending
@@ -493,12 +478,6 @@ class ToolbarView : public views::AccessiblePaneView,
   base::ScopedMultiSourceObservation<SidePanelEntry, SidePanelEntryObserver>
       side_panel_entry_observations_{this};
   base::WeakPtrFactory<ToolbarView> mode_ring_weak_factory_{this};
-||||||| upstream@pin
-=======
-  bool should_show_glic_actor_ = false;
-
-  bool was_mouse_down_ = false;
->>>>>>> upstream@new
 };
 
 extern const ui::ClassProperty<bool>* const kActionItemUnderlineIndicatorKey;

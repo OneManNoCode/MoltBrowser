@@ -40,15 +40,11 @@
   V(kMerchantTrust, kActionSidePanelShowMerchantTrust, "MerchantTrust")       \
   V(kComments, kActionSidePanelShowComments, "Comments")                      \
   V(kGlic, kActionSidePanelShowGlic, "Glic")                                  \
-<<<<<<< src/chrome/browser/ui/side_panel/side_panel_entry_id.h (MoltBrowser)
-  V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")               \
-  V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                  \
-||||||| upstream@pin
-=======
   V(kTabsFromOtherDevices, kActionSidePanelShowTabsFromOtherDevices,          \
     "TabsFromOtherDevices")                                                   \
   V(kSidePanelDev, std::nullopt, "SidePanelDev")                              \
->>>>>>> upstream@new
+  V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")               \
+  V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                  \
   /* Extensions (nothing more should be added below here) */                  \
   V(kExtension, std::nullopt, "Extension")
 
