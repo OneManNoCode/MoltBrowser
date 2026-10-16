@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/common/webui_url_constants.h
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/common/webui_url_constants.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
-index 100d37465a41facaed6c72800f38287b4df2f84d..0fb02bb29b890e937da1199acb7682f448120969 100644
+index bc26ce3751cbcd3aa18897353dd1bd58120f0e0c..8435534df766179bad105588d266790804a3e955 100644
 --- a/chrome/common/webui_url_constants.h
 +++ b/chrome/common/webui_url_constants.h
-@@ -200,6 +200,69 @@ inline constexpr char kChromeUIMediaEngagementHost[] = "media-engagement";
+@@ -206,6 +206,69 @@ inline constexpr char kChromeUIMediaEngagementHost[] = "media-engagement";
  inline constexpr char kChromeUIMediaRouterInternalsHost[] =
      "media-router-internals";
  inline constexpr char kChromeUIMemoryInternalsHost[] = "memory-internals";
@@ -72,15 +72,15 @@ index 100d37465a41facaed6c72800f38287b4df2f84d..0fb02bb29b890e937da1199acb7682f4
 +
 +// MoltBrowser product version — single source of truth for the in-app
 +// updater's "current version". Chromium's version_info reports the upstream
-+// 148.x.x.x, not ours, so the updater compares THIS against the GitHub
++// Chromium version, not ours, so the updater compares THIS against the GitHub
 +// release tag. Bump on each release (keep in sync with release.sh --version).
 +inline constexpr char kMoltBrowserVersion[] = "0.2.5";
  inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
  inline constexpr char kChromeUINetExportHost[] = "net-export";
  inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
-@@ -251,7 +314,7 @@ inline constexpr char kChromeUIPrivacySandboxInternalsHost[] =
- inline constexpr char kChromeUIPrivacySandboxInternalsURL[] =
-     "chrome://privacy-sandbox-internals";
+@@ -262,7 +325,7 @@ inline constexpr char kChromeUIPrintURL[] = "chrome://print/";
+ inline constexpr char16_t kChromeUIPrivacySandboxFledgeURL[] =
+     u"chrome://settings/adPrivacy/sites";
  inline constexpr char16_t kChromeUIPrivacySandboxManageTopicsLearnMoreURL[] =
 -    u"https://support.google.com/chrome?p=ad_privacy";
 +    u"https://moltsearch.ai/privacy";

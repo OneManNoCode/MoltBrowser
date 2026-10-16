@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/color/chrome_color_mixer.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/color/chrome_color_mixer.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/color/chrome_color_mixer.cc b/chrome/browser/ui/color/chrome_color_mixer.cc
-index 4dedff635bacae6a3fd03b4e8081af5508913bca..e6ef3da5de76bd1ed3892e5389527ed80539dc9a 100644
+index c221ad3346f846f9c16fa89a2ef527d4f73061d2..89000e0c8360c8acf39d5c074f3041d932a7cccb 100644
 --- a/chrome/browser/ui/color/chrome_color_mixer.cc
 +++ b/chrome/browser/ui/color/chrome_color_mixer.cc
 @@ -7,6 +7,7 @@
@@ -16,9 +16,9 @@ index 4dedff635bacae6a3fd03b4e8081af5508913bca..e6ef3da5de76bd1ed3892e5389527ed8
  #include "base/logging.h"
  #include "base/strings/string_number_conversions.h"
  #include "build/branding_buildflags.h"
-@@ -1155,6 +1156,42 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
-                           kColorReadAnythingBackgroundLowContrastDark,
-                           color_utils::kMinimumVisibleContrastRatio);
+@@ -1138,6 +1139,42 @@ void AddChromeColorMixer(ui::ColorProvider* provider,
+   mixer[kColorReadAnythingFullPageScrollbarLowContrastDark] = {
+       SkColorSetRGB(0xC7, 0xC7, 0xC7)};
  
 +  // MoltBrowser dark-glass tones. Force-dark (browser_widget.cc) already makes
 +  // every foreground light; here we only deepen the surfaces dark-mode leaves

@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc b/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
-index a4b99dc114bfbf51c630ade51ae442af2053846b..9db811ab103e487e100a6efb885dd0fa3fcb55f8 100644
+index c30379b14fcc936a2cbafa2c1546833f6b078fe6..161d1effc850403d1a719ea4d2eccf54fa62cdbd 100644
 --- a/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
 +++ b/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
 @@ -4,6 +4,13 @@
@@ -22,7 +22,7 @@ index a4b99dc114bfbf51c630ade51ae442af2053846b..9db811ab103e487e100a6efb885dd0fa
  #include <memory>
  #include <optional>
  #include <string>
-@@ -168,6 +175,7 @@ NewTabPageUIConfig::CreateWebUIController(content::WebUI* web_ui,
+@@ -184,6 +191,7 @@ NewTabPageUIConfig::CreateWebUIController(content::WebUI* web_ui,
      return std::make_unique<PageNotAvailableForGuestUI>(
          web_ui, chrome::kChromeUINewTabPageHost);
    }
@@ -30,11 +30,12 @@ index a4b99dc114bfbf51c630ade51ae442af2053846b..9db811ab103e487e100a6efb885dd0fa
    return std::make_unique<NewTabPageUI>(web_ui);
  }
  
-@@ -242,17 +250,12 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
-                      ntp_features::kNtpNextShowSimplificationUIParam.Get());
-   source->AddBoolean("ntpNextShowDismissalUIEnabled",
+@@ -284,14 +292,11 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
                       ntp_features::kNtpNextShowDismissalUIParam.Get());
+   source->AddBoolean("ntpNextDisablementContextMenuEnabled",
+                      ntp_features::kNtpNextDisablementContextMenuParam.Get());
 -  source->AddBoolean(
+-
 -      "oneGoogleBarEnabled",
 -      base::FeatureList::IsEnabled(ntp_features::kNtpOneGoogleBar));
 +  // MoltBrowser: Disable Google-specific NTP features
@@ -43,19 +44,26 @@ index a4b99dc114bfbf51c630ade51ae442af2053846b..9db811ab103e487e100a6efb885dd0fa
                       base::FeatureList::IsEnabled(ntp_features::kNtpShortcuts));
 -  source->AddBoolean("logoEnabled",
 -                     base::FeatureList::IsEnabled(ntp_features::kNtpLogo));
++  source->AddBoolean("logoEnabled", false);
+   source->AddBoolean(
+       "animatedDoodlesEnabled",
+       base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles));
+@@ -304,10 +309,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
+       base::FeatureList::IsEnabled(ntp_features::kNtpGoogleLogo26);
+ #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+   source->AddBoolean("useGoogleLogo26", use_google_logo_26);
 -  source->AddBoolean(
 -      "middleSlotPromoEnabled",
 -      base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromo) &&
 -          profile->GetPrefs()->GetBoolean(prefs::kNtpPromoVisible));
-+  source->AddBoolean("logoEnabled", false);
 +  source->AddBoolean("middleSlotPromoEnabled", false);
    source->AddBoolean(
        "middleSlotPromoDismissalEnabled",
        base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromoDismissal));
-@@ -632,20 +635,16 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
- 
+@@ -711,20 +713,16 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
    if (ntp_realbox::IsNtpRealboxNextEnabled(profile)) {
-     if (ntp_realbox::kCyclingPlaceholders.Get()) {
+     if (base::FeatureList::IsEnabled(
+             ntp_realbox::kNtpRealboxCyclingPlaceholders)) {
 -      source->AddLocalizedString(
 -          "searchBoxPlaceholder",
 -          IDS_NTP_SEARCH_BOX_DYNAMIC_PLACEHOLDER_ASK_GOOGLE);
@@ -76,7 +84,7 @@ index a4b99dc114bfbf51c630ade51ae442af2053846b..9db811ab103e487e100a6efb885dd0fa
            break;
          default:
            NOTREACHED();
-@@ -653,8 +652,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(Profile* profile) {
+@@ -732,8 +730,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
      }
  
    } else {
@@ -85,4 +93,4 @@ index a4b99dc114bfbf51c630ade51ae442af2053846b..9db811ab103e487e100a6efb885dd0fa
 +    source->AddString("searchBoxPlaceholder", u"Search MoltSearch or type a URL");
    }
  
-   source->AddBoolean("composeboxNoFlickerSuggestionsFix", false);
+   source->AddBoolean("keepMenuOpenOnTabSelectForRealbox",

@@ -1,19 +1,23 @@
 MoltBrowser patch for chrome/browser/ui/ui_features.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/ui_features.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/ui_features.cc b/chrome/browser/ui/ui_features.cc
-index 7dc8147a057ea0163b7a464781169a739ae7d819..d547d81f65e2a1d9773e3031f1a73e49b28eca37 100644
+index 05e8b374645574a44425641dda249d22bdd8b8c2..dec8083320de81e030f2966d9f32f6c6bc474b3d 100644
 --- a/chrome/browser/ui/ui_features.cc
 +++ b/chrome/browser/ui/ui_features.cc
-@@ -34,7 +34,7 @@ BASE_FEATURE(kCreateNewTabGroupAppMenuTopLevel,
-              base::FEATURE_DISABLED_BY_DEFAULT);
+@@ -53,6 +53,12 @@ BASE_FEATURE(kImportExportFlags, base::FEATURE_DISABLED_BY_DEFAULT);
+ BASE_FEATURE(kInfoBarInlineLinks, base::FEATURE_DISABLED_BY_DEFAULT);
  
  BASE_FEATURE(kTabStripDeclutter, base::FEATURE_DISABLED_BY_DEFAULT);
--BASE_FEATURE(kGlassToolbar, base::FEATURE_DISABLED_BY_DEFAULT);
++// MoltBrowser: the black-glass toolbar look (dark-glass colors in
++// chrome_color_mixer.cc, toolbar sheen in toolbar_view.cc, omnibox capsule in
++// location_bar_view.cc, forced-dark frame in browser_widget.cc). Upstream's
++// own experimental kGlassToolbar was removed by M152; MoltBrowser keeps the
++// name as its single revertible switch, on by default.
 +BASE_FEATURE(kGlassToolbar, base::FEATURE_ENABLED_BY_DEFAULT);
- 
- BASE_FEATURE(kDetachedTabs, base::FEATURE_DISABLED_BY_DEFAULT);
- 
+ BASE_FEATURE(kToolbarGlowUp, base::FEATURE_DISABLED_BY_DEFAULT);
+ BASE_FEATURE_PARAM(bool,
+                    kToolbarGlowUpReloadEnabled,

@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/rust/getrandom/v0_4/BUILD.gn
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/rust/getrandom/v0_4/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/getrandom/v0_4/BUILD.gn b/third_party/rust/getrandom/v0_4/BUILD.gn
+index e2d4bd9e886016c717ce006420339c13e4de0d5c..4b655287155f9281a9f02bfb41db9c0a7b66e65f 100644
+--- a/third_party/rust/getrandom/v0_4/BUILD.gn
++++ b/third_party/rust/getrandom/v0_4/BUILD.gn
+@@ -63,10 +63,18 @@ cargo_crate("lib") {
+ 
+   allow_unsafe = true
+ 
+-  deps = [ "//third_party/rust/cfg_if/v1:lib" ]
++  deps = [
++    "//third_party/rust/cfg_if/v1:lib",
++    "//third_party/rust/rand_core/v0_10:lib",
++  ]
+   if (!is_fuchsia && !is_win) {
+     deps += [ "//third_party/rust/libc/v0_2:lib" ]
+   }
++  features = [
++    "std",
++    "sys_rng",
++    "wasm_js",
++  ]
+   build_root =
+       "//third_party/rust/chromium_crates_io/vendor/getrandom-v0_4/build.rs"
+   build_sources =

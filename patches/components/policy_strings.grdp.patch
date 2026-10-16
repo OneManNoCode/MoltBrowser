@@ -1,11 +1,11 @@
 MoltBrowser patch for components/policy_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/policy_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/policy_strings.grdp b/components/policy_strings.grdp
-index 293e50152b9c44924616f4f009904e8a516e4a83..36ffb2bc7fbb747d2766c821eb089ef0923b9dc1 100644
+index cf208533ec33cf1e6ca03bbfd66c3ae1c6c83abc..b2af9347f309f9cb4ff4c13b49934b576c1c20ea 100644
 --- a/components/policy_strings.grdp
 +++ b/components/policy_strings.grdp
 @@ -232,7 +232,7 @@
@@ -26,7 +26,7 @@ index 293e50152b9c44924616f4f009904e8a516e4a83..36ffb2bc7fbb747d2766c821eb089ef0
    </message>
    <message name="IDS_POLICY_HOMEPAGE_LOCATION_ERROR" desc="The text displayed in the status column when the homepage URL given by the HomepageLocation policy is invalid.">
      Invalid URL. Must be a URL with a standard scheme, e.g http://example.com or https://example.com.
-@@ -778,10 +778,10 @@ Additional details:
+@@ -802,10 +802,10 @@ Additional details:
      This policy cannot be set to "True" and be mandatory, therefore it was changed to recommended.
    </message>
    <message name="IDS_POLICY_IGNORED_CHROME_PROFILE" desc="Text explaining that the policy cannot be set at the Chrome profile level and is therefore ignored.">
@@ -39,7 +39,7 @@ index 293e50152b9c44924616f4f009904e8a516e4a83..36ffb2bc7fbb747d2766c821eb089ef0
    </message>
    <message name="IDS_POLICY_IGNORED_EXTENSION" desc="Text explaining that extension policies are likely ignored by the extension.">
      Likely ignored by the extension.
-@@ -858,10 +858,10 @@ Additional details:
+@@ -885,10 +885,10 @@ Additional details:
      Streamline how your organization manages policies
    </message>
    <message name="IDS_POLICY_BANNER_PROMOTION_DESC" desc="Description for Chrome Enterprise Core (CEC) promotion banner">

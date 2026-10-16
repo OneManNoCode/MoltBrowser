@@ -1,14 +1,14 @@
 MoltBrowser patch for net/base/features.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/net/base/features.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/net/base/features.cc b/net/base/features.cc
-index 24bd9b2a6ad7d4f6836e0038f50aec9c638c8c6e..1837a5cd6b6f642e05ecf609f41ce21a77746fe9 100644
+index 54e646c9a6c7f74b8182cd1cada783cdef8e5810..e20f1a8dc8f30b8204d644afdd32af8067104241 100644
 --- a/net/base/features.cc
 +++ b/net/base/features.cc
-@@ -125,8 +125,14 @@ BASE_FEATURE(kSplitCacheByNetworkIsolationKey,
+@@ -200,8 +200,14 @@ BASE_FEATURE(kSplitCacheByNetworkIsolationKey,
  BASE_FEATURE(kSplitCodeCacheByNetworkIsolationKey,
               base::FEATURE_DISABLED_BY_DEFAULT);
  
@@ -22,5 +22,5 @@ index 24bd9b2a6ad7d4f6836e0038f50aec9c638c8c6e..1837a5cd6b6f642e05ecf609f41ce21a
 -             base::FEATURE_DISABLED_BY_DEFAULT);
 +             base::FEATURE_ENABLED_BY_DEFAULT);
  
- BASE_FEATURE(kSearchEnginePreconnectInterval,
-              base::FEATURE_DISABLED_BY_DEFAULT);
+ BASE_FEATURE(kSplitHostCacheByNetworkAnonymizationKey,
+              base::FEATURE_ENABLED_BY_DEFAULT);

@@ -1,14 +1,14 @@
 MoltBrowser patch for components/send_tab_to_self_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/send_tab_to_self_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/send_tab_to_self_strings.grdp b/components/send_tab_to_self_strings.grdp
-index c8cdc4a6fbed348ed100a00553b0bade30d5c01b..77f8a2f85af3a51b78cb94813a19e260e601ce7f 100644
+index fdc15c30d1c70595b8f2f7c28e3c4bbf584a131b..e1dd241f11f0947dfb5ea7fdea796db79ff2e7f7 100644
 --- a/components/send_tab_to_self_strings.grdp
 +++ b/components/send_tab_to_self_strings.grdp
-@@ -20,7 +20,7 @@
+@@ -26,7 +26,7 @@
      Tab sent from <ph name="DEVICE_NAME">$1<ex>Jane's iPhone</ex></ph>
    </message>
    <message name="IDS_SEND_TAB_PUSH_NOTIFICATION_BODY" desc = "Body text of the iOS send tab to self push notification.">

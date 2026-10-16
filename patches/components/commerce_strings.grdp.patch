@@ -1,15 +1,15 @@
 MoltBrowser patch for components/commerce_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/commerce_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/commerce_strings.grdp b/components/commerce_strings.grdp
-index 6bc9cad45f942aa1d43c645ad0a675f992ce26fb..cc4a2e14a20e97807487de845c3915afc73f9599 100644
+index a600ffc3d057ee767a9849afde0390faa2832950..cfc8f778a082bb1dacacddcb075a7c18bd719a47 100644
 --- a/components/commerce_strings.grdp
 +++ b/components/commerce_strings.grdp
-@@ -66,7 +66,7 @@
-       Try again
+@@ -13,7 +13,7 @@
+       Something went wrong. Try again.
      </message>
      <message name="IDS_OMNIBOX_TRACK_PRICE_DIALOG_TITLE_FIRST_RUN" desc="The title text for the dialog that is shown at the first time a user tracks the product displayed on the current web page.">
 -      Track prices with Chrome
@@ -17,7 +17,7 @@ index 6bc9cad45f942aa1d43c645ad0a675f992ce26fb..cc4a2e14a20e97807487de845c3915af
      </message>
      <message name="IDS_OMNIBOX_TRACK_PRICE_DIALOG_DESCRIPTION_FIRST_RUN" desc="The description text for the dialog that is shown at the first time a user tracks the product displayed on the current web page. It describes what will happen when price tracking is initiated, and tells users which bookmarks folder this page will be saved.">
        You’ll get email alerts if the price drops on any site. This page will be saved to the bookmark folder <ph name="LAST_BOOKMARKS_FOLDER">$1<ex>Other Bookmarks</ex></ph>.
-@@ -386,7 +386,7 @@
+@@ -276,7 +276,7 @@
        Price drop alerts are on. You can change this in <ph name="BEGIN_LINK">&lt;link&gt;</ph><ph name="NOTIFICATION_SETTINGS">%1$s<ex>settings</ex></ph><ph name="END_LINK">&lt;/link&gt;</ph>.
      </message>
      <message name="IDS_PRICE_NOTIFICATIONS_SETTINGS_MOBILE_DESCRIPTION_OFF" desc="The description text for managing mobile price drop popup notifications when the notification is currently disabled. Shown on the detailed page settings in Google services. It tells users that they can enable the popup notification in the Chrome notification settings." formatter_data="android_java">

@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index e6f8fef21367b8ed924a23d67c3b9752e7105cbc..1dd562a39168d644a76bc7b1a8c4576be07c0802 100644
+index fb1bc7c968496654dc7f35280a022826edbcd5ed..43d70fd7f8ee638d0a688d8a4b6f6c464ffba293 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -75,6 +75,7 @@
+@@ -89,6 +89,7 @@
  #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/core/layout/layout_box.h"
@@ -16,7 +16,7 @@ index e6f8fef21367b8ed924a23d67c3b9752e7105cbc..1dd562a39168d644a76bc7b1a8c4576b
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
  #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
-@@ -5133,6 +5134,11 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5357,6 +5358,11 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }

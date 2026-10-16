@@ -1,11 +1,11 @@
 MoltBrowser patch for components/search_engine_choice_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/search_engine_choice_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/search_engine_choice_strings.grdp b/components/search_engine_choice_strings.grdp
-index 5a3431860655097c90393db99a388c808fb4cd91..c52abe7aa2708b696ba17ce1d480b9932a856ba5 100644
+index c1875bbc1a27424e3e85ad8c161ff39102e29def..038d9ed1823f90455c142ab54be286f33b7e8aac 100644
 --- a/components/search_engine_choice_strings.grdp
 +++ b/components/search_engine_choice_strings.grdp
 @@ -36,7 +36,7 @@
@@ -32,7 +32,7 @@ index 5a3431860655097c90393db99a388c808fb4cd91..c52abe7aa2708b696ba17ce1d480b993
        </message>
      </if>
  
-@@ -94,43 +94,43 @@
+@@ -92,43 +92,43 @@
      <if expr="_google_chrome">
        <if expr="use_titlecase">
          <message name="IDS_SEARCH_ENGINE_CHOICE_INFO_DIALOG_TITLE" desc="This string is the heading of a card that explains why users are being prompted to choose a search engine, and what a search engine does in Chrome. (A search engine provides answers to search queries; this is different from a browser, which displays web pages. A search engine powers many experiences within a browser.) This screen appears when the user taps or clicks “Learn more” on the search engine choice screen. This string is before the “Based on a law in your region...” string. We want users to read this screen and understand that they can use any search engine with Chrome and what the impact of their choice might be.">

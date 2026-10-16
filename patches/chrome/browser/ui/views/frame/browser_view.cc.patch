@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/ui/views/frame/browser_view.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/views/frame/browser_view.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/frame/browser_view.cc b/chrome/browser/ui/views/frame/browser_view.cc
-index af6a177943de90cbff0e3fb2b3d6e064c35258de..859ffb64770638150679f4223f5006f79ad3e3e8 100644
+index 4c178650ff11d01042b0e0ea2c5ea70861b73870..3eb9c5744f0a245982dc8aff54f950017f3c007b 100644
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -6187,6 +6187,8 @@ void BrowserView::FrameColorsChanged() {
+@@ -6015,6 +6015,8 @@ void BrowserView::FrameColorsChanged() {
      web_app_window_title_->SetBackgroundColor(frame_color);
      web_app_window_title_->SetEnabledColor(caption_color);
    }

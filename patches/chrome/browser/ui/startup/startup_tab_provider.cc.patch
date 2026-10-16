@@ -1,18 +1,18 @@
 MoltBrowser patch for chrome/browser/ui/startup/startup_tab_provider.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/startup/startup_tab_provider.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/startup/startup_tab_provider.cc b/chrome/browser/ui/startup/startup_tab_provider.cc
-index 5d6a77e47e6cb879953b2364e248a9857ab034bb..fbb675ca62a2bc44dfe41946e0940021d43a4f3d 100644
+index 5a6f548f84c3d33a434c3180594b5a860f5d7269..168f12b07b36cada4687787d53d1468f7e0f1b80 100644
 --- a/chrome/browser/ui/startup/startup_tab_provider.cc
 +++ b/chrome/browser/ui/startup/startup_tab_provider.cc
-@@ -306,7 +306,8 @@ StartupTabs StartupTabProviderImpl::GetNewTabPageTabsForState(
+@@ -271,7 +271,8 @@ StartupTabs StartupTabProviderImpl::GetNewTabPageTabsForState(
      const SessionStartupPref& pref) {
    StartupTabs tabs;
    if (!pref.ShouldRestoreLastSession()) {
--    tabs.emplace_back(GURL(chrome::kChromeUINewTabURL));
+-    tabs.emplace_back(chrome::ChromeUINewTabURLAsGURL());
 +    // MoltBrowser: Open MoltSearch homepage instead of chrome://newtab
 +    tabs.emplace_back(GURL("chrome://molt-home/"));
    }

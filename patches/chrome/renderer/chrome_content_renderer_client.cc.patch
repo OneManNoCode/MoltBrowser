@@ -1,23 +1,23 @@
 MoltBrowser patch for chrome/renderer/chrome_content_renderer_client.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/renderer/chrome_content_renderer_client.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index abe1dbb4ec313cd2b13d0cf8b0c6da39c5a57c65..bcfa5cf352f854c2fad6fead58d5197cd3fbaab8 100644
+index bb16469783abb876d506da4725b2cdaa3339442f..6d8d0acd1e92033649d0a144a041de9aea183b48 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -60,6 +60,8 @@
- #include "chrome/renderer/loadtimes_extension_bindings.h"
+@@ -62,6 +62,8 @@
+ #include "chrome/renderer/loadtimes_bindings.h"
  #include "chrome/renderer/media/flash_embed_rewrite.h"
  #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
 +#include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"  // MoltBrowser
 +#include "chrome/renderer/molt_ai/shield/cosmetic_filter_agent.h"  // MoltBrowser
  #include "chrome/renderer/net/net_error_helper.h"
- #include "chrome/renderer/net_benchmarking_extension.h"
  #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
-@@ -381,6 +383,9 @@ ChromeContentRendererClient::~ChromeContentRendererClient() = default;
+ #include "chrome/renderer/plugins/pdf_plugin_placeholder.h"
+@@ -385,6 +387,9 @@ ChromeContentRendererClient::~ChromeContentRendererClient() = default;
  void ChromeContentRendererClient::RenderThreadStarted() {
    RenderThread* thread = RenderThread::Get();
  
@@ -27,7 +27,7 @@ index abe1dbb4ec313cd2b13d0cf8b0c6da39c5a57c65..bcfa5cf352f854c2fad6fead58d5197c
    main_thread_profiler_->SetAuxUnwinderFactory(base::BindRepeating(
        &CreateV8Unwinder, base::Unretained(v8::Isolate::GetCurrent())));
  
-@@ -604,6 +609,10 @@ void ChromeContentRendererClient::RenderFrameCreated(
+@@ -623,6 +628,10 @@ void ChromeContentRendererClient::RenderFrameCreated(
  
    new prerender::NoStatePrefetchRenderFrameObserver(render_frame);
  

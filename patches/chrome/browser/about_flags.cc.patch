@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/about_flags.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/about_flags.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index 1245672c684a659fefa0f2cfc781f3a3efb09788..5cb83ec83b0ff0c9c579160a971608dab6d08cbf 100644
+index f50171e75b72d729c0851a24c8839ce838a830e9..80a19ba3c1e6aca3c71b56217f2112300d410a12 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
-@@ -45,6 +45,8 @@
+@@ -51,6 +51,8 @@
  #include "chrome/browser/media/router/discovery/access_code/access_code_cast_constants.h"
  #include "chrome/browser/media/router/discovery/access_code/access_code_cast_feature.h"
  #include "chrome/browser/media/webrtc/desktop_media_picker.h"
@@ -17,9 +17,9 @@ index 1245672c684a659fefa0f2cfc781f3a3efb09788..5cb83ec83b0ff0c9c579160a971608da
  #include "chrome/browser/navigation_predictor/navigation_predictor_features.h"
  #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
  #include "chrome/browser/net/stub_resolver_config_reader.h"
-@@ -13154,6 +13156,13 @@ const FeatureEntry kFeatureEntries[] = {
-      flag_descriptions::kAutofillEnableOmniboxAutofillDescription, kOsDesktop,
-      FEATURE_VALUE_TYPE(autofill::features::kAutofillEnableOmniboxAutofill)},
+@@ -13731,6 +13733,13 @@ const FeatureEntry kFeatureEntries[] = {
+      flag_descriptions::kGlicContextMenuBelowSearchDescription, kOsDesktop,
+      FEATURE_VALUE_TYPE(features::kGlicContextMenuBelowSearch)},
  
 +    // MoltBrowser: MoltShield kill switches (#molt-shield-*).
 +    MOLT_SHIELD_FEATURE_ENTRIES,

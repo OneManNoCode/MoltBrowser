@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/resources/settings/settings_main/settings_main.ts
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/resources/settings/settings_main/settings_main.ts by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
-index bf151d0e0086b20e192aca343f491eb0f994c014..030207785ca7c1f2adc1a56d522e730effcd6608 100644
+index 7ff1c061b5a6bc9dbd1868ed155214ca97508efc..3af9744371861e44c85dd775dd53ed4ba166d337 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.ts
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
 @@ -10,6 +10,10 @@ import 'chrome://resources/cr_components/managed_footnote/managed_footnote.js';

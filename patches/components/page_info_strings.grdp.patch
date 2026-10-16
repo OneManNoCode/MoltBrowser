@@ -1,14 +1,14 @@
 MoltBrowser patch for components/page_info_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/page_info_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/page_info_strings.grdp b/components/page_info_strings.grdp
-index c9380bab7a1afccb7c2aa3bb2694add1c49dd09d..84b6f9ffc20e028d515c646cae12255eeb8ca32c 100644
+index 262b8510139f36ff3c91ad50082b34ee18846a3f..3e97a8e7d012b54069a72417fe8bec6f51b544ef 100644
 --- a/components/page_info_strings.grdp
 +++ b/components/page_info_strings.grdp
-@@ -32,10 +32,10 @@
+@@ -44,10 +44,10 @@
      You're viewing a developer tools page
    </message>
    <message name="IDS_PAGE_INFO_READER_MODE_PAGE_SECURE" desc="Message to display in the page info bubble when the page you are viewing is the reader mode version of an article which was retrieved over a secure connection.">
@@ -21,7 +21,7 @@ index c9380bab7a1afccb7c2aa3bb2694add1c49dd09d..84b6f9ffc20e028d515c646cae12255e
    </message>
  
    <!-- Safety Tip summary strings -->
-@@ -94,12 +94,12 @@
+@@ -103,12 +103,12 @@
    </message>
    <if expr="_google_chrome">
      <message name="IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS_SAVED" desc="A short paragraph explaining to a Chrome user that they have reused their saved password on the current website.">
@@ -36,7 +36,7 @@ index c9380bab7a1afccb7c2aa3bb2694add1c49dd09d..84b6f9ffc20e028d515c646cae12255e
      </message>
    </if>
    <if expr="use_titlecase">
-@@ -226,7 +226,7 @@
+@@ -211,7 +211,7 @@
      <if expr="is_android">
      <!-- Only used in the dialog shown after tapping "Details" in page info -->
      <message name="IDS_PAGE_INFO_SECURE_IDENTITY_VERIFIED" desc="The text of the identity section when the page is secure and uses a valid certificate">
@@ -45,7 +45,7 @@ index c9380bab7a1afccb7c2aa3bb2694add1c49dd09d..84b6f9ffc20e028d515c646cae12255e
      </message>
      </if>
  
-@@ -469,16 +469,16 @@
+@@ -428,16 +428,16 @@
        </message>
      </if>
      <message name="IDS_PAGE_INFO_CAMERA_SYSTEM_SETTINGS_DESCRIPTION" desc="The description for the camera permission with a link to system settings.">
@@ -66,7 +66,7 @@ index c9380bab7a1afccb7c2aa3bb2694add1c49dd09d..84b6f9ffc20e028d515c646cae12255e
      </message>
      <message name="IDS_PAGE_INFO_SETTINGS_OF_A_SYSTEM_LINK" desc="This is the text of the link pointing to settings of a system. This appears under a permission in the Page Info bubble if the permission is blocked on the system level.">
          system settings
-@@ -539,36 +539,36 @@
+@@ -498,36 +498,36 @@
      <!-- Password Protection -->
      <if expr="_google_chrome">
        <message name="IDS_PAGE_INFO_CHANGE_PASSWORD_DETAILS" desc="A short paragraph explaining to the user that they has reuse their google password on current website.">
@@ -113,7 +113,7 @@ index c9380bab7a1afccb7c2aa3bb2694add1c49dd09d..84b6f9ffc20e028d515c646cae12255e
        </message>
      </if>
  
-@@ -856,13 +856,13 @@
+@@ -1056,13 +1056,13 @@
      See info used to show you ads
    </message>
    <message name="IDS_PAGE_INFO_AD_PRIVACY_TOPICS_DESCRIPTION"  desc="1 of 3 possible descriptions a user might see when they choose 'Ad privacy' from page info for a specific site. 1) Navigate to any site. 2) Click the icon (often a lock) to the left of the URL in the address bar. Information about the page you're viewing appears. The 'Ad privacy' label will appear above the 'Site settings' button. 3) Click on Ad privacy. This string describes the case that the site being viewed uses the Ad topics setting. What's the Ad topics setting? When on, Chrome will estimate the user's topics of interest based on their recent browsing history and then show up to 3 of those topics with a site so that the site can better personalize ads (a privacy-preserving way to replicate some of the functionality of third-party cookies). In this case, we're informing the user that this site uses the Ad topics API and we're showing the user the ad topics Chrome has shared with the site. A button 'Manage ad privacy' allows the user to turn 'Ad privacy' settings on/off or to block specific ad topics.">

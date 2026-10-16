@@ -1,0 +1,19 @@
+MoltBrowser patch for chrome/browser/ui/ui_features.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/ui/ui_features.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/ui_features.h b/chrome/browser/ui/ui_features.h
+index a0fc21e2e8e34a196e347700a49c6bbd31029def..ed6e5a32f5d6eb5b7b13cd454c9aa9f957862760 100644
+--- a/chrome/browser/ui/ui_features.h
++++ b/chrome/browser/ui/ui_features.h
+@@ -43,6 +43,8 @@ BASE_DECLARE_FEATURE(kInfoBarInlineLinks);
+ // All feature flags associated with Glow Up, apart from those in
+ // ui_base_features.h
+ BASE_DECLARE_FEATURE(kTabStripDeclutter);
++// MoltBrowser: black-glass toolbar look (see ui_features.cc).
++BASE_DECLARE_FEATURE(kGlassToolbar);
+ BASE_DECLARE_FEATURE(kToolbarGlowUp);
+ BASE_DECLARE_FEATURE_PARAM(bool, kToolbarGlowUpReloadEnabled);
+ BASE_DECLARE_FEATURE_PARAM(bool, kToolbarGlowUpBackForwardEnabled);

@@ -1,11 +1,11 @@
 MoltBrowser patch for components/security_interstitials_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/security_interstitials_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/security_interstitials_strings.grdp b/components/security_interstitials_strings.grdp
-index 46e0934a8ef277fb2d1b7da91e9e475fe68a81e2..bfb27cc1df2894484830e79b0e35cd5ac058ab8f 100644
+index 2ca5a6fa46fcc82b9742d29483463c30669a6bd6..be6f0ee5f1b25567dbf9fdab66c1f1f483270e69 100644
 --- a/components/security_interstitials_strings.grdp
 +++ b/components/security_interstitials_strings.grdp
 @@ -42,7 +42,7 @@

@@ -1,14 +1,14 @@
 MoltBrowser patch for components/supervised_user_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/supervised_user_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/supervised_user_strings.grdp b/components/supervised_user_strings.grdp
-index 3d1f7e1d041416a3b21f06914f72c2ba9d3ba03e..4711c2c1ad33f6d7e967db9a5dfd82f9971532dd 100644
+index f540c9a9e4b54ffd44e67170e0acf2a1fdbd7b57..33a790f181783c0c3811bbc0f5af8325855ed1c2 100644
 --- a/components/supervised_user_strings.grdp
 +++ b/components/supervised_user_strings.grdp
-@@ -92,10 +92,10 @@
+@@ -62,10 +62,10 @@
          Next
        </message>
        <message name="IDS_SUPERVISED_USER_VERIFY_PAGE_SUBFRAME_YOUTUBE_HEADING" desc="A message for the child user when they visit a permitted site, but then encounter embedded content from YouTube.com. The child is signed in to their Google Account in Chrome, but their credentials have expired, so they need to sign in to get all the settings that their parent chose for them on YouTube.">

@@ -1,51 +1,60 @@
 MoltBrowser patch for chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc b/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
-index 7adf4cfe57196d77960b19aea0b901ed6be8d784..cad19cbbad61e7fa60403822cb02cbb76a8487c0 100644
+index 23d3c51c786881c3a0bdf158fc14f13c215c65f5..87688ad333bba7c6df4dbf280299f848d31c0ced 100644
 --- a/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
 +++ b/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc
-@@ -10,6 +10,7 @@
- #include "base/check.h"
+@@ -11,6 +11,7 @@
+ #include "base/check_deref.h"
  #include "base/functional/bind.h"
  #include "base/functional/callback.h"
 +#include "base/task/sequenced_task_runner.h"
  #include "base/time/time.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/ui/browser.h"
-@@ -61,6 +62,32 @@ SidePanelCoordinator* SidePanelCoordinator::From(
- void SidePanelCoordinator::Init(Browser* browser) {
+@@ -60,6 +61,41 @@ SidePanelCoordinator::SidePanelCoordinator(BrowserWindowInterface* browser)
+   side_panel_observation_.Observe(side_panel);
    SidePanelHelper::PopulateGlobalEntries(browser,
                                           SidePanelRegistry::From(browser));
++
 +  // MoltBrowser: default-open the AI Chat side panel on every new
 +  // browser window so users get the chat-with-the-page experience
 +  // immediately (matches Edge Copilot / Comet / Perplexity UX).
 +  //
-+  // Why PostTask: Init() runs INSIDE BrowserView's ctor (via
-+  // BrowserWindowFeatures::InitPostBrowserViewConstruction). Calling
-+  // Show() synchronously here triggers
++  // Why PostTask: the coordinator is created while the BrowserView is still
++  // being constructed (BrowserWindowFeatures::InitPostBrowserViewConstruction).
++  // Showing synchronously here triggers
 +  // SidePanel::ResetSidePanelAnimationContent() before the SidePanel
 +  // view itself finishes initializing → SEGV. Deferring one turn
-+  // lets the browser window finish constructing.
-+  //
-+  // SidePanelCoordinator is owned by BrowserWindowFeatures which is
-+  // owned by Browser, so Unretained(this) is safe across a single
-+  // message-loop turn — nothing can destroy us before the task fires.
-+  if (browser && browser->profile() &&
-+      !browser->profile()->IsGuestSession() &&
-+      !browser->profile()->IsSystemProfile() &&
-+      browser->is_type_normal()) {
++  // lets the browser window finish constructing. The task holds a WeakPtr to
++  // the window, so it is a no-op if the window is gone by then.
++  Profile* const profile = browser->GetProfile();
++  if (profile && !profile->IsGuestSession() && !profile->IsSystemProfile() &&
++      browser->GetType() == BrowserWindowInterface::TYPE_NORMAL) {
 +    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
 +        FROM_HERE,
 +        base::BindOnce(
-+            [](SidePanelCoordinator* self) {
-+              self->Show(SidePanelEntryId::kMoltAiChat);
++            [](base::WeakPtr<BrowserWindowInterface> weak_browser) {
++              BrowserWindowInterface* const window = weak_browser.get();
++              if (!window) {
++                return;
++              }
++              SidePanelUI* const ui = SidePanelUI::From(window);
++              SidePanelRegistry* const registry =
++                  SidePanelRegistry::From(window);
++              if (!ui || !registry ||
++                  !registry->GetEntryForKey(
++                      SidePanelEntryKey(SidePanelEntryId::kMoltAiChat))) {
++                return;
++              }
++              ui->Show(SidePanelEntryId::kMoltAiChat);
 +            },
-+            base::Unretained(this)));
++            browser->GetWeakPtr()));
 +  }
  }
  
- void SidePanelCoordinator::TearDownPreBrowserWindowDestruction() {
+ SidePanelCoordinator::~SidePanelCoordinator() = default;

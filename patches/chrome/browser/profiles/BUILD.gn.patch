@@ -1,19 +1,19 @@
 MoltBrowser patch for chrome/browser/profiles/BUILD.gn
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/profiles/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 5d61c630e4152b5098bf0eb956a194e4b2c2ac5f..0ccc9e2c16eea2def3864bc598cc8ebd649f3df7 100644
+index 7261b2cc26b5f913deda86a9392462d068d39fb2..468c746e0d58163057660b53170e4962d1be700a 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -325,6 +325,8 @@ source_set("profiles_extra_parts_impl") {
-     "//chrome/browser/lookalikes",
+@@ -674,6 +674,8 @@ source_set("profiles_extra_parts_impl") {
+     "//chrome/browser/manta:impl",
      "//chrome/browser/media/router",
      "//chrome/browser/media/webrtc",
 +    "//chrome/browser/molt_ai/automation",
 +    "//chrome/browser/molt_ai/memory",
+     "//chrome/browser/notebooks",
      "//chrome/browser/notifications",
      "//chrome/browser/omnibox",
-     "//chrome/browser/optimization_guide",

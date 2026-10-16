@@ -1,0 +1,21 @@
+MoltBrowser patch for third_party/rust/regex/v1/README.chromium
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/rust/regex/v1/README.chromium by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/regex/v1/README.chromium b/third_party/rust/regex/v1/README.chromium
+index 761ef6ed89beb0cb91e72b1e033f3ab8d0481b76..06c05cbc4fb3b1815a639ff7271da186e69c9ffe 100644
+--- a/third_party/rust/regex/v1/README.chromium
++++ b/third_party/rust/regex/v1/README.chromium
+@@ -5,8 +5,8 @@ Revision: 7b96fdc9d5fe6a0cb4efe30e6689b050493fc1e1
+ Update Mechanism: Manual (https://crbug.com/449898466)
+ License: Apache-2.0
+ License File: //third_party/rust/chromium_crates_io/vendor/regex-v1/LICENSE-APACHE
+-Shipped: no
+-Security Critical: no
++Shipped: yes
++Security Critical: yes
+ 
+ Description: An implementation of regular expressions for Rust. This implementation uses
+ finite automata and guarantees linear time matching on all inputs.

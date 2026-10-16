@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/app_management_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/app_management_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/app_management_strings.grdp b/chrome/app/app_management_strings.grdp
-index 17ac27ff32f2bde1992034a69bff58d42ed928bf..5b7b86d64b1e656cb40dba292d988a9c4385416e 100644
+index b225df595990f795c79d14e4514b716dbec72424..c3432e55d18b8ff57ba000f130f9ce7afedf331e 100644
 --- a/chrome/app/app_management_strings.grdp
 +++ b/chrome/app/app_management_strings.grdp
 @@ -43,10 +43,10 @@
@@ -19,5 +19,5 @@ index 17ac27ff32f2bde1992034a69bff58d42ed928bf..5b7b86d64b1e656cb40dba292d988a9c
 -    Open in Chrome browser
 +    Open in MoltBrowser browser
    </message>
-   <message name="IDS_APP_MANAGEMENT_INTENT_SHARING_TAB_EXPLANATION" desc="Label for the intent sharing description for when the app is set to open in tab mode.">
-     <ph name="APP_NAME">$1<ex>Gmail</ex></ph> is set to open in a new browser tab, supported links will also open in the browser. <ph name="BEGIN_LINK_LEARN_MORE">&lt;a href="https://support.google.com/chromebook?p=app_intent" target="_blank"&gt;</ph>Learn more<ph name="END_LINK_LEARN_MORE">&lt;/a&gt;</ph>
+   <message name="IDS_APP_MANAGEMENT_INTENT_SHARING_APP_OPEN_EXISTING_TAB" desc="This is an option presented to the user which makes user clicks on links that open this website to open in an existing browser tab of that website, instead of opening in a new browser tab.">
+     Open in an existing <ph name="APP_NAME">$1<ex>Gmail</ex></ph> tab

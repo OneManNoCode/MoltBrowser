@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/metrics/chrome_feature_list_creator.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/metrics/chrome_feature_list_creator.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/metrics/chrome_feature_list_creator.cc b/chrome/browser/metrics/chrome_feature_list_creator.cc
-index c8ab55cf0bb3f347fcd826c054eff3b1c1cf5e39..4e7a7387eab231b2dc768b3734bca745d9358241 100644
+index 90e572fe4efe1baa00ca8218dbcb3a5d0ad36ddb..ce2fb3c303c97ddf8b9ea867d8ee2491d06d73cc 100644
 --- a/chrome/browser/metrics/chrome_feature_list_creator.cc
 +++ b/chrome/browser/metrics/chrome_feature_list_creator.cc
-@@ -21,6 +21,7 @@
+@@ -20,6 +20,7 @@
  #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
  #include "chrome/browser/first_run/first_run.h"
  #include "chrome/browser/metrics/chrome_metrics_services_manager_client.h"
@@ -16,17 +16,27 @@ index c8ab55cf0bb3f347fcd826c054eff3b1c1cf5e39..4e7a7387eab231b2dc768b3734bca745
  #include "chrome/browser/prefs/browser_prefs.h"
  #include "chrome/browser/prefs/chrome_pref_service_factory.h"
  #include "chrome/common/chrome_paths.h"
-@@ -90,6 +91,13 @@ GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
-       overrides.emplace_back(info.feature, info.override_state);
-     }
-   }
-+
+@@ -238,11 +239,19 @@ void ChromeFeatureListCreator::SetUpFieldTrials() {
+ 
+   variations::VariationsService* variations_service =
+       metrics_services_manager_->GetVariationsService();
+-  variations_service->SetUpFieldTrials(
+-      variation_ids,
++  std::vector<base::FeatureList::FeatureOverrideInfo> extra_overrides =
+       content::GetSwitchDependentFeatureOverrides(
+-          *base::CommandLine::ForCurrentProcess()),
+-      std::move(feature_list), browser_field_trials_.get());
++          *base::CommandLine::ForCurrentProcess());
 +  // MoltBrowser: features that only reach Google in a build without API keys
-+  // are off by default. Registered here, after --enable-features (which
-+  // chrome://flags writes) and before the field trial testing config, so the
-+  // user can still turn them on and testing-config studies that touch them are
-+  // skipped. See chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
-+  molt_ai::privacy::AppendDefaultFeatureOverrides(overrides);
-   return overrides;
++  // are off by default. Registered as extra overrides, which apply after
++  // --enable-features (which chrome://flags writes) and before the field trial
++  // testing config, so the user can still turn them on and testing-config
++  // studies that touch them are skipped. See
++  // chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
++  molt_ai::privacy::AppendDefaultFeatureOverrides(extra_overrides);
++  variations_service->SetUpFieldTrials(variation_ids, extra_overrides,
++                                       std::move(feature_list),
++                                       browser_field_trials_.get());
+   variations::InitCrashKeys();
  }
  

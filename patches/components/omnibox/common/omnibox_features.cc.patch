@@ -1,19 +1,22 @@
 MoltBrowser patch for components/omnibox/common/omnibox_features.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/omnibox/common/omnibox_features.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox/common/omnibox_features.cc b/components/omnibox/common/omnibox_features.cc
-index a229abae589b334d2c613c846bae38e30267bd6b..b8337e8a37dad5472b71f668c4799fbf55559e4a 100644
+index cd448cb2cf8b0b8b0221b6004c0d41ebd7905794..372b59f46a2498361b906d4ab9a4c22826213c74 100644
 --- a/components/omnibox/common/omnibox_features.cc
 +++ b/components/omnibox/common/omnibox_features.cc
-@@ -171,7 +171,7 @@ BASE_FEATURE(kOmniboxMultimodalInput, DISABLED);
+@@ -198,7 +198,10 @@ BASE_FEATURE(kOmniboxMultimodalInput, DISABLED);
+ BASE_FEATURE(kAndroidDesktopAimGate, ENABLED);
  
- // Whether the AI Mode entrypoint is shown in the Omnibox as a RHS button. Only
- // used on desktop platforms.
--BASE_FEATURE(kAiModeOmniboxEntryPoint, ENABLED);
-+BASE_FEATURE(kAiModeOmniboxEntryPoint, DISABLED);
+ // Enables the AIM entrypoint for third party search engines.
+-BASE_FEATURE(kAim3pEntrypoint, ENABLED);
++// MoltBrowser: off by default. Since kAiModeOmniboxEntryPoint was removed, this
++// is the flag that gates the omnibox AI Mode button when the default search
++// engine is not Google (see OmniboxFieldTrial::IsAimOmniboxEntrypointEnabled).
++BASE_FEATURE(kAim3pEntrypoint, DISABLED);
+ const base::FeatureParam<bool> kAim3pEntrypointDebug{
+     &kAim3pEntrypoint, "Aim3pEntrypointDebug", false};
  
- // Hides the AIM entrypoint in the Omnibox when user input is in progress. Only
- // used on desktop platforms.

@@ -1,14 +1,14 @@
 MoltBrowser patch for components/management_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/management_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/management_strings.grdp b/components/management_strings.grdp
-index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bdb967a71a 100644
+index 3c4ddf0d6ee9fbae247ca2fc51c0225add050d43..32fcb6d0115e5643641c2f652e01665a07fd2bc3 100644
 --- a/components/management_strings.grdp
 +++ b/components/management_strings.grdp
-@@ -64,18 +64,18 @@
+@@ -67,18 +67,18 @@
      <if expr="not is_chromeos">
        <if expr="_google_chrome">
          <message name="IDS_MANAGEMENT_BROWSER_NOTICE" desc="Message shown when the (Google-branded) Chrome browser is managed, it indicates what the administrator can do on the browser.">
@@ -31,7 +31,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
          </message>
        </if>
        <message name="IDS_MANAGEMENT_PROFILE_NOTICE" desc="Message shown when one profile from the Chrome browser is managed, it indicates what the administrator can do for that profile.">
-@@ -214,7 +214,7 @@
+@@ -217,7 +217,7 @@
        Device access actions such as logins (including failed login reasons), logouts, locks, and unlocks
      </message>
      <message name="IDS_MANAGEMENT_REPORT_CRD_SESSIONS" desc="Message stating that administrators can see Chrome Remote Desktop events.">
@@ -40,7 +40,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
      </message>
      <message name="IDS_MANAGEMENT_REPORT_ALL_WEBSITE_INFO_AND_ACTIVITY" desc="Message stating that administrators can see what websites are visited and when.">
        Which websites are visited and when.
-@@ -264,7 +264,7 @@
+@@ -267,7 +267,7 @@
        Website cookies (signed-in state on recently visited websites will be preserved)
      </message>
      <message name="IDS_MANAGEMENT_DESK_SYNC_OPT_OUT" desc="Message explaining that the user can opt out from the effects of the Desk sync feature in Chrome Sync settings.">
@@ -49,7 +49,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
      </message>
      <message name="IDS_MANAGEMENT_DESK_SYNC_LEARN_MORE" desc="Learn more link for the section about the Desk sync feature to provide additional informaiton">
        <ph name="BEGIN_LINK">&lt;a target="_blank" href="https://support.google.com/chrome/a?p=office_cookies_sync" &gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;</ph>
-@@ -331,7 +331,7 @@
+@@ -334,7 +334,7 @@
        Your device name and network address
      </message>
      <message name="IDS_MANAGEMENT_EXTENSION_REPORT_USERNAME" desc="Message explaining that an extension currently reports the user's username" formatter_data="android_java">
@@ -58,7 +58,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
      </message>
      <message name="IDS_MANAGEMENT_EXTENSION_REPORT_VERSION" desc="Message explaining that an extension currently reports the user's browser and machine version" formatter_data="android_java">
        Version information about your device and browser
-@@ -355,9 +355,9 @@
+@@ -358,9 +358,9 @@
        A limited list of URLs of pages you visit where legacy technology events are occuring
      </message>
  
@@ -70,7 +70,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
      </message>
      <message name="IDS_MANAGEMENT_FILE_ATTACHED_EVENT" desc="Event for the file attachment scanning feature.">
        File is attached
-@@ -399,7 +399,7 @@
+@@ -396,7 +396,7 @@
        Applications authorized by your administrator can capture all screens attached to your device. This information can be processed locally or uploaded to your organization’s servers.
      </message>
      <message name="IDS_MANAGEMENT_EXTENSION_TELEMETRY_VISIBLE_DATA" desc="Description of the visible data for the extension telemetry feature.">
@@ -79,7 +79,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
      </message>
    </if>
  
-@@ -461,7 +461,7 @@
+@@ -458,7 +458,7 @@
    </if>
    <if expr="is_ios">
      <message name="IDS_IOS_MANAGEMENT_UI_DESC" desc="The descriptive text on chrome://management page when the browser is managed.">
@@ -88,13 +88,13 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
      </message>
      <message name="IDS_IOS_MANAGEMENT_UI_LEARN_MORE_LINK" desc="The clickable text on chrome://management.">
        Learn more
-@@ -474,22 +474,22 @@
+@@ -471,22 +471,22 @@
      </message>
    </if>
  
 -  <!-- Strings related to Chrome Enterprise Device Signals Sharing -->
 +  <!-- Strings related to MoltBrowser Enterprise Device Signals Sharing -->
-   <if expr="is_win or is_linux or is_macosx">
+   <if expr="is_win or is_linux or is_macosx or is_android">
      <message name="IDS_MANAGEMENT_DEVICE_SIGNALS_DISCLOSURE" desc="Disclosure message explaining that device signals can be shared.">
        Information about your browser, OS, device, installed software, files, and IP addresses
      </message>
@@ -116,7 +116,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
    </message>
    <message name="IDS_MANAGEMENT_CONNECTORS_EVENT" desc="Title of a column of the Connectors table showing the event that triggers a Connector" formatter_data="android_java">
      Event
-@@ -507,7 +507,7 @@
+@@ -510,7 +510,7 @@
      URLs of pages you visit are sent to Google Cloud or third parties for analysis, and may be visible to your administrator. For example, they might be scanned to detect unsafe websites or filter websites based on rules set by the administrator.
    </message>
    <message name="IDS_MANAGEMENT_ENTERPRISE_REPORTING_VISIBLE_DATA" desc="Description of the visible data for the Connectors reporting feature" formatter_data="android_java">
@@ -125,7 +125,7 @@ index 606b2c91df6c069a47ff02cf89f46d06f28a9a62..7822ecd6fc662adc1fe48179b803f6bd
    </message>
  
    <!-- Management toolbar button dialog view -->
-@@ -534,10 +534,10 @@
+@@ -537,10 +537,10 @@
      Easily manage how your employees browse the web
    </message>
    <message name="IDS_MANAGEMENT_BANNER_PROMOTION_DESC" desc="The description of the promotion banner on chrome://management page.">

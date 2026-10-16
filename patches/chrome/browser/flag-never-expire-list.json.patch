@@ -1,17 +1,17 @@
 MoltBrowser patch for chrome/browser/flag-never-expire-list.json
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/flag-never-expire-list.json by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-never-expire-list.json b/chrome/browser/flag-never-expire-list.json
-index 3beb256808ce12e8926b400860bde5794d5af545..e1cecd0c3e8cb784daaa6d03e2401c44c323c93d 100644
+index b8f673fb12a903d4e8f4bbd40c62e4ace8728aa5..2e6ed76c78567f974c9bd6a83da8ef913f58142a 100644
 --- a/chrome/browser/flag-never-expire-list.json
 +++ b/chrome/browser/flag-never-expire-list.json
-@@ -120,6 +120,14 @@
+@@ -103,6 +103,14 @@
+   "memlog",
    "memlog-sampling-rate",
    "memlog-stack-mode",
-   "minutes-delay-to-restore-gaia-cookies-if-deleted",
 +  "molt-fingerprinting-protection",
 +  "molt-shield-consent-killer",
 +  "molt-shield-cosmetics",

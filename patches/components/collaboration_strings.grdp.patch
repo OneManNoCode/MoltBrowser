@@ -1,11 +1,11 @@
 MoltBrowser patch for components/collaboration_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/collaboration_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/collaboration_strings.grdp b/components/collaboration_strings.grdp
-index 600fb5df0051df92f9be18908495937738573bc4..17fa016e8880e26fc944df9f5539440b4fcc0e0e 100644
+index 1a20d03b0f96cecb075c51305562eaef3580aca1..2a45cb54f83c0e285be07cff969a181d1329bce9 100644
 --- a/components/collaboration_strings.grdp
 +++ b/components/collaboration_strings.grdp
 @@ -5,10 +5,10 @@

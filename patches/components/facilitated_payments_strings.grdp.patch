@@ -1,11 +1,11 @@
 MoltBrowser patch for components/facilitated_payments_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/facilitated_payments_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/facilitated_payments_strings.grdp b/components/facilitated_payments_strings.grdp
-index 0b53b2612cacdfa2ae2b45d383cdbde2646ded5e..35f10c5515ccca75021b8350c6c3e52cb094d7bd 100644
+index 6d3b8ca78fbcd5ea4901cbf63a872551ef1522e4..215267f9db2dc1d1cb98b340d1b620b8d0836bd6 100644
 --- a/components/facilitated_payments_strings.grdp
 +++ b/components/facilitated_payments_strings.grdp
 @@ -11,7 +11,7 @@
@@ -55,9 +55,9 @@ index 0b53b2612cacdfa2ae2b45d383cdbde2646ded5e..35f10c5515ccca75021b8350c6c3e52c
    </message>
    <message name="IDS_PIX_PAYMENT_PRODUCT_ICON_CONTENT_DESCRIPTION" desc="Accessibility string for the Google Pay + Pix product icon." formatter_data="android_java">
      Google Pay, Pix
-@@ -129,13 +129,13 @@
- 
-   <!-- Pix account linking prompt strings -->
+@@ -144,13 +144,13 @@
+     Not now
+   </message>
    <message name="IDS_PIX_ACCOUNT_LINKING_PROMPT_TITLE" desc="Title for the bottom sheet showing Pix account linking prompt. It asks users to link their Pix accounts to Google Wallet so they can directly pay on Chrome." formatter_data="android_java">
 -    Pay with Pix directly in Chrome next time
 +    Pay with Pix directly in MoltBrowser next time
