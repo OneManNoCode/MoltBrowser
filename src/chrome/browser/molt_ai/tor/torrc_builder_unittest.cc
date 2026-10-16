@@ -211,10 +211,10 @@ TEST(TorrcBuilderTest, BridgesEmitTransportPluginsOnlyWhenNeeded) {
   TorrcOptions o = BaseOptions();
   o.bridge_lines = {kObfs4Line};
   std::string error;
-  // lyrebird not bundled -> refuse rather than write a torrc Tor can't use.
+  // No obfs4 transport -> refuse rather than write a torrc Tor can't use.
   EXPECT_FALSE(BuildTorrc(o, &error));
 
-  o.lyrebird_exec = "./pluggable_transports/lyrebird";
+  o.obfs4_exec = "./pluggable_transports/lyrebird";
   o.snowflake_exec = "./pluggable_transports/snowflake-client";
   std::optional<std::string> torrc = BuildTorrc(o, &error);
   ASSERT_TRUE(torrc) << error;
@@ -238,9 +238,99 @@ TEST(TorrcBuilderTest, BridgesEmitTransportPluginsOnlyWhenNeeded) {
 
   // Non-canonical (unvalidated) lines are rejected even if harmless-looking.
   o = BaseOptions();
-  o.lyrebird_exec = "./pluggable_transports/lyrebird";
+  o.obfs4_exec = "./pluggable_transports/lyrebird";
   o.bridge_lines = {std::string("Bridge ") + kObfs4Line};
   EXPECT_FALSE(BuildTorrc(o, nullptr));
+}
+
+// Linux packages don't bundle the transports: the distribution's root-owned
+// lyrebird / obfs4proxy / snowflake-client are run by absolute path.
+TEST(TorrcBuilderTest, SystemTransportsUseAbsolutePaths) {
+  TorrcOptions o = BaseOptions();
+  o.bridge_lines = {kObfs4Line, kSnowflakeLine};
+  o.obfs4_exec = "/usr/bin/obfs4proxy";
+  o.snowflake_exec = "/usr/bin/snowflake-client";
+  std::string error;
+  std::optional<std::string> torrc = BuildTorrc(o, &error);
+  ASSERT_TRUE(torrc) << error;
+  EXPECT_TRUE(HasLine(*torrc, "UseBridges 1"));
+  EXPECT_TRUE(
+      HasLine(*torrc, "ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy"));
+  EXPECT_TRUE(HasLine(
+      *torrc, "ClientTransportPlugin snowflake exec /usr/bin/snowflake-client"));
+  EXPECT_TRUE(HasLine(*torrc, std::string("Bridge ") + kObfs4Line));
+  EXPECT_TRUE(HasLine(*torrc, std::string("Bridge ") + kSnowflakeLine));
+
+  // Debian's lyrebird package.
+  o.bridge_lines = {kObfs4Line};
+  o.obfs4_exec = "/usr/bin/lyrebird";
+  o.snowflake_exec.clear();
+  torrc = BuildTorrc(o, &error);
+  ASSERT_TRUE(torrc) << error;
+  EXPECT_TRUE(
+      HasLine(*torrc, "ClientTransportPlugin obfs4 exec /usr/bin/lyrebird"));
+  EXPECT_EQ(std::string::npos, torrc->find("ClientTransportPlugin snowflake"));
+
+  // A snowflake bridge with only obfs4 available is refused.
+  o.bridge_lines = {kSnowflakeLine};
+  EXPECT_FALSE(BuildTorrc(o, &error));
+  EXPECT_FALSE(error.empty());
+}
+
+TEST(TorrcBuilderTest, TransportExecValidation) {
+  for (const char* good : {
+           "./pluggable_transports/lyrebird",
+           "./pluggable_transports/snowflake-client",
+           "./lyrebird",
+           "pluggable_transports\\lyrebird.exe",
+           "pluggable_transports\\snowflake-client.exe",
+           "/usr/bin/lyrebird",
+           "/usr/bin/obfs4proxy",
+           "/usr/bin/snowflake-client",
+       }) {
+    EXPECT_TRUE(IsValidTransportExec(good)) << good;
+  }
+  std::string nul = "/usr/bin/lyrebird";
+  nul.push_back('\0');
+  for (const std::string& bad : std::vector<std::string>{
+           "",
+           nul,
+           // Bare names could be looked up on PATH.
+           "lyrebird",
+           "obfs4proxy",
+           ".",
+           "./",
+           // Not canonical, or escaping the tor dir.
+           "../lyrebird",
+           "./pluggable_transports/../../lyrebird",
+           "pluggable_transports\\..\\lyrebird.exe",
+           "./pluggable_transports//lyrebird",
+           "./pluggable_transports/./lyrebird",
+           "/usr/bin/../bin/lyrebird",
+           "/usr/bin//lyrebird",
+           "/usr/bin/./lyrebird",
+           "/usr/bin/lyrebird/",
+           "/",
+           "/usr\\bin\\lyrebird",
+           // Windows absolute / root-relative paths.
+           "C:\\tor\\pluggable_transports\\lyrebird.exe",
+           "C:/tor/lyrebird.exe",
+           "\\tor\\lyrebird.exe",
+           "\\\\server\\share\\lyrebird.exe",
+           // Tor splits the line on blanks; torrc injection.
+           "/opt/My Apps/lyrebird",
+           "/usr/bin/lyrebird\tmanaged",
+           "/usr/bin/lyrebird\nSocksPort 0.0.0.0:9050",
+           "/usr/bin/lyrebird#comment",
+           "\"/usr/bin/lyrebird\"",
+           "./pluggable_transports/lyrebird\\",
+       }) {
+    EXPECT_FALSE(IsValidTransportExec(bad)) << bad;
+    TorrcOptions o = BaseOptions();
+    o.bridge_lines = {kObfs4Line};
+    o.obfs4_exec = bad;
+    EXPECT_FALSE(BuildTorrc(o, nullptr)) << bad;
+  }
 }
 
 }  // namespace

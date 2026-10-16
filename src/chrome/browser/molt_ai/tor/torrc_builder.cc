@@ -176,18 +176,19 @@ bool IsValidObfs4Cert(std::string_view cert) {
   return true;
 }
 
-// An exec token for ClientTransportPlugin: a safe torrc value with no blanks
-// (Tor splits the line on spaces).
-bool IsSafeExecToken(std::string_view exec) {
-  if (!IsSafeTorrcValue(exec)) {
-    return false;
-  }
-  for (char c : exec) {
-    if (IsBlank(c)) {
-      return false;
+// Splits |path| on '/' (and on '\\' too if |backslash_separates|).
+std::vector<std::string_view> SplitPathComponents(std::string_view path,
+                                                  bool backslash_separates) {
+  std::vector<std::string_view> out;
+  size_t start = 0;
+  for (size_t i = 0; i <= path.size(); ++i) {
+    if (i == path.size() || path[i] == '/' ||
+        (backslash_separates && path[i] == '\\')) {
+      out.push_back(path.substr(start, i - start));
+      start = i + 1;
     }
   }
-  return true;
+  return out;
 }
 
 }  // namespace
@@ -199,6 +200,51 @@ TorrcOptions::~TorrcOptions() = default;
 
 bool IsValidExitCountry(std::string_view cc) {
   return cc.size() == 2 && IsAsciiLower(cc[0]) && IsAsciiLower(cc[1]);
+}
+
+bool IsValidTransportExec(std::string_view exec) {
+  if (!IsSafeTorrcValue(exec)) {
+    return false;
+  }
+  for (char c : exec) {
+    if (IsBlank(c)) {
+      return false;  // Tor splits ClientTransportPlugin on blanks.
+    }
+  }
+  if (exec.front() == '/') {
+    // A canonical absolute POSIX path (a system package on Linux).
+    if (exec.find('\\') != std::string_view::npos) {
+      return false;
+    }
+    for (std::string_view component :
+         SplitPathComponents(exec.substr(1), /*backslash_separates=*/false)) {
+      if (component.empty() || component == "." || component == "..") {
+        return false;
+      }
+    }
+    return true;
+  }
+  // Relative to Tor's working directory (a bundled transport). No drive
+  // letter, and no root-relative or UNC Windows path.
+  if (exec.front() == '\\' || (exec.size() >= 2 && exec[1] == ':')) {
+    return false;
+  }
+  const std::vector<std::string_view> components =
+      SplitPathComponents(exec, /*backslash_separates=*/true);
+  size_t named = 0;
+  for (size_t i = 0; i < components.size(); ++i) {
+    const std::string_view component = components[i];
+    if (i == 0 && component == ".") {
+      continue;
+    }
+    if (component.empty() || component == "." || component == "..") {
+      return false;
+    }
+    ++named;
+  }
+  // "./<program>" or "<dir>/<program>": never a bare name, which could be
+  // looked up on PATH.
+  return components.size() >= 2 && named >= 1;
 }
 
 bool IsSafeTorrcValue(std::string_view value) {
@@ -411,11 +457,11 @@ std::optional<std::string> BuildTorrc(const TorrcOptions& options,
         break;
     }
   }
-  if (needs_obfs4 && !IsSafeExecToken(options.lyrebird_exec)) {
-    return fail("obfs4 bridges need the bundled lyrebird transport");
+  if (needs_obfs4 && !IsValidTransportExec(options.obfs4_exec)) {
+    return fail("obfs4 bridges need a usable obfs4 transport");
   }
-  if (needs_snowflake && !IsSafeExecToken(options.snowflake_exec)) {
-    return fail("snowflake bridges need the bundled snowflake transport");
+  if (needs_snowflake && !IsValidTransportExec(options.snowflake_exec)) {
+    return fail("snowflake bridges need a usable snowflake transport");
   }
 
   std::string t;
@@ -441,7 +487,7 @@ std::optional<std::string> BuildTorrc(const TorrcOptions& options,
   if (!options.bridge_lines.empty()) {
     t += "UseBridges 1\n";
     if (needs_obfs4) {
-      t += "ClientTransportPlugin obfs4 exec " + options.lyrebird_exec + "\n";
+      t += "ClientTransportPlugin obfs4 exec " + options.obfs4_exec + "\n";
     }
     if (needs_snowflake) {
       t += "ClientTransportPlugin snowflake exec " + options.snowflake_exec +

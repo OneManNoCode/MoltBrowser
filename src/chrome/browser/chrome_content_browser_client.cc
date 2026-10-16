@@ -114,6 +114,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
 #include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
+#include "chrome/browser/molt_ai/tor/onion_request_blocker.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
@@ -6688,6 +6689,11 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
       browser_context, frame, type, request_initiator, isolation_info,
       factory_builder);
 
+  // MoltNet: outside MoltNet, no request may reach a .onion host (a proxy
+  // server would resolve it).
+  molt_ai::tor::OnionBlockingURLLoaderFactory::MaybeProxy(browser_context, type,
+                                                          factory_builder);
+
   // WARNING: This must be the last interceptor in the chain as the proxying
   // URLLoaderFactory installed by this needs to be the one actually sending
   // packets over the network (to effectively target `bound_network`).
@@ -6758,6 +6764,10 @@ ChromeContentBrowserClient::
 
 bool ChromeContentBrowserClient::WillInterceptWebSocket(
     content::RenderFrameHost* frame) {
+  // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.
+  if (molt_ai::tor::ShouldInterceptWebSocketForOnion(frame)) {
+    return true;
+  }
   // MoltShield: see CreateWebSocket().
   if (molt_ai::shield::ShouldInterceptWebSocket(frame)) {
     return true;
@@ -6791,6 +6801,10 @@ void ChromeContentBrowserClient::CreateWebSocket(
     const std::optional<std::string>& user_agent,
     mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
         handshake_client) {
+  // MoltNet: dropping the handshake client fails the page's connection.
+  if (molt_ai::tor::IsOnionWebSocketBlocked(frame, url)) {
+    return;
+  }
   // MoltShield: the wrapped factory vets the URL (off the UI thread) right
   // before connecting, so it composes with the webRequest proxy below. When
   // MoltShield is the only interceptor, connect directly as content would.
