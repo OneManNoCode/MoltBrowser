@@ -2,9 +2,12 @@
 # Licensed under GPLv3. See LICENSE file.
 #
 # Shared by the browser half (//chrome/browser/molt_ai/fingerprinting, which
-# puts the switches on renderer command lines) and the renderer half
+# puts the mode switch on renderer command lines and sends the session seed
+# and Shields-off sites over :mojom) and the renderer half
 # (//chrome/renderer/molt_ai/fingerprinting, which hands them to Blink) of
 # MoltBrowser's fingerprinting protection.
+
+import("//mojo/public/tools/bindings/mojom.gni")
 
 source_set("fingerprinting") {
   sources = [
@@ -14,6 +17,12 @@ source_set("fingerprinting") {
     "molt_fingerprinting_switches.h",
   ]
   public_deps = [ "//base" ]
+}
+
+# Browser -> renderer configuration that stays off the command line (the
+# session seed) or changes at runtime (Shields-off sites).
+mojom("mojom") {
+  sources = [ "molt_fingerprinting.mojom" ]
 }
 
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.

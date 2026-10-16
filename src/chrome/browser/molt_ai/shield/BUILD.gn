@@ -43,6 +43,22 @@ source_set("prefs") {
   ]
 }
 
+# MoltShield's per-site "Shields off" semantics on a HostContentSettingsMap,
+# without a profile (also read by fingerprinting protection).
+source_set("site_exceptions") {
+  sources = [
+    "molt_shield_site_exceptions.cc",
+    "molt_shield_site_exceptions.h",
+  ]
+  public_deps = [ "//components/content_settings/core/common" ]
+  deps = [
+    "//base",
+    "//components/content_settings/core/browser",
+    "//net",
+    "//url",
+  ]
+}
+
 source_set("shield") {
   sources = [
     "filter_list_manager.cc",
@@ -83,6 +99,7 @@ source_set("shield") {
     "//third_party/blink/public/common",
   ]
   deps = [
+    ":site_exceptions",
     "adblock:molt_adblock",
     "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/common:constants",
@@ -120,16 +137,21 @@ source_set("unit_tests") {
   sources = [
     "molt_shield_kill_switch_unittest.cc",
     "molt_shield_prefs_unittest.cc",
+    "molt_shield_site_exceptions_unittest.cc",
     "molt_shield_unittest.cc",
   ]
   deps = [
     ":core",
     ":prefs",
+    ":site_exceptions",
     "//base",
     "//base/test:test_support",
     "//chrome/common/molt_ai/shield:features",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
     "//components/prefs",
     "//components/prefs:test_support",
+    "//components/sync_preferences:test_support",
     "//testing/gtest",
     "//url",
   ]

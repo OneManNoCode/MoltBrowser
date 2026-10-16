@@ -88,10 +88,38 @@ class Farbler {
   // 4 bytes per pixel, 8 bits per channel. size() must be a multiple of 4
   // (a trailing partial pixel is ignored).
   void FarbleRGBA8(base::span<uint8_t> pixels, ChannelOrder order) const;
+  // Same decisions on *premultiplied* RGBA8 (the tuple as stored), except
+  // that a channel is never moved above its alpha, so the result is still
+  // valid premultiplied data. Idempotent. Used where canvas pixels leave as
+  // premultiplied images (VideoFrame, captureStream, WebGPU uploads).
+  void FarbleRGBA8Premul(base::span<uint8_t> pixels, ChannelOrder order) const;
+  // 8-bit normalized pixels with `channels` (1-4) components each, as WebGL
+  // readPixels packs RED, RG, RGB and RGBA data. Missing components take
+  // their GL defaults for the decision (G = B = 0, A = 255), so a RED read
+  // returns exactly the R channel an RGBA read of the same data returns.
+  // A trailing partial pixel is ignored; other channel counts do nothing.
+  void FarbleUnorm8(base::span<uint8_t> pixels, size_t channels) const;
   // 8 bytes per pixel: R, G, B, A as little-endian IEEE half floats.
   void FarbleRGBAF16(base::span<uint8_t> pixels) const;
   // 16 bytes per pixel: R, G, B, A as little-endian IEEE single floats.
   void FarbleRGBAF32(base::span<uint8_t> pixels) const;
+
+  // --- Float readback (WebGL FLOAT / HALF_FLOAT readPixels) ----------------
+  //
+  // Values that came out of float framebuffers are not colours on an 8-bit
+  // grid (GPGPU results, HDR), so the snapping above would be far too
+  // coarse. Instead each value gets noise at its own precision:
+  //  * float32: FarbleSample() (the audio noise: low kAudioNoiseBits of the
+  //    mantissa, relative change < 2^-15);
+  //  * float16: FarbleHalf(), the pair collapse on the 15-bit magnitude
+  //    (about 1 value in 16 moves by exactly one ulp; zero, infinities and
+  //    NaN never move, nothing moves to zero or infinity).
+  // Both are idempotent and depend only on (key, value).
+  // Little-endian float32 values; a trailing partial value is ignored.
+  void FarbleFloat32(base::span<uint8_t> bytes) const;
+  // Little-endian float16 values; a trailing partial value is ignored.
+  void FarbleFloat16(base::span<uint8_t> bytes) const;
+  uint16_t FarbleHalf(uint16_t half) const;
 
   // --- Web Audio -----------------------------------------------------------
   //
@@ -113,11 +141,18 @@ class Farbler {
   unsigned HardwareConcurrency(unsigned real) const;
 
  private:
+  // The pair collapse on values in [0, max]: pairs {2k + a, 2k + 1 + a}, the
+  // alignment `a` from the key and `context`, one pair in kCollapseOneIn
+  // collapsed onto one of its two values.
+  uint32_t FarbleValue(uint32_t value, uint32_t max, uint64_t context) const;
   uint8_t FarbleByte(uint8_t value, uint64_t context) const;
   size_t ChannelFor(uint8_t alpha) const;
   std::array<uint8_t, 4> FarblePixelInChannel(
       const std::array<uint8_t, 4>& rgba,
       size_t channel) const;
+  void FarbleRGBA8Impl(base::span<uint8_t> pixels,
+                       ChannelOrder order,
+                       bool premultiplied) const;
 
   std::array<uint64_t, 4> k_;
 };

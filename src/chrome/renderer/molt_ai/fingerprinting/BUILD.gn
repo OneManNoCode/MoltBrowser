@@ -2,8 +2,9 @@
 # Licensed under GPLv3. See LICENSE file.
 #
 # Renderer half of MoltBrowser's fingerprinting protection: hands the
-# browser's mode + session seed to Blink at renderer start
-# (ChromeContentRendererClient::RenderThreadStarted).
+# browser's mode (command line) to Blink at renderer start
+# (ChromeContentRendererClient::RenderThreadStarted), then the session seed
+# and the Shields-off sites as they arrive over the channel.
 
 source_set("fingerprinting") {
   sources = [
@@ -13,6 +14,10 @@ source_set("fingerprinting") {
   deps = [
     "//base",
     "//chrome/common/molt_ai/fingerprinting",
+    "//chrome/common/molt_ai/fingerprinting:mojom",
+    "//content/public/renderer",
+    "//mojo/public/cpp/bindings",
     "//third_party/blink/public:blink",
+    "//third_party/blink/public/common",
   ]
 }

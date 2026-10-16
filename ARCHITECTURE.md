@@ -95,7 +95,7 @@ repo/
  |    |    +-- memory/                 # MemoryService, storage, index, embedder
  |    |    +-- security/               # agent_safety, WebUINavigationThrottle
  |    |    +-- common/                 # trusted helper-binary checks
- |    |    +-- fingerprinting/         # session seed + renderer switches
+ |    |    +-- fingerprinting/         # session seed (mojo), mode, Shields-off sites
  |    |    +-- privacy/                # private-by-default prefs, feature overrides
  |    |    +-- shield/                 # MoltShield (ad/tracker blocker)
  |    |    +-- tor/                    # MoltNet, .onion, Onion-Location
@@ -212,10 +212,15 @@ repo/
   (pure noise maths in `farbling.*`, glue in `molt_fingerprinting.*`), called
   from short `MoltBrowser:` hooks in the canvas, WebGL, Web Audio, navigator,
   screen, window and mouse-event code.
-- Browser side: a random 32-byte seed per profile, kept in memory, passed to
-  renderers with a mode (`farble` for normal/incognito, `uniform` for MoltNet)
-  as command-line switches (`molt_ai/fingerprinting/`). The per-site key is
-  HMAC-SHA256(seed, top-level site).
+- Browser side: a random 32-byte seed per profile, kept in memory and sent
+  to each renderer over a channel-associated mojo interface at launch, with a
+  mode (`farble` for normal/incognito, `uniform` for MoltNet) and the profile's
+  Shields-off sites, which are left unfarbled (`molt_ai/fingerprinting/`). The
+  per-site key is HMAC-SHA256(seed, top-level site); service workers and
+  first-party shared workers use their site's key.
+- Canvas frames leaving as video (`captureStream`, `new VideoFrame(canvas)`)
+  are only farbled in MoltNet windows: farbling every frame would slow video
+  calls with canvas effects (`FarblesVideoExports()`).
 - Kill switch: `#molt-fingerprinting-protection` (`MoltFingerprintingProtection`).
   Design, exact surface and known limits: `docs/FINGERPRINTING.md`.
 

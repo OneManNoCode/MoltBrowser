@@ -2,9 +2,11 @@
 # Licensed under GPLv3. See LICENSE file.
 #
 # Browser half of MoltBrowser's fingerprinting protection: the per-profile
-# session seed and the renderer switches (hooked from
-# ChromeContentBrowserClient::AppendExtraCommandLineSwitches). The engine
-# itself lives in Blink: //third_party/blink/renderer/core/molt_fingerprinting.
+# session seed, the renderer mode switch (hooked from
+# ChromeContentBrowserClient::AppendExtraCommandLineSwitches) and the
+# channel-associated configuration sent at RenderProcessWillLaunch (session
+# seed, Shields-off sites). The engine itself lives in Blink:
+# //third_party/blink/renderer/core/molt_fingerprinting.
 
 source_set("fingerprinting") {
   sources = [
@@ -16,11 +18,20 @@ source_set("fingerprinting") {
   public_deps = [ "//chrome/common/molt_ai/fingerprinting" ]
   deps = [
     "//base",
+    "//chrome/browser/content_settings:content_settings_factory",
+
+    # Shields-off sites (molt_shield_site_settings.h).
+    "//chrome/browser/molt_ai/shield",
 
     # molt_net_profile_id.h (is this the MoltNet profile?).
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/profiles:profile",
+    "//chrome/common/molt_ai/fingerprinting:mojom",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
     "//content/public/browser",
     "//crypto",
+    "//ipc",
+    "//mojo/public/cpp/bindings",
   ]
 }

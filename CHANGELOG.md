@@ -85,7 +85,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   windows also look the same for everyone: UTC, en-US, letterboxed screen
   size, 4 cores, no WebGL renderer string. Limits are listed in
   `docs/FINGERPRINTING.md`. Kill switch:
-  `chrome://flags/#molt-fingerprinting-protection`.
+  `chrome://flags/#molt-fingerprinting-protection`. It also covers WebGL2
+  pack-buffer, float and half-float readback, canvas uploads to WebGPU and
+  `AudioWorklet` input; MoltNet windows also farble canvas video exports
+  (`captureStream`, `VideoFrame`). Turning Shields off for a site turns the
+  noise off there too, and the session seed is no longer visible on renderer
+  command lines.
 - **`.onion` sites.** They open only in MoltNet windows, where `http://`
   onion sites load under HTTPS-Only. Regular windows never look up, load or
   search-suggest an onion address; they offer to open it in MoltNet. A
