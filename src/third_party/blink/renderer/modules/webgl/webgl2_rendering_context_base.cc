@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/webgl/webgl_active_info.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_buffer.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_fence_sync.h"
@@ -911,6 +912,11 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
     ContextGL()->ReadPixels(x, y, width, height, format, type,
                             reinterpret_cast<void*>(offset));
   }
+  // MoltBrowser: per-site fingerprinting noise on the pixels just packed into
+  // the buffer, so getBufferSubData() & co. never see them unfarbled.
+  molt_fingerprinting::FarblePixelPackBuffer(
+      Host()->GetTopExecutionContext(), ContextGL(), format, type, width,
+      height, GetPackPixelStoreParams(), offset);
 }
 
 void WebGL2RenderingContextBase::RenderbufferStorageHelper(
