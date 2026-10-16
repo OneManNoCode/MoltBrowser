@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
+#include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -50,7 +51,8 @@ TEST(MoltFeatureOverridesTest, DisablesKeylessGoogleRequests) {
   EXPECT_FALSE(base::FeatureList::IsEnabled(translate::kTranslateRankerQuery));
   EXPECT_FALSE(
       base::FeatureList::IsEnabled(translate::kTranslateRankerEnforcement));
-  EXPECT_FALSE(base::FeatureList::IsEnabled(omnibox::kAiModeOmniboxEntryPoint));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(omnibox::kAimEnabled));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(omnibox::kAim3pEntrypoint));
 }
 
 // --enable-features, which chrome://flags also writes, must still win.

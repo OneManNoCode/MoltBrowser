@@ -45,7 +45,9 @@ void MoltShieldNavigationThrottle::MaybeAdd(
     return;
   }
   content::NavigationHandle& handle = registry.GetNavigationHandle();
-  if (!registry.IsHTTPOrHTTPS() || handle.IsSameDocument()) {
+  // (NavigationThrottleRegistry::IsHTTPOrHTTPS() is gone at 152; it was
+  // this check on the URL at registration time.)
+  if (!handle.GetURL().SchemeIsHTTPOrHTTPS() || handle.IsSameDocument()) {
     return;
   }
   content::WebContents* web_contents = handle.GetWebContents();

@@ -16,18 +16,20 @@
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/molt_ai/import/browser_importer.h"
-#include "chrome/browser/password_manager/profile_password_store_factory.h"
+#include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/keyed_service/core/service_access_type.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -213,9 +215,10 @@ void MoltImportHandler::HandleOpenBookmark(const base::ListValue& args) {
   // WebContents lives in a bubble widget, not a tab strip, so FindBrowserWithTab
   // returns null — fall back to the most-recently-active browser window.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
   if (!browser)
-    browser = chrome::FindLastActive();
+    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
   if (!browser) {
     out.Set("ok", false);
     out.Set("error", "no active browser window");
@@ -469,8 +472,9 @@ void MoltImportHandler::ImportPasswords(
     form.password_value = cred.password;
     // AddLogin is asynchronous (writes on the store's own sequence); we count
     // it as accepted for import here. The store dedupes on its primary key, so
-    // re-importing existing logins is a no-op there.
-    store->AddLogin(form);
+    // re-importing existing logins is a no-op there. At 152 the store takes
+    // a StoredCredential.
+    store->AddLogin(password_manager::FromPasswordForm(std::move(form)));
     ++(*imported);
   }
 }

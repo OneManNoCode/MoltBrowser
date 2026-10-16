@@ -14,8 +14,8 @@
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "content/public/browser/web_contents.h"
 #include "url/gurl.h"
@@ -95,7 +95,10 @@ void AutomationRecorderTabHelper::Toggle(Profile* profile) {
   // Open the manager UI so the user can rename/edit/run. Pass the new
   // script id in the fragment so the page can scroll to + highlight it.
   if (profile) {
-    Browser* b = chrome::FindLastActiveWithProfile(profile);
+    ProfileBrowserCollection* browsers =
+        ProfileBrowserCollection::GetForProfile(profile);
+    BrowserWindowInterface* b =
+        browsers ? browsers->GetLastActiveBrowser() : nullptr;
     if (b) {
       ShowSingletonTab(b,
                         GURL("molt://ai-automation/#new=" + s.id));

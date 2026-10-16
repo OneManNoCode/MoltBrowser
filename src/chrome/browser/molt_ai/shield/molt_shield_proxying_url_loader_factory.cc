@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "base/byte_size.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
@@ -25,6 +26,7 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_version.h"
 #include "net/url_request/redirect_info.h"
+#include "services/network/public/cpp/http_request_headers_update_params.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/early_hints.mojom.h"
@@ -148,16 +150,14 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
 
   // network::mojom::URLLoader (from the renderer):
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override {
     // The stripped redirect target, if the leg the renderer follows was
     // stripped (see MaybeStripRedirect()).
     const std::optional<GURL> follow_url = stripper_.OnFollowRedirect(new_url);
     if (target_loader_.is_bound()) {
-      target_loader_->FollowRedirect(removed_headers, modified_headers,
-                                     modified_cors_exempt_headers, follow_url);
+      target_loader_->FollowRedirect(std::move(headers_update_params),
+                                     follow_url);
     }
   }
 
@@ -386,8 +386,8 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
     target_client_->OnReceiveResponse(std::move(head), std::move(consumer),
                                       std::nullopt);
     network::URLLoaderCompletionStatus status(net::OK);
-    status.decoded_body_length = static_cast<int64_t>(body.size());
-    status.encoded_data_length = 0;
+    status.decoded_body_length = base::ByteSize(body.size());
+    status.encoded_data_length = base::ByteSize();
     completed_ = true;
     target_client_->OnComplete(status);
     return true;

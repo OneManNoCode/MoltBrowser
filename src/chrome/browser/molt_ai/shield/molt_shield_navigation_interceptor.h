@@ -61,6 +61,7 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "services/network/public/cpp/http_request_headers_update_params.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "url/gurl.h"
 
@@ -101,9 +102,7 @@ class MoltShieldNavigationInterceptor
   // network::mojom::URLLoader, for the synthesized redirect: following it
   // restarts the navigation's loader, so there is nothing to do here.
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override {}
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {}

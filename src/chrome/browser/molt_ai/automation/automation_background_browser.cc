@@ -10,6 +10,7 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
@@ -19,11 +20,12 @@
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
-#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/base/base_window.h"
 #include "ui/base/mojom/window_show_state.mojom.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/base/page_transition_types.h"
@@ -39,11 +41,11 @@ namespace {
 // self-destructs and closes the browser window.
 class BackgroundRunHolder {
  public:
-  BackgroundRunHolder(Browser* browser,
+  BackgroundRunHolder(BrowserWindowInterface* browser,
                       molt_ai::BrowserAIRuntime* ai_runtime,
                       std::unique_ptr<AutomationStorage> storage,
                       content::WebContents* contents)
-      : browser_(browser),
+      : browser_(browser->GetWeakPtr()),
         ai_runtime_(ai_runtime),
         storage_(std::move(storage)),
         runner_(std::make_unique<AutomationRunner>(contents,
@@ -103,12 +105,13 @@ class BackgroundRunHolder {
             [](int64_t id) { AgentInboxRegistry::Get()->Remove(id); },
             id_to_clear),
         base::Seconds(30));
-    if (browser_ && browser_->window())
-      browser_->window()->Close();
+    // The user may have closed the run window already.
+    if (browser_ && browser_->GetWindow())
+      browser_->GetWindow()->Close();
     delete this;  // owns nothing else; safe to suicide here
   }
 
-  raw_ptr<Browser> browser_;
+  base::WeakPtr<BrowserWindowInterface> browser_;
   // NOT owned — the runtime is a process-wide singleton
   // (BrowserAIRuntime::GetInstance). This holder does `delete this` when the run
   // completes; owning the runtime here meant a background run that finished
@@ -173,14 +176,14 @@ void RunScriptInBackgroundBrowser(
   content::WebContents* contents = nav.navigated_or_inserted_contents;
   if (!contents) {
     LOG(WARNING) << "[MoltAutomation] background navigate failed";
-    browser->window()->Close();
+    browser->GetWindow()->Close();
     return;
   }
 
   if (minimize)
-    browser->window()->Minimize();
+    browser->GetWindow()->Minimize();
   else
-    browser->window()->Show();
+    browser->GetWindow()->Show();
 
   // Use the process-wide runtime singleton (shared with the chat UI). Only one
   // model fits in RAM at a time and its load/generation are serialized
@@ -195,7 +198,7 @@ void RunScriptInBackgroundBrowser(
   auto fresh = storage->Load(script.id);
   if (!fresh) {
     LOG(WARNING) << "[MoltAutomation] failed to reload script id=" << script.id;
-    browser->window()->Close();
+    browser->GetWindow()->Close();
     return;
   }
 

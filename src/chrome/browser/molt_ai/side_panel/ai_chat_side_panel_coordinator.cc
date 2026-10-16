@@ -15,7 +15,7 @@
 #include "ui/views/view.h"
 
 AiChatSidePanelCoordinator::AiChatSidePanelCoordinator(Browser* browser)
-    : browser_(browser), profile_(browser->profile()) {}
+    : browser_(browser), profile_(browser->GetProfile()) {}
 
 AiChatSidePanelCoordinator::~AiChatSidePanelCoordinator() = default;
 

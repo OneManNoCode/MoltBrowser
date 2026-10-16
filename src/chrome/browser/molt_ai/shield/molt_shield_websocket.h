@@ -18,6 +18,7 @@
 
 #include "content/public/browser/content_browser_client.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "services/network/public/mojom/network_context.mojom-forward.h"
 #include "services/network/public/mojom/websocket.mojom-forward.h"
 #include "url/gurl.h"
 
@@ -36,14 +37,18 @@ content::ContentBrowserClient::WebSocketFactory MaybeWrapWebSocketFactory(
     content::RenderFrameHost* frame,
     content::ContentBrowserClient::WebSocketFactory factory);
 
-// Connects without any other interceptor, passing the same headers content
-// would (User-Agent override only).
+// Connects without any other interceptor, passing what content's own direct
+// path would (content::WebSocketConnectorImpl::Connect): the User-Agent
+// override as the only extra header, no auth handler, and `header_client`
+// from ContentBrowserClient::WebSocketOptions (e.g. enterprise custom
+// headers; may be unbound). DevTools' extra headers are added by `factory`.
 void ConnectWebSocket(
     content::ContentBrowserClient::WebSocketFactory factory,
     const GURL& url,
     const std::optional<std::string>& user_agent,
     mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
-        handshake_client);
+        handshake_client,
+    mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client);
 
 }  // namespace molt_ai::shield
 

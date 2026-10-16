@@ -70,7 +70,7 @@ void EnsureProceduralWorld() {
   // Only a name for DevTools: no security origin (DOM access follows the
   // document's) and so no CSP of its own; the engine never evals.
   blink::WebIsolatedWorldInfo info;
-  info.human_readable_name = blink::WebString::FromASCII("MoltShield");
+  info.human_readable_name = blink::WebString::FromAscii("MoltShield");
   blink::SetIsolatedWorldInfo(kProceduralWorldId, info);
 }
 
@@ -172,7 +172,7 @@ void CosmeticFilterAgent::DidCreateDocumentElement() {
     // Main world, synchronously, before any page script: scriptlets must
     // patch globals before the page's own code reads them.
     frame->ExecuteScript(blink::WebScriptSource(
-        blink::WebString::FromUTF8(resources->scriptlet_js)));
+        blink::WebString::FromUtf8(resources->scriptlet_js)));
   }
   if (!resources->procedural_json.empty()) {
     RunProceduralFilters(frame, resources->procedural_json,
@@ -211,7 +211,7 @@ void CosmeticFilterAgent::ScanClassesAndIds() {
   blink::WebDocument document = frame->GetDocument();
   std::vector<std::string> classes;
   std::vector<std::string> ids;
-  const blink::WebString class_attr = blink::WebString::FromASCII("class");
+  const blink::WebString class_attr = blink::WebString::FromAscii("class");
 
   auto add = [](std::vector<std::string>& out, std::set<std::string>& sent,
                 std::string token) {
@@ -297,7 +297,7 @@ void CosmeticFilterAgent::RunProceduralFilters(
       frame->ExecuteScriptInIsolatedWorldAndReturnValue(
           kProceduralWorldId,
           blink::WebScriptSource(
-              blink::WebString::FromUTF8(kProceduralFiltersJs)),
+              blink::WebString::FromUtf8(kProceduralFiltersJs)),
           blink::BackForwardCacheAware::kAllow);
   if (engine.IsEmpty() || !engine->IsFunction()) {
     return;
@@ -331,7 +331,7 @@ void CosmeticFilterAgent::InsertUserStyleSheet(const std::string& css) {
   if (!frame) {
     return;
   }
-  frame->GetDocument().InsertStyleSheet(blink::WebString::FromUTF8(css),
+  frame->GetDocument().InsertStyleSheet(blink::WebString::FromUtf8(css),
                                         /*key=*/nullptr,
                                         blink::WebCssOrigin::kUser);
 }

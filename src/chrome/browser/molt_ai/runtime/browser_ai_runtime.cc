@@ -915,12 +915,14 @@ void BrowserAIRuntime::StartMemoryPressureMonitoring() {
   if (impl_->pressure_registration) return;
   impl_->pressure_listener = std::make_unique<PressureListener>(this);
   // MemoryPressureListenerTag is a closed enum in //base and only feeds a
-  // Finch suppression mask; reuse the on-device-model tag rather than fork
-  // base/ for a new value. Critical-level notifications are never
-  // suppressed by that mask's "1" setting.
+  // Finch suppression mask; reuse an existing tag rather than fork base/ for
+  // a new value. kOnDeviceTailModelService (used up to 148) was retired at
+  // 152; kGlicKeyedService is the closest live one (a browser-process AI
+  // service). Critical-level notifications are never suppressed by that
+  // mask's "1" setting.
   impl_->pressure_registration =
       std::make_unique<base::MemoryPressureListenerRegistration>(
-          base::MemoryPressureListenerTag::kOnDeviceTailModelService,
+          base::MemoryPressureListenerTag::kGlicKeyedService,
           impl_->pressure_listener.get());
 }
 

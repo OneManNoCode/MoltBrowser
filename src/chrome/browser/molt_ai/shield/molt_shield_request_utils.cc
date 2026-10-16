@@ -52,12 +52,13 @@ std::string_view RequestTypeForDestination(RequestDestination destination,
       return "csp_report";
     case RequestDestination::kEmpty:
     case RequestDestination::kJson:
+    case RequestDestination::kText:  // Text modules (import ... with {type}).
       // fetch()/XHR. Beacons and keepalive fetches are pings.
       return keepalive ? "ping" : "xmlhttprequest";
     case RequestDestination::kManifest:
     case RequestDestination::kWebBundle:
     case RequestDestination::kWebIdentity:
-    case RequestDestination::kDictionary:
+    case RequestDestination::kCompressionDictionary:
     case RequestDestination::kEmailVerification:
       return "other";
   }
