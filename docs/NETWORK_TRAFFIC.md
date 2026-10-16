@@ -75,8 +75,10 @@ the features MoltBrowser actually runs with are **not** simply the defaults in
 the code.
 
 This also explains why some of MoltBrowser's earlier changes don't take
-effect. `omnibox_features.cc` turns `AiModeOmniboxEntryPoint` off in the code,
-but the `AIMHintText` study turns it back on. The overrides added in this
+effect. At 148, `omnibox_features.cc` turned `AiModeOmniboxEntryPoint` off in
+the code, but the `AIMHintText` study turned it back on; at 152 the omnibox
+AI Mode button for non-Google search engines is `Aim3pEntrypoint`, which the
+`Aim3pEntrypoint` study turns on. The overrides added in this
 audit are registered *before* the testing config. A study that touches one of
 those features is then skipped entirely
 (`components/variations/field_trial_config/field_trial_util.cc:86-99`). See
@@ -190,8 +192,9 @@ chrome://flags) can still turn each one back on.
      `content-autofill.googleapis.com`.
    - `TranslateRankerQuery` and `TranslateRankerEnforcement` off: no
      translate-model download from `www.gstatic.com`.
-   - `AiModeOmniboxEntryPoint` off: restores MoltBrowser's existing choice,
-     which the `AIMHintText` testing-config study was undoing.
+   - `Aim3pEntrypoint` off (it was `AiModeOmniboxEntryPoint` before
+     Chromium 152): keeps the omnibox AI Mode button off, which the
+     `Aim3pEntrypoint` testing-config study would otherwise turn on.
 2. **Default pref values**
    (`src/chrome/browser/molt_ai/privacy/molt_privacy_prefs.cc`):
    - `alternate_error_pages.enabled = false`: no DNS probe to Google Public
