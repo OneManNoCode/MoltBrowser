@@ -174,22 +174,12 @@ BASE_FEATURE(kRichAutocompletion, "OmniboxRichAutocompletion", ENABLED);
 // Enables the AIM eligibility diagnostic component extension.
 BASE_FEATURE(kAimEligibilityComponentExtension, DISABLED);
 
-<<<<<<< src/components/omnibox/common/omnibox_features.cc (MoltBrowser)
-// Whether the AI Mode entrypoint is shown in the Omnibox as a RHS button. Only
-// used on desktop platforms.
-BASE_FEATURE(kAiModeOmniboxEntryPoint, DISABLED);
-||||||| upstream@pin
-// Whether the AI Mode entrypoint is shown in the Omnibox as a RHS button. Only
-// used on desktop platforms.
-BASE_FEATURE(kAiModeOmniboxEntryPoint, ENABLED);
-=======
 // Whether the aim button should dynamically change to portray the submission
 // type.
 BASE_FEATURE(kDynamicAimSubmit, DISABLED);
 
 const base::FeatureParam<bool> kShowRhsAimHint{&kDynamicAimSubmit,
                                                "Omnibox_ShowRhsAimHint", false};
->>>>>>> upstream@new
 
 // Hides the AIM entrypoint in the Omnibox when user input is in progress. Only
 // used on desktop platforms.
@@ -208,7 +198,10 @@ BASE_FEATURE(kOmniboxMultimodalInput, DISABLED);
 BASE_FEATURE(kAndroidDesktopAimGate, ENABLED);
 
 // Enables the AIM entrypoint for third party search engines.
-BASE_FEATURE(kAim3pEntrypoint, ENABLED);
+// MoltBrowser: off by default. Since kAiModeOmniboxEntryPoint was removed, this
+// is the flag that gates the omnibox AI Mode button when the default search
+// engine is not Google (see OmniboxFieldTrial::IsAimOmniboxEntrypointEnabled).
+BASE_FEATURE(kAim3pEntrypoint, DISABLED);
 const base::FeatureParam<bool> kAim3pEntrypointDebug{
     &kAim3pEntrypoint, "Aim3pEntrypointDebug", false};
 

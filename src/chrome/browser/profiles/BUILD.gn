@@ -674,13 +674,9 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/manta:impl",
     "//chrome/browser/media/router",
     "//chrome/browser/media/webrtc",
-<<<<<<< src/chrome/browser/profiles/BUILD.gn (MoltBrowser)
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/memory",
-||||||| upstream@pin
-=======
     "//chrome/browser/notebooks",
->>>>>>> upstream@new
     "//chrome/browser/notifications",
     "//chrome/browser/omnibox",
     "//chrome/browser/optimization_guide",

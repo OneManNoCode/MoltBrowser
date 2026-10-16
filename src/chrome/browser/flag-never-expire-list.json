@@ -103,8 +103,6 @@
   "memlog",
   "memlog-sampling-rate",
   "memlog-stack-mode",
-<<<<<<< src/chrome/browser/flag-never-expire-list.json (MoltBrowser)
-  "minutes-delay-to-restore-gaia-cookies-if-deleted",
   "molt-fingerprinting-protection",
   "molt-shield-consent-killer",
   "molt-shield-cosmetics",
@@ -113,10 +111,6 @@
   "molt-shield-removeparam",
   "molt-shield-request-proxy",
   "molt-shield-websocket",
-||||||| upstream@pin
-  "minutes-delay-to-restore-gaia-cookies-if-deleted",
-=======
->>>>>>> upstream@new
   "omaha-min-sdk-version-android",
   "omnibox-debug-logs",
   "on-device-app-controls",

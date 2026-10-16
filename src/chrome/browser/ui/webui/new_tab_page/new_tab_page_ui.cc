@@ -290,36 +290,13 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
   source->AddBoolean("ntpNextFeaturesEnabled", ntp_next_features_enabled);
   source->AddBoolean("ntpNextShowDismissalUIEnabled",
                      ntp_features::kNtpNextShowDismissalUIParam.Get());
-<<<<<<< src/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc (MoltBrowser)
-  // MoltBrowser: Disable Google-specific NTP features
-  source->AddBoolean("oneGoogleBarEnabled", false);
-||||||| upstream@pin
-  source->AddBoolean(
-      "oneGoogleBarEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpOneGoogleBar));
-=======
   source->AddBoolean("ntpNextDisablementContextMenuEnabled",
                      ntp_features::kNtpNextDisablementContextMenuParam.Get());
-  source->AddBoolean(
-
-      "oneGoogleBarEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpOneGoogleBar));
->>>>>>> upstream@new
+  // MoltBrowser: Disable Google-specific NTP features
+  source->AddBoolean("oneGoogleBarEnabled", false);
   source->AddBoolean("shortcutsEnabled",
                      base::FeatureList::IsEnabled(ntp_features::kNtpShortcuts));
-<<<<<<< src/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc (MoltBrowser)
   source->AddBoolean("logoEnabled", false);
-  source->AddBoolean("middleSlotPromoEnabled", false);
-||||||| upstream@pin
-  source->AddBoolean("logoEnabled",
-                     base::FeatureList::IsEnabled(ntp_features::kNtpLogo));
-  source->AddBoolean(
-      "middleSlotPromoEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromo) &&
-          profile->GetPrefs()->GetBoolean(prefs::kNtpPromoVisible));
-=======
-  source->AddBoolean("logoEnabled",
-                     base::FeatureList::IsEnabled(ntp_features::kNtpLogo));
   source->AddBoolean(
       "animatedDoodlesEnabled",
       base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles));
@@ -332,11 +309,7 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
       base::FeatureList::IsEnabled(ntp_features::kNtpGoogleLogo26);
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
   source->AddBoolean("useGoogleLogo26", use_google_logo_26);
-  source->AddBoolean(
-      "middleSlotPromoEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromo) &&
-          profile->GetPrefs()->GetBoolean(prefs::kNtpPromoVisible));
->>>>>>> upstream@new
+  source->AddBoolean("middleSlotPromoEnabled", false);
   source->AddBoolean(
       "middleSlotPromoDismissalEnabled",
       base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromoDismissal));
@@ -738,21 +711,9 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
               ntp_realbox::kNtpRealboxDynamicAiModeButton));
 
   if (ntp_realbox::IsNtpRealboxNextEnabled(profile)) {
-<<<<<<< src/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc (MoltBrowser)
-    if (ntp_realbox::kCyclingPlaceholders.Get()) {
-      source->AddString("searchBoxPlaceholder", u"Ask MoltSearch");
-||||||| upstream@pin
-    if (ntp_realbox::kCyclingPlaceholders.Get()) {
-      source->AddLocalizedString(
-          "searchBoxPlaceholder",
-          IDS_NTP_SEARCH_BOX_DYNAMIC_PLACEHOLDER_ASK_GOOGLE);
-=======
     if (base::FeatureList::IsEnabled(
             ntp_realbox::kNtpRealboxCyclingPlaceholders)) {
-      source->AddLocalizedString(
-          "searchBoxPlaceholder",
-          IDS_NTP_SEARCH_BOX_DYNAMIC_PLACEHOLDER_ASK_GOOGLE);
->>>>>>> upstream@new
+      source->AddString("searchBoxPlaceholder", u"Ask MoltSearch");
     } else {
       switch (ntp_realbox::kSteadyPlaceholder.Get()) {
         case ntp_realbox::PlaceholderText::ASK_OR_TYPE:
