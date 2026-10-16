@@ -1290,57 +1290,21 @@ content::WebContents& NewTab(BrowserWindowInterface* browser,
       NewTabGroupingUserData::kNewTabGroupingUserDataKey,
       std::make_unique<NewTabGroupingUserData>(active_tab_group_id));
 
-<<<<<<< src/chrome/browser/ui/browser_commands.cc (MoltBrowser)
   // MoltBrowser: Open MoltSearch homepage instead of chrome://newtab
   const GURL molt_new_tab_url("chrome://molt-home/");
 
-  if (browser->SupportsWindowFeature(
-||||||| upstream@pin
-  if (browser->SupportsWindowFeature(
-=======
   if (browser->GetBrowserForMigrationOnly()->SupportsWindowFeature(
->>>>>>> upstream@new
           Browser::WindowFeature::kFeatureTabStrip)) {
-<<<<<<< src/chrome/browser/ui/browser_commands.cc (MoltBrowser)
-    std::optional<tab_groups::TabGroupId> group_id = std::nullopt;
-
-    if (features::IsNewTabAddsToActiveGroupEnabled()) {
-      const int index = browser->tab_strip_model()->active_index();
-      group_id = browser->tab_strip_model()->GetTabGroupForTab(index);
-    }
-
-    return *AddAndReturnTabAt(browser, molt_new_tab_url, -1, true, group_id);
-||||||| upstream@pin
-    std::optional<tab_groups::TabGroupId> group_id = std::nullopt;
-
-    if (features::IsNewTabAddsToActiveGroupEnabled()) {
-      const int index = browser->tab_strip_model()->active_index();
-      group_id = browser->tab_strip_model()->GetTabGroupForTab(index);
-    }
-
-    return *AddAndReturnTabAt(browser, GURL(), -1, true, group_id);
-=======
-    return *AddAndReturnTabAt(browser, GURL(), -1, true, std::nullopt);
->>>>>>> upstream@new
+    return *AddAndReturnTabAt(browser, molt_new_tab_url, -1, true,
+                              std::nullopt);
   }
 
-<<<<<<< src/chrome/browser/ui/browser_commands.cc (MoltBrowser)
-  ScopedTabbedBrowserDisplayer displayer(browser->profile());
-  Browser* b = displayer.browser();
-  auto* contents = AddAndReturnTabAt(b, molt_new_tab_url, -1, true);
-  b->window()->Show();
-||||||| upstream@pin
-  ScopedTabbedBrowserDisplayer displayer(browser->profile());
-  Browser* b = displayer.browser();
-  auto* contents = AddAndReturnTabAt(b, GURL(), -1, true);
-  b->window()->Show();
-=======
   ScopedTabbedBrowserDisplayer displayer(browser->GetProfile());
   BrowserWindowInterface* displayer_browser =
       displayer.browser_window_interface();
-  auto* contents = AddAndReturnTabAt(displayer_browser, GURL(), -1, true);
+  auto* contents =
+      AddAndReturnTabAt(displayer_browser, molt_new_tab_url, -1, true);
   displayer_browser->GetWindow()->Show();
->>>>>>> upstream@new
   // The call to AddBlankTabAt above did not set the focus to the tab as its
   // window was not active, so we have to do it explicitly.
   // See http://crbug.com/41270207.

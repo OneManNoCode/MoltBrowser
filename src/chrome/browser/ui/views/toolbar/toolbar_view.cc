@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -19,15 +20,13 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
-#include "base/strings/string_util.h"
-||||||| upstream@pin
-=======
 #include "base/notimplemented.h"
->>>>>>> upstream@new
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "cc/paint/paint_flags.h"
+#include "cc/paint/paint_shader.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/actor/ui/actor_ui_metrics.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
@@ -74,23 +73,11 @@
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/side_panel/side_panel_registry.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
-#include "chrome/browser/ui/tab_search_feature.h"
-#include "chrome/browser/ui/tabs/features.h"
-#include "chrome/browser/ui/tabs/glic_actor_task_icon_manager_factory.h"
-#include "chrome/browser/ui/tabs/glic_nudge_controller.h"
-||||||| upstream@pin
-#include "chrome/browser/ui/tab_search_feature.h"
-#include "chrome/browser/ui/tabs/features.h"
-#include "chrome/browser/ui/tabs/glic_actor_task_icon_manager_factory.h"
-#include "chrome/browser/ui/tabs/glic_nudge_controller.h"
-=======
 #include "chrome/browser/ui/page_action/page_action_properties_provider.h"
->>>>>>> upstream@new
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
 #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
@@ -114,7 +101,6 @@
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_contextual_menu.h"
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
 #include "chrome/browser/ui/views/location_bar/webui_location_bar.h"
-#include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_container.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_controller.h"
@@ -133,14 +119,8 @@
 #include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
 #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
-#include "chrome/browser/ui/views/toolbar/live_toolbar_background.h"
 #include "chrome/browser/ui/views/toolbar/molt_import_bubble.h"
 #include "chrome/browser/ui/views/toolbar/molt_net_bubble.h"
-||||||| upstream@pin
-#include "chrome/browser/ui/views/toolbar/live_toolbar_background.h"
-=======
->>>>>>> upstream@new
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
@@ -407,7 +387,7 @@ class TorExitCountryButton : public ToolbarButton,
         // Tor bootstrap (~15-30s), then a new isolated MoltNet window.
         SetHighlight(u"\U0001F9C5 …", std::nullopt);
         molt_ai::tor::MoltNetWindow::Open(
-            browser_->profile(), GURL(),
+            browser_->GetProfile(), GURL(),
             base::BindOnce(&TorExitCountryButton::OnMoltNetDone,
                            weak_factory_.GetWeakPtr()));
         return;
@@ -416,7 +396,7 @@ class TorExitCountryButton : public ToolbarButton,
       mgr->SetExitCountry(std::string());
     } else if (command_id == kCommandNewIdentity) {
       molt_ai::tor::MoltNetWindow::NewIdentity(
-          browser_->profile(),
+          browser_->GetProfile(),
           base::BindOnce(&TorExitCountryButton::OnMoltNetDone,
                          weak_factory_.GetWeakPtr()));
       return;
@@ -481,7 +461,7 @@ class TorExitCountryButton : public ToolbarButton,
   // Routing of THIS window, never the process-wide Tor state alone.
   std::u16string StatusLine() const {
     using molt_ai::tor::MoltNetRouting;
-    switch (MoltNetRouting::GetStatus(browser_->profile()).state) {
+    switch (MoltNetRouting::GetStatus(browser_->GetProfile()).state) {
       case MoltNetRouting::RoutingState::kRoutedViaTor:
         return u"\U0001F7E2 Private via Tor";
       case MoltNetRouting::RoutingState::kBlockedTorDown:
@@ -502,7 +482,7 @@ class TorExitCountryButton : public ToolbarButton,
     // is no longer wired to the click. Refresh the button's flag/label when the
     // popover closes (the user may have changed the exit country inside it).
     MoltNetBubbleView::Show(
-        /*anchor=*/this, browser_->profile(),
+        /*anchor=*/this, browser_->GetProfile(),
         base::BindRepeating(&TorExitCountryButton::UpdateLabel,
                             weak_factory_.GetWeakPtr()));
   }
@@ -513,7 +493,7 @@ class TorExitCountryButton : public ToolbarButton,
   void UpdateLabel() {
     using molt_ai::tor::MoltNetRouting;
     const MoltNetRouting::RoutingState state =
-        MoltNetRouting::GetStatus(browser_->profile()).state;
+        MoltNetRouting::GetStatus(browser_->GetProfile()).state;
     const std::string cc = molt_ai::tor::TorManager::Get()->GetExitCountry();
     std::u16string label;
     switch (state) {
@@ -553,6 +533,49 @@ END_METADATA
 
 BEGIN_METADATA(TorExitCountryButton)
 END_METADATA
+
+// MoltBrowser: the black-glass toolbar ground. kColorToolbar is near-black
+// under kGlassToolbar (chrome_color_mixer.cc), so upstream's
+// CustomCornersBackground already paints the FULLY OPAQUE black-glass ground.
+// Not see-through: the "glass" comes from the black tint plus a top-down
+// specular sheen and a 1px specular top hairline painted here, and the
+// floating buttons. This keeps toolbar text/icons maximally legible.
+// (Before M152 this paint lived in upstream's LiveToolbarBackground, which
+// upstream deleted; the browser layout now requires the toolbar background to
+// be a CustomCornersBackground, hence the subclass.)
+class MoltGlassToolbarBackground : public CustomCornersBackground {
+ public:
+  using CustomCornersBackground::CustomCornersBackground;
+
+  void Paint(gfx::Canvas* canvas, views::View* view) const override {
+    CustomCornersBackground::Paint(canvas, view);
+
+    // Upstream's own glass frame cuts shapes out of the toolbar background;
+    // don't paint over those.
+    if (features::IsGlassFrameEnabled()) {
+      return;
+    }
+
+    gfx::ScopedCanvas scoped_canvas(canvas);
+    // Stay inside the (possibly rounded-corner) toolbar shape.
+    canvas->ClipPath(GetBackgroundPath(), /*do_anti_alias=*/true);
+
+    SkColor4f sheen[] = {
+        SkColor4f::FromColor(SkColorSetA(SK_ColorWHITE, 0x24)),  // ~0.14
+        SkColor4f::FromColor(SK_ColorTRANSPARENT)};
+    SkPoint sheen_pts[] = {SkPoint::Make(0, 0),
+                           SkPoint::Make(0, view->height() * 0.6f)};
+    static_assert(std::size(sheen) == std::size(sheen_pts));
+    cc::PaintFlags sheen_flags;
+    sheen_flags.setShader(cc::PaintShader::MakeLinearGradient(
+        sheen_pts, sheen, nullptr, std::size(sheen_pts), SkTileMode::kClamp));
+    canvas->DrawRect(gfx::RectF(view->GetLocalBounds()), sheen_flags);
+
+    cc::PaintFlags hairline;
+    hairline.setColor(SkColorSetA(SK_ColorWHITE, 0x33));  // ~0.20
+    canvas->DrawRect(gfx::RectF(0, 0, view->width(), 1), hairline);
+  }
+};
 
 }  // namespace
 
@@ -607,14 +630,13 @@ ToolbarView::~ToolbarView() {
 }
 
 // MoltBrowser: light the violet "active" ring on whichever mode button matches
-// the currently-open content side-panel entry, and clear it on the other (and
-// on both when the panel is closed). Driven by the SidePanelEntryObserver
-// callbacks below, which fire on open, AI↔Agent swap, and close.
+// the currently-open side-panel entry, and clear it on the other (and on both
+// when the panel is closed). Driven by the SidePanelEntryObserver callbacks
+// below, which fire on open, AI↔Agent swap, and close.
 void ToolbarView::UpdateAiAgentModeHighlights() {
   SidePanelUI* ui = browser_ ? browser_->GetFeatures().side_panel_ui() : nullptr;
   std::optional<SidePanelEntryId> id =
-      ui ? ui->GetCurrentEntryId(SidePanelEntry::PanelType::kContent)
-         : std::nullopt;
+      ui ? ui->GetCurrentEntryId() : std::nullopt;
   const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
   if (molt_ai_mode_button_) {
     molt_ai_mode_button_->SetHighlight(
@@ -644,7 +666,7 @@ void ToolbarView::SetUpSidePanelHighlightObservation() {
   for (SidePanelEntryId id :
        {SidePanelEntryId::kMoltAiChat, SidePanelEntryId::kMoltAgent}) {
     if (SidePanelEntry* entry =
-            registry->GetEntryForKey(SidePanelEntry::Key(id))) {
+            registry->GetEntryForKey(SidePanelEntryKey(id))) {
       if (!side_panel_entry_observations_.IsObservingSource(entry)) {
         side_panel_entry_observations_.AddObservation(entry);
       }
@@ -688,10 +710,18 @@ void ToolbarView::Init() {
   }
 
   if (display_mode_ == DisplayMode::kNormal) {
-    SetBackground(std::make_unique<CustomCornersBackground>(
-        *this, *browser_view_,
-        /*primary_color=*/CustomCornersBackground::ToolbarTheme(),
-        /*corner_color=*/CustomCornersBackground::FrameTheme()));
+    if (base::FeatureList::IsEnabled(features::kGlassToolbar)) {
+      // MoltBrowser: black-glass toolbar ground (sheen + hairline).
+      SetBackground(std::make_unique<MoltGlassToolbarBackground>(
+          *this, *browser_view_,
+          /*primary_color=*/CustomCornersBackground::ToolbarTheme(),
+          /*corner_color=*/CustomCornersBackground::FrameTheme()));
+    } else {
+      SetBackground(std::make_unique<CustomCornersBackground>(
+          *this, *browser_view_,
+          /*primary_color=*/CustomCornersBackground::ToolbarTheme(),
+          /*corner_color=*/CustomCornersBackground::FrameTheme()));
+    }
   } else if (display_mode_ == DisplayMode::kCustomTab) {
     custom_tab_bar_ =
         AddChildView(std::make_unique<CustomTabBarView>(browser_view_, this));
@@ -813,13 +843,13 @@ void ToolbarView::Init() {
 
     auto import_button = std::make_unique<ToolbarButton>();
     import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    import_button->SetVectorIcon(kBookmarksManagerIcon);
+    import_button->SetVectorIcon(kBookmarksManagerOldIcon);
     import_button->SetTooltipText(
         u"Bookmarks — view yours, or import from another browser");
     ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
     import_button_ptr->SetCallback(base::BindRepeating(
         [](ToolbarButton* anchor, Browser* browser) {
-          MoltImportBubbleView::Show(anchor, browser->profile());
+          MoltImportBubbleView::Show(anchor, browser->GetProfile());
         },
         base::Unretained(import_button_ptr), browser_));
   }
@@ -909,7 +939,6 @@ void ToolbarView::Init() {
     media_button_ = AddChildView(std::move(media_button));
   }
 
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
   // MoltBrowser: AI chat quick-access button with explicit "Local AI" label.
   // Toggles the AI chat side panel (the redesigned chat surface). Placed
   // where the Google avatar button used to live so the primary on-device AI
@@ -935,7 +964,7 @@ void ToolbarView::Init() {
     // UpdateAiAgentModeHighlights() only while the kMoltAiChat panel is open.
     molt_ai_button->SetHighlight(u"🤖 AI mode", std::nullopt);
     molt_ai_button->SetTooltipText(
-        u"Toggle AI mode — MoltBrowser AI, runs locally on your device (⌘⇧L)");
+        u"Toggle AI mode — MoltBrowser AI, runs locally on your device");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     // The 🤖 robot emoji in the label carries the icon (like the country flag
     // on the MoltNet button), so no separate vector icon. This is also the
@@ -999,13 +1028,13 @@ void ToolbarView::Init() {
     // Tor proxy (+ WebRTC/prediction/DoH overrides) into the REGULAR profile
     // and local state. Clear exactly those legacy values. Idempotent; a
     // no-op once cleaned (MoltNet never writes them there any more).
-    if (!molt_ai::tor::IsMoltNetProfile(browser_->profile())) {
+    if (!molt_ai::tor::IsMoltNetProfile(browser_->GetProfile())) {
       molt_ai::tor::MoltNetRouting::MigrateLegacyRoutingPrefs(
-          browser_->profile(), g_browser_process->local_state());
+          browser_->GetProfile(), g_browser_process->local_state());
     }
 
     molt_ai::UpdateManager::Get()->Initialize(
-        browser_->profile()
+        browser_->GetProfile()
             ->GetDefaultStoragePartition()
             ->GetURLLoaderFactoryForBrowserProcess());
     auto update_button = std::make_unique<ToolbarButton>(base::BindRepeating(
@@ -1015,61 +1044,13 @@ void ToolbarView::Init() {
         },
         browser_));
     update_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    update_button->SetVectorIcon(vector_icons::kInstallDesktopIcon);
+    update_button->SetVectorIcon(features::IsRoundedIconsEnabled()
+                                     ? vector_icons::kInstallDesktopIcon
+                                     : vector_icons::kInstallDesktopOldIcon);
     update_button->SetTooltipText(u"Software update");
     AddChildView(std::move(update_button));
   }
 
-  avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
-  // MoltBrowser: Hide the Google sign-in / avatar button.
-  // MoltBrowser does not use Google account integration.
-  bool show_avatar_toolbar_button = false;
-  avatar_->SetVisible(show_avatar_toolbar_button);
-
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-  auto new_tab_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-      &ToolbarView::NewTabButtonPressed, base::Unretained(this)));
-  new_tab_button->SetTooltipText(
-      l10n_util::GetStringUTF16(IDS_TOOLTIP_NEW_TAB));
-  new_tab_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  new_tab_button->SetVectorIcon(kNewTabToolbarButtonIcon);
-  new_tab_button->SetVisible(false);
-  new_tab_button->SetProperty(views::kElementIdentifierKey,
-                              kToolbarNewTabButtonElementId);
-  new_tab_button_ = AddChildView(std::move(new_tab_button));
-#endif  // BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-||||||| upstream@pin
-  avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
-  bool show_avatar_toolbar_button = true;
-#if BUILDFLAG(IS_CHROMEOS)
-  // ChromeOS only badges Incognito, Guest, and captive portal signin icons in
-  // the browser window.
-  show_avatar_toolbar_button =
-      browser_->profile()->IsIncognitoProfile() ||
-      browser_->profile()->IsGuestSession() ||
-      (browser_->profile()->IsOffTheRecord() &&
-       browser_->profile()->GetOTRProfileID().IsCaptivePortal());
-#else
-  // DevTools profiles are OffTheRecord, so hide it there.
-  show_avatar_toolbar_button = browser_->profile()->IsIncognitoProfile() ||
-                               browser_->profile()->IsGuestSession() ||
-                               browser_->profile()->IsRegularProfile();
-#endif
-  avatar_->SetVisible(show_avatar_toolbar_button);
-
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-  auto new_tab_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-      &ToolbarView::NewTabButtonPressed, base::Unretained(this)));
-  new_tab_button->SetTooltipText(
-      l10n_util::GetStringUTF16(IDS_TOOLTIP_NEW_TAB));
-  new_tab_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  new_tab_button->SetVectorIcon(kNewTabToolbarButtonIcon);
-  new_tab_button->SetVisible(false);
-  new_tab_button->SetProperty(views::kElementIdentifierKey,
-                              kToolbarNewTabButtonElementId);
-  new_tab_button_ = AddChildView(std::move(new_tab_button));
-#endif  // BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-=======
   if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
     if (base::FeatureList::IsEnabled(features::kAiOverlayDialog) &&
         ttc::AiOverlayDialogController::From(browser_)) {
@@ -1106,11 +1087,11 @@ void ToolbarView::Init() {
   if (!features::IsWebUIAvatarButtonEnabled()) {
     avatar_ =
         AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
-    bool show_avatar_toolbar_button =
-        AvatarToolbarButtonInterface::CanShowForProfile(browser_->GetProfile());
+    // MoltBrowser: Hide the Google sign-in / avatar button.
+    // MoltBrowser does not use Google account integration.
+    bool show_avatar_toolbar_button = false;
     avatar_->SetVisible(show_avatar_toolbar_button);
   }
->>>>>>> upstream@new
 
   overflow_button_ = AddChildView(std::make_unique<OverflowButton>());
   overflow_button_->SetVisible(false);

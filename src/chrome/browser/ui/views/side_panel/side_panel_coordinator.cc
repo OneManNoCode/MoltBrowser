@@ -61,6 +61,41 @@ SidePanelCoordinator::SidePanelCoordinator(BrowserWindowInterface* browser)
   side_panel_observation_.Observe(side_panel);
   SidePanelHelper::PopulateGlobalEntries(browser,
                                          SidePanelRegistry::From(browser));
+
+  // MoltBrowser: default-open the AI Chat side panel on every new
+  // browser window so users get the chat-with-the-page experience
+  // immediately (matches Edge Copilot / Comet / Perplexity UX).
+  //
+  // Why PostTask: the coordinator is created while the BrowserView is still
+  // being constructed (BrowserWindowFeatures::InitPostBrowserViewConstruction).
+  // Showing synchronously here triggers
+  // SidePanel::ResetSidePanelAnimationContent() before the SidePanel
+  // view itself finishes initializing → SEGV. Deferring one turn
+  // lets the browser window finish constructing. The task holds a WeakPtr to
+  // the window, so it is a no-op if the window is gone by then.
+  Profile* const profile = browser->GetProfile();
+  if (profile && !profile->IsGuestSession() && !profile->IsSystemProfile() &&
+      browser->GetType() == BrowserWindowInterface::TYPE_NORMAL) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            [](base::WeakPtr<BrowserWindowInterface> weak_browser) {
+              BrowserWindowInterface* const window = weak_browser.get();
+              if (!window) {
+                return;
+              }
+              SidePanelUI* const ui = SidePanelUI::From(window);
+              SidePanelRegistry* const registry =
+                  SidePanelRegistry::From(window);
+              if (!ui || !registry ||
+                  !registry->GetEntryForKey(
+                      SidePanelEntryKey(SidePanelEntryId::kMoltAiChat))) {
+                return;
+              }
+              ui->Show(SidePanelEntryId::kMoltAiChat);
+            },
+            browser->GetWeakPtr()));
+  }
 }
 
 SidePanelCoordinator::~SidePanelCoordinator() = default;
@@ -71,46 +106,6 @@ SidePanelCoordinator* SidePanelCoordinator::From(
   return Get(browser_window_interface->GetUnownedUserDataHost());
 }
 
-<<<<<<< src/chrome/browser/ui/views/side_panel/side_panel_coordinator.cc (MoltBrowser)
-void SidePanelCoordinator::Init(Browser* browser) {
-  SidePanelHelper::PopulateGlobalEntries(browser,
-                                         SidePanelRegistry::From(browser));
-  // MoltBrowser: default-open the AI Chat side panel on every new
-  // browser window so users get the chat-with-the-page experience
-  // immediately (matches Edge Copilot / Comet / Perplexity UX).
-  //
-  // Why PostTask: Init() runs INSIDE BrowserView's ctor (via
-  // BrowserWindowFeatures::InitPostBrowserViewConstruction). Calling
-  // Show() synchronously here triggers
-  // SidePanel::ResetSidePanelAnimationContent() before the SidePanel
-  // view itself finishes initializing → SEGV. Deferring one turn
-  // lets the browser window finish constructing.
-  //
-  // SidePanelCoordinator is owned by BrowserWindowFeatures which is
-  // owned by Browser, so Unretained(this) is safe across a single
-  // message-loop turn — nothing can destroy us before the task fires.
-  if (browser && browser->profile() &&
-      !browser->profile()->IsGuestSession() &&
-      !browser->profile()->IsSystemProfile() &&
-      browser->is_type_normal()) {
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE,
-        base::BindOnce(
-            [](SidePanelCoordinator* self) {
-              self->Show(SidePanelEntryId::kMoltAiChat);
-            },
-            base::Unretained(this)));
-  }
-}
-
-||||||| upstream@pin
-void SidePanelCoordinator::Init(Browser* browser) {
-  SidePanelHelper::PopulateGlobalEntries(browser,
-                                         SidePanelRegistry::From(browser));
-}
-
-=======
->>>>>>> upstream@new
 void SidePanelCoordinator::TearDownPreBrowserWindowDestruction() {
   Close(SidePanelEntryHideReason::kSidePanelClosed,
         /*suppress_animations=*/true);

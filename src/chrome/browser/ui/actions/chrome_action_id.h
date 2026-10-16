@@ -488,19 +488,11 @@
   E(kActionSidePanelShowSearchCompanion) \
   E(kActionSidePanelShowShoppingInsights) \
   E(kActionSidePanelShowSideSearch) \
-<<<<<<< src/chrome/browser/ui/actions/chrome_action_id.h (MoltBrowser)
-  E(kActionSidePanelShowUserNote) \
-  E(kActionSidePanelShowMerchantTrust) \
-  E(kActionSidePanelShowMoltAiChat) \
-  E(kActionSidePanelShowMoltAgent)
-||||||| upstream@pin
-  E(kActionSidePanelShowUserNote) \
-  E(kActionSidePanelShowMerchantTrust)
-=======
   E(kActionSidePanelShowMerchantTrust) \
   E(kActionSidePanelShowTabsFromOtherDevices, \
-    IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL)
->>>>>>> upstream@new
+    IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL) \
+  E(kActionSidePanelShowMoltAiChat) \
+  E(kActionSidePanelShowMoltAgent)
 
 #define TOOLBAR_PINNABLE_ACTION_IDS \
   E(kActionHome, IDC_HOME) \

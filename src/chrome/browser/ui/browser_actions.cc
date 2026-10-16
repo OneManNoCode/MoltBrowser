@@ -446,87 +446,6 @@ void BrowserActions::InitializeSidePanelActions() {
   Profile* const profile = base::to_address(profile_);
   BrowserWindowInterface* const bwi = base::to_address(bwi_);
 
-<<<<<<< src/chrome/browser/ui/browser_actions.cc (MoltBrowser)
-  actions::ActionManager::Get().AddAction(
-      actions::ActionItem::Builder()
-          .CopyAddressTo(&root_action_item_)
-          .AddChildren(
-              SidePanelAction(
-                  SidePanelEntryId::kBookmarks, IDS_BOOKMARK_MANAGER_TITLE,
-                  IDS_BOOKMARK_MANAGER_TITLE, kBookmarksSidePanelRefreshIcon,
-                  kActionSidePanelShowBookmarks, bwi, true),
-              SidePanelAction(SidePanelEntryId::kReadingList,
-                              IDS_READ_LATER_TITLE, IDS_READ_LATER_TITLE,
-                              kReadingListIcon, kActionSidePanelShowReadingList,
-                              bwi, true),
-              SidePanelAction(SidePanelEntryId::kAboutThisSite,
-                              IDS_PAGE_INFO_ABOUT_THIS_PAGE_TITLE,
-                              IDS_PAGE_INFO_ABOUT_THIS_PAGE_TITLE,
-                              PageInfoViewFactory::GetAboutThisSiteVectorIcon(),
-                              kActionSidePanelShowAboutThisSite, bwi, false),
-              SidePanelAction(SidePanelEntryId::kCustomizeChrome,
-                              IDS_SIDE_PANEL_CUSTOMIZE_CHROME_TITLE,
-                              IDS_SIDE_PANEL_CUSTOMIZE_CHROME_TITLE,
-                              vector_icons::kEditChromeRefreshIcon,
-                              kActionSidePanelShowCustomizeChrome, bwi, false),
-              SidePanelAction(SidePanelEntryId::kShoppingInsights,
-                              IDS_SHOPPING_INSIGHTS_SIDE_PANEL_TITLE,
-                              IDS_SHOPPING_INSIGHTS_SIDE_PANEL_TITLE,
-                              vector_icons::kShoppingBagIcon,
-                              kActionSidePanelShowShoppingInsights, bwi, false),
-              SidePanelAction(SidePanelEntryId::kMerchantTrust,
-                              IDS_MERCHANT_TRUST_SIDE_PANEL_TITLE,
-                              IDS_MERCHANT_TRUST_SIDE_PANEL_TITLE,
-                              vector_icons::kStorefrontIcon,
-                              kActionSidePanelShowMerchantTrust, bwi, false),
-              SidePanelAction(SidePanelEntryId::kMoltAiChat,
-                              IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
-                              IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
-                              vector_icons::kChatSparkIcon,
-                              kActionSidePanelShowMoltAiChat, bwi, true),
-              // MoltBrowser: Agent-mode automation studio side panel. Reuses
-              // the AI chat title/icon (the native header + ephemeral toolbar
-              // chip are both suppressed on this entry, so neither is ever
-              // user-visible); the toolbar "Agent mode" button toggles it.
-              SidePanelAction(SidePanelEntryId::kMoltAgent,
-                              IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
-                              IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
-                              vector_icons::kScreenRecordIcon,
-                              kActionSidePanelShowMoltAgent, bwi, true))
-||||||| upstream@pin
-  actions::ActionManager::Get().AddAction(
-      actions::ActionItem::Builder()
-          .CopyAddressTo(&root_action_item_)
-          .AddChildren(
-              SidePanelAction(
-                  SidePanelEntryId::kBookmarks, IDS_BOOKMARK_MANAGER_TITLE,
-                  IDS_BOOKMARK_MANAGER_TITLE, kBookmarksSidePanelRefreshIcon,
-                  kActionSidePanelShowBookmarks, bwi, true),
-              SidePanelAction(SidePanelEntryId::kReadingList,
-                              IDS_READ_LATER_TITLE, IDS_READ_LATER_TITLE,
-                              kReadingListIcon, kActionSidePanelShowReadingList,
-                              bwi, true),
-              SidePanelAction(SidePanelEntryId::kAboutThisSite,
-                              IDS_PAGE_INFO_ABOUT_THIS_PAGE_TITLE,
-                              IDS_PAGE_INFO_ABOUT_THIS_PAGE_TITLE,
-                              PageInfoViewFactory::GetAboutThisSiteVectorIcon(),
-                              kActionSidePanelShowAboutThisSite, bwi, false),
-              SidePanelAction(SidePanelEntryId::kCustomizeChrome,
-                              IDS_SIDE_PANEL_CUSTOMIZE_CHROME_TITLE,
-                              IDS_SIDE_PANEL_CUSTOMIZE_CHROME_TITLE,
-                              vector_icons::kEditChromeRefreshIcon,
-                              kActionSidePanelShowCustomizeChrome, bwi, false),
-              SidePanelAction(SidePanelEntryId::kShoppingInsights,
-                              IDS_SHOPPING_INSIGHTS_SIDE_PANEL_TITLE,
-                              IDS_SHOPPING_INSIGHTS_SIDE_PANEL_TITLE,
-                              vector_icons::kShoppingBagIcon,
-                              kActionSidePanelShowShoppingInsights, bwi, false),
-              SidePanelAction(SidePanelEntryId::kMerchantTrust,
-                              IDS_MERCHANT_TRUST_SIDE_PANEL_TITLE,
-                              IDS_MERCHANT_TRUST_SIDE_PANEL_TITLE,
-                              vector_icons::kStorefrontIcon,
-                              kActionSidePanelShowMerchantTrust, bwi, false))
-=======
   root_action_item_->AddChild(
       SidePanelAction(SidePanelEntryId::kBookmarks, IDS_BOOKMARK_MANAGER_TITLE,
                       IDS_BOOKMARK_MANAGER_TITLE,
@@ -585,7 +504,28 @@ void BrowserActions::InitializeSidePanelActions() {
           features::IsRoundedIconsEnabled() ? vector_icons::kStorefrontIcon
                                             : vector_icons::kStorefrontOldIcon,
           kActionSidePanelShowMerchantTrust, bwi, false)
->>>>>>> upstream@new
+          .Build());
+  root_action_item_->AddChild(
+      SidePanelAction(SidePanelEntryId::kMoltAiChat,
+                      IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
+                      IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
+                      features::IsRoundedIconsEnabled()
+                          ? vector_icons::kChatSparkIcon
+                          : vector_icons::kChatSparkOldIcon,
+                      kActionSidePanelShowMoltAiChat, bwi, true)
+          .Build());
+  // MoltBrowser: Agent-mode automation studio side panel. Reuses the AI chat
+  // title/icon (the native header + ephemeral toolbar chip are both suppressed
+  // on this entry, so neither is ever user-visible); the toolbar "Agent mode"
+  // button toggles it.
+  root_action_item_->AddChild(
+      SidePanelAction(SidePanelEntryId::kMoltAgent,
+                      IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
+                      IDS_SIDE_PANEL_MOLT_AI_CHAT_TITLE,
+                      features::IsRoundedIconsEnabled()
+                          ? vector_icons::kScreenRecordIcon
+                          : vector_icons::kScreenRecordOldIcon,
+                      kActionSidePanelShowMoltAgent, bwi, true)
           .Build());
 
   if (side_panel::history_clusters::
