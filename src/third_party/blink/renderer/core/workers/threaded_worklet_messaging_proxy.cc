@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/inspector/thread_debugger_common_impl.h"
 #include "third_party/blink/renderer/core/loader/worker_fetch_context.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
@@ -131,6 +132,8 @@ void ThreadedWorkletMessagingProxy::Initialize(
   CHECK(!client_provided_global_scope_creation_params);
 
   LocalDOMWindow* window = To<LocalDOMWindow>(GetExecutionContext());
+  // MoltBrowser: the worklet farbles with its document's per-site key.
+  molt_fingerprinting::ProvideToWorklet(*window, worker_clients);
   ContentSecurityPolicy* csp = window->GetContentSecurityPolicy();
   DCHECK(csp);
 

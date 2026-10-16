@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_blink_audio_worklet_process_callback.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_worklet_global_scope.h"
@@ -198,7 +199,8 @@ bool ClonePortTopology(v8::Isolate* isolate,
 // be identical.
 void CopyPortToArrayBuffers(v8::Isolate* isolate,
                             const Vector<scoped_refptr<AudioBus>>& audio_port,
-                            BackingArrayBuffers& array_buffers) {
+                            BackingArrayBuffers& array_buffers,
+                            ExecutionContext* farbling_context) {
   DCHECK_EQ(audio_port.size(), array_buffers.size());
 
   for (uint32_t bus_index = 0; bus_index < audio_port.size(); ++bus_index) {
@@ -213,6 +215,12 @@ void CopyPortToArrayBuffers(v8::Isolate* isolate,
       UNSAFE_TODO(memcpy(backing_store->Data(),
                          audio_bus->Channel(channel_index)->Data(),
                          bus_length * sizeof(float)));
+      // MoltBrowser: per-site fingerprinting noise on the samples script
+      // reads (the graph's own buses are untouched).
+      molt_fingerprinting::FarbleAudio(
+          farbling_context,
+          UNSAFE_TODO(base::span<float>(
+              static_cast<float*>(backing_store->Data()), bus_length)));
     }
   }
 }
@@ -480,7 +488,8 @@ bool AudioWorkletProcessor::Process(
   DCHECK_EQ(input_array_buffers_.size(), inputs.size());
 
   // Copies `inputs` to the internal `input_array_buffers_`.
-  CopyPortToArrayBuffers(isolate, inputs, input_array_buffers_);
+  CopyPortToArrayBuffers(isolate, inputs, input_array_buffers_,
+                         global_scope_.Get());  // MoltBrowser
 
   // 2nd JS arg `outputs_`. Compare `outputs` and `outputs_`. Then allocates the
   // data container if necessary.
