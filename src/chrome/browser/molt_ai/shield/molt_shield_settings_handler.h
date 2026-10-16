@@ -1,7 +1,9 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltShield section of molt://ai-settings: global switches, filter lists
+// MoltShield section of molt://ai-settings: global switches (plus the
+// per-profile "Strip tracking parameters" pref, molt_shield_prefs.h), filter
+// lists
 // (status, versions, enable, "update now"), session counters, open tabs with
 // their blocked counts + per-site Shields toggle + "Report broken site", and
 // the list of sites with Shields down.

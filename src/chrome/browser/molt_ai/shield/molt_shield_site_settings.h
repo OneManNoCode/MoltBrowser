@@ -36,6 +36,13 @@ namespace molt_ai::shield {
 bool AreShieldsUpForSite(content::BrowserContext* context,
                          const GURL& top_frame_url);
 
+// UI thread. Whether tracking-parameter stripping may run for `context`:
+// the MoltShieldRemoveParam kill switch (chrome://flags) and the profile's
+// "Strip tracking parameters" setting (molt_shield_prefs.h) are both on.
+// Checked per request / navigation leg, so the setting applies without a
+// relaunch. A null context counts as the default (on).
+bool IsRemoveParamEnabledForContext(content::BrowserContext* context);
+
 // Adds/removes the site-wide exception for `url`'s site.
 void SetShieldsUpForSite(content::BrowserContext* context,
                          const GURL& url,

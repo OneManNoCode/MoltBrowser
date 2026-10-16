@@ -51,7 +51,10 @@ MoltBrowser
  |    +-- Bridges (obfs4 / snowflake); see docs/MOLTNET_COMPLIANCE.md
  |    +-- .onion only in MoltNet windows (OnionNavigationThrottle + the host
  |    |   resolver refuse it elsewhere); Onion-Location offered as an infobar
- |    +-- tor binary: bundled, or on Linux a root-owned /usr/bin|/usr/sbin/tor
+ |    +-- tor binary: bundled, or on Linux a root-owned /usr/bin|/usr/sbin/tor;
+ |    |   pluggable transports likewise (lyrebird/obfs4proxy, snowflake-client)
+ |    +-- OnionBlockingURLLoaderFactory: no .onion requests outside MoltNet,
+ |    |   even through a user proxy
  |
  +-- WebAgent (molt_ai/agents) — chat-driven page actions, gated by
  |    molt_ai/security/agent_safety
@@ -161,8 +164,9 @@ repo/
   from brave-core).
 - Tracking-parameter stripping (`$removeparam` + a built-in list):
   navigations via `MoltShieldNavigationInterceptor` (an internal 307 on every
-  GET leg), subresources rewritten in the proxy before they start (same
-  origin and path only).
+  GET leg), subresources rewritten in the proxy before they start and on
+  server-redirect legs (same origin and path only, loop-guarded). Per-profile
+  switch in molt://ai-settings (pref `molt_shield.remove_tracking_params`).
 - Per-site Shields toggle (content setting), per-tab counts, breakage report in
   molt://ai-settings; consent-banner auto-reject (`molt_ai/consent/`).
 - Rust side tested/benchmarked standalone in `tools/shield_bench/`.

@@ -4,7 +4,10 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
 
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
@@ -41,6 +44,16 @@ bool AreShieldsUpForSite(content::BrowserContext* context,
   // Only an explicit per-site ALLOW lowers Shields; ignore the default.
   return !(setting == CONTENT_SETTING_ALLOW &&
            !info.primary_pattern.MatchesAllHosts());
+}
+
+bool IsRemoveParamEnabledForContext(content::BrowserContext* context) {
+  if (!molt_shield::IsRemoveParamEnabled()) {
+    return false;  // chrome://flags kill switch or --disable-molt-shield
+  }
+  // An incognito or MoltNet profile's prefs read through to its original
+  // profile's for prefs it never set, which is where the switch is set.
+  return prefs::IsRemoveTrackingParamsOn(
+      context ? Profile::FromBrowserContext(context)->GetPrefs() : nullptr);
 }
 
 void SetShieldsUpForSite(content::BrowserContext* context,

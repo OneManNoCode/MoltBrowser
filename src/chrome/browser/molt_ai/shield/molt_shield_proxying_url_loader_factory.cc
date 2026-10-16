@@ -24,6 +24,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_version.h"
+#include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/early_hints.mojom.h"
@@ -120,6 +121,7 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
         request_type_(RequestTypeForDestination(request.destination,
                                                 request.keepalive)),
         traffic_annotation_(traffic_annotation),
+        stripper_(request.redirect_mode),
         loader_receiver_(this, std::move(loader_receiver)),
         target_client_(std::move(client)) {
     loader_receiver_.set_disconnect_handler(base::BindOnce(
@@ -150,9 +152,12 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
       const net::HttpRequestHeaders& modified_headers,
       const net::HttpRequestHeaders& modified_cors_exempt_headers,
       const std::optional<GURL>& new_url) override {
+    // The stripped redirect target, if the leg the renderer follows was
+    // stripped (see MaybeStripRedirect()).
+    const std::optional<GURL> follow_url = stripper_.OnFollowRedirect(new_url);
     if (target_loader_.is_bound()) {
       target_loader_->FollowRedirect(removed_headers, modified_headers,
-                                     modified_cors_exempt_headers, new_url);
+                                     modified_cors_exempt_headers, follow_url);
     }
   }
 
@@ -174,12 +179,18 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
       network::mojom::URLResponseHeadPtr head,
       mojo::ScopedDataPipeConsumerHandle body,
       std::optional<mojo_base::BigBuffer> cached_metadata) override {
+    stripper_.OnResponse();
     target_client_->OnReceiveResponse(std::move(head), std::move(body),
                                       std::move(cached_metadata));
   }
 
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
                          network::mojom::URLResponseHeadPtr head) override {
+    // The network service's internal redirect to a stripped URL (asked for
+    // in FollowRedirect()): the decorated URL was never requested.
+    if (stripper_.OnNetworkRedirect(redirect_info.new_url)) {
+      MoltShieldService::Get()->RecordParamsStripped();
+    }
     std::optional<CheckInput> input = MakeInput(redirect_info.new_url);
     if (!input) {
       target_client_->OnReceiveRedirect(redirect_info, std::move(head));
@@ -261,6 +272,7 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
       CompleteWithError(net::ERR_BLOCKED_BY_CLIENT);
       return;
     }
+    MaybeStripRedirect(redirect_info, result.rewritten_url);
     target_client_->OnReceiveRedirect(redirect_info, std::move(head));
     client_receiver_.Resume();
   }
@@ -272,20 +284,51 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
   // same-origin: CORS checks and response tainting are exactly those of the
   // original URL, `fetch(url, {redirect: 'error'})` and streaming upload
   // bodies keep working, the body is sent once, and nothing can loop.
-  // Only the initial URL is stripped; server redirects are only checked for
-  // blocking (OnRedirectChecked).
+  // Server-redirect legs: MaybeStripRedirect().
   void MaybeStripParams(const std::string& rewritten_url) {
-    if (rewritten_url.empty() || !molt_shield::IsRemoveParamEnabled() ||
-        !CanStripParamsFromSubresource(request_.destination,
-                                       request_.keepalive)) {
-      return;
-    }
-    GURL stripped(rewritten_url);
-    if (!IsSafeParamStrip(request_.url, stripped)) {
+    GURL stripped = StrippedUrl(rewritten_url);
+    if (!stripper_.AllowInitialStrip(request_.url, stripped)) {
       return;
     }
     request_.url = std::move(stripped);
     MoltShieldService::Get()->RecordParamsStripped();
+  }
+
+  // A server redirect to a decorated URL (e.g. a click tracker's 302 to
+  // cdn.example/x.js?utm_source=...). The redirect can't be undone, but its
+  // target can be: the renderer gets the server's redirect unchanged, and
+  // when it follows, FollowRedirect() passes the stripped URL as `new_url`.
+  // The network service applies that before the decorated URL is requested
+  // (NetworkServiceNetworkDelegate::OnBeforeURLRequest) with an internal
+  // "307 Internal Redirect" (Non-Authoritative-Reason: Delegate) to the
+  // stripped URL, which arrives here and goes to the renderer like any
+  // redirect -- what a renderer-side URLLoaderThrottle that rewrites a
+  // redirect gets too. So the renderer ends on the URL that was fetched, and
+  // as only the query changes (same origin, path and fragment), CORS mode,
+  // credentials and tainting are unchanged; the network service requires
+  // `new_url` to be same-origin with the redirect target, which
+  // IsSafeParamStrip guarantees. Follow-mode GET legs only, loop-guarded:
+  // see SubresourceParamStripper. Where the network service re-issues a
+  // CORS request on the redirect instead of following it, `new_url` is not
+  // used and the URL is fetched as the server sent it (no strip, nothing
+  // breaks).
+  void MaybeStripRedirect(const net::RedirectInfo& redirect_info,
+                          const std::string& rewritten_url) {
+    stripper_.OnRedirectChecked(redirect_info.new_url, redirect_info.new_method,
+                                StrippedUrl(rewritten_url));
+  }
+
+  // The engine's rewrite when this request may be stripped at all, else an
+  // empty (invalid) URL. Stripping needs the kill switch and the profile's
+  // "Strip tracking parameters" setting on (read per leg).
+  GURL StrippedUrl(const std::string& rewritten_url) const {
+    if (rewritten_url.empty() ||
+        !IsRemoveParamEnabledForContext(factory_->browser_context_) ||
+        !CanStripParamsFromSubresource(request_.destination,
+                                       request_.keepalive)) {
+      return GURL();
+    }
+    return GURL(rewritten_url);
   }
 
   void StartTarget() {
@@ -376,6 +419,8 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
   const std::string request_type_;
   const net::MutableNetworkTrafficAnnotationTag traffic_annotation_;
   bool completed_ = false;
+  // Parameter stripping across the initial URL and the redirect legs.
+  SubresourceParamStripper stripper_;
   std::optional<std::pair<net::RequestPriority, int32_t>> pending_priority_;
 
   // Renderer side.

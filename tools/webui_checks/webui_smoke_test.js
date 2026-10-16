@@ -70,6 +70,30 @@ const agentTrustCalls = [];
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
 
+// saveMoltProfile calls from the /profile editor ([dict, options] each).
+const profileSaves = [];
+
+// The molt://ai-chat reader commands (A7): the active tab shows
+// example.com/b (entry 2); getPageContent reads it fresh; sendPrompt
+// records the prompts.
+const pageContentCalls = [];
+const sentPrompts = [];
+const ACTIVE_PAGE = {has_context: true, url: 'https://example.com/b', title: 'B',
+                     nav_entry_id: 2};
+
+// shieldSetGlobal calls from molt://ai-settings ([key, value] each). The
+// reply after turning tracking-parameter stripping off also reports its
+// chrome://flags kill switch as off.
+const shieldGlobalCalls = [];
+function shieldSetGlobal(args) {
+  shieldGlobalCalls.push([args[1], args[2]]);
+  if (args[1] !== 'removeParam') return SHIELD_STATE;
+  return Object.assign({}, SHIELD_STATE, {
+    removeParam: args[2],
+    hooksOff: ['molt-shield-websocket', 'molt-shield-removeparam'],
+  });
+}
+
 // Model licence display (A13), shared by molt://ai and molt://ai-chat: the
 // licence name is text, only an http(s) licence URL becomes a link, the
 // link opens through openUrlInTab, and in the model menu it doesn't also
@@ -110,7 +134,7 @@ async function checkModelLicences(window) {
 // molt://ai-settings MoltShield section state, with hostile strings where
 // list/tab metadata comes from the network or pages.
 const SHIELD_STATE = {
-  enabled: true, cosmetic: true, consentKiller: false, ready: true,
+  enabled: true, cosmetic: true, consentKiller: false, removeParam: true, ready: true,
   updating: false, lastUpdateCheck: 1760000000000, engine: 'adblock-rust-0.13.3/molt-1',
   stats: {checked: 1200, blocked: 300, ads: 120, redirects: 4, websockets: 1,
           cosmetic: 9, scriptlets: 2},
@@ -238,7 +262,7 @@ const PAGES = [
      vaultAdd: {success: true, id: 'c3', site_host: 'new.example'},
      // MoltShield section (script: kMoltShieldSettingsJs).
      shieldGetState: SHIELD_STATE,
-     shieldSetGlobal: SHIELD_STATE,
+     shieldSetGlobal,
      shieldSetListEnabled: SHIELD_STATE,
      shieldUpdateNow: SHIELD_STATE,
      shieldSetTabShields: SHIELD_STATE,
@@ -256,11 +280,25 @@ const PAGES = [
      assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));
      assert.strictEqual(doc.querySelectorAll('#shieldLists input[type=checkbox]').length, 2);
-     assert.strictEqual(doc.querySelectorAll('#shieldGlobals input[type=checkbox]').length, 3);
+     assert.strictEqual(doc.querySelectorAll('#shieldGlobals input[type=checkbox]').length, 4);
      assert(doc.querySelector('#shieldGlobals .shield-killswitch').textContent
                 .includes('molt-shield-websocket'), 'kill-switch notice shown');
      assert.strictEqual(doc.querySelectorAll('#shieldSection input:disabled').length, 0,
                         'controls stay usable unless --disable-molt-shield');
+     // "Strip tracking parameters": a per-profile switch next to the others.
+     const removeParamRow = () => Array.from(doc.querySelectorAll('#shieldGlobals .field'))
+         .find((f) => /Strip tracking parameters/.test(f.textContent));
+     let rp = removeParamRow();
+     assert(rp, 'tracking-parameter switch shown');
+     assert(rp.querySelector('input').checked, 'on by default');
+     rp.querySelector('input').click();
+     await tick();
+     assert.strictEqual(JSON.stringify(shieldGlobalCalls.pop()), '["removeParam",false]',
+                        'switch sends shieldSetGlobal(removeParam, false)');
+     rp = removeParamRow();
+     assert(!rp.querySelector('input').checked, 'shows the new value');
+     assert(rp.querySelector('input').disabled,
+            'disabled while #molt-shield-removeparam is off in chrome://flags');
      assert.strictEqual(doc.querySelectorAll('#vaultList b').length, 0, 'usernames are text');
      assert.strictEqual(doc.getElementById('vaultStorageWarn').style.display, '', 'keyring warning shown');
      const shows = Array.from(doc.querySelectorAll('#vaultList button')).filter((b) => b.textContent === 'Show');
@@ -467,7 +505,22 @@ const PAGES = [
        {id: 'abcdef1234567890', site_host: 'gist.github.com', username: 'me', match: 'same_site'}]},
      vaultAutofill: {success: false, cancelled: true},
      openMoltSettings: {success: true},
-     sendPrompt: {success: true},
+     sendPrompt: (args) => { sentPrompts.push(args[1]); return {success: true}; },
+     getPageContext: ACTIVE_PAGE,
+     getPageContent: (args) => {
+       pageContentCalls.push(args[1]);
+       return {has_content: true, url: ACTIVE_PAGE.url, title: 'B', nav_entry_id: 2,
+               content: 'fresh text of page B'};
+     },
+     // profile.enc exists but can't be decrypted: a plain save is refused,
+     // "start over" keeps it as a backup.
+     getMoltProfile: {profile: {}, unreadable: true},
+     saveMoltProfile: (args) => {
+       profileSaves.push(args.slice(1));
+       return args[2] && args[2].backupUnreadable
+           ? {success: true, backup: 'profile.enc.unreadable-20261016T090000Z<b>'}
+           : {success: false, unreadable: true, error: '<b>could not be decrypted</b>'};
+     },
    },
    async after(window) {
      const doc = window.document;
@@ -497,6 +550,77 @@ const PAGES = [
             '/vault add never echoes the password');
      assert(window.__sent.includes('openMoltSettings'), '/vault add opens Settings');
      assert(!window.__sent.includes('vaultAdd'), 'chat never sends vaultAdd');
+     // /profile with an unreadable profile.enc: the editor says so, a save
+     // is refused without touching it, and only an explicit "start over"
+     // asks for the backup path. (/vault add above finishes synchronously
+     // and sendMessage() then leaves the chat marked busy; reset that.)
+     window.setGenerating(false);
+     input.value = '/profile';
+     window.sendMessage();
+     await tick();
+     const editor = doc.querySelector('#messages .profile-editor');
+     assert(editor, '/profile opens the editor');
+     assert(/couldn't be decrypted/.test(editor.textContent), 'unreadable profile flagged');
+     assert(!input.disabled, 'composer usable again after /profile');
+     editor.querySelector('input[data-key=full_name]').value = 'Ada';
+     editor.querySelector('.profile-save').click();
+     await tick();
+     // (Objects from the page's realm: compare as JSON.)
+     assert.strictEqual(JSON.stringify(profileSaves[0]), '[{"full_name":"Ada"},{}]',
+                        'plain save first');
+     const startOver = Array.from(doc.querySelectorAll('#messages button')).find(
+         (b) => /Start a new profile/.test(b.textContent));
+     assert(startOver, 'refused save offers "start over"');
+     assert.strictEqual(doc.querySelectorAll('#messages b').length, 0, 'errors are text');
+     startOver.click();
+     await tick();
+     assert.strictEqual(JSON.stringify(profileSaves[1]),
+                        '[{"full_name":"Ada"},{"backupUnreadable":true}]');
+     assert(/kept as ~\/\.moltbrowser\/profile\.enc\.unreadable-/.test(
+                doc.getElementById('messages').textContent), 'backup named');
+     assert.strictEqual(doc.querySelectorAll('#messages b').length, 0, 'backup name is text');
+     // Reader commands (A7): text pushed for the previous page is never
+     // used; the current document's text is read instead.
+     const runCmd = async (cmd) => {
+       input.value = cmd;
+       window.sendMessage();
+       await tick();
+       await tick();
+     };
+     window.__moltSetTabContext({url: 'https://example.com/a', title: 'A',
+                                 text: 'stale text of page A', nav_entry_id: 1});
+     await runCmd('/summarize');
+     assert.strictEqual(pageContentCalls.pop(), 12000, 'stale push: page read again');
+     assert(/fresh text of page B/.test(sentPrompts[sentPrompts.length - 1]) &&
+            !/page A/.test(sentPrompts[sentPrompts.length - 1]),
+            '/summarize uses the current page, never the stale push');
+     // Pushed text for the document shown now is used as is.
+     window.__moltSetTabContext({url: ACTIVE_PAGE.url, title: 'B',
+                                 text: 'pushed text of page B', nav_entry_id: 2});
+     await runCmd('/tldr');
+     assert.strictEqual(pageContentCalls.length, 0, 'current push: no extra read');
+     assert(/pushed text of page B/.test(sentPrompts[sentPrompts.length - 1]));
+     // Same document, capture still running: read it now.
+     window.__moltSetTabContext({url: ACTIVE_PAGE.url, title: 'B', text: '',
+                                 nav_entry_id: 2, text_pending: true});
+     await runCmd('/translate');
+     assert.strictEqual(pageContentCalls.pop(), 4000);
+     assert(/fresh text of page B/.test(sentPrompts[sentPrompts.length - 1]));
+     window.__moltSetTabContext({url: 'https://example.com/a', title: 'A',
+                                 text: 'stale receipt of page A', nav_entry_id: 1});
+     await runCmd('/receipt');
+     assert.strictEqual(pageContentCalls.pop(), 10000);
+     assert(/Page URL: https:\/\/example\.com\/b/.test(sentPrompts[sentPrompts.length - 1]) &&
+            !/page A/.test(sentPrompts[sentPrompts.length - 1]), '/receipt reads page B');
+     // /chapters checks the URL of the document it read, not the push's.
+     window.__moltSetTabContext({url: 'https://www.youtube.com/watch?v=x', title: 'V',
+                                 text: '0:01 a\n0:02 b\n0:03 c\n0:04 d\n0:05 e',
+                                 nav_entry_id: 1});
+     const promptsBefore = sentPrompts.length;
+     await runCmd('/chapters');
+     assert.strictEqual(sentPrompts.length, promptsBefore, 'no prompt for a non-YouTube page');
+     assert(/Open a YouTube video first/.test(doc.getElementById('messages').textContent));
+     assert(!input.disabled, 'composer usable after the reader commands');
      // Tab-context contract still installed (from app.js now).
      window.__moltSetTabContext({url: 'https://example.com/a.pdf', title: 'Doc (PDF)'});
      assert.strictEqual(doc.querySelector('#tabContext .tab-context-icon').textContent, '\u{1F4C4}');

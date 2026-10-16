@@ -4,13 +4,17 @@
 // Streaming output filters applied to every decoded token piece before it
 // reaches the UI, in this order:
 //
-//   token piece -> HarmonyChannelFilter -> ThinkTagFilter -> Utf8Assembler
+//   token piece -> HarmonyChannelFilter -> GemmaThoughtFilter (Gemma 4
+//   vocabularies only) -> ThinkTagFilter -> Utf8Assembler
 //
 // - HarmonyChannelFilter: gpt-oss emits its private reasoning in an
 //   "analysis" channel and the answer in a "final" channel, framed by
 //   <|channel|>/<|message|>/<|start|>/<|end|>/... control tokens. Only the
 //   final channel is surfaced. Models that never emit those markers pass
 //   through untouched.
+// - GemmaThoughtFilter: Gemma 4 writes its thoughts as
+//   "<|channel>thought\n...<channel|>" before (or between parts of) the
+//   answer. Every such block is hidden, wherever it appears.
 // - ThinkTagFilter: Qwen3 (and other reasoning models) wrap their reasoning
 //   in <think>...</think>. The block is hidden even when the tags are split
 //   across tokens ("<th" + "ink>"), and the whitespace that follows the
@@ -52,6 +56,68 @@ class HarmonyChannelFilter {
   State state_ = kOutside;
   std::string channel_;
   bool emit_ = false;
+};
+
+// Hides Gemma 4's thought channel. The markers, as in the vendored
+// llama.cpp's built-in "gemma4" chat format (src/llama-chat.cpp) and the
+// Jinja template Gemma 4 GGUFs ship (llama.cpp b11641
+// models/templates/google-gemma-4-31B-it.jinja), are
+//   <|channel>  (token 100)  opens a block: "<|channel>thought\n..."
+//   <channel|>  (token 101)  closes it
+// Both are USER_DEFINED tokens in the Gemma 4 vocab
+// (models/ggml-vocab-gemma-4.gguf), so llama_token_to_piece() renders them
+// even with special=false and they arrive here as text, normally as whole
+// pieces. They are still matched across piece boundaries ("<|chan" +
+// "nel>"), in case a model spells one out of ordinary tokens.
+//
+// Rules (fail closed: when in doubt, hide):
+//  * Everything from "<|channel>" to its matching "<channel|>" is hidden,
+//    the channel name ("thought") included, anywhere in the stream. The
+//    answer never starts with whitespace; whitespace around a block in the
+//    middle of the answer is kept (as the template's strip_thinking()
+//    does).
+//  * Nested blocks count: "<|channel>a<|channel>b<channel|>c<channel|>"
+//    hides a, b and c. Reasoning that quotes the markers in pairs can't end
+//    the block early; an extra unpaired "<|channel>" keeps hiding until
+//    ForceClose() (the runtime's reasoning budget).
+//  * An unterminated block hides the rest of the stream (Flush() drops it).
+//  * A "<channel|>" with no open block is dropped (never shown).
+//  * Look-alikes are text: Harmony's "<|channel|>", "<channel>", "<|chan".
+// Linear time: only a possible marker prefix (< 10 bytes) is held back.
+class GemmaThoughtFilter {
+ public:
+  // |start_inside|: the prompt ends inside an open thought block.
+  explicit GemmaThoughtFilter(bool start_inside = false);
+
+  // Feed a piece; returns the text that can be shown now.
+  std::string Feed(std::string_view piece);
+  // End of stream: releases held-back bytes that turned out not to be a
+  // marker (nothing is released while inside a block).
+  std::string Flush();
+  // Closes every open block at once: the runtime fed kForceClose to the
+  // model because the reasoning budget ran out, and the answer follows.
+  void ForceClose();
+
+  // True while inside a thought block.
+  bool hiding() const { return depth_ > 0; }
+
+  // True if |prompt_tail| (the end of a rendered prompt) leaves a thought
+  // block open, by the same rules as Feed().
+  static bool EndsInsideThought(std::string_view prompt_tail);
+
+  static constexpr char kOpenMarker[] = "<|channel>";
+  static constexpr char kCloseMarker[] = "<channel|>";
+  // Text that closes an open block (as Gemma 4's template writes it);
+  // used to force an answer when the reasoning budget runs out.
+  static constexpr char kForceClose[] = "\n<channel|>";
+
+ private:
+  std::string EmitVisible(std::string_view text);
+
+  size_t depth_;
+  // Swallow whitespace until the answer's first visible character.
+  bool strip_leading_ws_ = true;
+  std::string pending_;
 };
 
 class ThinkTagFilter {

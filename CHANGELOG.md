@@ -50,10 +50,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   2 MiB of HTML (a crafted page could hang it for minutes or crash it).
   llama.cpp's GGUF and tokenizer fixes are in (see On-device AI), and a
   malformed model's tokenizer returns an error instead of aborting.
+- The AI library no longer forks the browser and starts a debugger found on
+  PATH (with permission to read the browser's memory) when it hits an
+  internal error.
 - On Linux without a system keyring, secrets are never written under
   Chromium's built-in fallback key; MoltBrowser asks you to install or
   unlock GNOME Keyring or KWallet. Existing data stays readable and moves to
-  the keyring on the next save.
+  the keyring on the next save. A form-filler profile that can't be
+  decrypted (keyring locked, another machine's key) is never overwritten;
+  you can start over and the old file is kept as a backup.
 - Malformed messages to internal pages no longer crash the browser; AI
   automation steps no longer freeze it.
 
@@ -87,6 +92,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   site's Onion-Location is offered as a bar, never followed automatically.
 - **Linux MoltNet uses your distribution's `tor`** (packages now recommend
   it), with a clear "install the tor package" message when it's missing.
+  Bridges work with the distribution's `obfs4proxy`/`lyrebird` and
+  `snowflake-client`, and Settings says which package a bridge needs.
+- In regular windows that use a proxy server, images, scripts, downloads and
+  WebSockets to `.onion` addresses are blocked before they reach the proxy.
+  Sites can announce their onion version with `<meta http-equiv=
+  "onion-location">` as well as the header.
 - **Less background traffic to Google.** Autofill no longer sends form
   signatures, Translate no longer downloads its ranking model, error pages
   no longer probe Google DNS or gstatic, and the password leak check (which
@@ -106,8 +117,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   blocked page.
 - **Tracking parameters are stripped** (fbclid, gclid, msclkid, utm_* and
   uBlock Origin's `$removeparam` rules, honoring its exceptions) from links
-  you open, before the request leaves the browser, and from page requests.
-  Kill switch: `chrome://flags/#molt-shield-removeparam`.
+  you open, before the request leaves the browser, and from page requests,
+  including their redirects. Turn it off in molt://ai-settings ("Strip
+  tracking parameters"); kill switch: `chrome://flags/#molt-shield-removeparam`.
 - **Procedural cosmetic filters work** (`:has-text()`, `:upward()`,
   `:matches-css()`, `:xpath()`, `:remove()`, `:style()` and more). They
   run in an isolated world; list text is vetted and never executed.
@@ -135,6 +147,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and fixed in an emulated official build; to be confirmed on a real one.
 - Memory search matches words regardless of case in Latin, Greek, Cyrillic
   and Armenian scripts; existing memories are re-indexed once.
+- Gemma 4's reasoning is hidden while it streams, so you see only the answer.
+- Reader commands (`/summarize`, `/tldr`, `/simplify`, `/eli5`, `/receipt`,
+  `/chapters`, `/translate`) always read the page you're on, not the one you
+  just left.
 
 ### Engineering
 - Chromium is pinned in one place (`chromium_version.txt`); copied upstream
