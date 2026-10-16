@@ -43,7 +43,8 @@
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/browser_context.h"
@@ -227,9 +228,12 @@ class AgentStudioHandler : public content::WebUIMessageHandler {
     if (!p) {
       return nullptr;
     }
-    Browser* b = chrome::FindLastActiveWithProfile(p);
-    if (b && b->tab_strip_model()) {
-      return b->tab_strip_model()->GetActiveWebContents();
+    ProfileBrowserCollection* browsers =
+        ProfileBrowserCollection::GetForProfile(p);
+    BrowserWindowInterface* b =
+        browsers ? browsers->GetLastActiveBrowser() : nullptr;
+    if (b && b->GetTabStripModel()) {
+      return b->GetTabStripModel()->GetActiveWebContents();
     }
     return nullptr;
   }

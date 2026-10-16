@@ -141,8 +141,8 @@ class AiChatSidePanelWebView::ChatPageObserver
 };
 
 AiChatSidePanelWebView::AiChatSidePanelWebView(Browser* browser)
-    : views::WebView(browser ? browser->profile() : nullptr),
-      profile_(browser ? browser->profile() : nullptr),
+    : views::WebView(browser ? browser->GetProfile() : nullptr),
+      profile_(browser ? browser->GetProfile() : nullptr),
       browser_(browser) {
   LoadInitialURL(GURL(kAiChatWebUIURL));
   if (browser_ && browser_->tab_strip_model()) {

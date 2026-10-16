@@ -114,7 +114,8 @@ void ConnectWebSocket(
     const GURL& url,
     const std::optional<std::string>& user_agent,
     mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
-        handshake_client) {
+        handshake_client,
+    mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client) {
   // Mirrors content::WebSocketConnectorImpl::Connect()'s direct path.
   std::vector<network::mojom::HttpHeaderPtr> headers;
   if (user_agent) {
@@ -122,7 +123,7 @@ void ConnectWebSocket(
         net::HttpRequestHeaders::kUserAgent, *user_agent));
   }
   std::move(factory).Run(url, std::move(headers), std::move(handshake_client),
-                         mojo::NullRemote(), mojo::NullRemote());
+                         mojo::NullRemote(), std::move(header_client));
 }
 
 }  // namespace molt_ai::shield

@@ -44,7 +44,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
-#include "chrome/browser/password_manager/profile_password_store_factory.h"
+#include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
@@ -53,6 +53,7 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
 #include "components/keyed_service/core/service_access_type.h"
 #include "url/gurl.h"
@@ -923,8 +924,9 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       form.password_value = cred.password;
       // AddLogin is asynchronous (writes on the store's own sequence); we
       // count it as accepted for import here. The store dedupes on its
-      // primary key, so re-importing existing logins is a no-op there.
-      store->AddLogin(form);
+      // primary key, so re-importing existing logins is a no-op there. At
+      // 152 the store takes a StoredCredential.
+      store->AddLogin(password_manager::FromPasswordForm(std::move(form)));
       ++(*imported);
     }
   }

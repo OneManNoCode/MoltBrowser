@@ -9,7 +9,9 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "base/scoped_observation.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/browser_process.h"
@@ -20,13 +22,11 @@
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/base_window.h"
@@ -44,10 +44,43 @@ Profile* ProfileByPath(const base::FilePath& path) {
   return g_browser_process->profile_manager()->GetProfileByPath(path);
 }
 
+// True if a browser window that hasn't closed yet uses `profile`. (The
+// global collection drops a window once it has closed, before the Browser
+// object itself is deleted.)
+bool HasOpenBrowserWindow(const Profile* profile) {
+  bool found = false;
+  GlobalBrowserCollection::GetInstance()->ForEach(
+      [profile, &found](BrowserWindowInterface* browser) {
+        found = browser->GetProfile() == profile;
+        return !found;
+      });
+  return found;
+}
+
+// A just-closed window's Browser is deleted by a task posted right after
+// the close notification (Browser::OnWindowCloseComplete), and the profile's
+// BrowserManagerService owns it, so the profile must outlive it. Re-post a
+// few times until the Browser is gone; if it somehow lingers, leave the
+// profile alone (a later close or New Identity retries).
+constexpr int kMaxWaitsForClosedBrowser = 10;
+
 // Destroys the MoltNet OTR profile |id| of the original profile at |path| if
 // no Browser window uses it any more. Looked up again by (path, id) because
-// the Profile* may already be gone when this runs.
-void DestroyIfUnused(base::FilePath path, Profile::OTRProfileID id) {
+// the Profile* may already be gone when this runs. |closed_browser|, if
+// set, is the window whose closing triggered this; it must be deleted
+// first.
+void DestroyIfUnused(base::FilePath path,
+                     Profile::OTRProfileID id,
+                     base::WeakPtr<BrowserWindowInterface> closed_browser,
+                     int waits_left) {
+  if (closed_browser) {
+    if (waits_left > 0) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, base::BindOnce(&DestroyIfUnused, std::move(path), id,
+                                    std::move(closed_browser), waits_left - 1));
+    }
+    return;
+  }
   Profile* original = ProfileByPath(path);
   if (!original || !original->HasOffTheRecordProfile(id)) {
     return;
@@ -55,7 +88,7 @@ void DestroyIfUnused(base::FilePath path, Profile::OTRProfileID id) {
   Profile* moltnet = original->GetOffTheRecordProfile(id,
                                                       /*create_if_needed=*/false);
   if (!moltnet || !IsMoltNetProfile(moltnet) ||
-      chrome::FindBrowserWithProfile(moltnet)) {
+      HasOpenBrowserWindow(moltnet)) {
     return;
   }
   MoltNetRouting::ForgetMoltNetProfile(moltnet);
@@ -64,27 +97,36 @@ void DestroyIfUnused(base::FilePath path, Profile::OTRProfileID id) {
   ProfileDestroyer::DestroyOTRProfileWhenAppropriate(moltnet);
 }
 
-void PostDestroyIfUnused(Profile* moltnet) {
+void PostDestroyIfUnused(
+    Profile* moltnet,
+    base::WeakPtr<BrowserWindowInterface> closed_browser = nullptr) {
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&DestroyIfUnused,
                      moltnet->GetOriginalProfile()->GetPath(),
-                     moltnet->GetOTRProfileID()));
+                     moltnet->GetOTRProfileID(), std::move(closed_browser),
+                     kMaxWaitsForClosedBrowser));
 }
 
 // Non-primary OTR profiles are NOT destroyed by Chromium when their last
 // window closes (BrowserManagerService only does that for incognito), so
 // MoltNet does it: closing the last MoltNet window ends that identity.
-class MoltNetProfileReaper : public BrowserListObserver {
+class MoltNetProfileReaper : public BrowserCollectionObserver {
  public:
-  MoltNetProfileReaper() { BrowserList::AddObserver(this); }
+  MoltNetProfileReaper() {
+    observation_.Observe(GlobalBrowserCollection::GetInstance());
+  }
 
-  // BrowserListObserver:
-  void OnBrowserRemoved(Browser* browser) override {
-    if (browser && IsMoltNetProfile(browser->profile())) {
-      PostDestroyIfUnused(browser->profile());
+  // BrowserCollectionObserver:
+  void OnBrowserClosed(BrowserWindowInterface* browser) override {
+    if (browser && IsMoltNetProfile(browser->GetProfile())) {
+      PostDestroyIfUnused(browser->GetProfile(), browser->GetWeakPtr());
     }
   }
+
+ private:
+  base::ScopedObservation<GlobalBrowserCollection, BrowserCollectionObserver>
+      observation_{this};
 };
 
 void EnsureReaper() {
@@ -131,7 +173,7 @@ void OpenVerifiedWindow(base::FilePath path,
                                                                    : GURL();
   // GURL() opens the new-tab page.
   chrome::AddTabAt(browser, target, /*index=*/-1, /*foreground=*/true);
-  browser->window()->Show();
+  browser->GetWindow()->Show();
   std::move(done).Run(true, std::string());
 }
 

@@ -81,10 +81,10 @@
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
-#include "chrome/browser/ui/side_panel/side_panel_entry.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/browser_thread.h"
@@ -1871,18 +1871,20 @@ void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
 
 content::WebContents* MoltAIChatHandler::GetActiveTabForChat() {
   content::WebContents* webui_contents = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_contents);
+  GlobalBrowserCollection* browsers = GlobalBrowserCollection::GetInstance();
+  BrowserWindowInterface* browser =
+      browsers->FindBrowserWithTab(webui_contents);
   if (!browser) {
     // Side panel: not a tab, but it lives in its browser's window. Not
-    // FindLastActive(): another window's tab would be the wrong page.
-    browser =
-        chrome::FindBrowserWithWindow(webui_contents->GetTopLevelNativeWindow());
+    // GetLastActiveBrowser(): another window's tab would be the wrong page.
+    browser = browsers->FindBrowserWithWindow(
+        webui_contents->GetTopLevelNativeWindow());
   }
-  if (!browser || !browser->tab_strip_model()) {
+  if (!browser || !browser->GetTabStripModel()) {
     return nullptr;
   }
   content::WebContents* active_tab =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   return active_tab == webui_contents ? nullptr : active_tab;
 }
 
@@ -2714,14 +2716,15 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   // Resolve the browser window that should receive the action.
   // The side-panel's WebContents is NOT a tab in the tab strip, so
   // FindBrowserWithTab returns null for it. Fall back to
-  // chrome::FindLastActive() — the most-recently-focused browser window,
+  // GetLastActiveBrowser() — the most-recently-focused browser window,
   // which is the one the user is actively looking at.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
   if (!browser) {
-    browser = chrome::FindLastActive();
+    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
   }
-  if (!browser || !browser->tab_strip_model()) {
+  if (!browser || !browser->GetTabStripModel()) {
     result.Set("success", false);
     result.Set("error", "no active browser window");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -2729,7 +2732,7 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
     return;
   }
   content::WebContents* target =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target) {
     result.Set("success", false);
     result.Set("error", "no active tab");
@@ -3091,15 +3094,16 @@ void MoltAIChatHandler::HandleListTabsInWindow(const base::ListValue& args) {
   base::ListValue tabs;
 
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("tabs", std::move(tabs));
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
-  TabStripModel* model = browser->tab_strip_model();
+  TabStripModel* model = browser->GetTabStripModel();
   const int active = model->active_index();
   const int n = model->count();
   for (int i = 0; i < n; ++i) {
@@ -3159,15 +3163,16 @@ void MoltAIChatHandler::HandleTriageActOnTabs(const base::ListValue& args) {
   }
 
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("success", false);
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
-  TabStripModel* model = browser->tab_strip_model();
+  TabStripModel* model = browser->GetTabStripModel();
 
   // Collect & sort indices descending so closing doesn't shift the
   // remaining indices out from under us.
@@ -3614,8 +3619,9 @@ void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
 
   // Resolve target tab.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("success", false);
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -3623,7 +3629,7 @@ void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
     return;
   }
   content::WebContents* target =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
     out.Set("success", false);
     out.Set("error", "active tab is not an http(s) page");
@@ -4054,18 +4060,19 @@ void MoltAIChatHandler::HandleExtractAllTabsText(
     max_chars_per_tab = std::max(200, args[1].GetInt());
 
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
 
   base::DictValue out;
   base::ListValue tabs;
-  if (!browser || !browser->tab_strip_model()) {
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("tabs", std::move(tabs));
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
-  TabStripModel* model = browser->tab_strip_model();
+  TabStripModel* model = browser->GetTabStripModel();
   const int n = model->count();
   if (n == 0) {
     out.Set("tabs", std::move(tabs));
@@ -4234,9 +4241,10 @@ void MoltAIChatHandler::HandleOpenUrlInTab(const base::ListValue& args) {
   // side panel's WebContents is not a tab (FindBrowserWithTab returns
   // null), so fall back to the most-recently-active browser window.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
   if (!browser) {
-    browser = chrome::FindLastActive();
+    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
   }
   if (!browser) {
     out.Set("success", false);
@@ -4291,8 +4299,9 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
   base::DictValue out;
 
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (browser && browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (browser && browser->GetTabStripModel()) {
     // Chat is hosted in a real tab — open settings beside it.
     std::string url = "molt://ai-settings/";
     if (!section.empty()) {
@@ -4337,15 +4346,18 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleCloseSidePanel(const base::ListValue& args) {
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
   if (!browser) {
-    browser = chrome::FindLastActive();
+    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
   }
   if (!browser) {
     return;
   }
   if (SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui()) {
-    side_panel_ui->Close(SidePanelEntry::PanelType::kContent);
+    // There is a single (content) side panel at 152; the per-type
+    // Close(PanelType) overload is gone.
+    side_panel_ui->Close();
   }
 }
 
@@ -4370,15 +4382,16 @@ void MoltAIChatHandler::HandleGetTrackerBreakdown(
 
   base::DictValue out;
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
   content::WebContents* target =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
     out.Set("error", "active tab is not an http(s) page");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -4483,10 +4496,11 @@ void MoltAIChatHandler::HandleGetDomainReputation(
   // If no host was supplied, infer from the active tab.
   if (host.empty()) {
     content::WebContents* webui_wc = web_ui()->GetWebContents();
-    Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-    if (browser && browser->tab_strip_model()) {
+    BrowserWindowInterface* browser =
+        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+    if (browser && browser->GetTabStripModel()) {
       content::WebContents* t =
-          browser->tab_strip_model()->GetActiveWebContents();
+          browser->GetTabStripModel()->GetActiveWebContents();
       if (t) host = std::string(t->GetLastCommittedURL().host());
     }
   }
@@ -4595,10 +4609,11 @@ void MoltAIChatHandler::HandleGetConnectionPath(
                             : std::string();
 
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
   content::WebContents* active =
-      (browser && browser->tab_strip_model())
-          ? browser->tab_strip_model()->GetActiveWebContents()
+      (browser && browser->GetTabStripModel())
+          ? browser->GetTabStripModel()->GetActiveWebContents()
           : nullptr;
   if (url_str.empty() && active) {
     url_str = active->GetLastCommittedURL().spec();
@@ -4727,11 +4742,12 @@ void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
       enabled ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK);
 
   // Reload the active tab so the change takes effect now.
-  Browser* browser = chrome::FindBrowserWithTab(
-      web_ui()->GetWebContents());
-  if (browser && browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
+          web_ui()->GetWebContents());
+  if (browser && browser->GetTabStripModel()) {
     content::WebContents* t =
-        browser->tab_strip_model()->GetActiveWebContents();
+        browser->GetTabStripModel()->GetActiveWebContents();
     if (t && std::string(t->GetLastCommittedURL().host()) == host) {
       t->GetController().Reload(content::ReloadType::NORMAL,
                                 /*check_for_repost=*/false);
@@ -5113,8 +5129,9 @@ void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
 
   // Resolve target tab.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("success", false);
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -5122,7 +5139,7 @@ void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
     return;
   }
   content::WebContents* target =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
     out.Set("success", false);
     out.Set("error", "active tab is not an http(s) page");
@@ -5265,8 +5282,9 @@ void MoltAIChatHandler::HandleApplyFormFillMap(
   }
   // Resolve target tab.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     out.Set("success", false);
     out.Set("error", "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -5274,7 +5292,7 @@ void MoltAIChatHandler::HandleApplyFormFillMap(
     return;
   }
   content::WebContents* target =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
     out.Set("success", false);
     out.Set("error", "active tab is not an http(s) page");
@@ -5915,10 +5933,11 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
 
   // Find the active browsing tab (not the side-panel WebContents itself).
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
   content::WebContents* target_wc = nullptr;
   if (browser) {
-    target_wc = browser->tab_strip_model()->GetActiveWebContents();
+    target_wc = browser->GetTabStripModel()->GetActiveWebContents();
   }
   if (!target_wc) {
     base::DictValue err;

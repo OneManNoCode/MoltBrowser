@@ -42,6 +42,7 @@ source_set("feature_overrides") {
 
   deps = [
     "//components/autofill/core/common:features",
+    "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
     "//components/translate/core/browser",
   ]
@@ -58,6 +59,7 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//components/autofill/core/common:features",
+    "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
     "//components/translate/core/browser",
     "//testing/gtest",

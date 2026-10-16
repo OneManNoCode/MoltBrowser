@@ -22,8 +22,8 @@ constexpr char kAgentWebUIURL[] = "chrome://molt-ai-agent/";
 }  // namespace
 
 AgentSidePanelWebView::AgentSidePanelWebView(Browser* browser)
-    : views::WebView(browser ? browser->profile() : nullptr),
-      profile_(browser ? browser->profile() : nullptr) {
+    : views::WebView(browser ? browser->GetProfile() : nullptr),
+      profile_(browser ? browser->GetProfile() : nullptr) {
   LoadInitialURL(GURL(kAgentWebUIURL));
 }
 

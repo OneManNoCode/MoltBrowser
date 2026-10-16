@@ -22,8 +22,8 @@
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/net_errors.h"
-#include "net/http/http_request_headers.h"
 #include "net/url_request/redirect_info.h"
+#include "services/network/public/cpp/http_request_headers_update_params.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/early_hints.mojom.h"
@@ -155,9 +155,7 @@ class OnionBlockingURLLoaderFactory::InProgressRequest
 
   // network::mojom::URLLoader (from the renderer):
   void FollowRedirect(
-      const std::vector<std::string>& removed_headers,
-      const net::HttpRequestHeaders& modified_headers,
-      const net::HttpRequestHeaders& modified_cors_exempt_headers,
+      network::HttpRequestHeadersUpdateParams headers_update_params,
       const std::optional<GURL>& new_url) override {
     // A throttle may substitute the redirect target.
     if (new_url && IsOnionRequestURL(*new_url)) {
@@ -165,8 +163,8 @@ class OnionBlockingURLLoaderFactory::InProgressRequest
       return;
     }
     if (target_loader_.is_bound()) {
-      target_loader_->FollowRedirect(removed_headers, modified_headers,
-                                     modified_cors_exempt_headers, new_url);
+      target_loader_->FollowRedirect(std::move(headers_update_params),
+                                     new_url);
     }
   }
 

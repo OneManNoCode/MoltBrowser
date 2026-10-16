@@ -332,7 +332,7 @@ std::array<uint8_t, kCbcKeySize> DerivePbkdf2Key(
     base::span<const uint8_t> password,
     uint32_t iterations) {
   std::array<uint8_t, kCbcKeySize> key;
-  crypto::kdf::DeriveKeyPbkdf2HmacSha1(
+  crypto::kdf::Pbkdf2HmacSha1(
       {.iterations = iterations}, password, kPbkdfSalt, key,
       // NOTE: SubtlePassKey's constructor is friend-gated and molt_ai is not on
       // that list; ForTesting() is the only public accessor. The PBKDF2
