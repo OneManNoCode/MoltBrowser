@@ -50,18 +50,21 @@ struct TorrcOptions {
   // "Bridge " keyword. Empty = connect directly to the Tor network.
   std::vector<std::string> bridge_lines;
 
-  // Executables for the pluggable transports, as Tor should exec them. These
-  // are RELATIVE to Tor's working directory (TorManager launches tor with its
-  // cwd set to the bundled tor dir) because Tor splits the
-  // ClientTransportPlugin line on spaces, so an absolute path under e.g.
-  // "Application Support" would break. "" = transport not bundled.
-  std::string lyrebird_exec;
-  std::string snowflake_exec;
+  // Executables for the pluggable transports, as Tor should exec them (see
+  // IsValidTransportExec): a bundled transport RELATIVE to Tor's working
+  // directory ("./pluggable_transports/lyrebird"; TorManager launches tor
+  // with its cwd set to the bundled tor dir), or, on Linux, the canonical
+  // absolute path of a root-owned system package ("/usr/bin/lyrebird",
+  // pluggable_transports.h). Tor splits the ClientTransportPlugin line on
+  // spaces, so an absolute path under e.g. "Application Support" would
+  // break; that is why bundled ones are relative. "" = no usable transport.
+  std::string obfs4_exec;      // lyrebird / obfs4proxy
+  std::string snowflake_exec;  // snowflake-client
 };
 
 // Renders the managed torrc. Returns nullopt (and sets |error|) if any field
-// is unsafe to place in a torrc line or a bridge needs a transport that isn't
-// bundled. Ports are always `auto` (Tor picks free ports; MoltNet reads them
+// is unsafe to place in a torrc line or a bridge needs a transport that has
+// no valid exec path. Ports are always `auto` (Tor picks free ports; MoltNet reads them
 // back from ControlPortWriteToFile / GETINFO), so a squatter on 9050/9051 can
 // never intercept MoltNet traffic.
 std::optional<std::string> BuildTorrc(const TorrcOptions& options,
@@ -75,6 +78,19 @@ bool IsValidExitCountry(std::string_view cc);
 // parsed as a QuotedString), no leading/trailing whitespace, and no trailing
 // backslash (line continuation).
 bool IsSafeTorrcValue(std::string_view value);
+
+// True iff |exec| may follow "ClientTransportPlugin <transport> exec": a
+// safe torrc value without blanks (Tor splits the line on them) that is
+// either
+//   * a canonical absolute POSIX path ("/usr/bin/lyrebird": no empty, "."
+//     or ".." components, no trailing slash, no backslash), or
+//   * a path relative to Tor's working directory that starts with a
+//     directory ("./pluggable_transports/lyrebird",
+//     "pluggable_transports\\lyrebird.exe"; '/' or '\\' separators; only
+//     the first component may be "."; no ".." or empty components; no
+//     drive letter), so it never names a bare program that could be looked
+//     up on PATH.
+bool IsValidTransportExec(std::string_view exec);
 
 // Validates one bridge line (optionally prefixed with "Bridge ") and returns
 // it normalized: single spaces, uppercase fingerprint. Accepted forms:

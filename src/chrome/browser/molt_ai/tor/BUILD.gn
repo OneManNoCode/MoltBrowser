@@ -9,12 +9,15 @@
 #   molt_net_routing.*       — the isolated MoltNet (Tor) profile
 
 # Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
-# bridge-line validation and .onion / Onion-Location checks. Split out so
-# molt_ai_unittests can test it without pulling in Profile / content.
+# bridge-line validation, which pluggable transports may run, and .onion /
+# Onion-Location checks. Split out so molt_ai_unittests can test it without
+# pulling in Profile / content.
 source_set("protocol") {
   sources = [
     "onion_util.cc",
     "onion_util.h",
+    "pluggable_transports.cc",
+    "pluggable_transports.h",
     "tor_control_protocol.cc",
     "tor_control_protocol.h",
     "torrc_builder.cc",
@@ -142,6 +145,7 @@ source_set("unit_tests") {
   sources = [
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",
+    "pluggable_transports_unittest.cc",
     "tor_control_protocol_unittest.cc",
     "torrc_builder_unittest.cc",
   ]

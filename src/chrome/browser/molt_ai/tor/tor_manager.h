@@ -10,6 +10,9 @@
 //     different binary requires an explicit opt-in
 //     (--moltnet-tor-binary=<absolute path>); there is no Homebrew/PATH
 //     fallback. All candidates go through FindHelperBinary (audit S18).
+//     The pluggable transports bridges need follow the same rule: bundled,
+//     or on Linux a root-owned /usr/bin/lyrebird, /usr/bin/obfs4proxy or
+//     /usr/bin/snowflake-client (pluggable_transports.h).
 //   * `SocksPort auto` + `ControlPort auto` + `ControlPortWriteToFile`: ports
 //     are picked by Tor and read back, so nothing squatting on 9050/9051 can
 //     impersonate it. A private --defaults-torrc stops a system-wide
@@ -97,6 +100,27 @@ struct BridgeSettings {
   std::string custom_lines;
 };
 
+// Which bridge options can work on this installation (settings UI). Each
+// field is empty when that part is usable, else a user-facing explanation
+// of what to do (pluggable_transports.h).
+struct BridgeSupport {
+  BridgeSupport();
+  BridgeSupport(const BridgeSupport&);
+  BridgeSupport& operator=(const BridgeSupport&);
+  ~BridgeSupport();
+
+  // A usable obfs4 transport (bundled lyrebird, or on Linux a root-owned
+  // /usr/bin/lyrebird or /usr/bin/obfs4proxy).
+  std::string obfs4_problem;
+  // A usable snowflake transport (bundled, or on Linux a root-owned
+  // /usr/bin/snowflake-client).
+  std::string snowflake_problem;
+  // Set iff neither transport is usable: no bridge can work.
+  std::string no_transport_problem;
+  // The built-in snowflake / obfs4 bridge list (bundled pt_config.json).
+  std::string built_in_problem;
+};
+
 // "none" | "snowflake" | "obfs4" | "custom" (the WebUI wire format).
 std::string BridgeModeToString(BridgeSettings::Mode mode);
 std::optional<BridgeSettings::Mode> BridgeModeFromString(std::string_view s);
@@ -174,7 +198,15 @@ class TorManager {
   std::vector<std::string> GetAvailableExitCountries() const;
 
   // ---- Bridges ----
+  // Bridges need a pluggable transport: the copy bundled with MoltBrowser,
+  // or on Linux the distribution's root-owned package (lyrebird /
+  // obfs4proxy, snowflake-client), checked like the system tor. If a
+  // selected bridge's transport is missing, Launch() fails with a message
+  // naming the package to install; Tor is never started without the
+  // bridges the user chose.
   void GetBridgeSettings(base::OnceCallback<void(BridgeSettings)> callback);
+  // What can work here (a few stat() calls, on a worker thread).
+  void GetBridgeSupport(base::OnceCallback<void(BridgeSupport)> callback);
   // Validates (custom lines must all be valid) and persists. Takes effect the
   // next time Tor starts.
   void SetBridgeSettings(const BridgeSettings& settings, DoneCallback done);

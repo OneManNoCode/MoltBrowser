@@ -29,6 +29,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
+#include "chrome/browser/molt_ai/tor/pluggable_transports.h"
 #include "chrome/browser/molt_ai/tor/tor_control_protocol.h"
 #include "chrome/browser/molt_ai/tor/torrc_builder.h"
 
@@ -64,18 +65,6 @@ constexpr char kLegacyExitCountryFileName[] = "exit_country";
 
 constexpr char kPtDirName[] = "pluggable_transports";
 constexpr char kPtConfigName[] = "pt_config.json";
-#if BUILDFLAG(IS_WIN)
-constexpr char kLyrebirdName[] = "lyrebird.exe";
-constexpr char kSnowflakeName[] = "snowflake-client.exe";
-// Relative to tor's working directory (the bundled tor dir).
-constexpr char kLyrebirdExec[] = "pluggable_transports\\lyrebird.exe";
-constexpr char kSnowflakeExec[] = "pluggable_transports\\snowflake-client.exe";
-#else
-constexpr char kLyrebirdName[] = "lyrebird";
-constexpr char kSnowflakeName[] = "snowflake-client";
-constexpr char kLyrebirdExec[] = "./pluggable_transports/lyrebird";
-constexpr char kSnowflakeExec[] = "./pluggable_transports/snowflake-client";
-#endif
 
 // Cold start through bridges/snowflake can take a while.
 constexpr int kColdBootstrapMs = 90000;
@@ -120,11 +109,102 @@ std::vector<std::string> SystemTorPaths() {
 #endif
 }
 
-// A bundled pluggable transport that passes the bundled-binary checks.
-bool HasBundledTransport(const base::FilePath& pt_dir, const char* name) {
-  return molt_ai::FindHelperBinary(pt_dir, {base::FilePath::FromASCII(name)},
-                                   /*linux_system_paths=*/{})
-      .found();
+// Linux packages don't bundle Tor or its pluggable transports; elsewhere
+// only the copies bundled with MoltBrowser are used.
+TransportSource PlatformTransportSource() {
+#if BUILDFLAG(IS_LINUX)
+  return TransportSource::kSystemPackages;
+#else
+  return TransportSource::kBundled;
+#endif
+}
+
+// The distribution's transport packages (Linux only), checked like the
+// system tor: root must own the file and every directory above it.
+std::vector<std::string> SystemTransportPaths(BridgeTransport transport) {
+#if BUILDFLAG(IS_LINUX)
+  return LinuxSystemTransportPaths(transport);
+#else
+  return {};
+#endif
+}
+
+// <bundled tor dir>/pluggable_transports/<name>[.exe].
+base::FilePath BundledTransportFile(BridgeTransport transport) {
+  std::string name(BundledTransportFileName(transport));
+#if BUILDFLAG(IS_WIN)
+  name += ".exe";
+#endif
+  return base::FilePath::FromASCII(name);
+}
+
+// How Tor, whose working directory is the bundled tor dir, execs a bundled
+// transport.
+std::string BundledTransportExec(BridgeTransport transport) {
+  const std::string name(BundledTransportFileName(transport));
+#if BUILDFLAG(IS_WIN)
+  return std::string(kPtDirName) + "\\" + name + ".exe";
+#else
+  return "./" + std::string(kPtDirName) + "/" + name;
+#endif
+}
+
+// A pluggable transport Tor may run for |transport| bridges: the bundled
+// copy in |pt_dir| (which may be empty or missing), else on Linux the
+// distribution's root-owned package (pluggable_transports.h). Both go
+// through FindHelperBinary's checks.
+struct TransportLookup {
+  // For the ClientTransportPlugin line; empty if there is no usable one.
+  std::string exec;
+  // When |exec| is empty: user-facing explanation and what to do.
+  std::string error;
+};
+
+TransportLookup FindTransport(const base::FilePath& pt_dir,
+                              BridgeTransport transport) {
+  TransportLookup out;
+  const molt_ai::HelperBinary found = molt_ai::FindHelperBinary(
+      pt_dir, {BundledTransportFile(transport)},
+      SystemTransportPaths(transport));
+  if (!found.found()) {
+    out.error = TransportUnavailableMessage(
+        transport, PlatformTransportSource(), found.rejected_existing,
+        found.error);
+    return out;
+  }
+  // A system transport runs by its canonical absolute path (no working
+  // directory involved); a bundled one relative to the bundled tor dir.
+  std::string exec = found.bundled ? BundledTransportExec(transport)
+                                   : found.path.AsUTF8Unsafe();
+  if (!IsValidTransportExec(exec)) {
+    // E.g. a symlink that resolves to a path with a space in it, which Tor
+    // would split.
+    out.error = TransportUnavailableMessage(
+        transport, PlatformTransportSource(), /*rejected_existing=*/true,
+        exec + " can't be used in Tor's configuration");
+    return out;
+  }
+  out.exec = std::move(exec);
+  return out;
+}
+
+BridgeSupport ComputeBridgeSupportBlocking(const base::FilePath& bundled_dir) {
+  BridgeSupport support;
+  const base::FilePath pt_dir = bundled_dir.empty()
+                                    ? base::FilePath()
+                                    : bundled_dir.AppendASCII(kPtDirName);
+  support.obfs4_problem = FindTransport(pt_dir, BridgeTransport::kObfs4).error;
+  support.snowflake_problem =
+      FindTransport(pt_dir, BridgeTransport::kSnowflake).error;
+  if (!support.obfs4_problem.empty() && !support.snowflake_problem.empty()) {
+    support.no_transport_problem =
+        NoTransportsMessage(PlatformTransportSource());
+  }
+  if (pt_dir.empty() || !base::PathExists(pt_dir.AppendASCII(kPtConfigName))) {
+    support.built_in_problem =
+        BuiltInBridgesUnavailableMessage(PlatformTransportSource());
+  }
+  return support;
 }
 
 // What the user should do when there is no tor MoltNet can run.
@@ -187,9 +267,9 @@ bool WriteBridgeSettingsBlocking(const base::FilePath& dir,
 }
 
 // Turns the persisted bridge choice into validated torrc Bridge lines. Any
-// problem is an error: if the user asked for bridges (e.g. because direct Tor
-// is blocked or dangerous where they are) we must not silently connect
-// without them.
+// problem is an error (a user-facing sentence): if the user asked for
+// bridges (e.g. because direct Tor is blocked or dangerous where they are)
+// we must not silently connect without them.
 std::optional<std::vector<std::string>> ResolveBridgeLinesBlocking(
     const BridgeSettings& settings,
     const base::FilePath& pt_config,
@@ -198,10 +278,15 @@ std::optional<std::vector<std::string>> ResolveBridgeLinesBlocking(
     case BridgeSettings::Mode::kNone:
       return std::vector<std::string>();
     case BridgeSettings::Mode::kCustom: {
+      std::string why;
       std::optional<std::vector<std::string>> lines =
-          ParseBridgeLines(settings.custom_lines, error);
-      if (lines && lines->empty()) {
-        *error = "custom bridges are selected but none were entered";
+          ParseBridgeLines(settings.custom_lines, &why);
+      if (!lines) {
+        *error = "Bridges: " + why + ".";
+        return std::nullopt;
+      }
+      if (lines->empty()) {
+        *error = "Bridges: custom bridges are selected but none were entered.";
         return std::nullopt;
       }
       return lines;
@@ -214,7 +299,7 @@ std::optional<std::vector<std::string>> ResolveBridgeLinesBlocking(
       std::string json;
       if (pt_config.empty() ||
           !base::ReadFileToStringWithMaxSize(pt_config, &json, 256 * 1024)) {
-        *error = "built-in bridges are not bundled with this build";
+        *error = BuiltInBridgesUnavailableMessage(PlatformTransportSource());
         return std::nullopt;
       }
       std::optional<base::DictValue> dict =
@@ -240,8 +325,8 @@ std::optional<std::vector<std::string>> ResolveBridgeLinesBlocking(
         }
       }
       if (out.empty()) {
-        *error = snowflake ? "no usable built-in snowflake bridges"
-                           : "no usable built-in obfs4 bridges";
+        *error = snowflake ? "Bridges: no usable built-in snowflake bridges."
+                           : "Bridges: no usable built-in obfs4 bridges.";
         return std::nullopt;
       }
       return out;
@@ -293,12 +378,6 @@ std::unique_ptr<TorSpawnResult> SpawnTorBlocking(SpawnSpec spec) {
       options.geoip6_file = geo6.AsUTF8Unsafe();
     }
     pt_dir = spec.bundled_dir.AppendASCII(kPtDirName);
-    if (HasBundledTransport(pt_dir, kLyrebirdName)) {
-      options.lyrebird_exec = kLyrebirdExec;
-    }
-    if (HasBundledTransport(pt_dir, kSnowflakeName)) {
-      options.snowflake_exec = kSnowflakeExec;
-    }
   }
 
   std::string error;
@@ -309,8 +388,22 @@ std::unique_ptr<TorSpawnResult> SpawnTorBlocking(SpawnSpec spec) {
       pt_dir.empty() ? base::FilePath() : pt_dir.AppendASCII(kPtConfigName),
       &error);
   if (!lines) {
-    result->error = "Bridges: " + error + ".";
+    result->error = error;
     return result;
+  }
+  // Only the transports these bridges need, so a missing one says exactly
+  // what to install.
+  for (BridgeTransport transport : RequiredTransports(*lines)) {
+    TransportLookup pt = FindTransport(pt_dir, transport);
+    if (pt.exec.empty()) {
+      result->error = pt.error;
+      return result;
+    }
+    if (transport == BridgeTransport::kObfs4) {
+      options.obfs4_exec = std::move(pt.exec);
+    } else {
+      options.snowflake_exec = std::move(pt.exec);
+    }
   }
   options.bridge_lines = std::move(*lines);
 
@@ -339,7 +432,8 @@ std::unique_ptr<TorSpawnResult> SpawnTorBlocking(SpawnSpec spec) {
   cmd.AppendArg(base::NumberToString(spec.owner_pid));
 
   base::LaunchOptions launch_options;
-  // Pluggable transports are referenced relative to the bundled tor dir.
+  // Bundled pluggable transports are referenced relative to the bundled tor
+  // dir (a system one on Linux by its absolute path).
   if (!spec.bundled_dir.empty() && base::DirectoryExists(spec.bundled_dir)) {
     launch_options.current_directory = spec.bundled_dir;
   }
@@ -506,6 +600,11 @@ BridgeSettings::BridgeSettings() = default;
 BridgeSettings::BridgeSettings(const BridgeSettings&) = default;
 BridgeSettings& BridgeSettings::operator=(const BridgeSettings&) = default;
 BridgeSettings::~BridgeSettings() = default;
+
+BridgeSupport::BridgeSupport() = default;
+BridgeSupport::BridgeSupport(const BridgeSupport&) = default;
+BridgeSupport& BridgeSupport::operator=(const BridgeSupport&) = default;
+BridgeSupport::~BridgeSupport() = default;
 
 TorBinaryInfo::TorBinaryInfo() = default;
 TorBinaryInfo::TorBinaryInfo(const TorBinaryInfo&) = default;
@@ -882,6 +981,14 @@ void TorManager::GetBridgeSettings(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&ReadBridgeSettingsBlocking,
                      GetDataDir().AppendASCII(kBridgesFileName)),
+      std::move(callback));
+}
+
+void TorManager::GetBridgeSupport(
+    base::OnceCallback<void(BridgeSupport)> callback) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ComputeBridgeSupportBlocking, GetBundledTorDir()),
       std::move(callback));
 }
 
