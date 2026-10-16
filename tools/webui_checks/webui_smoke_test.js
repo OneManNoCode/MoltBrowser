@@ -70,6 +70,9 @@ const agentTrustCalls = [];
 // URLs the model pickers asked the browser to open (openUrlInTab).
 const openedUrls = [];
 
+// saveMoltProfile calls from the /profile editor ([dict, options] each).
+const profileSaves = [];
+
 // Model licence display (A13), shared by molt://ai and molt://ai-chat: the
 // licence name is text, only an http(s) licence URL becomes a link, the
 // link opens through openUrlInTab, and in the model menu it doesn't also
@@ -440,6 +443,15 @@ const PAGES = [
      vaultAutofill: {success: false, cancelled: true},
      openMoltSettings: {success: true},
      sendPrompt: {success: true},
+     // profile.enc exists but can't be decrypted: a plain save is refused,
+     // "start over" keeps it as a backup.
+     getMoltProfile: {profile: {}, unreadable: true},
+     saveMoltProfile: (args) => {
+       profileSaves.push(args.slice(1));
+       return args[2] && args[2].backupUnreadable
+           ? {success: true, backup: 'profile.enc.unreadable-20261016T090000Z<b>'}
+           : {success: false, unreadable: true, error: '<b>could not be decrypted</b>'};
+     },
    },
    async after(window) {
      const doc = window.document;
@@ -469,6 +481,35 @@ const PAGES = [
             '/vault add never echoes the password');
      assert(window.__sent.includes('openMoltSettings'), '/vault add opens Settings');
      assert(!window.__sent.includes('vaultAdd'), 'chat never sends vaultAdd');
+     // /profile with an unreadable profile.enc: the editor says so, a save
+     // is refused without touching it, and only an explicit "start over"
+     // asks for the backup path. (/vault add above finishes synchronously
+     // and sendMessage() then leaves the chat marked busy; reset that.)
+     window.setGenerating(false);
+     input.value = '/profile';
+     window.sendMessage();
+     await tick();
+     const editor = doc.querySelector('#messages .profile-editor');
+     assert(editor, '/profile opens the editor');
+     assert(/couldn't be decrypted/.test(editor.textContent), 'unreadable profile flagged');
+     assert(!input.disabled, 'composer usable again after /profile');
+     editor.querySelector('input[data-key=full_name]').value = 'Ada';
+     editor.querySelector('.profile-save').click();
+     await tick();
+     // (Objects from the page's realm: compare as JSON.)
+     assert.strictEqual(JSON.stringify(profileSaves[0]), '[{"full_name":"Ada"},{}]',
+                        'plain save first');
+     const startOver = Array.from(doc.querySelectorAll('#messages button')).find(
+         (b) => /Start a new profile/.test(b.textContent));
+     assert(startOver, 'refused save offers "start over"');
+     assert.strictEqual(doc.querySelectorAll('#messages b').length, 0, 'errors are text');
+     startOver.click();
+     await tick();
+     assert.strictEqual(JSON.stringify(profileSaves[1]),
+                        '[{"full_name":"Ada"},{"backupUnreadable":true}]');
+     assert(/kept as ~\/\.moltbrowser\/profile\.enc\.unreadable-/.test(
+                doc.getElementById('messages').textContent), 'backup named');
+     assert.strictEqual(doc.querySelectorAll('#messages b').length, 0, 'backup name is text');
      // Tab-context contract still installed (from app.js now).
      window.__moltSetTabContext({url: 'https://example.com/a.pdf', title: 'Doc (PDF)'});
      assert.strictEqual(doc.querySelector('#tabContext .tab-context-icon').textContent, '\u{1F4C4}');

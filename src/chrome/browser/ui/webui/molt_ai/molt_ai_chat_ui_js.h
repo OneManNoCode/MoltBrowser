@@ -1731,12 +1731,25 @@ function openProfileEditor() {
     }).join('');
     currentAiText = '__PROFILE_EDITOR__';
     finishAiMessage();
+    // sendMessage() marked the chat busy after dispatching /profile; the
+    // editor is the whole answer, so give the composer back.
+    setGenerating(false);
     // Replace the last AI message with the editor markup.
     var msgs = document.querySelectorAll('#messages .message.ai');
     var last = msgs[msgs.length - 1];
     if (!last) return;
+    // A saved profile exists but couldn't be decrypted (keyring locked,
+    // another machine's key, corrupt file). It is never overwritten
+    // silently; say so instead of showing what looks like no profile.
+    var unreadableNote = (r && r.unreadable)
+        ? '<div class="profile-help">\u26a0 Your saved profile couldn\'t be ' +
+          'decrypted (is your system keyring locked?). It has not been ' +
+          'changed. Unlock the keyring and run <code>/profile</code> ' +
+          'again to edit it.</div>'
+        : '';
     last.querySelector('.text').innerHTML =
         moltHTML('<div class="profile-editor">' +
+        unreadableNote +
         '<div class="profile-help">Encrypted at rest via your OS keychain. ' +
         'Used by <code>/fill</code> to autofill forms on http(s) pages.</div>' +
         rows +
@@ -1744,24 +1757,54 @@ function openProfileEditor() {
         '<button class="profile-save">Save profile</button>' +
         '<button class="profile-cancel">Cancel</button>' +
         '</div></div>');
+    // opts.backupUnreadable: the user chose to start over; the unreadable
+    // profile is renamed to a backup next to it, never deleted.
+    function saveProfile(dict, opts) {
+      sendWithPromise('saveMoltProfile', dict, opts || {}).then(function(rr){
+        var box = last.querySelector('.text');
+        var n = Object.keys(dict).length;
+        if (rr && rr.success) {
+          var msg = '\u2713 Profile saved (' + n + ' field' +
+                    (n === 1 ? '' : 's') + ')';
+          if (rr.backup) {
+            msg += '. The profile that couldn\'t be decrypted was kept as ' +
+                   '~/.moltbrowser/' + rr.backup + '.';
+          }
+          box.textContent = msg;
+          return;
+        }
+        box.textContent = '\u2717 ' + ((rr && rr.error) || 'save failed');
+        if (rr && rr.unreadable) {
+          var actions = document.createElement('div');
+          actions.className = 'profile-actions';
+          var startOver = document.createElement('button');
+          startOver.className = 'profile-save';
+          startOver.textContent =
+              'Start a new profile (keep the old one as a backup)';
+          startOver.addEventListener('click', function() {
+            startOver.disabled = true;
+            saveProfile(dict, {backupUnreadable: true});
+          });
+          actions.appendChild(startOver);
+          box.appendChild(actions);
+        }
+      });
+    }
     last.querySelector('.profile-save').addEventListener('click', function(){
       var dict = {};
       last.querySelectorAll('input[data-key]').forEach(function(el){
         var v = el.value.trim();
         if (v) dict[el.getAttribute('data-key')] = v;
       });
-      sendWithPromise('saveMoltProfile', dict).then(function(rr){
-        var text = rr.success
-            ? '\u2713 Profile saved ('
-              + Object.keys(dict).length + ' field' +
-              (Object.keys(dict).length === 1 ? '' : 's') + ')'
-            : '\u2717 ' + (rr.error || 'save failed');
-        last.querySelector('.text').textContent = text;
-      });
+      saveProfile(dict);
     });
     last.querySelector('.profile-cancel').addEventListener('click', function(){
       last.querySelector('.text').textContent = 'Profile editor closed.';
     });
+  }).catch(function() {
+    currentAiText = '✗ Could not load your saved profile.';
+    finishAiMessage();
+    setGenerating(false);
   });
 }
 
