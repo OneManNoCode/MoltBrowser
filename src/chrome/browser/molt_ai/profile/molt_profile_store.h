@@ -8,6 +8,14 @@
 // is small so we read/write the whole thing on every change; no
 // streaming or partial-update path is needed.
 //
+// A profile.enc that exists but can't be read (the OS keyring is locked
+// or was reset, the file came from another machine, or it is corrupt) is
+// never overwritten by a plain Save(): the save is refused and the file is
+// left as it is, so the profile comes back once the keyring is unlocked.
+// Replacing it takes an explicit user choice
+// (SaveKeepingUnreadableAsBackup), and even then the old file is renamed
+// to a timestamped backup next to it, never deleted.
+//
 // All methods are UI-thread-safe but perform synchronous file I/O —
 // wrap calls in ScopedAllowBlockingForMolt or post them to a worker
 // sequence if the caller is hot on the UI thread.
@@ -40,6 +48,36 @@ inline constexpr char kFieldCompany[]     = "company";
 inline constexpr char kFieldJobTitle[]    = "job_title";
 inline constexpr char kFieldWebsite[]     = "website";
 
+// What reading profile.enc found.
+enum class ProfileReadStatus {
+  kOk,      // Read, decrypted and parsed.
+  kAbsent,  // No profile yet: no file, or an empty one.
+  // A profile exists but couldn't be read: the OS keyring is locked or
+  // unavailable, the key changed, or the file is corrupt.
+  kUnreadable,
+};
+
+struct ProfileLoadResult {
+  ProfileLoadResult();
+  ProfileLoadResult(ProfileLoadResult&&);
+  ProfileLoadResult& operator=(ProfileLoadResult&&);
+  ~ProfileLoadResult();
+
+  ProfileReadStatus status = ProfileReadStatus::kAbsent;
+  base::DictValue profile;  // Empty unless status is kOk.
+};
+
+enum class ProfileSaveResult {
+  kSaved,
+  // No real OS key store behind OSCrypt (molt_ai::IsSecureStorageAvailable()
+  // is false); nothing written.
+  kNoSecureStorage,
+  // profile.enc exists but couldn't be read; it was left untouched.
+  kExistingUnreadable,
+  // Directory, encryption or write failure; profile.enc left untouched.
+  kFailed,
+};
+
 class MoltProfileStore {
  public:
   MoltProfileStore();
@@ -49,14 +87,26 @@ class MoltProfileStore {
   MoltProfileStore& operator=(const MoltProfileStore&) = delete;
 
   // Returns the current profile dict. Empty dict if the file doesn't
-  // exist or fails to decrypt (corrupt file, keychain unavailable).
+  // exist or fails to decrypt (corrupt file, keychain unavailable). Use
+  // LoadWithStatus() to tell those apart.
   base::DictValue Load() const;
 
-  // Writes |dict| as the new profile, atomically (.tmp + rename).
-  // Returns true on success. Refuses (returns false) when there is no
-  // real OS key store behind OSCrypt — see
-  // molt_ai::IsSecureStorageAvailable().
-  bool Save(const base::DictValue& dict);
+  // The profile, and whether it was absent or unreadable.
+  ProfileLoadResult LoadWithStatus() const;
+
+  // Writes |dict| as the new profile, atomically (.tmp + rename). Refuses
+  // (kNoSecureStorage) when there is no real OS key store behind OSCrypt —
+  // see molt_ai::IsSecureStorageAvailable() — and refuses
+  // (kExistingUnreadable) to replace a profile.enc it can't read.
+  ProfileSaveResult Save(const base::DictValue& dict);
+
+  // Like Save(), but when profile.enc exists and can't be read, it is
+  // first renamed to profile.enc.unreadable-<UTC time> in the same
+  // directory and |*backup_path| is set to that file. Only for an explicit
+  // user choice to start over. |*backup_path| is empty when nothing was
+  // moved.
+  ProfileSaveResult SaveKeepingUnreadableAsBackup(const base::DictValue& dict,
+                                                  base::FilePath* backup_path);
 
   // Wipes the profile file. Returns true if the file is gone after
   // the call (whether or not it existed before).
@@ -67,6 +117,9 @@ class MoltProfileStore {
 
  private:
   base::FilePath GetProfilePath() const;
+  ProfileSaveResult SaveImpl(const base::DictValue& dict,
+                             bool backup_unreadable,
+                             base::FilePath* backup_path);
 
   base::FilePath root_override_;
 };
