@@ -161,6 +161,163 @@ TEST(MoltShieldRequestUtilsTest, WhereParamsMayBeStripped) {
       "GET", GURL("chrome://settings/?fbclid=1")));
 }
 
+TEST(MoltShieldRequestUtilsTest, WhereRedirectLegsMayBeStripped) {
+  using network::mojom::RedirectMode;
+  EXPECT_TRUE(CanStripParamsOnRedirect(RedirectMode::kFollow, "GET"));
+  // The strip becomes an internal 307, which would carry a body along.
+  EXPECT_FALSE(CanStripParamsOnRedirect(RedirectMode::kFollow, "POST"));
+  EXPECT_FALSE(CanStripParamsOnRedirect(RedirectMode::kFollow, "PUT"));
+  // The page gets an opaque redirect / an error; nothing is followed.
+  EXPECT_FALSE(CanStripParamsOnRedirect(RedirectMode::kManual, "GET"));
+  EXPECT_FALSE(CanStripParamsOnRedirect(RedirectMode::kError, "GET"));
+}
+
+TEST(MoltShieldRequestUtilsTest, ParamStripGuardOnlyAllowsSafeStrips) {
+  ParamStripGuard guard;
+  EXPECT_TRUE(guard.Allow(GURL("https://a.example/x.js?utm_source=n"),
+                          GURL("https://a.example/x.js")));
+  EXPECT_TRUE(guard.Allow(GURL("https://cdn.example/y.js?v=2&fbclid=1"),
+                          GURL("https://cdn.example/y.js?v=2")));
+  EXPECT_EQ(guard.strips(), 2);
+  // Never another origin, path or fragment, never a non-rewrite.
+  const GURL z("https://cdn.example/z.js?fbclid=1#f");
+  EXPECT_FALSE(guard.Allow(z, GURL("https://evil.example/z.js#f")));
+  EXPECT_FALSE(guard.Allow(z, GURL("http://cdn.example/z.js#f")));
+  EXPECT_FALSE(guard.Allow(z, GURL("https://cdn.example/other.js#f")));
+  EXPECT_FALSE(guard.Allow(z, GURL("https://cdn.example/z.js")));
+  EXPECT_FALSE(guard.Allow(z, GURL()));
+  EXPECT_FALSE(guard.Allow(z, z));
+  EXPECT_EQ(guard.strips(), 2);
+}
+
+TEST(MoltShieldRequestUtilsTest, ParamStripGuardStopsWhenTheServerInsists) {
+  ParamStripGuard guard;
+  const GURL plain("https://cdn.example/x.js");
+  EXPECT_TRUE(
+      guard.Allow(GURL("https://cdn.example/x.js?utm_source=n"), plain));
+  // The server sends x.js back to x.js?utm_source=... (any value): load it
+  // as is rather than bounce, and stop stripping this request.
+  EXPECT_FALSE(
+      guard.Allow(GURL("https://cdn.example/x.js?utm_source=m"), plain));
+  EXPECT_FALSE(guard.Allow(GURL("https://cdn.example/y.js?gclid=2"),
+                           GURL("https://cdn.example/y.js")));
+}
+
+TEST(MoltShieldRequestUtilsTest, ParamStripGuardCapsStripsPerRequest) {
+  ParamStripGuard guard;
+  for (int i = 0; i < kMaxParamStripsPerSubresource; ++i) {
+    const std::string path = "https://a.example/" + std::to_string(i);
+    EXPECT_TRUE(guard.Allow(GURL(path + "?gclid=1"), GURL(path)));
+  }
+  EXPECT_FALSE(guard.Allow(GURL("https://a.example/last?gclid=1"),
+                           GURL("https://a.example/last")));
+  EXPECT_EQ(guard.strips(), kMaxParamStripsPerSubresource);
+}
+
+// The proxy's event sequence for a stripped redirect leg.
+TEST(MoltShieldRequestUtilsTest, RedirectLegIsFollowedToTheStrippedUrl) {
+  using network::mojom::RedirectMode;
+  SubresourceParamStripper s(RedirectMode::kFollow);
+  const GURL decorated("https://cdn.example/lib.js?v=3&utm_source=ads");
+  const GURL stripped("https://cdn.example/lib.js?v=3");
+
+  // tracker.example/r -> 302 -> decorated. The renderer is told the
+  // server's redirect; following it asks for the stripped URL.
+  EXPECT_FALSE(s.OnNetworkRedirect(decorated));
+  s.OnRedirectChecked(decorated, "GET", stripped);
+  EXPECT_EQ(s.OnFollowRedirect(std::nullopt), stripped);
+  // The network service's internal 307 to it confirms the strip, once.
+  EXPECT_TRUE(s.OnNetworkRedirect(stripped));
+  s.OnRedirectChecked(stripped, "GET", GURL());  // nothing left to strip
+  EXPECT_EQ(s.OnFollowRedirect(std::nullopt), std::nullopt);
+  EXPECT_FALSE(s.OnNetworkRedirect(stripped));
+  s.OnResponse();
+}
+
+TEST(MoltShieldRequestUtilsTest, RedirectLegNotStrippedWhenItMustNotBe) {
+  using network::mojom::RedirectMode;
+  const GURL decorated("https://cdn.example/lib.js?utm_source=ads");
+  const GURL stripped("https://cdn.example/lib.js");
+  {
+    // No rewrite from the engine (or stripping is off for the request).
+    SubresourceParamStripper s(RedirectMode::kFollow);
+    s.OnRedirectChecked(decorated, "GET", GURL());
+    EXPECT_EQ(s.OnFollowRedirect(std::nullopt), std::nullopt);
+  }
+  {
+    // A POST leg (307/308), or a manual-mode request.
+    SubresourceParamStripper s(RedirectMode::kFollow);
+    s.OnRedirectChecked(decorated, "POST", stripped);
+    EXPECT_EQ(s.OnFollowRedirect(std::nullopt), std::nullopt);
+    SubresourceParamStripper m(RedirectMode::kManual);
+    m.OnRedirectChecked(decorated, "GET", stripped);
+    EXPECT_EQ(m.OnFollowRedirect(std::nullopt), std::nullopt);
+  }
+  {
+    // A cross-origin "rewrite" is never passed on as new_url.
+    SubresourceParamStripper s(RedirectMode::kFollow);
+    s.OnRedirectChecked(decorated, "GET", GURL("https://evil.example/lib.js"));
+    EXPECT_EQ(s.OnFollowRedirect(std::nullopt), std::nullopt);
+  }
+  {
+    // The renderer follows with a URL of its own: it wins, and is not
+    // counted as a strip.
+    SubresourceParamStripper s(RedirectMode::kFollow);
+    const GURL own("https://cdn.example/lib.js?utm_source=ads&x=1");
+    s.OnRedirectChecked(decorated, "GET", stripped);
+    EXPECT_EQ(s.OnFollowRedirect(own), own);
+    EXPECT_FALSE(s.OnNetworkRedirect(stripped));
+  }
+  {
+    // A stale stripped URL is never used for a later redirect: a new
+    // network redirect clears it before its own check.
+    SubresourceParamStripper s(RedirectMode::kFollow);
+    s.OnRedirectChecked(decorated, "GET", stripped);
+    EXPECT_FALSE(s.OnNetworkRedirect(GURL("https://other.example/")));
+    EXPECT_EQ(s.OnFollowRedirect(std::nullopt), std::nullopt);
+  }
+  {
+    // The CORS loader re-issued the request without new_url: the response
+    // comes straight back, no strip is counted.
+    SubresourceParamStripper s(RedirectMode::kFollow);
+    s.OnRedirectChecked(decorated, "GET", stripped);
+    EXPECT_EQ(s.OnFollowRedirect(std::nullopt), stripped);
+    s.OnResponse();
+    EXPECT_FALSE(s.OnNetworkRedirect(stripped));
+  }
+}
+
+TEST(MoltShieldRequestUtilsTest, RedirectLoopBackToParametersEnds) {
+  using network::mojom::RedirectMode;
+  SubresourceParamStripper s(RedirectMode::kFollow);
+  const GURL decorated("https://cdn.example/x.js?utm_source=n");
+  const GURL plain("https://cdn.example/x.js");
+  // Initial URL stripped; the server redirects x.js back to the decorated
+  // URL: that leg is loaded as sent.
+  EXPECT_TRUE(s.AllowInitialStrip(decorated, plain));
+  EXPECT_FALSE(s.OnNetworkRedirect(decorated));
+  s.OnRedirectChecked(decorated, "GET", plain);
+  EXPECT_EQ(s.OnFollowRedirect(std::nullopt), std::nullopt);
+
+  // A server that keeps redirecting to new decorated URLs gets at most
+  // kMaxParamStripsPerSubresource strips per request.
+  SubresourceParamStripper chain(RedirectMode::kFollow);
+  int strips = 0;
+  for (int i = 0; i < 10; ++i) {
+    const GURL next("https://cdn.example/" + std::to_string(i) + "?fbclid=1");
+    const GURL next_plain("https://cdn.example/" + std::to_string(i));
+    chain.OnNetworkRedirect(next);
+    chain.OnRedirectChecked(next, "GET", next_plain);
+    std::optional<GURL> follow = chain.OnFollowRedirect(std::nullopt);
+    if (follow) {
+      EXPECT_EQ(*follow, next_plain);
+      EXPECT_TRUE(chain.OnNetworkRedirect(next_plain));
+      ++strips;
+    }
+  }
+  EXPECT_EQ(strips, kMaxParamStripsPerSubresource);
+}
+
 TEST(MoltShieldRequestUtilsTest, LooksLikeFilterList) {
   EXPECT_TRUE(LooksLikeFilterList(ListWithFilters(kMinFilterLines)));
   EXPECT_FALSE(LooksLikeFilterList(ListWithFilters(kMinFilterLines - 1)));

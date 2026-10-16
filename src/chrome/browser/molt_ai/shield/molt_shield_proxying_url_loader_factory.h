@@ -22,7 +22,10 @@
 // rules) when the verdict comes back — the UI thread never matches. A
 // request that goes ahead is started without the tracking parameters the
 // engine says to strip (`$removeparam`), transparently: see
-// InProgressRequest::MaybeStripParams.
+// InProgressRequest::MaybeStripParams. A server redirect to a decorated URL
+// is followed to the stripped URL instead (FollowRedirect's `new_url`, same
+// origin and path only, loop-guarded): see
+// InProgressRequest::MaybeStripRedirect and SubresourceParamStripper.
 //
 // Navigations (documents and frames) are not handled here; see
 // molt_shield_navigation_throttle.h. Top-level documents are never blocked.

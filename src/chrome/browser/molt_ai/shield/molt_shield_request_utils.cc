@@ -135,6 +135,75 @@ bool CanStripParamsFromNavigation(std::string_view method, const GURL& url) {
          url.has_query();
 }
 
+bool CanStripParamsOnRedirect(network::mojom::RedirectMode redirect_mode,
+                              std::string_view new_method) {
+  return redirect_mode == network::mojom::RedirectMode::kFollow &&
+         new_method == "GET";
+}
+
+ParamStripGuard::ParamStripGuard() = default;
+ParamStripGuard::~ParamStripGuard() = default;
+
+bool ParamStripGuard::Allow(const GURL& url, const GURL& stripped) {
+  if (strips_ >= kMaxParamStripsPerSubresource ||
+      !IsSafeParamStrip(url, stripped)) {
+    return false;
+  }
+  if (!stripped_to_.insert(stripped).second) {
+    // Sent back to parameters this request was already stripped of: the
+    // server insists on them. Load it as is rather than bounce until
+    // ERR_TOO_MANY_REDIRECTS, and stop stripping this request.
+    strips_ = kMaxParamStripsPerSubresource;
+    return false;
+  }
+  ++strips_;
+  return true;
+}
+
+SubresourceParamStripper::SubresourceParamStripper(
+    network::mojom::RedirectMode redirect_mode)
+    : redirect_mode_(redirect_mode) {}
+
+SubresourceParamStripper::~SubresourceParamStripper() = default;
+
+bool SubresourceParamStripper::AllowInitialStrip(const GURL& url,
+                                                 const GURL& stripped) {
+  return guard_.Allow(url, stripped);
+}
+
+void SubresourceParamStripper::OnRedirectChecked(const GURL& new_url,
+                                                 std::string_view new_method,
+                                                 const GURL& stripped) {
+  pending_.reset();
+  if (CanStripParamsOnRedirect(redirect_mode_, new_method) &&
+      guard_.Allow(new_url, stripped)) {
+    pending_ = stripped;
+  }
+}
+
+std::optional<GURL> SubresourceParamStripper::OnFollowRedirect(
+    const std::optional<GURL>& renderer_new_url) {
+  std::optional<GURL> follow = renderer_new_url;
+  if (!follow && pending_) {
+    follow = pending_;
+    awaiting_ = pending_;
+  }
+  pending_.reset();
+  return follow;
+}
+
+bool SubresourceParamStripper::OnNetworkRedirect(const GURL& new_url) {
+  pending_.reset();
+  const bool confirmed = awaiting_ && *awaiting_ == new_url;
+  awaiting_.reset();
+  return confirmed;
+}
+
+void SubresourceParamStripper::OnResponse() {
+  pending_.reset();
+  awaiting_.reset();
+}
+
 bool LooksLikeFilterList(std::string_view text) {
   if (text.empty() || static_cast<int64_t>(text.size()) > kMaxListBytes) {
     return false;
