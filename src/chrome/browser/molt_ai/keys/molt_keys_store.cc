@@ -14,7 +14,7 @@
 #include "base/path_service.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "components/os_crypt/sync/os_crypt.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 
 namespace molt_ai {
 
@@ -22,6 +22,11 @@ namespace {
 
 constexpr char kRootDirName[] = ".moltbrowser";
 constexpr char kKeysFile[] = "keys.enc";
+
+#if BUILDFLAG(IS_LINUX)
+// Encrypted to learn which key the Encryptor encrypts with. Not a secret.
+constexpr char kTagProbe[] = "molt-secure-storage-probe";
+#endif
 
 // Process-wide test-root override. Empty in production. Mirrors the
 // per-instance override on VaultStore, but MoltKeysStore is all-static
@@ -101,7 +106,7 @@ std::optional<base::DictValue> ReadDecrypted() {
     return base::DictValue();
   }
   std::string plaintext;
-  if (!OSCrypt::DecryptString(ciphertext, &plaintext)) {
+  if (!molt_os_crypt::DecryptString(ciphertext, &plaintext)) {
     LOG(WARNING) << "[MoltKeysStore] decrypt failed";
     return std::nullopt;
   }
@@ -125,7 +130,7 @@ enum class WriteKind { kStoresSecrets, kRemovalOnly };
 bool WriteEncrypted(const base::DictValue& dict, WriteKind kind) {
   if (kind == WriteKind::kStoresSecrets && !IsSecureStorageAvailable()) {
     LOG(WARNING) << "[MoltKeysStore] refusing to store keys: no secure "
-                    "OS key storage (OSCrypt would use a hard-coded key)";
+                    "OS key storage (no keyring key, or not ready yet)";
     return false;
   }
   base::FilePath path = GetKeysPath();
@@ -143,7 +148,7 @@ bool WriteEncrypted(const base::DictValue& dict, WriteKind kind) {
   // be encrypted with an OS-backed key.
   bool encrypted = kind == WriteKind::kStoresSecrets
                        ? EncryptSecretForStorage(plaintext, &ciphertext)
-                       : OSCrypt::EncryptString(plaintext, &ciphertext);
+                       : molt_os_crypt::EncryptString(plaintext, &ciphertext);
   ScrubString(plaintext);
   if (!encrypted) {
     LOG(WARNING) << "[MoltKeysStore] encrypt failed";
@@ -164,29 +169,51 @@ bool WriteEncrypted(const base::DictValue& dict, WriteKind kind) {
 }  // namespace
 
 bool IsSecureStorageAvailable() {
-  // On Linux this is false when OSCrypt has no libsecret/KWallet backend
-  // (or --password-store=basic) and would encrypt with the hard-coded v10
-  // key; on macOS when the Keychain is unavailable; on Windows when only
-  // a mock key exists.
-  return OSCrypt::IsEncryptionAvailable();
+  // False until molt_os_crypt has the Encryptor, and when it has no key to
+  // encrypt with (macOS: Keychain locked or access denied; Windows: no DPAPI
+  // key).
+  if (!molt_os_crypt::IsEncryptionAvailable()) {
+    return false;
+  }
+#if BUILDFLAG(IS_LINUX)
+  // Without libsecret / KWallet (or with --password-store=basic) the
+  // Encryptor encrypts with the hard-coded v10 key. Check which key it
+  // actually uses.
+  std::string probe;
+  return molt_os_crypt::EncryptString(kTagProbe, &probe) &&
+         IsLinuxKeyringCiphertext(probe);
+#else
+  return true;
+#endif
 }
 
 std::string SecureStorageUnavailableMessage() {
+  if (!molt_os_crypt::IsReady()) {
+    return "Secure storage is still starting up (waiting for the system "
+           "keyring). Try again in a moment.";
+  }
 #if BUILDFLAG(IS_LINUX)
   return "No system keyring is available. Install or unlock GNOME Keyring "
-         "or KWallet to store secrets.";
+         "or KWallet, then restart MoltBrowser to store secrets.";
 #elif BUILDFLAG(IS_MAC)
-  return "The macOS Keychain is unavailable or locked. Unlock it to store "
-         "secrets.";
+  return "The macOS Keychain is unavailable or locked. Unlock it and restart "
+         "MoltBrowser to store secrets.";
 #else
   return "Secure OS key storage is unavailable, so secrets can't be stored.";
 #endif
 }
 
 bool IsLinuxKeyringCiphertext(const std::string& ciphertext) {
-  // os_crypt_linux.cc: "v11" = AES key derived from the keyring password,
-  // "v10" = the hard-coded "peanuts" key.
-  return ciphertext.size() > 3 && ciphertext.compare(0, 3, "v11") == 0;
+  // Tags of the os_crypt_async key providers BrowserProcessImpl registers on
+  // Linux: "v11" FreedesktopSecretKeyProvider (system keyring; the old
+  // OSCrypt's v11), "v12" SecretPortalKeyProvider (XDG secret portal), "v10"
+  // PosixKeyProvider (the hard-coded "peanuts" key). An allowlist, so a tag
+  // added upstream later fails closed until someone checks what it is.
+  if (ciphertext.size() <= 3) {
+    return false;  // A tag alone, or nothing: not a ciphertext.
+  }
+  return ciphertext.compare(0, 3, "v11") == 0 ||
+         ciphertext.compare(0, 3, "v12") == 0;
 }
 
 bool EncryptSecretForStorage(const std::string& plaintext,
@@ -196,15 +223,15 @@ bool EncryptSecretForStorage(const std::string& plaintext,
     return false;
   }
   std::string out;
-  if (!OSCrypt::EncryptString(plaintext, &out)) {
+  if (!molt_os_crypt::EncryptString(plaintext, &out)) {
     return false;
   }
 #if BUILDFLAG(IS_LINUX)
-  // OSCrypt picks the key per call and silently falls back to the
-  // hard-coded one; check what it actually used, not just what it reported.
+  // Check the key this ciphertext was actually made with, not just what the
+  // probe above saw.
   if (!IsLinuxKeyringCiphertext(out)) {
-    LOG(WARNING) << "[MoltSecretStore] OSCrypt used its hard-coded key; "
-                    "not storing the secret";
+    LOG(WARNING) << "[MoltSecretStore] the Encryptor used the hard-coded "
+                    "key; not storing the secret";
     return false;
   }
 #endif

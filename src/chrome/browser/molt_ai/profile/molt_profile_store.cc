@@ -17,7 +17,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
-#include "components/os_crypt/sync/os_crypt.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 
 namespace molt_ai {
 namespace profile {
@@ -48,9 +48,16 @@ ProfileReadStatus ReadProfile(const base::FilePath& path,
     return ProfileReadStatus::kAbsent;  // Nothing in it to lose.
   }
   std::string plaintext;
-  if (!OSCrypt::DecryptString(ciphertext, &plaintext)) {
-    LOG(WARNING) << "[MoltProfileStore] decrypt failed (OS keyring locked "
-                    "or key changed?)";
+  os_crypt_async::Encryptor::DecryptFlags flags;
+  if (!molt_os_crypt::DecryptString(ciphertext, &plaintext, &flags)) {
+    // Either way the file is kept: a temporary failure (keyring locked, or
+    // the Encryptor not ready yet) may clear up, and a permanent one (key
+    // changed, corrupt file) is still the user's data.
+    LOG(WARNING) << "[MoltProfileStore] decrypt failed ("
+                 << (flags.temporarily_unavailable
+                         ? "OS key store locked or not ready yet"
+                         : "key changed or file corrupt?")
+                 << ")";
     return ProfileReadStatus::kUnreadable;
   }
   std::optional<base::Value> parsed =
@@ -142,8 +149,8 @@ ProfileSaveResult MoltProfileStore::SaveImpl(const base::DictValue& dict,
   }
   if (!molt_ai::IsSecureStorageAvailable()) {
     LOG(WARNING) << "[MoltProfileStore] refusing to store profile: no "
-                    "secure OS key storage (OSCrypt would use a hard-coded "
-                    "key)";
+                    "secure OS key storage (no keyring key, or not ready "
+                    "yet)";
     return ProfileSaveResult::kNoSecureStorage;
   }
   const base::FilePath path = GetProfilePath();
@@ -167,8 +174,8 @@ ProfileSaveResult MoltProfileStore::SaveImpl(const base::DictValue& dict,
     return ProfileSaveResult::kFailed;
   }
   std::string ciphertext;
-  // Fails unless an OS-backed key encrypted it (never OSCrypt's hard-coded
-  // Linux fallback key).
+  // Fails unless an OS-backed key encrypted it (never the hard-coded Linux
+  // fallback key).
   if (!molt_ai::EncryptSecretForStorage(plaintext, &ciphertext)) {
     LOG(WARNING) << "[MoltProfileStore] encrypt failed";
     return ProfileSaveResult::kFailed;

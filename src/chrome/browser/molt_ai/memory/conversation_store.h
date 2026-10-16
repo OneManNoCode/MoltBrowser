@@ -5,9 +5,16 @@
 // stored per profile and encrypted at rest.
 //
 //   <profile>/MoltAI/Conversations/<id>.mconv
-//     = "MOLTCONV1\n" + OSCrypt(JSON {id, title, updated_at (ms since epoch),
+//     = "MOLTCONV1\n" + Encrypt(JSON {id, title, updated_at (ms since epoch),
 //                                     messages: [{role, content}],
 //                                     attachment?: {name, text, ...}})
+//
+// Encrypt() is the os_crypt_async Encryptor through molt_os_crypt; files
+// the old OSCrypt wrote decrypt unchanged. Unlike the secret stores
+// (keys.enc / vault.enc / profile.enc), any key is accepted, including the
+// hard-coded one Linux falls back to without a keyring, but nothing is ever
+// written unencrypted: before the Encryptor is ready (early startup), or
+// with no key at all, Save fails and List() skips what it can't decrypt.
 //
 // Previously conversations were plaintext JSON in ~/.moltbrowser/
 // conversations, shared by every profile and written even from incognito.
@@ -16,10 +23,9 @@
 // Off-the-record profiles must not use this store at all (the chat handler
 // refuses before getting here).
 //
-// Lives in the memory target because that is where OSCrypt is visible to
-// MoltBrowser code. All methods block on disk IO / OSCrypt: call them on a
-// single sequenced worker (the chat handler's conversation task runner) so
-// autosaves of one conversation stay ordered.
+// All methods block on disk IO: call them on a single sequenced worker (the
+// chat handler's conversation task runner) so autosaves of one conversation
+// stay ordered.
 
 #ifndef CHROME_BROWSER_MOLT_AI_MEMORY_CONVERSATION_STORE_H_
 #define CHROME_BROWSER_MOLT_AI_MEMORY_CONVERSATION_STORE_H_
@@ -76,7 +82,7 @@ class ConversationStore {
   // undecryptable.
   bool ReadDecrypted(const base::FilePath& path, std::string* json) const;
   // Encrypts |json| and atomically replaces |path| (tmp + rename). Refuses
-  // (returns false) rather than writing plaintext if OSCrypt fails.
+  // (returns false) rather than writing plaintext if encryption fails.
   bool WriteEncrypted(const base::FilePath& path,
                       const std::string& json) const;
 

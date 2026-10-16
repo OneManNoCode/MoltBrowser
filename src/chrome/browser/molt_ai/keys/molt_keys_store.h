@@ -1,15 +1,15 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltKeysStore — OSCrypt-encrypted store for cloud-provider API keys.
+// MoltKeysStore — encrypted store for cloud-provider API keys.
 //
 // Stores a JSON dict of provider configs at
 //   ~/.moltbrowser/keys.enc
-// encrypted via OSCrypt (OS keychain on macOS / DPAPI on Windows /
-// libsecret on Linux). The blob is tiny (one entry per configured
-// frontier provider) so we read/write the whole thing on every change;
-// no streaming or partial-update path — the exact same idiom as
-// molt_ai::vault::VaultStore.
+// encrypted with the os_crypt_async Encryptor through molt_os_crypt (OS
+// Keychain on macOS / DPAPI on Windows / Secret Service or KWallet on
+// Linux). The blob is tiny (one entry per configured frontier provider) so
+// we read/write the whole thing on every change; no streaming or
+// partial-update path — the exact same idiom as molt_ai::vault::VaultStore.
 //
 // On-disk JSON shape:
 //   {
@@ -31,8 +31,10 @@
 //   - Callers should SecureClear() any transient plaintext key buffers
 //     (molt_ai::chat_handler_helpers::SecureClear) after use.
 //
-// Threading: methods are UI-thread-safe but synchronous on disk +
-// keychain. Wrap callers in ScopedAllowBlockingForMolt.
+// Threading: any thread; synchronous file I/O, so wrap UI-thread callers in
+// ScopedAllowBlockingForMolt. Encryption never blocks on the OS key store
+// (molt_os_crypt fetched the key at startup). Until that key has arrived,
+// reads come back empty and writes are refused, as for a locked keyring.
 
 #ifndef CHROME_BROWSER_MOLT_AI_KEYS_MOLT_KEYS_STORE_H_
 #define CHROME_BROWSER_MOLT_AI_KEYS_MOLT_KEYS_STORE_H_
@@ -47,8 +49,8 @@
 namespace molt_ai {
 
 // One provider's stored configuration. `api_key` is plaintext only
-// while this struct is in scope — the on-disk form is OSCrypt-encrypted
-// at file granularity.
+// while this struct is in scope — the on-disk form is encrypted at file
+// granularity.
 struct ProviderConfig {
   ProviderConfig();
   ProviderConfig(const ProviderConfig&);
@@ -62,20 +64,22 @@ struct ProviderConfig {
   std::vector<std::string> enabled_models;
 };
 
-// True when OSCrypt is backed by a real OS secret store (macOS Keychain,
-// Windows DPAPI, GNOME Keyring / KWallet on Linux). On Linux with no
-// keyring OSCrypt silently falls back to a hard-coded key ("v10"), which
-// is obfuscation, not encryption — anyone who can read the file can
-// decrypt it. MoltBrowser's secret stores (keys.enc, vault.enc,
-// profile.enc) refuse to write new secrets while this is false; files
-// written earlier stay readable, and removing entries is still allowed.
-// May block on the OS keyring the first time: call under
-// ScopedAllowBlockingForMolt like the stores themselves.
+// True when new secrets would be encrypted with a real OS-backed key (macOS
+// Keychain, Windows DPAPI, the Secret Service / KWallet or the XDG secret
+// portal on Linux). On Linux without a keyring the Encryptor falls back to a
+// hard-coded key ("v10"), which is obfuscation, not encryption: anyone who
+// can read the file can decrypt it. MoltBrowser's secret stores (keys.enc,
+// vault.enc, profile.enc) refuse to write new secrets while this is false.
+// Files written earlier stay readable, and removing entries is still allowed.
 //
-// At the pinned Chromium, OSCrypt::IsEncryptionAvailable() is exactly that
-// test on every platform: Linux derives the "v11" keyring key (false when no
-// backend was selected or the keyring returned no password), macOS derives
-// the Keychain key, Windows has a DPAPI-wrapped key.
+// Also false until molt_os_crypt has its Encryptor (early in startup; on
+// Linux possibly until the user answers a keyring unlock prompt). Never
+// blocks.
+//
+// Implementation: the Encryptor must be able to encrypt, and on Linux a probe
+// encrypted with it must carry a keyring tag (see IsLinuxKeyringCiphertext).
+// The Encryptor is fixed for the browser session, so a keyring that comes up
+// later only counts after a restart.
 bool IsSecureStorageAvailable();
 
 // User-facing explanation to surface when IsSecureStorageAvailable() is
@@ -84,14 +88,18 @@ std::string SecureStorageUnavailableMessage();
 
 // Encrypts |plaintext| (non-empty) for one of the secret stores. Succeeds
 // only when the result is protected by an OS-backed key: the check above
-// must pass and, on Linux, the output must carry OSCrypt's keyring prefix
-// ("v11"), never the hard-coded-key prefix ("v10"). On failure |ciphertext|
-// is left empty and nothing should be written.
+// must pass and, on Linux, the output must carry a keyring tag ("v11" or
+// "v12"), never the hard-coded-key tag ("v10"). On failure |ciphertext| is
+// left empty and nothing should be written.
 bool EncryptSecretForStorage(const std::string& plaintext,
                              std::string* ciphertext);
 
-// Pure helper behind the Linux check above: true if |ciphertext| is OSCrypt
-// Linux output made with the keyring key. Exposed for tests.
+// Pure helper behind the Linux check above: true if |ciphertext| was made
+// with a key from the user's keyring. On Linux, "v11" is the Secret Service /
+// KWallet key (FreedesktopSecretKeyProvider, the old OSCrypt's v11 key) and
+// "v12" the XDG secret portal key (SecretPortalKeyProvider). "v10" is the
+// hard-coded key (PosixKeyProvider). Any other or unknown tag is rejected.
+// Exposed for tests.
 bool IsLinuxKeyringCiphertext(const std::string& ciphertext);
 
 // All static — the store is stateless apart from the on-disk file and
