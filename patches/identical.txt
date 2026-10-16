@@ -52,3 +52,4 @@ components/wallet_strings.grdp
 components/webapps_strings.grdp
 components/webxr_strings.grdp
 third_party/blink/renderer/modules/webcodecs/video_frame.cc
+third_party/blink/renderer/modules/webgpu/gpu_queue.cc
