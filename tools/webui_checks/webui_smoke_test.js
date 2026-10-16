@@ -73,6 +73,14 @@ const openedUrls = [];
 // saveMoltProfile calls from the /profile editor ([dict, options] each).
 const profileSaves = [];
 
+// The molt://ai-chat reader commands (A7): the active tab shows
+// example.com/b (entry 2); getPageContent reads it fresh; sendPrompt
+// records the prompts.
+const pageContentCalls = [];
+const sentPrompts = [];
+const ACTIVE_PAGE = {has_context: true, url: 'https://example.com/b', title: 'B',
+                     nav_entry_id: 2};
+
 // shieldSetGlobal calls from molt://ai-settings ([key, value] each). The
 // reply after turning tracking-parameter stripping off also reports its
 // chrome://flags kill switch as off.
@@ -469,7 +477,13 @@ const PAGES = [
        {id: 'abcdef1234567890', site_host: 'gist.github.com', username: 'me', match: 'same_site'}]},
      vaultAutofill: {success: false, cancelled: true},
      openMoltSettings: {success: true},
-     sendPrompt: {success: true},
+     sendPrompt: (args) => { sentPrompts.push(args[1]); return {success: true}; },
+     getPageContext: ACTIVE_PAGE,
+     getPageContent: (args) => {
+       pageContentCalls.push(args[1]);
+       return {has_content: true, url: ACTIVE_PAGE.url, title: 'B', nav_entry_id: 2,
+               content: 'fresh text of page B'};
+     },
      // profile.enc exists but can't be decrypted: a plain save is refused,
      // "start over" keeps it as a backup.
      getMoltProfile: {profile: {}, unreadable: true},
@@ -537,6 +551,48 @@ const PAGES = [
      assert(/kept as ~\/\.moltbrowser\/profile\.enc\.unreadable-/.test(
                 doc.getElementById('messages').textContent), 'backup named');
      assert.strictEqual(doc.querySelectorAll('#messages b').length, 0, 'backup name is text');
+     // Reader commands (A7): text pushed for the previous page is never
+     // used; the current document's text is read instead.
+     const runCmd = async (cmd) => {
+       input.value = cmd;
+       window.sendMessage();
+       await tick();
+       await tick();
+     };
+     window.__moltSetTabContext({url: 'https://example.com/a', title: 'A',
+                                 text: 'stale text of page A', nav_entry_id: 1});
+     await runCmd('/summarize');
+     assert.strictEqual(pageContentCalls.pop(), 12000, 'stale push: page read again');
+     assert(/fresh text of page B/.test(sentPrompts[sentPrompts.length - 1]) &&
+            !/page A/.test(sentPrompts[sentPrompts.length - 1]),
+            '/summarize uses the current page, never the stale push');
+     // Pushed text for the document shown now is used as is.
+     window.__moltSetTabContext({url: ACTIVE_PAGE.url, title: 'B',
+                                 text: 'pushed text of page B', nav_entry_id: 2});
+     await runCmd('/tldr');
+     assert.strictEqual(pageContentCalls.length, 0, 'current push: no extra read');
+     assert(/pushed text of page B/.test(sentPrompts[sentPrompts.length - 1]));
+     // Same document, capture still running: read it now.
+     window.__moltSetTabContext({url: ACTIVE_PAGE.url, title: 'B', text: '',
+                                 nav_entry_id: 2, text_pending: true});
+     await runCmd('/translate');
+     assert.strictEqual(pageContentCalls.pop(), 4000);
+     assert(/fresh text of page B/.test(sentPrompts[sentPrompts.length - 1]));
+     window.__moltSetTabContext({url: 'https://example.com/a', title: 'A',
+                                 text: 'stale receipt of page A', nav_entry_id: 1});
+     await runCmd('/receipt');
+     assert.strictEqual(pageContentCalls.pop(), 10000);
+     assert(/Page URL: https:\/\/example\.com\/b/.test(sentPrompts[sentPrompts.length - 1]) &&
+            !/page A/.test(sentPrompts[sentPrompts.length - 1]), '/receipt reads page B');
+     // /chapters checks the URL of the document it read, not the push's.
+     window.__moltSetTabContext({url: 'https://www.youtube.com/watch?v=x', title: 'V',
+                                 text: '0:01 a\n0:02 b\n0:03 c\n0:04 d\n0:05 e',
+                                 nav_entry_id: 1});
+     const promptsBefore = sentPrompts.length;
+     await runCmd('/chapters');
+     assert.strictEqual(sentPrompts.length, promptsBefore, 'no prompt for a non-YouTube page');
+     assert(/Open a YouTube video first/.test(doc.getElementById('messages').textContent));
+     assert(!input.disabled, 'composer usable after the reader commands');
      // Tab-context contract still installed (from app.js now).
      window.__moltSetTabContext({url: 'https://example.com/a.pdf', title: 'Doc (PDF)'});
      assert.strictEqual(doc.querySelector('#tabContext .tab-context-icon').textContent, '\u{1F4C4}');

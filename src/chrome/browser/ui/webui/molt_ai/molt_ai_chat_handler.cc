@@ -2292,14 +2292,26 @@ void MoltAIChatHandler::OnModelDeleted(std::string callback_id,
 
 // ------------------------------------------------------------------
 // HandleGetPageContent: Extract text content from the active tab
-// JS: chrome.send('getPageContent', [callback_id])
-// Uses JS injection to get document.body.innerText
+// JS: chrome.send('getPageContent', [callback_id, max_chars?])
+// Uses JS injection to get document.body.innerText. max_chars defaults to
+// 4000 (the quick actions); the reader slash commands ask for more. Clamped
+// to [1, kMaxPageContentChars], the side panel capture's cap.
 // ------------------------------------------------------------------
+namespace {
+constexpr int kDefaultPageContentChars = 4000;
+constexpr int kMaxPageContentChars = 50000;
+}  // namespace
+
 void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
   AllowJavascript();
 
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
+  // Renderer input: anything but a sane integer means the default.
+  int max_chars = kDefaultPageContentChars;
+  if (args.size() > 1 && args[1].is_int()) {
+    max_chars = std::clamp(args[1].GetInt(), 1, kMaxPageContentChars);
+  }
 
   content::WebContents* active_tab = GetActiveTabForChat();
   content::RenderFrameHost* rfh =
@@ -2318,13 +2330,16 @@ void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
   std::string title = base::UTF16ToUTF8(active_tab->GetTitle());
   const int nav_entry_id = CommittedEntryId(active_tab);
 
-  // Extract page text (limited to 4000 chars for the context window) in an
-  // isolated world, like the side panel's capture.
-  rfh->ExecuteJavaScriptInIsolatedWorld(
+  // Extract page text (at most max_chars, for the context window) in an
+  // isolated world, like the side panel's capture. max_chars is a clamped
+  // integer, the only value spliced into the script.
+  const std::u16string script =
       u"(function(){"
       u"var text = document.body ? document.body.innerText : '';"
-      u"return text.substring(0, 4000);"
-      u"})()",
+      u"return text.substring(0, " +
+      base::NumberToString16(max_chars) + u");})()";
+  rfh->ExecuteJavaScriptInIsolatedWorld(
+      script,
       base::BindOnce(&MoltAIChatHandler::OnPageContentExtracted,
                      weak_ptr_factory_.GetWeakPtr(), callback_id,
                      std::move(url), std::move(title), nav_entry_id),
