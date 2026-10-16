@@ -842,7 +842,12 @@ cr.addWebUiListener('ai-cloud-reply', function(providerName, model) {
   row.insertBefore(b, row.firstChild);
 });
 
+// Bumped whenever a reply finishes, so sendMessage() can tell that a slash
+// command already completed synchronously inside its dispatcher.
+var genFinishEpoch = 0;
+
 function setGenerating(val) {
+  if (!val) genFinishEpoch++;
   isGenerating = val;
   var input = document.getElementById('chatInput');
   var sendBtn = document.getElementById('sendBtn');
@@ -3071,6 +3076,10 @@ function sendMessage() {
   }
 
   // /help renders locally and synchronously — no generating state.
+  // Commands that finish right away (e.g. /vault add) call
+  // setGenerating(false) inside their dispatcher; only mark the chat busy
+  // afterwards if the command is still running.
+  var slashEpoch = genFinishEpoch;
   if (text.charAt(0) === '/' && tryDispatchHelpCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
@@ -3088,168 +3097,168 @@ function sendMessage() {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchPdfCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchBookmarksCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchAskTabsCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchSandboxCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchTrackersCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchReputationCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchHopsCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchTorCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchJsCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchTriageCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchWatchCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchFillCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchPasteCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchDigestCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchVaultCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchTranslateCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchFillAICommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchHistoryCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchReaderCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchReceiptCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchChaptersCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchClusterCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
   if (text.charAt(0) === '/' && tryDispatchPlanCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
     input.value = '';
-    setGenerating(true);
+    if (genFinishEpoch === slashEpoch) setGenerating(true);
     return;
   }
 
