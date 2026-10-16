@@ -2292,14 +2292,26 @@ void MoltAIChatHandler::OnModelDeleted(std::string callback_id,
 
 // ------------------------------------------------------------------
 // HandleGetPageContent: Extract text content from the active tab
-// JS: chrome.send('getPageContent', [callback_id])
-// Uses JS injection to get document.body.innerText
+// JS: chrome.send('getPageContent', [callback_id, max_chars?])
+// Uses JS injection to get document.body.innerText. max_chars defaults to
+// 4000 (the quick actions); the reader slash commands ask for more. Clamped
+// to [1, kMaxPageContentChars], the side panel capture's cap.
 // ------------------------------------------------------------------
+namespace {
+constexpr int kDefaultPageContentChars = 4000;
+constexpr int kMaxPageContentChars = 50000;
+}  // namespace
+
 void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
   AllowJavascript();
 
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
+  // Renderer input: anything but a sane integer means the default.
+  int max_chars = kDefaultPageContentChars;
+  if (args.size() > 1 && args[1].is_int()) {
+    max_chars = std::clamp(args[1].GetInt(), 1, kMaxPageContentChars);
+  }
 
   content::WebContents* active_tab = GetActiveTabForChat();
   content::RenderFrameHost* rfh =
@@ -2318,13 +2330,16 @@ void MoltAIChatHandler::HandleGetPageContent(const base::ListValue& args) {
   std::string title = base::UTF16ToUTF8(active_tab->GetTitle());
   const int nav_entry_id = CommittedEntryId(active_tab);
 
-  // Extract page text (limited to 4000 chars for the context window) in an
-  // isolated world, like the side panel's capture.
-  rfh->ExecuteJavaScriptInIsolatedWorld(
+  // Extract page text (at most max_chars, for the context window) in an
+  // isolated world, like the side panel's capture. max_chars is a clamped
+  // integer, the only value spliced into the script.
+  const std::u16string script =
       u"(function(){"
       u"var text = document.body ? document.body.innerText : '';"
-      u"return text.substring(0, 4000);"
-      u"})()",
+      u"return text.substring(0, " +
+      base::NumberToString16(max_chars) + u");})()";
+  rfh->ExecuteJavaScriptInIsolatedWorld(
+      script,
       base::BindOnce(&MoltAIChatHandler::OnPageContentExtracted,
                      weak_ptr_factory_.GetWeakPtr(), callback_id,
                      std::move(url), std::move(title), nav_entry_id),
@@ -3398,23 +3413,40 @@ void MoltAIChatHandler::HandleListActiveAgents(const base::ListValue& args) {
 // ScopedAllowBlockingForMolt; the blob is ~hundreds-of-bytes small so
 // the cost is negligible vs. the bounce-to-worker boilerplate.
 // ------------------------------------------------------------------
+namespace {
+
+// Shown when ~/.moltbrowser/profile.enc exists but can't be decrypted. The
+// store never overwrites it on its own (see molt_profile_store.h).
+constexpr char kProfileUnreadableError[] =
+    "Your saved profile couldn't be decrypted (is your system keyring "
+    "locked?), so it was not changed. Unlock the keyring and try again.";
+
+}  // namespace
+
 void MoltAIChatHandler::HandleGetMoltProfile(const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 1u, __func__)) return;
   const std::string callback_id = args[0].GetString();
 
-  base::DictValue dict;
+  molt_ai::profile::ProfileLoadResult loaded;
   {
     ScopedAllowBlockingForMolt allow;
     molt_ai::profile::MoltProfileStore store;
-    dict = store.Load();
+    loaded = store.LoadWithStatus();
   }
   base::DictValue out;
-  out.Set("profile", std::move(dict));
+  out.Set("profile", std::move(loaded.profile));
+  // A profile exists but couldn't be read: the editor says so instead of
+  // looking like there is no profile, and saving won't replace it.
+  out.Set("unreadable", loaded.status ==
+                            molt_ai::profile::ProfileReadStatus::kUnreadable);
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
 
+// args: [callback_id, profile dict, options?]. options.backupUnreadable is
+// the user's explicit "start over" after a save was refused because the
+// existing profile couldn't be read: the old file is kept as a backup.
 void MoltAIChatHandler::HandleSaveMoltProfile(const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 2u, __func__)) return;
@@ -3428,21 +3460,41 @@ void MoltAIChatHandler::HandleSaveMoltProfile(const base::ListValue& args) {
                               base::Value(std::move(out)));
     return;
   }
+  const bool backup_unreadable =
+      args.size() > 2 && args[2].is_dict() &&
+      args[2].GetDict().FindBool("backupUnreadable").value_or(false);
   base::DictValue dict = args[1].GetDict().Clone();
-  bool ok = false;
-  std::string error;
+  molt_ai::profile::ProfileSaveResult result =
+      molt_ai::profile::ProfileSaveResult::kFailed;
+  base::FilePath backup;
   {
     ScopedAllowBlockingForMolt allow;
     molt_ai::profile::MoltProfileStore store;
-    ok = store.Save(dict);
-    if (!ok) {
-      error = molt_ai::IsSecureStorageAvailable()
-                  ? std::string("failed to save profile")
-                  : molt_ai::SecureStorageUnavailableMessage();
-    }
+    result = backup_unreadable
+                 ? store.SaveKeepingUnreadableAsBackup(dict, &backup)
+                 : store.Save(dict);
   }
+  using molt_ai::profile::ProfileSaveResult;
+  const bool ok = result == ProfileSaveResult::kSaved;
   out.Set("success", ok);
-  if (!ok) out.Set("error", error);
+  switch (result) {
+    case ProfileSaveResult::kSaved:
+      if (!backup.empty()) {
+        // File name only; the editor says it is in ~/.moltbrowser/.
+        out.Set("backup", backup.BaseName().AsUTF8Unsafe());
+      }
+      break;
+    case ProfileSaveResult::kNoSecureStorage:
+      out.Set("error", molt_ai::SecureStorageUnavailableMessage());
+      break;
+    case ProfileSaveResult::kExistingUnreadable:
+      out.Set("error", kProfileUnreadableError);
+      out.Set("unreadable", true);
+      break;
+    case ProfileSaveResult::kFailed:
+      out.Set("error", "failed to save profile");
+      break;
+  }
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(out)));
 }
@@ -3581,15 +3633,19 @@ void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
   }
 
   // Load profile and stringify.
-  base::DictValue profile;
+  molt_ai::profile::ProfileLoadResult loaded;
   {
     ScopedAllowBlockingForMolt allow;
     molt_ai::profile::MoltProfileStore store;
-    profile = store.Load();
+    loaded = store.LoadWithStatus();
   }
+  base::DictValue profile = std::move(loaded.profile);
   if (profile.empty()) {
     out.Set("success", false);
-    out.Set("error", "profile is empty — open settings to set one up");
+    out.Set("error",
+            loaded.status == molt_ai::profile::ProfileReadStatus::kUnreadable
+                ? kProfileUnreadableError
+                : "profile is empty — open settings to set one up");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
@@ -5076,15 +5132,19 @@ void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
   }
 
   // Load profile.
-  base::DictValue profile;
+  molt_ai::profile::ProfileLoadResult loaded;
   {
     ScopedAllowBlockingForMolt allow;
     molt_ai::profile::MoltProfileStore store;
-    profile = store.Load();
+    loaded = store.LoadWithStatus();
   }
+  base::DictValue profile = std::move(loaded.profile);
   if (profile.empty()) {
     out.Set("success", false);
-    out.Set("error", "profile is empty — set one via /profile first");
+    out.Set("error",
+            loaded.status == molt_ai::profile::ProfileReadStatus::kUnreadable
+                ? kProfileUnreadableError
+                : "profile is empty — set one via /profile first");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;

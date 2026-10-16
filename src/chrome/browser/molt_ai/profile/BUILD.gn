@@ -16,3 +16,17 @@ source_set("profile") {
     "//components/os_crypt/sync",
   ]
 }
+
+# Never overwriting an unreadable profile.enc (keyring locked, another key,
+# corrupt file). Linked into //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_profile_store_unittest.cc" ]
+  deps = [
+    ":profile",
+    "//base",
+    "//chrome/browser/molt_ai/keys",
+    "//components/os_crypt/sync:test_support",
+    "//testing/gtest",
+  ]
+}

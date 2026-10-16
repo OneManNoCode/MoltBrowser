@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
-index db97dc1e4813e3dcdfc8173241c17328e4e040cf..45963d9460353fba74829f04a6b9803e000dfa21 100644
+index db97dc1e4813e3dcdfc8173241c17328e4e040cf..930a2976037325867608df7d561c1e083f9bdb23 100644
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
-@@ -63,6 +63,7 @@
+@@ -63,6 +63,8 @@
  #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
  #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
  #include "chrome/browser/k_anonymity_service/k_anonymity_service_factory.h"
 +#include "chrome/browser/molt_ai/privacy/molt_privacy_prefs.h"
++#include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
  #include "chrome/browser/notifications/platform_notification_service_factory.h"
  #include "chrome/browser/notifications/platform_notification_service_impl.h"
  #include "chrome/browser/origin_trials/origin_trials_factory.h"
-@@ -398,10 +399,16 @@ void ProfileImpl::RegisterProfilePrefs(
+@@ -398,10 +400,18 @@ void ProfileImpl::RegisterProfilePrefs(
  #else
    uint32_t home_page_flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
  #endif
@@ -32,10 +33,12 @@ index db97dc1e4813e3dcdfc8173241c17328e4e040cf..45963d9460353fba74829f04a6b9803e
    registry->RegisterStringPref(prefs::kNewTabPageLocationOverride,
 -                               std::string());
 +                               "chrome://molt-home/");
++  // MoltBrowser: MoltShield's "Strip tracking parameters" switch.
++  molt_ai::shield::prefs::RegisterProfilePrefs(registry);
  
  #if BUILDFLAG(ENABLE_PRINTING)
    registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);
-@@ -643,6 +650,10 @@ void ProfileImpl::LoadPrefsForNormalStartup(bool async_prefs) {
+@@ -643,6 +653,10 @@ void ProfileImpl::LoadPrefsForNormalStartup(bool async_prefs) {
    ::RegisterProfilePrefs(is_signin_profile,
                           g_browser_process->GetApplicationLocale(),
                           pref_registry_.get());
@@ -46,7 +49,7 @@ index db97dc1e4813e3dcdfc8173241c17328e4e040cf..45963d9460353fba74829f04a6b9803e
  
    mojo::PendingRemote<prefs::mojom::TrackedPreferenceValidationDelegate>
        pref_validation_delegate;
-@@ -683,6 +694,10 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
+@@ -683,6 +697,10 @@ void ProfileImpl::DoFinalInit(CreateMode create_mode) {
    if (!prefs->HasPrefPath(prefs::kProfileCreationTime))
      prefs->SetTime(prefs::kProfileCreationTime, path_creation_time_);
  

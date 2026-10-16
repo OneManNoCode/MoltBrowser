@@ -68,6 +68,20 @@ TEST_F(MoltKeysStoreTest, SavesAndReadsBackWithOsKey) {
   EXPECT_EQ(ReadKeysFile().find("sk-test"), std::string::npos);
 }
 
+// A keys.enc that can't be read (keyring locked or reset, another key,
+// corrupt file) is never rewritten: not by a save, not by a removal.
+TEST_F(MoltKeysStoreTest, NeverOverwritesAnUnreadableStore) {
+  if (!UseOsKey()) {
+    GTEST_SKIP() << "no OSCrypt mock in this configuration";
+  }
+  const std::string corrupt = "\x01\x02 not a key store";
+  ASSERT_TRUE(base::WriteFile(KeysPath(), corrupt));
+  EXPECT_TRUE(MoltKeysStore::LoadAll().empty());
+  EXPECT_FALSE(MoltKeysStore::Save("openai", MakeConfig("sk-test")));
+  MoltKeysStore::Remove("openai");
+  EXPECT_EQ(ReadKeysFile(), corrupt);
+}
+
 TEST(MoltSecretCiphertextTest, LinuxKeyringPrefix) {
   EXPECT_TRUE(IsLinuxKeyringCiphertext("v11\x01\x02"));
   EXPECT_FALSE(IsLinuxKeyringCiphertext("v10\x01\x02"));

@@ -1731,12 +1731,25 @@ function openProfileEditor() {
     }).join('');
     currentAiText = '__PROFILE_EDITOR__';
     finishAiMessage();
+    // sendMessage() marked the chat busy after dispatching /profile; the
+    // editor is the whole answer, so give the composer back.
+    setGenerating(false);
     // Replace the last AI message with the editor markup.
     var msgs = document.querySelectorAll('#messages .message.ai');
     var last = msgs[msgs.length - 1];
     if (!last) return;
+    // A saved profile exists but couldn't be decrypted (keyring locked,
+    // another machine's key, corrupt file). It is never overwritten
+    // silently; say so instead of showing what looks like no profile.
+    var unreadableNote = (r && r.unreadable)
+        ? '<div class="profile-help">\u26a0 Your saved profile couldn\'t be ' +
+          'decrypted (is your system keyring locked?). It has not been ' +
+          'changed. Unlock the keyring and run <code>/profile</code> ' +
+          'again to edit it.</div>'
+        : '';
     last.querySelector('.text').innerHTML =
         moltHTML('<div class="profile-editor">' +
+        unreadableNote +
         '<div class="profile-help">Encrypted at rest via your OS keychain. ' +
         'Used by <code>/fill</code> to autofill forms on http(s) pages.</div>' +
         rows +
@@ -1744,24 +1757,54 @@ function openProfileEditor() {
         '<button class="profile-save">Save profile</button>' +
         '<button class="profile-cancel">Cancel</button>' +
         '</div></div>');
+    // opts.backupUnreadable: the user chose to start over; the unreadable
+    // profile is renamed to a backup next to it, never deleted.
+    function saveProfile(dict, opts) {
+      sendWithPromise('saveMoltProfile', dict, opts || {}).then(function(rr){
+        var box = last.querySelector('.text');
+        var n = Object.keys(dict).length;
+        if (rr && rr.success) {
+          var msg = '\u2713 Profile saved (' + n + ' field' +
+                    (n === 1 ? '' : 's') + ')';
+          if (rr.backup) {
+            msg += '. The profile that couldn\'t be decrypted was kept as ' +
+                   '~/.moltbrowser/' + rr.backup + '.';
+          }
+          box.textContent = msg;
+          return;
+        }
+        box.textContent = '\u2717 ' + ((rr && rr.error) || 'save failed');
+        if (rr && rr.unreadable) {
+          var actions = document.createElement('div');
+          actions.className = 'profile-actions';
+          var startOver = document.createElement('button');
+          startOver.className = 'profile-save';
+          startOver.textContent =
+              'Start a new profile (keep the old one as a backup)';
+          startOver.addEventListener('click', function() {
+            startOver.disabled = true;
+            saveProfile(dict, {backupUnreadable: true});
+          });
+          actions.appendChild(startOver);
+          box.appendChild(actions);
+        }
+      });
+    }
     last.querySelector('.profile-save').addEventListener('click', function(){
       var dict = {};
       last.querySelectorAll('input[data-key]').forEach(function(el){
         var v = el.value.trim();
         if (v) dict[el.getAttribute('data-key')] = v;
       });
-      sendWithPromise('saveMoltProfile', dict).then(function(rr){
-        var text = rr.success
-            ? '\u2713 Profile saved ('
-              + Object.keys(dict).length + ' field' +
-              (Object.keys(dict).length === 1 ? '' : 's') + ')'
-            : '\u2717 ' + (rr.error || 'save failed');
-        last.querySelector('.text').textContent = text;
-      });
+      saveProfile(dict);
     });
     last.querySelector('.profile-cancel').addEventListener('click', function(){
       last.querySelector('.text').textContent = 'Profile editor closed.';
     });
+  }).catch(function() {
+    currentAiText = '✗ Could not load your saved profile.';
+    finishAiMessage();
+    setGenerating(false);
   });
 }
 
@@ -1781,20 +1824,57 @@ function openProfileEditor() {
 // framing prompt, and stream the LLM's rewrite into chat. All four
 // modes share the same plumbing — only the prompt template differs.
 // --------------------------------------------------------------
+// Text of the page the active tab shows NOW, for the slash commands that
+// read it (A7). The side panel's pushed text (__moltCurrentTabContext) is
+// used only when it was read from that document: same URL and committed
+// navigation entry as getPageContext reports, and its capture finished --
+// the check sendMessage() makes. When the native side can't name the
+// active tab, the push is the only (and current) source, as there.
+// Otherwise the page is read again through getPageContent, which reports
+// the document it read and drops the text if the tab moved on meanwhile.
+// Resolves {url, title, text} with at most maxChars of text, or null.
+function readActivePageText(maxChars) {
+  return sendWithPromise('getPageContext').then(function(ctx) {
+    var sp = window.__moltCurrentTabContext;
+    var named = !!(ctx && ctx.has_context);
+    var spCurrent = !!sp && !sp.text_pending && !!sp.text &&
+        (!named || (sp.url === ctx.url &&
+                    sp.nav_entry_id === ctx.nav_entry_id));
+    if (spCurrent) {
+      return {url: sp.url || '', title: sp.title || '',
+              text: sp.text.slice(0, maxChars)};
+    }
+    if (!named) return null;
+    return sendWithPromise('getPageContent', maxChars).then(function(r) {
+      if (!r || !r.has_content || !r.content) return null;
+      return {url: r.url || '', title: r.title || '',
+              text: String(r.content).slice(0, maxChars)};
+    });
+  }).catch(function() { return null; });
+}
+
 function tryDispatchReaderCommand(text) {
   var m = text.match(/^\s*\/(simplify|eli5|summarize|tldr)\b\s*(.*)$/i);
   if (!m) return false;
   var mode = m[1].toLowerCase();
   var extra = (m[2] || '').trim();
-  var sp = window.__moltCurrentTabContext;
-  if (!sp || !sp.text || !sp.text.length) {
-    addErrorMessage('Open an http(s) page first — Reader needs page content.');
-    return true;
-  }
+  addUserMessage(text);
   // Cap input so we don't spend half the context window on boilerplate.
   // 12k chars ≈ ~3k tokens, leaves room for the generation budget on
   // a 4k-context bundled model.
-  var pageText = sp.text.length > 12000 ? sp.text.slice(0, 12000) : sp.text;
+  readActivePageText(12000).then(function(page) {
+    if (!page || !page.text) {
+      addErrorMessage('Open an http(s) page first — Reader needs page content.');
+      setGenerating(false);
+      return;
+    }
+    runReaderPrompt(mode, extra, page);
+  });
+  return true;
+}
+
+function runReaderPrompt(mode, extra, page) {
+  var pageText = page.text;
   var framings = {
     simplify:
       'Rewrite the following web page in plain, accessible language ' +
@@ -1815,9 +1895,8 @@ function tryDispatchReaderCommand(text) {
       'reader could absorb in two seconds.'
   };
   var prompt = framings[mode] +
-               '\n\nPage title: ' + (sp.title || '(untitled)') +
+               '\n\nPage title: ' + (page.title || '(untitled)') +
                '\n\nPage content:\n' + pageText;
-  addUserMessage(text);
   startAiMessage();
   sendWithPromise('sendPrompt', prompt, /*history=*/'', /*ctx=*/'',
                   /*origin=*/'', activeModelId || pickedModelId || '').then(
@@ -1831,7 +1910,6 @@ function tryDispatchReaderCommand(text) {
         finishAiMessage();
         setGenerating(false);
       });
-  return true;
 }
 
 // --------------------------------------------------------------
@@ -1845,12 +1923,19 @@ function tryDispatchReaderCommand(text) {
 // --------------------------------------------------------------
 function tryDispatchReceiptCommand(text) {
   if (!/^\s*\/receipt\b/i.test(text)) return false;
-  var sp = window.__moltCurrentTabContext;
-  if (!sp || !sp.text || !sp.text.length) {
-    addErrorMessage('Open a receipt / invoice / order-confirmation page first.');
-    return true;
-  }
   addUserMessage(text);
+  readActivePageText(10000).then(function(page) {
+    if (!page || !page.text) {
+      addErrorMessage('Open a receipt / invoice / order-confirmation page first.');
+      setGenerating(false);
+      return;
+    }
+    runReceiptPrompt(page);
+  });
+  return true;
+}
+
+function runReceiptPrompt(page) {
   startAiMessage();
   var schema =
     '{"merchant":"<string>","date":"YYYY-MM-DD",' +
@@ -1867,10 +1952,9 @@ function tryDispatchReceiptCommand(text) {
     '- total is the grand total INCLUDING tax and shipping.\n' +
     '- If you can\'t find an item-level breakdown, return items: [].\n' +
     '- Respond with JSON only, no prose, no markdown fences.\n\n' +
-    'Page title: ' + (sp.title || '(untitled)') +
-    '\nPage URL: ' + (sp.url || '') +
-    '\n\nPage content:\n' +
-    (sp.text.length > 10000 ? sp.text.slice(0, 10000) : sp.text);
+    'Page title: ' + (page.title || '(untitled)') +
+    '\nPage URL: ' + (page.url || '') +
+    '\n\nPage content:\n' + page.text;
   sendWithPromise('sendPrompt', prompt, '', '', '',
                   activeModelId || pickedModelId || '').then(function() {
     // Grab whatever the LLM streamed into the current AI message bubble.
@@ -1900,7 +1984,7 @@ function tryDispatchReceiptCommand(text) {
       setGenerating(false);
       return;
     }
-    sendWithPromise('appendReceipt', data, sp.url || '').then(function(r) {
+    sendWithPromise('appendReceipt', data, page.url || '').then(function(r) {
       if (r.success) {
         currentAiText = '✓ Saved receipt: ' +
             (data.merchant || '?') + ' ' +
@@ -1919,7 +2003,6 @@ function tryDispatchReceiptCommand(text) {
     finishAiMessage();
     setGenerating(false);
   });
-  return true;
 }
 
 // --------------------------------------------------------------
@@ -1933,38 +2016,44 @@ function tryDispatchReceiptCommand(text) {
 // rather than try to click "..." → "Show transcript" via brittle
 // DOM scraping (that path changes every couple months).
 // --------------------------------------------------------------
+function isYouTubeUrl(u) {
+  try {
+    var h = new URL(u).hostname;
+    return h === 'youtube.com' || /\.youtube\.com$/.test(h);
+  } catch (e) {
+    return false;
+  }
+}
+
 function tryDispatchChaptersCommand(text) {
   if (!/^\s*\/chapters\b/i.test(text)) return false;
-  var sp = window.__moltCurrentTabContext;
-  if (!sp || !sp.url || sp.url.indexOf('youtube.com') < 0) {
-    addErrorMessage('Open a YouTube video first.');
-    return true;
-  }
   addUserMessage(text);
   startAiMessage();
   appendToAiMessage('Reading transcript from the YouTube tab...');
   // We don't ship a generic JS-eval IPC (deliberately — it would be
   // a perpetual RCE-into-active-tab landmine the moment a future
   // commit accidentally wires the script through unescaped). Instead
-  // we rely on the page-context capture the side panel does on every
-  // tab switch: when the transcript panel is open YouTube renders
-  // timestamped lines into the DOM that show up in sp.text. We then
-  // filter for "MM:SS" prefixes. Code-review LOW #13 (removed dead
-  // `eval_for_chapters` branch that referenced a never-implemented
-  // action type).
-  (Promise.resolve(null))
-      .then(function(r) {
-        var transcriptText = '';
-        if (!transcriptText) {
-          // Backup heuristic: look in page-context capture for "::" or
-          // numeric timestamp prefixes which YouTube's transcript uses.
-          if (sp.text) {
-            var lines = sp.text.split('\n').filter(function(L){
-              return /^\s*\d{1,2}:\d{2}/.test(L);
-            });
-            if (lines.length >= 5) transcriptText = lines.join('\n');
-          }
+  // we read the page's text (readActivePageText: the side panel's capture
+  // when it is for the current document, else a fresh read): when the
+  // transcript panel is open YouTube renders timestamped lines into the
+  // DOM that show up in it. We then filter for "MM:SS" prefixes.
+  // Code-review LOW #13 (removed dead `eval_for_chapters` branch that
+  // referenced a never-implemented action type).
+  readActivePageText(50000)
+      .then(function(page) {
+        if (!page || !isYouTubeUrl(page.url)) {
+          currentAiText = '✗ Open a YouTube video first.';
+          finishAiMessage();
+          setGenerating(false);
+          return;
         }
+        var transcriptText = '';
+        // Look for the numeric timestamp prefixes YouTube's transcript
+        // uses.
+        var lines = page.text.split('\n').filter(function(L){
+          return /^\s*\d{1,2}:\d{2}/.test(L);
+        });
+        if (lines.length >= 5) transcriptText = lines.join('\n');
         if (!transcriptText) {
           currentAiText =
             '✗ No transcript found. Click the "..." menu under the ' +
@@ -2539,20 +2628,20 @@ function tryDispatchTranslateCommand(text) {
     });
   }
   if (body) { doTranslate(body); return true; }
-  // No text supplied — fall back to using the captured active-page
-  // text (whatever the side panel snapshotted on tab-change). It's
-  // not the live selection but gets us 80% there without needing a
-  // generic eval IPC. The user can scope down by quoting a phrase.
-  var sp = window.__moltCurrentTabContext;
-  var fallback = sp && sp.text ? sp.text.slice(0, 4000) : '';
-  if (!fallback) {
-    currentAiText = 'Usage: /translate [lang] <text>  (or open a page ' +
-                     'with content first).';
-    finishAiMessage();
-    setGenerating(false);
-    return true;
-  }
-  doTranslate(fallback);
+  // No text supplied — fall back to the active page's text (that of the
+  // document the tab shows now, see readActivePageText). It's not the
+  // live selection but gets us 80% there without needing a generic eval
+  // IPC. The user can scope down by quoting a phrase.
+  readActivePageText(4000).then(function(page) {
+    if (!page || !page.text) {
+      currentAiText = 'Usage: /translate [lang] <text>  (or open a page ' +
+                       'with content first).';
+      finishAiMessage();
+      setGenerating(false);
+      return;
+    }
+    doTranslate(page.text);
+  });
   return true;
 }
 

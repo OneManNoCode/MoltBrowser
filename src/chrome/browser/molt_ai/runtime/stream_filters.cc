@@ -65,6 +65,77 @@ std::string HarmonyChannelFilter::Feed(const std::string& piece) {
   return std::string();
 }
 
+// ---- GemmaThoughtFilter ---------------------------------------------------
+
+GemmaThoughtFilter::GemmaThoughtFilter(bool start_inside)
+    : depth_(start_inside ? 1 : 0) {}
+
+std::string GemmaThoughtFilter::EmitVisible(std::string_view text) {
+  if (strip_leading_ws_) {
+    size_t i = 0;
+    while (i < text.size() && IsSpace(text[i])) ++i;
+    text.remove_prefix(i);
+    if (!text.empty()) strip_leading_ws_ = false;
+  }
+  return std::string(text);
+}
+
+std::string GemmaThoughtFilter::Feed(std::string_view piece) {
+  std::string out;
+  pending_.append(piece);
+  const std::string_view open(kOpenMarker);
+  const std::string_view close(kCloseMarker);
+  while (!pending_.empty()) {
+    const size_t open_pos = pending_.find(open);
+    const size_t close_pos = pending_.find(close);
+    const size_t first = std::min(open_pos, close_pos);
+    if (first == std::string::npos) {
+      // No whole marker: keep a possible marker prefix, hide or show the
+      // rest.
+      const size_t hold = std::max(PartialTagSuffix(pending_, open),
+                                   PartialTagSuffix(pending_, close));
+      if (depth_ == 0) {
+        out += EmitVisible(
+            std::string_view(pending_).substr(0, pending_.size() - hold));
+      }
+      pending_.erase(0, pending_.size() - hold);
+      break;
+    }
+    if (depth_ == 0) {
+      out += EmitVisible(std::string_view(pending_).substr(0, first));
+    }
+    if (first == open_pos) {
+      ++depth_;
+      pending_.erase(0, first + open.size());
+    } else {
+      // A close: ends one level, or is an orphan (dropped) at depth 0.
+      if (depth_ > 0) --depth_;
+      pending_.erase(0, first + close.size());
+    }
+  }
+  return out;
+}
+
+std::string GemmaThoughtFilter::Flush() {
+  std::string out;
+  if (depth_ == 0) out = EmitVisible(pending_);
+  pending_.clear();
+  return out;
+}
+
+void GemmaThoughtFilter::ForceClose() {
+  if (depth_ == 0) return;
+  depth_ = 0;
+  pending_.clear();  // a held-back marker prefix inside the block
+}
+
+// static
+bool GemmaThoughtFilter::EndsInsideThought(std::string_view prompt_tail) {
+  GemmaThoughtFilter f;
+  f.Feed(prompt_tail);
+  return f.hiding();
+}
+
 // ---- ThinkTagFilter -------------------------------------------------------
 
 ThinkTagFilter::ThinkTagFilter(bool start_inside)

@@ -373,6 +373,19 @@ std::vector<std::string> CollectSpecialTexts(const llama_vocab* vocab) {
   return out;
 }
 
+// Gemma 4 vocabularies define its thought-channel markers as special tokens
+// (see GemmaThoughtFilter). Only those models' output goes through that
+// filter, so another model's answer that mentions the markers is shown.
+bool UsesGemmaThoughtChannel(const std::vector<std::string>& special_texts) {
+  bool open = false;
+  bool close = false;
+  for (const std::string& s : special_texts) {
+    open = open || s == GemmaThoughtFilter::kOpenMarker;
+    close = close || s == GemmaThoughtFilter::kCloseMarker;
+  }
+  return open && close;
+}
+
 bool IsQwen3Arch(const std::string& arch) {
   return arch == "qwen3" || arch == "qwen3moe";
 }
@@ -446,6 +459,8 @@ struct BrowserAIRuntime::Impl {
   std::string model_arch;       // GGUF general.architecture
   int n_batch = kMinContextTokens;
   std::vector<std::string> special_texts;
+  // The loaded vocab has Gemma 4's thought-channel markers.
+  bool thought_channels = false;
   // Tokens currently in the KV cache (sequence 0) and the conversation they
   // belong to; used to reuse the common prefix across turns.
   std::vector<llama_token> kv_tokens;
@@ -550,6 +565,7 @@ struct BrowserAIRuntime::Impl {
     loaded_model_id.clear();
     model_arch.clear();
     special_texts.clear();
+    thought_channels = false;
     kv_tokens.clear();
     kv_key.clear();
   }
@@ -565,6 +581,8 @@ struct BrowserAIRuntime::Impl {
     int max_visible = 512;
     int max_hidden = 256;
     bool think_start_inside = false;
+    // The prompt ends inside a Gemma 4 thought block.
+    bool thought_start_inside = false;
     float temperature = 0.7f;
     float top_p = 0.9f;
     int top_k = 40;
@@ -660,14 +678,21 @@ struct BrowserAIRuntime::Impl {
                             llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     HarmonyChannelFilter harmony;
+    // Gemma 4's thought channel, for vocabularies that define its markers.
+    const bool gemma_thoughts = thought_channels;
+    GemmaThoughtFilter gemma(gemma_thoughts && p.thought_start_inside);
     ThinkTagFilter think(p.think_start_inside);
     Utf8Assembler utf8;
     auto feed = [&](const std::string& piece) {
-      std::string visible = think.Feed(harmony.Feed(piece));
+      std::string text = harmony.Feed(piece);
+      if (gemma_thoughts) text = gemma.Feed(text);
+      std::string visible = think.Feed(text);
       std::string complete = utf8.Push(visible);
       if (!complete.empty()) emit(complete);
     };
-    auto hiding = [&]() { return harmony.hiding() || think.in_think(); };
+    auto hiding = [&]() {
+      return harmony.hiding() || gemma.hiding() || think.in_think();
+    };
 
     int visible_tokens = 0;
     int hidden_tokens = 0;
@@ -692,10 +717,16 @@ struct BrowserAIRuntime::Impl {
       std::string piece = TokenToPiece(vocab, tok);
       if (piece.empty()) {
         // Reasoning tags may be CONTROL tokens that render empty without
-        // special=true; recover their text so the filter sees them.
+        // special=true; recover their text so the filters see them.
+        // (Gemma 4's markers are USER_DEFINED and render anyway; this
+        // keeps a vocab that marks them CONTROL from leaking thoughts.)
         const char* raw = llama_vocab_get_text(vocab, tok);
-        if (raw && (std::strcmp(raw, ThinkTagFilter::kOpenTag) == 0 ||
-                    std::strcmp(raw, ThinkTagFilter::kCloseTag) == 0)) {
+        if (raw &&
+            (std::strcmp(raw, ThinkTagFilter::kOpenTag) == 0 ||
+             std::strcmp(raw, ThinkTagFilter::kCloseTag) == 0 ||
+             (gemma_thoughts &&
+              (std::strcmp(raw, GemmaThoughtFilter::kOpenMarker) == 0 ||
+               std::strcmp(raw, GemmaThoughtFilter::kCloseMarker) == 0)))) {
           piece = raw;
         }
       }
@@ -721,9 +752,11 @@ struct BrowserAIRuntime::Impl {
         // Reasoning budget spent: close the reasoning block / switch to
         // the final channel so the model answers instead of thinking on.
         forced_answer = true;
-        const char* force = think.in_think()
-                                ? ThinkTagFilter::kForceClose
-                                : HarmonyChannelFilter::kForceFinal;
+        const char* force =
+            gemma.hiding()
+                ? GemmaThoughtFilter::kForceClose
+                : (think.in_think() ? ThinkTagFilter::kForceClose
+                                    : HarmonyChannelFilter::kForceFinal);
         std::vector<llama_token> ft = Tokenize(vocab, force, false, true);
         if (ft.empty() ||
             static_cast<int>(kv_tokens.size() + ft.size()) >= n_ctx - 1) {
@@ -737,6 +770,9 @@ struct BrowserAIRuntime::Impl {
         }
         kv_tokens.insert(kv_tokens.end(), ft.begin(), ft.end());
         for (llama_token t : ft) feed(TokenToPiece(vocab, t));
+        // The marker closed one Gemma block; nested ones would keep the
+        // answer hidden, so close them all (no-op when none is open).
+        gemma.ForceClose();
         if (think.in_think()) {
           // Control-token form of the tags rendered empty; tell the filter
           // explicitly.
@@ -748,7 +784,12 @@ struct BrowserAIRuntime::Impl {
 
     llama_sampler_free(sampler);
 
-    std::string tail = utf8.Push(think.Flush());
+    // Release held-back bytes in pipeline order (two statements: the
+    // Gemma flush must reach the think filter before it flushes).
+    std::string rest =
+        gemma_thoughts ? think.Feed(gemma.Flush()) : std::string();
+    rest += think.Flush();
+    std::string tail = utf8.Push(rest);
     tail += utf8.Flush();
     if (!tail.empty()) emit(tail);
     return out;
@@ -1108,6 +1149,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
   const llama_vocab* vocab = llama_model_get_vocab(new_model);
   std::vector<std::string> specials =
       vocab ? CollectSpecialTexts(vocab) : std::vector<std::string>();
+  const bool thought_channels = UsesGemmaThoughtChannel(specials);
   std::string arch = ReadModelArch(new_model);
 
   // ---- Brief critical section: install the new handles, detach the old ----
@@ -1131,6 +1173,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     impl_->model_arch = std::move(arch);
     impl_->n_batch = static_cast<int>(llama_n_batch(new_ctx));
     impl_->special_texts = std::move(specials);
+    impl_->thought_channels = thought_channels;
     // A new model invalidates any cached conversation prefix.
     impl_->kv_tokens.clear();
     impl_->kv_key.clear();
@@ -1658,6 +1701,10 @@ GenerationResult BrowserAIRuntime::StreamChat(const ChatPrompt& chat,
   gp.think_start_inside =
       tail_text.find(ThinkTagFilter::kOpenTag) != std::string::npos &&
       tail_text.find(ThinkTagFilter::kCloseTag) == std::string::npos;
+  // Gemma 4 with thinking off pre-fills an empty, closed thought block
+  // ("<|channel>thought\n<channel|>"); a template that leaves one open
+  // starts the stream hidden.
+  gp.thought_start_inside = GemmaThoughtFilter::EndsInsideThought(tail_text);
   gp.temperature = options.temperature;
   gp.top_p = options.top_p;
   gp.top_k = options.top_k;

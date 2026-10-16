@@ -64,6 +64,24 @@ TEST_F(VaultStoreTest, AddsAndListsWithOsKey) {
   EXPECT_EQ(on_disk.find("pw1"), std::string::npos);
 }
 
+// A vault.enc that can't be read (keyring locked or reset, another key,
+// corrupt file) is never rewritten, whatever the operation.
+TEST_F(VaultStoreTest, NeverOverwritesAnUnreadableVault) {
+  if (!UseOsKey()) {
+    GTEST_SKIP() << "no OSCrypt mock in this configuration";
+  }
+  const std::string corrupt = "\x01\x02 not a vault";
+  ASSERT_TRUE(base::WriteFile(VaultPath(), corrupt));
+  EXPECT_TRUE(store_.List().empty());
+  EXPECT_TRUE(store_.Add(MakeEntry("github.com", "pw1")).empty());
+  EXPECT_FALSE(store_.Update("someid", MakeEntry("github.com", "pw2")));
+  EXPECT_FALSE(store_.Delete("someid"));
+  EXPECT_FALSE(store_.TouchLastUsed("someid"));
+  std::string after;
+  ASSERT_TRUE(base::ReadFileToString(VaultPath(), &after));
+  EXPECT_EQ(after, corrupt);
+}
+
 #if BUILDFLAG(IS_LINUX)
 
 // vault.enc as an older build wrote it with no keyring (OSCrypt v10,
