@@ -497,20 +497,6 @@
 
   <!-- The IDS_ANDROID_OMNIBOX_PEDAL_* strings below are platform-specific
        variations of the user-facing UI strings above. -->
-<<<<<<< src/components/omnibox_pedal_ui_strings.grdp (MoltBrowser)
-  <!-- Same as IDS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT but
-       with "safety check" capitalized to "Safety Check". -->
-  <message name="IDS_ANDROID_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT" desc="The button text contents to suggest pedal action, RUN_CHROME_SAFETY_CHECK">
-    Run MoltBrowser Safety Check
-  </message>
-||||||| upstream@pin
-  <!-- Same as IDS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT but
-       with "safety check" capitalized to "Safety Check". -->
-  <message name="IDS_ANDROID_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT" desc="The button text contents to suggest pedal action, RUN_CHROME_SAFETY_CHECK">
-    Run Chrome Safety Check
-  </message>
-=======
->>>>>>> upstream@new
   <!-- Same as IDS_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_HINT but
        with "window" changed to "tab". -->
   <message name="IDS_ANDROID_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_HINT" desc="The button text contents to suggest pedal action, LAUNCH_INCOGNITO">

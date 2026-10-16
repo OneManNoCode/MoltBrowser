@@ -589,62 +589,62 @@
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      =1 {1 item is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account. This will also clean up any duplicates.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {PASSWORD_COUNT, plural,
-      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
-      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      =1 {1 password is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account. This will also clean up any duplicates.}
+      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {PASSWORD_COUNT, plural,
-      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
+      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account. This will also clean up any duplicates.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 item is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {PASSWORD_COUNT, plural,
-      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 password is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
+      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {PASSWORD_COUNT, plural,
-      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
+      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_PASSWORDS" desc="Title of the Passwords section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
@@ -715,20 +715,20 @@
     </if>
     <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks and other items are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
     </message>
     <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_ITEMS_WITH_LINK" desc="The text for a promotional banner located on the Account Settings page. It informs the user how many items on their local device are waiting to be uploaded. The text contains a placeholder for the number of items (e.g., '5 items') and acts as a clickable link that takes the user to the Batch Upload screen. Please ensure the placeholder handles pluralization correctly.">
       {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
+      =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
       }
     </message>
   </if>
@@ -1018,28 +1018,8 @@
     <message name="IDS_PROFILE_PICKER_BACK_BUTTON_SIGN_IN_LABEL" desc="Label for a button that navigates user to the previous page from the 'Sign in' page">
       Back from sign in
     </message>
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_WORK_AND_LIFE_SEPARATE" desc="Profile picker main view title.">
-      Keep work and life separate
-    </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_GOT_ANOTHER_GOOGLE_ACCOUNT" desc="Profile picker main view title.">
-      Got another MoltBrowser Account?
-    </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_TASKS_SEPARATE" desc="Profile picker main view title.">
-      Keep school, side projects, and other tasks separate
-||||||| upstream@pin
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_WORK_AND_LIFE_SEPARATE" desc="Profile picker main view title.">
-      Keep work and life separate
-    </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_GOT_ANOTHER_GOOGLE_ACCOUNT" desc="Profile picker main view title.">
-      Got another Google Account?
-    </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_TASKS_SEPARATE" desc="Profile picker main view title.">
-      Keep school, side projects, and other tasks separate
-=======
     <message name="IDS_PROFILE_PICKER_PAUSE_EFFECTS_BUTTON" desc="A text label for a button that pauses background effects, i.e. audio and animations (if applicable).">
       Pause effects
->>>>>>> upstream@new
     </message>
     <message name="IDS_PROFILE_PICKER_PLAY_EFFECTS_BUTTON" desc="A text label for a button that plays background effects, i.e. audio and animations (if applicable).">
       Play effects
@@ -1275,184 +1255,20 @@
       No thanks
     </message>
 
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <!-- Batch Upload Desktop -->
-    <message name="IDS_BATCH_UPLOAD_TITLE" desc="Title of the Batch Upload dialog on Desktop. This dialog appears when the user clicks on an informational message about items saved to their device. This title precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      Save items in account
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account. This will also clean up any duplicates.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account. This will also clean up any duplicates.}
-      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account. This will also clean up any duplicates.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-||||||| upstream@pin
-    <!-- Batch Upload Desktop -->
-    <message name="IDS_BATCH_UPLOAD_TITLE" desc="Title of the Batch Upload dialog on Desktop. This dialog appears when the user clicks on an informational message about items saved to their device. This title precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      Save items in account
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
-      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-=======
     <!-- Feature Showcase - Lens Overlay -->
     <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_SUBTITLE" desc="This is the subtitle for the Lens Overlay, explaining the primary use cases (shopping, translation, search).">
       Select anything on your screen as you browse to shop, translate, and search using AI
->>>>>>> upstream@new
     </message>
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
-      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-||||||| upstream@pin
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-=======
     <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_NOT_NOW" desc="The label for the 'Not now' button to not enable the Lens Overlay feature.">
       Not now
->>>>>>> upstream@new
     </message>
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-||||||| upstream@pin
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {PASSWORD_COUNT, plural,
-      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-=======
     <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_YES_IM_IN" desc="Label for the 'Yes, I'm in' button to enable the Lens Overlay feature.">
       Yes, I'm in
->>>>>>> upstream@new
     </message>
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_PASSWORDS" desc="Title of the Passwords section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-      {SELECTED_ITEMS, plural,
-      =0 {Passwords}
-      =1 {Passwords ({SELECTED_ITEMS})}
-      other {Passwords ({SELECTED_ITEMS})}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_BOOKMARKS" desc="Title of the Bookmarks section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-      {SELECTED_ITEMS, plural,
-      =0 {Bookmarks}
-      =1 {Bookmarks ({SELECTED_ITEMS})}
-      other {Bookmarks ({SELECTED_ITEMS})}
-      }
-||||||| upstream@pin
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_PASSWORDS" desc="Title of the Passwords section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-      {SELECTED_ITEMS, plural,
-      =0 {Passwords}
-      =1 {Passwords ({SELECTED_ITEMS})}
-      other {Passwords ({SELECTED_ITEMS})}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_BOOKMARKS" desc="Title of the Bookmarks section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-      {SELECTED_ITEMS, plural,
-      =0 {Bookmarks}
-      =1 {Bookmarks ({SELECTED_ITEMS})}
-      other {Bookmarks ({SELECTED_ITEMS})}
-      }
-=======
 
     <!-- Feature Showcase - Gemini -->
     <message name="IDS_FEATURE_SHOWCASE_GEMINI_SUBTITLE" desc="This is a subtitle explaining a specific feature of the AI assistant: using active page content to provide better context. (CHAR LIMIT = 60)">
       Get more relevant answers by sharing your tabs
->>>>>>> upstream@new
     </message>
     <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_1_ROW" desc="This is the body text of a consent dialog. It explains the technical data flow (content and URLs) to Google for AI processing. The tone should be transparent and cautionary.">
       Google uses the content and URL of shared tabs. Your current tab is shared in new chats. You can change this setting anytime.
@@ -1491,71 +1307,11 @@
     <message name="IDS_FEATURE_SHOWCASE_THEMES_SUBTITLE" desc="This is the subtitle for the customization screen, listing examples like 'themes' and 'dark mode'. (CHAR LIMIT = 60)">
       Customize your browser with options like themes and dark mode.
     </message>
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <if expr="use_titlecase">
-      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-        Save in Account
-      </message>
-    </if>
-    <if expr="not use_titlecase">
-      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-        Save in account
-      </message>
-    </if>
-    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-||||||| upstream@pin
-    <if expr="use_titlecase">
-      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-        Save in Account
-      </message>
-    </if>
-    <if expr="not use_titlecase">
-      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-        Save in account
-      </message>
-    </if>
-    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-=======
     <message name="IDS_FEATURE_SHOWCASE_THEMES_APPLY_THEME" desc="Label for the button to apply a theme to the browser. It is a verb-based action that initiates the visual change. Ensure 'Apply' is translated as a functional command. (CHAR LIMIT = 20)">
       Apply theme
->>>>>>> upstream@new
     </message>
-<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
-    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks and other items are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_ITEMS_WITH_LINK" desc="The text for a promotional banner located on the Account Settings page. It informs the user how many items on their local device are waiting to be uploaded. The text contains a placeholder for the number of items (e.g., '5 items') and acts as a clickable link that takes the user to the Batch Upload screen. Please ensure the placeholder handles pluralization correctly.">
-      {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
-      }
-||||||| upstream@pin
-    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks and other items are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-      {BOOKMARK_COUNT, plural,
-      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
-      }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_ITEMS_WITH_LINK" desc="The text for a promotional banner located on the Account Settings page. It informs the user how many items on their local device are waiting to be uploaded. The text contains a placeholder for the number of items (e.g., '5 items') and acts as a clickable link that takes the user to the Batch Upload screen. Please ensure the placeholder handles pluralization correctly.">
-      {ITEM_COUNT, plural,
-      =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
-      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
-      }
-=======
     <message name="IDS_FEATURE_SHOWCASE_THEMES_NO_THANKS" desc="Label for a button that dismisses the option to personalize the browser. (CHAR LIMIT = 20)">
       No thanks
->>>>>>> upstream@new
     </message>
 
     <!-- Signout Confirmation Dialog Desktop -->
