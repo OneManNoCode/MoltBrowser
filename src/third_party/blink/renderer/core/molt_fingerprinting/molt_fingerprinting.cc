@@ -315,7 +315,7 @@ std::optional<SiteKey> SiteKeyFor(ExecutionContext* context) {
   }
   // The site of a context can change when Blink reuses the initial empty
   // document's window for the first navigation, so compare every time.
-  const String id = String::FromUTF8(resolved.site + '\n' + resolved.partition);
+  const String id = String::FromUtf8(resolved.site + '\n' + resolved.partition);
   if (!state.has_key || state.site_and_partition != id) {
     state.key = DeriveSiteKey(g_seed, resolved.site, resolved.partition);
     state.site_and_partition = id;
@@ -423,8 +423,8 @@ scoped_refptr<StaticBitmapImage> FarbleForExportWith(const Farbler& farbler,
   if (!farbled) {
     return nullptr;
   }
-  return UnacceleratedStaticBitmapImage::Create(std::move(farbled),
-                                                image.Orientation());
+  return UnacceleratedStaticBitmapImage::Create(
+      std::move(farbled), image.Orientation(), paint_image.GetHDRMetadata());
 }
 
 namespace {
@@ -728,8 +728,8 @@ scoped_refptr<StaticBitmapImage> FarbleSnapshot(
   if (!farbled) {
     return image;
   }
-  return UnacceleratedStaticBitmapImage::Create(std::move(farbled),
-                                                image->Orientation());
+  return UnacceleratedStaticBitmapImage::Create(
+      std::move(farbled), image->Orientation(), paint_image.GetHDRMetadata());
 }
 
 scoped_refptr<StaticBitmapImage> FarbleForExport(
