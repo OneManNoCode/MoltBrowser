@@ -5,6 +5,7 @@
 
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_site_exceptions.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
@@ -16,7 +17,7 @@ namespace molt_ai::shield {
 
 namespace {
 
-constexpr ContentSettingsType kShieldsSetting = ContentSettingsType::ADS;
+constexpr ContentSettingsType kShieldsSetting = kShieldsDownSetting;
 
 }  // namespace
 
@@ -26,21 +27,25 @@ bool AreShieldsUpForSite(content::BrowserContext* context,
   if (service && !service->IsEnabled()) {
     return false;
   }
-  if (!context || !top_frame_url.SchemeIsHTTPOrHTTPS()) {
-    // Unknown top frame (e.g. service workers): filter.
-    return true;
-  }
+  // Unknown top frame (e.g. service workers), non-web pages: filter.
+  return !HasShieldsDownException(context, top_frame_url);
+}
+
+bool HasShieldsDownException(content::BrowserContext* context,
+                             const GURL& url) {
   HostContentSettingsMap* map =
-      HostContentSettingsMapFactory::GetForProfile(context);
+      context ? HostContentSettingsMapFactory::GetForProfile(context) : nullptr;
+  return map && HasShieldsDownException(*map, url);
+}
+
+std::vector<std::string> GetShieldsDownTopLevelSites(
+    content::BrowserContext* context) {
+  HostContentSettingsMap* map =
+      context ? HostContentSettingsMapFactory::GetForProfile(context) : nullptr;
   if (!map) {
-    return true;
+    return {};
   }
-  content_settings::SettingInfo info;
-  ContentSetting setting =
-      map->GetContentSetting(top_frame_url, GURL(), kShieldsSetting, &info);
-  // Only an explicit per-site ALLOW lowers Shields; ignore the default.
-  return !(setting == CONTENT_SETTING_ALLOW &&
-           !info.primary_pattern.MatchesAllHosts());
+  return ShieldsDownTopLevelSites(*map);
 }
 
 void SetShieldsUpForSite(content::BrowserContext* context,

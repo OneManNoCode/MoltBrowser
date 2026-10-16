@@ -36,6 +36,18 @@ namespace molt_ai::shield {
 bool AreShieldsUpForSite(content::BrowserContext* context,
                          const GURL& top_frame_url);
 
+// True if the user turned MoltShield off for `url` (an explicit per-site
+// exception matches it), whatever MoltShield's global state.
+bool HasShieldsDownException(content::BrowserContext* context, const GURL& url);
+
+// Top-level sites ("https://example.com", as net::SchemefulSite serializes
+// them) whose own URL has a Shields-down exception, sorted and unique. This
+// is what fingerprinting protection leaves alone. Exceptions narrower than a
+// site (one subdomain, a host pattern without [*.]) only count if they also
+// match the site's own URL.
+std::vector<std::string> GetShieldsDownTopLevelSites(
+    content::BrowserContext* context);
+
 // Adds/removes the site-wide exception for `url`'s site.
 void SetShieldsUpForSite(content::BrowserContext* context,
                          const GURL& url,

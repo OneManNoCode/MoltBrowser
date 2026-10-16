@@ -3,7 +3,7 @@
 #
 # Shared by the browser half (//chrome/browser/molt_ai/fingerprinting, which
 # puts the mode switch on renderer command lines and sends the session seed
-# over :mojom) and the renderer half
+# and Shields-off sites over :mojom) and the renderer half
 # (//chrome/renderer/molt_ai/fingerprinting, which hands them to Blink) of
 # MoltBrowser's fingerprinting protection.
 
@@ -20,7 +20,7 @@ source_set("fingerprinting") {
 }
 
 # Browser -> renderer configuration that stays off the command line (the
-# session seed).
+# session seed) or changes at runtime (Shields-off sites).
 mojom("mojom") {
   sources = [ "molt_fingerprinting.mojom" ]
 }

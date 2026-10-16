@@ -1931,8 +1931,8 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
     service->InitializeRenderer(host);
   }
 
-  // MoltBrowser: fingerprinting session seed, over the channel (never the
-  // command line).
+  // MoltBrowser: fingerprinting session seed and Shields-off sites, over the
+  // channel (never the command line).
   molt_ai::fingerprinting::InitializeRenderer(host);
 
   for (auto& part : extra_parts_) {

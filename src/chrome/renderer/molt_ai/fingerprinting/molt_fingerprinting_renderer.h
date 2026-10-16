@@ -3,9 +3,9 @@
 //
 // Renderer half of MoltBrowser's fingerprinting protection: reads the
 // --molt-fingerprinting-mode switch the browser put on this renderer's
-// command line, configures Blink, and receives the session seed over the
-// channel-associated FingerprintingConfiguration interface
-// (chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom).
+// command line, configures Blink, and receives the session seed and the
+// Shields-off sites over the channel-associated FingerprintingConfiguration
+// interface (chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom).
 
 #ifndef CHROME_RENDERER_MOLT_AI_FINGERPRINTING_MOLT_FINGERPRINTING_RENDERER_H_
 #define CHROME_RENDERER_MOLT_AI_FINGERPRINTING_MOLT_FINGERPRINTING_RENDERER_H_

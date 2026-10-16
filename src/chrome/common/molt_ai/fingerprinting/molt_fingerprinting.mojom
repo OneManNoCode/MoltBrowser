@@ -15,4 +15,11 @@ interface FingerprintingConfiguration {
   // launch. Anything but 32 bytes is ignored, and only the first seed
   // counts. Until it arrives, contexts that need a key get a random one.
   SetSessionSeed(array<uint8> seed);
+
+  // Top-level sites ("https://example.com", as net::SchemefulSite
+  // serializes them) the user turned MoltShield off for. Farbling is off
+  // for documents and workers of those sites (MoltNet renderers ignore the
+  // list). Sent at launch and again, replacing the list, whenever it
+  // changes.
+  SetUnfarbledSites(array<string> sites);
 };

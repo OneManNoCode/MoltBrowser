@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index f474618996d2f63e9068ff3c667c856bf638392b..760a1268614a8be862f9375e2b1e07481dd38fe1 100644
+index f474618996d2f63e9068ff3c667c856bf638392b..ebe98419c8a11ec5e1c632616ff2149ff34e2dae 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -106,6 +106,15 @@
@@ -158,8 +158,8 @@ index f474618996d2f63e9068ff3c667c856bf638392b..760a1268614a8be862f9375e2b1e0748
      service->InitializeRenderer(host);
    }
  
-+  // MoltBrowser: fingerprinting session seed, over the channel (never the
-+  // command line).
++  // MoltBrowser: fingerprinting session seed and Shields-off sites, over the
++  // channel (never the command line).
 +  molt_ai::fingerprinting::InitializeRenderer(host);
 +
    for (auto& part : extra_parts_) {
