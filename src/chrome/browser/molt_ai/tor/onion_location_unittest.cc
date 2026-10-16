@@ -3,10 +3,14 @@
 
 #include "chrome/browser/molt_ai/tor/onion_location.h"
 
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/check.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/values.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -88,6 +92,120 @@ TEST(OnionLocationTest, InvalidHeadersIgnored) {
               "%2Eonion/\n")
           .is_valid());
   EXPECT_FALSE(Offered(page, "Onion-Location:\n").is_valid());
+}
+
+TEST(OnionLocationTest, HeaderPresenceMakesMetaIgnored) {
+  EXPECT_FALSE(HasOnionLocationHeader(nullptr));
+  EXPECT_FALSE(HasOnionLocationHeader(Headers("X-Other: 1\n").get()));
+  // Present, even if invalid: the header is authoritative.
+  EXPECT_TRUE(HasOnionLocationHeader(Headers("onion-location: nope\n").get()));
+  EXPECT_TRUE(HasOnionLocationHeader(
+      Headers(std::string("Onion-Location: http://") + kHost + "/\n").get()));
+}
+
+// <meta http-equiv="onion-location">: the header's rules.
+TEST(OnionLocationTest, MetaFollowsTheHeaderRules) {
+  const std::string onion = std::string("http://") + kHost + "/path?q=1";
+  const GURL page("https://example.com/");
+  EXPECT_EQ(GURL(onion), GetOnionLocationFromMeta(page, {onion}));
+  // Surrounding spaces in the content attribute are tolerated.
+  EXPECT_EQ(GURL(onion), GetOnionLocationFromMeta(page, {"  " + onion + " "}));
+  // None, or more than one (even identical): ignored.
+  EXPECT_FALSE(GetOnionLocationFromMeta(page, {}).is_valid());
+  EXPECT_FALSE(GetOnionLocationFromMeta(page, {onion, onion}).is_valid());
+  // Only on https pages that aren't onion services.
+  EXPECT_FALSE(
+      GetOnionLocationFromMeta(GURL("http://example.com/"), {onion}).is_valid());
+  EXPECT_FALSE(GetOnionLocationFromMeta(
+                   GURL(std::string("https://") + kHost + "/"), {onion})
+                   .is_valid());
+  EXPECT_FALSE(GetOnionLocationFromMeta(GURL(), {onion}).is_valid());
+  // Same strict syntax as the header.
+  for (const std::string& bad : {
+           std::string("https://example.com/"),
+           std::string("javascript:alert(1)"),
+           std::string("http://u:p@") + kHost + "/",
+           std::string("//") + kHost + "/",
+           std::string("http://example.onion/"),  // Not a v3 address.
+           std::string("http://") + kHost + "/a b",
+           std::string("http://") + kHost + "\\@evil.com/",
+       }) {
+    EXPECT_FALSE(GetOnionLocationFromMeta(page, {bad}).is_valid()) << bad;
+  }
+}
+
+// The renderer's answer to OnionLocationMetaScript() is untrusted.
+TEST(OnionLocationTest, MetaScriptResultIsValidated) {
+  base::ListValue two;
+  two.Append("a");
+  two.Append("b");
+  std::optional<std::vector<std::string>> contents =
+      OnionLocationMetaContents(base::Value(std::move(two)));
+  ASSERT_TRUE(contents);
+  EXPECT_EQ((std::vector<std::string>{"a", "b"}), *contents);
+
+  contents = OnionLocationMetaContents(base::Value(base::ListValue()));
+  ASSERT_TRUE(contents);
+  EXPECT_TRUE(contents->empty());
+
+  EXPECT_FALSE(OnionLocationMetaContents(base::Value()));
+  EXPECT_FALSE(OnionLocationMetaContents(base::Value("http://x.onion/")));
+  base::ListValue three;
+  three.Append("a");
+  three.Append("b");
+  three.Append("c");
+  EXPECT_FALSE(OnionLocationMetaContents(base::Value(std::move(three))));
+  base::ListValue not_string;
+  not_string.Append(1);
+  EXPECT_FALSE(OnionLocationMetaContents(base::Value(std::move(not_string))));
+  base::ListValue huge;
+  huge.Append(std::string(64 * 1024, 'a'));
+  EXPECT_FALSE(OnionLocationMetaContents(base::Value(std::move(huge))));
+
+  // The script exists and is what the tab helper runs.
+  EXPECT_TRUE(std::u16string(OnionLocationMetaScript()).find(u"onion-location") !=
+              std::u16string::npos);
+}
+
+// Which request URLs the onion request blocker keeps out of non-MoltNet
+// profiles: any scheme, any onion name (valid v3 address or not), as GURL
+// canonicalizes it.
+TEST(OnionLocationTest, OnionRequestURLs) {
+  for (const std::string& url : {
+           std::string("http://") + kHost + "/pixel.gif",
+           std::string("https://") + kHost + ":8443/a?b#c",
+           std::string("ws://") + kHost + "/socket",
+           std::string("wss://") + kHost + "/socket",
+           std::string("https://www.") + kHost + "/",
+           // Not a valid onion address, still never to be resolved.
+           std::string("http://example.onion/"),
+           std::string("http://EXAMPLE.ONION/"),
+           std::string("http://example.onion./"),
+           std::string("http://onion/"),
+           std::string("ftp://example.onion/file"),
+           // Percent-encoded and IDN forms canonicalize to an onion host.
+           std::string("http://example%2Eonion/"),
+           std::string("http://example.\xEF\xBC\xAFnion/"),  // Fullwidth O.
+           std::string("http://user:pass@example.onion:81/"),
+       }) {
+    EXPECT_TRUE(IsOnionRequestURL(GURL(url))) << url;
+  }
+  for (const std::string& url : {
+           std::string(""),
+           std::string("http://example.com/"),
+           std::string("http://onion.example.com/"),
+           std::string("http://example.onion.example.com/"),
+           std::string("http://exampleonion/"),
+           std::string("http://example.com/x.onion"),
+           std::string("http://example.com/?u=http://x.onion/"),
+           std::string("http://127.0.0.1/"),
+           std::string("http://[::1]/"),
+           std::string("data:text/plain,x.onion"),
+           std::string("about:blank"),
+           std::string("not a url"),
+       }) {
+    EXPECT_FALSE(IsOnionRequestURL(GURL(url))) << url;
+  }
 }
 
 }  // namespace
