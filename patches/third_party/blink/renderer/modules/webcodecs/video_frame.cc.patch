@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webcodecs/video_frame.cc b/third_party/blink/renderer/modules/webcodecs/video_frame.cc
-index e7c4545de46c1d14369201c3529d2e56406733ff..676b345b4f4fb99057caf358727c86d5c677959d 100644
+index e7c4545de46c1d14369201c3529d2e56406733ff..2853eeac813c2d06ae9d4f56996850b7dbb328e0 100644
 --- a/third_party/blink/renderer/modules/webcodecs/video_frame.cc
 +++ b/third_party/blink/renderer/modules/webcodecs/video_frame.cc
 @@ -46,6 +46,7 @@
@@ -16,14 +16,18 @@ index e7c4545de46c1d14369201c3529d2e56406733ff..676b345b4f4fb99057caf358727c86d5
  #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
  #include "third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_factories.h"
  #include "third_party/blink/renderer/modules/webcodecs/array_buffer_util.h"
-@@ -764,6 +765,10 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
+@@ -764,6 +765,14 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
                                        "Invalid source state");
      return nullptr;
    }
 +  // MoltBrowser: canvas and image pixels enter the frame with the per-site
-+  // fingerprinting noise, so copyTo(), encoders and every other sink see it.
-+  image = molt_fingerprinting::FarbleForExport(
-+      ExecutionContext::From(script_state), std::move(image));
++  // fingerprinting noise, so copyTo(), encoders and every other sink see it
++  // (MoltNet windows; see FarblesVideoExports()).
++  if (molt_fingerprinting::FarblesVideoExports(
++          ExecutionContext::From(script_state))) {
++    image = molt_fingerprinting::FarbleForExport(
++        ExecutionContext::From(script_state), std::move(image));
++  }
  
    const auto timestamp = base::Microseconds(
        (init && init->hasTimestamp()) ? init->timestamp() : 0);

@@ -118,6 +118,14 @@ CORE_EXPORT void ResetForTesting();
 // or the context's thread.
 CORE_EXPORT std::optional<Farbler> FarblerFor(ExecutionContext* context);
 CORE_EXPORT bool IsFarbled(ExecutionContext* context);
+// Whether canvas frames leaving as video (captureStream(), new VideoFrame()
+// from a canvas) are farbled for `context`. Farbling every frame costs a CPU
+// pass per frame (about 16 ms per 720p camera-like frame on a slow VM), which
+// canvas-effects video calls would pay all the time, so this is only on in
+// MoltNet (uniform) windows. Normal windows keep the readback hooks
+// (getImageData, toDataURL, readPixels, ...); see docs/FINGERPRINTING.md for
+// the gap this leaves.
+CORE_EXPORT bool FarblesVideoExports(ExecutionContext* context);
 
 // --- Worklets ---------------------------------------------------------------
 

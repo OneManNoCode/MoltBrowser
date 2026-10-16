@@ -610,6 +610,10 @@ bool IsFarbled(ExecutionContext* context) {
   return SiteKeyFor(context).has_value();
 }
 
+bool FarblesVideoExports(ExecutionContext* context) {
+  return IsUniform() && IsFarbled(context);
+}
+
 void SetServiceWorkerStorageKey(ExecutionContext& worker,
                                 const BlinkStorageKey& storage_key) {
   if (Supplement<ExecutionContext>::From<MoltServiceWorkerSite>(worker)) {

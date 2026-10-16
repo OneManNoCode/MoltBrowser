@@ -1076,7 +1076,8 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
     // MoltBrowser: not when farbling, which needs the CPU copy below.
     if (context_ && (context_color_is_opaque || can_discard_alpha) &&
         base::FeatureList::IsEnabled(kOneCopyCanvasCapture) &&
-        !molt_fingerprinting::IsFarbled(GetDocument().GetExecutionContext())) {
+        !molt_fingerprinting::FarblesVideoExports(
+            GetDocument().GetExecutionContext())) {
       if (context_->CopyRenderingResultsToVideoFrame(
               copier_->GetAcceleratedVideoFramePool(
                   SharedGpuContext::ContextProviderWrapper()),
@@ -1098,9 +1099,13 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
       source_image = GetSourceImageForCanvasInternal(&status);
       if (status != kNormalSourceImageStatus)
         continue;
-      // MoltBrowser: captured frames carry the per-site fingerprinting noise.
-      source_image = molt_fingerprinting::FarbleForExport(
-          GetDocument().GetExecutionContext(), std::move(source_image));
+      // MoltBrowser: captured frames carry the per-site fingerprinting noise
+      // (MoltNet windows; see FarblesVideoExports()).
+      if (molt_fingerprinting::FarblesVideoExports(
+              GetDocument().GetExecutionContext())) {
+        source_image = molt_fingerprinting::FarbleForExport(
+            GetDocument().GetExecutionContext(), std::move(source_image));
+      }
     }
 
     // Here we need to use the SharedGpuContext as some of the images may

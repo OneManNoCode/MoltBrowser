@@ -23,7 +23,8 @@ The design follows Brave's "farbling" and Tor Browser's uniformity
 What changed in v1.1: the readback paths that bypassed v1 (WebGL2 pack
 buffers, float and narrow `readPixels`, `VideoFrame` from a canvas,
 `captureStream`, WebGPU uploads from a canvas, `AudioWorklet`) are closed
-or documented below; "Shields off" disables farbling per site; the session
+or documented below (the two per-frame video paths only in MoltNet windows,
+for performance); "Shields off" disables farbling per site; the session
 seed left the renderer command line; service workers and first-party
 shared workers farble with their site's key.
 
@@ -167,8 +168,8 @@ video pipelines, PBO readback).
 | `getImageData()` (2D and OffscreenCanvas 2D; unorm8, float16, float32 storage) | farbled | farbled | `base_rendering_context_2d.cc`: `getImageDataInternal` |
 | WebGL 1/2 `readPixels()` into client memory: `RED`, `RG`, `RGB`, `RGBA` × `UNSIGNED_BYTE`, `FLOAT`, `HALF_FLOAT(_OES)` | farbled | farbled | `webgl_rendering_context_base.cc`: `ReadPixelsHelper` |
 | WebGL2 `readPixels()` into a `PIXEL_PACK_BUFFER` (then `getBufferSubData`, `copyBufferSubData`, texture uploads from it), same formats | farbled (in the buffer) | farbled | `webgl2_rendering_context_base.cc`: `readPixels(..., offset)` |
-| `new VideoFrame(canvas \| OffscreenCanvas \| ImageBitmap \| <img> \| SVG image)`, then `copyTo()`, `VideoEncoder`, `MediaStreamTrackGenerator`, ... | farbled (at creation) | farbled | `video_frame.cc`: `VideoFrame::Create` (CanvasImageSource) |
-| `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | farbled (at capture) | farbled | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
+| `new VideoFrame(canvas \| OffscreenCanvas \| ImageBitmap \| <img> \| SVG image)`, then `copyTo()`, `VideoEncoder`, `MediaStreamTrackGenerator`, ... | **not farbled** (per-frame cost; see below) | farbled (at creation) | `video_frame.cc`: `VideoFrame::Create` (CanvasImageSource) |
+| `canvas.captureStream()` frames (`MediaRecorder`, `ImageCapture.grabFrame()`, `MediaStreamTrackProcessor`, `<video>`, WebRTC) | **not farbled** (per-frame cost; see below) | farbled (at capture) | `html_canvas_element.cc`: `NotifyListenersCanvasChanged` |
 | WebGPU `queue.copyExternalImageToTexture()` from a canvas, `OffscreenCanvas`, `ImageBitmap`, `<img>`, `ImageData` | farbled (before upload) | farbled | `gpu_queue.cc`: `copyExternalImageToTexture` |
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | `WEBGL_debug_renderer_info` | real | **unavailable** (null from `getExtension`, absent from `getSupportedExtensions`) | `webgl_debug_renderer_info.cc`: `Supported` |
@@ -302,9 +303,18 @@ one-copy GPU path while farbling), and every farbled `readPixels` into a
 mapping), so the async-readback idiom loses its asynchrony. Pages that
 stream a canvas as video (canvas recording, effects pipelines in video
 calls that build frames with `new VideoFrame(canvas)` or `captureStream()`)
-pay the export cost on every frame: at 720p on this VM that is about half a
-core at 30 fps. Shields off removes it for a site. Nothing is copied or
-computed when protection is off for the context.
+would pay the export cost on every frame: at 720p on this VM that is about
+half a core at 30 fps. **So the two per-frame hooks (`VideoFrame` from a
+canvas, `captureStream`) only run in MoltNet windows** (`FarblesVideoExports()`
+in `molt_fingerprinting.h`), and normal windows keep the one-copy GPU capture
+path. The cost of that choice: in normal windows a script can still read
+unfarbled canvas pixels by wrapping the canvas in a `VideoFrame` and calling
+`copyTo()`, or through a `captureStream()` track processor. Planned fix:
+farble at those readback points (`VideoFrame.copyTo`, `MediaStreamTrackProcessor`
+frames) instead of on every exported frame, then turn them on everywhere.
+WebGPU uploads from a canvas stay farbled in both (they are per upload, not
+per frame; camera `<video>`/`VideoFrame` sources are not farbled). Nothing is
+copied or computed when protection is off for the context.
 
 ## Kill switch
 

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 34e8e709326f520d341a2404eeae0f516287806e..9ec38411a43bba222b7ad2cba1ec8144a17929a4 100644
+index 34e8e709326f520d341a2404eeae0f516287806e..e6c2b71348ad428ad064a9c276014be45e784a0b 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -97,6 +97,7 @@
@@ -16,7 +16,7 @@ index 34e8e709326f520d341a2404eeae0f516287806e..9ec38411a43bba222b7ad2cba1ec8144
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/page/page_animator.h"
-@@ -1072,8 +1073,10 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
+@@ -1072,8 +1073,11 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
      // First attempt to copy directly from the rendering context to a video
      // frame. Not all rendering contexts need to support this (for contexts
      // where GetSourceImageForCanvasInternal is zero-copy, this is superfluous).
@@ -24,21 +24,26 @@ index 34e8e709326f520d341a2404eeae0f516287806e..9ec38411a43bba222b7ad2cba1ec8144
      if (context_ && (context_color_is_opaque || can_discard_alpha) &&
 -        base::FeatureList::IsEnabled(kOneCopyCanvasCapture)) {
 +        base::FeatureList::IsEnabled(kOneCopyCanvasCapture) &&
-+        !molt_fingerprinting::IsFarbled(GetDocument().GetExecutionContext())) {
++        !molt_fingerprinting::FarblesVideoExports(
++            GetDocument().GetExecutionContext())) {
        if (context_->CopyRenderingResultsToVideoFrame(
                copier_->GetAcceleratedVideoFramePool(
                    SharedGpuContext::ContextProviderWrapper()),
-@@ -1095,6 +1098,9 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
+@@ -1095,6 +1099,13 @@ void HTMLCanvasElement::NotifyListenersCanvasChanged() {
        source_image = GetSourceImageForCanvasInternal(&status);
        if (status != kNormalSourceImageStatus)
          continue;
-+      // MoltBrowser: captured frames carry the per-site fingerprinting noise.
-+      source_image = molt_fingerprinting::FarbleForExport(
-+          GetDocument().GetExecutionContext(), std::move(source_image));
++      // MoltBrowser: captured frames carry the per-site fingerprinting noise
++      // (MoltNet windows; see FarblesVideoExports()).
++      if (molt_fingerprinting::FarblesVideoExports(
++              GetDocument().GetExecutionContext())) {
++        source_image = molt_fingerprinting::FarbleForExport(
++            GetDocument().GetExecutionContext(), std::move(source_image));
++      }
      }
  
      // Here we need to use the SharedGpuContext as some of the images may
-@@ -1312,7 +1318,10 @@ String HTMLCanvasElement::ToDataURLInternal(
+@@ -1312,7 +1323,10 @@ String HTMLCanvasElement::ToDataURLInternal(
        ImageEncoderUtils::ToEncodingMimeType(
            mime_type, ImageEncoderUtils::kEncodeReasonToDataURL);
  

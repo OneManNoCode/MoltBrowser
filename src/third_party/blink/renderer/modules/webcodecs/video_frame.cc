@@ -766,9 +766,13 @@ VideoFrame* VideoFrame::Create(ScriptState* script_state,
     return nullptr;
   }
   // MoltBrowser: canvas and image pixels enter the frame with the per-site
-  // fingerprinting noise, so copyTo(), encoders and every other sink see it.
-  image = molt_fingerprinting::FarbleForExport(
-      ExecutionContext::From(script_state), std::move(image));
+  // fingerprinting noise, so copyTo(), encoders and every other sink see it
+  // (MoltNet windows; see FarblesVideoExports()).
+  if (molt_fingerprinting::FarblesVideoExports(
+          ExecutionContext::From(script_state))) {
+    image = molt_fingerprinting::FarbleForExport(
+        ExecutionContext::From(script_state), std::move(image));
+  }
 
   const auto timestamp = base::Microseconds(
       (init && init->hasTimestamp()) ? init->timestamp() : 0);
