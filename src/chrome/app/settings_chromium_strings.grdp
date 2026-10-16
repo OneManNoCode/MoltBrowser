@@ -76,7 +76,7 @@
       Make MoltBrowser the default browser and pin to the taskbar
     </message>
     <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_AND_PIN_USER_VALUE" desc="The text of the button to make Chromium the default browser and pin it to the taskbar.">
-      You can use Chromium anytime you click links in messages, documents, and other apps. It will also be pinned to your taskbar.
+      You can use MoltBrowser anytime you click links in messages, documents, and other apps. It will also be pinned to your taskbar.
     </message>
     <message name="IDS_SETTINGS_DEFAULT_BROWSER_ERROR" desc="The text displayed when Chrome cannot determine or set the default browser">
       MoltBrowser cannot determine or set the default browser
@@ -416,7 +416,7 @@
     Enhanced protection turns off JavaScript optimization for sites MoltBrowser doesn’t recognize
   </message>
   <message name="IDS_SETTINGS_SECURITY_BUNDLE_ENHANCED_BULLET_ONE" desc="First bullet point under the security settings enhanced bundle section">
-    Turns on additional features to provide Chromium’s strongest protections
+    Turns on additional features to provide MoltBrowser’s strongest protections
   </message>
 
   <!-- Secure connections -->
@@ -437,16 +437,16 @@
   </message>
   <!-- Skills Settings Page -->
   <message name="IDS_SETTINGS_SKILLS_SETTING_LABEL" desc="Label for the Skills setting entry point in Settings > AI page.">
-    Skills in Chromium
+    Skills in MoltBrowser
   </message>
   <message name="IDS_SETTINGS_SKILLS_TOGGLE_LABEL" desc="Label for the toggle button on the Skills settings subpage.">
-    Enable Skills in Chromium
+    Enable Skills in MoltBrowser
   </message>
   <message name="IDS_SETTINGS_SYNC_SKILLS_SEPARATE_INFORMATION" desc="Info text on the Sync page explaining that skills are managed separately from sync.">
-    AI innovations like skills are saved to your Google Account and managed separately from Chromium sync
+    AI innovations like skills are saved to your Google Account and managed separately from MoltBrowser sync
   </message>
   <message name="IDS_SETTINGS_SKILLS_WHEN_ON_BULLET_TWO" desc="Second bullet point under the 'When on' column in the Skills settings page.">
-    Use them alongside other Gemini features in Chromium
+    Use them alongside other Gemini features in MoltBrowser
   </message>
   <!-- Dictation Settings Page -->
   <!-- TODO(b/510738735): Make these translatable when finalized. -->
@@ -454,7 +454,7 @@
     Dictation
   </message>
   <message name="IDS_SETTINGS_DICTATION_SETTING_SUBLABEL" translateable="false" desc="Sublabel for the Dictation setting entry point in Settings > AI page.">
-    Chromium uses your microphone to capture your voice and fill in text fields with cleaned up content
+    MoltBrowser uses your microphone to capture your voice and fill in text fields with cleaned up content
   </message>
   <message name="IDS_SETTINGS_DICTATION_SHORTCUT_SUBLABEL" translateable="false" desc="Sublabel for the keyboard shortcut setting in Dictation settings page.">
     Open Dictation with a keyboard shortcut
