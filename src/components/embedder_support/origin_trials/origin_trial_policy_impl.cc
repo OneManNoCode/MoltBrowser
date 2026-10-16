@@ -12,6 +12,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ref.h"
 #include "base/strings/string_split.h"
@@ -23,6 +24,17 @@
 #include "third_party/blink/public/common/origin_trials/origin_trials_settings_provider.h"
 
 namespace embedder_support {
+
+namespace {
+
+// MoltBrowser: origin trials that stay off whatever token a site serves.
+// - HTMLInCanvas (drawElementImage, copyElementImageToTexture): renders page
+//   content (text, fonts, form controls) into a WebGPU texture that script
+//   reads back without fingerprinting protection's noise
+//   (docs/FINGERPRINTING.md).
+constexpr std::string_view kMoltDisabledTrials[] = {"HTMLInCanvas"};
+
+}  // namespace
 
 // This is the default public key used for validating signatures.
 static const blink::OriginTrialPublicKey kDefaultPublicKey = {
@@ -70,6 +82,9 @@ OriginTrialPolicyImpl::GetPublicKeys() const {
 }
 
 bool OriginTrialPolicyImpl::IsFeatureDisabled(std::string_view feature) const {
+  if (base::Contains(kMoltDisabledTrials, feature)) {  // MoltBrowser
+    return true;
+  }
   if (allow_only_deprecation_trials_) {
     if (!blink::origin_trials::IsDeprecationTrial(feature)) {
       return true;
