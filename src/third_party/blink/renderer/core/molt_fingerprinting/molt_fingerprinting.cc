@@ -195,27 +195,61 @@ ResolvedSite FromSchemefulSite(const BlinkSchemefulSite& site,
   return resolved;
 }
 
+// The top-level site of a storage key, plus its nonce (fenced frames,
+// credentialless iframes) as the partition.
+ResolvedSite FromStorageKey(const BlinkStorageKey& storage_key) {
+  std::string partition;
+  if (const auto& nonce = storage_key.GetNonce()) {
+    partition = nonce->ToString();
+  }
+  return FromSchemefulSite(storage_key.GetTopLevelSite(), std::move(partition));
+}
+
+// A service worker's site, from its registration's storage key, set before
+// its script runs (SetServiceWorkerStorageKey). Worker thread only.
+class MoltServiceWorkerSite final
+    : public GarbageCollected<MoltServiceWorkerSite>,
+      public Supplement<ExecutionContext> {
+ public:
+  static const char kSupplementName[];
+
+  MoltServiceWorkerSite(ExecutionContext& context, ResolvedSite resolved)
+      : Supplement<ExecutionContext>(context), resolved_(std::move(resolved)) {}
+
+  const ResolvedSite& resolved() const { return resolved_; }
+
+  void Trace(Visitor* visitor) const override {
+    Supplement<ExecutionContext>::Trace(visitor);
+  }
+
+ private:
+  const ResolvedSite resolved_;
+};
+
+const char MoltServiceWorkerSite::kSupplementName[] = "MoltServiceWorkerSite";
+
 ResolvedSite ResolveSite(ExecutionContext& context) {
   if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
-    const BlinkStorageKey& storage_key = window->GetStorageKey();
-    std::string partition;
-    if (const auto& nonce = storage_key.GetNonce()) {
-      partition = nonce->ToString();
-    }
-    return FromSchemefulSite(storage_key.GetTopLevelSite(),
-                             std::move(partition));
+    return FromStorageKey(window->GetStorageKey());
   }
   if (auto* worker = DynamicTo<WorkerGlobalScope>(context)) {
+    // Service workers: their registration's storage key.
+    if (const MoltServiceWorkerSite* service_worker_site =
+            Supplement<ExecutionContext>::From<MoltServiceWorkerSite>(
+                context)) {
+      return service_worker_site->resolved();
+    }
     // Set for dedicated workers (and workers nested in them) only.
     if (const SecurityOrigin* top = worker->top_level_frame_security_origin()) {
       return FromSchemefulSite(
           BlinkSchemefulSite(scoped_refptr<const SecurityOrigin>(top)),
           std::string());
     }
-    // Shared and service workers: their site for cookies is their storage
-    // key's top-level site when the key is first-party (the top-level site
-    // is then the worker's own site), and null when it is third-party
-    // (partitioned under a top-level site Blink isn't told).
+    // Shared workers (and service workers without a handed-over key): their
+    // site for cookies is their storage key's top-level site when the key is
+    // first-party (the top-level site is then the worker's own site), and
+    // null when it is third-party (partitioned under a top-level site Blink
+    // isn't told).
     if (const WebWorkerFetchContext* fetch_context =
             worker->web_worker_fetch_context()) {
       const net::SiteForCookies site_for_cookies =
@@ -574,6 +608,16 @@ std::optional<Farbler> FarblerFor(ExecutionContext* context) {
 
 bool IsFarbled(ExecutionContext* context) {
   return SiteKeyFor(context).has_value();
+}
+
+void SetServiceWorkerStorageKey(ExecutionContext& worker,
+                                const BlinkStorageKey& storage_key) {
+  if (Supplement<ExecutionContext>::From<MoltServiceWorkerSite>(worker)) {
+    return;  // Set once, before any script ran; never changes afterwards.
+  }
+  Supplement<ExecutionContext>::ProvideTo(
+      worker, MakeGarbageCollected<MoltServiceWorkerSite>(
+                  worker, FromStorageKey(storage_key)));
 }
 
 void ProvideToWorklet(LocalDOMWindow& window, WorkerClients* worker_clients) {

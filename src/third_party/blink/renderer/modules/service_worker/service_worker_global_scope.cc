@@ -82,6 +82,7 @@
 #include "third_party/blink/renderer/core/loader/worker_resource_timing_notifier_impl.h"
 #include "third_party/blink/renderer/core/messaging/blink_transferable_message.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/script/classic_script.h"
@@ -1673,6 +1674,9 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
     const blink::BlinkStorageKey& storage_key) {
   DCHECK(IsContextThread());
   DCHECK(!global_scope_initialized_);
+  // MoltBrowser: farble with the registration's top-level site (third-party
+  // workers too), set before any script runs.
+  molt_fingerprinting::SetServiceWorkerStorageKey(*this, storage_key);
 
   DCHECK(service_worker_host.is_valid());
   DCHECK(!service_worker_host_.is_bound());

@@ -83,6 +83,7 @@ class Isolate;
 
 namespace blink {
 
+class BlinkStorageKey;
 class ExecutionContext;
 class Image;
 class LocalDOMWindow;
@@ -124,6 +125,15 @@ CORE_EXPORT bool IsFarbled(ExecutionContext* context);
 // an AudioWorklet): the worklet will farble with `window`'s key, decided now.
 CORE_EXPORT void ProvideToWorklet(LocalDOMWindow& window,
                                   WorkerClients* worker_clients);
+
+// --- Service workers --------------------------------------------------------
+
+// Called on a service worker's thread when its global scope is initialized,
+// before any of its script runs: the worker farbles with the top-level site
+// (and nonce) of its registration's storage key, so third-party service
+// workers get their top-level site's key too.
+CORE_EXPORT void SetServiceWorkerStorageKey(ExecutionContext& worker,
+                                            const BlinkStorageKey& storage_key);
 
 // --- Canvas -----------------------------------------------------------------
 

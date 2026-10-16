@@ -152,6 +152,7 @@ third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc.patch
 third_party/blink/renderer/core/html/canvas/html_canvas_element.cc.patch
 third_party/blink/renderer/core/workers/threaded_worklet_messaging_proxy.cc.patch
 third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.patch
+third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc.patch
 third_party/blink/renderer/modules/webaudio/analyser_node.cc.patch
 third_party/blink/renderer/modules/webaudio/audio_buffer.cc.patch
 third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc.patch
