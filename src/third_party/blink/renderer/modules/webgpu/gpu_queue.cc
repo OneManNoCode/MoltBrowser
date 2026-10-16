@@ -25,15 +25,7 @@
 #include "third_party/blink/renderer/core/html/canvas/element_image.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/canvas/predefined_color_space.h"
-<<<<<<< src/third_party/blink/renderer/modules/webgpu/gpu_queue.cc (MoltBrowser)
-#include "third_party/blink/renderer/core/html/html_image_element.h"
-#include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
-||||||| upstream@pin
-#include "third_party/blink/renderer/core/html/html_image_element.h"
-#include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
-=======
->>>>>>> upstream@new
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/modules/webgpu/dawn_conversions.h"
@@ -419,26 +411,14 @@ void GPUQueue::copyExternalImageToTexture(
     return;
   }
 
-<<<<<<< src/third_party/blink/renderer/modules/webgpu/gpu_queue.cc (MoltBrowser)
   // MoltBrowser: canvas and image pixels enter WebGPU with the per-site
   // fingerprinting noise.
-  source.image = molt_fingerprinting::FarbleForExport(
-      device()->GetExecutionContext(), std::move(source.image));
-  if (!CopyFromCanvasSourceImage(source.image.get(), origin_in_external_image,
-                                 dawn_copy_size, dawn_destination,
-                                 destination->premultipliedAlpha(), color_space,
-                                 copyImage->flipY())) {
-||||||| upstream@pin
-  if (!CopyFromCanvasSourceImage(source.image.get(), origin_in_external_image,
-                                 dawn_copy_size, dawn_destination,
-                                 destination->premultipliedAlpha(), color_space,
-                                 copyImage->flipY())) {
-=======
+  source->image = molt_fingerprinting::FarbleForExport(
+      device_->GetExecutionContext(), std::move(source->image));
   if (!CopyStaticImagBitmapToWGPUTexture(
           GetDawnControlClient(), device_->GetHandle(), source->image.get(),
           origin_in_external_image, dawn_copy_size, dawn_destination,
           destination->premultipliedAlpha(), color_space, copyImage->flipY())) {
->>>>>>> upstream@new
     exception_state.ThrowTypeError(
         "Failed to copy content from external image.");
     return;

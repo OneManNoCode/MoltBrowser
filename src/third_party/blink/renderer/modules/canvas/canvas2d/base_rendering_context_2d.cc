@@ -57,12 +57,8 @@
 #include "third_party/blink/renderer/core/html/canvas/text_metrics.h"
 #include "third_party/blink/renderer/core/html/canvas/unique_font_selector.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
-<<<<<<< src/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc (MoltBrowser)
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
-||||||| upstream@pin
-=======
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
->>>>>>> upstream@new
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d_state.h"

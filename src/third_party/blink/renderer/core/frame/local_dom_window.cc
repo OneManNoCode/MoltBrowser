@@ -1794,15 +1794,11 @@ int LocalDOMWindow::screenX() const {
   LocalFrame* frame = GetFrame();
   if (!frame) {
     return 0;
-<<<<<<< src/third_party/blink/renderer/core/frame/local_dom_window.cc (MoltBrowser)
+  }
   // MoltBrowser: MoltNet windows don't reveal where they are on screen.
   if (molt_fingerprinting::IsUniform()) {
     return 0;
   }
-||||||| upstream@pin
-=======
-  }
->>>>>>> upstream@new
 
   Page* page = frame->GetPage();
   if (!page) {
@@ -1827,15 +1823,11 @@ int LocalDOMWindow::screenY() const {
   LocalFrame* frame = GetFrame();
   if (!frame) {
     return 0;
-<<<<<<< src/third_party/blink/renderer/core/frame/local_dom_window.cc (MoltBrowser)
+  }
   // MoltBrowser: MoltNet windows don't reveal where they are on screen.
   if (molt_fingerprinting::IsUniform()) {
     return 0;
   }
-||||||| upstream@pin
-=======
-  }
->>>>>>> upstream@new
 
   Page* page = frame->GetPage();
   if (!page) {

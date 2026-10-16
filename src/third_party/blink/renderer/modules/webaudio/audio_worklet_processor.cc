@@ -14,12 +14,8 @@
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_blink_audio_worklet_process_callback.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
-<<<<<<< src/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc (MoltBrowser)
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
-||||||| upstream@pin
-=======
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer/array_buffer_contents.h"
->>>>>>> upstream@new
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_worklet_global_scope.h"
@@ -226,27 +222,16 @@ void CopyPortToArrayBuffers(v8::Isolate* isolate,
       auto backing_store = array_buffers[bus_index][channel_index]
                                .Get(isolate)
                                ->GetBackingStore();
-<<<<<<< src/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc (MoltBrowser)
-      UNSAFE_TODO(memcpy(backing_store->Data(),
-                         audio_bus->Channel(channel_index)->Data(),
-                         bus_length * sizeof(float)));
+      DCHECK_EQ(backing_store->ByteLength(), bus_length * sizeof(float));
+      // MoltBrowser: keep a named view of the copy so it can be farbled.
+      ArrayBufferContents contents(std::move(backing_store));
+      base::span<float> samples =
+          base::subtle::reinterpret_span<float>(contents.ByteSpan())
+              .first(bus_length);
+      samples.copy_from(audio_bus->Channel(channel_index)->Span());
       // MoltBrowser: per-site fingerprinting noise on the samples script
       // reads (the graph's own buses are untouched).
-      molt_fingerprinting::FarbleAudio(
-          farbling_context,
-          UNSAFE_TODO(base::span<float>(
-              static_cast<float*>(backing_store->Data()), bus_length)));
-||||||| upstream@pin
-      UNSAFE_TODO(memcpy(backing_store->Data(),
-                         audio_bus->Channel(channel_index)->Data(),
-                         bus_length * sizeof(float)));
-=======
-      DCHECK_EQ(backing_store->ByteLength(), bus_length * sizeof(float));
-      base::subtle::reinterpret_span<float>(
-          ArrayBufferContents(std::move(backing_store)).ByteSpan())
-          .first(bus_length)
-          .copy_from(audio_bus->Channel(channel_index)->Span());
->>>>>>> upstream@new
+      molt_fingerprinting::FarbleAudio(farbling_context, samples);
     }
   }
 }

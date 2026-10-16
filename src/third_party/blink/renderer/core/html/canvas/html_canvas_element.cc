@@ -98,13 +98,7 @@
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/transform_utils.h"
-<<<<<<< src/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc (MoltBrowser)
-#include "third_party/blink/renderer/core/loader/render_blocking_resource_manager.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
-||||||| upstream@pin
-#include "third_party/blink/renderer/core/loader/render_blocking_resource_manager.h"
-=======
->>>>>>> upstream@new
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/page_animator.h"
