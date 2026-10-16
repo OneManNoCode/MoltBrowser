@@ -524,7 +524,9 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
             weak_this));
   }
 
-  // { mode: "none|snowflake|obfs4|custom", custom_lines: "..." }
+  // { mode: "none|snowflake|obfs4|custom", custom_lines: "...",
+  //   support: { obfs4, snowflake, none, built_in } } where each support
+  // field is "" when usable, else what to install or do (BridgeSupport).
   void HandleGetMoltnetBridges(const base::ListValue& args) {
     if (!HasCallbackArgs(args, 1u, __func__)) return;
     AllowJavascript();
@@ -534,13 +536,27 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
            molt_ai::tor::BridgeSettings settings) {
           if (!self)
             return;
-          base::DictValue out;
-          out.Set("mode", molt_ai::tor::BridgeModeToString(settings.mode));
-          out.Set("custom_lines", settings.custom_lines);
-          self->ResolveJavascriptCallback(base::Value(cb),
-                                          base::Value(std::move(out)));
+          molt_ai::tor::TorManager::Get()->GetBridgeSupport(base::BindOnce(
+              &MoltAISettingsHandler::ResolveMoltnetBridges, self,
+              std::move(cb), std::move(settings)));
         },
         weak_ptr_factory_.GetWeakPtr(), callback_id));
+  }
+
+  void ResolveMoltnetBridges(std::string callback_id,
+                             molt_ai::tor::BridgeSettings settings,
+                             molt_ai::tor::BridgeSupport support) {
+    base::DictValue out;
+    out.Set("mode", molt_ai::tor::BridgeModeToString(settings.mode));
+    out.Set("custom_lines", settings.custom_lines);
+    base::DictValue support_dict;
+    support_dict.Set("obfs4", support.obfs4_problem);
+    support_dict.Set("snowflake", support.snowflake_problem);
+    support_dict.Set("none", support.no_transport_problem);
+    support_dict.Set("built_in", support.built_in_problem);
+    out.Set("support", std::move(support_dict));
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
   }
 
   // Args: [callback_id, mode, custom_lines]. Custom lines are validated
@@ -1580,15 +1596,76 @@ function newCircuit() {
 }
 
 // ---- Bridges ----
+// What this installation can use (TorManager::GetBridgeSupport): each field
+// is '' when usable, else a sentence saying what to install or do.
+var bridgeSupport = null;
+
+// The transports the pasted custom lines need ("Bridge " prefix optional).
+function customBridgeTransports(text) {
+  var need = {obfs4: false, snowflake: false};
+  text.split('\n').forEach(function(line) {
+    var words = line.trim().split(/\s+/);
+    var t = words[0] === 'Bridge' ? words[1] : words[0];
+    if (t === 'obfs4' || t === 'snowflake') {
+      need[t] = true;
+    }
+  });
+  return need;
+}
+
+// Problems that stop the selected bridges from working here, as text.
+function bridgeProblems(mode) {
+  var s = bridgeSupport;
+  if (!s || mode === 'none') {
+    return [];
+  }
+  var out = [];
+  if (mode === 'custom') {
+    var need = customBridgeTransports(
+        document.getElementById('bridgeLines').value);
+    if (!need.obfs4 && !need.snowflake) {
+      if (s.none) {
+        out.push(s.none);
+      }
+      return out;
+    }
+    if (need.obfs4 && s.obfs4) {
+      out.push(s.obfs4);
+    }
+    if (need.snowflake && s.snowflake) {
+      out.push(s.snowflake);
+    }
+    return out;
+  }
+  // Built-in snowflake / obfs4.
+  if (s.built_in) {
+    out.push(s.built_in);
+  }
+  if (s[mode]) {
+    out.push(s[mode]);
+  }
+  return out;
+}
+
+function updateBridgeHint() {
+  var mode = document.getElementById('bridgeMode').value;
+  var hint = document.getElementById('bridgeHint');
+  var problems = bridgeProblems(mode);
+  hint.textContent = problems.join(' ');
+  hint.style.display = problems.length ? 'block' : 'none';
+}
+
 function onBridgeModeChange() {
   var mode = document.getElementById('bridgeMode').value;
   document.getElementById('bridgeLines').style.display =
       mode === 'custom' ? 'block' : 'none';
   document.getElementById('bridgeStatus').textContent = '';
+  updateBridgeHint();
 }
 
 function loadBridges() {
   sendWithPromise('getMoltnetBridges').then(function(b) {
+    bridgeSupport = (b && b.support) || null;
     document.getElementById('bridgeMode').value = (b && b.mode) || 'none';
     document.getElementById('bridgeLines').value = (b && b.custom_lines) || '';
     onBridgeModeChange();
@@ -2143,6 +2220,8 @@ document.getElementById('moltnetEnabled').addEventListener('change',
     function() { toggleMoltNet(this.checked); });
 document.getElementById('bridgeMode').addEventListener('change',
                                                       onBridgeModeChange);
+document.getElementById('bridgeLines').addEventListener('input',
+                                                       updateBridgeHint);
 document.getElementById('saveBridgesBtn').addEventListener('click',
                                                           saveBridges);
 document.getElementById('newCircuitBtn').addEventListener('click', newCircuit);
@@ -2311,6 +2390,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .provider-form .row{display:flex;gap:8px}
 .provider-hint{font-size:11px;color:#666;line-height:1.5}
 .provider-err{font-size:12px;color:#f87171}
+.bridge-hint{font-size:12px;color:#fbbf24;line-height:1.5;margin-top:8px}
 .model-scroll{max-height:220px;overflow-y:auto;margin-top:6px}
 .model-toggle{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px;color:#ccc;border-top:1px solid #191919;cursor:pointer}
 .model-toggle:first-child{border-top:none}
@@ -2501,11 +2581,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         <option value="custom">Custom bridges&hellip;</option>
       </select>
       <textarea id="bridgeLines" rows="4" style="display:none;margin-top:8px;font-family:monospace;font-size:12px" placeholder="obfs4 192.0.2.1:443 FINGERPRINT cert=... iat-mode=0"></textarea>
+      <div id="bridgeHint" class="bridge-hint" role="status" style="display:none"></div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
         <button class="btn secondary" id="saveBridgesBtn" style="font-size:12px;padding:6px 16px">Save bridges</button>
         <span id="bridgeStatus" class="desc"></span>
       </div>
-      <div class="desc">One obfs4 or snowflake bridge per line (from bridges.torproject.org). Bridge settings apply the next time MoltNet connects.</div>
+      <div class="desc">One obfs4 or snowflake bridge per line (from bridges.torproject.org). Bridges need their pluggable transport: on Linux, your distribution's obfs4proxy (or lyrebird) and snowflake-client packages. Bridge settings apply the next time MoltNet connects.</div>
     </div>
   </div>
 

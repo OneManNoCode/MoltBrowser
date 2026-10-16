@@ -207,7 +207,7 @@ const PAGES = [
   {name: 'molt://ai-settings', file: 'molt_ai_settings_ui.cc',
    listeners: ['#maxTokens:input', '#temperature:input', '#backBtn:click',
                '#moltnetEnabled:change', '#newCircuitBtn:click',
-               '#bridgeMode:change', '#saveBridgesBtn:click',
+               '#bridgeMode:change', '#bridgeLines:input', '#saveBridgesBtn:click',
                '#exitCountry:change', '#importAllBtn:click', '#saveBtn:click',
                '#resetBtn:click'],
    noClick: ['#backBtn'],
@@ -215,7 +215,12 @@ const PAGES = [
      getSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      resetSettings: {max_tokens: 512, temperature: 0.7, top_p: 0.9, top_k: 40},
      getMoltnetExitCountries: {available: [{code: 'de', name: 'Germany'}], selected: ''},
-     getMoltnetBridges: {mode: 'custom', custom_lines: '<img src=x onerror=alert(1)>'},
+     // Linux without transport packages or a built-in bridge list.
+     getMoltnetBridges: {mode: 'custom', custom_lines: '<img src=x onerror=alert(1)>',
+                         support: {obfs4: 'Need obfs4proxy <b>x</b>.',
+                                   snowflake: 'Need snowflake-client.',
+                                   none: 'Install obfs4proxy/snowflake-client to use bridges.',
+                                   built_in: 'No built-in list.'}},
      setMoltnetBridges: {ok: false, error: '<b>Line 1: bad</b>'},
 
      getImportableBrowsers: {browsers: [
@@ -275,6 +280,29 @@ const PAGES = [
      assert(doc.querySelector('#browserList svg'), 'browser logos rendered');
      assert.strictEqual(doc.getElementById('bridgeLines').style.display, 'block',
                         'custom bridge lines shown for custom mode');
+     // Missing pluggable transports: the hint names what the selected
+     // bridges need, as text.
+     const hint = doc.getElementById('bridgeHint');
+     assert.strictEqual(hint.style.display, 'block', 'transport hint shown');
+     assert.strictEqual(hint.textContent,
+                        'Install obfs4proxy/snowflake-client to use bridges.');
+     const lines = doc.getElementById('bridgeLines');
+     lines.value = 'Bridge obfs4 192.0.2.1:443 ' + 'A'.repeat(40) + ' cert=x iat-mode=0';
+     lines.dispatchEvent(new window.Event('input'));
+     assert.strictEqual(hint.textContent, 'Need obfs4proxy <b>x</b>.');
+     assert.strictEqual(doc.querySelectorAll('#bridgeHint b').length, 0, 'hint is text');
+     lines.value += '\nsnowflake 192.0.2.3:80 ' + 'B'.repeat(40);
+     lines.dispatchEvent(new window.Event('input'));
+     assert.strictEqual(hint.textContent, 'Need obfs4proxy <b>x</b>. Need snowflake-client.');
+     const mode = doc.getElementById('bridgeMode');
+     mode.value = 'snowflake';
+     mode.dispatchEvent(new window.Event('change'));
+     assert.strictEqual(hint.textContent, 'No built-in list. Need snowflake-client.');
+     mode.value = 'none';
+     mode.dispatchEvent(new window.Event('change'));
+     assert.strictEqual(hint.style.display, 'none', 'no hint without bridges');
+     mode.value = 'custom';
+     mode.dispatchEvent(new window.Event('change'));
      doc.getElementById('saveBridgesBtn').click(); await tick();
      assert(window.__sent.includes('setMoltnetBridges'), 'bridges saved via setMoltnetBridges');
      assert.strictEqual(doc.querySelectorAll('#bridgeStatus b').length, 0, 'bridge errors are text');
