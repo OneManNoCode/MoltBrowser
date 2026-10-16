@@ -48,7 +48,12 @@ claims below as the design intent, not as measured results.
    window, *Verify* fetches `check.torproject.org` through Tor.
 6. **Bridges.** If Tor is blocked or watched where you are, Settings → MoltNet
    offers the built-in snowflake or obfs4 bridges, or bridge lines you paste
-   from bridges.torproject.org.
+   from bridges.torproject.org. Bridges need a *pluggable transport*: the
+   copy that comes with MoltBrowser or, on Linux, your distribution's
+   `obfs4proxy` (or `lyrebird`) and `snowflake-client` packages. Settings
+   tells you which one to install when it's missing, and MoltNet won't
+   connect without the bridges you chose. Linux packages don't include the
+   built-in bridge list, so there you paste bridges (*Custom bridges*).
 7. **Exit country (optional).** You can pin the exit to a country. This shrinks
    the set of exits you share with other Tor users, which **reduces anonymity**;
    the choice is not saved and resets when MoltBrowser restarts.
@@ -56,17 +61,21 @@ claims below as the design intent, not as measured results.
    Tor like any other site; `http://` onion addresses are not upgraded or
    blocked by HTTPS-Only, because an onion connection is already encrypted
    end to end. When an `https://` site announces an onion version
-   (`Onion-Location` header), a bar offers *Open .onion version*; MoltBrowser
-   never switches on its own.
+   (`Onion-Location` header, or `<meta http-equiv="onion-location">` in the
+   page's `<head>`), a bar offers *Open .onion version*; MoltBrowser never
+   switches on its own.
 9. **Onion addresses stay out of regular windows.** A regular or incognito
    window can't reach onion services, so it doesn't try: opening a `.onion`
    address there shows "This is a Tor onion site" with a button to open it in
    a MoltNet window (nothing opens until you click). The onion name is never
    looked up in DNS (also when a page in a regular window tries to load
    something from an onion address) and is not sent to your search engine's
-   suggestions while you type it. While MoltNet is running, sites that
-   announce an onion version also get an *Open in MoltNet window* bar in
-   regular windows.
+   suggestions while you type it. If your regular windows use a proxy
+   server, onion names aren't sent to it either: images, scripts, other
+   requests, downloads and WebSockets to onion addresses are refused before
+   they reach the network. While MoltNet is running, sites that announce an
+   onion version also get an *Open in MoltNet window* bar in regular
+   windows.
 
 ## 2. How it is built
 
@@ -98,17 +107,27 @@ MoltNet windows are never restored after a restart.
 
 **Onion addresses.** RFC 7686 reserves `.onion` for Tor, and the Chromium
 version MoltBrowser is built on doesn't special-case it, so MoltBrowser does,
-in three places outside MoltNet's Tor connection: a navigation check that runs
+in four places outside MoltNet's Tor connection: a navigation check that runs
 before any other one stops `.onion` navigations in non-MoltNet windows (the
 page shown instead is a browser interstitial, so a website can't press its
-button, and the button only acts on a real click); the host resolver refuses
-every `.onion` name (no DNS, DNS-over-HTTPS, mDNS or hosts-file lookup, which
-also covers images, scripts, preconnects and prefetches); and the address bar
-doesn't send onion addresses to the search engine's suggestion service. In
-MoltNet windows the onion name goes to Tor inside the SOCKS5 request and is
-never resolved locally. `Onion-Location` is honored only on `https` pages that
-aren't onion sites themselves, only once per response, and only for a
-syntactically strict absolute `http(s)` URL whose host is a v3 onion address.
+button, and the button only acts on a real click); every other request from
+a non-MoltNet window (images, scripts, fetches, worker and service-worker
+loads, prefetches, downloads, and WebSockets from pages and dedicated
+workers) to an onion host, or redirected to one, is refused in the browser
+process before it reaches the network service, which matters when a proxy
+server would otherwise resolve the name; the host resolver refuses every
+`.onion` name (no DNS, DNS-over-HTTPS, mDNS or hosts-file lookup, which also
+covers preconnects); and the address bar doesn't send onion addresses to the
+search engine's suggestion service. In MoltNet windows the onion name goes
+to Tor inside the SOCKS5 request and is never resolved locally.
+`Onion-Location` is honored only on `https` pages that aren't onion sites
+themselves, only once per response, and only for a syntactically strict
+absolute `http(s)` URL whose host is a v3 onion address. A response without
+the header may say the same with exactly one `<meta
+http-equiv="onion-location">` in its `<head>`, read after the page is parsed
+by a script in an isolated world (page scripts can't change how it reads
+the page) and checked by the same rules; if the header is present, `<meta>`
+elements are ignored.
 
 **MoltBrowser's own Tor.** MoltNet runs only the Tor bundled with MoltBrowser
 or, on Linux (whose packages don't bundle Tor), the distribution's `tor`
@@ -127,7 +146,14 @@ cannot impersonate Tor. Tor is told to exit when MoltBrowser exits
 (`__OwningControllerProcess` + `TAKEOWNERSHIP`). A system-wide
 `torrc-defaults` is ignored. Pasted bridge lines are validated strictly (only
 obfs4/snowflake, fixed character sets) so they cannot inject other Tor
-options. The same ownership checks apply to the OCR (tesseract) and
+options. The pluggable transports bridges need follow the same rule as Tor:
+the copy bundled with MoltBrowser or, on Linux, the distribution's
+`/usr/bin/lyrebird` or `/usr/bin/obfs4proxy` (obfs4) and
+`/usr/bin/snowflake-client` (snowflake), each only if `root` owns the file
+and every folder above it; Tor is told to run that exact file by its full
+path. If the transport your bridges need is missing, MoltNet doesn't start
+Tor (it never falls back to connecting without bridges) and says which
+package to install. The same ownership checks apply to the OCR (tesseract) and
 voice (whisper) helpers: the bundled copy, or on Linux a `root`-owned
 `/usr/bin/tesseract` or `/usr/bin/whisper-cli`; never Homebrew, `/usr/local`
 or `PATH`.
@@ -150,7 +176,12 @@ gpg-verified steps documented in that script.
 | Tor accepts MoltBrowser's SOCKS5 username/password greeting and records a per-site username | Byte-for-byte replay against Tor 0.4.9.11 | Pass |
 | `.onion` detection, v3 address and `Onion-Location` validation | 6 unit tests (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
 | Helper-binary checks (bundled copy; root-owned system Tor on Linux; rejects user-owned, group/world-writable, setuid, symlink escapes) | 13 unit tests incl. real-filesystem cases (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
-| `.onion` blocked and offered in regular windows, no DNS query, `Onion-Location` bar, `http://` onion under HTTPS-Only | Needs a Chromium build | **Not yet done** |
+| Bridges with system transports: which `/usr/bin` paths are tried, the `ClientTransportPlugin` lines (absolute path for a system transport), exec-path validation (no blanks, `..`, bare names or torrc injection), which transports a set of bridges needs, the install messages | 7 unit tests (`molt_ai_unittests`), with ASan/UBSan | Pass (built standalone; not yet built in the Chromium tree) |
+| Tor runs the distribution's transports from the torrc MoltBrowser writes | `tor --verify-config`, then a short run of Tor 0.4.9.11 with Ubuntu 24.04's `obfs4proxy` 0.0.14 and `snowflake-client` 2.5.1 at absolute paths: both complete the managed-proxy handshake and are registered, and Tor connects to them (no bridge was reachable from the test machine) | Pass |
+| Settings names the transport to install | jsdom smoke test of molt://ai-settings (`tools/webui_checks`) | Pass |
+| Onion request URLs (any scheme, look-alikes refused), `<meta>` `Onion-Location` rules, validation of the page's answer | Unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
+| The script that reads `<meta http-equiv="onion-location">` | Run under jsdom against 13 documents (`<head>` vs `<body>`, letter case, look-alikes, missing `content`, more than one, length cap) | Pass |
+| `.onion` blocked and offered in regular windows, no DNS query, no onion request or WebSocket reaching a configured proxy, `Onion-Location` bar (header and `<meta>`), `http://` onion under HTTPS-Only, bridges connecting through the distribution's transports | Needs a Chromium build | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | Independent third-party audit | — | **Not done** |
 
@@ -191,13 +222,35 @@ Do all of this in a MoltNet window unless the step says otherwise.
 11. **Onion sites.** In a MoltNet window, open an onion address both as
     `https://` and as `http://`: both must load, with no HTTPS-Only warning
     for `http://`. Open `https://www.torproject.org`: a bar must offer the
-    onion version, and nothing may change until you click it.
+    onion version, and nothing may change until you click it. A test page
+    served over `https` without the header but with `<meta
+    http-equiv="onion-location" content="http://<v3 onion>/">` in its
+    `<head>` must get the same bar; with two such elements, or with the
+    element in `<body>`, no bar.
 12. **No onion names outside Tor (regular window).** Run
     `sudo tcpdump -n -l port 53 | grep -i onion`, then type an onion address
     in a regular window's address bar and press Enter: the "Tor onion site"
     page must appear and tcpdump must print nothing. The button must open the
     address in a MoltNet window. With DNS-over-HTTPS on, no DoH request may be
     made for it (check `chrome://net-export`).
+13. **No onion names to a proxy (regular window).** Start a logging proxy
+    (e.g. `mitmdump -p 8888`) and MoltBrowser with
+    `--proxy-server=http://127.0.0.1:8888` (MoltNet then refuses to open,
+    see step 9; this step is about regular windows). Open a test page that
+    loads `<img src="http://<onion>/x.png">`, calls
+    `fetch("http://<onion>/")`, loads an image from a URL that redirects to
+    an onion address, opens `new WebSocket("ws://<onion>/")` and does the
+    same from a dedicated worker: the proxy must log none of them, and
+    DevTools must show the requests failing with `ERR_BLOCKED_BY_CLIENT`.
+14. **Bridges with your distribution's transports (Linux).** Install
+    `obfs4proxy` (or `lyrebird`) and `snowflake-client`, paste obfs4 bridges
+    from bridges.torproject.org under *Custom bridges*, and turn MoltNet on:
+    `~/.moltbrowser/tor/torrc` must contain `ClientTransportPlugin obfs4 exec
+    /usr/bin/...`, Tor's log (`~/.moltbrowser/tor/tor.log`) must show it
+    using the bridge, and step 1 must pass. Repeat with snowflake bridges.
+    Remove the package: settings must name the package to install, and
+    turning MoltNet on must fail with that message rather than connect
+    without bridges.
 
 ## 5. What MoltNet does *not* do
 
@@ -227,23 +280,27 @@ Do all of this in a MoltNet window unless the step says otherwise.
    - If Tor stops, another local program could take over its old port; MoltNet
      windows would then talk to that program. Close MoltNet windows when you
      turn MoltNet off.
-   - Linux packages use the distribution's Tor, without pluggable transports
-     or the built-in bridge list, so bridges (snowflake / obfs4) don't work
-     with it yet, and the sandboxed Flatpak can't use a system Tor at all.
-     The Windows packaging doesn't yet ship the pluggable transports either,
-     so bridges there need a manual install.
-   - If your regular windows use a proxy server (system, policy or
-     extension), a page there that loads an image or script from an onion
-     address still sends that request to the proxy (only navigations and DNS
-     lookups are blocked outside MoltNet).
+   - Linux packages use the distribution's Tor and its pluggable-transport
+     packages, but don't include Tor Browser's built-in bridge list, so on
+     Linux you paste bridges yourself. Older `snowflake-client` packages
+     (Ubuntu 24.04 ships 2.5.1) may not understand every parameter of
+     current snowflake bridge lines. The sandboxed Flatpak can't use a
+     system Tor or its transports at all. The Windows packaging doesn't yet
+     ship the pluggable transports either, so bridges there need a manual
+     install.
+   - If your regular windows use a proxy server, a WebSocket that a shared
+     worker or service worker opens to an onion address still reaches that
+     proxy: the browser can't tell which profile such a worker belongs to.
+     Everything else to onion addresses is refused outside MoltNet.
    - Onion sites are not treated as secure contexts, so the address bar shows
      "Not secure" on `http://` onion sites and some web features stay off
-     there. `<meta http-equiv="onion-location">` is not supported (only the
-     header).
+     there. Doing this only in MoltNet windows needs engine changes that
+     aren't made yet.
    - The Tor 15.0.15 SHA-256 pins in `scripts/bundle-tor.sh` are empty; release
      builds fail until they are filled in.
-   - Bridges have been validated as configuration only; connecting through
-     snowflake/obfs4 has not been tested yet.
+   - Bridges have been validated as configuration, and Tor has been seen
+     starting the distribution's transports; connecting to the Tor network
+     through snowflake/obfs4 has not been tested yet.
 
 ## 6. Privacy defaults for regular windows
 
