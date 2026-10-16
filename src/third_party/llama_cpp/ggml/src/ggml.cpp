@@ -3,6 +3,10 @@
 #include <cstdlib>
 #include <exception>
 
+// MoltBrowser: no process-wide terminate handler. It would be a static
+// initializer in the browser binary that replaces Chromium's handler for every
+// std::terminate, and it runs ggml_print_backtrace (see ggml.c).
+#if !defined(GGML_MOLTBROWSER_NO_BACKTRACE)
 static std::terminate_handler previous_terminate_handler;
 
 GGML_NORETURN static void ggml_uncaught_exception() {
@@ -24,3 +28,4 @@ static bool ggml_uncaught_exception_init = []{
     std::set_terminate(ggml_uncaught_exception);
     return true;
 }();
+#endif  // !defined(GGML_MOLTBROWSER_NO_BACKTRACE)

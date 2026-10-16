@@ -53,11 +53,11 @@ and What's New. The reasons are in the detailed tables below.
 
 `configs/*.gn` and `scripts/configure.sh` set these values:
 
-| Setting | macOS arm64, Linux, Windows | macOS x64 / universal, Android | Effect |
+| Setting | macOS (all), Linux, Windows | Android | Effect |
 |---|---|---|---|
 | `is_chrome_branded` | `false` | `false` | Turns off every `GOOGLE_CHROME_BRANDING` code path (several listed below) |
 | `google_api_key`, client id, client secret | `""` | `""` | The API key becomes the placeholder `"dummytoken"` (`google_apis/default_api_keys.h:18`, `default_api_keys-inc.cc:18-20`), so `HasAPIKeyConfigured()` is false (`api_key_cache.cc:323-325`). Features that check this stay off. Features that don't check it **still send their request, with `key=dummytoken`**. |
-| `safe_browsing_mode` | `1` | `0` | Mode 1 builds the full desktop Safe Browsing service; mode 0 leaves it out. Note: the macOS arm64 config says mode 0 breaks `gn gen`, so the macOS x64/universal/Android configs look stale |
+| `safe_browsing_mode` | `1` | `0` | Mode 1 builds the full desktop Safe Browsing service; mode 0 leaves it out. The Android configs are scaffolding (no real Android build yet) |
 | `enable_reporting` | `false` | `false` | Leaves out Network Error Logging and the Reporting API |
 | `enable_widevine` | not set → `false` | Android: `true` | `third_party/widevine/cdm/widevine.gni:15-16`: Widevine is Chrome-branded on desktop. No Widevine component is downloaded, and DRM video (Netflix and similar) does not play |
 | `is_official_build` | `true` (Windows: `false`) | `true` | Doesn't change any network behaviour described here |
