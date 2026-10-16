@@ -4,16 +4,20 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/command_line.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "crypto/random.h"
+#include "ipc/ipc_channel_proxy.h"
+#include "mojo/public/cpp/bindings/associated_remote.h"
 
 namespace molt_ai::fingerprinting {
 
@@ -33,6 +37,18 @@ class SessionSeedData : public base::SupportsUserData::Data {
  private:
   SessionSeed seed_;
 };
+
+// A fresh endpoint on `host`'s channel. Like chrome::mojom::
+// RendererConfiguration (RendererUpdater), every message rides the channel
+// itself, so it is ordered with everything else sent to the renderer.
+mojo::AssociatedRemote<mojom::FingerprintingConfiguration> ConfigurationFor(
+    content::RenderProcessHost* host) {
+  mojo::AssociatedRemote<mojom::FingerprintingConfiguration> configuration;
+  if (IPC::ChannelProxy* channel = host->GetChannel()) {
+    channel->GetRemoteAssociatedInterface(&configuration);
+  }
+  return configuration;
+}
 
 }  // namespace
 
@@ -62,14 +78,31 @@ void AppendRendererSwitches(content::RenderProcessHost* host,
   if (!host || !command_line) {
     return;
   }
+  const RendererMode mode = ModeForBrowserContext(host->GetBrowserContext());
+  if (mode == RendererMode::kOff) {
+    return;
+  }
+  // Only the mode: the seed goes over the channel (InitializeRenderer).
+  command_line->AppendSwitchASCII(switches::kMode, ModeToSwitchValue(mode));
+}
+
+void InitializeRenderer(content::RenderProcessHost* host) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!host) {
+    return;
+  }
   content::BrowserContext* context = host->GetBrowserContext();
   const RendererMode mode = ModeForBrowserContext(context);
   if (mode == RendererMode::kOff) {
     return;
   }
-  command_line->AppendSwitchASCII(switches::kMode, ModeToSwitchValue(mode));
-  command_line->AppendSwitchASCII(switches::kSeed,
-                                  EncodeSeed(GetSessionSeed(context)));
+  mojo::AssociatedRemote<mojom::FingerprintingConfiguration> configuration =
+      ConfigurationFor(host);
+  if (!configuration) {
+    return;
+  }
+  const SessionSeed& seed = GetSessionSeed(context);
+  configuration->SetSessionSeed(std::vector<uint8_t>(seed.begin(), seed.end()));
 }
 
 }  // namespace molt_ai::fingerprinting

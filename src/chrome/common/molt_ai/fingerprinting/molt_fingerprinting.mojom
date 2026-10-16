@@ -1,0 +1,18 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+// MoltBrowser fingerprinting protection: browser -> renderer configuration
+// that must not go on the renderer's command line.
+module molt_ai.fingerprinting.mojom;
+
+// Renderer side, one per renderer process, channel-associated: messages are
+// ordered with the rest of the renderer's channel traffic, so what the
+// browser sends at RenderProcessWillLaunch arrives before any navigation
+// commit or service worker start for that process. Only bound when the
+// renderer's --molt-fingerprinting-mode is farble or uniform.
+interface FingerprintingConfiguration {
+  // The BrowserContext's 32-byte session seed, sent once per renderer
+  // launch. Anything but 32 bytes is ignored, and only the first seed
+  // counts. Until it arrives, contexts that need a key get a random one.
+  SetSessionSeed(array<uint8> seed);
+};

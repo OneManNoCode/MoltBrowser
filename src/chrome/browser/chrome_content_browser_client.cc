@@ -1931,6 +1931,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
     service->InitializeRenderer(host);
   }
 
+  // MoltBrowser: fingerprinting session seed, over the channel (never the
+  // command line).
+  molt_ai::fingerprinting::InitializeRenderer(host);
+
   for (auto& part : extra_parts_) {
     part->RenderProcessWillLaunch(host);
   }
@@ -3174,7 +3178,7 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
     command_line->CopySwitchesFrom(browser_command_line,
                                    kMoltShieldSwitchNames);
 
-    // MoltBrowser: fingerprinting protection mode + per-profile session seed.
+    // MoltBrowser: fingerprinting protection mode (the seed goes over mojo).
     molt_ai::fingerprinting::AppendRendererSwitches(
         content::RenderProcessHost::FromID(child_process_id), command_line);
   } else if (process_type == switches::kUtilityProcess) {
