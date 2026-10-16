@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 
 #include <algorithm>
-#include <map>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -14,38 +13,25 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/i18n/rtl.h"
 #include "base/metrics/field_trial_params.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
-#include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/actor/ui/actor_ui_window_controller.h"
 #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/content_settings/host_content_settings_map_factory.h"
-#include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
-#include "chrome/browser/extensions/extension_ui_util.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/page_info/merchant_trust_service_factory.h"
-#include "chrome/browser/page_info/page_info_features.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/sharing_hub/sharing_hub_features.h"
-#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
-#include "chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
@@ -54,12 +40,16 @@
 #include "chrome/browser/ui/lens/lens_overlay_entry_point_controller.h"
 #include "chrome/browser/ui/omnibox/ai_mode_page_action_controller.h"
 #include "chrome/browser/ui/omnibox/chrome_omnibox_client.h"
+#include "chrome/browser/ui/omnibox/clipboard_utils.h"
 #include "chrome/browser/ui/omnibox/omnibox_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_state_manager.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
+#include "chrome/browser/ui/omnibox/omnibox_tab_helper.h"
+#include "chrome/browser/ui/page_action/page_action_controller.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
+#include "chrome/browser/ui/page_action/page_action_properties_provider.h"
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
@@ -70,38 +60,32 @@
 #include "chrome/browser/ui/views/chrome_typography.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
-#include "chrome/browser/ui/views/location_bar/intent_chip_button.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_layout.h"
+#include "chrome/browser/ui/views/location_bar/location_bar_util.h"
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
-#include "chrome/browser/ui/views/location_bar/merchant_trust_chip_button_controller.h"
-#include "chrome/browser/ui/views/location_bar/omnibox_chip_button.h"
 #include "chrome/browser/ui/views/location_bar/omnibox_popup_file_selector.h"
 #include "chrome/browser/ui/views/location_bar/selected_keyword_view.h"
-#include "chrome/browser/ui/views/location_bar/star_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_context_menu.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_aim_presenter.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_closer.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_presenter_base.h"
+#include "chrome/browser/ui/views/omnibox/omnibox_popup_view_browser_view.h"
+#include "chrome/browser/ui/views/omnibox/omnibox_popup_view_full_webui.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_view_views.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_view_webui.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_webui_base_content.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_webui_content.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
-#include "chrome/browser/ui/views/page_action/action_ids.h"
 #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
-#include "chrome/browser/ui/views/page_action/page_action_controller.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_container.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_controller.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_params.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_view.h"
-#include "chrome/browser/ui/views/page_action/page_action_properties_provider.h"
 #include "chrome/browser/ui/views/page_action/page_action_view_params.h"
 #include "chrome/browser/ui/views/page_info/page_info_bubble_specification.h"
 #include "chrome/browser/ui/views/page_info/page_info_bubble_view.h"
-#include "chrome/browser/ui/views/passwords/manage_passwords_icon_views.h"
 #include "chrome/browser/ui/views/permissions/chip/permission_chip_view.h"
 #include "chrome/browser/ui/views/permissions/chip/permission_dashboard_view.h"
-#include "chrome/browser/ui/views/sharing_hub/sharing_hub_icon_view.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/browser/ui/views/user_education/browser_help_bubble.h"
@@ -110,15 +94,12 @@
 #include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_ui.h"
 #include "chrome/browser/web_applications/link_capturing_features.h"
 #include "chrome/common/chrome_features.h"
-#include "chrome/grit/branded_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/autofill/core/common/autofill_features.h"
-#include "components/autofill/core/common/autofill_payments_features.h"
+#include "chrome/grit/omnibox_popup_resources.h"
 #include "components/commerce/core/commerce_feature_list.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/contextual_search/input_state_model.h"
-#include "components/dom_distiller/core/dom_distiller_features.h"
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/lens/lens_features.h"
 #include "components/omnibox/browser/location_bar_model.h"
@@ -131,37 +112,19 @@
 #include "components/omnibox/common/input_state.h"
 #include "components/omnibox/common/omnibox_feature_configs.h"
 #include "components/omnibox/common/omnibox_features.h"
-#include "components/optimization_guide/core/optimization_guide_features.h"
-#include "components/page_info/core/features.h"
-#include "components/performance_manager/public/features.h"
-#include "components/permissions/features.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/common/features.h"
-#include "components/search/search.h"
-#include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/security_state/content/security_state_tab_helper.h"
 #include "components/security_state/core/security_state.h"
-#include "components/sharing_message/features.h"
-#include "components/strings/grit/components_strings.h"
-#include "components/translate/core/browser/language_state.h"
-#include "components/variations/variations_associated_data.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/content_features.h"
-#include "content/public/common/url_constants.h"
-#include "extensions/browser/extension_registry.h"
-#include "extensions/common/feature_switch.h"
 #include "services/device/public/cpp/device_features.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/ax_enums.mojom.h"
-#include "ui/accessibility/ax_node_data.h"
 #include "ui/actions/actions.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -169,8 +132,8 @@
 #include "ui/base/ime/virtual_keyboard_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/models/image_model.h"
 #include "ui/base/mojom/menu_source_type.mojom-forward.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/color/color_id.h"
 #include "ui/color/color_provider.h"
@@ -182,9 +145,9 @@
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/text_utils.h"
 #include "ui/gfx/vector_icon_types.h"
+#include "ui/menus/simple_menu_model.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -214,8 +177,11 @@ int IncrementalMinimumWidth(const views::View* view) {
   return (view && view->GetVisible()) ? view->GetMinimumSize().width() : 0;
 }
 
-// The padding between the intent chip and the other trailing decorations.
-constexpr int kIntentChipIntraItemPadding = 12;
+LocationBarView* GetLocationBarViewForActions(Browser* browser) {
+  BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser);
+  return browser_view ? browser_view->GetLocationBarView() : nullptr;
+}
+
 
 // The padding between the content setting icons and other trailing decorations.
 constexpr int kContentSettingIntraItemPadding = 8;
@@ -258,6 +224,15 @@ LocationBarView::LocationBarView(Browser* browser,
         base::BindRepeating([](const View* view) {
           const auto* v = views::AsViewClass<LocationBarView>(view);
           CHECK(v);
+
+          // The predicate might be called before LocationBarView is fully
+          // initialized (e.g. during view hierarchy construction or focus ring
+          // installation). GetOmniboxController() or its edit_model() might be
+          // null at this stage.
+          if (!v->is_initialized_) {
+            return false;
+          }
+
           // Show focus ring when the Omnibox is visibly focused and the popup
           // is closed.
           return v->GetOmniboxController()->edit_model()->is_caret_visible() &&
@@ -283,6 +258,12 @@ LocationBarView::LocationBarView(Browser* browser,
 }
 
 LocationBarView::~LocationBarView() {
+  // Remove selected keyword view since it has a raw_ptr to the omnibox
+  // controller.
+  auto selected_keyword_view = RemoveChildViewT(selected_keyword_view_.get());
+  selected_keyword_view_ = nullptr;
+  selected_keyword_view.reset();
+
   // Destroy the popup view first, since it holds a raw_ptr to the omnibox
   // view. Then explicitly delete the omnibox view to ensure it (a child view)
   // is destroyed before the omnibox controller (a member variable), since it
@@ -311,12 +292,12 @@ void LocationBarView::Init() {
         std::make_unique<PermissionDashboardController>(
             this, this, permission_dashboard_view_);
   } else {
-    chip_controller_ = std::make_unique<ChipController>(
-        this, this,
+    chip_view_ =
         AddChildViewAt(std::make_unique<PermissionChipView>(
                            PermissionChipView::Role::kPermissionRequestChip,
                            PermissionChipView::PressedCallback()),
-                       0));
+                       0);
+    chip_controller_ = std::make_unique<ChipController>(this, this, chip_view_);
   }
 
   const auto& typography_provider = views::TypographyProvider::Get();
@@ -332,15 +313,6 @@ void LocationBarView::Init() {
       std::make_unique<LocationIconView>(omnibox_chip_font_list, this, this);
   location_icon_view->set_drag_controller(this);
   location_icon_view_ = AddChildView(std::move(location_icon_view));
-
-  if (page_info::IsMerchantTrustFeatureEnabled() &&
-      page_info::kMerchantTrustEnableOmniboxChip.Get()) {
-    merchant_trust_chip_ = AddChildView(std::make_unique<OmniboxChipButton>());
-    merchant_trust_chip_controller_ =
-        std::make_unique<MerchantTrustChipButtonController>(
-            merchant_trust_chip_, location_icon_view_,
-            MerchantTrustServiceFactory::GetForProfile(profile_));
-  }
 
   // Initialize the Omnibox view. browser_ can be nullptr on ChromeOS in the
   // case of simple_web_view_dialog. Or it can be nulltpr on ChromeOS and on
@@ -361,36 +333,51 @@ void LocationBarView::Init() {
 
   const bool is_web_app =
       browser_ && web_app::AppBrowserController::IsWebApp(browser_);
+  const bool is_devtools = browser_ && browser_->is_type_devtools();
 
-  // Skip creating the AIM WebUI for web apps since it's not supported there
-  // and results in an extra Omnibox process being created.
-  if (!is_web_app && omnibox::IsAimPopupFeatureEnabled()) {
-    omnibox_popup_aim_presenter_ = std::make_unique<OmniboxPopupAimPresenter>(
-        this, omnibox_controller_.get());
+  // Skip creating the WebUI presenters/views for web apps and devtools windows
+  // since they're not supported there and will result in extra Omnibox
+  // processes being created (note that the address bar is not shown in web
+  // apps).
+  if (!is_web_app && !is_devtools) {
+    if (omnibox::IsAimPopupFeatureEnabled()) {
+      omnibox_popup_aim_presenter_ = std::make_unique<OmniboxPopupAimPresenter>(
+          /*location_bar=*/this, omnibox_controller_.get(),
+          /*presenter_delegate=*/*this);
+    }
+
+    const bool web_ui_popup_dropdown_only =
+        omnibox::IsWebUIOmniboxPopupEnabled() &&
+        !omnibox::IsWebUIOmniboxFullPopupEnabled();
+
+    if (web_ui_popup_dropdown_only &&
+        !base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxPopupDebug)) {
+      omnibox_popup_view_ = std::make_unique<OmniboxPopupViewWebUI>(
+          /*omnibox_view=*/omnibox_view_,
+          /*controller=*/omnibox_controller_.get(), /*location_bar=*/this,
+          /*presenter_delegate=*/*this);
+    } else if (omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
+      omnibox_popup_view_ =
+          std::make_unique<OmniboxPopupViewBrowserView>(this, browser_);
+    } else if (base::FeatureList::IsEnabled(
+                   omnibox::kWebUIOmniboxFullPopup)) {
+      omnibox_popup_view_ = std::make_unique<OmniboxPopupViewFullWebUI>(
+          /*omnibox_view=*/omnibox_view_,
+          /*controller=*/omnibox_controller_.get(), /*location_bar=*/this,
+          /*presenter_delegate=*/*this);
+    }
   }
 
-  const bool web_ui_popup_dropdown_only =
-      base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxPopup) &&
-      !base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup);
-
-  // Default to the legacy popup view for web apps since creating the WebUI
-  // popup results in an extra Omnibox process being created (note that the
-  // address bar is not shown in web apps). When the legacy
-  // `OmniboxPopupViewViews` is deprecated we will need to ensure that a null
-  // `omnibox_popup_view_` doesn't cause any issues (or aim for a cleaner
-  // solution).
-  if (!is_web_app &&
-      ((web_ui_popup_dropdown_only &&
-        !base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxPopupDebug)) ||
-       base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup))) {
-    omnibox_popup_view_ = std::make_unique<OmniboxPopupViewWebUI>(
-        /*omnibox_view=*/omnibox_view_, omnibox_controller_.get(),
-        /*location_bar_view=*/this);
-  } else {
+  // Default to the legacy popup view for web apps and devtools windows.
+  // When the legacy `OmniboxPopupViewViews` is deprecated we will need to
+  // ensure that a null `omnibox_popup_view_` doesn't cause any issues (or aim
+  // for a cleaner solution).
+  if (!omnibox_popup_view_) {
     omnibox_popup_view_ = std::make_unique<OmniboxPopupViewViews>(
         /*omnibox_view=*/omnibox_view_, omnibox_controller_.get(),
         /*location_bar_view=*/this);
   }
+
   if (omnibox::IsAimPopupFeatureEnabled()) {
     omnibox_popup_file_selector_ = std::make_unique<OmniboxPopupFileSelector>(
         GetWidget()->GetNativeWindow());
@@ -444,14 +431,9 @@ void LocationBarView::Init() {
       AddChildView(std::move(omnibox_additional_text_view));
   omnibox_additional_text_view_->SetEnabledColor(kColorOmniboxResultsUrl);
 
-  selected_keyword_view_ = AddChildView(
-      std::make_unique<SelectedKeywordView>(this, profile_, font_list));
+  selected_keyword_view_ = AddChildView(std::make_unique<SelectedKeywordView>(
+      this, profile_, omnibox_controller_.get(), font_list));
 
-  if (browser_ && apps::features::ShouldShowLinkCapturingUX() &&
-      !IsPageActionMigrated(PageActionIconType::kIntentPicker)) {
-    intent_chip_ =
-        AddChildView(std::make_unique<IntentChipButton>(browser_, this));
-  }
 
   SkColor icon_color = color_provider->GetColor(kColorOmniboxResultsIcon);
 
@@ -467,20 +449,13 @@ void LocationBarView::Init() {
 
   std::vector<actions::ActionItem*> page_action_items = {};
   if (browser_) {
-    actions::ActionItem* root_action_item =
-        browser_->browser_actions()->root_action_item();
-    for (actions::ActionId action_id : page_actions::kActionIds) {
-      if (actions::ActionItem* item = actions::ActionManager::Get().FindAction(
-              action_id, root_action_item)) {
-        page_action_items.emplace_back(item);
-      }
-    }
+    page_action_items = page_actions::GetActivePageActionItems(*browser_);
   }
 
   // We don't need to bridge the new page action container with the legacy one
-  // if all page actions (i.e. up to bookmark star) are migrated.
+  // if page actions migration is enabled.
   const bool should_bridge_containers =
-      !IsPageActionMigrated(PageActionIconType::kBookmarkStar);
+      !base::FeatureList::IsEnabled(features::kPageActionsMigration);
   static constexpr int kBetweenIconSpacing = 8;
   const page_actions::PageActionViewParams page_action_params{
       .icon_size =
@@ -504,79 +479,10 @@ void LocationBarView::Init() {
     // first so that they appear on the left side of the icon container.
     // TODO(crbug.com/40835681): Improve the ordering heuristics for page action
     // icons and determine a way to handle simultaneous icon animations.
-    params.types_enabled.push_back(PageActionIconType::kDiscounts);
-    params.types_enabled.push_back(PageActionIconType::kPriceInsights);
 
-    if (optimization_guide::features::ShouldEnableOptimizationGuideIconView()) {
-      params.types_enabled.push_back(PageActionIconType::kOptimizationGuide);
-    }
-    params.types_enabled.push_back(PageActionIconType::kClickToCall);
-    params.types_enabled.push_back(PageActionIconType::kAutofillAddress);
-    params.types_enabled.push_back(PageActionIconType::kManagePasswords);
-    if (!apps::features::ShouldShowLinkCapturingUX()) {
-      params.types_enabled.push_back(PageActionIconType::kIntentPicker);
-    }
-    params.types_enabled.push_back(PageActionIconType::kPwaInstall);
-    params.types_enabled.push_back(PageActionIconType::kFind);
-    params.types_enabled.push_back(PageActionIconType::kTranslate);
-    params.types_enabled.push_back(PageActionIconType::kZoom);
-    params.types_enabled.push_back(PageActionIconType::kFileSystemAccess);
-
-    params.types_enabled.push_back(PageActionIconType::kCookieControls);
-    params.types_enabled.push_back(
-        PageActionIconType::kPaymentsOfferNotification);
-    params.types_enabled.push_back(PageActionIconType::kMemorySaver);
     params.types_enabled.push_back(PageActionIconType::kFederation);
   }
-  params.types_enabled.push_back(PageActionIconType::kSaveCard);
-  params.types_enabled.push_back(PageActionIconType::kSaveIban);
-  params.types_enabled.push_back(PageActionIconType::kFilledCardInformation);
-  params.types_enabled.push_back(PageActionIconType::kVirtualCardEnroll);
-  params.types_enabled.push_back(PageActionIconType::kMandatoryReauth);
 
-  if (browser_ && lens::features::IsOmniboxEntryPointEnabled()) {
-    // The persistent compact entrypoint should be positioned directly before
-    // the star icon and the prominent expanding entrypoint should be
-    // positioned in the leading position. This entrypoint will be suppressed
-    // if the AIM page action is enabled and the user meets AIM eligibility
-    // criteria, since we want to avoid both showing up when the user focuses
-    // the Omnibox.
-    if (lens::features::IsOmniboxEntrypointAlwaysVisible()) {
-      params.types_enabled.push_back(PageActionIconType::kLensOverlay);
-    } else {
-      params.types_enabled.insert(params.types_enabled.begin(),
-                                  PageActionIconType::kLensOverlay);
-    }
-  }
-
-  if (browser_ && lens::features::IsLensOverlayEduActionChipEnabled()) {
-    // Position in the leading position, like the expanding entrypoint for
-    // kLensOverlay above. While both chips may be enabled, they will not appear
-    // at the same time due to different focus behavior.
-    params.types_enabled.insert(params.types_enabled.begin(),
-                                PageActionIconType::kLensOverlayHomework);
-  }
-
-  // Because AIM eligibility can change during the lifecycle of the
-  // `LocationBarView`, the AI Mode page action is added regardless of
-  // eligibility, but its visibility is toggled to match eligibility.
-  if (base::FeatureList::IsEnabled(omnibox::kAiModeOmniboxEntryPoint)) {
-    // Position in the leading position, like the entrypoint for
-    // kLensOverlayHomework above. While both chips may be enabled, they will
-    // not appear at the same time due to different focus behavior. The
-    // visibility of this entrypoint is dependent on whether or not the user
-    // meets AIM eligibility criteria.
-    params.types_enabled.insert(params.types_enabled.begin(),
-                                PageActionIconType::kAiMode);
-  }
-
-  if (browser_ && tab_groups::SavedTabGroupUtils::SupportsSharedTabGroups()) {
-    params.types_enabled.push_back(PageActionIconType::kCollaborationMessaging);
-  }
-
-  if (browser_ && !is_popup_mode_) {
-    params.types_enabled.push_back(PageActionIconType::kBookmarkStar);
-  }
 
   params.icon_color = color_provider->GetColor(kColorOmniboxActionIcon);
   params.between_icon_spacing = kBetweenIconSpacing;
@@ -589,17 +495,6 @@ void LocationBarView::Init() {
       AddChildView(std::make_unique<PageActionIconContainerView>(params));
   page_action_icon_controller_ = page_action_icon_container_->controller();
 
-  if (!page_action_icon_container_->children().empty() &&
-      base::FeatureList::IsEnabled(omnibox::kAiModeOmniboxEntryPoint) &&
-      !IsPageActionMigrated(PageActionIconType::kAiMode)) {
-    auto* first_page_action_icon_view = static_cast<PageActionIconView*>(
-        page_action_icon_container_->children().front());
-    DCHECK(first_page_action_icon_view->action_id() == kActionAiMode)
-        << "kActionAiMode must be the first child in "
-           "PageActionIconContainerView to ensure it's the left-most page "
-           "action.";
-  }
-
   auto clear_all_button = views::CreateVectorImageButton(base::BindRepeating(
       static_cast<void (OmniboxView::*)(const std::u16string&)>(
           &OmniboxView::SetUserText),
@@ -609,11 +504,19 @@ void LocationBarView::Init() {
   clear_all_button_ = AddChildView(std::move(clear_all_button));
   RefreshClearAllButtonIcon();
 
+  auto ai_mode_hint_label = std::make_unique<views::Label>(
+      std::u16string(), CONTEXT_OMNIBOX_PRIMARY, views::style::STYLE_PRIMARY);
+  ai_mode_hint_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  ai_mode_hint_label->SetVisible(false);
+  ai_mode_hint_label_ = AddChildView(std::move(ai_mode_hint_label));
+
   // Initialize the location entry. We do this to avoid a black flash which is
   // visible when the location entry has just been initialized.
   Update(nullptr);
 
   hover_animation_.SetSlideDuration(base::Milliseconds(200));
+
+  RegisterOmniboxActions();
 
   is_initialized_ = true;
 }
@@ -623,17 +526,24 @@ bool LocationBarView::IsInitialized() const {
 }
 
 int LocationBarView::GetBorderRadius() const {
-  return ChromeLayoutProvider::Get()->GetCornerRadiusMetric(
-      views::Emphasis::kMaximum, size());
+  return ComputeBorderRadius(size());
 }
 
+// static
+int LocationBarView::ComputeBorderRadius(gfx::Size size) {
+  return ChromeLayoutProvider::Get()->GetCornerRadiusMetric(
+      views::Emphasis::kMaximum, size);
+}
+
+// static
 std::unique_ptr<views::Background> LocationBarView::CreateRoundRectBackground(
     SkColor background_color,
     SkColor stroke_color,
+    gfx::Size size,
     SkBlendMode blend_mode,
     bool antialias,
-    bool should_border_scale) const {
-  const int radius = GetBorderRadius();
+    bool should_border_scale) {
+  const int radius = ComputeBorderRadius(size);
   auto painter =
       stroke_color == SK_ColorTRANSPARENT
           ? views::Painter::CreateSolidRoundRectPainter(
@@ -663,15 +573,9 @@ std::u16string_view LocationBarView::GetImeInlineAutocompletion() const {
 
 void LocationBarView::SetOmniboxAdditionalText(std::u16string_view text) {
   DCHECK(OmniboxFieldTrial::IsRichAutocompletionEnabled() || text.empty());
-  std::u16string adjusted_text;
-  if (!text.empty()) {
-    adjusted_text = std::u16string(text);
-    base::i18n::AdjustStringForLocaleDirection(&adjusted_text);
-    adjusted_text =
-        l10n_util::GetStringFUTF16(IDS_OMNIBOX_ADDITIONAL_TEXT_DASH_TEMPLATE,
-                                   std::u16string(), adjusted_text);
-  }
-  SetOmniboxAdjacentText(omnibox_additional_text_view_, adjusted_text);
+  std::u16string adjusted_text = FormatOmniboxAdditionalText(text);
+  SetOmniboxAdjacentText(omnibox_additional_text_view_,
+                         std::move(adjusted_text));
 }
 
 std::u16string_view LocationBarView::GetOmniboxAdditionalText() const {
@@ -705,10 +609,19 @@ void LocationBarView::FocusLocation(bool is_user_initiated,
 
 void LocationBarView::Revert() {
   omnibox_view_->RevertAll();
+  if (base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup) &&
+      !in_popup_state_transition_) {
+    GetOmniboxController()->popup_state_manager()->SetPopupState(
+        OmniboxPopupState::kNone);
+  }
 }
 
 OmniboxView* LocationBarView::GetOmniboxView() {
   return omnibox_view_;
+}
+
+OmniboxPopupView* LocationBarView::GetOmniboxPopupView() {
+  return omnibox_popup_view_.get();
 }
 
 OmniboxController* LocationBarView::GetOmniboxController() {
@@ -804,31 +717,36 @@ gfx::Size LocationBarView::CalculatePreferredSize(
     return gfx::Size(0, height);
   }
 
+  const int min_width = GetMinimumSize().width();
+  if (base::FeatureList::IsEnabled(features::kOmniboxResizingPrioritization)) {
+    // If space is bounded, take all available space down to the min width.
+    if (available_size.width().is_bounded()) {
+      return gfx::Size(std::max(min_width, available_size.width().value()),
+                       height);
+    }
+  }
+
   const int inset_width = GetInsets().width();
   const int padding =
       GetLayoutConstant(LayoutConstant::kLocationBarElementPadding);
   const int leading_width = GetMinimumLeadingWidth();
-  const int omnibox_width = omnibox_view_->GetMinimumSize().width();
+  const int omnibox_min_width = omnibox_view_->GetMinimumSize().width();
   const int trailing_width = GetMinimumTrailingWidth();
 
-  // The preferred size (unlike the minimum size) of the location bar is roughly
-  // the combined size of all child views including the omnibox/location field.
-  // While the location bar can scale down to its minimum size, it will continue
-  // to displace lower-priority views such as visible extensions if it cannot
-  // achieve its preferred size.
-  //
-  // It might be useful to track the preferred size of the location bar to see
-  // how much visual clutter users are experiencing on a regular basis,
-  // especially as we add more indicators to the bar.
-  int width = inset_width + omnibox_width;
+  // The preferred width is the greater of the sum of the min widths of all
+  // child components or the min width with double the space for the omnibox.
+  int preferred_width = inset_width + omnibox_min_width;
   if (leading_width > 0) {
-    width += leading_width + padding;
+    preferred_width += leading_width + padding;
   }
   if (trailing_width > 0) {
-    width += trailing_width + padding;
+    preferred_width += trailing_width + padding;
+  }
+  if (base::FeatureList::IsEnabled(features::kOmniboxResizingPrioritization)) {
+    preferred_width = std::max(preferred_width, min_width + omnibox_min_width);
   }
 
-  return gfx::Size(width, height);
+  return gfx::Size(preferred_width, height);
 }
 
 void LocationBarView::Layout(PassKey) {
@@ -916,9 +834,10 @@ void LocationBarView::Layout(PassKey) {
                                         false, 0, /*intra_item_padding=*/0,
                                         icon_left, permission_dashboard_view_);
     } else {
+      CHECK(chip_view_);
       leading_decorations.AddDecoration(vertical_padding, location_height,
                                         false, 0, /*intra_item_padding=*/0,
-                                        icon_left, chip_controller_->chip());
+                                        icon_left, chip_view_);
     }
   }
 
@@ -927,28 +846,7 @@ void LocationBarView::Layout(PassKey) {
     leading_decorations.AddDecoration(
         vertical_padding, location_height, false, kLeadingDecorationMaxFraction,
         /*intra_item_padding=*/0, icon_left, selected_keyword_view_);
-    if (selected_keyword_view_->GetKeyword() != keyword) {
-      selected_keyword_view_->SetKeyword(keyword);
-      const TemplateURL* template_url =
-          TemplateURLServiceFactory::GetForProfile(profile_)
-              ->GetTemplateURLForKeyword(keyword);
-      gfx::Image image;
-      if (template_url &&
-          (template_url->type() == TemplateURL::OMNIBOX_API_EXTENSION)) {
-        image = extensions::OmniboxAPI::Get(profile_)->GetOmniboxIcon(
-            template_url->GetExtensionId());
-      } else if (template_url &&
-                 template_url->policy_origin() ==
-                     TemplateURLData::PolicyOrigin::kSearchAggregator) {
-        const SkBitmap* bitmap =
-            GetOmniboxController()->edit_model()->GetIconBitmap(
-                template_url->favicon_url());
-        if (bitmap) {
-          image = gfx::Image(gfx::ImageSkia::CreateFrom1xBitmap(*bitmap));
-        }
-      }
-      selected_keyword_view_->SetCustomImage(image);
-    }
+    selected_keyword_view_->SetKeyword(keyword);
   } else if (location_icon_view_->GetShowText() &&
              !ShouldChipOverrideLocationIcon()) {
     location_icon_view_->SetVisible(true);
@@ -964,29 +862,6 @@ void LocationBarView::Layout(PassKey) {
     location_icon_view_->SetVisible(false);
   }
 
-  if (merchant_trust_chip_controller_) {
-    // The merchant chip is shown when:
-    // 1. there is data to be shown
-    // 2. no permission chips are shown
-    // 3. the omnibox is not in editing mode
-    // 4. location bar icon doesn't have extra text
-    const bool should_show_merchant_chip =
-        merchant_trust_chip_controller_->ShouldBeVisible() &&
-        !show_overriding_permission_chip && !IsEditingOrEmpty() &&
-        !location_icon_view_->GetShowText();
-
-    if (should_show_merchant_chip) {
-      // TODO(crbug.com/378854462): Use constant.
-      const int padding_before_chip = 2;
-      merchant_trust_chip_controller_->Show();
-      leading_decorations.AddDecoration(vertical_padding, location_height,
-                                        false, 0, padding_before_chip,
-                                        icon_left, merchant_trust_chip_);
-    } else {
-      merchant_trust_chip_controller_->Hide();
-    }
-  }
-
   auto add_trailing_decoration = [&](View* view, int intra_item_padding,
                                      int edge_padding) {
     if (view->GetVisible()) {
@@ -999,16 +874,11 @@ void LocationBarView::Layout(PassKey) {
   // When the AIM page action is shown as the right-most page action in the
   // location bar, it should be positioned flush against the right edge of the
   // location bar.
-  // If all page actions are migrated (i.e. up to bookmark star), then the extra
-  // padding that is usually added to bridge the new and legacy containers can
-  // be discounted.
+  // If page actions migration is enabled, then the extra padding that is
+  // usually added to bridge the new and legacy containers can be discounted.
   const bool all_page_actions_migrated =
-      IsPageActionMigrated(PageActionIconType::kBookmarkStar);
-  const int kTrailingEdgePaddingForAim =
-      IsPageActionMigrated(PageActionIconType::kAiMode) &&
-              !all_page_actions_migrated
-          ? -3
-          : 5;
+      base::FeatureList::IsEnabled(features::kPageActionsMigration);
+  const int kTrailingEdgePaddingForAim = !all_page_actions_migrated ? -3 : 5;
   const PageActionInfo info = GetPageActionInfo();
   const int kTrailingEdgePaddingForNonAim =
       (info.num_legacy_page_actions_shown == 0) && !all_page_actions_migrated
@@ -1023,17 +893,14 @@ void LocationBarView::Layout(PassKey) {
   add_trailing_decoration(page_action_container_,
                           /*intra_item_padding=*/0,
                           /*edge_padding=*/trailing_decorations_edge_padding);
+  add_trailing_decoration(ai_mode_hint_label_, /*intra_item_padding=*/0,
+                          /*edge_padding=*/trailing_decorations_edge_padding);
   for (ContentSettingImageView* view : base::Reversed(content_setting_views_)) {
     int intra_item_padding = kContentSettingIntraItemPadding;
     add_trailing_decoration(view, intra_item_padding,
                             /*edge_padding=*/trailing_decorations_edge_padding);
   }
 
-  if (intent_chip_) {
-    int intra_item_padding = kIntentChipIntraItemPadding;
-    add_trailing_decoration(intent_chip_, intra_item_padding,
-                            /*edge_padding=*/trailing_decorations_edge_padding);
-  }
 
   add_trailing_decoration(clear_all_button_, /*intra_item_padding=*/0,
                           /*edge_padding=*/trailing_decorations_edge_padding);
@@ -1175,12 +1042,13 @@ void LocationBarView::Update(WebContents* contents) {
   location_icon_view_->Update(
       /*suppress_animations=*/contents, GetOmniboxController()->IsPopupOpen());
 
-  if (intent_chip_) {
-    intent_chip_->Update();
-  }
 
   if (contents) {
     omnibox_view_->OnTabChanged(contents);
+    if (base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup) &&
+        !omnibox::IsWebUIOmniboxInBrowserViewEnabled()) {
+      omnibox_popup_view_->OnTabChanged(contents);
+    }
   } else {
     omnibox_view_->Update();
   }
@@ -1189,10 +1057,6 @@ void LocationBarView::Update(WebContents* contents) {
   // So we can determine whether page actions should be hidden or not.
   RefreshPageActionContainerViewAndIconsVisibility(
       /*should_hide_page_actions=*/ShouldHidePageActionIcons());
-
-  if (merchant_trust_chip_controller_) {
-    merchant_trust_chip_controller_->UpdateWebContents(contents);
-  }
 
   OnChanged();  // NOTE: Triggers layout.
 
@@ -1207,8 +1071,16 @@ void LocationBarView::Update(WebContents* contents) {
   }
 }
 
+// TODO(b/504668582): Its possible that `omnibox_view_->ResetTabState(contents)`
+//   isn't needed even if the `WebUIOmniboxFullPopupV2` flag is disabled, and
+//   that we can call `OmniboxTabHelper::ClearOmniboxInputState(contents)` in
+//   all cases.
 void LocationBarView::ResetTabState(WebContents* contents) {
-  omnibox_view_->ResetTabState(contents);
+  if (base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup)) {
+    OmniboxTabHelper::ClearOmniboxInputState(contents);
+  } else {
+    omnibox_view_->ResetTabState(contents);
+  }
 }
 
 bool LocationBarView::ShouldCloseOmniboxPopup(ui::MouseEvent* event) {
@@ -1246,7 +1118,8 @@ std::optional<bubble_anchor_util::AnchorConfiguration>
 LocationBarView::GetChipAnchor() {
   auto* chip = GetChipController()->chip();
   if (chip->GetVisible()) {
-    return {{chip, PermissionChipView::kPermissionRequestChipElementId,
+    return {{chip->GetAnchor(),
+             PermissionChipView::kPermissionRequestChipElementId,
              views::BubbleBorder::TOP_LEFT}};
   }
   return std::nullopt;
@@ -1256,8 +1129,12 @@ ui::TrackedElement* LocationBarView::GetAnchorOrNull() {
   return views::ElementTrackerViews::GetInstance()->GetElementForView(this);
 }
 
-Browser* LocationBarView::GetBrowser() {
+BrowserWindowInterface* LocationBarView::GetBrowser() {
   return browser();
+}
+
+Profile* LocationBarView::GetProfile() {
+  return profile_;
 }
 
 bool LocationBarView::IsVisible() const {
@@ -1278,6 +1155,10 @@ void LocationBarView::InvalidateLayout() {
 
 gfx::Rect LocationBarView::Bounds() const {
   return bounds();
+}
+
+gfx::Rect LocationBarView::BoundsInScreen() const {
+  return GetBoundsInScreen();
 }
 
 gfx::Size LocationBarView::MinimumSize() const {
@@ -1332,6 +1213,39 @@ void LocationBarView::OnPermissionManagerShuttingDown() {
 }
 #endif  // BUILDFLAG(OS_LEVEL_GEOLOCATION_PERMISSION_SUPPORTED)
 
+views::Widget* LocationBarView::GetLocationBarWidget() {
+  return GetWidget();
+}
+
+OmniboxPopupFileSelector* LocationBarView::GetOmniboxPopupFileSelector() const {
+  return omnibox_popup_file_selector_.get();
+}
+
+OmniboxPopupAimPresenter* LocationBarView::GetOmniboxPopupAimPresenter() const {
+  return omnibox_popup_aim_presenter_.get();
+}
+// If omnibox is open, notify Omnibox presenter that a permission prompt is
+// starting right before constructing the prompt view widget. This is the
+// notification point that is before and closest to rendering the view, which
+// ensures the omnibox knows as soon as possible and ignores focus-loss events
+// during the whole time that the embedded permission prompt is showing.
+void LocationBarView::SetPermissionPromptShowing(bool showing) {
+  OmniboxPopupPresenterBase* presenter = nullptr;
+  // Get Omnibox popup presenter for AIM or normal omnibox, depending
+  // on which is showing.
+  if (auto* aim_presenter = GetOmniboxPopupAimPresenter();
+      aim_presenter && aim_presenter->IsShown()) {
+    presenter = aim_presenter;
+  } else if (auto* popup_view = GetOmniboxPopupView();
+             popup_view && popup_view->presenter() &&
+             popup_view->presenter()->IsShown()) {
+    presenter = popup_view->presenter();
+  }
+  if (presenter) {
+    presenter->SetPermissionPromptShowing(showing);
+  }
+}
+
 WebContents* LocationBarView::GetWebContentsForPageActionIconView() {
   return GetWebContents();
 }
@@ -1373,10 +1287,10 @@ bool LocationBarView::ShouldHidePageActionIcon(
     return false;
   }
 
-  PinnedToolbarActionsContainer* pinned_toolbar_actions_container =
-      browser_view->toolbar()->pinned_toolbar_actions_container();
-  return pinned_toolbar_actions_container &&
-         pinned_toolbar_actions_container->IsActionPinnedOrPoppedOut(
+  PinnedToolbarActions* pinned_toolbar_actions =
+      browser_view->toolbar_button_provider()->GetPinnedToolbarActions();
+  return pinned_toolbar_actions &&
+         pinned_toolbar_actions->IsActionPinnedOrPoppedOut(
              icon_view->action_id().value_or(-1));
 }
 
@@ -1453,23 +1367,15 @@ LocationBarView::PageActionInfo LocationBarView::GetPageActionInfo() const {
   }
 
   // Check PageActionIconContainerView (legacy page actions).
-  bool aim_page_action_is_visible = false;
   for (views::View* view : page_action_icon_container_->children()) {
     if (view->GetVisible()) {
       info.num_legacy_page_actions_shown++;
-      PageActionIconView* icon_view = static_cast<PageActionIconView*>(view);
-      if (icon_view->action_id() == kActionAiMode) {
-        aim_page_action_is_visible = true;
-      }
     }
   }
 
   if (migrated_aim_page_action_is_visible &&
       (info.num_migrated_page_actions_shown +
        info.num_legacy_page_actions_shown) == 1) {
-    info.is_aim_last_visible_page_action = true;
-  } else if (aim_page_action_is_visible &&
-             info.num_legacy_page_actions_shown == 1) {
     info.is_aim_last_visible_page_action = true;
   }
 
@@ -1586,7 +1492,8 @@ void LocationBarView::RefreshBackground() {
     SetBackground(views::CreateSolidBackground(background_color_));
   } else {
     SetBackground(CreateRoundRectBackground(
-        background_color_, border_color, /*blend_mode=*/SkBlendMode::kSrcOver,
+        background_color_, border_color, size(),
+        /*blend_mode=*/SkBlendMode::kSrcOver,
         /*antialias=*/true, /*should_border_scale=*/true));
   }
 
@@ -1615,17 +1522,35 @@ bool LocationBarView::RefreshContentSettingViews() {
   }
 
   bool visibility_changed = false;
+  bool dashboard_updated = false;
+
   for (ContentSettingImageView* v : content_setting_views_) {
     const bool was_visible = v->GetVisible();
-    // The Left-Hand Side indicators currently supports only
-    // `ImageType::MEDIASTREAM`.
-    if (v->GetType() == ContentSettingImageModel::ImageType::MEDIASTREAM &&
-        // WebApps do not support the Left-Hand Side indicators.
-        !web_app::AppBrowserController::IsWebApp(browser_) &&
-        base::FeatureList::IsEnabled(
-            content_settings::features::kLeftHandSideActivityIndicators)) {
-      visibility_changed |= permission_dashboard_controller()->Update(
-          v->content_setting_image_model());
+
+    bool is_lhs_indicator = false;
+    if (!web_app::AppBrowserController::IsWebApp(browser_)) {
+      if (v->GetType() == ContentSettingImageModel::ImageType::kMediaStream) {
+        is_lhs_indicator = base::FeatureList::IsEnabled(
+            content_settings::features::kLeftHandSideActivityIndicators);
+      } else if (v->GetType() ==
+                 ContentSettingImageModel::ImageType::kSensors) {
+        is_lhs_indicator = base::FeatureList::IsEnabled(
+            content_settings::features::kLeftHandSideSensorActivityIndicators);
+      }
+    }
+
+    if (is_lhs_indicator) {
+      // Prioritize Media Stream (kMediaStream) over Sensors (kSensors) by
+      // selecting the first visible model. `kMediaStream` is always evaluated
+      // first because of the ordering in
+      // `ContentSettingImageModel::GenerateContentSettingImageModels()`.
+      if (!dashboard_updated) {
+        visibility_changed |= permission_dashboard_controller()->Update(
+            v->content_setting_image_model());
+        if (v->content_setting_image_model()->is_visible()) {
+          dashboard_updated = true;
+        }
+      }
     } else {
       v->Update();
       if (was_visible != v->GetVisible()) {
@@ -1633,6 +1558,7 @@ bool LocationBarView::RefreshContentSettingViews() {
       }
     }
   }
+
   return visibility_changed;
 }
 
@@ -1648,20 +1574,26 @@ void LocationBarView::RefreshPageActionIconViews() {
   page_action_icon_controller_->UpdateAll();
 }
 
-void LocationBarView::RefreshAiModePageActionIconView() {
-  if (IsPageActionMigrated(PageActionIconType::kAiMode)) {
-    auto* aim_page_action_controller =
-        omnibox::AiModePageActionController::From(browser_);
-    if (aim_page_action_controller) {
-      aim_page_action_controller->UpdatePageAction();
-    }
-    return;
+void LocationBarView::RefreshAiModePageAction() {
+  auto* aim_page_action_controller =
+      omnibox::AiModePageActionController::From(browser_);
+  if (aim_page_action_controller) {
+    aim_page_action_controller->UpdatePageAction();
   }
 
-  PageActionIconView* aim_icon_view =
-      page_action_icon_controller_->GetIconView(PageActionIconType::kAiMode);
-  if (aim_icon_view) {
-    aim_icon_view->Update();
+  if (omnibox::kShowRhsAimHint.Get()) {
+    if (omnibox_controller_->popup_state_manager()->popup_state() ==
+        OmniboxPopupState::kClassic) {
+      ai_mode_hint_label_->SetVisible(true);
+    } else {
+      ai_mode_hint_label_->SetVisible(false);
+    }
+#if BUILDFLAG(IS_MAC)
+    ai_mode_hint_label_->SetText(u"⌘ + return for AI Mode");
+#else
+    ai_mode_hint_label_->SetText(u"Ctrl + Enter for AI Mode");
+#endif
+    ai_mode_hint_label_->SetEnabledColor(kColorOmniboxTextDimmed);
   }
 }
 
@@ -1682,8 +1614,12 @@ void LocationBarView::RefreshPageActionContainerViewAndIconsVisibility(
 
 void LocationBarView::RefreshClearAllButtonIcon() {
   const bool touch_ui = ui::TouchUiController::Get()->touch_ui();
-  const gfx::VectorIcon& icon =
-      touch_ui ? omnibox::kClearIcon : kTabCloseNormalIcon;
+  const gfx::VectorIcon& icon = touch_ui ? features::IsRoundedIconsEnabled()
+                                               ? omnibox::kBackspaceFilledIcon
+                                               : omnibox::kClearOldIcon
+                                : features::IsRoundedIconsEnabled()
+                                    ? kCloseIcon
+                                    : kTabCloseNormalOldIcon;
   SetImageFromVectorIconWithColor(
       clear_all_button_, icon,
       {kColorLocationBarClearAllButtonIcon,
@@ -1699,6 +1635,8 @@ bool LocationBarView::ShouldShowKeywordBubble() const {
 void LocationBarView::OnPageInfoBubbleClosed(
     views::Widget::ClosedReason closed_reason,
     bool reload_prompt) {
+  location_icon_view_->MaybeAnimateIcon(false);
+
   // If we're closing the bubble because the user pressed ESC or because the
   // user clicked Close (rather than the user clicking directly on something
   // else), we should refocus the location bar. This lets the user tab into the
@@ -1737,7 +1675,11 @@ void LocationBarView::UpdateContentSettingsIcons() {
 }
 
 void LocationBarView::SaveStateToContents(WebContents* contents) {
-  omnibox_view_->SaveStateToTab(contents);
+  if (base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup)) {
+    omnibox_popup_view_->SaveStateToTab(contents);
+  } else {
+    omnibox_view_->SaveStateToTab(contents);
+  }
 }
 
 LocationBarTesting* LocationBarView::GetLocationBarForTesting() {
@@ -1768,6 +1710,7 @@ bool LocationBarView::IsContentSettingBubbleShowing(size_t index) {
 
 void LocationBarView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   RefreshBackground();
+  NotifyBoundsChanged();
 }
 
 bool LocationBarView::GetNeedsNotificationWhenVisibleBoundsChange() const {
@@ -1885,7 +1828,7 @@ void LocationBarView::OnPopupStateChanged(OmniboxPopupState old_state,
     // Close any overlapping user education bubbles when any popup opens.
     // It's not great for promos to overlap the omnibox if the user opens the
     // drop-down after showing the promo. This especially causes issues on Mac
-    // and Linux due to z-order/rendering issues, see crbug.com/1225046 and
+    // and Linux due to z-order/rendering issues, see crbug.com/40775593 and
     // crbug.com/332769403 for examples.
     BrowserHelpBubble::MaybeCloseOverlappingHelpBubbles(this);
   }
@@ -1894,11 +1837,17 @@ void LocationBarView::OnPopupStateChanged(OmniboxPopupState old_state,
   // Hide the old popup.
   switch (old_state) {
     case OmniboxPopupState::kClassic:
-      // Normally, the classic popup hides itself in `UpdatePopupAppearance()`
-      // before updating the popup state. However, explicitly hide the classic
-      // popup for scenario of transitioning from the classic to the aim popup.
+      // Normally, the classic/full popup hides itself in
+      // `UpdatePopupAppearance()` before updating the popup state. However,
+      // explicitly hide the classic/full popup for scenario of transitioning
+      // from the classic/full to the aim popup.
       if (omnibox_popup_view_->IsOpen()) {
         omnibox_popup_view_->UpdatePopupAppearance();
+      }
+      break;
+    case OmniboxPopupState::kFull:
+      if (omnibox_popup_view_->presenter()) {
+        omnibox_popup_view_->presenter()->Hide();
       }
       break;
     case OmniboxPopupState::kAim:
@@ -1913,8 +1862,13 @@ void LocationBarView::OnPopupStateChanged(OmniboxPopupState old_state,
   // Show the new popup.
   switch (new_state) {
     case OmniboxPopupState::kClassic:
-      // The classic popup shows itself in `UpdatePopupAppearance()` before
+      // The classic/full popup shows itself in `UpdatePopupAppearance()` before
       // updating the popup state.
+      break;
+    case OmniboxPopupState::kFull:
+      if (omnibox_popup_view_->presenter()) {
+        omnibox_popup_view_->presenter()->Show();
+      }
       break;
     case OmniboxPopupState::kAim:
       if (omnibox_popup_aim_presenter_) {
@@ -1931,7 +1885,7 @@ void LocationBarView::OnPopupStateChanged(OmniboxPopupState old_state,
 
   // Update the focus ring visibility.
   if (views::FocusRing::Get(this)) {
-    views::FocusRing::Get(this)->SchedulePaint();
+    views::FocusRing::Get(this)->Refresh();
   }
 
   // Notify accessibility that the popup controls changed.
@@ -1944,13 +1898,17 @@ void LocationBarView::ValidatePopupState(OmniboxPopupState state) {
     return;
   }
 
+  // TODO(b/517240222): Re-enable popup state validation for the full popup
+  //   (`omnibox::kWebUIOmniboxFullPopup`).
   // Skip validation if the browser window widget is closing or not visible.
   // During shutdown, the widget is hidden which can trigger omnibox view blur
   // and autocomplete stop before child popup widgets are destroyed and the
   // popup state manager is updated. This leads to a race condition where
   // popup_state=kClassic but the popup widget is already destroyed.
   // Note: GetWidget() returns the BrowserView's widget, not the popup widget.
-  if (views::Widget* widget = GetWidget(); !widget || !widget->IsVisible()) {
+  if (views::Widget* widget = GetWidget();
+      !widget || !widget->IsVisible() ||
+      base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup)) {
     return;
   }
 
@@ -1965,9 +1923,11 @@ void LocationBarView::ValidatePopupState(OmniboxPopupState state) {
           << " aim=" << aim_is_shown;
       break;
     case OmniboxPopupState::kClassic:
+    case OmniboxPopupState::kFull:
       DCHECK(classic_is_open && !aim_is_shown)
-          << "Widget state mismatch in kClassic: classic=" << classic_is_open
-          << " aim=" << aim_is_shown;
+          << "Widget state mismatch in "
+          << (state == OmniboxPopupState::kClassic ? "kClassic" : "kFull")
+          << ": classic=" << classic_is_open << " aim=" << aim_is_shown;
       break;
     case OmniboxPopupState::kAim:
       DCHECK(!classic_is_open && aim_is_shown)
@@ -1979,6 +1939,14 @@ void LocationBarView::ValidatePopupState(OmniboxPopupState state) {
 
 void LocationBarView::ClearInPopupStateTransition() {
   in_popup_state_transition_ = false;
+  // Since there is a 100ms delay, the omnibox_view never gets repainted.
+  // Ensure the omnibox view repaints to reflect potential placeholder text
+  // visibility changes.
+  if (omnibox_view_ &&
+      base::FeatureList::IsEnabled(
+          omnibox::kOmniboxAimDeferShowUntilVisualStateReady)) {
+    omnibox_view_->SchedulePaint();
+  }
 }
 
 void LocationBarView::AnimationProgressed(const gfx::Animation* animation) {
@@ -2016,10 +1984,10 @@ void LocationBarView::OnChanged() {
   InvalidateLayout();
   SchedulePaint();
   UpdateChipVisibility();
-  // The AI mode page action icon view visibility depends on whether or not
+  // The AI mode page action visibility depends on whether or not
   // user text has been entered into the omnibox, so refresh the icon on
   // changes.
-  RefreshAiModePageActionIconView();
+  RefreshAiModePageAction();
 }
 
 const LocationBarModel* LocationBarView::GetLocationBarModel() const {
@@ -2028,7 +1996,7 @@ const LocationBarModel* LocationBarView::GetLocationBarModel() const {
 
 void LocationBarView::OnOmniboxFocused() {
   if (views::FocusRing::Get(this)) {
-    views::FocusRing::Get(this)->SchedulePaint();
+    views::FocusRing::Get(this)->Refresh();
   }
 
   // Only show hover animation in unfocused steady state.  Since focusing
@@ -2036,20 +2004,29 @@ void LocationBarView::OnOmniboxFocused() {
   hover_animation_.Reset();
   RefreshBackground();
 
-  // The AI mode page action icon view should only be visible when the omnibox
+  // The AI mode page action should only be visible when the omnibox
   // is focused, so if there is a change in focus, refresh the icon.
-  RefreshAiModePageActionIconView();
+  RefreshAiModePageAction();
+}
+
+void LocationBarView::OpenOmniboxPopup(bool query_zps) {
+  if (base::FeatureList::IsEnabled(omnibox::kWebUIOmniboxFullPopup) &&
+      !in_popup_state_transition_) {
+    if (auto* popup_view = GetOmniboxPopupView()) {
+      popup_view->OnFocus(query_zps);
+    }
+  }
 }
 
 void LocationBarView::OnOmniboxBlurred() {
   if (views::FocusRing::Get(this)) {
-    views::FocusRing::Get(this)->SchedulePaint();
+    views::FocusRing::Get(this)->Refresh();
   }
   RefreshBackground();
 
-  // The AI mode page action icon view should only be visible when the omnibox
+  // The AI mode page action should only be visible when the omnibox
   // is focused, so if there is a change in focus, refresh the icon.
-  RefreshAiModePageActionIconView();
+  RefreshAiModePageAction();
 
   location_icon_view_->Update(false, false);
 }
@@ -2093,6 +2070,15 @@ bool LocationBarView::ShouldChipOverrideLocationIcon() {
 
 bool LocationBarView::IsEditingOrEmpty() const {
   return omnibox_view_ && omnibox_view_->IsEditingOrEmpty();
+}
+
+bool LocationBarView::IsMouseHovered() const {
+  return views::View::IsMouseHovered();
+}
+
+bool LocationBarView::IsFocusWithin() const {
+  const views::FocusManager* const focus_manager = GetFocusManager();
+  return focus_manager && Contains(focus_manager->GetFocusedView());
 }
 
 bool LocationBarView::OpenContextMenu() {
@@ -2156,18 +2142,6 @@ bool LocationBarView::HasAllowedInputs() {
          !state.allowed_models.empty();
 }
 
-OmniboxPopupUI* LocationBarView::GetOmniboxPopupUI() {
-  auto* web_contents = GetWrappedWebContents();
-  if (!web_contents) {
-    return nullptr;
-  }
-
-  if (content::WebUI* web_ui = web_contents->GetWebUI()) {
-    return web_ui->GetController()->GetAs<OmniboxPopupUI>();
-  }
-  return nullptr;
-}
-
 content::WebContents* LocationBarView::GetWrappedWebContents() {
   if (!omnibox_popup_aim_presenter_ ||
       !omnibox_popup_aim_presenter_->GetWebUIContent()) {
@@ -2191,10 +2165,7 @@ void LocationBarView::OnLocationIconGestureEvent(ui::GestureEvent* event) {
 }
 
 void LocationBarView::OnLocationIconPressed(const ui::MouseEvent& event) {
-  if (!OpenContextMenu()) {
-    return;
-  }
-
+  // "Paste-and-Go" behavior should take priority over all other interactions.
   if (event.IsOnlyMiddleMouseButton() &&
       ui::Clipboard::IsMiddleClickPasteEnabled() &&
       ui::Clipboard::IsSupportedClipboardBuffer(
@@ -2203,7 +2174,10 @@ void LocationBarView::OnLocationIconPressed(const ui::MouseEvent& event) {
         ui::ClipboardBuffer::kSelection, /* data_dst = */ std::nullopt,
         base::BindOnce(&LocationBarView::OnMiddleClickPaste,
                        weak_factory_.GetWeakPtr(), event.time_stamp()));
+    return;
   }
+
+  OpenContextMenu();
 }
 
 void LocationBarView::OnMiddleClickPaste(base::TimeTicks event_timestamp,
@@ -2253,7 +2227,8 @@ bool LocationBarView::ShowPageInfoDialog() {
   DCHECK(GetWidget());
 
   std::unique_ptr<PageInfoBubbleSpecification> specification =
-      PageInfoBubbleSpecification::Builder(this, GetWidget()->GetNativeWindow(),
+      PageInfoBubbleSpecification::Builder(views::BubbleAnchor(this),
+                                           GetWidget()->GetNativeWindow(),
                                            contents, entry->GetVirtualURL())
           .AddInitializedCallback(
               GetPageInfoDialogCreatedCallbackForTesting()
@@ -2299,6 +2274,18 @@ ui::ImageModel LocationBarView::GetLocationIcon(
              : ui::ImageModel();
 }
 
+OmniboxPopupUI* LocationBarView::GetOmniboxPopupUI() {
+  auto* web_contents = GetWrappedWebContents();
+  if (!web_contents) {
+    return nullptr;
+  }
+
+  if (content::WebUI* web_ui = web_contents->GetWebUI()) {
+    return web_ui->GetController()->GetAs<OmniboxPopupUI>();
+  }
+  return nullptr;
+}
+
 void LocationBarView::UpdateChipVisibility() {
   if (!IsEditingOrEmpty()) {
     return;
@@ -2341,6 +2328,10 @@ bool LocationBarView::GetPopupMode() const {
   return is_popup_mode_;
 }
 
+bool LocationBarView::in_popup_state_transition() const {
+  return in_popup_state_transition_;
+}
+
 page_actions::PageActionController* LocationBarView::GetPageActionController() {
   if (!browser_) {
     return nullptr;
@@ -2376,11 +2367,237 @@ void LocationBarView::OnAppShimChanged(const webapps::AppId& app_id) {
 }
 #endif
 
+void LocationBarView::RegisterOmniboxActions() {
+  if (!browser_) {
+    return;
+  }
+
+  auto* browser_actions = browser_->GetFeatures().browser_actions();
+  if (!browser_actions) {
+    return;
+  }
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::AddFileOrImageToOmnibox,
+                              base::Unretained(browser_), /*is_image=*/true))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_ADD_IMAGE))
+          .SetTooltipText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_ADD_IMAGE))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kAddPhotoAlternateIcon
+                                                : kAddPhotoAlternateOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextAddImage)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::AddFileOrImageToOmnibox,
+                              base::Unretained(browser_), /*is_image=*/false))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_ADD_FILE))
+          .SetTooltipText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_ADD_FILE))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kAttachFileIcon
+                                                : kAttachFileOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextAddFile)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::SetOmniboxToolModeAndOpenAi,
+                              base::Unretained(browser_),
+                              omnibox::ToolMode::TOOL_MODE_IMAGE_GEN))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_CREATE_IMAGES))
+          .SetTooltipText(
+              l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_CREATE_IMAGES))
+          .SetImage(ui::ImageModel::FromResourceId(
+              IDR_OMNIBOX_POPUP_IMAGES_CREATE_IMAGES_PNG))
+          .SetActionId(kActionOmniboxContextCreateImages)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::SetOmniboxToolModeAndOpenAi,
+                              base::Unretained(browser_),
+                              omnibox::ToolMode::TOOL_MODE_DEEP_SEARCH))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_DEEP_SEARCH))
+          .SetTooltipText(
+              l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_DEEP_SEARCH))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kTravelExploreIcon
+                                                : kTravelExploreOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextDeepResearch)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::SetOmniboxToolModeAndOpenAi,
+                              base::Unretained(browser_),
+                              omnibox::ToolMode::TOOL_MODE_CANVAS))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_CANVAS))
+          .SetTooltipText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_CANVAS))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kDraftSparkIcon
+                                                : kDraftSparkOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextCanvas)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(
+              &LocationBarView::SetOmniboxModelModeAndOpenAi,
+              base::Unretained(browser_),
+              omnibox::ModelMode::MODEL_MODE_GEMINI_PRO_AUTOROUTE))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_AUTO_MODEL))
+          .SetTooltipText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_AUTO_MODEL))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kAutorenewIcon
+                                                : kAutorenewOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextSetModelAuto)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::SetOmniboxModelModeAndOpenAi,
+                              base::Unretained(browser_),
+                              omnibox::ModelMode::MODEL_MODE_GEMINI_PRO))
+          .SetText(l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_THINKING_3_PRO))
+          .SetTooltipText(
+              l10n_util::GetStringUTF16(IDS_NTP_COMPOSE_THINKING_3_PRO))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kTimerIcon : kTimerOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextSetModelThinking)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::SetOmniboxModelModeAndOpenAi,
+                              base::Unretained(browser_),
+                              omnibox::ModelMode::MODEL_MODE_GEMINI_REGULAR))
+          .SetImage(ui::ImageModel::FromVectorIcon(
+              features::IsRoundedIconsEnabled() ? kBoltIcon : kBoltOldIcon,
+              ui::kColorIcon, ui::SimpleMenuModel::kDefaultIconSize))
+          .SetActionId(kActionOmniboxContextSetModelRegular)
+          .Build());
+
+  browser_actions->RegisterAction(
+      actions::ActionItem::Builder(
+          base::BindRepeating(&LocationBarView::ExecutePasteAndGo,
+                              base::Unretained(browser_)))
+          .SetActionId(kActionPasteAndGo)
+          .Build());
+}
+
+void LocationBarView::AddFileOrImageToOmnibox(
+    Browser* browser,
+    bool is_image,
+    actions::ActionItem* item,
+    actions::ActionInvocationContext context) {
+  LocationBarView* const location_bar = GetLocationBarViewForActions(browser);
+  if (!location_bar) {
+    return;
+  }
+  content::WebContents* const web_contents = location_bar->GetWebContents();
+  OmniboxController* const controller = location_bar->GetOmniboxController();
+  OmniboxEditModel* const edit_model =
+      controller ? controller->edit_model() : nullptr;
+  if (!web_contents || !edit_model) {
+    return;
+  }
+  const bool is_aim_popup_open =
+      controller->popup_state_manager()->popup_state() ==
+      OmniboxPopupState::kAim;
+  OmniboxPopupFileSelector* const file_selector =
+      location_bar->GetOmniboxPopupFileSelector();
+  if (file_selector) {
+    file_selector->OpenFileUploadDialog(
+        web_contents, is_image, edit_model,
+        OmniboxPopupFileSelector::CreateImageEncodingOptions(),
+        /*was_ai_mode_open=*/is_aim_popup_open);
+  }
+}
+
+void LocationBarView::SetOmniboxToolModeAndOpenAi(
+    Browser* browser,
+    omnibox::ToolMode tool_mode,
+    actions::ActionItem* item,
+    actions::ActionInvocationContext context) {
+  LocationBarView* const location_bar = GetLocationBarViewForActions(browser);
+  if (!location_bar) {
+    return;
+  }
+  OmniboxController* const controller = location_bar->GetOmniboxController();
+  OmniboxEditModel* const edit_model =
+      controller ? controller->edit_model() : nullptr;
+  if (!edit_model) {
+    return;
+  }
+  OmniboxPopupUI* const omnibox_popup_ui = location_bar->GetOmniboxPopupUI();
+  ContextualSearchboxHandler* const composebox_handler =
+      omnibox_popup_ui ? omnibox_popup_ui->composebox_handler() : nullptr;
+  if (composebox_handler) {
+    composebox_handler->SetActiveToolMode(tool_mode, /*is_set_by_server=*/false);
+    composebox_handler->RecordToolSelectionAction(tool_mode);
+  }
+  edit_model->OpenAiMode(OmniboxEditModel::AimActivation::kContextMenu);
+}
+
+void LocationBarView::SetOmniboxModelModeAndOpenAi(
+    Browser* browser,
+    omnibox::ModelMode model_mode,
+    actions::ActionItem* item,
+    actions::ActionInvocationContext context) {
+  LocationBarView* const location_bar = GetLocationBarViewForActions(browser);
+  if (!location_bar) {
+    return;
+  }
+  OmniboxController* const controller = location_bar->GetOmniboxController();
+  OmniboxEditModel* const edit_model =
+      controller ? controller->edit_model() : nullptr;
+  if (!edit_model) {
+    return;
+  }
+  OmniboxPopupUI* const omnibox_popup_ui = location_bar->GetOmniboxPopupUI();
+  ContextualSearchboxHandler* const composebox_handler =
+      omnibox_popup_ui ? omnibox_popup_ui->composebox_handler() : nullptr;
+  if (composebox_handler) {
+    composebox_handler->SetActiveModelMode(model_mode);
+    composebox_handler->RecordModelSelectionAction(model_mode);
+  }
+  edit_model->OpenAiMode(OmniboxEditModel::AimActivation::kContextMenu);
+}
+
+void LocationBarView::ExecutePasteAndGo(
+    Browser* browser,
+    actions::ActionItem* item,
+    actions::ActionInvocationContext context) {
+  LocationBarView* const location_bar = GetLocationBarViewForActions(browser);
+  if (!location_bar || !location_bar->omnibox_view_) {
+    return;
+  }
+  GetClipboardText(
+      /*notify_if_restricted=*/true,
+      base::BindOnce(
+          [](base::WeakPtr<LocationBarView> self, std::u16string text) {
+            if (self && self->omnibox_view_) {
+              if (auto* controller = self->GetOmniboxController()) {
+                controller->edit_model()->PasteAndGo(text);
+              }
+            }
+          },
+          location_bar->weak_factory_.GetWeakPtr()));
+}
+
 BEGIN_METADATA(LocationBarView)
 ADD_READONLY_PROPERTY_METADATA(int, BorderRadius)
 ADD_READONLY_PROPERTY_METADATA(gfx::Point, OmniboxViewOrigin)
-ADD_PROPERTY_METADATA(std::u16string_view, ImeInlineAutocompletion)
-ADD_PROPERTY_METADATA(std::u16string_view, OmniboxAdditionalText)
+ADD_PROPERTY_METADATA(std::u16string, ImeInlineAutocompletion)
+ADD_PROPERTY_METADATA(std::u16string, OmniboxAdditionalText)
 ADD_READONLY_PROPERTY_METADATA(int, MinimumLeadingWidth)
 ADD_READONLY_PROPERTY_METADATA(int, MinimumTrailingWidth)
 ADD_READONLY_PROPERTY_METADATA(gfx::Rect, LocalBoundsWithoutEndcaps)

@@ -10,7 +10,6 @@ import("//components/offline_pages/buildflags/features.gni")
 import("//components/optimization_guide/features.gni")
 import("//components/signin/features.gni")
 import("//components/spellcheck/spellcheck_build_features.gni")
-import("//components/surface_embed/buildflags/buildflags.gni")
 import("//content/public/common/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
@@ -32,25 +31,6 @@ grit("resources") {
     "renderer_resources_200_percent.pak",
     "renderer_resources_300_percent.pak",
   ]
-  grit_flags = [
-    "-E",
-    "mojom_root=" + rebase_path(root_gen_dir, root_build_dir),
-  ]
-  deps = [
-    "//services/network/public/mojom:mojom_js",
-    "//url/mojom:url_mojom_gurl_js",
-    "//url/mojom:url_mojom_origin_js",
-  ]
-  if (is_chromeos) {
-    deps += [
-      "//chrome/browser/ui/webui/ash/lobster:lobster_mojom_js",
-      "//chromeos/ash/components/enhanced_network_tts/mojom:mojom_js",
-      "//chromeos/ash/services/ime/public/mojom:mojom_js",
-      "//chromeos/ash/services/orca/public/mojom:mojom_js",
-      "//chromeos/components/remote_apps/mojom:mojom_js",
-      "//chromeos/services/tts/public/mojom:mojom_js",
-    ]
-  }
 }
 
 static_library("process_state") {
@@ -67,9 +47,12 @@ static_library("process_state") {
 }
 
 static_library("renderer") {
+  _configs = configs
+  configs = []
+  configs = [ "//third_party/tflite:tflite_shim_config" ] + _configs
   sources = [
-    "benchmarking_extension.cc",
-    "benchmarking_extension.h",
+    "benchmarking_bindings.cc",
+    "benchmarking_bindings.h",
     "browser_exposed_renderer_interfaces.cc",
     "browser_exposed_renderer_interfaces.h",
     "chrome_content_renderer_client.cc",
@@ -86,8 +69,8 @@ static_library("renderer") {
     "google_accounts_private_api_util.cc",
     "google_accounts_private_api_util.h",
     "instant_restricted_id_cache.h",
-    "loadtimes_extension_bindings.cc",
-    "loadtimes_extension_bindings.h",
+    "loadtimes_bindings.cc",
+    "loadtimes_bindings.h",
     "media/flash_embed_rewrite.cc",
     "media/flash_embed_rewrite.h",
     "media/media_feeds.cc",
@@ -100,8 +83,6 @@ static_library("renderer") {
     "net/net_error_helper_core.h",
     "net/net_error_page_controller.cc",
     "net/net_error_page_controller.h",
-    "net_benchmarking_extension.cc",
-    "net_benchmarking_extension.h",
     "plugins/non_loadable_plugin_placeholder.cc",
     "plugins/non_loadable_plugin_placeholder.h",
     "plugins/pdf_plugin_placeholder.cc",
@@ -117,8 +98,6 @@ static_library("renderer") {
     "url_loader_throttle_provider_impl.h",
     "v8_unwinder.cc",
     "v8_unwinder.h",
-    "web_link_preview_triggerer_impl.cc",
-    "web_link_preview_triggerer_impl.h",
     "websocket_handshake_throttle_provider_impl.cc",
     "websocket_handshake_throttle_provider_impl.h",
     "worker_content_settings_client.cc",
@@ -151,6 +130,7 @@ static_library("renderer") {
     # MoltBrowser: MoltShield cosmetic filtering (CosmeticFilterAgent).
     "//chrome/renderer/molt_ai/shield",
     "//chrome/services/speech/buildflags",
+    "//components/actor/core:task_id",
     "//components/autofill/content/renderer",
     "//components/autofill/core/common:features",
     "//components/base32",
@@ -164,7 +144,6 @@ static_library("renderer") {
     "//components/country_codes",
     "//components/dom_distiller/content/renderer",
     "//components/feed:feature_list",
-    "//components/feed/content/renderer:feed_renderer",
     "//components/google/core/common",
     "//components/guest_view/buildflags",
     "//components/heap_profiling/in_process",
@@ -179,6 +158,8 @@ static_library("renderer") {
     "//components/omnibox/common",
     "//components/optimization_guide/content/renderer",
     "//components/optimization_guide/core:features",
+    "//components/page_content_annotations/content/mojom",
+    "//components/page_content_annotations/content/renderer",
     "//components/page_content_annotations/core:features",
     "//components/page_image_annotation/content/renderer",
     "//components/page_load_metrics/renderer",
@@ -188,6 +169,7 @@ static_library("renderer") {
     "//components/pdf/common:util",
     "//components/permissions:permissions_common",
     "//components/plugins/renderer",
+    "//components/record_replay/core/common",
     "//components/resources:components_resources",
     "//components/resources:components_scaled_resources",
     "//components/safe_browsing:buildflags",
@@ -204,7 +186,8 @@ static_library("renderer") {
     "//components/subresource_filter/content/renderer",
     "//components/subresource_filter/core/common",
     "//components/supervised_user/core/common:buildflags",
-    "//components/surface_embed/buildflags",
+    "//components/surface_embed/common",
+    "//components/surface_embed/renderer",
     "//components/translate/content/renderer",
     "//components/translate/core/common",
     "//components/translate/core/language_detection",
@@ -300,6 +283,7 @@ static_library("renderer") {
   if (enable_extensions_core) {
     deps += [
       "//chrome/renderer/extensions",
+      "//chrome/renderer/resources",
       "//extensions/renderer",
     ]
   } else if (enable_guest_view) {
@@ -329,13 +313,6 @@ static_library("renderer") {
     deps += [ "//components/paint_preview/renderer" ]
   }
 
-  if (enable_surface_embed) {
-    deps += [
-      "//components/surface_embed/common",
-      "//components/surface_embed/renderer",
-    ]
-  }
-
   if (is_win) {
     deps += [ "//third_party/wtl" ]
     sources += [
@@ -355,14 +332,27 @@ static_library("renderer") {
       "wallet/boarding_pass_extractor.cc",
       "wallet/boarding_pass_extractor.h",
     ]
-    deps += [
-      "//chrome/common/wallet:mojo_bindings",
-      "//components/feed/content/renderer:feed_renderer",
-    ]
+    deps += [ "//chrome/common/wallet:mojo_bindings" ]
   } else {
     sources += [
       "accessibility/ax_tree_distiller.cc",
       "accessibility/ax_tree_distiller.h",
+      "accessibility/phrase_segmentation/base_phrase_segmenter.cc",
+      "accessibility/phrase_segmentation/base_phrase_segmenter.h",
+      "accessibility/phrase_segmentation/dependency_parser_model.cc",
+      "accessibility/phrase_segmentation/dependency_parser_model.h",
+      "accessibility/phrase_segmentation/dependency_parser_op_resolver.cc",
+      "accessibility/phrase_segmentation/dependency_parser_op_resolver.h",
+      "accessibility/phrase_segmentation/dependency_tree.cc",
+      "accessibility/phrase_segmentation/dependency_tree.h",
+      "accessibility/phrase_segmentation/phrase_segmenter.cc",
+      "accessibility/phrase_segmentation/phrase_segmenter.h",
+      "accessibility/phrase_segmentation/token_boundaries.cc",
+      "accessibility/phrase_segmentation/token_boundaries.h",
+      "accessibility/phrase_segmentation/tokenized_sentence.cc",
+      "accessibility/phrase_segmentation/tokenized_sentence.h",
+      "accessibility/phrase_segmentation/tokenizer.cc",
+      "accessibility/phrase_segmentation/tokenizer.h",
       "accessibility/read_anything/read_aloud_app_model.cc",
       "accessibility/read_anything/read_aloud_app_model.h",
       "accessibility/read_anything/read_aloud_traversal_utils.cc",
@@ -375,6 +365,8 @@ static_library("renderer") {
       "accessibility/read_anything/read_anything_node_utils.h",
       "media/chrome_speech_recognition_client.cc",
       "media/chrome_speech_recognition_client.h",
+      "password_manager/remote_actor_credential_sharing_extension.cc",
+      "password_manager/remote_actor_credential_sharing_extension.h",
       "searchbox/searchbox.cc",
       "searchbox/searchbox.h",
       "searchbox/searchbox_extension.cc",
@@ -383,47 +375,22 @@ static_library("renderer") {
 
     deps += [
       "//chrome/common/read_anything:mojo_bindings",
-      "//chrome/common/record_replay",
-      "//chrome/renderer/record_replay",
       "//chrome/renderer/webui_browser",
       "//components/crx_file",
+      "//components/record_replay/content/renderer",
       "//components/trusted_vault",
       "//services/screen_ai/buildflags",
       "//services/screen_ai/public/mojom",
       "//services/strings",
       "//third_party/re2",
+      "//third_party/tensorflow-text",
+      "//third_party/tensorflow_models:tflite_custom_ops",
+      "//third_party/tflite",
+      "//third_party/tflite:buildflags",
+      "//third_party/tflite:tflite_public_headers",
+      "//third_party/tflite_support",
+      "//third_party/tflite_support:tflite_support_proto",
     ]
-
-    if (build_with_tflite_lib) {
-      sources += [
-        "accessibility/phrase_segmentation/base_phrase_segmenter.cc",
-        "accessibility/phrase_segmentation/base_phrase_segmenter.h",
-        "accessibility/phrase_segmentation/dependency_parser_model.cc",
-        "accessibility/phrase_segmentation/dependency_parser_model.h",
-        "accessibility/phrase_segmentation/dependency_parser_op_resolver.cc",
-        "accessibility/phrase_segmentation/dependency_parser_op_resolver.h",
-        "accessibility/phrase_segmentation/dependency_tree.cc",
-        "accessibility/phrase_segmentation/dependency_tree.h",
-        "accessibility/phrase_segmentation/phrase_segmenter.cc",
-        "accessibility/phrase_segmentation/phrase_segmenter.h",
-        "accessibility/phrase_segmentation/token_boundaries.cc",
-        "accessibility/phrase_segmentation/token_boundaries.h",
-        "accessibility/phrase_segmentation/tokenized_sentence.cc",
-        "accessibility/phrase_segmentation/tokenized_sentence.h",
-        "accessibility/phrase_segmentation/tokenizer.cc",
-        "accessibility/phrase_segmentation/tokenizer.h",
-      ]
-
-      deps += [
-        "//third_party/tensorflow-text",
-        "//third_party/tensorflow_models:tflite_custom_ops",
-        "//third_party/tflite",
-        "//third_party/tflite:buildflags",
-        "//third_party/tflite:tflite_public_headers",
-        "//third_party/tflite_support",
-        "//third_party/tflite_support:tflite_support_proto",
-      ]
-    }
   }
 
   if (is_chromeos) {
@@ -444,6 +411,8 @@ static_library("renderer") {
     sources += [
       "indigo/indigo_agent.cc",
       "indigo/indigo_agent.h",
+      "indigo/onboarding_agent.cc",
+      "indigo/onboarding_agent.h",
     ]
   }
 }

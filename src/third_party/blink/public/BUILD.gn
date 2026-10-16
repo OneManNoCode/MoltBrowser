@@ -106,8 +106,6 @@ if (is_android) {
 source_set("test_headers") {
   testonly = true
   sources = [
-    "common/interest_group/test/interest_group_test_utils.h",
-    "common/interest_group/test_interest_group_builder.h",
     "common/origin_trials/scoped_test_origin_trial_policy.h",
     "platform/scheduler/test/renderer_scheduler_test_support.h",
     "platform/scheduler/test/web_mock_thread_scheduler.h",
@@ -325,6 +323,7 @@ source_set("blink_headers") {
     "web/web_hit_test_result.h",
     "web/web_image.h",
     "web/web_image_cache.h",
+    "web/web_image_replacement.h",
     "web/web_input_element.h",
     "web/web_input_method_controller.h",
     "web/web_interaction_effects_monitor.h",
@@ -332,7 +331,6 @@ source_set("blink_headers") {
     "web/web_label_element.h",
     "web/web_language_detection_details.h",
     "web/web_lifecycle_update.h",
-    "web/web_link_preview_triggerer.h",
     "web/web_local_frame.h",
     "web/web_local_frame_client.h",
     "web/web_local_frame_observer.h",
@@ -383,7 +381,6 @@ source_set("blink_headers") {
     "web/web_serialized_script_value.h",
     "web/web_serialized_script_value_version.h",
     "web/web_settings.h",
-    "web/web_shared_storage_worklet_thread.h",
     "web/web_shared_worker.h",
     "web/web_shared_worker_client.h",
     "web/web_spelling_marker.h",

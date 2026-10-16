@@ -11,12 +11,6 @@
   <message name="IDS_AVATAR_BUTTON_GUEST_TOOLTIP" desc="Tooltip for the avatar button when the user is in Guest mode.">
     To delete Guest mode history, close all Guest windows.
   </message>
-  <message name="IDS_GUEST_BUBBLE_ACCESSIBLE_TITLE" desc="Accessible title of the avatar menu, opened in guest mode. The message also shows the number of open guest windows if they are more than one. [ICU Syntax]">
-      {0, plural,
-        =1 {Guest}
-        other {# open guest windows}
-      }
-  </message>
   <message name="IDS_INCOGNITO_BUBBLE_ACCESSIBLE_TITLE" desc="Accessible title of the avatar menu, opened in Incognito mode. The message also shows the number of open Incognito windows if they are more than one. [ICU Syntax]">
       {0, plural,
         =1 {Incognito}
@@ -133,9 +127,6 @@
     Profiles
   </message>
   <if expr="is_macosx">
-    <message name="IDS_PROFILES_CREATE_NEW_PROFILE_OPTION" desc="In Title Case. Create new profile menu item and button title.">
-      Add Person...
-    </message>
     <message name="IDS_PROFILES_ADD_PROFILE_LABEL" desc="In Title Case. Menu item for adding a new profile.">
       Add Profile...
     </message>
@@ -148,30 +139,15 @@
   <message name="IDS_PROFILES_PROFILE_BUBBLE_ACCESSIBLE_TITLE" desc="Accessible title of the avatar menu bubble.">
     Accounts and sync
   </message>
-  <message name="IDS_PROFILES_EXIT_PROFILE_BUTTON" desc="Button in the avatar menu bubble view to close all windows of the current profile when there is more than one profile.">
-    Exit <ph name="PROFILE_NAME">$1<ex>User</ex></ph>
-  </message>
   <message name="IDS_PROFILES_ACCOUNT_REMOVAL_TITLE" desc="Title of the account removal view in the avatar menu bubble.">
     Remove account
-  </message>
-  <message name="IDS_PROFILES_SYNC_COMPLETE_TITLE" desc="Title of the profile card when sync is complete.">
-    Syncing to
   </message>
   <message name="IDS_PROFILES_DICE_SIGNIN_BUTTON" desc="Button in the profile user menu to sign in and turn on Sync.">
     Turn on sync...
   </message>
-  <message name="IDS_EXTENSIONS_EXPLICIT_SIGNIN_BUTTON" desc="Button in the profile user menu to explicitly sign in.">
-    Sign in
-  </message>
 
   <message name="IDS_PROFILES_DICE_WEB_ONLY_SIGNIN_BUTTON" desc="Button in the profile menu to sign in on Chrome and turn on Sync for a specific web account that is signed in only on the web.">
     Continue as <ph name="ACCOUNT_NAME">$1<ex>John</ex></ph>
-  </message>
-  <message name="IDS_PROFILES_DICE_SIGNIN_FIRST_ACCOUNT_BUTTON" desc="Button to sign in and turn on Sync for a specific web account.">
-    Sync as <ph name="ACCOUNT_FULL_NAME">$1<ex>John Doe</ex></ph>
-  </message>
-  <message name="IDS_PROFILES_DICE_SIGNIN_FIRST_ACCOUNT_BUTTON_NO_NAME" desc="Button to sign in and turn on Sync for a web account when the name is empty.">
-    Sync to your account
   </message>
   <message name="IDS_PROFILES_DICE_SYNC_DISABLED_TITLE" desc="Title of the profile user menu when sync is disabled.">
     Sync disabled
@@ -179,17 +155,16 @@
   <message name="IDS_PROFILES_DASHER_FEATURE_DISABLED_TITLE" desc="Description of the profile user menu when certain features are disabled for Dasherless profile.">
     This isn't a MoltBrowser Account. Items you save to MoltBrowser won't be available on other devices.
   </message>
-   <message name="IDS_PROFILES_DICE_SYNC_PAUSED_TITLE" desc="Title of the profile user menu when sync is paused.">
+  <message name="IDS_PROFILES_DICE_SYNC_PAUSED_TITLE" desc="Title of the profile user menu when sync is paused.">
     Sync is paused
   </message>
-  <message name="IDS_PROFILES_SIGNIN_PROMO" desc="Text describing the benefits of signing in.">
-    Sign in to get your bookmarks, history, passwords, and other settings on all your devices.
-  </message>
 
-   <!-- Signin Search AI Mode promo. -->
-   <!-- TODO(crbug.com/486858498): Finalize and make transalteable. -->
-  <message name="IDS_AI_SIGNIN_PROMO_TITLE" translateable="false">
-    Continue the conversation with AI Mode
+  <!-- Signin Search AI Mode promo. -->
+  <message name="IDS_AI_SIGNIN_PROMO_TITLE" desc="The title of in the sign-in promo bubble that is shown to users not signed-in to the browser when they click on search AI Mode result.">
+    Ask questions while you browse
+  </message>
+  <message name="IDS_AI_VERIFY_PROMO_SUBTITLE" desc="The message shown in a sign-in promo bubble that is shown to users that were previously signed in to the browser but their sign-in credentials have expired state, when they click in an AI Mode Search result link.">
+    You can keep chatting with AI Mode without switching tabs. To get started, verify it's you. You'll also get your passwords and more on all your devices.
   </message>
 
   <if expr="use_titlecase">
@@ -211,6 +186,15 @@
   <message name="IDS_PROFILE_MENU_PROFILE_IDENTIFIER_WITH_SEPARATOR" desc="The user name and profile name are separated by a symbol, in this case bullet •, with a white space before it and a white space after it. If the bullet • resembles another symbol in the language, please translate the bullet • as a symbol (A) that is not easily mistaken for a number or letter in the language and (B) that is typically used to separate elements.">
     <ph name="USER_NAME">$1<ex>John</ex></ph> • <ph name="PROFILE_NAME">$2<ex>Work</ex></ph>
   </message>
+  <message name="IDS_PROFILE_MENU_PROFILE_IDENTIFIER_WITH_NAME_AND_TIER" is_accessibility_with_no_ui="true" desc="The user name, profile name, and the Google membership tier are separated by a symbol, in this case bullet •, with a white space before it and a white space after it. If the bullet • resembles another symbol in the language, please translate the bullet • as a symbol (A) that is not easily mistaken for a number or letter in the language and (B) that is typically used to separate elements.">
+    <ph name="USER_NAME">$1<ex>John</ex></ph> • <ph name="PROFILE_NAME">$2<ex>Work</ex></ph> • <ph name="TIER_NAME">$3<ex>Google Subscription</ex></ph>
+  </message>
+  <message name="IDS_PROFILE_AVATAR_NAME_WITH_AI_MEMBERSHIP" desc="Label indicating that the profile has a Google membership associated with the AI avatar ring, preceded by the profile name or details.">
+    <ph name="PROFILE_NAME">$1<ex>Alice</ex></ph>. Google membership
+  </message>
+  <message name="IDS_PROFILE_MENU_PROFILE_IDENTIFIER_WITH_TIER" is_accessibility_with_no_ui="true" desc="Label indicating that the profile has a Google membership tier associated with the AI avatar ring, preceded by the profile name. The profile name and the tier name are separated by a symbol, in this case bullet •, with a white space before it and a white space after it. If the bullet • resembles another symbol in the language, please translate the bullet • as a symbol (A) that is not easily mistaken for a number or letter in the language and (B) that is typically used to separate elements.">
+    <ph name="PROFILE_NAME">$1<ex>Alice</ex></ph> • <ph name="TIER_NAME">$2<ex>Google Subscription</ex></ph>
+  </message>
   <message name="IDS_PROFILE_MENU_PROFILE_MANAGED_HEADER" desc="Disclaimer indicating that the profile is managed">
     This profile is managed
   </message>
@@ -227,12 +211,6 @@
     }
   </message>
   <if expr="not use_titlecase">
-    <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
-      Your accounts
-    </message>
-    <message name="IDS_PROFILES_PROFILE_HIDE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to hide the accounts for a profile.">
-      Hide accounts
-    </message>
     <message name="IDS_PROFILE_MENU_OPEN_GUEST_PROFILE" desc="The text label of the open guest profile item in the profile menu.">
       Open Guest profile
     </message>
@@ -262,12 +240,6 @@
     </message>
   </if>
   <if expr="use_titlecase">
-    <message name="IDS_PROFILES_PROFILE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to manage accounts for a profile.">
-      Your Accounts
-    </message>
-    <message name="IDS_PROFILES_PROFILE_HIDE_MANAGE_ACCOUNTS_BUTTON" desc="Button in the avatar menu bubble view used to hide the accounts for a profile.">
-      Hide Accounts
-    </message>
     <message name="IDS_PROFILE_MENU_OPEN_GUEST_PROFILE" desc="The text label of the open guest profile item in the profile menu.">
       Open Guest Profile
     </message>
@@ -296,15 +268,6 @@
       }
     </message>
   </if>
-  <message name="IDS_PROFILES_MANAGED_BY" desc="Label shown under the avatar in the avatar menu bubble view stating that the account is managed.">
-    Managed by <ph name="VALUE">$1<ex>1</ex></ph>
-  </message>
-  <message name="IDS_PROFILES_MANAGE_PROFILES_BUTTON_TOOLTIP" desc="Button in the avatar menu bubble view for launching the profile picker.">
-    Manage profiles
-  </message>
-  <message name="IDS_PROFILES_CUSTOMIZE_PROFILE_BUTTON_TOOLTIP" desc="Tooltip of the customize profile button in the avatar menu bubble view for editing the current profile. The button itself has no text, it is only the edit icon.">
-    Customize profile
-  </message>
   <message name="IDS_PROFILES_GUEST_PROFILE_NAME" desc="Name of the guest profile.">
     Guest
   </message>
@@ -555,9 +518,6 @@
   <message name="IDS_PROFILES_LOCAL_PROFILE_STATE" desc="This is displayed underneath the profile name for profiles that are not signed in to sync.">
     Not signed in
   </message>
-  <message name="IDS_PROFILES_CREATE_BUTTON_LABEL" desc="The label that appears on the profile create button in the options dialog to allow a user to create a new profile.">
-    Add person...
-  </message>
   <message name="IDS_PROFILES_MANAGE_BUTTON_LABEL" desc="The label that appears on the profile manage button in the options dialog to allow a user to manage their profile.">
     Edit...
   </message>
@@ -569,9 +529,6 @@
   </message>
    <message name="IDS_SIGN_IN_LOGIN_NAME_PROHIBITED" desc="The error message shown when the user tries to sign in using a name that is not allowed by the admin policy">
     Your organization doesn't allow you to sign in with this account
-  </message>
-  <message name="IDS_SUPERVISED_USER_NOT_ALLOWED_BY_POLICY" desc="The error message shown when the user tries to use the supervised user profile when it's disabled by policy">
-    Supervised users have been disabled by your administrator.
   </message>
   <if expr="is_android">
     <message name="IDS_SYNC_USER_NAME_IN_USE_ERROR" desc="Mobile: An error message shown when a user tries to sign in to sync using a user name that's already in use by another profile.">
@@ -601,9 +558,6 @@
       </message>
     </if>
     <if expr="is_chromeos">
-      <message name="IDS_LAUNCH_APP_BUTTON" desc="Text shown on the button that launches kiosk app from ChromeOS login UI">
-        Launch app
-      </message>
       <message name="IDS_PIN_KEYBOARD_HINT_TEXT_PIN" desc="Text to display in the pin field for user pod when no pin has been entered.">
         PIN
       </message>
@@ -617,6 +571,166 @@
         Sorry, your password could not be verified. Please try again.
       </message>
     </if>
+  </if>
+
+  <if expr="not is_android">
+
+    <!-- Feature Showcase - Google Password Manager -->
+    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_NO_THANKS" desc="Label for the 'No thanks' button to not pin the Password Manager to toolbar.">
+      No thanks
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_ADD_TO_TOOLBAR" desc="Label for the 'Add to toolbar' button to pin the Password Manager to toolbar.">
+      Add to toolbar
+    </message>
+
+    <!-- Batch Upload Desktop -->
+    <message name="IDS_BATCH_UPLOAD_TITLE" desc="Title of the Batch Upload dialog on Desktop. This dialog appears when the user clicks on an informational message about items saved to their device. This title precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      Save items in account
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {ITEM_COUNT, plural,
+      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
+      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {ITEM_COUNT, plural,
+      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_PASSWORDS" desc="Title of the Passwords section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+      {SELECTED_ITEMS, plural,
+      =0 {Passwords}
+      =1 {Passwords ({SELECTED_ITEMS})}
+      other {Passwords ({SELECTED_ITEMS})}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_BOOKMARKS" desc="Title of the Bookmarks section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+      {SELECTED_ITEMS, plural,
+      =0 {Bookmarks}
+      =1 {Bookmarks ({SELECTED_ITEMS})}
+      other {Bookmarks ({SELECTED_ITEMS})}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_READING_LIST" desc="Title of the Reading list section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+      {SELECTED_ITEMS, plural,
+      =0 {Reading list}
+      =1 {Reading list ({SELECTED_ITEMS})}
+      other {Reading list ({SELECTED_ITEMS})}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_ADDRESSES" desc="Title of the Addresses section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+      {SELECTED_ITEMS, plural,
+      =0 {Addresses}
+      =1 {Addresses ({SELECTED_ITEMS})}
+      other {Addresses ({SELECTED_ITEMS})}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_EXTENSIONS" desc="Title of the Extensions section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+      {SELECTED_ITEMS, plural,
+      =0 {Extensions}
+      =1 {Extensions ({SELECTED_ITEMS})}
+      other {Extensions ({SELECTED_ITEMS})}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_THEMES_WITH_DESCRIPTION" desc="Title of the Themes section in the Batch Upload dialog. It contains a fixed title in addition to its only item title description. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. This section title also acts as the item being selected (the section toggle dictates the state of the selection) since Themes will always have one item.">
+      Theme: <ph name="THEME_NAME">$1<ex>Green color</ex></ph>
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SAVE_TO_ACCOUNT_OK_BUTTON_LABEL" desc="Text of the button that triggers the saving of the selected items in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items only saved to their device. The title of the dialog is ‘Save items in account’. The list of items has three sections: Passwords, Bookmarks, and Addresses. When pressing the button, selected items are moved to the account storage (Saved in account) and the dialog is then closed. The tone should be motivating.">
+      Save in account
+    </message>
+    <message name="IDS_BATCH_UPLOAD_AVATAR_BUTTON_SAVING_TO_ACCOUNT" desc="Text shown on the avatar button pill after the user has requested to save items in their account through the Batch Upload dialog. The text is shown for few seconds then disappears.">
+      Saving in your account...
+    </message>
+    <message name="IDS_BATCH_UPLOAD_LAST_ITEM_SELECTED_SCREEN_READER" desc="Text read by the screen reader after focusing the last selected item of a section of the Batch upload dialog. It will mention that it is the last item, and that unselecting it will disable the section,  given that this can be an uncommon behavior, esepcially for visually impaired users, it needs to be explicilty stated by the screen reader.">
+      Last item selected, unselecting it will exit selection mode
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SCREEN_READER_ITEM_COUNT_SELECTED" desc="Text read by the screen reader after interacting with a checkbox in a section of the Batch Upload dialog. It will read the current number of selected items in the section after the user action on that checkbox.">
+      <ph name="NUMBER_OF_ITEMS_SELECTED">$1</ph> selected
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SCREEN_READER_SELECT_ALL" desc="Text read by the screen reader when focusing the toggle button of a section in the Batch Upload dialog and that toggle is turned off. Notifies that the action on the toggle would select all items in this section.">
+      Select all
+    </message>
+    <message name="IDS_BATCH_UPLOAD_PROMO_TITLE" desc="Title of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+      Get your bookmarks and more on all your devices
+    </message>
+    <if expr="use_titlecase">
+      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+        Save in Account
+      </message>
+    </if>
+    <if expr="not use_titlecase">
+      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+        Save in account
+      </message>
+    </if>
+    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks and other items are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_ITEMS_WITH_LINK" desc="The text for a promotional banner located on the Account Settings page. It informs the user how many items on their local device are waiting to be uploaded. The text contains a placeholder for the number of items (e.g., '5 items') and acts as a clickable link that takes the user to the Batch Upload screen. Please ensure the placeholder handles pluralization correctly.">
+      {ITEM_COUNT, plural,
+      =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
+      }
+    </message>
   </if>
 
   <if expr="not is_chromeos and not is_android">
@@ -827,6 +941,18 @@
     <message name="IDS_ENTERPRISE_WELCOME_MERGE_BROWSING_DATA_CHOICE_DETAILS" desc="Additional information of a radio button option that lets the user add their existing data from a newly created work profile.">
       Your organization will be able to see and manage any existing browsing data, such as passwords and more
     </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_PROFILE_INFORMATION_DETAILS" desc="Body text in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. This string describes the profile-related information that their organization can see and manage.">
+      Your organization may need to see and manage browsing data in your work profile, such as your browsing history and passwords
+    </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_DEVICE_INFORMATION_DETAILS" desc="Body text in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. This string describes the device-related information that their organization can see.">
+      To make sure this device can be used safely, your organization may need to see information about its operating system, browser, settings, and what software is installed on the device
+    </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_CONTINUE_BUTTON_LABEL" desc="Label of the primary confirmation button in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. Clicking this button acknowledges the disclaimer, closes the dialog, and allows the user to continue using Chrome.">
+      Got it
+    </message>
+    <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_CANCEL_BUTTON_LABEL" desc="Label of the secondary/cancel button in the enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection. Clicking this button cancels the startup flow and signs the user out of their managed Chrome profile.">
+      Sign out
+    </message>
     <message name="IDS_BROWSING_HISTORY_COUNT" desc="Text describing the number of browsing history entries">
       {BROWSING_HISTORY_COUNT, plural,
         =1 {your browsing history of # site}
@@ -850,6 +976,14 @@
     </message>
     <message name="IDS_ENTERPRISE_WELCOME_MERGE_BROWSING_DATA_WITH_ONE_COUNT_CHOICE_DETAILS" desc="Additional information of a radio button option that lets the user add their existing data from a newly created work profile.">
       You currently have <ph name="NUMBERED_ITEM">$1<ex>10 bookmarks</ex></ph>, and more. Your organization, <ph name="ACCOUNT_MANAGER">$2<ex>example.com</ex></ph>, will be able to see and manage this data.
+    </message>
+
+    <!--Accessible strings-->
+    <message name="IDS_ACCNAME_YOUR_AVATAR" desc="The accessible name for the user's avatar">
+      Your avatar
+    </message>
+    <message name="IDS_ACCNAME_ENTERPRISE_ORGANIZATION_ICON" desc="The accessible name for the icon which indicates that the profile is managed by an organization">
+      An icon indicating that this profile is managed by your organization
     </message>
 
     <!-- Supervised user profile signin IPH -->
@@ -884,6 +1018,7 @@
     <message name="IDS_PROFILE_PICKER_BACK_BUTTON_SIGN_IN_LABEL" desc="Label for a button that navigates user to the previous page from the 'Sign in' page">
       Back from sign in
     </message>
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_WORK_AND_LIFE_SEPARATE" desc="Profile picker main view title.">
       Keep work and life separate
     </message>
@@ -892,15 +1027,22 @@
     </message>
     <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_TASKS_SEPARATE" desc="Profile picker main view title.">
       Keep school, side projects, and other tasks separate
+||||||| upstream@pin
+    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_WORK_AND_LIFE_SEPARATE" desc="Profile picker main view title.">
+      Keep work and life separate
     </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_SHARING_A_COMPUTER" desc="Profile picker main view title.">
-      Sharing a computer?
+    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_GOT_ANOTHER_GOOGLE_ACCOUNT" desc="Profile picker main view title.">
+      Got another Google Account?
     </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_SUBTITLE_SHARING_A_COMPUTER" desc="Profile picker main view subtitle.">
-      Keep your bookmarks, passwords, and settings separate. Add a new profile now.
+    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_TASKS_SEPARATE" desc="Profile picker main view title.">
+      Keep school, side projects, and other tasks separate
+=======
+    <message name="IDS_PROFILE_PICKER_PAUSE_EFFECTS_BUTTON" desc="A text label for a button that pauses background effects, i.e. audio and animations (if applicable).">
+      Pause effects
+>>>>>>> upstream@new
     </message>
-    <message name="IDS_PROFILE_PICKER_MAIN_VIEW_SUBTITLE_KEEP_EVERYTHING_IN_CHROME" desc="Profile picker main view subtitle.">
-      Profiles let you separate work, personal, and play without switching to another browser. Add a new profile now.
+    <message name="IDS_PROFILE_PICKER_PLAY_EFFECTS_BUTTON" desc="A text label for a button that plays background effects, i.e. audio and animations (if applicable).">
+      Play effects
     </message>
     <message name="IDS_PROFILE_PICKER_PROFILE_CARD_NEEDS_SIGNIN_PROMPT" desc="Text on the profile card signaling that the user must sign-in in order to open a profile">
       Sign in
@@ -920,14 +1062,8 @@
     <message name="IDS_PROFILE_PICKER_PROFILE_MENU_REMOVE_TEXT" desc="Text of the remove button in profile card menu.">
       Delete
     </message>
-    <message name="IDS_PROFILE_PICKER_PROFILE_MENU_REMOVE_CONFIRM" desc="Text of the remove button in the remove warning.">
-      Delete
-    </message>
     <message name="IDS_PROFILE_PICKER_PROFILE_MENU_CUSTOMIZE_TEXT" desc="Text of the customize button in profile card menu">
       Edit
-    </message>
-    <message name="IDS_PROFILE_PICKER_PROFILE_MENU_INCOGNITO_TEXT" desc="Text of the Incognito button in profile card menu">
-      Incognito
     </message>
     <message name="IDS_PROFILE_PICKER_ASK_ON_STARTUP" desc="Text for the checkbox on the profile picker main view">
       Show on startup
@@ -980,7 +1116,7 @@
     <message name="IDS_PROFILE_PICKER_PROFILE_CREATION_FLOW_NOT_NOW_BUTTON_LABEL" desc="Label for a button to decline a prompt to sign in">
       Continue without an account
     </message>
-    <message name="IDS_PROFILE_PICKER_PROFILE_CREATION_FLOW_DONT_SIGN_IN_BUTTON_LABEL" translateable="false" desc="Label for a button to decline a prompt to sign in">
+    <message name="IDS_PROFILE_PICKER_PROFILE_CREATION_FLOW_DONT_SIGN_IN_BUTTON_LABEL" desc="Label for a button to decline a prompt to sign in">
       Don't sign in
     </message>
     <message name="IDS_PROFILE_PICKER_PROFILE_CREATION_FLOW_STAY_SIGNED_OUT_BUTTON_LABEL" desc="Label for a button to decline a prompt to sign in">
@@ -996,26 +1132,8 @@
     <message name="IDS_PROFILE_PICKER_PROFILE_CREATION_FLOW_LOCAL_PROFILE_CREATION_AVATAR_TEXT" desc="Text of a section to pick an avatar for the profile.">
       Pick an avatar
     </message>
-    <message name="IDS_PROFILE_PICKER_TAKE_A_TOUR_BUTTON_LABEL" desc="Label of a button that starts a tour for the picker using IPH bubbles.">
-      Take a tour
-    </message>
     <message name="IDS_PROFILE_PICKER_IPH_NEXT_BUTTON_LABEL" desc="Label of the next button showing on the IPH.">
       Next
-    </message>
-    <message name="IDS_PROFILE_PICKER_IPH_DONE_BUTTON_LABEL" desc="Label of the done button showing on the last IPH to close the tour.">
-      Done
-    </message>
-    <message name="IDS_PROFILE_PICKER_IPH_FOR_PROFILES_TITLE" desc="Title of the IPH bubble for introducing profiles.">
-      Your profiles
-    </message>
-    <message name="IDS_PROFILE_PICKER_IPH_FOR_ADD_PROFILE_TITLE" desc="Title of the IPH bubble for adding new profiles.">
-      Add family and friends
-    </message>
-    <message name="IDS_PROFILE_PICKER_IPH_FOR_CUSTOMIZE_PROFILE_TITLE" desc="Title of the IPH bubble for customizing profiles.">
-      Customize your profile
-    </message>
-    <message name="IDS_PROFILE_PICKER_IPH_FOR_CUSTOMIZE_PROFILE_TEXT" desc="Text of the IPH bubble for customizing profiles.">
-      Choose a name and color theme to differentiate between profiles
     </message>
     <message name="IDS_PROFILE_PICKER_PROFILE_SWITCH_SWITCH_BUTTON_LABEL" desc="Label of a button that switches user browsing to existing profile">
       Switch
@@ -1050,10 +1168,6 @@
       desc="This is the subtitle on a full-page screen that asks the user to sign in to Chrome with their Google Account. It appears when the user launches Chrome for the first time. When they sign in, they can personalize and customize Chrome and remember their settings in their Google Account. These features are also described in the cards below as 'All your devices', 'Stronger security', and 'Back up data'. The tone should be inviting and alluring.">
       Get additional features
     </message>
-    <message name="IDS_FRE_SIGN_IN_SUBTITLE_1"
-      desc="This is the subtitle on a full-page screen that asks the user to sign in to Chrome with their Google Account. It appears when the user launches Chrome for the first time. When they sign in, they can personalize and customize Chrome and remember their settings in their Google Account. These features are also described in the cards below as 'All your devices', 'Stronger security', and 'Back up data'. The tone should be inviting and alluring.">
-      Sign in for additional features
-    </message>
     <message name="IDS_FRE_DEVICES_CARD_TITLE"
       desc="This string is the headline in one of three cards that represent the top benefits for why a user should sign in to Chrome with a Google Account. The cards appear on a full-page screen when the user launches Chrome for the first time. This card's headline means that users can get their data (like bookmarks, history) on all the devices where they're signed in. The headline is followed by the body text 'Easily pick up where you left off'. The tone should be informative.">
       All your devices
@@ -1082,6 +1196,10 @@
       desc="This is the body text in one of three cards that represent the top benefits for why a user should sign in to Chrome with a Google Account. The cards appear on a full-page screen when the user launches Chrome for the first time. The body is preceded by the headline 'Back up data'. This card's body means that users can back up their data (like bookmarks, history, settings) so that the data can't get lost if a device malfunctions. Translate 'bookmarks' according to https://localization.google.com/glossary/termset?gid=27517723&amp;tsid=59c31bb . Translate 'and more' so that it conveys that there are additional similar items that are not listed. The tone should be informative.">
       Store your passwords, bookmarks, and more
     </message>
+    <message name="IDS_UNO_FRE_REFRESH_BACKUP_CARD_DESCRIPTION_WITH_PASSWORDS"
+      desc="This is the body text for the back-up benefit card (one of three cards that represent the top benefits for why a user should sign in to Chrome with a Google Account). The cards appear on a full-page screen when the user launches Chrome for the first time. It lists specific items that will be synced to the cloud so that the data can't get lost if a device malfunctions. The tone should be informative.">
+      Store your passwords, bookmarks, and settings
+    </message>
     <if expr="not use_titlecase">
       <message name="IDS_FRE_DECLINE_SIGN_IN_BUTTON_TITLE" desc="The title of the button giving the users the choice not to sign in to Chrome">
         Don't sign in
@@ -1104,8 +1222,11 @@
         Sign In
       </message>
     </if>
-    <message name="IDS_FRE_CREATE_ACCOUNT_DESCRIPTION" translateable="false" desc="Text informing users they can create an account in the next step(s).">
+    <message name="IDS_FRE_CREATE_ACCOUNT_DESCRIPTION" desc="Text displayed on the sign-in screen (close to the sign-in button) in the first run experience (very first time Chrome is launched), informing users they can either sign in with an existing Google account or create a new one in the next step(s).">
       Use your Google account or create a new one
+    </message>
+    <message name="IDS_FRE_SIGN_IN_CELEBRATION_WELCOME_TITLE" desc="Title for the sign in celebration screen (FRE).">
+      Welcome, <ph name="USER_NAME">$1<ex>John</ex></ph>!
     </message>
     <message name="IDS_FRE_MANAGED_DESCRIPTION" desc="The disclaimer explaining to the users that their device is managed by their organization">
       Your device is managed by your organization. Administrators can access the data in any profile on this device.
@@ -1113,13 +1234,31 @@
     <message name="IDS_FRE_MANAGED_BY_DESCRIPTION" desc="The disclaimer explaining to the users that their device is managed by an administrator">
       Your device is managed by <ph name="DOMAIN">$1<ex>example.com</ex></ph>. Administrators can access the data in any profile on this device.
     </message>
+    <message name="IDS_FRE_NATIVE_TOOLBAR_DONT_SIGN_IN_BUTTON_LABEL" desc="A label for a button on the native toolbar to decline a prompt to sign in. Once clicked, the sign-in flow will be cancelled.">
+      Don't sign in
+    </message>
+    <message name="IDS_FRE_NATIVE_TOOLBAR_START_BROWSING_BUTTON_LABEL" desc="A label for a button on the native toolbar of the first run feature showcase screen to start browsing directly. Once clicked, the first run flow will close and open the New Tab Page.">
+      Start browsing
+    </message>
+    <message name="IDS_FRE_NEXT_BUTTON_TITLE" desc="A title for a button that advances a user to the next step (sign in screen) in the first run experience flow.">
+      Next
+    </message>
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_TITLE" desc="A title for the final onboarding screen (Finish or Continue) in the first run experience flow.  It indicates that the setup process is complete. CHAR LIMIT = 25">
+      You're all set!
+    </message>
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_SEE_MORE_TIPS_BUTTON_LABEL" desc="A label for a button that leads to educational content. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow. CHAR LIMIT = 20">
+      See more tips
+    </message>
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_SEE_WHATS_NEW_BUTTON_LABEL" desc="A label for a button that leads to educational content. It appears for users who have finished the whole FRE flow and weren’t eligible to any of the Feature Showcase steps. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow. CHAR LIMIT = 20">
+      See what's new
+    </message>
+    <message name="IDS_FRE_FINISH_OR_CONTINUE_START_BROWSING_BUTTON_LABEL" desc="A label for a button that enters the web. It appears on the final onboarding screen (Finish or Continue) in the first run experience flow. CHAR LIMIT = 20">
+      Start browsing
+    </message>
 
     <!-- Default Browser Promo -->
     <message name="IDS_FRE_DEFAULT_BROWSER_TITLE_NEW" desc="Title for the page that prompts user to set Chrome as their default browser in the first run experience.">
       Set your default browser
-    </message>
-    <message name="IDS_FRE_DEFAULT_BROWSER_SUBTITLE" desc="Subtitle for the page that prompts user to set Chrome as their default browser in the first run experience.">
-      Get Google Search and Google smarts every time you browse
     </message>
     <message name="IDS_FRE_DEFAULT_BROWSER_SET_AS_DEFAULT" desc="The label for a button to confirm setting Chrome as their default browser.">
       Set as default
@@ -1136,6 +1275,7 @@
       No thanks
     </message>
 
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <!-- Batch Upload Desktop -->
     <message name="IDS_BATCH_UPLOAD_TITLE" desc="Title of the Batch Upload dialog on Desktop. This dialog appears when the user clicks on an informational message about items saved to their device. This title precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       Save items in account
@@ -1175,19 +1315,87 @@
       =1 {1 item is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
       other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
+||||||| upstream@pin
+    <!-- Batch Upload Desktop -->
+    <message name="IDS_BATCH_UPLOAD_TITLE" desc="Title of the Batch Upload dialog on Desktop. This dialog appears when the user clicks on an informational message about items saved to their device. This title precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      Save items in account
     </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {ITEM_COUNT, plural,
+      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
+      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account. This will also clean up any duplicates.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account. This will also clean up any duplicates.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {ITEM_COUNT, plural,
+      =1 {1 item is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+=======
+    <!-- Feature Showcase - Lens Overlay -->
+    <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_SUBTITLE" desc="This is the subtitle for the Lens Overlay, explaining the primary use cases (shopping, translation, search).">
+      Select anything on your screen as you browse to shop, translate, and search using AI
+>>>>>>> upstream@new
+    </message>
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {PASSWORD_COUNT, plural,
       =1 {1 password is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
       other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
+||||||| upstream@pin
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if password type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{PASSWORD_COUNT} passwords are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+=======
+    <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_NOT_NOW" desc="The label for the 'Not now' button to not enable the Lens Overlay feature.">
+      Not now
+>>>>>>> upstream@new
     </message>
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {PASSWORD_COUNT, plural,
       =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
+||||||| upstream@pin
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_PASSWORDS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if password type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of passwords items in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {PASSWORD_COUNT, plural,
+      =1 {1 password and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      other {{PASSWORD_COUNT} passwords and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+=======
+    <message name="IDS_FEATURE_SHOWCASE_LENS_OVERLAY_YES_IM_IN" desc="Label for the 'Yes, I'm in' button to enable the Lens Overlay feature.">
+      Yes, I'm in
+>>>>>>> upstream@new
     </message>
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
       =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
@@ -1213,52 +1421,77 @@
       =1 {Bookmarks ({SELECTED_ITEMS})}
       other {Bookmarks ({SELECTED_ITEMS})}
       }
-    </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_READING_LIST" desc="Title of the Reading list section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-      {SELECTED_ITEMS, plural,
-      =0 {Reading list}
-      =1 {Reading list ({SELECTED_ITEMS})}
-      other {Reading list ({SELECTED_ITEMS})}
+||||||| upstream@pin
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if bookmark type exists with no other types. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
       }
     </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_ADDRESSES" desc="Title of the Addresses section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-      {SELECTED_ITEMS, plural,
-      =0 {Addresses}
-      =1 {Addresses ({SELECTED_ITEMS})}
-      other {Addresses ({SELECTED_ITEMS})}
+    <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. This subtitle variant is shown if bookmark type is the first type and it is not the only one. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle mentions the number of bookmarks in the section as well as 'and other items' to reference the other types. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
       }
     </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_EXTENSIONS" desc="Title of the Extensions section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_PASSWORDS" desc="Title of the Passwords section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
       {SELECTED_ITEMS, plural,
-      =0 {Extensions}
-      =1 {Extensions ({SELECTED_ITEMS})}
-      other {Extensions ({SELECTED_ITEMS})}
+      =0 {Passwords}
+      =1 {Passwords ({SELECTED_ITEMS})}
+      other {Passwords ({SELECTED_ITEMS})}
       }
     </message>
-    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_THEMES_WITH_DESCRIPTION" desc="Title of the Themes section in the Batch Upload dialog. It contains a fixed title in addition to its only item title description. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. This section title also acts as the item being selected (the section toggle dictates the state of the selection) since Themes will always have one item.">
-      Theme: <ph name="THEME_NAME">$1<ex>Green color</ex></ph>
+    <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_BOOKMARKS" desc="Title of the Bookmarks section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
+      {SELECTED_ITEMS, plural,
+      =0 {Bookmarks}
+      =1 {Bookmarks ({SELECTED_ITEMS})}
+      other {Bookmarks ({SELECTED_ITEMS})}
+      }
+=======
+
+    <!-- Feature Showcase - Gemini -->
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_SUBTITLE" desc="This is a subtitle explaining a specific feature of the AI assistant: using active page content to provide better context. (CHAR LIMIT = 60)">
+      Get more relevant answers by sharing your tabs
+>>>>>>> upstream@new
     </message>
-    <message name="IDS_BATCH_UPLOAD_SAVE_TO_ACCOUNT_OK_BUTTON_LABEL" desc="Text of the button that triggers the saving of the selected items in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items only saved to their device. The title of the dialog is ‘Save items in account’. The list of items has three sections: Passwords, Bookmarks, and Addresses. When pressing the button, selected items are moved to the account storage (Saved in account) and the dialog is then closed. The tone should be motivating.">
-      Save in account
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_1_ROW" desc="This is the body text of a consent dialog. It explains the technical data flow (content and URLs) to Google for AI processing. The tone should be transparent and cautionary.">
+      Google uses the content and URL of shared tabs. Your current tab is shared in new chats. You can change this setting anytime.
     </message>
-    <message name="IDS_BATCH_UPLOAD_AVATAR_BUTTON_SAVING_TO_ACCOUNT" desc="Text shown on the avatar button pill after the user has requested to save items in their account through the Batch Upload dialog. The text is shown for few seconds then disappears.">
-      Saving in your account...
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_ROW" desc="This is a disclosure regarding human review and data usage for model training. 'Learn more' links to privacy choices. It is a critical privacy notice. This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Chats are reviewed and used to improve Google AI. Gemini is AI and can make mistakes. You can <ph name="BEGIN_LINK_MANAGE_ACTIVITY">&lt;a href="$1" target="_blank"&gt;</ph>manage your activity<ph name="END_LINK_MANAGE_ACTIVITY">&lt;/a&gt;</ph>, including info about your location. <ph name="BEGIN_LINK_LEARN_MORE">&lt;a href="$2" target="_blank"&gt;</ph>Learn more about your choices<ph name="END_LINK_LEARN_MORE">&lt;/a&gt;</ph>
     </message>
-    <message name="IDS_BATCH_UPLOAD_LAST_ITEM_SELECTED_SCREEN_READER" desc="Text read by the screen reader after focusing the last selected item of a section of the Batch upload dialog. It will mention that it is the last item, and that unselecting it will disable the section,  given that this can be an uncommon behavior, esepcially for visually impaired users, it needs to be explicilty stated by the screen reader.">
-      Last item selected, unselecting it will exit selection mode
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_US" desc="This is a disclosure regarding human review and data usage for model training. 'Learn more' links to privacy choices. It is a critical privacy notice. This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Chats are reviewed and used to improve Google AI. Gemini is AI and can make mistakes. Some content may not be suitable for everyone. You can <ph name="BEGIN_LINK_MANAGE_ACTIVITY">&lt;a href="$1" target="_blank"&gt;</ph>manage your activity<ph name="END_LINK_MANAGE_ACTIVITY">&lt;/a&gt;</ph>, including info about your location. <ph name="BEGIN_LINK_LEARN_MORE">&lt;a href="$2" target="_blank"&gt;</ph>Learn more about your choices<ph name="END_LINK_LEARN_MORE">&lt;/a&gt;</ph>
     </message>
-    <message name="IDS_BATCH_UPLOAD_SCREEN_READER_ITEM_COUNT_SELECTED" desc="Text read by the screen reader after interacting with a checkbox in a section of the Batch Upload dialog. It will read the current number of selected items in the section after the user action on that checkbox.">
-      <ph name="NUMBER_OF_ITEMS_SELECTED">$1</ph> selected
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_ENTERPRISE_ROW" desc="This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Neither your conversations with Gemini nor your Google Workspace data will be reviewed or used to improve generative AI models. Gemini is AI and can make mistakes.
     </message>
-    <message name="IDS_BATCH_UPLOAD_SCREEN_READER_SELECT_ALL" desc="Text read by the screen reader when focusing the toggle button of a section in the Batch Upload dialog and that toggle is turned off. Notifies that the action on the toggle would select all items in this section.">
-      Select all
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_2_ENTERPRISE_US" desc="This string includes legal disclaimers and a quality warning about AI 'hallucinations.' The tone should be cautionary.">
+      Neither your conversations with Gemini nor your Google Workspace data will be reviewed or used to improve generative AI models. Gemini is AI and can make mistakes. Some content may not be suitable for everyone.
     </message>
-    <message name="IDS_BATCH_UPLOAD_SCREEN_READER_SELECT_NONE" desc="Text read by the screen reader when focusing the toggle button of a section in the Batch Upload dialog and that toggle is turned on. Notifies that the action on the toggle would select no items in this section.">
-      Select none
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_3_ROW" desc="">
+      <ph name="BEGIN_LINK_TERMS">&lt;a href="$1" target="_blank"&gt;</ph>Google Terms<ph name="END_LINK_TERMS">&lt;/a&gt;</ph> and the <ph name="BEGIN_LINK_PRIVACY">&lt;a href="$2" target="_blank"&gt;</ph>Gemini Apps Privacy Notice<ph name="END_LINK_PRIVACY">&lt;/a&gt;</ph> apply
     </message>
-    <message name="IDS_BATCH_UPLOAD_PROMO_TITLE" desc="Title of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
-      Get your bookmarks and more on all your devices
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_DISCLOSURE_3_KR" desc="">
+      Our <ph name="BEGIN_LINK_TERMS">&lt;a href="$1" target="_blank"&gt;</ph>Terms<ph name="END_LINK_TERMS">&lt;/a&gt;</ph>, <ph name="BEGIN_LINK_LOCATION_TERMS">&lt;a href="$2" target="_blank"&gt;</ph>Korean Location Terms<ph name="END_LINK_LOCATION_TERMS">&lt;/a&gt;</ph>, and <ph name="BEGIN_LINK_PRIVACY">&lt;a href="$3" target="_blank"&gt;</ph>Privacy Notice<ph name="END_LINK_PRIVACY">&lt;/a&gt;</ph> apply.
     </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_NOT_NOW" desc="This is the button to decline the AI feature consent. (CHAR LIMIT = 15)">
+      Not now
+    </message>
+    <message name="IDS_FEATURE_SHOWCASE_GEMINI_YES_IM_IN" desc="This is a button to accept the AI feature consent. 'Yes, I'm in' is a colloquial phrase meaning 'I agree/consent.' Translate this as a positive, informal affirmation. (CHAR LIMIT = 15)">
+      Yes, I'm in
+    </message>
+
+    <!-- Enterprise profile welcome -->
+    <message name="IDS_FEATURE_SHOWCASE_STEPPER_A11Y_LABEL" is_accessibility_with_no_ui="true" desc="The accessible text for the feature showcase progress stepper, conveying the current step and total steps.">
+      Step <ph name="STEP_NUMBER">$1<ex>1</ex></ph> of <ph name="TOTAL_STEPS">$2<ex>3</ex></ph>
+    </message>
+
+    <!-- Feature Showcase - Themes and Customization -->
+    <message name="IDS_FEATURE_SHOWCASE_THEMES_SUBTITLE" desc="This is the subtitle for the customization screen, listing examples like 'themes' and 'dark mode'. (CHAR LIMIT = 60)">
+      Customize your browser with options like themes and dark mode.
+    </message>
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <if expr="use_titlecase">
       <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
         Save in Account
@@ -1274,7 +1507,28 @@
       =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your MoltBrowser Account.}
       other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
       }
+||||||| upstream@pin
+    <if expr="use_titlecase">
+      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+        Save in Account
+      </message>
+    </if>
+    <if expr="not use_titlecase">
+      <message name="IDS_BATCH_UPLOAD_PROMO_TITLE_OK_BUTTON_LABEL" desc="Affirmative button of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks (and other items, if any) are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. When the user clicks this button, the items aren’t saved yet: the user first sees the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+        Save in account
+      </message>
+    </if>
+    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark is saved only to this device. To use it on your other devices, save it in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+=======
+    <message name="IDS_FEATURE_SHOWCASE_THEMES_APPLY_THEME" desc="Label for the button to apply a theme to the browser. It is a verb-based action that initiates the visual change. Ensure 'Apply' is translated as a functional command. (CHAR LIMIT = 20)">
+      Apply theme
+>>>>>>> upstream@new
     </message>
+<<<<<<< src/chrome/app/profiles_strings.grdp (MoltBrowser)
     <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks and other items are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
       {BOOKMARK_COUNT, plural,
       =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your MoltBrowser Account.}
@@ -1286,6 +1540,22 @@
       =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
       other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
       }
+||||||| upstream@pin
+    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS_COMBO" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks and other items are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
+      {BOOKMARK_COUNT, plural,
+      =1 {1 bookmark and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      other {{BOOKMARK_COUNT} bookmarks and other items are saved only to this device. To use them on your other devices, save them in your Google Account.}
+      }
+    </message>
+    <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_ITEMS_WITH_LINK" desc="The text for a promotional banner located on the Account Settings page. It informs the user how many items on their local device are waiting to be uploaded. The text contains a placeholder for the number of items (e.g., '5 items') and acts as a clickable link that takes the user to the Batch Upload screen. Please ensure the placeholder handles pluralization correctly.">
+      {ITEM_COUNT, plural,
+      =1 {1 item is saved only to this device. To use it on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save it in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
+      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
+      }
+=======
+    <message name="IDS_FEATURE_SHOWCASE_THEMES_NO_THANKS" desc="Label for a button that dismisses the option to personalize the browser. (CHAR LIMIT = 20)">
+      No thanks
+>>>>>>> upstream@new
     </message>
 
     <!-- Signout Confirmation Dialog Desktop -->
@@ -1311,9 +1581,6 @@
     </message>
     <message name="IDS_HISTORY_SYNC_OPT_IN_SUBTITLE" desc="Subtitle of the history sync opt in screen which offers the user to turn on the data types history, tabs, and saved tab groups.">
       To quickly get back to sites you’ve visited, sync your history and tabs
-    </message>
-    <message name="IDS_HISTORY_SYNC_OPT_IN_SUBTITLE_WITH_EMAIL" desc="Subtitle of the history sync opt in screen which offers the user to turn on the data types history, tabs, and saved tab groups. Also includes the user's email.">
-      To quickly get back to sites you’ve visited, sync your history and tabs to <ph name="USER_EMAIL_ADDRESS">$2<ex>john.doe@example.com</ex></ph>
     </message>
     <message name="IDS_HISTORY_SYNC_OPT_IN_DESCRIPTION" desc="Description of the history sync opt in screen which offers the user to turn on the data types history, tabs, and saved tab groups.">
       You can stop syncing anytime in settings. Google may personalize Search and other services based on your history.
@@ -1398,5 +1665,29 @@
     </message>
     <message name="IDS_SIGN_IN_BENEFITS_WITHOUT_BOOKMARKS_AND_EXTENSIONS_IPH_TEXT" desc="Text of the IPH bubble announcing benefits for users who signed in before the sync-to-signin migration, not mentioning bookmarks and extensions because they require an explicit sign in.">
       While you're signed in, you can use the themes, settings, and more saved in your MoltBrowser Account on all your devices
+    </message>
+    <!-- Sign in on your phone (QR code) strings  -->
+    <if expr="not use_titlecase">
+      <message name="IDS_AVATAR_BUTTON_SIGNIN_ON_PHONE" desc="Text on the avatar pill expanding while the QR code bubble is showing, which will let the user sign in on their phone.">
+        Sign in on phone?
+      </message>
+    </if>
+    <if expr="use_titlecase">
+      <message name="IDS_AVATAR_BUTTON_SIGNIN_ON_PHONE" desc="Text on the avatar pill expanding while the QR code bubble is showing, which will let the user sign in on their phone.">
+        Sign In on Phone?
+      </message>
+    </if>
+    <if expr="not use_titlecase">
+      <message name="IDS_PROFILE_MENU_SIGNIN_ON_PHONE_BUTTON_LABEL" desc="Text of the Profile Menu button that opens the QR code bubble, which will let the user sign in on their phone.">
+        Sign in on your phone
+      </message>
+    </if>
+    <if expr="use_titlecase">
+      <message name="IDS_PROFILE_MENU_SIGNIN_ON_PHONE_BUTTON_LABEL" desc="Text of the Profile Menu button that opens the QR code bubble, which will let the user sign in on their phone.">
+        Sign In on Your Phone
+      </message>
+    </if>
+    <message name="IDS_QR_CODE_BUBBLE_SIGNIN_ON_PHONE_SUBTITLE" desc="Subtitle of the QR Code bubble showing a code for the user to sign in on their phone.">
+      To pick up where you left off, sign in to the same account on both devices
     </message>
 </grit-part>

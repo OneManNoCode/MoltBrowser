@@ -18,7 +18,7 @@ BASE_FEATURE(kAimCoBrowseEligibilityCheckEnabled,
 BASE_FEATURE(kAimFuseboxEligibilityCheckEnabled,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAimUrlNavigationFetchEnabled, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAimUrlNavigationFetchEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAimServerEligibilitySendCoBrowseUserAgentSuffixEnabled,
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -67,11 +67,17 @@ const base::FeatureParam<AimServerEligibilityIncludeClientLocaleMode>
         AimServerEligibilityIncludeClientLocaleMode::kGetWithLocale,
         &kAimServerEligibilityIncludeClientLocaleModeOptions};
 
-BASE_FEATURE(kAimEligibilityServiceIdentityImprovements,
+BASE_FEATURE(kAimServerEligibilityIncludeClientCountry,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAimEligibilityForceUsCountryCode,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kAimEligibilityServiceIdentityImprovements,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 const base::FeatureParam<bool> kAimIdentityOauthEnabled{
-    &kAimEligibilityServiceIdentityImprovements, "oauth_enabled", true};
+    &kAimEligibilityServiceIdentityImprovements, "oauth_enabled", false};
 const base::FeatureParam<bool> kAimIdentityRefreshOnCookieChanges{
     &kAimEligibilityServiceIdentityImprovements, "refresh_on_cookie_changes",
     true};

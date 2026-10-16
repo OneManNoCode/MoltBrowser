@@ -69,9 +69,6 @@
     <message name="IDS_AUTOFILL_FIELD_LABEL_PHONE" desc="The label of the Phone entry in a settings-like UI to enter a phone number.">
       Phone
     </message>
-    <message name="IDS_AUTOFILL_FIELD_LABEL_BILLING_ADDRESS" desc="Title of the field representing the billing address of a credit card.">
-      Billing Address
-    </message>
   </if>
 
   <!-- Autofill save credit card bubble or infobar prompt -->
@@ -156,12 +153,20 @@
       Save card?
     </message>
   </if>
+<<<<<<< src/components/autofill_payments_strings.grdp (MoltBrowser)
   <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_V4" desc="Title text for the Autofill save card prompt when the card is to be saved by uploading it to Google Payments, according to November 2018 UI guidelines. The prompt can be either a bubble or an infobar.">
     Save card to MoltBrowser Account?
+||||||| upstream@pin
+  <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_V4" desc="Title text for the Autofill save card prompt when the card is to be saved by uploading it to Google Payments, according to November 2018 UI guidelines. The prompt can be either a bubble or an infobar.">
+    Save card to Google Account?
+=======
+  <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_SECURITY" desc="Title text for the credit card upload save prompt on Desktop, using security-focused messaging. Became the new default for Desktop in Dec. 2024 and new default for Android and IOS (bottomsheet only) in H1 2025.">
+    Save card securely?
   </message>
-    <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_SECURITY" desc="Title text for the credit card upload save prompt on Desktop, using security-focused messaging. Became the new default for Desktop in Dec. 2024 and new default for Android and IOS (bottomsheet only) in H1 2025.">
-      Save card securely?
-    </message>
+  <message name="IDS_AUTOFILL_SAVE_CARD_IN_GOOGLE_WALLET_PROMPT_TITLE" desc="Title text for the save credit card in Google Wallet save prompt. This title specifically references Google Wallet instead of Google Account.">
+    Save card in Google Wallet
+>>>>>>> upstream@new
+  </message>
   <message name="IDS_AUTOFILL_SAVE_CVC_PROMPT_TITLE_TO_CLOUD" desc="Title text for the Autofill CVC upload prompt that offers to upload CVC to the Sync server for existing server cards. This prompt is shown if a CVC is detected for an existing server card on form submission.">
     Save security code?
   </message>
@@ -191,9 +196,6 @@
   <message name="IDS_AUTOFILL_DONE" desc="Text to show for the button in the save card manager bubble when the card has been saved either locally or to Google Payments.">
     Done
   </message>
-  <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_EXPLANATION" desc="Explanation of the effect of the Autofill save card prompt when the card is to be saved by uploading it to Google Payments and also saved locally. The prompt can be either a bubble or an infobar.">
-    Pay quickly on sites and apps across devices using cards you have saved with Google.
-  </message>
   <if expr="is_android">
     <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_EXPLANATION_V3" desc="Explanation of the effect of the Autofill save card prompt when the card is to be saved by uploading it to Google Payments, according to April 2018 UI guidelines, and minorly updated again in September 2023. The prompt will be shown either in a bubble below the omnibox, or in a bottom sheet, or in an infobar.">
       To pay faster next time, save your card and billing address in your MoltBrowser Account
@@ -213,6 +215,9 @@
   </message>
   <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_TO_WALLET_EXPLANATION_SECURITY" desc="Explanation of the benefit of credit card upload save on Desktop, using security-focused messaging. Became the new default for Desktop in Dec. 2024 and new default for Android and IOS (bottomsheet only) in H1 2025. The final line specifically references Google Wallet instead of Google Account.">
     Pay faster when your card is saved. Card details are encrypted in Google Wallet.
+  </message>
+  <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_TO_WALLET_V2_EXPLANATION" desc="Explanation of the benefit of credit card upload save to Google Wallet. The final line specifically references Google Wallet instead of Google Account.">
+    Pay faster with Google Pay when your card is saved. Card details are encrypted in Google Wallet.
   </message>
   <if expr="is_android or is_ios">
     <message name="IDS_AUTOFILL_SAVE_CVC_MESSAGE_SAVE_ACCEPT" desc="Positive button label for the Autofill save CVC prompt that offers to save CVC for existing server cards. This prompt is shown if a CVC is detected for an existing server card on form submission. The prompt is shown on Android and IOS devices.">
@@ -463,6 +468,7 @@
       Something went wrong
     </message>
   </if>
+<<<<<<< src/components/autofill_payments_strings.grdp (MoltBrowser)
   <if expr="is_ios">
     <if expr="_google_chrome">
       <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
@@ -475,6 +481,21 @@
       </message>
     </if>
   </if>
+||||||| upstream@pin
+  <if expr="is_ios">
+    <if expr="_google_chrome">
+      <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
+        If enabled, Chrome will store a copy of your card on this device for faster form filling.
+      </message>
+    </if>
+    <if expr="not _google_chrome">
+      <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
+        If enabled, Chromium will store a copy of your card on this device for faster form filling.
+      </message>
+    </if>
+  </if>
+=======
+>>>>>>> upstream@new
   <if expr="is_android">
     <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_ERROR_TRY_AGAIN_EXPIRATION_DATE" desc="Error message that encourages the user to try to re-enter their credit card expiration date after a previous failed attempt." formatter_data="android_java">
       Check your expiration date and try again
@@ -500,9 +521,6 @@
   </if>
   <message name="IDS_AUTOFILL_CARD_UNMASK_CONFIRM_BUTTON" desc="Text for button that confirms the credit card CVC entry dialog.">
     Confirm
-  </message>
-  <message name="IDS_AUTOFILL_CARD_UNMASK_VERIFY_BUTTON" desc="Label text for the ok button in the credit card CVC entry dialog.">
-    Verify
   </message>
   <message name="IDS_AUTOFILL_CARD_UNMASK_EXPIRATION_MONTH" desc="Accessible name for card expiry month field.">
     Month
@@ -743,6 +761,9 @@
   <message name="IDS_AUTOFILL_SAVE_IBAN_PROMPT_TITLE_SERVER" desc="Title text for the Autofill save IBAN (International Bank Account Number) to the GPay server prompt when a user submits a form with a valid IBAN.">
     Save IBAN?
   </message>
+  <message name="IDS_AUTOFILL_SAVE_IBAN_TO_WALLET_PROMPT_TITLE" desc="Title text for the Autofill save IBAN (International Bank Account Number) to the Google Wallet server prompt when a user submits a form with a valid IBAN.">
+    Save IBAN in Google Wallet
+  </message>
   <message name="IDS_AUTOFILL_UPLOAD_IBAN_PROMPT_EXPLANATION" desc="Explanation text for the Autofill save IBAN (International Bank Account Number) to the GPay server prompt when a user submits a form with a valid IBAN.">
     To autofill this IBAN next time, save it in your MoltBrowser Account
   </message>
@@ -880,8 +901,14 @@
   <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_DIALOG_TITLE_LABEL" desc="Title encouraging users to enroll their card to VCN." formatter_data="android_java">
       Make it more secure with a virtual card next time?
   </message>
+  <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_DIALOG_TITLE_LABEL_V2" desc="Title encouraging users to enroll their card to VCN." formatter_data="android_java">
+    Turn on a virtual card for autofill
+  </message>
   <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_DIALOG_CONTENT_LABEL" desc="Text explaining the benefit of enrolling a credit card as a virtual card. Also contains a link to learn more about virtual cards from IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_LEARN_MORE_LINK_LABEL.">
     A virtual card hides your actual card to help protect you from potential fraud. <ph name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_LEARN_MORE_LINK_LABEL">$1<ex>Learn about virtual cards</ex></ph>
+  </message>
+  <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_DIALOG_CONTENT_LABEL_V2" desc="Text explaining the benefit of enrolling a credit card as a virtual card and manage on Google Wallet. Also contains a link to learn more about virtual cards from IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_LEARN_MORE_LINK_LABEL.">
+    A virtual card number will be filled when you check out with this card to protect your actual details. Manage in Google Wallet. <ph name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_LEARN_MORE_LINK_LABEL">$1<ex>Learn about virtual cards</ex></ph>
   </message>
   <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_DECLINE_BUTTON_LABEL_SKIP" desc="Text displayed in the decline button in the virtual card enroll bubble. It is displayed only if the bubble/infobar will still be shown again at a later date after this one is declined.">
     Skip
@@ -1013,7 +1040,16 @@
       Pay in 4 or monthly
   </message>
   <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_CLEAR_FORM_TO_ENABLE" desc="Text for the disabled payment option button in the BNPL Pay Later tab, explaining that the user must clear the form to enable and use the pay later option.">
-      Clear form to use pay later option
+      Clear form to use pay later
+  </message>
+  <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_PAYMENT_OPTION_NOT_AVAILABLE_RIGHT_NOW" desc="Text for the disabled payment option button in the BNPL Pay Later tab, explaining that the option is not available right now.">
+      Not available right now
+  </message>
+  <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_PAYMENT_OPTION_CURRENCY_NOT_SUPPORTED" desc="Text for the disabled payment option button in the BNPL Pay Later tab, explaining that the currency is not supported.">
+      Currency not supported
+  </message>
+  <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_PAYMENT_OPTION_NOT_AVAILABLE_FOR_MERCHANT" desc="Text for the disabled payment option button in the BNPL Pay Later tab, explaining that the option is not available for this merchant.">
+      Not available for this merchant
   </message>
   <message name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_PAYMENT_OPTION_NOT_SUPPORTED_BY_MERCHANT" desc="Text for the disabled payment option button in the BNPL select provider screen, explaining that the provider is not supported by the merchant based on the page's URL.">
       Not supported by merchant
@@ -1021,11 +1057,20 @@
   <message name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_PAYMENT_OPTION_CHECKOUT_AMOUNT_TOO_LOW" desc="Text for the disabled payment option button in the BNPL select provider screen, explaining that the checkout amount is too low for the BNPL issuer to support.">
       Purchase must be over <ph name="CHECKOUT_AMOUNT_MINIMUM">$1<ex>$50.00</ex></ph>
   </message>
-  <message name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_PAYMENT_OPTION_CHECKOUT_AMOUNT_TOO_HIGH" desc="Text for the payment option button in the BNPL select provider screen, explaining that the checkout amount is too high for the BNPL issuer to support.">
+  <message name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_PAYMENT_OPTION_CHECKOUT_AMOUNT_TOO_HIGH" desc="Text for the disabled payment option button in the BNPL select provider screen, explaining that the checkout amount is too high for the BNPL issuer to support.">
       Purchase must be under <ph name="CHECKOUT_AMOUNT_MAXIMUM">$1<ex>$10,000.00</ex></ph>
+  </message>
+  <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_PAYMENT_OPTION_CHECKOUT_AMOUNT_TOO_LOW" desc="Text for the disabled payment option button in the BNPL Pay Later tab, explaining that the checkout amount is too low for the BNPL issuer to support.">
+      Minimum purchase <ph name="CHECKOUT_AMOUNT_MINIMUM">$1<ex>$50.00</ex></ph>
+  </message>
+  <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_PAYMENT_OPTION_CHECKOUT_AMOUNT_TOO_HIGH" desc="Text for the disabled payment option button in the BNPL Pay Later tab, explaining that the checkout amount is too high for the BNPL issuer to support.">
+      Maximum purchase <ph name="CHECKOUT_AMOUNT_MAXIMUM">$1<ex>$10,000.00</ex></ph>
   </message>
   <message name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_AI_FOOTNOTE" desc="A note explaining that Google will collect data from the checkout page to determine the checkout amount.">
       Content from the checkout page is shared with Google to offer these options. To hide pay later options in autofill, go to <ph name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_FOOTNOTE_HIDE_OPTION_PAYMENT_SETTINGS_LINK_TEXT">$1<ex>payment settings</ex></ph>.
+  </message>
+  <message name="IDS_AUTOFILL_CARD_BNPL_PAY_LATER_OPTIONS_AI_FOOTNOTE" desc="A note explaining that Google will collect data from the checkout page to determine the checkout amount and that payment plans are subject to eligibility.">
+      Content from the checkout page is shared with Google to offer these options. Payment plans are subject to eligibility. To hide pay later options in autofill, go to <ph name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_FOOTNOTE_HIDE_OPTION_PAYMENT_SETTINGS_LINK_TEXT">$1<ex>payment settings</ex></ph>.
   </message>
   <message name="IDS_AUTOFILL_CARD_BNPL_SELECT_PROVIDER_FOOTNOTE_FOR_AI_AMOUNT_EXTRACTION_NOTE" desc="A note explaining that Google will collect data from the checkout page to determine the checkout amount. This string is only part of what's shown on UI and is used for embolding text for first time users.">
       Content from the checkout page is shared with Google to offer these options.
@@ -1045,11 +1090,17 @@
   <message name="IDS_AUTOFILL_CARD_BNPL_LINKED_ISSUER_PILL_LABEL" desc="Label for the linked issuer pill view, which may be displayed on the BNPL select provider screen that prompts the user to choose a pay later provider. If this label is present, it indicates that the user has previously associated this BNPL provider with their Google account." formatter_data="android_java">
     Linked
   </message>
-  <message name="IDS_AUTOFILL_PAY_NOW" desc="Label for the tab in the autofill dropdown allowing the user to pay using a standard payment method, such as a credit card.">
-      Pay Now
+  <message name="IDS_AUTOFILL_PAY_NOW" desc="Label for the tab in the autofill dropdown allowing the user to pay using a standard payment method, such as a credit card." formatter_data="android_java">
+      Pay now
   </message>
-  <message name="IDS_AUTOFILL_PAY_LATER" desc="Label for the tab in the autofill dropdown allowing the user to pay later using a Buy Now, Pay Later (BNPL) provider.">
-      Pay Later
+  <message name="IDS_AUTOFILL_PAY_LATER" desc="Label for the tab in the autofill dropdown allowing the user to pay later using a Buy Now, Pay Later (BNPL) provider." formatter_data="android_java">
+      Pay later
+  </message>
+  <message name="IDS_AUTOFILL_PAY_NOW_PAY_LATER_TAB_ACCESSIBILITY_ANNOUNCEMENT" desc="Accessibility announcement when a tab is selected within the Autofill popup tabbed pane.">
+      <ph name="TAB_TITLE">$1<ex>Pay now</ex></ph>, selected tab, <ph name="INDEX">$2<ex>1</ex></ph> of <ph name="TOTAL">$3<ex>2</ex></ph>, use left or right arrow to switch between tabs
+  </message>
+  <message name="IDS_AUTOFILL_A11Y_ANNOUNCEMENT_CONCATENATE_TWO_STRINGS" desc="Generic template to concatenate two accessibility announcements with a comma.">
+      <ph name="STRING_1">$1<ex>Tab announcement</ex></ph>, <ph name="STRING_2">$2<ex>Footnote announcement</ex></ph>
   </message>
   <message name="IDS_AUTOFILL_CARD_INFO_RETRIEVAL_SUGGESTION_IPH_BUBBLE_FALLBACK_LABEL" desc="Text shown in the `In-Product Help(IPH)` bubble for card info retrieval suggestions on Chrome Android when the issuer_id is not present in the card. It is specifically for card info retrieval enrolled card. Card info will be copied after the user clicks the suggestion.">
       You can autofill this card because your account is linked to Google Pay
@@ -1059,6 +1110,12 @@
   </message>
   <message name="IDS_AUTOFILL_DISABLED_VIRTUAL_CARD_SUGGESTION_IPH_BUBBLE_LABEL_DESKTOP_SCREENREADER" is_accessibility_with_no_ui="true" desc="Screenreader text for the `In-Product Help(IPH)` bubble for grayed out virtual card suggestions on Chrome Desktop.">
       Cards not accepted by this merchant are disabled such as virtual cards.
+  </message>
+  <message name="IDS_AUTOFILL_DOWNSTREAM_CARD_AWARENESS_IPH_BUBBLE_LABEL" desc="Text shown in the `In-Product Help(IPH)` bubble for externally-saved card suggestions. This IPH is displayed when a user interacts with a payment form for the first time after adding a card through other Google services outside of Chrome.">
+      You can autofill cards that are saved in Google Wallet
+  </message>
+  <message name="IDS_AUTOFILL_DOWNSTREAM_CARD_AWARENESS_IPH_BUBBLE_LABEL_SCREENREADER" is_accessibility_with_no_ui="true" desc="Screenreader text for the `In-Product Help(IPH)` bubble for downstream card awareness. This IPH is displayed when a user interacts with a payment form for the first time after adding a card through other Google services outside of Chrome.">
+      You can autofill cards that are saved in Google Wallet.
   </message>
   <!-- virtual cards related strings - end -->
   <message name="IDS_AUTOFILL_CARD_AUTH_SELECTION_DIALOG_TITLE_MULTIPLE_OPTIONS" desc="Title for the credit card unmasking dialog for multiple challenge options. Used in VCN authentication, and once a challenge option is selected a new dialog is rendered where the user authenticates with the selected challenge option." formatter_data="android_java">
@@ -1289,6 +1346,12 @@
   <message name="IDS_AUTOFILL_SETTINGS_PAGE_CARD_BENEFITS_LABEL" desc="Label for the card benefits preferences in both the payments settings page and card benefits settings page. These preferences help users access the card benefits settings." formatter_data="android_java">
       Card benefits
   </message>
+  <message name="IDS_AUTOFILL_MAXIMIZE_CREDIT_CARD_BENEFITS_SUGGESTION_MAIN_TEXT" desc="The main text shown for the AI card recommendation suggestion. When this suggestion is accepted, it prompts Gemini to recommend credit cards for autofill.">
+    Maximize rewards
+  </message>
+  <message name="IDS_AUTOFILL_MAXIMIZE_CREDIT_CARD_BENEFITS_SUGGESTION_SECONDARY_TEXT" desc="The secondary text shown for the AI card recommendation suggestion. When this suggestion is accepted, it prompts Gemini to recommend credit cards for autofill.">
+    Compare card benefits using Gemini
+  </message>
   <if expr="not is_android">
     <message name="IDS_AUTOFILL_SETTINGS_PAGE_CARD_BENEFITS_TOGGLE_SUBLABEL_WITH_LEARN_LINK" desc="Sublabel for the payments settings page card benefits toggle, including a hyperlinked text to learn about card benefits.">
       Show which rewards and benefits are available for your cards at checkout. <ph name="CARD_BENEFIT_HELP_LINK_BEGIN">&lt;a href="$1" aria-description="$2"&gt;</ph>Learn about card benefits<ph name="CARD_BENEFIT_HELP_LINK_END">&lt;/a&gt;</ph>
@@ -1325,9 +1388,6 @@
   </if>
 
   <!-- Credit card and promo code offers and rewards-related strings -->
-  <message name="IDS_AUTOFILL_OFFERS_CASHBACK" desc="Displays that a cashback offer will be rewarded if credit card is used on current page. Part of Autofill suggestions popup.">
-    Cashback linked
-  </message>
   <message name="IDS_AUTOFILL_CARD_LINKED_OFFER_REMINDER_TITLE" desc="Title of the bubble/infobar shown on the merchant website when a GPay-activated card linked offer is available to use.">
     Reminder: saved offer available
   </message>
@@ -1356,9 +1416,6 @@
     </message>
   </if>
   <if expr="toolkit_views">
-    <message name="IDS_AUTOFILL_PROMO_CODE_OFFERS_REMINDER_TITLE" desc="Title of the bubble shown on the merchant website when a merchant promo code offer is available to use.">
-      Use this code at checkout
-    </message>
     <message name="IDS_AUTOFILL_GPAY_PROMO_CODE_OFFERS_REMINDER_TITLE" desc="Title of the bubble shown on the merchant website when a GPay merchant promo code offer is available to use, and the user can click on the promo code field to autofill it.">
       Reminder: Saved promo code available
     </message>
@@ -1370,9 +1427,6 @@
     </message>
     <message name="IDS_AUTOFILL_GPAY_PROMO_CODE_OFFERS_REMINDER_VALUE_PROP_TEXT" desc="The first line of the GPay promo code notification bubble, consisting of the value prop text and a see details link">
       <ph name="VALUE_PROP">$1<ex>5% off on shoes. Up to $50.</ex></ph> <ph name="DETAILS">$2<ex>See Details</ex></ph>
-    </message>
-    <message name="IDS_AUTOFILL_PROMO_CODE_OFFERS_USE_THIS_CODE_TEXT" desc="Text used in the promo code notification bubble to inform the user they can use the displayed promo code during checkout.">
-      Use this code at checkout
     </message>
   </if>
 
@@ -1555,7 +1609,7 @@
       Terms apply for card benefits
     </message>
     <message name="IDS_AUTOFILL_BNPL_ISSUER_SELECTION_TEXT_AFFIRM_BOTTOM_SHEET" desc="Text for the payment option button in the BNPL select provider bottomsheet, explaining that users can pay monthly or in installments. It is specifically for Affirm options.">
-        Monthly or 4 installments
+      No fees, as low as 0% APR
     </message>
     <message name="IDS_AUTOFILL_BNPL_ISSUER_SELECTION_TEXT_ZIP_BOTTOM_SHEET" desc="Text for the payment option button in the BNPL select provider bottomsheet, explaining that users can pay monthly or in installments. It is specifically for Zip options.">
         Pay in easy installments
@@ -1567,7 +1621,7 @@
       Payment plans are subject to eligibility.&#10;To hide pay later options, go to <ph name="BEGIN_LINK">&lt;link&gt;</ph>payment settings<ph name="END_LINK">&lt;/link&gt;</ph>
     </message>
     <message name="IDS_AUTOFILL_BNPL_ISSUER_BOTTOM_SHEET_AI_TERMS_LABEL" desc="Combined label for the BNPL issuer terms, the AI data sharing notice, and instructions on how to hide the pay later options. Appears in the BNPL select provider bottom sheet." formatter_data="android_java">
-      Payment plans are subject to eligibility. <ph name="BEGIN_BOLD">&lt;bold&gt;</ph>Content from the checkout page is shared with Google to offer these options.<ph name="END_BOLD">&lt;/bold&gt;</ph> To hide pay later options, go to <ph name="BEGIN_LINK">&lt;link&gt;</ph>payment settings<ph name="END_LINK">&lt;/link&gt;</ph>
+      <ph name="BEGIN_BOLD">&lt;bold&gt;</ph>Content from the checkout page is shared with Google to offer these options.<ph name="END_BOLD">&lt;/bold&gt;</ph> Payment plans are subject to eligibility. To hide pay later options, go to <ph name="BEGIN_LINK">&lt;link&gt;</ph>payment settings<ph name="END_LINK">&lt;/link&gt;</ph>.
     </message>
   </if>
 
@@ -1686,6 +1740,9 @@
   <message name="IDS_AUTOFILL_SAVE_CARD_TO_WALLET_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT" desc="Description text for confirmation shown after Google Wallet save card is successfully uploaded and saved to the server.">
     Your card is saved in Google Wallet so you can autofill it for future purchases
   </message>
+  <message name="IDS_AUTOFILL_SAVE_CARD_TO_WALLET_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT_V2" desc="Description text for confirmation shown after Google Wallet save card is successfully uploaded and saved to the server.">
+    This card is saved in Google Wallet so you can use it across Google services
+  </message>
   <message name="IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_FAILURE_DESCRIPTION_TEXT" desc="Description text for confirmation shown after save card upload to the server was unsuccessful.">
     This card couldn't be saved in your MoltBrowser Account. It's saved to MoltBrowser on this device instead.
   </message>
@@ -1720,16 +1777,24 @@
   <message name="IDS_AUTOFILL_SAVE_CARD_AND_VIRTUAL_CARD_ENROLL_CONFIRMATION_BUTTON_TEXT" desc="Text shown on the ok button of the confirmation prompt after a card upload or vcn enrollment.">
     Got it
   </message>
-  <message name="IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_FAILURE_OK_BUTTON_ACCESSIBLE_NAME" desc="Accessible name announced by the screenreader for save card failure confirmation prompt's ok button.">
-    Confirming card info can't be saved
-  </message>
-  <message name="IDS_AUTOFILL_VIRTUAL_CARD_ENROLL_CONFIRMATION_FAILURE_OK_BUTTON_ACCESSIBLE_NAME" desc="Accessible name announced by the screenreader for virtual card enrollment failure confirmation prompt's ok button.">
-    Confirming virtual card can't be turned on
-  </message>
   <if expr="is_ios">
     <message name="IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_SUCCESS_ACCESSIBLE_NAME" desc="Accessible name announced by the screenreader for a checkmark shown on save card infobar modal for card upload success ">
       Card info saved
     </message>
   </if>
+
+  <!-- Omnibox Autofill strings -->
+  <message name="IDS_AUTOFILL_PAYMENT_TEXT" desc="Text for the 'Autofill payment' chip displayed on the omnibox.">
+    Autofill payment
+  </message>
+  <message name="IDS_AUTOFILL_IPH_OMNIBOX_PAYMENT_CHIP_LABEL" desc="Text shown in the IPH bubble for the Autofill payment omnibox page action chip.">
+    Autofill using a saved payment method
+  </message>
+  <message name="IDS_AUTOFILL_IPH_OMNIBOX_PAYMENT_CHIP_LABEL_SCREENREADER" is_accessibility_with_no_ui="true" desc="Screenreader text for the IPH bubble for the Autofill payment omnibox page action chip.">
+    To autofill using a saved payment method, select the Autofill payment button.
+  </message>
+  <message name="IDS_AUTOFILL_OMNIBOX_BUBBLE_TITLE" desc="Text shown in the Autofill payment omnibox bubble title.">
+    Choose payment method
+  </message>
 
 </grit-part>

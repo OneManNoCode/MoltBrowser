@@ -27,7 +27,6 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/buildflags.h"
 #import "chrome/browser/chrome_browser_application_mac.h"
-#include "chrome/browser/enterprise/platform_auth/platform_auth_policy_observer.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/mac/install_from_dmg.h"
 #include "chrome/browser/mac/metrics.h"
@@ -41,7 +40,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/branded_strings.h"
 #include "components/metrics/metrics_service.h"
-#include "components/os_crypt/sync/os_crypt.h"
 #include "components/version_info/channel.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
@@ -128,17 +126,6 @@ void ChromeBrowserMainPartsMac::PreCreateMainMessageLoop() {
   }
 #endif  // !BUILDFLAG(CHROME_FOR_TESTING)
 
-  // Create the app delegate by requesting the shared AppController.
-  CHECK_EQ(nil, NSApp.delegate);
-  AppController* app_controller = AppController.sharedController;
-  CHECK_NE(nil, NSApp.delegate);
-
-  chrome::BuildMainMenu(NSApp, app_controller,
-                        l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
-                        /*is_pwa=*/false,
-                        /*is_rtl=*/base::i18n::IsRTL());
-  [app_controller mainMenuCreated];
-
   ui::WarmScreenCapture();
 
   metrics_ = std::make_unique<mac_metrics::Metrics>();
@@ -162,18 +149,32 @@ void ChromeBrowserMainPartsMac::PostCreateMainMessageLoop() {
   net::InitializeTrustStoreMacCache();
 }
 
+int ChromeBrowserMainPartsMac::PreCreateThreads() {
+  if (int ret = ChromeBrowserMainPartsPosix::PreCreateThreads();
+      ret != content::RESULT_CODE_NORMAL_EXIT) {
+    return ret;
+  }
+
+  // Create the app delegate by requesting the shared AppController.
+  CHECK_EQ(nil, NSApp.delegate);
+  AppController* app_controller = AppController.sharedController;
+  CHECK_NE(nil, NSApp.delegate);
+
+  chrome::BuildMainMenu(NSApp, app_controller,
+                        l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
+                        /*is_pwa=*/false,
+                        /*is_rtl=*/base::i18n::IsRTL());
+  [app_controller mainMenuCreated];
+
+  return content::RESULT_CODE_NORMAL_EXIT;
+}
+
 void ChromeBrowserMainPartsMac::PreProfileInit() {
   ChromeBrowserMainPartsPosix::PreProfileInit();
 
   // This is called here so that the app shim socket is only created after
   // taking the singleton lock.
   g_browser_process->platform_part()->app_shim_listener()->Init();
-
-  // Start up the platform auth SSO policy observer.
-  if (auto* local_state = g_browser_process->local_state(); local_state) {
-    platform_auth_policy_observer_ =
-        std::make_unique<PlatformAuthPolicyObserver>(local_state);
-  }
 }
 
 void ChromeBrowserMainPartsMac::PostProfileInit(Profile* profile,
@@ -183,14 +184,6 @@ void ChromeBrowserMainPartsMac::PostProfileInit(Profile* profile,
   // MoltBrowser: the in-app updater (molt_ai::UpdateManager) is initialized
   // cross-platform from ToolbarView's constructor, which has the profile's
   // network URLLoaderFactory. Nothing to do here.
-}
-
-void ChromeBrowserMainPartsMac::PostMainMessageLoopRun() {
-  // The `ProfileManager` has been destroyed, so no new platform authentication
-  // requests will be created.
-  platform_auth_policy_observer_.reset();
-
-  ChromeBrowserMainParts::PostMainMessageLoopRun();
 }
 
 void ChromeBrowserMainPartsMac::DidEndMainMessageLoop() {

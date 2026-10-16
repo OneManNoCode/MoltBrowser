@@ -46,6 +46,7 @@
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
 namespace blink {
@@ -338,6 +339,14 @@ bool MouseEvent::IsMouseEvent() const {
   return true;
 }
 
+void MouseEvent::SetRelatedTarget(EventTarget* related_target) {
+  if ((IsWheelEvent() || IsDragEvent()) &&
+      !RuntimeEnabledFeatures::DontLeakShadowTreesInDragEventsEnabled()) {
+    return;
+  }
+  related_target_ = related_target;
+}
+
 int16_t MouseEvent::button() const {
   const AtomicString& event_name = type();
   if (button_ == -1 || event_name == event_type_names::kMousemove ||
@@ -499,7 +508,8 @@ void MouseEvent::ComputeRelativePosition() {
     // box.
     if (layout_object->IsBoxModelObject()) {
       const auto* layout_box = To<LayoutBoxModelObject>(layout_object);
-      local_pos.Offset(-layout_box->BorderLeft(), -layout_box->BorderTop());
+      const PhysicalOffset offset = layout_box->BorderOutsets().Offset();
+      local_pos.Offset(-offset.left, -offset.top);
     }
 
     offset_x_ = local_pos.x() * inverse_zoom_factor;

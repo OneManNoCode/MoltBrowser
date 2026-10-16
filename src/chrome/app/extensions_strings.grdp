@@ -535,8 +535,16 @@
   <message name="IDS_EXTENSIONS_SIDEBAR_DISCOVER_MORE" desc="The text displayed in the sidebar of the chrome://extensions page to open the Chrome Web Store to get more extensions.">
     Discover more extensions and themes on the <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>Extension Store<ph name="END_LINK">&lt;/a&gt; <ex>&lt;/a&gt;</ex> </ph>
   </message>
+<<<<<<< src/chrome/app/extensions_strings.grdp (MoltBrowser)
   <message name="IDS_EXTENSIONS_WHATS_NEW_SIDEBAR_PROMO" desc="The text displayed in the sidebar of the chrome://extensions page to promote the extension documenation, for when the user is in developer mode.">
     Developing extensions? Stay up to date on <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>What's New<ph name="END_LINK">&lt;/a&gt;</ph> with MoltBrowser Extension developer documentation.
+||||||| upstream@pin
+  <message name="IDS_EXTENSIONS_WHATS_NEW_SIDEBAR_PROMO" desc="The text displayed in the sidebar of the chrome://extensions page to promote the extension documenation, for when the user is in developer mode.">
+    Developing extensions? Stay up to date on <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>What's New<ph name="END_LINK">&lt;/a&gt;</ph> with Chrome Extension developer documentation.
+=======
+  <message name="IDS_EXTENSIONS_MODERN_WEB_GUIDANCE_PROMO" desc="The promotional text displayed in the sidebar of the chrome://extensions page when Developer Mode is enabled. It encourages developers to download the Chrome Extensions and Chrome Web Store skill for their AI coding agents to get latest API updates and best practices.">
+    Using AI coding agents to build extensions? Install the <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph><ph name="CHROME_EXTENSIONS">Chrome Extensions<ex>Chrome Extensions</ex></ph> and <ph name="WEB_STORE_SKILL">Chrome Web Store skill<ex>Chrome Web Store skill</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph> to teach your coding agent the latest API updates and best practices.
+>>>>>>> upstream@new
   </message>
   <message name="IDS_EXTENSIONS_SIDEBAR_KEYBOARD_SHORTCUTS" desc="The text for the link to manage keyboard shortcuts for extensions.">
     Keyboard shortcuts
@@ -567,6 +575,9 @@
   </message>
   <message name="IDS_EXTENSIONS_SECTION_HEADER" desc="The label for the extensions section in chrome://extensions.">
     All Extensions
+  </message>
+  <message name="IDS_EXTENSIONS_PIN_NEW_EXTENSIONS" desc="The label for the toggle to pin new extensions in chrome://extensions.">
+    Pin new extensions
   </message>
   <!-- Extension Safety Check Review Panel strings -->
   <message name="IDS_EXTENSIONS_SAFETY_HUB_HEADER" desc="Name of a section in chrome://extensions that gives users an overview over their safety status and where users can take action to improve their safety.">
@@ -658,9 +669,6 @@
   </message>
   <message name="IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_FIND_ALTERNATIVE_BUTTON" desc="The label for a button to find an alternative extension in the manifest v2 deprecation panel">
     Find alternative
-  </message>
-  <message name="IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_KEEP_FOR_NOW_BUTTON" desc="The label for a button to dismiss the deprecation warning for a given extension, keeping it installed for the time being.">
-    Keep for now
   </message>
   <message name="IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_ACTION_MENU_BUTTON_LABEL" desc="The (accessible) label for the button whichs opens an extension's action menu.">
     More options for <ph name="EXTENSION_NAME">$1<ex>Google Translate</ex></ph>

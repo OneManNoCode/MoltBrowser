@@ -211,8 +211,7 @@
     <div slot="view" id="appearance">
       <template is="dom-if" if="[[renderPlugin_(
           routes_.APPEARANCE, lastRoute_, inSearchMode_)]]" update-when-false>
-        <settings-appearance-page-index prefs="{{prefs}}"
-            in-search-mode="[[inSearchMode_]]">
+        <settings-appearance-page-index in-search-mode="[[inSearchMode_]]">
         </settings-appearance-page-index>
       </template>
     </div>
@@ -241,9 +240,8 @@
   <template is="dom-if" if="[[showPage_(pageVisibility_.onStartup)]]">
     <div slot="view" id="onStartup">
       <template is="dom-if" if="[[renderPlugin_(
-          routes_.ON_STARTUP, lastRoute_, inSearchMode_)]]">
-        <settings-on-startup-page prefs="{{prefs}}">
-        </settings-on-startup-page>
+          routes_.ON_STARTUP, lastRoute_, inSearchMode_)]]" update-when-false>
+        <settings-on-startup-page></settings-on-startup-page>
       </template>
     </div>
   </template>
@@ -269,7 +267,7 @@
     <div slot="view" id="downloads">
       <template is="dom-if" if="[[renderPlugin_(
           routes_.DOWNLOADS, lastRoute_, inSearchMode_)]]">
-        <settings-downloads-page prefs="{{prefs}}"></settings-downloads-page>
+        <settings-downloads-page></settings-downloads-page>
       </template>
     </div>
   </template>
@@ -278,8 +276,7 @@
     <div slot="view" id="a11y">
       <template is="dom-if" if="[[renderPlugin_(
           routes_.ACCESSIBILITY, lastRoute_, inSearchMode_)]]">
-        <settings-a11y-page-index prefs="{{prefs}}"
-            in-search-mode="[[inSearchMode_]]">
+        <settings-a11y-page-index in-search-mode="[[inSearchMode_]]">
         </settings-a11y-page-index>
       </template>
     </div>
@@ -290,7 +287,7 @@
     <div slot="view" id="system">
       <template is="dom-if" if="[[renderPlugin_(
           routes_.SYSTEM, lastRoute_, inSearchMode_)]]">
-        <settings-system-page prefs="{{prefs}}"></settings-system-page>
+        <settings-system-page></settings-system-page>
       </template>
     </div>
   </template>

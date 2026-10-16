@@ -22,11 +22,14 @@
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/cocoa/fullscreen/fullscreen_menubar_tracker.h"
 #include "chrome/browser/ui/cocoa/fullscreen/fullscreen_toolbar_controller.h"
+#include "chrome/browser/ui/color/chrome_color_provider_utils.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
 #include "chrome/browser/ui/fullscreen_util_mac.h"
+#include "chrome/browser/ui/immersive/immersive_mode_controller.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/tabs/tab_style.h"
 #include "chrome/browser/ui/view_ids.h"
@@ -34,12 +37,13 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/browser_widget.h"
 #include "chrome/browser/ui/views/frame/caption_button_placeholder_container.h"
-#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
+#include "chrome/browser/ui/views/frame/glass_frame_service.h"
 #include "chrome/browser/ui/views/frame/tab_strip_region_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_frame_toolbar_utils.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
+#include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -48,13 +52,16 @@
 #include "ui/base/hit_test.h"
 #include "ui/base/theme_provider.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/outsets_f.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/cocoa/native_widget_mac_ns_window_host.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/layout_types.h"
@@ -80,6 +87,20 @@ BrowserFrameViewMac::BrowserFrameViewMac(BrowserWidget* frame,
                                          BrowserView* browser_view)
     : BrowserFrameView(frame, browser_view),
       fullscreen_session_timer_(std::make_unique<base::OneShotTimer>()) {
+  // GlassFrameService is only available if glass frame is enabled.
+  if (auto* const glass_service = GlassFrameService::GetInstance()) {
+    SetPaintToLayer();
+    layer()->SetFillsBoundsOpaquely(false);
+    is_glass_frame_eligible_ =
+        glass_service->IsBrowserWindowEligible(browser_view->browser());
+    glass_frame_service_subscription_ =
+        glass_service->RegisterGlassFrameEligibilityChangedCallback(
+            browser_view->browser(),
+            base::BindRepeating(
+                &BrowserFrameViewMac::OnGlassFrameEligibilityChanged,
+                base::Unretained(this)));
+  }
+
   if (web_app::AppBrowserController::IsWebApp(browser_view->browser())) {
     auto* provider =
         web_app::WebAppProvider::GetForWebApps(browser_view->GetProfile());
@@ -91,7 +112,8 @@ BrowserFrameViewMac::BrowserFrameViewMac(BrowserWidget* frame,
         base::BindRepeating(&BrowserFrameViewMac::UpdateFullscreenTopUI,
                             base::Unretained(this)));
   }
-  if (!browser_view->UsesImmersiveFullscreenMode()) {
+  if (!WindowFeatureController::From(browser_view->browser())
+           ->UsesImmersiveFullscreenMode()) {
     fullscreen_toolbar_controller_ =
         [[FullscreenToolbarController alloc] initWithBrowserView:browser_view];
     [fullscreen_toolbar_controller_
@@ -142,7 +164,8 @@ void BrowserFrameViewMac::OnFullscreenStateChanged() {
     EmitFullscreenSessionHistograms();
   }
 
-  if (GetBrowserView()->UsesImmersiveFullscreenMode()) {
+  if (WindowFeatureController::From(GetBrowserView()->browser())
+          ->UsesImmersiveFullscreenMode()) {
     ImmersiveModeController::From(GetBrowserView()->browser())
         ->SetEnabled(GetBrowserView()->IsFullscreen());
     UpdateFullscreenTopUI();
@@ -176,9 +199,11 @@ void BrowserFrameViewMac::OnTabStripStateChanged() {
   // Toggling the full size content view mask is a hacky way to force the
   // caption button to re-layout. Note that this will only work for normal
   // browser windows (not PWAs or anything using a remote `NSWindow`).
+  const NSRect frame = [window frame];
   const NSUInteger style_mask = [window styleMask];
   [window setStyleMask:style_mask ^ NSWindowStyleMaskFullSizeContentView];
   [window setStyleMask:style_mask];
+  [window setFrame:frame display:YES];
 }
 
 bool BrowserFrameViewMac::CaptionButtonsOnLeadingEdge() const {
@@ -231,7 +256,8 @@ void BrowserFrameViewMac::UpdateFullscreenTopUI() {
     new_style = GetUserPreferredToolbarStyle(always_show);
   }
 
-  if (GetBrowserView()->UsesImmersiveFullscreenMode()) {
+  if (WindowFeatureController::From(GetBrowserView()->browser())
+          ->UsesImmersiveFullscreenMode()) {
     remote_cocoa::mojom::NativeWidgetNSWindow* ns_window_mojo =
         views::NativeWidgetMacNSWindowHost::GetFromNativeWindow(
             GetBrowserView()->GetWidget()->GetNativeWindow())
@@ -413,7 +439,8 @@ void BrowserFrameViewMac::PaintChildren(const views::PaintInfo& info) {
   // Tabbed immersive fullscreen paints its own background. In this case we
   // allow painting of the frame's children, which fixes a flickering bug:
   // 1400287.
-  if (GetBrowserView()->UsesImmersiveFullscreenTabbedMode() ||
+  if (WindowFeatureController::From(GetBrowserView()->browser())
+          ->UsesImmersiveFullscreenTabbedMode() ||
       !ImmersiveModeController::From(GetBrowserView()->browser())
            ->IsRevealed()) {
     BrowserFrameView::PaintChildren(info);
@@ -462,6 +489,7 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
     return;
   }
 
+<<<<<<< src/chrome/browser/ui/views/frame/browser_frame_view_mac.mm (MoltBrowser)
   auto* theme_service = ThemeServiceFactory::GetForProfile(
       GetBrowserView()->browser()->profile());
 
@@ -475,6 +503,30 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
 
   if (!theme_service->UsingSystemTheme()) {
     PaintThemedFrame(canvas);
+||||||| upstream@pin
+  SkColor frame_color = GetFrameColor(BrowserFrameActiveState::kUseCurrent);
+  canvas->DrawColor(frame_color);
+
+  auto* theme_service = ThemeServiceFactory::GetForProfile(
+      GetBrowserView()->browser()->profile());
+  if (!theme_service->UsingSystemTheme()) {
+    PaintThemedFrame(canvas);
+=======
+  SkColor frame_color = GetFrameColor(BrowserFrameActiveState::kUseCurrent);
+  if (is_glass_frame_eligible_) {
+    const SkAlpha frame_alpha = color_utils::IsDark(frame_color)
+                                    ? kBrowserFrameAlphaDark
+                                    : kBrowserFrameAlphaLight;
+    canvas->DrawColor(SkColorSetA(frame_color, frame_alpha));
+  } else {
+    canvas->DrawColor(frame_color);
+
+    auto* theme_service = ThemeServiceFactory::GetForProfile(
+        GetBrowserView()->browser()->GetProfile());
+    if (!theme_service->UsingSystemTheme()) {
+      PaintThemedFrame(canvas);
+    }
+>>>>>>> upstream@new
   }
 }
 
@@ -507,21 +559,21 @@ void BrowserFrameViewMac::PaintThemedFrame(gfx::Canvas* canvas) {
 int BrowserFrameViewMac::TopUIFullscreenYOffset() const {
   if (!GetBrowserView()->GetTabStripVisible() ||
       !GetBrowserView()->IsFullscreen() ||
-      GetBrowserView()->UsesImmersiveFullscreenMode()) {
+      WindowFeatureController::From(GetBrowserView()->browser())
+          ->UsesImmersiveFullscreenMode()) {
     return 0;
   }
 
   CGFloat menu_bar_height =
-      [[[NSApplication sharedApplication] mainMenu] menuBarHeight];
+      NSApplication.sharedApplication.mainMenu.menuBarHeight;
   // If there's a camera notch, the window is already below where the menu bar
   // will be, so we shouldn't account for it.
-  if (@available(macos 12.0.1, *)) {
-    id screen = [GetWidget()->GetNativeWindow().GetNativeNSWindow() screen];
-    NSEdgeInsets insets = [screen safeAreaInsets];
-    if (insets.top != 0) {
-      menu_bar_height = 0;
-    }
+  NSScreen* screen = GetWidget()->GetNativeWindow().GetNativeNSWindow().screen;
+  NSEdgeInsets insets = screen.safeAreaInsets;
+  if (insets.top != 0) {
+    menu_bar_height = 0;
   }
+
   CGFloat title_bar_height =
       NSHeight([NSWindow frameRectForContentRect:NSZeroRect
                                        styleMask:NSWindowStyleMaskTitled]);
@@ -545,7 +597,9 @@ void BrowserFrameViewMac::UpdateCaptionButtonPlaceholderContainerBackground() {
   if (caption_button_placeholder_container_) {
     caption_button_placeholder_container_->SetBackground(
         views::CreateSolidBackground(
-            GetFrameColor(BrowserFrameActiveState::kUseCurrent)));
+            is_glass_frame_eligible_
+                ? SK_ColorTRANSPARENT
+                : GetFrameColor(BrowserFrameActiveState::kUseCurrent)));
   }
 }
 
@@ -560,4 +614,12 @@ void BrowserFrameViewMac::EmitFullscreenSessionHistograms() {
   // Max duration of 1 day.
   UMA_HISTOGRAM_CUSTOM_TIMES("Session.BrowserFullscreen.DurationUpTo24H", delta,
                              base::Milliseconds(1), base::Days(1), 100);
+}
+
+void BrowserFrameViewMac::OnGlassFrameEligibilityChanged(bool is_eligible) {
+  if (is_eligible == is_glass_frame_eligible_) {
+    return;
+  }
+  is_glass_frame_eligible_ = is_eligible;
+  SchedulePaint();
 }
