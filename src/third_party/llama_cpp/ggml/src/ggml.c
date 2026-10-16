@@ -156,6 +156,14 @@ static void ggml_print_backtrace_symbols(void) {
 #endif
 
 void ggml_print_backtrace(void) {
+#if defined(GGML_MOLTBROWSER_NO_BACKTRACE)
+    // MoltBrowser: ggml runs inside the browser process. Its default
+    // backtrace forks the browser, allows the child to ptrace it
+    // (PR_SET_PTRACER) and execs "gdb"/"lldb" looked up on PATH, so a
+    // planted debugger in a user-writable PATH entry would get the browser's
+    // memory. Chromium's own crash handling covers the abort() that follows.
+    return;
+#else
     const char * GGML_NO_BACKTRACE = getenv("GGML_NO_BACKTRACE");
     if (GGML_NO_BACKTRACE) {
         return;
@@ -234,6 +242,7 @@ void ggml_print_backtrace(void) {
 #endif
         waitpid(child_pid, NULL, 0);
     }
+#endif  // defined(GGML_MOLTBROWSER_NO_BACKTRACE)
 }
 #else
 void ggml_print_backtrace(void) {

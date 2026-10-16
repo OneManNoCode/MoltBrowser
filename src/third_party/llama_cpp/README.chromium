@@ -50,6 +50,12 @@ Local Modifications:
     ggml/src/ggml-metal/ggml-metal-ops.cpp: #include <utility> (std::swap
       with Chromium's C++ modules).
     ggml/src/ggml-metal/ggml-metal.cpp: #include <memory>.
+    ggml/src/ggml.c, ggml/src/ggml.cpp: with GGML_MOLTBROWSER_NO_BACKTRACE
+      (set by BUILD.gn's :ggml_no_backtrace), ggml_print_backtrace() does
+      nothing and no std::set_terminate handler is installed. Upstream
+      forks the browser process on GGML_ABORT, allows the child to ptrace
+      it (PR_SET_PTRACER) and execs gdb/lldb found on PATH; the terminate
+      handler is a static initializer replacing Chromium's own.
     src/llama-adapter.cpp: #include <iterator>.
     src/llama-chat.cpp: llm_chat_template_from_str() uses find() instead
       of map::at(), so a template that is not a bare name is not

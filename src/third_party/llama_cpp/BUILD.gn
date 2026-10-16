@@ -82,6 +82,13 @@ config("llama_exceptions") {
   }
 }
 
+# MoltBrowser: compile out ggml's crash backtrace (fork + PR_SET_PTRACER +
+# exec of gdb/lldb from PATH inside the browser process) and its process-wide
+# std::set_terminate static initializer. See README.chromium.
+config("ggml_no_backtrace") {
+  defines = [ "GGML_MOLTBROWSER_NO_BACKTRACE" ]
+}
+
 # ---- GGML split into sub-targets to avoid duplicate .o names ----
 
 # C-only core GGML sources
@@ -94,7 +101,10 @@ source_set("ggml_c") {
 
   public_configs = [ ":llama_cpp_config" ]
   configs += _llama_cpp_cfi_configs
-  configs += [ ":llama_cpp_version_headers" ]
+  configs += [
+    ":llama_cpp_version_headers",
+    ":ggml_no_backtrace",
+  ]
 
   cflags_c = [
     "-std=c11",
@@ -117,6 +127,7 @@ source_set("ggml_cpp") {
 
   public_configs = [ ":llama_cpp_config" ]
   configs += _llama_cpp_cfi_configs
+  configs += [ ":ggml_no_backtrace" ]
 
   # ggml-backend-reg.cpp uses try/catch
   configs -= [ "//build/config/compiler:no_exceptions" ]
