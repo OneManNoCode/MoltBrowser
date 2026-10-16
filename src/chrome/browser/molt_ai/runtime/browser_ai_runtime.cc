@@ -1383,15 +1383,26 @@ GenerationResult BrowserAIRuntime::StreamPrompt(const std::string& prompt,
                                 : 64);
   const int reply_reserve = std::min(visible + hidden, n_ctx / 2);
 
+  // Agent and automation prompts carry page text. parse_special=false is not
+  // enough on its own: llama.cpp still matches USER_DEFINED tokens (only
+  // CONTROL and UNKNOWN are skipped), and Gemma 4 defines its turn, channel
+  // and tool markers (<|channel>, <|tool_response>, ...) that way, so a page
+  // could end the turn or fake a tool result. Neutralize every
+  // control-looking vocab text first, as StreamChat does for its messages.
+  const std::vector<std::string>& specials = impl_->special_texts;
+  const std::string system_prompt =
+      NeutralizeSpecialTokens(options.system_prompt, specials);
+  const std::string body_text = NeutralizeSpecialTokens(prompt, specials);
+
   // The system prompt is kept whole (with BOS); the body is shortened in
   // the middle if needed (A2) — previously this failed outright.
   std::vector<llama_token> tokens;
-  if (!options.system_prompt.empty()) {
-    tokens = Tokenize(vocab, options.system_prompt + "\n\n",
+  if (!system_prompt.empty()) {
+    tokens = Tokenize(vocab, system_prompt + "\n\n",
                       /*add_special=*/true, /*parse_special=*/false);
   }
   std::vector<llama_token> body =
-      Tokenize(vocab, prompt, /*add_special=*/tokens.empty(),
+      Tokenize(vocab, body_text, /*add_special=*/tokens.empty(),
                /*parse_special=*/false);
   if (body.empty() && tokens.empty()) {
     result.error_message = "Failed to tokenize prompt";
