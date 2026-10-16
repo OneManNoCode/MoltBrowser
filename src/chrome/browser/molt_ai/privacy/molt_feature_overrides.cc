@@ -10,6 +10,7 @@
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
+#include "third_party/blink/public/common/features.h"
 
 namespace molt_ai {
 namespace privacy {
@@ -67,8 +68,16 @@ void AppendDefaultFeatureOverrides(
   AppendOverrides(kDisabledByDefault,
                   base::FeatureList::OVERRIDE_DISABLE_FEATURE, overrides);
 
-  // Features MoltBrowser forces on go in a list like the one above, appended
-  // with base::FeatureList::OVERRIDE_ENABLE_FEATURE.
+  static const base::Feature* const kEnabledByDefault[] = {
+      // Global Privacy Control: the `Sec-GPC: 1` request header (browser-
+      // and renderer-initiated requests) and navigator.globalPrivacyControl.
+      // Chromium 152 implements both behind this flag, off until Chrome adds
+      // a setting; MoltBrowser sends the signal by default, as Brave does.
+      // chrome://flags (#enable-global-privacy-control) can still turn it off.
+      &blink::features::kGlobalPrivacyControlForce,
+  };
+  AppendOverrides(kEnabledByDefault, base::FeatureList::OVERRIDE_ENABLE_FEATURE,
+                  overrides);
 }
 
 }  // namespace privacy

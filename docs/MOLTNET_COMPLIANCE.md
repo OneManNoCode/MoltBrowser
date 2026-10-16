@@ -321,9 +321,13 @@ is kept, and you can change any of them in Settings.
 - The `Sec-CH-UA` brand list says "Chromium", like other Chromium-based
   browsers, instead of advertising MoltBrowser.
 
-**Global Privacy Control** is not offered: the Chromium version MoltBrowser is
-built on has no `Sec-GPC` / `navigator.globalPrivacyControl` support, and
-adding it correctly needs engine changes we haven't made.
+**Global Privacy Control** is on: every request carries `Sec-GPC: 1` and
+`navigator.globalPrivacyControl` is true, in normal and MoltNet windows alike
+(Chromium 152's implementation, which MoltBrowser enables by default in
+`molt_feature_overrides.cc`; `chrome://flags/#enable-global-privacy-control`
+turns it off). It is a browser-wide switch, so MoltNet windows send it too: it
+tells sites that the user is a MoltBrowser (or Brave, or GPC-enabled) user,
+which is a small, fixed trait shared by everyone using MoltBrowser.
 
 ## 7. Bottom line
 

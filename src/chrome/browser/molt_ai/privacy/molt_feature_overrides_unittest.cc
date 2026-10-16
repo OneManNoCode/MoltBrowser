@@ -13,6 +13,7 @@
 #include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
+#include "third_party/blink/public/common/features.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
@@ -33,14 +34,34 @@ std::unique_ptr<base::FeatureList> BuildFeatureList(
   return feature_list;
 }
 
-TEST(MoltFeatureOverridesTest, OnlyDisablesFeatures) {
+// Everything is forced off except Global Privacy Control, which is forced on.
+TEST(MoltFeatureOverridesTest, OnlyGlobalPrivacyControlIsEnabled) {
   std::vector<base::FeatureList::FeatureOverrideInfo> overrides;
   AppendDefaultFeatureOverrides(overrides);
   ASSERT_FALSE(overrides.empty());
   for (const auto& [feature, state] : overrides) {
-    EXPECT_EQ(state, base::FeatureList::OVERRIDE_DISABLE_FEATURE)
+    const bool is_gpc =
+        &feature.get() == &blink::features::kGlobalPrivacyControlForce;
+    EXPECT_EQ(state, is_gpc ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
+                            : base::FeatureList::OVERRIDE_DISABLE_FEATURE)
         << feature.get().name;
   }
+}
+
+TEST(MoltFeatureOverridesTest, SendsGlobalPrivacyControl) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(
+      blink::features::kGlobalPrivacyControlForce));
+}
+
+// chrome://flags writes --disable-features, which must still win.
+TEST(MoltFeatureOverridesTest, GlobalPrivacyControlCanBeTurnedOff) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList(
+      "", blink::features::kGlobalPrivacyControlForce.name));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(
+      blink::features::kGlobalPrivacyControlForce));
 }
 
 TEST(MoltFeatureOverridesTest, DisablesKeylessGoogleRequests) {
