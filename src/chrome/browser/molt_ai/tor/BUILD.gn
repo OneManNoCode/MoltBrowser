@@ -86,8 +86,9 @@ source_set("tor") {
   }
 }
 
-# Onion-Location glue (GURL + net::HttpResponseHeaders) around onion_util,
-# kept out of :onion so molt_ai_unittests can test it.
+# Onion-Location (header and <meta>) and onion request-URL glue (GURL,
+# base::Value, net::HttpResponseHeaders) around onion_util, kept out of
+# :onion so molt_ai_unittests can test it.
 source_set("onion_location") {
   sources = [
     "onion_location.cc",
@@ -95,6 +96,7 @@ source_set("onion_location") {
   ]
   deps = [
     ":protocol",
+    "//base",
     "//net",
     "//url",
   ]
@@ -129,6 +131,9 @@ source_set("onion") {
     "//components/security_interstitials/content:security_interstitial_page",
     "//components/security_interstitials/core",
     "//content/public/browser",
+
+    # ISOLATED_WORLD_ID_CONTENT_END (OnionLocationTabHelper's <meta> read).
+    "//content/public/common",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
