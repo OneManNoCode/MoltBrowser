@@ -29,6 +29,20 @@ source_set("core") {
   ]
 }
 
+# Profile prefs ("Strip tracking parameters"). No //content or Profile
+# dependency: ProfileImpl::RegisterProfilePrefs (//chrome/browser) registers
+# them.
+source_set("prefs") {
+  sources = [
+    "molt_shield_prefs.cc",
+    "molt_shield_prefs.h",
+  ]
+  deps = [
+    "//base",
+    "//components/prefs",
+  ]
+}
+
 source_set("shield") {
   sources = [
     "filter_list_manager.cc",
@@ -57,6 +71,7 @@ source_set("shield") {
   ]
   public_deps = [
     ":core",
+    ":prefs",
     "//build/rust:cxx_cppdeps",
     "//chrome/browser/profiles:profile",
     "//chrome/common/molt_ai/shield:features",
@@ -73,6 +88,7 @@ source_set("shield") {
     "//chrome/common:constants",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
+    "//components/prefs",
     "//mojo/public/cpp/system",
     "//net",
   ]
@@ -89,9 +105,11 @@ source_set("settings_handler") {
     "//content/public/browser",
   ]
   deps = [
+    ":prefs",
     ":shield",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
+    "//components/prefs",
     "//net",
   ]
 }
@@ -101,13 +119,17 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "molt_shield_kill_switch_unittest.cc",
+    "molt_shield_prefs_unittest.cc",
     "molt_shield_unittest.cc",
   ]
   deps = [
     ":core",
+    ":prefs",
     "//base",
     "//base/test:test_support",
     "//chrome/common/molt_ai/shield:features",
+    "//components/prefs",
+    "//components/prefs:test_support",
     "//testing/gtest",
     "//url",
   ]

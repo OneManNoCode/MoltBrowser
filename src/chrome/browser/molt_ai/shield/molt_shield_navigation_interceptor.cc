@@ -53,6 +53,11 @@ std::optional<CheckInput> MoltShieldNavigationInterceptor::MakeInput(
       !CanStripParamsFromNavigation(request.method, request.url)) {
     return std::nullopt;
   }
+  // The profile's "Strip tracking parameters" setting (molt://ai-settings),
+  // read per leg so a change applies to the next navigation.
+  if (!IsRemoveParamEnabledForContext(browser_context)) {
+    return std::nullopt;
+  }
   MoltShieldService* service = MoltShieldService::Get();
   service->RegisterProfile(Profile::FromBrowserContext(browser_context));
   if (!service->IsEnabled()) {

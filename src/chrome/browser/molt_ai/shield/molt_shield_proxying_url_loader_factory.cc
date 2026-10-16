@@ -319,9 +319,11 @@ class MoltShieldProxyingURLLoaderFactory::InProgressRequest
   }
 
   // The engine's rewrite when this request may be stripped at all, else an
-  // empty (invalid) URL.
+  // empty (invalid) URL. Stripping needs the kill switch and the profile's
+  // "Strip tracking parameters" setting on (read per leg).
   GURL StrippedUrl(const std::string& rewritten_url) const {
-    if (rewritten_url.empty() || !molt_shield::IsRemoveParamEnabled() ||
+    if (rewritten_url.empty() ||
+        !IsRemoveParamEnabledForContext(factory_->browser_context_) ||
         !CanStripParamsFromSubresource(request_.destination,
                                        request_.keepalive)) {
       return GURL();

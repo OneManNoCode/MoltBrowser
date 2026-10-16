@@ -73,6 +73,19 @@ const openedUrls = [];
 // saveMoltProfile calls from the /profile editor ([dict, options] each).
 const profileSaves = [];
 
+// shieldSetGlobal calls from molt://ai-settings ([key, value] each). The
+// reply after turning tracking-parameter stripping off also reports its
+// chrome://flags kill switch as off.
+const shieldGlobalCalls = [];
+function shieldSetGlobal(args) {
+  shieldGlobalCalls.push([args[1], args[2]]);
+  if (args[1] !== 'removeParam') return SHIELD_STATE;
+  return Object.assign({}, SHIELD_STATE, {
+    removeParam: args[2],
+    hooksOff: ['molt-shield-websocket', 'molt-shield-removeparam'],
+  });
+}
+
 // Model licence display (A13), shared by molt://ai and molt://ai-chat: the
 // licence name is text, only an http(s) licence URL becomes a link, the
 // link opens through openUrlInTab, and in the model menu it doesn't also
@@ -113,7 +126,7 @@ async function checkModelLicences(window) {
 // molt://ai-settings MoltShield section state, with hostile strings where
 // list/tab metadata comes from the network or pages.
 const SHIELD_STATE = {
-  enabled: true, cosmetic: true, consentKiller: false, ready: true,
+  enabled: true, cosmetic: true, consentKiller: false, removeParam: true, ready: true,
   updating: false, lastUpdateCheck: 1760000000000, engine: 'adblock-rust-0.13.3/molt-1',
   stats: {checked: 1200, blocked: 300, ads: 120, redirects: 4, websockets: 1,
           cosmetic: 9, scriptlets: 2},
@@ -236,7 +249,7 @@ const PAGES = [
      vaultAdd: {success: true, id: 'c3', site_host: 'new.example'},
      // MoltShield section (script: kMoltShieldSettingsJs).
      shieldGetState: SHIELD_STATE,
-     shieldSetGlobal: SHIELD_STATE,
+     shieldSetGlobal,
      shieldSetListEnabled: SHIELD_STATE,
      shieldUpdateNow: SHIELD_STATE,
      shieldSetTabShields: SHIELD_STATE,
@@ -254,11 +267,25 @@ const PAGES = [
      assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));
      assert.strictEqual(doc.querySelectorAll('#shieldLists input[type=checkbox]').length, 2);
-     assert.strictEqual(doc.querySelectorAll('#shieldGlobals input[type=checkbox]').length, 3);
+     assert.strictEqual(doc.querySelectorAll('#shieldGlobals input[type=checkbox]').length, 4);
      assert(doc.querySelector('#shieldGlobals .shield-killswitch').textContent
                 .includes('molt-shield-websocket'), 'kill-switch notice shown');
      assert.strictEqual(doc.querySelectorAll('#shieldSection input:disabled').length, 0,
                         'controls stay usable unless --disable-molt-shield');
+     // "Strip tracking parameters": a per-profile switch next to the others.
+     const removeParamRow = () => Array.from(doc.querySelectorAll('#shieldGlobals .field'))
+         .find((f) => /Strip tracking parameters/.test(f.textContent));
+     let rp = removeParamRow();
+     assert(rp, 'tracking-parameter switch shown');
+     assert(rp.querySelector('input').checked, 'on by default');
+     rp.querySelector('input').click();
+     await tick();
+     assert.strictEqual(JSON.stringify(shieldGlobalCalls.pop()), '["removeParam",false]',
+                        'switch sends shieldSetGlobal(removeParam, false)');
+     rp = removeParamRow();
+     assert(!rp.querySelector('input').checked, 'shows the new value');
+     assert(rp.querySelector('input').disabled,
+            'disabled while #molt-shield-removeparam is off in chrome://flags');
      assert.strictEqual(doc.querySelectorAll('#vaultList b').length, 0, 'usernames are text');
      assert.strictEqual(doc.getElementById('vaultStorageWarn').style.display, '', 'keyring warning shown');
      const shows = Array.from(doc.querySelectorAll('#vaultList button')).filter((b) => b.textContent === 'Show');

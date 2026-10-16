@@ -26,9 +26,11 @@
 // Rules:
 //  * GET navigations to http(s) URLs with a query only (a 307 re-sends a
 //    POST body).
-//  * Global Shields on, Shields up for the top-level site, and the
-//    MoltShieldRemoveParam kill switch on (chrome://flags/
-//    #molt-shield-removeparam, --disable-molt-shield).
+//  * Global Shields on, Shields up for the top-level site, the profile's
+//    "Strip tracking parameters" setting on (molt://ai-settings,
+//    molt_shield_prefs.h; checked per leg) and the MoltShieldRemoveParam
+//    kill switch on (chrome://flags/#molt-shield-removeparam,
+//    --disable-molt-shield).
 //  * Only the engine's rewrite is used, never its block verdict: documents
 //    are never blocked here (ad frames are collapsed by
 //    MoltShieldNavigationThrottle).

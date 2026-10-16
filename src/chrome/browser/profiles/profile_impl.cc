@@ -64,6 +64,7 @@
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
 #include "chrome/browser/k_anonymity_service/k_anonymity_service_factory.h"
 #include "chrome/browser/molt_ai/privacy/molt_privacy_prefs.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
 #include "chrome/browser/origin_trials/origin_trials_factory.h"
@@ -409,6 +410,8 @@ void ProfileImpl::RegisterProfilePrefs(
   // other NTP URL resolution.
   registry->RegisterStringPref(prefs::kNewTabPageLocationOverride,
                                "chrome://molt-home/");
+  // MoltBrowser: MoltShield's "Strip tracking parameters" switch.
+  molt_ai::shield::prefs::RegisterProfilePrefs(registry);
 
 #if BUILDFLAG(ENABLE_PRINTING)
   registry->RegisterBooleanPref(prefs::kPrintingEnabled, true);

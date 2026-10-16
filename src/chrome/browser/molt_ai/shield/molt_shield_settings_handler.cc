@@ -11,6 +11,7 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
+#include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_request_utils.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_service.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_site_settings.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/common/webui_url_constants.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
@@ -112,6 +114,9 @@ base::DictValue MoltShieldSettingsHandler::BuildState() {
   state.Set("enabled", settings.enabled);
   state.Set("cosmetic", settings.cosmetic);
   state.Set("consentKiller", settings.consent_killer);
+  // Per profile (the regular one: Incognito and MoltNet follow it).
+  state.Set("removeParam", prefs::IsRemoveTrackingParamsOn(
+                               profile->GetOriginalProfile()->GetPrefs()));
   state.Set("ready", service->IsReady());
   state.Set("updating", service->IsUpdating());
   state.Set("lastUpdateCheck", ToJsTime(service->last_update_check()));
@@ -211,6 +216,13 @@ void MoltShieldSettingsHandler::HandleSetGlobal(const base::ListValue& args) {
       service->SetCosmeticEnabled(*value);
     } else if (*key == "consentKiller") {
       service->SetConsentKillerEnabled(*value);
+    } else if (*key == "removeParam") {
+      // A profile pref, not browser-wide state: set it on the regular
+      // profile so it persists and Incognito / MoltNet windows follow it.
+      Profile::FromWebUI(web_ui())
+          ->GetOriginalProfile()
+          ->GetPrefs()
+          ->SetBoolean(prefs::kRemoveTrackingParams, *value);
     }
   }
   ResolveWithState(args[0]);
@@ -364,12 +376,23 @@ const char kMoltShieldSettingsJs[] = R"JS(
        state.cosmetic],
       ['consentKiller', 'Auto-reject cookie consent banners',
        state.consentKiller],
+      ['removeParam', 'Strip tracking parameters from links and requests',
+       state.removeParam, 'Removes click and campaign identifiers ' +
+       '(utm_source, fbclid, gclid, …) from links you open, and the ' +
+       'tracking parameters the filter lists name from requests pages ' +
+       'make.', 'molt-shield-removeparam'],
     ];
     rows.forEach(function(r) {
       var f = el('div', 'field');
-      f.appendChild(toggleRow(r[1], r[2], function(v) {
+      var toggle = toggleRow(r[1], r[2], function(v) {
         call('shieldSetGlobal', r[0], v);
-      }));
+      });
+      f.appendChild(toggle);
+      if (r[3]) f.appendChild(el('div', 'desc', r[3]));
+      // Turned off in chrome://flags: the switch can't turn it back on.
+      if (r[4] && (state.hooksOff || []).indexOf(r[4]) >= 0) {
+        toggle.querySelector('input').disabled = true;
+      }
       box.appendChild(f);
     });
   }
