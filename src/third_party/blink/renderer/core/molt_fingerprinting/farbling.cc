@@ -36,6 +36,12 @@ constexpr uint64_t kCollapseOneIn = 8;
 // Marks byte contexts that come from AnalyserNode data rather than pixels
 // (pixel contexts fit in 32 bits).
 constexpr uint64_t kAudioByteContextTag = uint64_t{1} << 40;
+// Marks the contexts of float16 magnitudes (the low bit carries the sign).
+constexpr uint64_t kHalfContextTag = uint64_t{1} << 41;
+
+// Largest finite float16 magnitude (65504) and the infinity pattern.
+constexpr uint32_t kHalfMaxFinite = 0x7bff;
+constexpr uint32_t kHalfInfinity = 0x7c00;
 
 // splitmix64's finalizer: a full-avalanche 64-bit mixer.
 constexpr uint64_t Mix(uint64_t z) {
@@ -119,21 +125,23 @@ uint64_t Farbler::Prf(uint64_t domain, uint64_t input) const {
   return Mix(Mix(input ^ k_[0] ^ (domain * kGolden)) ^ k_[1]) ^ k_[2];
 }
 
-uint8_t Farbler::FarbleByte(uint8_t value, uint64_t context) const {
+uint32_t Farbler::FarbleValue(uint32_t value,
+                              uint32_t max,
+                              uint64_t context) const {
   // This runs once per distinct pixel, so it is kept to one multiply for the
   // pair alignment (which depends only on the context: the other channels +
   // alpha) and one mix round for the pair decision. Pairs are
-  // {2k + align, 2k + 1 + align}; with align == 1 the values 0 and 255 are
-  // singletons and never move.
-  const unsigned align =
-      static_cast<unsigned>(((context ^ k_[3]) * (k_[1] | 1)) >> 63);
-  if (value < align) {
+  // {2k + align, 2k + 1 + align}; with align == 1 the values 0 and `max`
+  // (when even) are singletons and never move.
+  const uint32_t align =
+      static_cast<uint32_t>(((context ^ k_[3]) * (k_[1] | 1)) >> 63);
+  if (value < align || value > max) {
     return value;
   }
-  const unsigned k = (value - align) >> 1;
-  const unsigned lo = 2 * k + align;
-  const unsigned hi = lo + 1;
-  if (hi > 255) {
+  const uint32_t k = (value - align) >> 1;
+  const uint32_t lo = 2 * k + align;
+  const uint32_t hi = lo + 1;
+  if (hi > max) {
     return value;
   }
   const uint64_t r = Mix(context ^ k_[0] ^ ((uint64_t{k} + 1) * kGolden) ^
@@ -141,7 +149,11 @@ uint8_t Farbler::FarbleByte(uint8_t value, uint64_t context) const {
   if ((r & (kCollapseOneIn - 1)) != 0) {
     return value;
   }
-  return static_cast<uint8_t>((r / kCollapseOneIn) & 1 ? hi : lo);
+  return (r / kCollapseOneIn) & 1 ? hi : lo;
+}
+
+uint8_t Farbler::FarbleByte(uint8_t value, uint64_t context) const {
+  return static_cast<uint8_t>(FarbleValue(value, 255, context));
 }
 
 size_t Farbler::ChannelFor(uint8_t alpha) const {
@@ -173,6 +185,17 @@ std::array<uint8_t, 4> Farbler::FarblePixel(
 
 void Farbler::FarbleRGBA8(base::span<uint8_t> pixels,
                           ChannelOrder order) const {
+  FarbleRGBA8Impl(pixels, order, /*premultiplied=*/false);
+}
+
+void Farbler::FarbleRGBA8Premul(base::span<uint8_t> pixels,
+                                ChannelOrder order) const {
+  FarbleRGBA8Impl(pixels, order, /*premultiplied=*/true);
+}
+
+void Farbler::FarbleRGBA8Impl(base::span<uint8_t> pixels,
+                              ChannelOrder order,
+                              bool premultiplied) const {
   const size_t r_index = order == ChannelOrder::kBGRA ? 2 : 0;
   const size_t b_index = 2 - r_index;
   const size_t count = pixels.size() / 4;
@@ -200,6 +223,12 @@ void Farbler::FarbleRGBA8(base::span<uint8_t> pixels,
         channel = ChannelFor(alpha);
       }
       last_out = FarblePixelInChannel(rgba, channel);
+      if (premultiplied && last_out[channel] > alpha) {
+        // Premultiplied colour channels can't exceed alpha. Not moving is
+        // still idempotent: the decision for this tuple is the same next
+        // time, and it is again refused.
+        last_out = rgba;
+      }
       last_changed = last_out != rgba;
     }
     if (!last_changed) {
@@ -208,6 +237,32 @@ void Farbler::FarbleRGBA8(base::span<uint8_t> pixels,
     pixels[p + r_index] = last_out[0];
     pixels[p + 1] = last_out[1];
     pixels[p + b_index] = last_out[2];
+  }
+}
+
+void Farbler::FarbleUnorm8(base::span<uint8_t> pixels, size_t channels) const {
+  if (channels == 4) {
+    FarbleRGBA8(pixels, ChannelOrder::kRGBA);
+    return;
+  }
+  if (channels < 1 || channels > 3) {
+    return;
+  }
+  // Opaque by definition (A = 255): one channel for the whole buffer.
+  const size_t channel = ChannelFor(255);
+  if (channel >= channels) {
+    // The key moves a channel this format doesn't return (e.g. G of a RED
+    // read). The RGBA read of the same data moves that channel, not R.
+    return;
+  }
+  const size_t count = pixels.size() / channels;
+  for (size_t i = 0; i < count; ++i) {
+    base::span<uint8_t> px = pixels.subspan(channels * i, channels);
+    std::array<uint8_t, 4> rgba = {0, 0, 0, 255};
+    for (size_t c = 0; c < channels; ++c) {
+      rgba[c] = px[c];
+    }
+    px[channel] = FarblePixelInChannel(rgba, channel)[channel];
   }
 }
 
@@ -289,6 +344,54 @@ void Farbler::FarbleAudio(base::span<float> samples) const {
       have_last = true;
     }
     samples[i] = last_out;
+  }
+}
+
+void Farbler::FarbleFloat32(base::span<uint8_t> bytes) const {
+  const size_t count = bytes.size() / 4;
+  uint32_t last_in = 0;
+  uint32_t last_out = 0;
+  bool have_last = false;
+  for (size_t i = 0; i < count; ++i) {
+    base::span<uint8_t> value = bytes.subspan(4 * i, 4u);
+    const uint32_t bits = LoadU32LE(value);
+    if (!have_last || bits != last_in) {
+      last_in = bits;
+      last_out =
+          std::bit_cast<uint32_t>(FarbleSample(std::bit_cast<float>(bits)));
+      have_last = true;
+    }
+    if (last_out != bits) {
+      StoreU32LE(value, last_out);
+    }
+  }
+}
+
+uint16_t Farbler::FarbleHalf(uint16_t half) const {
+  const uint32_t sign = half & 0x8000u;
+  const uint32_t magnitude = half & 0x7fffu;
+  if (magnitude == 0 || magnitude >= kHalfInfinity) {
+    // Zero, infinity, NaN.
+    return half;
+  }
+  // Adjacent finite non-zero magnitudes are adjacent values, one ulp apart
+  // (also across exponent boundaries). Shifting by one keeps 0 out of every
+  // pair, and capping at the largest finite magnitude keeps infinity out.
+  const uint32_t moved = FarbleValue(magnitude - 1, kHalfMaxFinite - 1,
+                                     kHalfContextTag | (sign >> 15)) +
+                         1;
+  return static_cast<uint16_t>(sign | moved);
+}
+
+void Farbler::FarbleFloat16(base::span<uint8_t> bytes) const {
+  const size_t count = bytes.size() / 2;
+  for (size_t i = 0; i < count; ++i) {
+    base::span<uint8_t> value = bytes.subspan(2 * i, 2u);
+    const uint16_t half = LoadU16LE(value);
+    const uint16_t out = FarbleHalf(half);
+    if (out != half) {
+      StoreU16LE(value, out);
+    }
   }
 }
 

@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index e6f8fef21367b8ed924a23d67c3b9752e7105cbc..6235d96dfc211b79bf695c34b23c9a28b9b26350 100644
+index e6f8fef21367b8ed924a23d67c3b9752e7105cbc..1dd562a39168d644a76bc7b1a8c4576be07c0802 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -75,6 +75,7 @@
@@ -16,14 +16,13 @@ index e6f8fef21367b8ed924a23d67c3b9752e7105cbc..6235d96dfc211b79bf695c34b23c9a28
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
  #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
-@@ -5133,6 +5134,12 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5133,6 +5134,11 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
-+  // MoltBrowser: per-site fingerprinting noise on RGBA / UNSIGNED_BYTE reads.
++  // MoltBrowser: per-site fingerprinting noise on 8-bit and float reads.
 +  molt_fingerprinting::FarbleReadPixels(
-+      Host()->GetTopExecutionContext(),
-+      format == GL_RGBA && type == GL_UNSIGNED_BYTE, width, height,
++      Host()->GetTopExecutionContext(), format, type, width, height,
 +      GetPackPixelStoreParams(),
 +      pixels->ByteSpanMaybeShared().subspan(offset_in_bytes.ValueOrDie()));
  }

@@ -366,6 +366,167 @@ TEST(MoltFarblingTest, HalfFloatConversionRoundTripsAndRounds) {
   EXPECT_EQ(HalfToFloat(0x3555), 0.333251953125f);
 }
 
+TEST(MoltFarblingTest, PremulNeverExceedsAlphaAndIsIdempotent) {
+  const Farbler f(KeyFromByte(27));
+  TestRng rng(5);
+  std::vector<uint8_t> premul(4 * 20000);
+  for (size_t p = 0; p < premul.size(); p += 4) {
+    const uint8_t a = (p % 12 == 0) ? 255 : rng.Byte();
+    premul[p + 3] = a;
+    for (size_t c = 0; c < 3; ++c) {
+      premul[p + c] = a ? static_cast<uint8_t>(rng.Next() % (a + 1u)) : 0;
+    }
+  }
+  for (ChannelOrder order : {ChannelOrder::kRGBA, ChannelOrder::kBGRA}) {
+    std::vector<uint8_t> out = premul;
+    f.FarbleRGBA8Premul(out, order);
+    int changed = 0;
+    for (size_t p = 0; p < out.size(); p += 4) {
+      EXPECT_EQ(out[p + 3], premul[p + 3]);
+      for (size_t c = 0; c < 3; ++c) {
+        EXPECT_LE(out[p + c], out[p + 3]);
+        EXPECT_LE(std::abs(int{out[p + c]} - int{premul[p + c]}), 1);
+        changed += out[p + c] != premul[p + c];
+      }
+    }
+    // Same sparsity as the unpremultiplied noise (about 1 colour in 16).
+    EXPECT_GT(changed, 20000 / 40);
+    EXPECT_LT(changed, 20000 / 8);
+    const std::vector<uint8_t> once = out;
+    f.FarbleRGBA8Premul(out, order);
+    EXPECT_EQ(out, once);
+  }
+  // Opaque pixels farble exactly like unpremultiplied ones.
+  std::vector<uint8_t> opaque(4 * 3000);
+  for (size_t p = 0; p < opaque.size(); ++p) {
+    opaque[p] = (p % 4 == 3) ? 255 : rng.Byte();
+  }
+  std::vector<uint8_t> a = opaque;
+  std::vector<uint8_t> b = opaque;
+  f.FarbleRGBA8Premul(a, ChannelOrder::kRGBA);
+  f.FarbleRGBA8(b, ChannelOrder::kRGBA);
+  EXPECT_EQ(a, b);
+}
+
+TEST(MoltFarblingTest, Unorm8ReadsMatchTheChannelsOfAnRGBARead) {
+  TestRng rng(6);
+  for (uint8_t k = 0; k < 24; ++k) {
+    const Farbler f(KeyFromByte(k));
+    for (size_t channels = 1; channels <= 4; ++channels) {
+      // Data as an R / RG / RGB framebuffer stores it, read back both as
+      // RGBA (G = B = 0, A = 255 where missing) and in its own format.
+      const size_t count = 2000;
+      std::vector<uint8_t> narrow(channels * count);
+      std::vector<uint8_t> rgba(4 * count);
+      for (size_t i = 0; i < count; ++i) {
+        rgba[4 * i + 3] = 255;
+        for (size_t c = 0; c < channels; ++c) {
+          narrow[channels * i + c] = rgba[4 * i + c] = rng.Byte();
+        }
+      }
+      const std::vector<uint8_t> original = narrow;
+      f.FarbleUnorm8(narrow, channels);
+      f.FarbleRGBA8(rgba, ChannelOrder::kRGBA);
+      for (size_t i = 0; i < count; ++i) {
+        for (size_t c = 0; c < channels; ++c) {
+          EXPECT_EQ(narrow[channels * i + c], rgba[4 * i + c]);
+        }
+      }
+      const std::vector<uint8_t> once = narrow;
+      f.FarbleUnorm8(narrow, channels);
+      EXPECT_EQ(narrow, once);
+      if (channels >= 3) {
+        // RGB(A) reads always carry the noise.
+        EXPECT_NE(narrow, original);
+      }
+    }
+  }
+  // Unknown layouts are left alone.
+  std::vector<uint8_t> five(50, 77);
+  Farbler(KeyFromByte(1)).FarbleUnorm8(five, 5);
+  Farbler(KeyFromByte(1)).FarbleUnorm8(five, 0);
+  EXPECT_EQ(five, std::vector<uint8_t>(50, 77));
+}
+
+TEST(MoltFarblingTest, Float32ReadbackUsesTheAudioNoise) {
+  const Farbler f(KeyFromByte(29));
+  TestRng rng(7);
+  std::vector<float> values(5000);
+  for (float& v : values) {
+    v = (static_cast<float>(rng.Next() % 2000001) - 1000000.0f) / 1000.0f;
+  }
+  values[0] = 0.0f;
+  values[1] = std::numeric_limits<float>::infinity();
+  std::vector<uint8_t> bytes(4 * values.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    const uint32_t bits = std::bit_cast<uint32_t>(values[i]);
+    for (size_t b = 0; b < 4; ++b) {
+      bytes[4 * i + b] = static_cast<uint8_t>((bits >> (8 * b)) & 0xff);
+    }
+  }
+  f.FarbleFloat32(bytes);
+  for (size_t i = 0; i < values.size(); ++i) {
+    uint32_t bits = 0;
+    for (size_t b = 0; b < 4; ++b) {
+      bits |= uint32_t{bytes[4 * i + b]} << (8 * b);
+    }
+    EXPECT_EQ(bits, std::bit_cast<uint32_t>(f.FarbleSample(values[i])));
+  }
+  const std::vector<uint8_t> once = bytes;
+  f.FarbleFloat32(bytes);
+  EXPECT_EQ(bytes, once);
+  // A trailing partial value is ignored.
+  std::vector<uint8_t> partial = {1, 2, 3};
+  f.FarbleFloat32(partial);
+  EXPECT_EQ(partial, (std::vector<uint8_t>{1, 2, 3}));
+}
+
+TEST(MoltFarblingTest, HalfNoiseIsOneUlpSparseAndIdempotent) {
+  const Farbler f(KeyFromByte(31));
+  int changed = 0;
+  int finite = 0;
+  for (uint32_t h = 0; h <= 0xffff; ++h) {
+    const uint16_t half = static_cast<uint16_t>(h);
+    const uint16_t out = f.FarbleHalf(half);
+    const uint32_t magnitude = h & 0x7fff;
+    if (magnitude == 0 || magnitude >= 0x7c00) {
+      EXPECT_EQ(out, half) << h;  // Zero, infinity, NaN.
+      continue;
+    }
+    ++finite;
+    EXPECT_EQ(out & 0x8000, half & 0x8000);  // Sign kept.
+    const int out_magnitude = out & 0x7fff;
+    EXPECT_GE(out_magnitude, 1);       // Never moves to zero...
+    EXPECT_LE(out_magnitude, 0x7bff);  // ... or to infinity.
+    EXPECT_LE(std::abs(out_magnitude - static_cast<int>(magnitude)), 1);
+    EXPECT_EQ(f.FarbleHalf(out), out) << h;
+    changed += out != half;
+  }
+  // About 1 in 16.
+  EXPECT_GT(changed, finite / 24);
+  EXPECT_LT(changed, finite / 10);
+  // Byte-buffer form agrees with the scalar one.
+  std::vector<uint8_t> bytes;
+  for (uint32_t h = 0x3800; h < 0x3c00; ++h) {
+    bytes.push_back(static_cast<uint8_t>(h & 0xff));
+    bytes.push_back(static_cast<uint8_t>(h >> 8));
+  }
+  f.FarbleFloat16(bytes);
+  for (uint32_t h = 0x3800; h < 0x3c00; ++h) {
+    const size_t i = 2 * (h - 0x3800);
+    EXPECT_EQ(static_cast<uint16_t>(bytes[i] | (bytes[i + 1] << 8)),
+              f.FarbleHalf(static_cast<uint16_t>(h)));
+  }
+  // Keyed: another site moves other values.
+  const Farbler g(KeyFromByte(32));
+  int differ = 0;
+  for (uint32_t h = 0x3c00; h < 0x4000; ++h) {
+    differ += f.FarbleHalf(static_cast<uint16_t>(h)) !=
+              g.FarbleHalf(static_cast<uint16_t>(h));
+  }
+  EXPECT_GT(differ, 0);
+}
+
 // --- Audio -------------------------------------------------------------------
 
 TEST(MoltFarblingTest, AudioSamplesGetTinyIdempotentNoise) {
