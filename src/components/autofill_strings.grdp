@@ -234,21 +234,7 @@
       Manage payment methods...
     </message>
 
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_AUTOFILL_MANAGE_PASSWORDS" desc="The text displayed at the bottom of the Autofill popup to allow the user to manage passwords that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Passwords section of the Settings page." meaning="Manage passwords in the user profile that can be used by MoltBrowser Autofill.">
-      Manage passwords...
-    </message>
-
     <message name="IDS_AUTOFILL_MANAGE_LOYALTY_CARDS" desc="The text displayed at the bottom of the Autofill popup to allow the user to manage loyalty cards that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Wallet page." meaning="Manage loyalty cards in the user wallet that can be used by MoltBrowser Autofill.">
-||||||| upstream@pin
-    <message name="IDS_AUTOFILL_MANAGE_PASSWORDS" desc="The text displayed at the bottom of the Autofill popup to allow the user to manage passwords that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Passwords section of the Settings page." meaning="Manage passwords in the user profile that can be used by Chrome Autofill.">
-      Manage passwords...
-    </message>
-
-    <message name="IDS_AUTOFILL_MANAGE_LOYALTY_CARDS" desc="The text displayed at the bottom of the Autofill popup to allow the user to manage loyalty cards that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Wallet page." meaning="Manage loyalty cards in the user wallet that can be used by Chrome Autofill.">
-=======
-    <message name="IDS_AUTOFILL_MANAGE_LOYALTY_CARDS" desc="The text displayed at the bottom of the Autofill popup to allow the user to manage loyalty cards that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Wallet page." meaning="Manage loyalty cards in the user wallet that can be used by Chrome Autofill.">
->>>>>>> upstream@new
       Manage loyalty cards...
     </message>
 
@@ -265,21 +251,7 @@
       Manage Payment Methods...
     </message>
 
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_AUTOFILL_MANAGE_PASSWORDS" desc="In Title Case: The text displayed at the bottom of the Autofill popup to allow the user to manage passwords that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Passwords section of the Settings page." meaning="Manage passwords in the user profile that can be used by MoltBrowser Autofill.">
-      Manage Passwords...
-    </message>
-
     <message name="IDS_AUTOFILL_MANAGE_LOYALTY_CARDS" desc="In Title Case: The text displayed at the bottom of the Autofill popup to allow the user to manage loyalty cards that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Wallet page." meaning="Manage loyalty cards in the user wallet that can be used by MoltBrowser Autofill.">
-||||||| upstream@pin
-    <message name="IDS_AUTOFILL_MANAGE_PASSWORDS" desc="In Title Case: The text displayed at the bottom of the Autofill popup to allow the user to manage passwords that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Passwords section of the Settings page." meaning="Manage passwords in the user profile that can be used by Chrome Autofill.">
-      Manage Passwords...
-    </message>
-
-    <message name="IDS_AUTOFILL_MANAGE_LOYALTY_CARDS" desc="In Title Case: The text displayed at the bottom of the Autofill popup to allow the user to manage loyalty cards that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Wallet page." meaning="Manage loyalty cards in the user wallet that can be used by Chrome Autofill.">
-=======
-    <message name="IDS_AUTOFILL_MANAGE_LOYALTY_CARDS" desc="In Title Case: The text displayed at the bottom of the Autofill popup to allow the user to manage loyalty cards that can be used by Chrome Autofill. Imperative. When the user clicks on it, opens the Wallet page." meaning="Manage loyalty cards in the user wallet that can be used by Chrome Autofill.">
->>>>>>> upstream@new
       Manage Loyalty Cards...
     </message>
 
@@ -426,16 +398,6 @@
   <message name="IDS_AUTOFILL_HOME_WORK_ADDRESS_EDIT_A11Y_LABEL" desc="The a11y label for the edit button for the home/work address in Settings.">
     Edit, opens new window
   </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-  <message name="IDS_AUTOFILL_SYNC_TOGGLE_LABEL" desc="The Sync Autofill toggle label on the Autofill Settings page.">
-    Use and save Addresses from your MoltBrowser Account
-  </message>
-||||||| upstream@pin
-  <message name="IDS_AUTOFILL_SYNC_TOGGLE_LABEL" desc="The Sync Autofill toggle label on the Autofill Settings page.">
-    Use and save Addresses from your Google Account
-  </message>
-=======
->>>>>>> upstream@new
   <message name="IDS_AUTOFILL_ADDRESSES_SETTINGS_TITLE" desc="Title for the Autofill settings page that allows user to manage their list of saved addresses and Autofill preferences for addresses. Sentence-Cased." formatter_data="android_java">
     Addresses and more
   </message>
@@ -759,34 +721,6 @@
     <message name="IDS_AUTOFILL_UPDATE_ADDRESS_ADD_NEW_INFO_PROMPT_CANCEL_BUTTON_LABEL" desc="Label of the Cancel button in the dialog that adds new info to an existing profile.">
       Cancel
     </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_PROMPT_TITLE" desc="The 'Add new address' bubble title.">
-      Fill your address with less typing
-    </message>
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_EDITOR_TITLE" desc="The title of the editor dialog called after the 'Add new address' prompt is accepted.">
-      Add address
-    </message>
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_INTO_CHROME_PROMPT_BODY_TEXT" desc="The 'Add new address' bubble body text if the address will be saved in Chrome (locally or syncable among Chromes on different devices).">
-      You don't have any addresses saved. Add an address to use it in MoltBrowser.
-    </message>
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_INTO_ACCOUNT_PROMPT_BODY_TEXT" desc="The 'Add new address' bubble body text if the address will be save in the user's Google account.">
-      You don't have any addresses saved. Add an address to use it across Google products.
-    </message>
-||||||| upstream@pin
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_PROMPT_TITLE" desc="The 'Add new address' bubble title.">
-      Fill your address with less typing
-    </message>
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_EDITOR_TITLE" desc="The title of the editor dialog called after the 'Add new address' prompt is accepted.">
-      Add address
-    </message>
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_INTO_CHROME_PROMPT_BODY_TEXT" desc="The 'Add new address' bubble body text if the address will be saved in Chrome (locally or syncable among Chromes on different devices).">
-      You don't have any addresses saved. Add an address to use it in Chrome.
-    </message>
-    <message name="IDS_AUTOFILL_ADD_NEW_ADDRESS_INTO_ACCOUNT_PROMPT_BODY_TEXT" desc="The 'Add new address' bubble body text if the address will be save in the user's Google account.">
-      You don't have any addresses saved. Add an address to use it across Google products.
-    </message>
-=======
->>>>>>> upstream@new
     <message name="IDS_AUTOFILL_UPDATE_ADDRESS_PROMPT_CANCEL_BUTTON_LABEL" desc="Label of the Cancel button in the prompt that offers the user to update an existing address.">
       No thanks
     </message>
@@ -1694,73 +1628,25 @@
     To offer suggestions and improve this feature, the page’s URL and content are shared with Google
   </message>
   <if expr="_google_chrome">
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the enhanced autofill button on chrome://settings/autofill." formatter_data="android_java">
-      MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the enhanced autofill button on chrome://settings/autofill." formatter_data="android_java">
-      Chrome understands forms better and can autofill them faster for you
-=======
     <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the smarter form understanding button on chrome://settings/autofill." formatter_data="android_java">
-      Chrome understands forms better and can autofill them faster for you
->>>>>>> upstream@new
-    </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using enhanced autofill, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context.">
       MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using enhanced autofill, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context.">
-      Chrome understands forms better and can autofill them faster for you
-=======
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context.">
-      Chrome understands forms better and can autofill them faster for you
->>>>>>> upstream@new
     </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath appears beneath the 'When on' title when seeing the Enhanced Autofill description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
-      MoltBrowser can autofill difficult fields that standard autofill might miss
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath appears beneath the 'When on' title when seeing the Enhanced Autofill description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
-      Chrome can autofill difficult fields that standard autofill might miss
-=======
+    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context.">
+      MoltBrowser understands forms better and can autofill them faster for you
+    </message>
     <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath appears beneath the 'When on' title when seeing the Smarter Form Understanding description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
-      Chrome can autofill difficult fields that standard autofill might miss
->>>>>>> upstream@new
+      MoltBrowser can autofill difficult fields that standard autofill might miss
     </message>
   </if>
   <if expr="not _google_chrome">
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the enhanced autofill button on chrome://settings/autofill." formatter_data="android_java">
-      MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the enhanced autofill button on chrome://settings/autofill." formatter_data="android_java">
-      Chromium understands forms better and can autofill them faster for you
-=======
     <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the smarter form understanding button on chrome://settings/autofill." formatter_data="android_java">
-      Chromium understands forms better and can autofill them faster for you
->>>>>>> upstream@new
-    </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using enhanced autofill, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context.">
       MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using enhanced autofill, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context.">
-      Chromium understands forms better and can autofill them faster for you
-=======
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context.">
-      Chromium understands forms better and can autofill them faster for you
->>>>>>> upstream@new
     </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath the 'When on' title when seeing the Enhanced Autofill description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
-      MoltBrowser can autofill difficult fields that standard autofill might miss
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath the 'When on' title when seeing the Enhanced Autofill description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
-      Chromium can autofill difficult fields that standard autofill might miss
-=======
+    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context.">
+      MoltBrowser understands forms better and can autofill them faster for you
+    </message>
     <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath the 'When on' title when seeing the Smarter Form Understanding description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
-      Chromium can autofill difficult fields that standard autofill might miss
->>>>>>> upstream@new
+      MoltBrowser can autofill difficult fields that standard autofill might miss
     </message>
   </if>
 

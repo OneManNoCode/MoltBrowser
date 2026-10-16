@@ -429,52 +429,6 @@
   <message name="IDS_OS_SETTINGS_TAG_PARENTAL_CONTROLS_ALT2" desc="Text for search result item which, when clicked, navigates the user to parental control settings. Alternate phrase for: 'Parental controls', 'Child accounts'">
     Family Link
   </message>
-<<<<<<< src/chrome/app/os_settings_search_tag_strings.grdp (MoltBrowser)
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_AND_GOOGLE_SERVICES" desc="Text for search result item which, when clicked, navigates the user to settings for Sync (syncs data between multiple Chromebooks) and Google Services.">
-    Sync and Google services
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_ENCRYPTION_OPTIONS" desc="Text for search result item which, when clicked, navigates the user to sync settings, with an option to choose whether synced data is encrypted with the user's Google account password or with a custom password chosen by the user. Alternate phrase for: 'Sync encryption password'">
-    Sync encryption options
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_ENCRYPTION_OPTIONS_ALT1" desc="Text for search result item which, when clicked, navigates the user to sync settings, with an option to choose whether synced data is encrypted with the user's Google account password or with a custom password chosen by the user. Alternate phrase for: 'Sync encryption options'">
-    Sync encryption password
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_MANAGEMENT" desc="Text for search result item which, when clicked, navigates the user to sync settings, with the option to decide which types of data are synced via Chrome Sync.">
-    Sync management
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_IMPROVE_SEARCH_SUGGESTIONS" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which requests suggestions from the user's default search engine.">
-    Improve search suggestions
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_MAKE_SEARCHES_AND_BROWSER_BETTER" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which sends URLs of pages the user has visited to Google, which helps to improve search/browsing results.">
-    Send URLs of pages you visit to Google
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_GOOGLE_DRIVE_SEARCH_SUGGESTIONS" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which provides suggestions to visit Google Drive items when the user types in the address bar.">
-    Show Drive suggestions
-  </message>
-||||||| upstream@pin
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_AND_GOOGLE_SERVICES" desc="Text for search result item which, when clicked, navigates the user to settings for Sync (syncs data between multiple Chromebooks) and Google Services.">
-    Sync and Google services
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_ENCRYPTION_OPTIONS" desc="Text for search result item which, when clicked, navigates the user to sync settings, with an option to choose whether synced data is encrypted with the user's Google account password or with a custom password chosen by the user. Alternate phrase for: 'Sync encryption password'">
-    Sync encryption options
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_ENCRYPTION_OPTIONS_ALT1" desc="Text for search result item which, when clicked, navigates the user to sync settings, with an option to choose whether synced data is encrypted with the user's Google account password or with a custom password chosen by the user. Alternate phrase for: 'Sync encryption options'">
-    Sync encryption password
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_SYNC_MANAGEMENT" desc="Text for search result item which, when clicked, navigates the user to sync settings, with the option to decide which types of data are synced via Chrome Sync.">
-    Sync management
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_IMPROVE_SEARCH_SUGGESTIONS" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which requests suggestions from the user's default search engine.">
-    Improve search suggestions
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_MAKE_SEARCHES_AND_BROWSER_BETTER" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which sends URLs of pages the user has visited to Google, which helps to improve search/browsing results.">
-    Send URLs of pages you visit to Google
-  </message>
-  <message name="IDS_OS_SETTINGS_TAG_GOOGLE_DRIVE_SEARCH_SUGGESTIONS" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which provides suggestions to visit Google Drive items when the user types in the address bar.">
-    Show Google Drive suggestions
-  </message>
-=======
->>>>>>> upstream@new
   <message name="IDS_OS_SETTINGS_TAG_LOCAL_DATA_RECOVERY" desc="Text for search result item which, when clicked, navigates the user to Local Data Recovery toggle.">
     Local Data Recovery
   </message>
@@ -1073,16 +1027,6 @@
   <message name="IDS_OS_SETTINGS_TAG_FILES" desc="Text for search result item which, when clicked, navigates the user to files settings.">
     Files
   </message>
-<<<<<<< src/chrome/app/os_settings_search_tag_strings.grdp (MoltBrowser)
-  <message name="IDS_OS_SETTINGS_TAG_FILES_DISCONNECT_GOOGLE_DRIVE" desc="Text for search result item that, when clicked, navigates the user to Settings: Google Drive settings, with a toggle to enable/disable connecting the user's Google Drive account.">
-    Disconnect Drive account
-  </message>
-||||||| upstream@pin
-  <message name="IDS_OS_SETTINGS_TAG_FILES_DISCONNECT_GOOGLE_DRIVE" desc="Text for search result item that, when clicked, navigates the user to Settings: Google Drive settings, with a toggle to enable/disable connecting the user's Google Drive account.">
-    Disconnect Google Drive account
-  </message>
-=======
->>>>>>> upstream@new
   <message name="IDS_OS_SETTINGS_TAG_FILES_REMOVE_GOOGLE_DRIVE_ACCESS" desc="Text for search result item that, when clicked, navigates the user to Settings: Google Drive settings, with a toggle to remove the user's Google Drive access from the device.">
     Remove Drive access
   </message>

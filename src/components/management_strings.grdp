@@ -471,16 +471,8 @@
     </message>
   </if>
 
-<<<<<<< src/components/management_strings.grdp (MoltBrowser)
   <!-- Strings related to MoltBrowser Enterprise Device Signals Sharing -->
-  <if expr="is_win or is_linux or is_macosx">
-||||||| upstream@pin
-  <!-- Strings related to Chrome Enterprise Device Signals Sharing -->
-  <if expr="is_win or is_linux or is_macosx">
-=======
-  <!-- Strings related to Chrome Enterprise Device Signals Sharing -->
   <if expr="is_win or is_linux or is_macosx or is_android">
->>>>>>> upstream@new
     <message name="IDS_MANAGEMENT_DEVICE_SIGNALS_DISCLOSURE" desc="Disclosure message explaining that device signals can be shared.">
       Information about your browser, OS, device, installed software, files, and IP addresses
     </message>

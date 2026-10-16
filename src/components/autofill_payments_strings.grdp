@@ -153,19 +153,11 @@
       Save card?
     </message>
   </if>
-<<<<<<< src/components/autofill_payments_strings.grdp (MoltBrowser)
-  <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_V4" desc="Title text for the Autofill save card prompt when the card is to be saved by uploading it to Google Payments, according to November 2018 UI guidelines. The prompt can be either a bubble or an infobar.">
-    Save card to MoltBrowser Account?
-||||||| upstream@pin
-  <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_V4" desc="Title text for the Autofill save card prompt when the card is to be saved by uploading it to Google Payments, according to November 2018 UI guidelines. The prompt can be either a bubble or an infobar.">
-    Save card to Google Account?
-=======
   <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_TITLE_TO_CLOUD_SECURITY" desc="Title text for the credit card upload save prompt on Desktop, using security-focused messaging. Became the new default for Desktop in Dec. 2024 and new default for Android and IOS (bottomsheet only) in H1 2025.">
     Save card securely?
   </message>
   <message name="IDS_AUTOFILL_SAVE_CARD_IN_GOOGLE_WALLET_PROMPT_TITLE" desc="Title text for the save credit card in Google Wallet save prompt. This title specifically references Google Wallet instead of Google Account.">
     Save card in Google Wallet
->>>>>>> upstream@new
   </message>
   <message name="IDS_AUTOFILL_SAVE_CVC_PROMPT_TITLE_TO_CLOUD" desc="Title text for the Autofill CVC upload prompt that offers to upload CVC to the Sync server for existing server cards. This prompt is shown if a CVC is detected for an existing server card on form submission.">
     Save security code?
@@ -468,34 +460,6 @@
       Something went wrong
     </message>
   </if>
-<<<<<<< src/components/autofill_payments_strings.grdp (MoltBrowser)
-  <if expr="is_ios">
-    <if expr="_google_chrome">
-      <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
-        If enabled, MoltBrowser will store a copy of your card on this device for faster form filling.
-      </message>
-    </if>
-    <if expr="not _google_chrome">
-      <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
-        If enabled, MoltBrowser will store a copy of your card on this device for faster form filling.
-      </message>
-    </if>
-  </if>
-||||||| upstream@pin
-  <if expr="is_ios">
-    <if expr="_google_chrome">
-      <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
-        If enabled, Chrome will store a copy of your card on this device for faster form filling.
-      </message>
-    </if>
-    <if expr="not _google_chrome">
-      <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_STORAGE_TOOLTIP" desc="Text that provides further explanation on iOS for the option in the card unmasking dialog that allows user to store a Wallet card on their local device.">
-        If enabled, Chromium will store a copy of your card on this device for faster form filling.
-      </message>
-    </if>
-  </if>
-=======
->>>>>>> upstream@new
   <if expr="is_android">
     <message name="IDS_AUTOFILL_CARD_UNMASK_PROMPT_ERROR_TRY_AGAIN_EXPIRATION_DATE" desc="Error message that encourages the user to try to re-enter their credit card expiration date after a previous failed attempt." formatter_data="android_java">
       Check your expiration date and try again

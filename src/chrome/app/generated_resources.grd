@@ -2626,13 +2626,7 @@ are declared in tools/grit/grit_args.gni.
       </message>
       <message name="IDS_DOWNLOAD_BY_EXTENSION_URL"
                desc="Indicates which extension downloaded this file by name and URL.">
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-        Downloaded by &lt;a href=&quot;<ph name="URL">$1<ex>adblock.com</ex></ph>&quot;&gt;<ph name="EXTENSION">$2<ex>The Best MoltBrowser Extension Ever</ex></ph>&lt;/a&gt;
-||||||| upstream@pin
-        Downloaded by &lt;a href=&quot;<ph name="URL">$1<ex>adblock.com</ex></ph>&quot;&gt;<ph name="EXTENSION">$2<ex>The Best Chrome Extension Ever</ex></ph>&lt;/a&gt;
-=======
-        Downloaded by extension: &lt;a href=&quot;<ph name="URL">$1<ex>adblock.com</ex></ph>&quot;&gt;<ph name="EXTENSION">$2<ex>The Best Chrome Extension Ever</ex></ph>&lt;/a&gt;
->>>>>>> upstream@new
+        Downloaded by extension: &lt;a href=&quot;<ph name="URL">$1<ex>adblock.com</ex></ph>&quot;&gt;<ph name="EXTENSION">$2<ex>The Best MoltBrowser Extension Ever</ex></ph>&lt;/a&gt;
       </message>
       <message name="IDS_DOWNLOADS_PAGE_INITIATOR_LINE" desc="Line that indicates the site that initiated a file download.">
         From <ph name="DISPLAY_INITIATOR_ORIGIN">$1<ex>https://example.com</ex></ph>
@@ -4249,22 +4243,6 @@ are declared in tools/grit/grit_args.gni.
       <message name="IDS_TRACKING_PROTECTION_BUBBLE_PERMANENT_ALLOWED_DESCRIPTION" desc="Descriptive text in the tracking protection bubble for permanent exceptions informing the user about having less browsing protection.">
         This means site features should work as expected, but you may have less browsing protection.
       </message>
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-      <message name="IDS_COOKIE_CONTROLS_BUBBLE_SEND_FEEDBACK_BUTTON_TITLE" desc="A subtitle for a portion of the cookie controls bubble soliciting feedback from users.">
-        Send feedback
-      </message>
-      <message name="IDS_COOKIE_CONTROLS_BUBBLE_SEND_FEEDBACK_BUTTON_DESCRIPTION" desc="Text asking the user for feedback on why they allowed third-party cookies for this particular site.">
-        Help us improve MoltBrowser by telling us why you allowed third-party cookies
-      </message>
-||||||| upstream@pin
-      <message name="IDS_COOKIE_CONTROLS_BUBBLE_SEND_FEEDBACK_BUTTON_TITLE" desc="A subtitle for a portion of the cookie controls bubble soliciting feedback from users.">
-        Send feedback
-      </message>
-      <message name="IDS_COOKIE_CONTROLS_BUBBLE_SEND_FEEDBACK_BUTTON_DESCRIPTION" desc="Text asking the user for feedback on why they allowed third-party cookies for this particular site.">
-        Help us improve Chrome by telling us why you allowed third-party cookies
-      </message>
-=======
->>>>>>> upstream@new
       <message name="IDS_COOKIE_CONTROLS_BUBBLE_RELOADING_LABEL" desc="Descriptive text informing the user that the page is reloading after they toggled third-party cookies in the cookie controls bubble.">
         Reloading <ph name="DOMAIN">$1<ex>example.com</ex></ph>...
       </message>
@@ -6153,20 +6131,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Hide Details
       </message>
 
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-      <!-- Error messages for Extension Store UI -->
-      <message name="IDS_WEBSTORE_DOWNLOAD_ACCESS_DENIED" desc="Text displayed in the error prompt when a CRX cannot be downloaded due to an authentication error.">
-        Access denied.
-      </message>
-
-||||||| upstream@pin
-      <!-- Error messages for Chrome Web Store UI -->
-      <message name="IDS_WEBSTORE_DOWNLOAD_ACCESS_DENIED" desc="Text displayed in the error prompt when a CRX cannot be downloaded due to an authentication error.">
-        Access denied.
-      </message>
-
-=======
->>>>>>> upstream@new
       <!-- Global error messages for extensions -->
       <message name="IDS_EXTENSION_WARNINGS_WRENCH_MENU_ITEM" desc="The wrench menu item indicating that extensions caused problems.">
         Extension error
@@ -11111,139 +11075,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Try using tab groups to organize tasks, for online shopping, and more
       </message>
 
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-      <!-- Saved Tab Group Tutorial Strings -->
-      <if expr="use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_ADD_TAB_TO_GROUP" desc="The description of the 'right click and save' step">
-          Right-click a tab and select "Add Tab to New Group"
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_ADD_TAB_TO_GROUP" desc="The description of the 'right click and save' step">
-          Right-click a tab and select "Add tab to new group"
-        </message>
-      </if>
-
-      <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_OPEN_EDITOR" desc="The description of the 'open editor' step">
-        Right-click on the group
-      </message>
-
-      <if expr="use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_NAME_SAVE_GROUP" desc="The description of the 'name, save and exit' step">
-          Turn on "Save Group"
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_NAME_SAVE_GROUP" desc="The description of the 'name, save and exit' step">
-          Turn on "Save group"
-        </message>
-      </if>
-
-      <if expr="use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_HIDE_GROUP" desc="The description of the 'hide group' step">
-          Select "Hide Group" to remove the group from your tab strip
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_HIDE_GROUP" desc="The description of the 'hide group' step">
-          Select "Hide group" to remove the group from your tab strip
-        </message>
-      </if>
-
-      <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_REOPEN_GROUP" desc="The description of the 'name, save and exit' step">
-        To reopen the group, click on the group
-      </message>
-
-      <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_SUCCESS_DESCRIPTION" desc="The description of the success step">
-        You can now use saved tab groups across your signed in desktop devices
-      </message>
-
-      <!-- Side Panel Tutorial Strings -->
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_OPEN_SIDE_PANEL" desc="The description of the 'open side panel' step in side panel reading list tutorial">
-        Click the side panel icon to open it
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_ADD_TAB" desc="The description of the 'add tab' step in side panel reading list tutorial">
-        Now add the current tab to your list
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_MARK_READ" desc="The description of the 'mark as read' step in side panel reading list tutorial">
-        Select “Mark as read” to move the page to the bottom of your list
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_CLICK_DROPDOWN" desc="The description of the 'click drop down' step in side panel reading list tutorial">
-        Click the drop down to choose another panel
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_SUCCESS_BODY" desc="The description of the body text in the 'success' step in side panel reading list tutorial">
-        Try using the side panel for bookmarks, journeys, and more
-      </message>
-
       <!-- Customize MoltBrowser Tutorial Strings -->
-||||||| upstream@pin
-      <!-- Saved Tab Group Tutorial Strings -->
-      <if expr="use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_ADD_TAB_TO_GROUP" desc="The description of the 'right click and save' step">
-          Right-click a tab and select "Add Tab to New Group"
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_ADD_TAB_TO_GROUP" desc="The description of the 'right click and save' step">
-          Right-click a tab and select "Add tab to new group"
-        </message>
-      </if>
-
-      <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_OPEN_EDITOR" desc="The description of the 'open editor' step">
-        Right-click on the group
-      </message>
-
-      <if expr="use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_NAME_SAVE_GROUP" desc="The description of the 'name, save and exit' step">
-          Turn on "Save Group"
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_NAME_SAVE_GROUP" desc="The description of the 'name, save and exit' step">
-          Turn on "Save group"
-        </message>
-      </if>
-
-      <if expr="use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_HIDE_GROUP" desc="The description of the 'hide group' step">
-          Select "Hide Group" to remove the group from your tab strip
-        </message>
-      </if>
-      <if expr="not use_titlecase">
-        <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_HIDE_GROUP" desc="The description of the 'hide group' step">
-          Select "Hide group" to remove the group from your tab strip
-        </message>
-      </if>
-
-      <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_REOPEN_GROUP" desc="The description of the 'name, save and exit' step">
-        To reopen the group, click on the group
-      </message>
-
-      <message name="IDS_TUTORIAL_SAVED_TAB_GROUP_SUCCESS_DESCRIPTION" desc="The description of the success step">
-        You can now use saved tab groups across your signed in desktop devices
-      </message>
-
-      <!-- Side Panel Tutorial Strings -->
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_OPEN_SIDE_PANEL" desc="The description of the 'open side panel' step in side panel reading list tutorial">
-        Click the side panel icon to open it
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_ADD_TAB" desc="The description of the 'add tab' step in side panel reading list tutorial">
-        Now add the current tab to your list
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_MARK_READ" desc="The description of the 'mark as read' step in side panel reading list tutorial">
-        Select “Mark as read” to move the page to the bottom of your list
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_CLICK_DROPDOWN" desc="The description of the 'click drop down' step in side panel reading list tutorial">
-        Click the drop down to choose another panel
-      </message>
-      <message name="IDS_TUTORIAL_SIDE_PANEL_READING_LIST_SUCCESS_BODY" desc="The description of the body text in the 'success' step in side panel reading list tutorial">
-        Try using the side panel for bookmarks, journeys, and more
-      </message>
-
-      <!-- Customize Chrome Tutorial Strings -->
-=======
-      <!-- Customize Chrome Tutorial Strings -->
->>>>>>> upstream@new
       <message name="IDS_TUTORIAL_CUSTOMIZE_CHROME_START_TUTORIAL_IPH" desc="The description of the IPH to start the customize chrome tutorial">
         Customize MoltBrowser to give your browser a new look
       </message>
@@ -15745,30 +15577,14 @@ Please help our engineers fix this problem. Tell us what happened right before y
           Help
         </message>
         <!-- App menu -->
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-        <message name="IDS_ABOUT_MAC" desc="The Mac menu item to open the about box.">
-          About <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
-||||||| upstream@pin
-        <message name="IDS_ABOUT_MAC" desc="The Mac menu item to open the about box.">
-          About <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
-=======
         <message name="IDS_ABOUT_MAC" desc="In Title Case: The Mac menu item to open the about box.">
-          About <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
->>>>>>> upstream@new
+          About <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
         </message>
         <message name="IDS_SERVICES_MAC" desc="In Title Case: The Mac menu item for the OS X services submenu (OS fills it in) in the app menu.">
           Services
         </message>
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-        <message name="IDS_HIDE_APP_MAC" desc="The Mac menu item to hide all browser windows in the app menu.">
-          Hide <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
-||||||| upstream@pin
-        <message name="IDS_HIDE_APP_MAC" desc="The Mac menu item to hide all browser windows in the app menu.">
-          Hide <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
-=======
         <message name="IDS_HIDE_APP_MAC" desc="In Title Case: The Mac menu item to hide all browser windows in the app menu.">
-          Hide <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
->>>>>>> upstream@new
+          Hide <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
         </message>
         <message name="IDS_HIDE_OTHERS_MAC" desc="In Title Case: The Mac menu item to hide other applications' windows in the app menu.">
           Hide Others
@@ -15776,16 +15592,8 @@ Please help our engineers fix this problem. Tell us what happened right before y
         <message name="IDS_SHOW_ALL_MAC" desc="In Title Case: The Mac menu item to show all browser windows in the app menu.">
           Show All
         </message>
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-        <message name="IDS_EXIT_MAC" desc="The Mac menu item to quit the browser in the app menu.">
-          Quit <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
-||||||| upstream@pin
-        <message name="IDS_EXIT_MAC" desc="The Mac menu item to quit the browser in the app menu.">
-          Quit <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
-=======
         <message name="IDS_EXIT_MAC" desc="In Title Case: The Mac menu item to quit the browser in the app menu.">
-          Quit <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
->>>>>>> upstream@new
+          Quit <ph name="PRODUCT_NAME">$1<ex>MoltBrowser</ex></ph>
         </message>
         <!-- File menu -->
         <message name="IDS_NEW_MAC" desc="In Title Case: The Mac menu item for creating a new file in the file menu.">
@@ -19692,35 +19500,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
     Help improve spam protection by sharing notification content and the site's URL with Google. Content may be reviewed by humans.
   </message>
 
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-     <!-- Merchant Trust IPH strings -->
-    <message name="IDS_MERCHANT_TRUST_IPH_TITLE" desc="Title of in product help to introduce merchant trust feature.">
-      See ratings for this store
-    </message>
-    <message name="IDS_MERCHANT_TRUST_IPH_BODY" desc="Content of in product help to introduce merchant trust feature.">
-      You can get a summary of what people are saying in their reviews
-    </message>
-    <message name="IDS_MERCHANT_TRUST_IPH_BODY_SCREEN_READER" desc="Announcement to screen reader users when the merchant trust IPH is shown." is_accessibility_with_no_ui="true">
-      You can get a summary of what people are saying in their reviews
-    </message>
-
     <!-- MoltBrowser Apps Deprecation -->
-||||||| upstream@pin
-     <!-- Merchant Trust IPH strings -->
-    <message name="IDS_MERCHANT_TRUST_IPH_TITLE" desc="Title of in product help to introduce merchant trust feature.">
-      See ratings for this store
-    </message>
-    <message name="IDS_MERCHANT_TRUST_IPH_BODY" desc="Content of in product help to introduce merchant trust feature.">
-      You can get a summary of what people are saying in their reviews
-    </message>
-    <message name="IDS_MERCHANT_TRUST_IPH_BODY_SCREEN_READER" desc="Announcement to screen reader users when the merchant trust IPH is shown." is_accessibility_with_no_ui="true">
-      You can get a summary of what people are saying in their reviews
-    </message>
-
-    <!-- Chrome Apps Deprecation -->
-=======
-    <!-- Chrome Apps Deprecation -->
->>>>>>> upstream@new
     <if expr="is_chromeos">
       <message name="IDS_USER_INSTALLED_CHROME_APP_DEPRECATION_NOTIFICATION_MESSAGE" desc="Message of the notification displayed while launching a user-installed app.">
         This MoltBrowser app will stop working after your ChromeOS version is updated. Save any app data you want to keep. To learn about your options, contact the app developer or your IT support team.
@@ -19810,13 +19590,7 @@ Please help our engineers fix this problem. Tell us what happened right before y
       Choose your account
     </message>
     <message name="IDS_ACCOUNT_CHOOSER_SUBTITLE" desc="Text description for saving files to Drive via Chrome PDF viewer.">
-<<<<<<< src/chrome/app/generated_resources.grd (MoltBrowser)
-      Find your file in the <ph name="FEATURE_NAME">$1<ex>Saved from MoltBrowser</ex></ph> folder
-||||||| upstream@pin
-      Find your file in the <ph name="FEATURE_NAME">$1<ex>Saved from Chrome</ex></ph> folder
-=======
-      Find your <ph name="FILENAME">$1<ex>document.pdf</ex></ph> in the <ph name="FEATURE_NAME">$2<ex>Saved from Chrome</ex></ph> folder
->>>>>>> upstream@new
+      Find your <ph name="FILENAME">$1<ex>document.pdf</ex></ph> in the <ph name="FEATURE_NAME">$2<ex>Saved from MoltBrowser</ex></ph> folder
     </message>
     <message name="IDS_SAVE_TO_DRIVE_FOLDER_NAME" desc="Name of the folder in Drive where files saved from Chrome are stored." meaning="Name of the folder in Drive where files saved from MoltBrowser are stored. Please use the short version of the branded term for MoltBrowser i.e. MoltBrowser">
       Saved from MoltBrowser
