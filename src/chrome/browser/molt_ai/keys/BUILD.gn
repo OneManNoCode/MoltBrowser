@@ -1,8 +1,52 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# MoltBrowser cloud-provider API-key store. OSCrypt-encrypted key blob
-# at ~/.moltbrowser/keys.enc. Same idiom as molt_ai/vault.
+# MoltBrowser cloud-provider API-key store: an encrypted key blob at
+# ~/.moltbrowser/keys.enc, the same idiom as molt_ai/vault. Also home to
+# molt_os_crypt, the encryption every MoltBrowser store uses (the
+# os_crypt_async Encryptor; Chromium 152 removed the synchronous OSCrypt).
+
+# The process-wide os_crypt_async::Encryptor. Only //base and os_crypt_async,
+# so molt_ai_unittests links it.
+source_set("os_crypt") {
+  sources = [
+    "molt_os_crypt.cc",
+    "molt_os_crypt.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//components/os_crypt/async/common",
+  ]
+
+  deps = [ "//components/os_crypt/async/browser" ]
+}
+
+# Calls molt_os_crypt::Init(g_browser_process->os_crypt_async()) when the
+# first profile is created. Registered in
+# chrome_browser_main_extra_parts_profiles.cc (and via
+# MemoryServiceFactory::DependsOn()).
+# Not linked into molt_ai_unittests (it needs g_browser_process).
+source_set("os_crypt_startup") {
+  sources = [
+    "molt_os_crypt_startup.cc",
+    "molt_os_crypt_startup.h",
+  ]
+
+  deps = [
+    ":os_crypt",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//components/keyed_service/content",
+    "//components/keyed_service/core",
+    "//components/os_crypt/async/browser",
+  ]
+
+  # molt_os_crypt_startup.cc includes chrome/browser/browser_process.h.
+  # //chrome/browser depends on this target (through memory), so the dep
+  # can't be declared without a cycle. This tree doesn't run `gn check`; the
+  # symbol resolves when chrome links (the same pattern as molt_ai/tor).
+}
 
 source_set("keys") {
   sources = [
@@ -11,21 +55,53 @@ source_set("keys") {
   ]
 
   deps = [
+    ":os_crypt",
     "//base",
-    "//components/os_crypt/sync",
   ]
 }
 
-# Keyring-state tests (S16): refusal without an OS-backed key; files written
-# under the hard-coded key stay readable. Linked into
-# //chrome/browser/molt_ai/test:molt_ai_unittests.
+# Encryptors with chosen keys and tags for the store tests: a fake OS key
+# ("v11" on Linux, "v10" elsewhere), Linux's real hard-coded "v10" key, a
+# locked keyring.
+source_set("test_support") {
+  testonly = true
+  sources = [
+    "molt_os_crypt_test_util.cc",
+    "molt_os_crypt_test_util.h",
+  ]
+  public_deps = [
+    ":os_crypt",
+    "//base",
+    "//components/os_crypt/async/common",
+  ]
+  deps = [
+    "//components/os_crypt/async/browser",
+    "//components/os_crypt/async/browser:key_provider_interface",
+  ]
+  if (is_linux) {
+    # The real hard-coded "v10" key, so the tests check that files the old
+    # OSCrypt wrote under it still decrypt.
+    deps += [ "//components/os_crypt/async/browser:posix_key_provider" ]
+  }
+}
+
+# molt_os_crypt behaviour, and the keyring-state tests (S16): refusal without
+# an OS-backed key; files written under the hard-coded key stay readable.
+# Linked into //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "molt_keys_store_unittest.cc" ]
+  sources = [
+    "molt_keys_store_unittest.cc",
+    "molt_os_crypt_unittest.cc",
+  ]
   deps = [
     ":keys",
+    ":os_crypt",
+    ":test_support",
     "//base",
-    "//components/os_crypt/sync:test_support",
+    "//base/test:test_support",
+    "//components/os_crypt/async/browser",
+    "//components/os_crypt/async/browser:test_support",
     "//testing/gtest",
   ]
 }

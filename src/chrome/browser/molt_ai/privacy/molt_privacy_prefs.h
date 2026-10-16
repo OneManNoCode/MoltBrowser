@@ -30,9 +30,8 @@
 // ApplyPrivacyPrefMigrations() turns it on ONCE for profiles where none of
 // the HTTPS-First prefs was ever set.
 //
-// Global Privacy Control is not available at the pinned Chromium (no
-// Sec-GPC / navigator.globalPrivacyControl support upstream), so it is not
-// set here — see docs/MOLTNET_COMPLIANCE.md.
+// Global Privacy Control is a feature flag, not a pref, at Chromium 152: it is
+// turned on in molt_feature_overrides.cc (docs/MOLTNET_COMPLIANCE.md).
 
 #ifndef CHROME_BROWSER_MOLT_AI_PRIVACY_MOLT_PRIVACY_PREFS_H_
 #define CHROME_BROWSER_MOLT_AI_PRIVACY_MOLT_PRIVACY_PREFS_H_

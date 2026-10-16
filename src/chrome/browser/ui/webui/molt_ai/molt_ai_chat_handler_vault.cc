@@ -21,7 +21,8 @@
 #include "chrome/browser/molt_ai/vault/vault_host_match.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
@@ -111,10 +112,11 @@ void MoltAIChatHandler::HandleVaultFindForActive(
   std::string host;
   bool fillable = false;
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (browser && browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (browser && browser->GetTabStripModel()) {
     content::WebContents* t =
-        browser->tab_strip_model()->GetActiveWebContents();
+        browser->GetTabStripModel()->GetActiveWebContents();
     if (t) {
       const url::Origin& origin =
           t->GetPrimaryMainFrame()->GetLastCommittedOrigin();
@@ -277,15 +279,16 @@ void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
 
   // Resolve target tab.
   content::WebContents* webui_wc = web_ui()->GetWebContents();
-  Browser* browser = chrome::FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->tab_strip_model()) {
+  BrowserWindowInterface* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  if (!browser || !browser->GetTabStripModel()) {
     ResolveError(out, "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
   content::WebContents* target =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   content::RenderFrameHost* frame =
       target ? target->GetPrimaryMainFrame() : nullptr;
   if (!frame) {

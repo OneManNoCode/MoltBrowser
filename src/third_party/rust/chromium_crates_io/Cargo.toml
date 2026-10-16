@@ -25,12 +25,15 @@ bytes = "1"
 chrono = "0.4.43"
 cxx = "1"
 fend-core = "1"
-font-types = "0.11"
+font-types = "0.12.1"
 hex = "0.4"
 hmac-sha256 = "1.1.12"
+incremental-font-transfer = "0.5.0"
 indexmap = "2.12.1"
-itertools = "0.11.0"
+itertools = "0.14.0"
+jpeg-encoder = "=0.7.0"
 lazy_static = "1"
+libafl = "0.15.4"
 libc = "0.2"
 minijinja = "2.14.0"
 num-traits = "0.2"
@@ -40,15 +43,16 @@ proc-macro2 = "1"
 prost = "0.14.1"
 qr_code = "2"
 quote = "1"
-read-fonts = "0.37.0"
 rustc-demangle-capi = "0.1"
 serde = "1.0.219"
 serde_json = "1.0.149"
-skrifa = "0.40.0"
+shared-brotli-patch-decoder = "0.1.3"
+skrifa = "0.44.0"
 small_ctor = "0.1"
+smallvec = "1"
 static_assertions = "1"
-strum = "0.27.2"
-xml = "1.2.0"
+xml = "1.3.0"
+zune-jpeg = "0.5.15"
 
 # MoltBrowser: MoltShield's ad/tracker blocking engine (Brave's adblock-rust,
 # MPL-2.0), used by //chrome/browser/molt_ai/shield/adblock. Pinned exactly:
@@ -81,41 +85,50 @@ features = ["nightly"]  # For optimized aarch64 implementation.
 version = "1"
 artifact = "bin"
 
+[dependencies.harfrust]
+version = "0.12.0"
+features = ["experimental_font_api"]
+
 [dependencies.icu_casemap]
-version = "2.1.1"
+version = "2.2.0"
 default-features = false
 features = ["compiled_data"]
 
 [dependencies.icu_experimental]
-version = "0.4.0"
+version = "0.5.0"
+default-features = false
+features = ["compiled_data"]
+
+[dependencies.icu_locale]
+version = "2.2.0"
 default-features = false
 features = ["compiled_data"]
 
 [dependencies.icu_locale_core]
-version = "2.1.1"
+version = "2.2.0"
 default-features = false
 
 [dependencies.icu_normalizer]
-version = "2.1.1"
+version = "2.2.0"
 default-features = false
 features = ["compiled_data"]
 
 [dependencies.icu_properties]
-version = "2.1.1"
+version = "2.2.0"
 default-features = false
 features = ["compiled_data"]
 
 [dependencies.icu_provider]
-version = "2.1.1"
+version = "2.2.0"
 default-features = false
 
 [dependencies.image]
 version = "0.25.9"
 default-features = false
-features = ["bmp"]
+features = ["bmp", "ico"]
 
 [dependencies.jxl]
-version = "0.3.0"
+version = "0.4.3"
 features = ["all-simd"]
 
 [dependencies.llguidance]
@@ -129,6 +142,17 @@ version = "0.4"
 # when debug asserts are off, which is when DCHECK_IS_ON() is false.
 features = ["std", "release_max_level_info"]
 
+[dependencies.moxcms]
+version = "0.8.1"
+default-features = false
+
+[dependencies.read-fonts]
+version = "0.41.0"
+features = ["agl"]
+
+[dependencies.rustfft]
+version = "6.4.1"
+
 # Temporarily inform our cargo tooling that we care about
 # the new version of serde_json_lenient. We are in the midst
 # of CLs that move from the older to the newer.
@@ -137,6 +161,14 @@ package = "serde_json_lenient"
 version = "0.2"
 features = ["unbounded_depth", "float_roundtrip"]
 
+[dependencies.sfv]
+version = "0.15.0"
+default-features = false
+
+[dependencies.strum]
+version = "0.28.0"
+features = ["derive"]
+
 # Tweak required to transitive dependency to avoids some use of unsafe,
 # at the cost of requiring the nightly compiler.
 [dependencies.subtle]
@@ -144,33 +176,33 @@ version = "2.6.1"
 features = ["core_hint_black_box"]
 
 [dependencies.symphonia]
-version = "0.5.4"
+version = "0.6.0"
 
 # Disable the default lists of codecs and supported containers, and only support
 # codecs specifically added in `features`. Enabling new codec support requires a
 # package configuration through gnrt vendor and gnrt gen.
 default-features = false
-features = ["flac", "mp3", "pcm", "vorbis"]
-
-[dependencies.symphonia-adapter-libopus]
-version = "0.2"
-default-features = false
+features = ["flac", "mp3", "pcm", "vorbis", "opt-simd"]
 
 [dependencies.syn]
 version = "2"
 features = ["full"]
 
 [dependencies.temporal_capi]
-version = "0.2"
+version = "0.2.4"
 features = ["zoneinfo64"]
 
 [dependencies.temporal_rs]
-version = "0.2"
+version = "0.2.4"
 default-features = false
 # This is necessary to enable a spec-compliance quirk
 features = ["float64_representable_durations"]
 
+[dependencies.zeroize]
+version = "1.7"
+features = ["zeroize_derive"]
+
 [dependencies.zip]
-version = "7.1.0"
+version = "8.2.0"
 default-features = false
 features = ["deflate-flate2"]

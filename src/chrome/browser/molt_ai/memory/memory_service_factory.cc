@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 
+#include "chrome/browser/molt_ai/keys/molt_os_crypt_startup.h"
 #include "chrome/browser/molt_ai/memory/memory_prefs.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -30,7 +31,13 @@ MemoryServiceFactory::MemoryServiceFactory()
               .WithRegular(ProfileSelection::kOriginalOnly)
               .WithGuest(ProfileSelection::kNone)
               .WithSystem(ProfileSelection::kNone)
-              .Build()) {}
+              .Build()) {
+  // The memory DB is encrypted with molt_os_crypt's Encryptor. Depending on
+  // the factory that starts molt_os_crypt also registers it: this
+  // constructor runs from EnsureBrowserContextKeyedServiceFactoriesBuilt(),
+  // so no upstream file needs to name it.
+  DependsOn(MoltOSCryptStartupFactory::GetInstance());
+}
 
 MemoryServiceFactory::~MemoryServiceFactory() = default;
 

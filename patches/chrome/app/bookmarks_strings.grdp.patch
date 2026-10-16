@@ -1,16 +1,16 @@
 MoltBrowser patch for chrome/app/bookmarks_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/bookmarks_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/bookmarks_strings.grdp b/chrome/app/bookmarks_strings.grdp
-index 2f639edef6b086632d04b194bd7fe412e5fc0592..62950b6435f13e32d674760fbc0fdbd2a6bf0366 100644
+index 4373525709305a112e78801a40001f9bcf8f21d3..40ba0ac3328f01545f21edef77a1f7728b59b541 100644
 --- a/chrome/app/bookmarks_strings.grdp
 +++ b/chrome/app/bookmarks_strings.grdp
-@@ -635,4 +635,10 @@
+@@ -615,4 +615,10 @@
+     Your bookmarks bar was hidden because you haven't used it recently
    </message>
-   <!-- End of screen reader message strings. -->
  
 +  <!-- Begin of Import bookmarks strings. -->
 +  <message name="IDS_BOOKMARKS_IMPORT_TOOLTIP" desc="Tooltip for the button in the bookmarks side panel which imports bookmarks from another browser.">

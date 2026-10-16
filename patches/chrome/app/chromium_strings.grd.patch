@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/chromium_strings.grd
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/chromium_strings.grd by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda64f6edb0 100644
+index eb7dcad69aa3f8732c7298cf3d70e69540a0a9cb..08767e73a79fbdcfb8f57d17819010b515ba6e2f 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -278,7 +278,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
@@ -78,9 +78,9 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +      <message name="IDS_PRODUCT_LOGO_ENTERPRISE_ALT_TEXT" desc="Alt text for the MoltBrowser Enterprise logo image." formatter_data="android_java">
 +        MoltBrowser Enterprise logo
        </message>
-       <if expr="is_win">
-         <message name="IDS_SHORTCUT_NEW_WINDOW" desc="The text label of the New window shortcut context menu entry as of Windows 8">
-@@ -360,7 +360,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+       <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_IDENTITY_DISC_WITH_NAME_AND_EMAIL_AI_TIER" desc="The content description for a toolbar button displaying user profile picture when the user has an AI subscription. Tapping on this button navigates to Settings page" formatter_data="android_java">
+         Signed in as <ph name="USER_NAME">%1$s<ex>Peter Parker</ex></ph>, <ph name="USER_EMAIL">%2$s<ex>peter.parker@gmail.com</ex></ph>, membership. Open the account menu
+@@ -361,7 +361,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
        </if>
        <if expr="not is_macosx and not is_chromeos">
          <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
@@ -89,7 +89,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <message name="IDS_TASK_MANAGER_SEARCH_PLACEHOLDER" desc="The placeholder text for the Search bar in the Task Manager window">
-@@ -394,18 +394,18 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+@@ -395,18 +395,18 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
          All tasks
        </message>
        <message name="IDS_SESSION_CRASHED_VIEW_UMA_OPTIN" desc="Text besides the checkbox to let users optin to UMA in the restore from previous crash bubble.">
@@ -111,16 +111,16 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
  
  New bookmarks can’t be saved in your account until you delete some. If you sign out now, unsaved bookmarks will be deleted.
          </message>
-@@ -413,7 +413,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
-       <message name="IDS_RESET_PROFILE_SETTINGS_EXPLANATION_IN_BULLET_POINTS" desc="A label formatted with bullet points describing the consequences of the 'reset profile settings' feature">
-         This action will:
-         <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
--          • Reset some Chromium settings and Chromium shortcuts
-+          • Reset some MoltBrowser settings and MoltBrowser shortcuts
-           <ph name="LINE_BREAK">&lt;br&gt;</ph>
-           • Disable extensions
-           <ph name="LINE_BREAK">&lt;br&gt;</ph>
-@@ -431,7 +431,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -421,7 +421,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+             <ph name="LINE_BREAK">&lt;br&gt;</ph>
+             • Delete cookies and other temporary site data
+             <ph name="LINE_BREAK">&lt;br&gt;</ph>
+-            • Reset Chromium shortcuts
++            • Reset MoltBrowser shortcuts
+             <ph name="LINE_BREAKS">&lt;br&gt;&lt;br&gt;</ph>
+             Bookmarks, history, and saved passwords won't be affected.
+         </message>
+@@ -449,7 +449,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
            </then>
            <else>
              <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
@@ -129,7 +129,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
              </message>
            </else>
          </if>
-@@ -439,19 +439,19 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -457,19 +457,19 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
        <if expr="is_chromeos">
          <!-- Browser Window Title Format -->
          <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabbed browser windows">
@@ -152,7 +152,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <if expr="is_macosx">
-@@ -470,46 +470,46 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -488,46 +488,46 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
          </then>
          <else>
            <message name="IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window">
@@ -210,7 +210,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <if expr="_is_chrome_for_testing_branded">
-@@ -520,105 +520,105 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -538,117 +538,117 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
          </then>
          <else>
            <message name="IDS_ABOUT_TERMS_OF_SERVICE" desc="The terms of service label in the About box." translateable="false">
@@ -274,14 +274,6 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <!-- Sharing messages -->
-       <message name="IDS_BROWSER_SHARING_CLICK_TO_CALL_DIALOG_HELP_TEXT_NO_DEVICES" desc="The label to be shown as a help text of the dialog when user click on a phone number, if there are no phones to choose from.">
--        To send a number from here to your Android phone, sign in to Chromium on both devices.
-+        To send a number from here to your Android phone, sign in to MoltBrowser on both devices.
-       </message>
-       <message name="IDS_BROWSER_SHARING_CLICK_TO_CALL_DIALOG_HELP_TEXT_NO_DEVICES_ORIGIN" desc="The label to be shown as a help text of the dialog when user click on a phone number, if there are no phones to choose from.">
--        To send a number from <ph name="ORIGIN">$1<ex>www.google.com</ex></ph> to your Android phone, sign in to Chromium on both devices.
-+        To send a number from <ph name="ORIGIN">$1<ex>www.google.com</ex></ph> to your Android phone, sign in to MoltBrowser on both devices.
-       </message>
        <message name="IDS_BROWSER_SHARING_ERROR_DIALOG_TEXT_DEVICE_NOT_FOUND" desc="The text to be shown on the dialog when an error occurred because the device is not synced.">
 -        Make sure you are signed in to Chromium on your <ph name="TARGET_DEVICE_NAME">$1<ex>Pixel XL</ex></ph> and then try sending again.
 +        Make sure you are signed in to MoltBrowser on your <ph name="TARGET_DEVICE_NAME">$1<ex>Pixel XL</ex></ph> and then try sending again.
@@ -302,6 +294,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +          Uninstall MoltBrowser
          </message>
        </if>
+       <!-- Default Browser messages -->
        <message name="IDS_FR_CUSTOMIZE_DEFAULT_BROWSER" desc="Default browser checkbox label">
 -        Make Chromium the default browser
 +        Make MoltBrowser the default browser
@@ -310,6 +303,28 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -        Chromium is no longer your default browser. Make Chromium the default browser?
 +        MoltBrowser is no longer your default browser. Make MoltBrowser the default browser?
        </message>
+       <if expr="is_win">
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_PAGE_TITLE" desc="Title of the default browser visual guided setter page.">
+-          Set Chromium as your default browser
++          Set MoltBrowser as your default browser
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_HEADER_TITLE" desc="Header text of the default browser visual guided setter.">
+-          Set Chromium as your default browser
++          Set MoltBrowser as your default browser
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_CONTENT_TITLE" desc="Content title of the default browser visual guided setter.">
+-          Set Chromium as your default browser
++          Set MoltBrowser as your default browser
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_CONTENT_DESCRIPTION" desc="Body text of the default browser visual guided setter.">
+-          Keep your passwords, bookmarks, and history perfectly synced across devices by setting Chromium as your default browser.
++          Keep your passwords, bookmarks, and history perfectly synced across devices by setting MoltBrowser as your default browser.
+         </message>
+         <message name="IDS_DEFAULT_BROWSER_VISUAL_GUIDED_SETTER_INSTRUCTION_STEP_2" desc="Instruction step 2 of the default browser visual guided setter. $1 is the bold button name.">
+-          Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Yes<ph name="END_BOLD">&lt;/strong&gt;</ph> in the Windows notification to pin Chromium to your taskbar for quick access.
++          Click <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>Yes<ph name="END_BOLD">&lt;/strong&gt;</ph> in the Windows notification to pin MoltBrowser to your taskbar for quick access.
+         </message>
+       </if>
        <if expr="use_titlecase">
          <message name="IDS_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND" desc="In Title Case: The checkbox in the status tray context menu that controls whether chrome keeps running in the background after the last window is closed">
 -          Let Chromium Run in the Background
@@ -340,7 +355,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
  
  <ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
        </message>
-@@ -628,9 +628,9 @@ Chromium cannot read and write to its data directory:
+@@ -658,9 +658,9 @@ Chromium cannot read and write to its data directory:
          </message>
        </if>
        <message name="IDS_PROFILE_TOO_NEW_ERROR" desc="Error displayed on startup when the profile is from a newer version of the product and can not be read">
@@ -352,7 +367,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_PREFERENCES_UNREADABLE_ERROR" desc="Error displayed on startup when user preferences file can not be read">
  Your preferences can not be read.
-@@ -640,21 +640,21 @@ Some features may be unavailable and changes to preferences won't be saved.
+@@ -670,21 +670,21 @@ Some features may be unavailable and changes to preferences won't be saved.
        <message name="IDS_PREFERENCES_CORRUPT_ERROR" desc="Error displayed on startup when user preferences file can not be read">
  Your preferences file is corrupt or invalid.
  
@@ -376,9 +391,9 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -        Chromium
 +        MoltBrowser
        </message>
-       <message name="IDS_PASSWORD_BUBBLES_PASSWORD_MANAGER_LINK_TEXT_SAVING_ON_DEVICE" desc="The text of the Google Password Manager links displayed on Password Manager bubbles footer when the credentials are stored only locally.">
+       <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
          Password Manager
-@@ -667,81 +667,81 @@ Chromium is unable to recover your settings.
+@@ -697,81 +697,81 @@ Chromium is unable to recover your settings.
        </message>
        <if expr="is_macosx">
        <message name="IDS_PASSWORDS_AUTHENTICATION_PROMPT_PREFIX" desc="Text shown in the beginning of the OS-level user authentication prompt before performing a seneitive operation such as show passwords in plain text.">
@@ -481,7 +496,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
            Access the Internet
          </message>
          <message name="IDS_UNINSTALL_DELETE_PROFILE" desc="Text to show user to ask whether to delete all the profile data also during uninstallation.">
-@@ -751,280 +751,280 @@ Chromium is unable to recover your settings.
+@@ -781,277 +781,277 @@ Chromium is unable to recover your settings.
            Uninstall
          </message>
          <message name="IDS_PIN_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not pinned to the taskbar.">
@@ -525,8 +540,8 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +          Keep your passwords, bookmarks, and history perfectly synced across devices. Easily access the features you know and love by updating your default browser to MoltBrowser. MoltBrowser will be pinned to your taskbar for quick access.
          </message>
          <message name="IDS_DEFAULT_BROWSER_MODAL_TITLE_WITHOUT_SETTINGS_ILLUSTRATION" desc="Title of the default browser modal without settings illustration.">
--          Use Chromium recommended browser settings
-+          Use MoltBrowser recommended browser settings
+-          Set Chromium as your default browser
++          Set MoltBrowser as your default browser
          </message>
          <message name="IDS_DEFAULT_BROWSER_MODAL_BODY_WITHOUT_SETTINGS_ILLUSTRATION" desc="Body text of the default browser modal without settings illustration.">
 -          Get easy access to the features you know, love, and trust by setting Chromium as your default browser.
@@ -544,6 +559,10 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          Get easy access to the features you know, love, and trust by setting Chromium as your default browser.
 +          Get easy access to the features you know, love, and trust by setting MoltBrowser as your default browser.
          </message>
+         <message name="IDS_DEFAULT_BROWSER_SUCCESS_TOAST_BODY" desc="Body text of the toast shown when Chromium is successfully set as the default browser.">
+-          Chromium is now your default browser
++          MoltBrowser is now your default browser
+         </message>
          <message name="IDS_DEFAULT_BROWSER_BUBBLE_DIALOG_STEPS_PINNED_COMBINED" desc="Numbered instructions. $1, $2 and $3 are the bold button names.">
 -          1. Click <ph name="BUTTON_LABEL">$1<ex>Open settings</ex></ph> below&#xA;2. Click <ph name="BUTTON_2">$2<ex>Set default</ex></ph> in your Windows settings&#xA;3. Click <ph name="BUTTON_3">$3<ex>Yes</ex></ph> in the Windows notification to pin Chromium to your taskbar for quick access
 +          1. Click <ph name="BUTTON_LABEL">$1<ex>Open settings</ex></ph> below&#xA;2. Click <ph name="BUTTON_2">$2<ex>Set default</ex></ph> in your Windows settings&#xA;3. Click <ph name="BUTTON_3">$3<ex>Yes</ex></ph> in the Windows notification to pin MoltBrowser to your taskbar for quick access
@@ -553,6 +572,20 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          <message name="IDS_PDF_INFOBAR_TEXT" desc="Text to show in an infobar when Chromium is not the default PDF viewer.">
 -          Set Chromium as your default PDF viewer
 +          Set MoltBrowser as your default PDF viewer
+         </message>
+       </if>
+       <if expr="enable_pdf">
+         <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT" desc="Text of the In Product Help message shown for the button to summarize PDF.">
+-          Get a quick overview of this document and ask questions with Gemini in Chromium
++          Get a quick overview of this document and ask questions with Gemini in MoltBrowser
+         </message>
+         <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT_NEW" desc="Text of the In Product Help message shown for the button to summarize PDF.">
+-          Share this document with Gemini in Chromium to get a quick overview and ask follow-up questions
++          Share this document with Gemini in MoltBrowser to get a quick overview and ask follow-up questions
+         </message>
+         <message name="IDS_PDF_GLIC_SUMMARIZE_IPH_TEXT_NEW_SCREENREADER" desc="The screenreader text of the In Product Help message shown for the button to summarize PDF." is_accessibility_with_no_ui="true">
+-          Click the Summarize button to share this document with Gemini in Chromium to get a quick overview and ask follow-up questions
++          Click the Summarize button to share this document with Gemini in MoltBrowser to get a quick overview and ask follow-up questions
          </message>
        </if>
        <!-- Download Bubble Items -->
@@ -689,6 +722,12 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chromium
 +          <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to MoltBrowser
          </message>
+         <if expr="is_android">
+           <message name="IDS_EXTENSION_INSTALLED_MANAGE_INFO_IN_MAIN_MENU" desc="Text displayed in the post install dialog when the extensions menu is unpinned on Android informing them they can manage their extensions in the main menu.">
+-            Manage your extensions by clicking Extensions in the Chromium main menu.
++            Manage your extensions by clicking Extensions in the MoltBrowser main menu.
+           </message>
+         </if>
  
          <!-- Extension uninstall prompt -->
          <message name="IDS_EXTENSION_UNINSTALL_PROMPT_REMOVE_DATA_CHECKBOX" desc="Checkbox text to ask the user whether they want to remove associated data at uninstall time. Only used when uninstalling an app associated with a particular website.">
@@ -705,19 +744,6 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          Chromium found that these items contain malware:
 +          MoltBrowser found that these items contain malware:
          </message>
- 
-         <!-- Manifest V2 Deprecation dialog -->
-         <message name="IDS_EXTENSIONS_MANIFEST_V2_DEPRECATION_KEEP_DIALOG_DESCRIPTION" desc="The description of the dialog asking the user if they want to keep the extension installed, which is affected by the Manifest V2 deprecation">
--          This extension is no longer supported. Chromium recommends that you remove it instead.
-+          This extension is no longer supported. MoltBrowser recommends that you remove it instead.
-         </message>
-         <message name="IDS_EXTENSIONS_MANIFEST_V2_DEPRECATION_DISABLED_DIALOG_DESCRIPTION"  desc="The description of the dialog that appears when extensions were disabled due to the Manifest V2 deprecation">
-           {NUM_EXTENSIONS, plural,
--          =1 {This extension is no longer supported. Chromium recommends that you remove it.}
--          other {These extensions are no longer supported. Chromium recommends that you remove them.}}
-+          =1 {This extension is no longer supported. MoltBrowser recommends that you remove it.}
-+          other {These extensions are no longer supported. MoltBrowser recommends that you remove them.}}
-         </message>
          <message name="IDS_EXTENSIONS_MV2_DEPRECATION_MESSAGE_DISABLED_SUBTITLE" desc="Subtitle text displayed in the manifest v2 deprecation message for a specific extension during the disabled stage.">
 -          Chromium recommends that you remove it. <ph name="BEGIN_LINK">&lt;a href="$1" aria-description="$2" target="_blank"&gt;</ph>Learn more about supported extensions<ph name="END_LINK">&lt;/a&gt;</ph>
 +          MoltBrowser recommends that you remove it. <ph name="BEGIN_LINK">&lt;a href="$1" aria-description="$2" target="_blank"&gt;</ph>Learn more about supported extensions<ph name="END_LINK">&lt;/a&gt;</ph>
@@ -733,6 +759,14 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          <message name="IDS_EXTENSIONS_MV2_DEPRECATION_PANEL_REMOVE_BUTTON_ACC_LABEL" desc="The (accessible) label for the button to remove an extension.">
 -          Remove <ph name="EXTENSION_NAME">$1<ex>Google Translate</ex></ph> from Chromium
 +          Remove <ph name="EXTENSION_NAME">$1<ex>Google Translate</ex></ph> from MoltBrowser
+         </message>
+         <message name="IDS_EXTENSIONS_MENU_ZERO_STATE_DESC" desc="Description in the Extensions Menu when there are no extensions installed." formatter_data="android_java">
+-          Extensions are add-ons that let you customize Chromium. From staying organized, to simplifying everyday tasks, extensions help you make Chromium your own.
++          Extensions are add-ons that let you customize MoltBrowser. From staying organized, to simplifying everyday tasks, extensions help you make MoltBrowser your own.
+         </message>
+         <message name="IDS_OPEN_WEB_STORE_BUTTON_TEXT" desc="Text for the open Chrome Web Store button." formatter_data="android_java">
+-          Open Chrome Web Store
++          Open Extension Store
          </message>
        </if>
  
@@ -811,6 +845,8 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
  
+@@ -1062,19 +1062,19 @@ Chromium is unable to recover your settings.
+ 
        <!-- Main Chrome menu -->
        <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
 -        Customize and control Chromium
@@ -833,7 +869,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
  
        <if expr="use_titlecase and not is_chromeos">
-@@ -1036,12 +1036,12 @@ Chromium is unable to recover your settings.
+@@ -1086,12 +1086,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
@@ -848,7 +884,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <if expr="not use_titlecase and not is_chromeos">
-@@ -1053,17 +1053,17 @@ Chromium is unable to recover your settings.
+@@ -1103,17 +1103,17 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
@@ -869,7 +905,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_RELAUNCH_TO_UPDATE" desc="The text label of the relaunch to update ChromeOS menu item">
            Relaunch to update &amp;ChromiumOS
-@@ -1072,13 +1072,13 @@ Chromium is unable to recover your settings.
+@@ -1122,13 +1122,13 @@ Chromium is unable to recover your settings.
  
        <if expr="is_macosx">
          <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome." translateable="false">
@@ -886,7 +922,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
  
-@@ -1087,24 +1087,24 @@ Chromium is unable to recover your settings.
+@@ -1137,24 +1137,24 @@ Chromium is unable to recover your settings.
          <if expr="use_titlecase">
            <then>
              <message name="IDS_CUSTOMIZE_CHROME" desc="In Title Case: The text label of the Customize Chrome menu item">
@@ -917,7 +953,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
              </message>
            </else>
          </if>
-@@ -1116,33 +1116,33 @@ Chromium is unable to recover your settings.
+@@ -1166,33 +1166,33 @@ Chromium is unable to recover your settings.
  
        <!-- Chrome sign-in page -->
        <message name="IDS_CHROME_SIGNIN_TITLE" desc="Title on the about:chrome-signin page" translateable="false">
@@ -958,7 +994,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_SESSION_RESTORE_LINK" desc="Text for the link in the session restore infobar to open the Settings page.">
           Settings.
-@@ -1151,79 +1151,79 @@ Chromium is unable to recover your settings.
+@@ -1201,78 +1201,78 @@ Chromium is unable to recover your settings.
          Settings, opens in new tab.
        </message>
        <!-- Enterprise sign-in dialog -->
@@ -969,10 +1005,9 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
  
        <!-- Signin Search AI Mode promo -->
-       <!-- TODO(crbug.com/486858498): Finalize and make transalteable. -->
-       <message name="IDS_AI_SIGNIN_PROMO_SUBTITLE" translateable="false">
--        Sign in to Chromium to ask AI mode about your tabs. You'll also get your passwords and more on all your devices.
-+        Sign in to MoltBrowser to ask AI mode about your tabs. You'll also get your passwords and more on all your devices.
+       <message name="IDS_AI_SIGNIN_PROMO_SUBTITLE" desc="The message shown in a sign-in promo bubble that is shown to users not signed-in to the browser when they click in an AI Mode Search result link.">
+-        You can keep chatting with AI Mode without switching tabs. To get started, sign in to Chromium. You'll also get your passwords and more on all your devices.
++        You can keep chatting with AI Mode without switching tabs. To get started, sign in to MoltBrowser. You'll also get your passwords and more on all your devices.
        </message>
        <message name="IDS_AI_SIGNIN_PROMO_AVATAR_PILL_TEXT" translateable="false" meaning="Text shown on the expanded avatar pill when the Signin Search AI Bubble promo is shown to the user">
 -        Sign in to Chromium?
@@ -1059,7 +1094,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <if expr="_is_chrome_for_testing_branded">
          <then>
-@@ -1232,40 +1232,40 @@ Chromium is unable to recover your settings.
+@@ -1281,37 +1281,37 @@ Chromium is unable to recover your settings.
            </message>
          </then>
          <else>
@@ -1093,10 +1128,6 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          Get the Chromium app to save passwords on the go
 +          Get the MoltBrowser app to save passwords on the go
          </message>
-         <message name="IDS_NTP_SIGN_IN_PROMO_WITH_BOOKMARKS" desc="The text shown in the body of the New Tab Page sign in promotion">
--          Sign in to Chromium to get your passwords, bookmarks, and more on all your devices
-+          Sign in to MoltBrowser to get your passwords, bookmarks, and more on all your devices
-         </message>
        </if>
  
        <!-- Customize Chrome Auto Promo Strings -->
@@ -1112,7 +1143,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
  
        <!-- Realbox Strings -->
-@@ -1279,140 +1279,140 @@ Chromium is unable to recover your settings.
+@@ -1325,148 +1325,148 @@ Chromium is unable to recover your settings.
        <!-- Signin Email Confirmation tab modal dialog -->
        <if expr="not is_chromeos">
          <message name="IDS_SIGNIN_EMAIL_CONFIRMATION_TITLE" desc="Title of the signin email confirmation tab modal dialog.">
@@ -1257,18 +1288,6 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          You’ll be signed out of most sites when you close all Chromium windows, except your Google Account if you’re signed in to Chromium. To let sites remember you, <ph name="SETTINGS_LINK">$1<ex>go to settings</ex></ph>.
 +          You’ll be signed out of most sites when you close all MoltBrowser windows, except your Google Account if you’re signed in to MoltBrowser. To let sites remember you, <ph name="SETTINGS_LINK">$1<ex>go to settings</ex></ph>.
          </message>
-         <message name="IDS_SYNC_PASSPHRASE_DIALOG_FOOTER" desc="Dialog footer of the passphrase dialog.">
--          If you forgot your passphrase or want to change this setting, <ph name="SETTINGS_LINK">$1<ex>clear</ex></ph> the Chromium data in your account
-+          If you forgot your passphrase or want to change this setting, <ph name="SETTINGS_LINK">$1<ex>clear</ex></ph> the MoltBrowser data in your account
-         </message>
-         <message name="IDS_SYNC_PASSPHRASE_DIALOG_FOOTER_LINK_ACC" desc="Accessibility label for the link in the footer of the sync passhprase dialog">
--          Clear the Chromium data in your account
-+          Clear the MoltBrowser data in your account
-         </message>
-         <message name="IDS_SYNC_PASSPHRASE_DIALOG_BODY" desc="Body of the sync passphrase dialog.">
--          Your data is encrypted with your passphrase. Enter it to use and save Chromium data in your Google Account.
-+          Your data is encrypted with your passphrase. Enter it to use and save MoltBrowser data in your Google Account.
-         </message>
          <message name="IDS_AVATAR_BUTTON_INTERCEPT_BUBBLE_CHROME_SIGNIN_ACCESSIBILITY_LABEL"
 -          desc="Accessibility label (read by the accessibility tools) of the avatar button when the Chromium Signin bubble is shown. The text implies that the expanded bubble underneath the button is closable by clicking on the button. The actual text is 'Sign in to Chromium?' with a bubble shown under it.">
 -          Click to close the Chromium sign-in dialog
@@ -1295,6 +1314,19 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
  
+       <message name="IDS_SYNC_PASSPHRASE_DIALOG_FOOTER" desc="Dialog footer of the passphrase dialog.">
+-        If you forgot your passphrase or want to change this setting, <ph name="SETTINGS_LINK">$1<ex>clear</ex></ph> the Chromium data in your account
++        If you forgot your passphrase or want to change this setting, <ph name="SETTINGS_LINK">$1<ex>clear</ex></ph> the MoltBrowser data in your account
+       </message>
+       <message name="IDS_SYNC_PASSPHRASE_DIALOG_FOOTER_LINK_ACC" desc="Accessibility label for the link in the footer of the sync passphrase dialog">
+-        Clear the Chromium data in your account
++        Clear the MoltBrowser data in your account
+       </message>
+       <message name="IDS_SYNC_PASSPHRASE_DIALOG_BODY" desc="Body of the sync passphrase dialog.">
+-        Your data is encrypted with your passphrase. Enter it to use and save Chromium data in your Google Account.
++        Your data is encrypted with your passphrase. Enter it to use and save MoltBrowser data in your Google Account.
+       </message>
+ 
        <if expr="not is_chromeos and not is_android">
          <!-- Profile Customization Web UI -->
          <message name="IDS_PROFILE_CUSTOMIZATION_TEXT" desc="Text of the profile customization bubble">
@@ -1314,7 +1346,34 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
            ChromiumOS System
          </message>
          <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when the user's sign-in credentials are out of date.">
-@@ -1428,120 +1428,120 @@ Chromium is unable to recover your settings.
+           ChromiumOS could not sync your data because your account sign-in details are out of date.
+         </message>
+         <message name="IDS_SYNC_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE_2" desc="Message in the sign-in error notification when the user's sign-in credentials are out of date.">
+-          ChromiumOS could not save Chromium data in your Google Account because your account sign-in details are out of date
++          ChromiumOS could not save MoltBrowser data in your Google Account because your account sign-in details are out of date
+         </message>
+         <message name="IDS_SYNC_UNAVAILABLE_ERROR_BUBBLE_VIEW_MESSAGE" desc="Message in the sign-in error notification when sync is not available for their domain.">
+           ChromiumOS could not sync your data because Sync is not available for your domain.
+@@ -1475,133 +1475,133 @@ Chromium is unable to recover your settings.
+           ChromiumOS could not sync your data due to an error signing in.
+         </message>
+         <message name="IDS_SYNC_OTHER_SIGN_IN_ERROR_BUBBLE_VIEW_MESSAGE_2" desc="Message in the sign-in error notification when there's an error signing in.">
+-          ChromiumOS could not save Chromium data in your Google Account due to an error signing in
++          ChromiumOS could not save MoltBrowser data in your Google Account due to an error signing in
+         </message>
+         <message name="IDS_SYNC_PASSPHRASE_ERROR_BUBBLE_VIEW_MESSAGE_2" desc="Message in the sync error bubble view when the user needs to enter their sync passphrase.">
+-          To use and save Chromium data in your Google Account, enter your passphrase
++          To use and save MoltBrowser data in your Google Account, enter your passphrase
+         </message>
+         <message name="IDS_SYNC_NEEDS_KEYS_FOR_EVERYTHING_ERROR_BUBBLE_VIEW_MESSAGE_2" desc="Message in the sync error notification when the user needs to reauth to retrieve the sync encryption keys and resume sync.">
+-          To use and save Chromium data in your Google Account, verify it's you
++          To use and save MoltBrowser data in your Google Account, verify it's you
+         </message>
+         <message name="IDS_SYNC_RECOVERABILITY_DEGRADED_FOR_EVERYTHING_ERROR_BUBBLE_VIEW_MESSAGE_2" desc="Message in the sync error notification when the user needs to reauth to add recovery options, affecting all sync data.">
+-          To make sure you can always use and save Chromium data in your Google Account, verify it's you
++          To make sure you can always use and save MoltBrowser data in your Google Account, verify it's you
+         </message>
+       </if>
  
        <!-- Profile Menu -->
        <message name="IDS_PROFILE_MENU_SIGNIN_PROMO_BUTTON" meaning="Button" desc="Text for the button in the sign-in promo in the profile menu when the used is signed out.">
@@ -1378,6 +1437,12 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
  
+       <!-- Sign in on your phone (QR code) strings  -->
+       <message name="IDS_QR_CODE_BUBBLE_SIGNIN_ON_PHONE_TITLE" desc="Title of the QR Code bubble showing a code for the user to sign in on their phone.">
+-        Sign in to Chromium on your phone
++        Sign in to MoltBrowser on your phone
+       </message>
+ 
        <!-- App list -->
        <if expr="is_chromeos">
          <message name="IDS_APP_LIST_EXTENSIONS_UNINSTALL" desc="Title text for the context menu item of a non-platform-app app list item that removes the app.">
@@ -1407,14 +1472,6 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
 -        <message name="IDS_APP_SHORTCUTS_SUBDIR_NAME_DEV" desc="Unused in Chromium builds" translateable="false">
 +        <message name="IDS_APP_SHORTCUTS_SUBDIR_NAME_DEV" desc="Unused in MoltBrowser builds" translateable="false">
-         </message>
-       </if>
- 
-       <!-- ChromeOS OOBE Terms of Service screen-->
-       <if expr="is_chromeos">
-         <message name="IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING" desc="Subheading at the top of the Terms of Service screen. MANAGER can be a domain or an email address.">
--          <ph name="MANAGER">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the ChromiumOS Terms.
-+          <ph name="MANAGER">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the MoltBrowserOS Terms.
          </message>
        </if>
  
@@ -1472,7 +1529,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
  
-@@ -1549,40 +1549,40 @@ Chromium is unable to recover your settings.
+@@ -1609,40 +1609,40 @@ Chromium is unable to recover your settings.
        <if expr="not is_android and not is_chromeos">
          <!-- User pod remove sync warning text -->
          <message name="IDS_LOGIN_POD_USER_REMOVE_WARNING_SYNC" desc="Main text shown as a warning when attempting to remove an user.">
@@ -1523,7 +1580,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_TUTORIAL_PASSWORD_MANAGER_CLICK_PASSWORD_MANAGER" desc="The description of the 'click password manager' step in password manager tutorial">
            Click “Password Manager”
-@@ -1597,88 +1597,88 @@ Chromium is unable to recover your settings.
+@@ -1657,94 +1657,94 @@ Chromium is unable to recover your settings.
  
        <!-- Settings API bubble -->
        <message name="IDS_EXTENSIONS_SETTINGS_API_SECOND_LINE_START_PAGES" desc="Second line in the Settings API bubble. Only shown if the secondary change by the extension was just the start pages. The triple single quotes are needed to preserve the space before and after the sentence which is needed when the language (Chrome is being translated to) uses space as word separator. Please preserve them, unless the language being translated to does not use space as word separator.">
@@ -1604,6 +1661,10 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -            Open link in Chromium inco&amp;gnito window
 +            Open link in MoltBrowser inco&amp;gnito window
            </message>
+           <message name="IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD_INAPP_V2" desc="The name of the command to open a link in an Incognito browser window when the user is in an app window">
+-            Open link in Chromium Inco&amp;gnito window
++            Open link in MoltBrowser Inco&amp;gnito window
+           </message>
          </if>
          <if expr="use_titlecase">
            <message name="IDS_CONTENT_CONTEXT_OPENLINKNEWTAB_INAPP" desc="In Title Case: The name of the command to open a link in a newly created browser tab when the user is in an app window">
@@ -1611,6 +1672,10 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +            Open Link in New MoltBrowser &amp;tab
            </message>
            <message name="IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD_INAPP" desc="In Title Case: The name of the command to open a link in an Incognito browser window when the user is in an app window">
+-            Open Link in Chromium Inco&amp;gnito Window
++            Open Link in MoltBrowser Inco&amp;gnito Window
+           </message>
+           <message name="IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD_INAPP_V2" desc="In Title Case: The name of the command to open a link in an Incognito browser window when the user is in an app window">
 -            Open Link in Chromium Inco&amp;gnito Window
 +            Open Link in MoltBrowser Inco&amp;gnito Window
            </message>
@@ -1636,7 +1701,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
            </message>
          </if>
        </if>
-@@ -1686,13 +1686,13 @@ Chromium is unable to recover your settings.
+@@ -1752,13 +1752,13 @@ Chromium is unable to recover your settings.
        <!-- Update Recommended dialog -->
        <if expr="not is_chromeos">
          <message name="IDS_UPDATE_RECOMMENDED_DIALOG_TITLE" desc="The window title for the Update Recommended dialog.">
@@ -1654,7 +1719,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_RELAUNCH_AND_UPDATE" desc="The button in the Update Recommended dialog which updates and relaunches Chrome.">
            Relaunch
-@@ -1700,7 +1700,7 @@ Chromium is unable to recover your settings.
+@@ -1766,7 +1766,7 @@ Chromium is unable to recover your settings.
        </if>
        <if expr="is_chromeos">
          <message name="IDS_UPDATE_RECOMMENDED_DIALOG_TITLE" desc="The window title for the Update Recommended dialog.">
@@ -1663,7 +1728,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_UPDATE_RECOMMENDED" desc="The main text of the Update Recommended dialog.">
            ChromiumOS needs to be restarted to apply the update.
-@@ -1712,71 +1712,71 @@ Chromium is unable to recover your settings.
+@@ -1778,71 +1778,71 @@ Chromium is unable to recover your settings.
  
        <if expr="is_win or is_macosx or is_linux">
          <message name="IDS_UPDATE_RECOMMENDED_DIALOG_TITLE_ALT" desc="Alternate window title for the Update Recommended dialog." translateable="false">
@@ -1752,7 +1817,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <message name="IDS_RECOVERY_BUBBLE_TEXT" desc="Text for the chrome recovery bubble view full description.">
-@@ -1785,91 +1785,91 @@ Chromium is unable to recover your settings.
+@@ -1851,77 +1851,77 @@ Chromium is unable to recover your settings.
  
        <!-- Critical Notification bubble -->
        <message name="IDS_CRITICAL_NOTIFICATION_TITLE" desc="The title for a bubble that appears when there is a critical update and Chromium must restart to install it. It counts down a timer and then Chromium automatically restarts.">
@@ -1800,30 +1865,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
  
        <!-- Runtime permission strings -->
        <if expr="is_android">
-         <message name="IDS_INFOBAR_MISSING_AR_CAMERA_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to augmented reality capabilities, but Chrome is missing the Android camera permission.">
--          Chromium needs permission to access your camera to create a 3D map of your surroundings
-+          MoltBrowser needs permission to access your camera to create a 3D map of your surroundings
-         </message>
-         <message name="IDS_INFOBAR_MISSING_CAMERA_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the camera capabilities, but Chrome is missing the Android camera permission.">
--          Chromium needs permission to access your camera for this site
-+          MoltBrowser needs permission to access your camera for this site
-         </message>
-         <message name="IDS_INFOBAR_MISSING_HAND_TRACKING_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to hand tracking capabilities, but Chrome is missing the Android hand tracking permission.">
--          Chromium needs permission to track your hands
-+          MoltBrowser needs permission to track your hands
-         </message>
-         <message name="IDS_INFOBAR_MISSING_MICROPHONE_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the microphone capabilities, but Chrome is missing the Android microphone permission.">
--          Chromium needs permission to access your microphone for this site
-+          MoltBrowser needs permission to access your microphone for this site
-         </message>
-         <message name="IDS_INFOBAR_MISSING_MICROPHONE_CAMERA_PERMISSIONS_TEXT" desc="Text shown in an infobar when a website has requested access to the microphone and camera capabilities, but Chrome is missing the Android microphone and camera permissions.">
--          Chromium needs permission to access your camera and microphone for this site
-+          MoltBrowser needs permission to access your camera and microphone for this site
-         </message>
-         <message name="IDS_INFOBAR_MISSING_LOCATION_PERMISSION_TEXT" desc="Text shown in an infobar when a website has requested access to the location capabilities, but Chrome is missing the Android location permission.">
--          Chromium needs access to your location to share your location with this site
-+          MoltBrowser needs access to your location to share your location with this site
-         </message>
+ 
          <message name="IDS_MISSING_STORAGE_PERMISSION_DOWNLOAD_EDUCATION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
 -          Chromium needs storage access to download files
 +          MoltBrowser needs storage access to download files
@@ -1853,6 +1895,10 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          Chromium needs location permission for this site
 +          MoltBrowser needs location permission for this site
          </message>
+         <message name="IDS_MESSAGE_MISSING_LOCAL_NETWORK_PERMISSION_TEXT" desc="Text shown in a prompt ui when a website has requested access to the local network capabilities, but Chrome is missing the Android local network permission.">
+-          Chromium needs local network permission for this site
++          MoltBrowser needs local network permission for this site
+         </message>
          <message name="IDS_MESSAGE_STORAGE_ACCESS_PERMISSION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
 -          Chromium needs storage access permission to download files
 +          MoltBrowser needs storage access permission to download files
@@ -1870,7 +1916,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_LOCAL_NETWORK_ACCESS_PERMISSION_DESC" desc="Text shown in the macOS permission dialog, describing why Chrome needs the permission to access local network.">
            This will allow you to select from available devices and display content on them.
-@@ -1878,12 +1878,15 @@ Chromium is unable to recover your settings.
+@@ -1930,12 +1930,15 @@ Chromium is unable to recover your settings.
  
        <!-- Side panel strings -->
        <message name="IDS_SIDE_PANEL_CUSTOMIZE_CHROME_TITLE" desc="The name of the Customize Chrome feature in the side panel combo box.">
@@ -1888,7 +1934,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
  
        <!-- Lens Overlay Strings -->
-@@ -2238,7 +2241,7 @@ Chromium is unable to recover your settings.
+@@ -2277,7 +2280,7 @@ Chromium is unable to recover your settings.
          </message>
          <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_LEARN_MORE_ABOUT_GOOGLE_LENS_LINK"
            desc="Accessibility label for text link that is shown to users to learn more about privacy in relation to Google Lens.">
@@ -1897,7 +1943,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_LENS_PERMISSION_BUBBLE_DIALOG_TITLE"
            desc="The title of the lens permission search bubble dialog, introducing Lens as a way to search what's on their screen.">
-@@ -2335,7 +2338,7 @@ Chromium is unable to recover your settings.
+@@ -2362,7 +2365,7 @@ Chromium is unable to recover your settings.
        <!-- OOBE -->
        <if expr="is_chromeos">
          <message name="IDS_INSTALLING_UPDATE" desc="Label shown on the updates installation screen during OOBE">
@@ -1906,7 +1952,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_EULA_SCREEN_ACCESSIBLE_TITLE" desc="Title to be spoken on opening the OOBE EULA screen">
            ChromiumOS terms
-@@ -2345,7 +2348,7 @@ Chromium is unable to recover your settings.
+@@ -2372,7 +2375,7 @@ Chromium is unable to recover your settings.
        <!-- Native notifications for Windows 10 -->
        <if expr="is_win">
          <message name="IDS_WIN_NOTIFICATION_SETTINGS_CONTEXT_MENU_ITEM_NAME" desc="The name of the button in Windows Notification Center which leads to Chrome notification settings.">
@@ -1915,7 +1961,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
        <!-- Relaunch notification bubble and dialog. -->
-@@ -2353,115 +2356,115 @@ Chromium is unable to recover your settings.
+@@ -2380,115 +2383,115 @@ Chromium is unable to recover your settings.
          <if expr="not is_chromeos">
            <message name="IDS_RELAUNCH_RECOMMENDED_TITLE" desc="The title of a dialog that tells users that a browser relaunch is recommended for an update available for some number of days.">
              {0, plural,
@@ -2075,41 +2121,12 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
        </if>
  
-@@ -2475,137 +2478,137 @@ Chromium is unable to recover your settings.
+@@ -2502,104 +2505,104 @@ Chromium is unable to recover your settings.
        <!-- Chrome parent extension/app install blocking dialog. -->
        <if expr="enable_extensions_core">
          <message name="IDS_EXTENSION_PERMISSIONS_BLOCKED_BY_PARENT_PROMPT_MESSAGE" desc="Text for the dialog indicating that a parent has blocked extensions and apps.">
 -         Your parent has turned off "Permissions for sites, apps and extensions" for Chromium
 +         Your parent has turned off "Permissions for sites, apps and extensions" for MoltBrowser
-         </message>
- 
-         <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE_APP" desc="Titlebar of the prompt window for an externally installed app">
--          Another program on your computer added an app that may change the way Chromium works.
-+          Another program on your computer added an app that may change the way MoltBrowser works.
- 
- <ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>
-         </message>
-         <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE_EXTENSION" desc="Titlebar of the prompt window for an externally installed extension">
--          Another program on your computer added an extension that may change the way Chromium works.
-+          Another program on your computer added an extension that may change the way MoltBrowser works.
- 
- <ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>
-         </message>
-         <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_TITLE_THEME" desc="Titlebar of the prompt window for an externally installed theme">
--          Another program on your computer added a theme that may change the way Chromium works.
-+          Another program on your computer added a theme that may change the way MoltBrowser works.
- 
- <ph name="EXTENSION_NAME">$1<ex>Babylon Toolbar</ex></ph>
-         </message>
-         <message name="IDS_EXTENSION_EXTERNAL_INITIAL_INSTALL_PROMPT_TITLE_EXTENSION" desc="">
--          <ph name="PARTNER_NAME">$1<ex>Google</ex></ph> has added an extension that may change the way Chromium works.
-+          <ph name="PARTNER_NAME">$1<ex>Google</ex></ph> has added an extension that may change the way MoltBrowser works.
- 
- <ph name="EXTENSION_NAME">$2<ex>Babylon Toolbar</ex></ph>
-         </message>
-         <message name="IDS_EXTENSION_EXTERNAL_INSTALL_PROMPT_ABORT_BUTTON" desc="Button on the external install prompt to remove an extension installed by a third party.">
--          Remove from Chromium
-+          Remove from MoltBrowser
          </message>
        </if>
  
@@ -2129,25 +2146,9 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +        <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_V2" desc="Title of a screen that lets the user choose which profile to use when browsing the web. *If the EN source doesn't translate well in your language, an alternative string 'Which MoltBrowser profile would you like to use?' may be used instead">
 +          Who's using MoltBrowser?
          </message>
-         <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_EVERYTHING_IN_CHROME" desc="Profile picker main view title.">
--          Keep everything in Chromium
-+          Keep everything in MoltBrowser
-         </message>
          <message name="IDS_PROFILE_PICKER_MAIN_VIEW_SUBTITLE" desc="Profile picker main view subtitle">
 -          With Chromium profiles, you can separate all your Chromium stuff. Create profiles for friends and family, or split between work and fun.
 +          With MoltBrowser profiles, you can separate all your MoltBrowser stuff. Create profiles for friends and family, or split between work and fun.
-         </message>
-         <message name="IDS_PROFILE_PICKER_MAIN_VIEW_SUBTITLE_KEEP_WORK_AND_LIFE_SEPARATE" desc="Profile picker main view subtitle.">
--          Chromium profiles let you keep personal browsing and work apart. Add a new profile now.
-+          MoltBrowser profiles let you keep personal browsing and work apart. Add a new profile now.
-         </message>
-         <message name="IDS_PROFILE_PICKER_MAIN_VIEW_SUBTITLE_GOT_ANOTHER_GOOGLE_ACCOUNT" desc="Profile picker main view subtitle.">
--          Chromium profiles help you separate different parts of your life. Add a new profile now.
-+          MoltBrowser profiles help you separate different parts of your life. Add a new profile now.
-         </message>
-         <message name="IDS_PROFILE_PICKER_MAIN_VIEW_SUBTITLE_KEEP_TASKS_SEPARATE" desc="Profile picker main view subtitle.">
--          Add a new Chromium profile to keep bookmarks, passwords, and settings apart.
-+          Add a new MoltBrowser profile to keep bookmarks, passwords, and settings apart.
          </message>
          <message name="IDS_PROFILE_PICKER_PROFILE_CREATION_FLOW_PROFILE_TYPE_CHOICE_TITLE" desc="Profile picker profile type choice title">
 -          Set up your new Chromium profile
@@ -2180,6 +2181,10 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          Sign in to Chromium
 +          desc="This string appears as a heading on a full-page screen that asks the user to sign in to MoltBrowser with their Google Account. It appears when the user launches Chromium for the first time. When they sign in, they can personalize and customize Chromium and remember their settings in their Google Account. The tone should be inviting and alluring.">
 +          Sign in to MoltBrowser
+         </message>
+         <message name="IDS_FRE_GET_YOUR_BROWSER_READY_TITLE" meaning="Title" desc="It appears when the user launches Chromium for the first time on the page that is displayed before the sign in page. When they sign in, they can personalize and customize Chromium and remember their settings in their Google Account. The tone should be inviting and alluring.">
+-          Let's get your Chromium ready
++          Let's get your MoltBrowser ready
          </message>
  
          <!-- Default Browser Promo -->
@@ -2251,9 +2256,35 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +        <message name="IDS_SIGNOUT_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNOUT_IPH_TEXT_SCREENREADER" desc="Text announced by screenreaders related to the confirmation message is intended to help users to understand that signing out of a Google service (like Gmail) will not sign them out of MoltBrowser. It appears in a blue in-product help bubble, which points to the MoltBrowser Profile Menu; it appears after the user signs out of a Google service (like Gmail). The user can open the Profile Menu and sign out of MoltBrowser, if they wish to do so.">
 +          To remove your Google Account from MoltBrowser, sign out of MoltBrowser in the Settings page
          </message>
+ 
+         <!-- Feature Showcase - Password Manager -->
+@@ -2607,7 +2610,7 @@ Chromium is unable to recover your settings.
+           Stay safe with Password Manager
+         </message>
+         <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_SUBTITLE" desc="Description for the Password Manager page in the Feature Showcase.">
+-          Built into Chromium to help you create, save, and autofill strong passwords. Add the shortcut for easy access.
++          Built into MoltBrowser to help you create, save, and autofill strong passwords. Add the shortcut for easy access.
+         </message>
+ 
+         <!-- Feature Showcase - Lens -->
+@@ -2620,14 +2623,14 @@ Chromium is unable to recover your settings.
+ 
+         <!-- Feature Showcase - Gemini -->
+         <message name="IDS_FEATURE_SHOWCASE_GEMINI_TITLE" desc="This is the headline for the Gemini (AI assistant) opt-in screen. It introduces the benefit of AI assistance for productivity. (CHAR LIMIT = 60)">
+-          Ask anything, right where you are, with Gemini in Chromium
++          Ask anything, right where you are, with Gemini in MoltBrowser
+         </message>
+ 
        </if>
  
-@@ -2619,20 +2622,20 @@ Chromium is unable to recover your settings.
+       <!-- Feature Showcase - Themes -->
+       <message name="IDS_FEATURE_SHOWCASE_THEMES_TITLE" desc="This is the headline for a customization onboarding screen. It focuses on personalization and user choice. (CHAR LIMIT = 30)">
+-        Make Chromium yours
++        Make MoltBrowser yours
+       </message>
+ 
+       <!-- Notification quiet permission IPH -->
+@@ -2640,20 +2643,20 @@ Chromium is unable to recover your settings.
  
        <!-- ChromeLabs bubble -->
        <message name="IDS_CHROMELABS_RELAUNCH_FOOTER_MESSAGE" desc="Text that shows in the footer of the Chrome Labs bubble when relaunch is needed for changes to take effect.">
@@ -2278,7 +2309,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_TAILORED_SECURITY_UNCONSENTED_PROMOTION_MESSAGE_DESCRIPTION" desc="Description shown in the message shown when a user changes their account-level tailored security setting encouraging them to enable Enhanced Safe Browsing">
          Enhanced protection does more to block phishing and malware
-@@ -2647,39 +2650,39 @@ Chromium is unable to recover your settings.
+@@ -2668,39 +2671,39 @@ Chromium is unable to recover your settings.
        <!--Launch On Startup-->
        <if expr="is_win">
          <message name="IDS_SETTINGS_FOREGROUND_LAUNCH_ON_STARTUP_LABEL" desc="Label for settings toggle button that enables or disables opening Chromium on system startup">
@@ -2328,8 +2359,8 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 +          MoltBrowser
          </message>
          <message name="IDS_NO_UPDATE_RESPONSE" desc="Updater response for no updates when handling install result.">
-           No update is available.
-@@ -2688,7 +2691,7 @@ Chromium is unable to recover your settings.
+           No update is available
+@@ -2709,7 +2712,7 @@ Chromium is unable to recover your settings.
            Installation failed. Please try again.
          </message>
          <message name="IDS_INSTALLER_DISPLAY_NAME" desc="Name for the updater metainstaller.">
@@ -2338,7 +2369,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_CLOSE_BUTTON" desc="Close button tooltip">
            Close
-@@ -2727,13 +2730,13 @@ Chromium is unable to recover your settings.
+@@ -2748,13 +2751,13 @@ Chromium is unable to recover your settings.
            Canceling...
          </message>
          <message name="IDS_TEXT_RESTART_BROWSER" desc="For when a browser must be restarted to complete the installation.">
@@ -2355,7 +2386,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_UPDATER_CLOSE" desc="For close button on the UI post install completion.">
            Close
-@@ -2793,7 +2796,7 @@ Chromium is unable to recover your settings.
+@@ -2814,7 +2817,7 @@ Chromium is unable to recover your settings.
          <!--Network errors.-->
          <message name="IDS_NO_NETWORK_PRESENT_ERROR"
                   desc="Error message displayed in the main dialog when the Updater is unable to connect to the network.">
@@ -2364,7 +2395,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          </message>
          <message name="IDS_ERROR_HTTPSTATUS_UNAUTHORIZED"
                   desc="Error message displayed in the main dialog when an update check or download fails due to unauthorized access, usually due to proxy problems.">
-@@ -2919,101 +2922,101 @@ Chromium is unable to recover your settings.
+@@ -2940,101 +2943,101 @@ Chromium is unable to recover your settings.
          <!--Windows service strings.-->
          <message name="IDS_UPDATER_SERVICE_DISPLAY_NAME"
                   desc="The name of the Windows service. Displayed in the Windows Services management console.">
@@ -2471,7 +2502,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -        Open Gemini in Chromium
 +        Open Gemini in MoltBrowser
        </message>
-       <message name="IDS_GLIC_TAB_STRIP_BUTTON_TOOLTIP_CLOSE" translateable="false" desc="This is the tooltip shown when hovering over the glic entry button in the tab strip while the Glic window is open.">
+       <message name="IDS_GLIC_TAB_STRIP_BUTTON_TOOLTIP_CLOSE" translateable="false" desc="This is the tooltip shown when hovering over the glic entry button in the tab strip while the Glic window is open." formatter_data="android_java">
 -        Close Gemini in Chromium
 +        Close Gemini in MoltBrowser
        </message>
@@ -2488,7 +2519,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_GLIC_STATUS_ICON_TOOLTIP_CANARY" translateable="false" desc="This is the tooltip that is shown when the glic status icon is hovered and the Glic window is closed. It indicates that this is the Canary version of the browser.">
          Open Gemini (Canary)
-@@ -3025,7 +3028,7 @@ Chromium is unable to recover your settings.
+@@ -3046,7 +3049,7 @@ Chromium is unable to recover your settings.
          Open Gemini (Beta)
        </message>
        <message name="IDS_GLIC_STATUS_ICON_TOOLTIP_CLOSE" translateable="false" desc="This is the tooltip that is shown when the glic status icon is hovered and the Glic window is open.">
@@ -2497,7 +2528,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_GLIC_STATUS_ICON_TOOLTIP_CLOSE_CANARY" translateable="false" desc="This is the tooltip that is shown when the glic status icon is hovered and the Glic window is open. It indicates that this is the Canary version of the browser.">
          Close Gemini (Canary)
-@@ -3037,7 +3040,7 @@ Chromium is unable to recover your settings.
+@@ -3058,7 +3061,7 @@ Chromium is unable to recover your settings.
          Close Gemini (Beta)
        </message>
        <message name="IDS_GLIC_STATUS_ICON_TOOLTIP_TOGGLE" translateable="false" desc="This is the tooltip that is shown when the glic status icon is hovered.">
@@ -2506,7 +2537,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_GLIC_STATUS_ICON_TOOLTIP_TOGGLE_CANARY" translateable="false" desc="This is the tooltip that is shown when the glic status icon is hovered. It indicates that this is the Canary version of the browser.">
          Toggle Gemini (Canary)
-@@ -3049,79 +3052,79 @@ Chromium is unable to recover your settings.
+@@ -3070,106 +3073,106 @@ Chromium is unable to recover your settings.
          Toggle Gemini (Beta)
        </message>
        <message name="IDS_GLIC_STATUS_ICON_MENU_SHOW" translateable="false" desc="This is the menu item for showing the glic UI.">
@@ -2539,13 +2570,53 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -        Gemini in Chromium
 +        Gemini in MoltBrowser
        </message>
-       <message name="IDS_SETTINGS_GLIC_PERMISSIONS_WEB_ACTUATION_TOGGLE" desc="Title for the Gemini feature introduction screen">
--        Let Chromium browse for you
-+        Let MoltBrowser browse for you
+       <message name="IDS_SETTINGS_GLIC_BUTTON_TOGGLE_SUBLABEL" desc="Sublabel of the toggle that controls whether the Gemini icon is shown in the tabstrip." formatter_data="android_java">
+-        Quickly open Gemini in Chromium whenever you need it
++        Quickly open Gemini in MoltBrowser whenever you need it
        </message>
-       <message name="IDS_SETTINGS_GLIC_PERMISSIONS_WEB_ACTUATION_TOGGLE_SUBLABEL" desc="Subheader explaining what the Gemini feature does">
--        Gemini in Chromium uses auto browse to work in your tabs and complete tasks you give it. <ph name="LINK_BEGIN">&lt;a href="#"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
-+        Gemini in MoltBrowser uses auto browse to work in your tabs and complete tasks you give it. <ph name="LINK_BEGIN">&lt;a href="#"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
+       <if expr="is_macosx">
+         <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE" desc="Name of the toggle that controls whether the Gemini icon is shown in the MacOS menu bar (on Mac only).">
+-          Show Gemini in Chromium in Mac menu bar and turn on keyboard shortcut
++          Show Gemini in MoltBrowser in Mac menu bar and turn on keyboard shortcut
+         </message>
+         <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SHORTCUT_EXCLUDED" desc="Name of the toggle that controls whether the Gemini icon is shown in the MacOS menu bar (on Mac only) when local hotkeys can be configured independently.">
+-          Show Gemini in Chromium in Mac menu bar
++          Show Gemini in MoltBrowser in Mac menu bar
+         </message>
+       </if>
+       <if expr="is_win or is_linux or is_chromeos">
+         <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE" desc="Name of the toggle that controls whether the Gemini icon is shown in the system tray (on ChromeOS, Windows and Linux).">
+-          Show Gemini in Chromium in system tray and turn on keyboard shortcut
++          Show Gemini in MoltBrowser in system tray and turn on keyboard shortcut
+         </message>
+         <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SHORTCUT_EXCLUDED" desc="Name of the toggle that controls whether the Gemini icon is shown in the system tray (on ChromeOS, Windows and Linux) when local hotkeys can be configured independently.">
+-          Show Gemini in Chromium in system tray
++          Show Gemini in MoltBrowser in system tray
+         </message>
+       </if>
+       <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SUBLABEL" desc="Sublabel of the toggle that controls whether the Gemini icon is shown in the menu bar (on Mac) / system tray (on Windows and Linux)." formatter_data="android_java">
+-        Easy access to use Gemini in Chromium across your device, even if Chromium is minimized.
++        Easy access to use Gemini in MoltBrowser across your device, even if MoltBrowser is minimized.
+       </message>
+       <message name="IDS_SETTINGS_GLIC_KEYBOARD_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut that's used to globally invoke Gemini." formatter_data="android_java">
+-        Open Gemini in Chromium with a keyboard shortcut.
++        Open Gemini in MoltBrowser with a keyboard shortcut.
+       </message>
+       <message name="IDS_SETTINGS_GLIC_NAVIGATION_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut navigate between Chrome and Gemini." formatter_data="android_java">
+-        To leave or return to Gemini in Chromium, use keyboard shortcut.
++        To leave or return to Gemini in MoltBrowser, use keyboard shortcut.
+       </message>
+       <message name="IDS_SETTINGS_GLIC_KEEP_SIDEPANEL_OPEN_ON_NEW_TABS_SUBLABEL" desc="Sublabel describing the setting to keep side panel open when new tabs are opened.">
+-        If Gemini in Chromium is open, the side panel stays open when creating new tabs
++        If Gemini in MoltBrowser is open, the side panel stays open when creating new tabs
+       </message>
+       <message name="IDS_SETTINGS_GLIC_SELECTION_SHORTCUT_SUBLABEL" desc="Sublabel describing the selection shortcut triggering in Gemini.">
+-        To select part of the screen in Gemini in Chromium, use keyboard shortcut.
++        To select part of the screen in Gemini in MoltBrowser, use keyboard shortcut.
+       </message>
+       <message name="IDS_SETTINGS_GLIC_HOTKEY_SCOPE_CHROME" desc="Label for the 'In Chromium' option in the shortcut invocation scope dropdown.">
+-        In Chromium
++        In MoltBrowser
        </message>
  
        <!-- Profile Picker Glic version-->
@@ -2575,12 +2646,6 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -        To open Gemini in Chromium, press <ph name="GLOBAL_HOTKEY">$1<ex>⌘+G</ex></ph>
 +        To open Gemini in MoltBrowser, press <ph name="GLOBAL_HOTKEY">$1<ex>⌘+G</ex></ph>
        </message>
-       <!-- Variant of the label on the Gemini button in the tabstrip-->
--      <message name="IDS_GLIC_BUTTON_ENTRYPOINT_ASK_BROWSER_LABEL" desc="Label on the button used to open Gemini in Chromium.">
--        Ask Chromium
-+      <message name="IDS_GLIC_BUTTON_ENTRYPOINT_ASK_BROWSER_LABEL" desc="Label on the button used to open Gemini in MoltBrowser.">
-+        Ask MoltBrowser
-       </message>
  
        <!-- UNO Promo strings for extensions -->
        <if expr="enable_extensions">
@@ -2607,7 +2672,7 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
        </message>
        <message name="IDS_DICE_MIGRATION_CONFIRMATION_TOAST_BUTTON" desc="The text on the button of the confirmation toast shown after the user clicks the accept button on the Dice Migration dialog, that allows the users to control the sync settings or sign out of Chrome.">
          Manage
-@@ -3131,12 +3134,12 @@ Chromium is unable to recover your settings.
+@@ -3179,12 +3182,12 @@ Chromium is unable to recover your settings.
        <if expr="not is_android">
          <if expr="use_titlecase">
            <message name="IDS_PROFILE_MENU_ACCOUNT_SETTINGS_BUTTON" desc="Button in the avatar menu bubble view for opening Chrome account settings.">
@@ -2622,7 +2687,20 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
            </message>
          </if>
        </if>
-@@ -3144,65 +3147,65 @@ Chromium is unable to recover your settings.
+@@ -3198,10 +3201,10 @@ Chromium is unable to recover your settings.
+         </message>
+ 
+         <message name="IDS_DICTATION_ONBOARDING_TITLE" desc="The title string in the onboarding dialog for the dictation feature." translateable="false">
+-          Turn your spoken thoughts into polished text with Chromium
++          Turn your spoken thoughts into polished text with MoltBrowser
+         </message>
+         <message name="IDS_DICTATION_ONBOARDING_BULLET_MICROPHONE" desc="The first paragraph in the onboarding dialog describing how the microphone is used." translateable="false">
+-          Chromium will use your microphone to capture your voice and fill in text fields with cleaned up text.
++          MoltBrowser will use your microphone to capture your voice and fill in text fields with cleaned up text.
+         </message>
+         <message name="IDS_DICTATION_ONBOARDING_BULLET_DISCLAIMER" desc="The disclaimer text in the onboarding dialog describing the use of AI and potential for mistakes and providing a link for more details." translateable="false">
+           Dictation uses AI and can make mistakes. <ph name="LEARN_MORE_LINK">$1<ex>Learn more</ex></ph>
+@@ -3211,140 +3214,140 @@ Chromium is unable to recover your settings.
        <!--Desktop to iOS promo strings-->
        <if expr="not is_android">
          <message name="IDS_IOS_DESKTOP_ESB_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop ESB promo bubble with a reminder button.">
@@ -2677,25 +2755,17 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          To use your saved passwords, follow the QR code, download Chromium for iOS and sign in to your Google Account
 +          To use your saved passwords, follow the QR code, download MoltBrowser for iOS and sign in to your Google Account
          </message>
-         <message name="IDS_IOS_DESKTOP_LENS_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Lens promo notification.">
--          Chromium Tip: Search With Lens
-+          MoltBrowser Tip: Search With Lens
-         </message>
-         <message name="IDS_IOS_DESKTOP_PASSWORD_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Password promo notification.">
--          Chromium Tip: Save Passwords
-+          MoltBrowser Tip: Save Passwords
-         </message>
          <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_DESCRIPTION_QR" desc="The description for the iOS desktop price tracking promo bubble with a QR code.">
 -          Download Chromium on your phone to track prices and get alerts when the price drops on any site
 +          Download MoltBrowser on your phone to track prices and get alerts when the price drops on any site
          </message>
+         <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Price Tracking promo bubble with a QR Code.">
+-          Get price tracking alerts with Chromium on your phone
++          Get price tracking alerts with MoltBrowser on your phone
+         </message>
          <message name="IDS_IOS_DESKTOP_PRICE_TRACKING_REMINDER_CONFIRMATION" desc="Body text of the promo bubble that appears after the user chooses to be reminded of price tracking on their iOS device.">
 -          Next time you open Chromium on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to enable price tracking alerts.
 +          Next time you open MoltBrowser on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to enable price tracking alerts.
-         </message>
-         <message name="IDS_IOS_DESKTOP_SAFE_BROWSING_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Enhanced Safe Browsing promo notification.">
--          Chromium Tip: Enhanced Safe Browsing
-+          MoltBrowser Tip: Enhanced Safe Browsing
          </message>
          <message name="IDS_IOS_DESKTOP_TAB_GROUPS_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Tab Groups promo bubble with a QR code.">
 -          Download Chromium on your phone to open or create new tab groups on the go.
@@ -2705,20 +2775,126 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
 -          Next time you open Chromium on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to use tab groups.
 +          Next time you open MoltBrowser on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>, you’ll see a prompt to use tab groups.
          </message>
+         <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop AI promo bubble with a QR code.">
+-          Scan the QR code with your phone to download Chromium and sign in to your Google Account.
++          Scan the QR code with your phone to download MoltBrowser and sign in to your Google Account.
+         </message>
+         <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop AI promo bubble with a QR code.">
+-          Use Google's best AI tools with the Chromium app on your phone
++          Use Google's best AI tools with the MoltBrowser app on your phone
+         </message>
+         <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop AI promo bubble with a reminder.">
+-          Take your favorite Google AI tools on the go with Chromium on iOS.
++          Take your favorite Google AI tools on the go with MoltBrowser on iOS.
+         </message>
+         <message name="IDS_IOS_DESKTOP_AI_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop AI promo bubble with a reminder.">
+-          Get the power of AI when you use the Chromium app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
++          Get the power of AI when you use the MoltBrowser app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+         </message>
+         <message name="IDS_IOS_DESKTOP_AI_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop AI promo notification.">
+-          Use the Chromium app to take the best AI tools on the go
++          Use the MoltBrowser app to take the best AI tools on the go
+         </message>
+         <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Best of Google promo bubble with a QR code.">
+-          Scan the QR code with your phone to download Chromium and sign in to your Google Account.
++          Scan the QR code with your phone to download MoltBrowser and sign in to your Google Account.
+         </message>
+         <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Best of Google promo bubble with a QR code.">
+-          Get the best of Google with the Chromium app on your phone
++          Get the best of Google with the MoltBrowser app on your phone
+         </message>
+         <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Best of Google promo bubble with a reminder.">
+-          Seamlessly work with your favorite apps like Google Drive and YouTube on the go with Chromium.
++          Seamlessly work with your favorite apps like Google Drive and YouTube on the go with MoltBrowser.
+         </message>
+         <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Best of Google promo bubble with a reminder.">
+-          Get the best of Google with the Chromium app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
++          Get the best of Google with the MoltBrowser app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+         </message>
+         <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Best of Google promo notification.">
+-          Access all of your Google favorites with Chromium on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
++          Access all of your Google favorites with MoltBrowser on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+         </message>
+         <message name="IDS_IOS_DESKTOP_BEST_OF_GOOGLE_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Best of Google promo notification.">
+           Reminder: The best of Google in your pocket
+         </message>
+         <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Safety promo bubble with a QR code.">
+-          Scan the QR code with your phone to download Chromium and sign in to your Google Account.
++          Scan the QR code with your phone to download MoltBrowser and sign in to your Google Account.
+         </message>
+         <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Safety promo bubble with a QR code.">
+-          Get Google's best safety features on the go, with the Chromium app on your phone
++          Get Google's best safety features on the go, with the MoltBrowser app on your phone
+         </message>
+         <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Safety promo bubble with a reminder.">
+-          Get Google’s best safety features on the go with Chromium.
++          Get Google’s best safety features on the go with MoltBrowser.
+         </message>
+         <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Safety promo bubble with a reminder.">
+-          Take the safety of Google on the go with the Chromium app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
++          Take the safety of Google on the go with the MoltBrowser app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+         </message>
+         <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Safety promo notification.">
+-          Use the Chromium app to take the safety of Google on the go
++          Use the MoltBrowser app to take the safety of Google on the go
+         </message>
+         <message name="IDS_IOS_DESKTOP_SAFETY_PROMO_NOTIFICATION_TITLE" desc="The title for the iOS desktop Safety promo notification.">
+           Reminder: Google’s best safety features in your pocket
+         </message>
+         <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Shopping promo bubble with a QR code.">
+-          Scan the QR code with your phone to download Chromium and sign in to your Google Account.
++          Scan the QR code with your phone to download MoltBrowser and sign in to your Google Account.
+         </message>
+         <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Shopping promo bubble with a QR code.">
+-          Get price drop alerts on items you're interested in with the Chromium app on your phone
++          Get price drop alerts on items you're interested in with the MoltBrowser app on your phone
+         </message>
+         <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Shopping promo bubble with a reminder.">
+-          Discover products with your camera, track price drops and more on the go with Chromium on iOS.
++          Discover products with your camera, track price drops and more on the go with MoltBrowser on iOS.
+         </message>
+         <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Shopping promo bubble with a reminder.">
+-          Get more out of online shopping when you use the Chromium app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
++          Get more out of online shopping when you use the MoltBrowser app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+         </message>
+         <message name="IDS_IOS_DESKTOP_SHOPPING_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Shopping promo notification.">
+-          Use the Chromium app to take the best shopping tools on the go
++          Use the MoltBrowser app to take the best shopping tools on the go
+         </message>
+         <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_DESCRIPTION_QR" desc="The description for the iOS desktop Your Chrome promo bubble with a QR code.">
+-          Scan the QR code with your phone to download Chromium and sign in to your Google Account.
++          Scan the QR code with your phone to download MoltBrowser and sign in to your Google Account.
+         </message>
+         <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_TITLE_QR" desc="The title for the iOS desktop Your Chrome promo bubble with a QR code.">
+-          Take your passwords, tabs and more on the go with the Chromium app on your phone
++          Take your passwords, tabs and more on the go with the MoltBrowser app on your phone
+         </message>
+         <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_DESCRIPTION_REMINDER" desc="The description for the iOS desktop Your Chrome promo bubble with a reminder.">
+-          Pick up right where you left off with Chromium on iOS.
++          Pick up right where you left off with MoltBrowser on iOS.
+         </message>
+         <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_BUBBLE_TITLE_REMINDER" desc="The title for the iOS desktop Your Chrome promo bubble with a reminder.">
+-          Take your passwords, tabs and more on the go with the Chromium app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
++          Take your passwords, tabs and more on the go with the MoltBrowser app on your <ph name="DEVICE_TYPE">$1<ex>iPhone</ex></ph>
+         </message>
+         <message name="IDS_IOS_DESKTOP_YOUR_CHROME_PROMO_NOTIFICATION_BODY" desc="The body for the iOS desktop Your Chrome promo notification.">
+-          Use the Chromium app to keep browsing on the go
++          Use the MoltBrowser app to keep browsing on the go
+         </message>
        </if>
  
-@@ -3212,8 +3215,8 @@ Chromium is unable to recover your settings.
+@@ -3354,8 +3357,8 @@ Chromium is unable to recover your settings.
          Your settings were changed by an unknown app
        </message>
        <message name="IDS_DEFAULT_SEARCH_ENGINE_RESET_NOTIFICATION_BODY"
 -         desc="Body text of the notification shown when Chromium resets the default search engine, explaining that a change from outside Chromium was detected.">
--        Your default search engine was changed from outside of Chromium. To protect you, Chromium reset it.
+-        Your search engine was changed from outside of Chromium. To protect you, Chromium reset it to its original default. <ph name="LEARN_MORE_LINK">$1<ex>Learn more</ex></ph>
 +         desc="Body text of the notification shown when Chromium resets the default search engine, explaining that a change from outside MoltBrowser was detected.">
-+        Your default search engine was changed from outside of MoltBrowser. To protect you, MoltBrowser reset it.
++        Your search engine was changed from outside of MoltBrowser. To protect you, MoltBrowser reset it to its original default. <ph name="LEARN_MORE_LINK">$1<ex>Learn more</ex></ph>
        </message>
        <message name="IDS_DEFAULT_SEARCH_ENGINE_RESET_NOTIFICATION_GOT_IT_BUTTON"
           desc="Label for the 'Got it' button in the default search engine reset notification, which dismisses the UI.">
-@@ -3225,10 +3228,10 @@ Chromium is unable to recover your settings.
+@@ -3371,10 +3374,10 @@ Chromium is unable to recover your settings.
        </message>
  
        <!--Report-unsafe-site Dialog (accessed from Help menu)-->
@@ -2731,3 +2907,32 @@ index 32e6972fee33a7f80fd018e304da0027d2621056..5e2257b0cacb5c949fc16243f0c6fdda
          Improve online safety for everyone when you report a site you think is harmful.
        </message>
        <message name="IDS_REPORT_UNSAFE_SITE_DIALOG_FOOTER" desc="Explanatory text in dialog footer describing what other information is sent as part of the unsafe-site-report.">
+@@ -3383,23 +3386,23 @@ Chromium is unable to recover your settings.
+ 
+       <!-- JS optimizations bubble -->
+       <message name="IDS_JS_OPTIMIZATION_BUBBLE_BODY_NON_POLICY_BODY" desc="Body text for the JavaScript optimization bubble when disabled for other reasons.">
+-        For security, Chromium turns off JavaScript optimization when you visit a site for the first time.&#xA;
++        For security, MoltBrowser turns off JavaScript optimization when you visit a site for the first time.&#xA;
+ If this page isn’t working as expected, try allowing optimization.
+       </message>
+       <!-- Send Tab To Self -->
+       <message name="IDS_SEND_TAB_TO_SELF_SIGN_IN_PROMO_TITLE" desc="Title of the send-tab-to-self sign-in promo bubble.">
+-        Sign in to Chromium
++        Sign in to MoltBrowser
+       </message>
+       <message name="IDS_SEND_TAB_TO_SELF_SIGN_IN_PROMO_BUTTON_LABEL" desc="Label of the sign-in button in the send-tab-to-self sign-in promo bubble.">
+-        Sign in to Chromium
++        Sign in to MoltBrowser
+       </message>
+ 
+       <!-- Enterprise device signals disclaimer -->
+       <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_TITLE" desc="Title of an enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection.">
+-        Your work secured on Chromium
++        Your work secured on MoltBrowser
+       </message>
+       <message name="IDS_ENTERPRISE_DEVICE_SIGNALS_DISCLAIMER_SUBTITLE" desc="Subtitle of an enterprise device signals collection disclaimer modal dialog. The dialog is shown on Chrome startup to managed Chrome users who have not previously acknowledged device signals collection.">
+-        To secure your work on Chromium, your organization will be able to view or manage certain information when you’re signed-in to Chromium.
++        To secure your work on MoltBrowser, your organization will be able to view or manage certain information when you’re signed-in to MoltBrowser.
+       </message>
+     </messages>
+   </release>

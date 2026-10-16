@@ -1,14 +1,14 @@
 MoltBrowser patch for components/permissions_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/permissions_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/permissions_strings.grdp b/components/permissions_strings.grdp
-index 254362df90ee15821eb64352de33f1bcd08418f8..979935af8324e606b6e292371e753d56874b31ca 100644
+index 35f801c48a142bfeef825921f405f43f00945416..b1b334212447c9fbdb1236950e748acbf1aacdd7 100644
 --- a/components/permissions_strings.grdp
 +++ b/components/permissions_strings.grdp
-@@ -46,13 +46,13 @@
+@@ -55,13 +55,13 @@
        Notifications are automatically blocked for all sites except ones you allow
      </message>
      <message name="IDS_NOTIFICATION_QUIET_PERMISSION_INFOBAR_PREDICTION_SERVICE_MESSAGE" desc="Text used as notification message when requesting permission for Web Notifications via a notification. Used when the prediction service has decided that the user will be very unlikely to grant this permission.">
@@ -24,7 +24,7 @@ index 254362df90ee15821eb64352de33f1bcd08418f8..979935af8324e606b6e292371e753d56
      </message>
      <message name="IDS_MEDIA_CAPTURE_AUDIO_ONLY_INFOBAR_TEXT" desc="Text requesting permission for a site to access the computer's microphone.">
        <ph name="HOST">$1<ex>html5rocks.com</ex></ph> wants to use your microphone
-@@ -583,10 +583,10 @@ This will otherwise be blocked by your privacy settings. This will allow the con
+@@ -586,10 +586,10 @@ This will otherwise be blocked by your privacy settings. This will allow the con
      You previously didn't allow <ph name="permission">$1<ex>camera</ex></ph> for this site
    </message>
    <message name ="IDS_PERMISSION_OFF_FOR_CHROME" desc="Text informing the user that they have turned the permission off for chrome">

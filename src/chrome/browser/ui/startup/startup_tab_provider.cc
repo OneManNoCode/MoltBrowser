@@ -34,6 +34,7 @@
 #include "chrome/browser/ui/startup/google_chrome_scheme_util.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/startup/startup_types.h"
+#include "chrome/browser/ui/startup/url_util.h"
 #include "chrome/browser/ui/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/settings/reset_settings_handler.h"
@@ -58,7 +59,6 @@
 #endif  // BUILDFLAG(IS_WIN)
 
 #if !BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/privacy_sandbox/privacy_sandbox_service.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
 #include "chrome/browser/ui/webui/whats_new/whats_new_util.h"
@@ -87,34 +87,6 @@ bool ProfileHasOtherTabbedBrowser(Profile* profile) {
       });
   return found;
 }
-
-
-#if !BUILDFLAG(IS_ANDROID)
-// Returns whether |extension_registry| contains an extension which has a URL
-// override for the new tab URL.
-bool HasExtensionNtpOverride(
-    extensions::ExtensionRegistry* extension_registry) {
-  for (const auto& extension : extension_registry->enabled_extensions()) {
-    const auto& overrides =
-        extensions::URLOverrides::GetChromeURLOverrides(extension.get());
-    if (overrides.find(chrome::kChromeUINewTabHost) != overrides.end()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Returns whether |url| is an NTP controlled entirely by Chrome.
-bool IsChromeControlledNtpUrl(const GURL& url) {
-  // Convert to origins for comparison, as any appended paths are irrelevant.
-  const auto ntp_origin = url::Origin::Create(url);
-
-  return ntp_origin ==
-             url::Origin::Create(GURL(chrome::kChromeUINewTabPageURL)) ||
-         ntp_origin == url::Origin::Create(
-                           GURL(chrome::kChromeUINewTabPageThirdPartyURL));
-}
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 bool IsWelcomePageUrl(const GURL& url) {
   static constexpr std::string_view kChromeUIWelcomeHost = "welcome";
@@ -191,7 +163,8 @@ StartupTabs StartupTabProviderImpl::GetCommandLineTabs(
     DCHECK_NE(parsed_arg.tab_parsed, CommandLineTabsPresent::kUnknown);
 
     if (parsed_arg.tab_parsed == CommandLineTabsPresent::kYes) {
-      result.emplace_back(std::move(parsed_arg.tab_url));
+      result.emplace_back(std::move(parsed_arg.tab_url),
+                          parsed_arg.is_untrusted_launch);
     }
   }
 
@@ -223,14 +196,6 @@ StartupTabs StartupTabProviderImpl::GetNewFeaturesTabs(
   return GetNewFeaturesTabsForState(whats_new_enabled);
 }
 
-StartupTabs StartupTabProviderImpl::GetPrivacySandboxTabs(
-    Profile* profile,
-    const StartupTabs& other_startup_tabs) const {
-  return GetPrivacySandboxTabsForState(
-      extensions::ExtensionRegistry::Get(profile),
-      search::GetNewTabPageURL(profile), other_startup_tabs);
-}
-
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 // static
@@ -246,7 +211,7 @@ StartupTabs StartupTabProviderImpl::GetInitialPrefsTabsForState(
     tabs.reserve(first_run_tabs.size());
     for (GURL url : first_run_tabs) {
       if (url.host() == kNewTabUrlHost) {
-        url = GURL(chrome::kChromeUINewTabURL);
+        url = chrome::ChromeUINewTabURLAsGURL();
       }
       if (IsWelcomePageUrl(url)) {
         // These URLs are still referenced from some of the installers. As
@@ -323,42 +288,6 @@ StartupTabs StartupTabProviderImpl::GetNewFeaturesTabsForState(
   return tabs;
 }
 
-// static
-StartupTabs StartupTabProviderImpl::GetPrivacySandboxTabsForState(
-    extensions::ExtensionRegistry* extension_registry,
-    const GURL& ntp_url,
-    const StartupTabs& other_startup_tabs) {
-  // There may already be a tab appropriate for the Privacy Sandbox prompt
-  // available in |other_startup_tabs|.
-  StartupTabs tabs;
-  const bool suitable_tab_available =
-      std::ranges::any_of(other_startup_tabs, [&](const StartupTab& tab) {
-        // The generic new tab URL is only suitable if the user has a Chrome
-        // controlled New Tab Page.
-        if (tab.url.GetHost() == chrome::kChromeUINewTabHost) {
-          return !HasExtensionNtpOverride(extension_registry) &&
-                 IsChromeControlledNtpUrl(ntp_url);
-        }
-        return privacy_sandbox::IsUrlSuitableForPrompt(tab.url);
-      });
-
-  if (suitable_tab_available) {
-    return tabs;
-  }
-
-  // Fallback to using about:blank if the user has customized the NTP.
-  // TODO(crbug.com/40218325): Stop using about:blank and create a dedicated
-  // Privacy Sandbox WebUI page for this scenario.
-  if (HasExtensionNtpOverride(extension_registry) ||
-      !IsChromeControlledNtpUrl(ntp_url)) {
-    tabs.emplace_back(GURL(url::kAboutBlankURL));
-  } else {
-    tabs.emplace_back(GURL(chrome::kChromeUINewTabURL));
-  }
-
-  return tabs;
-}
-
 #endif
 
 // static
@@ -391,28 +320,34 @@ StartupTabProviderImpl::ParseTabFromCommandLineArg(
     if (url.is_valid()) {
       return {CommandLineTabsPresent::kYes, std::move(url)};
     }
-  } else if (!startup::StripGoogleChromeScheme(arg) || !arg.empty()) {
+  } else {
     // Otherwise, fall through to treating it as a URL; stripping off the
     // direct-launch scheme (e.g. "google-chrome://") if present.
     // This will create a file URL or a regular URL.
-    const base::FilePath arg_path(arg);
-    GURL url(arg_path.MaybeAsASCII());
+    const bool was_stripped = startup::StripGoogleChromeScheme(arg);
+    if (!was_stripped || !arg.empty()) {
+      const base::FilePath arg_path(arg);
+      GURL url(arg_path.MaybeAsASCII());
 
-    // This call can (in rare circumstances) block the UI thread.
-    // FixupRelativeFile may access to current working directory, which is a
-    // blocking API. http://crbug.com/60641
-    // http://crbug.com/371030: Only use URLFixerUpper if we don't have a
-    // valid URL, otherwise we will look in the current directory for a file
-    // named 'about' if the browser was started with a about:foo argument.
-    // http://crbug.com/424991: Always use URLFixerUpper on file:// URLs,
-    // otherwise we wouldn't correctly handle '#' in a file name.
-    if (!url.is_valid() || url.SchemeIsFile()) {
-      base::ScopedAllowBlocking allow_blocking;
-      url = url_formatter::FixupRelativeFile(cur_dir, arg_path);
-    }
+      // This call can (in rare circumstances) block the UI thread.
+      // FixupRelativeFile may access to current working directory, which is a
+      // blocking API. http://crbug.com/40466600
+      // http://crbug.com/40364501: Only use URLFixerUpper if we don't have a
+      // valid URL, otherwise we will look in the current directory for a file
+      // named 'about' if the browser was started with a about:foo argument.
+      // http://crbug.com/40389934: Always use URLFixerUpper on file:// URLs,
+      // otherwise we wouldn't correctly handle '#' in a file name.
+      if (!url.is_valid() || url.SchemeIsFile()) {
+        base::ScopedAllowBlocking allow_blocking;
+        url = url_formatter::FixupRelativeFile(cur_dir, arg_path);
+      }
 
-    if (startup::ValidateUrl(url)) {
-      return {CommandLineTabsPresent::kYes, std::move(url)};
+      const bool is_valid = was_stripped
+                                ? startup::ValidateLaunchUrlWebSafe(url)
+                                : startup::ValidateLaunchUrlWebUnsafe(url);
+      if (is_valid) {
+        return {CommandLineTabsPresent::kYes, std::move(url), was_stripped};
+      }
     }
   }
   return {CommandLineTabsPresent::kNo, GURL()};

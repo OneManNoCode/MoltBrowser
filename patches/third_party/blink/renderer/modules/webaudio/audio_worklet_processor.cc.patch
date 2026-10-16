@@ -1,22 +1,22 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc b/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
-index 00b4eb389f4f1313d6a8f68ec009d6b8989e6d44..9a29f73e36c03b44cfe5a7fd2dc1396df53e90f6 100644
+index 63ed10c6ab37948478f02e5f18b4a6ea488d1101..90206a5fd35557bb8e71ebc6ed9a07075ee5816e 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_worklet_processor.cc
-@@ -11,6 +11,7 @@
+@@ -14,6 +14,7 @@
  #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_blink_audio_worklet_process_callback.h"
  #include "third_party/blink/renderer/core/messaging/message_port.h"
 +#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/typed_arrays/array_buffer/array_buffer_contents.h"
  #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
  #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
- #include "third_party/blink/renderer/modules/webaudio/audio_worklet_global_scope.h"
-@@ -198,7 +199,8 @@ bool ClonePortTopology(v8::Isolate* isolate,
+@@ -207,7 +208,8 @@ bool ClonePortTopology(v8::Isolate* isolate,
  // be identical.
  void CopyPortToArrayBuffers(v8::Isolate* isolate,
                              const Vector<scoped_refptr<AudioBus>>& audio_port,
@@ -26,20 +26,27 @@ index 00b4eb389f4f1313d6a8f68ec009d6b8989e6d44..9a29f73e36c03b44cfe5a7fd2dc1396d
    DCHECK_EQ(audio_port.size(), array_buffers.size());
  
    for (uint32_t bus_index = 0; bus_index < audio_port.size(); ++bus_index) {
-@@ -213,6 +215,12 @@ void CopyPortToArrayBuffers(v8::Isolate* isolate,
-       UNSAFE_TODO(memcpy(backing_store->Data(),
-                          audio_bus->Channel(channel_index)->Data(),
-                          bus_length * sizeof(float)));
+@@ -221,10 +223,15 @@ void CopyPortToArrayBuffers(v8::Isolate* isolate,
+                                .Get(isolate)
+                                ->GetBackingStore();
+       DCHECK_EQ(backing_store->ByteLength(), bus_length * sizeof(float));
+-      base::subtle::reinterpret_span<float>(
+-          ArrayBufferContents(std::move(backing_store)).ByteSpan())
+-          .first(bus_length)
+-          .copy_from(audio_bus->Channel(channel_index)->Span());
++      // MoltBrowser: keep a named view of the copy so it can be farbled.
++      ArrayBufferContents contents(std::move(backing_store));
++      base::span<float> samples =
++          base::subtle::reinterpret_span<float>(contents.ByteSpan())
++              .first(bus_length);
++      samples.copy_from(audio_bus->Channel(channel_index)->Span());
 +      // MoltBrowser: per-site fingerprinting noise on the samples script
 +      // reads (the graph's own buses are untouched).
-+      molt_fingerprinting::FarbleAudio(
-+          farbling_context,
-+          UNSAFE_TODO(base::span<float>(
-+              static_cast<float*>(backing_store->Data()), bus_length)));
++      molt_fingerprinting::FarbleAudio(farbling_context, samples);
      }
    }
  }
-@@ -480,7 +488,8 @@ bool AudioWorkletProcessor::Process(
+@@ -507,7 +514,8 @@ bool AudioWorkletProcessor::Process(
    DCHECK_EQ(input_array_buffers_.size(), inputs.size());
  
    // Copies `inputs` to the internal `input_array_buffers_`.

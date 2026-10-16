@@ -41,7 +41,7 @@ or profile leaves the machine.
    `<label for>` → `aria-label`/`aria-labelledby` → `placeholder` → nearest preceding
    text. `selector` is a stable, unique locator with the same fallback chain the
    recorder already produces. Richer than today's text `ObservePage()` snapshot.
-2. **`MoltProfile`** — an on-device, OSCrypt-encrypted identity store (same idiom as
+2. **`MoltProfile`** — an on-device, encrypted identity store (`molt_ai/keys/molt_os_crypt`) (same idiom as
    `keys.enc`): name, email, phone, address, links (LinkedIn/GitHub/portfolio), work
    history, education, and a résumé (extracted text + file path for file-upload
    fields). Populated from (a) a settings form, (b) a parsed résumé upload, or (c)

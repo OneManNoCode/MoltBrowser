@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/app/profiles_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/profiles_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/profiles_strings.grdp b/chrome/app/profiles_strings.grdp
-index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b4232e022d9 100644
+index a1bd370a993b7370304b48ea0b9d52ff50801f3a..c8457d4b2d6fd03649c3975e20b50a8651086ca5 100644
 --- a/chrome/app/profiles_strings.grdp
 +++ b/chrome/app/profiles_strings.grdp
-@@ -44,7 +44,7 @@
+@@ -38,7 +38,7 @@
    <message name="IDS_AVATAR_BUTTON_SYNC_ERROR_BOOKMARKS_LIMIT_EXCEEDED" desc="Short label for the avatar button when the user has too many bookmarks.">
      Unsaved data
    </message>
@@ -17,7 +17,7 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
      Verify it's you
    </message>
    <message name="IDS_AVATAR_BUTTON_WORK" desc="Short label for the avatar button when the profile is a managed profile in an enterprise environment, such as a business, government organization, or other workplace." meaning="Using a managed profile, as for a workplace">
-@@ -92,7 +92,7 @@
+@@ -86,7 +86,7 @@
      Verify it’s you to save and use your passkeys on this device
    </message>
    <message name="IDS_PROFILE_MENU_PASSKEYS_ERROR_DESCRIPTION_GET" desc="Subtitle in the profile menu, shown when the user needs to verify their identity to unlock usage of their Google Password Manager passkeys on this device, e.g. by presenting a PIN. The word 'passkey' is distinct from 'password', consult the glossary for a translation.">
@@ -26,34 +26,16 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
    </message>
    <message name="IDS_PROFILE_MENU_PASSKEYS_ERROR_DESCRIPTION_VERIFY" desc="Subtitle in the profile menu, shown when the user needs to verify their identity to unlock usage of their Google Password Manager passkeys on this device, e.g. by presenting a PIN. The word 'passkey' is distinct from 'password', consult the glossary for a translation.">
      Verify it’s you to get your passkeys on this device
-@@ -177,7 +177,7 @@
+@@ -153,7 +153,7 @@
      Sync disabled
    </message>
    <message name="IDS_PROFILES_DASHER_FEATURE_DISABLED_TITLE" desc="Description of the profile user menu when certain features are disabled for Dasherless profile.">
 -    This isn't a Google Account. Items you save to Chrome won't be available on other devices.
 +    This isn't a MoltBrowser Account. Items you save to MoltBrowser won't be available on other devices.
    </message>
-    <message name="IDS_PROFILES_DICE_SYNC_PAUSED_TITLE" desc="Title of the profile user menu when sync is paused.">
+   <message name="IDS_PROFILES_DICE_SYNC_PAUSED_TITLE" desc="Title of the profile user menu when sync is paused.">
      Sync is paused
-@@ -879,7 +879,7 @@
-       Guest mode
-     </message>
-     <message name="IDS_PROFILE_PICKER_BACK_BUTTON_ARIA_LABEL" desc="Label for a button that navigates user to the previous page from a profile picker subpage">
--      Back from <ph name="PAGE_TITLE">$1<ex>Set up your new Chrome profile</ex></ph> page
-+      Back from <ph name="PAGE_TITLE">$1<ex>Set up your new MoltBrowser profile</ex></ph> page
-     </message>
-     <message name="IDS_PROFILE_PICKER_BACK_BUTTON_SIGN_IN_LABEL" desc="Label for a button that navigates user to the previous page from the 'Sign in' page">
-       Back from sign in
-@@ -888,7 +888,7 @@
-       Keep work and life separate
-     </message>
-     <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_GOT_ANOTHER_GOOGLE_ACCOUNT" desc="Profile picker main view title.">
--      Got another Google Account?
-+      Got another MoltBrowser Account?
-     </message>
-     <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_KEEP_TASKS_SEPARATE" desc="Profile picker main view title.">
-       Keep school, side projects, and other tasks separate
-@@ -1142,62 +1142,62 @@
+@@ -589,62 +589,62 @@
      </message>
      <message name="IDS_BATCH_UPLOAD_SUBTITLE_DESCRIPTION_ITEMS_WITH_DEDUPLICATION" desc="Subtitle of the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved to their device. This subtitle variant is shown if no special type exists. This subtitle precedes a list of items (passwords, bookmarks, and addresses), where the user can select the checkboxes for the items that they want to save in their Google Account. This subtitle only mentions the total number of items that are shown. A special type will have its type name shown first instead of 'items' and potentially show 'and other items' if multiple sections exist, in different strings. When items are saved in their Google Account, the user can access them on any device where they’re signed in to Chrome. The tone should be motivating.">
        {ITEM_COUNT, plural,
@@ -136,7 +118,7 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
        }
      </message>
      <message name="IDS_BATCH_UPLOAD_SECTION_TITLE_PASSWORDS" desc="Title of the Passwords section in the Batch Upload dialog. This dialog appears when the user clicks on an informational message about items saved only to their device. The title of the dialog is ‘Save items in account’. The list of items has sections for each applicable data type: Passwords, Bookmarks, and more. This section shows the number of selected items in the section of the dialog, if any.">
-@@ -1271,20 +1271,20 @@
+@@ -715,20 +715,20 @@
      </if>
      <message name="IDS_BATCH_UPLOAD_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of the Batch Upload promo. This promo appears to inform the user that there are items saved only to their device; this subtitle mentions how many bookmarks are on the device. If the user chooses to save items in their Google Account, the user can access them on any device where they’re signed in to Chrome. This promo leads to the Batch Upload dialog, where the user can select the checkboxes for the items that they want to save in their Google Account. The tone should be motivating.">
        {BOOKMARK_COUNT, plural,
@@ -162,8 +144,17 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
 +      other {{ITEM_COUNT} items are saved only to this device. To use them on your other devices, <ph name="BEGIN_LINK">&lt;a href="'#'" id="openBatchUploadLink"&gt;</ph>save them in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.}
        }
      </message>
- 
-@@ -1297,8 +1297,8 @@
+   </if>
+@@ -1013,7 +1013,7 @@
+       Guest mode
+     </message>
+     <message name="IDS_PROFILE_PICKER_BACK_BUTTON_ARIA_LABEL" desc="Label for a button that navigates user to the previous page from a profile picker subpage">
+-      Back from <ph name="PAGE_TITLE">$1<ex>Set up your new Chrome profile</ex></ph> page
++      Back from <ph name="PAGE_TITLE">$1<ex>Set up your new MoltBrowser profile</ex></ph> page
+     </message>
+     <message name="IDS_PROFILE_PICKER_BACK_BUTTON_SIGN_IN_LABEL" desc="Label for a button that navigates user to the previous page from the 'Sign in' page">
+       Back from sign in
+@@ -1323,8 +1323,8 @@
      </message>
      <message name="IDS_SIGNOUT_CONFIRMATION_EXTENSIONS_SECTION_TOOLTIP" desc="Mouse over tooltip for the Extensions section in the Signout Confirmation dialog which allows users to remove extensions linked to their account when signing out.">
        {ACCOUNT_EXTENSIONS_COUNT, plural,
@@ -174,7 +165,7 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
        }
      </message>
      <message name="IDS_SIGNOUT_CONFIRMATION_UNSYNCED_DATA_WITH_ACCOUNT_EXTENSIONS" desc="An additional message shown in the Signout Confirmation dialog if the user initiates a signout with unsynced data and they have account extensions installed.">
-@@ -1325,7 +1325,7 @@
+@@ -1348,7 +1348,7 @@
        No thanks
      </message>
      <message name="IDS_TABS_DISABLED_ERROR_DESCRIPTION" desc="Message that is shown in an error dialog when a user tries to sign in to use a service that requires history sync opt in (e.g. sharing/joining tab groups), but sync is disabled.">
@@ -183,7 +174,7 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
      </message>
      <!-- Avatar Button Promos Desktop -->
      <if expr="not use_titlecase">
-@@ -1377,7 +1377,7 @@
+@@ -1400,7 +1400,7 @@
        Continue
      </message>
      <message name="IDS_PROFILE_MENU_PROMO_DESCRIPTION_WITH_BATCH_UPLOAD" desc="The description of the identity section in the Profile Menu for users that can see the Batch Upload promo in the Avatar button, when having local data. This describes the action presented right below it in the button.">
@@ -192,7 +183,7 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
      </message>
      <if expr="not use_titlecase">
        <message name="IDS_PROFILE_MENU_PROMO_BUTTON_WITH_BATCH_UPLOAD" desc="The button label in the Profile Menu identity section for users that can see the Batch Upload promo in the Avatar button, when having local data. When clicked, it opens the Batch Upload dialog.">
-@@ -1390,13 +1390,13 @@
+@@ -1413,14 +1413,14 @@
        </message>
      </if>
      <message name="IDS_PROFILE_MENU_PROMO_DESCRIPTION_WITH_BATCH_UPLOAD_BOOKMARK_CLEANUP" desc="The description of the identity section in the Profile Menu for users that can see the Batch Upload promo in the Avatar button with the emphasis on Bookmarks cleanup, when having local data. This describes the action presented right below it in the button.">
@@ -208,4 +199,5 @@ index f2031ee79ce7bf7c457b71ae5de18ca3f80b0f60..1d3fbd9b1215bec6df4bcdb95fa26b42
 -      While you're signed in, you can use the themes, settings, and more saved in your Google Account on all your devices
 +      While you're signed in, you can use the themes, settings, and more saved in your MoltBrowser Account on all your devices
      </message>
- </grit-part>
+     <!-- Sign in on your phone (QR code) strings  -->
+     <if expr="not use_titlecase">

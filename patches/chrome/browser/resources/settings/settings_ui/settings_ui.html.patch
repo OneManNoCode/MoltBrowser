@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/resources/settings/settings_ui/settings_ui.html
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/resources/settings/settings_ui/settings_ui.html by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/resources/settings/settings_ui/settings_ui.html b/chrome/browser/resources/settings/settings_ui/settings_ui.html
-index 7e8581d15ff0180e3ed75bbc635cc45a56606b31..de7d56f2d6a9a7c77c83dec77457ed9e3269cd90 100644
+index 193e7ff92522100c1827b5ce68a3bce18533a343..5345b3a96b7219ac57fb47b4219c1bee0e49baa0 100644
 --- a/chrome/browser/resources/settings/settings_ui/settings_ui.html
 +++ b/chrome/browser/resources/settings/settings_ui/settings_ui.html
-@@ -83,9 +83,21 @@
+@@ -84,9 +84,21 @@
          narrow="{{narrow_}}"
          narrow-threshold="980"
          show-menu="[[narrow_]]">

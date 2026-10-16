@@ -16,15 +16,6 @@
 class ConfirmInfoBarDelegate;
 class ThemeInstalledInfoBarDelegate;
 
-namespace blocked_content {
-class PopupBlockedInfoBarDelegate;
-}
-
-#if BUILDFLAG(IS_ANDROID)
-namespace offline_pages {
-class OfflinePageInfoBarDelegate;
-}
-#endif
 
 namespace translate {
 class TranslateInfoBarDelegate;
@@ -176,7 +167,7 @@ class InfoBarDelegate {
     SEND_TAB_TO_SELF_INFOBAR_DELEGATE = 92,
     TAB_SHARING_INFOBAR_DELEGATE = 93,
     // Removed SAFETY_TIP_INFOBAR_DELEGATE = 94,
-    WEBOTP_SERVICE_INFOBAR_DELEGATE = 95,
+    // Removed: WEBOTP_SERVICE_INFOBAR_DELEGATE = 95,
     KNOWN_INTERCEPTION_DISCLOSURE_INFOBAR_DELEGATE = 96,
     // Removed: SYNC_ERROR_INFOBAR_DELEGATE_ANDROID = 97,
     // Removed: INSECURE_DOWNLOAD_INFOBAR_DELEGATE_ANDROID = 98,
@@ -216,6 +207,11 @@ class InfoBarDelegate {
     AUTOFILL_AI_SAVE_ENTITY_INFOBAR_DELEGATE_IOS = 132,
     JS_OPTIMIZATIONS_INFOBAR_DELEGATE = 133,
     WEB_APP_BLOCKED_MIGRATION_INFOBAR_DELEGATE = 134,
+    OSCRYPTASYNC_AVAILABILITY_INFOBAR_DELEGATE = 135,
+    AUTOFILL_AI_PRE_FETCH_FAILURE_INFOBAR_DELEGATE_IOS = 136,
+    SIGNIN_QRCODE_INFOBAR_DELEGATE = 137,
+    FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS = 138,
+    PASSWORD_SAVED_INFOBAR_DELEGATE_IOS = 139,
 
     // MoltBrowser identifiers start at 1000, well clear of upstream's, so
     // rebases never collide.
@@ -330,15 +326,9 @@ class InfoBarDelegate {
   // Type-checking downcast routines:
   virtual ConfirmInfoBarDelegate* AsConfirmInfoBarDelegate();
   virtual const ConfirmInfoBarDelegate* AsConfirmInfoBarDelegate() const;
-  virtual blocked_content::PopupBlockedInfoBarDelegate*
-  AsPopupBlockedInfoBarDelegate();
   virtual ThemeInstalledInfoBarDelegate* AsThemePreviewInfobarDelegate();
 #if BUILDFLAG(IS_IOS)
   virtual translate::TranslateInfoBarDelegate* AsTranslateInfoBarDelegate();
-#endif
-#if BUILDFLAG(IS_ANDROID)
-  virtual offline_pages::OfflinePageInfoBarDelegate*
-  AsOfflinePageInfoBarDelegate();
 #endif
 
   void set_infobar(InfoBar* infobar) { infobar_ = infobar; }

@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/ui/tab_helpers.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/tab_helpers.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 6c3874b43f7fe707addcee98190657e282f52b57..2cde12217299c6a00d60cd82e8cb81d18f61a7a6 100644
+index 692ebd4c087d9c19d4d8f96c220506f198019bca..f26ecfdefad25d1391d9a471141f9a6c62c3a41a 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -44,6 +44,10 @@
+@@ -45,6 +45,10 @@
  #include "chrome/browser/lookalikes/safety_tip_web_contents_observer.h"
  #include "chrome/browser/media/media_engagement_service.h"
  #include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_observer.h"
@@ -19,7 +19,7 @@ index 6c3874b43f7fe707addcee98190657e282f52b57..2cde12217299c6a00d60cd82e8cb81d1
  #include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
  #include "chrome/browser/net/net_error_tab_helper.h"
  #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
-@@ -620,6 +624,26 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
+@@ -657,6 +661,26 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
    vr::VrTabHelper::CreateForWebContents(web_contents);
    OneTimePermissionsTrackerHelper::CreateForWebContents(web_contents);
  

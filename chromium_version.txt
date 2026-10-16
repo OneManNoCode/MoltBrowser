@@ -10,5 +10,5 @@
 # CHROMIUM_VERSION is chrome/VERSION at CHROMIUM_REVISION. The current pin is
 # a trunk commit from 2026-03-10 (canary-era 148.0.7729.0), not a release
 # branch build, so it has none of the M148 branch's security merges.
-CHROMIUM_VERSION=148.0.7729.0
-CHROMIUM_REVISION=51a413be46f7632ebc3ae331c68af71daa5d6bbf
+CHROMIUM_VERSION=152.0.7977.169
+CHROMIUM_REVISION=92a6f15143569cf59b340472d0b5030465d95722

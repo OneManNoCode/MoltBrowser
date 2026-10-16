@@ -1,0 +1,20 @@
+MoltBrowser patch for third_party/rust/version_check/v0_9/README.chromium
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/rust/version_check/v0_9/README.chromium by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/version_check/v0_9/README.chromium b/third_party/rust/version_check/v0_9/README.chromium
+index f26493727878a935d4364264cf022355a65f5c4a..300174f39e1fb78a537a48a2c481cf89fa1dffc3 100644
+--- a/third_party/rust/version_check/v0_9/README.chromium
++++ b/third_party/rust/version_check/v0_9/README.chromium
+@@ -5,7 +5,7 @@ Revision: d77ef9f27cc336719b2d839d09ee6635dd22f758
+ Update Mechanism: Manual (https://crbug.com/449898466)
+ License: Apache-2.0
+ License File: //third_party/rust/chromium_crates_io/vendor/version_check-v0_9/LICENSE-APACHE
+-Shipped: no
+-Security Critical: no
++Shipped: yes
++Security Critical: yes
+ 
+ Description: Tiny crate to check the version of the installed/running rustc.

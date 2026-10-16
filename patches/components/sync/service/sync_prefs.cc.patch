@@ -1,14 +1,14 @@
 MoltBrowser patch for components/sync/service/sync_prefs.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/sync/service/sync_prefs.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/sync/service/sync_prefs.cc b/components/sync/service/sync_prefs.cc
-index 79b0412af48775e43ca0ec4f04857bf9096d9b2a..9e1c076512eab600225c8e524d92ac63c9d62b1a 100644
+index 0d20f0b7789965ad1d92fde58a0b8667ef067ecb..47307f8ec60a0c6e87ada9c3de4d56395dff7d5e 100644
 --- a/components/sync/service/sync_prefs.cc
 +++ b/components/sync/service/sync_prefs.cc
-@@ -202,7 +202,10 @@ void SyncPrefs::RegisterProfilePrefs(PrefRegistrySimple* registry) {
+@@ -233,7 +233,10 @@ void SyncPrefs::RegisterProfilePrefs(PrefRegistrySimple* registry) {
    registry->RegisterBooleanPref(
        kSyncEncryptionBootstrapTokenPerAccountMigrationDone, false);
  

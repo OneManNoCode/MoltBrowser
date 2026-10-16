@@ -1,15 +1,15 @@
 MoltBrowser patch for chrome/app/os_settings_search_tag_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/os_settings_search_tag_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/os_settings_search_tag_strings.grdp b/chrome/app/os_settings_search_tag_strings.grdp
-index e5f95757d26c2c1b3772f75fe70fa09e2f1c6e1c..d871e2a8721fe02bb142802cd4fe53bc22eb8331 100644
+index 422c49c33b05e672127d9c738c448395732bba0c..7e02a997b21fba2d3be51d67c0601a990e43c54c 100644
 --- a/chrome/app/os_settings_search_tag_strings.grdp
 +++ b/chrome/app/os_settings_search_tag_strings.grdp
-@@ -421,7 +421,7 @@
-     Add account
+@@ -361,7 +361,7 @@
+     My accounts
    </message>
    <message name="IDS_OS_SETTINGS_TAG_PEOPLE_ACCOUNTS_ADD_V2" desc="Text for search result item which, when clicked, navigates the user to accounts settings, with a button to add a new account.">
 -    Add Google Account
@@ -17,21 +17,8 @@ index e5f95757d26c2c1b3772f75fe70fa09e2f1c6e1c..d871e2a8721fe02bb142802cd4fe53bc
    </message>
    <message name="IDS_OS_SETTINGS_TAG_PEOPLE_ACCOUNTS_REMOVE" desc="Text for search result item which, when clicked, navigates the user to accounts settings, with an option to remove an account.">
      Remove account
-@@ -520,7 +520,7 @@
-     Send URLs of pages you visit to Google
-   </message>
-   <message name="IDS_OS_SETTINGS_TAG_GOOGLE_DRIVE_SEARCH_SUGGESTIONS" desc="Text for search result item which, when clicked, navigates the user to Google services settings, with a toggle to enable/disable a feature which provides suggestions to visit Google Drive items when the user types in the address bar.">
--    Show Google Drive suggestions
-+    Show Drive suggestions
-   </message>
-   <message name="IDS_OS_SETTINGS_TAG_LOCAL_DATA_RECOVERY" desc="Text for search result item which, when clicked, navigates the user to Local Data Recovery toggle.">
-     Local Data Recovery
-@@ -1190,10 +1190,10 @@
+@@ -1028,7 +1028,7 @@
      Files
-   </message>
-   <message name="IDS_OS_SETTINGS_TAG_FILES_DISCONNECT_GOOGLE_DRIVE" desc="Text for search result item that, when clicked, navigates the user to Settings: Google Drive settings, with a toggle to enable/disable connecting the user's Google Drive account.">
--    Disconnect Google Drive account
-+    Disconnect Drive account
    </message>
    <message name="IDS_OS_SETTINGS_TAG_FILES_REMOVE_GOOGLE_DRIVE_ACCESS" desc="Text for search result item that, when clicked, navigates the user to Settings: Google Drive settings, with a toggle to remove the user's Google Drive access from the device.">
 -    Remove Google Drive access
@@ -39,7 +26,7 @@ index e5f95757d26c2c1b3772f75fe70fa09e2f1c6e1c..d871e2a8721fe02bb142802cd4fe53bc
    </message>
    <message name="IDS_OS_SETTINGS_TAG_FILES_NETWORK_FILE_SHARES" desc="Text for search result item which, when clicked, navigates the user to network file share (a.k.a. SMB share) settings. Alternate phrase for: 'SMB share'">
      Network file shares
-@@ -1208,7 +1208,7 @@
+@@ -1043,7 +1043,7 @@
      Office file settings
    </message>
    <message name="IDS_OS_SETTINGS_TAG_FILES_GOOGLE_DRIVE" translateable="false" desc="Text for search result item which, when clicked, navigates the user to the Google Drive settings.">

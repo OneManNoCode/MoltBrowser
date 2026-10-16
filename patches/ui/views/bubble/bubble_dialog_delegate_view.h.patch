@@ -1,14 +1,14 @@
 MoltBrowser patch for ui/views/bubble/bubble_dialog_delegate_view.h
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/ui/views/bubble/bubble_dialog_delegate_view.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/ui/views/bubble/bubble_dialog_delegate_view.h b/ui/views/bubble/bubble_dialog_delegate_view.h
-index e805d999c48710826d6d2c6636e6f32184d2513b..443607ec7f7e516638cfb0f7cd7141a56919c18f 100644
+index deb9b12ee797b984df82acd7b564572f80ff0205..bcb463cf6bbb4d765772914a9736c24f7aad5546 100644
 --- a/ui/views/bubble/bubble_dialog_delegate_view.h
 +++ b/ui/views/bubble/bubble_dialog_delegate_view.h
-@@ -62,6 +62,8 @@ class ExtensionPopup;
+@@ -65,6 +65,8 @@ class ExtensionPopup;
  class ExtensionsMenuView;
  class FlyingIndicator;
  class GlobalErrorBubbleView;
@@ -17,7 +17,7 @@ index e805d999c48710826d6d2c6636e6f32184d2513b..443607ec7f7e516638cfb0f7cd7141a5
  class HomePageUndoBubble;
  class MediaDialogView;
  class HatsNextWebDialog;
-@@ -819,6 +821,14 @@ class VIEWS_EXPORT BubbleDialogDelegateView : public View,
+@@ -842,6 +844,14 @@ class VIEWS_EXPORT BubbleDialogDelegateView : public View,
    friend class ::ExtensionsMenuView;
    friend class ::FlyingIndicator;
    friend class ::GlobalErrorBubbleView;

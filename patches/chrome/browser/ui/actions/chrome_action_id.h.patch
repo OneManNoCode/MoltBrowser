@@ -1,19 +1,19 @@
 MoltBrowser patch for chrome/browser/ui/actions/chrome_action_id.h
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/actions/chrome_action_id.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
-index ac894a3986296e2aad608c47d8fcdc9299fa29bf..fbe10f54cd3cc3598e474890fc3e3c1e5a0fa0ec 100644
+index f6b247d5a60a65792528adcd0ba04855ac72fcc2..d4c38e42400f59a20e7565d5711c170ff5cf4efd 100644
 --- a/chrome/browser/ui/actions/chrome_action_id.h
 +++ b/chrome/browser/ui/actions/chrome_action_id.h
-@@ -574,7 +574,9 @@
-   E(kActionSidePanelShowShoppingInsights) \
+@@ -490,7 +490,9 @@
    E(kActionSidePanelShowSideSearch) \
-   E(kActionSidePanelShowUserNote) \
--  E(kActionSidePanelShowMerchantTrust)
-+  E(kActionSidePanelShowMerchantTrust) \
+   E(kActionSidePanelShowMerchantTrust) \
+   E(kActionSidePanelShowTabsFromOtherDevices, \
+-    IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL)
++    IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL) \
 +  E(kActionSidePanelShowMoltAiChat) \
 +  E(kActionSidePanelShowMoltAgent)
  

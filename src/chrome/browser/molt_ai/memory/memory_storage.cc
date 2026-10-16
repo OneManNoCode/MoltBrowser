@@ -12,8 +12,8 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"  // for BUILDFLAG(IS_WIN) — explicit not transitive
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 #include "chrome/browser/molt_ai/memory/memory_embedder.h"
-#include "components/os_crypt/sync/os_crypt.h"
 #include "crypto/hmac.h"
 #include "crypto/random.h"
 #include "sql/meta_table.h"
@@ -82,9 +82,10 @@ bool MemoryStorage::Open(const base::FilePath& memory_dir,
   }
   db_path_ = memory_dir.Append(FILE_PATH_LITERAL("memory.db"));
 
-  db_ = std::make_unique<sql::Database>(
-      sql::DatabaseOptions().set_preload(true),
-      sql::Database::Tag("MoltMemory"));
+  // (set_preload() is gone at Chromium 152. It was only a page-cache hint,
+  // and this DB opens on a BEST_EFFORT worker, off the startup path.)
+  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions(),
+                                        sql::Database::Tag("MoltMemory"));
 
   if (!db_->Open(db_path_)) {
     LOG(ERROR) << "[MoltMemory] cannot open " << db_path_.value();
@@ -100,7 +101,7 @@ bool MemoryStorage::Open(const base::FilePath& memory_dir,
 
   if (!EnsureSchema(embedder, /*allow_wipe=*/true)) {
     // EnsureSchema only returns false for a DB we must not touch further
-    // this session (e.g. OSCrypt unavailable mid-migration). The data is
+    // this session (e.g. encryption unavailable mid-migration). The data is
     // left intact for the next launch.
     db_->Close();
     db_.reset();
@@ -134,7 +135,7 @@ bool MemoryStorage::CreateTablesV2() {
              " doc_id INTEGER NOT NULL,"
              " chunk_idx INTEGER NOT NULL,"
              " text_enc BLOB,"
-             " embedding BLOB"  // OSCrypt(packed floats) in v2
+             " embedding BLOB"  // Encrypt(packed floats) in v2
              ")") &&
          db_->Execute(
              "CREATE INDEX IF NOT EXISTS idx_chunks_doc "
@@ -175,7 +176,7 @@ bool MemoryStorage::EnsureSchema(const MemoryEmbedder& embedder,
   }
 
   if (meta.GetVersionNumber() < 2) {
-    // v1 -> v2: encrypt URLs + embeddings in place. On failure (OSCrypt
+    // v1 -> v2: encrypt URLs + embeddings in place. On failure (encryption
     // unavailable) the transaction rolls back and the v1 data is kept.
     if (!MigrateV1ToV2(&meta, embedder)) {
       LOG(ERROR) << "[MoltMemory] v1->v2 migration failed; memory disabled "
@@ -359,14 +360,16 @@ bool MemoryStorage::ReembedAllChunks(const MemoryEmbedder& embedder) {
 
 bool MemoryStorage::Encrypt(const std::string& plaintext,
                             std::string* ciphertext) const {
-  ciphertext->clear();
-  return OSCrypt::EncryptString(plaintext, ciphertext);
+  // Any key, the hard-coded Linux one included; fails (and the caller then
+  // refuses to persist) when there is none or the Encryptor isn't ready.
+  // An empty field stays empty, as it did with OSCrypt.
+  return molt_os_crypt::EncryptString(plaintext, ciphertext);
 }
 
 std::string MemoryStorage::Decrypt(const std::string& ciphertext) const {
   std::string out;
   if (ciphertext.empty()) return std::string();
-  if (!OSCrypt::DecryptString(ciphertext, &out)) return std::string();
+  if (!molt_os_crypt::DecryptString(ciphertext, &out)) return std::string();
   return out;
 }
 
@@ -390,7 +393,7 @@ bool MemoryStorage::InsertDocumentWithChunks(Document* doc,
   sql::Transaction tx(db_.get());
   if (!tx.Begin()) return false;
 
-  // Never persist plaintext: any OSCrypt failure aborts the insert.
+  // Never persist plaintext: any encryption failure aborts the insert.
   std::string url_enc;
   std::string title_enc;
   if (!Encrypt(doc->url, &url_enc) || !Encrypt(doc->title, &title_enc)) {

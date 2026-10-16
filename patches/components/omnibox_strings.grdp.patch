@@ -1,14 +1,14 @@
 MoltBrowser patch for components/omnibox_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/omnibox_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox_strings.grdp b/components/omnibox_strings.grdp
-index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db1d829c28 100644
+index bfa7291ff264cf79fd695da5240767b56cbafa56..922956e321443ce4040d85ec4fb8f1b0b1d6b1b8 100644
 --- a/components/omnibox_strings.grdp
 +++ b/components/omnibox_strings.grdp
-@@ -35,7 +35,7 @@
+@@ -41,7 +41,7 @@
      Ask Google about this page
    </message>
    <message name="IDS_ACC_CONTEXTUAL_SEARCH_OPEN_LENS_ACTION_SUFFIX" desc="Suffix for spoken suggestion description with omnibox action button, to explain keystroke used to open lens.">
@@ -17,52 +17,16 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
    <message name="IDS_ACC_CONTEXTUAL_SEARCH_OPEN_LENS_ACTION" desc="Announcement when lens action button is focused">
      Ask Google about this page button, activate to ask Google about this page
-@@ -48,7 +48,7 @@
-     Search Bookmarks
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_BOOKMARKS_ACTION_SUFFIX" desc="Suffix for spoken suggestion description with omnibox action button, to explain keystroke used to invoke bookmark search.">
--    <ph name="STARTER_PACK_BOOKMARKS_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The Chromium Projects http://www.chromium.org bookmark</ex></ph>, press Enter to search bookmarks
-+    <ph name="STARTER_PACK_BOOKMARKS_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The MoltBrowser Projects http://www.chromium.org bookmark</ex></ph>, press Enter to search bookmarks
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_BOOKMARKS_ACTION" desc="Announcement when Search Bookmarks action button is focused">
-     Search Bookmarks button, activate to search bookmarks
-@@ -61,7 +61,7 @@
-     Search History
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_HISTORY_ACTION_SUFFIX" desc="Suffix for spoken suggestion description with omnibox action button, to explain keystroke used to invoke history search.">
--    <ph name="STARTER_PACK_HISTORY_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The Chromium Projects http://www.chromium.org bookmark</ex></ph>, press Enter to search history
-+    <ph name="STARTER_PACK_HISTORY_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The MoltBrowser Projects http://www.chromium.org bookmark</ex></ph>, press Enter to search history
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_HISTORY_ACTION" desc="Announcement when Search History action button is focused">
-     Search History button, activate to search history
-@@ -74,7 +74,7 @@
-     Search Tabs
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_TABS_ACTION_SUFFIX" desc="Suffix for spoken suggestion description with omnibox action button, to explain keystroke used to invoke tabs search.">
--    <ph name="STARTER_PACK_TABS_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The Chromium Projects http://www.chromium.org bookmark</ex></ph>, press Enter to search tabs
-+    <ph name="STARTER_PACK_TABS_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The MoltBrowser Projects http://www.chromium.org bookmark</ex></ph>, press Enter to search tabs
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_TABS_ACTION" desc="Announcement when Search Tabs action button is focused">
-     Search Tabs button, activate to search tabs
-@@ -87,7 +87,7 @@
-     Ask AI Mode in Google Search
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_AI_MODE_ACTION_SUFFIX" desc="Suffix for spoken suggestion description with omnibox action button, to explain keystroke used to invoke AI mode.">
--    <ph name="STARTER_PACK_AI_MODE_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The Chromium Projects http://www.chromium.org bookmark</ex></ph>, press Enter to ask AI Mode in Google Search
-+    <ph name="STARTER_PACK_AI_MODE_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The MoltBrowser Projects http://www.chromium.org bookmark</ex></ph>, press Enter to ask AI Mode in Google Search
-   </message>
-   <message name="IDS_ACC_STARTER_PACK_AI_MODE_ACTION" desc="Announcement when AI Mode action button is focused">
-     AI Mode button, activate to ask AI Mode in Google Search
-@@ -192,7 +192,7 @@
+@@ -167,7 +167,7 @@
    </if>
    <if expr="is_android">
      <message name="IDS_OMNIBOX_ON_CCT_EMPTY_HINT" desc="Hint text shown in the Omnibox on a Custom Tab." formatter_data="android_java">
 -      Search the web in Chrome
 +      Search the web in MoltBrowser
      </message>
-   </if>
-   <message name="IDS_OMNIBOX_ADDITIONAL_TEXT_DASH_TEMPLATE" desc="The omnibox text when there is both traditional text (i.e., user text + inline autocompletion) and additional text (i.e. the default suggestion's URL when rich autocompleting a title) to display.">
-@@ -351,13 +351,13 @@
+     <message name="IDS_OMNIBOX_EMPTY_ASK_HINT_SHORT_WITH_DSE_NAME" desc="Alternative text displayed in the omnibox when it is empty, prompting the user to ask. Includes Default Search Engine name." formatter_data="android_java">
+       Ask <ph name="ENGINE_NAME">$1<ex>Google</ex></ph>
+@@ -348,13 +348,13 @@
      Resume your journey
    </message>
    <message name="IDS_OMNIBOX_ACTION_HISTORY_CLUSTERS_SEARCH_SUGGESTION_CONTENTS" desc="The button tooltip for the History Clusters omnibox action. Clicking this button takes users to a view of their browsing history related to the attached suggestion.">
@@ -79,7 +43,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
  
    <!-- Omnibox Actions in Suggest. -->
-@@ -438,7 +438,7 @@
+@@ -420,7 +420,7 @@
         These are parameterized on the text being completed into the omnibox.
    -->
    <message name="IDS_ACC_AUTOCOMPLETE_HISTORY" desc="Text for screenreaders describing a URL from history.">
@@ -88,7 +52,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
    <message name="IDS_ACC_AUTOCOMPLETE_SEARCH_HISTORY" desc="Text for screenreaders describing a search from history.">
      <ph name="TEXT">$1<ex>dogs</ex></ph> search from history
-@@ -456,7 +456,7 @@
+@@ -438,7 +438,7 @@
      <ph name="QUERY">$1<ex>weather in los angeles</ex></ph>, answer, <ph name="ANSWER">$2<ex>sunny and 84 degrees</ex></ph>
    </message>
    <message name="IDS_ACC_AUTOCOMPLETE_BOOKMARK" desc="Text for screenreaders describing a URL from a bookmark.">
@@ -97,7 +61,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
    <message name="IDS_ACC_AUTOCOMPLETE_CLIPBOARD_IMAGE" desc="Text for screenreaders describing an image from a clipboard.">
      Search for clipboard image
-@@ -472,25 +472,25 @@
+@@ -454,21 +454,21 @@
    </message>
    <!-- Supplement accessibility label with item position, e.g. "1 of 3" -->
    <message name="IDS_ACC_AUTOCOMPLETE_N_OF_M" desc="Text for screenreaders describing the current match's position in the list of suggestions.">
@@ -108,11 +72,6 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    <message name="IDS_ACC_TAB_SWITCH_SUFFIX" desc="Suffix for tab switch suggestions to explain keystroke used to switch.">
 -    <ph name="TAB_SWITCH_SUFFIX">$1<ex>The Chromium Projects http://www.chromium.org bookmark</ex></ph>, currently open, press Tab then Enter to switch to the open tab
 +    <ph name="TAB_SWITCH_SUFFIX">$1<ex>The MoltBrowser Projects http://www.chromium.org bookmark</ex></ph>, currently open, press Tab then Enter to switch to the open tab
-   </message>
-   <!-- Accessibility prefix for suggestions where the tab switch button is focused. Commas are important as they add pauses. -->
-   <message name="IDS_ACC_TAB_SWITCH_BUTTON_FOCUSED_PREFIX" desc="Announcement when tab switch button focused.">
--    Tab switch button, press Enter to switch to the open tab, <ph name="TAB_SWITCH_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The Chromium Projects http://www.chromium.org bookmark</ex></ph>
-+    Tab switch button, press Enter to switch to the open tab, <ph name="TAB_SWITCH_FOCUSED_FRIENDLY_MATCH_TEXT">$1<ex>The MoltBrowser Projects http://www.chromium.org bookmark</ex></ph>
    </message>
    <message name="IDS_ACC_TAB_SWITCH_BUTTON" desc="Announcement when tab switch button focused.">
      Tab switch button, press Enter to switch to this tab
@@ -128,7 +87,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
    <message name="IDS_ACC_KEYWORD_MODE" desc="Announcement when entering keyword search mode.">
      Search <ph name="KEYWORD_SUFFIX">$1<ex>Youtube</ex></ph>
-@@ -511,24 +511,24 @@
+@@ -489,40 +489,40 @@
  
    <!-- Accessibility labels for the omnibox thumbs up feedback button. -->
    <message name="IDS_ACC_THUMBS_UP_SUGGESTION_FOCUSED_PREFIX" desc="Announcement when thumbs up feedback button is focused.">
@@ -157,10 +116,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
    <message name="IDS_ACC_REMOVE_SUGGESTION_BUTTON" desc="Announcement when remove suggestion button is focused.">
      Remove Suggestion button, press Enter to remove this suggestion
-@@ -541,18 +541,18 @@
-     AI Mode button, press Enter to ask AI Mode
    </message>
- 
 -  <!-- Accessibility announcements made for the Chrome tip IPH suggestions sometimes shown at the bottom of the Omnibox -->
 +  <!-- Accessibility announcements made for the MoltBrowser tip IPH suggestions sometimes shown at the bottom of the Omnibox -->
    <message name="IDS_ACC_CHROME_TIP" desc="Announcement that is read after the last suggestion when the IPH row is present in the Omnibox.">
@@ -181,7 +137,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
    </message>
  
    <!-- Site Search/Keyword mode Starter Pack strings. Note: kCurrentDataVersion in template_url_starter_pack_data.cc must also be updated when changing these values. -->
-@@ -568,7 +568,7 @@
+@@ -538,7 +538,7 @@
    <message name="IDS_SEARCH_ENGINES_STARTER_PACK_HISTORY_KEYWORD" desc = "The keyword required to trigger history search in keyword mode. This will be prepended with an '@'.">
      History
    </message>
@@ -190,7 +146,7 @@ index 2c0e3f2c388d036911c285cdef0f891cfe5105bd..77971c33f1d1c85510247d29beb515db
      Tabs
    </message>
    <message name="IDS_SEARCH_ENGINES_STARTER_PACK_TABS_KEYWORD" desc = "The keyword required to trigger tab search in keyword mode. This will be prepended with an '@'.">
-@@ -639,11 +639,11 @@
+@@ -609,11 +609,11 @@
      Learn more
    </message>
    <message name="IDS_ACC_OMNIBOX_IPH_LINK_SELECTED" desc="Announcement when an IPH Chrome Tip link is selected.">

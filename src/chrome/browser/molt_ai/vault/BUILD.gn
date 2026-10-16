@@ -2,7 +2,8 @@
 # Licensed under GPLv3. See LICENSE file.
 #
 # MoltBrowser password vault. Encrypted credentials store at
-# ~/.moltbrowser/vault.enc, OSCrypt-backed.
+# ~/.moltbrowser/vault.enc, encrypted through molt_ai/keys:os_crypt (the
+# os_crypt_async Encryptor).
 
 source_set("vault") {
   sources = [
@@ -15,7 +16,7 @@ source_set("vault") {
   deps = [
     "//base",
     "//chrome/browser/molt_ai/keys",
-    "//components/os_crypt/sync",
+    "//chrome/browser/molt_ai/keys:os_crypt",
     "//net",
     "//url",
   ]
@@ -33,7 +34,8 @@ source_set("unit_tests") {
     ":vault",
     "//base",
     "//chrome/browser/molt_ai/keys",
-    "//components/os_crypt/sync:test_support",
+    "//chrome/browser/molt_ai/keys:os_crypt",
+    "//chrome/browser/molt_ai/keys:test_support",
     "//testing/gtest",
     "//url",
   ]

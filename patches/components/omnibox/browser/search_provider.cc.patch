@@ -1,15 +1,15 @@
 MoltBrowser patch for components/omnibox/browser/search_provider.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/omnibox/browser/search_provider.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox/browser/search_provider.cc b/components/omnibox/browser/search_provider.cc
-index 7530f7923c867f87c9721d806d94a0c598ff95cc..c29e5c7c6244ff046a946f2848c863b3f7fea472 100644
+index a4d03c38c74a617de8dd95e116023a5bfeacde92..74177f28d098f4d8ab623bc24f9d473d0870b02e 100644
 --- a/components/omnibox/browser/search_provider.cc
 +++ b/components/omnibox/browser/search_provider.cc
-@@ -124,6 +124,38 @@ bool ShouldOnlyShowVerbatimMatches(const AutocompleteInput& input) {
-          omnibox::IsComposebox(input.current_page_classification());
+@@ -140,6 +140,38 @@ bool ShouldOnlyShowVerbatimMatches(const AutocompleteInput& input) {
+   return false;
  }
  
 +// MoltBrowser: true iff |host| is a name under the special-use ".onion"
@@ -47,7 +47,7 @@ index 7530f7923c867f87c9721d806d94a0c598ff95cc..c29e5c7c6244ff046a946f2848c863b3
  }  // namespace
  
  // SearchProvider::Providers --------------------------------------------------
-@@ -810,6 +842,15 @@ bool SearchProvider::IsQueryPotentiallyPrivate() const {
+@@ -842,6 +874,15 @@ bool SearchProvider::IsQueryPotentiallyPrivate() const {
    if (input_.text().empty())
      return false;
  

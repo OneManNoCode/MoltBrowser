@@ -1,0 +1,18 @@
+MoltBrowser patch for third_party/rust/regex_automata/v0_4/BUILD.gn
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/rust/regex_automata/v0_4/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/regex_automata/v0_4/BUILD.gn b/third_party/rust/regex_automata/v0_4/BUILD.gn
+index dd8ac3aec7045ee02656658bdefecb3a4a896df6..ecdccda90a85c7130d4a2478e10062a4c8fde0e8 100644
+--- a/third_party/rust/regex_automata/v0_4/BUILD.gn
++++ b/third_party/rust/regex_automata/v0_4/BUILD.gn
+@@ -136,7 +136,6 @@ cargo_crate("lib") {
+   # //third_party/rust/chromium_crates_io/Cargo.toml to use
+   # it from first-party code.
+   visibility = [ "//third_party/rust/*" ]
+-  testonly = true
+ 
+   #####################################################################
+   # Tweaking which GN `config`s apply to this target.

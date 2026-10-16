@@ -229,6 +229,19 @@ repo/
   `HashingEmbedder` v3 (Unicode-aware keyword hashing, not a neural
   embedding). Never records MoltNet browsing.
 
+### Encrypted stores
+- keys.enc (cloud API keys), vault.enc (passwords), profile.enc (form-filler
+  profile), saved chat conversations and the memory database all encrypt
+  through `molt_ai/keys/molt_os_crypt`: a thread-safe shim over Chromium's
+  `os_crypt_async` Encryptor, fetched once by `MoltOSCryptStartupFactory`
+  when the first profile is created. Until it arrives every store fails
+  closed (nothing is ever written in plaintext); chat history and memory
+  wait for it.
+- The secret stores (keys, vault, profile) also require an OS-backed key:
+  on Linux a keyring ("v11") or secret portal ("v12") key, never Chromium's
+  hard-coded fallback ("v10"); macOS Keychain; Windows DPAPI. Chat history
+  and memory accept any key.
+
 ### Cross-Platform
 - **macOS**: Metal GPU, signed in-app updates, DMG packaging, notarization
 - **Windows**: CPU inference today (Vulkan planned), signed in-app updates, NSIS installer

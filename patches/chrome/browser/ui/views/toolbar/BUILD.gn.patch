@@ -1,34 +1,34 @@
 MoltBrowser patch for chrome/browser/ui/views/toolbar/BUILD.gn
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/views/toolbar/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index 2f2dc8060681c00c5eff10947f037e1bacfa4e3c..32052a829307e80d4d39319c1eaa28af300274aa 100644
+index 1514298328f544b4517850940564fce3d3a569eb..d166828e2f474cb814522df3e2ece8209a06145f 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
-@@ -40,6 +40,8 @@ source_set("toolbar") {
-     "toolbar_glic_button.h",
+@@ -42,6 +42,8 @@ source_set("toolbar") {
+     "toolbar_glic_constants.h",
      "toolbar_icon_container_view.h",
      "toolbar_ink_drop_util.h",
 +    "molt_import_bubble.h",
 +    "molt_net_bubble.h",
      "toolbar_view.h",
-     "webui_back_forward_control.h",
-     "webui_reload_control.h",
-@@ -128,6 +130,8 @@ source_set("impl") {
-     "toolbar_glic_actor_task_icon.cc",
+     "webui_app_menu_control.h",
+     "webui_avatar_toolbar_button.h",
+@@ -139,6 +141,8 @@ source_set("impl") {
      "toolbar_glic_button.cc",
+     "toolbar_glic_constants.h",
      "toolbar_icon_container_view.cc",
 +    "molt_import_bubble.cc",
 +    "molt_net_bubble.cc",
      "toolbar_ink_drop_util.cc",
      "toolbar_view.cc",
-     "webui_back_forward_control.cc",
-@@ -160,6 +164,9 @@ source_set("impl") {
-     "//chrome/browser/extensions",
-     "//chrome/browser/feedback",
+     "webui_app_menu_control.cc",
+@@ -181,6 +185,9 @@ source_set("impl") {
+     "//chrome/browser/glic/browser_ui",
+     "//chrome/browser/lifetime",
      "//chrome/browser/media/router:media_router_feature",
 +    "//chrome/browser/molt_ai/automation",
 +    "//chrome/browser/molt_ai/tor",

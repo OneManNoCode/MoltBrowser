@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/support_tool_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/support_tool_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/support_tool_strings.grdp b/chrome/app/support_tool_strings.grdp
-index c80f619ea6d2838e2a6cc5af22558f4b5250efc2..9f1602da234f44ee501daa118915e2eb17e6c5d1 100644
+index 0d1e5cac021537d2cebc2b3ccaa4539672272560..198a65acc36cc32e5c011bff61ad02fd885ac465 100644
 --- a/chrome/app/support_tool_strings.grdp
 +++ b/chrome/app/support_tool_strings.grdp
 @@ -103,7 +103,7 @@
@@ -26,15 +26,6 @@ index c80f619ea6d2838e2a6cc5af22558f4b5250efc2..9f1602da234f44ee501daa118915e2eb
          </message>
          <message name="IDS_SUPPORT_TOOL_CHROMEOS_BLUETOOTH_FLOSS" desc="Bluetooth logs if Floss is enabled on the device. Floss is the project that works on converging on a single Bluetooth stack between Android and ChromeOS.">
              ChromeOS Bluetooth
-@@ -178,7 +178,7 @@
-             ChromeOS Kiosk App Logs
-         </message>
-         <message name="IDS_SUPPORT_TOOL_CHROME_UPDATER" desc="Diagnostic information regarding Chrome's updater.">
--            Chrome Updater
-+            MoltBrowser Updater
-         </message>
-         <!-- PII type strings -->
-         <message name="IDS_SUPPORT_TOOL_ANDROID_APP_INFO" desc="Android App informations on the device. Includes information like app storage paths etc.">
 @@ -194,7 +194,7 @@
              Email Address
          </message>

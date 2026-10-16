@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/app/app-Info.plist
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/app-Info.plist by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
-index e813de1e4e3649b509a9bf9246d6a9e29c72cd1d..4d63cea70d5dc6f736dabbb63f8d9ec35dacf52e 100644
+index 6fada0a2b1a1f4b5675fc657a3a7b2337e43c4a1..66a9549a9826df2f6c8d68b3ab315d39aec2280c 100644
 --- a/chrome/app/app-Info.plist
 +++ b/chrome/app/app-Info.plist
-@@ -232,7 +232,7 @@
+@@ -234,7 +234,7 @@
  				<string>public.content</string>
  			</array>
  			<key>UTTypeDescription</key>
@@ -17,7 +17,7 @@ index e813de1e4e3649b509a9bf9246d6a9e29c72cd1d..4d63cea70d5dc6f736dabbb63f8d9ec3
  			<key>UTTypeIcons</key>
  			<dict>
  				<key>UTTypeIconBadgeName</key>
-@@ -260,7 +260,7 @@
+@@ -262,7 +262,7 @@
  				<string>com.apple.web-internet-location</string>
  			</array>
  			<key>UTTypeDescription</key>

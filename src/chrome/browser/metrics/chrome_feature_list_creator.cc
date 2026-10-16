@@ -8,7 +8,6 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/path_service.h"
@@ -54,55 +53,6 @@
 #include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-namespace {
-
-// Returns a list of extra switch-dependent feature overrides to be applied
-// during FeatureList initialization. Combines the overrides defined at the
-// content layer with additional chrome layer overrides. The overrides
-// specified in this list each cause a feature's state to be overridden based on
-// the presence of a command line switch.
-std::vector<base::FeatureList::FeatureOverrideInfo>
-GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
-  std::vector<base::FeatureList::FeatureOverrideInfo> overrides =
-      content::GetSwitchDependentFeatureOverrides(command_line);
-
-  // Describes a switch-dependent override. See also content layer overrides.
-  struct SwitchDependentFeatureOverrideInfo {
-    // Switch that the override depends upon. The override will be registered if
-    // this switch is present.
-    const char* switch_name;
-    // Feature to override.
-    const std::reference_wrapper<const base::Feature> feature;
-    // State to override the feature with.
-    base::FeatureList::OverrideState override_state;
-  } chrome_layer_override_info[] = {
-      // Override for --privacy-sandbox-ads-apis.
-      {switches::kEnablePrivacySandboxAdsApis,
-       std::cref(privacy_sandbox::kOverridePrivacySandboxSettingsLocalTesting),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-      // Override for --devtools-greendev-ui.
-      {switches::kEnableDevToolsGreenDevUi,
-       std::cref(features::kDevToolsGreenDevUi),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-  };
-
-  for (const auto& info : chrome_layer_override_info) {
-    if (command_line.HasSwitch(info.switch_name)) {
-      overrides.emplace_back(info.feature, info.override_state);
-    }
-  }
-
-  // MoltBrowser: features that only reach Google in a build without API keys
-  // are off by default. Registered here, after --enable-features (which
-  // chrome://flags writes) and before the field trial testing config, so the
-  // user can still turn them on and testing-config studies that touch them are
-  // skipped. See chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
-  molt_ai::privacy::AppendDefaultFeatureOverrides(overrides);
-  return overrides;
-}
-
-}  // namespace
-
 // static
 ChromeFeatureListCreator* ChromeFeatureListCreator::GetInstance() {
   static base::NoDestructor<ChromeFeatureListCreator> instance;
@@ -112,23 +62,11 @@ ChromeFeatureListCreator* ChromeFeatureListCreator::GetInstance() {
 ChromeFeatureListCreator::~ChromeFeatureListCreator() = default;
 
 void ChromeFeatureListCreator::CreateFeatureList() {
-  // Get the variation IDs passed through the command line. This is done early
-  // on because ConvertFlagsToSwitches() will append to the command line
-  // the variation IDs from flags (so that they are visible in about://version).
-  // This will be passed on to `VariationsService::SetUpFieldTrials()`, which
-  // will manually fetch the variation IDs from flags (hence the reason we do
-  // not pass the mutated command line, otherwise the IDs will be duplicated).
-  // It also distinguishes between variation IDs coming from the command line
-  // and from flags, so we cannot rely on simply putting them all in the
-  // command line.
-  const std::string command_line_variation_ids =
-      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          variations::switches::kForceVariationIds);
   CreatePrefService();
   ConvertFlagsToSwitches();
   CreateMetricsServices();
   SetupInitialPrefs();
-  SetUpFieldTrials(command_line_variation_ids);
+  SetUpFieldTrials();
 }
 
 void ChromeFeatureListCreator::SetApplicationLocale(const std::string& locale) {
@@ -178,11 +116,6 @@ void ChromeFeatureListCreator::CreatePrefService() {
       base::PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_file);
   DCHECK(result);
 
-#if BUILDFLAG(IS_ANDROID)
-  base::UmaHistogramBoolean("UMA.Startup.LocalStateFileExistence",
-                            base::PathExists(local_state_file));
-#endif  // BUILDFLAG(IS_ANDROID)
-
   auto pref_registry = base::MakeRefCounted<PrefRegistrySimple>();
   RegisterLocalState(pref_registry.get());
 
@@ -204,8 +137,16 @@ void ChromeFeatureListCreator::CreatePrefService() {
 
   // Try and read the local state prefs, if it succeeds, use it as the
   // ManagementService's cache.
-  if (local_state_pref_store->ReadPrefs() ==
-      JsonPrefStore::PREF_READ_ERROR_NONE) {
+  const auto read_error = local_state_pref_store->ReadPrefs();
+
+  // Record whether Local State was present when ReadPrefs() attempted to load
+  // it. Deriving this from the read result avoids a separate PathExists() call
+  // on the startup critical path.
+  base::UmaHistogramBoolean(
+      "UMA.Startup.LocalStateFileExistence",
+      read_error != JsonPrefStore::PREF_READ_ERROR_NO_FILE);
+
+  if (read_error == JsonPrefStore::PREF_READ_ERROR_NONE) {
     auto* platform_management_service =
         policy::ManagementServiceFactory::GetForPlatform();
     platform_management_service->UsePrefStoreAsCache(local_state_pref_store);
@@ -278,8 +219,7 @@ void ChromeFeatureListCreator::CreateNetworkTimeTracker() {
   CHECK(!network_time_tracker_->is_initialized());
 }
 
-void ChromeFeatureListCreator::SetUpFieldTrials(
-    const std::string& command_line_variation_ids) {
+void ChromeFeatureListCreator::SetUpFieldTrials() {
   browser_field_trials_ =
       std::make_unique<ChromeBrowserFieldTrials>(local_state_.get());
 
@@ -299,11 +239,19 @@ void ChromeFeatureListCreator::SetUpFieldTrials(
 
   variations::VariationsService* variations_service =
       metrics_services_manager_->GetVariationsService();
-  variations_service->SetUpFieldTrials(
-      variation_ids, command_line_variation_ids,
-      GetSwitchDependentFeatureOverrides(
-          *base::CommandLine::ForCurrentProcess()),
-      std::move(feature_list), browser_field_trials_.get());
+  std::vector<base::FeatureList::FeatureOverrideInfo> extra_overrides =
+      content::GetSwitchDependentFeatureOverrides(
+          *base::CommandLine::ForCurrentProcess());
+  // MoltBrowser: features that only reach Google in a build without API keys
+  // are off by default. Registered as extra overrides, which apply after
+  // --enable-features (which chrome://flags writes) and before the field trial
+  // testing config, so the user can still turn them on and testing-config
+  // studies that touch them are skipped. See
+  // chrome/browser/molt_ai/privacy/molt_feature_overrides.h.
+  molt_ai::privacy::AppendDefaultFeatureOverrides(extra_overrides);
+  variations_service->SetUpFieldTrials(variation_ids, extra_overrides,
+                                       std::move(feature_list),
+                                       browser_field_trials_.get());
   variations::InitCrashKeys();
 }
 

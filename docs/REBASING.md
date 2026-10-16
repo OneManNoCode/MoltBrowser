@@ -251,7 +251,10 @@ Collisions at 152: upstream now vendors `regex` 1, `aho-corasick` 1,
 brought in) and has its own `third_party/rust/zip/v8` build files. The vendored
 `getrandom`, `version_check` and `r-efi` sources are byte-identical to ours;
 `regex` and `aho-corasick` are different patch versions. Drop our copies and
-our `third_party/rust/<crate>/` BUILD/README files for them.
+our `third_party/rust/<crate>/` BUILD/README files for them. (What the rebase
+actually did is in [The 152 rebase](#the-152-rebase-2026-10-16): upstream
+builds `regex`, `aho-corasick`, `regex-automata` and `version_check` test-only,
+so we patch their BUILD.gn files instead of dropping them.)
 
 Upstream API changes that hit first-party code (found by diffing the upstream
 headers our code includes; heuristic, the compile is authoritative):
@@ -261,11 +264,11 @@ headers our code includes; heuristic, the compile is authoritative):
 | `chrome/browser/ui/browser_finder.h` removed | 5 files, e.g. `molt_ai/automation/automation_recorder_tab_helper.cc` |
 | `browser_navigator.h`, `browser_navigator_params.h` moved to `chrome/browser/ui/navigator/` | `molt_ai/automation/automation_background_browser.cc` and 1 more |
 | `profile_password_store_factory.h` moved to `chrome/browser/password_manager/factories/` | `ui/webui/molt_ai/molt_ai_settings_ui.cc` and 1 more |
-| `components/os_crypt/sync/os_crypt.h` removed (move to `os_crypt_async`) | 4 files, e.g. `molt_ai/keys/molt_keys_store.cc` |
+| `components/os_crypt/sync/os_crypt.h` removed (move to `os_crypt_async`) | 4 files, e.g. `molt_ai/keys/molt_keys_store.cc` (done: `molt_ai/keys/molt_os_crypt`) |
 | `crypto::kdf::DeriveKeyPbkdf2HmacSha1` -> `Pbkdf2HmacSha1(Pbkdf2HmacSha1Params)` | `molt_ai/import/browser_importer.cc:335` |
 | `SidePanelEntry::PanelType` -> `SidePanelType` (the shared `kContent` panel) | `ui/views/toolbar/toolbar_view.cc:602` |
 | `URLLoaderThrottle` request-header out-params (`modified_request_headers`, `to_be_removed_request_headers`, `modified_cors_exempt_request_headers`) replaced (likely by `HttpRequestHeadersUpdateParams`) | `molt_ai/shield/molt_shield_url_loader_throttle.cc` (`WillRedirectRequest`) |
-| `sql::Database::set_preload` removed | `molt_ai/memory/memory_storage.cc:51` |
+| `sql::Database::set_preload` removed | `molt_ai/memory/memory_storage.cc:51` (done: dropped, it was a page-cache hint) |
 
 At 155, additionally: `Browser::RequestMediaAccessPermission`,
 `Browser::CreateParams::{initial_bounds, initial_show_state, trusted_source}`,
@@ -277,3 +280,72 @@ in the old `browser.h` and in our `web_agent.cc`.)
 
 The full reports regenerate in about 30 seconds:
 `tools/chromium/rebase.py 152.0.7977.168` (and `155.0.8059.87`).
+
+## The 152 rebase (2026-10-16)
+
+`tools/chromium/rebase.py 152.0.7977.169 --apply --allow-conflicts`, then the
+conflicts resolved in reviewable commits on top (strings, Rust crates, browser
+UI, build/startup files, first-party API ports, OSCrypt, Blink). Result:
+171 patched upstream files, 48 identical copies, 1 DEPS whole file;
+`verify_patches.py` reproduces `src/` byte for byte. Nothing has been
+compiled yet.
+
+### Decisions and behaviour changes
+
+- **Strings.** Merged message by message (not hunk by hunk): upstream's text
+  plus our rebrand. Messages new at 152 that name Chromium in the product-name
+  files (`chromium_strings.grd`, `settings_chromium_strings.grdp`,
+  `password_manager_ui_strings.grdp`) were rebranded; new strings of
+  Google-only features (Gemini, ChromeOS, iOS promos) were left as upstream
+  wrote them.
+- **Fingerprinting.** Hooks carried over; AudioWorklet inputs are farbled on
+  the new `ArrayBufferContents` span, WebGPU uploads before the new
+  `CopyStaticImagBitmapToWGPUTexture`, and farbled copies keep HDR metadata.
+  New at 152: the HTML-in-canvas origin trial (`HTMLInCanvas`) would let a
+  site render page content into WebGPU and read it back unfarbled, so the
+  origin trial policy refuses its tokens.
+- **Privacy defaults.** Global Privacy Control (new upstream, flag-gated) is
+  on by default. Google AI Mode's omnibox entry point is now `kAim3pEntrypoint`
+  (plus the `kAimEnabled` kill switch); both are forced off.
+- **UI.** Cmd+Shift+L (now upstream's "collapse vertical tabs") no longer
+  opens the AI panel; the command stays for a new shortcut. The toolbar's live
+  page reflection is gone with upstream's capture pipeline (the rest of the
+  glass look is a `CustomCornersBackground`). An explicit widget colour-mode
+  override now wins over our forced dark mode. The macOS vibrancy view in the
+  remote_cocoa bridge is dormant (upstream's `kGlassFrame` owns translucency).
+- **Rust.** One version per crate epoch, upstream's: regex 1.12.4,
+  aho-corasick 1.1.4, regex-automata 0.4.16 (adblock and anydoc accept them;
+  `tools/shield_bench` tests on them). Upstream builds regex, aho-corasick,
+  regex-automata and version_check test-only; we ship them, so their
+  BUILD.gn files are patched (`testonly` dropped). encoding_rs 0.8 (dropped
+  upstream) is vendored by us again.
+- **Encryption.** OSCrypt (sync) is gone at 152. MoltBrowser's stores use
+  `molt_ai/keys/molt_os_crypt`, a shim over the `os_crypt_async` Encryptor
+  that `MoltOSCryptStartupFactory` fetches when the first profile is
+  created; until it arrives, every store fails closed (chat history and
+  memory wait for it). The 152 key providers use the same tags and keys as
+  OSCrypt did (Linux v10/v11, macOS v10 Keychain, Windows v10 DPAPI), so
+  existing files open; on Linux the secret stores accept v11 and the secret
+  portal's v12, never the hard-coded v10.
+- **Removed APIs.** `BrowserList` / `browser_finder.h` → `GlobalBrowserCollection`
+  / `ProfileBrowserCollection`; `Browser::profile()` → `GetProfile()`;
+  `URLLoader::FollowRedirect` and `URLLoaderThrottle::WillRedirectRequest`
+  take `HttpRequestHeadersUpdateParams`; `PasswordStoreInterface::AddLogin`
+  takes a `StoredCredential`. MoltNet's profile reaper now waits until the
+  closed window's `Browser` is destroyed before destroying the profile.
+
+### Still to do on the build machine (in order)
+
+1. `./scripts/setup.sh --resync` to move `chromium/src` to 152.0.7977.169.
+2. Refresh the search engines overlay from the synced subproject (this
+   environment can't reach it):
+   `tools/chromium/search_engines_overlay.py chromium/src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json -o src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json`
+   and commit the result.
+3. `scripts/vendor-rust-crates.sh` (adblock and its crates, windows-sys 0.61
+   for Windows; gnrt is the authority on Cargo.lock / BUILD.gn details).
+4. `autoninja ... chrome` and `molt_ai_unittests`; send the error log back.
+5. Manual checks: close the last MoltNet window (profile destroyed, no
+   crash); toolbar look in horizontal and vertical tabs; existing
+   keys.enc / vault.enc / profile.enc / chat history still open after the
+   os_crypt_async move on each platform.
+

@@ -1,0 +1,18 @@
+MoltBrowser patch for third_party/rust/version_check/v0_9/BUILD.gn
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/rust/version_check/v0_9/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/rust/version_check/v0_9/BUILD.gn b/third_party/rust/version_check/v0_9/BUILD.gn
+index be50dff87b3fc59ab3e8a8afac5148a2b3793d46..9d0415710865540f6a9463631c63c362bf5fdeff 100644
+--- a/third_party/rust/version_check/v0_9/BUILD.gn
++++ b/third_party/rust/version_check/v0_9/BUILD.gn
+@@ -36,7 +36,6 @@ cargo_crate("buildrs_support") {
+   # //third_party/rust/chromium_crates_io/Cargo.toml to use
+   # it from first-party code.
+   visibility = [ "//third_party/rust/*" ]
+-  testonly = true
+ 
+   #####################################################################
+   # Tweaking which GN `config`s apply to this target.

@@ -1,37 +1,37 @@
 MoltBrowser patch for chrome/app/skills_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/skills_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/skills_strings.grdp b/chrome/app/skills_strings.grdp
-index 77ec7b8ec847e02b2e4e619e00d414a6c0be6690..f5ac11925381042507c3f0a493f0671a20797403 100644
+index 5ae5ff90c3a4e436d311bab17b2fbef813a0cb71..c369cb681ad445ff3cfa9eb78e9cc4220cf1d4a3 100644
 --- a/chrome/app/skills_strings.grdp
 +++ b/chrome/app/skills_strings.grdp
 @@ -33,7 +33,7 @@
      Manage your custom workflows powered by
    </message>
-   <message name="IDS_SKILLS_SIDEBAR_FOOTER_BRANDING" desc="The branding text 'Gemini in Chrome' displayed in the sidebar footer" translateable="false">
+   <message name="IDS_SKILLS_SIDEBAR_FOOTER_BRANDING" desc="The branding text 'Gemini in Chrome' displayed in the sidebar footer">
 -    Gemini in Chrome
 +    Gemini in MoltBrowser
    </message>
  
    <!-- chrome://skills error page -->
 @@ -41,7 +41,7 @@
-     Skills isn't available
+     Skills aren't available
    </message>
-   <message name="IDS_SKILLS_ERROR_PAGE_DESCRIPTION" desc="Description of the error page that occurs when chrome://skills is not accessible" translateable="false">
+   <message name="IDS_SKILLS_ERROR_PAGE_DESCRIPTION" desc="Description of the error page that occurs when chrome://skills is not accessible because Glic is not enabled">
 -    To use Skills, sign in to Chrome with a Google account that has Gemini in Chrome enabled
 +    To use Skills, sign in to MoltBrowser with a Google account that has Gemini in MoltBrowser enabled
    </message>
-   <message name="IDS_SKILLS_NO_SEARCH_RESULT_TITLE" desc="Title of the page that occurs when chrome://skills has no search results" translateable="false">
-     No search results
-@@ -125,7 +125,7 @@
+   <message name="IDS_SKILLS_DISABLED_ERROR_PAGE_DESCRIPTION" desc="Description of the error page that occurs when chrome://skills is disabled by the settings toggle">
+     The Skills feature is currently disabled. Update your Chrome Settings to get started.
+@@ -137,7 +137,7 @@
      <ph name="MAX_CHARS">$1<ex>20,000</ex></ph> character limit reached
    </message>
-   <message name="IDS_SKILLS_DIALOG_ACCOUNT_INFO" desc="Text for account info in the skills dialog" translateable="false">
+   <message name="IDS_SKILLS_DIALOG_ACCOUNT_INFO" desc="Text for account info in the skills dialog">
 -    Your skills get saved to your Google Account,
 +    Your skills get saved to your MoltBrowser Account,
    </message>
-   <message name="IDS_SKILLS_DIALOG_SAVE_ERROR" desc="Error message for saving a skill" translateable="false">
+   <message name="IDS_SKILLS_DIALOG_SAVE_ERROR" desc="Error message for saving a skill">
      Unable to save. Try again

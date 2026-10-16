@@ -1,64 +1,19 @@
 MoltBrowser patch for components/omnibox/browser/BUILD.gn
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/omnibox/browser/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox/browser/BUILD.gn b/components/omnibox/browser/BUILD.gn
-index f16ae332f28a2afe6c642bf1cf1cbedb4842c0cc..89840fe758753c87aa1123ff907b990adc6f59ff 100644
+index 66b93310a4820db26560b2fb264a008666a701f6..64f9d3f09d2a85bc9fe97121b7c02db378588642 100644
 --- a/components/omnibox/browser/BUILD.gn
 +++ b/components/omnibox/browser/BUILD.gn
-@@ -170,6 +170,8 @@ static_library("browser") {
-     "bookmark_provider.h",
-     "bookmark_scoring_signals_annotator.cc",
-     "bookmark_scoring_signals_annotator.h",
+@@ -177,6 +177,8 @@ static_library("browser") {
+     "actions/omnibox_pedal_provider.h",
+     "actions/tab_switch_action.cc",
+     "actions/tab_switch_action.h",
 +    "ai_prompt_provider.cc",
 +    "ai_prompt_provider.h",
-     "builtin_provider.cc",
-     "builtin_provider.h",
-     "calculator_provider.cc",
-@@ -409,6 +411,11 @@ static_library("browser") {
-     deps += [ ":vector_icons" ]
-   }
- 
-+  # Re-added (matches upstream): build_with_tflite_lib IS a valid GN var
-+  # here, and these impl sources define AutocompleteScoringModelService /
-+  # OnDeviceTailModelService etc. that the (tflite-guarded) callers
-+  # reference. Omitting them broke the chrome.dll link with undefined
-+  # symbols on Windows.
-   if (build_with_tflite_lib) {
-     sources += [
-       "autocomplete_scoring_model_executor.cc",
-@@ -770,14 +777,8 @@ static_library("test_support") {
-     "//ui/gfx",
-   ]
- 
--  if (build_with_tflite_lib) {
--    sources += [
--      "fake_autocomplete_scoring_model_service.cc",
--      "fake_autocomplete_scoring_model_service.h",
--      "fake_on_device_tail_model_service.cc",
--      "fake_on_device_tail_model_service.h",
--    ]
--  }
-+  # NOTE: second build_with_tflite_lib block — same removal reason as
-+  # the one earlier in this file. Upstream Chromium removed the variable.
- 
-   if (toolkit_views) {
-     # Needed to get the TOOLKIT_VIEWS define.
-@@ -952,14 +953,7 @@ source_set("unit_tests") {
-     deps += [ "//chromeos/constants" ]
-   }
- 
--  if (build_with_tflite_lib) {
--    sources += [
--      "autocomplete_scoring_model_executor_unittest.cc",
--      "autocomplete_scoring_model_handler_unittest.cc",
--      "on_device_tail_model_executor_unittest.cc",
--      "on_device_tail_model_service_unittest.cc",
--    ]
--  }
-+  # NOTE: third build_with_tflite_lib block — same removal reason.
- 
-   if (enable_extensions) {
-     deps += [ "//extensions/common:extension_features" ]
+     "aim_eligibility_service.cc",
+     "aim_eligibility_service.h",
+     "answers_cache.cc",

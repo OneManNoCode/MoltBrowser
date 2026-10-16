@@ -1,0 +1,46 @@
+MoltBrowser patch for components/embedder_support/origin_trials/origin_trial_policy_impl.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/components/embedder_support/origin_trials/origin_trial_policy_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/embedder_support/origin_trials/origin_trial_policy_impl.cc b/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
+index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..4503cf74bab224879cdcbe081f8d915f15cdbc62 100644
+--- a/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
++++ b/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
+@@ -12,6 +12,7 @@
+ 
+ #include "base/base64.h"
+ #include "base/command_line.h"
++#include "base/containers/contains.h"
+ #include "base/feature_list.h"
+ #include "base/memory/raw_ref.h"
+ #include "base/strings/string_split.h"
+@@ -24,6 +25,17 @@
+ 
+ namespace embedder_support {
+ 
++namespace {
++
++// MoltBrowser: origin trials that stay off whatever token a site serves.
++// - HTMLInCanvas (drawElementImage, copyElementImageToTexture): renders page
++//   content (text, fonts, form controls) into a WebGPU texture that script
++//   reads back without fingerprinting protection's noise
++//   (docs/FINGERPRINTING.md).
++constexpr std::string_view kMoltDisabledTrials[] = {"HTMLInCanvas"};
++
++}  // namespace
++
+ // This is the default public key used for validating signatures.
+ static const blink::OriginTrialPublicKey kDefaultPublicKey = {
+     0x7c, 0xc4, 0xb8, 0x9a, 0x93, 0xba, 0x6e, 0xe2, 0xd0, 0xfd, 0x03,
+@@ -70,6 +82,9 @@ OriginTrialPolicyImpl::GetPublicKeys() const {
+ }
+ 
+ bool OriginTrialPolicyImpl::IsFeatureDisabled(std::string_view feature) const {
++  if (base::Contains(kMoltDisabledTrials, feature)) {  // MoltBrowser
++    return true;
++  }
+   if (allow_only_deprecation_trials_) {
+     if (!blink::origin_trials::IsDeprecationTrial(feature)) {
+       return true;

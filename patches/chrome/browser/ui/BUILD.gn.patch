@@ -1,19 +1,20 @@
 MoltBrowser patch for chrome/browser/ui/BUILD.gn
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 93fb4d5bcbd9633fd1c3ae4d38cdacfe786df785..8a1697a40c89967cc5606efa3af0d592c06a9c9e 100644
+index 4ecd2c257938e9bf2bc270da28f5fcee68617fe6..e852c0f521f29503fc50d75466d6dc57c159c9ef 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -321,6 +321,14 @@ static_library("ui") {
-     "//chrome/browser/lookalikes",
-     "//chrome/browser/media/router:media_router_feature",
+@@ -567,6 +567,15 @@ static_library("ui") {
      "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
+     "//chrome/browser/metrics",
+     "//chrome/browser/metrics:impl",
 +    "//chrome/browser/molt_ai/anti_rage",
 +    "//chrome/browser/molt_ai/consent",
++    "//chrome/browser/molt_ai/keys:os_crypt",
 +    "//chrome/browser/molt_ai/memory",
 +    "//chrome/browser/molt_ai/ocr",
 +    "//chrome/browser/molt_ai/pdf",
@@ -22,4 +23,4 @@ index 93fb4d5bcbd9633fd1c3ae4d38cdacfe786df785..8a1697a40c89967cc5606efa3af0d592
 +    "//chrome/browser/molt_ai/voice",
      "//chrome/browser/new_tab_page/chrome_colors:generate_chrome_colors_info",
      "//chrome/browser/new_tab_page/chrome_colors:selected_colors_info",
-     "//chrome/browser/obsolete_system",
+     "//chrome/browser/ntp_tiles",

@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/app/media_router_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/media_router_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/media_router_strings.grdp b/chrome/app/media_router_strings.grdp
-index eee1ced9bf2c28c3bddc0055c9381398fcd9c66a..7222bc5f0c282bd028d29c9b728462a2f019f51a 100644
+index 6a79222f596c23b6e2699da720b608424e587aaa..2a65b894465d830fe81834fd4f08f2b7950fdd4a 100644
 --- a/chrome/app/media_router_strings.grdp
 +++ b/chrome/app/media_router_strings.grdp
-@@ -102,7 +102,7 @@
+@@ -93,7 +93,7 @@
      Permission to cast is rejected. Open a help center article in a new tab to learn more.
    </message>
    <message name="IDS_MEDIA_ROUTER_LOCAL_DISCOVERY_PERMISSION_REJECTED_LABEL" desc="The error message including the link to the OS settings page, shown when the browser does not have the permission to connect to devices on the local network.">
@@ -17,7 +17,7 @@ index eee1ced9bf2c28c3bddc0055c9381398fcd9c66a..7222bc5f0c282bd028d29c9b728462a2
    </message>
    <message name="IDS_MEDIA_ROUTER_LOCAL_DISCOVERY_PERMISSION_REJECTED_LINK" desc="Text for the link to the OS settings page allowing useres to turn on the permission. This string will be embedded in a longer sentence that makes up the whole label.">
      System Settings
-@@ -366,7 +366,7 @@
+@@ -346,7 +346,7 @@
      Send debug logs (recommended)
    </message>
    <message name="IDS_MEDIA_ROUTER_FEEDBACK_PRIVACY_DATA_USAGE" desc="Text with details about data usage of details submitted in the feedback page.">

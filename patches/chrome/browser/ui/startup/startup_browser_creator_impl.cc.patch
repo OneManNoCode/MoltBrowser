@@ -1,24 +1,24 @@
 MoltBrowser patch for chrome/browser/ui/startup/startup_browser_creator_impl.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/browser/ui/startup/startup_browser_creator_impl.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/startup/startup_browser_creator_impl.cc b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
-index 607ebe50edf49491d67287df5f191cd99756c18b..84a8c23a8e2e0001a6642b838530f9c73b59ee3f 100644
+index ee1fa51aa3762e99c05ce5d0a8945d39223df595..e64314d6345f9ed463ca67b29b4894011d070185 100644
 --- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
 +++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
-@@ -570,7 +570,8 @@ StartupBrowserCreatorImpl::DetermineStartupTabs(
+@@ -623,7 +623,8 @@ StartupBrowserCreatorImpl::DetermineStartupTabs(
        return {std::move(tabs), launch_result};
      }
  
--    return {StartupTabs({StartupTab(GURL(chrome::kChromeUINewTabURL))}),
+-    return {StartupTabs({StartupTab(chrome::ChromeUINewTabURLAsGURL())}),
 +    // MoltBrowser: Open MoltSearch instead of chrome://newtab
 +    return {StartupTabs({StartupTab(GURL("chrome://molt-home/"))}),
              launch_result};
    }
  
-@@ -702,10 +703,11 @@ Browser* StartupBrowserCreatorImpl::RestoreOrCreateBrowser(
+@@ -760,10 +761,11 @@ Browser* StartupBrowserCreatorImpl::RestoreOrCreateBrowser(
    // OpenTabsInBrowser requires at least one tab be passed. As a fallback to
    // prevent a crash, use the NTP if |tabs| is empty. This could happen if
    // we expected a session restore to happen but it did not occur/succeed.
@@ -26,7 +26,7 @@ index 607ebe50edf49491d67287df5f191cd99756c18b..84a8c23a8e2e0001a6642b838530f9c7
    browser = OpenTabsInBrowser(
        browser, process_startup,
        (tabs.empty()
--           ? StartupTabs({StartupTab(GURL(chrome::kChromeUINewTabURL))})
+-           ? StartupTabs({StartupTab(chrome::ChromeUINewTabURLAsGURL())})
 +           ? StartupTabs({StartupTab(GURL("chrome://molt-home/"))})
             : tabs),
        (behavior == BrowserOpenBehavior::USE_EXISTING_AND_OVERWRITE_ACTIVE_TAB

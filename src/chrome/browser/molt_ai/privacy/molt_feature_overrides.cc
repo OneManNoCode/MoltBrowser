@@ -5,16 +5,32 @@
 
 #include <functional>
 
+#include "base/containers/span.h"
 #include "components/autofill/core/common/autofill_debug_features.h"
+#include "components/omnibox/browser/aim_eligibility_service_features.h"
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/translate/core/browser/translate_ranker_impl.h"
+#include "third_party/blink/public/common/features.h"
 
 namespace molt_ai {
 namespace privacy {
 
+namespace {
+
+void AppendOverrides(
+    base::span<const base::Feature* const> features,
+    base::FeatureList::OverrideState state,
+    std::vector<base::FeatureList::FeatureOverrideInfo>& overrides) {
+  for (const base::Feature* feature : features) {
+    overrides.emplace_back(std::cref(*feature), state);
+  }
+}
+
+}  // namespace
+
 void AppendDefaultFeatureOverrides(
     std::vector<base::FeatureList::FeatureOverrideInfo>& overrides) {
-  const base::Feature* const kDisabledByDefault[] = {
+  static const base::Feature* const kDisabledByDefault[] = {
       // Autofill crowdsourcing. On every http(s) page with a form that has a
       // password field or enough fillable fields, the browser asks
       // content-autofill.googleapis.com for field-type predictions (hashed
@@ -33,17 +49,35 @@ void AppendDefaultFeatureOverrides(
       &translate::kTranslateRankerQuery,
       &translate::kTranslateRankerEnforcement,
 
-      // Google AI Mode entry point in the omnibox. omnibox_features.cc
-      // already defaults it to disabled in MoltBrowser, but the AIMHintText
-      // study in the field trial testing config turns it back on; listing it
-      // here makes that study skip.
-      &omnibox::kAiModeOmniboxEntryPoint,
+      // Google AI Mode entry points in the omnibox. 152 dropped
+      // kAiModeOmniboxEntryPoint; OmniboxFieldTrial's
+      // IsAimOmniboxEntrypointEnabled() now shows the AI Mode button
+      //  * for a Google default search engine when AimEligibilityService
+      //    says the user is eligible, which needs kAimEnabled (the AIM kill
+      //    switch, which also gates every other AIM surface), and
+      //  * for any other engine when kAim3pEntrypoint is on and kAimEnabled
+      //    plus policy allow it.
+      // MoltBrowser defaults both features to disabled in its overlay
+      // (aim_eligibility_service_features.cc, omnibox_features.cc), but the
+      // "Aim3pEntrypoint" study in the field trial testing config turns
+      // kAim3pEntrypoint back on for desktop; listing both here makes any
+      // study that touches them skip.
+      &omnibox::kAimEnabled,
+      &omnibox::kAim3pEntrypoint,
   };
+  AppendOverrides(kDisabledByDefault,
+                  base::FeatureList::OVERRIDE_DISABLE_FEATURE, overrides);
 
-  for (const base::Feature* feature : kDisabledByDefault) {
-    overrides.emplace_back(std::cref(*feature),
-                           base::FeatureList::OVERRIDE_DISABLE_FEATURE);
-  }
+  static const base::Feature* const kEnabledByDefault[] = {
+      // Global Privacy Control: the `Sec-GPC: 1` request header (browser-
+      // and renderer-initiated requests) and navigator.globalPrivacyControl.
+      // Chromium 152 implements both behind this flag, off until Chrome adds
+      // a setting; MoltBrowser sends the signal by default, as Brave does.
+      // chrome://flags (#enable-global-privacy-control) can still turn it off.
+      &blink::features::kGlobalPrivacyControlForce,
+  };
+  AppendOverrides(kEnabledByDefault, base::FeatureList::OVERRIDE_ENABLE_FEATURE,
+                  overrides);
 }
 
 }  // namespace privacy

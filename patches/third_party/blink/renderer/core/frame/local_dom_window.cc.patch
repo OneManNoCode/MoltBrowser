@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/frame/local_dom_window.cc
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/third_party/blink/renderer/core/frame/local_dom_window.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index 3fbc88748183fee47003947a9c2c3f9c2d768a59..d5c3e4238eca99e8e630788712b3295594a129c6 100644
+index 511fce6b8fada409373d828cf1cb1a95421dd97b..4242f87c25bd8d7d8106fbbbe10d1c503e5b2b08 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -126,6 +126,7 @@
+@@ -123,6 +123,7 @@
  #include "third_party/blink/renderer/core/layout/layout_view.h"
  #include "third_party/blink/renderer/core/loader/document_loader.h"
  #include "third_party/blink/renderer/core/loader/frame_load_request.h"
@@ -16,7 +16,7 @@ index 3fbc88748183fee47003947a9c2c3f9c2d768a59..d5c3e4238eca99e8e630788712b32955
  #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
  #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
  #include "third_party/blink/renderer/core/page/chrome_client.h"
-@@ -1581,6 +1582,10 @@ int LocalDOMWindow::outerHeight() const {
+@@ -1678,6 +1679,10 @@ int LocalDOMWindow::outerHeight() const {
    if (frame->IsInFencedFrameTree()) {
      return innerHeight();
    }
@@ -26,8 +26,8 @@ index 3fbc88748183fee47003947a9c2c3f9c2d768a59..d5c3e4238eca99e8e630788712b32955
 +  }
  
    Page* page = frame->GetPage();
-   if (!page)
-@@ -1606,6 +1611,10 @@ int LocalDOMWindow::outerWidth() const {
+   if (!page) {
+@@ -1710,6 +1715,10 @@ int LocalDOMWindow::outerWidth() const {
    if (frame->IsInFencedFrameTree()) {
      return innerWidth();
    }
@@ -37,26 +37,26 @@ index 3fbc88748183fee47003947a9c2c3f9c2d768a59..d5c3e4238eca99e8e630788712b32955
 +  }
  
    Page* page = frame->GetPage();
-   if (!page)
-@@ -1671,6 +1680,10 @@ int LocalDOMWindow::screenX() const {
-   LocalFrame* frame = GetFrame();
-   if (!frame)
+   if (!page) {
+@@ -1786,6 +1795,10 @@ int LocalDOMWindow::screenX() const {
+   if (!frame) {
      return 0;
+   }
 +  // MoltBrowser: MoltNet windows don't reveal where they are on screen.
 +  if (molt_fingerprinting::IsUniform()) {
 +    return 0;
 +  }
  
    Page* page = frame->GetPage();
-   if (!page)
-@@ -1689,6 +1702,10 @@ int LocalDOMWindow::screenY() const {
-   LocalFrame* frame = GetFrame();
-   if (!frame)
+   if (!page) {
+@@ -1811,6 +1824,10 @@ int LocalDOMWindow::screenY() const {
+   if (!frame) {
      return 0;
+   }
 +  // MoltBrowser: MoltNet windows don't reveal where they are on screen.
 +  if (molt_fingerprinting::IsUniform()) {
 +    return 0;
 +  }
  
    Page* page = frame->GetPage();
-   if (!page)
+   if (!page) {

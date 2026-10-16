@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/BUILD.gn
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/third_party/blink/renderer/core/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 9b399ad326a19af7fd5e717bf8940ec562338f6d..1b17f92034a7775d406f694b0913a29420d310eb 100644
+index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..b74efe61a63de2d4045180a6942509c158da833b 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
-@@ -56,6 +56,7 @@ import("//third_party/blink/renderer/core/mathml/build.gni")
+@@ -57,6 +57,7 @@ import("//third_party/blink/renderer/core/mathml/build.gni")
  import("//third_party/blink/renderer/core/messaging/build.gni")
  import("//third_party/blink/renderer/core/mobile_metrics/build.gni")
  import("//third_party/blink/renderer/core/mojo/build.gni")
@@ -16,7 +16,7 @@ index 9b399ad326a19af7fd5e717bf8940ec562338f6d..1b17f92034a7775d406f694b0913a294
  import("//third_party/blink/renderer/core/navigation_api/build.gni")
  import("//third_party/blink/renderer/core/offscreencanvas/build.gni")
  import("//third_party/blink/renderer/core/origin_trials/build.gni")
-@@ -326,6 +327,12 @@ component("core") {
+@@ -328,6 +329,12 @@ component("core") {
    sources +=
        rebase_path(blink_core_sources_mobile_metrics, "", "mobile_metrics")
    sources += rebase_path(blink_core_sources_mojo, "", "mojo")
@@ -39,7 +39,7 @@ index 9b399ad326a19af7fd5e717bf8940ec562338f6d..1b17f92034a7775d406f694b0913a294
      "//third_party/rust/xml/v1:lib",
      "//tools/v8_context_snapshot:buildflags",
      "//ui/base/cursor/mojom:cursor_type_blink",
-@@ -1505,6 +1515,9 @@ source_set("unit_tests") {
+@@ -1531,6 +1541,9 @@ source_set("unit_tests") {
    sources += rebase_path(blink_core_tests_mathml, "", "mathml")
    sources += rebase_path(blink_core_tests_messaging, "", "messaging")
    sources += rebase_path(blink_core_tests_mobile_metrics, "", "mobile_metrics")
@@ -49,7 +49,7 @@ index 9b399ad326a19af7fd5e717bf8940ec562338f6d..1b17f92034a7775d406f694b0913a294
    sources += rebase_path(blink_core_tests_navigation_api, "", "navigation_api")
    sources += rebase_path(blink_core_tests_origin_trials, "", "origin_trials")
    sources += rebase_path(blink_core_tests_page, "", "page")
-@@ -1579,6 +1592,9 @@ source_set("unit_tests") {
+@@ -1606,6 +1619,9 @@ source_set("unit_tests") {
      "//third_party/blink/renderer/core",
      "//third_party/blink/renderer/core:testing",
      "//third_party/blink/renderer/core:unit_test_support",

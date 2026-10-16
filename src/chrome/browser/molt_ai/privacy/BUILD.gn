@@ -42,8 +42,10 @@ source_set("feature_overrides") {
 
   deps = [
     "//components/autofill/core/common:features",
+    "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
     "//components/translate/core/browser",
+    "//third_party/blink/public/common",
   ]
 
   public_deps = [ "//base" ]
@@ -58,8 +60,10 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//components/autofill/core/common:features",
+    "//components/omnibox/browser:aim_eligibility_service_features",
     "//components/omnibox/common",
     "//components/translate/core/browser",
     "//testing/gtest",
+    "//third_party/blink/public/common",
   ]
 }

@@ -13,7 +13,6 @@
 #include "chrome/browser/obsolete_system/obsolete_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/automation_infobar_delegate.h"
@@ -21,6 +20,7 @@
 #include "chrome/browser/ui/startup/bidding_and_auction_consented_debugging_infobar_delegate.h"
 // MoltBrowser: removed google_api_keys_infobar_delegate (not shown to users)
 #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
+#include "chrome/browser/ui/startup/oscryptasync_availability_infobar_delegate.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/startup/startup_types.h"
 #include "chrome/browser/ui/ui_features.h"
@@ -111,17 +111,16 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
                             bool is_web_app,
                             bool is_post_crash_launch,
                             bool was_restarted) {
-  if (!browser || !profile ||
-      browser->GetFeatures().tab_strip_model()->count() == 0) {
+  if (!browser || !profile) {
+    return;
+  }
+  auto* web_contents = browser->GetTabStripModel()->GetActiveWebContents();
+  if (!web_contents) {
     return;
   }
 
   // Show the Automation info bar unless it has been disabled by policy.
   bool show_bad_flags_security_warnings = ShouldShowBadFlagsSecurityWarnings();
-
-  content::WebContents* web_contents =
-      browser->GetFeatures().tab_strip_model()->GetActiveWebContents();
-  DCHECK(web_contents);
 
   if (show_bad_flags_security_warnings) {
 #if BUILDFLAG(CHROME_FOR_TESTING)
@@ -146,7 +145,7 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
     return;
   }
 
-  // Web apps should not display the session restore bubble (crbug.com/1264121)
+  // Web apps should not display the session restore bubble (crbug.com/40800614)
   const bool should_display_bubble =
       !is_web_app && HasPendingUncleanExit(browser->GetProfile());
   base::UmaHistogramBoolean("Startup.CrashBubbleShown", should_display_bubble);
@@ -196,6 +195,8 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
     }
   }
 
+  OSCryptAsyncAvailabilityInfoBarDelegate::MaybeCreate(browser);
+
 #if BUILDFLAG(IS_WIN)
   if (auto* startup_launch_manager =
           StartupLaunchManager::From(g_browser_process)) {
@@ -231,11 +232,7 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
   // The default browser prompt should only be shown after the first run.
   if (is_first_run == chrome::startup::IsFirstRun::kNo) {
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-    const bool pin_feature_enabled =
-        base::FeatureList::IsEnabled(features::kOfferPinToTaskbarInfoBar);
-
-    if (pin_feature_enabled &&
-        base::FeatureList::IsEnabled(features::kSeparateDefaultAndPinPrompt)) {
+    if (base::FeatureList::IsEnabled(features::kSeparateDefaultAndPinPrompt)) {
       const int seed = features::kSeparateDefaultAndPinPromptRandSeed.Get();
       const int choice = (seed > 0) ? (seed % 2) : base::RandIntInclusive(0, 1);
 
@@ -264,11 +261,9 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
             &pdf::infobar::PdfInfoBarController::MaybeShowInfoBarAtStartup,
             browser->GetWeakPtr());
       }
-      if (pin_feature_enabled) {
-        callback = base::BindOnce(
-            &default_browser::PinInfoBarController::MaybeShowInfoBarForBrowser,
-            browser->GetWeakPtr(), std::move(callback));
-      }
+      callback = base::BindOnce(
+          &default_browser::PinInfoBarController::MaybeShowInfoBarForBrowser,
+          browser->GetWeakPtr(), std::move(callback));
       ShowDefaultBrowserPrompt(profile, std::move(callback));
     }
 #else

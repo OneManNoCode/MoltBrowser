@@ -18,7 +18,7 @@
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "components/os_crypt/sync/os_crypt.h"
+#include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
 
 namespace molt_ai {
 namespace memory {
@@ -81,13 +81,16 @@ bool ConversationStore::ReadDecrypted(const base::FilePath& path,
   std::string contents;
   if (!base::ReadFileToString(path, &contents)) return false;
   if (contents.compare(0, kMagicLen, kMagic) != 0) return false;
-  return OSCrypt::DecryptString(contents.substr(kMagicLen), json);
+  return molt_os_crypt::DecryptString(contents.substr(kMagicLen), json);
 }
 
 bool ConversationStore::WriteEncrypted(const base::FilePath& path,
                                        const std::string& json) const {
+  // Any key will do here, the hard-coded Linux one included (unlike the
+  // secret stores), but never no key: without one, nothing is written.
   std::string ciphertext;
-  if (!OSCrypt::EncryptString(json, &ciphertext)) {
+  if (json.empty() || !molt_os_crypt::EncryptString(json, &ciphertext) ||
+      ciphertext.empty()) {
     LOG(ERROR) << "[MoltAI] conversation not saved: encryption unavailable";
     return false;
   }

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -25,6 +26,7 @@
 #include "cc/paint/paint_canvas.h"
 #include "cc/paint/paint_flags.h"
 #include "cc/paint/paint_image.h"
+#include "cc/paint/record_paint_canvas.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
@@ -32,23 +34,23 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_canvas_text_align.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_canvas_text_baseline.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_text_cluster_options.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_2d_gpu_transfer_option.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_direction.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_font_kerning.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_font_stretch.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_font_variant_caps.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_text_rendering.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texture_format.h"
 #include "third_party/blink/renderer/core/css/properties/computed_style_utils.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/node.h"
-#include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
+#include "third_party/blink/renderer/core/geometry/dom_matrix.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_font_cache.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
+#include "third_party/blink/renderer/core/html/canvas/element_image.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 #include "third_party/blink/renderer/core/html/canvas/text_cluster.h"
@@ -56,6 +58,7 @@
 #include "third_party/blink/renderer/core/html/canvas/unique_font_selector.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d_state.h"
@@ -74,6 +77,8 @@
 #include "third_party/blink/renderer/platform/geometry/path.h"
 #include "third_party/blink/renderer/platform/graphics/bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/blend_mode.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_2d_bitmap_provider.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_2d_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_deferred_paint_record.h"
 #include "third_party/blink/renderer/platform/graphics/flush_reason.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
@@ -82,10 +87,12 @@
 #include "third_party/blink/renderer/platform/graphics/image.h"
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_image.h"
+#include "third_party/blink/renderer/platform/graphics/scoped_raster_timer.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/video_frame_image_util.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/layout_locale.h"
@@ -98,6 +105,7 @@
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "ui/gfx/geometry/skia_conversions.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 // Including "base/time/time.h" triggers a bug in IWYU.
 // https://github.com/include-what-you-use/include-what-you-use/issues/1122
@@ -109,18 +117,6 @@ class MemoryManagedPaintCanvas;
 
 namespace {
 
-wgpu::TextureFormat AsDawnType(const viz::SharedImageFormat& format) {
-  // NOTE: Canvas2D can be only RGBA_8888, BGRA_8888, or F16.
-  if (format == viz::SinglePlaneFormat::kRGBA_8888) {
-    return wgpu::TextureFormat::RGBA8Unorm;
-  } else if (format == viz::SinglePlaneFormat::kBGRA_8888) {
-    return wgpu::TextureFormat::BGRA8Unorm;
-  } else if (format == viz::SinglePlaneFormat::kRGBA_F16) {
-    return wgpu::TextureFormat::RGBA16Float;
-  } else {
-    return wgpu::TextureFormat::Undefined;
-  }
-}
 
 bool IsContextProviderValid() {
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper =
@@ -151,21 +147,14 @@ BaseRenderingContext2D::BaseRenderingContext2D(
           task_runner,
           this,
           &BaseRenderingContext2D::TryRestoreContextEvent),
-      color_params_(attrs.color_space, attrs.pixel_format, attrs.alpha) {}
+      color_params_(attrs.color_space,
+                    attrs.hdr_metadata,
+                    attrs.pixel_format,
+                    attrs.alpha) {}
 
 void BaseRenderingContext2D::ResetInternal() {
   Canvas2DRecorderContext::ResetInternal();
 
-  // If a WebGPU transfer texture exists, we must destroy it immediately. We
-  // can't allow it to continue to exist, as it would be subject to Javascript
-  // garbage-collection and could vanish any time Oilpan runs a sweep. Normally
-  // it's okay for Oilpan to delete GPUTextures, since Dawn maintains its own
-  // ownership graph of GPU resources, but in our case, destruction of the
-  // GPUTexture will also result in destruction of the associated SharedImage.
-  if (webgpu_access_texture_) {
-    webgpu_access_texture_->destroy();
-    webgpu_access_texture_ = nullptr;
-  }
 }
 
 CanvasRenderingContext2DSettings* BaseRenderingContext2D::getContextAttributes()
@@ -174,15 +163,13 @@ CanvasRenderingContext2DSettings* BaseRenderingContext2D::getContextAttributes()
 }
 
 void BaseRenderingContext2D::DispatchContextLostEvent(TimerBase*) {
-  // If `need_dispatch_context_restored_` is `true`, the context has been
-  // restored already (e.g. by fixing a `kInvalidCanvasSize` context loss), but
-  // the oncontextrestored event was postponed until the oncontextlost event was
-  // dispatched first. This is happening now, so irrespective of how this
-  // function returns, `need_dispatch_context_restored_` should be cleared.
-  absl::Cleanup cleanup = [this] { need_dispatch_context_restored_ = false; };
+  CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
+  if (!host) {
+    return;
+  }
 
   Event* event = Event::CreateCancelable(event_type_names::kContextlost);
-  GetCanvasRenderingContextHost()->HostDispatchEvent(event);
+  host->HostDispatchEvent(event);
 
   UseCounter::Count(GetTopExecutionContext(),
                     WebFeature::kCanvasRenderingContext2DContextLostEvent);
@@ -194,7 +181,8 @@ void BaseRenderingContext2D::DispatchContextLostEvent(TimerBase*) {
     return;
   }
 
-  if (need_dispatch_context_restored_) {
+  if (context_lost_mode_ == CanvasRenderingContext::kInvalidCanvasSize &&
+      host->IsValidImageSize()) {
     // The context is already restored (an invalid canvas size was probably
     // fixed). We can send the restored event right away.
     dispatch_context_restored_event_timer_.StartOneShot(base::TimeDelta(),
@@ -268,7 +256,7 @@ void BaseRenderingContext2D::TryRestoreContextEvent(TimerBase* timer) {
       (!SharedGpuContext::IsGpuCompositingEnabled() &&
        SharedGpuContext::SharedImageInterfaceProvider())) {
     RestoreGuard context_is_being_restored(*this);
-    if (GetOrCreateResourceProvider()) {
+    if (InitializeResourceProvider()) {
       try_restore_context_event_timer_.Stop();
       DispatchContextRestoredEvent(nullptr);
       return;
@@ -290,18 +278,21 @@ void BaseRenderingContext2D::RestoreFromInvalidSizeIfNeeded() {
       !host) {
     return;
   }
-  DCHECK(!GetResourceProvider());
 
   if (host->IsValidImageSize()) {
-    if (dispatch_context_lost_event_timer_.IsActive()) {
-      // An oncontextlost event is still pending. We can't send the
-      // oncontextrestored right away because the oncontextlost callback could
-      // choose to prevent restoration. Thus, we need to delay queuing the
-      // restored event to after the lost event completed.
-      need_dispatch_context_restored_ = true;
-    } else {
+    // The size was restored. Fire a contextrestored event, but only if there's
+    // no pending contextlost. contextlost needs to run first and it will take
+    // care of running contextrestored if the size is still valid at that point.
+    if (!dispatch_context_lost_event_timer_.IsActive()) {
       dispatch_context_restored_event_timer_.StartOneShot(base::TimeDelta(),
                                                           FROM_HERE);
+    }
+  } else {
+    // The canvas was given another invalid size. Abort any pending
+    // contextrestored event, these would have to wait until the canvas is given
+    // a valid size.
+    if (dispatch_context_restored_event_timer_.IsActive()) {
+      dispatch_context_restored_event_timer_.Stop();
     }
   }
 }
@@ -605,7 +596,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
   // WritePixels (called by PutByteArray) requires that the source and
   // destination pixel formats have the same bytes per pixel.
   SkColorType dest_color_type =
-      viz::ToClosestSkColorType(GetSharedImageFormat());
+      viz::ToClosestSkColorType(color_params_.GetSharedImageFormat());
   if (SkColorTypeBytesPerPixel(dest_color_type) !=
       SkColorTypeBytesPerPixel(data_pixmap.colorType())) {
     SkImageInfo converted_info =
@@ -621,16 +612,14 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
 
     PutByteArray(converted_bitmap.pixmap(), source_rect, dest_offset);
     if (GetPaintCanvas()) {
-      WillDraw(gfx::RectToSkIRect(dest_rect),
-               CanvasPerformanceMonitor::DrawType::kImageData);
+      WillDraw(dest_rect, CanvasPerformanceMonitor::DrawType::kImageData);
     }
     return;
   }
 
   PutByteArray(data_pixmap, source_rect, dest_offset);
   if (GetPaintCanvas()) {
-    WillDraw(gfx::RectToSkIRect(dest_rect),
-             CanvasPerformanceMonitor::DrawType::kImageData);
+    WillDraw(dest_rect, CanvasPerformanceMonitor::DrawType::kImageData);
   }
 }
 
@@ -733,19 +722,8 @@ void BaseRenderingContext2D::Trace(Visitor* visitor) const {
   visitor->Trace(dispatch_context_lost_event_timer_);
   visitor->Trace(dispatch_context_restored_event_timer_);
   visitor->Trace(try_restore_context_event_timer_);
-  visitor->Trace(webgpu_access_texture_);
   CanvasRenderingContext::Trace(visitor);
   Canvas2DRecorderContext::Trace(visitor);
-}
-
-bool BaseRenderingContext2D::Is2DCanvasAccelerated() const {
-  if (IsHibernating()) {
-    return false;
-  }
-
-  auto* resource_provider = GetResourceProvider();
-  return resource_provider ? resource_provider->IsAccelerated()
-                           : Host()->ShouldTryToUseGpuRaster();
 }
 
 void BaseRenderingContext2D::RestoreCanvasMatrixClipStack(
@@ -757,20 +735,52 @@ void BaseRenderingContext2D::Reset() {
   ResetInternal();
 }
 
-scoped_refptr<StaticBitmapImage>
-BaseRenderingContext2D::PaintRenderingResultsToSnapshot(
-    SourceDrawingBuffer source_buffer) {
-  if (!IsResourceProviderValid()) {
-    return nullptr;
+std::optional<cc::PaintRecord> BaseRenderingContext2D::FlushCanvasInternal(
+    Canvas2DResourceProvider* shared_image_provider,
+    Canvas2DBitmapProvider* bitmap_provider,
+    FlushReason reason) {
+  MemoryManagedPaintRecorder* recorder = nullptr;
+  if (shared_image_provider) {
+    recorder = &shared_image_provider->Recorder();
+  } else if (bitmap_provider) {
+    recorder = &bitmap_provider->Recorder();
+  }
+  if (!recorder || !recorder->HasReleasableDrawOps()) {
+    return std::nullopt;
   }
 
-  CanvasResourceProvider* provider = GetResourceProvider();
-  provider->FlushCanvas();
-  return provider->Snapshot();
-}
-
-bool BaseRenderingContext2D::IsResourceProviderValid() {
-  return GetResourceProvider() && GetResourceProvider()->IsValid();
+  cc::PaintRecord recording = recorder->ReleaseMainRecording();
+  bool want_to_print = (Host() && Host()->IsPrinting()) ||
+                       reason == FlushReason::kPrinting ||
+                       reason == FlushReason::kCanvasPushFrameWhilePrinting;
+  if (shared_image_provider) {
+    ScopedRasterTimer timer(shared_image_provider->IsAccelerated()
+                                ? shared_image_provider->RasterInterface()
+                                : nullptr,
+                            *shared_image_provider);
+    if (want_to_print && shared_image_provider->clear_frame()) {
+      shared_image_provider->SetLastRecording(recording);
+    } else {
+      shared_image_provider->ClearLastRecording();
+    }
+    shared_image_provider->set_clear_frame(false);
+    shared_image_provider->RasterRecord(recording);
+    shared_image_provider->ReleaseImageProviderImages();
+  } else if (bitmap_provider) {
+    ScopedRasterTimer timer(nullptr, *bitmap_provider);
+    if (want_to_print && bitmap_provider->clear_frame()) {
+      bitmap_provider->SetLastRecording(recording);
+    } else {
+      bitmap_provider->ClearLastRecording();
+    }
+    bitmap_provider->set_clear_frame(false);
+    bitmap_provider->RasterRecord(recording);
+    bitmap_provider->ReleaseImageProviderImages();
+  }
+  if (Host()) {
+    Host()->DidFlush();
+  }
+  return recording;
 }
 
 void BaseRenderingContext2D::WillUseCurrentFont() const {
@@ -1093,6 +1103,31 @@ void BaseRenderingContext2D::DrawTextInternal(
 
   location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
 
+  if (host && host->ShouldCaptureRenderedText()) {
+    gfx::RectF exact_bounds = bounds;
+    // If the text is scaled horizontally to fit maxWidth, scale the bounding
+    // box by the same factor.
+    if (use_max_width) {
+      float scale_x = width / font_width;
+      exact_bounds.set_x(exact_bounds.x() * scale_x);
+      exact_bounds.set_width(exact_bounds.width() * scale_x);
+    }
+
+    // Offset the bounding box to the actual draw location.
+    exact_bounds.Offset(location.x(), location.y());
+
+    // Inflate the bounding box to account for stroke width if we are stroking.
+    if (paint_type == CanvasRenderingContext2DState::kStrokePaintType) {
+      InflateStrokeRect(exact_bounds);
+    }
+
+    // Map the bounds to the canvas coordinate system and record the text.
+    exact_bounds = state.GetTransform().MapRect(exact_bounds);
+    host->RecordRenderedText(text.substr(run_start, run_end - run_start),
+                             exact_bounds,
+                             font_data->GetFontMetrics().FloatHeight());
+  }
+
   bounds.Offset(location.x(), location.y());
   if (paint_type == CanvasRenderingContext2DState::kStrokePaintType) {
     InflateStrokeRect(bounds);
@@ -1319,233 +1354,268 @@ void BaseRenderingContext2D::setFontVariantCaps(
 UniqueFontSelector* BaseRenderingContext2D::GetFontSelector() const {
   return nullptr;
 }
-
-V8GPUTextureFormat BaseRenderingContext2D::getTextureFormat() const {
-  return FromDawnEnum(AsDawnType(GetSharedImageFormat()));
-}
-
-GPUTexture* BaseRenderingContext2D::transferToGPUTexture(
-    const Canvas2dGPUTransferOption* access_options,
-    ExceptionState& exception_state) {
-  if (!OriginClean()) {
-    exception_state.ThrowSecurityError(
-        "The canvas has been tainted by cross-origin data.");
-    return nullptr;
-  }
-
-  blink::GPUDevice* blink_device = access_options->getDeviceOr(nullptr);
-  if (!blink_device) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "GPUDevice cannot be null.");
-    return nullptr;
-  }
-
-  // Verify that we are not inside a canvas layer.
-  if (layer_count_ > 0) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "A layer is currently active.");
-    return nullptr;
-  }
-
-  // Verify that the usage flags are supported.
-  constexpr wgpu::TextureUsage kSupportedUsageFlags =
-      wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst |
-      wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment;
-
-  // If `transferToGPUTexture` is called twice without an intervening call to
-  // `transferBackFromGPUTexture`, the semantics are that the current ongoing
-  // transfer should be discarded and the new transfer given the 2D canvas in
-  // its current state (defined to be blank post-initiation of the first
-  // transfer but then incorporating any canvas 2D operations that have
-  // subsequently occurred on the canvas). Implement that semantics here.
-  // Note that the canvas will have been made blank by the removal of the
-  // CanvasResourceProvider at the initiation of the first transfer but will
-  // then incorporate any canvas 2D operations that have subsequently occurred
-  // on the canvas via the usage of the CanvasResourceProvider that those
-  // operations would have caused to be created as the source for the new
-  // transfer below.
-  if (webgpu_access_texture_) {
-    webgpu_access_texture_->destroy();
-    webgpu_access_texture_ = nullptr;
-    resource_provider_from_webgpu_access_.reset();
-  }
-
-  wgpu::TextureUsage tex_usage =
-      AsDawnFlags<wgpu::TextureUsage>(access_options->usage());
-  if (tex_usage & ~kSupportedUsageFlags) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "Usage flags are not supported.");
-    return nullptr;
-  }
-
-  // Prepare to flush the canvas to a WebGPU texture.
-  FinalizeFrame();
-
-  // We will need to access the canvas' resource provider.
-  CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
-  if (!host) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "Unable to access canvas image.");
-    return nullptr;
-  }
-  host->SetTransferToGPUTextureWasInvoked();
-
-  // Ensure that the canvas host lives on the GPU. This call is a no-op if the
-  // host is already accelerated.
-  // TODO(crbug.com/340911120): if the user requested WillReadFrequently, do we
-  // want to behave differently here?
-  EnableAccelerationIfPossible();
-
-  // A texture needs to exist on the GPU. If we aren't able to create an
-  // accelerated SharedImage provider, we won't be able to transfer the canvas.
-  // In that case, WebGPU access is not possible.
-  Canvas2DResourceProviderSharedImage* provider =
-      GetOrCreateResourceProvider()->As2DSharedImageProvider();
-  if (!provider || !provider->IsAccelerated()) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "Unable to transfer canvas to GPU.");
-    return nullptr;
-  }
-
-  // Get the SharedImage backing this canvas resource for transfer to WebGPU.
-  // This call will ensure that a copy occurs if needed for CopyOnWrite or for
-  // creation of a SharedImage with WebGPU usage and will end the canvas access.
-  gpu::SyncToken canvas_access_sync_token;
-  bool performed_copy = false;
-  scoped_refptr<gpu::ClientSharedImage> client_si =
-      provider->GetBackingClientSharedImageForTransferToWebGPU(
-          canvas_access_sync_token, performed_copy);
-  if (access_options->requireZeroCopy() && performed_copy) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kInvalidStateError,
-        "Transferring canvas to GPU was not zero-copy.");
-    return nullptr;
-  }
-
-  // If the backing SharedImage is not available (e.g., because the GPU context
-  // has been lost), zero-copy transfer is not possible.
-  if (!client_si) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "Unable to transfer canvas to GPU.");
-    return nullptr;
-  }
-
-  wgpu::TextureFormat dawn_format = AsDawnType(client_si->format());
-  wgpu::TextureDescriptor desc = {
-      .usage = tex_usage,
-      .size = {base::checked_cast<uint32_t>(client_si->size().width()),
-               base::checked_cast<uint32_t>(client_si->size().height())},
-      .format = dawn_format,
-  };
-
-  // Create a WebGPU texture backed by the resource's SharedImage.
-  scoped_refptr<WebGPUMailboxTexture> texture =
-      WebGPUMailboxTexture::FromExistingSharedImage(
-          blink_device->GetDawnControlClient(), blink_device->GetHandle(), desc,
-          client_si,
-          // Ensure that WebGPU waits for the 2D canvas service-side operations
-          // on this resource to complete.
-          canvas_access_sync_token);
-
-  webgpu_access_texture_ = MakeGarbageCollected<GPUTexture>(
-      blink_device, dawn_format, tex_usage, std::move(texture),
-      access_options->getLabelOr(String()));
-
-  // We take away the canvas' resource provider here, which will cause the
-  // canvas to be treated as a brand new surface if additional draws occur.
-  // It also gives us a mechanism to detect post-transfer-out draws, which is
-  // used in `transferBackFromWebGPU` to raise an exception.
-  auto owned_provider = ReplaceResourceProvider(nullptr);
-
-  // Note: This must be a CRPSI since this method would have bailed out earlier
-  // otherwise.
-  resource_provider_from_webgpu_access_ =
-      base::WrapUnique<Canvas2DResourceProviderSharedImage>(
-          owned_provider.release()->As2DSharedImageProvider());
-
-  // The user isn't obligated to ever transfer back, which means this resource
-  // provider might stick around for while. Jettison any unnecessary resources.
-  resource_provider_from_webgpu_access_->ClearUnusedResources();
-
-  WillDraw(SkIRect::MakeXYWH(0, 0, Width(), Height()),
-           CanvasPerformanceMonitor::DrawType::kOther);
-
-  return webgpu_access_texture_;
-}
-
-void BaseRenderingContext2D::transferBackFromGPUTexture(
-    ExceptionState& exception_state) {
-  // If the context is lost or doesn't exist, this call should be a no-op.
-  // We don't want to throw an exception or attempt any changes if
-  // `transferBackFromWebGPU` is called during teardown.
-  CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
-  if (!host || isContextLost()) [[unlikely]] {
-    return;
-  }
-
-  // Prevent unbalanced calls to transferBackFromGPUTexture without an earlier
-  // call to transferToGPUTexture.
-  if (!webgpu_access_texture_ || !resource_provider_from_webgpu_access_) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kInvalidStateError,
-        "This canvas is not currently in use by WebGPU.");
-    webgpu_access_texture_ = nullptr;
-    resource_provider_from_webgpu_access_ = nullptr;
-    return;
-  }
-
-  // If this canvas already has a resource provider, this means that drawing has
-  // occurred after `transferToWebGPU`. We disallow transferring back in this
-  // case, and raise an exception instead.
-  if (GetResourceProvider()) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kInvalidStateError,
-        "The canvas was touched after transferToGPUTexture.");
-    webgpu_access_texture_ = nullptr;
-    resource_provider_from_webgpu_access_ = nullptr;
-    return;
-  }
-
-  // If the caller explicitly destroyed the WebGPU access texture, there is
-  // nothing to transfer.
-  if (webgpu_access_texture_->IsDestroyed()) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "The texture has been destroyed.");
-    webgpu_access_texture_ = nullptr;
-    resource_provider_from_webgpu_access_ = nullptr;
-    return;
-  }
-
-  // Restore the canvas' resource provider back onto the canvas host,
-  // surrendering our temporary ownership of the provider.
-  Canvas2DResourceProviderSharedImage* resource_provider =
-      resource_provider_from_webgpu_access_.get();
-  ReplaceResourceProvider(std::move(resource_provider_from_webgpu_access_));
-  resource_provider->SetDelegate(host);
-
-  // Disassociate the WebGPU texture from the SharedImage to end its
-  // SharedImage access.
-  gpu::SyncToken webgpu_completion_sync_token =
-      webgpu_access_texture_->GetMailboxTexture()->Dissociate();
-
-  // Signal to the resource provider that the transfer to WebGPU has completed
-  // to ensure that it waits on the WebGPU service-side operations to complete
-  // before any further canvas operations occur.
-  resource_provider->TransferBackFromWebGPU(webgpu_completion_sync_token);
-
-  // Destroy the WebGPU texture to prevent it from being used after
-  // `transferBackFromGPUTexture`.
-  webgpu_access_texture_->destroy();
-
-  // We are finished with the WebGPU texture and its associated device.
-  webgpu_access_texture_ = nullptr;
-
-  WillDraw(SkIRect::MakeXYWH(0, 0, Width(), Height()),
-           CanvasPerformanceMonitor::DrawType::kOther);
-}
-
 int BaseRenderingContext2D::LayerCount() const {
   return Canvas2DRecorderContext::LayerCount();
+}
+
+DOMMatrix* BaseRenderingContext2D::drawElementImage(
+    const V8UnionElementOrElementImage* element,
+    double dx,
+    double dy,
+    ExceptionState& exception_state) {
+  return DrawElementInternal(
+      element,
+      /*sx*/ std::nullopt, /*sy*/ std::nullopt,
+      /*swidth*/ std::nullopt, /*sheight*/ std::nullopt, dx, dy,
+      /*dwidth*/ std::nullopt, /*dheight*/ std::nullopt, exception_state);
+}
+
+DOMMatrix* BaseRenderingContext2D::drawElementImage(
+    const V8UnionElementOrElementImage* element,
+    double dx,
+    double dy,
+    double dwidth,
+    double dheight,
+    ExceptionState& exception_state) {
+  return DrawElementInternal(element,
+                             /*sx*/ std::nullopt, /*sy*/ std::nullopt,
+                             /*swidth*/ std::nullopt, /*sheight*/ std::nullopt,
+                             dx, dy, dwidth, dheight, exception_state);
+}
+
+DOMMatrix* BaseRenderingContext2D::drawElementImage(
+    const V8UnionElementOrElementImage* element,
+    double sx,
+    double sy,
+    double swidth,
+    double sheight,
+    double dx,
+    double dy,
+    ExceptionState& exception_state) {
+  return DrawElementInternal(element, sx, sy, swidth, sheight, dx, dy,
+                             /*dwidth*/ std::nullopt, /*dheight*/ std::nullopt,
+                             exception_state);
+}
+
+DOMMatrix* BaseRenderingContext2D::drawElementImage(
+    const V8UnionElementOrElementImage* element,
+    double sx,
+    double sy,
+    double swidth,
+    double sheight,
+    double dx,
+    double dy,
+    double dwidth,
+    double dheight,
+    ExceptionState& exception_state) {
+  return DrawElementInternal(element, sx, sy, swidth, sheight, dx, dy, dwidth,
+                             dheight, exception_state);
+}
+
+DOMMatrix* BaseRenderingContext2D::DrawElementInternal(
+    const V8UnionElementOrElementImage* element,
+    std::optional<double> sx,
+    std::optional<double> sy,
+    std::optional<double> swidth,
+    std::optional<double> sheight,
+    double x,
+    double y,
+    std::optional<double> dwidth,
+    std::optional<double> dheight,
+    ExceptionState& exception_state) {
+  CHECK(RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+      GetCanvasRenderingContextHost()->GetTopExecutionContext()));
+
+  if (!GetOrCreatePaintCanvas()) {
+    return DOMMatrix::Create();
+  }
+
+  if (!IsDrawElementImageEligible(element, "DrawElementImage",
+                                  exception_state)) {
+    return nullptr;
+  }
+
+  std::optional<CanvasChildPaintRecord> child_paint_record;
+  if (element->IsElement()) {
+    child_paint_record = GetChildPaintRecord(element->GetAsElement());
+  } else if (element->IsElementImage()) {
+    if (const auto& record = element->GetAsElementImage()->PaintRecord()) {
+      child_paint_record = *record;
+    }
+  }
+
+  TRACE_EVENT0("blink", "DrawElementImage");
+
+  if (!child_paint_record) {
+    if (element->IsElementImage()) {
+      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                        "The ElementImage has been closed.");
+    } else {
+      exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                        "No cached paint record for element.");
+    }
+    return nullptr;
+  }
+
+  float dpr = child_paint_record->paint_state.effective_zoom;
+  gfx::RectF src_rect(child_paint_record->paint_state.box_size);
+  if (sx && sy && swidth && sheight) {
+    src_rect = gfx::RectF(*sx * dpr, *sy * dpr, *swidth * dpr, *sheight * dpr);
+  }
+
+  if (src_rect.IsEmpty()) {
+    return DOMMatrix::Create();
+  }
+
+  // The filter needs to be resolved before calling Draw, because it
+  // immediately checks IsFilterResolved() and uses a null canvas if not.
+  StateGetFilter();
+
+  // The ideal size is the source content size, represented in canvas grid
+  // coordinates. This will cause the element to have the same proportions when
+  // appearing inside the canvas as it would have were it painted outside the
+  // canvas.
+  gfx::SizeF ideal_dst_size(src_rect.size());
+  gfx::Vector2dF scale_factor =
+      GetCanvasGridScaleFactor(child_paint_record->paint_state, Host()->Size());
+  ideal_dst_size.Scale(scale_factor.x(), scale_factor.y());
+
+  gfx::RectF dst_rect(x, y, 0, 0);
+  if (dwidth && dheight) {
+    dst_rect.set_size(gfx::SizeF(*dwidth, *dheight));
+  } else {
+    // If no explicit destination size is given, default to the ideal size.
+    dst_rect.set_size(ideal_dst_size);
+  }
+
+  if (dst_rect.IsEmpty()) {
+    return DOMMatrix::Create();
+  }
+
+  cc::PaintRecord paint_record = std::move(child_paint_record->record);
+  uint32_t animated_image_frame_index_map_pos =
+      animated_image_frame_index_maps_.size();
+  animated_image_frame_index_maps_.emplace_back(
+      child_paint_record->paint_state.animated_image_frame_index_map);
+  // TODO(crbug.com/421834883): This code is based on image drawing. Maybe we
+  // need a distinct paint_type: kImagePaintType seems to do the right thing
+  // but maybe its treatment of anti-aliasing is incorrect. The kNonOpaqueImage
+  // type controls drop shadow painting under transforms. It's not clear if we
+  // should behave like a non-opaque image here, but the element may not be
+  // opaque so going with that for now.
+  Draw<OverdrawOp::kNone>(
+      /*draw_func=*/
+      [paint_record, dst_rect, src_rect, animated_image_frame_index_map_pos](
+          MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
+        cc::RecordPaintCanvas::DisableFlushCheckScope disable_flush_check_scope(
+            static_cast<cc::RecordPaintCanvas*>(c));
+        int initial_save_count = c->getSaveCount();
+
+        if (flags->getImageFilter() ||
+            flags->getBlendMode() != SkBlendMode::kSrcOver ||
+            SkColorGetA(flags->getColor()) < 255) {
+          SkM44 ctm = c->getLocalToDevice();
+          SkM44 inv_ctm;
+          if (!ctm.invert(&inv_ctm)) {
+            // There is an earlier check for invertibility, but the arithmetic
+            // in AffineTransform is not exactly identical, so it is possible
+            // for SkMatrix to find the transform to be non-invertible at this
+            // stage. crbug.com/504687
+            return;
+          }
+          SkRect bounds = gfx::RectFToSkRect(dst_rect);
+          ctm.asM33().mapRect(&bounds);
+          if (!bounds.isFinite()) {
+            // There is an earlier check for the correctness of the bounds, but
+            // it is possible that after applying the matrix transformation we
+            // get a faulty set of bounds, so we want to catch this asap and
+            // avoid sending a draw command. crbug.com/1039125 We want to do
+            // this before the save command is sent.
+            return;
+          }
+          c->save();
+          c->concat(inv_ctm);
+
+          cc::PaintFlags layer_flags;
+          layer_flags.setBlendMode(flags->getBlendMode());
+          layer_flags.setImageFilter(flags->getImageFilter());
+          layer_flags.setColor(flags->getColor());
+
+          c->saveLayer(bounds, layer_flags);
+          c->concat(ctm);
+        }
+
+        c->save();
+        c->translate(dst_rect.x(), dst_rect.y());
+        if (dst_rect.width() != src_rect.width() ||
+            dst_rect.height() != src_rect.height()) {
+          c->scale(dst_rect.width() / src_rect.width(),
+                   dst_rect.height() / src_rect.height());
+        }
+        c->translate(-src_rect.x(), -src_rect.y());
+
+        c->clipRect(SkRect::MakeXYWH(src_rect.x(), src_rect.y(),
+                                     src_rect.width(), src_rect.height()));
+
+        // A CustomDataOp callback will be used to apply the animated image
+        // frame index map for this ElementImage prior to processing
+        // DrawImage(Rect)Op's in this paint_record.
+        c->recordCustomData(animated_image_frame_index_map_pos);
+
+        c->drawPicture(std::move(paint_record),
+                       // use a save at the beginning of the record to keep
+                       // transforms local:
+                       true);
+
+        // Reset the animated image frame index map
+        c->recordCustomData(std::numeric_limits<uint32_t>::max());
+
+        c->restoreToCount(initial_save_count);
+      },
+      NoOverdraw, /*bounds=*/dst_rect,
+      CanvasRenderingContext2DState::kImagePaintType,
+      CanvasRenderingContext2DState::kNonOpaqueImage,
+      CanvasPerformanceMonitor::DrawType::kElement);
+
+  // Compute the transform, in canvas grid coordinates, that we just drew with.
+  // We start from the context's CTM, then offset by x,y, and finally apply any
+  // dest scaling.
+  gfx::Transform draw_transform = GetState().GetTransform().ToTransform();
+  draw_transform.Translate(x, y);
+  // The drawing commands above scale by `dst_rect.size() / src_rect.size()`,
+  // which does two things: 1) scales the drawing commands of `paint_record` (in
+  // physical pixels) to canvas grid coordinates, and 2) applies any additional
+  // dest scaling. We are only returning #2 in the logic below.
+  draw_transform.Scale(dst_rect.width() / ideal_dst_size.width(),
+                       dst_rect.height() / ideal_dst_size.height());
+
+  if (sx && sy) {
+    draw_transform.Translate(-src_rect.x() * scale_factor.x(),
+                             -src_rect.y() * scale_factor.y());
+  }
+
+  // This call will take our draw transform in canvas grid coordinates, and
+  // convert it to a transform in CSS pixels suitable for positioning the
+  // element.
+  gfx::Transform result_transform = blink::GetElementTransform(
+      child_paint_record->paint_state, Host()->Size(), draw_transform);
+
+  return MakeGarbageCollected<DOMMatrix>(result_transform,
+                                         result_transform.Is2dTransform());
+}
+
+scoped_refptr<const cc::AnimatedImageFrameIndexMap>
+BaseRenderingContext2D::GetAnimatedImageFrameIndexMap(uint32_t id) const {
+  DCHECK(id == std::numeric_limits<uint32_t>::max() ||
+         id < animated_image_frame_index_maps_.size());
+  if (id < animated_image_frame_index_maps_.size()) {
+    return animated_image_frame_index_maps_[id];
+  }
+  return nullptr;
+}
+
+void BaseRenderingContext2D::DidFlush() {
+  animated_image_frame_index_maps_.clear();
 }
 
 }  // namespace blink

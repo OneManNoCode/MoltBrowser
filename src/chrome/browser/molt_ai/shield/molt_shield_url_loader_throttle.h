@@ -19,7 +19,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_types.h"
@@ -56,9 +55,7 @@ class MoltShieldURLLoaderThrottle : public blink::URLLoaderThrottle {
       net::RedirectInfo* redirect_info,
       const network::mojom::URLResponseHead& response_head,
       bool* defer,
-      std::vector<std::string>* to_be_removed_request_headers,
-      net::HttpRequestHeaders* modified_request_headers,
-      net::HttpRequestHeaders* modified_cors_exempt_request_headers) override;
+      network::HttpRequestHeadersUpdateParams* headers_update_params) override;
 
  private:
   // Defers and starts a check of `url`; returns false if `url` isn't

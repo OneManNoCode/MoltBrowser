@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/settings_chromium_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/chrome/app/settings_chromium_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/settings_chromium_strings.grdp b/chrome/app/settings_chromium_strings.grdp
-index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379649a4052 100644
+index 0c1f37b3d0de9e561c9d2c280f94949996568758..49c6b50553c4c5317988edc00eba47ced23a50b6 100644
 --- a/chrome/app/settings_chromium_strings.grdp
 +++ b/chrome/app/settings_chromium_strings.grdp
 @@ -1,43 +1,43 @@
@@ -62,55 +62,15 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
      </message>
    </if>
    <if expr="is_chromeos">
-@@ -51,72 +51,72 @@
+@@ -51,45 +51,45 @@
  
    <!-- Autofill Page -->
-   <message name="IDS_SETTINGS_CHECK_PASSWORDS_ERROR_OFFLINE" desc="Error message when the password check can't be completed because the user is offline.">
--    Chromium can't check your passwords. Try checking your internet connection.
-+    MoltBrowser can't check your passwords. Try checking your internet connection.
-   </message>
-   <message name="IDS_SETTINGS_CHECK_PASSWORDS_ERROR_SIGNED_OUT" desc="Error message when the password check can't be completed because the user is not signed in.">
--    Chromium can check your passwords when you sign in with your Google Account
-+    MoltBrowser can check your passwords when you sign in with your MoltBrowser Account
-   </message>
-   <message name="IDS_SETTINGS_CHECK_PASSWORDS_ERROR_NO_PASSWORDS" desc="Error message when the password check can't be completed since no passwords could be checked.">
--    No saved passwords. Chromium can check your passwords when you save them.
-+    No saved passwords. MoltBrowser can check your passwords when you save them.
-   </message>
-   <message name="IDS_SETTINGS_CHECK_PASSWORDS_ERROR_QUOTA_LIMIT_GOOGLE_ACCOUNT" desc="Error message when the password check can't be completed since the user hit the quota limit, but the user is able to check their passwords in their Google account.">
--    Chromium can't check your passwords. Try again after 24 hours or <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>check passwords in your Google Account<ph name="END_LINK">&lt;/a&gt;</ph>.
-+    MoltBrowser can't check your passwords. Try again after 24 hours or <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>check passwords in your MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph>.
-   </message>
-   <message name="IDS_SETTINGS_CHECK_PASSWORDS_ERROR_QUOTA_LIMIT" desc="Error message when the password check can't be completed since the user hit the quota limit.">
--    Chromium can't check your passwords. Try again after 24 hours.
-+    MoltBrowser can't check your passwords. Try again after 24 hours.
-   </message>
-   <message name="IDS_SETTINGS_CHECK_PASSWORDS_ERROR_GENERIC" desc="Error message when the password check can't be completed for an unspecified reason.">
--    Chromium can't check your passwords. Try again later.
-+    MoltBrowser can't check your passwords. Try again later.
-   </message>
-   <message name="IDS_SETTINGS_NO_COMPROMISED_CREDENTIALS_LABEL" desc="Label which is shown when there were no compromised passwords detected.">
--    Chromium will notify you when you sign in with a compromised password
-+    MoltBrowser will notify you when you sign in with a compromised password
-   </message>
    <message name="IDS_SETTINGS_SIGNED_OUT_USER_LABEL" desc="Label which is shown at the top of the compromised password section if user is signed out.">
 -    To check if your passwords are safe from data breaches and other security issues, <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;</ph>sign in to Chromium<ph name="END_LINK">&lt;/a&gt;</ph>.
 +    To check if your passwords are safe from data breaches and other security issues, <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;</ph>sign in to MoltBrowser<ph name="END_LINK">&lt;/a&gt;</ph>.
    </message>
-   <message name="IDS_SETTINGS_SIGNED_OUT_USER_HAS_COMPROMISED_CREDENTIALS_LABEL" desc="Label which is shown at the bottom of the compromised password section if user is signed out and has compromised credentials.">
--    To check if your other passwords are safe from data breaches and other security issues, <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;</ph>sign in to Chromium<ph name="END_LINK">&lt;/a&gt;</ph>.
-+    To check if your other passwords are safe from data breaches and other security issues, <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;</ph>sign in to MoltBrowser<ph name="END_LINK">&lt;/a&gt;</ph>.
-   </message>
-   <message name="IDS_SETTINGS_WEAK_PASSWORDS_DESCRIPTION_GENERATION" desc="Information about why weak passwords are a security issue and what syncing user should do to fix the problem. Has a link.">
--    Weak passwords are easy to guess. Let Chromium <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;</ph>create and remember strong passwords for you<ph name="END_LINK">&lt;/a&gt;</ph>.
-+    Weak passwords are easy to guess. Let MoltBrowser <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;</ph>create and remember strong passwords for you<ph name="END_LINK">&lt;/a&gt;</ph>.
-   </message>
-   <message name="IDS_SETTINGS_COMPROMISED_EDIT_DISCLAIMER_DESCRIPTION" desc="A description for the dialog which tells the user to edit password in Chromium if it was changed already.">
--    If so, please edit your saved password in Chromium so it matches your new password.
-+    If so, please edit your saved password in MoltBrowser so it matches your new password.
-   </message>
  
-   <!-- Enhanced autofill Page-->
+   <!-- Autofill AI Page-->
    <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_USE_TO_FILL"  desc="Bullet 2 of 2 that appears beneath the “When on” title. “Later”: this is a two-step feature. 1) data is saved, 2) it becomes valuable to the user later when they want to fill in a form with similar data. “Chromium can ask”: the user has a choice, every time, whether their data is saved and also whether they want to autofill their saved info into forms.">
 -    Later, Chromium can ask if you want to use saved info to autofill forms for you
 +    Later, MoltBrowser can ask if you want to use saved info to autofill forms for you
@@ -137,6 +97,10 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
 -      Make Chromium the default browser and pin to the taskbar
 +      Make MoltBrowser the default browser and pin to the taskbar
      </message>
+     <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_AND_PIN_USER_VALUE" desc="The text of the button to make Chromium the default browser and pin it to the taskbar.">
+-      You can use Chromium anytime you click links in messages, documents, and other apps. It will also be pinned to your taskbar.
++      You can use MoltBrowser anytime you click links in messages, documents, and other apps. It will also be pinned to your taskbar.
+     </message>
      <message name="IDS_SETTINGS_DEFAULT_BROWSER_ERROR" desc="The text displayed when Chrome cannot determine or set the default browser">
 -      Chromium cannot determine or set the default browser
 +      MoltBrowser cannot determine or set the default browser
@@ -155,7 +119,7 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
          </message>
        </else>
      </if>
-@@ -124,353 +124,353 @@
+@@ -97,356 +97,356 @@
  
    <!-- Preloading Page-->
    <message name="IDS_SETTINGS_PRELOAD_PAGES_STANDARD_PRELOADING_WHEN_ON_BULLET_TWO" desc="Bullet point in the standard preloading and when on column. Informs the user about what the standard preloading setting does.">
@@ -254,10 +218,6 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
 -    If a site tries to steal your password, or when you download a harmful file, Chromium may also send URLs, including bits of page content, to Safe Browsing
 +    If a site tries to steal your password, or when you download a harmful file, MoltBrowser may also send URLs, including bits of page content, to Safe Browsing
    </message>
-   <message name="IDS_SETTINGS_PRIVACY_GUIDE_COMPLETION_CARD_PRIVACY_SANDBOX_SUB_LABEL" desc="Text of the Privacy Sandbox sublabel in the completion card of the 'Privacy Guide'.">
--    Chromium gives you more control over the ads you see and limits what sites can learn about you when they show you personalized ads
-+    MoltBrowser gives you more control over the ads you see and limits what sites can learn about you when they show you personalized ads
-   </message>
    <message name="IDS_SETTINGS_PRIVACY_GUIDE_COMPLETION_CARD_WAA_SUB_LABEL" desc="Text of the Web and App Activity sublabel in the completion card of the 'Privacy Guide'.">
 -    Choose whether to include Chromium history for more personalized experiences in Google services
 +    Choose whether to include MoltBrowser history for more personalized experiences
@@ -272,10 +232,6 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
    </message>
  
    <!-- Privacy Sandbox -->
-   <message name="IDS_SETTINGS_PRIVACY_SANDBOX_LEARN_MORE_DIALOG_TOPICS_TITLE" desc="TOPICS API A sub title that describes the first of 2 ways a site can get info from Chrome in order to target ads to the user. Topics of interest include things like “Live comedy” and “Rock music”. Chrome estimates these interests based on the sites users visit. * “Your”: we need to convey a sense of ownership, even if the user didn’t explicitly choose the interests we’re talking about. Without the “your”, it could sound like Chrome is simply building a generic library of interests. * “estimated”: It’s an “estimation”, and we don’t want to suggest that we know with certainty the user’s interests. Avoid words like “guess”, “establish”, “define”, etc. (in place of “estimate”). * “by Chrome”: This is new behavior for a browser (Chrome) to take an active role in processing user data for the purposes of showing ads. It’s important to convey “chrome”, the actor in this case.">
--    Your interests as estimated by Chromium
-+    Your interests as estimated by MoltBrowser
-   </message>
    <message name="IDS_SETTINGS_PRIVACY_SANDBOX_AD_MEASUREMENT_DIALOG_DESCRIPTION" desc="A description of the Ad measurement API. * “Ad measurement” is the name of an API in this context. We don’t use “API” with the user, but they need to know that there is something called “A measurement” and what it does. * “sites you visit”: call the API to get information. The actor is the site, not Chrome. * “restricts cross-site tracking”: Today, with 3rd-party cookies, ad measurement technologies can inadvertently (and intentionally) share considerable information from one site to another). This feature restricts that sharing in order to improve the user’s privacy.">
 -    Ad measurement allows sites you visit to request information from Chromium that helps the site measure the performance of their ads. Ad measurement restricts cross-site tracking by transferring as little information as possible between sites.
 +    Ad measurement allows sites you visit to request information from MoltBrowser that helps the site measure the performance of their ads. Ad measurement restricts cross-site tracking by transferring as little information as possible between sites.
@@ -388,10 +344,6 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
 -    When you type in the address bar or search box, Chromium sends what you type to your organization's search, AI, and agent tools to get suggestions.
 +    When you type in the address bar or search box, MoltBrowser sends what you type to your organization's search, AI, and agent tools to get suggestions.
    </message>
-   <message name="IDS_SETTINGS_SYNC_SIGN_IN_PROMPT_WITH_NO_ACCOUNT" desc="The text displayed to prompt users to sign in to Chromium.">
--    Sign in to sync and personalize Chromium across your devices
-+    Sign in to sync and personalize MoltBrowser across your devices
-   </message>
    <message name="IDS_SETTINGS_PERSONALIZE_GOOGLE_SERVICES_DESC" desc="This is the subtitle of a setting that directs users to other settings where they can control how Chrome history can be used to personalize other Google services. This subtitle appears in Chrome's Advanced Sync settings, after the 'Control how browsing history is used with your other data across Google services' string. The 'Web &#38; App Activity' text should match the branded term in Glossary Manager: https://localization.google.com/glossary/termset?gid=27517723&#38;tsid=77d3b75.">
 -    To get personalization, include Chromium in Web &#38; App Activity
 +    To get personalization, include MoltBrowser in Web &#38; App Activity
@@ -443,12 +395,6 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
    <message name="IDS_SETTINGS_PASSPHRASE_RESET_HINT_ACCOUNT_DATA_ENCRYPTION" desc="Informs user how to change their encryption setting.">
 -    If you forgot your passphrase or want to change this setting, <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>delete the Chromium data in your account<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
 +    If you forgot your passphrase or want to change this setting, <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>delete the MoltBrowser data in your account<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
-   </message>
- 
-   <!-- Page content -->
-   <message name="IDS_SETTINGS_PAGE_CONTENT_THINGS_TO_CONSIDER_BULLET_TWO" desc="Bullet point in the 'Things to consider' column of the description of the setting that enables features that provide contextual help for currently opened pages.">
--    To help improve these features, Chromium sends your interactions with them to Google. This data may be read, processed, and annotated by human reviewers.
-+    To help improve these features, MoltBrowser sends your interactions with them to Google. This data may be read, processed, and annotated by human reviewers.
    </message>
  
    <!-- Performance Page -->
@@ -588,6 +534,10 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
 -    Enhanced protection turns off JavaScript optimization for sites Chromium doesn’t recognize
 +    Enhanced protection turns off JavaScript optimization for sites MoltBrowser doesn’t recognize
    </message>
+   <message name="IDS_SETTINGS_SECURITY_BUNDLE_ENHANCED_BULLET_ONE" desc="First bullet point under the security settings enhanced bundle section">
+-    Turns on additional features to provide Chromium’s strongest protections
++    Turns on additional features to provide MoltBrowser’s strongest protections
+   </message>
  
    <!-- Secure connections -->
    <message name="IDS_SETTINGS_SECURE_CONNECTIONS_SECTION_DESCRIPTION" desc="Description for the Secure Connections section in Security settings, explaining the baseline behavior of the browser even if the 'Always use secure connections' toggle is disabled.">
@@ -610,4 +560,31 @@ index 915a3675bd70e39681a55428f7e0a93d7282b8a3..74b6231f63cb919f4715a36efbe33379
 -    When HTTPS isn't available, Chromium will use an insecure connection without warning you
 +    When HTTPS isn't available, MoltBrowser will use an insecure connection without warning you
    </message>
- </grit-part>
+   <!-- Skills Settings Page -->
+   <message name="IDS_SETTINGS_SKILLS_SETTING_LABEL" desc="Label for the Skills setting entry point in Settings > AI page.">
+-    Skills in Chromium
++    Skills in MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_SKILLS_TOGGLE_LABEL" desc="Label for the toggle button on the Skills settings subpage.">
+-    Enable Skills in Chromium
++    Enable Skills in MoltBrowser
+   </message>
+   <message name="IDS_SETTINGS_SYNC_SKILLS_SEPARATE_INFORMATION" desc="Info text on the Sync page explaining that skills are managed separately from sync.">
+-    AI innovations like skills are saved to your Google Account and managed separately from Chromium sync
++    AI innovations like skills are saved to your Google Account and managed separately from MoltBrowser sync
+   </message>
+   <message name="IDS_SETTINGS_SKILLS_WHEN_ON_BULLET_TWO" desc="Second bullet point under the 'When on' column in the Skills settings page.">
+-    Use them alongside other Gemini features in Chromium
++    Use them alongside other Gemini features in MoltBrowser
+   </message>
+   <!-- Dictation Settings Page -->
+   <!-- TODO(b/510738735): Make these translatable when finalized. -->
+@@ -454,7 +454,7 @@
+     Dictation
+   </message>
+   <message name="IDS_SETTINGS_DICTATION_SETTING_SUBLABEL" translateable="false" desc="Sublabel for the Dictation setting entry point in Settings > AI page.">
+-    Chromium uses your microphone to capture your voice and fill in text fields with cleaned up content
++    MoltBrowser uses your microphone to capture your voice and fill in text fields with cleaned up content
+   </message>
+   <message name="IDS_SETTINGS_DICTATION_SHORTCUT_SUBLABEL" translateable="false" desc="Sublabel for the keyboard shortcut setting in Dictation settings page.">
+     Open Dictation with a keyboard shortcut

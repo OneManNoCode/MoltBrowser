@@ -1,11 +1,11 @@
 MoltBrowser patch for components/privacy_sandbox_chrome_strings.grdp
-Upstream base: chromium/src@51a413be46f7632ebc3ae331c68af71daa5d6bbf (148.0.7729.0)
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
 Generated from src/components/privacy_sandbox_chrome_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/privacy_sandbox_chrome_strings.grdp b/components/privacy_sandbox_chrome_strings.grdp
-index e7862d3a78e884d06825c6fc17fa9d0d403c3b2a..f5a4000f7e4467f9dfdb2337d6fa0e9a2f42cb7a 100644
+index e81ff3b48ae236f681b36bf09d3b68fe9b8553d0..45fa00540af5fe19aafae8a3261dc21bf107e039 100644
 --- a/components/privacy_sandbox_chrome_strings.grdp
 +++ b/components/privacy_sandbox_chrome_strings.grdp
 @@ -15,25 +15,25 @@
@@ -58,9 +58,9 @@ index e7862d3a78e884d06825c6fc17fa9d0d403c3b2a..f5a4000f7e4467f9dfdb2337d6fa0e9a
    </message>
    <message name="IDS_SETTINGS_UNBLOCK_TOPIC_TOAST_BODY" desc="When a user unblocks a topic, a toast appears explaining what they did and and how that can make the topic active. The toast appears for at most 10 seconds." formatter_data="android_java">
      This topic is unblocked and may become active based on your browsing history
-@@ -163,7 +163,7 @@
-     Text presented to user:
-   </message>
+@@ -148,7 +148,7 @@
+ 
+   <!-- Privacy Sandbox v4 - Topics Consent Details -->
    <message name="IDS_PRIVACY_SANDBOX_TOPICS_CONSENT_UPDATE_SOURCE_SETTINGS" desc="Text presented when the user's last Topics consent location was Chrome settings">
 -    Chrome settings
 +    MoltBrowser settings

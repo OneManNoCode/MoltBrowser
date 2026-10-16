@@ -23,7 +23,6 @@
   V(kHistoryClusters, kActionSidePanelShowHistoryCluster, "HistoryClusters")  \
   V(kHistory, kActionSidePanelShowHistory, "History")                         \
   V(kReadAnything, kActionSidePanelShowReadAnything, "ReadAnything")          \
-  V(kUserNote, kActionSidePanelShowUserNote, "UserNotes")                     \
   V(kFeed, kActionSidePanelShowFeed, "Feed")                                  \
   V(kWebView, std::nullopt, "WebView")                                        \
   V(kContextualTasks, kActionSidePanelShowContextualTasks, "ContextualTasks") \
@@ -41,6 +40,9 @@
   V(kMerchantTrust, kActionSidePanelShowMerchantTrust, "MerchantTrust")       \
   V(kComments, kActionSidePanelShowComments, "Comments")                      \
   V(kGlic, kActionSidePanelShowGlic, "Glic")                                  \
+  V(kTabsFromOtherDevices, kActionSidePanelShowTabsFromOtherDevices,          \
+    "TabsFromOtherDevices")                                                   \
+  V(kSidePanelDev, std::nullopt, "SidePanelDev")                              \
   V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")               \
   V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                  \
   /* Extensions (nothing more should be added below here) */                  \
@@ -48,11 +50,16 @@
 
 // LINT.ThenChange(//tools/metrics/actions/actions.xml:SidePanelEntry,//tools/metrics/histograms/metadata/browser/histograms.xml:SidePanelEntry)
 
+// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.chrome.browser.ui.side_panel
+// GENERATED_JAVA_PREFIX_TO_STRIP: k
 #define SIDE_PANEL_ENTRY_ID_ENUM(entry_id, action_id, histogram_name) entry_id,
 enum class SidePanelEntryId { SIDE_PANEL_ENTRY_IDS(SIDE_PANEL_ENTRY_ID_ENUM) };
 #undef SIDE_PANEL_ENTRY_ID_ENUM
 
 std::string SidePanelEntryIdToString(SidePanelEntryId id);
+
+std::optional<SidePanelEntryId> SidePanelEntryIdFromString(
+    std::string_view name);
 
 std::string_view SidePanelEntryIdToHistogramName(SidePanelEntryId id);
 

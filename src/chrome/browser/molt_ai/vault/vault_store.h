@@ -5,20 +5,23 @@
 //
 // Stores a JSON array of credential entries at
 //   ~/.moltbrowser/vault.enc
-// encrypted via OSCrypt (OS keychain on macOS / DPAPI on Windows /
-// libsecret on Linux). The blob is small so we read/write the whole
-// thing on every change; no streaming or partial-update path.
+// encrypted with the os_crypt_async Encryptor through molt_os_crypt (OS
+// Keychain on macOS / DPAPI on Windows / Secret Service or KWallet on
+// Linux). The blob is small so we read/write the whole thing on every
+// change; no streaming or partial-update path.
 //
 // Why a separate file from profile.enc:
 //   - Credentials are the highest-sensitivity blob the user owns.
 //     Isolating them in their own file means a future change (e.g.
-//     adding a second crypto layer on top of OSCrypt, or backing
+//     adding a second crypto layer on top of the OS key, or backing
 //     this with a hardware security module) only touches one path.
 //   - The form-filler profile is already a different shape (single
 //     dict of name/email/etc); credentials are an array.
 //
-// Threading: methods are UI-thread-safe but synchronous on disk +
-// keychain. Wrap callers in ScopedAllowBlockingForMolt.
+// Threading: any thread; synchronous file I/O, so wrap UI-thread callers in
+// ScopedAllowBlockingForMolt. Encryption doesn't block on the OS key store.
+// Until molt_os_crypt has its Encryptor (early startup), List() is empty and
+// writes are refused, as for a locked keyring.
 
 #ifndef CHROME_BROWSER_MOLT_AI_VAULT_VAULT_STORE_H_
 #define CHROME_BROWSER_MOLT_AI_VAULT_VAULT_STORE_H_
@@ -35,11 +38,10 @@ namespace molt_ai {
 namespace vault {
 
 // One stored credential. The plaintext password lives only in memory
-// when the entry is in scope — the on-disk form is encrypted via
-// OSCrypt at file granularity (not field granularity, since OSCrypt
-// is symmetric, and the cost-benefit of a second crypto layer for a
-// single field is marginal vs. holding the whole vault open in RAM
-// during a form fill).
+// when the entry is in scope — the on-disk form is encrypted at file
+// granularity (not field granularity: the OS key is symmetric, and the
+// cost-benefit of a second crypto layer for a single field is marginal vs.
+// holding the whole vault open in RAM during a form fill).
 struct VaultEntry {
   VaultEntry();
   VaultEntry(const VaultEntry&);
@@ -81,8 +83,8 @@ class VaultStore {
 
   // Insert a new entry. Assigns a fresh id and timestamps. Returns
   // the assigned id, empty string on failure — including when there is
-  // no real OS key store (molt_ai::IsSecureStorageAvailable()), since
-  // OSCrypt would then encrypt with a hard-coded key.
+  // no real OS key store (molt_ai::IsSecureStorageAvailable()), since the
+  // Encryptor would then use a hard-coded key (or isn't ready yet).
   std::string Add(VaultEntry entry);
 
   // Replace an existing entry by id. Bumps last_changed_unix if the
@@ -123,7 +125,7 @@ class VaultStore {
   std::optional<std::vector<VaultEntry>> ReadDecrypted() const;
   // Encrypt+write the whole vault. Atomic via .tmp + rename. When
   // |adds_secrets| is true the write is refused unless a real OS key
-  // store backs OSCrypt.
+  // store backs the Encryptor (molt_ai::EncryptSecretForStorage()).
   bool WriteEncrypted(const std::vector<VaultEntry>& entries,
                       bool adds_secrets);
 

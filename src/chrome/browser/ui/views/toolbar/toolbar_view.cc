@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -16,14 +17,16 @@
 #include "base/functional/bind.h"
 #include "base/i18n/number_formatting.h"
 #include "base/i18n/rtl.h"
-#include "base/memory/raw_ptr.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "cc/paint/paint_flags.h"
+#include "cc/paint/paint_shader.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/actor/ui/actor_ui_metrics.h"
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
@@ -38,7 +41,14 @@
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/glic/browser_ui/glic_actor_nudge_controller.h"
+#include "chrome/browser/glic/browser_ui/glic_actor_task_icon_manager_factory.h"
+#include "chrome/browser/glic/browser_ui/glic_button_controller.h"
+#include "chrome/browser/glic/browser_ui/glic_nudge_controller.h"
+#include "chrome/browser/glic/browser_ui/glic_split_button_controller.h"
+#include "chrome/browser/glic/public/features.h"
 #include "chrome/browser/glic/public/glic_enabling.h"
+#include "chrome/browser/glic/public/glic_invoke_options.h"
 #include "chrome/browser/glic/public/glic_keyed_service.h"
 #include "chrome/browser/glic/public/glic_keyed_service_factory.h"
 #include "chrome/browser/media/router/media_router_feature.h"
@@ -47,7 +57,9 @@
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
+#include "chrome/browser/ui/ai_overlay_dialog/ai_overlay_dialog_controller.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_content_setting_bubble_model_delegate.h"
@@ -65,39 +77,35 @@
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/side_panel/side_panel_registry.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
-#include "chrome/browser/ui/tab_search_feature.h"
-#include "chrome/browser/ui/tabs/features.h"
-#include "chrome/browser/ui/tabs/glic_actor_task_icon_manager_factory.h"
-#include "chrome/browser/ui/tabs/glic_nudge_controller.h"
+#include "chrome/browser/ui/page_action/page_action_properties_provider.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
 #include "chrome/browser/ui/tabs/vertical_tab_strip_state_controller.h"
 #include "chrome/browser/ui/toolbar/chrome_labs/chrome_labs_prefs.h"
 #include "chrome/browser/ui/toolbar/chrome_labs/chrome_labs_utils.h"
-#include "chrome/browser/ui/toolbar/pinned_toolbar/tab_search_toolbar_button_controller.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view.h"
 #include "chrome/browser/ui/views/contextual_tasks/contextual_tasks_button.h"
 #include "chrome/browser/ui/views/contextual_tasks/contextual_tasks_close_tab_button.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
+#include "chrome/browser/ui/views/extensions/extensions_container_views.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_button.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_coordinator.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_desktop.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/custom_corners_background.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
+#include "chrome/browser/ui/views/glic/glic_button_interface.h"
+#include "chrome/browser/ui/views/global_media_controls/media_toolbar_button.h"
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_contextual_menu.h"
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
-#include "chrome/browser/ui/views/location_bar/intent_chip_button.h"
-#include "chrome/browser/ui/views/location_bar/star_view.h"
 #include "chrome/browser/ui/views/location_bar/webui_location_bar.h"
-#include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/ui/views/page_action/page_action_container_view.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_container.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_controller.h"
-#include "chrome/browser/ui/views/page_action/page_action_properties_provider.h"
 #include "chrome/browser/ui/views/page_action/page_action_view.h"
+#include "chrome/browser/ui/views/page_action/page_action_view_interface.h"
 #include "chrome/browser/ui/views/performance_controls/battery_saver_button.h"
 #include "chrome/browser/ui/views/performance_controls/performance_intervention_button.h"
 #include "chrome/browser/ui/views/side_panel/side_panel.h"
@@ -105,11 +113,12 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
 #include "chrome/browser/ui/views/toolbar/app_menu.h"
+#include "chrome/browser/ui/views/toolbar/app_menu_control.h"
+#include "chrome/browser/ui/views/toolbar/avatar_toolbar_button_interface.h"
 #include "chrome/browser/ui/views/toolbar/back_forward_button.h"
 #include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
 #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
-#include "chrome/browser/ui/views/toolbar/live_toolbar_background.h"
 #include "chrome/browser/ui/views/toolbar/molt_import_bubble.h"
 #include "chrome/browser/ui/views/toolbar/molt_net_bubble.h"
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
@@ -127,6 +136,7 @@
 #include "chrome/browser/ui/waap/initial_webui_window_metrics_manager.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/web_applications/link_capturing_features.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/branded_strings.h"
@@ -160,29 +170,32 @@
 #include "ui/color/color_provider.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/menus/simple_menu_model.h"
 #include "ui/views/accessibility/view_accessibility.h"
+#include "ui/views/actions/action_view_controller.h"
 #include "ui/views/background.h"
 #include "ui/views/cascading_property.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/layout/flex_layout.h"
 #include "ui/views/layout/flex_layout_view.h"
 #include "ui/views/layout/proposed_layout.h"
+#include "ui/views/mouse_watcher.h"
+#include "ui/views/mouse_watcher_view_host.h"
 #include "ui/views/view.h"
 #include "ui/views/view_class_properties.h"
 #include "ui/views/view_utils.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-#include "chrome/browser/ui/views/frame/webui_tab_strip_container_view.h"
-#endif  // BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-
 #if defined(USE_AURA)
+#include <array>
+
 #include "ui/aura/window_occlusion_tracker.h"
 #endif
 
@@ -193,97 +206,6 @@ DEFINE_UI_CLASS_PROPERTY_KEY(bool, kActionItemUnderlineIndicatorKey, false)
 
 namespace {
 
-// Intermediate data for determining whether a point should be considered in the
-// caption are when the toolbar is the top element in the browser.
-struct CaptionHitTestData {
-  raw_ptr<const views::View> at = nullptr;
-  bool is_direct_hit = false;
-  raw_ptr<const views::View> before = nullptr;
-  int before_dist = 0;
-  raw_ptr<const views::View> after = nullptr;
-  int after_dist = 0;
-};
-
-// Calculates the `CaptionHitTestData` (`data`) starting at `view` for `point`,
-// which should be in `view`'s local coordinates. Bails out immediately if a
-// View is hit; may traverse into icon containers.
-void CalculateIsPositionInWindowCaption(CaptionHitTestData& data,
-                                        const views::View* view,
-                                        const gfx::Point& point) {
-  for (auto& child : view->children()) {
-    if (!child->GetVisible()) {
-      continue;
-    }
-    const gfx::Rect bounds = child->bounds();
-
-    if (views::IsViewClass<ToolbarIconContainerView>(child) ||
-        views::IsViewClass<page_actions::PageActionContainerView>(child)) {
-      // Traverse into known icon containers.
-      const auto in_child =
-          views::View::ConvertPointToTarget(view, child, point);
-      CalculateIsPositionInWindowCaption(data, child, in_child);
-    } else if (bounds.x() <= point.x() && bounds.right() >= point.x()) {
-      // This point is in/above/below the child.
-      data.at = child;
-      data.is_direct_hit = bounds.Contains(point);
-    } else {
-      // See if the view is the closest before or after the target point in the
-      // layout.
-      if (bounds.right() < point.x()) {
-        const int dist = point.x() - bounds.right();
-        if (!data.before || data.before_dist > dist) {
-          data.before = child;
-          data.before_dist = dist;
-        }
-      } else if (bounds.x() > point.x()) {
-        const int dist = bounds.x() - point.x();
-        if (!data.after || data.after_dist > dist) {
-          data.after = child;
-          data.after_dist = dist;
-        }
-      }
-    }
-
-    // If a view was hit at any level, stop processing.
-    if (data.at) {
-      break;
-    }
-  }
-}
-
-// Returns whether `point` should be treated as part of the caption area in
-// `view`, which should be the topmost view in the browser.
-bool IsPositionInWindowCaption(const views::View* view,
-                               const gfx::Point& point) {
-  CaptionHitTestData data;
-  CalculateIsPositionInWindowCaption(data, view, point);
-
-  const bool is_above_centerline =
-      point.y() <= view->GetLocalBounds().CenterPoint().y();
-  const auto is_separator = [](const views::View* view) {
-    return views::IsViewClass<views::Separator>(view) ||
-           views::IsViewClass<ToolbarDivider>(view);
-  };
-
-  // If the point is in a view, then it's not in the caption unless the view is
-  // a separator. If the point is at a view but not in it, then it is caption if
-  // the point is centerline; otherwise it's not.
-  if (data.at) {
-    return is_separator(data.at) ||
-           (!data.is_direct_hit && is_above_centerline);
-  }
-
-  // If the point is not in a view but it is next to a separator or the edge of
-  // the toolbar, it is caption.
-  if (!data.before || is_separator(data.before) || !data.after ||
-      is_separator(data.after)) {
-    return true;
-  }
-
-  // All remaining points (between non-separator views) are caption if they are
-  // above centerline.
-  return is_above_centerline;
-}
 // Gets the display mode for a given browser.
 ToolbarView::DisplayMode GetDisplayMode(Browser* browser) {
   // Checked in this order because even tabbed PWAs use the CUSTOM_TAB
@@ -312,11 +234,48 @@ auto& GetViewCommandMap() {
 
 constexpr int kBrowserAppMenuRefreshExpandedMargin = 5;
 constexpr int kBrowserAppMenuRefreshCollapsedMargin = 2;
+constexpr int kLargeSpaceBetweenButtons = 6;
+constexpr int kInsideBorderAroundGlicButtons = 2;
+constexpr int kOutsideBorderAroundGlicButtons = 11;
+constexpr int kGlicButtonMargin = 5;
 
-bool IsMigratedClickToCallBubble(
-    IntentPickerBubbleView::BubbleType bubble_type) {
-  return bubble_type == IntentPickerBubbleView::BubbleType::kClickToCall &&
-         IsPageActionMigrated(PageActionIconType::kClickToCall);
+// Returns whether `point` should be treated as part of the caption area in
+// `view`. Recursively traverses into icon containers to correctly handle
+// padding between buttons.
+bool IsPositionInWindowCaptionForView(const views::View* view,
+                                      const gfx::Point& point) {
+  for (const views::View* child : view->children()) {
+    if (!child->GetVisible() || !child->bounds().Contains(point)) {
+      continue;
+    }
+    // Recurse into known icon container types to check their children.
+    if (views::IsViewClass<ToolbarIconContainerView>(child) ||
+        views::IsViewClass<page_actions::PageActionContainerView>(child)) {
+      const gfx::Point point_in_child =
+          views::View::ConvertPointToTarget(view, child, point);
+      return IsPositionInWindowCaptionForView(child, point_in_child);
+    }
+    // Separators and dividers are non-interactive and should be treated
+    // as caption area.
+    if (views::IsViewClass<views::Separator>(child) ||
+        views::IsViewClass<ToolbarDivider>(child)) {
+      return true;
+    }
+    // The point hit an interactive control (button, location bar, etc.).
+    return false;
+  }
+  // The point is not in any child's bounds — it's in empty space between
+  // children, padding, or above/below a child. In VTS mode the toolbar is
+  // at the very top of the window, so all non-interactive areas should be
+  // draggable regardless of vertical position.
+  return true;
+}
+
+void SetRefreshMargins(views::View* button, bool expanded) {
+  button->SetProperty(
+      views::kMarginsKey,
+      gfx::Insets::VH(0, expanded ? kBrowserAppMenuRefreshExpandedMargin
+                                  : kBrowserAppMenuRefreshCollapsedMargin));
 }
 
 // MoltBrowser: turn a 2-letter ISO country code into its flag emoji
@@ -428,7 +387,7 @@ class TorExitCountryButton : public ToolbarButton,
         // Tor bootstrap (~15-30s), then a new isolated MoltNet window.
         SetHighlight(u"\U0001F9C5 …", std::nullopt);
         molt_ai::tor::MoltNetWindow::Open(
-            browser_->profile(), GURL(),
+            browser_->GetProfile(), GURL(),
             base::BindOnce(&TorExitCountryButton::OnMoltNetDone,
                            weak_factory_.GetWeakPtr()));
         return;
@@ -437,7 +396,7 @@ class TorExitCountryButton : public ToolbarButton,
       mgr->SetExitCountry(std::string());
     } else if (command_id == kCommandNewIdentity) {
       molt_ai::tor::MoltNetWindow::NewIdentity(
-          browser_->profile(),
+          browser_->GetProfile(),
           base::BindOnce(&TorExitCountryButton::OnMoltNetDone,
                          weak_factory_.GetWeakPtr()));
       return;
@@ -502,7 +461,7 @@ class TorExitCountryButton : public ToolbarButton,
   // Routing of THIS window, never the process-wide Tor state alone.
   std::u16string StatusLine() const {
     using molt_ai::tor::MoltNetRouting;
-    switch (MoltNetRouting::GetStatus(browser_->profile()).state) {
+    switch (MoltNetRouting::GetStatus(browser_->GetProfile()).state) {
       case MoltNetRouting::RoutingState::kRoutedViaTor:
         return u"\U0001F7E2 Private via Tor";
       case MoltNetRouting::RoutingState::kBlockedTorDown:
@@ -523,7 +482,7 @@ class TorExitCountryButton : public ToolbarButton,
     // is no longer wired to the click. Refresh the button's flag/label when the
     // popover closes (the user may have changed the exit country inside it).
     MoltNetBubbleView::Show(
-        /*anchor=*/this, browser_->profile(),
+        /*anchor=*/this, browser_->GetProfile(),
         base::BindRepeating(&TorExitCountryButton::UpdateLabel,
                             weak_factory_.GetWeakPtr()));
   }
@@ -534,7 +493,7 @@ class TorExitCountryButton : public ToolbarButton,
   void UpdateLabel() {
     using molt_ai::tor::MoltNetRouting;
     const MoltNetRouting::RoutingState state =
-        MoltNetRouting::GetStatus(browser_->profile()).state;
+        MoltNetRouting::GetStatus(browser_->GetProfile()).state;
     const std::string cc = molt_ai::tor::TorManager::Get()->GetExitCountry();
     std::u16string label;
     switch (state) {
@@ -575,6 +534,49 @@ END_METADATA
 BEGIN_METADATA(TorExitCountryButton)
 END_METADATA
 
+// MoltBrowser: the black-glass toolbar ground. kColorToolbar is near-black
+// under kGlassToolbar (chrome_color_mixer.cc), so upstream's
+// CustomCornersBackground already paints the FULLY OPAQUE black-glass ground.
+// Not see-through: the "glass" comes from the black tint plus a top-down
+// specular sheen and a 1px specular top hairline painted here, and the
+// floating buttons. This keeps toolbar text/icons maximally legible.
+// (Before M152 this paint lived in upstream's LiveToolbarBackground, which
+// upstream deleted; the browser layout now requires the toolbar background to
+// be a CustomCornersBackground, hence the subclass.)
+class MoltGlassToolbarBackground : public CustomCornersBackground {
+ public:
+  using CustomCornersBackground::CustomCornersBackground;
+
+  void Paint(gfx::Canvas* canvas, views::View* view) const override {
+    CustomCornersBackground::Paint(canvas, view);
+
+    // Upstream's own glass frame cuts shapes out of the toolbar background;
+    // don't paint over those.
+    if (features::IsGlassFrameEnabled()) {
+      return;
+    }
+
+    gfx::ScopedCanvas scoped_canvas(canvas);
+    // Stay inside the (possibly rounded-corner) toolbar shape.
+    canvas->ClipPath(GetBackgroundPath(), /*do_anti_alias=*/true);
+
+    SkColor4f sheen[] = {
+        SkColor4f::FromColor(SkColorSetA(SK_ColorWHITE, 0x24)),  // ~0.14
+        SkColor4f::FromColor(SK_ColorTRANSPARENT)};
+    SkPoint sheen_pts[] = {SkPoint::Make(0, 0),
+                           SkPoint::Make(0, view->height() * 0.6f)};
+    static_assert(std::size(sheen) == std::size(sheen_pts));
+    cc::PaintFlags sheen_flags;
+    sheen_flags.setShader(cc::PaintShader::MakeLinearGradient(
+        sheen_pts, sheen, nullptr, std::size(sheen_pts), SkTileMode::kClamp));
+    canvas->DrawRect(gfx::RectF(view->GetLocalBounds()), sheen_flags);
+
+    cc::PaintFlags hairline;
+    hairline.setColor(SkColorSetA(SK_ColorWHITE, 0x33));  // ~0.20
+    canvas->DrawRect(gfx::RectF(0, 0, view->width(), 1), hairline);
+  }
+};
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -586,29 +588,36 @@ ToolbarView::ToolbarView(Browser* browser, BrowserView* browser_view)
     : AnimationDelegateViews(this),
       browser_(browser),
       browser_view_(browser_view),
-      app_menu_icon_controller_(browser->profile(), this),
+      app_menu_icon_controller_(browser->GetProfile(), this),
       display_mode_(GetDisplayMode(browser)) {
+  // WebApp type-browsers set their own ToolbarButtonProvider.
+  if (!web_app::AppBrowserController::IsWebApp(browser)) {
+    scoped_unowned_user_data_.emplace(browser_->GetUnownedUserDataHost(),
+                                      *this);
+  }
+
   SetID(VIEW_ID_TOOLBAR);
   SetProperty(views::kElementIdentifierKey, kToolbarElementId);
 
   GetViewAccessibility().SetRole(ax::mojom::Role::kToolbar);
 
   if (display_mode_ == DisplayMode::kNormal) {
-    if (base::FeatureList::IsEnabled(features::kGlassToolbar)) {
-      auto background =
-          std::make_unique<LiveToolbarBackground>(browser_view_, this);
-      SetBackground(std::move(background));
-    }
-
     for (const auto& view_and_command : GetViewCommandMap()) {
       chrome::AddCommandObserver(browser_, view_and_command.second, this);
     }
   }
   views::SetCascadingColorProviderColor(this, views::kCascadingBackgroundColor,
                                         kColorToolbar);
+
+  mouse_watcher_ = std::make_unique<views::MouseWatcher>(
+      std::make_unique<views::MouseWatcherViewHost>(this, gfx::Insets()), this);
 }
 
 ToolbarView::~ToolbarView() {
+  if (glic_split_button_controller_) {
+    glic_split_button_controller_->SetVerticalTabsDelegate(nullptr);
+  }
+
   if (display_mode_ != DisplayMode::kNormal) {
     return;
   }
@@ -621,14 +630,13 @@ ToolbarView::~ToolbarView() {
 }
 
 // MoltBrowser: light the violet "active" ring on whichever mode button matches
-// the currently-open content side-panel entry, and clear it on the other (and
-// on both when the panel is closed). Driven by the SidePanelEntryObserver
-// callbacks below, which fire on open, AI↔Agent swap, and close.
+// the currently-open side-panel entry, and clear it on the other (and on both
+// when the panel is closed). Driven by the SidePanelEntryObserver callbacks
+// below, which fire on open, AI↔Agent swap, and close.
 void ToolbarView::UpdateAiAgentModeHighlights() {
   SidePanelUI* ui = browser_ ? browser_->GetFeatures().side_panel_ui() : nullptr;
   std::optional<SidePanelEntryId> id =
-      ui ? ui->GetCurrentEntryId(SidePanelEntry::PanelType::kContent)
-         : std::nullopt;
+      ui ? ui->GetCurrentEntryId() : std::nullopt;
   const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
   if (molt_ai_mode_button_) {
     molt_ai_mode_button_->SetHighlight(
@@ -658,7 +666,7 @@ void ToolbarView::SetUpSidePanelHighlightObservation() {
   for (SidePanelEntryId id :
        {SidePanelEntryId::kMoltAiChat, SidePanelEntryId::kMoltAgent}) {
     if (SidePanelEntry* entry =
-            registry->GetEntryForKey(SidePanelEntry::Key(id))) {
+            registry->GetEntryForKey(SidePanelEntryKey(id))) {
       if (!side_panel_entry_observations_.IsObservingSource(entry)) {
         side_panel_entry_observations_.AddObservation(entry);
       }
@@ -672,7 +680,7 @@ void ToolbarView::Init() {
   // Avoid generating too many occlusion tracking calculation events before this
   // function returns. The occlusion status will be computed only once once this
   // function returns.
-  // See crbug.com/1183894#c2
+  // See crbug.com/40171404#comment3
   aura::WindowOcclusionTracker::ScopedPause pause_occlusion;
 #endif
 
@@ -686,7 +694,7 @@ void ToolbarView::Init() {
     webui_location_bar = std::make_unique<WebUILocationBar>(browser_, this);
   } else {
     location_bar_view = std::make_unique<LocationBarView>(
-        browser_, browser_->profile(), browser_->command_controller(), this,
+        browser_, browser_->GetProfile(), browser_->command_controller(), this,
         display_mode_ != DisplayMode::kNormal);
   }
 
@@ -702,7 +710,13 @@ void ToolbarView::Init() {
   }
 
   if (display_mode_ == DisplayMode::kNormal) {
-    if (!base::FeatureList::IsEnabled(features::kGlassToolbar)) {
+    if (base::FeatureList::IsEnabled(features::kGlassToolbar)) {
+      // MoltBrowser: black-glass toolbar ground (sheen + hairline).
+      SetBackground(std::make_unique<MoltGlassToolbarBackground>(
+          *this, *browser_view_,
+          /*primary_color=*/CustomCornersBackground::ToolbarTheme(),
+          /*corner_color=*/CustomCornersBackground::FrameTheme()));
+    } else {
       SetBackground(std::make_unique<CustomCornersBackground>(
           *this, *browser_view_,
           /*primary_color=*/CustomCornersBackground::ToolbarTheme(),
@@ -719,9 +733,8 @@ void ToolbarView::Init() {
     // in popups.
     pinned_toolbar_actions_container_ = AddChildView(
         std::make_unique<PinnedToolbarActionsContainer>(browser_view_, this));
-    if (!base::FeatureList::IsEnabled(features::kGlassToolbar)) {
-      SetBackground(views::CreateSolidBackground(kColorLocationBarBackground));
-    }
+    pinned_toolbar_actions_ = pinned_toolbar_actions_container_;
+    SetBackground(views::CreateSolidBackground(kColorLocationBarBackground));
     SetLayoutManager(std::make_unique<views::FlexLayout>())
         ->SetOrientation(views::LayoutOrientation::kHorizontal)
         .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
@@ -747,14 +760,15 @@ void ToolbarView::Init() {
         browser, command, ui::DispositionFromEventFlags(event.flags()));
   };
 
-  PrefService* const prefs = browser_->profile()->GetPrefs();
+  PrefService* const prefs = browser_->GetProfile()->GetPrefs();
 
   std::unique_ptr<ExtensionsToolbarDesktop> extensions_container;
   std::unique_ptr<ToolbarDivider> toolbar_divider;
 
   // Do not create the extensions or browser actions container if it is a guest
   // profile (only regular and incognito profiles host extensions).
-  if (!browser_->profile()->IsGuestSession()) {
+  if (!browser_->GetProfile()->IsGuestSession() &&
+      !features::IsWebUIExtensionsContainerEnabled()) {
     extensions_container = std::make_unique<ExtensionsToolbarDesktop>(browser_);
 
     toolbar_divider = std::make_unique<ToolbarDivider>();
@@ -762,9 +776,11 @@ void ToolbarView::Init() {
 
   std::unique_ptr<MediaToolbarButtonView> media_button;
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-  media_button = std::make_unique<MediaToolbarButtonView>(
-      browser_view_,
-      std::make_unique<MediaToolbarButtonContextualMenu>(browser_));
+  if (!features::IsWebUIMediaButtonEnabled()) {
+    media_button = std::make_unique<MediaToolbarButtonView>(
+        browser_view_,
+        std::make_unique<MediaToolbarButtonContextualMenu>(browser_));
+  }
 #endif
 
   // Always add children in order from left to right, for accessibility.
@@ -777,15 +793,21 @@ void ToolbarView::Init() {
         base::BindRepeating(callback, browser_, IDC_FORWARD), browser_));
   }
 
-  if (features::IsWebUIToolbarEnabled()) {
+  if (base::FeatureList::IsEnabled(
+          features::kWebUIToolbarProcessOverheadExperiment)) {
+    detached_toolbar_webview_ = std::make_unique<WebUIToolbarWebView>(
+        browser_, browser_->command_controller(), /*location_bar=*/nullptr);
+  } else if (features::IsWebUIToolbarEnabled()) {
     toolbar_webview_ = AddChildView(std::make_unique<WebUIToolbarWebView>(
         browser_, browser_->command_controller(),
         std::move(webui_location_bar)));
   }
 
-  if (!features::IsWebUIReloadButtonEnabled()) {
+  if (!features::IsWebUIReloadButtonEnabled() ||
+      base::FeatureList::IsEnabled(
+          features::kWebUIToolbarProcessOverheadExperiment)) {
     reload_ = AddChildView(std::make_unique<ReloadButton>(
-        browser_->profile(), browser_->command_controller(),
+        browser_->GetProfile(), browser_->command_controller(),
         InitialWebUIWindowMetricsManager::From(browser_)));
   }
 
@@ -800,11 +822,15 @@ void ToolbarView::Init() {
   }
 
   if (base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks) &&
-      ((contextual_tasks::kShowEntryPoint.Get() ==
-        contextual_tasks::EntryPointOption::kToolbarPermanent) ||
-       (contextual_tasks::kShowEntryPoint.Get() ==
-        contextual_tasks::EntryPointOption::kToolbarRevisit))) {
-    AddChildView(std::make_unique<ContextualTasksButton>(browser_));
+      contextual_tasks::kShowEntryPoint.Get() ==
+          contextual_tasks::EntryPointOption::kToolbarEphemeralBranded) {
+    auto button = std::make_unique<ContextualTasksButton>(browser_);
+    auto* vts_controller =
+        tabs::VerticalTabStripStateController::From(browser_);
+    if (!vts_controller || !vts_controller->ShouldDisplayVerticalTabs()) {
+      button->SetProperty(views::kMarginsKey, gfx::Insets());
+    }
+    AddChildViewAt(std::move(button), 0);
   }
 
   // MoltBrowser: MoltNet (Tor exit-country) + Import buttons live in the LEFT
@@ -817,13 +843,13 @@ void ToolbarView::Init() {
 
     auto import_button = std::make_unique<ToolbarButton>();
     import_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    import_button->SetVectorIcon(kBookmarksManagerIcon);
+    import_button->SetVectorIcon(kBookmarksManagerOldIcon);
     import_button->SetTooltipText(
         u"Bookmarks — view yours, or import from another browser");
     ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
     import_button_ptr->SetCallback(base::BindRepeating(
         [](ToolbarButton* anchor, Browser* browser) {
-          MoltImportBubbleView::Show(anchor, browser->profile());
+          MoltImportBubbleView::Show(anchor, browser->GetProfile());
         },
         base::Unretained(import_button_ptr), browser_));
   }
@@ -835,17 +861,14 @@ void ToolbarView::Init() {
     location_bar_ = toolbar_webview_->GetLocationBar();
   }
 
-  if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
-    auto* vertical_tab_strip_state_controller =
-        tabs::VerticalTabStripStateController::From(browser_view_->browser());
-    if (base::FeatureList::IsEnabled(features::kGlicActorUi) &&
-        features::kGlicActorUiTaskIcon.Get()) {
-      glic_actor_button_container_ =
-          AddChildView(CreateGlicActorButtonContainer());
-      glic_actor_task_icon_ =
-          glic_actor_button_container_->AddChildView(CreateGlicActorTaskIcon());
-      glic_actor_button_container_->SetVisible(false);
-    }
+  bool is_glic_left_of_profile =
+      features::kGlicToolbarButtonLocationParam.Get() ==
+          features::GlicToolbarButtonLocation::kLeftOfProfileChip ||
+      features::kGlicToolbarButtonLocationParam.Get() ==
+          features::GlicToolbarButtonLocation::kLeftOfProfileChipWithBackground;
+  if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile()) &&
+      !is_glic_left_of_profile) {
+    InitGlicContainer();
 
     glic_button_ = AddChildView(CreateGlicButton());
     std::unique_ptr<ToolbarDivider> glic_button_divider =
@@ -855,15 +878,6 @@ void ToolbarView::Init() {
         views::kMarginsKey,
         gfx::Insets::VH(
             0, GetLayoutConstant(LayoutConstant::kToolbarDividerSpacing)));
-    if (vertical_tab_strip_state_controller) {
-      vertical_tab_subscription_ =
-          vertical_tab_strip_state_controller->RegisterOnModeChanged(
-              base::BindRepeating(&ToolbarView::OnVerticalTabStripModeChanged,
-                                  base::Unretained(this)));
-      should_display_vertical_tabs_ =
-          vertical_tab_strip_state_controller->ShouldDisplayVerticalTabs();
-    }
-    UpdateGlicButtonVisibility();
   }
 
   if (extensions_container) {
@@ -877,28 +891,26 @@ void ToolbarView::Init() {
     toolbar_divider_ = AddChildView(std::move(toolbar_divider));
   }
 
-  pinned_toolbar_actions_container_ = AddChildView(
-      std::make_unique<PinnedToolbarActionsContainer>(browser_view_, this));
-
-  if (!base::FeatureList::IsEnabled(tabs::kHorizontalTabStripComboButton) &&
-      features::HasTabSearchToolbarButton()) {
-    tab_search_button_ =
-        pinned_toolbar_actions_container()->CreatePermanentButtonFor(
-            kActionTabSearch);
-    tab_search_button_->SetProperty(views::kElementIdentifierKey,
-                                    kTabSearchButtonElementId);
+  if (!features::IsWebUIPinnedToolbarActionsEnabled()) {
+    pinned_toolbar_actions_container_ = AddChildView(
+        std::make_unique<PinnedToolbarActionsContainer>(browser_view_, this));
+    pinned_toolbar_actions_ = pinned_toolbar_actions_container_;
+  } else {
+    pinned_toolbar_actions_ = toolbar_webview_->GetPinnedToolbarActions();
   }
 
   if (IsChromeLabsEnabled()) {
-    UpdateChromeLabsNewBadgePrefs(browser_->profile());
+    UpdateChromeLabsNewBadgePrefs(browser_->GetProfile());
 
     const bool should_show_chrome_labs_ui =
-        ShouldShowChromeLabsUI(browser_->profile());
+        ShouldShowChromeLabsUI(browser_->GetProfile());
     if (should_show_chrome_labs_ui) {
       show_chrome_labs_button_.Init(
           chrome_labs_prefs::kBrowserLabsEnabledEnterprisePolicy, prefs,
           base::BindRepeating(&ToolbarView::OnChromeLabsPrefChanged,
                               base::Unretained(this)));
+      CHECK(!features::IsWebUIPinnedToolbarActionsEnabled())
+          << "WebUIPinnedToolbarActions does not support ChromeLabs.";
       // Set the visibility for the button based on initial enterprise policy
       // value. Only call OnChromeLabsPrefChanged if there is a change from
       // the initial value.
@@ -910,15 +922,20 @@ void ToolbarView::Init() {
 
   // Only show the Battery Saver button when it is not controlled by the OS. On
   // ChromeOS the battery icon in the shelf shows the same information.
-  if (!performance_manager::user_tuning::IsBatterySaverModeManagedByOS()) {
+  if (!performance_manager::user_tuning::IsBatterySaverModeManagedByOS() &&
+      !features::IsWebUIBatterySaverButtonEnabled()) {
     battery_saver_button_ =
-        AddChildView(std::make_unique<BatterySaverButton>(browser_view_));
+        AddChildView(std::make_unique<BatterySaverButton>(browser_));
   }
 
-  performance_intervention_button_ = AddChildView(
-      std::make_unique<PerformanceInterventionButton>(browser_view_));
+  if (!features::IsWebUIPerformanceInterventionButtonEnabled()) {
+    performance_intervention_button_ =
+        AddChildView(std::make_unique<PerformanceInterventionButton>(browser_));
+  }
 
-  if (media_button) {
+  if (features::IsWebUIMediaButtonEnabled()) {
+    media_button_ = toolbar_webview_->GetMediaToolbarButton();
+  } else if (media_button) {
     media_button_ = AddChildView(std::move(media_button));
   }
 
@@ -947,7 +964,7 @@ void ToolbarView::Init() {
     // UpdateAiAgentModeHighlights() only while the kMoltAiChat panel is open.
     molt_ai_button->SetHighlight(u"🤖 AI mode", std::nullopt);
     molt_ai_button->SetTooltipText(
-        u"Toggle AI mode — MoltBrowser AI, runs locally on your device (⌘⇧L)");
+        u"Toggle AI mode — MoltBrowser AI, runs locally on your device");
     molt_ai_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     // The 🤖 robot emoji in the label carries the icon (like the country flag
     // on the MoltNet button), so no separate vector icon. This is also the
@@ -1011,13 +1028,13 @@ void ToolbarView::Init() {
     // Tor proxy (+ WebRTC/prediction/DoH overrides) into the REGULAR profile
     // and local state. Clear exactly those legacy values. Idempotent; a
     // no-op once cleaned (MoltNet never writes them there any more).
-    if (!molt_ai::tor::IsMoltNetProfile(browser_->profile())) {
+    if (!molt_ai::tor::IsMoltNetProfile(browser_->GetProfile())) {
       molt_ai::tor::MoltNetRouting::MigrateLegacyRoutingPrefs(
-          browser_->profile(), g_browser_process->local_state());
+          browser_->GetProfile(), g_browser_process->local_state());
     }
 
     molt_ai::UpdateManager::Get()->Initialize(
-        browser_->profile()
+        browser_->GetProfile()
             ->GetDefaultStoragePartition()
             ->GetURLLoaderFactoryForBrowserProcess());
     auto update_button = std::make_unique<ToolbarButton>(base::BindRepeating(
@@ -1027,41 +1044,70 @@ void ToolbarView::Init() {
         },
         browser_));
     update_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-    update_button->SetVectorIcon(vector_icons::kInstallDesktopIcon);
+    update_button->SetVectorIcon(features::IsRoundedIconsEnabled()
+                                     ? vector_icons::kInstallDesktopIcon
+                                     : vector_icons::kInstallDesktopOldIcon);
     update_button->SetTooltipText(u"Software update");
     AddChildView(std::move(update_button));
   }
 
-  avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
-  // MoltBrowser: Hide the Google sign-in / avatar button.
-  // MoltBrowser does not use Google account integration.
-  bool show_avatar_toolbar_button = false;
-  avatar_->SetVisible(show_avatar_toolbar_button);
+  if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
+    if (base::FeatureList::IsEnabled(features::kAiOverlayDialog) &&
+        ttc::AiOverlayDialogController::From(browser_)) {
+      actions::ActionItem* action_item =
+          actions::ActionManager::Get().FindAction(
+              kActionShowAiOverlayDialog, browser_->browser_window_features()
+                                              ->browser_actions()
+                                              ->root_action_item());
+      if (action_item) {
+        action_item->SetVisible(true);
+        action_item->SetEnabled(true);
+        PinnedToolbarActionsModel::Get(browser_->GetProfile())
+            ->UpdatePinnedState(kActionShowAiOverlayDialog, true);
+      }
+    }
+  }
 
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-  auto new_tab_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-      &ToolbarView::NewTabButtonPressed, base::Unretained(this)));
-  new_tab_button->SetTooltipText(
-      l10n_util::GetStringUTF16(IDS_TOOLTIP_NEW_TAB));
-  new_tab_button->SetHorizontalAlignment(gfx::ALIGN_CENTER);
-  new_tab_button->SetVectorIcon(kNewTabToolbarButtonIcon);
-  new_tab_button->SetVisible(false);
-  new_tab_button->SetProperty(views::kElementIdentifierKey,
-                              kToolbarNewTabButtonElementId);
-  new_tab_button_ = AddChildView(std::move(new_tab_button));
-#endif  // BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
+  if (is_glic_left_of_profile &&
+      glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
+    InitGlicContainer();
+
+    glic_button_ = AddChildView(CreateGlicButton());
+    // The left margin is needed to ensure proper spacing before the
+    // separator. The right margin is needed for spacing between the glic and
+    // actor icons. The space between glic and profile should also be 5 but that
+    // is handled by the profile margins.
+    glic_button_->SetProperty(views::kMarginsKey,
+                              gfx::Insets()
+                                  .set_left(kGlicButtonMargin)
+                                  .set_right(kInsideBorderAroundGlicButtons));
+    UpdateGlicButtonVisibility();
+  }
+
+  if (!features::IsWebUIAvatarButtonEnabled()) {
+    avatar_ =
+        AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
+    // MoltBrowser: Hide the Google sign-in / avatar button.
+    // MoltBrowser does not use Google account integration.
+    bool show_avatar_toolbar_button = false;
+    avatar_->SetVisible(show_avatar_toolbar_button);
+  }
 
   overflow_button_ = AddChildView(std::make_unique<OverflowButton>());
   overflow_button_->SetVisible(false);
 
-  auto app_menu_button = std::make_unique<BrowserAppMenuButton>(this);
-  app_menu_button->SetFlipCanvasOnPaintForRTLUI(true);
-  app_menu_button->GetViewAccessibility().SetName(
-      l10n_util::GetStringUTF16(IDS_ACCNAME_APP));
-  app_menu_button->SetTooltipText(
-      l10n_util::GetStringUTF16(IDS_APPMENU_TOOLTIP));
-  app_menu_button->SetID(VIEW_ID_APP_MENU);
-  app_menu_button_ = AddChildView(std::move(app_menu_button));
+  // WebUI app menu button handles these internally, so no need to set these
+  // properties here, and the control is added as part of the WebUI toolbar.
+  if (!features::IsWebUIAppMenuButtonEnabled()) {
+    auto app_menu_button = std::make_unique<BrowserAppMenuButton>(this);
+    app_menu_button->SetFlipCanvasOnPaintForRTLUI(true);
+    app_menu_button->GetViewAccessibility().SetName(
+        l10n_util::GetStringUTF16(IDS_ACCNAME_APP));
+    app_menu_button->SetTooltipText(
+        l10n_util::GetStringUTF16(IDS_APPMENU_TOOLTIP));
+    app_menu_button->SetID(VIEW_ID_APP_MENU);
+    app_menu_button_ = AddChildView(std::move(app_menu_button));
+  }
 
   if (base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks) &&
       contextual_tasks::GetExpandButtonOption() ==
@@ -1098,6 +1144,20 @@ void ToolbarView::Init() {
     home_->SetVisible(show_home_button_.GetValue());
   }
 
+  if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
+    auto* vertical_tab_strip_state_controller =
+        tabs::VerticalTabStripStateController::From(browser_view_->browser());
+    if (vertical_tab_strip_state_controller) {
+      vertical_tab_subscription_ =
+          vertical_tab_strip_state_controller->RegisterOnModeChanged(
+              base::BindRepeating(&ToolbarView::OnVerticalTabStripModeChanged,
+                                  base::Unretained(this)));
+      should_display_vertical_tabs_ =
+          vertical_tab_strip_state_controller->ShouldDisplayVerticalTabs();
+    }
+    UpdateGlicButtonVisibility();
+  }
+
   InitLayout();
 
   for (auto* button : std::array<views::Button*, 5>{back_, forward_, reload_,
@@ -1107,13 +1167,32 @@ void ToolbarView::Init() {
     }
   }
 
+  if (auto* glic_split_button_controller =
+          glic::GlicSplitButtonController::From(browser_)) {
+    glic_split_button_controller_ = glic_split_button_controller->GetWeakPtr();
+    glic_split_button_controller_->SetVerticalTabsDelegate(this);
+  }
+
   initialized_ = true;
+}
+
+void ToolbarView::InitGlicContainer() {
+  if (base::FeatureList::IsEnabled(features::kGlicActorUi) &&
+      features::kGlicActorUiTaskIcon.Get()) {
+    glic_actor_button_container_ =
+        AddChildView(CreateGlicActorButtonContainer());
+    glic_actor_task_icon_ =
+        glic_actor_button_container_->AddChildView(CreateGlicActorTaskIcon());
+    glic_actor_button_container_->SetVisible(false);
+    glic_actor_task_icon_->SetVisible(false);
+  }
 }
 
 void ToolbarView::OnVerticalTabStripModeChanged(
     tabs::VerticalTabStripStateController* controller) {
   should_display_vertical_tabs_ = controller->ShouldDisplayVerticalTabs();
   UpdateGlicButtonVisibility();
+  UpdateGlicActorVisibility();
 }
 
 std::unique_ptr<GlicAndActorButtonsContainer>
@@ -1135,8 +1214,26 @@ ToolbarView::CreateGlicActorTaskIcon() {
           base::BindRepeating(&ToolbarView::OnGlicActorTaskIconClicked,
                               base::Unretained(this)));
 
+  // Add a MenuButtonController in order to keep the task icon pressed while the
+  // bubble is visible.
+  glic_actor_task_icon->SetButtonController(
+      std::make_unique<views::MenuButtonController>(
+          glic_actor_task_icon.get(),
+          base::BindRepeating(&ToolbarView::OnGlicActorTaskIconClicked,
+                              base::Unretained(this)),
+          std::make_unique<views::Button::DefaultButtonControllerDelegate>(
+              glic_actor_task_icon.get())));
+
   glic_actor_task_icon->SetProperty(views::kCrossAxisAlignmentKey,
                                     views::LayoutAlignment::kCenter);
+
+  if (base::FeatureList::IsEnabled(features::kToolbarGlicButtonResizing)) {
+    glic_actor_task_icon->SetProperty(
+        views::kFlexBehaviorKey,
+        views::FlexSpecification(
+            views::MinimumFlexSizeRule::kPreferredSnapToMinimum,
+            views::MaximumFlexSizeRule::kPreferred));
+  }
 
   return glic_actor_task_icon;
 }
@@ -1144,12 +1241,16 @@ ToolbarView::CreateGlicActorTaskIcon() {
 void ToolbarView::OnGlicActorTaskIconClicked() {
   Profile* const profile = browser_view_->GetProfile();
   auto* icon_manager =
-      tabs::GlicActorTaskIconManagerFactory::GetForProfile(profile);
+      glic::GlicActorTaskIconManagerFactory::GetForProfile(profile);
   CHECK(icon_manager);
 
   ActorTaskListBubbleController* controller =
       ActorTaskListBubbleController::From(browser_view_->browser());
-  controller->ShowBubble(glic_actor_task_icon_);
+  // Only show the bubble if the button is not currently pressed. Clicking on
+  // the pressed button should dismiss the nudge.
+  if (!glic_actor_task_icon_->GetIsPressed()) {
+    controller->ShowBubble(glic_actor_task_icon_);
+  }
 
   auto current_task_nudge_state = icon_manager->GetCurrentActorTaskNudgeState();
   actor::ui::LogGlobalTaskIndicatorClick(current_task_nudge_state);
@@ -1159,15 +1260,12 @@ std::unique_ptr<glic::ToolbarGlicButton> ToolbarView::CreateGlicButton() {
   glic::GlicKeyedService* service =
       glic::GlicKeyedService::Get(browser_view_->GetProfile());
   std::u16string tooltip_text = l10n_util::GetStringUTF16(
-      service->IsWindowOrFreShowing() ? IDS_GLIC_TAB_STRIP_BUTTON_TOOLTIP_CLOSE
-                                      : IDS_GLIC_TAB_STRIP_BUTTON_TOOLTIP);
+      service->instance_coordinator().IsAnyPanelShowing()
+          ? IDS_GLIC_TAB_STRIP_BUTTON_TOOLTIP_CLOSE
+          : IDS_GLIC_TAB_STRIP_BUTTON_TOOLTIP);
   std::unique_ptr<glic::ToolbarGlicButton> glic_button =
       std::make_unique<glic::ToolbarGlicButton>(
           browser_view_->browser(),
-          base::BindRepeating(&ToolbarView::OnGlicButtonHovered,
-                              base::Unretained(this)),
-          base::BindRepeating(&ToolbarView::OnGlicButtonMouseDown,
-                              base::Unretained(this)),
           base::BindRepeating(&ToolbarView::OnGlicButtonAnimationEnded,
                               base::Unretained(this)),
           tooltip_text,
@@ -1181,6 +1279,8 @@ std::unique_ptr<glic::ToolbarGlicButton> ToolbarView::CreateGlicButton() {
 }
 
 void ToolbarView::OnGlicButtonClicked() {
+  CHECK(glic_split_button_controller_);
+
   // Indicate that the glic button was pressed so that we can either close the
   // IPH promo (if present) or note that it has already been used to prevent
   // unnecessarily displaying the promo.
@@ -1189,25 +1289,35 @@ void ToolbarView::OnGlicButtonClicked() {
       FeaturePromoFeatureUsedAction::kClosePromoIfPresent);
 
   std::optional<std::string> prompt_suggestion;
-  tabs::GlicNudgeController* glic_nudge_controller =
-      browser_->browser_window_features()->glic_nudge_controller();
-  if (glic_nudge_controller) {
-    prompt_suggestion = glic_nudge_controller->GetPromptSuggestion();
-    glic_nudge_controller->ClearPromptSuggestion();
+  glic::GlicNudgeController* nudge_controller =
+      glic_split_button_controller_->nudge_controller();
+  CHECK(nudge_controller);
+  prompt_suggestion = nudge_controller->GetPromptSuggestion();
+  nudge_controller->ClearPromptSuggestion();
+
+  glic::mojom::InvocationSource source;
+  glic::GlicButtonController* button_controller =
+      glic_split_button_controller_->button_controller();
+  CHECK(button_controller);
+  source = button_controller->GetInvocationSource(
+      glic_button_->GetIsShowingNudge(), /*is_toolbar=*/true);
+
+  auto* glic_service = glic::GlicKeyedServiceFactory::GetGlicKeyedService(
+      browser_view_->GetProfile());
+  const bool is_panel_showing =
+      glic_service->IsPanelShowingForBrowser(*browser_view_->browser());
+  if (!is_panel_showing && prompt_suggestion.has_value() &&
+      !prompt_suggestion->empty()) {
+    glic::GlicInvokeOptions options(glic::Target(browser()), source);
+    options.prompts.push_back(std::move(*prompt_suggestion));
+    glic_service->Invoke(std::move(options));
+  } else {
+    glic_service->ToggleUI(browser_view_->browser(),
+                           /*prevent_close=*/false, source);
   }
 
-  glic::GlicKeyedServiceFactory::GetGlicKeyedService(
-      browser_view_->GetProfile())
-      ->ToggleUI(browser_view_->browser(),
-                 /*prevent_close=*/false,
-                 glic_button_->GetIsShowingNudge()
-                     ? glic::mojom::InvocationSource::kNudge
-                     : glic::mojom::InvocationSource::kTopChromeButton,
-                 prompt_suggestion);
-
   if (glic_button_->GetIsShowingNudge()) {
-    glic_nudge_controller->OnNudgeActivity(
-        tabs::GlicNudgeActivity::kNudgeClicked);
+    nudge_controller->OnNudgeActivity(glic::GlicNudgeActivity::kNudgeClicked);
   }
 
   ExecuteHideToolbarNudge(glic_button_);
@@ -1217,43 +1327,14 @@ void ToolbarView::OnGlicButtonClicked() {
 }
 
 void ToolbarView::OnGlicButtonDismissed() {
-  browser_->browser_window_features()->glic_nudge_controller()->OnNudgeActivity(
-      tabs::GlicNudgeActivity::kNudgeDismissed);
+  CHECK(glic_split_button_controller_);
+  glic::GlicNudgeController* nudge_controller =
+      glic_split_button_controller_->nudge_controller();
+  CHECK(nudge_controller);
+  nudge_controller->OnNudgeActivity(glic::GlicNudgeActivity::kNudgeDismissed);
 
   // Force hide the button when pressed, bypassing locked expansion mode.
   ExecuteHideToolbarNudge(glic_button_);
-}
-
-void ToolbarView::OnGlicButtonHovered() {
-  Profile* const profile = browser_view_->GetProfile();
-
-  glic::GlicKeyedService* glic_service =
-      glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
-  if (auto* instance =
-          glic_service->GetInstanceForActiveTab(browser_view_->browser())) {
-    instance->host().instance_delegate().PrepareForOpen();
-  }
-}
-
-void ToolbarView::OnGlicButtonMouseDown() {
-  Profile* const profile = browser_view_->GetProfile();
-  if (!glic::GlicEnabling::IsEnabledAndConsentForProfile(profile)) {
-    // Do not do this optimization if user has not consented to GLIC.
-    return;
-  }
-  auto* glic_service = glic::GlicKeyedService::Get(profile);
-
-  // TODO(crbug.com/445934142): Create the instance here so that suggestions can
-  // be fetched, but don't show it yet.
-  if (auto* instance =
-          glic_service->GetInstanceForActiveTab(browser_view_->browser())) {
-    // This prefetches the results and allows the underlying implementation to
-    // cache the results for future calls. Which is why the callback does
-    // nothing.
-    instance->host().instance_delegate().FetchZeroStateSuggestions(
-        /*is_first_run=*/false, /*supported_tools=*/std::nullopt,
-        base::DoNothing());
-  }
 }
 
 void ToolbarView::OnGlicButtonAnimationEnded() {
@@ -1261,19 +1342,264 @@ void ToolbarView::OnGlicButtonAnimationEnded() {
   return;
 }
 
-void ToolbarView::ExecuteHideToolbarNudge(glic::ToolbarGlicButton* button) {
+void ToolbarView::ShowToolbarNudge(glic::GlicButtonInterface* button) {
+  if (IsMouseHovered()) {
+    SetLockedExpansionMode(ExpansionMode::kWillShow, button);
+    return;
+  }
+  if (locked_expansion_mode_ == ExpansionMode::kNone) {
+    ExecuteShowToolbarNudge(button);
+  }
+}
+
+void ToolbarView::HideToolbarNudge(glic::GlicButtonInterface* button) {
+  if (this->IsMouseHovered()) {
+    SetLockedExpansionMode(ExpansionMode::kWillHide, button);
+    return;
+  }
+  if (locked_expansion_mode_ == ExpansionMode::kNone) {
+    ExecuteHideToolbarNudge(button);
+  }
+}
+
+bool ToolbarView::GetIsShowingGlicNudge() {
+  return glic_button_ && glic_button_->GetIsShowingNudge();
+}
+
+bool ToolbarView::GetIsShowingGlicActorTaskIconNudge() {
+  return glic_actor_task_icon_ && glic_actor_task_icon_->GetIsShowingNudge();
+}
+
+void ToolbarView::OnTriggerGlicNudgeUI(glic::NudgeParams params) {
+  if (GetIsShowingGlicActorTaskIconNudge()) {
+    return;
+  }
+
+  if (!glic_button_) {
+    return;
+  }
+  if (!params.label.empty()) {
+    glic_button_->SetNudgeLabel(std::move(params.label));
+    ShowToolbarNudge(glic_button_);
+  }
+}
+
+void ToolbarView::OnHideGlicNudgeUI() {
+  if (glic_button_) {
+    HideToolbarNudge(glic_button_);
+  }
+}
+
+void ToolbarView::SetGlicActorNudgeLabel(const std::u16string& nudge_label) {
+  if (glic_actor_task_icon_) {
+    glic_actor_task_icon_->ShowNudgeLabel(nudge_label);
+  }
+}
+
+void ToolbarView::TriggerGlicActorNudge(const std::u16string& nudge_text) {
+  if (!glic_button_ || !glic_actor_task_icon_) {
+    return;
+  }
+  if (GetIsShowingGlicNudge()) {
+    // If the glic button is showing, start the hide animation in parallel to
+    // the show actor nudge animation.
+    HideToolbarNudge(glic_button_);
+    OnGlicButtonAnimationEnded();
+  }
+  ShowGlicActorNudge(nudge_text);
+}
+
+void ToolbarView::ShowGlicActorNudge(const std::u16string nudge_text) {
+  if (!glic_button_ || !glic_actor_task_icon_) {
+    return;
+  }
+  // Start animation for minimizing the glic button.
+  glic_button_->Collapse();
+  ShowGlicActorTaskIcon();
+  glic_actor_task_icon_->ShowNudgeLabel(nudge_text);
+  ShowToolbarNudge(glic_actor_task_icon_);
+}
+
+void ToolbarView::ShowGlicActorTaskIcon() {
+  if (!glic_button_ || !glic_actor_task_icon_ ||
+      !glic_actor_button_container_) {
+    return;
+  }
+  // If the nudge is showing (ex: previous state was CheckTasks), hide the
+  // nudge.
+  if (glic_actor_task_icon_->GetIsShowingNudge()) {
+    HideToolbarNudge(glic_actor_task_icon_);
+    return;
+  }
+  glic_button_ =
+      glic_actor_button_container_->InsertGlicButton(glic_button_.get());
+  SetGlicActorShowState(true);
+  SetGlicShowState(true);
+  glic_button_->Collapse();
+  glic_button_->SetSplitButtonCornerStyling();
+  UpdateGlicActorButtonContainerBorders();
+
+  if (glic_actor_task_icon_->GetAnimationMode() ==
+      glic::AnimationMode::kEntry) {
+    // TODO(crbug.com/484389669): Create animation session to being animation of
+    // nudge.
+    glic_actor_task_icon_->SetAnimationMode(glic::AnimationMode::kNudge);
+    glic_actor_task_icon_->SetWidthFactor(1.0);
+  }
+}
+
+void ToolbarView::HideGlicActorTaskIcon() {
+  if (!glic_actor_task_icon_) {
+    return;
+  }
+
+  // If it's already hidden, do nothing.
+  if (!glic_actor_task_icon_->GetVisible() &&
+      !glic_actor_task_icon_->GetIsShowingNudge()) {
+    return;
+  }
+  glic_actor_task_icon_->SetIsShowingNudge(false);
+
+  // TODO(crbug.com/484389669): Toolbar glic actor animations
+  if (glic_actor_task_icon_->GetAnimationMode() ==
+      glic::AnimationMode::kNudge) {
+    // TODO(crbug.com/484389669): Create animation session to being animation of
+    // nudge.
+    glic_actor_task_icon_->SetAnimationMode(glic::AnimationMode::kEntry);
+    glic_actor_task_icon_->SetWidthFactor(0.0);
+  }
+
+  FinalizeHideGlicActorTaskIcon();
+}
+
+void ToolbarView::SetGlicActorNudgePressedState(bool pressed) {
+  if (glic_actor_task_icon_) {
+    glic_actor_task_icon_->SetPressedState(pressed);
+  }
+}
+
+void ToolbarView::ShowActorTaskListBubble() {
+  if (!glic_actor_task_icon_) {
+    return;
+  }
+  ActorTaskListBubbleController::From(browser_)->ShowBubble(
+      glic_actor_task_icon());
+}
+
+void ToolbarView::FinalizeHideGlicActorTaskIcon() {
+  if (!glic_button_ || !glic_actor_task_icon_ ||
+      !glic_actor_button_container_) {
+    return;
+  }
+  // Reset Nudge State
+  if (glic_actor_task_icon_->GetIsShowingNudge()) {
+    // TODO(crbug.com/484389669): Glic actor nudge animation
+    glic_actor_task_icon_->SetIsShowingNudge(false);
+  }
+  glic_actor_task_icon_->SetVisible(false);
+  glic_actor_task_icon_->SetTaskIconToDefault();
+
+  size_t insertion_index = GetIndexOf(avatar_.get()).value();
+  if (glic_button_divider_) {
+    insertion_index = GetIndexOf(glic_button_divider_).value();
+  }
+  glic_button_ = AddChildViewAt(std::move(glic_button_.get()), insertion_index);
+  glic_actor_button_container_->SetVisible(false);
+  glic_button_->Expand();
+  glic_button_->ResetSplitButtonCornerStyling();
+  // Reset the animation mode for the next time the icon is shown.
+  glic_actor_task_icon_->SetAnimationMode(glic::AnimationMode::kEntry);
+  UpdateGlicActorButtonContainerBorders();
+}
+
+void ToolbarView::UpdateGlicActorButtonContainerBorders() {
+  CHECK(glic_button_);
+  gfx::Insets glic_border;
+
+  // Ensure buttons look vertically centered by making the top and bottom insets
+  // match.
+  gfx::Insets border_insets = gfx::Insets();
+  int min_vertical_inset =
+      std::min(border_insets.top(), border_insets.bottom());
+  border_insets.set_top_bottom(min_vertical_inset, min_vertical_inset);
+
+  // GlicActorTaskIcon will only ever be shown alongside the GlicButton.
+  if (glic_actor_task_icon_ && glic_actor_task_icon_->IsDrawn()) {
+    gfx::Insets task_icon_border;
+    const gfx::Insets right_icon_border =
+        gfx::Insets().set_left_right(0, kOutsideBorderAroundGlicButtons);
+    const gfx::Insets left_icon_border = gfx::Insets().set_left_right(
+        kOutsideBorderAroundGlicButtons, kInsideBorderAroundGlicButtons);
+    task_icon_border = right_icon_border + border_insets;
+    glic_border = left_icon_border + border_insets;
+    glic_actor_task_icon_->SetBorder(
+        views::CreateEmptyBorder(task_icon_border));
+    // Force a background repaint to account for the new border insets.
+    glic_actor_task_icon_->RefreshBackground();
+  } else {
+    // Reset GlicButton border if Task Icon is hidden.
+    glic_border = gfx::Insets().set_left_right(border_insets.top(),
+                                               border_insets.bottom()) +
+                  border_insets;
+  }
+  glic_button_->SetBorder(views::CreateEmptyBorder(glic_border));
+  // Force a background repaint to account for the new border insets.
+  glic_button_->RefreshBackground();
+}
+
+void ToolbarView::ExecuteShowToolbarNudge(glic::GlicButtonInterface* button) {
+  // TODO(crbug.com/): Fix cases where we can't show modal ui during animation
+  // session.
+  button->SetIsShowingNudge(true);
+
+  // Only change the margins between the GlicButton and nudges that are NOT
+  // coming from the GlicActorTaskIcon.
+  if (glic_button_ && glic_button_->GetVisible() && button != glic_button_ &&
+      button != glic_actor_task_icon_) {
+    const int space_between_buttons = kLargeSpaceBetweenButtons;
+    gfx::Insets margin;
+    margin.set_right(space_between_buttons);
+    button->GetPropertyHandler()->SetProperty(views::kMarginsKey, margin);
+  } else {
+    // Reset the margins.
+    button->GetPropertyHandler()->SetProperty(views::kMarginsKey,
+                                              gfx::Insets());
+  }
+}
+
+void ToolbarView::ExecuteHideToolbarNudge(glic::GlicButtonInterface* button) {
   if (!button->GetVisible()) {
     return;
   }
 
   // Since the glic button is still visible in it's hidden state we need to have
   // a special case to query if it's in its Hide state.
-  if (button == glic_button_ && button->GetWidthFactor() == 0.0 &&
-      base::FeatureList::IsEnabled(features::kGlicEntrypointVariations)) {
+  if (button == glic_button_ && button->GetWidthFactor() == 0.0) {
     return;
   }
 
   button->SetIsShowingNudge(false);
+}
+
+void ToolbarView::UpdateGlicActorVisibility() {
+  if (!glic_actor_task_icon_) {
+    return;
+  }
+
+  bool is_glic_actor_visible =
+      should_show_glic_actor_ &&
+      (should_display_vertical_tabs_ ||
+       base::FeatureList::IsEnabled(features::kGlicHorizontalTabToolbarButton));
+
+  glic_actor_task_icon_->SetVisible(is_glic_actor_visible);
+  if (glic_button_) {
+    bool is_glic_left_of_profile =
+        base::FeatureList::IsEnabled(features::kGlicToolbarButtonLocation) &&
+        features::kGlicToolbarButtonLocationParam.Get() ==
+            features::GlicToolbarButtonLocation::kLeftOfProfileChip;
+    glic_button_->UpdateStyle(is_glic_left_of_profile &&
+                              !is_glic_actor_visible);
+  }
 }
 
 void ToolbarView::UpdateGlicButtonVisibility() {
@@ -1282,10 +1608,32 @@ void ToolbarView::UpdateGlicButtonVisibility() {
   }
 
   bool is_glic_visible =
-      should_show_glic_button_ && should_display_vertical_tabs_;
+      should_show_glic_button_ &&
+      (should_display_vertical_tabs_ ||
+       base::FeatureList::IsEnabled(features::kGlicHorizontalTabToolbarButton));
 
   glic_button_->SetVisible(is_glic_visible);
-  glic_button_divider_->SetVisible(is_glic_visible);
+  if (glic_button_divider_) {
+    glic_button_divider_->SetVisible(is_glic_visible);
+  }
+
+  if (glic_actor_button_container_) {
+    // glic_actor_button_container_ should only be visible at the same time as
+    // glic_button_.
+    glic_actor_button_container_->SetVisible(is_glic_visible);
+  }
+  bool is_glic_left_of_profile =
+      base::FeatureList::IsEnabled(features::kGlicToolbarButtonLocation) &&
+      features::kGlicToolbarButtonLocationParam.Get() ==
+          features::GlicToolbarButtonLocation::kLeftOfProfileChip;
+  bool is_task_icon_visible =
+      glic_actor_task_icon_ && glic_actor_task_icon_->GetVisible();
+  glic_button_->UpdateStyle(is_glic_left_of_profile && !is_task_icon_visible);
+}
+
+void ToolbarView::SetGlicActorShowState(bool show) {
+  should_show_glic_actor_ = show;
+  UpdateGlicActorVisibility();
 }
 
 void ToolbarView::SetGlicShowState(bool show) {
@@ -1301,15 +1649,37 @@ void ToolbarView::SetGlicPanelIsOpen(bool open) {
   glic_button_->SetGlicPanelIsOpen(open);
 }
 
+void ToolbarView::MouseMovedOutOfHost() {
+  SetLockedExpansionMode(ExpansionMode::kNone, /*button=*/nullptr);
+}
+
+void ToolbarView::SetLockedExpansionMode(ExpansionMode mode,
+                                         glic::GlicButtonInterface* button) {
+  if (mode == ExpansionMode::kNone) {
+    if (locked_expansion_mode_ == ExpansionMode::kWillShow) {
+      ExecuteShowToolbarNudge(locked_expansion_button_);
+    } else if (locked_expansion_mode_ == ExpansionMode::kWillHide) {
+      ExecuteHideToolbarNudge(locked_expansion_button_);
+    }
+    locked_expansion_button_ = nullptr;
+  } else {
+    locked_expansion_button_ = button;
+    mouse_watcher_->Start(GetWidget()->GetNativeWindow());
+  }
+  locked_expansion_mode_ = mode;
+}
+
 void ToolbarView::AnimationEnded(const gfx::Animation* animation) {
   if (animation->GetCurrentValue() == 0) {
     SetToolbarVisibility(false);
   }
-  browser()->window()->ToolbarSizeChanged(/*is_animating=*/false);
+  BrowserWindow::FromBrowser(browser())->ToolbarSizeChanged(
+      /*is_animating=*/false);
 }
 
 void ToolbarView::AnimationProgressed(const gfx::Animation* animation) {
-  browser()->window()->ToolbarSizeChanged(/*is_animating=*/true);
+  BrowserWindow::FromBrowser(browser())->ToolbarSizeChanged(
+      /*is_animating=*/true);
 }
 
 void ToolbarView::Update(WebContents* tab) {
@@ -1355,7 +1725,8 @@ void ToolbarView::UpdateCustomTabBarVisibility(bool visible, bool animate) {
   if (!animate) {
     size_animation_.Reset(visible ? 1.0 : 0.0);
     SetToolbarVisibility(visible);
-    browser()->window()->ToolbarSizeChanged(/*is_animating=*/false);
+    BrowserWindow::FromBrowser(browser())->ToolbarSizeChanged(
+        /*is_animating=*/false);
     return;
   }
 
@@ -1367,26 +1738,6 @@ void ToolbarView::UpdateCustomTabBarVisibility(bool visible, bool animate) {
   }
 }
 
-void ToolbarView::UpdateForWebUITabStrip() {
-#if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-  if (!new_tab_button_) {
-    return;
-  }
-  if (browser_view_->webui_tab_strip()) {
-    const int button_height =
-        GetLayoutConstant(LayoutConstant::kToolbarButtonHeight);
-    new_tab_button_->SetPreferredSize(gfx::Size(button_height, button_height));
-    new_tab_button_->SetVisible(true);
-    const size_t insertion_index = GetIndexOf(new_tab_button_).value();
-    AddChildViewAt(browser_view_->webui_tab_strip()->CreateTabCounter(),
-                   insertion_index);
-    LoadImages();
-  } else {
-    new_tab_button_->SetVisible(false);
-  }
-#endif  // BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
-}
-
 void ToolbarView::ResetTabState(WebContents* tab) {
   if (location_bar_) {
     location_bar_->ResetTabState(tab);
@@ -1394,13 +1745,15 @@ void ToolbarView::ResetTabState(WebContents* tab) {
 }
 
 void ToolbarView::SetPaneFocusAndFocusAppMenu() {
-  if (app_menu_button_) {
-    SetPaneFocus(app_menu_button_);
+  AppMenuControl* app_menu_control = GetAppMenuControl();
+  if (app_menu_control) {
+    app_menu_control->Focus(GetAsAccessiblePaneView());
   }
 }
 
 bool ToolbarView::GetAppMenuFocused() const {
-  return app_menu_button_ && app_menu_button_->HasFocus();
+  const AppMenuControl* app_menu_control = GetAppMenuControl();
+  return app_menu_control && app_menu_control->HasFocus();
 }
 
 void ToolbarView::ShowIntentPickerBubble(
@@ -1410,55 +1763,64 @@ void ToolbarView::ShowIntentPickerBubble(
     IntentPickerBubbleView::BubbleType bubble_type,
     const std::optional<url::Origin>& initiating_origin,
     IntentPickerResponse callback) {
-  views::Button* highlighted_button = nullptr;
-  if (bubble_type == IntentPickerBubbleView::BubbleType::kClickToCall) {
-    highlighted_button =
-        GetPageActionIconView(PageActionIconType::kClickToCall);
-  } else if (highlighted_button = GetIntentChipButton(); !highlighted_button) {
-    highlighted_button = GetPageActionView(kActionShowIntentPicker);
+  std::optional<ui::ElementIdentifier> higlighted_element;
+  if (GetPageActionViewInterface(kActionShowIntentPicker)) {
+    higlighted_element = kIntentPickerPageActionElementId;
+  } else {
+    return;
   }
 
-  // Post migration, highlighted_button is a nullptr for ClickToCall
-  // BubbleType but the bubble still gets shown without a page action being
-  // shown/highlighted.
-  if (highlighted_button || IsMigratedClickToCallBubble(bubble_type)) {
-    IntentPickerBubbleView::ShowBubble(
-        location_bar_view(), highlighted_button, bubble_type, GetWebContents(),
-        std::move(app_info), show_stay_in_chrome, show_remember_selection,
-        initiating_origin, std::move(callback));
-  }
+  IntentPickerBubbleView::ShowBubble(
+      GetBubbleAnchor(std::nullopt), higlighted_element, bubble_type,
+      GetWebContents(), std::move(app_info), show_stay_in_chrome,
+      show_remember_selection, initiating_origin, std::move(callback));
 }
 
 void ToolbarView::ShowBookmarkBubble(const GURL& url, bool already_bookmarked) {
-  views::View* const anchor_view = location_bar_view();
-  views::Button* const bookmark_star_icon =
-      GetPageActionView(kActionBookmarkThisTab);
-  CHECK(bookmark_star_icon);
-  BookmarkBubbleView::ShowBubble(anchor_view, GetWebContents(),
-                                 bookmark_star_icon, browser_, url,
-                                 already_bookmarked);
+  page_actions::PageActionViewInterface* bookmark_star_icon = nullptr;
+  if (!features::IsWebUILocationBarEnabled()) {
+    bookmark_star_icon = GetPageActionViewInterface(kActionBookmarkThisTab);
+    CHECK(bookmark_star_icon);
+  }
+  BookmarkBubbleView::ShowBubble(GetBubbleAnchor(std::nullopt),
+                                 GetWebContents(), bookmark_star_icon, browser_,
+                                 url, already_bookmarked);
 }
 
 bool ToolbarView::IsPositionInWindowCaption(
     const gfx::Point& test_point) const {
-  return ::IsPositionInWindowCaption(this, test_point);
+  return IsPositionInWindowCaptionForView(this, test_point);
+}
+
+void ToolbarView::RecordHitTestMetrics(bool is_caption_area) {
+  const bool is_mouse_down = GetWidget() && GetWidget()->IsMouseButtonDown();
+
+  if (!is_mouse_down) {
+    was_mouse_down_ = false;
+  } else if (!was_mouse_down_) {
+    was_mouse_down_ = true;
+    if (browser_view_->ShouldDrawVerticalTabStrip()) {
+      if (is_caption_area) {
+        base::RecordAction(
+            base::UserMetricsAction("VerticalTabs.Toolbar.CaptionAreaPressed"));
+      } else {
+        base::RecordAction(base::UserMetricsAction(
+            "VerticalTabs.Toolbar.InteractiveAreaPressed"));
+      }
+    }
+  }
 }
 
 views::Button* ToolbarView::GetChromeLabsButton() const {
-  return browser_->GetFeatures()
-      .chrome_labs_coordinator()
-      ->GetChromeLabsButton();
+  return ChromeLabsCoordinator::From(browser_)->GetChromeLabsButton();
 }
 
 ExtensionsToolbarButton* ToolbarView::GetExtensionsButton() const {
   return extensions_container_->GetExtensionsButton();
 }
 
-ToolbarButton* ToolbarView::GetCastButton() const {
-  return pinned_toolbar_actions_container()
-             ? pinned_toolbar_actions_container()->GetButtonFor(
-                   kActionRouteMedia)
-             : nullptr;
+views::LabelButton* ToolbarView::GetGlicButton() {
+  return glic_button_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1527,9 +1889,9 @@ gfx::Size ToolbarView::CalculatePreferredSize(
     case DisplayMode::kNormal:
       size = AccessiblePaneView::CalculatePreferredSize(available_size);
       // Because there are odd cases where something causes one of the views in
-      // the toolbar to report an unreasonable height (see crbug.com/985909), we
-      // cap the height at the size of known child views (location bar and back
-      // button) plus margins.
+      // the toolbar to report an unreasonable height (see crbug.com/41471763),
+      // we cap the height at the size of known child views (location bar and
+      // back button) plus margins.
       // TODO(crbug.com/40663413): Figure out why the height reports incorrectly
       // on some installations.
       if (layout_manager_ && location_bar_->IsVisible()) {
@@ -1555,9 +1917,9 @@ gfx::Size ToolbarView::GetMinimumSize() const {
     case DisplayMode::kNormal:
       size = AccessiblePaneView::GetMinimumSize();
       // Because there are odd cases where something causes one of the views in
-      // the toolbar to report an unreasonable height (see crbug.com/985909), we
-      // cap the height at the size of known child views (location bar and back
-      // button) plus margins.
+      // the toolbar to report an unreasonable height (see crbug.com/41471763),
+      // we cap the height at the size of known child views (location bar and
+      // back button) plus margins.
       // TODO(crbug.com/40663413): Figure out why the height reports incorrectly
       // on some installations.
       if (layout_manager_ && location_bar_->IsVisible()) {
@@ -1656,11 +2018,6 @@ void ToolbarView::OnThemeChanged() {
   SchedulePaint();
 }
 
-void ToolbarView::NewTabButtonPressed(const ui::Event& event) {
-  chrome::NewTab(browser_view_->browser(),
-                 NewTabTypes::kNewTabButtonInToolbarForTouch);
-}
-
 bool ToolbarView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   const views::View* focused_view = focus_manager()->GetFocusedView();
   if (focused_view && (focused_view->GetID() == VIEW_ID_OMNIBOX)) {
@@ -1673,6 +2030,14 @@ void ToolbarView::ChildPreferredSizeChanged(views::View* child) {
   InvalidateLayout();
   if (size() != GetPreferredSize()) {
     PreferredSizeChanged();
+  }
+}
+
+void ToolbarView::ChildVisibilityChanged(views::View* child) {
+  if (child == home_) {
+    if (!home_->GetVisible() && show_home_button_.GetValue()) {
+      base::UmaHistogramBoolean("Toolbar.Overflow.HomeButton", true);
+    }
   }
 }
 
@@ -1696,14 +2061,20 @@ void ToolbarView::InitLayout() {
   // This will cause them to be the first ones to drop out or shrink to minimum.
   // Order 1 - kOrderOffset will be assigned to new flex-able elements.
   constexpr int kOrderOffset = 1000;
-  constexpr int kLocationBarFlexOrder = kOrderOffset + 1;
+  // If kOmniboxResizingPrioritization is enabled, give the location bar the
+  // highest priority as it will first shrink down to its soft minimum but won't
+  // hit its hard minimum until all other items have dropped out.
+  const int location_bar_flex_order =
+      base::FeatureList::IsEnabled(features::kOmniboxResizingPrioritization)
+          ? 1
+          : kOrderOffset + 1;
   constexpr int kToolbarActionsFlexOrder = kOrderOffset + 2;
   constexpr int kExtensionsFlexOrder = kOrderOffset + 3;
 
   const views::FlexSpecification location_bar_flex_rule =
       views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
                                views::MaximumFlexSizeRule::kUnbounded)
-          .WithOrder(kLocationBarFlexOrder);
+          .WithOrder(location_bar_flex_order);
 
   layout_manager_ = SetLayoutManager(std::make_unique<views::FlexLayout>());
 
@@ -1712,15 +2083,12 @@ void ToolbarView::InitLayout() {
       .SetCollapseMargins(true)
       .SetDefault(views::kMarginsKey, gfx::Insets::VH(0, default_margin));
 
+  // If the Views location bar is in use, set its properties here.
   if (location_bar_view_) {
     location_bar_view_->SetProperty(views::kFlexBehaviorKey,
                                     location_bar_flex_rule);
     location_bar_view_->SetProperty(views::kMarginsKey,
                                     gfx::Insets::VH(0, location_bar_margin));
-  } else {
-    // If the location bar is part of a WebView, make that stretchable.
-    toolbar_webview_->SetProperty(views::kFlexBehaviorKey,
-                                  location_bar_flex_rule);
   }
 
   if (extensions_container_) {
@@ -1750,15 +2118,53 @@ void ToolbarView::InitLayout() {
             0, GetLayoutConstant(LayoutConstant::kToolbarDividerSpacing)));
   }
 
-  constexpr int kToolbarFlexOrderStart = 1;
+  if (glic_button_ &&
+      base::FeatureList::IsEnabled(features::kToolbarGlicButtonResizing)) {
+    glic_button_->SetProperty(
+        views::kFlexBehaviorKey,
+        views::FlexSpecification(
+            views::MinimumFlexSizeRule::kPreferredSnapToMinimum,
+            views::MaximumFlexSizeRule::kPreferred));
+  }
+
+  if (app_menu_button_ &&
+      base::FeatureList::IsEnabled(features::kToolbarAppMenuLabelResizing)) {
+    app_menu_button_->SetProperty(
+        views::kFlexBehaviorKey,
+        views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToMinimum,
+                                 views::MaximumFlexSizeRule::kPreferred));
+  }
+
+  if (avatar_ &&
+      base::FeatureList::IsEnabled(features::kToolbarProfileChipResizing)) {
+    // Flex order for the profile avatar button is determined by the
+    // `toolbar_controller`.
+    avatar_->SetProperty(
+        views::kFlexBehaviorKey,
+        views::FlexSpecification(
+            views::MinimumFlexSizeRule::kScaleToMinimumSnapToZero,
+            views::MaximumFlexSizeRule::kPreferred));
+  }
+
+  // Order 1 is reserved for the location bar if kOmniboxResizingPrioritization
+  // is enabled.
+  constexpr int kToolbarFlexOrderStart = 2;
 
   // TODO(crbug.com/40929989): Ignore containers till issue addressed.
   toolbar_controller_ = std::make_unique<ToolbarController>(
       ToolbarController::GetDefaultResponsiveElements(browser_),
       ToolbarController::GetDefaultOverflowOrder(), kToolbarFlexOrderStart,
-      this, overflow_button_, pinned_toolbar_actions_container_,
+      this, toolbar_webview_.get(), overflow_button_, pinned_toolbar_actions_,
       PinnedToolbarActionsModel::Get(browser_view_->GetProfile()));
   overflow_button_->set_toolbar_controller(toolbar_controller_.get());
+
+  if (toolbar_webview_) {
+    toolbar_webview_->SetProperty(
+        views::kFlexBehaviorKey,
+        toolbar_webview_->GetFlexSpecification(
+            toolbar_controller_->webui_toolbar_button_flex_order(),
+            location_bar_flex_order));
+  }
 
   LayoutCommon();
 }
@@ -1767,35 +2173,30 @@ void ToolbarView::LayoutCommon() {
   DCHECK(display_mode_ == DisplayMode::kNormal);
 
   gfx::Insets interior_margin =
-      GetLayoutInsets(browser_view_->webui_tab_strip()
-                          ? LayoutInset::WEBUI_TAB_STRIP_TOOLBAR_INTERIOR_MARGIN
-                          : LayoutInset::TOOLBAR_INTERIOR_MARGIN);
+      GetLayoutInsets(LayoutInset::TOOLBAR_INTERIOR_MARGIN);
 
-  if (!browser_view_->webui_tab_strip()) {
-    if (app_menu_button_->IsLabelPresentAndVisible()) {
+  auto* vts_controller = tabs::VerticalTabStripStateController::From(browser_);
+  if (base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks) &&
+      (contextual_tasks::kShowEntryPoint.Get() ==
+       contextual_tasks::EntryPointOption::kToolbarEphemeralBranded) &&
+      (!vts_controller || !vts_controller->ShouldDisplayVerticalTabs())) {
+    interior_margin.set_left(0);
+  }
+
+  if (app_menu_button_) {
+    const bool expanded = app_menu_button_->IsLabelPresentAndVisible();
+    if (expanded) {
       // The interior margin in an expanded state should be more than in a
       // collapsed state.
       interior_margin.set_right(interior_margin.right() + 1);
-      app_menu_button_->SetProperty(
-          views::kMarginsKey,
-          gfx::Insets::VH(0, kBrowserAppMenuRefreshExpandedMargin));
-    } else {
-      app_menu_button_->SetProperty(
-          views::kMarginsKey,
-          gfx::Insets::VH(0, kBrowserAppMenuRefreshCollapsedMargin));
     }
+    SetRefreshMargins(app_menu_button_, expanded);
+  }
 
-    // The margins of the `avatar_` uses the same constants as the
-    // `app_menu_button_`.
-    if (avatar_->IsLabelPresentAndVisible()) {
-      avatar_->SetProperty(
-          views::kMarginsKey,
-          gfx::Insets::VH(0, kBrowserAppMenuRefreshExpandedMargin));
-    } else {
-      avatar_->SetProperty(
-          views::kMarginsKey,
-          gfx::Insets::VH(0, kBrowserAppMenuRefreshCollapsedMargin));
-    }
+  // The margins of the `avatar_` uses the same constants as the
+  // `app_menu_button_`.
+  if (avatar_) {
+    SetRefreshMargins(avatar_, avatar_->IsLabelPresentAndVisible());
   }
 
   layout_manager_->SetInteriorMargin(interior_margin);
@@ -1803,16 +2204,18 @@ void ToolbarView::LayoutCommon() {
   // Extend buttons to the window edge if we're either in a maximized or
   // fullscreen window. This makes the buttons easier to hit, see Fitts' law.
   const bool extend_buttons_to_edge =
-      browser_->window() &&
-      (browser_->window()->IsMaximized() || browser_->window()->IsFullscreen());
+      browser_->GetWindow() && (browser_->GetWindow()->IsMaximized() ||
+                                browser_->GetWindow()->IsFullscreen());
   const int margin = extend_buttons_to_edge ? interior_margin.left() : 0;
   if (features::IsWebUIBackForwardButtonEnabled()) {
     toolbar_webview_->SetBackButtonLeadingMargin(margin);
   } else {
     back_->SetLeadingMargin(margin);
   }
-  app_menu_button_->SetTrailingMargin(
-      extend_buttons_to_edge ? interior_margin.right() : 0);
+
+  const int trailing_margin =
+      extend_buttons_to_edge ? interior_margin.right() : 0;
+  GetAppMenuControl()->SetTrailingMargin(trailing_margin);
 
   if (toolbar_divider_ && extensions_container_) {
     views::ManualLayoutUtil(layout_manager_)
@@ -1824,27 +2227,21 @@ void ToolbarView::LayoutCommon() {
 // AppMenuIconController::Delegate:
 void ToolbarView::UpdateTypeAndSeverity(
     AppMenuIconController::TypeAndSeverity type_and_severity) {
-  // There's no app menu in tabless windows.
-  if (!app_menu_button_) {
-    return;
+  AppMenuControl* app_menu_control = GetAppMenuControl();
+  if (app_menu_control) {
+    app_menu_control->SetTypeAndSeverity(type_and_severity);
   }
-
-  std::u16string accname_app = l10n_util::GetStringUTF16(IDS_ACCNAME_APP);
-  if (type_and_severity.type ==
-      AppMenuIconController::IconType::kUpgradeNotification) {
-    accname_app = l10n_util::GetStringFUTF16(
-        IDS_ACCNAME_APP_UPGRADE_RECOMMENDED, accname_app);
-  }
-  app_menu_button_->GetViewAccessibility().SetName(accname_app);
-  app_menu_button_->SetTypeAndSeverity(type_and_severity);
 }
 
-ExtensionsToolbarDesktop* ToolbarView::GetExtensionsToolbarDesktop() {
+ExtensionsContainerViews* ToolbarView::GetExtensionsContainerViews() {
+  if (features::IsWebUIExtensionsContainerEnabled()) {
+    return toolbar_webview_->extensions_container_views();
+  }
   return extensions_container_;
 }
 
-PinnedToolbarActionsContainer* ToolbarView::GetPinnedToolbarActionsContainer() {
-  return pinned_toolbar_actions_container_;
+PinnedToolbarActions* ToolbarView::GetPinnedToolbarActions() {
+  return pinned_toolbar_actions_;
 }
 
 gfx::Size ToolbarView::GetToolbarButtonSize() const {
@@ -1858,11 +2255,14 @@ gfx::Size ToolbarView::GetToolbarButtonSize() const {
   return gfx::Size(size, size);
 }
 
-views::View* ToolbarView::GetDefaultExtensionDialogAnchorView() {
-  if (extensions_container_ && extensions_container_->GetVisible()) {
-    return extensions_container_->GetExtensionsButton();
+views::BubbleAnchor ToolbarView::GetDefaultExtensionDialogAnchor() {
+  ExtensionsContainerViews* extensions_container =
+      GetExtensionsContainerViews();
+  if (extensions_container && extensions_container->IsVisible()) {
+    return extensions_container->GetExtensionsButtonAnchor();
   }
-  return GetAppMenuButton();
+  auto* control = GetAppMenuControl();
+  return control ? control->GetAnchor() : views::BubbleAnchor();
 }
 
 PageActionIconView* ToolbarView::GetPageActionIconView(
@@ -1874,8 +2274,15 @@ PageActionIconView* ToolbarView::GetPageActionIconView(
   return location_bar_view()->page_action_icon_controller()->GetIconView(type);
 }
 
-IconLabelBubbleView* ToolbarView::GetPageActionView(
+page_actions::PageActionViewInterface* ToolbarView::GetPageActionViewInterface(
     actions::ActionId action_id) {
+  if (features::IsWebUILocationBarEnabled()) {
+    if (toolbar_webview_ && !location_bar_view_) {
+      return toolbar_webview_->GetLocationBar()->GetPageActionViewInterface(
+          action_id);
+    }
+    return nullptr;
+  }
   page_actions::PageActionPropertiesProvider provider;
   if (!provider.Contains(action_id)) {
     return nullptr;
@@ -1888,7 +2295,17 @@ IconLabelBubbleView* ToolbarView::GetPageActionView(
   return GetPageActionIconView(properties.type);
 }
 
-AppMenuButton* ToolbarView::GetAppMenuButton() {
+AppMenuControl* ToolbarView::GetAppMenuControl() {
+  if (features::IsWebUIAppMenuButtonEnabled() && toolbar_webview_) {
+    return toolbar_webview_->GetAppMenuControl();
+  }
+  return app_menu_button_;
+}
+
+const AppMenuControl* ToolbarView::GetAppMenuControl() const {
+  if (features::IsWebUIAppMenuButtonEnabled() && toolbar_webview_) {
+    return toolbar_webview_->GetAppMenuControl();
+  }
   return app_menu_button_;
 }
 
@@ -1898,72 +2315,85 @@ gfx::Rect ToolbarView::GetFindBarBoundingBox(int contents_bottom) {
     return gfx::Rect();
   }
 
-  CHECK(location_bar_view_)
-      << "Alternate location bar impls need to handle this.";
+  CHECK(location_bar_);
 
-  if (!location_bar_view_->IsDrawn()) {
+  if (!location_bar_->IsDrawn()) {
     return gfx::Rect();
   }
 
-  gfx::Rect bounds = location_bar_view_->ConvertRectToWidget(
-      location_bar_view_->GetLocalBounds());
+  gfx::Rect bounds = views::View::ConvertRectFromScreen(
+      GetWidget()->GetRootView(), location_bar_->BoundsInScreen());
   return gfx::Rect(bounds.x(), bounds.bottom(), bounds.width(),
                    contents_bottom - bounds.bottom());
 }
 
 void ToolbarView::FocusToolbar() {
   SetPaneFocus(nullptr);
+  if (toolbar_webview_) {
+    toolbar_webview_->AdjustForToolbarFocus();
+  }
 }
 
 views::AccessiblePaneView* ToolbarView::GetAsAccessiblePaneView() {
   return this;
 }
 
-views::View* ToolbarView::GetAnchorView(
-    std::optional<actions::ActionId> action_id) {
-  if (pinned_toolbar_actions_container_ && action_id.has_value() &&
-      pinned_toolbar_actions_container_->IsActionPinnedOrPoppedOut(
-          action_id.value())) {
-    return pinned_toolbar_actions_container_->GetButtonFor(action_id.value());
-  }
-
-  return location_bar_view_;
-}
-
 views::BubbleAnchor ToolbarView::GetBubbleAnchor(
     std::optional<actions::ActionId> action_id) {
-  if (views::View* view = GetAnchorView(action_id)) {
-    // In app windows the location bar view may exist but not be drawn. Avoid
-    // anchoring bubbles to a non-drawn view (e.g. on Ozone/Wayland) and always
-    // return a valid view anchor by falling back to the contents view.
-    if (!view->IsDrawn() && browser_view_) {
-      auto* top_container = browser_view_->top_container();
-      CHECK(top_container);
-      return top_container;
-    }
-    return view;
+  // If a pinned toolbar actions button exists for the action_id, return that.
+  if (pinned_toolbar_actions_ && action_id.has_value() &&
+      pinned_toolbar_actions_->IsActionPinnedOrPoppedOut(action_id.value())) {
+    return pinned_toolbar_actions_->GetBubbleAnchor(action_id.value());
   }
-  return nullptr;
+
+  // Otherwise attempt to use the location bar.
+  auto anchor = features::IsWebUILocationBarEnabled()
+                    ? views::BubbleAnchor(location_bar_->GetAnchorOrNull())
+                    : views::BubbleAnchor(location_bar_view_);
+  bool anchor_not_drawn;
+  if (views::View* view = anchor.GetIfView()) {
+    anchor_not_drawn = !view->IsDrawn();
+  } else {
+    anchor_not_drawn = (features::IsWebUILocationBarEnabled() ||
+                        features::IsWebUIPinnedToolbarActionsEnabled()) &&
+                       anchor.IsNull();
+  }
+  // In app windows the location bar view may exist but not be drawn. Avoid
+  // anchoring bubbles to a non-drawn view (e.g. on Ozone/Wayland) and always
+  // return a valid view anchor by falling back to the contents view.
+  if (anchor_not_drawn && browser_view_) {
+    auto* top_container = browser_view_->top_container();
+    CHECK(top_container);
+    return views::BubbleAnchor(top_container);
+  }
+  return anchor;
+}
+
+views::BubbleAnchor ToolbarView::GetPageActionBubbleAnchor(
+    actions::ActionId action_id) {
+  page_actions::PageActionViewInterface* view =
+      GetPageActionViewInterface(action_id);
+  if (view) {
+    return view->GetBubbleAnchor();
+  }
+  return views::BubbleAnchor();
 }
 
 void ToolbarView::ZoomChangedForActiveTab(bool can_show_bubble) {
-  if (IsPageActionMigrated(PageActionIconType::kZoom)) {
-    auto* zoom_view_controller = browser_->GetActiveTabInterface()
-                                     ->GetTabFeatures()
-                                     ->zoom_view_controller();
-    CHECK(zoom_view_controller);
-    zoom_view_controller->UpdatePageActionIconAndBubbleVisibility(
-        /*prefer_to_show_bubble=*/can_show_bubble, /*from_user_gesture=*/false);
-    return;
-  }
-
-  CHECK(location_bar_view_)
-      << "Alternate location bar impls need to handle this.";
-  location_bar_view_->page_action_icon_controller()->ZoomChangedForActiveTab(
-      can_show_bubble);
+  auto* zoom_view_controller = browser_->GetActiveTabInterface()
+                                   ->GetTabFeatures()
+                                   ->zoom_view_controller();
+  CHECK(zoom_view_controller);
+  zoom_view_controller->UpdatePageActionIconAndBubbleVisibility(
+      /*prefer_to_show_bubble=*/can_show_bubble, /*from_user_gesture=*/false);
 }
 
-AvatarToolbarButton* ToolbarView::GetAvatarToolbarButton() {
+AvatarToolbarButtonInterface* ToolbarView::GetAvatarToolbarButtonInterface() {
+  if (features::IsWebUIAvatarButtonEnabled()) {
+    return toolbar_webview_
+               ? toolbar_webview_->GetAvatarToolbarButtonInterface()
+               : nullptr;
+  }
   return avatar_;
 }
 
@@ -1982,15 +2412,12 @@ ReloadControl* ToolbarView::GetReloadButton() {
   return reload_;
 }
 
-IntentChipButton* ToolbarView::GetIntentChipButton() {
-  return location_bar_view()->intent_chip();
-}
 
 ToolbarButton* ToolbarView::GetDownloadButton() {
-    return pinned_toolbar_actions_container_
-               ? pinned_toolbar_actions_container_->GetButtonFor(
-                     kActionShowDownloads)
-               : nullptr;
+  return pinned_toolbar_actions_container_
+             ? pinned_toolbar_actions_container_->GetButtonFor(
+                   kActionShowDownloads)
+             : nullptr;
 }
 
 WebUIToolbarWebView* ToolbarView::GetWebUIToolbarViewForTesting() {
@@ -2018,8 +2445,9 @@ void ToolbarView::OnChromeLabsPrefChanged() {
   actions::ActionItem* chrome_labs_action =
       pinned_toolbar_actions_container_->GetActionItemFor(
           kActionShowChromeLabs);
-  chrome_labs_action->SetVisible(show_chrome_labs_button_.GetValue() &&
-                                 ShouldShowChromeLabsUI(browser_->profile()));
+  chrome_labs_action->SetVisible(
+      show_chrome_labs_button_.GetValue() &&
+      ShouldShowChromeLabsUI(browser_->GetProfile()));
   GetViewAccessibility().AnnounceText(l10n_util::GetStringUTF16(
       chrome_labs_action->GetVisible()
           ? IDS_ACCESSIBLE_TEXT_CHROMELABS_BUTTON_ADDED_BY_ENTERPRISE_POLICY
