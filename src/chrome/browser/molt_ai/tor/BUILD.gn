@@ -102,7 +102,9 @@ source_set("onion_location") {
 
 # .onion UX: the navigation throttle that keeps onion names off the network in
 # regular windows (registered first in chrome_content_browser_client.cc), its
-# "Open in a MoltNet window" interstitial, and the Onion-Location infobar.
+# "Open in a MoltNet window" interstitial, the Onion-Location infobar, and the
+# request blocker that does the same for subresources and WebSockets (also
+# hooked in chrome_content_browser_client.cc).
 source_set("onion") {
   sources = [
     "onion_blocking_page.cc",
@@ -111,6 +113,8 @@ source_set("onion") {
     "onion_location_tab_helper.h",
     "onion_navigation_throttle.cc",
     "onion_navigation_throttle.h",
+    "onion_request_blocker.cc",
+    "onion_request_blocker.h",
   ]
 
   deps = [
@@ -125,7 +129,14 @@ source_set("onion") {
     "//components/security_interstitials/content:security_interstitial_page",
     "//components/security_interstitials/core",
     "//content/public/browser",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
     "//net",
+
+    # onion_request_blocker.cc proxies URLLoaderFactory / URLLoader.
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//ui/base",
     "//url",
   ]

@@ -90,6 +90,47 @@ TEST(OnionLocationTest, InvalidHeadersIgnored) {
   EXPECT_FALSE(Offered(page, "Onion-Location:\n").is_valid());
 }
 
+// Which request URLs the onion request blocker keeps out of non-MoltNet
+// profiles: any scheme, any onion name (valid v3 address or not), as GURL
+// canonicalizes it.
+TEST(OnionLocationTest, OnionRequestURLs) {
+  for (const std::string& url : {
+           std::string("http://") + kHost + "/pixel.gif",
+           std::string("https://") + kHost + ":8443/a?b#c",
+           std::string("ws://") + kHost + "/socket",
+           std::string("wss://") + kHost + "/socket",
+           std::string("https://www.") + kHost + "/",
+           // Not a valid onion address, still never to be resolved.
+           std::string("http://example.onion/"),
+           std::string("http://EXAMPLE.ONION/"),
+           std::string("http://example.onion./"),
+           std::string("http://onion/"),
+           std::string("ftp://example.onion/file"),
+           // Percent-encoded and IDN forms canonicalize to an onion host.
+           std::string("http://example%2Eonion/"),
+           std::string("http://example.\xEF\xBC\xAFnion/"),  // Fullwidth O.
+           std::string("http://user:pass@example.onion:81/"),
+       }) {
+    EXPECT_TRUE(IsOnionRequestURL(GURL(url))) << url;
+  }
+  for (const std::string& url : {
+           std::string(""),
+           std::string("http://example.com/"),
+           std::string("http://onion.example.com/"),
+           std::string("http://example.onion.example.com/"),
+           std::string("http://exampleonion/"),
+           std::string("http://example.com/x.onion"),
+           std::string("http://example.com/?u=http://x.onion/"),
+           std::string("http://127.0.0.1/"),
+           std::string("http://[::1]/"),
+           std::string("data:text/plain,x.onion"),
+           std::string("about:blank"),
+           std::string("not a url"),
+       }) {
+    EXPECT_FALSE(IsOnionRequestURL(GURL(url))) << url;
+  }
+}
+
 }  // namespace
 }  // namespace tor
 }  // namespace molt_ai

@@ -46,5 +46,9 @@ GURL GetOnionLocation(const GURL& page_url,
   return target;
 }
 
+bool IsOnionRequestURL(const GURL& url) {
+  return url.is_valid() && IsOnionHost(url.host());
+}
+
 }  // namespace tor
 }  // namespace molt_ai

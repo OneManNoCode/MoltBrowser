@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d87711746309 100644
+index f474618996d2f63e9068ff3c667c856bf638392b..4c155038a9a2f898af7f2785bb9902ccea7f9dc5 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -106,6 +106,15 @@
+@@ -106,6 +106,16 @@
  #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
  #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
  #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
@@ -20,11 +20,12 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
 +#include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 +#include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
 +#include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
++#include "chrome/browser/molt_ai/tor/onion_request_blocker.h"
 +#include "chrome/common/molt_ai/shield/molt_shield_features.h"
  #include "chrome/browser/metrics/chrome_feature_list_creator.h"
  #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
  #include "chrome/browser/net/chrome_network_delegate.h"
-@@ -820,11 +829,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
+@@ -820,11 +830,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
  }
  
  // Handles the rewriting of the new tab page URL based on group policy.
@@ -47,7 +48,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
      return false;
    }
  
-@@ -835,18 +853,98 @@ bool HandleNewTabPageLocationOverride(
+@@ -835,18 +854,98 @@ bool HandleNewTabPageLocationOverride(
      return false;
    }
  
@@ -74,12 +75,8 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
 +bool HandleMoltSchemeRewrite(GURL* url,
 +                              content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(chrome::kMoltScheme)) {
-     return false;
-   }
--  url::Component scheme;
--  if (!url::ExtractScheme(ntp_location, &scheme)) {
--    ntp_location = base::StrCat(
--        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
++    return false;
++  }
 +
 +  auto host = url->host();
 +  std::string new_host;
@@ -104,9 +101,8 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
 +    new_host = chrome::kChromeUISettingsHost;
 +  } else {
 +    return false;
-   }
- 
--  *url = GURL(ntp_location);
++  }
++
 +  GURL::Replacements replacements;
 +  replacements.SetSchemeStr(content::kChromeUIScheme);
 +  replacements.SetHostStr(new_host);
@@ -120,8 +116,12 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
 +bool HandleMoltSchemeReverseRewrite(GURL* url,
 +                                     content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(content::kChromeUIScheme)) {
-+    return false;
-+  }
+     return false;
+   }
+-  url::Component scheme;
+-  if (!url::ExtractScheme(ntp_location, &scheme)) {
+-    ntp_location = base::StrCat(
+-        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
 +
 +  auto host = url->host();
 +  std::string new_host;
@@ -145,8 +145,9 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
 +    new_host = chrome::kMoltSettingsHost;
 +  } else {
 +    return false;
-+  }
-+
+   }
+ 
+-  *url = GURL(ntp_location);
 +  GURL::Replacements replacements;
 +  replacements.SetSchemeStr(chrome::kMoltScheme);
 +  replacements.SetHostStr(new_host);
@@ -154,7 +155,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
    return true;
  }
  
-@@ -3067,6 +3165,18 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -3067,6 +3166,18 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
      };
  
      command_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
@@ -173,7 +174,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
    } else if (process_type == switches::kUtilityProcess) {
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
      static const char* const kSwitchNames[] = {
-@@ -5030,6 +5140,12 @@ bool ChromeContentBrowserClient::
+@@ -5030,6 +5141,12 @@ bool ChromeContentBrowserClient::
  
  void ChromeContentBrowserClient::BrowserURLHandlerCreated(
      BrowserURLHandler* handler) {
@@ -186,7 +187,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
    // The group policy NTP URL handler must be registered before the other NTP
    // URL handlers below. Also register it before the "parts" handlers, so the
    // NTP policy takes precedence over extensions that override the NTP.
-@@ -5530,7 +5646,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
+@@ -5530,7 +5647,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
  
  void ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationThrottleRegistry& registry) {
@@ -203,7 +204,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
  }
  
  std::vector<std::unique_ptr<content::CommitDeferringCondition>>
-@@ -6039,6 +6164,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
+@@ -6039,6 +6165,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(google_throttle));
    }
  
@@ -217,7 +218,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
    return result;
  }
  
-@@ -6548,6 +6680,14 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6548,6 +6681,19 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
        frame, factory_builder, header_client);
  #endif
  
@@ -229,10 +230,15 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
 +      browser_context, frame, type, request_initiator, isolation_info,
 +      factory_builder);
 +
++  // MoltNet: outside MoltNet, no request may reach a .onion host (a proxy
++  // server would resolve it).
++  molt_ai::tor::OnionBlockingURLLoaderFactory::MaybeProxy(browser_context, type,
++                                                          factory_builder);
++
    // WARNING: This must be the last interceptor in the chain as the proxying
    // URLLoaderFactory installed by this needs to be the one actually sending
    // packets over the network (to effectively target `bound_network`).
-@@ -6594,6 +6734,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
+@@ -6594,6 +6740,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
      }
    }
  
@@ -247,10 +253,14 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
    return interceptors;
  }
  
-@@ -6610,6 +6758,10 @@ ChromeContentBrowserClient::
+@@ -6610,6 +6764,14 @@ ChromeContentBrowserClient::
  
  bool ChromeContentBrowserClient::WillInterceptWebSocket(
      content::RenderFrameHost* frame) {
++  // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.
++  if (molt_ai::tor::ShouldInterceptWebSocketForOnion(frame)) {
++    return true;
++  }
 +  // MoltShield: see CreateWebSocket().
 +  if (molt_ai::shield::ShouldInterceptWebSocket(frame)) {
 +    return true;
@@ -258,10 +268,14 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    if (!frame) {
      return false;
-@@ -6639,6 +6791,29 @@ void ChromeContentBrowserClient::CreateWebSocket(
+@@ -6639,6 +6801,33 @@ void ChromeContentBrowserClient::CreateWebSocket(
      const std::optional<std::string>& user_agent,
      mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
          handshake_client) {
++  // MoltNet: dropping the handshake client fails the page's connection.
++  if (molt_ai::tor::IsOnionWebSocketBlocked(frame, url)) {
++    return;
++  }
 +  // MoltShield: the wrapped factory vets the URL (off the UI thread) right
 +  // before connecting, so it composes with the webRequest proxy below. When
 +  // MoltShield is the only interceptor, connect directly as content would.
@@ -288,7 +302,7 @@ index f474618996d2f63e9068ff3c667c856bf638392b..05d06d56a1fa80f6c10d6d6337a5d877
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
    if (!frame) {
-@@ -9085,9 +9260,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9085,9 +9274,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {
