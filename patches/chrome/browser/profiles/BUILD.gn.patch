@@ -5,14 +5,15 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 7261b2cc26b5f913deda86a9392462d068d39fb2..468c746e0d58163057660b53170e4962d1be700a 100644
+index 7261b2cc26b5f913deda86a9392462d068d39fb2..247d5d7d7557d9647489819c70dd9482b3825f25 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -674,6 +674,8 @@ source_set("profiles_extra_parts_impl") {
+@@ -674,6 +674,9 @@ source_set("profiles_extra_parts_impl") {
      "//chrome/browser/manta:impl",
      "//chrome/browser/media/router",
      "//chrome/browser/media/webrtc",
 +    "//chrome/browser/molt_ai/automation",
++    "//chrome/browser/molt_ai/keys:os_crypt_startup",
 +    "//chrome/browser/molt_ai/memory",
      "//chrome/browser/notebooks",
      "//chrome/browser/notifications",
