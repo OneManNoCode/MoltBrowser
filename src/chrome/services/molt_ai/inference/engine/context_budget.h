@@ -1,7 +1,8 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// Pure (std-only) context-window arithmetic for BrowserAIRuntime:
+// Pure (std-only) context-window arithmetic for the on-device inference
+// engine (LlamaEngine, in the sandboxed inference service):
 //   - how large a llama.cpp context to allocate for a model on this machine
 //   - how to fit system prompt + retrieved context + history + the new user
 //     turn + a reply reserve into that window WITHOUT ever truncating the
@@ -11,8 +12,8 @@
 // Kept free of llama.cpp / base types so it is unit-tested standalone
 // (context_budget_unittest.cc).
 
-#ifndef CHROME_BROWSER_MOLT_AI_RUNTIME_CONTEXT_BUDGET_H_
-#define CHROME_BROWSER_MOLT_AI_RUNTIME_CONTEXT_BUDGET_H_
+#ifndef CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_CONTEXT_BUDGET_H_
+#define CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_CONTEXT_BUDGET_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -109,4 +110,4 @@ PromptBudgetPlan PlanPromptBudget(const PromptBudgetInput& in);
 
 }  // namespace molt_ai
 
-#endif  // CHROME_BROWSER_MOLT_AI_RUNTIME_CONTEXT_BUDGET_H_
+#endif  // CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_CONTEXT_BUDGET_H_

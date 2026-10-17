@@ -1,0 +1,5 @@
+include_rules = [
+  "+chrome/services/molt_ai/inference",
+  # Only this directory may use llama.cpp (GN visibility enforces it too).
+  "+third_party/llama_cpp/include",
+]

@@ -1,0 +1,41 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Std-only building blocks of the on-device inference engine: context
+# budgeting, prompt helpers and the streaming output filters. No llama.cpp,
+# no //base, so they are unit-tested standalone too.
+
+# Output filters. Also linked by the browser
+# (//chrome/browser/molt_ai/runtime:stream_validator), which re-applies
+# StopSequenceFilter and checks UTF-8 on what the service sends.
+source_set("stream_filters") {
+  sources = [
+    "stream_filters.cc",
+    "stream_filters.h",
+  ]
+}
+
+# Everything the engine (//chrome/services/molt_ai/inference) uses.
+source_set("inference_utils") {
+  sources = [
+    "context_budget.cc",
+    "context_budget.h",
+    "prompt_utils.cc",
+    "prompt_utils.h",
+  ]
+  public_deps = [ ":stream_filters" ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "context_budget_unittest.cc",
+    "prompt_utils_unittest.cc",
+    "stream_filters_unittest.cc",
+  ]
+  deps = [
+    ":inference_utils",
+    "//testing/gtest",
+  ]
+}

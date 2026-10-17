@@ -12,7 +12,10 @@ Shipped: yes
 Description:
 LLM inference in C/C++ (llama.cpp and the ggml tensor library), used for
 MoltBrowser's on-device model runtime. It parses untrusted model files
-(GGUF) and prompt text in the browser process, hence Security Critical.
+(GGUF) and prompt text, hence Security Critical. It runs only in a
+sandboxed utility process: the inference service in
+//chrome/services/molt_ai/inference (kOnDeviceModelExecution sandbox,
+docs/design/SANDBOXED_INFERENCE.md), the only code BUILD.gn lets link it.
 Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
 macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev).
 
@@ -26,12 +29,17 @@ and ggml-metal sources and all MoltBrowser callers, is built with
 Chromium's -fno-exceptions. So a `throw` or `.at(` miss in ggml-cpu or
 ggml-metal aborts (none in the files BUILD.gn builds at b11641; only
 the unbuilt ggml-cpu/spacemit/ has some), and an exception that
-escapes a llama_* C function into a caller terminates the browser
-process. Model loading and context creation catch everything upstream;
-see the llama-vocab.cpp patch below for tokenization.
+escapes a llama_* C function into a caller terminates the inference
+process (the browser then reports the model as stopped; repeated
+crashes are rate-limited). Model loading and context creation catch
+everything upstream; see the llama-vocab.cpp patch below for
+tokenization, and the list of checked calls at the top of
+chrome/services/molt_ai/inference/llama_engine.cc.
 
 Local Modifications:
-- BUILD.gn: GN build for Chromium (not upstream).
+- BUILD.gn: GN build for Chromium (not upstream). Every target that
+  compiles llama.cpp or ggml code is visible only to
+  //chrome/services/molt_ai/inference (the sandboxed inference service).
 - chromium/ggml-version.h, chromium/llama-version.h: stand-ins for the
   headers upstream CMake generates from ggml/src/ggml-version.h.in and
   src/llama-version.h.in. Update their values with every update.
@@ -72,6 +80,14 @@ Local Modifications:
     src/llama.cpp, src/llama-quant.cpp: static_cast instead of
       dynamic_cast<llama_model_base *> (Chromium builds with -fno-rtti;
       every model type derives from llama_model_base).
+    src/llama-mmap.cpp: with LLAMA_MOLTBROWSER_SANDBOXED (set on
+      :llama_cpp by BUILD.gn's :llama_sandboxed), the Linux mmap of a
+      model file doesn't pass MAP_POPULATE. The model is loaded in a
+      sandboxed utility process, and Chrome's seccomp-bpf policy answers
+      that flag with SIGSYS (RestrictMmapFlags in sandbox/linux/
+      seccomp-bpf-helpers/syscall_parameters_restrictions.cc). The
+      posix_madvise(POSIX_MADV_WILLNEED) that follows still prefetches
+      the same range.
     src/llama-memory-hybrid-idx.cpp: struct kpool_layout defined before
       the constructor (as C++23, which Chromium uses, libc++ rejects the
       constexpr ~unique_ptr of an incomplete type there).

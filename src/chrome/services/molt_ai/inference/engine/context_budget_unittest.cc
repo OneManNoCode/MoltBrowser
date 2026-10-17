@@ -1,7 +1,7 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "chrome/browser/molt_ai/runtime/context_budget.h"
+#include "chrome/services/molt_ai/inference/engine/context_budget.h"
 
 #include <cstdint>
 #include <numeric>

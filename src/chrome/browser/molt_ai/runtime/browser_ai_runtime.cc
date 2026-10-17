@@ -8,39 +8,46 @@
 #include <chrono>
 #include <cstdint>  // for int32_t/int64_t — required on Linux under -fmodules
 #include <cstdlib>  // for getenv
-#include <cstring>
 #include <filesystem>
-#include <iostream>
+#include <functional>
 #include <mutex>
-#include <ratio>
 #include <thread>
 #include <utility>
 #include <vector>
 
 // Chromium includes
 #include "base/cpu.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/raw_ptr_exclusion.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/system/sys_info.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/threading/scoped_blocking_call.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
-#include "chrome/browser/molt_ai/runtime/context_budget.h"
-#include "chrome/browser/molt_ai/runtime/prompt_utils.h"
-#include "chrome/browser/molt_ai/runtime/stream_filters.h"
+#include "chrome/browser/lifetime/termination_notification.h"
+#include "chrome/browser/molt_ai/runtime/inference_process_host.h"
+#include "chrome/browser/molt_ai/runtime/stream_validator.h"
+#include "chrome/services/molt_ai/inference/engine/stream_filters.h"
+#include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
+#include "content/public/browser/browser_thread.h"
 
-// llama.cpp headers. NOTE: on x64 parts of ggml are compiled with
-// -mavx2/-mfma/-mf16c (see //third_party/llama_cpp/BUILD.gn); nothing in
-// this file may call into llama/ggml before Initialize() has checked the
-// CPU (impl_->unsupported_reason).
-#include "third_party/llama_cpp/include/llama.h"
+// No llama.cpp here: the model runs in the sandboxed inference service
+// (//third_party/llama_cpp is visible only to chrome/services/molt_ai/
+// inference).
 
 namespace molt_ai {
 
 namespace {
+
+using Clock = std::chrono::steady_clock;
 
 // Default idle time after which the model is unloaded to give RAM back.
 constexpr base::TimeDelta kDefaultIdleUnload = base::Minutes(10);
@@ -52,8 +59,34 @@ constexpr uint64_t kRuntimeOverheadBytes = 1024ULL * 1024 * 1024;
 // A model is never allowed to need more than this share of physical RAM.
 constexpr double kMaxShareOfTotalRam = 0.9;
 
-// Prompt tokens kept free beyond the plan, for template/tokenizer drift.
-constexpr int kContextSlack = 4;
+constexpr uint64_t kGiB = 1024ULL * 1024 * 1024;
+
+// Largest context the browser accepts (the RAM tiers of ComputeContextSizing
+// top out here).
+constexpr uint32_t kMaxContextTokens = 32768;
+
+// Backstops for a blocked caller, beyond the host's own deadlines (load 10
+// min; a generation 15 min from when it starts running, after waiting up to
+// that long behind another one). The host enforces the real limits; these
+// only matter if the UI thread stops answering in a way the ping misses.
+constexpr base::TimeDelta kLoadWait = base::Minutes(11);
+constexpr base::TimeDelta kGenerationWait = base::Minutes(32);
+// An unload waits for running requests, then for the process to exit.
+constexpr base::TimeDelta kUnloadWait = base::Minutes(32);
+
+// The blocked worker wakes at least this often (cancellation, shutdown).
+constexpr std::chrono::milliseconds kWaitSlice{250};
+// Streamed text reaches the TokenCallback at most this often (about 30
+// updates a second), so a fast or hostile service can't flood the UI.
+constexpr std::chrono::milliseconds kDeliveryInterval{33};
+// If the UI thread shows no sign of life for this long, a ping is posted;
+// if the ping isn't answered within kUiTimeout, the UI thread is gone
+// (shutdown without the app-terminating notification) and the caller
+// returns instead of blocking ThreadPool shutdown.
+constexpr std::chrono::seconds kHeartbeatInterval{5};
+constexpr std::chrono::seconds kUiTimeout{15};
+// After asking the host to cancel, how long to wait for it to confirm.
+constexpr std::chrono::seconds kCancelConfirmWait{5};
 
 // Model registry — free, open-weight GGUF models that run 100% on-device via
 // llama.cpp (nothing is sent to the model's maker). Ordered small -> large.
@@ -271,12 +304,17 @@ const LicenseEntry* FindLicense(const std::string& id) {
 }
 
 std::string ComputeUnsupportedReason() {
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  // The inference service isn't registered in this build's utility process
+  // (chrome/utility/services.cc), so there is nothing to launch.
+  return "On-device AI isn't available in this version of MoltBrowser. Use "
+         "a cloud model instead (AI Settings > Connect AI Providers).";
+#else
 #if defined(ARCH_CPU_X86_64)
   // //third_party/llama_cpp builds ggml's x86 kernels with -mavx2 -mfma
-  // -mf16c. On a CPU without them the first quantized matmul raises SIGILL
-  // and takes the whole browser process down. (Every shipping AVX2 CPU
-  // also has F16C, which base::CPU doesn't expose.) Runtime ISA dispatch
-  // (GGML_CPU_ALL_VARIANTS-style) is a separate, later project.
+  // -mf16c. On a CPU without them the first quantized matmul raises SIGILL.
+  // (Every shipping AVX2 CPU also has F16C, which base::CPU doesn't
+  // expose.) The inference service checks again before loading.
   const base::CPU& cpu = base::CPU::GetInstanceNoAllocation();
   if (!cpu.has_avx2() || !cpu.has_fma3()) {
     return "This CPU doesn't support AVX2, which on-device AI in "
@@ -285,139 +323,208 @@ std::string ComputeUnsupportedReason() {
   }
 #endif
   return std::string();
+#endif
 }
 
-// Helper: convert a single token to a string piece
-std::string TokenToPiece(const llama_vocab* vocab, llama_token token) {
-  char buf[256];
-  int n = llama_token_to_piece(vocab, token, buf, sizeof(buf), 0, false);
-  if (n < 0) {
-    // Buffer too small — allocate larger
-    std::vector<char> large_buf(static_cast<size_t>(-n));
-    n = llama_token_to_piece(vocab, token, large_buf.data(),
-                             static_cast<int32_t>(large_buf.size()), 0, false);
-    if (n > 0) {
-      return std::string(large_buf.data(), static_cast<size_t>(n));
-    }
-    return "";
-  }
-  return std::string(buf, static_cast<size_t>(n));
+std::string GbString(uint64_t bytes) {
+  return base::NumberToString((bytes + 512ULL * 1024 * 1024) / kGiB);
 }
 
-std::vector<llama_token> Tokenize(const llama_vocab* vocab,
-                                  const std::string& text,
-                                  bool add_special,
-                                  bool parse_special) {
-  std::vector<llama_token> tokens(text.size() + 16);
-  int n = llama_tokenize(vocab, text.c_str(),
-                         static_cast<int32_t>(text.size()), tokens.data(),
-                         static_cast<int32_t>(tokens.size()), add_special,
-                         parse_special);
-  // INT32_MIN is an error (tokenization failed, e.g. malformed vocab data),
-  // not a "buffer too small" size; negating it would overflow.
-  if (n == INT32_MIN) return {};
-  if (n < 0) {
-    tokens.resize(static_cast<size_t>(-n));
-    n = llama_tokenize(vocab, text.c_str(), static_cast<int32_t>(text.size()),
-                       tokens.data(), static_cast<int32_t>(tokens.size()),
-                       add_special, parse_special);
-  }
-  tokens.resize(n > 0 ? static_cast<size_t>(n) : 0);
-  return tokens;
+// Longest prefix of |text| of at most |cap| bytes that doesn't end inside a
+// UTF-8 character.
+std::string CapText(const std::string& text, size_t cap) {
+  if (text.size() <= cap) return text;
+  return text.substr(0, Utf8SafePrefixLength(std::string_view(text).substr(
+                            0, cap)));
 }
 
-std::string Detokenize(const llama_vocab* vocab,
-                       const std::vector<llama_token>& tokens) {
-  if (tokens.empty()) return std::string();
-  std::vector<char> buf(tokens.size() * 8 + 64);
-  int n = llama_detokenize(vocab, tokens.data(),
-                           static_cast<int32_t>(tokens.size()), buf.data(),
-                           static_cast<int32_t>(buf.size()),
-                           /*remove_special=*/false,
-                           /*unparse_special=*/false);
-  if (n == INT32_MIN) return std::string();  // error, see Tokenize()
-  if (n < 0) {
-    buf.resize(static_cast<size_t>(-n));
-    n = llama_detokenize(vocab, tokens.data(),
-                         static_cast<int32_t>(tokens.size()), buf.data(),
-                         static_cast<int32_t>(buf.size()), false, false);
-  }
-  return n > 0 ? std::string(buf.data(), static_cast<size_t>(n))
-               : std::string();
+std::string CapRequestText(const std::string& text) {
+  return CapText(text, mojom::kMaxRequestTextBytes);
 }
 
-std::string ReadModelArch(const llama_model* model) {
-  char buf[64] = {0};
-  int n = llama_model_meta_val_str(model, "general.architecture", buf,
-                                   sizeof(buf));
-  return n > 0 ? std::string(buf, std::min<size_t>(static_cast<size_t>(n),
-                                                   sizeof(buf) - 1))
-               : std::string();
+// The service caps conversation keys; a longer key is replaced by a short
+// digest. A collision would only compare two conversations' token prefixes
+// (reuse is exact-prefix), never mix their text.
+std::string ConversationKeyForService(const std::string& key) {
+  if (key.size() <= mojom::kMaxConversationKeyBytes) return key;
+  return "h:" + base::NumberToString(
+                    static_cast<uint64_t>(std::hash<std::string>()(key))) +
+         ":" + base::NumberToString(static_cast<uint64_t>(key.size()));
 }
 
-// Texts of the vocab's control-looking tokens, for neutralizing untrusted
-// text before it is tokenized with parse_special=true.
-std::vector<std::string> CollectSpecialTexts(const llama_vocab* vocab) {
+std::vector<std::string> StopSequencesForService(
+    const std::vector<std::string>& stops) {
   std::vector<std::string> out;
-  const int32_t n_vocab = llama_vocab_n_tokens(vocab);
-  for (llama_token t = 0; t < n_vocab; ++t) {
-    const llama_token_attr attr = llama_vocab_get_attr(vocab, t);
-    if (!(attr & (LLAMA_TOKEN_ATTR_CONTROL | LLAMA_TOKEN_ATTR_USER_DEFINED))) {
+  for (const std::string& s : stops) {
+    if (out.size() >= mojom::kMaxStopSequences) break;
+    if (s.empty() || s.size() > mojom::kMaxStopSequenceBytes ||
+        !IsValidUtf8(s)) {
       continue;
     }
-    const char* text = llama_vocab_get_text(vocab, t);
-    if (!text) continue;
-    std::string s(text);
-    if (LooksLikeSpecialTokenText(s)) out.push_back(std::move(s));
+    out.push_back(s);
   }
   return out;
 }
 
-// Gemma 4 vocabularies define its thought-channel markers as special tokens
-// (see GemmaThoughtFilter). Only those models' output goes through that
-// filter, so another model's answer that mentions the markers is shown.
-bool UsesGemmaThoughtChannel(const std::vector<std::string>& special_texts) {
-  bool open = false;
-  bool close = false;
-  for (const std::string& s : special_texts) {
-    open = open || s == GemmaThoughtFilter::kOpenMarker;
-    close = close || s == GemmaThoughtFilter::kCloseMarker;
+mojom::GenerationParamsPtr ToServiceParams(const PromptOptions& o) {
+  auto p = mojom::GenerationParams::New();
+  p->max_visible_tokens = o.max_tokens > 0 ? static_cast<uint32_t>(o.max_tokens)
+                                           : 0u;
+  p->max_reasoning_tokens =
+      o.max_reasoning_tokens > 0 ? static_cast<uint32_t>(o.max_reasoning_tokens)
+                                 : 0u;
+  p->reasoning = o.reasoning == ReasoningMode::kOn ? mojom::ReasoningMode::kOn
+                                                   : mojom::ReasoningMode::kOff;
+  p->temperature = o.temperature;
+  p->top_p = o.top_p;
+  p->top_k = o.top_k > 0 ? static_cast<uint32_t>(o.top_k) : 0u;
+  p->conversation_key = ConversationKeyForService(o.conversation_key);
+  p->stop_sequences = StopSequencesForService(o.stop_sequences);
+  return p;
+}
+
+// The trust labels stay structural: browser-authored text goes in
+// system_prompt / context_preamble only; page text, history and the user's
+// message keep their own fields so the service neutralizes them.
+mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
+  auto r = mojom::ChatRequest::New();
+  r->system_prompt = CapRequestText(chat.system_prompt);
+  r->context_preamble = CapRequestText(chat.context_preamble);
+  r->context = CapRequestText(chat.context);
+  r->user_message = CapRequestText(chat.user_message);
+  std::vector<const ChatMessage*> turns;
+  for (const ChatMessage& m : chat.history) {
+    if (m.content.empty()) continue;
+    if (m.role != "user" && m.role != "assistant") continue;
+    turns.push_back(&m);
   }
-  return open && close;
+  // The newest turns (the budget drops the oldest first anyway).
+  const size_t from = turns.size() > mojom::kMaxHistoryTurns
+                          ? turns.size() - mojom::kMaxHistoryTurns
+                          : 0;
+  for (size_t i = from; i < turns.size(); ++i) {
+    r->history.push_back(mojom::ChatTurn::New(
+        turns[i]->role == "user" ? mojom::ChatRole::kUser
+                                 : mojom::ChatRole::kAssistant,
+        CapRequestText(turns[i]->content)));
+  }
+  return r;
 }
 
-bool IsQwen3Arch(const std::string& arch) {
-  return arch == "qwen3" || arch == "qwen3moe";
+// User-facing text for a load that didn't succeed.
+std::string LoadError(const InferenceOutcome& outcome, const std::string& name) {
+  using Kind = InferenceOutcome::Kind;
+  switch (outcome.kind) {
+    case Kind::kOk:
+    case Kind::kCancelled:
+      return std::string();
+    case Kind::kLoadFailed:
+      switch (outcome.load_status) {
+        case mojom::LoadModelStatus::kOk:
+          return std::string();
+        case mojom::LoadModelStatus::kUnsupportedCpu:
+          return "This CPU doesn't support AVX2, which on-device AI in "
+                 "MoltBrowser needs. Use a cloud model instead (AI Settings "
+                 "> Connect AI Providers).";
+        case mojom::LoadModelStatus::kInvalidModelFile:
+          return "Couldn't load " + name +
+                 ". The file may be incomplete or incompatible — try "
+                 "deleting and re-downloading it from the model menu.";
+        case mojom::LoadModelStatus::kOutOfMemory:
+          return "Couldn't start " + name +
+                 " — not enough memory for it right now. Close some apps or "
+                 "tabs, or pick a smaller model.";
+        case mojom::LoadModelStatus::kBackendUnavailable:
+          return "Couldn't start " + name +
+                 ": on-device AI found no way to run it on this device.";
+      }
+      return "Couldn't load " + name + ".";
+    case Kind::kProcessGone:
+      return "The on-device AI process stopped while loading " + name +
+             ". Try again, or pick a smaller model.";
+    case Kind::kLaunchFailed:
+#if BUILDFLAG(IS_WIN)
+      return "On-device AI couldn't start its sandboxed process. The "
+             "portable ZIP can't run on-device models: install MoltBrowser "
+             "with the installer, or use a cloud model.";
+#else
+      return "On-device AI couldn't start its sandboxed process. Try again, "
+             "or use a cloud model.";
+#endif
+    case Kind::kViolation:
+      return "Couldn't load " + name +
+             ": the on-device AI process sent an invalid response.";
+    case Kind::kTimedOut:
+      return "Loading " + name +
+             " took too long and was stopped. Try again, or pick a smaller "
+             "model.";
+    case Kind::kMemoryExceeded:
+      return name + " used far more memory than expected and was stopped. "
+                    "Pick a smaller model.";
+    case Kind::kNoModel:
+      return "Couldn't load " + name + ".";
+    case Kind::kShuttingDown:
+      return "MoltBrowser is closing.";
+  }
+  return "Couldn't load " + name + ".";
 }
 
-bool IsReasoningArch(const std::string& arch) {
-  return IsQwen3Arch(arch) || arch == "qwen35" || arch == "qwen35moe" ||
-         arch == "gpt-oss";
-}
-
-// Keep the first |limit| tokens of |text| (context excerpts are ranked
-// best-first, so the head is the most relevant part).
-std::string TruncateTextHead(const llama_vocab* vocab,
-                             const std::string& text,
-                             int limit) {
-  if (limit <= 0) return std::string();
-  std::vector<llama_token> t = Tokenize(vocab, text, false, false);
-  if (static_cast<int>(t.size()) <= limit) return text;
-  t.resize(static_cast<size_t>(limit));
-  return Detokenize(vocab, t) + "\n[...]";
-}
-
-// Keep the head and tail of |text| within |limit| tokens.
-std::string TruncateTextMiddle(const llama_vocab* vocab,
-                               const std::string& text,
-                               int limit) {
-  std::vector<llama_token> t = Tokenize(vocab, text, false, false);
-  if (limit <= 0 || static_cast<int>(t.size()) <= limit) return text;
-  const std::vector<llama_token> marker =
-      Tokenize(vocab, "\n[...]\n", false, false);
-  return Detokenize(vocab,
-                    TruncateTokensMiddle(t, static_cast<size_t>(limit),
-                                         marker));
+// Fills |result| from a generation outcome. Returns the error ("" = none).
+std::string GenerationError(const InferenceOutcome& outcome,
+                            GenerationResult* result) {
+  using Kind = InferenceOutcome::Kind;
+  switch (outcome.kind) {
+    case Kind::kOk:
+      break;
+    case Kind::kCancelled:
+      result->was_cancelled = true;
+      return std::string();
+    case Kind::kLoadFailed:
+    case Kind::kProcessGone:
+    case Kind::kLaunchFailed:
+      return "The on-device model stopped unexpectedly (it may have run out "
+             "of memory). Try again, or pick a smaller model.";
+    case Kind::kViolation:
+      return "The on-device model sent an invalid response and was stopped. "
+             "Try again.";
+    case Kind::kTimedOut:
+      return "The on-device model stopped responding and was stopped. Try "
+             "again.";
+    case Kind::kMemoryExceeded:
+      return "The on-device model used far more memory than expected and was "
+             "stopped. Try a smaller model.";
+    case Kind::kNoModel:
+      return "No model loaded";
+    case Kind::kShuttingDown:
+      return "MoltBrowser is closing.";
+  }
+  if (!outcome.has_summary) return std::string();  // stopped by the browser
+  const StreamSummary& s = outcome.summary;
+  result->tokens_prompt = static_cast<int>(s.prompt_tokens);
+  result->tokens_reused = static_cast<int>(s.reused_tokens);
+  result->tokens_generated = static_cast<int>(s.generated_tokens);
+  switch (static_cast<mojom::GenerationStatus>(s.status)) {
+    case mojom::GenerationStatus::kEndOfGeneration:
+    case mojom::GenerationStatus::kMaxTokens:
+    case mojom::GenerationStatus::kStopSequence:
+    case mojom::GenerationStatus::kContextFull:
+      return std::string();
+    case mojom::GenerationStatus::kCancelled:
+      result->was_cancelled = true;
+      return std::string();
+    case mojom::GenerationStatus::kPromptTooLong:
+      return "This conversation is too long for the model's context window. "
+             "Start a new chat or shorten your message.";
+    case mojom::GenerationStatus::kSystemPromptTooLong:
+      return "The system prompt is too long for this model's context window.";
+    case mojom::GenerationStatus::kTokenizeFailed:
+      return "Failed to tokenize prompt";
+    case mojom::GenerationStatus::kDecodeFailed:
+      return s.generated_tokens == 0
+                 ? "The model couldn't process the prompt."
+                 : "The model stopped unexpectedly while answering.";
+  }
+  return "The model stopped unexpectedly while answering.";
 }
 
 }  // namespace
@@ -434,46 +541,52 @@ struct BrowserAIRuntime::Impl {
   std::unordered_map<std::string, ModelInfo> models;
   std::string active_model_id;
 
-  // generation_mutex guards the live llama handles and the per-model state
-  // below during use: RunPrompt / StreamPrompt / StreamChat hold it for
-  // their whole run, and LoadModel/UnloadModel/Shutdown take it to swap or
-  // free those handles — so a model can never be freed under an in-flight
-  // decode or a chat-template read. load_mutex serializes LoadModel /
-  // UnloadModel against each other and is held across the slow disk load
-  // WITHOUT holding generation_mutex. Ordering is always load_mutex ->
-  // generation_mutex; generation paths never take load_mutex. Fields
-  // written during a swap are written with BOTH locks held.
-  std::mutex generation_mutex;
+  // Serializes LoadModel / UnloadModel / DeleteModel (never two multi-GB
+  // models loading at once). Held while waiting for the inference process,
+  // never by the UI thread.
   std::mutex load_mutex;
-  std::atomic<bool> is_generating{false};
-  std::atomic<bool> is_loading{false};
-  bool initialized = false;
-  // Non-empty => local inference must not touch llama/ggml at all.
+
+  // What is loaded, and how busy it is. Guarded by state_mutex; never held
+  // while waiting on anything.
+  mutable std::mutex state_mutex;
+  std::string loaded_model_id;
+  std::string loaded_arch;
+  std::string loaded_crash_key;
+  int active_generations = 0;
+  bool is_loading = false;
+
+  std::atomic<bool> initialized{false};
+  std::atomic<bool> shutting_down{false};
+  // Non-empty => no inference process is ever launched.
   std::string unsupported_reason;
   std::string model_directory;
 
-  // llama.cpp context handles — C library types, excluded from raw_ptr check
-  RAW_PTR_EXCLUSION llama_model* llama_model_handle = nullptr;
-  RAW_PTR_EXCLUSION llama_context* llama_ctx = nullptr;
-  std::string loaded_model_id;  // Track which model is currently loaded
-  std::string model_arch;       // GGUF general.architecture
-  int n_batch = kMinContextTokens;
-  std::vector<std::string> special_texts;
-  // The loaded vocab has Gemma 4's thought-channel markers.
-  bool thought_channels = false;
-  // Tokens currently in the KV cache (sequence 0) and the conversation they
-  // belong to; used to reuse the common prefix across turns.
-  std::vector<llama_token> kv_tokens;
-  std::string kv_key;
-
-  // Per-request cancellation: id -> cancelled.
+  // Per-request cancellation: id -> state. A Stop that arrives before the
+  // request reaches the inference process is remembered here.
+  struct RequestState {
+    bool cancelled = false;
+    // The request's mailbox while it waits (woken on cancel).
+    scoped_refptr<InferenceMailbox> mailbox;
+  };
   mutable std::mutex requests_mutex;
-  std::unordered_map<uint64_t, bool> requests;
+  std::unordered_map<uint64_t, RequestState> requests;
   uint64_t next_request_id = 1;
+
+  // Crash-loop guard. Guarded by guard_mutex.
+  mutable std::mutex guard_mutex;
+  CrashLoopGuard crash_guard;
 
   // Idle unload.
   std::atomic<uint64_t> activity_epoch{0};
   std::atomic<int64_t> idle_timeout_ms{kDefaultIdleUnload.InMilliseconds()};
+
+  // The UI-thread side. Created by Initialize() on the UI thread and, like
+  // this singleton, never destroyed; |host| is only dereferenced there.
+  std::unique_ptr<HostDelegate> host_delegate;
+  std::unique_ptr<InferenceProcessHost> host;
+  std::atomic<InferenceProcessHost*> host_ptr{nullptr};
+  scoped_refptr<base::SequencedTaskRunner> ui_task_runner;
+  base::CallbackListSubscription app_terminating_subscription;
 
   // Memory-pressure monitoring; created and destroyed on the UI thread.
   std::unique_ptr<PressureListener> pressure_listener;
@@ -545,254 +658,137 @@ struct BrowserAIRuntime::Impl {
     }
   }
 
-  // Free llama.cpp resources for the currently loaded model. Caller holds
-  // load_mutex and generation_mutex.
-  void FreeLlamaResources() {
-    if (llama_ctx) {
-      llama_free(llama_ctx);
-      llama_ctx = nullptr;
-    }
-    if (llama_model_handle) {
-      llama_model_free(llama_model_handle);
-      llama_model_handle = nullptr;
-    }
-    {
-      std::lock_guard<std::mutex> lock(models_mutex);
-      auto it = models.find(loaded_model_id);
-      if (it != models.end()) it->second.is_loaded = false;
-      if (active_model_id == loaded_model_id) active_model_id.clear();
-    }
-    loaded_model_id.clear();
-    model_arch.clear();
-    special_texts.clear();
-    thought_channels = false;
-    kv_tokens.clear();
-    kv_key.clear();
-  }
-
   bool IsCancelled(uint64_t id) const {
     if (id == 0) return false;
     std::lock_guard<std::mutex> lock(requests_mutex);
     auto it = requests.find(id);
-    return it != requests.end() && it->second;
+    return it != requests.end() && it->second.cancelled;
   }
 
-  struct GenerationParams {
-    int max_visible = 512;
-    int max_hidden = 256;
-    bool think_start_inside = false;
-    // The prompt ends inside a Gemma 4 thought block.
-    bool thought_start_inside = false;
-    float temperature = 0.7f;
-    float top_p = 0.9f;
-    int top_k = 40;
-    uint64_t request_id = 0;
-  };
+  void SetRequestMailbox(uint64_t id, scoped_refptr<InferenceMailbox> mailbox) {
+    std::lock_guard<std::mutex> lock(requests_mutex);
+    auto it = requests.find(id);
+    if (it != requests.end()) it->second.mailbox = std::move(mailbox);
+  }
 
-  struct GenerationOutcome {
-    int n_generated = 0;
-    int n_reused = 0;
-    bool cancelled = false;
-    std::string error;
-  };
-
-  // Decodes |prompt| (reusing the KV prefix shared with the previous call
-  // when |reuse_key| matches) and samples until end-of-generation, budget,
-  // cancellation or a full window. Visible text goes to |emit|. Caller
-  // holds generation_mutex and has checked that the handles exist.
-  GenerationOutcome GenerateLocked(
-      const std::vector<llama_token>& prompt,
-      const std::string& reuse_key,
-      const GenerationParams& p,
-      const std::function<void(const std::string&)>& emit) {
-    GenerationOutcome out;
-    const llama_vocab* vocab = llama_model_get_vocab(llama_model_handle);
-    const int n_ctx = static_cast<int>(llama_n_ctx(llama_ctx));
-    llama_memory_t mem = llama_get_memory(llama_ctx);
-    if (!vocab || !mem || prompt.empty()) {
-      out.error = "Model is not ready.";
-      return out;
-    }
-
-    // ---- KV prefix reuse (A2/KV) ----
-    size_t n_keep = 0;
-    if (!reuse_key.empty() && reuse_key == kv_key) {
-      n_keep = CommonPrefixLength(kv_tokens, prompt);
-      // At least one prompt token must be decoded to get fresh logits.
-      if (n_keep >= prompt.size()) n_keep = prompt.size() - 1;
-    }
-    if (n_keep > 0) {
-      // Drop everything after the shared prefix. Bail out to a full
-      // re-evaluation if the cache can't do a partial removal (recurrent
-      // memory) or no longer holds the start of the sequence (SWA).
-      if (!llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(n_keep), -1) ||
-          llama_memory_seq_pos_min(mem, 0) > 0) {
-        n_keep = 0;
+  // Marks |model_id| loaded (or nothing, when empty) in the registry and the
+  // state. Caller holds neither lock.
+  void SetLoaded(const std::string& model_id,
+                 const std::string& arch,
+                 const std::string& crash_key) {
+    {
+      std::lock_guard<std::mutex> lock(models_mutex);
+      for (auto& [id, m] : models) {
+        m.is_loaded = !model_id.empty() && id == model_id;
       }
+      active_model_id = model_id;
     }
-    if (n_keep == 0) {
-      llama_memory_clear(mem, true);
-    }
-    kv_tokens.assign(prompt.begin(),
-                     prompt.begin() + static_cast<std::ptrdiff_t>(n_keep));
-    kv_key = reuse_key;
-    out.n_reused = static_cast<int>(n_keep);
+    std::lock_guard<std::mutex> lock(state_mutex);
+    loaded_model_id = model_id;
+    loaded_arch = arch;
+    loaded_crash_key = crash_key;
+  }
 
-    auto fail_decode = [&](const char* what) {
-      // The cache state is unknown after a failed decode: start clean next
-      // time.
-      llama_memory_clear(mem, true);
-      kv_tokens.clear();
-      kv_key.clear();
-      out.error = what;
+  // Posts |task| to the host on the UI thread. False if there is no host or
+  // the UI thread no longer takes tasks.
+  bool PostToHost(base::OnceCallback<void(InferenceProcessHost*)> task) {
+    InferenceProcessHost* h = host_ptr.load();
+    if (!h || !ui_task_runner) return false;
+    return ui_task_runner->PostTask(
+        FROM_HERE, base::BindOnce(std::move(task), base::Unretained(h)));
+  }
+
+  // Blocks the calling worker until |mailbox| is finished, delivering text to
+  // |on_text| (at most every kDeliveryInterval). Returns early (with a
+  // made-up outcome) on app termination, when the UI thread stops answering,
+  // or after |deadline|. If |request_id| is cancelled meanwhile, the host is
+  // asked to cancel |token|.
+  InferenceOutcome Wait(InferenceMailbox* mailbox,
+                        uint64_t request_id,
+                        uint64_t token,
+                        base::TimeDelta deadline,
+                        const std::function<void(const std::string&)>& on_text) {
+    DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    base::ScopedBlockingCall blocking(FROM_HERE,
+                                      base::BlockingType::WILL_BLOCK);
+    const Clock::time_point start = Clock::now();
+    const auto limit = std::chrono::milliseconds(deadline.InMilliseconds());
+    Clock::time_point last_delivery;
+    Clock::time_point cancel_sent;
+    bool cancelling = false;
+    Clock::time_point ping_sent;
+    bool pinging = false;
+    std::string pending;
+
+    auto deliver = [&](Clock::time_point now) {
+      if (pending.empty()) return;
+      if (on_text) on_text(pending);
+      pending.clear();
+      last_delivery = now;
     };
-
-    // ---- Prompt evaluation in n_batch-sized chunks ----
-    std::vector<llama_token> work(prompt.begin(), prompt.end());
-    for (size_t i = n_keep; i < work.size();) {
-      if (IsCancelled(p.request_id)) {
-        out.cancelled = true;
-        return out;  // kv_tokens matches exactly what was decoded
-      }
-      const size_t n = std::min<size_t>(static_cast<size_t>(n_batch),
-                                        work.size() - i);
-      llama_batch batch =
-          llama_batch_get_one(work.data() + i, static_cast<int32_t>(n));
-      if (llama_decode(llama_ctx, batch) != 0) {
-        fail_decode("The model couldn't process the prompt.");
-        return out;
-      }
-      kv_tokens.insert(kv_tokens.end(),
-                       work.begin() + static_cast<std::ptrdiff_t>(i),
-                       work.begin() + static_cast<std::ptrdiff_t>(i + n));
-      i += n;
-    }
-
-    // ---- Sampling ----
-    llama_sampler* sampler =
-        llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(p.top_k));
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(p.top_p, 1));
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(p.temperature));
-    llama_sampler_chain_add(sampler,
-                            llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-
-    HarmonyChannelFilter harmony;
-    // Gemma 4's thought channel, for vocabularies that define its markers.
-    const bool gemma_thoughts = thought_channels;
-    GemmaThoughtFilter gemma(gemma_thoughts && p.thought_start_inside);
-    ThinkTagFilter think(p.think_start_inside);
-    Utf8Assembler utf8;
-    auto feed = [&](const std::string& piece) {
-      std::string text = harmony.Feed(piece);
-      if (gemma_thoughts) text = gemma.Feed(text);
-      std::string visible = think.Feed(text);
-      std::string complete = utf8.Push(visible);
-      if (!complete.empty()) emit(complete);
+    auto request_cancel = [&]() {
+      if (cancelling || token == 0) return;
+      cancelling = true;
+      cancel_sent = Clock::now();
+      PostToHost(base::BindOnce(
+          [](uint64_t t, InferenceProcessHost* h) { h->Cancel(t); }, token));
     };
-    auto hiding = [&]() {
-      return harmony.hiding() || gemma.hiding() || think.in_think();
-    };
-
-    int visible_tokens = 0;
-    int hidden_tokens = 0;
-    bool forced_answer = false;
 
     while (true) {
-      if (IsCancelled(p.request_id)) {
-        out.cancelled = true;
-        break;
+      std::chrono::milliseconds timeout = kWaitSlice;
+      const bool pacing = !pending.empty();
+      if (pacing) {
+        const auto since = std::chrono::duration_cast<std::chrono::milliseconds>(
+            Clock::now() - last_delivery);
+        timeout = std::clamp(kDeliveryInterval - since,
+                             std::chrono::milliseconds(1), kDeliveryInterval);
       }
-      // Never let the cache reach n_ctx (llama_decode would fail).
-      if (static_cast<int>(kv_tokens.size()) >= n_ctx - 1) break;
+      const bool finished = mailbox->Wait(timeout, &pending);
+      const Clock::time_point now = Clock::now();
+      if (finished) {
+        deliver(now);
+        return mailbox->outcome();
+      }
+      if (now - last_delivery >= kDeliveryInterval) deliver(now);
 
-      llama_token tok = llama_sampler_sample(sampler, llama_ctx, -1);
-      llama_sampler_accept(sampler, tok);
-
-      // Stop on ANY end-of-generation token (EOS, <|eot_id|>, <|im_end|>,
-      // <|end|>, <|return|>, ...) BEFORE converting to text, so EOG token
-      // text is never emitted.
-      if (llama_vocab_is_eog(vocab, tok)) break;
-
-      std::string piece = TokenToPiece(vocab, tok);
-      if (piece.empty()) {
-        // Reasoning tags may be CONTROL tokens that render empty without
-        // special=true; recover their text so the filters see them.
-        // (Gemma 4's markers are USER_DEFINED and render anyway; this
-        // keeps a vocab that marks them CONTROL from leaking thoughts.)
-        const char* raw = llama_vocab_get_text(vocab, tok);
-        if (raw &&
-            (std::strcmp(raw, ThinkTagFilter::kOpenTag) == 0 ||
-             std::strcmp(raw, ThinkTagFilter::kCloseTag) == 0 ||
-             (gemma_thoughts &&
-              (std::strcmp(raw, GemmaThoughtFilter::kOpenMarker) == 0 ||
-               std::strcmp(raw, GemmaThoughtFilter::kCloseMarker) == 0)))) {
-          piece = raw;
+      if (shutting_down.load()) {
+        request_cancel();
+        deliver(now);
+        return InferenceOutcome(InferenceOutcome::Kind::kShuttingDown);
+      }
+      if (IsCancelled(request_id)) request_cancel();
+      if (cancelling && now - cancel_sent > kCancelConfirmWait) {
+        deliver(now);
+        return InferenceOutcome(InferenceOutcome::Kind::kCancelled);
+      }
+      // Liveness of the UI thread itself (see kUiTimeout).
+      const Clock::time_point heartbeat = mailbox->last_heartbeat();
+      if (pinging && heartbeat >= ping_sent) pinging = false;
+      if (!pinging && now - heartbeat > kHeartbeatInterval) {
+        pinging = true;
+        ping_sent = now;
+        scoped_refptr<InferenceMailbox> ref(mailbox);
+        if (!PostToHost(base::BindOnce(
+                [](scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
+                  h->Ping(std::move(m));
+                },
+                std::move(ref)))) {
+          deliver(now);
+          return InferenceOutcome(InferenceOutcome::Kind::kShuttingDown);
         }
       }
-      const bool hidden_before = hiding();
-      feed(piece);
-      if (hidden_before || hiding()) {
-        ++hidden_tokens;
-      } else {
-        ++visible_tokens;
+      if (pinging && now - ping_sent > kUiTimeout) {
+        LOG(WARNING) << "[MoltAI] UI thread not responding; giving up on an "
+                        "on-device AI request";
+        deliver(now);
+        return InferenceOutcome(InferenceOutcome::Kind::kShuttingDown);
       }
-
-      if (llama_decode(llama_ctx, llama_batch_get_one(&tok, 1)) != 0) {
-        fail_decode("The model stopped unexpectedly while answering.");
-        break;
-      }
-      kv_tokens.push_back(tok);
-      ++out.n_generated;
-
-      if (visible_tokens >= p.max_visible) break;
-
-      if (hiding() && hidden_tokens >= p.max_hidden) {
-        if (forced_answer) break;  // it went back to reasoning; give up
-        // Reasoning budget spent: close the reasoning block / switch to
-        // the final channel so the model answers instead of thinking on.
-        forced_answer = true;
-        const char* force =
-            gemma.hiding()
-                ? GemmaThoughtFilter::kForceClose
-                : (think.in_think() ? ThinkTagFilter::kForceClose
-                                    : HarmonyChannelFilter::kForceFinal);
-        std::vector<llama_token> ft = Tokenize(vocab, force, false, true);
-        if (ft.empty() ||
-            static_cast<int>(kv_tokens.size() + ft.size()) >= n_ctx - 1) {
-          break;
-        }
-        llama_batch force_batch =
-            llama_batch_get_one(ft.data(), static_cast<int32_t>(ft.size()));
-        if (llama_decode(llama_ctx, force_batch) != 0) {
-          fail_decode("The model stopped unexpectedly while answering.");
-          break;
-        }
-        kv_tokens.insert(kv_tokens.end(), ft.begin(), ft.end());
-        for (llama_token t : ft) feed(TokenToPiece(vocab, t));
-        // The marker closed one Gemma block; nested ones would keep the
-        // answer hidden, so close them all (no-op when none is open).
-        gemma.ForceClose();
-        if (think.in_think()) {
-          // Control-token form of the tags rendered empty; tell the filter
-          // explicitly.
-          feed(ThinkTagFilter::kCloseTag);
-        }
-        hidden_tokens = 0;
+      if (now - start > limit) {
+        request_cancel();
+        deliver(now);
+        return InferenceOutcome(InferenceOutcome::Kind::kTimedOut);
       }
     }
-
-    llama_sampler_free(sampler);
-
-    // Release held-back bytes in pipeline order (two statements: the
-    // Gemma flush must reach the think filter before it flushes).
-    std::string rest =
-        gemma_thoughts ? think.Feed(gemma.Flush()) : std::string();
-    rest += think.Flush();
-    std::string tail = utf8.Push(rest);
-    tail += utf8.Flush();
-    if (!tail.empty()) emit(tail);
-    return out;
   }
 };
 
@@ -804,8 +800,6 @@ class BrowserAIRuntime::PressureListener : public base::MemoryPressureListener {
  private:
   void OnMemoryPressure(base::MemoryPressureLevel level) override {
     if (level != base::MEMORY_PRESSURE_LEVEL_CRITICAL) return;
-    // Unloading takes locks a running load may hold for a minute — never on
-    // the UI thread.
     base::ThreadPool::PostTask(
         FROM_HERE,
         {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
@@ -814,6 +808,22 @@ class BrowserAIRuntime::PressureListener : public base::MemoryPressureListener {
                        base::Unretained(runtime_.get())));
   }
 
+  // The runtime is an immortal singleton.
+  raw_ptr<BrowserAIRuntime> runtime_;
+};
+
+// Process events from the host (UI thread).
+class BrowserAIRuntime::HostDelegate : public InferenceProcessHost::Delegate {
+ public:
+  explicit HostDelegate(BrowserAIRuntime* runtime) : runtime_(runtime) {}
+
+  void OnModelProcessLost(const std::string& model_id,
+                          const std::string& crash_key,
+                          CrashLoopGuard::Phase phase) override {
+    runtime_->OnModelProcessLost(model_id, crash_key, static_cast<int>(phase));
+  }
+
+ private:
   // The runtime is an immortal singleton.
   raw_ptr<BrowserAIRuntime> runtime_;
 };
@@ -846,22 +856,12 @@ bool BrowserAIRuntime::Initialize() {
   // filesystem I/O on the UI thread. Filesystem work (mkdir, stat()s) is
   // deferred to RefreshModelStatus(), which runs on a worker thread before
   // any model is loaded or downloaded.
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  // Must run before ANY llama/ggml call (A9).
   impl_->unsupported_reason = ComputeUnsupportedReason();
-
-  if (impl_->unsupported_reason.empty()) {
-    // llama.cpp requires a one-time global backend init before any model
-    // load. Registers compiled-in backends (Metal on Apple Silicon, CPU
-    // elsewhere). No filesystem I/O — Metal device probing only.
-    static std::once_flag llama_backend_once;
-    std::call_once(llama_backend_once, []() {
-      llama_backend_init();
-      std::cerr << "[MoltAI] llama.cpp backend initialized" << std::endl;
-    });
-  } else {
-    std::cerr << "[MoltAI] on-device inference disabled: "
-              << impl_->unsupported_reason << std::endl;
+  if (!impl_->unsupported_reason.empty()) {
+    LOG(WARNING) << "[MoltAI] on-device inference disabled: "
+                 << impl_->unsupported_reason;
   }
 
   // Detect hardware capabilities (sysconf/sysctl — non-blocking)
@@ -880,31 +880,45 @@ bool BrowserAIRuntime::Initialize() {
   // false; RefreshModelStatus() updates it from a worker thread.
   impl_->InitializeModelRegistry();
 
+  if (impl_->unsupported_reason.empty()) {
+    // The client of the sandboxed inference process lives on this (UI)
+    // thread. No process is launched until a model is loaded.
+    impl_->ui_task_runner = base::SequencedTaskRunner::GetCurrentDefault();
+    impl_->host_delegate = std::make_unique<HostDelegate>(this);
+    impl_->host =
+        std::make_unique<InferenceProcessHost>(impl_->host_delegate.get());
+    impl_->host_ptr = impl_->host.get();
+    // Workers blocked on the inference process return when the app
+    // terminates, so they never hold up ThreadPool shutdown.
+    impl_->app_terminating_subscription =
+        browser_shutdown::AddAppTerminatingCallback(base::BindOnce(
+            &BrowserAIRuntime::OnAppTerminating, base::Unretained(this)));
+  }
+
   impl_->initialized = true;
   return true;
 }
 
-void BrowserAIRuntime::Shutdown() {
-  if (!impl_->initialized) return;
-
-  // Ask any in-flight decode to stop, then take the same locks LoadModel/Unload
-  // take (load_mutex -> generation_mutex) before freeing the handles, so this
-  // can never free a model out from under a running decode. (Unreachable today —
-  // the singleton is never destroyed — but this keeps it safe if ever wired to
-  // browser/profile teardown.)
-  CancelGeneration();
-  std::lock_guard<std::mutex> load_lock(impl_->load_mutex);
-  std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
-
-  impl_->FreeLlamaResources();
+void BrowserAIRuntime::OnAppTerminating() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  impl_->shutting_down = true;
   {
-    std::lock_guard<std::mutex> lock(impl_->models_mutex);
-    for (auto& [id, info] : impl_->models) {
-      info.is_loaded = false;
+    std::lock_guard<std::mutex> lock(impl_->requests_mutex);
+    for (auto& [id, request] : impl_->requests) {
+      request.cancelled = true;
+      if (request.mailbox) request.mailbox->Wake();
     }
   }
+  if (impl_->host) impl_->host->Shutdown();
+}
 
-  impl_->initialized = false;
+void BrowserAIRuntime::Shutdown() {
+  if (!impl_->initialized) return;
+  CancelGeneration();
+  impl_->SetLoaded(std::string(), std::string(), std::string());
+  impl_->PostToHost(base::BindOnce([](InferenceProcessHost* h) {
+    h->Unload(InferenceProcessHost::UnloadMode::kNow, nullptr);
+  }));
 }
 
 std::string BrowserAIRuntime::GetLocalInferenceUnsupportedReason() const {
@@ -947,30 +961,62 @@ void BrowserAIRuntime::TouchActivity() {
 void BrowserAIRuntime::MaybeUnloadIdle(uint64_t epoch) {
   // Any newer activity re-armed its own check.
   if (epoch != impl_->activity_epoch.load()) return;
-  if (impl_->is_generating || impl_->is_loading) return;
-  std::unique_lock<std::mutex> load_lock(impl_->load_mutex, std::try_to_lock);
-  if (!load_lock.owns_lock()) return;
-  std::unique_lock<std::mutex> gen_lock(impl_->generation_mutex,
-                                        std::try_to_lock);
-  if (!gen_lock.owns_lock()) return;
-  if (epoch != impl_->activity_epoch.load() || !impl_->llama_model_handle) {
-    return;
-  }
-  std::cerr << "[MoltAI] unloading idle model " << impl_->loaded_model_id
-            << std::endl;
-  impl_->FreeLlamaResources();
+  UnloadIfIdle("idle");
 }
 
 void BrowserAIRuntime::OnCriticalMemoryPressure() {
-  if (impl_->is_generating || impl_->is_loading) return;
+  UnloadIfIdle("critical memory pressure");
+}
+
+void BrowserAIRuntime::UnloadIfIdle(const char* reason) {
+  // A load in progress holds load_mutex; never wait for it here.
   std::unique_lock<std::mutex> load_lock(impl_->load_mutex, std::try_to_lock);
   if (!load_lock.owns_lock()) return;
-  std::unique_lock<std::mutex> gen_lock(impl_->generation_mutex,
-                                        std::try_to_lock);
-  if (!gen_lock.owns_lock() || !impl_->llama_model_handle) return;
-  std::cerr << "[MoltAI] critical memory pressure: unloading "
-            << impl_->loaded_model_id << std::endl;
-  impl_->FreeLlamaResources();
+  std::string unloading;
+  {
+    // Check and forget in one step, so a generation starting now either
+    // pins the model first or sees it gone ("No model loaded").
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    // Keep today's policy: never interrupt a generation.
+    if (impl_->loaded_model_id.empty() || impl_->active_generations > 0 ||
+        impl_->is_loading) {
+      return;
+    }
+    unloading = impl_->loaded_model_id;
+    impl_->loaded_model_id.clear();
+    impl_->loaded_arch.clear();
+    impl_->loaded_crash_key.clear();
+  }
+  LOG(INFO) << "[MoltAI] " << reason << ": ending the on-device model process ("
+            << unloading << ")";
+  impl_->SetLoaded(std::string(), std::string(), std::string());
+  // Ending the process frees the weights, the KV cache and any GPU buffers
+  // at once.
+  impl_->PostToHost(base::BindOnce([](InferenceProcessHost* h) {
+    h->Unload(InferenceProcessHost::UnloadMode::kGraceful, nullptr);
+  }));
+}
+
+void BrowserAIRuntime::OnModelProcessLost(const std::string& model_id,
+                                          const std::string& crash_key,
+                                          int phase) {
+  {
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    impl_->crash_guard.RecordCrash(
+        crash_key, static_cast<CrashLoopGuard::Phase>(phase),
+        (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds());
+  }
+  bool was_loaded = false;
+  {
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    was_loaded = impl_->loaded_model_id == model_id;
+  }
+  // The next chat send relaunches it (the chat handler loads when
+  // GetLoadedModelId() differs); agents and automation report "No model
+  // loaded", as after an idle unload.
+  if (was_loaded) impl_->SetLoaded(std::string(), std::string(), std::string());
+  LOG(WARNING) << "[MoltAI] the on-device model process (" << model_id
+               << ") ended unexpectedly";
 }
 
 RamCheck BrowserAIRuntime::CheckRamForModel(const std::string& model_id) const {
@@ -1018,14 +1064,18 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     set_error(impl_->unsupported_reason);
     return false;
   }
+  if (impl_->shutting_down) {
+    set_error("MoltBrowser is closing.");
+    return false;
+  }
+  if (!impl_->host_ptr.load()) {
+    set_error("On-device AI isn't ready yet. Try again in a moment.");
+    return false;
+  }
 
-  // load_mutex serializes loads/unloads (never allocate two multi-GB models at
-  // once → avoids OOM, and avoids swap races). CRUCIALLY, the slow part below —
-  // the disk read + llama_init_from_model + Metal shader compile, 14-60s — runs
-  // into LOCAL handles WITHOUT holding generation_mutex, so it never freezes an
-  // in-flight decode or an on-UI-thread caller. generation_mutex is taken only
-  // for the brief pointer swap, which waits for any active decode to finish
-  // before the old model is detached and freed → no use-after-free.
+  // Serializes loads/unloads: never two multi-GB models loading at once.
+  // The slow part (the process loads the model) runs while another model
+  // may keep serving requests in its own process.
   std::lock_guard<std::mutex> load_lock(impl_->load_mutex);
 
   ModelInfo info;
@@ -1048,173 +1098,184 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     return false;
   }
 
-  // load_mutex makes loaded_model_id stable here (all writers hold it).
-  if (impl_->loaded_model_id == model_id && impl_->llama_model_handle) {
-    TouchActivity();
-    return true;
+  bool previous_loaded = false;
+  {
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    if (impl_->loaded_model_id == model_id) {
+      TouchActivity();
+      return true;
+    }
+    previous_loaded = !impl_->loaded_model_id.empty();
   }
 
-  // RAM check against what is actually free (A8).
+  // RAM check against what is actually free.
   const RamCheck rc = CheckRamForModel(model_id);
   if (!rc.ok) {
-    const auto gb = [](uint64_t b) {
-      return std::to_string((b + 512ULL * 1024 * 1024) /
-                            (1024ULL * 1024 * 1024));
-    };
     if (rc.exceeds_total) {
-      set_error(name + " needs about " + gb(rc.needed_bytes) +
-                " GB of memory, but this device has " + gb(rc.total_bytes) +
-                " GB. Try a smaller model.");
+      set_error(name + " needs about " + GbString(rc.needed_bytes) +
+                " GB of memory, but this device has " +
+                GbString(rc.total_bytes) + " GB. Try a smaller model.");
     } else {
-      set_error(name + " needs about " + gb(rc.needed_bytes) +
+      set_error(name + " needs about " + GbString(rc.needed_bytes) +
                 " GB of free memory, but only about " +
-                gb(rc.available_bytes) +
+                GbString(rc.available_bytes) +
                 " GB is available right now. Close some apps or tabs, or "
                 "pick a smaller model.");
     }
     return false;
   }
 
-  impl_->is_loading = true;
-
-  // Free the old model FIRST when the new one wouldn't fit next to it —
-  // loading new-before-free briefly needs both in RAM.
-  {
-    const uint64_t free_now =
-        base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes();
-    if (free_now < rc.needed_bytes && impl_->llama_model_handle) {
-      std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
-      std::cerr << "[MoltAI] freeing " << impl_->loaded_model_id
-                << " before loading " << model_id << " (low memory)"
-                << std::endl;
-      impl_->FreeLlamaResources();
-    }
+  // The browser opens the file (the sandbox can't) and hands the process a
+  // read-only handle. Not async: llama.cpp reads it synchronously. Share
+  // delete, so DeleteModel isn't blocked by a process still exiting.
+  base::File file(base::FilePath::FromUTF8Unsafe(info.file_path),
+                  base::File::FLAG_OPEN | base::File::FLAG_READ |
+                      base::File::FLAG_WIN_SHARE_DELETE);
+  base::File::Info file_info;
+  if (!file.IsValid() || !file.GetInfo(&file_info) ||
+      file_info.is_directory || file_info.size <= 0) {
+    set_error("Couldn't open " + name +
+              ". Try deleting and re-downloading it from the model menu.");
+    return false;
   }
-
-  // ---- llama.cpp model loading into LOCAL handles (no generation_mutex) ----
-  llama_model_params model_params = llama_model_default_params();
-  model_params.n_gpu_layers = -1;  // Offload all layers to GPU (Metal on macOS)
-
-  llama_model* new_model = llama_model_load_from_file(
-      info.file_path.c_str(), model_params);
-  if (!new_model) {
-    std::cerr << "[MoltAI] Failed to load model: " << info.file_path
-              << std::endl;
-    impl_->is_loading = false;
+  const uint64_t file_size = static_cast<uint64_t>(file_info.size);
+  if (info.is_verified() && info.file_size_bytes &&
+      file_size != info.file_size_bytes) {
     set_error("Couldn't load " + name +
-              ". The file may be incomplete or incompatible — try deleting "
-              "and re-downloading it from the model menu.");
+              ". The file is incomplete — try deleting and re-downloading it "
+              "from the model menu.");
     return false;
   }
-
-  // Size the context from the model's training window, RAM and a KV-cache
-  // memory estimate (A2) instead of a fixed 2048.
-  ContextSizingInput sizing_in;
-  sizing_in.total_ram_bytes = impl_->hardware.total_ram_bytes;
-  sizing_in.model_file_bytes = info.file_size_bytes;
-  sizing_in.n_ctx_train = llama_model_n_ctx_train(new_model);
-  sizing_in.kv_bytes_per_token = EstimateKvBytesPerToken(
-      llama_model_n_layer(new_model), llama_model_n_embd(new_model),
-      llama_model_n_head(new_model), llama_model_n_head_kv(new_model));
-  const ContextSizing sizing = ComputeContextSizing(sizing_in);
-
-  llama_context_params ctx_params = llama_context_default_params();
-  ctx_params.n_ctx = static_cast<uint32_t>(sizing.n_ctx);
-  // Prompts longer than n_batch are decoded in n_batch-sized chunks
-  // (GenerateLocked), so n_batch no longer has to cover the whole window.
-  ctx_params.n_batch = static_cast<uint32_t>(sizing.n_batch);
-  ctx_params.n_threads = impl_->hardware.cpu_cores > 4
-                             ? impl_->hardware.cpu_cores / 2
-                             : std::max(1, impl_->hardware.cpu_cores);
-  ctx_params.n_threads_batch = ctx_params.n_threads;
-
-  llama_context* new_ctx = llama_init_from_model(new_model, ctx_params);
-  if (!new_ctx && sizing.n_ctx > kMinContextTokens) {
-    // The KV estimate is approximate (and GPU buffers can fail to
-    // allocate); retry with the old fixed size before giving up.
-    std::cerr << "[MoltAI] context of " << sizing.n_ctx
-              << " failed; retrying with " << kMinContextTokens << std::endl;
-    ctx_params.n_ctx = kMinContextTokens;
-    ctx_params.n_batch = kMinContextTokens;
-    new_ctx = llama_init_from_model(new_model, ctx_params);
-  }
-  if (!new_ctx) {
-    std::cerr << "[MoltAI] Failed to create context for: " << model_id
-              << std::endl;
-    llama_model_free(new_model);
-    impl_->is_loading = false;
-    set_error("Couldn't start " + name + " — not enough memory for it right "
-              "now. Close some apps or tabs, or pick a smaller model.");
-    return false;
-  }
-
-  const llama_vocab* vocab = llama_model_get_vocab(new_model);
-  std::vector<std::string> specials =
-      vocab ? CollectSpecialTexts(vocab) : std::vector<std::string>();
-  const bool thought_channels = UsesGemmaThoughtChannel(specials);
-  std::string arch = ReadModelArch(new_model);
-
-  // ---- Brief critical section: install the new handles, detach the old ----
-  // Acquiring generation_mutex waits for any in-flight decode/template read to
-  // finish; once we swap impl_->llama_ctx to the new one, every later generation
-  // reads the new handles, so the old ones are unreferenced afterwards.
-  llama_model* old_model = nullptr;
-  llama_context* old_ctx = nullptr;
+  const std::string crash_key =
+      model_id + ":" + base::NumberToString(file_size) + ":" +
+      base::NumberToString(static_cast<int64_t>(
+          file_info.last_modified.ToDeltaSinceWindowsEpoch().InMicroseconds()));
   {
-    std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
-    old_ctx = impl_->llama_ctx;
-    old_model = impl_->llama_model_handle;
-    {
-      std::lock_guard<std::mutex> lock(impl_->models_mutex);
-      for (auto& [id, m] : impl_->models) m.is_loaded = (id == model_id);
-      impl_->active_model_id = model_id;
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    const CrashLoopGuard::Verdict verdict = impl_->crash_guard.Check(
+        crash_key,
+        (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds());
+    if (verdict != CrashLoopGuard::Verdict::kAllowed) {
+      set_error(CrashLoopGuard::Explain(verdict));
+      return false;
     }
-    impl_->llama_ctx = new_ctx;
-    impl_->llama_model_handle = new_model;
-    impl_->loaded_model_id = model_id;
-    impl_->model_arch = std::move(arch);
-    impl_->n_batch = static_cast<int>(llama_n_batch(new_ctx));
-    impl_->special_texts = std::move(specials);
-    impl_->thought_channels = thought_channels;
-    // A new model invalidates any cached conversation prefix.
-    impl_->kv_tokens.clear();
-    impl_->kv_key.clear();
   }
 
-  // Free the previous model OUTSIDE the lock — it is now detached (unreachable by
-  // any current or future generation), so this can't race a decode, and freeing
-  // a multi-GB model + its Metal buffers should not extend the critical section.
-  if (old_ctx) {
-    llama_free(old_ctx);
+  {
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    impl_->is_loading = true;
   }
-  if (old_model) {
-    llama_model_free(old_model);
+  struct LoadingScope {
+    raw_ptr<Impl> impl;
+    ~LoadingScope() {
+      std::lock_guard<std::mutex> lock(impl->state_mutex);
+      impl->is_loading = false;
+    }
+  } loading_scope{impl_.get()};
+
+  // End the old model's process FIRST when the new one wouldn't fit next to
+  // it (it finishes its running requests); otherwise the new process loads
+  // while the old one keeps serving, and replaces it on success.
+  if (previous_loaded &&
+      base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes() <
+          static_cast<int64_t>(rc.needed_bytes)) {
+    LOG(INFO) << "[MoltAI] ending the current model's process before loading "
+              << model_id << " (low memory)";
+    impl_->SetLoaded(std::string(), std::string(), std::string());
+    auto exited = base::MakeRefCounted<InferenceMailbox>();
+    if (impl_->PostToHost(base::BindOnce(
+            [](scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
+              h->Unload(InferenceProcessHost::UnloadMode::kGraceful,
+                        std::move(m));
+            },
+            exited))) {
+      impl_->Wait(exited.get(), 0, 0, kUnloadWait, nullptr);
+    }
   }
 
-  impl_->is_loading = false;
-  std::cerr << "[MoltAI] Model loaded: " << info.display_name
-            << " (arch=" << impl_->model_arch
-            << " ctx=" << llama_n_ctx(new_ctx)
-            << " batch=" << impl_->n_batch << ")" << std::endl;
+  InferenceProcessHost::LoadRequest request;
+  request.model_id = model_id;
+  request.crash_key = crash_key;
+  request.file = std::move(file);
+  request.file_size = file_size;
+  request.total_ram_bytes = impl_->hardware.total_ram_bytes;
+  const int cores = impl_->hardware.cpu_cores;
+  request.cpu_threads =
+      static_cast<uint32_t>(cores > 4 ? cores / 2 : std::max(1, cores));
+  request.max_context_tokens = kMaxContextTokens;
+  request.allow_cpu_repack = true;
+  // Footprint watchdog: weights (repacked copies count on CPU) + the KV
+  // cache the RAM tiers allow + 2 GB, and 50% on top of that.
+  const uint64_t ram = impl_->hardware.total_ram_bytes;
+  const uint64_t kv_bound = std::max<uint64_t>(
+      1 * kGiB, ram > file_size + 4 * kGiB ? (ram - file_size - 4 * kGiB) / 2
+                                           : 0);
+  const uint64_t expected = file_size + kv_bound + 2 * kGiB;
+  request.footprint_limit_bytes = expected + expected / 2;
+
+  auto mailbox = base::MakeRefCounted<InferenceMailbox>();
+  if (!impl_->PostToHost(base::BindOnce(
+          [](InferenceProcessHost::LoadRequest r,
+             scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
+            h->Load(std::move(r), std::move(m));
+          },
+          std::move(request), mailbox))) {
+    set_error("MoltBrowser is closing.");
+    return false;
+  }
+  const InferenceOutcome outcome =
+      impl_->Wait(mailbox.get(), 0, 0, kLoadWait, nullptr);
+  if (outcome.kind != InferenceOutcome::Kind::kOk) {
+    std::string message = LoadError(outcome, name);
+    if (outcome.kind == InferenceOutcome::Kind::kProcessGone ||
+        outcome.kind == InferenceOutcome::Kind::kTimedOut ||
+        outcome.kind == InferenceOutcome::Kind::kViolation) {
+      std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+      const CrashLoopGuard::Verdict verdict = impl_->crash_guard.Check(
+          crash_key,
+          (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds());
+      if (verdict == CrashLoopGuard::Verdict::kRefusedAfterLoadCrashes) {
+        message = CrashLoopGuard::Explain(verdict);
+      }
+    }
+    LOG(ERROR) << "[MoltAI] couldn't load " << model_id << " (outcome "
+               << static_cast<int>(outcome.kind) << ")";
+    set_error(message.empty() ? "Couldn't load " + name + "." : message);
+    return false;
+  }
+
+  impl_->SetLoaded(model_id, outcome.architecture, crash_key);
+  LOG(INFO) << "[MoltAI] model loaded in the inference process: " << model_id
+            << " (arch=" << outcome.architecture
+            << " backend=" << outcome.backend
+            << " ctx=" << outcome.context_tokens
+            << " repack=" << outcome.cpu_repack_used << ")";
   TouchActivity();
   return true;
 }
 
 bool BrowserAIRuntime::UnloadModel(const std::string& model_id) {
-  // Same serialization as LoadModel, same lock ordering (load_mutex ->
-  // generation_mutex): never free llama resources while a generation or a load
-  // is touching them. Callers (DeleteModel, the public API) hold neither lock,
-  // so this cannot self-deadlock. Unload is fast, so holding generation_mutex
-  // across it is fine (unlike LoadModel's slow disk read).
+  // Same serialization as LoadModel.
   std::lock_guard<std::mutex> load_lock(impl_->load_mutex);
-  std::lock_guard<std::mutex> gen_lock(impl_->generation_mutex);
-
   {
     std::lock_guard<std::mutex> lock(impl_->models_mutex);
     if (impl_->models.find(model_id) == impl_->models.end()) return false;
   }
-  if (impl_->loaded_model_id == model_id) {
-    impl_->FreeLlamaResources();
+  {
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    if (impl_->loaded_model_id != model_id) return true;
+  }
+  impl_->SetLoaded(std::string(), std::string(), std::string());
+  // The process finishes its running requests, then ends; wait for that,
+  // so the memory (and, on Windows, the file) is free when this returns.
+  auto exited = base::MakeRefCounted<InferenceMailbox>();
+  if (impl_->PostToHost(base::BindOnce(
+          [](scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
+            h->Unload(InferenceProcessHost::UnloadMode::kGraceful,
+                      std::move(m));
+          },
+          exited))) {
+    impl_->Wait(exited.get(), 0, 0, kUnloadWait, nullptr);
   }
   return true;
 }
@@ -1230,9 +1291,7 @@ std::vector<ModelInfo> BrowserAIRuntime::GetAvailableModels() const {
 }
 
 std::string BrowserAIRuntime::GetLoadedModelId() const {
-  // Guarded by generation_mutex — loaded_model_id is written under it during the
-  // brief model swap. Worker-thread only (see header).
-  std::lock_guard<std::mutex> lock(impl_->generation_mutex);
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
   return impl_->loaded_model_id;
 }
 
@@ -1259,6 +1318,7 @@ bool BrowserAIRuntime::DeleteModel(const std::string& model_id) {
   if (info.model_id.empty()) {
     return false;
   }
+  // Waits until the model's process has exited.
   UnloadModel(model_id);
   std::error_code ec;
   std::filesystem::remove(info.file_path, ec);
@@ -1272,14 +1332,18 @@ bool BrowserAIRuntime::DeleteModel(const std::string& model_id) {
 uint64_t BrowserAIRuntime::NewRequestId() {
   std::lock_guard<std::mutex> lock(impl_->requests_mutex);
   const uint64_t id = impl_->next_request_id++;
-  impl_->requests[id] = false;
+  impl_->requests[id] = Impl::RequestState();
   return id;
 }
 
 void BrowserAIRuntime::CancelRequest(uint64_t request_id) {
   std::lock_guard<std::mutex> lock(impl_->requests_mutex);
   auto it = impl_->requests.find(request_id);
-  if (it != impl_->requests.end()) it->second = true;
+  if (it == impl_->requests.end()) return;
+  it->second.cancelled = true;
+  // Wake the blocked worker; it asks the host to close the request's
+  // streamer, which cancels it in the inference process.
+  if (it->second.mailbox) it->second.mailbox->Wake();
 }
 
 bool BrowserAIRuntime::IsRequestCancelled(uint64_t request_id) const {
@@ -1293,7 +1357,10 @@ void BrowserAIRuntime::FinishRequest(uint64_t request_id) {
 
 void BrowserAIRuntime::CancelGeneration() {
   std::lock_guard<std::mutex> lock(impl_->requests_mutex);
-  for (auto& [id, cancelled] : impl_->requests) cancelled = true;
+  for (auto& [id, request] : impl_->requests) {
+    request.cancelled = true;
+    if (request.mailbox) request.mailbox->Wake();
+  }
 }
 
 // ---- Inference -------------------------------------------------------------
@@ -1301,21 +1368,14 @@ void BrowserAIRuntime::CancelGeneration() {
 namespace {
 
 // RAII: allocates a private request id when the caller didn't pass one and
-// releases it afterwards; marks the runtime busy for the idle/pressure
-// unloaders.
+// releases it afterwards.
 class ScopedRequest {
  public:
-  ScopedRequest(BrowserAIRuntime* rt,
-                uint64_t requested,
-                std::atomic<bool>* busy)
+  ScopedRequest(BrowserAIRuntime* rt, uint64_t requested)
       : rt_(rt),
         id_(requested ? requested : rt->NewRequestId()),
-        owned_(requested == 0),
-        busy_(busy) {
-    *busy_ = true;
-  }
+        owned_(requested == 0) {}
   ~ScopedRequest() {
-    *busy_ = false;
     if (owned_) rt_->FinishRequest(id_);
   }
   uint64_t id() const { return id_; }
@@ -1324,7 +1384,6 @@ class ScopedRequest {
   raw_ptr<BrowserAIRuntime> rt_;
   uint64_t id_;
   bool owned_;
-  raw_ptr<std::atomic<bool>> busy_;
 };
 
 }  // namespace
@@ -1342,183 +1401,8 @@ GenerationResult BrowserAIRuntime::StreamPrompt(const std::string& prompt,
                                                 const PromptOptions& options) {
   // Raw-prompt path (agents/automation build their own prompt text; no chat
   // template). Chat UI traffic uses StreamChat.
-  GenerationResult result;
-  auto done = [&]() {
-    if (callback) callback("", /*is_done=*/true);
-  };
-  if (!impl_->unsupported_reason.empty()) {
-    result.error_message = impl_->unsupported_reason;
-    done();
-    return result;
-  }
-
-  std::lock_guard<std::mutex> lock(impl_->generation_mutex);
-  ScopedRequest req(this, options.request_id, &impl_->is_generating);
-  const auto start = std::chrono::steady_clock::now();
-
-  const std::string model_id =
-      options.model_id.empty() ? impl_->loaded_model_id : options.model_id;
-  if (model_id.empty() || !impl_->llama_model_handle || !impl_->llama_ctx) {
-    result.error_message = "No model loaded";
-    done();
-    return result;
-  }
-  if (model_id != impl_->loaded_model_id) {
-    result.error_message = "Model not loaded: " + model_id;
-    done();
-    return result;
-  }
-  if (impl_->IsCancelled(req.id())) {
-    result.was_cancelled = true;
-    done();
-    return result;
-  }
-
-  const llama_vocab* vocab = llama_model_get_vocab(impl_->llama_model_handle);
-  const int n_ctx = static_cast<int>(llama_n_ctx(impl_->llama_ctx));
-  const int visible =
-      options.max_tokens > 0 ? options.max_tokens : AdaptiveReplyTokens(n_ctx);
-  const int hidden = options.max_reasoning_tokens > 0
-                         ? options.max_reasoning_tokens
-                         : (IsReasoningArch(impl_->model_arch)
-                                ? AdaptiveReasoningTokens(n_ctx)
-                                : 64);
-  const int reply_reserve = std::min(visible + hidden, n_ctx / 2);
-
-  // Agent and automation prompts carry page text. parse_special=false is not
-  // enough on its own: llama.cpp still matches USER_DEFINED tokens (only
-  // CONTROL and UNKNOWN are skipped), and Gemma 4 defines its turn, channel
-  // and tool markers (<|channel>, <|tool_response>, ...) that way, so a page
-  // could end the turn or fake a tool result. Neutralize every
-  // control-looking vocab text first, as StreamChat does for its messages.
-  const std::vector<std::string>& specials = impl_->special_texts;
-  const std::string system_prompt =
-      NeutralizeSpecialTokens(options.system_prompt, specials);
-  const std::string body_text = NeutralizeSpecialTokens(prompt, specials);
-
-  // The system prompt is kept whole (with BOS); the body is shortened in
-  // the middle if needed (A2) — previously this failed outright.
-  std::vector<llama_token> tokens;
-  if (!system_prompt.empty()) {
-    tokens = Tokenize(vocab, system_prompt + "\n\n",
-                      /*add_special=*/true, /*parse_special=*/false);
-  }
-  std::vector<llama_token> body =
-      Tokenize(vocab, body_text, /*add_special=*/tokens.empty(),
-               /*parse_special=*/false);
-  if (body.empty() && tokens.empty()) {
-    result.error_message = "Failed to tokenize prompt";
-    done();
-    return result;
-  }
-  const int body_limit = n_ctx - kContextSlack - reply_reserve -
-                         static_cast<int>(tokens.size());
-  if (body_limit < 16) {
-    result.error_message =
-        "The system prompt is too long for this model's context window.";
-    done();
-    return result;
-  }
-  if (static_cast<int>(body.size()) > body_limit) {
-    std::cerr << "[MoltAI] RunPrompt: prompt shortened from " << body.size()
-              << " to " << body_limit << " tokens" << std::endl;
-    body = TruncateTokensMiddle(body, static_cast<size_t>(body_limit),
-                                Tokenize(vocab, "\n[...]\n", false, false));
-  }
-  tokens.insert(tokens.end(), body.begin(), body.end());
-  result.tokens_prompt = static_cast<int>(tokens.size());
-
-  Impl::GenerationParams gp;
-  gp.max_visible = visible;
-  gp.max_hidden = hidden;
-  gp.temperature = options.temperature;
-  gp.top_p = options.top_p;
-  gp.top_k = options.top_k;
-  gp.request_id = req.id();
-  // Raw prompts never share a conversation prefix.
-  Impl::GenerationOutcome outcome = impl_->GenerateLocked(
-      tokens, /*reuse_key=*/std::string(), gp,
-      [&](const std::string& visible_text) {
-        result.text += visible_text;
-        if (callback) callback(visible_text, /*is_done=*/false);
-      });
-  done();
-
-  result.model_used = model_id;
-  result.tokens_generated = outcome.n_generated;
-  result.was_cancelled = outcome.cancelled;
-  result.error_message = outcome.error;
-  result.success = outcome.error.empty();
-  result.generation_time_ms = std::chrono::duration<float, std::milli>(
-                                  std::chrono::steady_clock::now() - start)
-                                  .count();
-  TouchActivity();
-  return result;
-}
-
-std::string BrowserAIRuntime::ApplyChatTemplate(
-    const std::vector<ChatMessage>& messages,
-    bool add_assistant) const {
-  // Fetch the template the model ships in its GGUF metadata
-  // (tokenizer.chat_template). nullptr → llama_chat_apply_template
-  // falls back to llama.cpp's built-in "chatml" format.
-  const char* tmpl = nullptr;
-  if (impl_->llama_model_handle) {
-    tmpl = llama_model_chat_template(impl_->llama_model_handle,
-                                     /*name=*/nullptr);
-  }
-
-  std::vector<llama_chat_message> chat;
-  chat.reserve(messages.size());
-  size_t total_chars = 0;
-  for (const auto& m : messages) {
-    chat.push_back({m.role.c_str(), m.content.c_str()});
-    total_chars += m.role.size() + m.content.size();
-  }
-
-  // llama.h recommends allocating ~2x the total message chars up front;
-  // if that still isn't enough, the return value is the required size.
-  std::vector<char> buf(std::max<size_t>(total_chars * 2, 1024));
-  int32_t n = llama_chat_apply_template(
-      tmpl, chat.data(), chat.size(), add_assistant,
-      buf.data(), static_cast<int32_t>(buf.size()));
-
-  if (n < 0 && tmpl != nullptr) {
-    // The GGUF's template isn't one of llama.cpp's recognized formats —
-    // retry with the chatml default (tmpl=nullptr never fails).
-    std::cerr << "[MoltAI] ApplyChatTemplate: model chat template "
-                 "unrecognized, falling back to chatml" << std::endl;
-    tmpl = nullptr;
-    n = llama_chat_apply_template(
-        tmpl, chat.data(), chat.size(), add_assistant,
-        buf.data(), static_cast<int32_t>(buf.size()));
-  }
-
-  if (n > static_cast<int32_t>(buf.size())) {
-    // Result was truncated (strncpy semantics) — resize to the reported
-    // total byte count and format again.
-    buf.resize(static_cast<size_t>(n));
-    n = llama_chat_apply_template(
-        tmpl, chat.data(), chat.size(), add_assistant,
-        buf.data(), static_cast<int32_t>(buf.size()));
-  }
-
-  if (n < 0) {
-    // Defensive last resort (should be unreachable — chatml is a
-    // built-in): hand-format zephyr-style so generation can proceed.
-    std::string out;
-    for (const auto& m : messages) {
-      out += "<|" + m.role + "|>\n" + m.content + "</s>\n";
-    }
-    if (add_assistant) {
-      out += "<|assistant|>\n";
-    }
-    return out;
-  }
-
-  // Always use the returned byte count — the buffer is NOT
-  // null-terminated when the result exactly fills it.
-  return std::string(buf.data(), static_cast<size_t>(n));
+  return Generate(/*is_chat=*/false, nullptr, &prompt, std::move(callback),
+                  options);
 }
 
 GenerationResult BrowserAIRuntime::StreamChat(
@@ -1544,6 +1428,15 @@ GenerationResult BrowserAIRuntime::StreamChat(
 GenerationResult BrowserAIRuntime::StreamChat(const ChatPrompt& chat,
                                               TokenCallback callback,
                                               const PromptOptions& options) {
+  return Generate(/*is_chat=*/true, &chat, nullptr, std::move(callback),
+                  options);
+}
+
+GenerationResult BrowserAIRuntime::Generate(bool is_chat,
+                                            const ChatPrompt* chat,
+                                            const std::string* raw_prompt,
+                                            TokenCallback callback,
+                                            const PromptOptions& options) {
   GenerationResult result;
   auto done = [&]() {
     if (callback) callback("", /*is_done=*/true);
@@ -1554,197 +1447,117 @@ GenerationResult BrowserAIRuntime::StreamChat(const ChatPrompt& chat,
     return result;
   }
 
-  // Hold generation_mutex across the token counting, the chat-template
-  // build (which dereferences the model handle) AND the decode, so a
-  // concurrent LoadModel can't free or swap the model in between (the
-  // reported use-after-free), and the prompt is built and decoded against
-  // the same model.
-  std::lock_guard<std::mutex> lock(impl_->generation_mutex);
-  ScopedRequest req(this, options.request_id, &impl_->is_generating);
-  const auto start = std::chrono::steady_clock::now();
-
-  if (!impl_->llama_model_handle || !impl_->llama_ctx) {
-    result.error_message = "No model loaded";
-    done();
-    return result;
-  }
+  ScopedRequest req(this, options.request_id);
+  const auto start = Clock::now();
   if (impl_->IsCancelled(req.id())) {
     result.was_cancelled = true;
     done();
     return result;
   }
 
-  const llama_vocab* vocab = llama_model_get_vocab(impl_->llama_model_handle);
-  const int n_ctx = static_cast<int>(llama_n_ctx(impl_->llama_ctx));
-  const std::string& arch = impl_->model_arch;
-
-  // ---- Reasoning control (A3) ----
-  std::string system_text;
-  if (arch == "gpt-oss") {
-    // Harmony reads the reasoning effort from the system message.
-    system_text = options.reasoning == ReasoningMode::kOn
-                      ? "Reasoning: medium\n\n"
-                      : "Reasoning: low\n\n";
-  }
-  system_text += chat.system_prompt;
-  if (IsQwen3Arch(arch) && options.reasoning == ReasoningMode::kOff) {
-    // Qwen3 soft switch. Kept in the (stable) system message so it doesn't
-    // break KV-prefix reuse across turns. Qwen3 still emits an empty
-    // <think></think> block, which the stream filter hides.
-    system_text += "\n/no_think";
-  }
-
-  const int visible =
-      options.max_tokens > 0 ? options.max_tokens : AdaptiveReplyTokens(n_ctx);
-  int hidden = 64;  // room for an empty <think></think> block
-  if (options.max_reasoning_tokens > 0) {
-    hidden = options.max_reasoning_tokens;
-  } else if (options.reasoning == ReasoningMode::kOn || arch == "gpt-oss") {
-    hidden = AdaptiveReasoningTokens(n_ctx);
-  }
-
-  // ---- Untrusted text can't smuggle in control tokens ----
-  const std::vector<std::string>& specials = impl_->special_texts;
-  const std::string context = NeutralizeSpecialTokens(chat.context, specials);
-  const std::string user = NeutralizeSpecialTokens(chat.user_message, specials);
-  std::vector<ChatMessage> history;
-  history.reserve(chat.history.size());
-  for (const ChatMessage& m : chat.history) {
-    if (m.content.empty()) continue;
-    if (m.role != "user" && m.role != "assistant") continue;
-    history.push_back({m.role, NeutralizeSpecialTokens(m.content, specials)});
-  }
-
-  // ---- Token budget (A2): system never trimmed ----
-  auto count = [&](const std::string& s) {
-    return static_cast<int>(Tokenize(vocab, s, false, false).size());
-  };
-  PromptBudgetInput in;
-  in.n_ctx = n_ctx;
-  in.reply_reserve = visible + hidden;
-  in.system_tokens =
-      count(system_text) + (context.empty() ? 0 : count(chat.context_preamble));
-  in.context_tokens = context.empty() ? 0 : count(context);
-  in.user_tokens = count(user);
-  for (const ChatMessage& m : history) {
-    in.history_tokens.push_back(count(m.content));
-    in.history_starts_turn.push_back(m.role == "user");
-  }
+  // Pin the loaded model for the idle / pressure unloaders.
+  std::string model_id;
   {
-    // Template overhead per message, measured on two empty messages.
-    const std::string empty_chat = ApplyChatTemplate(
-        {{"system", ""}, {"user", ""}}, /*add_assistant=*/true);
-    in.per_message_overhead =
-        static_cast<int>(Tokenize(vocab, empty_chat, true, true).size()) / 2 +
-        1;
-  }
-
-  std::vector<llama_token> tokens;
-  int reply_tokens = 0;
-  bool fitted = false;
-  for (int attempt = 0; attempt < 4 && !fitted; ++attempt) {
-    const PromptBudgetPlan plan = PlanPromptBudget(in);
-    if (!plan.fits) break;
-
-    std::string ctx_text = context;
-    if (plan.context_token_limit >= 0) {
-      ctx_text = TruncateTextHead(vocab, context, plan.context_token_limit);
-    }
-    std::string user_text = user;
-    if (plan.user_token_limit >= 0) {
-      user_text = TruncateTextMiddle(vocab, user, plan.user_token_limit);
-    }
-
-    std::vector<ChatMessage> messages;
-    messages.push_back(
-        {"system",
-         ctx_text.empty() ? system_text
-                          : system_text + chat.context_preamble + ctx_text});
-    for (size_t i = plan.history_keep_from; i < history.size(); ++i) {
-      messages.push_back(history[i]);
-    }
-    messages.push_back({"user", user_text});
-
-    // parse_special=true: the template's control markers (<|im_end|>,
-    // <|eot_id|>, </s>, ...) must become real special tokens, not plain
-    // text. Message contents were neutralized above.
-    tokens = Tokenize(vocab, ApplyChatTemplate(messages, true),
-                      /*add_special=*/true, /*parse_special=*/true);
-    const int over = static_cast<int>(tokens.size()) + plan.reply_tokens +
-                     kContextSlack - n_ctx;
-    if (over <= 0) {
-      fitted = true;
-      reply_tokens = plan.reply_tokens;
-      if (plan.history_keep_from > 0 || plan.context_token_limit >= 0 ||
-          plan.user_token_limit >= 0) {
-        std::cerr << "[MoltAI] StreamChat: fitted to n_ctx=" << n_ctx
-                  << " (dropped " << plan.history_keep_from
-                  << " history msgs, context_limit=" << plan.context_token_limit
-                  << ", user_limit=" << plan.user_token_limit << ")"
-                  << std::endl;
-      }
-    } else {
-      // Per-message estimates undershot the real template; tighten and
-      // re-plan (never by cutting the system prompt).
-      in.safety_margin += over + 16;
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    model_id = impl_->loaded_model_id;
+    if (!model_id.empty() &&
+        (is_chat || options.model_id.empty() || options.model_id == model_id)) {
+      ++impl_->active_generations;
     }
   }
-  if (!fitted || tokens.empty()) {
-    result.error_message =
-        "This conversation is too long for the model's context window. "
-        "Start a new chat or shorten your message.";
+  if (model_id.empty()) {
+    result.error_message = "No model loaded";
     done();
     return result;
   }
-  result.tokens_prompt = static_cast<int>(tokens.size());
+  if (!is_chat && !options.model_id.empty() && options.model_id != model_id) {
+    result.error_message = "Model not loaded: " + options.model_id;
+    done();
+    return result;
+  }
+  struct ActiveScope {
+    raw_ptr<Impl> impl;
+    ~ActiveScope() {
+      std::lock_guard<std::mutex> lock(impl->state_mutex);
+      --impl->active_generations;
+    }
+  } active_scope{impl_.get()};
 
-  // Some templates pre-open the reasoning block in the prompt.
-  const std::string tail_text = Detokenize(
-      vocab, std::vector<llama_token>(
-                 tokens.end() - std::min<std::ptrdiff_t>(
-                                    4, static_cast<std::ptrdiff_t>(
-                                           tokens.size())),
-                 tokens.end()));
+  StreamLimits limits;
+  limits.max_visible_tokens =
+      options.max_tokens > 0 ? static_cast<uint32_t>(options.max_tokens) : 0u;
+  limits.max_reasoning_tokens =
+      options.max_reasoning_tokens > 0
+          ? static_cast<uint32_t>(options.max_reasoning_tokens)
+          : 0u;
+  limits.stop_sequences = StopSequencesForService(options.stop_sequences);
 
-  Impl::GenerationParams gp;
-  // Visible and hidden budgets both come out of the reply reserve; when the
-  // window is tight, shrink the hidden part first.
-  gp.max_visible = std::min(visible, reply_tokens);
-  gp.max_hidden = std::max(16, std::min(hidden, reply_tokens - gp.max_visible));
-  gp.think_start_inside =
-      tail_text.find(ThinkTagFilter::kOpenTag) != std::string::npos &&
-      tail_text.find(ThinkTagFilter::kCloseTag) == std::string::npos;
-  // Gemma 4 with thinking off pre-fills an empty, closed thought block
-  // ("<|channel>thought\n<channel|>"); a template that leaves one open
-  // starts the stream hidden.
-  gp.thought_start_inside = GemmaThoughtFilter::EndsInsideThought(tail_text);
-  gp.temperature = options.temperature;
-  gp.top_p = options.top_p;
-  gp.top_k = options.top_k;
-  gp.request_id = req.id();
+  auto mailbox = base::MakeRefCounted<InferenceMailbox>();
+  impl_->SetRequestMailbox(req.id(), mailbox);
+  const uint64_t token = req.id();
+  bool posted;
+  if (is_chat) {
+    posted = impl_->PostToHost(base::BindOnce(
+        [](uint64_t t, mojom::ChatRequestPtr r, mojom::GenerationParamsPtr p,
+           StreamLimits l, scoped_refptr<InferenceMailbox> m,
+           InferenceProcessHost* h) {
+          h->StartChat(t, std::move(r), std::move(p), std::move(l),
+                       std::move(m));
+        },
+        token, ToServiceChat(*chat), ToServiceParams(options),
+        std::move(limits), mailbox));
+  } else {
+    auto raw = mojom::RawPromptRequest::New();
+    raw->system_prompt = CapRequestText(options.system_prompt);
+    raw->prompt = CapRequestText(*raw_prompt);
+    posted = impl_->PostToHost(base::BindOnce(
+        [](uint64_t t, mojom::RawPromptRequestPtr r,
+           mojom::GenerationParamsPtr p, StreamLimits l,
+           scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
+          h->StartPrompt(t, std::move(r), std::move(p), std::move(l),
+                         std::move(m));
+        },
+        token, std::move(raw), ToServiceParams(options), std::move(limits),
+        mailbox));
+  }
 
-  Impl::GenerationOutcome outcome = impl_->GenerateLocked(
-      tokens, options.conversation_key, gp,
-      [&](const std::string& visible_text) {
-        result.text += visible_text;
-        if (callback) callback(visible_text, /*is_done=*/false);
-      });
+  InferenceOutcome outcome(InferenceOutcome::Kind::kShuttingDown);
+  if (posted) {
+    outcome = impl_->Wait(
+        mailbox.get(), req.id(), token, kGenerationWait,
+        [&](const std::string& text) {
+          result.text += text;
+          if (callback) callback(text, /*is_done=*/false);
+        });
+  }
+  impl_->SetRequestMailbox(req.id(), nullptr);
   done();
+  if (outcome.kind == InferenceOutcome::Kind::kNoModel) {
+    // The process went away before the request reached it (a crash right
+    // after loading, an unload): forget the model so the chat's next send
+    // loads it again.
+    std::string loaded;
+    {
+      std::lock_guard<std::mutex> lock(impl_->state_mutex);
+      loaded = impl_->loaded_model_id;
+    }
+    if (loaded == model_id) {
+      impl_->SetLoaded(std::string(), std::string(), std::string());
+    }
+  }
 
-  result.model_used = impl_->loaded_model_id;
-  result.tokens_generated = outcome.n_generated;
-  result.tokens_reused = outcome.n_reused;
-  result.was_cancelled = outcome.cancelled;
-  result.error_message = outcome.error;
-  result.success = outcome.error.empty();
+  result.model_used = model_id;
+  result.error_message = GenerationError(outcome, &result);
+  result.success = result.error_message.empty();
   result.generation_time_ms = std::chrono::duration<float, std::milli>(
-                                  std::chrono::steady_clock::now() - start)
+                                  Clock::now() - start)
                                   .count();
-  std::cerr << "[MoltAI] StreamChat: n_ctx=" << n_ctx
-            << " n_prompt=" << result.tokens_prompt
-            << " reused=" << outcome.n_reused
-            << " generated=" << outcome.n_generated
-            << (outcome.cancelled ? " (cancelled)" : "") << std::endl;
+  // Counts only, never text.
+  VLOG(1) << "[MoltAI] " << (is_chat ? "StreamChat" : "StreamPrompt")
+          << ": n_prompt=" << result.tokens_prompt
+          << " reused=" << result.tokens_reused
+          << " generated=" << result.tokens_generated
+          << (result.was_cancelled ? " (cancelled)" : "");
   TouchActivity();
   return result;
 }

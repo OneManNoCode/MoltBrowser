@@ -490,7 +490,15 @@ struct llama_mmap::impl {
                     strerror(errno));
         }
         // MAP_POPULATE would fault in the lazy ranges too
+#if !defined(LLAMA_MOLTBROWSER_SANDBOXED)
         if (prefetch && lazy_ranges.empty()) { flags |= MAP_POPULATE; }
+#else
+        // MoltBrowser: no MAP_POPULATE. The model is loaded in a sandboxed
+        // utility process, and Chrome's seccomp-bpf policy answers that flag
+        // with SIGSYS (RestrictMmapFlags in sandbox/linux/seccomp-bpf-helpers/
+        // syscall_parameters_restrictions.cc). The posix_madvise(
+        // POSIX_MADV_WILLNEED) below still prefetches the same range.
+#endif
 #endif
         addr = mmap(NULL, file->size(), PROT_READ, flags, fd, 0);
         if (addr == MAP_FAILED) {

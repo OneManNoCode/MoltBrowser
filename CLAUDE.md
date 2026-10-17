@@ -84,7 +84,8 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - **`base::Value` in this tree has NO nested `List()`/`Dict()`** → use `base::ListValue` / `base::DictValue` (live throughout `molt_ai/automation/*`)
 - **`GURL::host()` returns `std::string_view`** here → wrap as `std::string(g.host())`, not `= g.host()`
 - **`CopyFromSurface` is the 4-arg glic-era form**: `(gfx::Rect, gfx::Size, base::TimeDelta, cb)` where `cb` takes `const content::CopyFromSurfaceResult&` (a `base::expected<viz::CopyOutputBitmapWithMetadata, …>`); wrap with `mojo::WrapCallbackWithDefaultInvokeIfNotRun`. Used for per-step + record-time screenshots.
-- **Never let an exception escape a `llama_*` call.** The llama.cpp targets build *with* exceptions; the Chromium code calling them doesn't, so an escaping exception aborts the browser. Check every C API you start using, and re-audit when updating the vendored llama.cpp (local patches are listed in `src/third_party/llama_cpp/README.chromium`).
+- **llama.cpp runs only in the sandboxed inference service.** `//third_party/llama_cpp` is GN-visible only to `chrome/services/molt_ai/inference` (a utility process, `kOnDeviceModelExecution` sandbox; design: `docs/design/SANDBOXED_INFERENCE.md`). Browser code never includes `llama.h`: it uses `BrowserAIRuntime`, which talks to the service over `molt_ai.mojom.MoltInferenceService` and treats everything it sends as hostile (`runtime/stream_validator.*`). Files go to the service as read-only handles, never paths.
+- **Never let an exception escape a `llama_*` call.** The llama.cpp targets build *with* exceptions; the service code calling them doesn't, so an escaping exception kills the on-device AI process (not the browser any more, but it is still a crash, and repeated crashes lock the model out for a while). Still enforced: check every C API you start using (the checked list is at the top of `llama_engine.cc`), and re-audit when updating the vendored llama.cpp (local patches are listed in `src/third_party/llama_cpp/README.chromium`; keep `GGML_MOLTBROWSER_NO_BACKTRACE` and `LLAMA_MOLTBROWSER_SANDBOXED`, which drops `MAP_POPULATE` that the sandbox kills).
 - **No `std::regex` on page content** — it's quadratic on hostile input and a regex error aborts under `-fno-exceptions`. Write a linear scanner (see `molt_ai/dom/dom_interpreter.cc`).
 - **Helper binaries go through `molt_ai/common/helper_binary.h`** (bundled copy, or a root-owned system copy on Linux) — never Homebrew, `/usr/local` or PATH. Launch system tools by absolute path.
 
@@ -139,6 +140,10 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 ### Checks that need no Chromium checkout
 - WebUI checks above; `molt_ai_unittests` targets can often be compiled
   standalone against small base/crypto stand-ins for quick verification.
+- On-device inference: the engine utils (`chrome/services/molt_ai/inference/engine/`)
+  and `runtime/stream_validator.*` are std-only and build with system gtest;
+  `llama_engine.cc` is std + `llama.h` and links against the vendored
+  llama.cpp objects with a tiny GGUF (no `//base`).
 - MoltShield engine: `cd tools/shield_bench && ./fetch_lists.sh && cargo test --release && cargo run --release`.
 - Rust crates (adblock for MoltShield) are vendored with gnrt on the build
   machine: `scripts/vendor-rust-crates.sh`.
