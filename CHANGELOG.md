@@ -132,6 +132,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   command lines. Chromium 152's HTML-in-canvas origin trial, which would let
   a site read rendered page content back through WebGPU without the noise,
   stays off.
+- Third-party shared workers (a script's worker started from its iframes)
+  now get the fingerprinting noise of the site they run under, like the
+  iframes themselves, instead of a new random one each time the worker
+  starts: their canvas, WebGL and audio values match the site's pages and
+  still don't link across sites.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

@@ -94,11 +94,13 @@ creating the channel and before `InitializeRenderer`, any frame creation,
 navigation commit or `SetUpEmbeddedWorkerChannelForServiceWorker`; channel
 messages are delivered in order, so documents and service workers always
 have it. Shared workers are started over their own pipe
-(`SharedWorkerFactory`), so in principle one could run before the seed is
-processed; any context that needs a key before the seed arrived gets a
-random key for its whole life (fail closed: its values are unlinkable, just
-not stable). The renderer exposes the interface only when its mode is
-farble or uniform.
+(`SharedWorkerFactory`), so in principle one could start before the seed
+is processed. A shared worker's key is only derived when the worker first
+needs one (once its script has been fetched and runs), not when it starts,
+so the seed only has to arrive before that first farbled read. Any context
+that does need a key before the seed arrived gets a random key for its
+whole life (fail closed: its values are unlinkable, just not stable). The
+renderer exposes the interface only when its mode is farble or uniform.
 
 **Seed lifetime.**
 
@@ -116,8 +118,7 @@ site be32(len) partition)` (`farbling.cc`, `DeriveSiteKey`), where:
 | Document | top-level site of the window's storage key, e.g. `https://example.com` (scheme + eTLD+1) | the storage key's nonce, if any (fenced frames, credentialless iframes) |
 | Dedicated worker (and workers nested in it) | site of the top-level frame's origin, which Blink already passes to every dedicated worker | - |
 | Service worker (first- and third-party) | top-level site of its registration's storage key, handed to Blink in `ServiceWorkerGlobalScope::InitializeGlobalScope` before any script runs | the storage key's nonce, if any |
-| First-party shared worker | its site for cookies, i.e. its storage key's top-level site (= its own site) | - |
-| Third-party (partitioned) shared worker | Blink is only told the constructor's origin: **random per-worker key** (see gaps) | - |
+| Shared worker (first- and third-party) | top-level site of its storage key (the constructor's, which the browser sends when it starts the worker), handed to Blink in `WebSharedWorkerImpl::StartWorkerContext` before the worker thread starts (see [Shared workers](#shared-workers)) | the storage key's nonce, if any |
 | Worklet (e.g. `AudioWorklet`) | the creating document's key, handed over at creation (`ThreadedWorkletMessagingProxy::Initialize`) | (document's) |
 | Top-level site opaque (e.g. CSP `sandbox` top-level document) | random per-context key | - |
 | Top-level site not http(s) (`chrome://`, extensions, `file://`) | **not farbled** | - |
@@ -125,13 +126,82 @@ site be32(len) partition)` (`farbling.cc`, `DeriveSiteKey`), where:
 Third-party iframes therefore use the **top-level** site's key: a tracker
 embedded on two sites sees two unrelated fingerprints.
 
+## Shared workers
+
+A shared worker farbles with exactly the key a document with its storage
+key gets: the storage key's top-level site, plus its nonce (if any) as the
+partition. A shared worker's storage key is the one of the context that
+constructed it, and storage partitioning gives every top-level site its own
+instance. So a tracker's shared worker started from its iframes on
+a.example farbles with a.example's key, like a.example's pages and the
+tracker's iframes there; the same script under b.example is a different
+worker and gets b.example's key. The key no longer changes when the worker
+restarts, only with the session seed. First-party shared workers get the
+same key as before: their top-level site is their own site.
+
+**Where the storage key comes from.** Blink is only told a shared worker's
+constructor *origin*, so the storage key travels alongside it, all of it
+from the browser:
+
+1. `SharedWorkerHost::Start` already sends the creator's storage key
+   (`SharedWorkerInstance::creator_storage_key()`, computed from the
+   creating frame) to the worker's renderer as `constructor_key` in
+   `SharedWorkerFactory.CreateSharedWorker`. No mojo change.
+2. `EmbeddedSharedWorkerStub` (content) passes it to
+   `WebSharedWorker::CreateAndStart`, which has one new argument for it.
+3. `WebSharedWorkerImpl::StartWorkerContext` hands it to the new worker's
+   `WorkerClients` on the main thread, before the worker thread starts
+   (`ProvideToSharedWorker` in `molt_fingerprinting/shared_worker_key.{h,cc}`),
+   the way worklets get their document's key.
+4. On the worker thread, the first farbled read resolves the key from it
+   with the same rules as for documents: Shields off and non-http(s)
+   top-level sites are not farbled, an opaque top-level site gets a random
+   key, and so does a worker that needs one before the seed arrived.
+
+Nothing the page controls (the worker's URL, name or options) goes into the
+key.
+
+**Choices.**
+
+* `data:` URL shared workers run with an opaque origin (and, depending on
+  a Chromium feature, a storage key derived from the constructor's). They
+  farble with the constructor's key, like `data:` URL dedicated workers,
+  which use the top-level frame's site.
+* A first-party shared worker created with `sameSiteCookies: 'none'` used
+  to get a random key (its site for cookies is null); it now gets its
+  site's key like any other first-party worker.
+* A shared worker created through the Storage Access API
+  (`requestStorageAccess({SharedWorker: true})`, then
+  `handle.SharedWorker()`) is a first-party worker of the embedded site and
+  farbles with that site's key, which the embedded frame on another site
+  can then read through it. The frame only gets that worker once it holds
+  storage access, the same permission that unlocks the site's first-party
+  cookies and storage, so this links nothing new.
+* Where third-party storage partitioning is off for an origin (enterprise
+  policy), its storage keys carry its own site as the top-level site, so
+  its shared workers get that site's key, the same as its frames.
+
+**Verification.** The glue and `shared_worker_key.cc` type-check with the
+strict clang flags against stand-ins of the 152 signatures, and the scratch
+harness runs them under ASan/UBSan: 8 shared-worker cases on top of the 21
+earlier ones (first-party key unchanged, third-party under two top-level
+sites, restarts, nonce, opaque top-level site, seed late, Shields off,
+non-web top-level sites, `sameSiteCookies: 'none'`, nothing handed over
+when off). Five of them fail when the new lookup is removed.
+`shared_worker_key_test.cc` (`MoltSharedWorkerKeyTest.*`, real worker
+threads) and the upstream hooks (`web_shared_worker.h`,
+`web_shared_worker_impl.{h,cc}`,
+`content/renderer/worker/embedded_shared_worker_stub.cc`) need the build
+machine.
+
 ## Shields off
 
 MoltShield's per-site switch is stored as an explicit `ADS` content-settings
 exception (`molt_shield_site_settings.h`). In normal and Incognito windows,
 farbling is off for every top-level site the user turned Shields off for:
 the page, its iframes (they use the top-level site), its dedicated workers,
-worklets it creates and service/first-party shared workers of that site.
+worklets it creates and service and shared workers under that site
+(third-party ones included).
 MoltNet keeps farbling regardless: there the point is to look like every
 other MoltNet user, and the real canvas/audio values would link New
 Identity sessions on that site. MoltShield's *global* switch and the `ADS`
@@ -376,11 +446,6 @@ Honest list; anything not in the table above is not covered.
 
 **Context coverage**
 
-* Third-party (partitioned) shared workers get a random key per worker
-  instance: their values are unlinkable but not stable across worker
-  restarts, and differ from their pages'. Blink is only told their
-  constructor's origin; fixing it means plumbing the constructor storage key
-  through `WebSharedWorker::CreateAndStart` and the content stub.
 * Worklets other than threaded ones created by a document (e.g. shared
   storage worklets) get no key and are not farbled; they expose none of the
   farbled APIs.
@@ -544,8 +609,8 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 3. (Dropped: the channel vote, see known attacks. A real answer to
    scripts written against the noise is a different design, such as a
    prompt before canvas readback, not a noise revision.)
-4. Stable keys for third-party shared workers (plumb the constructor
-   storage key).
+4. (Done: third-party shared workers use their top-level site's key, see
+   [Shared workers](#shared-workers).)
 5. Real letterboxing of MoltNet windows (round the content area itself), then
    CSS device media queries and `devicePixelRatio`.
 6. Fonts and text metrics (an allow-list of system fonts per platform, as
