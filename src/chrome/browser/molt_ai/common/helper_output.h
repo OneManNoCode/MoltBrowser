@@ -2,9 +2,10 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // Text that a helper program (tesseract, whisper-cli) wrote, made safe to
-// put in a base::Value and send to an internal page. The helpers run outside
-// the browser's sandbox on untrusted input (any website's PDF, an attached
-// image, recorded audio), so their output is treated as untrusted bytes: it
+// put in a base::Value and send to an internal page. The helpers run on
+// untrusted input (any website's PDF, an attached image, recorded audio) in
+// their own sandbox (helper_sandbox.h), and a helper the input took over
+// writes what it likes, so their output is treated as untrusted bytes: it
 // need not be UTF-8, and a byte-count cut can split a character.
 
 #ifndef CHROME_BROWSER_MOLT_AI_COMMON_HELPER_OUTPUT_H_

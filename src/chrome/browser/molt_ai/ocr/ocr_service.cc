@@ -13,11 +13,11 @@
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
-#include "base/process/launch.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
 #include "chrome/browser/molt_ai/common/helper_output.h"
+#include "chrome/browser/molt_ai/common/helper_sandbox.h"
 
 namespace molt_ai {
 namespace ocr {
@@ -72,45 +72,21 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
     return r;
   }
 
-  // tesseract <input> <output-stem> [args]
-  // Point tesseract at our bundled traineddata when we're using a
-  // bundled binary. We pass --tessdata-dir on the command line rather
-  // than the TESSDATA_PREFIX env var: GetAppOutputWithExitCode() does
-  // not take LaunchOptions, so an env entry would be silently dropped.
-  // |tessdata| is the bundle dir (the *parent* of tessdata/, matching
-  // the TESSDATA_PREFIX convention), so the flag gets the tessdata/
-  // subdirectory that actually holds eng.traineddata. This is
-  // cross-platform; on Windows it resolves <DIR_EXE>\ocr\tessdata.
-  base::FilePath out_stem = named.RemoveExtension();
-  base::CommandLine cmd(bin);
-  cmd.AppendArgPath(named);
-  cmd.AppendArgPath(out_stem);
-  cmd.AppendArg("-l");
-  cmd.AppendArg("eng");
-  if (!tessdata.value().empty()) {
-    cmd.AppendArg("--tessdata-dir");
-    cmd.AppendArgPath(tessdata.AppendASCII("tessdata"));
-  }
-  std::string combined;
-  int exit_code = -1;
-  bool launched = base::GetAppOutputWithExitCode(cmd, &combined, &exit_code);
-  if (!launched) {
-    r.error = "failed to launch tesseract";
+  // tesseract <input> <output-stem> [args], sandboxed, with a deadline.
+  const base::FilePath out_stem = named.RemoveExtension();
+  const HelperRunResult run = RunSandboxedTesseract(
+      bin, tessdata, scratch_dir, named, out_stem, kPdfOcrTimeout);
+  const std::string failure =
+      DescribeHelperRunFailure(run, "tesseract", "failed to launch tesseract");
+  if (!failure.empty()) {
+    r.error = failure;
     base::DeletePathRecursively(scratch_dir);
     return r;
   }
-  if (exit_code != 0) {
-    r.error = "tesseract exit=" + std::to_string(exit_code) + ": " +
-              SanitizeHelperText(combined, 200);
-    base::DeletePathRecursively(scratch_dir);
-    return r;
-  }
-  // tesseract writes <stem>.txt
-  base::FilePath txt = out_stem.AddExtensionASCII(".txt");
+  // tesseract writes <stem>.txt (read only if it is a plain file it made).
   std::string text;
-  if (base::PathExists(txt)) {
-    base::ReadFileToString(txt, &text);
-  }
+  ReadHelperOutputFile(out_stem.AddExtensionASCII(".txt"),
+                       kMaxTesseractTextFileBytes, &text);
   base::DeletePathRecursively(scratch_dir);
 
   // tesseract read an untrusted PDF: its text need not be UTF-8, and a
@@ -127,6 +103,35 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
 }
 
 }  // namespace
+
+HelperRunResult RunSandboxedTesseract(const base::FilePath& bin,
+                                      const base::FilePath& tessdata_parent,
+                                      const base::FilePath& scratch_dir,
+                                      const base::FilePath& input,
+                                      const base::FilePath& out_stem,
+                                      base::TimeDelta timeout) {
+  base::CommandLine cmd(bin);
+  cmd.AppendArgPath(input);
+  cmd.AppendArgPath(out_stem);
+  cmd.AppendArg("-l");
+  cmd.AppendArg("eng");
+  HelperSandboxPolicy policy;
+  // Its own directory: bundled libraries (and data, for a bundled copy).
+  policy.read_only_paths.push_back(bin.DirName());
+  if (!tessdata_parent.empty()) {
+    // Point tesseract at our bundled traineddata. |tessdata_parent| is the
+    // bundle dir (the *parent* of tessdata/, matching the TESSDATA_PREFIX
+    // convention), so the flag gets the tessdata/ subdirectory that holds
+    // eng.traineddata. On Windows it resolves <DIR_EXE>\ocr\tessdata.
+    const base::FilePath tessdata = tessdata_parent.AppendASCII("tessdata");
+    cmd.AppendArg("--tessdata-dir");
+    cmd.AppendArgPath(tessdata);
+    policy.read_only_paths.push_back(tessdata);
+  }
+  policy.read_only_paths.push_back(input);
+  policy.writable_dir = scratch_dir;
+  return RunSandboxedHelper(cmd, policy, timeout, kMaxTesseractOutputBytes);
+}
 
 // static
 OcrService* OcrService::Get() {
