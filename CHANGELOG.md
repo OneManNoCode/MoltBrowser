@@ -71,13 +71,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   attached in the AI chat (PDF, Word, Office, e-book, CSV) are parsed in a
   locked-down helper process, one per document, with no file or network
   access: a malformed or malicious file can crash only that process, and a
-  parser stuck for 30 seconds is stopped.
+  parser stuck for 30 seconds is stopped (60 seconds when it renders a
+  scanned PDF's pages for OCR).
 - **OCR and voice helpers are sandboxed.** tesseract (scanned PDFs,
   attached images) and whisper (voice) now see only their own files, the
   input and a private scratch folder, get no network, and are stopped after
-  2 minutes for a PDF, 1 for an image and 5 for audio. A malicious file
-  that takes one over can't reach your files or the internet, and one that
-  makes it hang no longer ties up the browser. Linux uses Landlock and
+  1 minute per image or PDF page (3 minutes for a whole scanned PDF) and 5
+  minutes for audio. A malicious file that takes one over can't reach your
+  files or the internet, and one that makes it hang no longer ties up the
+  browser. Linux uses Landlock and
   seccomp (kernels older than 5.13 get the network block only); macOS uses
   the system sandbox and won't run OCR or voice without it; Windows gets the
   time limit and a job object for now. Voice transcription runs on the CPU.
@@ -198,6 +200,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - Reader commands (`/summarize`, `/tldr`, `/simplify`, `/eli5`, `/receipt`,
   `/chapters`, `/translate`) always read the page you're on, not the one you
   just left.
+
+### Fixed
+- **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
+  attached in the AI chat) was handed to tesseract as a PDF, which it can't
+  read: it decodes images through leptonica, which writes PDFs but doesn't
+  read them. So this fallback never produced text. Now the sandboxed
+  document parser renders the first 20 pages with PDFium (200 dpi, at most
+  25 megapixels a page; no JavaScript, no system fonts) and tesseract reads
+  those images one page at a time. The browser checks every page image
+  before tesseract sees it. The text comes back with `--- Page N ---`
+  headers and says when pages were left out; one 3-minute limit covers the
+  whole PDF.
 
 ### Engineering
 - Chromium is pinned in one place (`chromium_version.txt`); copied upstream

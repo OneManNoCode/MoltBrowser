@@ -15,6 +15,7 @@
 #include "chrome/services/molt_ai/document_parser/anydoc/anydoc_ffi.rs.h"
 #include "chrome/services/molt_ai/document_parser/docx_text_extractor.h"
 #include "chrome/services/molt_ai/document_parser/pdf/pdf_text_scraper.h"
+#include "chrome/services/molt_ai/document_parser/pdf_page_renderer.h"
 #include "third_party/rust/cxx/v1/cxx.h"
 
 namespace molt_ai {
@@ -158,6 +159,22 @@ void DocumentParserImpl::ExtractDocxText(mojo_base::BigBuffer docx,
     return;
   }
   std::move(callback).Run(TextResult(text, max_chars, error));
+}
+
+void DocumentParserImpl::RenderPdfPages(mojo_base::BigBuffer pdf,
+                                        uint32_t max_pages,
+                                        uint32_t dpi,
+                                        RenderPdfPagesCallback callback) {
+  if (mojom::ParseResultPtr refusal = CheckDocument(pdf)) {
+    mojom::PdfPageImagesPtr result = mojom::PdfPageImages::New();
+    result->success = false;
+    result->error = std::move(refusal->error);
+    std::move(callback).Run(std::move(result));
+    return;
+  }
+  // PDFium reads |pdf| in place; it stays alive until the call returns.
+  std::move(callback).Run(pdf_render::RenderPdfPages(
+      base::span<const uint8_t>(pdf), max_pages, dpi));
 }
 
 }  // namespace molt_ai

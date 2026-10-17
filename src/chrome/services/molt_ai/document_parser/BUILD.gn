@@ -2,11 +2,14 @@
 # Licensed under GPLv3. See LICENSE file.
 #
 # molt_ai.mojom.DocumentParser: MoltBrowser's document parsers (PDF text
-# layer, anydoc Office/e-book/CSV -> Markdown, .docx flat text), run in a
-# sandboxed utility process (audit S5). //chrome/utility registers :lib; the
-# browser reaches it only through //chrome/browser/molt_ai/document_parser.
-# The parsers (pdf/, anydoc/ and the Rust crates) are linked only from here:
-# no browser-process target may depend on them.
+# layer, anydoc Office/e-book/CSV -> Markdown, .docx flat text, PDF pages
+# rendered with PDFium for OCR), run in a sandboxed utility process (audit
+# S5). //chrome/utility registers :lib; the browser reaches it only through
+# //chrome/browser/molt_ai/document_parser. The parsers (pdf/, anydoc/, the
+# Rust crates, and PDFium for MoltBrowser's purposes) are linked only from
+# here: no MoltBrowser browser-process target may depend on them.
+
+import("//pdf/features.gni")
 
 source_set("lib") {
   sources = [
@@ -14,6 +17,8 @@ source_set("lib") {
     "document_parser_impl.h",
     "docx_text_extractor.cc",
     "docx_text_extractor.h",
+    "pdf_page_renderer.cc",
+    "pdf_page_renderer.h",
   ]
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
@@ -29,8 +34,18 @@ source_set("lib") {
     "pdf",
     "//base",
     "//build/rust:cxx_cppdeps",
+    "//pdf:buildflags",
     "//third_party/zlib/google:zip",
+    "//ui/gfx/codec",
+    "//ui/gfx/geometry",
   ]
+
+  # RenderPdfPages drives PDFium through its C API, not through //pdf (whose
+  # wrappers start a V8 isolate on every call); see pdf_page_renderer.h.
+  # Without PDF support it fails every call.
+  if (enable_pdf) {
+    deps += [ "//third_party/pdfium" ]
+  }
 
   visibility = [
     ":unit_tests",
@@ -48,7 +63,10 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//mojo/public/cpp/base",
+    "//pdf:buildflags",
+    "//skia",
     "//testing/gtest",
     "//third_party/zlib",
+    "//ui/gfx/codec",
   ]
 }

@@ -12,16 +12,18 @@
 //                            Chromium builds Rust with panic=abort, so a
 //                            panic kills this process, never the browser.
 //   - .docx flat text:       docx_text_extractor.h (zip::ZipReader)
+//   - PDF pages for OCR:     pdf_page_renderer.h (PDFium's C API: no V8, no
+//                            system fonts, so kService is enough), PNG out
 //
 // The service enforces its own limits whatever the browser asks for
-// (mojom::kMaxDocumentBytes in, mojom::kMaxOutputChars out), and every string
-// it returns is valid UTF-8. The browser still validates every reply.
+// (mojom::kMaxDocumentBytes in; mojom::kMaxOutputChars, the render limits
+// and kMaxPageImageBytes out), and every string it returns is valid UTF-8.
+// The browser still validates every reply.
 //
-// Not in this sandbox: OCR of scans and images runs tesseract as a helper
-// process under its own, looser OS-level sandbox and deadline
-// (molt_ai/ocr/ocr_service.h, molt_ai/common/helper_sandbox.h). Still
-// outside a sandbox (tracked separately): llama.cpp inference runs in the
-// browser process (molt_ai/runtime).
+// Not in this sandbox: the OCR itself. The browser runs tesseract on the
+// rendered pages (and on attached images) as a helper process under its
+// own, looser OS-level sandbox and deadline (molt_ai/ocr/ocr_service.h,
+// molt_ai/common/helper_sandbox.h).
 
 #ifndef CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_DOCUMENT_PARSER_IMPL_H_
 #define CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_DOCUMENT_PARSER_IMPL_H_
@@ -59,6 +61,10 @@ class DocumentParserImpl : public mojom::DocumentParser {
   void ExtractDocxText(mojo_base::BigBuffer docx,
                        uint32_t max_chars,
                        ExtractDocxTextCallback callback) override;
+  void RenderPdfPages(mojo_base::BigBuffer pdf,
+                      uint32_t max_pages,
+                      uint32_t dpi,
+                      RenderPdfPagesCallback callback) override;
 
  private:
   mojo::Receiver<mojom::DocumentParser> receiver_;
