@@ -1,0 +1,205 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+// On-device LLM inference (llama.cpp) in a sandboxed utility process.
+// Design and threat model: docs/design/SANDBOXED_INFERENCE.md.
+//
+// Trust: the browser is the client and treats everything the service sends as
+// hostile (chrome/browser/molt_ai/runtime/stream_validator.h). The service
+// trusts the browser but still enforces the caps below, as a second line of
+// defence.
+module molt_ai.mojom;
+
+import "mojo/public/mojom/base/big_string.mojom";
+import "mojo/public/mojom/base/file.mojom";
+import "sandbox/policy/mojom/context.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+// Caps on what the browser sends. A request over a cap is a bad message.
+const uint32 kMaxHistoryTurns = 512;
+const uint32 kMaxConversationKeyBytes = 128;
+const uint32 kMaxStopSequences = 8;
+const uint32 kMaxStopSequenceBytes = 64;
+// Per text field of a request (system prompt, context, a turn, the message).
+const uint32 kMaxRequestTextBytes = 33554432;  // 32 MiB
+const uint32 kMaxTokenizeTextBytes = 4194304;  // 4 MiB
+
+// Caps on what the service sends.
+const uint32 kMaxChunkBytes = 4096;
+const uint32 kMaxArchitectureBytes = 64;
+// Smallest context the browser accepts in a ModelDescription.
+const uint32 kMinDescribedContextTokens = 256;
+
+struct ModelLoadParams {
+  // Opened read-only by the browser (never a path). Must not be async
+  // (overlapped on Windows): llama.cpp reads it synchronously.
+  mojo_base.mojom.ReadOnlyFile weights;
+  // The size the browser saw; the service refuses a file of another size.
+  uint64 file_size;
+  // For sizing the context (ComputeContextSizing).
+  uint64 total_ram_bytes;
+  // n_threads / n_threads_batch. Clamped to [1, 256] by the service.
+  uint32 cpu_threads;
+  // Upper bound on the context; the service picks min(sizing, cap).
+  uint32 max_context_tokens;
+  // CPU weight repacking (use_extra_bufts). The service turns it off when
+  // its sandbox memory limit is too small for it (cpu_repack_used says).
+  bool allow_cpu_repack = true;
+};
+
+enum LoadModelStatus {
+  kOk,
+  // The CPU lacks the instruction set the build needs (AVX2/FMA on x64).
+  kUnsupportedCpu,
+  // Not a GGUF llama.cpp can load, wrong size, or unreadable.
+  kInvalidModelFile,
+  // The context (KV cache, compute buffers) couldn't be allocated.
+  kOutOfMemory,
+  // No usable compute backend.
+  kBackendUnavailable,
+};
+
+struct ModelDescription {
+  // GGUF general.architecture, [a-z0-9_.-], at most kMaxArchitectureBytes.
+  string architecture;
+  // "metal" | "cpu" | "vulkan".
+  string backend;
+  // n_ctx allocated, in [kMinDescribedContextTokens, max_context_tokens].
+  uint32 context_tokens;
+  uint32 train_context_tokens;
+  uint32 vocab_size;
+  bool cpu_repack_used;
+};
+
+// The model service. One process per loaded model.
+[ServiceSandbox=sandbox.mojom.Sandbox.kOnDeviceModelExecution,
+ RequireContext=sandbox.mojom.Context.kBrowser]
+interface MoltInferenceService {
+  // At most once per process (a second call is a bad message). The model
+  // lives while `model` is connected; the browser drops both pipes to unload,
+  // which ends the process. `description` is set exactly when status is kOk.
+  LoadModel(ModelLoadParams params, pending_receiver<Model> model)
+      => (LoadModelStatus status, ModelDescription? description);
+};
+
+// Whether a reasoning-capable model should think before answering (hidden
+// from the user either way).
+enum ReasoningMode {
+  kOff,
+  kOn,
+};
+
+enum ChatRole {
+  kUser,
+  kAssistant,
+};
+
+struct GenerationParams {
+  // Visible-answer token budget; 0 = adaptive (AdaptiveReplyTokens).
+  uint32 max_visible_tokens = 0;
+  // Hidden reasoning budget; 0 = adaptive.
+  uint32 max_reasoning_tokens = 0;
+  ReasoningMode reasoning = ReasoningMode.kOff;
+  float temperature = 0.7;
+  float top_p = 0.9;
+  uint32 top_k = 40;
+  // KV-prefix reuse across turns of one conversation; "" = none. At most
+  // kMaxConversationKeyBytes.
+  string conversation_key;
+  // Visible-text stops (applied after the reasoning filters; the stop text is
+  // not emitted). At most kMaxStopSequences, each 1..kMaxStopSequenceBytes
+  // bytes of UTF-8.
+  array<string> stop_sequences;
+};
+
+struct ChatTurn {
+  ChatRole role;
+  mojo_base.mojom.BigString content;
+};
+
+// Mirrors molt_ai::ChatPrompt. The trust labels are the field names:
+// system_prompt and context_preamble are browser-authored; context, history
+// and user_message are untrusted and are neutralized before
+// parse_special=true tokenization. The browser never concatenates untrusted
+// text into system_prompt.
+struct ChatRequest {
+  string system_prompt;
+  string context_preamble;
+  mojo_base.mojom.BigString context;
+  // Oldest first; at most kMaxHistoryTurns.
+  array<ChatTurn> history;
+  mojo_base.mojom.BigString user_message;
+};
+
+// Agents and automation (BrowserAIRuntime::StreamPrompt / RunPrompt): no chat
+// template; both parts are neutralized and tokenized with
+// parse_special=false.
+struct RawPromptRequest {
+  string system_prompt;
+  mojo_base.mojom.BigString prompt;
+};
+
+enum GenerationStatus {
+  // The model emitted an end-of-generation token.
+  kEndOfGeneration,
+  // The visible or reasoning budget ran out.
+  kMaxTokens,
+  // A stop sequence matched.
+  kStopSequence,
+  // The context window is full.
+  kContextFull,
+  // Only seen by the service: the browser closed the streamer.
+  kCancelled,
+  // The request doesn't fit the context window even after trimming.
+  kPromptTooLong,
+  // The system prompt alone leaves no room (raw prompts).
+  kSystemPromptTooLong,
+  kTokenizeFailed,
+  kDecodeFailed,
+};
+
+struct GenerationSummary {
+  GenerationStatus status;
+  uint32 prompt_tokens;
+  // Prompt tokens served from the KV cache of the previous turn.
+  uint32 reused_tokens;
+  // Visible + hidden.
+  uint32 generated_tokens;
+  // Whole history turns dropped to fit the window.
+  uint32 history_dropped;
+  bool context_trimmed;
+  bool user_message_trimmed;
+};
+
+// Implemented by the browser. Closing it cancels the request, queued or
+// running.
+interface GenerationStreamer {
+  // During prompt evaluation, at most every 500 ms (liveness + UI), and only
+  // before the first chunk.
+  OnPromptProgress(uint32 done_tokens, uint32 total_tokens);
+  // Visible text since the last chunk: complete, valid UTF-8, reasoning and
+  // channel markers removed, stop sequences applied, never empty, at most
+  // kMaxChunkBytes.
+  OnChunk(string text);
+  // Exactly once, last. The service drops the pipe afterwards.
+  OnComplete(GenerationSummary summary);
+};
+
+interface Model {
+  // Served one at a time, in arrival order; a request whose streamer is
+  // closed when its turn comes is skipped.
+  StreamChat(ChatRequest request, GenerationParams params,
+             pending_remote<GenerationStreamer> streamer);
+  StreamPrompt(RawPromptRequest request, GenerationParams params,
+               pending_remote<GenerationStreamer> streamer);
+
+  // Plain-text tokenization with this vocab (no BOS, parse_special=false).
+  // Null on failure or if `text` is over kMaxTokenizeTextBytes. For tests, a
+  // future context meter and memory chunking; no current browser caller
+  // needs token ids, and they are never used for a security decision.
+  Tokenize(mojo_base.mojom.BigString text) => (array<int32>? tokens);
+  CountTokens(mojo_base.mojom.BigString text) => (uint32? count);
+
+  // Drops a cached KV prefix (conversation deleted or cleared).
+  ForgetConversation(string conversation_key);
+};
