@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index bddbd4bf5230a0988b73ecda2d270437852bc9a7..d4f6da1d3c7339e4b1fc4bc4cd4deed31f4d0177 100644
+index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53c31a6421 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -116,6 +116,16 @@
@@ -264,8 +264,18 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..d4f6da1d3c7339e4b1fc4bc4cd4deed3
    return interceptors;
  }
  
-@@ -6800,6 +6958,14 @@ ChromeContentBrowserClient::
+@@ -6798,8 +6956,24 @@ ChromeContentBrowserClient::
+   return prefetch_handler;
+ }
  
++bool ChromeContentBrowserClient::ShouldBlockWorkerWebSocket(
++    content::BrowserContext* browser_context,
++    const GURL& url) {
++  // MoltNet: shared and service workers' WebSockets to .onion hosts, outside
++  // MoltNet (frames and dedicated workers go through CreateWebSocket()).
++  return molt_ai::tor::IsOnionWorkerWebSocketBlocked(browser_context, url);
++}
++
  bool ChromeContentBrowserClient::WillInterceptWebSocket(
      content::RenderFrameHost* frame) {
 +  // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.
@@ -279,7 +289,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..d4f6da1d3c7339e4b1fc4bc4cd4deed3
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    if (!frame) {
      return false;
-@@ -6845,6 +7011,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
+@@ -6845,6 +7019,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
      mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
          handshake_client,
      content::ContentBrowserClient::WebSocketOptions options) {
@@ -315,7 +325,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..d4f6da1d3c7339e4b1fc4bc4cd4deed3
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
    if (!frame) {
-@@ -9547,9 +9742,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9547,9 +9750,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {

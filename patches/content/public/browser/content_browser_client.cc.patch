@@ -1,0 +1,22 @@
+MoltBrowser patch for content/public/browser/content_browser_client.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/public/browser/content_browser_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
+index 2c79dbb65564871e8cca71a34a7f8f0347d37d24..a437d943754b2afdfa3c6cadb8a13643890f1a6b 100644
+--- a/content/public/browser/content_browser_client.cc
++++ b/content/public/browser/content_browser_client.cc
+@@ -1106,6 +1106,11 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+   return false;
+ }
+ 
++bool ContentBrowserClient::ShouldBlockWorkerWebSocket(BrowserContext*,
++                                                      const GURL&) {
++  return false;
++}
++
+ ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
+ ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
+ ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

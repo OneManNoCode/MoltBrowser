@@ -1993,6 +1993,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Returns true when the embedder wants to intercept a websocket connection.
   virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
 
+  // MoltBrowser: a WebSocket opened by a shared or service worker has no
+  // frame, so WillInterceptWebSocket() can't tell which profile it belongs
+  // to. This is asked first for those, with the worker process's
+  // BrowserContext; returning true refuses the connection (the handshake
+  // fails in the worker).
+  virtual bool ShouldBlockWorkerWebSocket(BrowserContext* browser_context,
+                                          const GURL& url);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

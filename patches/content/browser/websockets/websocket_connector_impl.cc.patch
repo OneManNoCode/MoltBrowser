@@ -1,0 +1,23 @@
+MoltBrowser patch for content/browser/websockets/websocket_connector_impl.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/browser/websockets/websocket_connector_impl.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
+index cbcaed4ff457263538c75c5a6f5d33646c259c36..592834818aea341290b7a6c2753608eb984b2631 100644
+--- a/content/browser/websockets/websocket_connector_impl.cc
++++ b/content/browser/websockets/websocket_connector_impl.cc
+@@ -120,6 +120,12 @@ void WebSocketConnectorImpl::Connect(
+   }
+ 
+   RenderFrameHost* frame = RenderFrameHost::FromID(frame_id_);
++  // MoltBrowser: shared and service workers have no frame for the hooks
++  // below; let the embedder refuse by profile instead.
++  if (!frame && GetContentClient()->browser()->ShouldBlockWorkerWebSocket(
++                    process->GetBrowserContext(), url)) {
++    return;
++  }
+   content::ContentBrowserClient::WebSocketOptions options =
+       GetContentClient()->browser()->GetWebSocketOptions(frame);
+ 

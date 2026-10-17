@@ -718,6 +718,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::FrameTreeNodeId frame_tree_node_id,
       const network::ResourceRequest& resource_request) override;
   bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
+  bool ShouldBlockWorkerWebSocket(content::BrowserContext* browser_context,
+                                  const GURL& url) override;
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

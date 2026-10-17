@@ -40,6 +40,7 @@ chrome/browser/BUILD.gn.patch
 chrome/browser/about_flags.cc.patch
 chrome/browser/chrome_browser_main_mac.mm.patch
 chrome/browser/chrome_content_browser_client.cc.patch
+chrome/browser/chrome_content_browser_client.h.patch
 chrome/browser/flag-metadata.json.patch
 chrome/browser/flag-never-expire-list.json.patch
 chrome/browser/metrics/chrome_feature_list_creator.cc.patch
@@ -135,7 +136,10 @@ components/ssl_errors_strings.grdp.patch
 components/supervised_user_strings.grdp.patch
 components/sync/service/sync_prefs.cc.patch
 components/sync_ui_strings.grdp.patch
+content/browser/websockets/websocket_connector_impl.cc.patch
 content/common/url_schemes.cc.patch
+content/public/browser/content_browser_client.cc.patch
+content/public/browser/content_browser_client.h.patch
 net/base/features.cc.patch
 net/dns/host_resolver_manager.cc.patch
 net/socket/socks5_client_socket.cc.patch

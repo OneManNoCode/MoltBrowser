@@ -1106,6 +1106,11 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
   return false;
 }
 
+bool ContentBrowserClient::ShouldBlockWorkerWebSocket(BrowserContext*,
+                                                      const GURL&) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

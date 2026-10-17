@@ -6956,6 +6956,14 @@ ChromeContentBrowserClient::
   return prefetch_handler;
 }
 
+bool ChromeContentBrowserClient::ShouldBlockWorkerWebSocket(
+    content::BrowserContext* browser_context,
+    const GURL& url) {
+  // MoltNet: shared and service workers' WebSockets to .onion hosts, outside
+  // MoltNet (frames and dedicated workers go through CreateWebSocket()).
+  return molt_ai::tor::IsOnionWorkerWebSocketBlocked(browser_context, url);
+}
+
 bool ChromeContentBrowserClient::WillInterceptWebSocket(
     content::RenderFrameHost* frame) {
   // MoltNet: CreateWebSocket() refuses .onion URLs outside MoltNet.
