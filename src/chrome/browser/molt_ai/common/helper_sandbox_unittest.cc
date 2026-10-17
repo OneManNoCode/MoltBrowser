@@ -402,7 +402,7 @@ TEST(HelperSandboxLinuxTest, SeccompVerdicts) {
 TEST(HelperSandboxLinuxTest, PathRules) {
   hsl::Policy policy;
   policy.read_execute = {"/opt/molt/ocr"};
-  policy.read_only = {"/opt/molt/ocr/tessdata", "/tmp/molt_ocr.x/input.pdf"};
+  policy.read_only = {"/opt/molt/ocr/tessdata", "/tmp/molt_ocr.x/input.png"};
   policy.writable = "/tmp/molt_ocr.x";
   const std::vector<hsl::PathRule> rules = hsl::BuildPathRules(policy);
   auto access_of = [&rules](std::string_view path) -> uint64_t {
@@ -430,7 +430,7 @@ TEST(HelperSandboxLinuxTest, PathRules) {
             hsl::kFsReadFile | hsl::kFsWriteFile | hsl::kFsTruncate);
   EXPECT_EQ(access_of("/opt/molt/ocr"), hsl::kReadExecuteAccess);
   EXPECT_EQ(access_of("/opt/molt/ocr/tessdata"), hsl::kReadAccess);
-  EXPECT_EQ(access_of("/tmp/molt_ocr.x/input.pdf"), hsl::kReadAccess);
+  EXPECT_EQ(access_of("/tmp/molt_ocr.x/input.png"), hsl::kReadAccess);
   const uint64_t scratch = access_of("/tmp/molt_ocr.x");
   EXPECT_EQ(scratch, hsl::kScratchAccess);
   // Nothing written to the scratch directory can be run, and it can't hold

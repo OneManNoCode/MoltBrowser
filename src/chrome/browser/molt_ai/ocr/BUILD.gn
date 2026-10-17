@@ -1,7 +1,9 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# OCR for image-only PDFs. Wraps a bundled (or system) tesseract.
+# OCR for attached images and image-only PDFs. Wraps a bundled (or system)
+# tesseract; a PDF's pages are rendered to PNG first by the sandboxed
+# document parser (tesseract can't read PDFs).
 
 source_set("ocr") {
   sources = [
@@ -10,13 +12,35 @@ source_set("ocr") {
   ]
 
   # tesseract runs confined, with a deadline; ocr_service.h exposes
-  # RunSandboxedTesseract() for the chat handler's image OCR.
-  public_deps = [ "//chrome/browser/molt_ai/common:helper_sandbox" ]
+  # RunSandboxedTesseract() and OcrImageWithTesseract() for the chat
+  # handler's image OCR, and takes rendered pages from the document parser.
+  public_deps = [
+    "//chrome/browser/molt_ai/common:helper_sandbox",
+    "//chrome/browser/molt_ai/document_parser",
+  ]
 
   deps = [
     "//base",
     # Bundled or (Linux) root-owned system binary only; no Homebrew/PATH.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_output",
+    "//chrome/services/molt_ai/document_parser/public/mojom",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests (which runs
+# with Mojo initialized).
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "ocr_service_unittest.cc" ]
+  deps = [
+    ":ocr",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/document_parser",
+    "//chrome/services/molt_ai/document_parser/public/mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+    "//testing/gtest",
   ]
 }

@@ -1,4 +1,15 @@
 include_rules = [
+  "+pdf/buildflags.h",
+  "+third_party/pdfium/public",
   "+third_party/rust/cxx/v1/cxx.h",
   "+third_party/zlib",
+  "+ui/gfx/codec/png_codec.h",
+  "+ui/gfx/geometry/size.h",
 ]
+
+specific_include_rules = {
+  # The tests decode the rendered PNGs to check the pixels.
+  "document_parser_impl_unittest\.cc": [
+    "+third_party/skia/include/core",
+  ],
+}

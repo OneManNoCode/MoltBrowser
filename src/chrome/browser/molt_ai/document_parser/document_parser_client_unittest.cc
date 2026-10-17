@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -32,6 +33,8 @@
 namespace molt_ai {
 namespace {
 
+using document_parser_client_internal::IsWellFormedPng;
+using PagesStatus = PdfPagesResult::Status;
 using Status = DocumentParseResult::Status;
 
 mojom::ParseResultPtr Reply(bool success,
@@ -41,6 +44,70 @@ mojom::ParseResultPtr Reply(bool success,
   reply->success = success;
   reply->text = std::move(text);
   reply->error = std::move(error);
+  return reply;
+}
+
+void AppendBe32(std::string& out, uint32_t value) {
+  for (int shift = 24; shift >= 0; shift -= 8) {
+    out.push_back(static_cast<char>((value >> shift) & 0xff));
+  }
+}
+
+// A PNG chunk. The CRC is left zero: the browser doesn't check CRCs.
+std::string Chunk(std::string_view type,
+                  std::string_view data,
+                  std::optional<uint32_t> length = std::nullopt) {
+  std::string chunk;
+  AppendBe32(chunk, length.value_or(static_cast<uint32_t>(data.size())));
+  chunk += type;
+  chunk += data;
+  AppendBe32(chunk, 0);
+  return chunk;
+}
+
+constexpr char kPngSignature[] = "\x89PNG\r\n\x1a\n";
+
+std::string Ihdr(uint32_t width,
+                 uint32_t height,
+                 uint8_t bit_depth = 8,
+                 uint8_t color_type = 2) {
+  std::string data;
+  AppendBe32(data, width);
+  AppendBe32(data, height);
+  data.push_back(static_cast<char>(bit_depth));
+  data.push_back(static_cast<char>(color_type));
+  data.append(3, '\0');  // Compression, filter, no interlace.
+  return Chunk("IHDR", data);
+}
+
+// A structurally valid PNG of |width| x |height| (the browser never decodes
+// it, so the IDAT needn't be real zlib data). |idat_size| pads the IDAT.
+std::string MakePng(uint32_t width, uint32_t height, size_t idat_size = 16) {
+  return std::string(kPngSignature, 8) + Ihdr(width, height) +
+         Chunk("IDAT", std::string(idat_size, 'x')) + Chunk("IEND", "");
+}
+
+mojom::PdfPageImagePtr Page(uint32_t index,
+                            uint32_t width,
+                            uint32_t height,
+                            const std::string& png) {
+  mojom::PdfPageImagePtr page = mojom::PdfPageImage::New();
+  page->page_index = index;
+  page->width = width;
+  page->height = height;
+  page->png = mojo_base::BigBuffer(base::as_byte_span(png));
+  return page;
+}
+
+// A successful reply with |count| pages of 100 x 50 from page 0, in a
+// document of |page_count| pages.
+mojom::PdfPageImagesPtr PagesReply(uint32_t count, uint32_t page_count) {
+  mojom::PdfPageImagesPtr reply = mojom::PdfPageImages::New();
+  reply->success = true;
+  reply->page_count = page_count;
+  for (uint32_t i = 0; i < count; ++i) {
+    reply->pages.push_back(Page(i, 100, 50, MakePng(100, 50)));
+  }
   return reply;
 }
 
@@ -65,6 +132,7 @@ class DocumentParserClientTest : public testing::Test,
     client_.reset();
     receivers_.Clear();
     hung_.clear();
+    hung_pages_.clear();
   }
 
   mojo::PendingRemote<mojom::DocumentParser> Launch(
@@ -96,6 +164,29 @@ class DocumentParserClientTest : public testing::Test,
                        uint32_t max_chars,
                        ExtractDocxTextCallback callback) override {
     Handle(std::move(docx), std::string(), max_chars, std::move(callback));
+  }
+  void RenderPdfPages(mojo_base::BigBuffer pdf,
+                      uint32_t max_pages,
+                      uint32_t dpi,
+                      RenderPdfPagesCallback callback) override {
+    ++parses_;
+    last_document_ =
+        std::string(base::as_string_view(base::span<const uint8_t>(pdf)));
+    last_max_pages_ = max_pages;
+    last_dpi_ = dpi;
+    switch (behavior_) {
+      case Behavior::kReply:
+        // Each test sets a fresh reply for each render.
+        ASSERT_TRUE(pages_reply_);
+        std::move(callback).Run(std::move(pages_reply_));
+        return;
+      case Behavior::kHang:
+        hung_pages_.push_back(std::move(callback));
+        return;
+      case Behavior::kCrash:
+        receivers_.Clear();
+        return;
+    }
   }
 
   void Handle(mojo_base::BigBuffer document,
@@ -131,6 +222,28 @@ class DocumentParserClientTest : public testing::Test,
     return future.Take();
   }
 
+  // Runs |client_->RenderPdfPages()| to completion, with the service
+  // answering |reply|.
+  PdfPagesResult Render(mojom::PdfPageImagesPtr reply,
+                        uint32_t max_pages = 20,
+                        uint32_t dpi = 200,
+                        const std::string& document = "%PDF-") {
+    pages_reply_ = std::move(reply);
+    base::test::TestFuture<PdfPagesResult> future;
+    client_->RenderPdfPages(base::as_byte_span(document), max_pages, dpi,
+                            future.GetCallback());
+    return future.Take();
+  }
+
+  // Expects |reply| to fail the render as malformed.
+  void ExpectMalformed(mojom::PdfPageImagesPtr reply,
+                       uint32_t max_pages = 20) {
+    PdfPagesResult result = Render(std::move(reply), max_pages);
+    EXPECT_EQ(result.status, PagesStatus::kFailed);
+    EXPECT_TRUE(result.pages.empty());
+    EXPECT_NE(result.error.find("malformed"), std::string::npos);
+  }
+
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   mojo::ReceiverSet<mojom::DocumentParser> receivers_;
@@ -138,7 +251,9 @@ class DocumentParserClientTest : public testing::Test,
 
   Behavior behavior_ = Behavior::kReply;
   mojom::ParseResultPtr reply_ = Reply(true, "hello");
+  mojom::PdfPageImagesPtr pages_reply_;
   std::vector<base::OnceCallback<void(mojom::ParseResultPtr)>> hung_;
+  std::vector<RenderPdfPagesCallback> hung_pages_;
   // The process each launch reports, and whether it reports it only later
   // (when the test runs |deferred_process_callback_|).
   std::optional<base::Process> process_for_launch_;
@@ -149,6 +264,8 @@ class DocumentParserClientTest : public testing::Test,
   std::string last_document_;
   std::string last_extension_;
   uint32_t last_max_chars_ = 0;
+  uint32_t last_max_pages_ = 0;
+  uint32_t last_dpi_ = 0;
 };
 
 TEST_F(DocumentParserClientTest, PassesTheDocumentAndReturnsText) {
@@ -327,6 +444,240 @@ TEST_F(DocumentParserClientTest, CallbackMayStartAnotherCall) {
           client_.get(), fallback.GetCallback()));
   EXPECT_EQ(fallback.Take().status, Status::kNoText);
   EXPECT_EQ(launches_, 2);
+}
+
+TEST_F(DocumentParserClientTest, RenderReturnsTheCheckedPages) {
+  mojom::PdfPageImagesPtr reply = mojom::PdfPageImages::New();
+  reply->success = true;
+  reply->page_count = 7;
+  const std::string first = MakePng(100, 50);
+  const std::string second = MakePng(30, 40);
+  reply->pages.push_back(Page(0, 100, 50, first));
+  // Pages may be left out (one PDFium couldn't draw).
+  reply->pages.push_back(Page(2, 30, 40, second));
+  PdfPagesResult result = Render(std::move(reply), /*max_pages=*/5,
+                                 /*dpi=*/150, "%PDF-1.7 scan");
+  ASSERT_EQ(result.status, PagesStatus::kOk) << result.error;
+  EXPECT_TRUE(result.error.empty());
+  EXPECT_EQ(result.page_count, 7u);
+  ASSERT_EQ(result.pages.size(), 2u);
+  EXPECT_EQ(result.pages[0].page_index, 0u);
+  EXPECT_EQ(result.pages[0].width, 100u);
+  EXPECT_EQ(result.pages[0].height, 50u);
+  EXPECT_EQ(std::string(result.pages[0].png.begin(), result.pages[0].png.end()),
+            first);
+  EXPECT_EQ(result.pages[1].page_index, 2u);
+  EXPECT_EQ(std::string(result.pages[1].png.begin(), result.pages[1].png.end()),
+            second);
+  EXPECT_EQ(last_document_, "%PDF-1.7 scan");
+  EXPECT_EQ(last_max_pages_, 5u);
+  EXPECT_EQ(last_dpi_, 150u);
+}
+
+TEST_F(DocumentParserClientTest, RenderClampsPagesAndDpi) {
+  Render(PagesReply(1, 1), /*max_pages=*/1000, /*dpi=*/5000);
+  EXPECT_EQ(last_max_pages_, mojom::kMaxRenderPages);
+  EXPECT_EQ(last_dpi_, mojom::kMaxRenderDpi);
+
+  Render(PagesReply(1, 1), /*max_pages=*/0, /*dpi=*/0);
+  EXPECT_EQ(last_max_pages_, 1u);
+  EXPECT_EQ(last_dpi_, mojom::kMinRenderDpi);
+}
+
+TEST_F(DocumentParserClientTest, RenderUnreadableCarriesTheError) {
+  mojom::PdfPageImagesPtr reply = mojom::PdfPageImages::New();
+  reply->success = false;
+  reply->error = "the PDF is password-protected";
+  // Pages that come with a failure are ignored.
+  reply->pages.push_back(Page(0, 100, 50, MakePng(100, 50)));
+  PdfPagesResult result = Render(std::move(reply));
+  EXPECT_EQ(result.status, PagesStatus::kUnreadable);
+  EXPECT_TRUE(result.pages.empty());
+  EXPECT_EQ(result.error, "the PDF is password-protected");
+
+  reply = mojom::PdfPageImages::New();
+  reply->success = false;
+  reply->error = std::string(5000, 'e');
+  result = Render(std::move(reply));
+  EXPECT_EQ(result.status, PagesStatus::kUnreadable);
+  EXPECT_EQ(result.error.size(), size_t{mojom::kMaxErrorBytes});
+
+  reply = mojom::PdfPageImages::New();
+  reply->success = false;
+  reply->error = "bad \xff error";
+  EXPECT_EQ(Render(std::move(reply)).status, PagesStatus::kFailed);
+}
+
+TEST_F(DocumentParserClientTest, RenderRejectsTooManyPages) {
+  // More pages than the mojom allows ...
+  ExpectMalformed(PagesReply(mojom::kMaxRenderPages + 1, 100));
+  // ... or than the call asked for.
+  ExpectMalformed(PagesReply(4, 100), /*max_pages=*/3);
+  // "Success" without pages.
+  ExpectMalformed(PagesReply(0, 100));
+  // More pages than the document has.
+  ExpectMalformed(PagesReply(3, 2));
+}
+
+TEST_F(DocumentParserClientTest, RenderRejectsBadPageIndices) {
+  const std::string png = MakePng(100, 50);
+  // Beyond what the call asked for.
+  mojom::PdfPageImagesPtr reply = PagesReply(0, 100);
+  reply->pages.push_back(Page(3, 100, 50, png));
+  ExpectMalformed(std::move(reply), /*max_pages=*/3);
+  // Beyond the document.
+  reply = PagesReply(0, 2);
+  reply->pages.push_back(Page(2, 100, 50, png));
+  ExpectMalformed(std::move(reply));
+  // Out of order, and repeated.
+  reply = PagesReply(0, 100);
+  reply->pages.push_back(Page(1, 100, 50, png));
+  reply->pages.push_back(Page(0, 100, 50, png));
+  ExpectMalformed(std::move(reply));
+  reply = PagesReply(0, 100);
+  reply->pages.push_back(Page(1, 100, 50, png));
+  reply->pages.push_back(Page(1, 100, 50, png));
+  ExpectMalformed(std::move(reply));
+}
+
+TEST_F(DocumentParserClientTest, RenderRejectsOversizePages) {
+  const auto one_page = [](uint32_t width, uint32_t height) {
+    mojom::PdfPageImagesPtr reply = PagesReply(0, 1);
+    reply->pages.push_back(Page(0, width, height, MakePng(width, height)));
+    return reply;
+  };
+  ExpectMalformed(one_page(0, 50));
+  ExpectMalformed(one_page(100, 0));
+  ExpectMalformed(one_page(mojom::kMaxPageImageSide + 1, 10));
+  ExpectMalformed(one_page(10, mojom::kMaxPageImageSide + 1));
+  // Each side within the limit, the area not.
+  ExpectMalformed(one_page(mojom::kMaxPageImageSide, 2600));
+  // At the limits is fine.
+  EXPECT_EQ(Render(one_page(mojom::kMaxPageImageSide, 2500)).status,
+            PagesStatus::kOk);
+}
+
+TEST_F(DocumentParserClientTest, RenderRejectsMoreBytesThanTheLimit) {
+  // One page whose PNG alone is over the total.
+  mojom::PdfPageImagesPtr reply = PagesReply(0, 1);
+  reply->pages.push_back(
+      Page(0, 100, 50, MakePng(100, 50, size_t{mojom::kMaxPageImageBytes})));
+  ExpectMalformed(std::move(reply));
+}
+
+TEST_F(DocumentParserClientTest, RenderRejectsWhatIsNotAPng) {
+  const auto with_png = [](const std::string& png) {
+    mojom::PdfPageImagesPtr reply = PagesReply(0, 1);
+    reply->pages.push_back(Page(0, 100, 50, png));
+    return reply;
+  };
+  ExpectMalformed(with_png(std::string()));
+  ExpectMalformed(with_png("GIF89a not a png at all"));
+  // A PNG of another size than the reply claims.
+  ExpectMalformed(with_png(MakePng(50, 100)));
+  // Cut short.
+  const std::string png = MakePng(100, 50);
+  ExpectMalformed(with_png(png.substr(0, png.size() - 1)));
+}
+
+TEST_F(DocumentParserClientTest, RenderTimeoutIsLongerThanTheTextTimeout) {
+  static_assert(DocumentParserClient::kRenderTimeout >
+                DocumentParserClient::kTimeout);
+  behavior_ = Behavior::kHang;
+  base::test::TestFuture<PdfPagesResult> future;
+  client_->RenderPdfPages(base::as_byte_span(std::string("%PDF-")), 20, 200,
+                          future.GetCallback());
+  task_environment_.FastForwardBy(DocumentParserClient::kTimeout +
+                                  base::Seconds(1));
+  EXPECT_FALSE(future.IsReady());
+  task_environment_.FastForwardBy(DocumentParserClient::kRenderTimeout -
+                                  DocumentParserClient::kTimeout);
+  ASSERT_TRUE(future.IsReady());
+  PdfPagesResult result = future.Take();
+  EXPECT_EQ(result.status, PagesStatus::kFailed);
+  EXPECT_NE(result.error.find("timed out"), std::string::npos);
+  EXPECT_EQ(client_->pending_calls_for_testing(), 0u);
+}
+
+TEST_F(DocumentParserClientTest, RenderCrashFailsTheCall) {
+  behavior_ = Behavior::kCrash;
+  PdfPagesResult result = Render(PagesReply(1, 1));
+  EXPECT_EQ(result.status, PagesStatus::kFailed);
+  EXPECT_NE(result.error.find("stopped unexpectedly"), std::string::npos);
+}
+
+TEST_F(DocumentParserClientTest, RenderRefusesEmptyAndOversizeDocuments) {
+  PdfPagesResult result = Render(nullptr, 20, 200, std::string());
+  EXPECT_EQ(result.status, PagesStatus::kUnreadable);
+  EXPECT_NE(result.error.find("empty"), std::string::npos);
+
+  const std::string huge(size_t{mojom::kMaxDocumentBytes} + 1, 'x');
+  result = Render(nullptr, 20, 200, huge);
+  EXPECT_EQ(result.status, PagesStatus::kFailed);
+  EXPECT_NE(result.error.find("too large"), std::string::npos);
+  EXPECT_EQ(launches_, 0);
+}
+
+TEST_F(DocumentParserClientTest, RenderSharesTheConcurrencyLimit) {
+  behavior_ = Behavior::kHang;
+  for (size_t i = 0; i < DocumentParserClient::kMaxConcurrentCalls; ++i) {
+    client_->ExtractPdfText(base::as_byte_span(std::string("%PDF-")), 100,
+                            base::DoNothing());
+  }
+  PdfPagesResult result = Render(nullptr);
+  EXPECT_EQ(result.status, PagesStatus::kFailed);
+  EXPECT_NE(result.error.find("too many"), std::string::npos);
+}
+
+TEST(DocumentParserPngCheckTest, AcceptsWellFormedPngs) {
+  EXPECT_TRUE(IsWellFormedPng(base::as_byte_span(MakePng(100, 50)), 100, 50));
+  // Ancillary chunks and several IDATs are fine; so are RGBA and gray.
+  const std::string sig(kPngSignature, 8);
+  EXPECT_TRUE(IsWellFormedPng(
+      base::as_byte_span(sig + Ihdr(3, 4) + Chunk("tEXt", "a\0b") +
+                         Chunk("IDAT", "xx") + Chunk("IDAT", "yy") +
+                         Chunk("IEND", "")),
+      3, 4));
+  for (const uint8_t color_type : {uint8_t{0}, uint8_t{4}, uint8_t{6}}) {
+    EXPECT_TRUE(IsWellFormedPng(
+        base::as_byte_span(sig + Ihdr(3, 4, 8, color_type) +
+                           Chunk("IDAT", "x") + Chunk("IEND", "")),
+        3, 4))
+        << int{color_type};
+  }
+}
+
+TEST(DocumentParserPngCheckTest, RejectsMalformedPngs) {
+  const std::string sig(kPngSignature, 8);
+  const std::string idat = Chunk("IDAT", "xx");
+  const std::string iend = Chunk("IEND", "");
+  const auto check = [](const std::string& png) {
+    return IsWellFormedPng(base::as_byte_span(png), 3, 4);
+  };
+  EXPECT_FALSE(check(std::string()));
+  EXPECT_FALSE(check(sig));
+  // Wrong signature.
+  EXPECT_FALSE(check("\x89PNG\r\n\x1a\r" + Ihdr(3, 4) + idat + iend));
+  // Wrong size.
+  EXPECT_FALSE(check(sig + Ihdr(4, 3) + idat + iend));
+  // IHDR not first, twice, or the wrong length.
+  EXPECT_FALSE(check(sig + idat + Ihdr(3, 4) + iend));
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + Ihdr(3, 4) + idat + iend));
+  EXPECT_FALSE(check(sig + Chunk("IHDR", std::string(12, '\0')) + idat + iend));
+  // Formats the parser never writes: 16-bit, palette.
+  EXPECT_FALSE(check(sig + Ihdr(3, 4, 16, 2) + idat + iend));
+  EXPECT_FALSE(check(sig + Ihdr(3, 4, 8, 3) + idat + iend));
+  // No IDAT; no IEND; IEND with data; something after IEND.
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + iend));
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + idat));
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + idat + Chunk("IEND", "x")));
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + idat + iend + "x"));
+  // A chunk longer than what is left, or than PNG allows.
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + Chunk("IDAT", "xx", 1000) + iend));
+  EXPECT_FALSE(
+      check(sig + Ihdr(3, 4) + Chunk("IDAT", "xx", 0xFFFFFFFF) + iend));
+  // A chunk type that isn't four letters.
+  EXPECT_FALSE(check(sig + Ihdr(3, 4) + Chunk("ID4T", "xx") + idat + iend));
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)

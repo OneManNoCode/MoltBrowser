@@ -4,8 +4,9 @@
 // MoltBrowser's document parsers, run in a sandboxed utility process (audit
 // S5, the "Rule of 2"): the documents come from anywhere (a /pdf URL from any
 // website, a file the user attaches in the AI chat), and the parsers are
-// hand-written C++ plus zlib, and the anydoc Rust crate (a panic aborts its
-// process). A parser bug or panic must cost at most this process.
+// hand-written C++ plus zlib, the anydoc Rust crate (a panic aborts its
+// process) and PDFium (pages rendered for OCR). A parser bug or panic must
+// cost at most this process.
 //
 // The browser talks to it only through
 // //chrome/browser/molt_ai/document_parser (DocumentParserClient), which
@@ -27,6 +28,23 @@ const uint32 kMaxOutputChars = 1048576;  // 1 MiB
 // Error strings are cut to this many bytes.
 const uint32 kMaxErrorBytes = 1024;
 
+// RenderPdfPages limits. The service applies them whatever the browser asks
+// for, and the browser rejects any reply that breaks them.
+//
+// At most this many pages are rendered, from the first.
+const uint32 kMaxRenderPages = 20;
+// The requested resolution is clamped to [kMinRenderDpi, kMaxRenderDpi].
+const uint32 kMinRenderDpi = 50;
+const uint32 kMaxRenderDpi = 200;
+// A page too large at that resolution is scaled down, keeping its aspect
+// ratio, until each side is at most kMaxPageImageSide pixels and the page
+// at most kMaxPageImagePixels pixels.
+const uint32 kMaxPageImageSide = 10000;
+const uint32 kMaxPageImagePixels = 25000000;
+// The PNGs of one reply together are at most this many bytes: rendering
+// stops before the page that would go over.
+const uint32 kMaxPageImageBytes = 67108864;  // 64 MiB
+
 // The outcome of one call.
 struct ParseResult {
   // True when `text` holds the document's text. False when the parser
@@ -45,9 +63,50 @@ struct ParseResult {
   string error;
 };
 
+// One page of a PDF, rendered for OCR.
+struct PdfPageImage {
+  // The page's 0-based index in the document.
+  uint32 page_index;
+
+  // The image's size in pixels: each side 1 to kMaxPageImageSide, together
+  // at most kMaxPageImagePixels. The PNG's IHDR says the same.
+  uint32 width;
+  uint32 height;
+
+  // The page as a PNG (8 bits per channel, RGB or RGBA), drawn on white.
+  mojo_base.mojom.BigBuffer png;
+};
+
+// The outcome of RenderPdfPages.
+struct PdfPageImages {
+  // True when `pages` holds at least one page. False when the input is not a
+  // PDF, is damaged, needs a password, has no pages, or none of its first
+  // pages could be rendered; `pages` is then empty and `error` may say why.
+  bool success;
+
+  // How many pages the document has (0 if it could not be opened). Can be
+  // more than `pages` holds: only the first pages are rendered.
+  uint32 page_count;
+
+  // The rendered pages in ascending page_index order, each index below the
+  // call's (clamped) `max_pages`. A page that could not be rendered is left
+  // out; the PNGs together are at most kMaxPageImageBytes.
+  array<PdfPageImage> pages;
+
+  // As ParseResult.error.
+  string error;
+};
+
 // Stateless: every call stands alone. The browser launches a fresh process
 // for each call and closes it afterwards, so one document can never affect
 // how another is parsed.
+//
+// kService is enough for RenderPdfPages too: the service drives PDFium
+// through its C API with no V8 isolate and no form-fill environment (no
+// JavaScript, no dynamic code), no system fonts (fonts a PDF doesn't embed
+// are drawn with PDFium's built-in ones, so it never reads font directories
+// or, on Windows, calls GDI) and the AGG renderer into BGRA bitmaps (which
+// keeps CoreGraphics out on macOS). See pdf_page_renderer.h.
 [ServiceSandbox=sandbox.mojom.Sandbox.kService]
 interface DocumentParser {
   // The text layer of a PDF (hand-written scanner plus zlib; see
@@ -70,4 +129,13 @@ interface DocumentParser {
   // fallback for a .docx that anydoc can't read.
   ExtractDocxText(mojo_base.mojom.BigBuffer docx, uint32 max_chars)
       => (ParseResult result);
+
+  // The first `max_pages` pages of a PDF (clamped to [1, kMaxRenderPages])
+  // rendered with PDFium at `dpi` (clamped to [kMinRenderDpi,
+  // kMaxRenderDpi], and scaled down further for a page over the pixel
+  // limits) as PNGs: the input for OCR of a PDF with no text layer, which
+  // the browser then runs through tesseract. Annotations are drawn; forms
+  // and JavaScript are not run.
+  RenderPdfPages(mojo_base.mojom.BigBuffer pdf, uint32 max_pages, uint32 dpi)
+      => (PdfPageImages result);
 };
