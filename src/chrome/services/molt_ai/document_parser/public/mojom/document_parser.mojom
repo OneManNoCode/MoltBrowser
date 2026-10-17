@@ -1,0 +1,73 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+// MoltBrowser's document parsers, run in a sandboxed utility process (audit
+// S5, the "Rule of 2"): the documents come from anywhere (a /pdf URL from any
+// website, a file the user attaches in the AI chat), and the parsers are
+// hand-written C++ plus zlib, and the anydoc Rust crate (a panic aborts its
+// process). A parser bug or panic must cost at most this process.
+//
+// The browser talks to it only through
+// //chrome/browser/molt_ai/document_parser (DocumentParserClient), which
+// launches one process per call, enforces a timeout and validates every
+// reply. The implementation is
+// //chrome/services/molt_ai/document_parser/document_parser_impl.h.
+module molt_ai.mojom;
+
+import "mojo/public/mojom/base/big_buffer.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+// Documents larger than this are refused without being parsed. The browser's
+// own caps are lower: 25 MB for /pdf, 20 MiB for chat attachments.
+const uint32 kMaxDocumentBytes = 33554432;  // 32 MiB
+
+// Every call's `max_chars` is clamped to this.
+const uint32 kMaxOutputChars = 1048576;  // 1 MiB
+
+// Error strings are cut to this many bytes.
+const uint32 kMaxErrorBytes = 1024;
+
+// The outcome of one call.
+struct ParseResult {
+  // True when `text` holds the document's text. False when the parser
+  // refused the input or found nothing to extract; `text` is then empty and
+  // `error` may say why.
+  bool success;
+
+  // Valid UTF-8 (base::IsStringUTF8: no invalid sequences, no
+  // non-characters), at most the call's `max_chars` bytes, cut at a character
+  // boundary. Whatever the document held that is not valid UTF-8 becomes
+  // U+FFFD.
+  string text;
+
+  // A short diagnostic for the user, valid UTF-8, at most kMaxErrorBytes.
+  // Empty on success, and possibly on failure.
+  string error;
+};
+
+// Stateless: every call stands alone. The browser launches a fresh process
+// for each call and closes it afterwards, so one document can never affect
+// how another is parsed.
+[ServiceSandbox=sandbox.mojom.Sandbox.kService]
+interface DocumentParser {
+  // The text layer of a PDF (hand-written scanner plus zlib; see
+  // pdf/pdf_text_scraper.h). Fails when `pdf` is not a PDF or has no
+  // readable text layer, e.g. a scan, which the browser then OCRs.
+  ExtractPdfText(mojo_base.mojom.BigBuffer pdf, uint32 max_chars)
+      => (ParseResult result);
+
+  // Office / e-book / spreadsheet / CSV to GitHub-Flavored Markdown with the
+  // anydoc crate. The format is sniffed from the bytes; `extension` (the file
+  // name's, lowercase and without the dot, e.g. "docx"; may be empty) is only
+  // the fallback, and the only hint for CSV. Fails with anydoc's diagnostic
+  // in `error`, or with an empty `error` when the document converted to
+  // nothing.
+  ConvertToMarkdown(mojo_base.mojom.BigBuffer document,
+                    string extension,
+                    uint32 max_chars) => (ParseResult result);
+
+  // The flat text of a .docx (word/document.xml, in-memory unzip): the
+  // fallback for a .docx that anydoc can't read.
+  ExtractDocxText(mojo_base.mojom.BigBuffer docx, uint32 max_chars)
+      => (ParseResult result);
+};

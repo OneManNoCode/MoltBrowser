@@ -96,6 +96,9 @@ chrome/common/chrome_content_client.cc.patch
 chrome/common/webui_url_constants.h.patch
 chrome/renderer/BUILD.gn.patch
 chrome/renderer/chrome_content_renderer_client.cc.patch
+chrome/utility/BUILD.gn.patch
+chrome/utility/DEPS.patch
+chrome/utility/services.cc.patch
 components/arc_strings.grdp.patch
 components/autofill_payments_strings.grdp.patch
 components/autofill_strings.grdp.patch

@@ -572,7 +572,6 @@ static_library("ui") {
     "//chrome/browser/molt_ai/keys:os_crypt",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/ocr",
-    "//chrome/browser/molt_ai/pdf",
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/vault",
     "//chrome/browser/molt_ai/voice",

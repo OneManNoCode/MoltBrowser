@@ -21,6 +21,7 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
+#include "base/containers/span.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -54,9 +55,8 @@
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
-#include "chrome/browser/molt_ai/anydoc/anydoc_ffi.rs.h"
+#include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 #include "chrome/browser/molt_ai/ocr/ocr_service.h"
-#include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/molt_ai/voice/voice_service.h"
@@ -102,7 +102,6 @@
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-#include "third_party/zlib/google/zip_reader.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
@@ -3769,14 +3768,20 @@ void MoltAIChatHandler::HandleListMemoryDocs(const base::ListValue& args) {
 }
 
 // ------------------------------------------------------------------
-// HandleExtractPdfText: download a PDF URL via SimpleURLLoader, run
-// our minimal PDF text scraper, and ship the result back to chat.
-// The result includes the host so the UI can show a "Chatting with
-// foo.pdf from example.com" chip.
+// HandleExtractPdfText: download a PDF URL via SimpleURLLoader, read
+// its text layer in the sandboxed document parser (a utility process,
+// see document_parser_client.h), fall back to OCR for a scan, and ship
+// the result back to chat. The result includes the host so the UI can
+// show a "Chatting with foo.pdf from example.com" chip.
 //
 // Args: [callback_id, url]
 // Returns: {success, url, text, char_count, error?}
 // ------------------------------------------------------------------
+namespace {
+// Text budget for /pdf (the text layer and the OCR fallback alike).
+constexpr size_t kMaxPdfTextChars = 50000;
+}  // namespace
+
 void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
   AllowJavascript();
   if (!HasCallbackArgs(args, 2u, __func__)) return;
@@ -3872,63 +3877,82 @@ void MoltAIChatHandler::HandleExtractPdfText(const base::ListValue& args) {
                                               base::Value(std::move(out)));
               return;
             }
-            // Hand to the scraper. CPU-only, ~100ms for typical PDFs.
-            std::vector<uint8_t> bytes(body->begin(), body->end());
-            std::string text =
-                molt_ai::pdf::ExtractText(bytes, /*max_chars=*/50000);
-            if (!text.empty()) {
-              out.Set("success", true);
-              out.Set("text", text);
-              out.Set("char_count", static_cast<int>(text.size()));
-              out.Set("source", "text_layer");
-              self->ResolveJavascriptCallback(base::Value(cb_id),
-                                              base::Value(std::move(out)));
-              return;
-            }
-            // No text layer — fall back to OCR via bundled tesseract.
-            // We keep the URL in the response by routing through a
-            // tiny lambda that re-wraps the result.
-            std::string raw(body->begin(), body->end());
-            std::string cb_inner = cb_id;
-            molt_ai::ocr::OcrService::Get()->OcrPdf(
-                std::move(raw), /*max_chars=*/50000,
-                base::BindOnce(
-                    [](base::WeakPtr<MoltAIChatHandler> self,
-                       std::string cb_id, std::string src_url,
-                       molt_ai::ocr::OcrResult r) {
-                      if (!self) return;
-                      base::DictValue out;
-                      out.Set("url", src_url);
-                      out.Set("source", "ocr");
-                      out.Set("ocr_binary_source", r.binary_source);
-                      out.Set("ocr_duration_ms", r.duration_ms);
-                      if (r.success) {
-                        out.Set("success", true);
-                        out.Set("text", r.text);
-                        out.Set("char_count",
-                                static_cast<int>(r.text.size()));
-                      } else {
-                        out.Set("success", false);
-                        // Be explicit about whether tesseract was
-                        // missing vs. failed.
-                        if (r.binary_source == "none") {
-                          out.Set("error",
-                                  "no text layer and no OCR available "
-                                  "— run scripts/bundle-tesseract.sh "
-                                  "or install tesseract.");
-                        } else {
-                          out.Set("error", "no text layer; OCR failed: " +
-                                            r.error);
-                        }
-                      }
-                      self->ResolveJavascriptCallback(
-                          base::Value(cb_id),
-                          base::Value(std::move(out)));
-                    },
-                    self, cb_id, src_url));
+            // The text layer is read in the sandboxed document parser;
+            // OnPdfTextLayer() falls back to OCR for a scan. The client
+            // copies |pdf_bytes| before returning, and moving the
+            // unique_ptr doesn't move the string it points to.
+            auto pdf = std::make_unique<std::string>(std::move(*body));
+            const base::span<const uint8_t> pdf_bytes =
+                base::as_byte_span(*pdf);
+            self->document_parser_.ExtractPdfText(
+                pdf_bytes, kMaxPdfTextChars,
+                base::BindOnce(&MoltAIChatHandler::OnPdfTextLayer, self,
+                               std::move(cb_id), std::move(src_url),
+                               std::move(pdf)));
           },
           weak_this),
       kMaxPdfBytes);
+}
+
+void MoltAIChatHandler::OnPdfTextLayer(std::string callback_id,
+                                       std::string source_url,
+                                       std::unique_ptr<std::string> pdf,
+                                       molt_ai::DocumentParseResult result) {
+  using Status = molt_ai::DocumentParseResult::Status;
+  if (result.status != Status::kNoText) {
+    base::DictValue out;
+    out.Set("url", source_url);
+    if (result.status == Status::kOk) {
+      out.Set("success", true);
+      out.Set("char_count", static_cast<int>(result.text.size()));
+      out.Set("text", std::move(result.text));
+      out.Set("source", "text_layer");
+    } else {
+      // The parser crashed, hung or misbehaved on this document: never
+      // hand it on to the (unsandboxed) OCR helper.
+      out.Set("success", false);
+      out.Set("error", "couldn't read this PDF: " + result.error);
+    }
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  // No text layer — fall back to OCR via bundled tesseract.
+  // We keep the URL in the response by routing through a
+  // tiny lambda that re-wraps the result.
+  molt_ai::ocr::OcrService::Get()->OcrPdf(
+      std::move(*pdf), kMaxPdfTextChars,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::string src_url, molt_ai::ocr::OcrResult r) {
+            if (!self) return;
+            base::DictValue out;
+            out.Set("url", src_url);
+            out.Set("source", "ocr");
+            out.Set("ocr_binary_source", r.binary_source);
+            out.Set("ocr_duration_ms", r.duration_ms);
+            if (r.success) {
+              out.Set("success", true);
+              out.Set("text", r.text);
+              out.Set("char_count", static_cast<int>(r.text.size()));
+            } else {
+              out.Set("success", false);
+              // Be explicit about whether tesseract was
+              // missing vs. failed.
+              if (r.binary_source == "none") {
+                out.Set("error",
+                        "no text layer and no OCR available "
+                        "— run scripts/bundle-tesseract.sh "
+                        "or install tesseract.");
+              } else {
+                out.Set("error", "no text layer; OCR failed: " + r.error);
+              }
+            }
+            self->ResolveJavascriptCallback(base::Value(cb_id),
+                                            base::Value(std::move(out)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), std::move(callback_id),
+          std::move(source_url)));
 }
 
 // ------------------------------------------------------------------
@@ -5426,7 +5450,10 @@ void MoltAIChatHandler::HandleTranscribeAudio(
 
 // ------------------------------------------------------------------
 // HandleExtractAttachment: extract plain text from a base64-uploaded
-// file (chat attachment).
+// file (chat attachment). A ThreadPool worker decodes it and handles
+// what needs no parser (text files, image OCR); PDFs and Office /
+// e-book documents go to the sandboxed document parser from the UI
+// thread (document_parser_client.h).
 // JS: chrome.send('extractAttachment', [callback_id, name, mime, b64])
 // Resolves {success, text, truncated, error?}.
 // ------------------------------------------------------------------
@@ -5441,9 +5468,11 @@ constexpr size_t kMaxAttachmentBytes = 20 * 1024 * 1024;  // 20 MiB
 constexpr size_t kMaxAttachmentB64Bytes = 28u << 20;
 // Extracted-text budget shipped back to the chat context.
 constexpr size_t kMaxAttachmentChars = 48000;
-// word/document.xml read cap — the decompressed XML can be far larger
-// than the .docx itself (zip bomb); bound the inflation.
-constexpr uint64_t kMaxDocxXmlBytes = 20 * 1024 * 1024;
+// What the document parser is asked for: a little over the budget, so
+// MakeAttachmentSuccess() still sees a cut (and reports `truncated`) and
+// makes it where it would on the whole text. The parser cuts at a UTF-8
+// character boundary, which can be up to 3 bytes short of its limit.
+constexpr size_t kMaxAttachmentParseChars = kMaxAttachmentChars + 4;
 
 // kRichDoc = Office / e-book / spreadsheet formats handled by the on-device
 // `anydoc` crate (structure-preserving -> Markdown). kDocx also routes through
@@ -5555,106 +5584,6 @@ base::DictValue MakeAttachmentSuccess(std::string text) {
   return out;
 }
 
-// Strip WordprocessingML down to plain text: keep the character data
-// inside <w:t> runs, map </w:p> to \n, <w:tab/> to \t and <w:br/> /
-// <w:cr/> to \n. Same hand-rolled-scanner altitude as
-// pdf_text_scraper — no XML parser dependency needed.
-std::string StripWordprocessingXml(const std::string& xml) {
-  std::string out;
-  bool in_text = false;
-  size_t i = 0;
-  while (i < xml.size()) {
-    if (xml[i] != '<') {
-      if (in_text) {
-        out += xml[i];
-      }
-      ++i;
-      continue;
-    }
-    size_t close = xml.find('>', i);
-    if (close == std::string::npos) {
-      break;
-    }
-    std::string_view tag(xml.data() + i + 1, close - i - 1);
-    const bool self_closing = !tag.empty() && tag.back() == '/';
-    if (self_closing) {
-      tag.remove_suffix(1);
-    }
-    const size_t space = tag.find_first_of(" \t\r\n");
-    const std::string_view tag_name =
-        space == std::string_view::npos ? tag : tag.substr(0, space);
-    if (tag_name == "w:t") {
-      in_text = !self_closing;
-    } else if (tag_name == "/w:t") {
-      in_text = false;
-    } else if (tag_name == "/w:p") {
-      out += '\n';
-    } else if (tag_name == "w:tab") {
-      out += '\t';
-    } else if (tag_name == "w:br" || tag_name == "w:cr") {
-      out += '\n';
-    }
-    i = close + 1;
-  }
-  // Decode the predefined XML entities. &amp; must go last so an
-  // escaped "&amp;lt;" decodes to a literal "&lt;", not a fake tag.
-  base::ReplaceSubstringsAfterOffset(&out, 0, "&lt;", "<");
-  base::ReplaceSubstringsAfterOffset(&out, 0, "&gt;", ">");
-  base::ReplaceSubstringsAfterOffset(&out, 0, "&quot;", "\"");
-  base::ReplaceSubstringsAfterOffset(&out, 0, "&apos;", "'");
-  base::ReplaceSubstringsAfterOffset(&out, 0, "&amp;", "&");
-  return out;
-}
-
-// In-memory .docx → text. Blocking-safe CPU work only (zlib inflate
-// via zip::ZipReader::OpenFromString — no temp files, no mojo).
-std::string ExtractDocxText(const std::string& zip_bytes,
-                            std::string* error) {
-  zip::ZipReader reader;
-  if (!reader.OpenFromString(zip_bytes)) {
-    *error = "not a valid .docx (could not open as a zip archive)";
-    return std::string();
-  }
-  bool found = false;
-  std::string xml;
-  while (const zip::ZipReader::Entry* entry = reader.Next()) {
-    if (entry->is_directory || entry->is_encrypted) {
-      continue;
-    }
-    // Zip entry paths use '/', but base::FilePath may hold either
-    // separator on Windows — compare a normalized UTF-8 form.
-    std::string path = entry->path.AsUTF8Unsafe();
-    std::replace(path.begin(), path.end(), '\\', '/');
-    if (path != "word/document.xml") {
-      continue;
-    }
-    found = true;
-    const bool ok = reader.ExtractCurrentEntryToString(kMaxDocxXmlBytes, &xml);
-    if (!ok && xml.size() < kMaxDocxXmlBytes) {
-      // Real inflate error (a full-to-the-cap buffer just means the
-      // XML hit the read cap; the char budget truncates below that
-      // anyway, so we keep what we got).
-      *error = "failed to read word/document.xml from the archive";
-      return std::string();
-    }
-    break;
-  }
-  if (!found) {
-    *error = "no word/document.xml entry — is this really a .docx file?";
-    return std::string();
-  }
-  std::string text = StripWordprocessingXml(xml);
-  if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
-    *error = "document contains no extractable text";
-    return std::string();
-  }
-  if (!base::IsStringUTF8(text)) {
-    *error = "document text is not valid UTF-8";
-    return std::string();
-  }
-  return text;
-}
-
 // OCR an image via tesseract. Reuses OcrService's public binary
 // resolution (bundled Resources/ocr first, then system paths) and
 // replicates its exact subprocess invocation from RunTesseractBlocking
@@ -5723,121 +5652,83 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
   return MakeAttachmentSuccess(std::move(text));
 }
 
-// Runs on a MayBlock ThreadPool worker. Returns the response dict
-// plus, for text-layer-less PDFs only, the raw PDF bytes (second
-// member nonempty) so the UI-thread reply can chain into the async
-// OcrService::OcrPdf fallback — mirroring HandleExtractPdfText.
-// High-fidelity on-device document -> Markdown via the vendored `anydoc` crate
-// (Office / e-book / spreadsheet / CSV -> clean GFM Markdown; tables, headings
-// and lists preserved). Fully local — no network, no cloud. Returns the
-// Markdown, or "" on any handled failure so the caller can fall back;
-// `error_out` receives anydoc's diagnostic when it fails.
-std::string ExtractWithAnydoc(const std::string& bytes,
-                              const std::string& lower_name,
-                              std::string* error_out) {
-  // Lowercase extension hint without the dot; anydoc sniffs the content first
-  // regardless, so this is only a fallback signal.
-  std::string ext;
+// The extension of a lowercased file name, without the dot: anydoc's
+// format hint (it sniffs the content first regardless).
+std::string AttachmentExtension(const std::string& lower_name) {
   const size_t dot = lower_name.find_last_of('.');
-  if (dot != std::string::npos && dot + 1 < lower_name.size()) {
-    ext = lower_name.substr(dot + 1);
-  }
-  rust::Slice<const uint8_t> slice(
-      reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size());
-  molt_ai::anydoc_ffi::ConvertResult r =
-      molt_ai::anydoc_ffi::convert_to_markdown(slice, rust::Str(ext));
-  if (!r.ok) {
-    if (error_out) {
-      *error_out = std::string(r.error.data(), r.error.size());
-    }
+  if (dot == std::string::npos || dot + 1 >= lower_name.size()) {
     return std::string();
   }
-  std::string md(r.markdown.data(), r.markdown.size());
-  TruncateAtWhitespaceBoundary(&md, kMaxAttachmentChars);
-  return md;
+  return lower_name.substr(dot + 1);
 }
 
-std::pair<base::DictValue, std::string> ExtractAttachmentBlocking(
-    const std::string& name,
-    const std::string& mime,
-    const std::string& b64) {
+// What the decode worker hands back to the UI thread: the final answer,
+// or a document for the sandboxed parser.
+struct PreparedAttachment {
+  // Set when no parser is needed: text files, image OCR, errors.
+  std::optional<base::DictValue> result;
+  // Otherwise kPdf, kDocx or kRichDoc, with the decoded file.
+  AttachmentKind kind = AttachmentKind::kUnsupported;
+  std::unique_ptr<std::string> bytes;
+  std::string extension;
+};
+
+PreparedAttachment AttachmentAnswer(base::DictValue result) {
+  PreparedAttachment prepared;
+  prepared.result = std::move(result);
+  return prepared;
+}
+
+// Runs on a MayBlock ThreadPool worker: decodes the attachment and
+// answers what needs no document parser. PDFs and Office / e-book
+// documents go back to the UI thread for the sandboxed parser
+// (MoltAIChatHandler::ParseAttachmentPdf / ParseAttachmentDocument).
+PreparedAttachment PrepareAttachmentBlocking(const std::string& name,
+                                             const std::string& mime,
+                                             const std::string& b64) {
   std::string bytes;
   if (!base::Base64Decode(b64, &bytes)) {
-    return {MakeAttachmentError("base64 decode failed"), std::string()};
+    return AttachmentAnswer(MakeAttachmentError("base64 decode failed"));
   }
   if (bytes.empty()) {
-    return {MakeAttachmentError("empty attachment"), std::string()};
+    return AttachmentAnswer(MakeAttachmentError("empty attachment"));
   }
   if (bytes.size() > kMaxAttachmentBytes) {
-    return {MakeAttachmentError("attachment exceeds max size (20 MiB)"),
-            std::string()};
+    return AttachmentAnswer(
+        MakeAttachmentError("attachment exceeds max size (20 MiB)"));
   }
   const std::string lower_name = base::ToLowerASCII(name);
   const std::string lower_mime = base::ToLowerASCII(mime);
-  switch (DetectAttachmentKind(lower_name, lower_mime)) {
+  const AttachmentKind kind = DetectAttachmentKind(lower_name, lower_mime);
+  switch (kind) {
     case AttachmentKind::kText: {
       if (!base::IsStringUTF8(bytes)) {
-        return {MakeAttachmentError("text file is not valid UTF-8"),
-                std::string()};
+        return AttachmentAnswer(
+            MakeAttachmentError("text file is not valid UTF-8"));
       }
-      return {MakeAttachmentSuccess(std::move(bytes)), std::string()};
-    }
-    case AttachmentKind::kDocx: {
-      // Prefer anydoc's structure-preserving Markdown (tables/headings/lists);
-      // fall back to the legacy flat-text scraper only if anydoc can't read it.
-      std::string ad_err;
-      std::string md = ExtractWithAnydoc(bytes, lower_name, &ad_err);
-      if (!md.empty()) {
-        return {MakeAttachmentSuccess(std::move(md)), std::string()};
-      }
-      std::string error;
-      std::string text = ExtractDocxText(bytes, &error);
-      if (text.empty()) {
-        return {MakeAttachmentError(error.empty() ? ad_err : error),
-                std::string()};
-      }
-      return {MakeAttachmentSuccess(std::move(text)), std::string()};
-    }
-    case AttachmentKind::kRichDoc: {
-      // Office / e-book / spreadsheet / CSV -> Markdown, entirely on-device.
-      std::string ad_err;
-      std::string md = ExtractWithAnydoc(bytes, lower_name, &ad_err);
-      if (md.empty()) {
-        return {MakeAttachmentError(
-                    ad_err.empty() ? "couldn't read this document on-device"
-                                   : ad_err),
-                std::string()};
-      }
-      return {MakeAttachmentSuccess(std::move(md)), std::string()};
+      return AttachmentAnswer(MakeAttachmentSuccess(std::move(bytes)));
     }
     case AttachmentKind::kImage: {
-      return {OcrImageBlocking(bytes,
-                               AttachmentImageExtension(lower_name,
-                                                        lower_mime)),
-              std::string()};
+      return AttachmentAnswer(OcrImageBlocking(
+          bytes, AttachmentImageExtension(lower_name, lower_mime)));
     }
-    case AttachmentKind::kPdf: {
-      // Same two-tier route as /pdf (HandleExtractPdfText): cheap
-      // text-layer scraper first, tesseract OCR as fallback. The +1
-      // over budget lets the truncation helper detect the cut.
-      const std::vector<uint8_t> vec(bytes.begin(), bytes.end());
-      std::string text =
-          molt_ai::pdf::ExtractText(vec, kMaxAttachmentChars + 1);
-      if (!text.empty()) {
-        return {MakeAttachmentSuccess(std::move(text)), std::string()};
-      }
-      // No text layer — hand the bytes back for the OCR fallback.
-      return {base::DictValue(), std::move(bytes)};
+    case AttachmentKind::kPdf:
+    case AttachmentKind::kDocx:
+    case AttachmentKind::kRichDoc: {
+      PreparedAttachment prepared;
+      prepared.kind = kind;
+      prepared.bytes = std::make_unique<std::string>(std::move(bytes));
+      prepared.extension = AttachmentExtension(lower_name);
+      return prepared;
     }
     case AttachmentKind::kUnsupported:
       break;
   }
-  return {MakeAttachmentError(
-              "unsupported attachment type (mime='" + mime +
-              "') — supported: .txt/.md, .pdf, Office & e-book docs "
-              "(.docx/.pptx/.xlsx/.csv/.odt/.ods/.odp/.rtf/.epub), and "
-              ".png/.jpg/.jpeg/.webp images"),
-          std::string()};
+  return AttachmentAnswer(MakeAttachmentError(
+      "unsupported attachment type (mime='" + mime +
+      "') — supported: .txt/.md, .pdf, Office & e-book docs "
+      "(.docx/.pptx/.xlsx/.csv/.odt/.ods/.odp/.rtf/.epub), and "
+      ".png/.jpg/.jpeg/.webp images"));
 }
 
 }  // namespace
@@ -5873,22 +5764,65 @@ void MoltAIChatHandler::HandleExtractAttachment(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
-      base::BindOnce(&ExtractAttachmentBlocking, name, mime, b64),
+      base::BindOnce(&PrepareAttachmentBlocking, name, mime, b64),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-             std::pair<base::DictValue, std::string> extracted) {
+             PreparedAttachment prepared) {
             if (!self) {
               return;
             }
-            if (extracted.second.empty()) {
+            if (prepared.result) {
               self->ResolveJavascriptCallback(
                   base::Value(cb_id),
-                  base::Value(std::move(extracted.first)));
+                  base::Value(std::move(*prepared.result)));
+              return;
+            }
+            if (prepared.kind == AttachmentKind::kPdf) {
+              self->ParseAttachmentPdf(cb_id, std::move(prepared.bytes));
+              return;
+            }
+            self->ParseAttachmentDocument(
+                cb_id, std::move(prepared.bytes), prepared.extension,
+                /*is_docx=*/prepared.kind == AttachmentKind::kDocx);
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id));
+}
+
+// Same two-tier route as /pdf (OnPdfTextLayer): the text layer from the
+// sandboxed parser, tesseract OCR for a scan.
+void MoltAIChatHandler::ParseAttachmentPdf(const std::string& callback_id,
+                                           std::unique_ptr<std::string> pdf) {
+  // The client copies |bytes| before returning; moving the unique_ptr
+  // doesn't move the string it points to.
+  const base::span<const uint8_t> bytes = base::as_byte_span(*pdf);
+  document_parser_.ExtractPdfText(
+      bytes, kMaxAttachmentParseChars,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::unique_ptr<std::string> pdf,
+             molt_ai::DocumentParseResult r) {
+            if (!self) {
+              return;
+            }
+            using Status = molt_ai::DocumentParseResult::Status;
+            if (r.status == Status::kOk) {
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id),
+                  base::Value(MakeAttachmentSuccess(std::move(r.text))));
+              return;
+            }
+            if (r.status == Status::kFailed) {
+              // The parser crashed, hung or misbehaved on this document:
+              // never hand it on to the (unsandboxed) OCR helper.
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id),
+                  base::Value(MakeAttachmentError(
+                      "couldn't read this PDF: " + r.error)));
               return;
             }
             // PDF with no text layer — same OCR fallback as /pdf.
             molt_ai::ocr::OcrService::Get()->OcrPdf(
-                std::move(extracted.second), kMaxAttachmentChars + 1,
+                std::move(*pdf), kMaxAttachmentChars + 1,
                 base::BindOnce(
                     [](base::WeakPtr<MoltAIChatHandler> self,
                        std::string cb_id, molt_ai::ocr::OcrResult r) {
@@ -5914,7 +5848,72 @@ void MoltAIChatHandler::HandleExtractAttachment(
                     },
                     self, std::move(cb_id)));
           },
-          weak_ptr_factory_.GetWeakPtr(), callback_id));
+          weak_ptr_factory_.GetWeakPtr(), callback_id, std::move(pdf)));
+}
+
+// Office / e-book / spreadsheet / CSV -> Markdown with anydoc (tables,
+// headings and lists preserved), on-device in the sandboxed parser. A
+// .docx anydoc can't read falls back to the flat-text extractor.
+void MoltAIChatHandler::ParseAttachmentDocument(
+    const std::string& callback_id,
+    std::unique_ptr<std::string> document,
+    const std::string& extension,
+    bool is_docx) {
+  const base::span<const uint8_t> bytes = base::as_byte_span(*document);
+  document_parser_.ConvertToMarkdown(
+      bytes, extension, kMaxAttachmentParseChars,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             bool is_docx, std::unique_ptr<std::string> document,
+             molt_ai::DocumentParseResult r) {
+            if (!self) {
+              return;
+            }
+            if (r.status == molt_ai::DocumentParseResult::Status::kOk) {
+              self->ResolveJavascriptCallback(
+                  base::Value(cb_id),
+                  base::Value(MakeAttachmentSuccess(std::move(r.text))));
+              return;
+            }
+            if (is_docx) {
+              // Also after a crash or timeout: the fallback runs in a
+              // fresh sandboxed process.
+              self->ParseAttachmentDocxText(cb_id, std::move(document),
+                                            std::move(r.error));
+              return;
+            }
+            self->ResolveJavascriptCallback(
+                base::Value(cb_id),
+                base::Value(MakeAttachmentError(
+                    r.error.empty() ? "couldn't read this document on-device"
+                                    : r.error)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id, is_docx,
+          std::move(document)));
+}
+
+void MoltAIChatHandler::ParseAttachmentDocxText(
+    const std::string& callback_id,
+    std::unique_ptr<std::string> docx,
+    std::string anydoc_error) {
+  document_parser_.ExtractDocxText(
+      base::as_byte_span(*docx), kMaxAttachmentParseChars,
+      base::BindOnce(
+          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
+             std::string anydoc_error, molt_ai::DocumentParseResult r) {
+            if (!self) {
+              return;
+            }
+            self->ResolveJavascriptCallback(
+                base::Value(cb_id),
+                base::Value(
+                    r.status == molt_ai::DocumentParseResult::Status::kOk
+                        ? MakeAttachmentSuccess(std::move(r.text))
+                        : MakeAttachmentError(r.error.empty() ? anydoc_error
+                                                              : r.error)));
+          },
+          weak_ptr_factory_.GetWeakPtr(), callback_id,
+          std::move(anydoc_error)));
 }
 
 // ------------------------------------------------------------------

@@ -418,9 +418,16 @@ Honest list; anything not in the table above is not covered.
   that draws its fingerprint in grey (R = G = B), or renders it three times
   in different channels, can take the majority of the three channels and
   recover the true value of every pixel. Found while reviewing v1 for
-  v1.1; fixing it means changing the canvas noise itself (e.g. moving all
-  three channels by the same keyed decision), which changes every
-  canvas fingerprint and is left for a deliberate noise revision.
+  v1.1. Not worth fixing on its own (decided Oct 2026): it is one case of
+  *redundancy voting*, which defeats every sparse value-only noise. A page
+  that renders the same text in grey levels 255, 254 and 253 gets three
+  different anti-aliasing values per pixel, which the noise moves
+  independently, so the majority of the three, scaled back, is again the
+  true coverage. Moving all three channels together (the obvious fix)
+  stops the channel vote but not this one, and changes every canvas
+  fingerprint. The same holds for Brave's and Firefox's canvas noise: it
+  defeats scripts that hash the exact pixels (what fingerprinting
+  libraries do), not scripts written against the noise.
 * *Coarse quantisation*: the noise is at most 1 per channel (one ulp for
   half floats, < 2^-15 relative for float32 and audio), so a script that
   compares results with a robust/perceptual hash or rounds them first can
@@ -534,7 +541,9 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 2. Make canvas-to-video export cheap enough for video-call effects: a
    faster farbling loop, or noise applied on the GPU in the copy that
    `captureStream` / `VideoFrame` already do.
-3. The channel-vote weakness of the canvas noise (see known attacks).
+3. (Dropped: the channel vote, see known attacks. A real answer to
+   scripts written against the noise is a different design, such as a
+   prompt before canvas readback, not a noise revision.)
 4. Stable keys for third-party shared workers (plumb the constructor
    storage key).
 5. Real letterboxing of MoltNet windows (round the content area itself), then

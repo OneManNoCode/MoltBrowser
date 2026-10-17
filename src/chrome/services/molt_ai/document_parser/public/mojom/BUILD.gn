@@ -1,0 +1,13 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojom") {
+  sources = [ "document_parser.mojom" ]
+
+  public_deps = [
+    "//mojo/public/mojom/base",
+    "//sandbox/policy/mojom",
+  ]
+}

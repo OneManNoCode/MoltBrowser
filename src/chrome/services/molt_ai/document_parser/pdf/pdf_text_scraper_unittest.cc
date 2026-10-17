@@ -1,7 +1,7 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "chrome/browser/molt_ai/pdf/pdf_text_scraper.h"
+#include "chrome/services/molt_ai/document_parser/pdf/pdf_text_scraper.h"
 
 #include <cstdint>
 #include <string>
