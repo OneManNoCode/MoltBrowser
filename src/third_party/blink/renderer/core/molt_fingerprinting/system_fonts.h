@@ -1,0 +1,95 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+//
+// MoltBrowser fingerprinting protection: limits which installed ("system")
+// fonts web content can see (docs/FINGERPRINTING.md, "Fonts"). fonts.h has
+// the rules and the allow-lists; this file applies them to Blink's lookups.
+//
+// Upstream hooks (each marked "MoltBrowser:"):
+//
+//   FontFallbackList::GetFontData, system lookup of a family name
+//     -> FontSelector::GetSystemFontData (new virtual; the default is the
+//        old FontCache lookup) -> CSSFontSelectorBase override (documents,
+//        canvas, OffscreenCanvas and FontFace in workers)
+//                                                  -> GetSystemFontData
+//   CSSFontSelectorBase::IsPlatformFamilyMatchAvailable
+//     (document.fonts.check())           -> IsSystemFontFamilyAvailable
+//   LocalFontFaceSource::IsLocalFontAvailable / CreateFontData
+//     (@font-face / FontFace src: local())         -> AllowLocalFontFace,
+//                                                     AllowInstalledFont
+//   FontAccess::DidGetEnumerationResponse
+//     (window.queryLocalFonts())                   -> AllowEnumeratedFont
+//
+// Per execution context (see SystemFontVisibility):
+//   * protection off, non-http(s) top-level site, or Shields off (kFarble):
+//     every installed font, exactly as upstream;
+//   * kUniform (MoltNet): the allow-list;
+//   * kFarble with a stable per-site key: the allow-list plus the site's
+//     sample (FontVisibility::IsSampled);
+//   * kFarble with a random per-context key (opaque top-level sites, SVG
+//     images, third-party shared workers, ...): the allow-list only, so
+//     creating many such contexts can't add up their samples.
+// Generic families (serif, sans-serif, monospace, cursive, fantasy,
+// system-ui, math, -webkit-body) and the fonts the user picked for them in
+// settings are never restricted; neither are web fonts (src: url()) or the
+// per-character system fallback.
+
+#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_SYSTEM_FONTS_H_
+#define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_SYSTEM_FONTS_H_
+
+#include <optional>
+#include <string_view>
+
+#include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/fonts.h"
+
+namespace blink {
+
+class AtomicString;
+class ExecutionContext;
+class FontDescription;
+class FontFamily;
+class SimpleFontData;
+
+namespace molt_fingerprinting {
+
+// The fonts `context` may see. Cached per worker and per document (a
+// window's entry is recomputed for its next document; MoltShield reloads
+// the page when Shields are toggled). A null context in a protecting
+// process gets the allow-list.
+CORE_EXPORT FontVisibility SystemFontVisibility(ExecutionContext* context);
+
+// The installed font that `family` names, as FontCache::GetFontData() finds
+// it, or null when there is none or `context` may not see it. Generic
+// families are never restricted.
+CORE_EXPORT const SimpleFontData* GetSystemFontData(
+    ExecutionContext* context,
+    const FontDescription& font_description,
+    const FontFamily& family);
+
+// document.fonts.check(): whether the non-generic `family` names a font
+// `context` may see, or nullopt when `context` sees every font (then the
+// caller keeps its own answer).
+CORE_EXPORT std::optional<bool> IsSystemFontFamilyAvailable(
+    ExecutionContext* context,
+    const FontDescription& font_description,
+    const FontFamily& family);
+
+// src: local(`unique_name`): whether the face it names (full or PostScript
+// name) belongs to a family `context` may see.
+CORE_EXPORT bool AllowLocalFontFace(ExecutionContext* context,
+                                    const FontDescription& font_description,
+                                    const AtomicString& unique_name);
+// Whether `context` may use the installed font `font_data`.
+CORE_EXPORT bool AllowInstalledFont(ExecutionContext* context,
+                                    const SimpleFontData& font_data);
+
+// queryLocalFonts(): whether to report a font of family `family` (UTF-8, as
+// the browser enumerated it).
+CORE_EXPORT bool AllowEnumeratedFont(ExecutionContext* context,
+                                     std::string_view family);
+
+}  // namespace molt_fingerprinting
+}  // namespace blink
+
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_SYSTEM_FONTS_H_

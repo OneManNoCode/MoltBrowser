@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/blink/public/web/web_shared_worker.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/public/web/web_shared_worker.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/public/web/web_shared_worker.h b/third_party/blink/public/web/web_shared_worker.h
+index afadb2f8c33436ce709ecd5c22c4efad3f619324..41651ec2b69f83800bb1dfcba8e55ae75a1545e5 100644
+--- a/third_party/blink/public/web/web_shared_worker.h
++++ b/third_party/blink/public/web/web_shared_worker.h
+@@ -56,6 +56,7 @@
+ namespace blink {
+ 
+ class MessagePortDescriptor;
++class StorageKey;  // MoltBrowser
+ class WebString;
+ class WebSharedWorkerClient;
+ class WebURL;
+@@ -102,7 +103,10 @@ class BLINK_EXPORT WebSharedWorker {
+           coep_reporting_observer,
+       CrossVariantMojoReceiver<mojom::ReportingObserverInterfaceBase>
+           dip_reporting_observer,
+-      bool is_cross_origin_isolated);
++      bool is_cross_origin_isolated,
++      // MoltBrowser: the constructor's storage key, as the browser sent it
++      // (fingerprinting protection uses its top-level site).
++      const StorageKey& constructor_key);
+ 
+   // Sends a connect event to the SharedWorker context.
+   virtual void Connect(int connection_request_id,

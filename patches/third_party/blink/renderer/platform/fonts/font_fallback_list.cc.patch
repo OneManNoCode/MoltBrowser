@@ -1,0 +1,22 @@
+MoltBrowser patch for third_party/blink/renderer/platform/fonts/font_fallback_list.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/fonts/font_fallback_list.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/fonts/font_fallback_list.cc b/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
+index a35f4d61b28cdcd3c878726fa36cbb0f1b69e2bd..35b9758bc26b27c6809d5403b2d15fd840ba7ee1 100644
+--- a/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
++++ b/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
+@@ -169,8 +169,9 @@ const FontData* FontFallbackList::GetFontData(
+         font_selector_->GetFontData(font_description, *curr_family);
+     // Don't query system fonts for empty font family name.
+     if (!result && !curr_family->FamilyName().empty()) {
+-      result = FontCache::Get().GetFontData(font_description,
+-                                            curr_family->FamilyName());
++      // MoltBrowser: through the selector, which may hide installed fonts.
++      result = font_selector_->GetSystemFontData(font_description,
++                                                 *curr_family);
+     }
+     if (result) {
+       return result;

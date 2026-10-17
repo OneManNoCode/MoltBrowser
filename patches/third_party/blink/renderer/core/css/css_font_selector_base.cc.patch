@@ -1,0 +1,43 @@
+MoltBrowser patch for third_party/blink/renderer/core/css/css_font_selector_base.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/css/css_font_selector_base.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/css/css_font_selector_base.cc b/third_party/blink/renderer/core/css/css_font_selector_base.cc
+index 65b35128ff752f9ed1151166587c671cdddbbcab..74ef5c635e3538fedbae34bdd2f70c99ff4b3467 100644
+--- a/third_party/blink/renderer/core/css/css_font_selector_base.cc
++++ b/third_party/blink/renderer/core/css/css_font_selector_base.cc
+@@ -7,6 +7,7 @@
+ #include "build/build_config.h"
+ #include "third_party/blink/renderer/core/css/css_segmented_font_face.h"
+ #include "third_party/blink/renderer/core/frame/web_feature.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+ #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+@@ -29,11 +30,24 @@ bool CSSFontSelectorBase::IsPlatformFamilyMatchAvailable(
+   AtomicString family = FamilyNameFromSettings(font_description, passed_family);
+   if (family.empty()) {
+     family = passed_family.FamilyName();
++    // MoltBrowser: hidden installed fonts don't match (system_fonts.h).
++    if (auto available = molt_fingerprinting::IsSystemFontFamilyAvailable(
++            GetExecutionContext(), font_description, passed_family)) {
++      return *available;
++    }
+   }
+   return FontCache::Get().IsPlatformFamilyMatchAvailable(font_description,
+                                                          family);
+ }
+ 
++// MoltBrowser: installed fonts hidden from web content stay hidden.
++const SimpleFontData* CSSFontSelectorBase::GetSystemFontData(
++    const FontDescription& font_description,
++    const FontFamily& family) {
++  return molt_fingerprinting::GetSystemFontData(GetExecutionContext(),
++                                                font_description, family);
++}
++
+ void CSSFontSelectorBase::ReportNotDefGlyph() const {
+   UseCounter::Count(GetUseCounter(),
+                     WebFeature::kFontShapingNotDefGlyphObserved);

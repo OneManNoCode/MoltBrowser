@@ -1,0 +1,20 @@
+MoltBrowser patch for third_party/blink/renderer/core/css/css_font_selector_base.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/css/css_font_selector_base.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/css/css_font_selector_base.h b/third_party/blink/renderer/core/css/css_font_selector_base.h
+index b44a2d8053736f595f66a5781d7fbc9bb4b884be..50b8348b6b81753731bb8a989211a62195a0d4b8 100644
+--- a/third_party/blink/renderer/core/css/css_font_selector_base.h
++++ b/third_party/blink/renderer/core/css/css_font_selector_base.h
+@@ -24,6 +24,9 @@ class CORE_EXPORT CSSFontSelectorBase : public FontSelector {
+  public:
+   bool IsPlatformFamilyMatchAvailable(const FontDescription&,
+                                       const FontFamily& family) override;
++  // MoltBrowser: molt_fingerprinting/system_fonts.h.
++  const SimpleFontData* GetSystemFontData(const FontDescription&,
++                                          const FontFamily& family) override;
+ 
+   void WillUseFontData(const FontDescription&,
+                        const FontFamily& family,

@@ -1,0 +1,22 @@
+MoltBrowser patch for third_party/blink/renderer/platform/fonts/font_selector.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/fonts/font_selector.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/fonts/font_selector.cc b/third_party/blink/renderer/platform/fonts/font_selector.cc
+index 9b0055dd231b10b41b5010dab0702374589d330f..d8aba9ff23bfd16636dda038e80df5b9de2dcfd3 100644
+--- a/third_party/blink/renderer/platform/fonts/font_selector.cc
++++ b/third_party/blink/renderer/platform/fonts/font_selector.cc
+@@ -110,4 +110,11 @@ FontFallbackMap& FontSelector::GetFontFallbackMap() {
+   return *font_fallback_map_;
+ }
+ 
++// MoltBrowser: the lookup FontFallbackList used to do itself.
++const SimpleFontData* FontSelector::GetSystemFontData(
++    const FontDescription& font_description,
++    const FontFamily& family) {
++  return FontCache::Get().GetFontData(font_description, family.FamilyName());
++}
++
+ }  // namespace blink

@@ -26,6 +26,22 @@
 //   MoltNet  Screen::GetRect/colorDepth/isExtended,
 //            LocalDOMWindow::outer{Width,Height}/screen{X,Y},
 //            MouseEvent::SetCoordinatesFromWebPointerProperties
+//   workers  WebSharedWorkerImpl::StartWorkerContext (storage key from
+//              content's EmbeddedSharedWorkerStub)   -> ProvideToSharedWorker
+//                                                       (shared_worker_key.h)
+//   MoltNet  WebGL getParameter limits, getSupportedExtensions/getExtension,
+//            getShaderPrecisionFormat, getInternalformatParameter(SAMPLES);
+//            WebGPU GPU::RequestAdapterImpl          -> gpu_uniformity.h
+//   fonts    FontFallbackList::GetFontData (system lookup)
+//              -> FontSelector::GetSystemFontData, overridden by
+//                 CSSFontSelectorBase               -> GetSystemFontData
+//            CSSFontSelectorBase::IsPlatformFamilyMatchAvailable
+//              (document.fonts.check())    -> IsSystemFontFamilyAvailable
+//            LocalFontFaceSource::IsLocalFontAvailable,
+//              CreateFontData                       -> AllowLocalFontFace,
+//                                                      AllowInstalledFont
+//            FontAccess::DidGetEnumerationResponse -> AllowEnumeratedFont
+//            (all in system_fonts.h)
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:
@@ -35,10 +51,11 @@
 //     key);
 //   * dedicated workers (nested too): the site of the top-level frame's
 //     origin, which Blink already threads through to every dedicated worker;
-//   * first-party shared and service workers (their storage key is not
-//     partitioned, so its top-level site is the worker's own site): that
-//     site. Third-party ones get a random key of their own (unlinkable, but
-//     not stable across worker restarts) -- see docs/FINGERPRINTING.md;
+//   * service and shared workers, first- and third-party: the top-level site
+//     of their storage key (plus its nonce, if any), handed over by the
+//     browser before any of their script runs (SetServiceWorkerStorageKey,
+//     and ProvideToSharedWorker in shared_worker_key.h). A third-party worker
+//     under a.example thus shares a.example's key with the pages it serves;
 //   * worklets: the key of the document that created them, handed over at
 //     creation (ProvideToWorklet);
 //   * contexts whose top-level site isn't http(s) (chrome://, extensions)
@@ -240,6 +257,14 @@ CORE_EXPORT ExecutionContext* ContextOfCurrentCall(v8::Isolate* isolate);
 // [2, real]. Otherwise `real`.
 CORE_EXPORT unsigned HardwareConcurrency(ExecutionContext* context,
                                          unsigned real);
+
+// --- Fonts (system_fonts.h) -------------------------------------------------
+
+// FarblerFor(), plus whether its key is the context's stable per-site key
+// (false for the random keys of opaque contexts and of contexts that needed
+// a key before the seed arrived, and for worklets' handed-over keys).
+CORE_EXPORT std::optional<Farbler> SiteFarblerFor(ExecutionContext* context,
+                                                  bool* is_site_key);
 
 // --- MoltNet uniformity -----------------------------------------------------
 

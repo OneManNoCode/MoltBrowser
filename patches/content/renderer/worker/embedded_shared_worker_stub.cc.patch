@@ -1,0 +1,22 @@
+MoltBrowser patch for content/renderer/worker/embedded_shared_worker_stub.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/renderer/worker/embedded_shared_worker_stub.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/renderer/worker/embedded_shared_worker_stub.cc b/content/renderer/worker/embedded_shared_worker_stub.cc
+index 1c6d965d9464449b401f0be801e65d9ac1cd7020..9184c80d14865f72463ab767931efbfa54326dea 100644
+--- a/content/renderer/worker/embedded_shared_worker_stub.cc
++++ b/content/renderer/worker/embedded_shared_worker_stub.cc
+@@ -141,7 +141,10 @@ EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
+       std::move(web_worker_fetch_context), std::move(host), this, ukm_source_id,
+       require_cross_site_request_for_cookies,
+       std::move(coep_reporting_observer), std::move(dip_reporting_observer),
+-      cross_origin_isolated);
++      cross_origin_isolated,
++      // MoltBrowser: Blink is otherwise only told the key's origin, and
++      // fingerprinting protection needs its top-level site.
++      constructor_key);
+ 
+   // If the host drops its connection, then self-destruct.
+   receiver_.set_disconnect_handler(base::BindOnce(

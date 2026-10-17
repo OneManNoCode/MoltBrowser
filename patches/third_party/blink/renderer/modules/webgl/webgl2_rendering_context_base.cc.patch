@@ -5,18 +5,31 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
-index 1e2b512f07644b42e80b4fb677c40ce103185df8..8ee3cf102ab997c73a2e6122449ee05744f66a87 100644
+index 1e2b512f07644b42e80b4fb677c40ce103185df8..074341e7198d34305e2a46b518d4ec119b172af7 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
-@@ -22,6 +22,7 @@
+@@ -22,6 +22,8 @@
  #include "third_party/blink/renderer/core/html/html_image_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
  #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/gpu_uniformity.h"  // MoltBrowser
 +#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
  #include "third_party/blink/renderer/modules/webgl/webgl_active_info.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_buffer.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_fence_sync.h"
-@@ -922,6 +923,11 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
+@@ -659,7 +661,10 @@ ScriptValue WebGL2RenderingContextBase::getInternalformatParameter(
+       auto values = base::HeapArray<GLint>::WithSize(length);
+       ContextGL()->GetInternalformativ(target, internalformat, GL_SAMPLES,
+                                        length, values.data());
+-      return WebGLAny(script_state, DOMInt32Array::Create(values));
++      // MoltBrowser: no sample counts above MoltNet's MAX_SAMPLES baseline.
++      const size_t shown = molt_fingerprinting::UniformSampleCounts(
++          Host()->GetTopExecutionContext(), values);
++      return WebGLAny(script_state, DOMInt32Array::Create(values.first(shown)));
+     }
+     default:
+       SynthesizeGLError(GL_INVALID_ENUM, "getInternalformatParameter",
+@@ -922,6 +927,11 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
      ContextGL()->ReadPixels(x, y, width, height, format, type,
                              reinterpret_cast<void*>(offset));
    }
@@ -28,3 +41,13 @@ index 1e2b512f07644b42e80b4fb677c40ce103185df8..8ee3cf102ab997c73a2e6122449ee057
  }
  
  void WebGL2RenderingContextBase::RenderbufferStorageHelper(
+@@ -5060,6 +5070,9 @@ ScriptValue WebGL2RenderingContextBase::GetInt64Parameter(
+   GLint64 value = 0;
+   if (!isContextLost())
+     ContextGL()->GetInteger64v(pname, &value);
++  // MoltBrowser: MoltNet windows report fixed baselines for limits.
++  value = molt_fingerprinting::UniformWebGLInt64(
++      Host()->GetTopExecutionContext(), pname, value);
+   return WebGLAny(script_state, value);
+ }
+ 
