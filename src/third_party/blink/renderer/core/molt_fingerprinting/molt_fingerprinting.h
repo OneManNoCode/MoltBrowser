@@ -26,6 +26,9 @@
 //   MoltNet  Screen::GetRect/colorDepth/isExtended,
 //            LocalDOMWindow::outer{Width,Height}/screen{X,Y},
 //            MouseEvent::SetCoordinatesFromWebPointerProperties
+//   workers  WebSharedWorkerImpl::StartWorkerContext (storage key from
+//              content's EmbeddedSharedWorkerStub)   -> ProvideToSharedWorker
+//                                                       (shared_worker_key.h)
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:
@@ -35,10 +38,11 @@
 //     key);
 //   * dedicated workers (nested too): the site of the top-level frame's
 //     origin, which Blink already threads through to every dedicated worker;
-//   * first-party shared and service workers (their storage key is not
-//     partitioned, so its top-level site is the worker's own site): that
-//     site. Third-party ones get a random key of their own (unlinkable, but
-//     not stable across worker restarts) -- see docs/FINGERPRINTING.md;
+//   * service and shared workers, first- and third-party: the top-level site
+//     of their storage key (plus its nonce, if any), handed over by the
+//     browser before any of their script runs (SetServiceWorkerStorageKey,
+//     and ProvideToSharedWorker in shared_worker_key.h). A third-party worker
+//     under a.example thus shares a.example's key with the pages it serves;
 //   * worklets: the key of the document that created them, handed over at
 //     creation (ProvideToWorklet);
 //   * contexts whose top-level site isn't http(s) (chrome://, extensions)
