@@ -23,8 +23,10 @@
 //     (base::IsStringUTF8) fail the call, and the text is cut to the call's
 //     max_chars.
 //
-// Still outside a sandbox (tracked separately): OCR of scans and images runs
-// the bundled tesseract as an unsandboxed helper process (molt_ai/ocr), and
+// Not here: OCR of scans and images runs tesseract as a helper process
+// under its own OS-level sandbox and deadline (molt_ai/ocr,
+// molt_ai/common/helper_sandbox.h), which is looser than this one (and on
+// Windows confines no files). Still outside a sandbox (tracked separately):
 // llama.cpp inference runs in the browser process (molt_ai/runtime).
 //
 // The service keeps no profile state, so incognito and MoltNet profiles need

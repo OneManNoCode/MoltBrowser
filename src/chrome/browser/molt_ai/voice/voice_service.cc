@@ -13,12 +13,12 @@
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
-#include "base/process/launch.h"
 #include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
 #include "chrome/browser/molt_ai/common/helper_output.h"
+#include "chrome/browser/molt_ai/common/helper_sandbox.h"
 
 namespace molt_ai {
 namespace voice {
@@ -42,6 +42,15 @@ namespace {
 std::vector<std::string> SystemWhisperPaths() {
   return {"/usr/bin/whisper-cli"};
 }
+
+// The deadline for one transcription. Recordings are at most ~3 minutes (8
+// MiB of base64 WAV, HandleTranscribeAudio); whisper's tiny model runs
+// faster than real time even on slow CPUs.
+constexpr base::TimeDelta kWhisperTimeout = base::Seconds(300);
+
+// whisper's stdout and stderr kept per run, and the most of its .txt read
+// back: an hour of speech is well under 1 MiB of text.
+constexpr size_t kMaxWhisperOutputBytes = 1u << 20;
 
 // Sync, blocking: write WAV to a temp file, run whisper-cli, capture
 // stdout, delete the temp file. Returns the transcription text or
@@ -87,6 +96,8 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   // Build the command line. -nt = no timestamps (clean text output),
   // -np = no prints (suppress chatter on stderr), -l auto = auto
   // language detect, -of <stem> writes <stem>.txt next to the audio.
+  // -ng = CPU only: the sandbox gives whisper no GPU (Metal, /dev/dri), so
+  // don't let it probe one.
   base::FilePath out_stem = wav_path.RemoveExtension();
   base::CommandLine cmd(bin);
   if (!model.value().empty()) {
@@ -95,6 +106,7 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   }
   cmd.AppendArg("-nt");
   cmd.AppendArg("-np");
+  cmd.AppendArg("-ng");
   cmd.AppendArg("-l");
   cmd.AppendArg("auto");
   cmd.AppendArg("-otxt");
@@ -103,30 +115,34 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   cmd.AppendArg("-f");
   cmd.AppendArgPath(wav_path);
 
-  std::string combined_output;
-  int exit_code = -1;
-  bool launched =
-      base::GetAppOutputWithExitCode(cmd, &combined_output, &exit_code);
-  if (!launched) {
-    r.error = "failed to launch whisper subprocess";
-    base::DeletePathRecursively(scratch_dir);
-    return r;
+  // Sandboxed (helper_sandbox.h): it reads its own directory (and model)
+  // and the audio, writes only the scratch directory, has no network, and
+  // is killed after kWhisperTimeout.
+  molt_ai::HelperSandboxPolicy policy;
+  policy.read_only_paths.push_back(bin.DirName());
+  if (!model.value().empty()) {
+    policy.read_only_paths.push_back(model);
   }
-  if (exit_code != 0) {
-    r.error = "whisper exit=" + std::to_string(exit_code) + ": " +
-              SanitizeHelperText(combined_output, 200);
+  policy.read_only_paths.push_back(wav_path);
+  policy.writable_dir = scratch_dir;
+  const molt_ai::HelperRunResult run = molt_ai::RunSandboxedHelper(
+      cmd, policy, kWhisperTimeout, kMaxWhisperOutputBytes);
+  const std::string failure = molt_ai::DescribeHelperRunFailure(
+      run, "whisper", "failed to launch whisper subprocess");
+  if (!failure.empty()) {
+    r.error = failure;
     base::DeletePathRecursively(scratch_dir);
     return r;
   }
 
-  // Read the transcription file whisper-cli wrote next to the audio.
+  // Read the transcription file whisper-cli wrote next to the audio (only
+  // if it is a plain file it made).
   base::FilePath txt_path = out_stem.AddExtensionASCII(".txt");
   std::string transcription;
-  if (base::PathExists(txt_path)) {
-    base::ReadFileToString(txt_path, &transcription);
-  } else {
+  if (!molt_ai::ReadHelperOutputFile(txt_path, kMaxWhisperOutputBytes,
+                                     &transcription)) {
     // Older whisper builds dump stdout directly. Use that as fallback.
-    transcription = combined_output;
+    transcription = run.output;
   }
   base::DeletePathRecursively(scratch_dir);
 

@@ -54,6 +54,7 @@
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/common/helper_output.h"
+#include "chrome/browser/molt_ai/common/helper_sandbox.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
@@ -3910,7 +3911,8 @@ void MoltAIChatHandler::OnPdfTextLayer(std::string callback_id,
       out.Set("source", "text_layer");
     } else {
       // The parser crashed, hung or misbehaved on this document: never
-      // hand it on to the (unsandboxed) OCR helper.
+      // hand it on to the OCR helper too (its sandbox is looser, and on
+      // Windows confines no files).
       out.Set("success", false);
       out.Set("error", "couldn't read this PDF: " + result.error);
     }
@@ -5586,11 +5588,11 @@ base::DictValue MakeAttachmentSuccess(std::string text) {
 }
 
 // OCR an image via tesseract. Reuses OcrService's public binary
-// resolution (bundled Resources/ocr first, then system paths) and
-// replicates its exact subprocess invocation from RunTesseractBlocking
-// — the service's only entry point is OcrPdf, which hard-codes an
-// input.pdf temp name; images just need a different extension (and are
-// tesseract's native input). Runs on a MayBlock worker.
+// resolution (bundled Resources/ocr first, then system paths) and its
+// sandboxed invocation (molt_ai::ocr::RunSandboxedTesseract) — the
+// service's only entry point is OcrPdf, which hard-codes an input.pdf temp
+// name; images just need a different extension (and are tesseract's native
+// input). Runs on a MayBlock worker.
 base::DictValue OcrImageBlocking(const std::string& image_bytes,
                                  const std::string& ext) {
   auto* svc = molt_ai::ocr::OcrService::Get();
@@ -5617,35 +5619,22 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
     base::DeletePathRecursively(scratch_dir);
     return MakeAttachmentError("could not write temp image");
   }
+  // Sandboxed, with a deadline (helper_sandbox.h).
   const base::FilePath out_stem = named.RemoveExtension();
-  base::CommandLine cmd(bin);
-  cmd.AppendArgPath(named);
-  cmd.AppendArgPath(out_stem);
-  cmd.AppendArg("-l");
-  cmd.AppendArg("eng");
-  if (!tessdata.value().empty()) {
-    cmd.AppendArg("--tessdata-dir");
-    cmd.AppendArgPath(tessdata.AppendASCII("tessdata"));
-  }
-  std::string combined;
-  int exit_code = -1;
-  const bool launched =
-      base::GetAppOutputWithExitCode(cmd, &combined, &exit_code);
-  if (!launched) {
+  const molt_ai::HelperRunResult run = molt_ai::ocr::RunSandboxedTesseract(
+      bin, tessdata, scratch_dir, named, out_stem,
+      molt_ai::ocr::kImageOcrTimeout);
+  const std::string failure = molt_ai::DescribeHelperRunFailure(
+      run, "tesseract", "failed to launch tesseract");
+  if (!failure.empty()) {
     base::DeletePathRecursively(scratch_dir);
-    return MakeAttachmentError("failed to launch tesseract");
+    return MakeAttachmentError(failure);
   }
-  if (exit_code != 0) {
-    base::DeletePathRecursively(scratch_dir);
-    return MakeAttachmentError("tesseract exit=" +
-                               std::to_string(exit_code) + ": " +
-                               molt_ai::SanitizeHelperText(combined, 200));
-  }
-  const base::FilePath txt = out_stem.AddExtensionASCII(".txt");
+  // Only a plain file tesseract made itself.
   std::string text;
-  if (base::PathExists(txt)) {
-    base::ReadFileToString(txt, &text);
-  }
+  molt_ai::ReadHelperOutputFile(out_stem.AddExtensionASCII(".txt"),
+                                molt_ai::ocr::kMaxTesseractTextFileBytes,
+                                &text);
   base::DeletePathRecursively(scratch_dir);
   if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
     return MakeAttachmentError("OCR returned no text");
@@ -5816,7 +5805,8 @@ void MoltAIChatHandler::ParseAttachmentPdf(const std::string& callback_id,
             }
             if (r.status == Status::kFailed) {
               // The parser crashed, hung or misbehaved on this document:
-              // never hand it on to the (unsandboxed) OCR helper.
+              // never hand it on to the OCR helper too (its sandbox is
+              // looser, and on Windows confines no files).
               self->ResolveJavascriptCallback(
                   base::Value(cb_id),
                   base::Value(MakeAttachmentError(

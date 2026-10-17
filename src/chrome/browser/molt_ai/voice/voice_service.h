@@ -22,6 +22,12 @@
 // dedicated temp file under TMPDIR with a random suffix, delete it
 // after transcription, and never network anything.
 //
+// whisper-cli parses the audio (untrusted bytes) under the helper sandbox
+// (helper_sandbox.h): it may read its own directory and model and the
+// audio, write only a private per-call scratch directory, never use the
+// network, and is killed after 300 s. It runs on the CPU (-ng): the
+// sandbox gives it no GPU.
+//
 // Threading: public methods are UI-thread. Actual subprocess invoke
 // runs on a MayBlock thread-pool task; completion bounces back.
 
