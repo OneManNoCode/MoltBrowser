@@ -935,6 +935,24 @@ unsigned HardwareConcurrency(ExecutionContext* context, unsigned real) {
   return real;
 }
 
+std::optional<Farbler> SiteFarblerFor(ExecutionContext* context,
+                                      bool* is_site_key) {
+  *is_site_key = false;
+  const std::optional<SiteKey> key = SiteKeyFor(context);
+  if (!key) {
+    return std::nullopt;
+  }
+  // SiteKeyFor() keeps every key it made in the context's state; only a key
+  // derived from a site has a non-null `site_and_partition`. Handed-over
+  // worklet keys have no state.
+  if (const MoltFarblingState* state =
+          Supplement<ExecutionContext>::From<MoltFarblingState>(*context)) {
+    *is_site_key = state->has_key && !state->pinned_random &&
+                   !state->site_and_partition.IsNull();
+  }
+  return Farbler(*key);
+}
+
 std::optional<gfx::Rect> UniformScreenRect(LocalFrame* frame) {
   if (!IsUniform() || !frame) {
     return std::nullopt;

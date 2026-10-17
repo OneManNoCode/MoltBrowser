@@ -43,8 +43,8 @@ Does not protect against (see [Known gaps and attacks](#known-gaps-and-attacks))
 * local attackers who can read a renderer's memory (the seed is no longer
   on the command line, but it is in every renderer of the profile);
 * a compromised renderer;
-* fingerprinting surfaces outside the list below (fonts, WebGL parameters,
-  WebGPU rendering, `GPUAdapter.info`, ...).
+* fingerprinting surfaces outside the list below (font fallback and text
+  metrics, WebGL parameters, WebGPU rendering, `GPUAdapter.info`, ...).
 
 ## How it works
 
@@ -244,6 +244,11 @@ video pipelines, PBO readback).
 | `OffscreenCanvas.transferToImageBitmap()`, `createImageBitmap(canvas)` | covered where the bitmap is read (see below) | same | - |
 | HTML-in-canvas (`drawElementImage`, WebGL `texElementImage2D`, WebGPU `copyElementImageToTexture`) | **off**: the `HTMLInCanvas` origin trial's tokens are refused (only `chrome://flags` turns it on) | same | `origin_trial_policy_impl.cc`: `IsFeatureDisabled` |
 | `WEBGL_debug_renderer_info` | real | **unavailable** (null from `getExtension`, absent from `getSupportedExtensions`) | `webgl_debug_renderer_info.cc`: `Supported` |
+| WebGL limits (`getParameter` `MAX_*`, ranges, `MAX_VIEWPORT_DIMS`, ...), `getShaderPrecisionFormat`, `getInternalformatParameter(SAMPLES)` | real | **fixed baselines**, never above the real value ([details](#webgl-and-webgpu-in-moltnet-windows)) | `webgl_rendering_context_base.cc`, `webgl2_rendering_context_base.cc` |
+| WebGL extensions (`getSupportedExtensions`, `getExtension`) | real | **fixed allow-list of 23**, intersected with the GPU's | `webgl_rendering_context_base.cc`: `ExtensionSupportedAndAllowed` |
+| WebGPU `navigator.gpu.requestAdapter()` | real | **null** (no adapter) | `gpu.cc`: `RequestAdapterImpl` |
+| Installed fonts: CSS `font-family`, canvas text, `document.fonts.check()`, `local()` | per-OS allow-list + 1 in 16 of the others, per site | **per-OS allow-list** ([details](#fonts)) | `font_fallback_list.cc`, `font_selector.{h,cc}`, `css_font_selector_base.{h,cc}`, `local_font_face_source.cc` |
+| `queryLocalFonts()` (after its permission prompt) | filtered like CSS | filtered like CSS | `font_access.cc`: `DidGetEnumerationResponse` |
 | `AudioBuffer.getChannelData()`, `copyFromChannel()` (incl. `OfflineAudioContext` results and `ScriptProcessorNode`'s `inputBuffer`/`outputBuffer`) | farbled | farbled | `audio_buffer.cc` (binding entry points only) |
 | `AudioWorkletProcessor.process()` `inputs` | farbled | farbled | `audio_worklet_processor.cc`: `CopyPortToArrayBuffers` |
 | `AnalyserNode.get{Float,Byte}{Frequency,TimeDomain}Data()` | farbled | farbled | `analyser_node.cc` |
@@ -634,6 +639,187 @@ running WebGL report pages (e.g. webglreport.com, three.js and Babylon.js
 examples, a KTX2 sample) and a WebGPU sample (null adapter, WebGL fallback)
 on a Mac, a Windows and a Linux machine, comparing their reports.
 
+## Fonts
+
+The set of installed font families is one of the strongest fingerprinting
+signals: a page that draws text in `font-family: "X", monospace` and
+compares widths, declares `@font-face { src: local("X") }`, calls
+`document.fonts.check()`, measures or draws text on a canvas, or calls
+`queryLocalFonts()` can test hundreds of families in a few milliseconds.
+So protected contexts only see some installed ("system") families:
+
+| Context | Installed families it can name |
+|---|---|
+| MoltNet window | the platform's **allow-list** only: the same for every MoltNet user on that OS |
+| Normal / Incognito window, web site | the allow-list plus the site's **sample**: each other family name is in it with probability 1/16, decided by `PRF(site key, name)`, so stable within a site and session, unrelated across sites and sessions |
+| Normal / Incognito, a context with a random key (opaque top-level site, SVG image document, third-party shared worker, a context that started before the seed) | the allow-list only (a per-context random sample could be summed over many such contexts) |
+| Shields off (normal / Incognito), non-http(s) top-level site, protection off | every font, exactly as upstream |
+
+Never affected: generic families (`serif`, `sans-serif`, `monospace`,
+`cursive`, `fantasy`, `system-ui`, `math`, `-webkit-body`) and the fonts the
+user chose for them in settings, web fonts (`src: url()`, `FontFace` from
+data), and the per-character system fallback.
+
+**How a lookup is decided** (`molt_fingerprinting/fonts.{h,cc}`, pure logic;
+`system_fonts.{h,cc}`, Blink glue). Names are compared after lower-casing
+ASCII letters and dropping ASCII whitespace (fontconfig ignores blanks too);
+other code points are compared as they are, in Latin-1, UTF-8 or UTF-16
+without copying. A family lookup is allowed only if **both** the requested
+name and the family the platform resolved it to (`SkTypeface::getFamilyName`,
+cached per typeface) are visible:
+
+* the resolved family stops aliases, localized, full and PostScript names,
+  fontconfig rules and Windows suffix matching ("Segoe UI Semibold" ->
+  Segoe UI) from reaching a hidden family;
+* the requested name keeps platform aliasing from telling machines apart.
+  On Linux, `Arial` is the real Arial on a machine with msttcorefonts and
+  Liberation Sans (fontconfig's metric alias) elsewhere; Blink itself
+  substitutes Arial for a missing Helvetica, Courier New for Courier, and so
+  on. Such names are listed as aliases and protected contexts look up the
+  listed family instead (Liberation Sans, Arial, ...), so every machine gets
+  the same answer. In a normal window an alias whose name is in the site's
+  sample is looked up as is.
+* A hidden name is not looked up at all, so an installed hidden font and a
+  missing font are indistinguishable, in result and in timing.
+
+`system-ui` is never restricted, also when Blink uses it as a family name
+(quoted, or macOS's `BlinkMacSystemFont`): it is the platform UI font, which
+the generic `system-ui` already shows.
+
+**The allow-lists** (`font_allowlists.cc`) hold, per OS, the families every
+supported version installs by default; a font missing on some supported
+version would split users, so the lists err on the small side (a missing
+entry only costs compatibility: the page falls back to its next family).
+
+* Windows 10 (22H2) and 11: the intersection of Microsoft's published
+  Windows 10 and Windows 11 font lists, without the "Features on Demand"
+  supplemental fonts (Meiryo, MS Mincho, SimHei, Gulim, Arial Nova, ...;
+  installed with some display languages only) and without the Windows 11
+  additions (Segoe UI Variable, Segoe Fluent Icons, Cascadia Code / Mono).
+  Also the legacy per-weight family names DirectWrite reports (Segoe UI
+  Semibold, Bahnschrift Light, ...) and the localized names of the default
+  CJK fonts (MS Gothic, Yu Gothic, SimSun, Microsoft YaHei / JhengHei,
+  MingLiU-ExtB, Malgun Gothic). Aliases: Helvetica, Times, Courier,
+  MS Sans Serif, MS Serif (Blink's own substitutions).
+* macOS 13, 14 and 15: the families installed in `/System/Library/Fonts`
+  and `/System/Library/Fonts/Supplemental` per Apple's published font lists
+  for those releases, not the ones macOS downloads on demand; plus a few
+  PostScript names sites use (`HelveticaNeue-Light`, `HiraKakuProN-W3`, ...)
+  and localized names of the CJK families. The long tail of rarely named
+  script fonts (Noto Sans Adlam, Noto Sans Bamum, ...) is left out.
+* Linux: only what mainstream desktop distributions all install: DejaVu
+  (Sans, Serif, Sans Mono, Condensed, Light), Liberation 2 (Sans, Serif,
+  Mono) and Noto (Sans, Serif, Sans Mono, Color Emoji). Aliases: Arial,
+  Helvetica, Times New Roman, Times, Courier New, Courier -> Liberation.
+* Android: the families and aliases of AOSP's `fonts.xml` (OEM additions
+  are not listed; users can't install system fonts).
+
+The lists were built from the vendors' published lists and default installs
+(no other browser's list or code was used); the Windows and macOS lists
+still need checking against fresh installs of each supported version
+(Follow-up 6).
+
+**Sample rate.** A site sees each non-listed installed family with
+probability p. Compatibility needs a large p, but the sample is a
+per-site *view* of a stable fact: two sites can link a visitor through any
+rare family both happen to see, with probability p^2 per family:
+
+| p | extra families a site sees, of 10 / 30 | 2 sites share one, of 10 / 30 |
+|---|---|---|
+| 1/4 | 2.5 / 7.5 | 48% / 86% |
+| 1/8 | 1.25 / 3.75 | 15% / 38% |
+| **1/16** | 0.6 / 1.9 | **3.8% / 11%** |
+| 1/32 | 0.3 / 0.9 | 1.0% / 2.9% |
+
+At no rate that keeps linking rare can a site rely on a font the visitor
+installed, so the sample buys little compatibility; it mostly makes the
+visible set vary per site. MoltBrowser uses **1/16** (`kExtraFontOneIn`):
+cross-site overlap stays small for typical users (Office or Adobe users,
+with dozens of extra but common families, share about one between two
+sites, which says little), and Shields off is the escape hatch when a site
+needs the user's own fonts. The sample is redrawn every session.
+
+**Hooks** (one-to-five-line, each marked `MoltBrowser:`):
+
+| API | Hook (upstream file: function) |
+|---|---|
+| CSS `font-family`, canvas `ctx.font` (`measureText`, `fillText`), OffscreenCanvas and `FontFace` in workers, SVG text | `font_fallback_list.cc`: `GetFontData` asks the selector (`font_selector.{h,cc}`: new virtual `FontSelector::GetSystemFontData`, default = the old `FontCache` lookup), overridden in `css_font_selector_base.{h,cc}` for documents and workers |
+| `document.fonts.check()`, `self.fonts.check()` | `css_font_selector_base.cc`: `IsPlatformFamilyMatchAvailable` |
+| `@font-face` / `FontFace` `src: local()` (and `FontFace.load()`'s status) | `local_font_face_source.cc`: `IsLocalFontAvailable`, `CreateFontData` (unique names match exactly on every platform, so the face's family alone decides) |
+| `queryLocalFonts()` | `font_access.cc`: `DidGetEnumerationResponse` |
+
+**Local Font Access.** `queryLocalFonts()` still needs the permission
+prompt; after it, it returns only the families CSS can use in the same
+context: the allow-list in MoltNet (the same for every MoltNet user on the
+OS), the allow-list plus the site's sample in normal windows, everything
+with Shields off. Design tools that need all of the user's fonts work with
+Shields off for their site.
+
+**Generic families at 152.** Blink parses `serif`, `sans-serif`, `cursive`,
+`fantasy`, `monospace`, `-webkit-body`, `system-ui` and `math` as generic
+families; `CSSFontSelector` maps them through the user's font settings
+(`FontSelector::FamilyNameFromSettings`) and looks the result up directly,
+not through the hook, so they keep working. `system-ui` resolves to the
+platform UI font in `FontCache`. `ui-serif`, `ui-monospace`, `emoji`,
+`fangsong` and the like are not generic families in Blink 152; they are
+plain family names that don't resolve (and are treated as such). Text
+without `font-family` uses the standard-font setting the same way. If the
+user points a default-font setting at a font outside the allow-list, that
+font is still used for that generic and for unstyled text: the user's
+choice wins, and pages can't name it, but see the gaps below.
+
+**Cost.** The visibility of a context is computed once per document or
+worker (string-free afterwards); a decision hashes the name once (linear,
+no allocation), binary-searches the list and, after a successful lookup,
+reads the typeface's family from a 256-entry cache. Toggling Shields applies
+from the next document (MoltShield reloads the page).
+
+**Known gaps (fonts)**
+
+* **Per-character system fallback** (emoji, CJK, rare scripts): a page that
+  renders characters no listed font has gets them from whatever installed
+  font covers them, and can measure that. Out of scope.
+* **Text metrics and rendering**: `measureText()` values and glyph pixels
+  are not noised beyond the canvas noise; hinting, anti-aliasing and font
+  versions differ between machines.
+* **Font settings**: the fonts the user chose for the generic families
+  (and the minimum font size) stay visible through generic families and
+  unstyled text; a page that ships candidate fonts as web fonts can compare
+  metrics and identify them. On Linux, `system-ui` shows the desktop's UI
+  font, and Chromium's default `sans-serif` setting ("Arial") resolves to
+  the real Arial or to Liberation Sans depending on the machine (the same
+  metrics, different glyphs). Some default settings (per-script CJK
+  fonts, `math`) are lists from which Chromium takes the first installed
+  family, so those generics also tell which candidate is installed.
+  MoltNet should eventually pin these settings.
+* Users whose machine lacks an allow-listed font (removed by an
+  administrator, minimal Linux installs) remain distinguishable by that.
+* In normal windows, a sampled name that resolves to a hidden family costs a
+  platform lookup that a page might time.
+* Code paths that build a `Font` without a font selector use `FontCache`
+  directly and aren't filtered; none is known to be reachable from web
+  content (frameless documents refuse canvas fonts).
+
+**Verification.** Standalone (no Chromium checkout): `fonts_unittest.cc`
+(13 tests: normalization in all three encodings, malformed UTF-8/UTF-16,
+list integrity, the sample's rate, stability and cross-site independence,
+uniform mode) passes with g++ (ASan/UBSan) and clang (UBSan trap,
+`-Wunsafe-buffer-usage -Wshorten-64-to-32 -Wimplicit-int-conversion
+-Wexit-time-destructors -Wglobal-constructors -fno-exceptions`), together
+with `farbling_unittest.cc`; `system_fonts.cc` and `molt_fingerprinting.cc`
+type-check with the strict clang flags against stand-ins of the pinned
+Blink/Skia signatures, and a 12-test harness runs the real glue against a
+fake `FontCache` (per-mode visibility, aliases on two simulated machines,
+name tricks, `check()`, `local()`, `queryLocalFonts()` filtering, Shields
+off, random keys, workers, caching); the upstream hook statements
+type-check against stand-ins of their classes. Needs the build machine:
+compiling Blink with the hooks, `blink_unittests` (`MoltSystemFontsTest.*`,
+`MoltFontNameTest.*`, `MoltFontListTest.*`, `MoltFontVisibilityTest.*`),
+and in a running browser on each OS: font-probing pages and suites
+(FingerprintJS, CreepJS font tests) in normal, Incognito and MoltNet
+windows, with Shields on and off; East Asian sites; design tools with
+`queryLocalFonts()`.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
@@ -696,8 +882,9 @@ Honest list; anything not in the table above is not covered.
   compiling ever bigger shaders) still finds the real limits; and the
   results of WebGL rendering and of shader arithmetic still differ by GPU
   under the readback noise.
-* Text metrics and fonts: `measureText()`/`TextMetrics`, font enumeration via
-  layout, `isPointInPath`.
+* Text metrics: `measureText()`/`TextMetrics`, `isPointInPath`. Installed
+  fonts are limited (see [Fonts](#fonts)), but per-character fallback
+  fonts, glyph rendering and the user's font settings still show.
 
 **Context coverage**
 
@@ -829,6 +1016,9 @@ on a canvas-effects video call.
 |---|---|
 | `src/third_party/blink/renderer/core/molt_fingerprinting/farbling.{h,cc}` | pure math (+ `farbling_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.{h,cc}` | Blink glue (+ `molt_fingerprinting_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.{h,cc}` | a shared worker's storage key, handed to its thread (+ `shared_worker_key_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/webgl_uniform.{h,cc}`, `gpu_uniformity.{h,cc}` | MoltNet WebGL baselines (pure, + `webgl_uniform_unittest.cc`) and their Blink glue, incl. WebGPU (+ `gpu_uniformity_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, Shields-off sites) |
 | `src/chrome/common/molt_ai/fingerprinting/` | feature, mode switch, `molt_fingerprinting.mojom` |
 | `src/chrome/browser/molt_ai/fingerprinting/` | session seed, mode switch, seed + sites over mojo, chrome://flags entry |
@@ -850,7 +1040,12 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 `video_frame.cc`, `gpu_queue.cc`, `audio_buffer.cc`, `analyser_node.cc`,
 `audio_worklet_processor.cc`, `threaded_worklet_messaging_proxy.cc`,
 `service_worker_global_scope.cc`, `navigator_base.cc`, `screen.cc`,
-`local_dom_window.cc`, `mouse_event.cc`.
+`local_dom_window.cc`, `mouse_event.cc`; shared workers:
+`content/renderer/worker/embedded_shared_worker_stub.cc`,
+`web_shared_worker.h`, `web_shared_worker_impl.{h,cc}`; MoltNet GPU:
+`gpu.cc` (WebGPU); fonts: `font_selector.{h,cc}`,
+`font_fallback_list.cc`, `css_font_selector_base.{h,cc}`,
+`local_font_face_source.cc`, `font_access.cc`.
 
 ## Follow-ups
 
@@ -868,12 +1063,14 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
    [Shared workers](#shared-workers).)
 5. Real letterboxing of MoltNet windows (round the content area itself), then
    CSS device media queries and `devicePixelRatio`.
-6. Fonts and text metrics (an allow-list of system fonts per platform, as
-   Tor Browser and Brave do). (The WebGL parameter surface and WebGPU in
-   MoltNet are done: fixed WebGL baselines and no WebGPU adapter. Left: a
+6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
+   the Windows and macOS lists against fresh installs of each supported
+   version, pin the generic-font settings in MoltNet, and text metrics /
+   per-character fallback. The WebGL parameter surface and WebGPU in
+   MoltNet are done (fixed WebGL baselines, no WebGPU adapter); left: a
    mobile look at the baselines if MoltNet comes to Android, and checking
    them against the WebGL reports of real Macs, Windows and Linux machines
-   in MoltNet windows.)
+   in MoltNet windows.
 7. Per-document Shields-off delivery instead of a per-profile list.
 8. MoltNet: renderer UI strings and form-control formats in en-US; touch
    coordinates; Window Management API.

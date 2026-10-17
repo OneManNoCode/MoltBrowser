@@ -11,10 +11,13 @@ blink_core_sources_molt_fingerprinting = [
   "shared_worker_key.h",
   "gpu_uniformity.cc",
   "gpu_uniformity.h",
+  "system_fonts.cc",
+  "system_fonts.h",
 ]
 
 blink_core_tests_molt_fingerprinting = [
   "molt_fingerprinting_test.cc",
   "shared_worker_key_test.cc",
   "gpu_uniformity_test.cc",
+  "system_fonts_test.cc",
 ]
