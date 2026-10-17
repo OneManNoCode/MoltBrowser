@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/gpu_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/webgpu/dawn_enum_conversions.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_adapter.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_buffer.h"
@@ -265,6 +266,15 @@ void GPU::RequestAdapterImpl(
     OnRequestAdapterCallback(script_state, options, resolver,
                              wgpu::RequestAdapterStatus::Error, nullptr,
                              "Unknown feature level");
+    return;
+  }
+
+  // MoltBrowser: no adapter (so no GPUAdapter.info, limits or features) in
+  // MoltNet windows; the spec allows that and sites fall back to WebGL.
+  if (molt_fingerprinting::HidesWebGPUAdapter(execution_context)) {
+    OnRequestAdapterCallback(script_state, options, resolver,
+                             wgpu::RequestAdapterStatus::Unavailable, nullptr,
+                             "WebGPU is not available in MoltNet windows");
     return;
   }
 
