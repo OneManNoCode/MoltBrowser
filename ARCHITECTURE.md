@@ -76,6 +76,8 @@ MoltBrowser
  |    |   page text) + automation_security (workflow trust)
  |    +-- WebUINavigationThrottle: web pages can't open chrome:// or molt://
  |    +-- trusted_binary / helper_binary: which tor/OCR/whisper may run
+ |    +-- helper_sandbox: tesseract/whisper confined (Landlock + seccomp,
+ |        Seatbelt, job object) with a deadline
  |
  +-- OmniboxAI (@ai prefix, ? prefix)
  |    +-- AiPromptProvider -> chrome://molt-ai/?q=...
@@ -102,7 +104,7 @@ repo/
  |    |    +-- document_parser/        # client of the sandboxed parser service
  |    |    +-- memory/                 # MemoryService, storage, index, embedder
  |    |    +-- security/               # agent_safety, WebUINavigationThrottle
- |    |    +-- common/                 # trusted helper-binary checks
+ |    |    +-- common/                 # helper binaries: trust checks, sandbox
  |    |    +-- fingerprinting/         # session seed (mojo), mode, Shields-off sites
  |    |    +-- privacy/                # private-by-default prefs, feature overrides
  |    |    +-- shield/                 # MoltShield (ad/tracker blocker)
@@ -165,9 +167,46 @@ repo/
   Replies are untrusted: text that is not valid UTF-8 fails the call, and
   text is cut to the caller's budget. The chat handler keeps base64 decoding,
   size limits and plain-text files on a worker thread.
-- Still outside a sandbox: OCR of scans and images runs the bundled
-  tesseract as a helper process, and llama.cpp inference runs in the browser
-  process.
+- OCR of a scan (no text layer) runs in the helper sandbox below; a PDF that
+  crashed or hung the parser is never passed on to it. Still outside a
+  sandbox: llama.cpp inference runs in the browser process.
+
+### Helper programs (sandboxed OCR and speech-to-text)
+- tesseract (scanned PDFs, attached images) and whisper-cli (voice) read
+  untrusted files, so they only run through
+  `molt_ai/common/helper_sandbox.h` (`RunSandboxedHelper`), after
+  `helper_binary.h` picked the binary. Per call: a private scratch directory
+  holds the input and output and is the only writable place (also the
+  working directory, HOME and TMPDIR); the helper's own directory, its
+  tessdata or model and the input are readable; no network; nothing of the
+  browser's environment. A deadline kills the helper and its process group
+  (120 s for a PDF, 60 s for an image, 300 s for audio), output is read up
+  to 256 KiB (tesseract) / 1 MiB (whisper), and files it leaves are read
+  back only if they are plain single-link files (no symlink or hard link
+  out of the sandbox). Callers get `timed out` / `sandbox unavailable`
+  errors in the same result structs and JSON as before.
+- Linux, between fork and exec (`base::LaunchOptions::pre_exec_delegate`,
+  `helper_sandbox_linux.*`, prepared in the parent): a new session (no
+  controlling terminal), no_new_privs, Landlock (read+execute /usr, /lib,
+  /lib64 and the helper's directory; read /etc, /sys/devices/system/cpu,
+  /proc/self and the policy's paths; read+write the scratch directory, which
+  can't hold symlinks or run what is written there; ABI 4+: no TCP; ABI 6+:
+  no abstract UNIX sockets, no signals out), then seccomp-bpf (x86_64,
+  aarch64; allow by default): socket() other than AF_UNIX and connect()
+  fail with EACCES; io_uring, leaving the process group (setsid/setpgid),
+  ptrace, process_vm_*, pidfd_getfd, bpf, perf_event_open, userfaultfd, the
+  keyring calls, namespaces and mounts are refused. Kernels without Landlock (before 5.13) keep the seccomp layer
+  only (files unconfined); the browser logs the layers once. A layer the
+  kernel has but that fails to apply stops the run.
+- macOS: `/usr/bin/sandbox-exec` with a deny-by-default Seatbelt profile
+  (`seatbelt_profile.*`; paths only as `-D` parameters): system libraries,
+  the helper's directory and inputs readable, scratch read-write, no
+  network, Mach lookups or IOKit. Fail-closed: without sandbox-exec, or if
+  it can't apply the profile, the helper doesn't run.
+- Windows: a job object (killed on close, UI restrictions) and the deadline
+  only. No file or network confinement yet; that needs an AppContainer and
+  ACLs on the bundle and scratch directories, as the inference sandbox will.
+- whisper runs on the CPU (`-ng`): the sandboxes give it no GPU.
 
 ### WebUI Architecture
 - All UI is inline HTML/CSS/JS in C++ raw strings (no separate resource files)

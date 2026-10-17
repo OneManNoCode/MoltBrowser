@@ -63,8 +63,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   attached in the AI chat (PDF, Word, Office, e-book, CSV) are parsed in a
   locked-down helper process, one per document, with no file or network
   access: a malformed or malicious file can crash only that process, and a
-  parser stuck for 30 seconds is stopped. OCR of scans and images still runs
-  outside the sandbox.
+  parser stuck for 30 seconds is stopped.
+- **OCR and voice helpers are sandboxed.** tesseract (scanned PDFs,
+  attached images) and whisper (voice) now see only their own files, the
+  input and a private scratch folder, get no network, and are stopped after
+  2 minutes for a PDF, 1 for an image and 5 for audio. A malicious file
+  that takes one over can't reach your files or the internet, and one that
+  makes it hang no longer ties up the browser. Linux uses Landlock and
+  seccomp (kernels older than 5.13 get the network block only); macOS uses
+  the system sandbox and won't run OCR or voice without it; Windows gets the
+  time limit and a job object for now. Voice transcription runs on the CPU.
 - The AI library no longer forks the browser and starts a debugger found on
   PATH (with permission to read the browser's memory) when it hits an
   internal error.
