@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <utility>
 
@@ -12,6 +13,7 @@
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/numerics/byte_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
@@ -23,12 +25,89 @@
 
 namespace molt_ai {
 
+namespace document_parser_client_internal {
+
+namespace {
+
+bool ChunkTypeIs(base::span<const uint8_t> type, std::string_view name) {
+  return std::ranges::equal(type, base::as_byte_span(name));
+}
+
+}  // namespace
+
+bool IsWellFormedPng(base::span<const uint8_t> png,
+                     uint32_t width,
+                     uint32_t height) {
+  static constexpr std::array<uint8_t, 8> kSignature = {
+      0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+  // A chunk is a 4-byte big-endian data length, a 4-byte type, the data and
+  // a 4-byte CRC.
+  constexpr size_t kChunkOverhead = 12;
+  constexpr uint32_t kMaxChunkLength = 0x7FFFFFFF;  // The PNG spec's limit.
+  if (png.size() < kSignature.size() ||
+      !std::ranges::equal(png.first(kSignature.size()), kSignature)) {
+    return false;
+  }
+  base::span<const uint8_t> rest = png.subspan(kSignature.size());
+  bool first = true;
+  bool saw_idat = false;
+  while (!rest.empty()) {
+    if (rest.size() < kChunkOverhead) {
+      return false;
+    }
+    const uint32_t length = base::U32FromBigEndian(rest.first<4u>());
+    if (length > kMaxChunkLength || length > rest.size() - kChunkOverhead) {
+      return false;
+    }
+    const base::span<const uint8_t> type = rest.subspan(4u, 4u);
+    if (!std::ranges::all_of(type, [](uint8_t c) {
+          return base::IsAsciiAlpha(c);
+        })) {
+      return false;
+    }
+    const base::span<const uint8_t> data = rest.subspan(8u, length);
+    if (first) {
+      if (!ChunkTypeIs(type, "IHDR") || length != 13) {
+        return false;
+      }
+      const uint8_t bit_depth = data[8];
+      const uint8_t color_type = data[9];
+      const uint8_t compression = data[10];
+      const uint8_t filter = data[11];
+      const uint8_t interlace = data[12];
+      if (base::U32FromBigEndian(data.first<4u>()) != width ||
+          base::U32FromBigEndian(data.subspan(4u).first<4u>()) != height ||
+          bit_depth != 8 ||
+          (color_type != 0 && color_type != 2 && color_type != 4 &&
+           color_type != 6) ||
+          compression != 0 || filter != 0 || interlace > 1) {
+        return false;
+      }
+      first = false;
+    } else if (ChunkTypeIs(type, "IHDR")) {
+      return false;
+    } else if (ChunkTypeIs(type, "IDAT")) {
+      saw_idat = true;
+    } else if (ChunkTypeIs(type, "IEND")) {
+      return length == 0 && rest.size() == kChunkOverhead && saw_idat;
+    }
+    rest = rest.subspan(kChunkOverhead + length);
+  }
+  return false;  // No IEND.
+}
+
+}  // namespace document_parser_client_internal
+
 namespace {
 
 using Status = DocumentParseResult::Status;
+using PagesStatus = PdfPagesResult::Status;
 
 // Shown in the OS task manager for the parser processes.
 constexpr char16_t kDisplayName[] = u"MoltBrowser Document Parser";
+
+constexpr char kMalformedReply[] =
+    "the document parser returned malformed output";
 
 mojo::PendingRemote<mojom::DocumentParser> LaunchInUtilityProcess(
     DocumentParserClient::ProcessCallback on_launched) {
@@ -46,12 +125,24 @@ DocumentParseResult Failed(std::string error) {
   return DocumentParseResult(Status::kFailed, std::string(), std::move(error));
 }
 
+PdfPagesResult PagesFailed(std::string error) {
+  PdfPagesResult result;
+  result.status = PagesStatus::kFailed;
+  result.error = std::move(error);
+  return result;
+}
+
+uint32_t ClampMaxChars(size_t max_chars) {
+  return static_cast<uint32_t>(
+      std::min<size_t>(max_chars, mojom::kMaxOutputChars));
+}
+
 // The utility process may be compromised: check everything it sends.
 DocumentParseResult ValidateReply(mojom::ParseResultPtr reply,
                                   size_t max_chars) {
   if (!reply || !base::IsStringUTF8(reply->text) ||
       !base::IsStringUTF8(reply->error)) {
-    return Failed("the document parser returned malformed output");
+    return Failed(kMalformedReply);
   }
   std::string error(
       base::TruncateUTF8ToByteSize(reply->error, mojom::kMaxErrorBytes));
@@ -70,6 +161,66 @@ DocumentParseResult ValidateReply(mojom::ParseResultPtr reply,
   return DocumentParseResult(Status::kOk, std::move(text), std::string());
 }
 
+// Likewise for rendered pages: anything outside the mojom's limits, out of
+// order, or not a well-formed PNG of its stated size fails the whole call.
+// |max_pages| is the (clamped) number of pages the call asked for.
+PdfPagesResult ValidatePages(mojom::PdfPageImagesPtr reply,
+                             uint32_t max_pages) {
+  if (!reply || !base::IsStringUTF8(reply->error)) {
+    return PagesFailed(kMalformedReply);
+  }
+  std::string error(
+      base::TruncateUTF8ToByteSize(reply->error, mojom::kMaxErrorBytes));
+  if (!reply->success) {
+    // Whatever pages came with a failure are ignored.
+    PdfPagesResult result;
+    result.status = PagesStatus::kUnreadable;
+    result.error = std::move(error);
+    return result;
+  }
+  if (reply->pages.empty() || reply->pages.size() > max_pages) {
+    return PagesFailed(kMalformedReply);
+  }
+  PdfPagesResult result;
+  result.status = PagesStatus::kOk;
+  result.page_count = reply->page_count;
+  uint64_t total_bytes = 0;
+  std::optional<uint32_t> previous_index;
+  for (const mojom::PdfPageImagePtr& page : reply->pages) {
+    if (!page || page->page_index >= max_pages ||
+        page->page_index >= reply->page_count ||
+        (previous_index && page->page_index <= *previous_index)) {
+      return PagesFailed(kMalformedReply);
+    }
+    previous_index = page->page_index;
+    if (page->width == 0 || page->height == 0 ||
+        page->width > mojom::kMaxPageImageSide ||
+        page->height > mojom::kMaxPageImageSide ||
+        uint64_t{page->width} * page->height > mojom::kMaxPageImagePixels) {
+      return PagesFailed(kMalformedReply);
+    }
+    // An invalid BigBuffer (shared memory that could not be mapped) is empty.
+    const base::span<const uint8_t> bytes(page->png);
+    total_bytes += bytes.size();
+    if (bytes.empty() || total_bytes > mojom::kMaxPageImageBytes) {
+      return PagesFailed(kMalformedReply);
+    }
+    // Copy first, check the copy: a large BigBuffer is shared memory, which
+    // a compromised service could still change after the check.
+    RenderedPdfPage rendered;
+    rendered.page_index = page->page_index;
+    rendered.width = page->width;
+    rendered.height = page->height;
+    rendered.png.assign(bytes.begin(), bytes.end());
+    if (!document_parser_client_internal::IsWellFormedPng(
+            rendered.png, rendered.width, rendered.height)) {
+      return PagesFailed(kMalformedReply);
+    }
+    result.pages.push_back(std::move(rendered));
+  }
+  return result;
+}
+
 }  // namespace
 
 DocumentParseResult::DocumentParseResult() = default;
@@ -84,6 +235,16 @@ DocumentParseResult& DocumentParseResult::operator=(
 DocumentParseResult& DocumentParseResult::operator=(DocumentParseResult&&) =
     default;
 DocumentParseResult::~DocumentParseResult() = default;
+
+RenderedPdfPage::RenderedPdfPage() = default;
+RenderedPdfPage::RenderedPdfPage(RenderedPdfPage&&) = default;
+RenderedPdfPage& RenderedPdfPage::operator=(RenderedPdfPage&&) = default;
+RenderedPdfPage::~RenderedPdfPage() = default;
+
+PdfPagesResult::PdfPagesResult() = default;
+PdfPagesResult::PdfPagesResult(PdfPagesResult&&) = default;
+PdfPagesResult& PdfPagesResult::operator=(PdfPagesResult&&) = default;
+PdfPagesResult::~PdfPagesResult() = default;
 
 // The process of one call, for terminating it. Shared with the launch
 // callback, which can run after its Call is gone (the client was destroyed,
@@ -129,13 +290,18 @@ class DocumentParserClient::ProcessKiller
   std::optional<int> kill_exit_code_;
 };
 
-// One parse: its process, its pipe, its timeout and its caller's callback.
+// One call: its process, its pipe, its timeout and its caller's callback,
+// which is a text callback or a pages callback (exactly one is set until the
+// call is answered).
 class DocumentParserClient::Call {
  public:
-  Call(DocumentParserClient* owner, size_t max_chars, ResultCallback callback)
+  Call(DocumentParserClient* owner, ResultCallback callback)
       : owner_(owner),
-        max_chars_(std::min<size_t>(max_chars, mojom::kMaxOutputChars)),
-        callback_(std::move(callback)),
+        text_callback_(std::move(callback)),
+        process_(base::MakeRefCounted<ProcessKiller>()) {}
+  Call(DocumentParserClient* owner, PdfPagesCallback callback)
+      : owner_(owner),
+        pages_callback_(std::move(callback)),
         process_(base::MakeRefCounted<ProcessKiller>()) {}
   Call(const Call&) = delete;
   Call& operator=(const Call&) = delete;
@@ -143,7 +309,7 @@ class DocumentParserClient::Call {
   // A call destroyed before it was answered (its client is going away)
   // takes its process with it.
   ~Call() {
-    if (callback_) {
+    if (pending()) {
       process_->Kill(content::RESULT_CODE_KILLED);
     }
   }
@@ -166,34 +332,77 @@ class DocumentParserClient::Call {
   }
 
   mojom::DocumentParser* parser() { return remote_.get(); }
-  uint32_t max_chars() const { return static_cast<uint32_t>(max_chars_); }
 
-  // The reply callback of every DocumentParser method.
-  base::OnceCallback<void(mojom::ParseResultPtr)> ReplyCallback() {
-    return base::BindOnce(&Call::OnReply, base::Unretained(this));
+  // The reply callbacks of the text methods and of RenderPdfPages. Unretained
+  // as above: |remote_| drops a pending reply when this call is destroyed.
+  base::OnceCallback<void(mojom::ParseResultPtr)> TextReplyCallback(
+      size_t max_chars) {
+    return base::BindOnce(&Call::OnTextReply, base::Unretained(this),
+                          max_chars);
+  }
+  base::OnceCallback<void(mojom::PdfPageImagesPtr)> PagesReplyCallback(
+      uint32_t max_pages) {
+    return base::BindOnce(&Call::OnPagesReply, base::Unretained(this),
+                          max_pages);
   }
 
-  ResultCallback TakeCallback() { return std::move(callback_); }
+  // The caller's callback bound to a kFailed answer with |error|.
+  base::OnceClosure TakeFailure(std::string error) {
+    DCHECK(pending());
+    if (text_callback_) {
+      return base::BindOnce(std::move(text_callback_),
+                            Failed(std::move(error)));
+    }
+    return base::BindOnce(std::move(pages_callback_),
+                          PagesFailed(std::move(error)));
+  }
+
+  // The caller's callback bound to "the parser can't read this" (kNoText,
+  // kUnreadable) with |error|.
+  base::OnceClosure TakeRefusal(std::string error) {
+    DCHECK(pending());
+    if (text_callback_) {
+      return base::BindOnce(std::move(text_callback_),
+                            DocumentParseResult(Status::kNoText, std::string(),
+                                                std::move(error)));
+    }
+    PdfPagesResult result;
+    result.status = PagesStatus::kUnreadable;
+    result.error = std::move(error);
+    return base::BindOnce(std::move(pages_callback_), std::move(result));
+  }
 
  private:
+  bool pending() const { return text_callback_ || pages_callback_; }
+
   // Each of these ends the call: |this| is destroyed inside OnCallDone().
-  void OnReply(mojom::ParseResultPtr reply) {
-    owner_->OnCallDone(this, ValidateReply(std::move(reply), max_chars_));
+  void OnTextReply(size_t max_chars, mojom::ParseResultPtr reply) {
+    owner_->OnCallDone(this,
+                       base::BindOnce(std::move(text_callback_),
+                                      ValidateReply(std::move(reply),
+                                                    max_chars)));
+  }
+
+  void OnPagesReply(uint32_t max_pages, mojom::PdfPageImagesPtr reply) {
+    owner_->OnCallDone(this,
+                       base::BindOnce(std::move(pages_callback_),
+                                      ValidatePages(std::move(reply),
+                                                    max_pages)));
   }
 
   void OnDisconnected() {
     owner_->OnCallDone(this,
-                       Failed("the document parser stopped unexpectedly"));
+                       TakeFailure("the document parser stopped unexpectedly"));
   }
 
   void OnTimeout() {
     process_->Kill(content::RESULT_CODE_HUNG);
-    owner_->OnCallDone(this, Failed("the document parser timed out"));
+    owner_->OnCallDone(this, TakeFailure("the document parser timed out"));
   }
 
   const raw_ptr<DocumentParserClient> owner_;
-  const size_t max_chars_;
-  ResultCallback callback_;
+  ResultCallback text_callback_;
+  PdfPagesCallback pages_callback_;
   const scoped_refptr<ProcessKiller> process_;
   mojo::Remote<mojom::DocumentParser> remote_;
   base::OneShotTimer timer_;
@@ -201,11 +410,15 @@ class DocumentParserClient::Call {
 
 DocumentParserClient::DocumentParserClient()
     : DocumentParserClient(base::BindRepeating(&LaunchInUtilityProcess),
-                           kTimeout) {}
+                           kTimeout,
+                           kRenderTimeout) {}
 
 DocumentParserClient::DocumentParserClient(LaunchCallback launch,
-                                           base::TimeDelta timeout)
-    : launch_(std::move(launch)), timeout_(timeout) {}
+                                           base::TimeDelta timeout,
+                                           base::TimeDelta render_timeout)
+    : launch_(std::move(launch)),
+      timeout_(timeout),
+      render_timeout_(render_timeout) {}
 
 DocumentParserClient::~DocumentParserClient() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -214,10 +427,12 @@ DocumentParserClient::~DocumentParserClient() {
 void DocumentParserClient::ExtractPdfText(base::span<const uint8_t> pdf,
                                           size_t max_chars,
                                           ResultCallback callback) {
-  Call* call = StartCall(pdf.size(), max_chars, std::move(callback));
+  const uint32_t chars = ClampMaxChars(max_chars);
+  Call* call = StartCall(std::make_unique<Call>(this, std::move(callback)),
+                         pdf.size(), timeout_);
   if (call) {
-    call->parser()->ExtractPdfText(mojo_base::BigBuffer(pdf), call->max_chars(),
-                                   call->ReplyCallback());
+    call->parser()->ExtractPdfText(mojo_base::BigBuffer(pdf), chars,
+                                   call->TextReplyCallback(chars));
   }
 }
 
@@ -225,71 +440,83 @@ void DocumentParserClient::ConvertToMarkdown(base::span<const uint8_t> document,
                                              std::string_view extension,
                                              size_t max_chars,
                                              ResultCallback callback) {
-  Call* call = StartCall(document.size(), max_chars, std::move(callback));
+  const uint32_t chars = ClampMaxChars(max_chars);
+  Call* call = StartCall(std::make_unique<Call>(this, std::move(callback)),
+                         document.size(), timeout_);
   if (call) {
     call->parser()->ConvertToMarkdown(mojo_base::BigBuffer(document),
-                                      std::string(extension), call->max_chars(),
-                                      call->ReplyCallback());
+                                      std::string(extension), chars,
+                                      call->TextReplyCallback(chars));
   }
 }
 
 void DocumentParserClient::ExtractDocxText(base::span<const uint8_t> docx,
                                            size_t max_chars,
                                            ResultCallback callback) {
-  Call* call = StartCall(docx.size(), max_chars, std::move(callback));
+  const uint32_t chars = ClampMaxChars(max_chars);
+  Call* call = StartCall(std::make_unique<Call>(this, std::move(callback)),
+                         docx.size(), timeout_);
   if (call) {
-    call->parser()->ExtractDocxText(mojo_base::BigBuffer(docx),
-                                    call->max_chars(), call->ReplyCallback());
+    call->parser()->ExtractDocxText(mojo_base::BigBuffer(docx), chars,
+                                    call->TextReplyCallback(chars));
+  }
+}
+
+void DocumentParserClient::RenderPdfPages(base::span<const uint8_t> pdf,
+                                          uint32_t max_pages,
+                                          uint32_t dpi,
+                                          PdfPagesCallback callback) {
+  // The service clamps the same way; the reply is checked against these.
+  max_pages = std::clamp(max_pages, uint32_t{1}, mojom::kMaxRenderPages);
+  dpi = std::clamp(dpi, mojom::kMinRenderDpi, mojom::kMaxRenderDpi);
+  Call* call = StartCall(std::make_unique<Call>(this, std::move(callback)),
+                         pdf.size(), render_timeout_);
+  if (call) {
+    call->parser()->RenderPdfPages(mojo_base::BigBuffer(pdf), max_pages, dpi,
+                                   call->PagesReplyCallback(max_pages));
   }
 }
 
 DocumentParserClient::Call* DocumentParserClient::StartCall(
+    std::unique_ptr<Call> call,
     size_t document_size,
-    size_t max_chars,
-    ResultCallback callback) {
+    base::TimeDelta timeout) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (document_size == 0) {
-    Refuse(std::move(callback),
-           DocumentParseResult(Status::kNoText, std::string(),
-                               "the document is empty"));
+    Refuse(call->TakeRefusal("the document is empty"));
     return nullptr;
   }
   if (document_size > mojom::kMaxDocumentBytes) {
-    Refuse(std::move(callback),
-           Failed("the document is too large to read (over 32 MiB)"));
+    Refuse(call->TakeFailure("the document is too large to read (over 32 MiB)"));
     return nullptr;
   }
   if (calls_.size() >= kMaxConcurrentCalls) {
-    Refuse(std::move(callback),
-           Failed("too many documents are being read at once; try again"));
+    Refuse(call->TakeFailure(
+        "too many documents are being read at once; try again"));
     return nullptr;
   }
-  auto call = std::make_unique<Call>(this, max_chars, std::move(callback));
-  if (!call->Start(launch_, timeout_)) {
-    Refuse(call->TakeCallback(),
-           Failed("the document parser could not be started"));
+  if (!call->Start(launch_, timeout)) {
+    Refuse(call->TakeFailure("the document parser could not be started"));
     return nullptr;
   }
   calls_.push_back(std::move(call));
   return calls_.back().get();
 }
 
-void DocumentParserClient::Refuse(ResultCallback callback,
-                                  DocumentParseResult result) {
+void DocumentParserClient::Refuse(base::OnceClosure answer) {
   // Never answer synchronously; and like every other answer, a refusal is
   // dropped if this client goes away first.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&DocumentParserClient::RunRefusal,
                                 weak_ptr_factory_.GetWeakPtr(),
-                                std::move(callback), std::move(result)));
+                                std::move(answer)));
 }
 
-void DocumentParserClient::RunRefusal(ResultCallback callback,
-                                      DocumentParseResult result) {
-  std::move(callback).Run(std::move(result));
+void DocumentParserClient::RunRefusal(base::OnceClosure answer) {
+  std::move(answer).Run();
 }
 
-void DocumentParserClient::OnCallDone(Call* call, DocumentParseResult result) {
+void DocumentParserClient::OnCallDone(Call* call, base::OnceClosure answer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto it = std::find_if(
       calls_.begin(), calls_.end(),
@@ -297,12 +524,11 @@ void DocumentParserClient::OnCallDone(Call* call, DocumentParseResult result) {
   CHECK(it != calls_.end());
   std::unique_ptr<Call> done = std::move(*it);
   calls_.erase(it);
-  ResultCallback callback = done->TakeCallback();
   // Closes the pipe: a parser that answered exits on its own (a hung one was
   // terminated by OnTimeout()).
   done.reset();
-  // Last: the callback may start another call, or destroy this client.
-  std::move(callback).Run(std::move(result));
+  // Last: the answer may start another call, or destroy this client.
+  std::move(answer).Run();
 }
 
 }  // namespace molt_ai
