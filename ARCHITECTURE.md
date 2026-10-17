@@ -65,10 +65,14 @@ MoltBrowser
  |
  +-- Document parsing — /pdf downloads and chat attachments
  |    +-- DocumentParser service (chrome/services/molt_ai/document_parser):
- |    |   PDF text layer, anydoc (Office/e-book/CSV -> Markdown), .docx text;
+ |    |   PDF text layer, anydoc (Office/e-book/CSV -> Markdown), .docx text,
+ |    |   PDF pages -> PNG for OCR (PDFium C API, no V8, no system fonts);
  |    |   in a kService-sandboxed utility process, one per document
  |    +-- DocumentParserClient (molt_ai/document_parser): launch, 30 s
- |        timeout + kill, untrusted-reply validation
+ |    |   timeout (60 s to render pages) + kill, untrusted-reply validation
+ |    |   (UTF-8; page limits and PNG structure, checked on a copy)
+ |    +-- OcrService (molt_ai/ocr): tesseract on attached images and on the
+ |        rendered pages of a scan (tesseract can't read PDFs), sandboxed
  |
  +-- MemoryService (molt_ai/memory) — opt-in, encrypted SQLite store +
  |    in-memory index, HashingEmbedder v3 (Unicode-aware keyword hashing)
@@ -106,6 +110,8 @@ repo/
  |    |    +-- automation/             # Agent mode (record/replay)
  |    |    +-- dom/                    # DOMInterpreter, DOMContentBridge
  |    |    +-- document_parser/        # client of the sandboxed parser service
+ |    |    +-- ocr/                    # OcrService: tesseract on images and
+ |    |    |                           #   rendered PDF pages
  |    |    +-- memory/                 # MemoryService, storage, index, embedder
  |    |    +-- security/               # agent_safety, WebUINavigationThrottle
  |    |    +-- common/                 # helper binaries: trust checks, sandbox
@@ -125,6 +131,7 @@ repo/
  |    |    +-- molt_ai_agent_ui.*      # chrome://molt-ai-agent/
  |    +-- chrome/services/molt_ai/document_parser/  # utility-process parsers
  |    |    +-- pdf/, anydoc/           # PDF scraper, anydoc cxx bridge
+ |    |    +-- pdf_page_renderer.*     # PDF pages -> PNG with PDFium (for OCR)
  |    +-- chrome/services/molt_ai/inference/  # sandboxed on-device inference
  |    |                                #   service (llama.cpp engine, mojom;
  |    |                                #   engine/: std-only budget, prompt and
@@ -193,29 +200,49 @@ repo/
   flat-text fallback, and returns only valid UTF-8 within its own size
   limits. It is registered in `chrome/utility/services.cc`; no
   browser-process target links the parsers.
+- It also renders PDF pages for OCR (`RenderPdfPages`,
+  `pdf_page_renderer.*`): the first 20 pages (`kMaxRenderPages`) at up to
+  200 dpi, each scaled down to at most 10000 px a side and 25 MP, encoded as
+  PNG (`gfx::PNGCodec`), 64 MiB of PNG per reply at most; all limits are
+  mojom constants. PDFium is driven through its C API rather than `//pdf`
+  (whose wrappers create a V8 isolate per call), so `kService` is enough on
+  every platform: no V8 isolate or form-fill environment (no JavaScript, no
+  JIT memory, which `kService` refuses on Windows and macOS), an empty font
+  path list (no font directory scans and, on Windows under win32k
+  lockdown, no GDI; unembedded fonts use PDFium's built-in ones), and AGG
+  into BGRA bitmaps with `FPDF_NO_NATIVETEXT` (no CoreGraphics or GDI
+  text). An encrypted, damaged or page-less PDF is a clean failure.
 - The browser side, `molt_ai/document_parser/DocumentParserClient`, launches
   one process per call, so documents never share a parser. A crash or kill
-  fails the call; so does a 30 s timeout, which also terminates the process.
-  Replies are untrusted: text that is not valid UTF-8 fails the call, and
-  text is cut to the caller's budget. The chat handler keeps base64 decoding,
-  size limits and plain-text files on a worker thread.
-- OCR of a scan (no text layer) runs in the helper sandbox below; a PDF that
-  crashed or hung the parser is never passed on to it. Still outside a
-  sandbox: llama.cpp inference runs in the browser process.
+  fails the call; so does a timeout (30 s; 60 s to render pages), which also
+  terminates the process. Replies are untrusted: text that is not valid
+  UTF-8 fails the call, and text is cut to the caller's budget. Rendered
+  pages must keep every mojom limit, come in page order and be well-formed
+  PNGs of their stated size (signature, chunk structure, IHDR); each is
+  copied out of the reply before the check, since a large `BigBuffer` is
+  shared memory. The browser never decodes them. The chat handler keeps
+  base64 decoding, size limits and plain-text files on a worker thread.
+- OCR of a scan (no text layer): tesseract can't read PDFs (leptonica has no
+  PDF reader), so `molt_ai/ocr/OcrService::OcrPdf` has the parser render the
+  pages, then OCRs each PNG in the helper sandbox below, joining the text
+  with `--- Page N ---` headers, cut to the caller's budget and sanitized.
+  One deadline (180 s) covers rendering and every page; a page gets at most
+  60 s, and pages not reached are left out (the text says so). A PDF that
+  crashed or hung the text parser is never passed on to rendering or OCR.
 
 ### Helper programs (sandboxed OCR and speech-to-text)
-- tesseract (scanned PDFs, attached images) and whisper-cli (voice) read
-  untrusted files, so they only run through
+- tesseract (attached images, and the rendered pages of scanned PDFs) and
+  whisper-cli (voice) read untrusted files, so they only run through
   `molt_ai/common/helper_sandbox.h` (`RunSandboxedHelper`), after
   `helper_binary.h` picked the binary. Per call: a private scratch directory
   holds the input and output and is the only writable place (also the
   working directory, HOME and TMPDIR); the helper's own directory, its
   tessdata or model and the input are readable; no network; nothing of the
   browser's environment. A deadline kills the helper and its process group
-  (120 s for a PDF, 60 s for an image, 300 s for audio), output is read up
-  to 256 KiB (tesseract) / 1 MiB (whisper), and files it leaves are read
-  back only if they are plain single-link files (no symlink or hard link
-  out of the sandbox). Callers get `timed out` / `sandbox unavailable`
+  (60 s for an image or a PDF page, all of a PDF within 180 s, 300 s for
+  audio), output is read up to 256 KiB (tesseract) / 1 MiB (whisper), and
+  files it leaves are read back only if they are plain single-link files
+  (no symlink or hard link out of the sandbox). Callers get `timed out` / `sandbox unavailable`
   errors in the same result structs and JSON as before.
 - Linux, between fork and exec (`base::LaunchOptions::pre_exec_delegate`,
   `helper_sandbox_linux.*`, prepared in the parent): a new session (no
