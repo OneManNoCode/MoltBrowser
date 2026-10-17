@@ -19,6 +19,7 @@
 #include "crypto/random.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "net/cookies/site_for_cookies.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/platform/web_worker_fetch_context.h"
 #include "third_party/blink/public/web/web_molt_fingerprinting.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -26,6 +27,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timezone/timezone_controller.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
@@ -239,14 +241,21 @@ ResolvedSite ResolveSite(ExecutionContext& context) {
                 context)) {
       return service_worker_site->resolved();
     }
+    // Shared workers: the storage key they were constructed with, handed
+    // over by the browser when they started (shared_worker_key.h).
+    if (const StorageKey* shared_worker_key =
+            SharedWorkerStorageKey(worker->Clients())) {
+      return FromStorageKey(BlinkStorageKey(*shared_worker_key));
+    }
     // Set for dedicated workers (and workers nested in them) only.
     if (const SecurityOrigin* top = worker->top_level_frame_security_origin()) {
       return FromSchemefulSite(
           BlinkSchemefulSite(scoped_refptr<const SecurityOrigin>(top)),
           std::string());
     }
-    // Shared workers (and service workers without a handed-over key): their
-    // site for cookies is their storage key's top-level site when the key is
+    // Workers without a handed-over storage key (not expected: shared and
+    // service workers get theirs before any script runs): their site for
+    // cookies is their storage key's top-level site when the key is
     // first-party (the top-level site is then the worker's own site), and
     // null when it is third-party (partitioned under a top-level site Blink
     // isn't told).

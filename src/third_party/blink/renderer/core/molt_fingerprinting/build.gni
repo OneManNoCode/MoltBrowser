@@ -7,6 +7,8 @@
 blink_core_sources_molt_fingerprinting = [
   "molt_fingerprinting.cc",
   "molt_fingerprinting.h",
+  "shared_worker_key.cc",
+  "shared_worker_key.h",
 ]
 
 blink_core_tests_molt_fingerprinting = [ "molt_fingerprinting_test.cc" ]
