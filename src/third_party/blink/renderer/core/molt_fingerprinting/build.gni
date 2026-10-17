@@ -11,4 +11,7 @@ blink_core_sources_molt_fingerprinting = [
   "shared_worker_key.h",
 ]
 
-blink_core_tests_molt_fingerprinting = [ "molt_fingerprinting_test.cc" ]
+blink_core_tests_molt_fingerprinting = [
+  "molt_fingerprinting_test.cc",
+  "shared_worker_key_test.cc",
+]
