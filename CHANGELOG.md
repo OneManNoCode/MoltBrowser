@@ -132,6 +132,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   command lines. Chromium 152's HTML-in-canvas origin trial, which would let
   a site read rendered page content back through WebGPU without the noise,
   stays off.
+- **Sites can't list your fonts.** In MoltNet windows pages only see the
+  fonts your operating system ships with, the same for every MoltNet user;
+  in normal and incognito windows they see those plus a small random share
+  of your other fonts (1 in 16, different for every site and session).
+  This covers CSS, canvas text, `document.fonts.check()`, `local()` fonts
+  and `queryLocalFonts()`. Generic fonts (serif, sans-serif, ...) and web
+  fonts are unaffected; Shields off shows all your fonts to that site.
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).
