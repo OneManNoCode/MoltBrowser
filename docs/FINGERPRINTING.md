@@ -555,9 +555,11 @@ static_asserts of `gpu_uniformity.cc`, compiled against them);
 stand-ins of the pinned Blink signatures, and a 9-test harness runs the
 real glue in all three modes, including real kUniform (web, opaque and
 non-web top-level sites, the seed missing, Shields off ignored, state
-untouched); the hook expressions type-check with their upstream argument
-types. **Needs the build machine:** the real Blink build of the hooks,
-`gpu_uniformity_test.cc` in `blink_unittests`, and a MoltNet window
+untouched); `gpu_uniformity_test.cc` itself builds and passes against
+those stand-ins (plus `DummyPageHolder` and friends); the hook expressions
+type-check with their upstream argument types. **Needs the build
+machine:** the real Blink build of the hooks, `gpu_uniformity_test.cc` in
+`blink_unittests` against the real `DummyPageHolder`, and a MoltNet window
 running WebGL report pages (e.g. webglreport.com, three.js and Babylon.js
 examples, a KTX2 sample) and a WebGPU sample (null adapter, WebGL fallback)
 on a Mac, a Windows and a Linux machine, comparing their reports.

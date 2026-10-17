@@ -101,8 +101,9 @@ bool UsesUniformGpu(ExecutionContext* context) {
   if (!UniformMode()) {
     return false;
   }
-  // IsFarbled() is false exactly for contexts whose top-level site isn't
-  // web content (in kUniform, Shields-off sites are farbled too).
+  // In kUniform, IsFarbled() is false only for contexts whose top-level
+  // site isn't web content and for contexts without a site (worklets, which
+  // have neither WebGL nor navigator.gpu); Shields-off sites are farbled.
   return !context || IsFarbled(context);
 }
 
