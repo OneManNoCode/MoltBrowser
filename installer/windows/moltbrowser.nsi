@@ -121,6 +121,33 @@ Section "MoltBrowser (required)" SecMain
   SectionIn RO
   SetOutPath "$INSTDIR"
 
+  ; On-device AI runs in a sandboxed utility process that Windows confines
+  ; with LPAC (Chromium's kOnDeviceModelExecution sandbox). An LPAC process
+  ; can load MoltBrowser's own DLLs only if the install directory grants
+  ; read + execute to the two capability SIDs Chrome's installer grants
+  ; (chrome/installer/setup/configure_app_container_sandbox.cc,
+  ; ConfigureAppContainerSandbox, at Chromium 152):
+  ;   chromeInstallFiles      S-1-15-3-1024-3424233489-972189580-2057154623-
+  ;                           747635277-1604371224-316187997-3786583170-
+  ;                           1043257646
+  ;   lpacChromeInstallFiles  S-1-15-3-1024-2302894289-466761758-1166120688-
+  ;                           1039016420-2430351297-4240214049-4028510897-
+  ;                           3317428798
+  ; with FILE_GENERIC_READ | FILE_GENERIC_EXECUTE (icacls "RX", 0x1200A9),
+  ; inherited by files and folders (CONTAINER_INHERIT_ACE |
+  ; OBJECT_INHERIT_ACE = "(OI)(CI)"), as base::win::GrantAccessToPath does
+  ; there. Like Chrome, before the files are extracted, so they inherit it;
+  ; icacls also propagates it to anything already in the directory (an
+  ; update). Best effort, as in Chrome: if it fails the browser works, but
+  ; local models can't start. The portable ZIP can't do this; see
+  ; docs/design/SANDBOXED_INFERENCE.md.
+  DetailPrint "Allowing MoltBrowser's on-device AI sandbox to read $INSTDIR"
+  nsExec::ExecToLog '"$SYSDIR\icacls.exe" "$INSTDIR" /grant "*S-1-15-3-1024-3424233489-972189580-2057154623-747635277-1604371224-316187997-3786583170-1043257646:(OI)(CI)(RX)" "*S-1-15-3-1024-2302894289-466761758-1166120688-1039016420-2430351297-4240214049-4028510897-3317428798:(OI)(CI)(RX)"'
+  Pop $0
+  StrCmp $0 "0" lpacAclDone 0
+    DetailPrint "Warning: icacls returned $0; on-device AI may not start."
+  lpacAclDone:
+
   ; Recursively copy the entire staged runtime tree. /r captures top-level
   ; files (exe/dll/pak/bin/dat) plus locales\, resources\, and the bundled
   ; tor\ ocr\ whisper\ dirs whenever the stage step includes them.

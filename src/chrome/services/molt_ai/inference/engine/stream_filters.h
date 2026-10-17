@@ -2,10 +2,11 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // Streaming output filters applied to every decoded token piece before it
-// reaches the UI, in this order:
+// leaves the inference service, in this order:
 //
 //   token piece -> HarmonyChannelFilter -> GemmaThoughtFilter (Gemma 4
-//   vocabularies only) -> ThinkTagFilter -> Utf8Assembler
+//   vocabularies only) -> ThinkTagFilter -> Utf8Assembler -> ToDisplayText
+//   -> StopSequenceFilter
 //
 // - HarmonyChannelFilter: gpt-oss emits its private reasoning in an
 //   "analysis" channel and the answer in a "final" channel, framed by
@@ -22,15 +23,25 @@
 // - Utf8Assembler: a token can end in the middle of a multi-byte UTF-8
 //   character (e.g. half an emoji); bytes are held back until the
 //   character is complete.
+// - ToDisplayText: byte-level tokens can still form invalid UTF-8 (or NUL);
+//   the service replaces it with U+FFFD, because the browser treats invalid
+//   UTF-8 from the service as a protocol violation (IsValidUtf8).
+// - StopSequenceFilter: caller-supplied stop strings, matched on the visible
+//   display text (after the reasoning filters). The stop string and
+//   everything after it are dropped. The browser runs the same filter again
+//   over the same text as it receives it (chrome/browser/molt_ai/runtime/
+//   stream_validator.h); that copy is the one callers see.
 //
 // Std-only so they are unit-tested standalone (stream_filters_unittest.cc).
+// The browser links this file for StopSequenceFilter and IsValidUtf8 only.
 
-#ifndef CHROME_BROWSER_MOLT_AI_RUNTIME_STREAM_FILTERS_H_
-#define CHROME_BROWSER_MOLT_AI_RUNTIME_STREAM_FILTERS_H_
+#ifndef CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_STREAM_FILTERS_H_
+#define CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_STREAM_FILTERS_H_
 
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace molt_ai {
 
@@ -158,6 +169,47 @@ class ThinkTagFilter {
   std::string pending_;
 };
 
+// Stops the visible stream at the first of a set of stop strings. Matching is
+// on bytes, with one KMP automaton per stop string, so it is linear in the
+// input whatever the stop strings are, and independent of how the text is
+// split into pieces. The filter holds back at most (longest stop - 1) bytes:
+// a suffix that could still become a stop string.
+//
+// When a stop string completes, the text before its first byte is returned,
+// stopped() becomes true and every later Feed()/Flush() returns "". If two
+// stop strings overlap, the one that completes first wins. Empty stop strings
+// are ignored. A held-back suffix is a prefix of a stop string; when the stop
+// strings are valid UTF-8 they start with a lead byte, so on valid UTF-8
+// input the filter never splits a character.
+class StopSequenceFilter {
+ public:
+  explicit StopSequenceFilter(std::vector<std::string> stop_sequences = {});
+  ~StopSequenceFilter();
+  StopSequenceFilter(StopSequenceFilter&&);
+  StopSequenceFilter& operator=(StopSequenceFilter&&);
+
+  // Feed visible text; returns the part that can be shown now.
+  std::string Feed(std::string_view text);
+  // End of stream: releases the held-back suffix (no stop string can
+  // complete any more). Nothing after a stop.
+  std::string Flush();
+
+  bool stopped() const { return stopped_; }
+  bool empty() const { return stops_.empty(); }
+  // Bytes currently held back.
+  size_t held_back() const { return pending_.size(); }
+
+ private:
+  struct Stop {
+    std::string text;
+    std::vector<size_t> failure;  // KMP failure function
+    size_t matched = 0;           // length of the current partial match
+  };
+  std::vector<Stop> stops_;
+  std::string pending_;
+  bool stopped_ = false;
+};
+
 class Utf8Assembler {
  public:
   // Appends |bytes|; returns the longest prefix made of complete UTF-8
@@ -174,6 +226,23 @@ class Utf8Assembler {
 // multi-byte UTF-8 character.
 size_t Utf8SafePrefixLength(std::string_view s);
 
+// Strict UTF-8 (RFC 3629): no overlong forms, no surrogates (U+D800..DFFF),
+// nothing above U+10FFFF, no truncated sequence at the end. NUL is valid.
+bool IsValidUtf8(std::string_view s);
+
+// |s| with every ill-formed subsequence replaced by U+FFFD, one replacement
+// per maximal subpart (the Unicode / WHATWG convention). Valid input is
+// returned unchanged; the result always passes IsValidUtf8().
+std::string ReplaceInvalidUtf8(std::string_view s);
+
+// |s| with NUL bytes replaced by U+FFFD (a NUL would cut the text short in
+// C-string APIs and in the WebUI).
+std::string ReplaceNul(std::string_view s);
+
+// The text the service sends and the browser shows:
+// ReplaceNul(ReplaceInvalidUtf8(s)).
+std::string ToDisplayText(std::string_view s);
+
 }  // namespace molt_ai
 
-#endif  // CHROME_BROWSER_MOLT_AI_RUNTIME_STREAM_FILTERS_H_
+#endif  // CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_STREAM_FILTERS_H_

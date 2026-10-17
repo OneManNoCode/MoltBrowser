@@ -1,0 +1,33 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# The on-device inference service (molt_ai.mojom.MoltInferenceService): the
+# only code that links llama.cpp. It runs in a utility process sandboxed with
+# kOnDeviceModelExecution; chrome/utility/services.cc registers it with
+#   services.Add(molt_ai::RunMoltInferenceService);
+# Design: docs/design/SANDBOXED_INFERENCE.md.
+
+assert(!is_android && !is_ios,
+       "On-device inference isn't built for Android or iOS (not registered)")
+
+source_set("inference") {
+  sources = [
+    "llama_engine.cc",
+    "llama_engine.h",
+    "molt_inference_service.cc",
+    "molt_inference_service.h",
+    "molt_model_impl.cc",
+    "molt_model_impl.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/public/mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  deps = [
+    "//chrome/services/molt_ai/inference/engine:inference_utils",
+    "//third_party/llama_cpp",
+  ]
+}

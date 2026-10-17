@@ -1,0 +1,13 @@
+include_rules = [
+  # The client of the sandboxed inference service (S5 phase 2): the mojo
+  # interface and the std-only stream filters only, never the engine or
+  # llama.cpp (GN visibility enforces the latter too).
+  "+chrome/services/molt_ai/inference/public",
+  "+chrome/services/molt_ai/inference/engine/stream_filters.h",
+]
+
+specific_include_rules = {
+  "inference_process_host_unittest\.cc": [
+    "+mojo/core/embedder",
+  ],
+}

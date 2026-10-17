@@ -1,0 +1,225 @@
+// Copyright 2026 GenEye AI Labs Inc.
+// Licensed under GPLv3. See LICENSE file.
+
+#include "chrome/services/molt_ai/inference/molt_inference_service.h"
+
+#include <stdio.h>
+
+#include <algorithm>
+#include <utility>
+
+#include "base/cpu.h"
+#include "base/files/file.h"
+#include "base/functional/bind.h"
+#include "base/location.h"
+#include "base/logging.h"
+#include "base/task/task_traits.h"
+#include "base/task/thread_pool.h"
+#include "build/build_config.h"
+#include "chrome/services/molt_ai/inference/molt_model_impl.h"
+#include "third_party/llama_cpp/include/llama.h"
+
+#if BUILDFLAG(IS_WIN)
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#else
+#include "base/files/scoped_file.h"
+#endif
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#include <sys/resource.h>
+#endif
+
+namespace molt_ai {
+
+namespace {
+
+// llama.cpp's log, at --v=1 only and only warnings and errors. It logs model
+// metadata and failures, never prompt or response text (the pre-tokenizer
+// debug output that would is compiled out upstream). May run on any thread.
+void LlamaLogCallback(ggml_log_level level, const char* text, void*) {
+  if (level != GGML_LOG_LEVEL_WARN && level != GGML_LOG_LEVEL_ERROR) return;
+  VLOG(1) << "[MoltAI inference] llama.cpp: " << (text ? text : "");
+}
+
+// Second line of defence: the browser checks the CPU before launching. On
+// x64 ggml's kernels are built with -mavx2 -mfma -mf16c and raise SIGILL
+// without them.
+bool CpuSupported() {
+#if defined(ARCH_CPU_X86_64)
+  const base::CPU& cpu = base::CPU::GetInstanceNoAllocation();
+  return cpu.has_avx2() && cpu.has_fma3();
+#else
+  return true;
+#endif
+}
+
+// This process's limit on anonymous memory, set by the sandbox
+// (kOnDeviceModelExecution scales it with RAM). 0 = none known.
+uint64_t SandboxMemoryLimit() {
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+  struct rlimit limit;
+  if (getrlimit(RLIMIT_DATA, &limit) == 0 && limit.rlim_cur != RLIM_INFINITY) {
+    return static_cast<uint64_t>(limit.rlim_cur);
+  }
+  return 0;
+#elif BUILDFLAG(IS_WIN)
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
+  if (!::QueryInformationJobObject(nullptr, JobObjectExtendedLimitInformation,
+                                   &info, sizeof(info), nullptr)) {
+    return 0;
+  }
+  const DWORD flags = info.BasicLimitInformation.LimitFlags;
+  uint64_t limit = 0;
+  if (flags & JOB_OBJECT_LIMIT_JOB_MEMORY) limit = info.JobMemoryLimit;
+  if (flags & JOB_OBJECT_LIMIT_PROCESS_MEMORY) {
+    const uint64_t process_limit = info.ProcessMemoryLimit;
+    limit = limit ? std::min(limit, process_limit) : process_limit;
+  }
+  return limit;
+#else
+  return 0;  // macOS: no limit; the browser's footprint watchdog bounds it
+#endif
+}
+
+// The browser's read-only handle as a synchronous stdio stream for
+// llama_model_load_from_file_ptr(). nullptr if it can't be converted.
+ScopedStdioFile ToStdioFile(base::File file) {
+  // llama.cpp reads synchronously; an overlapped (async) Windows handle
+  // would break the CRT reads.
+  if (!file.IsValid() || file.async()) return nullptr;
+#if BUILDFLAG(IS_WIN)
+  HANDLE handle = file.TakePlatformFile();
+  const int fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle),
+                                 _O_RDONLY | _O_BINARY);
+  if (fd == -1) {
+    ::CloseHandle(handle);
+    return nullptr;
+  }
+  FILE* stream = _fdopen(fd, "rb");
+  if (!stream) {
+    _close(fd);  // also closes |handle|
+    return nullptr;
+  }
+  return ScopedStdioFile(stream);
+#else
+  // Take the fd out of base::File first: fclose() closes it later, and no
+  // ScopedFD may still own it then (fd-ownership enforcement).
+  const int fd = file.TakePlatformFile();
+  FILE* stream = fdopen(fd, "rb");
+  if (!stream) {
+    base::ScopedFD close_it(fd);
+    return nullptr;
+  }
+  return ScopedStdioFile(stream);
+#endif
+}
+
+mojom::LoadModelStatus ToMojo(EngineLoadStatus status) {
+  switch (status) {
+    case EngineLoadStatus::kOk:
+      return mojom::LoadModelStatus::kOk;
+    case EngineLoadStatus::kInvalidModelFile:
+      return mojom::LoadModelStatus::kInvalidModelFile;
+    case EngineLoadStatus::kOutOfMemory:
+      return mojom::LoadModelStatus::kOutOfMemory;
+    case EngineLoadStatus::kBackendUnavailable:
+      return mojom::LoadModelStatus::kBackendUnavailable;
+  }
+  return mojom::LoadModelStatus::kInvalidModelFile;
+}
+
+}  // namespace
+
+MoltInferenceService::MoltInferenceService(
+    mojo::PendingReceiver<mojom::MoltInferenceService> receiver)
+    : receiver_(this, std::move(receiver)) {
+  // Before any other llama.cpp call; the default logger writes to stderr.
+  llama_log_set(&LlamaLogCallback, nullptr);
+}
+
+MoltInferenceService::~MoltInferenceService() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+}
+
+void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
+                                     mojo::PendingReceiver<mojom::Model> model,
+                                     LoadModelCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (load_requested_) {
+    receiver_.ReportBadMessage("LoadModel called twice");
+    return;
+  }
+  load_requested_ = true;
+
+  if (!CpuSupported()) {
+    std::move(callback).Run(mojom::LoadModelStatus::kUnsupportedCpu, nullptr);
+    return;
+  }
+  ScopedStdioFile file = ToStdioFile(std::move(params->weights));
+  if (!file) {
+    std::move(callback).Run(mojom::LoadModelStatus::kInvalidModelFile,
+                            nullptr);
+    return;
+  }
+
+  EngineLoadParams load;
+  load.file_size = params->file_size;
+  load.total_ram_bytes = params->total_ram_bytes;
+  load.cpu_threads = std::clamp<uint32_t>(params->cpu_threads, 1, 256);
+  load.max_context_tokens = params->max_context_tokens;
+  load.allow_cpu_repack = params->allow_cpu_repack;
+  load.memory_limit_bytes = SandboxMemoryLimit();
+
+  // Generation must not run on the thread that receives mojo messages (a
+  // closed streamer would only be seen between requests).
+  // CONTINUE_ON_SHUTDOWN: a decode in progress can't delay process exit.
+  engine_ = base::SequenceBound<LlamaEngine>(
+      base::ThreadPool::CreateSequencedTaskRunner(
+          {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}));
+  engine_.AsyncCall(&LlamaEngine::Load)
+      .WithArgs(std::move(file), load)
+      .Then(base::BindOnce(&MoltInferenceService::OnLoaded,
+                           weak_factory_.GetWeakPtr(), std::move(model),
+                           std::move(callback)));
+}
+
+void MoltInferenceService::OnLoaded(mojo::PendingReceiver<mojom::Model> model,
+                                    LoadModelCallback callback,
+                                    EngineLoadResult result) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (result.status != EngineLoadStatus::kOk) {
+    engine_.Reset();  // frees whatever was loaded, on the engine sequence
+    std::move(callback).Run(ToMojo(result.status), nullptr);
+    return;
+  }
+  auto description = mojom::ModelDescription::New();
+  description->architecture = std::move(result.description.architecture);
+  description->backend = std::move(result.description.backend);
+  description->context_tokens = result.description.context_tokens;
+  description->train_context_tokens = result.description.train_context_tokens;
+  description->vocab_size = result.description.vocab_size;
+  description->cpu_repack_used = result.description.cpu_repack_used;
+  model_ = std::make_unique<MoltModelImpl>(
+      std::move(engine_), std::move(model),
+      base::BindOnce(&MoltInferenceService::OnModelDisconnected,
+                     weak_factory_.GetWeakPtr()));
+  std::move(callback).Run(mojom::LoadModelStatus::kOk,
+                          std::move(description));
+}
+
+void MoltInferenceService::OnModelDisconnected() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // The browser unloaded the model; it drops the service pipe too, which
+  // ends the process. Free the weights now regardless.
+  model_.reset();
+}
+
+std::unique_ptr<MoltInferenceService> RunMoltInferenceService(
+    mojo::PendingReceiver<mojom::MoltInferenceService> receiver) {
+  return std::make_unique<MoltInferenceService>(std::move(receiver));
+}
+
+}  // namespace molt_ai

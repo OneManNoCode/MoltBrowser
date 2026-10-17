@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index 500cbc7ed8e76b552a23147279fc233af9649197..3aa4f6881c65ea3a6562e3a07053e71a14444007 100644
+index 500cbc7ed8e76b552a23147279fc233af9649197..fe00bdd819be880f30621c58f54fcc147df24c3a 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
 @@ -37,6 +37,7 @@ static_library("utility") {
@@ -16,3 +16,11 @@ index 500cbc7ed8e76b552a23147279fc233af9649197..3aa4f6881c65ea3a6562e3a07053e71a
      "//chrome/services/speech/buildflags",
      "//components/heap_profiling/in_process",
      "//components/metrics:child_call_stack_profile_builder",
+@@ -143,6 +144,7 @@ static_library("utility") {
+     deps += [
+       "//chrome/common:mojo_bindings",
+       "//chrome/common/importer:interfaces",
++      "//chrome/services/molt_ai/inference",  # MoltBrowser
+       "//chrome/services/reading_mode_metrics:lib",
+       "//components/autofill/core/common",
+       "//components/user_data_importer/common",

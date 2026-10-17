@@ -134,11 +134,13 @@ moltbrowser/
       fingerprinting/        # Fingerprinting protection (browser side)
       memory/                # Opt-in AI memory
       models/                # Verified model downloads
-      runtime/               # On-device LLM runtime (llama.cpp)
+      runtime/               # On-device models: registry + client of the sandbox
       security/              # Agent safety, internal-page guards
       shield/                # MoltShield (adblock-rust)
       tor/                   # MoltNet
       update/                # Signed updates
+    chrome/services/molt_ai/inference/  # On-device LLM inference (llama.cpp) in a
+                             # sandboxed utility process
     third_party/blink/renderer/core/molt_fingerprinting/  # Engine side
     third_party/llama_cpp/   # Vendored llama.cpp
   docs/                      # Documentation

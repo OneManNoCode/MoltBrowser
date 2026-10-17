@@ -1,18 +1,19 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# Std-only building blocks of the on-device runtime (context budgeting,
-# streaming output filters, prompt helpers). The runtime itself is
-# //chrome/browser/molt_ai:molt_ai_runtime, which depends on this.
+# The on-device runtime itself is //chrome/browser/molt_ai:molt_ai_runtime
+# (BrowserAIRuntime + InferenceProcessHost, the client of the sandboxed
+# //chrome/services/molt_ai/inference service).
 
-source_set("inference_utils") {
+# Checks on what the inference service sends (std-only, so the standalone
+# test build links it too).
+source_set("stream_validator") {
   sources = [
-    "context_budget.cc",
-    "context_budget.h",
-    "prompt_utils.cc",
-    "prompt_utils.h",
-    "stream_filters.cc",
-    "stream_filters.h",
+    "stream_validator.cc",
+    "stream_validator.h",
+  ]
+  public_deps = [
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
   ]
 }
 
@@ -20,12 +21,18 @@ source_set("inference_utils") {
 source_set("unit_tests") {
   testonly = true
   sources = [
-    "context_budget_unittest.cc",
-    "prompt_utils_unittest.cc",
-    "stream_filters_unittest.cc",
+    "inference_process_host_unittest.cc",
+    "stream_validator_unittest.cc",
   ]
   deps = [
-    ":inference_utils",
+    ":stream_validator",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/services/molt_ai/inference/public/mojom",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
     "//testing/gtest",
   ]
 }

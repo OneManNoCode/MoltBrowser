@@ -1,7 +1,7 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "chrome/browser/molt_ai/runtime/stream_filters.h"
+#include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 
 #include <cstdint>
 #include <functional>
@@ -392,6 +392,291 @@ TEST(Utf8Test, AssemblerJoinsSplitEmoji) {
   EXPECT_EQ(a.Flush(), "");
   EXPECT_EQ(a.Push("\xE2\x82"), "");
   EXPECT_EQ(a.Flush(), "\xE2\x82");
+}
+
+// ---- StopSequenceFilter ---------------------------------------------------
+
+std::string RunStop(const std::vector<std::string>& stops,
+                    const std::vector<std::string>& pieces,
+                    bool* stopped = nullptr) {
+  StopSequenceFilter f(stops);
+  std::string out;
+  for (const std::string& p : pieces) out += f.Feed(p);
+  out += f.Flush();
+  if (stopped) *stopped = f.stopped();
+  return out;
+}
+
+// Every way of splitting |text| into two or three pieces gives the same
+// output as feeding it whole (and as feeding it byte by byte).
+void ExpectSplitInvariant(const std::vector<std::string>& stops,
+                          const std::string& text) {
+  bool whole_stopped = false;
+  const std::string whole = RunStop(stops, {text}, &whole_stopped);
+  std::vector<std::string> bytes;
+  for (char c : text) bytes.emplace_back(1, c);
+  bool stopped = false;
+  EXPECT_EQ(RunStop(stops, bytes, &stopped), whole) << text;
+  EXPECT_EQ(stopped, whole_stopped) << text;
+  for (size_t i = 0; i <= text.size(); ++i) {
+    for (size_t j = i; j <= text.size(); ++j) {
+      EXPECT_EQ(RunStop(stops, {text.substr(0, i), text.substr(i, j - i),
+                                text.substr(j)},
+                        &stopped),
+                whole)
+          << text << " split at " << i << "," << j;
+      EXPECT_EQ(stopped, whole_stopped);
+    }
+  }
+}
+
+TEST(StopSequenceFilterTest, NoStopsPassesEverythingThrough) {
+  StopSequenceFilter f;
+  EXPECT_TRUE(f.empty());
+  EXPECT_EQ(f.Feed("Hello"), "Hello");
+  EXPECT_EQ(f.Feed(""), "");
+  EXPECT_EQ(f.Flush(), "");
+  EXPECT_FALSE(f.stopped());
+  // Empty stop strings are ignored.
+  StopSequenceFilter g({"", ""});
+  EXPECT_TRUE(g.empty());
+  EXPECT_EQ(g.Feed("abc"), "abc");
+}
+
+TEST(StopSequenceFilterTest, StopTextAndEverythingAfterAreDropped) {
+  bool stopped = false;
+  EXPECT_EQ(RunStop({"\nUser:"}, {"Answer.\nUser: more"}, &stopped),
+            "Answer.");
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(RunStop({"STOP"}, {"STOP right away"}, &stopped), "");
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(RunStop({"STOP"}, {"no stop here"}, &stopped), "no stop here");
+  EXPECT_FALSE(stopped);
+}
+
+TEST(StopSequenceFilterTest, NothingIsReleasedAfterAStop) {
+  StopSequenceFilter f({"END"});
+  EXPECT_EQ(f.Feed("abc E"), "abc ");
+  EXPECT_EQ(f.Feed("ND tail"), "");
+  EXPECT_TRUE(f.stopped());
+  EXPECT_EQ(f.Feed("more"), "");
+  EXPECT_EQ(f.Flush(), "");
+}
+
+TEST(StopSequenceFilterTest, HoldsBackOnlyAPossibleStopPrefix) {
+  StopSequenceFilter f({"</answer>"});
+  EXPECT_EQ(f.Feed("x </ans"), "x ");
+  EXPECT_EQ(f.held_back(), 5u);
+  EXPECT_EQ(f.Feed("wer is"), "</answer is");  // not a stop after all
+  EXPECT_EQ(f.held_back(), 0u);
+  EXPECT_EQ(f.Feed(" <"), " ");
+  EXPECT_EQ(f.Flush(), "<");  // end of stream releases the prefix
+  EXPECT_FALSE(f.stopped());
+}
+
+TEST(StopSequenceFilterTest, SplitAcrossPiecesAnyWay) {
+  ExpectSplitInvariant({"\n\nUser:"}, "Hi.\n\nUse it.\n\nUser: x");
+  ExpectSplitInvariant({"abab"}, "abaabababab");
+  ExpectSplitInvariant({"aab"}, "aaaaaab!");
+  ExpectSplitInvariant({"xyz", "yq"}, "xxyyqz");
+  ExpectSplitInvariant({"<|im_end|>"}, "<|im_<|im_end|>");
+  ExpectSplitInvariant({"stop"}, "no match at all");
+}
+
+TEST(StopSequenceFilterTest, OverlappingPrefixesFoundByKmp) {
+  // A naive matcher that restarts after a mismatch at the next byte would
+  // miss these.
+  EXPECT_EQ(RunStop({"aab"}, {"aaab"}), "a");
+  EXPECT_EQ(RunStop({"abab"}, {"ababab"}), "");
+  EXPECT_EQ(RunStop({"abac"}, {"xabababac!"}), "xabab");
+}
+
+TEST(StopSequenceFilterTest, FirstStopToCompleteWins) {
+  EXPECT_EQ(RunStop({"abc", "b"}, {"xabc"}), "xa");
+  EXPECT_EQ(RunStop({"bc", "abcd"}, {"abcd"}), "a");
+  EXPECT_EQ(RunStop({"END", "STOP"}, {"1 STOP 2 END"}), "1 ");
+}
+
+TEST(StopSequenceFilterTest, Utf8StopsNeverSplitACharacter) {
+  // "é" is C3 A9; the stop starts with the same lead byte as a different
+  // character in the text.
+  bool stopped = false;
+  EXPECT_EQ(RunStop({"\xC3\xA8nd"}, {"caf\xC3\xA9", " \xC3\xA8", "nd"},
+                    &stopped),
+            "caf\xC3\xA9 ");
+  EXPECT_TRUE(stopped);
+  StopSequenceFilter f({"\xE2\x80\x94STOP"});  // em dash + STOP
+  const std::string a = f.Feed("x\xE2\x80\x94");
+  EXPECT_EQ(a, "x");
+  EXPECT_TRUE(IsValidUtf8(a));
+  const std::string b = f.Feed("\xE2\x80\x94y");
+  EXPECT_EQ(b, "\xE2\x80\x94\xE2\x80\x94y");
+  EXPECT_TRUE(IsValidUtf8(b));
+}
+
+TEST(StopSequenceFilterTest, LinearTimeOnAdversarialInput) {
+  // 2 MiB of 'a' against stops that almost match everywhere: KMP keeps this
+  // at O(n * stops); a naive rescan would be O(n * stops * 64).
+  std::vector<std::string> stops;
+  for (int i = 0; i < 8; ++i) stops.push_back(std::string(63, 'a') + "b");
+  StopSequenceFilter f(stops);
+  const std::string chunk(4096, 'a');
+  size_t out = 0;
+  for (int i = 0; i < 512; ++i) {
+    out += f.Feed(chunk).size();
+    EXPECT_LE(f.held_back(), 63u);
+  }
+  out += f.Flush().size();
+  EXPECT_EQ(out, 512u * 4096u);
+  EXPECT_FALSE(f.stopped());
+}
+
+TEST(StreamPipelineTest, StopSequenceAppliesAfterReasoningFilters) {
+  // A stop string inside the hidden reasoning doesn't end the answer.
+  ThinkTagFilter think;
+  StopSequenceFilter stop({"DONE"});
+  std::string out;
+  for (const char* p : {"<think>", "I am DONE thinking", "</think>",
+                        "\n\nThe answer", " is 4. DO", "NE and more"}) {
+    out += stop.Feed(think.Feed(p));
+  }
+  out += stop.Feed(think.Flush());
+  out += stop.Flush();
+  EXPECT_EQ(out, "The answer is 4. ");
+  EXPECT_TRUE(stop.stopped());
+}
+
+// ---- UTF-8 validation -----------------------------------------------------
+
+TEST(Utf8Test, IsValidUtf8AcceptsWellFormedText) {
+  EXPECT_TRUE(IsValidUtf8(""));
+  EXPECT_TRUE(IsValidUtf8("plain ascii"));
+  EXPECT_TRUE(IsValidUtf8(std::string("nul\0inside", 10)));
+  EXPECT_TRUE(IsValidUtf8("caf\xC3\xA9"));                // U+00E9
+  EXPECT_TRUE(IsValidUtf8("\xE2\x82\xAC"));               // U+20AC
+  EXPECT_TRUE(IsValidUtf8("\xED\x9F\xBF"));               // U+D7FF
+  EXPECT_TRUE(IsValidUtf8("\xEE\x80\x80"));               // U+E000
+  EXPECT_TRUE(IsValidUtf8("\xEF\xBF\xBD"));               // U+FFFD
+  EXPECT_TRUE(IsValidUtf8("\xF0\x9F\x98\x80"));           // U+1F600
+  EXPECT_TRUE(IsValidUtf8("\xF4\x8F\xBF\xBF"));           // U+10FFFF
+}
+
+TEST(Utf8Test, IsValidUtf8RejectsIllFormedText) {
+  EXPECT_FALSE(IsValidUtf8("\x80"));                  // lone continuation
+  EXPECT_FALSE(IsValidUtf8("\xC3"));                  // truncated
+  EXPECT_FALSE(IsValidUtf8("ab\xE2\x82"));            // truncated at end
+  EXPECT_FALSE(IsValidUtf8("\xC0\xAF"));              // overlong '/'
+  EXPECT_FALSE(IsValidUtf8("\xC1\xBF"));              // overlong
+  EXPECT_FALSE(IsValidUtf8("\xE0\x80\xAF"));          // overlong 3-byte
+  EXPECT_FALSE(IsValidUtf8("\xF0\x80\x80\xAF"));      // overlong 4-byte
+  EXPECT_FALSE(IsValidUtf8("\xED\xA0\x80"));          // U+D800 surrogate
+  EXPECT_FALSE(IsValidUtf8("\xED\xBF\xBF"));          // U+DFFF surrogate
+  EXPECT_FALSE(IsValidUtf8("\xF4\x90\x80\x80"));      // U+110000
+  EXPECT_FALSE(IsValidUtf8("\xF5\x80\x80\x80"));      // invalid lead
+  EXPECT_FALSE(IsValidUtf8("\xFF"));
+  EXPECT_FALSE(IsValidUtf8("\xC3\x28"));              // bad continuation
+  EXPECT_FALSE(IsValidUtf8("\xE2\x28\xA1"));
+}
+
+TEST(Utf8Test, ReplaceInvalidUtf8UsesOneReplacementPerMaximalSubpart) {
+  const std::string fffd = "\xEF\xBF\xBD";
+  EXPECT_EQ(ReplaceInvalidUtf8("valid \xC3\xA9"), "valid \xC3\xA9");
+  EXPECT_EQ(ReplaceInvalidUtf8("a\x80" "b"), "a" + fffd + "b");
+  EXPECT_EQ(ReplaceInvalidUtf8("\xE2\x82"), fffd);          // one subpart
+  EXPECT_EQ(ReplaceInvalidUtf8("\xE2\x82" "A"), fffd + "A");
+  EXPECT_EQ(ReplaceInvalidUtf8("\xC0\xAF"), fffd + fffd);   // C0 never leads
+  EXPECT_EQ(ReplaceInvalidUtf8("\xED\xA0\x80"), fffd + fffd + fffd);
+  EXPECT_EQ(ReplaceInvalidUtf8("\xF0\x9F\x98"), fffd);
+  EXPECT_EQ(ReplaceInvalidUtf8("\xF0\x9F\x98\xF0\x9F\x98\x80"),
+            fffd + "\xF0\x9F\x98\x80");
+  // The Unicode Standard's example (section 3.9, U+FFFD substitution).
+  EXPECT_EQ(ReplaceInvalidUtf8("\x61\xF1\x80\x80\xE1\x80\xC2\x62\x80\x63\x80"
+                               "\xBF\x64"),
+            "a" + fffd + fffd + fffd + "b" + fffd + "c" + fffd + fffd + "d");
+}
+
+TEST(Utf8Test, ReplaceInvalidUtf8OutputIsAlwaysValid) {
+  // Every 1- and 2-byte string, and a sample of 3- and 4-byte ones.
+  for (int a = 0; a < 256; ++a) {
+    const std::string one(1, static_cast<char>(a));
+    EXPECT_TRUE(IsValidUtf8(ReplaceInvalidUtf8(one)));
+    for (int b = 0; b < 256; ++b) {
+      const std::string two = one + static_cast<char>(b);
+      const std::string fixed = ReplaceInvalidUtf8(two);
+      ASSERT_TRUE(IsValidUtf8(fixed)) << a << " " << b;
+      if (IsValidUtf8(two)) {
+        EXPECT_EQ(fixed, two);
+      }
+    }
+  }
+  uint32_t x = 12345;
+  for (int i = 0; i < 200000; ++i) {
+    std::string s;
+    for (int j = 0; j < 4; ++j) {
+      x = x * 1103515245u + 12345u;
+      s.push_back(static_cast<char>(0x80 | ((x >> 16) & 0x7F) |
+                                    ((x >> 24) & 0x80 ? 0x40 : 0)));
+    }
+    const std::string fixed = ReplaceInvalidUtf8(s);
+    ASSERT_TRUE(IsValidUtf8(fixed));
+    if (IsValidUtf8(s)) {
+      EXPECT_EQ(fixed, s);
+    }
+  }
+}
+
+TEST(Utf8Test, DisplayTextHasNoNulAndIsValid) {
+  const std::string fffd = "\xEF\xBF\xBD";
+  EXPECT_EQ(ReplaceNul("plain"), "plain");
+  EXPECT_EQ(ReplaceNul(std::string("a\0b\0", 4)), "a" + fffd + "b" + fffd);
+  EXPECT_EQ(ToDisplayText(std::string("\0\xC3\xA9\xFF", 4)),
+            fffd + "\xC3\xA9" + fffd);
+  EXPECT_EQ(ToDisplayText("caf\xC3\xA9"), "caf\xC3\xA9");
+}
+
+TEST(StreamPipelineTest, ServiceAndBrowserStopFiltersAgree) {
+  // The service runs the stop filter on display text; the browser runs its
+  // copy on the chunks it receives (already display text). Same text, same
+  // cut, however the service chunked it.
+  const std::vector<std::string> stops = {"\xEF\xBF\xBD\xEF\xBF\xBD",
+                                          "END"};
+  const std::vector<std::string> pieces = {"ok ", "\xFF", "\xFE", " tail END"};
+  Utf8Assembler utf8;
+  StopSequenceFilter service(stops);
+  std::vector<std::string> sent;
+  for (const std::string& p : pieces) {
+    std::string chunk = service.Feed(ToDisplayText(utf8.Push(p)));
+    if (!chunk.empty()) sent.push_back(chunk);
+  }
+  std::string last = service.Feed(ToDisplayText(utf8.Flush()));
+  last += service.Flush();
+  if (!last.empty()) sent.push_back(last);
+  EXPECT_TRUE(service.stopped());
+  StopSequenceFilter browser(stops);
+  std::string shown;
+  for (const std::string& c : sent) {
+    ASSERT_TRUE(IsValidUtf8(c));
+    shown += browser.Feed(ReplaceNul(c));
+  }
+  shown += browser.Flush();
+  EXPECT_EQ(shown, "ok ");
+  EXPECT_FALSE(browser.stopped());  // the service already cut it
+}
+
+TEST(StreamPipelineTest, ByteFallbackGarbageLeavesTheServiceAsValidUtf8) {
+  // Pieces as a byte-fallback vocab can produce them; what the service sends
+  // (Utf8Assembler output, then ReplaceInvalidUtf8) is always valid.
+  Utf8Assembler utf8;
+  std::string sent;
+  for (const char* p : {"ok ", "\xED", "\xA0\x80", " \xC3", "(", "\xF0\x9F",
+                        "\x98\x80", "\xFF", "end \xE2\x82"}) {
+    const std::string chunk = ReplaceInvalidUtf8(utf8.Push(p));
+    EXPECT_TRUE(IsValidUtf8(chunk));
+    sent += chunk;
+  }
+  sent += ReplaceInvalidUtf8(utf8.Flush());
+  EXPECT_TRUE(IsValidUtf8(sent));
+  EXPECT_NE(sent.find("\xF0\x9F\x98\x80"), std::string::npos);
 }
 
 }  // namespace

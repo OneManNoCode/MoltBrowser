@@ -64,6 +64,7 @@
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/common/importer/profile_import.mojom.h"
+#include "chrome/services/molt_ai/inference/molt_inference_service.h"  // MoltBrowser
 #include "chrome/services/reading_mode_metrics/reading_mode_metrics_service.h"
 #include "chrome/utility/importer/profile_import_impl.h"
 #include "components/mirroring/service/mirroring_service.h"
@@ -498,6 +499,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if !BUILDFLAG(IS_ANDROID)
+  services.Add(molt_ai::RunMoltInferenceService);  // MoltBrowser
   services.Add(RunProfileImporter);
   services.Add(RunMirroringService);
   services.Add(RunReadingModeMetricsService);

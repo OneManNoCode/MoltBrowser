@@ -45,6 +45,7 @@ test("molt_ai_unittests") {
     "//chrome/browser/molt_ai/security:unit_tests",
     "//chrome/browser/molt_ai/tor:unit_tests",
     "//chrome/browser/ui/webui/molt_ai:unit_tests",
+    "//chrome/services/molt_ai/inference/engine:unit_tests",
 
     # The sandboxed document parser service and its PDF scraper.
     "//chrome/services/molt_ai/document_parser:unit_tests",

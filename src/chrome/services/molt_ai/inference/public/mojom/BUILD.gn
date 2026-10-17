@@ -1,0 +1,15 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+# molt_ai.mojom.MoltInferenceService: on-device inference in a sandboxed
+# utility process. Used by //chrome/services/molt_ai/inference (the service)
+# and //chrome/browser/molt_ai:molt_ai_runtime (the client).
+mojom("mojom") {
+  sources = [ "molt_inference.mojom" ]
+  public_deps = [
+    "//mojo/public/mojom/base",
+    "//sandbox/policy/mojom",
+  ]
+}
