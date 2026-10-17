@@ -5,16 +5,28 @@
 # This file defines the build targets for all AI components
 # that integrate into the Chromium browser build.
 
+# The on-device model registry and the client of the sandboxed inference
+# service. No llama.cpp: the model runs in a utility process
+# (//chrome/services/molt_ai/inference, kOnDeviceModelExecution sandbox).
 source_set("molt_ai_runtime") {
   sources = [
     "runtime/browser_ai_runtime.cc",
     "runtime/browser_ai_runtime.h",
+    "runtime/inference_process_host.cc",
+    "runtime/inference_process_host.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//chrome/browser/molt_ai/runtime:stream_validator",
+    "//chrome/services/molt_ai/inference/public/mojom",
+    "//content/public/browser",
   ]
 
   deps = [
-    "//base",
-    "//chrome/services/molt_ai/inference/engine:inference_utils",
-    "//third_party/llama_cpp",
+    "//chrome/browser/lifetime:termination_notification",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+    "//mojo/public/cpp/bindings",
   ]
 }
 

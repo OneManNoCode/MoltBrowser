@@ -1,0 +1,38 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# The on-device runtime itself is //chrome/browser/molt_ai:molt_ai_runtime
+# (BrowserAIRuntime + InferenceProcessHost, the client of the sandboxed
+# //chrome/services/molt_ai/inference service).
+
+# Checks on what the inference service sends (std-only, so the standalone
+# test build links it too).
+source_set("stream_validator") {
+  sources = [
+    "stream_validator.cc",
+    "stream_validator.h",
+  ]
+  public_deps = [
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "inference_process_host_unittest.cc",
+    "stream_validator_unittest.cc",
+  ]
+  deps = [
+    ":stream_validator",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/services/molt_ai/inference/public/mojom",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
+    "//testing/gtest",
+  ]
+}

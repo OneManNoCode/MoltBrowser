@@ -68,14 +68,16 @@ struct ModelInfo {
 //         PromptOptions::max_reasoning_tokens).
 enum class ReasoningMode { kOff, kOn };
 
-// Token streaming callback. Called with visible text only (reasoning,
-// Harmony analysis and template control markers are filtered out), and
-// exactly once with is_done=true at the end. Errors are reported through
-// the returned GenerationResult, not as streamed text.
+// Token streaming callback. Called on the calling thread with visible text
+// only (reasoning, Harmony analysis and template control markers are
+// filtered out, stop sequences applied; several tokens may arrive in one
+// call, at most about 30 calls a second), and exactly once with
+// is_done=true at the end. Errors are reported through the returned
+// GenerationResult, not as streamed text.
 using TokenCallback = std::function<void(const std::string& token, bool is_done)>;
 
-// A single chat turn for template-aware prompting (StreamChat /
-// ApplyChatTemplate). role is "system", "user" or "assistant".
+// A single chat turn for template-aware prompting (StreamChat). role is
+// "system", "user" or "assistant".
 struct ChatMessage {
   std::string role;
   std::string content;
@@ -124,6 +126,9 @@ struct PromptOptions {
   // non-empty key (one conversation) reuse the common token prefix of their
   // prompts instead of re-evaluating it. Empty = no reuse.
   std::string conversation_key;
+  // Visible-text stop strings (at most 8, each 1-64 bytes of UTF-8; others
+  // are ignored). The answer ends before the first one; it isn't included.
+  std::vector<std::string> stop_sequences;
 };
 
 // Generation result
@@ -152,15 +157,21 @@ struct RamCheck {
 };
 
 // ============================================================
-// BrowserAIRuntime — Core AI orchestration engine
+// BrowserAIRuntime — on-device model registry and inference client
 // ============================================================
-// Owns the one on-device llama.cpp model/context, chat templating, the
-// context-window budget, streaming output filtering and per-request
-// cancellation.
+// The model itself runs in a sandboxed utility process
+// (molt_ai.mojom.MoltInferenceService, chrome/services/molt_ai/inference;
+// docs/design/SANDBOXED_INFERENCE.md): llama.cpp, the chat template, the
+// context budget and the output filters live there, and nothing in the
+// browser process parses a GGUF or tokenizes text. This class keeps the
+// model registry, the RAM checks, per-request cancellation and idle /
+// memory-pressure unloading, and turns its blocking API into calls on
+// InferenceProcessHost (UI thread), validating everything that comes back.
 //
-// Threading: load and generation are blocking and run on ThreadPool
-// workers. generation_mutex guards the llama handles during use;
-// load_mutex serializes loads/unloads (see Impl).
+// Threading: LoadModel, UnloadModel, DeleteModel and the generation calls
+// block and must run on ThreadPool workers (MayBlock), never on the UI
+// thread. They return early when the app terminates, so a worker blocked
+// here never holds up shutdown.
 // ============================================================
 class BrowserAIRuntime {
  public:
@@ -245,16 +256,6 @@ class BrowserAIRuntime {
                                 TokenCallback callback,
                                 const PromptOptions& options = {});
 
-  // Format |messages| with the loaded model's own chat template (the
-  // GGUF's tokenizer.chat_template, via llama_chat_apply_template).
-  // Falls back to llama.cpp's built-in "chatml" format when the model
-  // ships no template or its template is unrecognized. When
-  // |add_assistant| is true, the assistant-turn start marker is
-  // appended so the model continues as the assistant. Caller must hold
-  // the generation lock (only called from StreamChat).
-  std::string ApplyChatTemplate(const std::vector<ChatMessage>& messages,
-                                bool add_assistant) const;
-
   // Chat-aware streaming inference: applies the loaded model's chat
   // template, fits the request into the context window (see ChatPrompt),
   // reuses the KV cache across turns of one conversation
@@ -285,9 +286,8 @@ class BrowserAIRuntime {
   // Cancels every in-flight request (shutdown / legacy callers).
   void CancelGeneration();
 
-  // The id of the model currently resident in memory ("" if none). Takes
-  // generation_mutex, so call it from a worker thread (it can briefly block
-  // behind an in-flight decode), never the UI thread.
+  // The id of the model currently loaded in the inference process ("" if
+  // none). Doesn't block behind a generation.
   std::string GetLoadedModelId() const;
 
   // ---- Hardware ----
@@ -310,12 +310,26 @@ class BrowserAIRuntime {
  private:
   struct Impl;
   class PressureListener;
+  class HostDelegate;
 
   // Called (on a worker) after a critical memory-pressure signal.
   void OnCriticalMemoryPressure();
   // Records activity and (re)arms the idle-unload check.
   void TouchActivity();
   void MaybeUnloadIdle(uint64_t epoch);
+  // Ends the model process if nothing is using it (idle / memory pressure).
+  void UnloadIfIdle(const char* reason);
+  // UI thread.
+  void OnAppTerminating();
+  void OnModelProcessLost(const std::string& model_id,
+                          const std::string& crash_key,
+                          int phase);
+  // The streaming facade shared by StreamPrompt and StreamChat.
+  GenerationResult Generate(bool is_chat,
+                            const ChatPrompt* chat,
+                            const std::string* raw_prompt,
+                            TokenCallback callback,
+                            const PromptOptions& options);
 
   std::unique_ptr<Impl> impl_;
 };

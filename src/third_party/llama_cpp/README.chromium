@@ -12,7 +12,10 @@ Shipped: yes
 Description:
 LLM inference in C/C++ (llama.cpp and the ggml tensor library), used for
 MoltBrowser's on-device model runtime. It parses untrusted model files
-(GGUF) and prompt text in the browser process, hence Security Critical.
+(GGUF) and prompt text, hence Security Critical. It runs only in a
+sandboxed utility process: the inference service in
+//chrome/services/molt_ai/inference (kOnDeviceModelExecution sandbox,
+docs/design/SANDBOXED_INFERENCE.md), the only code BUILD.gn lets link it.
 Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
 macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev).
 
@@ -26,9 +29,12 @@ and ggml-metal sources and all MoltBrowser callers, is built with
 Chromium's -fno-exceptions. So a `throw` or `.at(` miss in ggml-cpu or
 ggml-metal aborts (none in the files BUILD.gn builds at b11641; only
 the unbuilt ggml-cpu/spacemit/ has some), and an exception that
-escapes a llama_* C function into a caller terminates the browser
-process. Model loading and context creation catch everything upstream;
-see the llama-vocab.cpp patch below for tokenization.
+escapes a llama_* C function into a caller terminates the inference
+process (the browser then reports the model as stopped; repeated
+crashes are rate-limited). Model loading and context creation catch
+everything upstream; see the llama-vocab.cpp patch below for
+tokenization, and the list of checked calls at the top of
+chrome/services/molt_ai/inference/llama_engine.cc.
 
 Local Modifications:
 - BUILD.gn: GN build for Chromium (not upstream). Every target that

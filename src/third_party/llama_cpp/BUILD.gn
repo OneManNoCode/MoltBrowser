@@ -57,7 +57,7 @@ config("llama_cpp_version_headers") {
 # pointer types (ggml_vec_dot_t, ggml_from_float_t, ...) that do not match the
 # kernels' own types (e.g. ggml_vec_dot_f16 takes non-const ggml_fp16_t *,
 # ggml_vec_dot_t passes const void *), so the first matmul on F16 data traps
-# and takes the browser process down. Pointer generalization
+# and takes the (inference) process down. Pointer generalization
 # (cfi_icall_generalize_pointers) is not enough because the mismatch includes
 # const. Exempt the whole library: a function defined in an exempt TU carries
 # no CFI type info, so llama.cpp's own indirect calls into ggml (e.g. functions
@@ -92,10 +92,6 @@ config("llama_exceptions") {
 _llama_cpp_visibility = [
   ":*",
   "//chrome/services/molt_ai/inference/*",
-
-  # Transitional: the in-process runtime keeps linking llama.cpp until the
-  # browser-side client replaces it (S5 phase 2, step 6).
-  "//chrome/browser/molt_ai:molt_ai_runtime",
 ]
 
 # MoltBrowser: build for Chrome's seccomp-bpf sandbox. src/llama-mmap.cpp
@@ -106,8 +102,9 @@ config("llama_sandboxed") {
 }
 
 # MoltBrowser: compile out ggml's crash backtrace (fork + PR_SET_PTRACER +
-# exec of gdb/lldb from PATH inside the browser process) and its process-wide
-# std::set_terminate static initializer. See README.chromium.
+# exec of gdb/lldb from PATH; the sandbox would also kill the process for
+# it) and its process-wide std::set_terminate static initializer. See
+# README.chromium.
 config("ggml_no_backtrace") {
   defines = [ "GGML_MOLTBROWSER_NO_BACKTRACE" ]
 }
@@ -258,9 +255,10 @@ source_set("ggml_cpu_arch_arm_c") {
 # These TUs are compiled with -mavx2 -mfma -mf16c, so they raise SIGILL on
 # x64 CPUs without AVX2/FMA (pre-2013 Intel, some VMs). They contain no
 # static initializers (checked: no .init_array in the objects), so nothing
-# runs at startup; BrowserAIRuntime::Initialize() checks base::CPU and
-# refuses local models (pointing users to cloud models) before any
-# llama/ggml call. TODO: real runtime dispatch — build one CPU-backend
+# runs at startup; BrowserAIRuntime checks base::CPU and refuses local
+# models (pointing users to cloud models) before launching the inference
+# service, which checks again before any llama/ggml call. TODO: real
+# runtime dispatch — build one CPU-backend
 # variant per ISA level (like ggml's GGML_CPU_ALL_VARIANTS/backend-dl) and
 # pick at runtime — so older CPUs can run models too.
 source_set("ggml_cpu_arch_x86") {
@@ -710,7 +708,7 @@ source_set("llama_cpp") {
 }
 
 # Common utilities (sampling, CLI helpers, etc.)
-# NOTE: nothing depends on this target (the runtime only uses llama.h) and it
+# NOTE: nothing depends on this target (the service only uses llama.h) and it
 # is not buildable as is: common/jinja/value.h uses typeid, which Chromium's
 # -fno-rtti rejects, and the list below has never covered all of common/ (no
 # sampling.cpp, jinja/*.cpp, ...). Same situation at b8284 (where arg.cpp and
