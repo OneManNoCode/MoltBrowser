@@ -61,7 +61,7 @@ and pick something to help with. Status is updated as work lands.
 
 | | Item |
 |---|---|
-| 🔨 | **Sandboxed AI.** On-device inference and document parsing move into sandboxed utility processes. *PDF and Office/e-book parsing now run in a sandboxed utility process, one per document. On-device inference is next ([design](docs/design/SANDBOXED_INFERENCE.md)).* |
+| 🧪 | **Sandboxed AI.** On-device inference and document parsing move into sandboxed utility processes. *Code complete: PDF and Office/e-book parsing run in a sandboxed utility process, one per document, and llama.cpp runs in its own sandboxed process ([design](docs/design/SANDBOXED_INFERENCE.md)); first build and per-platform checks are next.* |
 | 📋 | **Web-standard AI APIs, without Google.** The Prompt, Summarizer, Writer, Rewriter and Translator APIs, backed by the open model of your choice and running fully offline. |
 | 📋 | **A private agent.** An on-device planner combined with record/replay, screenshot understanding (vision models), grammar-constrained actions and WebMCP site tools. |
 | 📋 | **Semantic history search** with real on-device embeddings. |
