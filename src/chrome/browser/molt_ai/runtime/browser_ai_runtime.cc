@@ -28,9 +28,9 @@
 #include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
-#include "chrome/browser/molt_ai/runtime/context_budget.h"
-#include "chrome/browser/molt_ai/runtime/prompt_utils.h"
-#include "chrome/browser/molt_ai/runtime/stream_filters.h"
+#include "chrome/services/molt_ai/inference/engine/context_budget.h"
+#include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
+#include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 
 // llama.cpp headers. NOTE: on x64 parts of ggml are compiled with
 // -mavx2/-mfma/-mf16c (see //third_party/llama_cpp/BUILD.gn); nothing in

@@ -1,7 +1,7 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "chrome/browser/molt_ai/runtime/stream_filters.h"
+#include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 
 #include <algorithm>
 
@@ -234,7 +234,162 @@ std::string ThinkTagFilter::Flush() {
   return out;
 }
 
+// ---- StopSequenceFilter ---------------------------------------------------
+
+StopSequenceFilter::StopSequenceFilter(std::vector<std::string> stop_sequences) {
+  for (std::string& text : stop_sequences) {
+    if (text.empty()) continue;
+    Stop stop;
+    // failure[i] = length of the longest proper prefix of text[0..i] that is
+    // also a suffix of it.
+    stop.failure.assign(text.size(), 0);
+    size_t k = 0;
+    for (size_t i = 1; i < text.size(); ++i) {
+      while (k > 0 && text[i] != text[k]) k = stop.failure[k - 1];
+      if (text[i] == text[k]) ++k;
+      stop.failure[i] = k;
+    }
+    stop.text = std::move(text);
+    stops_.push_back(std::move(stop));
+  }
+}
+
+StopSequenceFilter::~StopSequenceFilter() = default;
+StopSequenceFilter::StopSequenceFilter(StopSequenceFilter&&) = default;
+StopSequenceFilter& StopSequenceFilter::operator=(StopSequenceFilter&&) =
+    default;
+
+std::string StopSequenceFilter::Feed(std::string_view text) {
+  std::string out;
+  if (stopped_) return out;
+  if (stops_.empty()) {
+    out.assign(text);
+    return out;
+  }
+  // pending_ holds every byte not released yet. A stop string completing at
+  // pending_[i] starts inside pending_: its first (length - 1) bytes were a
+  // partial match, and partial matches are never released.
+  const size_t begin = pending_.size();
+  pending_.append(text);
+  for (size_t i = begin; i < pending_.size(); ++i) {
+    const char c = pending_[i];
+    for (Stop& stop : stops_) {
+      size_t k = stop.matched;
+      while (k > 0 && stop.text[k] != c) k = stop.failure[k - 1];
+      if (stop.text[k] == c) ++k;
+      if (k == stop.text.size()) {
+        out.append(pending_, 0, i + 1 - k);
+        pending_.clear();
+        stopped_ = true;
+        return out;
+      }
+      stop.matched = k;
+    }
+  }
+  size_t hold = 0;
+  for (const Stop& stop : stops_) hold = std::max(hold, stop.matched);
+  hold = std::min(hold, pending_.size());
+  out.append(pending_, 0, pending_.size() - hold);
+  pending_.erase(0, pending_.size() - hold);
+  return out;
+}
+
+std::string StopSequenceFilter::Flush() {
+  std::string out;
+  if (!stopped_) out.swap(pending_);
+  pending_.clear();
+  for (Stop& stop : stops_) stop.matched = 0;
+  return out;
+}
+
 // ---- UTF-8 ----------------------------------------------------------------
+
+namespace {
+
+// Byte ranges of a well-formed UTF-8 sequence starting with |lead| (Table 3-7
+// of the Unicode Standard). |length| is 0 for a byte that can't start one
+// (continuation byte, C0/C1 overlong lead, F5..FF).
+struct SequenceShape {
+  size_t length = 0;
+  unsigned char second_min = 0x80;
+  unsigned char second_max = 0xBF;
+};
+
+SequenceShape ShapeOf(unsigned char lead) {
+  SequenceShape shape;
+  if (lead < 0x80) {
+    shape.length = 1;
+  } else if (lead >= 0xC2 && lead <= 0xDF) {
+    shape.length = 2;
+  } else if (lead >= 0xE0 && lead <= 0xEF) {
+    shape.length = 3;
+    if (lead == 0xE0) shape.second_min = 0xA0;  // no overlong 3-byte forms
+    if (lead == 0xED) shape.second_max = 0x9F;  // no surrogates
+  } else if (lead >= 0xF0 && lead <= 0xF4) {
+    shape.length = 4;
+    if (lead == 0xF0) shape.second_min = 0x90;  // no overlong 4-byte forms
+    if (lead == 0xF4) shape.second_max = 0x8F;  // nothing above U+10FFFF
+  }
+  return shape;
+}
+
+// How many bytes at s[i] belong to a (possibly incomplete) well-formed
+// sequence: the full length if it is complete, otherwise the length of its
+// maximal subpart (at least 1 for a lead byte that can start a sequence, 0
+// for one that can't).
+size_t MatchedPrefix(std::string_view s, size_t i, const SequenceShape& shape) {
+  if (shape.length == 0) return 0;
+  size_t n = 1;
+  while (n < shape.length && i + n < s.size()) {
+    const auto b = static_cast<unsigned char>(s[i + n]);
+    const unsigned char lo = n == 1 ? shape.second_min : 0x80;
+    const unsigned char hi = n == 1 ? shape.second_max : 0xBF;
+    if (b < lo || b > hi) break;
+    ++n;
+  }
+  return n;
+}
+
+constexpr char kReplacementCharacter[] = "\xEF\xBF\xBD";
+
+}  // namespace
+
+bool IsValidUtf8(std::string_view s) {
+  size_t i = 0;
+  while (i < s.size()) {
+    const SequenceShape shape = ShapeOf(static_cast<unsigned char>(s[i]));
+    const size_t n = MatchedPrefix(s, i, shape);
+    if (n == 0 || n != shape.length) return false;
+    i += n;
+  }
+  return true;
+}
+
+std::string ReplaceInvalidUtf8(std::string_view s) {
+  std::string out;
+  size_t i = 0;
+  size_t copied = 0;  // s[copied, i) is valid and not yet in |out|
+  bool replaced = false;
+  while (i < s.size()) {
+    const SequenceShape shape = ShapeOf(static_cast<unsigned char>(s[i]));
+    const size_t n = MatchedPrefix(s, i, shape);
+    if (n != 0 && n == shape.length) {
+      i += n;
+      continue;
+    }
+    if (!replaced) out.reserve(s.size() + 8);
+    replaced = true;
+    out.append(s.substr(copied, i - copied));
+    out += kReplacementCharacter;
+    i += n == 0 ? 1 : n;  // one U+FFFD per maximal subpart
+    copied = i;
+  }
+  if (!replaced) return std::string(s);
+  out.append(s.substr(copied));
+  return out;
+}
+
+// ---- Utf8Assembler --------------------------------------------------------
 
 size_t Utf8SafePrefixLength(std::string_view s) {
   if (s.empty()) return 0;

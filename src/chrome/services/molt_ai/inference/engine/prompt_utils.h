@@ -1,11 +1,12 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// Std-only prompt helpers for BrowserAIRuntime (unit-tested standalone in
-// prompt_utils_unittest.cc).
+// Std-only prompt helpers for the on-device inference engine (LlamaEngine,
+// in the sandboxed inference service); unit-tested standalone in
+// prompt_utils_unittest.cc.
 
-#ifndef CHROME_BROWSER_MOLT_AI_RUNTIME_PROMPT_UTILS_H_
-#define CHROME_BROWSER_MOLT_AI_RUNTIME_PROMPT_UTILS_H_
+#ifndef CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_PROMPT_UTILS_H_
+#define CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_PROMPT_UTILS_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -44,4 +45,4 @@ bool LooksLikeSpecialTokenText(const std::string& text);
 
 }  // namespace molt_ai
 
-#endif  // CHROME_BROWSER_MOLT_AI_RUNTIME_PROMPT_UTILS_H_
+#endif  // CHROME_SERVICES_MOLT_AI_INFERENCE_ENGINE_PROMPT_UTILS_H_

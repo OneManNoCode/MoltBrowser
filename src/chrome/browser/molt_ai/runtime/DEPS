@@ -1,0 +1,4 @@
+include_rules = [
+  # The std-only engine helpers moved to the inference service (S5 phase 2).
+  "+chrome/services/molt_ai/inference/engine",
+]
