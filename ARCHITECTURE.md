@@ -61,6 +61,13 @@ MoltBrowser
  |    +-- DOMInterpreter (linear-time, thread pool, 2 MiB cap) /
  |        DOMContentBridge (isolated-world page reads)
  |
+ +-- Document parsing — /pdf downloads and chat attachments
+ |    +-- DocumentParser service (chrome/services/molt_ai/document_parser):
+ |    |   PDF text layer, anydoc (Office/e-book/CSV -> Markdown), .docx text;
+ |    |   in a kService-sandboxed utility process, one per document
+ |    +-- DocumentParserClient (molt_ai/document_parser): launch, 30 s
+ |        timeout + kill, untrusted-reply validation
+ |
  +-- MemoryService (molt_ai/memory) — opt-in, encrypted SQLite store +
  |    in-memory index, HashingEmbedder v3 (Unicode-aware keyword hashing)
  |
@@ -92,6 +99,7 @@ repo/
  |    |    +-- agents/                 # WebAgent
  |    |    +-- automation/             # Agent mode (record/replay)
  |    |    +-- dom/                    # DOMInterpreter, DOMContentBridge
+ |    |    +-- document_parser/        # client of the sandboxed parser service
  |    |    +-- memory/                 # MemoryService, storage, index, embedder
  |    |    +-- security/               # agent_safety, WebUINavigationThrottle
  |    |    +-- common/                 # trusted helper-binary checks
@@ -109,6 +117,9 @@ repo/
  |    |    +-- molt_ai_chat_handler.*  # WebUI message handler (bridge JS<>C++)
  |    |    +-- molt_ai_settings_ui.*   # chrome://molt-ai-settings/
  |    |    +-- molt_ai_agent_ui.*      # chrome://molt-ai-agent/
+ |    +-- chrome/services/molt_ai/document_parser/  # utility-process parsers
+ |    |    +-- pdf/, anydoc/           # PDF scraper, anydoc cxx bridge
+ |    +-- chrome/utility/services.cc  # registers the parser service
  |    +-- chrome/common/
  |    |    +-- webui_url_constants.h   # URL registrations
  |    +-- third_party/llama_cpp/       # LLM inference engine (GGUF), see README.chromium
@@ -138,6 +149,25 @@ repo/
   it doesn't, so no exception may escape a `llama_*` call. On macOS the Metal
   kernels are compiled into `default.metallib` by
   `scripts/build-ggml-metallib.sh`.
+
+### Document parsing (sandboxed)
+- Untrusted documents (PDFs downloaded for `/pdf`, files attached in the AI
+  chat) are parsed only in a utility process under the `kService` sandbox
+  (no file system, no network): `molt_ai.mojom.DocumentParser` in
+  `chrome/services/molt_ai/document_parser/` runs the PDF text-layer scraper
+  (C++ and zlib), anydoc (Rust; a panic ends that process) and the .docx
+  flat-text fallback, and returns only valid UTF-8 within its own size
+  limits. It is registered in `chrome/utility/services.cc`; no
+  browser-process target links the parsers.
+- The browser side, `molt_ai/document_parser/DocumentParserClient`, launches
+  one process per call, so documents never share a parser. A crash or kill
+  fails the call; so does a 30 s timeout, which also terminates the process.
+  Replies are untrusted: text that is not valid UTF-8 fails the call, and
+  text is cut to the caller's budget. The chat handler keeps base64 decoding,
+  size limits and plain-text files on a worker thread.
+- Still outside a sandbox: OCR of scans and images runs the bundled
+  tesseract as a helper process, and llama.cpp inference runs in the browser
+  process.
 
 ### WebUI Architecture
 - All UI is inline HTML/CSS/JS in C++ raw strings (no separate resource files)
