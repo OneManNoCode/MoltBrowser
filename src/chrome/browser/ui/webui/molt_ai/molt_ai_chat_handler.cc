@@ -53,6 +53,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
+#include "chrome/browser/molt_ai/common/helper_output.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
@@ -5638,7 +5639,7 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
     base::DeletePathRecursively(scratch_dir);
     return MakeAttachmentError("tesseract exit=" +
                                std::to_string(exit_code) + ": " +
-                               combined.substr(0, 200));
+                               molt_ai::SanitizeHelperText(combined, 200));
   }
   const base::FilePath txt = out_stem.AddExtensionASCII(".txt");
   std::string text;
@@ -5649,7 +5650,9 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
   if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
     return MakeAttachmentError("OCR returned no text");
   }
-  return MakeAttachmentSuccess(std::move(text));
+  // tesseract read an untrusted image: valid UTF-8, cut like the parser's.
+  return MakeAttachmentSuccess(
+      molt_ai::SanitizeHelperText(text, kMaxAttachmentParseChars));
 }
 
 // The extension of a lowercased file name, without the dot: anydoc's

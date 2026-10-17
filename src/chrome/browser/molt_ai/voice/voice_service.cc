@@ -18,6 +18,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
+#include "chrome/browser/molt_ai/common/helper_output.h"
 
 namespace molt_ai {
 namespace voice {
@@ -113,7 +114,7 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   }
   if (exit_code != 0) {
     r.error = "whisper exit=" + std::to_string(exit_code) + ": " +
-              combined_output.substr(0, 200);
+              SanitizeHelperText(combined_output, 200);
     base::DeletePathRecursively(scratch_dir);
     return r;
   }
@@ -133,7 +134,9 @@ TranscribeResult RunWhisperBlocking(std::string wav_bytes,
   std::string trimmed;
   base::TrimWhitespaceASCII(transcription, base::TRIM_ALL, &trimmed);
   r.success = !trimmed.empty();
-  r.text = trimmed;
+  // whisper's output is untrusted bytes: valid UTF-8 for base::Value, and
+  // bounded (an hour of speech is well under 1 MiB of text).
+  r.text = SanitizeHelperText(trimmed, 1u << 20);
   r.duration_ms =
       static_cast<int>((base::TimeTicks::Now() - t0).InMilliseconds());
   if (!r.success && r.error.empty()) {
