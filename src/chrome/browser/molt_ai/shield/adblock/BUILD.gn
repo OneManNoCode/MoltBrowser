@@ -3,7 +3,7 @@
 #
 # MoltShield's ad/tracker blocking engine: Brave's adblock-rust (MPL-2.0),
 # vendored via gnrt into //third_party/rust/adblock, behind a small cxx
-# bridge. Same pattern as //chrome/browser/molt_ai/anydoc.
+# bridge. Same pattern as //chrome/services/molt_ai/document_parser/anydoc.
 #
 # The crate's embedded public-suffix list is disabled; domain resolution
 # calls back into //net's registry_controlled_domains (domain_resolver.cc).

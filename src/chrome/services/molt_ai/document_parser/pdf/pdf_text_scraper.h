@@ -22,8 +22,8 @@
 // thread inside a ScopedAllowBlockingForMolt without dragging in the
 // full PDF rendering pipeline.
 
-#ifndef CHROME_BROWSER_MOLT_AI_PDF_PDF_TEXT_SCRAPER_H_
-#define CHROME_BROWSER_MOLT_AI_PDF_PDF_TEXT_SCRAPER_H_
+#ifndef CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_PDF_PDF_TEXT_SCRAPER_H_
+#define CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_PDF_PDF_TEXT_SCRAPER_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -49,4 +49,4 @@ std::string ExtractText(const std::vector<uint8_t>& pdf_bytes,
 }  // namespace pdf
 }  // namespace molt_ai
 
-#endif  // CHROME_BROWSER_MOLT_AI_PDF_PDF_TEXT_SCRAPER_H_
+#endif  // CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_PDF_PDF_TEXT_SCRAPER_H_

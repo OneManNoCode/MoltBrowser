@@ -30,7 +30,6 @@ test("molt_ai_unittests") {
     "//chrome/browser/molt_ai/keys:unit_tests",
     "//chrome/browser/molt_ai/memory:unit_tests",
     "//chrome/browser/molt_ai/models:unit_tests",
-    "//chrome/browser/molt_ai/pdf:unit_tests",
     "//chrome/browser/molt_ai/privacy:unit_tests",
     "//chrome/browser/molt_ai/profile:unit_tests",
     "//chrome/browser/molt_ai/runtime:unit_tests",
@@ -41,6 +40,9 @@ test("molt_ai_unittests") {
     "//chrome/browser/molt_ai/security:unit_tests",
     "//chrome/browser/molt_ai/tor:unit_tests",
     "//chrome/browser/ui/webui/molt_ai:unit_tests",
+
+    # Document parsers (PDF text layer, ...).
+    "//chrome/services/molt_ai/document_parser/pdf:unit_tests",
 
     # Fingerprinting protection: switch encoding, and the pure Blink-side
     # math (it depends only on //base and //crypto, so it runs here too).
