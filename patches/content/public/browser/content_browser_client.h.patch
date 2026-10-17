@@ -1,0 +1,25 @@
+MoltBrowser patch for content/public/browser/content_browser_client.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/public/browser/content_browser_client.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
+index 0b57cc869d78d870e86fd6d41660799dd4e160c6..23ab1c4db500d01c7275437f26660188face2dfc 100644
+--- a/content/public/browser/content_browser_client.h
++++ b/content/public/browser/content_browser_client.h
+@@ -1993,6 +1993,14 @@ class CONTENT_EXPORT ContentBrowserClient {
+   // Returns true when the embedder wants to intercept a websocket connection.
+   virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
+ 
++  // MoltBrowser: a WebSocket opened by a shared or service worker has no
++  // frame, so WillInterceptWebSocket() can't tell which profile it belongs
++  // to. This is asked first for those, with the worker process's
++  // BrowserContext; returning true refuses the connection (the handshake
++  // fails in the worker).
++  virtual bool ShouldBlockWorkerWebSocket(BrowserContext* browser_context,
++                                          const GURL& url);
++
+   struct CONTENT_EXPORT WebSocketOptions {
+     WebSocketOptions();
+     ~WebSocketOptions();

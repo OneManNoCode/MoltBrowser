@@ -940,6 +940,29 @@ function tryDispatchHelpCommand(text) {
 }
 
 // --------------------------------------------------------------
+// URL of the page the active tab shows NOW, for the slash commands that act
+// on "this page" when no URL is given (/pdf, /sandbox, /tor open, /js).
+// Asked from the browser, like readActivePageText(): the side panel's last
+// push (__moltLastTabContext) can lag behind the tab (a navigation or tab
+// switch it hasn't reported yet), and acting on the previous page --
+// turning JavaScript off for the wrong site, opening the wrong page in
+// MoltNet -- is worse than a round trip. The push is used only when the
+// native side can't name the active tab. Resolves '' if unknown.
+// --------------------------------------------------------------
+function readActiveTabUrl() {
+  return sendWithPromise('getPageContext').then(function(ctx) {
+    if (ctx && ctx.has_context) return ctx.url || '';
+    var sp = window.__moltLastTabContext;
+    return (sp && sp.url) || '';
+  }).catch(function() { return ''; });
+}
+
+// |given| if non-empty, else the active tab's URL (readActiveTabUrl).
+function urlOrActiveTab(given) {
+  return given ? Promise.resolve(given) : readActiveTabUrl();
+}
+
+// --------------------------------------------------------------
 // PDF chat: /pdf [url]
 // With no arg, uses the active tab URL if it ends in .pdf. Otherwise
 // fetches the supplied URL. The extracted text is stored as the next
@@ -951,23 +974,26 @@ function tryDispatchPdfCommand(text) {
   var m = text.match(/^\s*\/pdf\b\s*(.*)$/i);
   if (!m) return false;
   var rest = (m[1] || '').trim();
-  var url = rest;
-  if (!url) {
-    // Use the active tab if it looks like a PDF.
-    var tabUrl = (window.__moltLastTabContext &&
-                  window.__moltLastTabContext.url) || '';
-    if (/\.pdf(\?|#|$)/i.test(tabUrl)) url = tabUrl;
-  }
-  if (!url) {
-    addErrorMessage('Usage: /pdf <url>  (or open a .pdf tab first)');
-    return true;
-  }
-  if (!/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
-    url = 'https://' + url;
-  }
   addUserMessage(text);
-  startAiMessage();
-  appendToAiMessage('Fetching ' + url + '...');
+  urlOrActiveTab(rest).then(function(url) {
+    // With no argument, the active tab counts only if it shows a PDF.
+    if (!rest && !/\.pdf(\?|#|$)/i.test(url)) url = '';
+    if (!url) {
+      addErrorMessage('Usage: /pdf <url>  (or open a .pdf tab first)');
+      setGenerating(false);
+      return;
+    }
+    if (!/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+    startAiMessage();
+    appendToAiMessage('Fetching ' + url + '...');
+    extractPdfIntoContext(url);
+  });
+  return true;
+}
+
+function extractPdfIntoContext(url) {
   sendWithPromise('extractPdfText', url).then(function(r) {
     if (!r.success) {
       currentAiText = '✗ ' + (r.error || 'PDF extraction failed');
@@ -985,7 +1011,6 @@ function tryDispatchPdfCommand(text) {
     finishAiMessage();
     setGenerating(false);
   });
-  return true;
 }
 
 // --------------------------------------------------------------
@@ -1098,25 +1123,22 @@ function tryDispatchAskTabsCommand(text) {
 function tryDispatchSandboxCommand(text) {
   var m = text.match(/^\s*\/sandbox\b\s*(.*)$/i);
   if (!m) return false;
-  var url = (m[1] || '').trim();
-  if (!url) {
-    var tabUrl = (window.__moltLastTabContext &&
-                  window.__moltLastTabContext.url) || '';
-    if (tabUrl) url = tabUrl;
-  }
-  if (!url) {
-    addErrorMessage('Usage: /sandbox <url>');
-    return true;
-  }
   addUserMessage(text);
-  startAiMessage();
-  sendWithPromise('openSandboxTab', url).then(function(r) {
-    currentAiText = r.success
-        ? '✓ Opened ' + r.url + ' in a sandbox window. ' +
-          'Cookies/storage will be discarded on close.'
-        : '✗ ' + (r.error || 'sandbox open failed');
-    finishAiMessage();
-    setGenerating(false);
+  urlOrActiveTab((m[1] || '').trim()).then(function(url) {
+    if (!url) {
+      addErrorMessage('Usage: /sandbox <url>');
+      setGenerating(false);
+      return;
+    }
+    startAiMessage();
+    sendWithPromise('openSandboxTab', url).then(function(r) {
+      currentAiText = r.success
+          ? '✓ Opened ' + r.url + ' in a sandbox window. ' +
+            'Cookies/storage will be discarded on close.'
+          : '✗ ' + (r.error || 'sandbox open failed');
+      finishAiMessage();
+      setGenerating(false);
+    });
   });
   return true;
 }
@@ -1411,30 +1433,26 @@ function tryDispatchTorCommand(text) {
     return true;
   }
   if (sub === 'open') {
-    var url = parts.slice(1).join(' ').trim();
-    if (!url) {
-      var tabUrl = (window.__moltLastTabContext &&
-                    window.__moltLastTabContext.url) || '';
-      if (tabUrl) url = tabUrl;
-    }
-    if (!url) {
-      currentAiText = 'Usage: /tor open <url>';
-      finishAiMessage();
-      setGenerating(false);
-      return true;
-    }
-    appendToAiMessage('Starting Tor (if needed) and opening ' + url +
-                       ' in a MoltNet window...');
-    sendWithPromise('openTorTab', url).then(function(r) {
-      if (r.success) {
-        currentAiText = '✓ Opened ' + r.url + ' in a MoltNet window.\n\n' +
-                        'Only MoltNet windows use Tor; they have their own ' +
-                        'cookies, discarded when the last one closes.';
-      } else {
-        currentAiText = '✗ ' + (r.error || 'open-tor-tab failed');
+    urlOrActiveTab(parts.slice(1).join(' ').trim()).then(function(url) {
+      if (!url) {
+        currentAiText = 'Usage: /tor open <url>';
+        finishAiMessage();
+        setGenerating(false);
+        return;
       }
-      finishAiMessage();
-      setGenerating(false);
+      appendToAiMessage('Starting Tor (if needed) and opening ' + url +
+                         ' in a MoltNet window...');
+      sendWithPromise('openTorTab', url).then(function(r) {
+        if (r.success) {
+          currentAiText = '✓ Opened ' + r.url + ' in a MoltNet window.\n\n' +
+                          'Only MoltNet windows use Tor; they have their own ' +
+                          'cookies, discarded when the last one closes.';
+        } else {
+          currentAiText = '✗ ' + (r.error || 'open-tor-tab failed');
+        }
+        finishAiMessage();
+        setGenerating(false);
+      });
     });
     return true;
   }
@@ -1506,27 +1524,28 @@ function tryDispatchJsCommand(text) {
   else if (parts[0] === 'off' || parts[0] === 'disable') enabled = false;
   else {
     addErrorMessage('Usage: /js on | /js off  [host]');
-    return true;
-  }
-  var host = parts[1] || '';
-  if (!host) {
-    var tabUrl = (window.__moltLastTabContext &&
-                  window.__moltLastTabContext.url) || '';
-    try { host = new URL(tabUrl).host; } catch (e) {}
-  }
-  if (!host) {
-    addErrorMessage('No host. Try /js ' + parts[0] + ' example.com');
+    setGenerating(false);
     return true;
   }
   addUserMessage(text);
-  startAiMessage();
-  sendWithPromise('setJsForDomain', host, enabled).then(function(r) {
-    currentAiText = r.success
-        ? '✓ JavaScript ' + (enabled ? 'enabled' : 'disabled') +
-          ' for ' + host + '. Active tab reloaded.'
-        : '✗ ' + (r.error || 'JS toggle failed');
-    finishAiMessage();
-    setGenerating(false);
+  var given = parts[1] || '';
+  (given ? Promise.resolve(given) : readActiveTabUrl().then(function(url) {
+    try { return new URL(url).host; } catch (e) { return ''; }
+  })).then(function(host) {
+    if (!host) {
+      addErrorMessage('No host. Try /js ' + parts[0] + ' example.com');
+      setGenerating(false);
+      return;
+    }
+    startAiMessage();
+    sendWithPromise('setJsForDomain', host, enabled).then(function(r) {
+      currentAiText = r.success
+          ? '✓ JavaScript ' + (enabled ? 'enabled' : 'disabled') +
+            ' for ' + host + '. Active tab reloaded.'
+          : '✗ ' + (r.error || 'JS toggle failed');
+      finishAiMessage();
+      setGenerating(false);
+    });
   });
   return true;
 }

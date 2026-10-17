@@ -354,5 +354,12 @@ bool IsOnionWebSocketBlocked(content::RenderFrameHost* frame,
   return ShouldInterceptWebSocketForOnion(frame) && IsOnionRequestURL(url);
 }
 
+bool IsOnionWorkerWebSocketBlocked(content::BrowserContext* browser_context,
+                                   const GURL& url) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  // A missing profile counts as non-MoltNet (IsMoltNetContext).
+  return !IsMoltNetContext(browser_context) && IsOnionRequestURL(url);
+}
+
 }  // namespace tor
 }  // namespace molt_ai

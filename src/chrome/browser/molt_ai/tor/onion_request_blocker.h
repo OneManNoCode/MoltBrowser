@@ -27,16 +27,15 @@
 //     IsOnionWebSocketBlocked() refuses a .onion URL (the dropped handshake
 //     is a failed connection to the page). WebSockets don't follow
 //     redirects, so the initial URL is the only one.
+//   * Shared and service workers have no frame, so content asks
+//     ContentBrowserClient::ShouldBlockWorkerWebSocket() (a MoltBrowser
+//     hook in content's WebSocketConnectorImpl) with the worker process's
+//     BrowserContext instead; IsOnionWorkerWebSocketBlocked() answers.
 //
 // Deliberately independent of MoltShield: its proxy honours the per-site
 // Shields switch and its own kill switches; this doesn't. It never blocks
 // anything in a MoltNet profile, where onion names go to Tor inside the
 // SOCKS5 request.
-//
-// Known gap: content gives the embedder no frame (and so no profile) for
-// WebSockets opened by shared or service workers, so those are not
-// intercepted; with a proxy configured, such a WebSocket to a .onion host
-// would reach the proxy. (Dedicated workers report their frame.)
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_ONION_REQUEST_BLOCKER_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_ONION_REQUEST_BLOCKER_H_
@@ -116,13 +115,19 @@ class OnionBlockingURLLoaderFactory : public network::mojom::URLLoaderFactory {
 };
 
 // UI thread. True iff WebSockets from |frame| must be vetted for .onion
-// URLs: |frame|'s profile isn't MoltNet. False for a null |frame| (see the
-// known gap above).
+// URLs: |frame|'s profile isn't MoltNet. False for a null |frame| (shared
+// and service workers: IsOnionWorkerWebSocketBlocked()).
 bool ShouldInterceptWebSocketForOnion(content::RenderFrameHost* frame);
 
 // UI thread. True iff the WebSocket |url| from |frame| must not be opened:
 // ShouldInterceptWebSocketForOnion(frame) and |url| is a .onion URL.
 bool IsOnionWebSocketBlocked(content::RenderFrameHost* frame, const GURL& url);
+
+// UI thread. True iff a WebSocket to |url| that a shared or service worker
+// of |browser_context| opens must not be opened: the profile isn't MoltNet
+// (or is unknown) and |url| is a .onion URL.
+bool IsOnionWorkerWebSocketBlocked(content::BrowserContext* browser_context,
+                                   const GURL& url);
 
 }  // namespace tor
 }  // namespace molt_ai

@@ -1,0 +1,19 @@
+MoltBrowser patch for chrome/browser/chrome_content_browser_client.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/chrome_content_browser_client.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
+index 76a42bf288c100bca1fc797769fbd9f6f616e20c..8f9b9b7761269e02b8244eaf27c11fc5df6c2d05 100644
+--- a/chrome/browser/chrome_content_browser_client.h
++++ b/chrome/browser/chrome_content_browser_client.h
+@@ -718,6 +718,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+       content::FrameTreeNodeId frame_tree_node_id,
+       const network::ResourceRequest& resource_request) override;
+   bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
++  bool ShouldBlockWorkerWebSocket(content::BrowserContext* browser_context,
++                                  const GURL& url) override;
+   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
+       content::RenderFrameHost* frame) override;
+   void CreateWebSocket(

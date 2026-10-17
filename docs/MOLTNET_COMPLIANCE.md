@@ -112,8 +112,8 @@ before any other one stops `.onion` navigations in non-MoltNet windows (the
 page shown instead is a browser interstitial, so a website can't press its
 button, and the button only acts on a real click); every other request from
 a non-MoltNet window (images, scripts, fetches, worker and service-worker
-loads, prefetches, downloads, and WebSockets from pages and dedicated
-workers) to an onion host, or redirected to one, is refused in the browser
+loads, prefetches, downloads, and WebSockets from pages and from dedicated,
+shared and service workers) to an onion host, or redirected to one, is refused in the browser
 process before it reaches the network service, which matters when a proxy
 server would otherwise resolve the name; the host resolver refuses every
 `.onion` name (no DNS, DNS-over-HTTPS, mDNS or hosts-file lookup, which also
@@ -240,7 +240,8 @@ Do all of this in a MoltNet window unless the step says otherwise.
     loads `<img src="http://<onion>/x.png">`, calls
     `fetch("http://<onion>/")`, loads an image from a URL that redirects to
     an onion address, opens `new WebSocket("ws://<onion>/")` and does the
-    same from a dedicated worker: the proxy must log none of them, and
+    same from a dedicated worker, a shared worker and a service worker: the
+    proxy must log none of them, and
     DevTools must show the requests failing with `ERR_BLOCKED_BY_CLIENT`.
 14. **Bridges with your distribution's transports (Linux).** Install
     `obfs4proxy` (or `lyrebird`) and `snowflake-client`, paste obfs4 bridges
@@ -290,10 +291,6 @@ Do all of this in a MoltNet window unless the step says otherwise.
      system Tor or its transports at all. The Windows packaging doesn't yet
      ship the pluggable transports either, so bridges there need a manual
      install.
-   - If your regular windows use a proxy server, a WebSocket that a shared
-     worker or service worker opens to an onion address still reaches that
-     proxy: the browser can't tell which profile such a worker belongs to.
-     Everything else to onion addresses is refused outside MoltNet.
    - Onion sites are not treated as secure contexts, so the address bar shows
      "Not secure" on `http://` onion sites and some web features stay off
      there. Doing this only in MoltNet windows needs engine changes that
