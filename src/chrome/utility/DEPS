@@ -6,6 +6,7 @@ include_rules = [
   "+chrome/services/file_util/public/mojom",
   "+chrome/services/mac_notifications",
   "+chrome/services/media_gallery_util",
+  "+chrome/services/molt_ai/document_parser",
   "+chrome/services/pdf/pdf_service.h",
   "+chrome/services/pdf/public/mojom",
   "+chrome/services/printing/printing_service.h",

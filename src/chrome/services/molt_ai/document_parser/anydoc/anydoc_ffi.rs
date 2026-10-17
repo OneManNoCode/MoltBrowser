@@ -6,13 +6,12 @@
 // 100% local: no network, no cloud, no ML models. Turns user-attached
 // Office/PDF/e-book files into structured Markdown the on-device LLM grounds on.
 //
-// Parsing runs in the browser process, at parity with the existing native
-// pdf/docx scrapers this augments. anydoc is memory-safe Rust and fuzz-tested,
-// so it is more robust than those hand-rolled scrapers; but Chromium builds
-// Rust with panic=immediate-abort, so a parser *panic* on a malformed file
-// cannot be caught here and would abort the process. Moving document parsing
-// into a sandboxed utility process is the planned hardening (it would also
-// sandbox the existing scrapers).
+// Parsing runs in the sandboxed document parser utility process
+// (chrome/services/molt_ai/document_parser/document_parser_impl.h), next to the
+// native pdf/docx scrapers this augments. anydoc is memory-safe Rust and
+// fuzz-tested, but Chromium builds Rust with panic=immediate-abort, so a
+// parser *panic* on a malformed file cannot be caught here: it ends that
+// utility process, and the browser reports a failed parse.
 
 #[cxx::bridge(namespace = "molt_ai::anydoc_ffi")]
 mod ffi {

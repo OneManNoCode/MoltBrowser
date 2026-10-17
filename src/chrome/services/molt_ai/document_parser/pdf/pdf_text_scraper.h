@@ -18,9 +18,11 @@
 // scanned PDFs and CID-encoded CJK PDFs return empty — those need OCR
 // (Tier 2 of the roadmap).
 //
-// This scraper does NOT depend on PDFium so we can run it on the UI
-// thread inside a ScopedAllowBlockingForMolt without dragging in the
-// full PDF rendering pipeline.
+// This scraper does NOT depend on PDFium, so it stays small. It parses
+// untrusted bytes (any PDF a website serves), so it runs only in the
+// sandboxed document parser utility process
+// (chrome/services/molt_ai/document_parser/document_parser_impl.h), never
+// in the browser process.
 
 #ifndef CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_PDF_PDF_TEXT_SCRAPER_H_
 #define CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_PDF_PDF_TEXT_SCRAPER_H_
@@ -34,7 +36,7 @@ namespace molt_ai {
 namespace pdf {
 
 // Caps on zlib output, so a crafted PDF (a "decompression bomb") can't make
-// the browser process allocate gigabytes. A stream that inflates past the
+// the parser process allocate gigabytes. A stream that inflates past the
 // per-stream cap is truncated (its prefix is still scanned); once the total
 // cap is spent, scanning stops.
 inline constexpr size_t kMaxStreamInflatedBytes = 16 * 1024 * 1024;

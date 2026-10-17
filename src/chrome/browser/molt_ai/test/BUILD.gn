@@ -12,6 +12,10 @@
 #     ProfileManager / RenderThread / TestingProfile setup that
 #     chrome unit_tests pulls in.
 #
+# The runner initializes Mojo: the document parser tests talk to fakes
+# over real message pipes, and BigBuffers over 64 KiB use shared memory.
+# Everything else runs as it did under base's runner.
+#
 # Build: autoninja -C out/MoltBrowser molt_ai_unittests
 # Run:   ./out/MoltBrowser/molt_ai_unittests
 # Filter to one suite: ./out/MoltBrowser/molt_ai_unittests \
@@ -21,12 +25,13 @@ import("//testing/test.gni")
 
 test("molt_ai_unittests") {
   deps = [
-    "//base/test:run_all_unittests",
+    "//mojo/core/test:run_all_unittests",
 
     # Each module under molt_ai/ that has tests adds itself here.
     "//chrome/browser/molt_ai/automation:unit_tests",
     "//chrome/browser/molt_ai/cloud:unit_tests",
     "//chrome/browser/molt_ai/common:unit_tests",
+    "//chrome/browser/molt_ai/document_parser:unit_tests",
     "//chrome/browser/molt_ai/keys:unit_tests",
     "//chrome/browser/molt_ai/memory:unit_tests",
     "//chrome/browser/molt_ai/models:unit_tests",
@@ -41,7 +46,8 @@ test("molt_ai_unittests") {
     "//chrome/browser/molt_ai/tor:unit_tests",
     "//chrome/browser/ui/webui/molt_ai:unit_tests",
 
-    # Document parsers (PDF text layer, ...).
+    # The sandboxed document parser service and its PDF scraper.
+    "//chrome/services/molt_ai/document_parser:unit_tests",
     "//chrome/services/molt_ai/document_parser/pdf:unit_tests",
 
     # Fingerprinting protection: switch encoding, and the pure Blink-side

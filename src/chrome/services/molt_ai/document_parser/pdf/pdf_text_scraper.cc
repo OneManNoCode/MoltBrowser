@@ -29,7 +29,7 @@ size_t Find(const uint8_t* hay, size_t n, size_t from, const char* needle) {
 // Returns empty string on failure. Output beyond |max_out| is dropped (the
 // prefix is still scanned for text): deflate reaches ~1000:1, so a few-MB
 // "decompression bomb" stream would otherwise inflate to gigabytes in the
-// browser process.
+// parser process.
 std::string TryInflate(const uint8_t* data, size_t len, size_t max_out) {
   if (max_out == 0 || len == 0) return {};
   // Output buffer grows as needed. Start ~4x source, never above the cap.

@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 4ecd2c257938e9bf2bc270da28f5fcee68617fe6..384233210b3557c64acb951c8c1ad0c9f8a7e790 100644
+index 4ecd2c257938e9bf2bc270da28f5fcee68617fe6..7eeb724f408dec07fa5962162191685ddde949a7 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -567,6 +567,15 @@ static_library("ui") {
+@@ -567,6 +567,14 @@ static_library("ui") {
      "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
      "//chrome/browser/metrics",
      "//chrome/browser/metrics:impl",
@@ -17,7 +17,6 @@ index 4ecd2c257938e9bf2bc270da28f5fcee68617fe6..384233210b3557c64acb951c8c1ad0c9
 +    "//chrome/browser/molt_ai/keys:os_crypt",
 +    "//chrome/browser/molt_ai/memory",
 +    "//chrome/browser/molt_ai/ocr",
-+    "//chrome/services/molt_ai/document_parser/pdf",
 +    "//chrome/browser/molt_ai/tor",
 +    "//chrome/browser/molt_ai/vault",
 +    "//chrome/browser/molt_ai/voice",

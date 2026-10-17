@@ -1,0 +1,41 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# The browser side of the sandboxed document parser (audit S5): launches
+# //chrome/services/molt_ai/document_parser in a utility process per call and
+# validates what comes back. The parsers themselves are not linked here.
+
+source_set("document_parser") {
+  sources = [
+    "document_parser_client.cc",
+    "document_parser_client.h",
+  ]
+
+  public_deps = [
+    "//base",
+    "//chrome/services/molt_ai/document_parser/public/mojom",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  deps = [
+    "//content/public/browser",
+    "//content/public/common",
+    "//mojo/public/cpp/base",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests (which runs
+# with Mojo initialized).
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "document_parser_client_unittest.cc" ]
+  deps = [
+    ":document_parser",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/services/molt_ai/document_parser/public/mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+    "//testing/gtest",
+  ]
+}

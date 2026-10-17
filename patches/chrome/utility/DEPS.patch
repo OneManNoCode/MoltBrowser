@@ -1,0 +1,18 @@
+MoltBrowser patch for chrome/utility/DEPS
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/utility/DEPS by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/utility/DEPS b/chrome/utility/DEPS
+index 7d88045f10f6232aa47500404507ef7ffbcb2fe6..e70458b9e408d8b5f4e81937eac9ef03955cd93d 100644
+--- a/chrome/utility/DEPS
++++ b/chrome/utility/DEPS
+@@ -6,6 +6,7 @@ include_rules = [
+   "+chrome/services/file_util/public/mojom",
+   "+chrome/services/mac_notifications",
+   "+chrome/services/media_gallery_util",
++  "+chrome/services/molt_ai/document_parser",
+   "+chrome/services/pdf/pdf_service.h",
+   "+chrome/services/pdf/public/mojom",
+   "+chrome/services/printing/printing_service.h",

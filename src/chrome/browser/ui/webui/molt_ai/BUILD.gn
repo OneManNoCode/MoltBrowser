@@ -46,10 +46,10 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai:molt_ai_import",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/molt_ai:molt_update",
-    "//chrome/services/molt_ai/document_parser/anydoc:anydoc_ffi",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/cloud",
     "//chrome/browser/molt_ai/common",
+    "//chrome/browser/molt_ai/document_parser",
     "//chrome/browser/molt_ai/keys",
     "//chrome/browser/molt_ai/memory",
     "//chrome/browser/molt_ai/models:download",
@@ -66,8 +66,6 @@ source_set("molt_ai") {
     "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
-    # HandleExtractAttachment (.docx unzip) uses zip::ZipReader.
-    "//third_party/zlib/google:zip",
     "//url",
   ]
 }

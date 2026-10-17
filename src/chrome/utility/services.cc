@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "build/build_config.h"
+#include "chrome/services/molt_ai/document_parser/document_parser_impl.h"
 #include "chrome/services/speech/buildflags/buildflags.h"
 #include "components/on_device_translation/buildflags/buildflags.h"
 #include "components/paint_preview/buildflags/buildflags.h"
@@ -164,6 +165,13 @@ auto RunCSVPasswordParser(
         receiver) {
   return std::make_unique<password_manager::CSVPasswordParserImpl>(
       std::move(receiver));
+}
+
+// MoltBrowser: PDF / Office / e-book parsing for the AI chat, out of the
+// browser process (kService sandbox; see document_parser_impl.h).
+auto RunMoltDocumentParser(
+    mojo::PendingReceiver<molt_ai::mojom::DocumentParser> receiver) {
+  return std::make_unique<molt_ai::DocumentParserImpl>(std::move(receiver));
 }
 
 auto ContentBookmarkParser(
@@ -480,6 +488,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
   services.Add(RunFilePatcher);
   services.Add(RunUnzipper);
   services.Add(RunCSVPasswordParser);
+  services.Add(RunMoltDocumentParser);
   services.Add(ContentBookmarkParser);
   services.Add(RunPassageEmbeddingsService);
   services.Add(RunOakSessionService);
