@@ -389,6 +389,24 @@ std::string ReplaceInvalidUtf8(std::string_view s) {
   return out;
 }
 
+std::string ReplaceNul(std::string_view s) {
+  if (s.find('\0') == std::string_view::npos) return std::string(s);
+  std::string out;
+  out.reserve(s.size() + 8);
+  for (char c : s) {
+    if (c == '\0') {
+      out += kReplacementCharacter;
+    } else {
+      out.push_back(c);
+    }
+  }
+  return out;
+}
+
+std::string ToDisplayText(std::string_view s) {
+  return ReplaceNul(ReplaceInvalidUtf8(s));
+}
+
 // ---- Utf8Assembler --------------------------------------------------------
 
 size_t Utf8SafePrefixLength(std::string_view s) {

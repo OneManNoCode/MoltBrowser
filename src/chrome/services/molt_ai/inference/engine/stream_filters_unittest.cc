@@ -625,6 +625,44 @@ TEST(Utf8Test, ReplaceInvalidUtf8OutputIsAlwaysValid) {
   }
 }
 
+TEST(Utf8Test, DisplayTextHasNoNulAndIsValid) {
+  const std::string fffd = "\xEF\xBF\xBD";
+  EXPECT_EQ(ReplaceNul("plain"), "plain");
+  EXPECT_EQ(ReplaceNul(std::string("a\0b\0", 4)), "a" + fffd + "b" + fffd);
+  EXPECT_EQ(ToDisplayText(std::string("\0\xC3\xA9\xFF", 4)),
+            fffd + "\xC3\xA9" + fffd);
+  EXPECT_EQ(ToDisplayText("caf\xC3\xA9"), "caf\xC3\xA9");
+}
+
+TEST(StreamPipelineTest, ServiceAndBrowserStopFiltersAgree) {
+  // The service runs the stop filter on display text; the browser runs its
+  // copy on the chunks it receives (already display text). Same text, same
+  // cut, however the service chunked it.
+  const std::vector<std::string> stops = {"\xEF\xBF\xBD\xEF\xBF\xBD",
+                                          "END"};
+  const std::vector<std::string> pieces = {"ok ", "\xFF", "\xFE", " tail END"};
+  Utf8Assembler utf8;
+  StopSequenceFilter service(stops);
+  std::vector<std::string> sent;
+  for (const std::string& p : pieces) {
+    std::string chunk = service.Feed(ToDisplayText(utf8.Push(p)));
+    if (!chunk.empty()) sent.push_back(chunk);
+  }
+  std::string last = service.Feed(ToDisplayText(utf8.Flush()));
+  last += service.Flush();
+  if (!last.empty()) sent.push_back(last);
+  EXPECT_TRUE(service.stopped());
+  StopSequenceFilter browser(stops);
+  std::string shown;
+  for (const std::string& c : sent) {
+    ASSERT_TRUE(IsValidUtf8(c));
+    shown += browser.Feed(ReplaceNul(c));
+  }
+  shown += browser.Flush();
+  EXPECT_EQ(shown, "ok ");
+  EXPECT_FALSE(browser.stopped());  // the service already cut it
+}
+
 TEST(StreamPipelineTest, ByteFallbackGarbageLeavesTheServiceAsValidUtf8) {
   // Pieces as a byte-fallback vocab can produce them; what the service sends
   // (Utf8Assembler output, then ReplaceInvalidUtf8) is always valid.

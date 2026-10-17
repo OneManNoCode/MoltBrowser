@@ -5,8 +5,8 @@
 // leaves the inference service, in this order:
 //
 //   token piece -> HarmonyChannelFilter -> GemmaThoughtFilter (Gemma 4
-//   vocabularies only) -> ThinkTagFilter -> StopSequenceFilter ->
-//   Utf8Assembler -> ReplaceInvalidUtf8
+//   vocabularies only) -> ThinkTagFilter -> Utf8Assembler -> ToDisplayText
+//   -> StopSequenceFilter
 //
 // - HarmonyChannelFilter: gpt-oss emits its private reasoning in an
 //   "analysis" channel and the answer in a "final" channel, framed by
@@ -20,17 +20,17 @@
 //   in <think>...</think>. The block is hidden even when the tags are split
 //   across tokens ("<th" + "ink>"), and the whitespace that follows the
 //   closing tag is trimmed.
-// - StopSequenceFilter: caller-supplied stop strings, matched on the visible
-//   text (after the reasoning filters). The stop string and everything after
-//   it are dropped. The browser runs the same filter again over what it
-//   receives from the service (chrome/browser/molt_ai/runtime/
-//   stream_validator.h); that copy is the one callers see.
 // - Utf8Assembler: a token can end in the middle of a multi-byte UTF-8
 //   character (e.g. half an emoji); bytes are held back until the
 //   character is complete.
-// - ReplaceInvalidUtf8: byte-level tokens can still form invalid UTF-8; the
-//   service replaces it with U+FFFD, because the browser treats invalid
+// - ToDisplayText: byte-level tokens can still form invalid UTF-8 (or NUL);
+//   the service replaces it with U+FFFD, because the browser treats invalid
 //   UTF-8 from the service as a protocol violation (IsValidUtf8).
+// - StopSequenceFilter: caller-supplied stop strings, matched on the visible
+//   display text (after the reasoning filters). The stop string and
+//   everything after it are dropped. The browser runs the same filter again
+//   over the same text as it receives it (chrome/browser/molt_ai/runtime/
+//   stream_validator.h); that copy is the one callers see.
 //
 // Std-only so they are unit-tested standalone (stream_filters_unittest.cc).
 // The browser links this file for StopSequenceFilter and IsValidUtf8 only.
@@ -234,6 +234,14 @@ bool IsValidUtf8(std::string_view s);
 // per maximal subpart (the Unicode / WHATWG convention). Valid input is
 // returned unchanged; the result always passes IsValidUtf8().
 std::string ReplaceInvalidUtf8(std::string_view s);
+
+// |s| with NUL bytes replaced by U+FFFD (a NUL would cut the text short in
+// C-string APIs and in the WebUI).
+std::string ReplaceNul(std::string_view s);
+
+// The text the service sends and the browser shows:
+// ReplaceNul(ReplaceInvalidUtf8(s)).
+std::string ToDisplayText(std::string_view s);
 
 }  // namespace molt_ai
 
