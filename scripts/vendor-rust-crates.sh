@@ -24,7 +24,7 @@
 #                                   [--build-dir out/MoltBrowser] [--check]
 #
 # --check runs `gn check` and builds //chrome/browser/molt_ai/shield/adblock
-# and //chrome/browser/molt_ai/anydoc afterwards.
+# and //chrome/services/molt_ai/document_parser/anydoc afterwards.
 #
 # On Chromium 152, adding adblock (MoltShield) vendors 15 new crates: adblock,
 # arrayvec 0.7 (upstream dropped it at 152), flatbuffers, seahash, url,
@@ -142,8 +142,10 @@ if [[ "$CHECK" == 1 ]]; then
   echo "==> gn check + build of the first-party Rust targets"
   # Make sure the first-party sources are in the tree being built.
   rsync -a "$ROOT_DIR/src/chrome/browser/molt_ai/" "$CHROMIUM_SRC/chrome/browser/molt_ai/"
+  rsync -a "$ROOT_DIR/src/chrome/services/molt_ai/document_parser/" \
+    "$CHROMIUM_SRC/chrome/services/molt_ai/document_parser/"
   gn check "$BUILD_DIR" "//chrome/browser/molt_ai/shield/*"
   autoninja -C "$BUILD_DIR" \
     chrome/browser/molt_ai/shield/adblock:molt_adblock \
-    chrome/browser/molt_ai/anydoc:anydoc_ffi
+    chrome/services/molt_ai/document_parser/anydoc:anydoc_ffi
 fi

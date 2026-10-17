@@ -59,6 +59,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   2 MiB of HTML (a crafted page could hang it for minutes or crash it).
   llama.cpp's GGUF and tokenizer fixes are in (see On-device AI), and a
   malformed model's tokenizer returns an error instead of aborting.
+- **Documents are read in a sandbox.** PDFs opened with `/pdf` and files
+  attached in the AI chat (PDF, Word, Office, e-book, CSV) are parsed in a
+  locked-down helper process, one per document, with no file or network
+  access: a malformed or malicious file can crash only that process, and a
+  parser stuck for 30 seconds is stopped. OCR of scans and images still runs
+  outside the sandbox.
 - The AI library no longer forks the browser and starts a debugger found on
   PATH (with permission to read the browser's memory) when it hits an
   internal error.

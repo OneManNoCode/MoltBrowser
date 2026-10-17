@@ -1,0 +1,40 @@
+MoltBrowser patch for chrome/utility/services.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/utility/services.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
+index fe34a39eb840ceab0d7553f404ba248375ae2d4e..64deb9411073fd1e90de12ac56d0a26d03fe5c36 100644
+--- a/chrome/utility/services.cc
++++ b/chrome/utility/services.cc
+@@ -8,6 +8,7 @@
+ #include <utility>
+ 
+ #include "build/build_config.h"
++#include "chrome/services/molt_ai/document_parser/document_parser_impl.h"
+ #include "chrome/services/speech/buildflags/buildflags.h"
+ #include "components/on_device_translation/buildflags/buildflags.h"
+ #include "components/paint_preview/buildflags/buildflags.h"
+@@ -166,6 +167,13 @@ auto RunCSVPasswordParser(
+       std::move(receiver));
+ }
+ 
++// MoltBrowser: PDF / Office / e-book parsing for the AI chat, out of the
++// browser process (kService sandbox; see document_parser_impl.h).
++auto RunMoltDocumentParser(
++    mojo::PendingReceiver<molt_ai::mojom::DocumentParser> receiver) {
++  return std::make_unique<molt_ai::DocumentParserImpl>(std::move(receiver));
++}
++
+ auto ContentBookmarkParser(
+     mojo::PendingReceiver<user_data_importer::mojom::BookmarkHtmlParser>
+         receiver) {
+@@ -480,6 +488,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+   services.Add(RunFilePatcher);
+   services.Add(RunUnzipper);
+   services.Add(RunCSVPasswordParser);
++  services.Add(RunMoltDocumentParser);
+   services.Add(ContentBookmarkParser);
+   services.Add(RunPassageEmbeddingsService);
+   services.Add(RunOakSessionService);

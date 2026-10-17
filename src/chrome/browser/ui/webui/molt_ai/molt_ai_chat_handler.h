@@ -31,6 +31,7 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
+#include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "content/public/browser/global_routing_id.h"
@@ -120,6 +121,12 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // PDF chat — download the PDF at |url|, extract text, return.
   // Args: [callback_id, url]
   void HandleExtractPdfText(const base::ListValue& args);
+  // /pdf continuation: the sandboxed parser's answer for the text layer;
+  // falls back to OCR when there is none.
+  void OnPdfTextLayer(std::string callback_id,
+                      std::string source_url,
+                      std::unique_ptr<std::string> pdf,
+                      molt_ai::DocumentParseResult result);
   // Smart bookmarks — keyword-rank the user's bookmarks against |query|.
   // Args: [callback_id, query, top_k]
   void HandleSearchBookmarks(const base::ListValue& args);
@@ -221,14 +228,30 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: [callback_id, wav_b64]
   void HandleTranscribeAudio(const base::ListValue& args);
   // Attachment uploads — decode a base64-encoded file the user picked
-  // in the chat and extract plain text from it on a ThreadPool worker:
-  //   .txt/.md   → UTF-8 validate + pass through
-  //   .docx      → in-memory unzip, strip word/document.xml markup
-  //   images     → tesseract OCR (same binary the OCR service resolves)
-  //   .pdf       → pdf_text_scraper, then OCR fallback (mirrors /pdf)
+  // in the chat (on a ThreadPool worker) and extract plain text from it:
+  //   .txt/.md   → UTF-8 validate + pass through (worker)
+  //   images     → tesseract OCR (worker; same binary the OCR service
+  //                resolves)
+  //   .pdf       → text layer in the sandboxed document parser, then
+  //                OCR fallback (mirrors /pdf)
+  //   .docx      → anydoc Markdown in the sandboxed document parser,
+  //                else its flat-text extractor (word/document.xml)
+  //   Office / e-book / CSV → anydoc Markdown (sandboxed parser)
   // Resolves {success, text, truncated, error?}.
   // Args: [callback_id, name, mime, base64_data]
   void HandleExtractAttachment(const base::ListValue& args);
+  // The attachment kinds the sandboxed document parser reads (see
+  // HandleExtractAttachment); |pdf| / |document| / |docx| hold the
+  // decoded file.
+  void ParseAttachmentPdf(const std::string& callback_id,
+                          std::unique_ptr<std::string> pdf);
+  void ParseAttachmentDocument(const std::string& callback_id,
+                               std::unique_ptr<std::string> document,
+                               const std::string& extension,
+                               bool is_docx);
+  void ParseAttachmentDocxText(const std::string& callback_id,
+                               std::unique_ptr<std::string> docx,
+                               std::string anydoc_error);
   // Tier 4: Form filler v2 — LLM fallback. Two-phase:
   //   1. HandleRunFormFillAI: probe visible form fields, return a
   //      ready-to-send prompt for the LLM.
@@ -384,6 +407,11 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   std::unique_ptr<network::SimpleURLLoader> pdf_loader_;
   std::string pdf_callback_id_;
   std::string pdf_source_url_;
+
+  // Untrusted documents (/pdf, chat attachments) are parsed only through
+  // this: in a sandboxed utility process per call, never in the browser
+  // process. Destroying it ends pending parses (and their processes).
+  molt_ai::DocumentParserClient document_parser_;
   std::string download_callback_id_;
   std::string downloading_model_id_;
   uint64_t download_total_bytes_ = 0;

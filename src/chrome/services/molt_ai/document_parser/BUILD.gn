@@ -1,0 +1,54 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# molt_ai.mojom.DocumentParser: MoltBrowser's document parsers (PDF text
+# layer, anydoc Office/e-book/CSV -> Markdown, .docx flat text), run in a
+# sandboxed utility process (audit S5). //chrome/utility registers :lib; the
+# browser reaches it only through //chrome/browser/molt_ai/document_parser.
+# The parsers (pdf/, anydoc/ and the Rust crates) are linked only from here:
+# no browser-process target may depend on them.
+
+source_set("lib") {
+  sources = [
+    "document_parser_impl.cc",
+    "document_parser_impl.h",
+    "docx_text_extractor.cc",
+    "docx_text_extractor.h",
+  ]
+
+  configs += [ "//build/config/compiler:wexit_time_destructors" ]
+
+  public_deps = [
+    "//chrome/services/molt_ai/document_parser/public/mojom",
+    "//mojo/public/cpp/base",
+    "//mojo/public/cpp/bindings",
+  ]
+
+  deps = [
+    "anydoc:anydoc_ffi",
+    "pdf",
+    "//base",
+    "//build/rust:cxx_cppdeps",
+    "//third_party/zlib/google:zip",
+  ]
+
+  visibility = [
+    ":unit_tests",
+    "//chrome/utility",
+  ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests (which runs
+# with Mojo initialized: BigBuffers over 64 KiB use shared memory).
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "document_parser_impl_unittest.cc" ]
+  deps = [
+    ":lib",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/public/cpp/base",
+    "//testing/gtest",
+    "//third_party/zlib",
+  ]
+}

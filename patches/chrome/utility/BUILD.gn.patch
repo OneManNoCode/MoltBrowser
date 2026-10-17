@@ -1,0 +1,18 @@
+MoltBrowser patch for chrome/utility/BUILD.gn
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/utility/BUILD.gn by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
+index 500cbc7ed8e76b552a23147279fc233af9649197..3aa4f6881c65ea3a6562e3a07053e71a14444007 100644
+--- a/chrome/utility/BUILD.gn
++++ b/chrome/utility/BUILD.gn
+@@ -37,6 +37,7 @@ static_library("utility") {
+     "//chrome:strings",
+     "//chrome/common",
+     "//chrome/common:mojo_bindings",
++    "//chrome/services/molt_ai/document_parser:lib",  # MoltBrowser
+     "//chrome/services/speech/buildflags",
+     "//components/heap_profiling/in_process",
+     "//components/metrics:child_call_stack_profile_builder",

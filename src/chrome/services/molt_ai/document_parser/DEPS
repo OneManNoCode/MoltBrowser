@@ -1,0 +1,4 @@
+include_rules = [
+  "+third_party/rust/cxx/v1/cxx.h",
+  "+third_party/zlib",
+]

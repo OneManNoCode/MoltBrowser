@@ -4,6 +4,8 @@
 # On-device document -> Markdown extraction for MoltBrowser AI chat, backed by
 # the pure-Rust `anydoc` crate (Office/PDF/e-book/CSV -> clean GFM Markdown).
 # Fully local: no network, no cloud. Exposed to C++ via a small cxx bridge.
+# Parses untrusted files, so only the sandboxed document parser utility
+# process links it (../document_parser_impl.h).
 
 import("//build/rust/rust_static_library.gni")
 
@@ -13,5 +15,5 @@ rust_static_library("anydoc_ffi") {
   sources = [ "anydoc_ffi.rs" ]
   cxx_bindings = [ "anydoc_ffi.rs" ]
   deps = [ "//third_party/rust/anydoc/v0_1:lib" ]
-  visibility = [ "//chrome/browser/ui/webui/molt_ai:*" ]
+  visibility = [ "//chrome/services/molt_ai/document_parser:*" ]
 }
