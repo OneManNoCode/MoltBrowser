@@ -50,6 +50,7 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/cloud",
     "//chrome/browser/molt_ai/common",
     "//chrome/browser/molt_ai/common:helper_output",
+    "//chrome/browser/molt_ai/common:helper_sandbox",
     "//chrome/browser/molt_ai/document_parser",
     "//chrome/browser/molt_ai/keys",
     "//chrome/browser/molt_ai/memory",

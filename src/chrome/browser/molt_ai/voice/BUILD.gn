@@ -14,5 +14,7 @@ source_set("voice") {
     # Bundled or (Linux) root-owned system binary only; no Homebrew/PATH.
     "//chrome/browser/molt_ai/common:helper_binary",
     "//chrome/browser/molt_ai/common:helper_output",
+    # whisper-cli runs confined, with a deadline.
+    "//chrome/browser/molt_ai/common:helper_sandbox",
   ]
 }

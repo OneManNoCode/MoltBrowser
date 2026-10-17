@@ -9,6 +9,10 @@ source_set("ocr") {
     "ocr_service.h",
   ]
 
+  # tesseract runs confined, with a deadline; ocr_service.h exposes
+  # RunSandboxedTesseract() for the chat handler's image OCR.
+  public_deps = [ "//chrome/browser/molt_ai/common:helper_sandbox" ]
+
   deps = [
     "//base",
     # Bundled or (Linux) root-owned system binary only; no Homebrew/PATH.

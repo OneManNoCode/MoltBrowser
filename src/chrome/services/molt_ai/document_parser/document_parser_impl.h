@@ -17,10 +17,11 @@
 // (mojom::kMaxDocumentBytes in, mojom::kMaxOutputChars out), and every string
 // it returns is valid UTF-8. The browser still validates every reply.
 //
-// Still outside this sandbox (tracked separately): OCR of scans and images
-// runs the bundled tesseract as an unsandboxed helper process
-// (molt_ai/ocr/ocr_service.h), and llama.cpp inference runs in the browser
-// process (molt_ai/runtime).
+// Not in this sandbox: OCR of scans and images runs tesseract as a helper
+// process under its own, looser OS-level sandbox and deadline
+// (molt_ai/ocr/ocr_service.h, molt_ai/common/helper_sandbox.h). Still
+// outside a sandbox (tracked separately): llama.cpp inference runs in the
+// browser process (molt_ai/runtime).
 
 #ifndef CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_DOCUMENT_PARSER_IMPL_H_
 #define CHROME_SERVICES_MOLT_AI_DOCUMENT_PARSER_DOCUMENT_PARSER_IMPL_H_

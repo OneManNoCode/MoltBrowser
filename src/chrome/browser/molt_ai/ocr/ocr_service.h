@@ -17,6 +17,12 @@
 //      above it.
 // No Homebrew, /usr/local, /opt/local or PATH fallback (audit S18).
 //
+// tesseract reads untrusted files (any website's PDF, attached images), so
+// it runs under the helper sandbox (helper_sandbox.h): it may read its own
+// directory, its tessdata and the input, write only a private per-call
+// scratch directory, never use the network, and is killed at a deadline
+// (kPdfOcrTimeout, kImageOcrTimeout).
+//
 // Threading: blocking subprocess on a MayBlock thread-pool task.
 
 #ifndef CHROME_BROWSER_MOLT_AI_OCR_OCR_SERVICE_H_
@@ -27,7 +33,9 @@
 
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
+#include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
+#include "chrome/browser/molt_ai/common/helper_sandbox.h"
 
 namespace base {
 template <typename T>
@@ -36,6 +44,30 @@ class NoDestructor;
 
 namespace molt_ai {
 namespace ocr {
+
+// Deadlines for one tesseract run. A scanned PDF (up to 25 MiB) can have
+// many pages; an image is one page. tesseract takes a few seconds per page.
+inline constexpr base::TimeDelta kPdfOcrTimeout = base::Seconds(120);
+inline constexpr base::TimeDelta kImageOcrTimeout = base::Seconds(60);
+
+// tesseract's stdout and stderr kept per run (only error messages use it).
+inline constexpr size_t kMaxTesseractOutputBytes = 256 * 1024;
+// The most of tesseract's .txt output read back (callers cut it further).
+inline constexpr size_t kMaxTesseractTextFileBytes = 4 * 1024 * 1024;
+
+// Runs |bin| (tesseract) on |input| under the helper sandbox, writing
+// <|out_stem|>.txt. |input| and |out_stem| are in |scratch_dir|, the only
+// directory it may write. It may read its own directory and, when
+// |tessdata_parent| is set (bundled builds), |tessdata_parent|/tessdata,
+// which it is also pointed at. A system tesseract finds its data under
+// /usr. Blocking; MayBlock thread-pool tasks only.
+molt_ai::HelperRunResult RunSandboxedTesseract(
+    const base::FilePath& bin,
+    const base::FilePath& tessdata_parent,
+    const base::FilePath& scratch_dir,
+    const base::FilePath& input,
+    const base::FilePath& out_stem,
+    base::TimeDelta timeout);
 
 struct OcrResult {
   OcrResult();

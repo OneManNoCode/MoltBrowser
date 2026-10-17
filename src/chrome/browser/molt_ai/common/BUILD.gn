@@ -48,12 +48,61 @@ source_set("helper_binary") {
   ]
 }
 
+# The Linux confinement for OCR and voice helpers (Landlock + seccomp-bpf,
+# applied between fork and exec). Pure Linux code without //base, so a
+# standalone harness can run the same code against the kernel.
+source_set("helper_sandbox_linux") {
+  sources = []
+  if (is_linux) {
+    sources += [
+      "helper_sandbox_linux.cc",
+      "helper_sandbox_linux.h",
+    ]
+  }
+}
+
+# The macOS Seatbelt profile and sandbox-exec command line. Pure C++,
+# built everywhere so its tests run everywhere.
+source_set("seatbelt_profile") {
+  sources = [
+    "seatbelt_profile.cc",
+    "seatbelt_profile.h",
+  ]
+}
+
+# RunSandboxedHelper(): tesseract and whisper-cli with OS-level confinement
+# and a deadline.
+source_set("helper_sandbox") {
+  sources = [
+    "helper_sandbox.cc",
+    "helper_sandbox.h",
+  ]
+  if (is_posix) {
+    sources += [ "helper_sandbox_posix.cc" ]
+  }
+  if (is_win) {
+    sources += [ "helper_sandbox_win.cc" ]
+  }
+  public_deps = [ "//base" ]
+  deps = [
+    ":helper_output",
+    ":helper_sandbox_linux",
+    ":seatbelt_profile",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "helper_output_unittest.cc" ]
+  sources = [
+    "helper_output_unittest.cc",
+    "helper_sandbox_unittest.cc",
+  ]
   deps = [
     ":helper_output",
+    ":helper_sandbox",
+    ":helper_sandbox_linux",
+    ":seatbelt_profile",
     "//base",
     "//testing/gtest",
   ]
