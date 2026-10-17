@@ -14,6 +14,8 @@ source_set("farbling") {
   sources = [
     "farbling.cc",
     "farbling.h",
+    "webgl_uniform.cc",
+    "webgl_uniform.h",
   ]
   public_deps = [ "//base" ]
   deps = [ "//crypto" ]
@@ -29,7 +31,10 @@ source_set("farbling") {
 # molt_ai_unittests binary (//chrome/browser/molt_ai/test).
 source_set("unit_tests") {
   testonly = true
-  sources = [ "farbling_unittest.cc" ]
+  sources = [
+    "farbling_unittest.cc",
+    "webgl_uniform_unittest.cc",
+  ]
   deps = [
     ":farbling",
     "//base",
