@@ -53,8 +53,6 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_service.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
-#include "chrome/browser/molt_ai/common/helper_output.h"
-#include "chrome/browser/molt_ai/common/helper_sandbox.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/keys/molt_keys_store.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
@@ -3911,8 +3909,9 @@ void MoltAIChatHandler::OnPdfTextLayer(std::string callback_id,
       out.Set("source", "text_layer");
     } else {
       // The parser crashed, hung or misbehaved on this document: never
-      // hand it on to the OCR helper too (its sandbox is looser, and on
-      // Windows confines no files).
+      // hand it on to OCR too (PDFium would be a second parser for it to
+      // attack, and then tesseract, whose sandbox is looser and on Windows
+      // confines no files).
       out.Set("success", false);
       out.Set("error", "couldn't read this PDF: " + result.error);
     }
@@ -3920,9 +3919,10 @@ void MoltAIChatHandler::OnPdfTextLayer(std::string callback_id,
                               base::Value(std::move(out)));
     return;
   }
-  // No text layer — fall back to OCR via bundled tesseract.
-  // We keep the URL in the response by routing through a
-  // tiny lambda that re-wraps the result.
+  // No text layer (a scan): OCR. The sandboxed parser renders the first
+  // pages to PNG and tesseract reads those (it can't read PDFs). We keep
+  // the URL in the response by routing through a tiny lambda that re-wraps
+  // the result.
   molt_ai::ocr::OcrService::Get()->OcrPdf(
       std::move(*pdf), kMaxPdfTextChars,
       base::BindOnce(
@@ -5587,14 +5587,14 @@ base::DictValue MakeAttachmentSuccess(std::string text) {
   return out;
 }
 
-// OCR an image via tesseract. Reuses OcrService's public binary
-// resolution (bundled Resources/ocr first, then system paths) and its
-// sandboxed invocation (molt_ai::ocr::RunSandboxedTesseract) — the
-// service's only entry point is OcrPdf, which hard-codes an input.pdf temp
-// name; images just need a different extension (and are tesseract's native
-// input). Runs on a MayBlock worker.
-base::DictValue OcrImageBlocking(const std::string& image_bytes,
-                                 const std::string& ext) {
+// OCR an image via tesseract: OcrService's binary resolution (bundled
+// Resources/ocr first, then on Linux a root-owned system copy) and its
+// sandboxed run (molt_ai::ocr::OcrImageWithTesseract: private scratch
+// directory, helper sandbox, deadline, sanitized text). The same per-image
+// path OCRs the rendered pages of a scanned PDF (OcrService::OcrPdf). Runs
+// on a MayBlock worker.
+base::DictValue OcrAttachmentImageBlocking(const std::string& image_bytes,
+                                           const std::string& ext) {
   auto* svc = molt_ai::ocr::OcrService::Get();
   const base::FilePath bin = svc->ResolveTesseractBinary();
   if (bin.value().empty()) {
@@ -5607,41 +5607,15 @@ base::DictValue OcrImageBlocking(const std::string& image_bytes,
   if (svc->IsUsingBundledTesseract()) {
     tessdata = svc->GetBundledOcrDir();
   }
-  // Private 0700 scratch dir — same symlink-race rationale as the OCR
-  // service's RunTesseractBlocking.
-  base::FilePath scratch_dir;
-  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("molt_attach_ocr"),
-                                    &scratch_dir)) {
-    return MakeAttachmentError("could not create scratch directory");
+  // Cut like the parser's (kMaxAttachmentParseChars), so that
+  // MakeAttachmentSuccess() sees and reports a cut.
+  molt_ai::ocr::OcrResult result = molt_ai::ocr::OcrImageWithTesseract(
+      bin, tessdata, base::as_byte_span(image_bytes), ext,
+      kMaxAttachmentParseChars, molt_ai::ocr::kImageOcrTimeout);
+  if (!result.success) {
+    return MakeAttachmentError(result.error);
   }
-  const base::FilePath named = scratch_dir.AppendASCII("input." + ext);
-  if (!base::WriteFile(named, image_bytes)) {
-    base::DeletePathRecursively(scratch_dir);
-    return MakeAttachmentError("could not write temp image");
-  }
-  // Sandboxed, with a deadline (helper_sandbox.h).
-  const base::FilePath out_stem = named.RemoveExtension();
-  const molt_ai::HelperRunResult run = molt_ai::ocr::RunSandboxedTesseract(
-      bin, tessdata, scratch_dir, named, out_stem,
-      molt_ai::ocr::kImageOcrTimeout);
-  const std::string failure = molt_ai::DescribeHelperRunFailure(
-      run, "tesseract", "failed to launch tesseract");
-  if (!failure.empty()) {
-    base::DeletePathRecursively(scratch_dir);
-    return MakeAttachmentError(failure);
-  }
-  // Only a plain file tesseract made itself.
-  std::string text;
-  molt_ai::ReadHelperOutputFile(out_stem.AddExtensionASCII(".txt"),
-                                molt_ai::ocr::kMaxTesseractTextFileBytes,
-                                &text);
-  base::DeletePathRecursively(scratch_dir);
-  if (text.find_first_not_of(" \t\r\n") == std::string::npos) {
-    return MakeAttachmentError("OCR returned no text");
-  }
-  // tesseract read an untrusted image: valid UTF-8, cut like the parser's.
-  return MakeAttachmentSuccess(
-      molt_ai::SanitizeHelperText(text, kMaxAttachmentParseChars));
+  return MakeAttachmentSuccess(std::move(result.text));
 }
 
 // The extension of a lowercased file name, without the dot: anydoc's
@@ -5701,7 +5675,7 @@ PreparedAttachment PrepareAttachmentBlocking(const std::string& name,
       return AttachmentAnswer(MakeAttachmentSuccess(std::move(bytes)));
     }
     case AttachmentKind::kImage: {
-      return AttachmentAnswer(OcrImageBlocking(
+      return AttachmentAnswer(OcrAttachmentImageBlocking(
           bytes, AttachmentImageExtension(lower_name, lower_mime)));
     }
     case AttachmentKind::kPdf:
@@ -5781,7 +5755,8 @@ void MoltAIChatHandler::HandleExtractAttachment(
 }
 
 // Same two-tier route as /pdf (OnPdfTextLayer): the text layer from the
-// sandboxed parser, tesseract OCR for a scan.
+// sandboxed parser; for a scan, the parser renders the pages and tesseract
+// OCRs them (OcrService::OcrPdf).
 void MoltAIChatHandler::ParseAttachmentPdf(const std::string& callback_id,
                                            std::unique_ptr<std::string> pdf) {
   // The client copies |bytes| before returning; moving the unique_ptr
@@ -5805,8 +5780,7 @@ void MoltAIChatHandler::ParseAttachmentPdf(const std::string& callback_id,
             }
             if (r.status == Status::kFailed) {
               // The parser crashed, hung or misbehaved on this document:
-              // never hand it on to the OCR helper too (its sandbox is
-              // looser, and on Windows confines no files).
+              // never hand it on to OCR too (see OnPdfTextLayer).
               self->ResolveJavascriptCallback(
                   base::Value(cb_id),
                   base::Value(MakeAttachmentError(
