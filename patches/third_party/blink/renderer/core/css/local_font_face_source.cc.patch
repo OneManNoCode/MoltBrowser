@@ -1,0 +1,41 @@
+MoltBrowser patch for third_party/blink/renderer/core/css/local_font_face_source.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/css/local_font_face_source.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/css/local_font_face_source.cc b/third_party/blink/renderer/core/css/local_font_face_source.cc
+index ab4e6a9bedfed3f638920641bd58b0a2f3b0e15f..2ceb62b30d62a275771997ea552da8586c097299 100644
+--- a/third_party/blink/renderer/core/css/local_font_face_source.cc
++++ b/third_party/blink/renderer/core/css/local_font_face_source.cc
+@@ -8,6 +8,7 @@
+ #include "build/build_config.h"
+ #include "third_party/blink/renderer/core/css/css_custom_font_data.h"
+ #include "third_party/blink/renderer/core/css/css_font_face.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/platform/fonts/bitmap_glyphs_block_list.h"
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+@@ -45,6 +46,10 @@ bool LocalFontFaceSource::IsLocalFontAvailable(
+   // TODO(crbug.com/1025945): Properly handle Windows prior to 10 and Android.
+   bool font_available = FontCache::Get().IsPlatformFontUniqueNameMatchAvailable(
+       font_description, font_name_);
++  // MoltBrowser: installed faces hidden from web content are unavailable.
++  font_available = font_available && molt_fingerprinting::AllowLocalFontFace(
++      font_selector_ ? font_selector_->GetExecutionContext() : nullptr,
++      font_description, font_name_);
+   return font_available;
+ }
+ 
+@@ -107,7 +112,10 @@ const SimpleFontData* LocalFontFaceSource::CreateFontData(
+   // OOM), in which case we want to exit before creating the SkTypeface.
+   const SimpleFontData* unique_lookup_result = FontCache::Get().GetFontData(
+       unstyled_description, font_name_, AlternateFontName::kLocalUniqueFace);
+-  if (!unique_lookup_result) {
++  if (!unique_lookup_result ||
++      // MoltBrowser: also checks the face found for this description.
++      !molt_fingerprinting::AllowInstalledFont(
++          font_selector_->GetExecutionContext(), *unique_lookup_result)) {
+     return nullptr;
+   }
+ 

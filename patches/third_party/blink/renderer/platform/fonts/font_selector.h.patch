@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/blink/renderer/platform/fonts/font_selector.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/fonts/font_selector.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/fonts/font_selector.h b/third_party/blink/renderer/platform/fonts/font_selector.h
+index bebf378c601c5e50f5acd677bab46e06862969cd..0ff0652db391ac48f4fd8189efedd4df5fb2d703 100644
+--- a/third_party/blink/renderer/platform/fonts/font_selector.h
++++ b/third_party/blink/renderer/platform/fonts/font_selector.h
+@@ -46,6 +46,7 @@ class FontFallbackMap;
+ class FontFamily;
+ class FontSelectorClient;
+ class GenericFontFamilySettings;
++class SimpleFontData;  // MoltBrowser: GetSystemFontData().
+ class UseCounter;
+ 
+ class PLATFORM_EXPORT FontSelector : public FontCacheClient {
+@@ -78,6 +79,11 @@ class PLATFORM_EXPORT FontSelector : public FontCacheClient {
+       const FontDescription&,
+       const FontFamily& passed_family) = 0;
+ 
++  // MoltBrowser: the installed font `family` names (FontCache::GetFontData);
++  // core's selectors hide some from web content (molt_fingerprinting).
++  virtual const SimpleFontData* GetSystemFontData(const FontDescription&,
++                                                  const FontFamily& family);
++
+   FontFallbackMap& GetFontFallbackMap();
+ 
+   void Trace(Visitor* visitor) const override;

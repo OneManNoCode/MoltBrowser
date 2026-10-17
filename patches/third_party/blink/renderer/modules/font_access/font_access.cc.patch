@@ -1,0 +1,30 @@
+MoltBrowser patch for third_party/blink/renderer/modules/font_access/font_access.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/modules/font_access/font_access.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/font_access/font_access.cc b/third_party/blink/renderer/modules/font_access/font_access.cc
+index f066f2052eb0c6236b27e311afa9d72e37a0a061..c4a64675baec5edc7fe8d0e46fc7a124d8a5aff6 100644
+--- a/third_party/blink/renderer/modules/font_access/font_access.cc
++++ b/third_party/blink/renderer/modules/font_access/font_access.cc
+@@ -20,6 +20,7 @@
+ #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"
+ #include "third_party/blink/renderer/modules/font_access/font_metadata.h"
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
+ 
+@@ -160,6 +161,11 @@ void FontAccess::DidGetEnumerationResponse(
+         !selection_utf8.contains(element.postscript_name().c_str())) {
+       continue;
+     }
++    // MoltBrowser: only fonts web content here may see (system_fonts.h).
++    if (!molt_fingerprinting::AllowEnumeratedFont(GetSupplementable(),
++                                                  element.family())) {
++      continue;
++    }
+ 
+     auto entry = FontEnumerationEntry{
+         .postscript_name = String::FromUtf8(element.postscript_name()),
