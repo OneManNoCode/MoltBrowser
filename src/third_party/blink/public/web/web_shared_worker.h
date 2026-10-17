@@ -56,6 +56,7 @@
 namespace blink {
 
 class MessagePortDescriptor;
+class StorageKey;  // MoltBrowser
 class WebString;
 class WebSharedWorkerClient;
 class WebURL;
@@ -102,7 +103,10 @@ class BLINK_EXPORT WebSharedWorker {
           coep_reporting_observer,
       CrossVariantMojoReceiver<mojom::ReportingObserverInterfaceBase>
           dip_reporting_observer,
-      bool is_cross_origin_isolated);
+      bool is_cross_origin_isolated,
+      // MoltBrowser: the constructor's storage key, as the browser sent it
+      // (fingerprinting protection uses its top-level site).
+      const StorageKey& constructor_key);
 
   // Sends a connect event to the SharedWorker context.
   virtual void Connect(int connection_request_id,

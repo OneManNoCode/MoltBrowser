@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/core/events/message_event.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/inspector/worker_devtools_params.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 #include "third_party/blink/renderer/core/workers/parent_execution_context_task_runners.h"
@@ -236,7 +237,8 @@ void WebSharedWorkerImpl::StartWorkerContext(
         coep_reporting_observer,
     CrossVariantMojoReceiver<mojom::blink::ReportingObserverInterfaceBase>
         dip_reporting_observer,
-    bool is_cross_origin_isolated) {
+    bool is_cross_origin_isolated,
+    const StorageKey& constructor_key) {  // MoltBrowser
   DCHECK(IsMainThread());
   DCHECK(web_worker_fetch_context);
   CHECK(constructor_origin.Get()->CanAccessSharedWorkers() ||
@@ -305,6 +307,9 @@ void WebSharedWorkerImpl::StartWorkerContext(
       blink::SecurityOrigin::CreateFromUrlOrigin(
           url::Origin(origin_from_browser)),
       std::move(coep_reporting_observer), std::move(dip_reporting_observer));
+  // MoltBrowser: farble with the top-level site (and nonce) of this key.
+  molt_fingerprinting::ProvideToSharedWorker(
+      constructor_key, creation_params->worker_clients.Get());
 
   auto thread_startup_data = WorkerBackingThreadStartupData::CreateDefault();
   thread_startup_data.atomics_wait_mode =
@@ -391,7 +396,8 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
         coep_reporting_observer,
     CrossVariantMojoReceiver<mojom::blink::ReportingObserverInterfaceBase>
         dip_reporting_observer,
-    bool is_cross_origin_isolated) {
+    bool is_cross_origin_isolated,
+    const StorageKey& constructor_key) {  // MoltBrowser
   auto worker =
       base::WrapUnique(new WebSharedWorkerImpl(token, std::move(host), client));
   worker->StartWorkerContext(
@@ -404,7 +410,7 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
       std::move(policy_container), std::move(web_worker_fetch_context),
       ukm_source_id, require_cross_site_request_for_cookies,
       std::move(coep_reporting_observer), std::move(dip_reporting_observer),
-      is_cross_origin_isolated);
+      is_cross_origin_isolated, constructor_key);  // MoltBrowser
   return worker;
 }
 
