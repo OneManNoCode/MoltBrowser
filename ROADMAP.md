@@ -32,7 +32,7 @@ and pick something to help with. Status is updated as work lands.
 
 | | Item |
 |---|---|
-| 🔨 | **Current Chromium engine.** Move from the current development snapshot to the latest stable / Extended Stable Chromium, and adopt a patch series so every Chrome security release ships in MoltBrowser within days. *The patch series and rebase tooling are done ([REBASING.md](docs/REBASING.md)); the rebase onto Extended Stable 152 is next, on a build machine.* |
+| 🧪 | **Current Chromium engine.** Move from the current development snapshot to the latest stable / Extended Stable Chromium, and adopt a patch series so every Chrome security release ships in MoltBrowser within days. *Rebased onto Extended Stable 152.0.7977.169, with the patch series and rebase tooling ([REBASING.md](docs/REBASING.md)); the first build on 152 is next.* |
 | 🧪 | **Signed updates.** Verify every downloaded update against a pinned signing key and the OS code-signing check before installing. |
 | 🧪 | **AI chat rendering hardened** against markup injection from model output, with a fuzzing regression test in CI. |
 | 🧪 | **Locked-down internal pages.** No inline script, Trusted Types enforced, and secrets never handed to the chat page. |
@@ -49,8 +49,8 @@ and pick something to help with. Status is updated as work lands.
 | | Item |
 |---|---|
 | 🧪 | **MoltShield on adblock-rust** (Brave's engine, MPL-2.0). Blocks every request type, uses the EasyList / EasyPrivacy / uBlock filter lists with signed updates, cosmetic filtering and scriptlets, a per-site Shields toggle, and blocked counts. |
-| 🧪 | **Private-by-default settings.** Third-party cookies blocked, HTTPS-First, Global Privacy Control, tracking-parameter stripping, no network prediction. *(Global Privacy Control comes with the Chromium 152 rebase.)* |
-| 🧪 | **Fingerprinting protection** in the engine, not in page scripts: per-site, per-session randomization (Brave-style) in normal windows, and uniformity (UTC, en-US, letterboxing) in MoltNet windows. *v1 in v0.3: canvas, WebGL, audio and CPU-count farbling; MoltNet uniformity for time zone, language and screen size. Still to do: fonts, real window letterboxing, WebGPU and video-frame readback, a per-site off switch. Details and known limits: [FINGERPRINTING.md](docs/FINGERPRINTING.md).* |
+| 🧪 | **Private-by-default settings.** Third-party cookies blocked, HTTPS-First, Global Privacy Control, tracking-parameter stripping, no network prediction. |
+| 🧪 | **Fingerprinting protection** in the engine, not in page scripts: per-site, per-session randomization (Brave-style) in normal windows, and uniformity (UTC, en-US, letterboxing) in MoltNet windows. *In v0.3: canvas, WebGL, WebGPU uploads, audio and CPU-count farbling, turned off where you turn Shields off; MoltNet uniformity for time zone, language and screen size. Still to do: fonts, real window letterboxing, and canvas video exports in normal windows. Details and known limits: [FINGERPRINTING.md](docs/FINGERPRINTING.md).* |
 | 🔨 | **Tor-grade MoltNet.** A real "New identity", a separate Tor circuit per site, HTTPS-Only, bridges (snowflake / obfs4) for censored networks, a verified Tor binary, and `.onion` support. *In v0.3: real New Identity, per-site circuits, HTTPS-Only, bridges, `.onion` support with Onion-Location, and the system `tor` on Linux. Still to do: pinned Tor binary hashes, bridges with the system `tor`, and treating `.onion` as a secure context.* |
 | 🔨 | **De-Googled background traffic.** Audit and remove remaining Google service calls, and add phishing / malware protection that doesn't send your browsing to Google. *Source audit done ([NETWORK_TRAFFIC.md](docs/NETWORK_TRAFFIC.md)) and the unneeded calls are off in v0.3. Next: a traffic capture on a real build, and the Safe Browsing decision ([memo](docs/SAFE_BROWSING_DECISION.md)).* |
 | 🧪 | **Better on-device AI.** Context windows sized to the model, faster multi-turn chat, reasoning models that show only the answer, and a refreshed model catalog by RAM tier with verified downloads. *llama.cpp is updated to b11641, with Gemma 4 support.* |
@@ -61,7 +61,7 @@ and pick something to help with. Status is updated as work lands.
 
 | | Item |
 |---|---|
-| 📋 | **Sandboxed AI.** On-device inference and document parsing move into sandboxed utility processes. |
+| 🔨 | **Sandboxed AI.** On-device inference and document parsing move into sandboxed utility processes. *PDF and Office/e-book parsing now run in a sandboxed utility process, one per document. On-device inference is next ([design](docs/design/SANDBOXED_INFERENCE.md)).* |
 | 📋 | **Web-standard AI APIs, without Google.** The Prompt, Summarizer, Writer, Rewriter and Translator APIs, backed by the open model of your choice and running fully offline. |
 | 📋 | **A private agent.** An on-device planner combined with record/replay, screenshot understanding (vision models), grammar-constrained actions and WebMCP site tools. |
 | 📋 | **Semantic history search** with real on-device embeddings. |

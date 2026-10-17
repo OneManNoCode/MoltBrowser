@@ -17,6 +17,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/common/helper_binary.h"
+#include "chrome/browser/molt_ai/common/helper_output.h"
 
 namespace molt_ai {
 namespace ocr {
@@ -100,7 +101,7 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
   }
   if (exit_code != 0) {
     r.error = "tesseract exit=" + std::to_string(exit_code) + ": " +
-              combined.substr(0, 200);
+              SanitizeHelperText(combined, 200);
     base::DeletePathRecursively(scratch_dir);
     return r;
   }
@@ -112,7 +113,9 @@ OcrResult RunTesseractBlocking(std::string pdf_bytes,
   }
   base::DeletePathRecursively(scratch_dir);
 
-  if (text.size() > max_chars) text.resize(max_chars);
+  // tesseract read an untrusted PDF: its text need not be UTF-8, and a
+  // byte cut could split a character.
+  text = SanitizeHelperText(text, max_chars);
   r.success = !text.empty();
   r.text = std::move(text);
   if (!r.success && r.error.empty()) {

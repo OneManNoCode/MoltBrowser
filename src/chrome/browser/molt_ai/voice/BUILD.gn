@@ -13,5 +13,6 @@ source_set("voice") {
     "//base",
     # Bundled or (Linux) root-owned system binary only; no Homebrew/PATH.
     "//chrome/browser/molt_ai/common:helper_binary",
+    "//chrome/browser/molt_ai/common:helper_output",
   ]
 }

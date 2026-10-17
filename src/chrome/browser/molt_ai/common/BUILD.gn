@@ -27,6 +27,15 @@ source_set("trusted_binary") {
   }
 }
 
+# Untrusted text from helper programs, made valid UTF-8 and cut safely.
+source_set("helper_output") {
+  sources = [
+    "helper_output.cc",
+    "helper_output.h",
+  ]
+  deps = [ "//base" ]
+}
+
 source_set("helper_binary") {
   sources = [
     "helper_binary.cc",
@@ -42,8 +51,12 @@ source_set("helper_binary") {
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = []
-  deps = [ "//testing/gtest" ]
+  sources = [ "helper_output_unittest.cc" ]
+  deps = [
+    ":helper_output",
+    "//base",
+    "//testing/gtest",
+  ]
   if (is_posix) {
     sources += [ "trusted_binary_unittest.cc" ]
     deps += [ ":trusted_binary" ]
