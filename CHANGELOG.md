@@ -54,6 +54,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   app's own folder or, on Linux, a root-owned system copy; never from
   Homebrew, `/usr/local` or PATH. The updater launches its install helpers
   by full path.
+- **On-device AI runs in a sandbox.** Local models now load and run in their
+  own sandboxed process (Chromium's on-device model sandbox) instead of
+  inside the browser, so a malicious model file or crafted page text can't
+  take over the browser through a bug in the model loader or tokenizer. The
+  browser checks everything that process sends back and stops it if it
+  misbehaves, hangs or uses far more memory than the model needs. On Windows
+  the installer gives the sandbox read access to the install folder; the
+  portable ZIP can't run local models (cloud models work).
 - **Hostile pages and model files can't crash the browser.** The agent's
   page reader parses in linear time, off the UI thread, and reads at most
   2 MiB of HTML (a crafted page could hang it for minutes or crash it).

@@ -7,8 +7,10 @@ MoltBrowser is an AI-native privacy browser built on a Chromium fork (v0.2.5; ma
 ```
 MoltBrowser
  |
- +-- BrowserAIRuntime — on-device (llama.cpp b11641, Metal on macOS, CPU
- |    |   elsewhere) + cloud
+ +-- BrowserAIRuntime — on-device + cloud
+ |    +-- MoltInferenceService: llama.cpp b11641 (Metal on macOS, CPU
+ |    |   elsewhere) in a sandboxed utility process (kOnDeviceModelExecution),
+ |    |   one per loaded model; the browser validates everything it sends
  |    +-- Model catalog + ModelDownloadJob (pinned revision, size, SHA-256)
  |    +-- CloudProvider (molt_ai/cloud) — OpenAI / Anthropic / Gemini +
  |    |    any OpenAI-compatible endpoint; keys in molt_ai/keys (keys.enc)
@@ -87,7 +89,9 @@ MoltBrowser
 repo/
  +-- src/                              # Git-tracked source (copied to chromium/src for build)
  |    +-- chrome/browser/molt_ai/      # Core AI modules
- |    |    +-- runtime/                # BrowserAIRuntime, model catalog
+ |    |    +-- runtime/                # BrowserAIRuntime, model catalog, client
+ |    |    |                           #   of the inference service
+ |    |    |                           #   (InferenceProcessHost, StreamValidator)
  |    |    +-- models/                 # ModelDownloadJob (verified downloads)
  |    |    +-- agents/                 # WebAgent
  |    |    +-- automation/             # Agent mode (record/replay)
@@ -109,6 +113,10 @@ repo/
  |    |    +-- molt_ai_chat_handler.*  # WebUI message handler (bridge JS<>C++)
  |    |    +-- molt_ai_settings_ui.*   # chrome://molt-ai-settings/
  |    |    +-- molt_ai_agent_ui.*      # chrome://molt-ai-agent/
+ |    +-- chrome/services/molt_ai/inference/  # sandboxed on-device inference
+ |    |                                #   service (llama.cpp engine, mojom;
+ |    |                                #   engine/: std-only budget, prompt and
+ |    |                                #   output filters)
  |    +-- chrome/common/
  |    |    +-- webui_url_constants.h   # URL registrations
  |    +-- third_party/llama_cpp/       # LLM inference engine (GGUF), see README.chromium
@@ -133,11 +141,35 @@ repo/
 - CPU inference on Linux/Windows today (Vulkan planned)
 - Models stored as GGUF files in `~/.moltbrowser/models/`, downloaded with a
   pinned revision, size and SHA-256
+- **Sandboxed.** llama.cpp runs only in a utility process,
+  `molt_ai.mojom.MoltInferenceService` (`chrome/services/molt_ai/inference`),
+  launched with Chromium's `kOnDeviceModelExecution` sandbox (Seatbelt with
+  the Metal rules on macOS, the GPU-level seccomp policy and broker on Linux,
+  LPAC on Windows; memory limits scale with RAM). GN visibility makes it the
+  only code that can link llama.cpp. GGUF parsing, tokenization, the chat
+  template, the context budget, special-token neutralization, the reasoning
+  filters and stop sequences all run there. Design and threat model:
+  `docs/design/SANDBOXED_INFERENCE.md`.
+- One process per loaded model. The browser opens the GGUF and passes a
+  read-only handle (the sandbox can't open files). Unloading (explicit, after
+  10 idle minutes, or on critical memory pressure) ends the process, which
+  frees the weights, the KV cache and any Metal buffers at once.
+- The browser side (`BrowserAIRuntime` + `InferenceProcessHost`, UI thread)
+  treats the process as hostile: `StreamValidator` checks UTF-8, sizes,
+  counts, rates and message order and re-applies stop sequences; loads and
+  generations have deadlines and a liveness timeout; a footprint watchdog
+  and a crash-loop guard limit what a misbehaving model can do. A violation
+  kills the process. `BrowserAIRuntime`'s blocking API is unchanged for its
+  callers (chat, `WebAgent`, Agent-mode automation).
+- Windows: the installer grants the LPAC capability SIDs on the install
+  directory (as Chrome's setup does); the portable ZIP can't run on-device
+  models. Android/iOS: not built (on-device AI reports itself unavailable).
 - Vendored llama.cpp b11641 (`src/third_party/llama_cpp/README.chromium` lists
-  the local patches). Its targets build with exceptions; Chromium code calling
-  it doesn't, so no exception may escape a `llama_*` call. On macOS the Metal
-  kernels are compiled into `default.metallib` by
-  `scripts/build-ggml-metallib.sh`.
+  the local patches). Its targets build with exceptions; the service code
+  calling it doesn't, so no exception may escape a `llama_*` call (it would
+  kill the inference process). On macOS the Metal kernels are compiled into
+  `default.metallib` by `scripts/build-ggml-metallib.sh`; the sandboxed
+  process loads it from the framework's `Resources/`.
 
 ### WebUI Architecture
 - All UI is inline HTML/CSS/JS in C++ raw strings (no separate resource files)

@@ -1,6 +1,6 @@
 # S5 phase 2: on-device inference in a sandboxed utility process
 
-Status: design only, not implemented. Audit item S5 ("Rule of 2"): `llama_model_load_from_file`, tokenization and inference run in the unsandboxed browser process, so a GGUF or tokenizer bug becomes full browser compromise. Phase 1 (document parsing in a utility process) is a separate change.
+Status: implemented (October 2026), steps 1-4 and 6-9 of §6; pending a compile on the build machine and the per-platform device checks (§6, "Only verifiable on a build machine"). Step 5, registering the service in `chrome/utility/services.cc` and `chrome/utility/BUILD.gn`, is done together with phase 1, which patches the same two files. The owner's decisions are recorded in §0 and §7; how the implementation differs from this design, and why, is in §8. Audit item S5 ("Rule of 2"): `llama_model_load_from_file`, tokenization and inference ran in the unsandboxed browser process, so a GGUF or tokenizer bug became full browser compromise. Phase 1 (document parsing in a utility process) is a separate change.
 
 Pin: Chromium 152.0.7977.169 (`92a6f151`). Upstream files below were read at that revision with `upshow new`.
 
@@ -10,7 +10,7 @@ Pin: Chromium 152.0.7977.169 (`92a6f151`). Upstream files below were read at tha
    - It is launched with `content::ServiceProcessHost::Launch` and `[ServiceSandbox=sandbox.mojom.Sandbox.kOnDeviceModelExecution, RequireContext=sandbox.mojom.Context.kBrowser]`.
    - Every `llama_*`/`ggml_*` call moves there.
    - GN `visibility` on `//third_party/llama_cpp` makes it impossible for browser code to include `llama.h` again.
-2. **Sandbox type.** Use `kOnDeviceModelExecution` on macOS, Linux and Windows.
+2. **Sandbox type.** Use `kOnDeviceModelExecution` on macOS, Linux and Windows. **Decided by the owner.**
    - It is the only type that allows Metal on macOS. On macOS `kService`/`kUtility` use `utility.sb`, which has no IOKit or `MTLCompilerService` rules.
    - On Linux and Windows it is the only type whose memory limit scales with RAM (8, 16, 32 or 64 GB). The others are capped at 4 GB (`sandbox/constants.h` `kDataSizeLimit`).
    - CPU weight repacking on AVX2 alone exceeds 4 GB for an 8B model.
@@ -23,7 +23,7 @@ Pin: Chromium 152.0.7977.169 (`92a6f151`). Upstream files below were read at tha
    - Moving: the chat template, context budget, special-token neutralization and the reasoning filters (Harmony, `GemmaThoughtFilter`, `<think>`).
    - Checked in the browser: UTF-8, sizes, counts, protocol order and liveness of everything coming back.
 6. **Lifetime.** There is one process per loaded model. Dropping the remote kills the process, so idle unload, memory-pressure unload and model swap all become "kill the process".
-7. **No caller changes in this phase.** `BrowserAIRuntime` keeps its public API, including the blocking calls made from ThreadPool workers. So `MoltAIChatHandler`, `WebAgent`, `AutomationRunner` and `automation_background_browser` are untouched. Async variants and migrating callers to them is a later, optional step.
+7. **No caller changes in this phase** (none were needed; `PromptOptions` gained an optional `stop_sequences` field, §8). `BrowserAIRuntime` keeps its public API, including the blocking calls made from ThreadPool workers. So `MoltAIChatHandler`, `WebAgent`, `AutomationRunner` and `automation_background_browser` are untouched. Async variants and migrating callers to them is a later, optional step.
 8. **Upstream files patched:** `chrome/utility/services.cc` and `chrome/utility/BUILD.gn`, imported unchanged first and then patched. No sandbox policy files are expected to change.
 
 ```
@@ -130,7 +130,7 @@ Use `kOnDeviceModelExecution` everywhere:
 
 | Need | Allowed? | Work-around |
 |---|---|---|
-| Start the process at all | **Only if the install directory grants read+execute to the LPAC capability SIDs.** Chrome's installer does this (`ConfigureAppContainerSandbox`, `install_worker.cc:967`). The 7-Zip portable ZIP does not. | **Done (step 7):** the NSIS installer runs `icacls "$INSTDIR" /grant` with exactly the two SIDs Chrome's setup grants (`chrome/installer/setup/configure_app_container_sandbox.cc` at 152: `chromeInstallFiles` `S-1-15-3-1024-3424233489-…-1043257646` and `lpacChromeInstallFiles` `S-1-15-3-1024-2302894289-…-3317428798`), `(OI)(CI)(RX)` = `FILE_GENERIC_READ \| FILE_GENERIC_EXECUTE` inherited by files and folders, before extracting (§2.3a). Verify on Windows. |
+| Start the process at all | **Only if the install directory grants read+execute to the LPAC capability SIDs.** Chrome's installer does this (`ConfigureAppContainerSandbox`, `install_worker.cc:967`). The 7-Zip portable ZIP does not. | **Done (step 7):** the NSIS installer runs `icacls "$INSTDIR" /grant` with exactly the two SIDs Chrome's setup grants (`chrome/installer/setup/configure_app_container_sandbox.cc` at 152: `chromeInstallFiles` `S-1-15-3-1024-3424233489-…-1043257646` and `lpacChromeInstallFiles` `S-1-15-3-1024-2302894289-…-3317428798`), `(OI)(CI)(RX)` = `FILE_GENERIC_READ \| FILE_GENERIC_EXECUTE` inherited by files and folders, before extracting (§2.4a). Verify on Windows. |
 | Open the GGUF by path | No (LPAC has no user-profile access) | `ReadOnlyFile`, opened **without `FLAG_ASYNC`**. Upstream uses `FLAG_ASYNC`, but an overlapped handle breaks llama.cpp's synchronous CRT reads. Convert with `_open_osfhandle(h, _O_RDONLY\|_O_BINARY)` + `_fdopen(fd, "rb")`. A read-only handle has no `FILE_EXECUTE`, so it can't be mapped executable. |
 | `CreateFileMapping`/`MapViewOfFile` on that handle (`llama-mmap.cpp:594`); `PrefetchVirtualMemory` | Yes | — |
 | Job memory limit | 8/16/32/64 GB of committed memory | File-backed read-only views aren't charged; repack, KV and compute buffers are (§2.5). |
@@ -146,9 +146,9 @@ Use `kOnDeviceModelExecution` everywhere:
   - No path to Vulkan.
   - A second set of behaviours to test.
 - **Suggestion:** `kOnDeviceModelExecution` everywhere. If Windows can't ship the LPAC ACLs (portable ZIP), use `kService` with repacking off on Windows only. That means a second mojom interface name, because the sandbox type is a compile-time attribute of the interface. Owner decision (§7).
-- **Decided:** `kOnDeviceModelExecution` on macOS, Linux and Windows; no `kService` variant for now. The portable ZIP can't run on-device models (§2.3a).
+- **Decided:** `kOnDeviceModelExecution` on macOS, Linux and Windows; no `kService` variant for now. The portable ZIP can't run on-device models (§2.4a).
 
-### 2.3a Windows: installer ACLs and the portable ZIP
+### 2.4a Windows: installer ACLs and the portable ZIP
 
 - `installer/windows/moltbrowser.nsi` grants the LPAC capability SIDs on `$INSTDIR` right after creating it and before `File /r`, as Chrome's setup does for its target and temp directories (`AddInstallWorkItems`, `install_worker.cc:967`). The in-app updater runs the same installer, and files written into the directory later inherit the ACEs. The step is best effort, like Chrome's (`set_best_effort(true)`): if `icacls` fails the install continues and local models can't start.
 - **Portable ZIP: on-device AI needs the installer.** A directory unpacked from a ZIP has whatever ACLs its parent gives it, which normally don't include the LPAC capability SIDs, so the sandboxed process can't load MoltBrowser's own DLLs and dies before IPC. The browser reports that as a launch failure, not a model crash (so the crash-loop guard doesn't blame the model file), with "The portable ZIP can't run on-device models: install MoltBrowser with the installer, or use a cloud model." Cloud models work from the ZIP. A user can also grant the two SIDs on the unpacked folder by hand with the same `icacls` command.
@@ -278,8 +278,9 @@ struct GenerationSummary {
 
 // Implemented by the browser. Closing it cancels the request (queued or running).
 interface GenerationStreamer {
-  // During prompt evaluation, at most every 500 ms (liveness + UI).
-  OnPromptProgress(uint32 done_tokens, uint32 total_tokens);
+  // Liveness while nothing visible is sent, at most every 500 ms: prompt
+  // evaluation, then hidden reasoning (implemented as OnProgress, §8).
+  OnProgress(uint32 done_tokens, uint32 total_tokens);
   // Visible text since the last chunk: complete UTF-8, reasoning and channel
   // markers removed, stop sequences applied, never empty.
   OnChunk(string text);
@@ -607,23 +608,23 @@ Total is roughly 2,500 changed lines, about half of them moves: 5–7 days of de
 
 ## 7. Risks and open questions for the owner
 
-1. **Sandbox type on Linux/Windows CPU:** `kOnDeviceModelExecution` (RAM-scaled limits, Vulkan-ready, GPU-level attack surface) versus `kService` (tighter, but a 4 GB cap: repack off, smaller context). Recommendation: the former.
-2. **Windows LPAC ACLs:** add them to NSIS, and decide what the portable ZIP does. Options: a `kService` variant, or local AI disabled on the ZIP. Do not fall back to in-process. **Decided:** NSIS grants the SIDs (§2.3a); the portable ZIP needs the installer for on-device AI (or a later `kService` variant).
-3. **No in-process fallback.** A kill switch that brings llama back into the browser re-opens S5. Proposal: no fallback; on failure show an error that suggests a cloud model. Dev debugging uses `--utility-startup-dialog` / `--no-sandbox`.
+1. **Sandbox type on Linux/Windows CPU:** `kOnDeviceModelExecution` (RAM-scaled limits, Vulkan-ready, GPU-level attack surface) versus `kService` (tighter, but a 4 GB cap: repack off, smaller context). Recommendation: the former. **Decided:** `kOnDeviceModelExecution` on macOS, Linux and Windows.
+2. **Windows LPAC ACLs:** add them to NSIS, and decide what the portable ZIP does. Options: a `kService` variant, or local AI disabled on the ZIP. Do not fall back to in-process. **Decided:** NSIS grants the SIDs (§2.4a); the portable ZIP needs the installer for on-device AI (or a later `kService` variant).
+3. **No in-process fallback.** A kill switch that brings llama back into the browser re-opens S5. Proposal: no fallback; on failure show an error that suggests a cloud model. Dev debugging uses `--utility-startup-dialog` / `--no-sandbox`. **Decided:** no fallback; the browser no longer links llama.cpp at all.
 4. **Repack versus memory limits:** measure `use_extra_bufts` on and off (speed and RSS) for TinyLlama, Qwen3-8B and gpt-oss-20b on 16 GB and 32 GB machines.
 5. **Latency:** process launch plus Metal pipeline creation on every reload after idle unload. Consider pre-warming the process when the chat opens.
-6. **One process serves chat, agent and automation**, so a compromise can leak across them. Separate processes would double the RAM for multi-GB models; accept for now.
+6. **One process serves chat, agent and automation**, so a compromise can leak across them. Separate processes would double the RAM for multi-GB models; accept for now. **Accepted.**
 7. **GPU driver exposure and the macOS Metal shader cache** are reachable from the sandbox. This is the same as upstream; accept.
 8. **Windows Vulkan:** ggml-vulkan with preload/warm-up versus ggml-webgpu over Chromium's Dawn (better sandbox fit, unknown performance). Also, ggml-vulkan's build-time SPIR-V generation needs a GN action.
 9. **Crash dumps contain prompts:** confirm the crash-upload configuration excludes or strips the inference process.
 10. **Phase-1 coordination:** a shared import of `chrome/utility/services.cc`/`BUILD.gn` and the `chrome/services/molt_ai/` layout.
 11. **Callers converted to async (2c)?** It would remove the facade and its shutdown handling. Small but touches three call sites.
 12. **Should `WebAgent`/automation auto-load the model after an idle unload or crash** like the chat does? Today they fail with "No model loaded".
-13. **Stop-sequence semantics** (stop text excluded; applied after the reasoning filters) and whether any current caller wants stop sequences now.
+13. **Stop-sequence semantics** (stop text excluded; applied after the reasoning filters) and whether any current caller wants stop sequences now. **Decided:** as designed. No current caller sets any; `PromptOptions::stop_sequences` makes them available.
 14. **macOS `sysctl` denial noise:** accept it, or skip that `sysctlbyname` with a one-line ggml patch.
 15. **Model directory** (aside; it now matters because the browser opens the file): the path comes from `getenv("HOME")`, which is usually unset on Windows, giving a `/tmp/moltbrowser/models` fallback. Out of scope, but it should use `base::PathService` / `base::GetHomeDir()`.
 
-### Critical files for implementation
+### Critical files for implementation (as designed)
 
 - `src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc`
 - `src/chrome/browser/molt_ai/runtime/browser_ai_runtime.h`
@@ -631,3 +632,50 @@ Total is roughly 2,500 changed lines, about half of them moves: 5–7 days of de
 - `src/third_party/llama_cpp/BUILD.gn`
 - `src/chrome/browser/molt_ai/runtime/stream_filters.h`
 - `chrome/utility/services.cc` (upstream, to be imported to `src/chrome/utility/services.cc`)
+## 8. Implementation notes and deviations
+
+Where the code differs from the sections above, and why.
+
+- **Progress is also liveness during reasoning.** `GenerationStreamer.OnPromptProgress` became `OnProgress`. It is also sent while the model generates hidden reasoning (reasoning tokens / budget), at most every 500 ms and only when nothing else was sent. Hidden reasoning sends no text, and a long reasoning budget on a slow CPU can take longer than the 2-minute liveness timeout. The browser accepts progress at any time, still at most 4 a second.
+- **Stop filter position.** The service applies `StopSequenceFilter` after `Utf8Assembler` and `ToDisplayText`, not before `Utf8Assembler`. `ToDisplayText` turns invalid UTF-8 and NUL into U+FFFD. This way the service and the browser run the filter on exactly the same text, so a stop string can't match in one copy and not the other because of replaced bytes. Stop strings are valid UTF-8, so the filter still never splits a character. The browser rejects invalid UTF-8 from the service outright, so the service must never send any.
+- **Engine layout.** `LlamaEngine` (`llama_engine.{h,cc}`) uses only std and `llama.h`: no `//base`, no mojo, no logging. It is built and run standalone against the vendored llama.cpp objects. `MoltModelImpl` and `MoltInferenceService` are the mojo/base glue around it. `engine/BUILD.gn` has a separate `:stream_filters` target next to `:inference_utils` and `:unit_tests`. It is the only part the browser links, for `StopSequenceFilter` and the UTF-8 checks.
+- **The mojom caps are constants** (`kMaxHistoryTurns`, `kMaxChunkBytes`, ...), shared by both sides. The browser caps what it sends:
+  - history keeps the newest 512 turns;
+  - a text field over 32 MiB keeps its head;
+  - a conversation key over 128 bytes is replaced by a digest, which is harmless because KV reuse compares exact token prefixes;
+  - invalid stop strings are dropped.
+
+  The service checks the caps again and treats a violation as a bad message.
+- **Chunk and byte caps without the adaptive budgets.** The browser doesn't know which adaptive budgets the service picks, so a budget of 0 (adaptive) counts as `n_ctx` tokens:
+  - total bytes: `min(2 MiB, min(n_ctx, visible + reasoning + 16) * 512)`;
+  - chunks: that token bound + total / 4096 + 16, because the service splits a run of text over 4 KiB into several chunks.
+- **Memory budget before load.** The service decides on CPU repacking before it knows the model's hparams. Repacking stays on only if the file size + 1 GiB (minimum KV) + 1 GiB (compute) fits in 85% of the sandbox limit. After loading, it caps `n_ctx` so the KV cache fits in what is left. The browser's own cap on `n_ctx` is 32768, the top RAM tier.
+- **Footprint watchdog limit.** The browser can't see the KV size, so it uses an upper bound:
+  - limit: `1.5 * (weights + max(1 GiB, (RAM - weights - 4 GiB) / 2) + 2 GiB)`;
+  - sampled every 30 s: physical footprint on macOS, anonymous RSS + swap on Linux, private bytes on Windows.
+- **The crash-loop guard is time-based.** `BrowserAIRuntime::LoadModel` can't tell an explicit pick in the model menu from the chat's auto-load, because the callers are unchanged. So "until the user picks the model again" became "for the rest of the window":
+  - Two load crashes within an hour refuse the file for that hour. A re-downloaded file is a new key (id + size + mtime).
+  - Generation crashes back off relaunches by 1 s, 5 s, then 30 s. Three within ten minutes refuse the model until fewer than three remain in the window.
+  - Deaths while idle (e.g. the OS reclaiming memory) aren't counted.
+- **Launch failures aren't crashes.** A process that never starts, or dies before IPC, is reported as `kLaunchFailed` and doesn't count against the model file. On Windows that is the portable ZIP without the LPAC ACLs.
+- **Shutdown.** `AddAppTerminatingCallback` wakes every blocked worker. As a backstop, a blocked worker pings the UI thread when it has heard nothing for 5 s, and gives up if the ping isn't answered within 15 s, so a shutdown without the app-terminating notification can't block ThreadPool shutdown on it. `CancelRequest` wakes the blocked worker immediately.
+- **Swap and unload.** A model swap loads the new process while the old one keeps serving. On success the old process stops taking requests, finishes the ones it has, then ends. `UnloadModel` and `DeleteModel` do the same and wait until the process has exited. Idle and memory-pressure unloads check and forget the model in one step under the state lock: a generation starting at that moment either pins the model first or sees it gone.
+- **Android and iOS.** The service isn't registered there: step 5 guards it with `!BUILDFLAG(IS_ANDROID)`, and `//chrome/services/molt_ai/inference` asserts it isn't built for Android or iOS. `BrowserAIRuntime` reports on-device AI as unavailable there and never launches anything. Before this change, the Android GN graph linked llama.cpp into the browser; it no longer does.
+- **Tests.** Step 8's tests went in with the code they test:
+  - step 2: the moved engine utils, `StopSequenceFilter` and the UTF-8 helpers;
+  - step 6: `StreamValidator`, `CrashLoopGuard`, and `InferenceProcessHost` against a fake in-process service.
+
+### 8.1 Verified without a Chromium checkout
+
+- **Unit tests** for the engine utils, `StopSequenceFilter`, `StreamValidator` and `CrashLoopGuard`, with system gtest: clang with ASan + UBSan, g++ `-O2 -Werror`, and a libc++ `-fno-exceptions -fno-rtti` syntax pass.
+- **`LlamaEngine` end to end**, against the vendored llama.cpp built with the GN flags (`LLAMA_MOLTBROWSER_SANDBOXED` included) and a tiny GGUF, also under ASan + UBSan + LSan:
+  - loading from a `FILE*` made with `fdopen`;
+  - chat and raw prompts;
+  - KV-prefix reuse and `ForgetConversation`;
+  - cancellation and stop sequences;
+  - oversized prompts, a size mismatch and garbage files;
+  - the memory budget and `Tokenize`.
+- **The `MAP_POPULATE` patch.** In a child process with a seccomp-bpf filter that applies Chrome's `RestrictMmapFlags` rule (`SECCOMP_RET_TRAP` for any other flag), the patched build loads the model and generates. The same test linked with an unpatched `llama-mmap.o` dies with SIGSYS.
+- **The mojom**, with upstream's parser and C++ generator at the pin and `//mojo/public/mojom/base`'s typemaps.
+- **Syntax** of the service, `InferenceProcessHost`, `BrowserAIRuntime` and the host unittest: `clang++ -fsyntax-only` against stand-in headers that mimic the generated bindings and the `//base`, mojo and content APIs used.
+- **The NSIS script**, built with makensis 3.09; the SIDs it grants were compared with the upstream source.
