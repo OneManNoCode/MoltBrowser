@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"
 #include "third_party/blink/renderer/modules/font_access/font_metadata.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 
@@ -158,6 +159,11 @@ void FontAccess::DidGetEnumerationResponse(
     // only allow items that match.
     if (hasPostscriptNameFilter &&
         !selection_utf8.contains(element.postscript_name().c_str())) {
+      continue;
+    }
+    // MoltBrowser: only fonts web content here may see (system_fonts.h).
+    if (!molt_fingerprinting::AllowEnumeratedFont(GetSupplementable(),
+                                                  element.family())) {
       continue;
     }
 

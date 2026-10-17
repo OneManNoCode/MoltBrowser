@@ -8,6 +8,7 @@
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/css/css_custom_font_data.h"
 #include "third_party/blink/renderer/core/css/css_font_face.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/fonts/bitmap_glyphs_block_list.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
@@ -44,6 +45,10 @@ bool LocalFontFaceSource::IsLocalFontAvailable(
     const FontDescription& font_description) const {
   // TODO(crbug.com/1025945): Properly handle Windows prior to 10 and Android.
   bool font_available = FontCache::Get().IsPlatformFontUniqueNameMatchAvailable(
+      font_description, font_name_);
+  // MoltBrowser: installed faces hidden from web content are unavailable.
+  font_available = font_available && molt_fingerprinting::AllowLocalFontFace(
+      font_selector_ ? font_selector_->GetExecutionContext() : nullptr,
       font_description, font_name_);
   return font_available;
 }
@@ -107,7 +112,10 @@ const SimpleFontData* LocalFontFaceSource::CreateFontData(
   // OOM), in which case we want to exit before creating the SkTypeface.
   const SimpleFontData* unique_lookup_result = FontCache::Get().GetFontData(
       unstyled_description, font_name_, AlternateFontName::kLocalUniqueFace);
-  if (!unique_lookup_result) {
+  if (!unique_lookup_result ||
+      // MoltBrowser: also checks the face found for this description.
+      !molt_fingerprinting::AllowInstalledFont(
+          font_selector_->GetExecutionContext(), *unique_lookup_result)) {
     return nullptr;
   }
 

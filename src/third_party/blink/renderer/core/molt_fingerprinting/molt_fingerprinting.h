@@ -26,6 +26,16 @@
 //   MoltNet  Screen::GetRect/colorDepth/isExtended,
 //            LocalDOMWindow::outer{Width,Height}/screen{X,Y},
 //            MouseEvent::SetCoordinatesFromWebPointerProperties
+//   fonts    FontFallbackList::GetFontData (system lookup)
+//              -> FontSelector::GetSystemFontData, overridden by
+//                 CSSFontSelectorBase               -> GetSystemFontData
+//            CSSFontSelectorBase::IsPlatformFamilyMatchAvailable
+//              (document.fonts.check())    -> IsSystemFontFamilyAvailable
+//            LocalFontFaceSource::IsLocalFontAvailable,
+//              CreateFontData                       -> AllowLocalFontFace,
+//                                                      AllowInstalledFont
+//            FontAccess::DidGetEnumerationResponse -> AllowEnumeratedFont
+//            (all in system_fonts.h)
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:
@@ -240,6 +250,14 @@ CORE_EXPORT ExecutionContext* ContextOfCurrentCall(v8::Isolate* isolate);
 // [2, real]. Otherwise `real`.
 CORE_EXPORT unsigned HardwareConcurrency(ExecutionContext* context,
                                          unsigned real);
+
+// --- Fonts (system_fonts.h) -------------------------------------------------
+
+// FarblerFor(), plus whether its key is the context's stable per-site key
+// (false for the random keys of opaque contexts and of contexts that needed
+// a key before the seed arrived, and for worklets' handed-over keys).
+CORE_EXPORT std::optional<Farbler> SiteFarblerFor(ExecutionContext* context,
+                                                  bool* is_site_key);
 
 // --- MoltNet uniformity -----------------------------------------------------
 

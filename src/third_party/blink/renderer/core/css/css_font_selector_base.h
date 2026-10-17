@@ -24,6 +24,9 @@ class CORE_EXPORT CSSFontSelectorBase : public FontSelector {
  public:
   bool IsPlatformFamilyMatchAvailable(const FontDescription&,
                                       const FontFamily& family) override;
+  // MoltBrowser: molt_fingerprinting/system_fonts.h.
+  const SimpleFontData* GetSystemFontData(const FontDescription&,
+                                          const FontFamily& family) override;
 
   void WillUseFontData(const FontDescription&,
                        const FontFamily& family,

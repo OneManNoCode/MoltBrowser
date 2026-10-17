@@ -7,6 +7,7 @@
 #include "build/build_config.h"
 #include "third_party/blink/renderer/core/css/css_segmented_font_face.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/system_fonts.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
@@ -29,9 +30,22 @@ bool CSSFontSelectorBase::IsPlatformFamilyMatchAvailable(
   AtomicString family = FamilyNameFromSettings(font_description, passed_family);
   if (family.empty()) {
     family = passed_family.FamilyName();
+    // MoltBrowser: hidden installed fonts don't match (system_fonts.h).
+    if (auto available = molt_fingerprinting::IsSystemFontFamilyAvailable(
+            GetExecutionContext(), font_description, passed_family)) {
+      return *available;
+    }
   }
   return FontCache::Get().IsPlatformFamilyMatchAvailable(font_description,
                                                          family);
+}
+
+// MoltBrowser: installed fonts hidden from web content stay hidden.
+const SimpleFontData* CSSFontSelectorBase::GetSystemFontData(
+    const FontDescription& font_description,
+    const FontFamily& family) {
+  return molt_fingerprinting::GetSystemFontData(GetExecutionContext(),
+                                                font_description, family);
 }
 
 void CSSFontSelectorBase::ReportNotDefGlyph() const {

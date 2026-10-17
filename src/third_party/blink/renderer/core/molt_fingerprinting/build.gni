@@ -7,6 +7,11 @@
 blink_core_sources_molt_fingerprinting = [
   "molt_fingerprinting.cc",
   "molt_fingerprinting.h",
+  "system_fonts.cc",
+  "system_fonts.h",
 ]
 
-blink_core_tests_molt_fingerprinting = [ "molt_fingerprinting_test.cc" ]
+blink_core_tests_molt_fingerprinting = [
+  "molt_fingerprinting_test.cc",
+  "system_fonts_test.cc",
+]

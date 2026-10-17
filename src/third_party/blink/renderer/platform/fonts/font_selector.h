@@ -46,6 +46,7 @@ class FontFallbackMap;
 class FontFamily;
 class FontSelectorClient;
 class GenericFontFamilySettings;
+class SimpleFontData;  // MoltBrowser: GetSystemFontData().
 class UseCounter;
 
 class PLATFORM_EXPORT FontSelector : public FontCacheClient {
@@ -77,6 +78,11 @@ class PLATFORM_EXPORT FontSelector : public FontCacheClient {
   virtual bool IsPlatformFamilyMatchAvailable(
       const FontDescription&,
       const FontFamily& passed_family) = 0;
+
+  // MoltBrowser: the installed font `family` names (FontCache::GetFontData);
+  // core's selectors hide some from web content (molt_fingerprinting).
+  virtual const SimpleFontData* GetSystemFontData(const FontDescription&,
+                                                  const FontFamily& family);
 
   FontFallbackMap& GetFontFallbackMap();
 

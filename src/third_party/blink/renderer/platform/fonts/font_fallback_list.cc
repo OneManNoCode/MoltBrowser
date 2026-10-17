@@ -169,8 +169,9 @@ const FontData* FontFallbackList::GetFontData(
         font_selector_->GetFontData(font_description, *curr_family);
     // Don't query system fonts for empty font family name.
     if (!result && !curr_family->FamilyName().empty()) {
-      result = FontCache::Get().GetFontData(font_description,
-                                            curr_family->FamilyName());
+      // MoltBrowser: through the selector, which may hide installed fonts.
+      result = font_selector_->GetSystemFontData(font_description,
+                                                 *curr_family);
     }
     if (result) {
       return result;

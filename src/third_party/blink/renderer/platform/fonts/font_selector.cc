@@ -110,4 +110,11 @@ FontFallbackMap& FontSelector::GetFontFallbackMap() {
   return *font_fallback_map_;
 }
 
+// MoltBrowser: the lookup FontFallbackList used to do itself.
+const SimpleFontData* FontSelector::GetSystemFontData(
+    const FontDescription& font_description,
+    const FontFamily& family) {
+  return FontCache::Get().GetFontData(font_description, family.FamilyName());
+}
+
 }  // namespace blink
