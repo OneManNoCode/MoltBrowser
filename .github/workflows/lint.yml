@@ -8,6 +8,8 @@ name: Lint
 #   * patches/ still reproduces the src/ overlay byte-for-byte
 #     (tools/chromium/verify_patches.py; non-blocking until the patch series
 #     becomes the build input, see docs/REBASING.md)
+#   * the macOS helper dylib bundler (scripts/macho_bundle_deps.py) against
+#     arm64 Mach-O fixtures built with clang + lld (blocking)
 
 on:
   push:
@@ -66,3 +68,17 @@ jobs:
           persist-credentials: false
       - name: patches/ reproduces src/ (fetches upstream@pin from the GitHub mirror)
         run: python3 tools/chromium/verify_patches.py
+
+  macho-bundle-deps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install clang, lld and LLVM's otool / install_name_tool
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang lld llvm
+      - name: scripts/macho_bundle_deps_test.py
+        run: MOLT_REQUIRE_MACHO_TOOLS=1 python3 scripts/macho_bundle_deps_test.py -v

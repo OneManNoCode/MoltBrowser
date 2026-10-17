@@ -7,15 +7,18 @@
 # fallback path uses this when a downloaded PDF has no text layer.
 #
 # Strategy: tesseract is a thicket of native deps (leptonica, libpng,
-# libtiff, ICU, pango). Building from source inside the build pipeline
-# is over-engineering — we lean on the user's Homebrew-installed
-# tesseract and copy the binary + dylibs into Resources/ocr/.
-# Falls back to downloading just the eng.traineddata if no system
-# tesseract is present (the C++ side will keep using "system tesseract"
-# in that case).
+# libtiff, libarchive, ...). Building from source inside the build pipeline
+# is over-engineering — we take the build machine's Homebrew (or MacPorts)
+# tesseract and copy the binary + every non-system dylib it loads into
+# Resources/ocr/, rewritten to load from there (macho_bundle_deps.py). The
+# app never runs a tesseract from outside its bundle on macOS, and the
+# helper sandbox only lets it map code from Resources/ocr/ and the OS.
+# Without a tesseract on the build machine, only eng.traineddata is bundled
+# and OCR is unavailable.
 #
 # Bundle layout:
 #   MoltBrowser.app/Contents/Resources/ocr/tesseract
+#   MoltBrowser.app/Contents/Resources/ocr/lib/*.dylib
 #   MoltBrowser.app/Contents/Resources/ocr/tessdata/eng.traineddata
 #
 # Usage:
@@ -52,6 +55,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "[bundle-tesseract] macOS only (Linux and Windows use their own packaging)."
+  exit 1
+fi
 
 if [[ -z "$APP_PATH" ]]; then
   for cand in \
@@ -92,31 +100,46 @@ if ! verify_or_redownload "$TRAINEDDATA_CACHE" \
 fi
 install -m 644 "$TRAINEDDATA_CACHE" "$DEST/tessdata/eng.traineddata"
 
+# Never leave a half-bundled tesseract behind: the app would find it and
+# fail at launch (or load a library from outside the bundle).
+remove_bundled_binary() {
+  rm -rf "${DEST:?}/tesseract" "${DEST:?}/lib"
+}
+
 if [[ -z "$SYS_BIN" ]]; then
-  echo "[bundle-tesseract] No system tesseract found; bundled traineddata"
-  echo "[bundle-tesseract] is in place but the binary is not. Install with"
+  remove_bundled_binary
+  echo "[bundle-tesseract] No tesseract on this machine; bundled traineddata"
+  echo "[bundle-tesseract] is in place but the binary is not, so OCR is"
+  echo "[bundle-tesseract] unavailable in this build. Install with"
   echo "[bundle-tesseract]   brew install tesseract"
   echo "[bundle-tesseract] and re-run this script to bundle it."
   exit 0
 fi
 
-# Copy the tesseract binary. We do NOT rewrite its dylib links here —
-# that's a notarization-time concern and beyond the scope of dev
-# bundling. The bundled binary will still work as long as the user has
-# the standard Homebrew dependencies installed (leptonica, libtiff,
-# libpng, libjpeg). For DMG distribution we'd run otool + install_name_tool
-# to rewrite each LC_LOAD_DYLIB to @executable_path/... — separate batch.
+# Copy the binary and the dylibs it loads (recursively, OS libraries
+# aside) into lib/, rewrite every load command to point there, drop the
+# LC_RPATHs and re-sign ad hoc. Fails if anything still loads from outside
+# the bundle. Release signing later signs each file with the Developer ID
+# (release.sh / sign-app.sh sign every Mach-O under Resources/ocr/).
+remove_bundled_binary
 install -m 755 "$SYS_BIN" "$DEST/tesseract"
-xattr -d com.apple.quarantine "$DEST/tesseract" 2>/dev/null || true
+if ! python3 "$SCRIPT_DIR/macho_bundle_deps.py" "$DEST/tesseract" \
+        --lib-dir "$DEST/lib" --origin "$SYS_BIN"; then
+  remove_bundled_binary
+  echo "[bundle-tesseract] FATAL: could not make the bundled tesseract"
+  echo "[bundle-tesseract] self-contained (see above); not bundling it."
+  exit 1
+fi
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
-# Quick sanity check.
-"$DEST/tesseract" --version >/dev/null 2>&1 && {
-  VER="$("$DEST/tesseract" --version 2>&1 | head -1)"
-  echo "[bundle-tesseract] Bundled tesseract: $VER"
-} || {
-  echo "[bundle-tesseract] Bundled binary fails to run (missing dylibs?)."
-  echo "[bundle-tesseract] C++ side will fall through to system tesseract."
-}
+# Sanity check: it runs from the bundle.
+if ! "$DEST/tesseract" --version >/dev/null 2>&1; then
+  remove_bundled_binary
+  echo "[bundle-tesseract] FATAL: the bundled tesseract does not run; not bundling it."
+  exit 1
+fi
+echo "[bundle-tesseract] Bundled tesseract: $("$DEST/tesseract" --version 2>&1 | head -1)"
 
 echo "[bundle-tesseract] Bundled into $DEST"
+echo "[bundle-tesseract]   lib/: $(find "$DEST/lib" -type f 2>/dev/null | wc -l | tr -d ' ') dylibs, $(du -sh "$DEST/lib" 2>/dev/null | cut -f1)"
 echo "[bundle-tesseract]   tessdata/eng.traineddata: $(du -h "$DEST/tessdata/eng.traineddata" | cut -f1)"

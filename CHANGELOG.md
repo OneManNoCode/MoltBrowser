@@ -81,6 +81,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   seccomp (kernels older than 5.13 get the network block only); macOS uses
   the system sandbox and won't run OCR or voice without it; Windows gets the
   time limit and a job object for now. Voice transcription runs on the CPU.
+- **macOS: OCR ships with its own libraries.** The bundled tesseract still
+  pointed at the build machine's Homebrew libraries, so on other Macs it
+  couldn't start (and the sandbox wouldn't let it load them anyway). The
+  app now carries every library tesseract and whisper need inside its own
+  folder, and the build fails rather than ship a helper that loads code
+  from outside the app.
 - The AI library no longer forks the browser and starts a debugger found on
   PATH (with permission to read the browser's memory) when it hits an
   internal error.

@@ -16,6 +16,8 @@
 # Bundle layout:
 #   MoltBrowser.app/Contents/Resources/whisper/whisper-cli
 #   MoltBrowser.app/Contents/Resources/whisper/ggml-tiny.en.bin
+#   MoltBrowser.app/Contents/Resources/whisper/lib/*.dylib (only if the build
+#     picked up a non-system library; normally absent)
 #
 # Usage:
 #   ./scripts/bundle-whisper.sh
@@ -88,12 +90,12 @@ DEST="$APP_PATH/Contents/Resources/whisper"
 mkdir -p "$DEST"
 mkdir -p "$CACHE_DIR"
 
-# Pre-flight: we need git + cmake + curl on PATH. build.sh calls into
+# Pre-flight: we need git + cmake + curl (+ python3) on PATH. build.sh calls into
 # this script silently from the macOS post-build step; a missing dep
 # used to show up as a confusing cmake-not-found halfway through the
 # clone. Catch it up-front with a clear message. Code-review LOW #17.
 _missing=""
-for tool in git cmake curl; do
+for tool in git cmake curl python3; do
   command -v "$tool" >/dev/null 2>&1 || _missing="$_missing $tool"
 done
 if [[ -n "$_missing" ]]; then
@@ -172,9 +174,24 @@ fi
 
 # Install. Strip extended attrs so the bundled binary launches
 # without the macOS "downloaded from internet" prompt the first time.
+rm -rf "${DEST:?}/lib"
 install -m 755 "$BIN" "$DEST/whisper-cli"
+# whisper-cli is linked statically against the OS's Metal and Accelerate,
+# so it should load only OS libraries. Make sure: the helper sandbox maps
+# code only from Resources/whisper/ and the OS. This bundles anything else
+# the build picked up (say a Homebrew libomp) into lib/, rewritten to load
+# from there, drops the build tree's LC_RPATHs, and fails if anything still
+# loads from outside the bundle.
+if [[ "$(uname)" == "Darwin" ]] &&
+   ! python3 "$SCRIPT_DIR/macho_bundle_deps.py" "$DEST/whisper-cli" \
+        --lib-dir "$DEST/lib" --origin "$BIN"; then
+  rm -rf "${DEST:?}/whisper-cli" "${DEST:?}/lib"
+  echo "[bundle-whisper] FATAL: could not make the bundled whisper-cli"
+  echo "[bundle-whisper] self-contained (see above); not bundling it."
+  exit 1
+fi
 install -m 644 "$MODEL_CACHE" "$DEST/ggml-tiny.en.bin"
-xattr -d com.apple.quarantine "$DEST/whisper-cli" 2>/dev/null || true
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 # Record the version we bundled.
 echo "$WHISPER_TAG" > "$DEST/.version"

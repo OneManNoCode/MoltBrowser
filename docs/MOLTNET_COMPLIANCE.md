@@ -156,7 +156,10 @@ Tor (it never falls back to connecting without bridges) and says which
 package to install. The same ownership checks apply to the OCR (tesseract) and
 voice (whisper) helpers: the bundled copy, or on Linux a `root`-owned
 `/usr/bin/tesseract` or `/usr/bin/whisper-cli`; never Homebrew, `/usr/local`
-or `PATH`.
+or `PATH`. On macOS the bundled copies also carry their own libraries
+(`Contents/Resources/ocr/lib/`) and load nothing from outside the app apart
+from the operating system's; the build checks this
+(`scripts/macho_bundle_deps.py`) and refuses to bundle a helper that would.
 
 **Supply chain.** On Linux, Tor comes from your distribution's signed packages
 (MoltBrowser's `.deb`/`.rpm` declare `Recommends: tor`); MoltBrowser doesn't
