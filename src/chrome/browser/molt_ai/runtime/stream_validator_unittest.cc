@@ -209,6 +209,26 @@ TEST(StreamValidatorTest, LivenessAndDeadline) {
   EXPECT_EQ(w.CheckTime(5000000), StreamViolation::kNone);
 }
 
+TEST(StreamValidatorTest, QueuedRequestsHaveNoClockUntilActivated) {
+  StreamLimits l = Limits();
+  l.stall_timeout_ms = 120000;
+  l.deadline_ms = 900000;
+  StreamValidator v(l, 0);
+  v.SetQueued();
+  EXPECT_TRUE(v.queued());
+  // Waiting behind a 20-minute request is fine...
+  EXPECT_EQ(v.CheckTime(20 * 60 * 1000), StreamViolation::kNone);
+  // ... and the clocks start when it runs.
+  v.Activate(20 * 60 * 1000);
+  EXPECT_FALSE(v.queued());
+  EXPECT_EQ(v.CheckTime(20 * 60 * 1000 + 119000), StreamViolation::kNone);
+  EXPECT_EQ(v.CheckTime(20 * 60 * 1000 + 121000), StreamViolation::kStalled);
+  // Activate() on a running request changes nothing.
+  StreamValidator w(l, 0);
+  w.Activate(500000);
+  EXPECT_EQ(w.CheckTime(121000), StreamViolation::kStalled);
+}
+
 TEST(ModelDescriptionTest, Validation) {
   EXPECT_TRUE(IsValidModelDescription("llama", "cpu", 4096, 32000, 256, 8192));
   EXPECT_TRUE(IsValidModelDescription("gpt-oss", "metal", 256, 1, 256, 256));

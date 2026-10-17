@@ -786,6 +786,11 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   auto last_progress = start;
   const auto interval = std::chrono::milliseconds(kProgressIntervalMs);
   std::vector<llama_token> work(prompt.begin(), prompt.end());
+  if (callbacks.on_progress) {
+    // Tells the browser this request is running now (it may have waited
+    // behind another one); its liveness clock starts here.
+    callbacks.on_progress(ToU32(n_keep), ToU32(work.size()));
+  }
   for (size_t i = n_keep; i < work.size();) {
     if (cancelled()) {
       return EngineStatus::kCancelled;  // kv_tokens matches what was decoded

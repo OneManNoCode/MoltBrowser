@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 
 #include <algorithm>
+#include <deque>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -203,6 +204,9 @@ class InferenceProcessHost::ModelProcess
   uint32_t vocab_size = 0;
   scoped_refptr<InferenceMailbox> load_mailbox;
   std::map<uint64_t, std::unique_ptr<Generation>> generations;
+  // Tokens in the order the service received them. It serves them one at a
+  // time, so only the first is running; the others have no clock yet.
+  std::deque<uint64_t> queue_order;
   std::vector<scoped_refptr<InferenceMailbox>> exit_waiters;
   // Set once killed or lost: no further crash is recorded for it.
   bool lost = false;
@@ -306,6 +310,8 @@ class InferenceProcessHost::Generation : public mojom::GenerationStreamer {
   StreamViolation CheckTime(int64_t now_ms) const {
     return validator_.CheckTime(now_ms);
   }
+  void SetQueued() { validator_.SetQueued(); }
+  void Activate(int64_t now_ms) { validator_.Activate(now_ms); }
 
   // Ends the request for the caller (the streamer closes when this is
   // destroyed). Text already delivered stays delivered.
@@ -542,6 +548,8 @@ void InferenceProcessHost::StartGeneration(
   auto generation = std::make_unique<Generation>(
       this, p, token, std::move(limits), std::move(mailbox), NowMs());
   mojo::PendingRemote<mojom::GenerationStreamer> streamer = generation->Bind();
+  if (!p->queue_order.empty()) generation->SetQueued();
+  p->queue_order.push_back(token);
   p->generations[token] = std::move(generation);
   if (is_chat) {
     p->model->StreamChat(std::move(chat), std::move(params),
@@ -571,6 +579,7 @@ void InferenceProcessHost::FinishGeneration(ModelProcess* process,
   // still working on it, that cancels it.
   std::unique_ptr<Generation> generation = std::move(it->second);
   process->generations.erase(it);
+  RemoveFromQueue(process, token);
   generation->Finish(std::move(outcome));
   generation.reset();
   if (process->state == ModelProcess::State::kRetired &&
@@ -700,6 +709,7 @@ void InferenceProcessHost::KillProcess(ModelProcess* process,
   std::map<uint64_t, std::unique_ptr<Generation>> generations =
       std::move(process->generations);
   process->generations.clear();
+  process->queue_order.clear();
   for (auto& [token, generation] : generations) generation->Finish(outcome);
   generations.clear();
 
@@ -814,6 +824,17 @@ void InferenceProcessHost::OnFootprintSample(
              << (process->footprint_limit_bytes() >> 20) << " MiB";
   KillProcess(process.get(), InferenceOutcome::Kind::kMemoryExceeded,
               CrashLoopGuard::Phase::kGenerating);
+}
+
+void InferenceProcessHost::RemoveFromQueue(ModelProcess* process,
+                                           uint64_t token) {
+  std::deque<uint64_t>& order = process->queue_order;
+  const bool was_running = !order.empty() && order.front() == token;
+  order.erase(std::remove(order.begin(), order.end(), token), order.end());
+  if (!was_running || order.empty()) return;
+  // The service moves on to the next request: its clocks start now.
+  auto next = process->generations.find(order.front());
+  if (next != process->generations.end()) next->second->Activate(NowMs());
 }
 
 InferenceProcessHost::ModelProcess* InferenceProcessHost::FindGenerationOwner(

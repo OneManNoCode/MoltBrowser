@@ -65,12 +65,14 @@ constexpr uint64_t kGiB = 1024ULL * 1024 * 1024;
 // top out here).
 constexpr uint32_t kMaxContextTokens = 32768;
 
-// How long a blocked caller waits beyond the host's own deadlines (load 10
-// min, generation 15 min) before giving up on the UI thread.
+// Backstops for a blocked caller, beyond the host's own deadlines (load 10
+// min; a generation 15 min from when it starts running, after waiting up to
+// that long behind another one). The host enforces the real limits; these
+// only matter if the UI thread stops answering in a way the ping misses.
 constexpr base::TimeDelta kLoadWait = base::Minutes(11);
-constexpr base::TimeDelta kGenerationWait = base::Minutes(16);
+constexpr base::TimeDelta kGenerationWait = base::Minutes(32);
 // An unload waits for running requests, then for the process to exit.
-constexpr base::TimeDelta kUnloadWait = base::Minutes(16);
+constexpr base::TimeDelta kUnloadWait = base::Minutes(32);
 
 // The blocked worker wakes at least this often (cancellation, shutdown).
 constexpr std::chrono::milliseconds kWaitSlice{250};

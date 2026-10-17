@@ -267,6 +267,9 @@ class InferenceProcessHost {
   void DestroySoon(ModelProcess* process);
   void DestroyNow(ModelProcess* process);
   ModelProcess* FindGenerationOwner(uint64_t token) const;
+  // Drops |token| from |process|'s queue; starts the next one's clocks if
+  // |token| was running.
+  void RemoveFromQueue(ModelProcess* process, uint64_t token);
   void UpdateTicking();
   int64_t NowMs() const;
 

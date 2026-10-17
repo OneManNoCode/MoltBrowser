@@ -320,6 +320,28 @@ TEST_F(InferenceProcessHostTest, ProgressKeepsALongPromptAlive) {
   EXPECT_EQ(gen->outcome().kind, Kind::kTimedOut);
 }
 
+TEST_F(InferenceProcessHostTest, QueuedRequestIsNotKilledWhileItWaits) {
+  Load();
+  scoped_refptr<InferenceMailbox> first = Chat(1);
+  scoped_refptr<InferenceMailbox> second = Chat(2);
+  // The first streams for 10 minutes; the second waits silently.
+  for (int i = 0; i < 10; ++i) {
+    task_environment_.FastForwardBy(base::Seconds(60));
+    service().streamer(0)->OnChunk("x");
+    task_environment_.RunUntilIdle();
+  }
+  EXPECT_FALSE(Finished(second.get()));
+  service().streamer(0)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(first.get()));
+  // Now the second runs: its liveness clock starts.
+  task_environment_.FastForwardBy(base::Seconds(100));
+  EXPECT_FALSE(Finished(second.get()));
+  task_environment_.FastForwardBy(base::Seconds(25));
+  ASSERT_TRUE(Finished(second.get()));
+  EXPECT_EQ(second->outcome().kind, Kind::kTimedOut);
+}
+
 TEST_F(InferenceProcessHostTest, FloodKillsTheProcess) {
   Load();
   scoped_refptr<InferenceMailbox> gen = Chat(1);

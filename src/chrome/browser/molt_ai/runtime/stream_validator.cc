@@ -165,8 +165,19 @@ StreamValidator::CompleteResult StreamValidator::OnComplete(
   return result;
 }
 
+void StreamValidator::SetQueued() {
+  queued_ = true;
+}
+
+void StreamValidator::Activate(int64_t now_ms) {
+  if (!queued_) return;
+  queued_ = false;
+  start_ms_ = now_ms;
+  last_message_ms_ = std::max(last_message_ms_, now_ms);
+}
+
 StreamViolation StreamValidator::CheckTime(int64_t now_ms) const {
-  if (completed_) return StreamViolation::kNone;
+  if (completed_ || queued_) return StreamViolation::kNone;
   if (now_ms - start_ms_ > limits_.deadline_ms) {
     return StreamViolation::kDeadlineExceeded;
   }

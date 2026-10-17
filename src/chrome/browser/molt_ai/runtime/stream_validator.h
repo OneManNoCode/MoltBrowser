@@ -79,7 +79,10 @@ struct StreamSummary {
 //  - OnComplete: exactly once, last; counts clamped to [0, context_tokens].
 //  - Any message: at most max_messages_per_second; nothing after OnComplete.
 //  - CheckTime (from a timer): no message for stall_timeout_ms, or longer
-//    than deadline_ms in total.
+//    than deadline_ms in total, counted from when the request starts
+//    running: while it waits behind another request (the service serves
+//    one at a time) it is exempt.
+
 // Memory is bounded: text is returned, never accumulated, and the stop
 // filter holds back less than the longest stop string.
 class StreamValidator {
@@ -118,6 +121,12 @@ class StreamValidator {
 
   StreamViolation CheckTime(int64_t now_ms) const;
 
+  // The request waits behind another one: no liveness or deadline yet.
+  void SetQueued();
+  // It reached the head of the service's queue: the clocks start now.
+  void Activate(int64_t now_ms);
+  bool queued() const { return queued_; }
+
   bool completed() const { return completed_; }
   bool stopped() const { return stop_.stopped(); }
   size_t total_bytes() const { return total_bytes_; }
@@ -130,7 +139,7 @@ class StreamValidator {
   StreamViolation CountMessage(int64_t now_ms, bool is_progress);
 
   const StreamLimits limits_;
-  const int64_t start_ms_;
+  int64_t start_ms_;
   size_t max_total_bytes_ = 0;
   uint32_t max_chunks_ = 0;
 
@@ -142,6 +151,7 @@ class StreamValidator {
   size_t total_bytes_ = 0;
   uint32_t chunks_ = 0;
   bool completed_ = false;
+  bool queued_ = false;
 };
 
 // Validation of a ModelDescription (section 5.3): architecture at most 64
