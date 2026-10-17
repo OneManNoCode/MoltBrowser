@@ -160,6 +160,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   MoltBrowser turned off, back on. Everything the browser still contacts on
   its own is listed in `docs/NETWORK_TRAFFIC.md`, and the privacy policy
   now names each host.
+- **MoltNet windows describe the same GPU for everyone.** WebGL there
+  reports fixed limits (8192-pixel textures, for example), a fixed list of
+  23 common extensions and fixed shader precision, never more than the GPU
+  really has; WebGPU finds no adapter, so sites fall back to WebGL. Normal
+  and incognito windows are unchanged.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

@@ -387,6 +387,253 @@ WebGPU uploads from a canvas stay farbled in both (they are per upload, not
 per frame; camera `<video>`/`VideoFrame` sources are not farbled). Nothing is
 copied or computed when protection is off for the context.
 
+## WebGL and WebGPU in MoltNet windows
+
+WebGL's pixels are farbled everywhere and MoltNet hides its unmasked GPU
+strings, but WebGL also describes the GPU through dozens of limits, an
+extension list and shader precision formats, and WebGPU through
+`GPUAdapter.info`, limits and features. In MoltNet windows (kUniform) all of
+that is now the same for every user. Normal and Incognito windows are
+unchanged (see [Scope](#scope-moltnet-only) below).
+
+### WebGL 1 and 2
+
+* **Limits.** `getParameter` reports a fixed baseline for every
+  implementation-dependent limit, as `min(real, baseline)`: a page is never
+  told about a capability the GPU lacks, and every GPU that meets the
+  baseline reports exactly the baseline. Where the larger number is the
+  weaker claim (`UNIFORM_BUFFER_OFFSET_ALIGNMENT`, `MIN_PROGRAM_TEXEL_OFFSET`,
+  the low end of the point/line ranges) it is `max(real, baseline)`. State
+  (`VIEWPORT`, `DEPTH_RANGE`, `SAMPLES`, blend state, ...) is never changed.
+* **Extensions.** `getSupportedExtensions()` and `getExtension()` see a fixed
+  allow-list of 23 common extensions, intersected with what the GPU
+  supports (both go through `ExtensionSupportedAndAllowed`, so they always
+  agree).
+* **Shader precision.** `getShaderPrecisionFormat` reports fixed formats,
+  clamped component-wise to the real ones.
+* **Sample counts.** WebGL 2's `getInternalformatParameter(RENDERBUFFER, f,
+  SAMPLES)` lists no count above the reported `MAX_SAMPLES` (4).
+
+**How the baselines were picked.** Every baseline is at least the WebGL 2
+(OpenGL ES 3.0) minimum, so a clamped report is still a valid one, and at
+most what every desktop GPU that runs WebGL 2 in current Chromium reports
+through ANGLE (D3D11 feature level 10_0 and up, every Metal Mac, current
+Mesa and NVIDIA drivers), so that nearly every MoltNet user reports the
+baseline itself. Within that range: where pages size their work from a limit
+(textures, uniforms, varyings, texture units, attributes, draw buffers) the
+baseline is the realistic desktop floor, because the spec minimums are low
+enough to push engines onto slower paths or smaller textures; very high
+values (16384-pixel textures, 4096 uniform vectors) would single out older
+and mobile GPUs. Where pages don't (performance hints, LOD bias, server wait
+timeout) the baseline is the spec minimum or a deliberately low value. The
+coverage figures below are from web3dsurvey.com's WebGL 2 data (October
+2026, all browsers and platforms; desktop-only coverage is higher).
+
+| Parameter(s) | Baseline | WebGL 2 minimum | Why |
+|---|---|---|---|
+| `MAX_TEXTURE_SIZE`, `MAX_CUBE_MAP_TEXTURE_SIZE`, `MAX_RENDERBUFFER_SIZE` | 8192 | 2048 | ~95% of devices and every desktop GPU have 8192 (D3D10-class GPUs stop there); 16384 only ~80%. 4096 would halve the largest texture |
+| `MAX_VIEWPORT_DIMS` | 8192 x 8192 | the renderbuffer size | consistent with the renderbuffer size, as ES 3.0 requires |
+| `MAX_VERTEX_ATTRIBS` | 16 | 16 | ANGLE's cap everywhere |
+| `MAX_VERTEX_UNIFORM_VECTORS`, `MAX_FRAGMENT_UNIFORM_VECTORS` | 1024 | 256, 224 (WebGL 1: 128, 16) | Metal reports 1024, the other desktop backends at least that (~95% of all devices have 512 or more); lower values cut e.g. the skinning bones engines put in uniforms |
+| `MAX_VERTEX_UNIFORM_COMPONENTS`, `MAX_FRAGMENT_UNIFORM_COMPONENTS` | 4096 | 1024, 896 | 4 x the vectors |
+| `MAX_VARYING_VECTORS` | 30 | 15 | ~95% of devices have at least 30, about a third more; 15 is tight for big material shaders |
+| `MAX_VARYING_COMPONENTS`, `MAX_VERTEX_OUTPUT_COMPONENTS`, `MAX_FRAGMENT_INPUT_COMPONENTS` | 120 | 60, 64, 60 | 4 x the varyings |
+| `MAX_TEXTURE_IMAGE_UNITS`, `MAX_VERTEX_TEXTURE_IMAGE_UNITS` | 16 | 16 | 99.95% have 16 or more, only ~20% have 24 |
+| `MAX_COMBINED_TEXTURE_IMAGE_UNITS` | 32 | 32 | the sum of the two |
+| `MAX_DRAW_BUFFERS`, `MAX_COLOR_ATTACHMENTS` (also `WEBGL_draw_buffers`) | 8 | 4 | every desktop GPU (4 on some mobile ones) |
+| `SUBPIXEL_BITS` | 4 | 4 | the minimum; drivers report 4 or 8 |
+| `ALIASED_POINT_SIZE_RANGE` | [1, 255] | [1, 1] | about Intel's maximum, the lowest on desktop |
+| `ALIASED_LINE_WIDTH_RANGE` | [1, 1] | [1, 1] | D3D11, Metal and Vulkan only draw 1-pixel lines |
+| `MAX_TEXTURE_MAX_ANISOTROPY_EXT` | 16 | 2 | universal on desktop |
+| `MAX_3D_TEXTURE_SIZE`, `MAX_ARRAY_TEXTURE_LAYERS` | 2048 | 256 | D3D11's and Metal's value; ~98.5% or more of devices have it |
+| `MAX_SAMPLES` | 4 | 4 | the minimum; higher counts (8, 16, 32) vary between GPUs |
+| `MAX_VERTEX_UNIFORM_BLOCKS`, `MAX_FRAGMENT_UNIFORM_BLOCKS` | 12 | 12 | the minimums |
+| `MAX_COMBINED_UNIFORM_BLOCKS`, `MAX_UNIFORM_BUFFER_BINDINGS` | 24 | 24 | the minimums |
+| `MAX_UNIFORM_BLOCK_SIZE` | 16384 | 16384 | the minimum; about a fifth of Chromium's WebGL 2 users have less than 65536 |
+| `MAX_COMBINED_{VERTEX,FRAGMENT}_UNIFORM_COMPONENTS` | 53248 | (formula) | ES 3.0's formula over the values above |
+| `UNIFORM_BUFFER_OFFSET_ALIGNMENT` | 256 (`max`) | at most 256 | every real alignment divides 256 |
+| `MIN_PROGRAM_TEXEL_OFFSET`, `MAX_PROGRAM_TEXEL_OFFSET` | -8 (`max`), 7 | -8, 7 | the minimums |
+| `MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS`, `_SEPARATE_ATTRIBS`, `_SEPARATE_COMPONENTS` | 64, 4, 4 | 64, 4, 4 | the minimums |
+| `MAX_ELEMENT_INDEX` | 2^32 - 1 | 2^24 - 1 | 32-bit indices on every desktop GPU |
+| `MAX_ELEMENTS_VERTICES`, `MAX_ELEMENTS_INDICES` | 2048 | none | performance hints nothing enforces |
+| `MAX_TEXTURE_LOD_BIAS` | 2.0 | 2.0 | only bounds a shader's LOD bias |
+| `MAX_SERVER_WAIT_TIMEOUT` | 0 | 0 | WebGL 2 only allows `TIMEOUT_IGNORED` |
+
+Extension parameters (`MAX_VIEWS_OVR`, `MAX_DUAL_SOURCE_DRAW_BUFFERS_EXT`,
+`MAX_CLIP_DISTANCES_WEBGL`, pixel-local-storage planes, interpolation
+offsets) are unreachable: their extensions aren't on the allow-list.
+
+**Extensions allowed** (when supported): `ANGLE_instanced_arrays`,
+`EXT_blend_minmax`, `EXT_color_buffer_float`, `EXT_color_buffer_half_float`,
+`EXT_frag_depth`, `EXT_sRGB`, `EXT_shader_texture_lod`,
+`EXT_texture_filter_anisotropic`, `KHR_parallel_shader_compile`,
+`OES_element_index_uint`, `OES_standard_derivatives`, `OES_texture_float`,
+`OES_texture_float_linear`, `OES_texture_half_float`,
+`OES_texture_half_float_linear`, `OES_vertex_array_object`,
+`WEBGL_color_buffer_float`, `WEBGL_compressed_texture_s3tc`,
+`WEBGL_compressed_texture_s3tc_srgb`, `WEBGL_depth_texture`,
+`WEBGL_draw_buffers`, `WEBGL_lose_context`, `WEBGL_multi_draw` (the ones
+that are core in WebGL 2 only show up in WebGL 1). Everything else is
+hidden, notably:
+
+* `WEBGL_debug_renderer_info` (still also hidden by its own hook) and
+  `WEBGL_debug_shaders`, whose `getTranslatedShaderSource()` shows the
+  backend's shader language and the driver-bug workarounds ANGLE applies
+  for the specific GPU;
+* `EXT_disjoint_timer_query(_webgl2)`: GPU timers;
+* extensions that differ between GPUs of one platform: `EXT_float_blend`
+  (Apple GPUs can't blend 32-bit float targets; ~88% of macOS devices have
+  it) and the BPTC, RGTC, ASTC, ETC/ETC1 and PVRTC texture formats (ASTC
+  alone would tell Apple-silicon Macs from Intel ones);
+* the newer and rarely used ones (`EXT_clip_control`, `EXT_depth_clamp`,
+  `EXT_polygon_offset_clamp`, `EXT_texture_mirror_clamp_to_edge`,
+  `EXT_texture_norm16`, `EXT_render_snorm`, `EXT_conservative_depth`,
+  `OES_fbo_render_mipmap`, `OES_draw_buffers_indexed`,
+  `OES_sample_variables`, `OES_shader_multisample_interpolation`,
+  `OVR_multiview2`, `NV_shader_noperspective_interpolation`, and the
+  `WEBGL_` blend-func-extended, clip-cull-distance, polygon-mode,
+  provoking-vertex, render-shared-exponent, stencil-texturing,
+  multi-draw-instanced-base-vertex and draft ones), whose support varies by
+  backend and which few sites use.
+
+Hidden extensions behave exactly as on a GPU without them: `getExtension`
+returns null, their enums are invalid, their shader `#extension`s don't
+compile, and enabling `EXT_color_buffer_float` or `OES_texture_float` no
+longer implicitly enables `EXT_float_blend`.
+
+**Shader precision formats** (`rangeMin, rangeMax, precision`, both shader
+types): `highp` float 127, 127, 23 and int 31, 30, 0, as on every WebGL 2 GPU;
+`mediump` and `lowp` float 15, 15, 10 and int 15, 14, 0, the half floats and
+16-bit integers that GPUs with native low precision (mobile, Apple) run them
+at. Desktop GPUs run every precision at 32 bits and are clamped down to the
+same report; a page that checks `HIGH_FLOAT` (as three.js does) is
+unaffected, one that looks at `MEDIUM_FLOAT` may pick `highp` instead,
+which works everywhere.
+
+**Checked and left alone.** `getContextAttributes()` echoes the request
+except `antialias` (false where Chromium can't or won't use MSAA on the
+GPU) and `desynchronized` (per platform); reporting an antialias the GPU
+doesn't do would make pages skip their own anti-aliasing, so it stays
+real. `VERSION`, `SHADING_LANGUAGE_VERSION`, `VENDOR` and `RENDERER` are
+fixed Chromium strings; `RED/GREEN/BLUE/ALPHA/DEPTH/STENCIL_BITS`,
+`SAMPLES` and `IMPLEMENTATION_COLOR_READ_FORMAT/TYPE` describe the bound
+framebuffer, which ANGLE derives from the requested formats rather than the
+hardware;
+`COMPRESSED_TEXTURE_FORMATS` only lists formats of enabled (so allowed)
+extensions; the extension order is the fixed registration order. Whether
+`getContext('webgl2')` succeeds at all (blocklisted GPUs) and
+`failIfMajorPerformanceCaveat` remain hardware signals. WebGL on WebGPU
+(`WebGLOnWebGPU`) is an experiment behind a Blink runtime flag that is off
+by default; it has its own implementation and is not covered.
+
+**Not enforced.** The reported values are what the page is told, not what
+it gets: the GPU's real limits still apply, so a page that uses more than
+the reported limit (a 16384-pixel texture, more uniforms, 8x MSAA) keeps
+working, exactly as before. That also means a script that probes instead of
+asking still finds the real limits: allocating textures until one fails,
+compiling shaders with more uniforms or varyings, `drawBuffers` with more
+buffers, `DRAW_BUFFERi` or `bindBufferBase` indices past the reported
+count, the sample count a `renderbufferStorageMultisample(3, ...)` is
+rounded up to, `drawingBufferWidth` of a canvas wider than 8192, or
+measuring `mediump` precision in a shader. Enforcing the baselines would
+mean new validation in dozens of entry points (and different errors from
+upstream's), so it isn't done: like the canvas noise, this stops scripts
+that read the values (what fingerprinting libraries do), not ones written
+against MoltBrowser.
+
+### WebGPU: no adapter
+
+In MoltNet windows `navigator.gpu.requestAdapter()` resolves to null, the
+spec's answer when no adapter is available, before any GPU-process context
+is created; sites already handle it by falling back to WebGL (three.js'
+`WebGPURenderer`, for one, switches to its WebGL 2 backend). Tor Browser
+has no WebGPU either. Making WebGPU uniform instead would mean fixing
+`GPUAdapter.info`, every limit, the feature list and the WGSL behaviour of
+each backend, and WebGPU's rendering and compute results would still
+differ by GPU, with no readback noise to cover them (see the gaps below).
+
+* The rest of `navigator.gpu` stays: `getPreferredCanvasFormat()` is fixed
+  per platform at compile time (`rgba8unorm` on Linux and Android,
+  `bgra8unorm` elsewhere) and `wgslLanguageFeatures` comes from the Dawn
+  build and flags, not the GPU. Hiding `navigator.gpu` itself would be
+  cleaner for feature detection, but at 152 the interface is no longer
+  behind a runtime flag, so it would need an IDL change; a null adapter is
+  the one-hook way.
+* Workers (dedicated, shared, service) go through the same
+  `GPU::RequestAdapterImpl` and are covered too.
+* DevTools' console for the page says "WebGPU is not available in MoltNet
+  windows" (the page itself can't read it).
+
+### Which contexts
+
+The same contexts as farbling, decided per call from the WebGL context's
+(or `navigator.gpu`'s) execution context: documents, iframes (by their
+top-level site), workers including `OffscreenCanvas` WebGL in workers.
+Pages whose top-level site isn't http(s) (`chrome://` and other internal or
+local pages) keep the real GPU. MoltNet ignores Shields off, as it does for
+farbling. A WebGL call without an execution context fails closed (gets the
+baselines).
+
+### Scope: MoltNet only
+
+None of this applies in normal and Incognito windows. Their goal is per-site
+unlinkability without breaking sites: fixed limits can't vary per site in a
+useful way (random lower limits would break apps and the real ones show
+through probing anyway), and clamping them to one baseline only makes a user
+look like the other MoltBrowser users, which normal windows don't otherwise
+attempt (real time zone, screen, language and unmasked GPU strings). It
+would cost every WebGL app the limits, extensions and WebGPU above for no
+unlinkability gain.
+
+### What it costs MoltNet users
+
+* Pages that honour the limits use at most 8192-pixel textures (image
+  viewers and map engines tile more) and 4x MSAA.
+* No 32-bit float blending (`EXT_float_blend`): GPGPU code that accumulates
+  into float32 targets with blending fails; half-float blending works.
+* KTX2/Basis texture transcoders choose S3TC (BC1/BC3) instead of BC7 or
+  ASTC: a little more memory or a little less quality.
+* WebGPU-only pages show their "WebGPU not supported" path.
+
+The baselines target desktop GPUs, where MoltNet runs. If MoltNet ever
+comes to Android, the texture size, uniform-vector and draw-buffer
+baselines (and S3TC, which mobile GPUs lack) need a mobile-specific look.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/webgl_uniform.{h,cc}` | the baselines, allow-list and precision formats, std + //base only (+ `webgl_uniform_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/gpu_uniformity.{h,cc}` | when to apply them (kUniform, web context), the entry points the hooks call (+ `gpu_uniformity_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`):
+`webgl_rendering_context_base.cc` (`ExtensionSupportedAndAllowed`,
+`GetIntParameter`, `GetFloatParameter`, `GetWebGLFloatArrayParameter`,
+`GetWebGLIntArrayParameter`, the `WEBGL_draw_buffers` cases of
+`getParameter`, `getShaderPrecisionFormat`),
+`webgl2_rendering_context_base.cc` (`GetInt64Parameter`,
+`getInternalformatParameter`) and `webgpu/gpu.cc` (`RequestAdapterImpl`).
+
+**Verified without a Chromium checkout:** `webgl_uniform_unittest.cc` (14
+tests: every baseline against the ES 3.0 minimums, clamp directions, the
+tables' consistency, precision formats, sample counts, the allow-list)
+passes standalone with g++ (ASan/UBSan) and clang (UBSan trap,
+`-Wunsafe-buffer-usage -Wshorten-64-to-32 -fno-exceptions`); every GL enum
+value in `webgl_uniform.h` matches the Khronos headers at the pin (the
+static_asserts of `gpu_uniformity.cc`, compiled against them);
+`gpu_uniformity.cc` type-checks with the same strict flags against
+stand-ins of the pinned Blink signatures, and a 9-test harness runs the
+real glue in all three modes, including real kUniform (web, opaque and
+non-web top-level sites, the seed missing, Shields off ignored, state
+untouched); `gpu_uniformity_test.cc` itself builds and passes against
+those stand-ins (plus `DummyPageHolder` and friends); the hook expressions
+type-check with their upstream argument types. **Needs the build
+machine:** the real Blink build of the hooks, `gpu_uniformity_test.cc` in
+`blink_unittests` against the real `DummyPageHolder`, and a MoltNet window
+running WebGL report pages (e.g. webglreport.com, three.js and Babylon.js
+examples, a KTX2 sample) and a WebGPU sample (null adapter, WebGL fallback)
+on a Mac, a Windows and a Linux machine, comparing their reports.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
@@ -423,9 +670,11 @@ Honest list; anything not in the table above is not covered.
   while buffers that are mapped for reading mostly hold compute results
   (e.g. ML inference) that noise would corrupt. What *enters* WebGPU from
   canvases and images is farbled (`copyExternalImageToTexture`), so 2D
-  canvas and WebGL fingerprints can't be laundered through WebGPU; WebGPU's
-  own rendering differences, `GPUAdapter.info`, limits and features, and
-  timing are not addressed.
+  canvas and WebGL fingerprints can't be laundered through WebGPU. In normal
+  windows WebGPU's own rendering differences, `GPUAdapter.info`, limits and
+  features, and timing are not addressed; MoltNet windows have no WebGPU
+  adapter at all ([WebGL and WebGPU in MoltNet
+  windows](#webgl-and-webgpu-in-moltnet-windows)).
 * `copyElementImageToTexture` / canvas `drawElement` (HTML-in-canvas) are
   behind the `CanvasDrawElement` runtime flag (status "test" at the pin) and
   not hooked.
@@ -439,8 +688,14 @@ Honest list; anything not in the table above is not covered.
 * Float precision games: a page reading a half-float framebuffer as `FLOAT`
   can round the values back to half precision (`Float16Array`) and drop the
   float32 noise; more generally see *coarse quantisation* below.
-* The rest of the WebGL surface: limits (`MAX_*`), extension lists, shader
-  precision formats.
+* The rest of the WebGL surface in normal windows: limits (`MAX_*`),
+  extension lists, shader precision formats. MoltNet windows report fixed
+  baselines for all three ([WebGL and WebGPU in MoltNet
+  windows](#webgl-and-webgpu-in-moltnet-windows)), but they aren't
+  enforced, so a script that probes (allocating ever larger textures,
+  compiling ever bigger shaders) still finds the real limits; and the
+  results of WebGL rendering and of shader arithmetic still differ by GPU
+  under the readback noise.
 * Text metrics and fonts: `measureText()`/`TextMetrics`, font enumeration via
   layout, `isPointInPath`.
 
@@ -614,8 +869,11 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 5. Real letterboxing of MoltNet windows (round the content area itself), then
    CSS device media queries and `devicePixelRatio`.
 6. Fonts and text metrics (an allow-list of system fonts per platform, as
-   Tor Browser and Brave do), the WebGL parameter surface and WebGPU
-   (`GPUAdapter.info`, or WebGPU off) in MoltNet.
+   Tor Browser and Brave do). (The WebGL parameter surface and WebGPU in
+   MoltNet are done: fixed WebGL baselines and no WebGPU adapter. Left: a
+   mobile look at the baselines if MoltNet comes to Android, and checking
+   them against the WebGL reports of real Macs, Windows and Linux machines
+   in MoltNet windows.)
 7. Per-document Shields-off delivery instead of a per-profile list.
 8. MoltNet: renderer UI strings and form-control formats in en-US; touch
    coordinates; Window Management API.
