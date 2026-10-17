@@ -82,6 +82,29 @@ config("llama_exceptions") {
   }
 }
 
+# MoltBrowser: llama.cpp runs only in the sandboxed on-device inference
+# service (//chrome/services/molt_ai/inference, a utility process launched with
+# the kOnDeviceModelExecution sandbox). Every target that compiles llama.cpp
+# or ggml code is visible only to that directory (its tests live there too)
+# and to this file, so browser code can't link it or include llama.h again: a
+# GGUF, tokenizer or kernel bug stays inside the sandbox. See
+# docs/design/SANDBOXED_INFERENCE.md.
+_llama_cpp_visibility = [
+  ":*",
+  "//chrome/services/molt_ai/inference/*",
+
+  # Transitional: the in-process runtime keeps linking llama.cpp until the
+  # browser-side client replaces it (S5 phase 2, step 6).
+  "//chrome/browser/molt_ai:molt_ai_runtime",
+]
+
+# MoltBrowser: build for Chrome's seccomp-bpf sandbox. src/llama-mmap.cpp
+# doesn't pass MAP_POPULATE, which the sandbox answers with SIGSYS. See
+# README.chromium.
+config("llama_sandboxed") {
+  defines = [ "LLAMA_MOLTBROWSER_SANDBOXED" ]
+}
+
 # MoltBrowser: compile out ggml's crash backtrace (fork + PR_SET_PTRACER +
 # exec of gdb/lldb from PATH inside the browser process) and its process-wide
 # std::set_terminate static initializer. See README.chromium.
@@ -93,6 +116,8 @@ config("ggml_no_backtrace") {
 
 # C-only core GGML sources
 source_set("ggml_c") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml.c",
     "ggml/src/ggml-alloc.c",
@@ -114,6 +139,8 @@ source_set("ggml_c") {
 
 # C++-only core GGML sources
 source_set("ggml_cpp") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml.cpp",
     "ggml/src/ggml-backend.cpp",
@@ -141,6 +168,8 @@ source_set("ggml_cpp") {
 
 # CPU backend — C sources (separated to avoid quants.c / ggml-cpu.c collisions)
 source_set("ggml_cpu_c") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml-cpu/ggml-cpu.c",
     "ggml/src/ggml-cpu/quants.c",
@@ -157,6 +186,8 @@ source_set("ggml_cpu_c") {
 
 # CPU backend — C++ sources
 source_set("ggml_cpu_cpp") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml-cpu/ggml-cpu.cpp",
     "ggml/src/ggml-cpu/binary-ops.cpp",
@@ -184,6 +215,8 @@ source_set("ggml_cpu_cpp") {
 
 # Architecture-specific CPU sources — ARM (Apple Silicon)
 source_set("ggml_cpu_arch_arm") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml-cpu/arch/arm/cpu-feats.cpp",
     "ggml/src/ggml-cpu/arch/arm/repack.cpp",
@@ -200,6 +233,8 @@ source_set("ggml_cpu_arch_arm") {
 
 # ARM C sources (quants.c would conflict with cpu quants.c)
 source_set("ggml_cpu_arch_arm_c") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml-cpu/arch/arm/quants.c",
   ]
@@ -229,6 +264,8 @@ source_set("ggml_cpu_arch_arm_c") {
 # variant per ISA level (like ggml's GGML_CPU_ALL_VARIANTS/backend-dl) and
 # pick at runtime — so older CPUs can run models too.
 source_set("ggml_cpu_arch_x86") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml-cpu/arch/x86/cpu-feats.cpp",
     "ggml/src/ggml-cpu/arch/x86/repack.cpp",
@@ -251,6 +288,8 @@ source_set("ggml_cpu_arch_x86") {
 
 # x86 C sources (quants.c would conflict with cpu quants.c)
 source_set("ggml_cpu_arch_x86_c") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "ggml/src/ggml-cpu/arch/x86/quants.c",
   ]
@@ -347,6 +386,8 @@ if (is_mac) {
   # on a custom struct, and Chromium's C++ modules don't instantiate it
   # correctly across translation units.
   source_set("ggml_metal") {
+    visibility = _llama_cpp_visibility
+
     sources = [
       "ggml/src/ggml-metal/ggml-metal.cpp",
       "ggml/src/ggml-metal/ggml-metal-common.cpp",
@@ -369,6 +410,8 @@ if (is_mac) {
   # Metal Objective-C sources (separated due to different compiler flags).
   # llama.cpp uses manual retain/release — disable Chromium's default ARC.
   source_set("ggml_metal_objc") {
+    visibility = _llama_cpp_visibility
+
     sources = [
       "ggml/src/ggml-metal/ggml-metal-device.m",
       "ggml/src/ggml-metal/ggml-metal-context.m",
@@ -389,6 +432,8 @@ if (is_mac) {
 
 # Combined GGML target
 group("ggml") {
+  visibility = _llama_cpp_visibility
+
   public_deps = [
     ":ggml_c",
     ":ggml_cpp",
@@ -422,6 +467,8 @@ group("ggml") {
 # Separated from llama_cpp to avoid .o name collision (src/llama.cpp vs
 # src/models/llama.cpp both produce llama.o).
 source_set("llama_models") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "src/models/afmoe.cpp",
     "src/models/apertus.cpp",
@@ -603,6 +650,8 @@ source_set("llama_models") {
 # disables by default (-fno-exceptions). We enable exceptions for
 # this third-party code with -fexceptions.
 source_set("llama_cpp") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "src/llama.cpp",
     "src/llama-adapter.cpp",
@@ -645,7 +694,10 @@ source_set("llama_cpp") {
   ]
   public_configs = [ ":llama_cpp_config" ]
   configs += _llama_cpp_cfi_configs
-  configs += [ ":llama_cpp_version_headers" ]
+  configs += [
+    ":llama_cpp_version_headers",
+    ":llama_sandboxed",
+  ]
 
   # Remove Chromium's global no_exceptions config and enable exceptions
   configs -= [ "//build/config/compiler:no_exceptions" ]
@@ -664,6 +716,8 @@ source_set("llama_cpp") {
 # sampling.cpp, jinja/*.cpp, ...). Same situation at b8284 (where arg.cpp and
 # json-schema-to-grammar.cpp also needed vendor/nlohmann, not vendored).
 source_set("llama_common") {
+  visibility = _llama_cpp_visibility
+
   sources = [
     "common/common.cpp",
     "common/chat.cpp",
