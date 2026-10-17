@@ -26,6 +26,9 @@
 //   MoltNet  Screen::GetRect/colorDepth/isExtended,
 //            LocalDOMWindow::outer{Width,Height}/screen{X,Y},
 //            MouseEvent::SetCoordinatesFromWebPointerProperties
+//   MoltNet  WebGL getParameter limits, getSupportedExtensions/getExtension,
+//            getShaderPrecisionFormat, getInternalformatParameter(SAMPLES);
+//            WebGPU GPU::RequestAdapterImpl          -> gpu_uniformity.h
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:

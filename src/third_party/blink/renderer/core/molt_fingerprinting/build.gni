@@ -7,6 +7,11 @@
 blink_core_sources_molt_fingerprinting = [
   "molt_fingerprinting.cc",
   "molt_fingerprinting.h",
+  "gpu_uniformity.cc",
+  "gpu_uniformity.h",
 ]
 
-blink_core_tests_molt_fingerprinting = [ "molt_fingerprinting_test.cc" ]
+blink_core_tests_molt_fingerprinting = [
+  "molt_fingerprinting_test.cc",
+  "gpu_uniformity_test.cc",
+]

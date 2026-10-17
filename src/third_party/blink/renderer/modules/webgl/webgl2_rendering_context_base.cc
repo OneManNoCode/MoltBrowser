@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/gpu_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/webgl/webgl_active_info.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_buffer.h"
@@ -660,7 +661,10 @@ ScriptValue WebGL2RenderingContextBase::getInternalformatParameter(
       auto values = base::HeapArray<GLint>::WithSize(length);
       ContextGL()->GetInternalformativ(target, internalformat, GL_SAMPLES,
                                        length, values.data());
-      return WebGLAny(script_state, DOMInt32Array::Create(values));
+      // MoltBrowser: no sample counts above MoltNet's MAX_SAMPLES baseline.
+      const size_t shown = molt_fingerprinting::UniformSampleCounts(
+          Host()->GetTopExecutionContext(), values);
+      return WebGLAny(script_state, DOMInt32Array::Create(values.first(shown)));
     }
     default:
       SynthesizeGLError(GL_INVALID_ENUM, "getInternalformatParameter",
@@ -5066,6 +5070,9 @@ ScriptValue WebGL2RenderingContextBase::GetInt64Parameter(
   GLint64 value = 0;
   if (!isContextLost())
     ContextGL()->GetInteger64v(pname, &value);
+  // MoltBrowser: MoltNet windows report fixed baselines for limits.
+  value = molt_fingerprinting::UniformWebGLInt64(
+      Host()->GetTopExecutionContext(), pname, value);
   return WebGLAny(script_state, value);
 }
 

@@ -89,6 +89,7 @@
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/gpu_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
@@ -3840,7 +3841,9 @@ bool WebGLRenderingContextBase::ExtensionSupportedAndAllowed(
     return false;
   if (disabled_extensions_.Contains(String(tracker->ExtensionName())))
     return false;
-  return true;
+  // MoltBrowser: MoltNet windows only expose a fixed list of common ones.
+  return molt_fingerprinting::WebGLExtensionAllowed(
+      Host()->GetTopExecutionContext(), tracker->ExtensionName());
 }
 
 WebGLExtension* WebGLRenderingContextBase::EnableExtensionIfSupported(
@@ -4282,14 +4285,20 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
       return ScriptValue::CreateNull(script_state->GetIsolate());
     case GL_MAX_COLOR_ATTACHMENTS_EXT:  // EXT_draw_buffers BEGIN
       if (ExtensionEnabled(kWebGLDrawBuffersName) || IsWebGL2())
-        return WebGLAny(script_state, MaxColorAttachments());
+        // MoltBrowser: MoltNet windows report a fixed baseline.
+        return WebGLAny(script_state, molt_fingerprinting::UniformWebGLInt(
+                                          Host()->GetTopExecutionContext(),
+                                          pname, MaxColorAttachments()));
       SynthesizeGLError(
           GL_INVALID_ENUM, "getParameter",
           "invalid parameter name, WEBGL_draw_buffers not enabled");
       return ScriptValue::CreateNull(script_state->GetIsolate());
     case GL_MAX_DRAW_BUFFERS_EXT:
       if (ExtensionEnabled(kWebGLDrawBuffersName) || IsWebGL2())
-        return WebGLAny(script_state, MaxDrawBuffers());
+        // MoltBrowser: MoltNet windows report a fixed baseline.
+        return WebGLAny(script_state, molt_fingerprinting::UniformWebGLInt(
+                                          Host()->GetTopExecutionContext(),
+                                          pname, MaxDrawBuffers()));
       SynthesizeGLError(
           GL_INVALID_ENUM, "getParameter",
           "invalid parameter name, WEBGL_draw_buffers not enabled");
@@ -4512,8 +4521,13 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
   GLint precision = 0;
   ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
                                         &precision);
-  return MakeGarbageCollected<WebGLShaderPrecisionFormat>(range[0], range[1],
-                                                          precision);
+  // MoltBrowser: MoltNet windows report fixed precision formats.
+  const molt_fingerprinting::ShaderPrecisionFormat shown =
+      molt_fingerprinting::UniformShaderPrecisionFormat(
+          Host()->GetTopExecutionContext(), precision_type,
+          {range[0], range[1], precision});
+  return MakeGarbageCollected<WebGLShaderPrecisionFormat>(
+      shown.range_min, shown.range_max, shown.precision);
 }
 
 String WebGLRenderingContextBase::getShaderSource(WebGLShader* shader) {
@@ -7913,6 +7927,9 @@ ScriptValue WebGLRenderingContextBase::GetFloatParameter(
   GLfloat value = 0;
   if (!isContextLost()) {
     ContextGL()->GetFloatv(pname, &value);
+    // MoltBrowser: MoltNet windows report fixed baselines for limits.
+    value = molt_fingerprinting::UniformWebGLFloat(
+        Host()->GetTopExecutionContext(), pname, value);
   }
   return WebGLAny(script_state, value);
 }
@@ -7923,6 +7940,9 @@ ScriptValue WebGLRenderingContextBase::GetIntParameter(
   GLint value = 0;
   if (!isContextLost()) {
     ContextGL()->GetIntegerv(pname, &value);
+    // MoltBrowser: MoltNet windows report fixed baselines for limits.
+    value = molt_fingerprinting::UniformWebGLInt(
+        Host()->GetTopExecutionContext(), pname, value);
     switch (pname) {
       case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
       case GL_IMPLEMENTATION_COLOR_READ_TYPE:
@@ -7963,6 +7983,9 @@ ScriptValue WebGLRenderingContextBase::GetWebGLFloatArrayParameter(
   std::array<GLfloat, 4> value = {0};
   if (!isContextLost())
     ContextGL()->GetFloatv(pname, value.data());
+  // MoltBrowser: fixed point size / line width ranges in MoltNet windows.
+  molt_fingerprinting::UniformWebGLFloats(Host()->GetTopExecutionContext(),
+                                          pname, value);
   unsigned length = 0;
   switch (pname) {
     case GL_ALIASED_POINT_SIZE_RANGE:
@@ -7987,6 +8010,9 @@ ScriptValue WebGLRenderingContextBase::GetWebGLIntArrayParameter(
   std::array<GLint, 4> value = {0};
   if (!isContextLost())
     ContextGL()->GetIntegerv(pname, value.data());
+  // MoltBrowser: a fixed MAX_VIEWPORT_DIMS in MoltNet windows.
+  molt_fingerprinting::UniformWebGLInts(Host()->GetTopExecutionContext(),
+                                        pname, value);
   unsigned length = 0;
   switch (pname) {
     case GL_MAX_VIEWPORT_DIMS:
