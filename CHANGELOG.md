@@ -79,10 +79,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   1 minute per image or PDF page (3 minutes for a whole scanned PDF) and 5
   minutes for audio. A malicious file that takes one over can't reach your
   files or the internet, and one that makes it hang no longer ties up the
-  browser. Linux uses Landlock and
-  seccomp (kernels older than 5.13 get the network block only); macOS uses
-  the system sandbox and won't run OCR or voice without it; Windows gets the
-  time limit and a job object for now. Voice transcription runs on the CPU.
+  browser. Linux uses Landlock and seccomp (kernels older than 5.13 get the
+  network block only); macOS uses the system sandbox and won't run OCR or
+  voice without it; Windows gets the time limit and a job object for now.
+  Voice transcription runs on the CPU.
 - **macOS: OCR ships with its own libraries.** The bundled tesseract still
   pointed at the build machine's Homebrew libraries, so on other Macs it
   couldn't start (and the sandbox wouldn't let it load them anyway). The
