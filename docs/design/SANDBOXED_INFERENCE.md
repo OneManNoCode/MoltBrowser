@@ -130,7 +130,7 @@ Use `kOnDeviceModelExecution` everywhere:
 
 | Need | Allowed? | Work-around |
 |---|---|---|
-| Start the process at all | **Only if the install directory grants read+execute to the LPAC capability SIDs.** Chrome's installer does this (`ConfigureAppContainerSandbox`, `install_worker.cc:967`). Our NSIS installer (`installer/windows/moltbrowser.nsi`) and the 7-Zip portable ZIP do not. | Add an ACL step to NSIS, granting the same SIDs Chrome's setup derives. The portable ZIP has no reliable fix, so a fallback is needed (§2.4). Verify on Windows. |
+| Start the process at all | **Only if the install directory grants read+execute to the LPAC capability SIDs.** Chrome's installer does this (`ConfigureAppContainerSandbox`, `install_worker.cc:967`). The 7-Zip portable ZIP does not. | **Done (step 7):** the NSIS installer runs `icacls "$INSTDIR" /grant` with exactly the two SIDs Chrome's setup grants (`chrome/installer/setup/configure_app_container_sandbox.cc` at 152: `chromeInstallFiles` `S-1-15-3-1024-3424233489-…-1043257646` and `lpacChromeInstallFiles` `S-1-15-3-1024-2302894289-…-3317428798`), `(OI)(CI)(RX)` = `FILE_GENERIC_READ \| FILE_GENERIC_EXECUTE` inherited by files and folders, before extracting (§2.3a). Verify on Windows. |
 | Open the GGUF by path | No (LPAC has no user-profile access) | `ReadOnlyFile`, opened **without `FLAG_ASYNC`**. Upstream uses `FLAG_ASYNC`, but an overlapped handle breaks llama.cpp's synchronous CRT reads. Convert with `_open_osfhandle(h, _O_RDONLY\|_O_BINARY)` + `_fdopen(fd, "rb")`. A read-only handle has no `FILE_EXECUTE`, so it can't be mapped executable. |
 | `CreateFileMapping`/`MapViewOfFile` on that handle (`llama-mmap.cpp:594`); `PrefetchVirtualMemory` | Yes | — |
 | Job memory limit | 8/16/32/64 GB of committed memory | File-backed read-only views aren't charged; repack, KV and compute buffers are (§2.5). |
@@ -146,6 +146,13 @@ Use `kOnDeviceModelExecution` everywhere:
   - No path to Vulkan.
   - A second set of behaviours to test.
 - **Suggestion:** `kOnDeviceModelExecution` everywhere. If Windows can't ship the LPAC ACLs (portable ZIP), use `kService` with repacking off on Windows only. That means a second mojom interface name, because the sandbox type is a compile-time attribute of the interface. Owner decision (§7).
+- **Decided:** `kOnDeviceModelExecution` on macOS, Linux and Windows; no `kService` variant for now. The portable ZIP can't run on-device models (§2.3a).
+
+### 2.3a Windows: installer ACLs and the portable ZIP
+
+- `installer/windows/moltbrowser.nsi` grants the LPAC capability SIDs on `$INSTDIR` right after creating it and before `File /r`, as Chrome's setup does for its target and temp directories (`AddInstallWorkItems`, `install_worker.cc:967`). The in-app updater runs the same installer, and files written into the directory later inherit the ACEs. The step is best effort, like Chrome's (`set_best_effort(true)`): if `icacls` fails the install continues and local models can't start.
+- **Portable ZIP: on-device AI needs the installer.** A directory unpacked from a ZIP has whatever ACLs its parent gives it, which normally don't include the LPAC capability SIDs, so the sandboxed process can't load MoltBrowser's own DLLs and dies before IPC. The browser reports that as a launch failure, not a model crash (so the crash-loop guard doesn't blame the model file), with "The portable ZIP can't run on-device models: install MoltBrowser with the installer, or use a cloud model." Cloud models work from the ZIP. A user can also grant the two SIDs on the unpacked folder by hand with the same `icacls` command.
+- A later option for the ZIP is a `kService` variant of the interface (USER_LOCKDOWN token, no LPAC, so no ACL dependency; 4 GB job limit, so repacking off and a smaller context; §2.4). Not built.
 
 ### 2.5 Memory-mapping a multi-GB GGUF
 
@@ -601,7 +608,7 @@ Total is roughly 2,500 changed lines, about half of them moves: 5–7 days of de
 ## 7. Risks and open questions for the owner
 
 1. **Sandbox type on Linux/Windows CPU:** `kOnDeviceModelExecution` (RAM-scaled limits, Vulkan-ready, GPU-level attack surface) versus `kService` (tighter, but a 4 GB cap: repack off, smaller context). Recommendation: the former.
-2. **Windows LPAC ACLs:** add them to NSIS, and decide what the portable ZIP does. Options: a `kService` variant, or local AI disabled on the ZIP. Do not fall back to in-process.
+2. **Windows LPAC ACLs:** add them to NSIS, and decide what the portable ZIP does. Options: a `kService` variant, or local AI disabled on the ZIP. Do not fall back to in-process. **Decided:** NSIS grants the SIDs (§2.3a); the portable ZIP needs the installer for on-device AI (or a later `kService` variant).
 3. **No in-process fallback.** A kill switch that brings llama back into the browser re-opens S5. Proposal: no fallback; on failure show an error that suggests a cloud model. Dev debugging uses `--utility-startup-dialog` / `--no-sandbox`.
 4. **Repack versus memory limits:** measure `use_extra_bufts` on and off (speed and RSS) for TinyLlama, Qwen3-8B and gpt-oss-20b on 16 GB and 32 GB machines.
 5. **Latency:** process launch plus Metal pipeline creation on every reload after idle unload. Consider pre-warming the process when the chat opens.
