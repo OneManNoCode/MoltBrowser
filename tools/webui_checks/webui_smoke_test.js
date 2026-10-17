@@ -78,6 +78,10 @@ const profileSaves = [];
 // records the prompts.
 const pageContentCalls = [];
 const sentPrompts = [];
+// Calls from the "this page" slash commands (/js, /sandbox, /tor open).
+const jsToggles = [];
+const sandboxOpens = [];
+const torOpens = [];
 const ACTIVE_PAGE = {has_context: true, url: 'https://example.com/b', title: 'B',
                      nav_entry_id: 2};
 
@@ -507,6 +511,9 @@ const PAGES = [
      openMoltSettings: {success: true},
      sendPrompt: (args) => { sentPrompts.push(args[1]); return {success: true}; },
      getPageContext: ACTIVE_PAGE,
+     setJsForDomain: (args) => { jsToggles.push(args.slice(1)); return {success: true}; },
+     openSandboxTab: (args) => { sandboxOpens.push(args[1]); return {success: true, url: args[1]}; },
+     openTorTab: (args) => { torOpens.push(args[1]); return {success: true, url: args[1]}; },
      getPageContent: (args) => {
        pageContentCalls.push(args[1]);
        return {has_content: true, url: ACTIVE_PAGE.url, title: 'B', nav_entry_id: 2,
@@ -624,6 +631,23 @@ const PAGES = [
      assert.strictEqual(sentPrompts.length, promptsBefore, 'no prompt for a non-YouTube page');
      assert(/Open a YouTube video first/.test(doc.getElementById('messages').textContent));
      assert(!input.disabled, 'composer usable after the reader commands');
+     // "This page" commands with no URL (/js, /sandbox, /tor open, /pdf) act
+     // on the page the active tab shows now, never the side panel's last
+     // push, which can be the previous page.
+     window.__moltLastTabContext = {url: 'https://stale.example/old.pdf', title: 'Old'};
+     await runCmd('/js off');
+     assert.strictEqual(JSON.stringify(jsToggles.pop()), '["example.com",false]',
+                        '/js off acts on the active tab');
+     await runCmd('/sandbox');
+     assert.strictEqual(sandboxOpens.pop(), ACTIVE_PAGE.url, '/sandbox opens the active tab');
+     await runCmd('/tor open');
+     assert.strictEqual(torOpens.pop(), ACTIVE_PAGE.url, '/tor open opens the active tab');
+     await runCmd('/pdf');
+     assert(!window.__sent.includes('extractPdfText'),
+            '/pdf ignores a stale .pdf push when the active tab is not a PDF');
+     assert(!input.disabled, 'composer usable after a /pdf usage error');
+     await runCmd('/js maybe');
+     assert(!input.disabled, 'composer usable after a /js usage error');
      // Tab-context contract still installed (from app.js now).
      window.__moltSetTabContext({url: 'https://example.com/a.pdf', title: 'Doc (PDF)'});
      assert.strictEqual(doc.querySelector('#tabContext .tab-context-icon').textContent, '\u{1F4C4}');
