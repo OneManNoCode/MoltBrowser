@@ -174,9 +174,11 @@ struct GenerationSummary {
 // Implemented by the browser. Closing it cancels the request, queued or
 // running.
 interface GenerationStreamer {
-  // During prompt evaluation, at most every 500 ms (liveness + UI), and only
-  // before the first chunk.
-  OnPromptProgress(uint32 done_tokens, uint32 total_tokens);
+  // Liveness (and progress for the UI) while nothing visible is produced, at
+  // most every 500 ms: during prompt evaluation (prompt tokens evaluated /
+  // total) and while the model reasons (reasoning tokens / budget). The
+  // browser kills a process that sends nothing for two minutes.
+  OnProgress(uint32 done_tokens, uint32 total_tokens);
   // Visible text since the last chunk: complete, valid UTF-8, reasoning and
   // channel markers removed, stop sequences applied, never empty, at most
   // kMaxChunkBytes.

@@ -836,6 +836,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
     if (out.empty()) return;
     EmitChunks(std::move(out), callbacks);
     out.clear();
+    last_progress = Clock::now();
   };
   auto hiding = [&]() {
     return harmony.hiding() || gemma.hiding() || think.in_think();
@@ -892,6 +893,12 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
       ++visible_tokens;
     }
     send();
+    if (callbacks.on_progress && hiding() &&
+        Clock::now() - last_progress >= interval) {
+      // Long hidden reasoning sends no text: keep the browser informed.
+      last_progress = Clock::now();
+      callbacks.on_progress(ToU32(hidden_tokens), ToU32(p.max_hidden));
+    }
     if (stop.stopped()) {
       // The stop text is in the KV cache only up to this token; the next
       // turn re-evaluates from the common prefix anyway.

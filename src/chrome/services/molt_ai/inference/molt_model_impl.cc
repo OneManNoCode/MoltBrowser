@@ -260,7 +260,7 @@ void MoltModelImpl::OnProgress(uint64_t id,
   if (!running_ || running_->id != id || !running_->streamer.is_connected()) {
     return;
   }
-  running_->streamer->OnPromptProgress(done_tokens, total_tokens);
+  running_->streamer->OnProgress(done_tokens, total_tokens);
 }
 
 void MoltModelImpl::OnGenerationDone(uint64_t id, EngineSummary summary) {

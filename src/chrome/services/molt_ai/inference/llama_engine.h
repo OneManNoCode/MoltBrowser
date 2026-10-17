@@ -136,7 +136,10 @@ struct EngineCallbacks {
   // Polled before every prompt chunk and every sampled token. May be read
   // from another thread's flag.
   std::function<bool()> is_cancelled;
-  // Prompt evaluation progress, at most every kProgressInterval.
+  // Progress while nothing visible is sent, at most every
+  // kProgressIntervalMs: prompt evaluation (tokens evaluated / prompt size),
+  // then hidden reasoning (reasoning tokens / budget). The browser uses it
+  // as liveness.
   std::function<void(uint32_t done_tokens, uint32_t total_tokens)> on_progress;
   // Visible text: complete, valid UTF-8, never empty, at most kMaxChunkBytes.
   std::function<void(std::string text)> on_chunk;
