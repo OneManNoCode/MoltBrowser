@@ -5,8 +5,9 @@
 # molt_fingerprinting.h and docs/FINGERPRINTING.md).
 #
 #   :farbling   - the pure math (key derivation, PRF, pixel/audio noise,
-#                 letterbox buckets). Depends only on //base and //crypto, so
-#                 it is linked into Blink core *and* tested standalone.
+#                 letterbox buckets) and the font allow-lists and matcher
+#                 (fonts.h). Depends only on //base and //crypto, so it is
+#                 linked into Blink core *and* tested standalone.
 #   build.gni   - the Blink glue (molt_fingerprinting.{h,cc}), compiled into
 #                 the core component like every other core subdirectory.
 
@@ -14,6 +15,10 @@ source_set("farbling") {
   sources = [
     "farbling.cc",
     "farbling.h",
+    "font_allowlists.cc",
+    "font_allowlists.h",
+    "fonts.cc",
+    "fonts.h",
   ]
   public_deps = [ "//base" ]
   deps = [ "//crypto" ]
@@ -29,7 +34,10 @@ source_set("farbling") {
 # molt_ai_unittests binary (//chrome/browser/molt_ai/test).
 source_set("unit_tests") {
   testonly = true
-  sources = [ "farbling_unittest.cc" ]
+  sources = [
+    "farbling_unittest.cc",
+    "fonts_unittest.cc",
+  ]
   deps = [
     ":farbling",
     "//base",
