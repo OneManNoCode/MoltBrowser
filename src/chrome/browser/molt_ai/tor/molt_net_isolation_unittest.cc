@@ -14,6 +14,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
 #include "chrome/browser/molt_ai/tor/molt_net_isolation_policy.h"
 #include "chrome/common/pref_names.h"
+#include "components/content_settings/core/browser/content_settings_registry.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/browser/website_settings_info.h"
 #include "components/content_settings/core/browser/website_settings_registry.h"
@@ -72,6 +73,8 @@ TEST(MoltNetIsolationTest, PinnedNamesMatchChromiumsConstants) {
 // Every content and website setting type, present and future, has its
 // exceptions and its default pinned.
 TEST(MoltNetIsolationTest, EveryContentSettingTypeIsPinned) {
+  // Content settings register themselves in the website settings registry.
+  content_settings::ContentSettingsRegistry::GetInstance();
   for (const content_settings::WebsiteSettingsInfo* info :
        *content_settings::WebsiteSettingsRegistry::GetInstance()) {
     EXPECT_TRUE(IsMoltNetPinnedPref(info->pref_name())) << info->name();
