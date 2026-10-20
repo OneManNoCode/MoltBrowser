@@ -132,6 +132,12 @@ ActiveTabPermissionGranter::ActiveTabPermissionGranter(
 ActiveTabPermissionGranter::~ActiveTabPermissionGranter() = default;
 
 void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
+  // MoltBrowser: no activeTab grant on a MoltNet (Tor) tab (keyboard
+  // shortcut, context menu, ...) for an extension kept out of MoltNet.
+  if (ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
+          extension, web_contents()->GetBrowserContext())) {
+    return;
+  }
   if (IsGranted(extension)) {
     return;
   }

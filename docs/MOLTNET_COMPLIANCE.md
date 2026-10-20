@@ -135,11 +135,12 @@ would link MoltNet to your regular browsing. So:
   scripts and pages can't message it or load its web-accessible resources
   (which is how sites detect extensions); it gets no background page or
   service worker, extension pages, toolbar button, side panel, omnibox
-  keyword or page override in MoltNet; no events about MoltNet tabs, windows, navigations,
-  downloads, cookies, context menus or keyboard shortcuts reach it; the
-  tabs and windows APIs and `chrome.debugger` don't show it MoltNet windows
-  or pages; it can't open tabs in a MoltNet window; MoltNet's requests,
-  WebSockets and WebTransport are never handed to `webRequest` or
+  keyword or page override in MoltNet; no events about MoltNet tabs,
+  windows, navigations, downloads, cookies, context menus or keyboard
+  shortcuts reach it; the tabs and windows APIs and `chrome.debugger`
+  don't show it MoltNet windows or pages; it can't open tabs in a MoltNet
+  window or get `activeTab` access to one; MoltNet's requests, WebSockets
+  and WebTransport are never handed to `webRequest` or
   `declarativeNetRequest`; and the settings it controls (proxy, privacy,
   fonts, ...) don't apply to MoltNet's profile. The decision is in
   `chrome/browser/molt_ai/tor/molt_net_isolation.h`; Chromium's extension
@@ -379,7 +380,9 @@ Do all of this in a MoltNet window unless the step says otherwise.
      Incognito) are not covered by §2's extension and service isolation.
      Context-menu items that a split-mode extension's Incognito copy adds
      can still appear in a MoltNet page's menu; choosing one does nothing
-     (the extension gets no event). An event the browser
+     (the extension gets no event). Likewise an extension's keyboard
+     shortcut is still caught in a MoltNet window (the page doesn't get
+     those keys) and does nothing. An event the browser
      only dispatches after a MoltNet profile is gone falls back to
      Chromium's Incognito rules (events are normally sent while it exists).
      Several of Chromium's Incognito protections test for the primary

@@ -28,8 +28,9 @@
 //   * MoltNet windows and tabs are invisible to the tabs and windows APIs
 //     (browser_extension_window_controller.cc), never the window an
 //     extension opens tabs in (chrome_extension_function_details.cc,
-//     browser_window_util.cc), and can't be debugged
-//     (api/debugger/debugger_api.cc);
+//     browser_window_util.cc), can't be debugged
+//     (api/debugger/debugger_api.cc), and never give them activeTab
+//     (permissions/active_tab_permission_granter.cc);
 //   * no extension-controlled preference applies to MoltNet's prefs
 //     (off_the_record_profile_impl.cc).
 //
