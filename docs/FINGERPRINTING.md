@@ -357,20 +357,51 @@ read, or the rest of the buffer.
   on, so pages sizing worker pools from it don't oversubscribe weak machines,
   while 2 would needlessly halve throughput on most.
 
-**Cost** (measured with a scratch benchmark of `farbling.cc`, `-O2`, median
-of 7 runs, on the 2.1 GHz VM these changes were developed on, where a warm
-8 MB `memcpy` takes about 0.7 ms; expect a fraction of this on a current
-Mac):
+**Cost.** Measured with a scratch benchmark that links the previous loops
+("before") and the current ones ("after") into one binary and runs them
+alternately on the same inputs, calling them as `molt_fingerprinting.cc`
+does (one call per row; one per buffer for audio). Clang 18, `-O2
+-ffp-contract=off` as in Chromium builds, unchecked spans as in the earlier
+figures; each figure is the median of 6 runs of the median of 15, on the
+2.1 GHz VM these changes were developed on, where a warm 8 MB `memcpy`
+takes about 0.65 ms. Expect a fraction of this on a current Mac. The two
+versions' outputs were compared byte for byte (identical).
 
-| Path | Content | Time |
-|---|---|---|
-| canvas readback, 1920x1080 RGBA8 | flat / text-like / every pixel distinct | ~3 / ~10 / ~35-50 ms |
-| exported frame (premultiplied), 640x360 | canvas-like / camera-like | 0.8 / 5.2 ms |
-| exported frame, 1280x720 | canvas-like / camera-like | 3.3 / 16 ms |
-| exported frame, 1920x1080 | canvas-like / camera-like | 7.8 / 42 ms |
-| `readPixels` 1024x1024 | `RGB`/`UNSIGNED_BYTE`, `RGBA`/`FLOAT`, `RGBA`/`HALF_FLOAT` | 18, 17, 60 ms |
-| `AudioWorklet` render quantum | 128 frames, stereo | 0.8 µs |
-| 10 s of 44.1 kHz audio | `getChannelData` | ~1.4 ms |
+| Path | Content | Before | After |
+|---|---|---|---|
+| canvas readback, 1920x1080 RGBA8 | flat | 2.9 ms | 1.5 ms |
+| | text-like | 8.6 ms | 5.2 ms |
+| | gradient | 6.8 ms | 2.9 ms |
+| | camera-like | 32 ms | 12 ms |
+| | every pixel distinct | 35 ms | 11 ms |
+| | random, alpha included | 43 ms | 23 ms |
+| canvas readback, 1920x1080, `float16` / `float32` storage | camera-like | 64 / 49 ms | 40 / 30 ms |
+| exported frame (premultiplied), 640x360 | canvas-like / camera-like | 0.75 / 3.9 ms | 0.28 / 1.3 ms |
+| exported frame, 1280x720 | canvas-like / camera-like | 3.0 / 15 ms | 1.1 / 5.4 ms |
+| exported frame, 1920x1080 | canvas-like / camera-like | 6.7 / 35 ms | 2.5 / 12.5 ms |
+| `readPixels` 1024x1024 | `RGB`/`UNSIGNED_BYTE`, random | 18 ms | 7.3 ms |
+| | `RGBA`/`FLOAT`, random in [0, 1) | 15 ms | 13 ms |
+| | `RGBA`/`HALF_FLOAT`, random in [0, 1) / smooth render | 57 / 37 ms | 15 / 15 ms |
+| `AudioWorklet` render quantum | 128 frames, stereo | 0.73 µs | 0.71 µs |
+| 10 s of 44.1 kHz audio | `getChannelData` | 1.3 ms | 1.25 ms |
+| `AnalyserNode` byte data | 16384 bins | 165 µs | 47 µs |
+
+Where the time went: whether a pair collapses (one in eight) and onto
+which value (one in two) are coin flips, and the old loops branched on
+them; those branches were mispredicted so often that they cost more than
+the PRF. The loops now compute both outcomes and select (with
+`__builtin_unpredictable` where the compiler has it), derive the farbled
+channel once per alpha per call (the float pixel paths derived it for
+every pixel) and a half's pair context once per sign, and still reuse the
+result for runs of one colour. Float32 and audio were already bound by
+their two mix rounds (four 64-bit multiplies) per distinct value, and stay
+as they were. With bounds-checked spans and hardened libc++, as in a
+Chromium build, both versions are up to 50% slower (most on flat content,
+hardly at all on distinct pixels) and the speedups are the same. Tried and
+dropped: a per-call cache of recent colours (text 20% faster, camera-like
+and distinct pixels 15-30% slower: its hit-or-miss branch is as
+unpredictable as the one removed), and keeping the key in local registers
+(no measurable difference).
 
 On top of the CPU work: exported frames from accelerated canvases need a
 synchronous GPU readback and become CPU-backed (`captureStream` loses its
@@ -379,13 +410,16 @@ one-copy GPU path while farbling), and every farbled `readPixels` into a
 mapping), so the async-readback idiom loses its asynchrony. Pages that
 stream a canvas as video (canvas recording, effects pipelines in video
 calls that build frames with `new VideoFrame(canvas)` or `captureStream()`)
-would pay the export cost on every frame: at 720p on this VM that is about
-half a core at 30 fps. **So the two per-frame hooks (`VideoFrame` from a
-canvas, `captureStream`) only run in MoltNet windows** (`FarblesVideoExports()`
-in `molt_fingerprinting.h`), and normal windows keep the one-copy GPU capture
-path. The cost of that choice: in normal windows a script can still read
-unfarbled canvas pixels by wrapping the canvas in a `VideoFrame` and calling
-`copyTo()`, or through a `captureStream()` track processor. Planned fix:
+would pay the export cost on every frame: at 720p on this VM, camera-like
+content costs 5.4 ms of CPU per frame, about a sixth of a core at 30 fps
+(half a core before the loops above were optimised), plus the GPU readback,
+which this benchmark can't measure. **So the two per-frame hooks
+(`VideoFrame` from a canvas, `captureStream`) only run in MoltNet windows**
+(`FarblesVideoExports()` in `molt_fingerprinting.h`), and normal windows
+keep the one-copy GPU capture path. The cost of that choice: in normal
+windows a script can still read unfarbled canvas pixels by wrapping the
+canvas in a `VideoFrame` and calling `copyTo()`, or through a
+`captureStream()` track processor. Planned fix:
 farble at those readback points (`VideoFrame.copyTo`, `MediaStreamTrackProcessor`
 frames) instead of on every exported frame, then turn them on everywhere.
 WebGPU uploads from a canvas stay farbled in both (they are per upload, not
