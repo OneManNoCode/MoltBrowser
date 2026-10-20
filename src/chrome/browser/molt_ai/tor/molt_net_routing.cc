@@ -283,14 +283,18 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   }
   // These writes land in the OTR profile's in-memory overlay store. MoltNet's
   // pref service writes nothing through to the regular profile or disk
-  // (molt_net_isolation.h), and these values replace the defaults it pinned
+  // (molt_net_pref_isolation.h), and these values replace the defaults it pinned
   // when the profile was created.
   PrefService* prefs = moltnet_profile->GetPrefs();
   // socks5:// = remote DNS (hostnames go to Tor, never the local resolver)
   // and no DIRECT fallback = fail-closed when Tor is unreachable.
+  // "<-loopback>" removes Chromium's implicit bypass of localhost, loopback
+  // and link-local addresses, so those go to Tor too, which refuses them:
+  // MoltNet pages can't probe services on this machine or the local link
+  // (Tor Browser does the same).
   prefs->Set(proxy_config::prefs::kProxy,
              base::Value(ProxyConfigDictionary::CreateFixedServers(
-                 SocksProxyUri(socks_port), /*bypass_list=*/std::string())));
+                 SocksProxyUri(socks_port), /*bypass_list=*/"<-loopback>")));
   prefs->SetString(prefs::kWebRTCIPHandlingPolicy,
                    kWebRtcDisableNonProxiedUdp);
   prefs->SetInteger(prefs::kNetworkPredictionOptions,

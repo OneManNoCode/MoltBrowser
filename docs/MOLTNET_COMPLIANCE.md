@@ -157,6 +157,7 @@ MoltNet windows are never restored after a restart.
 | Network prediction off | no DNS prefetch / preconnect outside the proxy |
 | HTTPS-Only mode on | warns before any plain-HTTP page, which the exit relay could read or modify (not for `.onion`, which never leaves Tor) |
 | Connections partitioned by top-level site | no socket reuse across sites; enables per-site circuits |
+| No proxy bypass (`<-loopback>`) | `localhost`, loopback and link-local addresses go to Tor too, which refuses them: pages can't probe local services |
 
 **WebRTC.** MoltNet turns WebRTC peer connections off, as Tor Browser
 does (Chromium 152, read in the code and checked against stand-ins of its
@@ -207,8 +208,11 @@ connect through a proxy before it looks anything up. Local Network Access
 checks use the address of the connection itself (for a proxied one:
 unknown) and look nothing up. The Network Information API reads values the
 browser already has. Direct Sockets is only for isolated web apps and
-Chrome Apps, which MoltNet windows can't host. The proxy's built-in
-exceptions (`localhost`, loopback and link-local addresses) are in §5.
+Chrome Apps, which MoltNet windows can't host. Chromium's built-in proxy
+exceptions (`localhost`, loopback and link-local addresses) are switched off
+for MoltNet (`<-loopback>`): those requests go to Tor too, which refuses
+them, so a MoltNet page can't reach or probe services on your machine or
+your local network.
 
 **Nothing from the regular profile (extensions and services).** The MoltNet
 profile is an off-the-record profile of your regular one, and Chromium
@@ -529,13 +533,9 @@ Do all of this in a MoltNet window unless the step says otherwise.
      Incognito profile only; third-party cookies, Shared Storage and
      ambient authentication are fixed for MoltNet, the rest haven't been
      reviewed one by one yet.
-   - Chromium's built-in proxy exceptions apply to MoltNet too: requests to
-     `localhost` and `*.localhost`, to loopback addresses (`127.0.0.0/8`,
-     `[::1]`) and to link-local addresses (`169.254.0.0/16`, `[fe80::]/10`),
-     and on Windows to the host names `loopback` and `loopback.`, go direct
-     instead of through Tor. `localhost` names are answered without DNS,
-     and these requests stay on your machine or your local network, but a
-     page can probe local services and devices on your local link.
+   - Local servers don't open in MoltNet windows: `localhost`, loopback
+     and link-local addresses go to Tor, which refuses them (see §2). Use
+     a regular window for a local development server.
    - If Tor stops, another local program could take over its old port; MoltNet
      windows would then talk to that program. Close MoltNet windows when you
      turn MoltNet off.

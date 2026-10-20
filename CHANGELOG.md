@@ -223,6 +223,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   lookups, sockets or local-network (mDNS) announcements, even if a page's
   process ignores that. Video calls don't work in MoltNet windows; regular
   and incognito windows are unchanged.
+- **MoltNet pages can't reach your machine or local network.** Requests
+  to `localhost`, loopback and link-local addresses used to skip Tor, so a
+  page could probe the services running on your computer or devices on
+  your network. They now go to Tor, which refuses them, as in Tor Browser
+  (use a regular window for a local development server).
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
