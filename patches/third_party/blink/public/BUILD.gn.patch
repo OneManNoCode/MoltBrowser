@@ -5,16 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/public/BUILD.gn b/third_party/blink/public/BUILD.gn
-index 8dfebb40910e4e3bde478d0e1a33e8010b21c6c3..6f46e780a905f3657d72aa92c9ca9783a6ab39b4 100644
+index 8dfebb40910e4e3bde478d0e1a33e8010b21c6c3..8c80a486112f5b190814c4a7f731a7a80906020f 100644
 --- a/third_party/blink/public/BUILD.gn
 +++ b/third_party/blink/public/BUILD.gn
-@@ -339,6 +339,9 @@ source_set("blink_headers") {
+@@ -339,6 +339,12 @@ source_set("blink_headers") {
      "web/web_media_inspector.h",
      "web/web_message_port_converter.h",
      "web/web_meta_element.h",
 +
 +    # MoltBrowser: fingerprinting protection entry point.
 +    "web/web_molt_fingerprinting.h",
++
++    # MoltBrowser: what a MoltNet renderer refuses (RTCPeerConnection).
++    "web/web_molt_net.h",
      "web/web_navigation_control.h",
      "web/web_navigation_params.h",
      "web/web_navigation_policy.h",

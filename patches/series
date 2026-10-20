@@ -41,6 +41,7 @@ chrome/browser/about_flags.cc.patch
 chrome/browser/chrome_browser_main_mac.mm.patch
 chrome/browser/chrome_content_browser_client.cc.patch
 chrome/browser/chrome_content_browser_client.h.patch
+chrome/browser/chrome_content_browser_client_receiver_bindings.cc.patch
 chrome/browser/content_settings/cookie_settings_factory.cc.patch
 chrome/browser/content_settings/host_content_settings_map_factory.cc.patch
 chrome/browser/extensions/api/debugger/debugger_api.cc.patch
@@ -196,6 +197,7 @@ third_party/blink/renderer/core/input/touch_event_manager.cc.patch
 third_party/blink/renderer/core/workers/threaded_worklet_messaging_proxy.cc.patch
 third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.patch
 third_party/blink/renderer/modules/font_access/font_access.cc.patch
+third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
 third_party/blink/renderer/modules/permissions/permission_status_listener.cc.patch
 third_party/blink/renderer/modules/screen_details/window_screen_details.cc.patch
 third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc.patch
