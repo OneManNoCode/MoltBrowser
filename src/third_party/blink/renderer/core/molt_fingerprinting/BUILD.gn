@@ -21,6 +21,8 @@ source_set("farbling") {
     "font_allowlists.h",
     "fonts.cc",
     "fonts.h",
+    "moltnet_values.cc",
+    "moltnet_values.h",
   ]
   public_deps = [ "//base" ]
   deps = [ "//crypto" ]
@@ -40,6 +42,7 @@ source_set("unit_tests") {
     "farbling_unittest.cc",
     "webgl_uniform_unittest.cc",
     "fonts_unittest.cc",
+    "moltnet_values_unittest.cc",
   ]
   deps = [
     ":farbling",
