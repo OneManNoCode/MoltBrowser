@@ -1,0 +1,24 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# MoltNet decisions shared by the browser (//chrome/browser/molt_ai/tor) and
+# the renderer (//chrome/renderer/molt_ai/tor): which WebRTC networking a
+# MoltNet window gets (none) and the switch that tells a renderer process it
+# hosts a MoltNet profile. Standard library only.
+
+source_set("webrtc_policy") {
+  sources = [
+    "molt_net_webrtc_policy.cc",
+    "molt_net_webrtc_policy.h",
+  ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_net_webrtc_policy_unittest.cc" ]
+  deps = [
+    ":webrtc_policy",
+    "//testing/gtest",
+  ]
+}

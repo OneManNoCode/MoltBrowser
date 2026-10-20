@@ -1,0 +1,19 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Renderer half of MoltNet's "no WebRTC" rule: hands the browser's
+# --molt-net-renderer switch to Blink at renderer start
+# (ChromeContentRendererClient::RenderThreadStarted). The browser half is
+# //chrome/browser/molt_ai/tor:webrtc.
+
+source_set("tor") {
+  sources = [
+    "molt_net_renderer.cc",
+    "molt_net_renderer.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/common/molt_ai/tor:webrtc_policy",
+    "//third_party/blink/public:blink",
+  ]
+}

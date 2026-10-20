@@ -52,6 +52,10 @@ test("molt_ai_unittests") {
     "//chrome/services/molt_ai/document_parser:unit_tests",
     "//chrome/services/molt_ai/document_parser/pdf:unit_tests",
 
+    # MoltNet: which WebRTC networking a profile gets, and the renderer
+    # switch that carries it.
+    "//chrome/common/molt_ai/tor:unit_tests",
+
     # Fingerprinting protection: switch encoding, and the pure Blink-side
     # math (it depends only on //base and //crypto, so it runs here too).
     "//chrome/common/molt_ai/fingerprinting:unit_tests",

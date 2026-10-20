@@ -1556,6 +1556,10 @@ Honest list; anything not in the table above is not covered.
   otherwise follows the regular profile's theme).
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
+* WebRTC is off in MoltNet windows (`new RTCPeerConnection()` throws, see
+  docs/MOLTNET_COMPLIANCE.md §2), which is the same for everyone, but
+  `RTCRtpSender.getCapabilities()` and `RTCRtpReceiver.getCapabilities()`
+  still list the codecs this machine supports, hardware ones included.
 
 **Known attacks on the noise:**
 
