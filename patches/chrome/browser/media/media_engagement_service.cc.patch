@@ -1,0 +1,33 @@
+MoltBrowser patch for chrome/browser/media/media_engagement_service.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/media/media_engagement_service.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/media/media_engagement_service.cc b/chrome/browser/media/media_engagement_service.cc
+index fcc423b8188a4557b9056f3254346d6d98e07e14..76bc3b4a1b525ff3fb7bb4f8317d2a53248a65e0 100644
+--- a/chrome/browser/media/media_engagement_service.cc
++++ b/chrome/browser/media/media_engagement_service.cc
+@@ -17,6 +17,7 @@
+ #include "chrome/browser/media/media_engagement_preloaded_list.h"
+ #include "chrome/browser/media/media_engagement_score.h"
+ #include "chrome/browser/media/media_engagement_service_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/pref_names.h"
+@@ -243,6 +244,14 @@ double MediaEngagementService::GetEngagementScore(
+ 
+ bool MediaEngagementService::HasHighEngagement(
+     const url::Origin& origin) const {
++  // MoltBrowser: no site has high media engagement in MoltNet (Tor) windows,
++  // so autoplay with sound needs a user gesture there for everyone. An off-
++  // the-record profile inherits the regular profile's scores, and
++  // navigator.getAutoplayPolicy() or an unmuted play() would show a page
++  // whether the user watches its media outside MoltNet.
++  if (molt_ai::tor::IsMoltNetProfile(profile_)) {
++    return false;
++  }
+   MediaEngagementScore score = CreateEngagementScore(origin);
+   bool has_high_engagement = score.high_score();
+   if (has_high_engagement) {

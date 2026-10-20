@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/site_protection/site_familiarity_utils.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/site_protection/site_familiarity_utils.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/site_protection/site_familiarity_utils.cc b/chrome/browser/site_protection/site_familiarity_utils.cc
+index f60530c7182dff64af4dfa1b25c1423d6539b05c..2d36e4d54c66a3ffda7e0cc9c6d23aa9695a0411 100644
+--- a/chrome/browser/site_protection/site_familiarity_utils.cc
++++ b/chrome/browser/site_protection/site_familiarity_utils.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/metrics/field_trial_params.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "components/content_settings/browser/ui/javascript_optimizer_setting.h"
+@@ -42,6 +43,12 @@ bool AreV8OptimizationsDisabledOnUnfamiliarSites(Profile* profile) {
+ }
+ 
+ bool CanEnableBlockingJavascriptOptimizersForUnfamiliarSites(Profile* profile) {
++  // MoltBrowser: never in MoltNet (Tor) windows. "Familiar" is decided from
++  // the regular profile's history and site engagement, and whether a page's
++  // JavaScript runs optimized is measurable by the page.
++  if (molt_ai::tor::IsMoltNetProfile(profile)) {
++    return false;
++  }
+   if (!safe_browsing::IsSafeBrowsingEnabled(*profile->GetPrefs())) {
+     // Blocking js-opt on unfamiliar sites requires Safe Browsing to be enabled.
+     return false;

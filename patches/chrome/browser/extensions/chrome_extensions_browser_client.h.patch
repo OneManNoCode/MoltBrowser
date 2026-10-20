@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/extensions/chrome_extensions_browser_client.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/extensions/chrome_extensions_browser_client.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/extensions/chrome_extensions_browser_client.h b/chrome/browser/extensions/chrome_extensions_browser_client.h
+index bcd8128c0d7ce74a05ec97686e36b67fbb9d3b18..d3b1bdfeb440335383d1899ea08226c27f96d8d1 100644
+--- a/chrome/browser/extensions/chrome_extensions_browser_client.h
++++ b/chrome/browser/extensions/chrome_extensions_browser_client.h
+@@ -125,6 +125,11 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
+   bool CanExtensionCrossIncognito(
+       const Extension* extension,
+       content::BrowserContext* context) const override;
++  // MoltBrowser: MoltNet (Tor) profiles admit MoltBrowser's component
++  // extensions only.
++  bool IsExtensionKeptOutOfContext(
++      const Extension* extension,
++      content::BrowserContext* context) const override;
+   base::FilePath GetBundleResourcePath(
+       const network::ResourceRequest& request,
+       const base::FilePath& extension_resources_path,

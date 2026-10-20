@@ -1,0 +1,48 @@
+MoltBrowser patch for chrome/browser/extensions/chrome_extensions_browser_client.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/extensions/chrome_extensions_browser_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/extensions/chrome_extensions_browser_client.cc b/chrome/browser/extensions/chrome_extensions_browser_client.cc
+index 88c78a6c42e388aa17baa70d6836f489c2d7b160..7bf8fb9838c96662f1b829c257450186a40ed292 100644
+--- a/chrome/browser/extensions/chrome_extensions_browser_client.cc
++++ b/chrome/browser/extensions/chrome_extensions_browser_client.cc
+@@ -67,6 +67,7 @@
+ #include "chrome/browser/external_protocol/external_protocol_handler.h"
+ #include "chrome/browser/image_fetcher/image_decoder_impl.h"
+ #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
+ #include "chrome/browser/net/system_network_context_manager.h"
+ #include "chrome/browser/policy/cloud/extension_install_policy_service.h"
+ #include "chrome/browser/policy/cloud/extension_install_policy_service_factory.h"
+@@ -414,6 +415,13 @@ bool ChromeExtensionsBrowserClient::CanExtensionCrossIncognito(
+   return IsGuestSession(context) || util::CanCrossIncognito(extension, context);
+ }
+ 
++bool ChromeExtensionsBrowserClient::IsExtensionKeptOutOfContext(
++    const Extension* extension,
++    content::BrowserContext* context) const {
++  // MoltBrowser: see molt_ai/tor/molt_net_isolation.h.
++  return molt_ai::tor::IsExtensionKeptOutOf(extension, context);
++}
++
+ base::FilePath ChromeExtensionsBrowserClient::GetBundleResourcePath(
+     const network::ResourceRequest& request,
+     const base::FilePath& extension_resources_path,
+@@ -875,8 +883,14 @@ std::vector<content::BrowserContext*>
+ ChromeExtensionsBrowserClient::GetRelatedContextsForExtension(
+     content::BrowserContext* browser_context,
+     const Extension& extension) const {
+-  return util::GetAllRelatedProfiles(
++  std::vector<content::BrowserContext*> contexts = util::GetAllRelatedProfiles(
+       Profile::FromBrowserContext(browser_context), extension);
++  // MoltBrowser: "Allow in Incognito" covers every off-the-record profile;
++  // leave out the MoltNet (Tor) ones the extension is kept out of.
++  std::erase_if(contexts, [this, &extension](content::BrowserContext* context) {
++    return IsExtensionKeptOutOfContext(&extension, context);
++  });
++  return contexts;
+ }
+ 
+ void ChromeExtensionsBrowserClient::AddAdditionalAllowedHosts(

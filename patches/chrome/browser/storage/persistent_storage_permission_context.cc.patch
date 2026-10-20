@@ -1,0 +1,33 @@
+MoltBrowser patch for chrome/browser/storage/persistent_storage_permission_context.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/storage/persistent_storage_permission_context.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/storage/persistent_storage_permission_context.cc b/chrome/browser/storage/persistent_storage_permission_context.cc
+index f9c96b4703b91ba3cb095adf070b32d4cc22e779..09672a386e6654cc75486b2ac401c78bea9c0cf7 100644
+--- a/chrome/browser/storage/persistent_storage_permission_context.cc
++++ b/chrome/browser/storage/persistent_storage_permission_context.cc
+@@ -12,6 +12,7 @@
+ #include "chrome/browser/content_settings/cookie_settings_factory.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/engagement/important_sites_util.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/content_settings/core/browser/cookie_settings.h"
+@@ -67,7 +68,13 @@ void PersistentStoragePermissionContext::DecidePermission(
+ 
+   // Durable is only allowed to be granted to the top-level origin. Embedding
+   // origin is the last committed navigation origin to the web contents.
+-  if (request_data->requesting_origin != request_data->embedding_origin) {
++  // MoltBrowser: and never in MoltNet (Tor) windows. The checks below read the
++  // regular profile's bookmarks, installed apps and site engagement, so
++  // navigator.storage.persist() would tell a page whether the user
++  // bookmarked or often uses it outside MoltNet.
++  if (request_data->requesting_origin != request_data->embedding_origin ||
++      molt_ai::tor::IsMoltNetProfile(
++          Profile::FromBrowserContext(browser_context()))) {
+     NotifyPermissionSet(*request_data, std::move(callback),
+                         /*persist=*/false,
+                         /*permission_result=*/nullptr,

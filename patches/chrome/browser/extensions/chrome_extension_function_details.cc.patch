@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/extensions/chrome_extension_function_details.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/extensions/chrome_extension_function_details.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/extensions/chrome_extension_function_details.cc b/chrome/browser/extensions/chrome_extension_function_details.cc
+index 9cfacb4358c329d4ea2b37680281b05c70f1899c..b6e976b655f23b58ef81403055a7791b260d36db 100644
+--- a/chrome/browser/extensions/chrome_extension_function_details.cc
++++ b/chrome/browser/extensions/chrome_extension_function_details.cc
+@@ -7,6 +7,7 @@
+ #include "chrome/browser/extensions/browser_extension_window_controller.h"
+ #include "chrome/browser/extensions/window_controller.h"
+ #include "chrome/browser/extensions/window_controller_list.h"
++#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+@@ -62,7 +63,11 @@ WindowController* ChromeExtensionFunctionDetails::GetCurrentWindowController()
+       [&](BrowserWindowInterface* browser) {
+         if (browser->GetProfile() == profile ||
+             (function_->include_incognito_information() &&
+-             browser->GetProfile()->GetOriginalProfile() == profile)) {
++             browser->GetProfile()->GetOriginalProfile() == profile &&
++             // MoltBrowser: never a MoltNet (Tor) window the extension is
++             // kept out of (molt_ai/tor/molt_net_isolation.h).
++             !molt_ai::tor::IsExtensionKeptOutOf(function_->extension(),
++                                                browser->GetProfile()))) {
+           window_controller = BrowserExtensionWindowController::From(browser);
+           return false;  // Stop iterating.
+         }
