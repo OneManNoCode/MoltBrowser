@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -37,6 +38,11 @@ bool BrowserMatchesHelper(BrowserWindowInterface& browser,
   if (browser.GetProfile() != &profile) {
     if (!include_incognito_or_parent ||
         !profile.IsSameOrParent(browser.GetProfile())) {
+      return false;
+    }
+    // MoltBrowser: "incognito" never stretches to a MoltNet (Tor) window,
+    // so an extension's fallback window can't be one.
+    if (molt_ai::tor::IsMoltNetProfile(browser.GetProfile())) {
       return false;
     }
   }
