@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timezone/timezone_controller.h"
@@ -570,6 +571,8 @@ void Configure(Mode mode) {
     const String error = LocaleController::instance().SetLocaleOverride(
         String(kUniformLocale), /*is_claiming_override=*/true);
     DCHECK(error.empty()) << error;
+    // Form controls don't use ICU's default locale (moltnet_uniformity.h).
+    PinUniformFormLocale();
   }
 }
 

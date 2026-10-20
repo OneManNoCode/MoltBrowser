@@ -47,6 +47,10 @@
 //            LocalDOMWindow::devicePixelRatio, HTMLImageElement (srcset),
 //            StyleResolverState (image-set())     -> DevicePixelRatioFor
 //            (letterbox.h; the browser letterboxes the page itself)
+//   MoltNet  Touch / PointerEvent (touch) coordinates and contact,
+//            getScreenDetails(), the window-management permission,
+//            screen and orientation "change" events, screen.orientation,
+//            the form-control Locale            -> moltnet_uniformity.h
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:
