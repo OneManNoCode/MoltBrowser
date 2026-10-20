@@ -7,6 +7,10 @@
 #   tor_control_connection.* — SAFECOOKIE-authenticated control client
 #   tor_service.*            — read-only circuit/status queries
 #   molt_net_routing.*       — the isolated MoltNet (Tor) profile
+#   molt_net_isolation*.*    — keeps the regular profile's extensions and
+#                              services out of MoltNet windows
+
+import("//extensions/buildflags/buildflags.gni")
 
 # Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
 # bridge-line validation, which pluggable transports may run, and .onion /
@@ -86,6 +90,43 @@ source_set("tor") {
   }
 }
 
+# Pure (std-only) part of MoltNet's isolation from the regular profile: which
+# extensions may run in MoltNet, and the in-memory certificate-exception
+# store. Tested in molt_ai_unittests without a Profile.
+source_set("isolation_policy") {
+  sources = [
+    "molt_net_isolation_policy.cc",
+    "molt_net_isolation_policy.h",
+  ]
+}
+
+# What keeps the regular profile's extensions and services out of MoltNet
+# windows (molt_net_isolation.h). Called from upstream hooks marked
+# "MoltBrowser:" in //extensions/browser, //chrome/browser/extensions,
+# //chrome/browser/profiles and //chrome/browser/ssl. Those targets are
+# linked into chrome with this one (via //chrome/browser/molt_ai); declaring
+# the deps the other way round would create cycles, as for :tor above.
+source_set("isolation") {
+  sources = [
+    "molt_net_isolation.cc",
+    "molt_net_isolation.h",
+  ]
+  public_deps = [ ":isolation_policy" ]
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//components/keyed_service/core",
+    "//components/prefs",
+    "//components/security_interstitials/content:security_interstitial_page",
+    "//content/public/browser",
+    "//extensions/buildflags",
+    "//net",
+  ]
+  if (enable_extensions_core) {
+    deps += [ "//extensions/common" ]
+  }
+}
+
 # Onion-Location (header and <meta>) and onion request-URL glue (GURL,
 # base::Value, net::HttpResponseHeaders) around onion_util, kept out of
 # :onion so molt_ai_unittests can test it.
@@ -154,11 +195,13 @@ source_set("onion") {
 }
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
-# generation, bridge-line validation, .onion / Onion-Location). Picked up by
+# generation, bridge-line validation, .onion / Onion-Location, which
+# extensions MoltNet admits). Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_isolation_policy_unittest.cc",
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",
     "pluggable_transports_unittest.cc",
@@ -166,6 +209,7 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":isolation_policy",
     ":onion_location",
     ":protocol",
     "//base",
