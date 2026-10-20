@@ -43,6 +43,7 @@ namespace blink {
 
 namespace {
 Locale* g_default_locale;
+Locale* g_default_locale_override;  // MoltBrowser: SetDefaultLocaleOverride.
 }
 
 class DateTimeStringBuilder : private DateTimeFormat::TokenHandler {
@@ -186,6 +187,9 @@ String DateTimeStringBuilder::ToString() {
 
 Locale& Locale::DefaultLocale() {
   DCHECK(IsMainThread());
+  if (g_default_locale_override) {  // MoltBrowser
+    return *g_default_locale_override;
+  }
   if (!g_default_locale)
     g_default_locale = Locale::Create(DefaultLanguage()).release();
   return *g_default_locale;
@@ -196,6 +200,14 @@ void Locale::ResetDefaultLocale() {
   // DefaultLocale().
   delete g_default_locale;
   g_default_locale = nullptr;
+}
+
+// MoltBrowser: set once, before any document exists (form controls keep
+// references to the default locale).
+void Locale::SetDefaultLocaleOverride(std::unique_ptr<Locale> locale) {
+  DCHECK(IsMainThread());
+  delete g_default_locale_override;
+  g_default_locale_override = locale.release();
 }
 
 Locale::~Locale() = default;

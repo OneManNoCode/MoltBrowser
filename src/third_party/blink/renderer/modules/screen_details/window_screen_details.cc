@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/permissions/permission_utils.h"
 #include "third_party/blink/renderer/modules/screen_details/screen_details.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -78,6 +79,14 @@ ScriptPromise<ScreenDetails> WindowScreenDetails::GetScreenDetails(
       mojom::blink::PermissionName::WINDOW_MANAGEMENT);
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<ScreenDetails>>(
       script_state, exception_state.GetContext());
+  // MoltBrowser: MoltNet windows never share screen details: denied without
+  // asking the browser (no prompt, and no permission state is consulted).
+  if (molt_fingerprinting::HidesScreenDetails(window)) {
+    auto promise = resolver->Promise();
+    resolver->RejectWithDOMException(DOMExceptionCode::kNotAllowedError,
+                                     "Permission denied.");
+    return promise;
+  }
   const bool has_transient_user_activation =
       LocalFrame::HasTransientUserActivation(GetSupplementable()->GetFrame());
   // Only request permission with transient activation, otherwise check quietly.

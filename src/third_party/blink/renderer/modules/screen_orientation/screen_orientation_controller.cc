@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/fullscreen/scoped_allow_fullscreen.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/modules/screen_orientation/screen_orientation.h"
@@ -193,6 +194,11 @@ void ScreenOrientationController::NotifyOrientationChanged() {
 void ScreenOrientationController::NotifyOrientationChangedInternal() {
   if (!IsActiveAndVisible())
     return;
+  // MoltBrowser: MoltNet windows report a fixed orientation (type(),
+  // angle()), so a real rotation is no change the page may see.
+  if (molt_fingerprinting::HidesScreenChanges()) {
+    return;
+  }
 
   UpdateOrientation();
   GetExecutionContext()

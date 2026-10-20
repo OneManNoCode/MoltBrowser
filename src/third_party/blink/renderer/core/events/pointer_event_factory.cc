@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/pointer_type_names.h"
@@ -135,6 +136,9 @@ void UpdateCommonPointerEventInit(const WebPointerEvent& web_pointer_event,
   pointer_event_init->setTangentialPressure(
       web_pointer_event.tangential_pressure);
   pointer_event_init->setTwist(web_pointer_event.twist);
+  // MoltBrowser: MoltNet windows hide touch contact size and pressure.
+  molt_fingerprinting::UniformTouchPointerEventInit(
+      dom_window, web_pointer_event, pointer_event_init);
 }
 
 }  // namespace

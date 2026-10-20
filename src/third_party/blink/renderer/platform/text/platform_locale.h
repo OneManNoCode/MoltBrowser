@@ -43,6 +43,9 @@ class PLATFORM_EXPORT Locale {
   static std::unique_ptr<Locale> Create(const String& locale_identifier);
   static Locale& DefaultLocale();
   static void ResetDefaultLocale();
+  // MoltBrowser: DefaultLocale() returns `locale` from now on (null: undo).
+  // MoltNet renderers pin it to fixed en-US data before any document exists.
+  static void SetDefaultLocaleOverride(std::unique_ptr<Locale> locale);
 
   String QueryString(int resource_id);
   String QueryString(int resource_id, const String& parameter);

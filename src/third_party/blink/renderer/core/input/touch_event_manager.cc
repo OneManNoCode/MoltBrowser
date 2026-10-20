@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/input/event_handling_util.h"
 #include "third_party/blink/renderer/core/input/touch_action_util.h"
 #include "third_party/blink/renderer/core/layout/hit_test_canvas_result.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/instrumentation/histogram.h"
@@ -213,6 +214,10 @@ Touch* TouchEventManager::CreateDomTouch(
   gfx::SizeF adjusted_radius = gfx::ScaleSize(
       gfx::SizeF(transformed_event.width / 2.f, transformed_event.height / 2.f),
       scale_factor);
+  // MoltBrowser: in MoltNet windows screenX/Y are MouseEvent's (relative to
+  // the viewport) and the contact's size, angle and pressure are hidden.
+  molt_fingerprinting::UniformTouch(target_frame->DomWindow(),
+                                    transformed_event, adjusted_radius);
 
   return MakeGarbageCollected<Touch>(
       target_frame, touch_node, point_attr->event_.id,

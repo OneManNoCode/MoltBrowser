@@ -9,6 +9,7 @@
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_permission_state.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/permissions/permissions.h"
 
 namespace blink {
@@ -65,6 +66,11 @@ void PermissionStatusListener::NotifyEventListener(
 
 void PermissionStatusListener::OnPermissionStatusChange(
     MojoPermissionStatusWithDetails status) {
+  // MoltBrowser: fixed in MoltNet windows (see state()).
+  if (molt_fingerprinting::ReportsPermissionDenied(GetExecutionContext(),
+                                                   descriptor_->name)) {
+    return;
+  }
   if (status_.Equals(status)) {
     return;
   }
@@ -124,6 +130,12 @@ bool PermissionStatusListener::HasPendingActivity() {
 }
 
 V8PermissionState PermissionStatusListener::state() const {
+  // MoltBrowser: MoltNet windows report window-management as denied for
+  // everybody, as getScreenDetails() behaves there.
+  if (molt_fingerprinting::ReportsPermissionDenied(GetExecutionContext(),
+                                                   descriptor_->name)) {
+    return V8PermissionState(V8PermissionState::Enum::kDenied);
+  }
   return ToV8PermissionState(status_->status);
 }
 

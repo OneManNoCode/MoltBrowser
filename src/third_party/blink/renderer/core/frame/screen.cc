@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "ui/display/screen_info.h"
 #include "ui/display/screen_infos.h"
@@ -49,6 +50,11 @@ Screen::Screen(LocalDOMWindow* window, int64_t display_id)
 bool Screen::AreWebExposedScreenPropertiesEqual(
     const display::ScreenInfo& prev,
     const display::ScreenInfo& current) {
+  // MoltBrowser: MoltNet windows show a uniform screen, so real changes
+  // (another monitor, resolution, rotation) fire no "change" events.
+  if (molt_fingerprinting::HidesScreenChanges()) {
+    return true;
+  }
   // height() and width() use rect.size()
   if (prev.rect.size() != current.rect.size()) {
     return false;

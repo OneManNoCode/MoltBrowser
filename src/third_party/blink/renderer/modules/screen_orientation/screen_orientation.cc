@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_orientation_lock_type.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/screen_orientation/lock_orientation_callback.h"
 #include "third_party/blink/renderer/modules/screen_orientation/screen_orientation_controller.h"
@@ -88,10 +89,20 @@ ExecutionContext* ScreenOrientation::GetExecutionContext() const {
 }
 
 V8OrientationType ScreenOrientation::type() const {
+  // MoltBrowser: MoltNet windows report the uniform screen's orientation.
+  if (const auto uniform =
+          molt_fingerprinting::UniformOrientationType(DomWindow())) {
+    return V8OrientationType(OrientationTypeToV8Enum(*uniform));
+  }
   return V8OrientationType(OrientationTypeToV8Enum(type_));
 }
 
 uint16_t ScreenOrientation::angle() const {
+  // MoltBrowser: the uniform screen is never rotated.
+  if (const auto uniform =
+          molt_fingerprinting::UniformOrientationAngle(DomWindow())) {
+    return *uniform;
+  }
   return angle_;
 }
 
