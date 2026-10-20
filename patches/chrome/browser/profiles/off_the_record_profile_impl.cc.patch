@@ -5,18 +5,37 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/off_the_record_profile_impl.cc b/chrome/browser/profiles/off_the_record_profile_impl.cc
-index 1de7ece73d67b577b0ce8502edef23c3916d145d..e75c9b345544239e86148eb53ea161013537486a 100644
+index 1de7ece73d67b577b0ce8502edef23c3916d145d..ba902bec550fbec150774745b175ca7b18e7a5bf 100644
 --- a/chrome/browser/profiles/off_the_record_profile_impl.cc
 +++ b/chrome/browser/profiles/off_the_record_profile_impl.cc
-@@ -35,6 +35,7 @@
+@@ -35,6 +35,10 @@
  #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
  #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
  #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
 +#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_pref_isolation.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/notifications/platform_notification_service_factory.h"
  #include "chrome/browser/notifications/platform_notification_service_impl.h"
  #include "chrome/browser/origin_trials/origin_trials_factory.h"
-@@ -199,7 +200,12 @@ void OffTheRecordProfileImpl::Init() {
+@@ -173,6 +177,15 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(
+     prefs_ =
+         CreateAutomationPrefService(PrefServiceSyncableFromProfile(profile_),
+                                     CreateExtensionPrefStore(profile_, true));
++  } else if (molt_ai::tor::IsMoltNetOtrProfileId(otr_profile_id)) {
++    // MoltBrowser: MoltNet writes nothing into the regular profile's prefs,
++    // its pages see MoltBrowser's defaults instead of the user's settings,
++    // site permissions and exceptions (molt_net_pref_isolation.h), and no
++    // extension-controlled setting (proxy, privacy, fonts, ...) applies
++    // (molt_net_isolation.h).
++    prefs_ = molt_ai::tor::CreateMoltNetPrefService(
++        PrefServiceSyncableFromProfile(profile_),
++        molt_ai::tor::CreateMoltNetExtensionPrefStore());
+   } else {
+     prefs_ = CreateIncognitoPrefServiceSyncable(
+         PrefServiceSyncableFromProfile(profile_),
+@@ -199,7 +212,12 @@ void OffTheRecordProfileImpl::Init() {
          IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
              policy::IncognitoModeAvailability::kDisabled);
  

@@ -7,6 +7,13 @@
 #   tor_control_connection.* — SAFECOOKIE-authenticated control client
 #   tor_service.*            — read-only circuit/status queries
 #   molt_net_routing.*       — the isolated MoltNet (Tor) profile
+#   molt_net_pref_isolation* — MoltNet's pref service: nothing written
+#                              through to the regular profile, web-visible
+#                              settings pinned to MoltBrowser's defaults
+#   molt_net_isolation*      — keeps the regular profile's extensions and
+#                              services out of MoltNet windows
+
+import("//extensions/buildflags/buildflags.gni")
 
 # Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
 # bridge-line validation, which pluggable transports may run, and .onion /
@@ -30,6 +37,31 @@ source_set("protocol") {
   ]
 }
 
+# Which of the regular profile's prefs MoltNet must not use. Pure (std
+# only), so molt_ai_unittests tests it standalone.
+source_set("pref_isolation_policy") {
+  sources = [
+    "molt_net_pref_isolation_policy.cc",
+    "molt_net_pref_isolation_policy.h",
+  ]
+}
+
+# MoltNet's pref service (molt_net_pref_isolation.h). Created by
+# OffTheRecordProfileImpl (//chrome/browser/profiles:misc) for MoltNet
+# profile ids, so it depends on components only (no //chrome/browser cycle).
+source_set("pref_isolation") {
+  sources = [
+    "molt_net_pref_isolation.cc",
+    "molt_net_pref_isolation.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [
+    ":pref_isolation_policy",
+    "//components/prefs",
+    "//components/sync_preferences",
+  ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -46,7 +78,10 @@ source_set("tor") {
     "tor_service.h",
   ]
 
-  public_deps = [ ":protocol" ]
+  public_deps = [
+    ":pref_isolation",
+    ":protocol",
+  ]
 
   deps = [
     "//base",
@@ -83,6 +118,43 @@ source_set("tor") {
   # raw sockets. On Windows that means winsock2, which needs ws2_32.
   if (is_win) {
     libs = [ "ws2_32.lib" ]
+  }
+}
+
+# Pure (std-only) part of MoltNet's isolation from the regular profile: which
+# extensions may run in MoltNet, and the in-memory certificate-exception
+# store. Tested in molt_ai_unittests without a Profile.
+source_set("isolation_policy") {
+  sources = [
+    "molt_net_isolation_policy.cc",
+    "molt_net_isolation_policy.h",
+  ]
+}
+
+# What keeps the regular profile's extensions and services out of MoltNet
+# windows (molt_net_isolation.h). Called from upstream hooks marked
+# "MoltBrowser:" in //extensions/browser, //chrome/browser/extensions,
+# //chrome/browser/profiles and //chrome/browser/ssl. Those targets are
+# linked into chrome with this one (via //chrome/browser/molt_ai); declaring
+# the deps the other way round would create cycles, as for :tor above.
+source_set("isolation") {
+  sources = [
+    "molt_net_isolation.cc",
+    "molt_net_isolation.h",
+  ]
+  public_deps = [ ":isolation_policy" ]
+  deps = [
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//components/keyed_service/core",
+    "//components/prefs",
+    "//components/security_interstitials/content:security_interstitial_page",
+    "//content/public/browser",
+    "//extensions/buildflags",
+    "//net",
+  ]
+  if (enable_extensions_core) {
+    deps += [ "//extensions/common" ]
   }
 }
 
@@ -154,11 +226,16 @@ source_set("onion") {
 }
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
-# generation, bridge-line validation, .onion / Onion-Location). Picked up by
+# generation, bridge-line validation, .onion / Onion-Location, which prefs
+# MoltNet pins and which extensions it admits) and MoltNet's pref service
+# against real pref stores and a real HostContentSettingsMap. Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_isolation_policy_unittest.cc",
+    "molt_net_pref_isolation_policy_unittest.cc",
+    "molt_net_pref_isolation_unittest.cc",
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",
     "pluggable_transports_unittest.cc",
@@ -166,9 +243,25 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":isolation_policy",
     ":onion_location",
+    ":pref_isolation",
+    ":pref_isolation_policy",
     ":protocol",
     "//base",
+    "//base/test:test_support",
+
+    # Pref-name constants checked against the pinned list.
+    "//chrome/browser/molt_ai/shield:prefs",
+    "//chrome/common:constants",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//components/language/core/browser",
+    "//components/pref_registry",
+    "//components/prefs",
+    "//components/privacy_sandbox:privacy_sandbox_prefs",
+    "//components/sync_preferences",
+    "//components/sync_preferences:test_support",
     "//net",
     "//testing/gtest",
     "//url",

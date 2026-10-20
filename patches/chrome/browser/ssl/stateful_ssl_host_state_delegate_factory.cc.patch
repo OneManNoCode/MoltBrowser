@@ -1,0 +1,32 @@
+MoltBrowser patch for chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc b/chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc
+index 0c9cf21f433cc95b703fb88e5bd16818c948c093..248dc1d265ddb329f73cdd76c80367a6c5a39641 100644
+--- a/chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc
++++ b/chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc
+@@ -7,6 +7,8 @@
+ #include <memory>
+ 
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/security_interstitials/content/stateful_ssl_host_state_delegate.h"
+ 
+@@ -15,6 +17,12 @@ namespace {
+ std::unique_ptr<KeyedService> BuildStatefulSSLHostStateDelegate(
+     content::BrowserContext* context) {
+   Profile* profile = Profile::FromBrowserContext(context);
++  // MoltBrowser: MoltNet (Tor) profiles keep their certificate-error
++  // exceptions in memory and never inherit the regular profile's.
++  if (molt_ai::tor::IsMoltNetProfile(profile)) {
++    return molt_ai::tor::CreateMoltNetSSLHostStateDelegate(
++        profile, HostContentSettingsMapFactory::GetForProfile(profile));
++  }
+   return std::make_unique<StatefulSSLHostStateDelegate>(
+       profile, HostContentSettingsMapFactory::GetForProfile(profile));
+ }

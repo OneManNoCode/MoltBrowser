@@ -281,9 +281,10 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
     *error = "MoltNet's Tor isn't running";
     return false;
   }
-  // These writes land in the OTR profile's in-memory overlay store: none of
-  // these prefs is on the incognito "persistent" allowlist, so nothing
-  // reaches the regular profile or disk.
+  // These writes land in the OTR profile's in-memory overlay store. MoltNet's
+  // pref service writes nothing through to the regular profile or disk
+  // (molt_net_isolation.h), and these values replace the defaults it pinned
+  // when the profile was created.
   PrefService* prefs = moltnet_profile->GetPrefs();
   // socks5:// = remote DNS (hostnames go to Tor, never the local resolver)
   // and no DIRECT fallback = fail-closed when Tor is unreachable.
@@ -307,14 +308,16 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
 
   if (ProxyExternallyControlled(prefs) || !ProxyPointsAtTor(prefs, socks_port)) {
     *error =
-        "A policy, extension or command-line flag controls the proxy, so "
-        "MoltNet can't guarantee Tor routing";
+        // Extension-controlled settings never reach MoltNet's profile
+        // (molt_net_isolation.h: CreateMoltNetExtensionPrefStore).
+        "A policy or command-line flag controls the proxy, so MoltNet "
+        "can't guarantee Tor routing";
     return false;
   }
   if (!LeakPrefsInPlace(prefs)) {
     *error =
-        "A policy or extension overrides MoltNet's WebRTC / prediction / "
-        "HTTPS-Only settings";
+        "A policy overrides MoltNet's WebRTC / prediction / HTTPS-Only "
+        "settings";
     return false;
   }
   return true;

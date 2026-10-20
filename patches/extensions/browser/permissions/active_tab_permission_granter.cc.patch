@@ -1,0 +1,23 @@
+MoltBrowser patch for extensions/browser/permissions/active_tab_permission_granter.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/extensions/browser/permissions/active_tab_permission_granter.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/extensions/browser/permissions/active_tab_permission_granter.cc b/extensions/browser/permissions/active_tab_permission_granter.cc
+index 1b298e1007b0c3b561456d9415bd8ff89a5b78cb..0ac1a55d32c87ce86ce7ca50bab944f01a154077 100644
+--- a/extensions/browser/permissions/active_tab_permission_granter.cc
++++ b/extensions/browser/permissions/active_tab_permission_granter.cc
+@@ -132,6 +132,12 @@ ActiveTabPermissionGranter::ActiveTabPermissionGranter(
+ ActiveTabPermissionGranter::~ActiveTabPermissionGranter() = default;
+ 
+ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
++  // MoltBrowser: no activeTab grant on a MoltNet (Tor) tab (keyboard
++  // shortcut, context menu, ...) for an extension kept out of MoltNet.
++  if (ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
++          extension, web_contents()->GetBrowserContext())) {
++    return;
++  }
+   if (IsGranted(extension)) {
+     return;
+   }

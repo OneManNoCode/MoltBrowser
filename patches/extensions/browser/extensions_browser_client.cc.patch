@@ -1,0 +1,24 @@
+MoltBrowser patch for extensions/browser/extensions_browser_client.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/extensions/browser/extensions_browser_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/extensions/browser/extensions_browser_client.cc b/extensions/browser/extensions_browser_client.cc
+index 0ff0338f20744dcd092b8ce19063b4b7a10bff93..206aacc817adf537e1268d6281c7a6e9cfe9202c 100644
+--- a/extensions/browser/extensions_browser_client.cc
++++ b/extensions/browser/extensions_browser_client.cc
+@@ -117,6 +117,13 @@ bool ExtensionsBrowserClient::IsExtensionEnabled(
+   return false;
+ }
+ 
++// MoltBrowser: see the declaration.
++bool ExtensionsBrowserClient::IsExtensionKeptOutOfContext(
++    const Extension* extension,
++    content::BrowserContext* context) const {
++  return false;
++}
++
+ bool ExtensionsBrowserClient::IsWebUIAllowedToMakeNetworkRequests(
+     const url::Origin& origin) {
+   return false;

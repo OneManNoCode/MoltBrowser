@@ -1,0 +1,33 @@
+MoltBrowser patch for chrome/browser/net/profile_network_context_service.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/net/profile_network_context_service.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
+index c9ae7f58abdc9e650501363db9da48231ffecc15..c9835c427c54e92835bc87ffdfa4167313026a27 100644
+--- a/chrome/browser/net/profile_network_context_service.cc
++++ b/chrome/browser/net/profile_network_context_service.cc
+@@ -38,6 +38,7 @@
+ #include "chrome/browser/domain_reliability/service_factory.h"
+ #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
+ #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/net/system_network_context_manager.h"
+ #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -224,6 +225,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
+     return true;
+   }
+ 
++  // MoltBrowser: MoltNet (Tor) windows never answer an authentication
++  // challenge with the OS user's NTLM / Kerberos credentials. (MoltNet is a
++  // non-primary OTR profile *with* browser windows, unlike the rule below
++  // assumes.)
++  if (molt_ai::tor::IsMoltNetProfile(profile)) {
++    return false;
++  }
++
+   // Non-primary OTR profiles are not used to create browser windows and are
+   // only technical means for a task that does not need to leave state after
+   // it's completed.

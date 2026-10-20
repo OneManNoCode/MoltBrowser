@@ -1,0 +1,29 @@
+MoltBrowser patch for chrome/browser/extensions/api/debugger/debugger_api.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/extensions/api/debugger/debugger_api.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/extensions/api/debugger/debugger_api.cc b/chrome/browser/extensions/api/debugger/debugger_api.cc
+index a1301c0248a14e484ba154c7f51396fc14631b8a..ffe7c8615b3b94dba0764cf304a5ad4c3bb4b7e3 100644
+--- a/chrome/browser/extensions/api/debugger/debugger_api.cc
++++ b/chrome/browser/extensions/api/debugger/debugger_api.cc
+@@ -29,6 +29,7 @@
+ #include "chrome/browser/extensions/extension_service.h"
+ #include "chrome/browser/extensions/extension_tab_util.h"
+ #include "chrome/browser/lifetime/termination_notification.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_observer.h"
+ #include "chrome/common/chrome_switches.h"
+@@ -163,6 +164,10 @@ bool ExtensionMayAttachToTargetProfile(Profile* extension_profile,
+   if (!profile) {
+     return false;
+   }
++  // MoltBrowser: no extension lists or attaches to a MoltNet (Tor) page.
++  if (molt_ai::tor::IsMoltNetProfile(profile)) {
++    return false;
++  }
+   if (!extension_profile->IsSameOrParent(profile)) {
+     return false;
+   }

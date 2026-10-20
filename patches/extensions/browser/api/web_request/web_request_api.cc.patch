@@ -1,0 +1,38 @@
+MoltBrowser patch for extensions/browser/api/web_request/web_request_api.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/extensions/browser/api/web_request/web_request_api.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/extensions/browser/api/web_request/web_request_api.cc b/extensions/browser/api/web_request/web_request_api.cc
+index c7d9f0fe8d5e5f302db52e4358d98c16b8d5ca8f..490dcb82f3547c4dacf9cdf298cd85fdb39ee10f 100644
+--- a/extensions/browser/api/web_request/web_request_api.cc
++++ b/extensions/browser/api/web_request/web_request_api.cc
+@@ -851,6 +851,13 @@ WebRequestAPI::ProxyDecision WebRequestAPI::MaybeProxyURLLoaderFactoryInternal(
+     const url::Origin& request_initiator) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+ 
++  // MoltBrowser: requests of a MoltNet (Tor) profile are never proxied, so no
++  // extension sees or changes them (webRequest, declarativeNetRequest).
++  if (ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
++          /*extension=*/nullptr, browser_context)) {
++    return ProxyDecision::kWillNotProxy;
++  }
++
+   ProxyDecision decision = ProxyDecision::kWillNotProxy;
+   if (base::FeatureList::IsEnabled(
+           extensions_features::kOptimizeWebRequestProxy)) {
+@@ -1029,6 +1036,13 @@ bool WebRequestAPI::MayHaveProxies() const {
+ 
+ bool WebRequestAPI::MayHaveProxiesForFrame(
+     content::RenderFrameHost* render_frame_host) const {
++  // MoltBrowser: nor its WebSockets or WebTransport sessions (see
++  // MaybeProxyURLLoaderFactoryInternal).
++  if (render_frame_host &&
++      ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
++          /*extension=*/nullptr, render_frame_host->GetBrowserContext())) {
++    return false;
++  }
+   if (base::FeatureList::IsEnabled(
+           extensions_features::kOptimizeWebRequestProxy)) {
+     return HasWebRequestOrDeclarativeWebRequestExtension() ||

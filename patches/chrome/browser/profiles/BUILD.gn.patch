@@ -5,10 +5,20 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 7261b2cc26b5f913deda86a9392462d068d39fb2..247d5d7d7557d9647489819c70dd9482b3825f25 100644
+index 7261b2cc26b5f913deda86a9392462d068d39fb2..588463b0b2be6057d969f0ca847bb507465ea690 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -674,6 +674,9 @@ source_set("profiles_extra_parts_impl") {
+@@ -104,6 +104,9 @@ source_set("misc") {
+     "//chrome/browser/heavy_ad_intervention",
+     "//chrome/browser/image_decoder",
+     "//chrome/browser/lifetime",
++
++    # MoltBrowser: MoltNet's pref service (off_the_record_profile_impl.cc).
++    "//chrome/browser/molt_ai/tor:pref_isolation",
+     "//chrome/browser/net",
+     "//chrome/browser/origin_trials",
+     "//chrome/browser/password_manager/factories",
+@@ -674,6 +677,9 @@ source_set("profiles_extra_parts_impl") {
      "//chrome/browser/manta:impl",
      "//chrome/browser/media/router",
      "//chrome/browser/media/webrtc",

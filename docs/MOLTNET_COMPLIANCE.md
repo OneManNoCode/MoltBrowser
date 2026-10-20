@@ -76,6 +76,32 @@ claims below as the design intent, not as measured results.
    they reach the network. While MoltNet is running, sites that announce an
    onion version also get an *Open in MoltNet window* bar in regular
    windows.
+10. **Your settings stay out of MoltNet windows.** What a site can see in a
+    MoltNet window doesn't depend on how you set up your regular browser.
+    MoltNet uses MoltBrowser's defaults instead of your site permissions
+    and site exceptions (including sites where you blocked JavaScript or
+    turned Shields off), your defaults for permissions and content, your
+    font and font-size settings, the default text encoding, Do Not Track,
+    your third-party cookie choice, your ad privacy (Privacy Sandbox)
+    choices, "Strip tracking parameters", and the accessibility settings a
+    page can detect. A site that regular windows stopped from asking for a
+    permission (after you dismissed it several times) can ask again.
+    Permissions you grant and changes you make in a MoltNet window last
+    until New Identity or until the last MoltNet window closes, and nothing
+    done in a MoltNet window changes your regular settings.
+11. **Your extensions and your regular browsing stay out.** Extensions you
+    or an administrator installed don't run in MoltNet windows and can't
+    see them, even when they're allowed in Incognito; only the browser's
+    built-in extensions (the PDF viewer) work there. Settings an extension
+    controls (proxy, privacy, fonts, ...) don't apply in MoltNet either.
+    MoltNet also doesn't let sites see what your regular browsing taught
+    the browser: sites you watch a lot don't autoplay with sound,
+    `navigator.storage.persist()` doesn't reveal your bookmarks or the
+    sites you use most, lookalike-domain warnings don't depend on the sites
+    you use, and certificate warnings you clicked through in a regular
+    window are shown again. Third-party cookies and Shared Storage are
+    always off in MoltNet windows, and MoltNet never sends your Windows or
+    Kerberos sign-in to a site.
 
 ## 2. How it is built
 
@@ -86,12 +112,33 @@ profile's in-memory preferences. Earlier versions wrote the proxy into the
 regular profile and into the browser-wide (local state) settings; on startup
 MoltBrowser now removes exactly those old values.
 
+**Settings isolation.** An off-the-record profile normally reads every
+setting it hasn't changed itself from the regular profile, and Incognito
+also writes a few settings back into it (the third-party cookie mode, the
+bookmarks bar, DevTools settings). Site permissions and other content
+settings are stored the same way, so that is also how Incognito inherits
+them. The MoltNet profile's settings store (`molt_net_isolation.h`) differs
+in two ways: it writes nothing back into the regular profile, and when the
+profile is created, every setting a page can observe
+(`molt_net_isolation_policy.h`: the permission and content-setting
+exceptions and defaults of every type, including permission embargo and
+MoltShield's per-site switch; fonts and font sizes; default encoding; Do
+Not Track; third-party cookie mode; languages; Privacy Sandbox switches;
+the accessibility settings pages can detect) is set to MoltBrowser's
+default in the profile's own in-memory store, so the regular profile's
+value is never read, and changing it later has no effect on MoltNet.
+MoltNet's own settings (the proxy and leak controls below, en-US) are
+written on top. Settings an administrator's policy or an extension
+controls still take precedence; for the proxy and the leak controls that
+blocks MoltNet (see *Fail-closed*).
+
 **Fail-closed.** The MoltNet profile's proxy is `socks5://127.0.0.1:<port>` with
 no direct fallback, so if Tor stops, pages in MoltNet windows fail with a proxy
 error instead of loading directly. A MoltNet window is only opened after (a) Tor
 reports an established circuit, (b) the proxy and leak settings are confirmed
-to be MoltNet's own (a policy, extension or command-line flag that overrides
-them blocks MoltNet with an error), and (c) the MoltNet profile's network
+to be MoltNet's own (a policy or command-line flag that overrides them
+blocks MoltNet with an error; settings controlled by extensions don't reach
+MoltNet's profile at all, see below), and (c) the MoltNet profile's network
 context itself confirms it would send requests to exactly that SOCKS5 endpoint.
 MoltNet windows are never restored after a restart.
 
@@ -100,10 +147,71 @@ MoltNet windows are never restored after a restart.
 | Setting | Why |
 |---|---|
 | `socks5://` proxy | hostnames are resolved by Tor, not your DNS resolver |
-| WebRTC `disable_non_proxied_udp` | WebRTC can't open direct UDP that would reveal your IP |
+| WebRTC `disable_non_proxied_udp` | WebRTC gathers no local or public address and opens no direct connection: no UDP or STUN, only TCP to relay (TURN) servers through Tor; set by MoltNet whatever your regular windows use |
 | Network prediction off | no DNS prefetch / preconnect outside the proxy |
 | HTTPS-Only mode on | warns before any plain-HTTP page, which the exit relay could read or modify (not for `.onion`, which never leaves Tor) |
 | Connections partitioned by top-level site | no socket reuse across sites; enables per-site circuits |
+
+**WebRTC.** Tor Browser turns WebRTC off; MoltNet keeps it but restricts
+it. With `disable_non_proxied_udp` (Chromium 152, read in the code, not
+yet tested in a built browser), a page's `RTCPeerConnection` enumerates no
+network interfaces and gathers no host or STUN candidates; UDP and UDP
+relays are off and the browser doesn't listen for TCP. What is left is TCP
+to the page's relay (TURN) servers, which the network service opens
+through the profile's proxy, so through Tor, and those relays see a Tor
+exit. Your real IP address therefore never reaches a candidate or a
+connection. The setting is MoltNet's own: it doesn't follow your regular
+windows' WebRTC setting, and if a policy overrides it, MoltNet
+refuses to open (extension-controlled settings don't apply in MoltNet). The relays' host names are another matter (§5).
+
+**Nothing from the regular profile (extensions and services).** The MoltNet
+profile is an off-the-record profile of your regular one, and Chromium
+treats every such profile like Incognito: extensions allowed in Incognito
+run there, and several of the browser's per-profile services read the
+regular profile's data. Whatever a page can observe that comes from there
+would be the same in every MoltNet session, after every New Identity, and
+would link MoltNet to your regular browsing. So:
+
+- *Extensions.* Only MoltBrowser's component extensions (the PDF viewer)
+  are let into MoltNet. Every other one (Web Store, unpacked, sideloaded or
+  installed by policy, whatever its "Allow in Incognito" switch and whether
+  it runs in *split* or *spanning* incognito mode) is treated as not
+  allowed there: MoltNet renderers don't load it, so it has no content
+  scripts and pages can't message it or load its web-accessible resources
+  (which is how sites detect extensions); it gets no background page or
+  service worker, extension pages, toolbar button, side panel, omnibox
+  keyword or page override in MoltNet; no events about MoltNet tabs,
+  windows, navigations, downloads, cookies, context menus or keyboard
+  shortcuts reach it; the tabs and windows APIs and `chrome.debugger`
+  don't show it MoltNet windows or pages; it can't open tabs in a MoltNet
+  window or get `activeTab` access to one; MoltNet's requests, WebSockets
+  and WebTransport are never handed to `webRequest` or
+  `declarativeNetRequest`; and the settings it controls (proxy, privacy,
+  fonts, ...) don't apply to MoltNet's profile. The decision is in
+  `chrome/browser/molt_ai/tor/molt_net_isolation.h`; Chromium's extension
+  code asks it through `ExtensionsBrowserClient::IsExtensionKeptOutOfContext`
+  and a few hooks marked `MoltBrowser:`.
+- *Services.* In MoltNet windows no site has high media engagement
+  (autoplay with sound always needs a click or key press, the same for
+  everyone); `navigator.storage.persist()` is never granted (it is
+  otherwise granted for sites you bookmarked, installed or use often);
+  lookalike-domain warnings compare against the built-in list of popular
+  sites only, not the sites you use; the "block the JavaScript optimizer on
+  unfamiliar sites" setting isn't applied (familiarity comes from your
+  history); certificate-warning exceptions ("Proceed (unsafe)") are kept in
+  memory for the MoltNet session that made them, and those made in regular
+  windows don't apply; third-party cookies are blocked and the Privacy
+  Sandbox's Shared Storage is off whatever your regular settings, as in
+  Incognito; and the browser never answers a server's authentication
+  challenge with your Windows (NTLM) or Kerberos credentials.
+- *Checked and not inherited* (Chromium already keeps these per profile):
+  HTTPS-First "Continue to site" exceptions, client hints, Storage Access
+  and top-level storage access grants, FedCM grants and sign-in status,
+  HSTS and the rest of the network state (MoltNet's network context is in
+  memory and starts empty), visited-link colouring, media device IDs,
+  persistent origin trials, and the extension `cookies` API (which only
+  reaches the primary Incognito profile). Push messaging and notifications
+  aren't available in off-the-record profiles.
 
 **Onion addresses.** RFC 7686 reserves `.onion` for Tor, and the Chromium
 version MoltBrowser is built on doesn't special-case it, so MoltBrowser does,
@@ -184,8 +292,13 @@ gpg-verified steps documented in that script.
 | Settings names the transport to install | jsdom smoke test of molt://ai-settings (`tools/webui_checks`) | Pass |
 | Onion request URLs (any scheme, look-alikes refused), `<meta>` `Onion-Location` rules, validation of the page's answer | Unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
 | The script that reads `<meta http-equiv="onion-location">` | Run under jsdom against 13 documents (`<head>` vs `<body>`, letter case, look-alikes, missing `content`, more than one, length cap) | Pass |
+| Which extensions MoltNet admits (component only; an ID with no loaded extension is kept out), MoltNet's in-memory certificate exceptions | 6 unit tests (`molt_ai_unittests`); standalone harness with g++ ASan/UBSan and clang `-fno-exceptions`: the same tests, the Chromium glue against stand-ins with the 152 signatures (`StatefulSSLHostStateDelegate`, `Extension` locations, OTR profile ids), every hook expression, and 5 mutants all caught | Pass (built standalone; not yet built in the Chromium tree) |
+| Extensions, autoplay, `persist()`, lookalike warnings, certificate exceptions, third-party cookies, Shared Storage, ambient authentication in a running browser (§4 steps 16-17) | Needs a Chromium build | **Not yet done** |
 | `.onion` blocked and offered in regular windows, no DNS query, no onion request or WebSocket reaching a configured proxy, `Onion-Location` bar (header and `<meta>`), `http://` onion under HTTPS-Only, bridges connecting through the distribution's transports | Needs a Chromium build | **Not yet done** |
-| Isolation, fail-closed behaviour, leak controls, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
+| Which settings MoltNet takes from MoltBrowser's defaults (§1.10): the list, prefix matching, look-alike names | 6 unit tests (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
+| MoltNet's settings store: the regular profile's values and later changes don't show, MoltNet's own values and policy still apply, nothing is written back (an Incognito-style store leaks both ways) | Unit tests (`molt_ai_unittests`), run against stand-ins of Chromium's settings classes; the hook that picks MoltNet's store, checked the same way | Pass (standalone stand-ins); the real-class tests need a Chromium build |
+| Site settings with Chromium's real content-settings code: blocked JavaScript, a blocked permission, Shields off and a permission embargo in the regular profile, none of them in MoltNet; changes in a MoltNet window stay there | Unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
+| Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | Independent third-party audit | — | **Not done** |
 
 ## 4. Check it yourself (do this on every release build)
@@ -217,8 +330,10 @@ Do all of this in a MoltNet window unless the step says otherwise.
    the exit IP each one sees (e.g. two different IP-echo sites): they should
    normally differ. In Tor's log with `SafeLogging 0` + `Log info`, streams for
    different sites carry different SOCKS usernames.
-9. **Overrides are refused.** Start MoltBrowser with `--proxy-server=...` (or an
-   extension/policy proxy): opening a MoltNet window must fail with an error.
+9. **Overrides are refused.** Start MoltBrowser with `--proxy-server=...` (or a
+   policy proxy): opening a MoltNet window must fail with an error. A proxy
+   set by an extension doesn't reach MoltNet: with one installed and
+   allowed in Incognito, MoltNet must open and step 1 must pass.
 10. **The relays are real.** *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.
@@ -255,6 +370,45 @@ Do all of this in a MoltNet window unless the step says otherwise.
     Remove the package: settings must name the package to install, and
     turning MoltNet on must fail with that message rather than connect
     without bridges.
+15. **Your settings don't follow you.** In a regular window, on a test
+    site: block its location permission and its JavaScript, turn Shields off
+    for it, dismiss its notification prompt three times; then in Settings
+    turn on Do Not Track, set a large font size and a different standard
+    font, and allow third-party cookies. In a MoltNet window, on the same
+    site: JavaScript runs, `navigator.permissions.query({name:
+    'geolocation'})` and `({name: 'notifications'})` say `prompt`,
+    `navigator.doNotTrack` is `null` and requests carry no `DNT` header,
+    text has the default size and font, a third-party frame can't read or
+    set unpartitioned cookies, and MoltShield blocks the site's ads. Change
+    a regular setting back while the MoltNet window is open: nothing changes
+    in it. Allow a permission and turn Shields off in the MoltNet window:
+    neither shows in a regular window, and both are gone after New Identity.
+16. **Extensions stay out.** In a regular window install a test extension
+    with a content script on `<all_urls>` that marks the page, a
+    web-accessible resource, `externally_connectable` for `<all_urls>`,
+    `tabs`, `webRequest`, `declarativeNetRequest` (a rule that blocks
+    some test URL), `debugger` and a keyboard shortcut, whose background
+    logs `chrome.tabs.query({})`, `tabs.onUpdated`, `windows.onFocusChanged`,
+    `webRequest.onBeforeRequest` and `chrome.debugger.getTargets()`. Allow
+    it in Incognito. In a MoltNet window: the page is not marked,
+    `fetch("chrome-extension://<id>/<resource>")` fails,
+    `chrome.runtime` is undefined in the page, the blocked URL loads, the
+    toolbar shows no extension, the shortcut does nothing, and the logs
+    show no MoltNet tab, window id, URL, request or target (focusing a
+    MoltNet window logs `-1`). A primary Incognito window must still behave
+    as before. Repeat with `"incognito": "split"`. A PDF opens in MoltNet's
+    PDF viewer. `chrome-extension://<id>/page.html` typed in a MoltNet
+    window shows a blocked page.
+17. **No regular-profile carry-over.** In a regular window, watch a video
+    with sound on a site until `chrome://media-engagement` lists it as
+    high; on that site in a MoltNet window,
+    `navigator.getAutoplayPolicy("mediaelement")` must be `"allowed-muted"`.
+    Bookmark a site in a regular window; there, in MoltNet,
+    `await navigator.storage.persist()` must be `false`. Click through a
+    self-signed certificate warning in a regular window; the same site in
+    MoltNet must warn again. With third-party cookies allowed in regular
+    settings, a cross-site iframe in MoltNet must not get its cookies, and
+    `sharedStorage.set()` must reject.
 
 ## 5. What MoltNet does *not* do
 
@@ -281,6 +435,17 @@ Do all of this in a MoltNet window unless the step says otherwise.
      individually: Safe Browsing's real-time hash-prefix checks, the AI side
      panel (cloud AI providers), and other features may make requests outside
      the MoltNet profile's network context.
+   - Context-menu items that a split-mode extension's Incognito copy adds
+     can still appear in a MoltNet page's menu; choosing one does nothing
+     (the extension gets no event). Likewise an extension's keyboard
+     shortcut is still caught in a MoltNet window (the page doesn't get
+     those keys) and does nothing. An event the browser
+     only dispatches after a MoltNet profile is gone falls back to
+     Chromium's Incognito rules (events are normally sent while it exists).
+     Several of Chromium's Incognito protections test for the primary
+     Incognito profile only; third-party cookies, Shared Storage and
+     ambient authentication are fixed for MoltNet, the rest haven't been
+     reviewed one by one yet.
    - Requests to `localhost` / loopback addresses bypass the proxy (they stay on
      your machine, but a page can probe local services).
    - If Tor stops, another local program could take over its old port; MoltNet
@@ -303,6 +468,20 @@ Do all of this in a MoltNet window unless the step says otherwise.
    - Bridges have been validated as configuration, and Tor has been seen
      starting the distribution's transports; connecting to the Tor network
      through snowflake/obfs4 has not been tested yet.
+   - WebRTC host names (from reading the code; not yet tested): when a
+     page gives WebRTC a relay (TURN) server or a peer by name, the name is
+     looked up by MoltBrowser's own DNS resolver, not through Tor. That
+     can't reveal your IP address to the page, but your DNS resolver (and
+     whoever runs the name's DNS servers) sees a lookup the page chose,
+     which can link the MoltNet window to your network.
+   - Settings that apply to the whole browser rather than to your regular
+     profile still reach MoltNet windows (§1.10 covers the profile's):
+     page colours and your system's high-contrast and accessibility
+     settings, MoltShield's on/off switch and its filter lists, and the
+     language of MoltBrowser's own interface, which picks MoltBrowser's
+     default fonts and text encoding. `prefers-color-scheme` is dark for
+     everyone while MoltBrowser's dark toolbar is on (the default); with it
+     off, MoltNet windows follow your regular windows' theme.
 
 ## 6. Privacy defaults for regular windows
 
