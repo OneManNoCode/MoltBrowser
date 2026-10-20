@@ -172,6 +172,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   23 common extensions and fixed shader precision, never more than the GPU
   really has; WebGPU finds no adapter, so sites fall back to WebGL. Normal
   and incognito windows are unchanged.
+- **More of MoltNet looks the same for everyone.** Touches report their
+  position relative to the page, like mouse clicks, and no finger size or
+  pressure; sites can't see your other monitors (`getScreenDetails()` is
+  always denied, without a prompt, and moving the window between screens
+  goes unnoticed); `screen.orientation` matches the uniform screen size;
+  date, time and number fields use US English formats whatever your
+  system's language and regional settings. Built-in form messages such as
+  "Please fill out this field" still follow the browser's language.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

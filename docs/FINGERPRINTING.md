@@ -820,6 +820,256 @@ and in a running browser on each OS: font-probing pages and suites
 windows, with Shields on and off; East Asian sites; design tools with
 `queryLocalFonts()`.
 
+## MoltNet: touches, screens, orientation and form controls
+
+Four more things that told MoltNet users apart: where a touch lands on
+the physical screen and how big and firm it is, the user's monitors, the
+screen's orientation, and the language and regional settings that form
+controls follow. Normal and Incognito windows are unchanged: none of these
+values can vary per site in a useful way, and fixing them would only make
+a user look like other MoltBrowser users.
+
+| API | MoltNet windows | Hook (upstream file: function) |
+|---|---|---|
+| `Touch.screenX/Y` | MouseEvent's value: the point relative to the viewport | `touch_event_manager.cc`: `CreateDomTouch` |
+| `Touch.radiusX/Y`, `rotationAngle`, `force` | **0** (the spec's "unknown") | same |
+| `PointerEvent` with `pointerType` "touch": `width`/`height`, `pressure`, `tiltX/Y`, `twist`, `tangentialPressure` | **1**/**1**, **0.5** while down (else 0), **0** | `pointer_event_factory.cc`: `UpdateCommonPointerEventInit` |
+| `window.getScreenDetails()` | rejects: `NotAllowedError: Permission denied.`, no prompt | `window_screen_details.cc`: `GetScreenDetails` |
+| `navigator.permissions.query({name: 'window-management'})` | **"denied"**, never changes | `permission_status_listener.cc`: `state`, `OnPermissionStatusChange` |
+| `window.screen` "change" event | never fires | `screen.cc`: `AreWebExposedScreenPropertiesEqual` |
+| `screen.orientation.type`, `.angle` | the uniform screen's: **landscape-primary**, **0** (see below) | `screen_orientation.cc`: `type`, `angle` |
+| `screen.orientation` "change" event | never fires | `screen_orientation_controller.cc`: `NotifyOrientationChangedInternal` |
+| Date, time, month, week and number fields, numbers in validation messages | **en-US** formats on every OS | `platform_locale.{h,cc}`: `Locale::DefaultLocale`, set by `Configure` |
+
+The values are in `moltnet_values.{h,cc}` (std only, tested standalone),
+the Blink side in `moltnet_uniformity.{h,cc}`. Which contexts: what
+continues an existing MoltNet treatment follows it, so `Touch.screenX/Y`
+(MouseEvent's), the orientation (the uniform screen's) and the missing
+screen events apply to the whole MoltNet process like the screen values
+themselves, and the form locale is per process like the time zone and the
+Intl locale. The new treatments (touch contact, `getScreenDetails()`, the
+window-management permission) apply to web content only, like the WebGL
+baselines: pages whose top-level site isn't http(s) keep the real values.
+MoltNet ignores Shields off, as elsewhere.
+
+### Touches
+
+At 152 `TouchEventManager::CreateDomTouch` copies the touch point's
+position on the physical screen into the `Touch`, so `screenX - clientX`
+gave the window position plus the browser chrome, which mouse events in
+MoltNet no longer show. Touch pointer events already went through
+MouseEvent's hook (`UpdateCommonPointerEventInit` calls
+`MouseEvent::SetCoordinatesFromWebPointerProperties`). The hook now passes
+the touch point through the same `UniformScreenPoint()`, with the same
+root-frame position, so a `Touch` and the `PointerEvent` of the same
+finger report the same `screenX/Y`, relative to the viewport.
+
+The contact is hardware-revealing too: whether and how a digitizer reports
+the contact ellipse and pressure (many report nothing, others a fixed size,
+others real values at their own resolution) differs between touchscreens,
+and the contact size of a real finger is the user's. The same numbers
+reach pages twice: `Touch.radiusX` is half of `PointerEvent.width`, and
+`Touch.force` feeds `PointerEvent.pressure`. So both are fixed for touch
+pointers: the `Touch` gets the Touch Events spec's values for "unknown"
+(0), the `PointerEvent` the Pointer Events spec's values for hardware
+without contact geometry or pressure (1 x 1, 0.5 while down, 0 otherwise;
+no tilt, twist or barrel pressure). Pens and mice are untouched: pen
+pressure and tilt are what drawing apps need. Cost: pages that use touch
+size or pressure (some drawing apps and games) see none in MoltNet.
+
+### Screens (Window Management API)
+
+`screen.isExtended` is already false for the whole MoltNet process
+(`Screen::isExtended` returns before the permissions-policy check). For
+`window.getScreenDetails()` there were two options: report one screen
+equal to the uniform screen, or reject as if the permission were denied.
+MoltNet rejects, because at 152 that is one hook that cannot leak:
+
+* `getScreenDetails()` is the only way to a `ScreenDetails` or
+  `ScreenDetailed` object, so rejecting there closes every attribute they
+  have (`left/top`, `isPrimary`, `isInternal`, `label`,
+  `devicePixelRatio`, `hdrHeadroom` and the `CanvasHDR` colour primaries),
+  their three change events, and whatever a later Chromium adds. A fake
+  screen needs a hook per attribute and event, and has to stay consistent
+  with what the browser still does with the real screens once the
+  permission is granted (window placement on other screens, fullscreen on
+  a chosen screen, fullscreen popups); the user would also still be asked
+  for the permission.
+* Denial is a state every site already handles: users deny it, and
+  Firefox and Safari don't have the API at all. Together with
+  `isExtended = false` a MoltNet window looks like a one-screen user who
+  said no.
+
+The rejection is the one a real denial gives (`NotAllowedError`,
+"Permission denied."), returned without asking the browser: no prompt and
+no permission state is consulted.
+
+**The permission query did leak.** MoltNet's profile is an off-the-record
+profile of the regular one, and `WINDOW_MANAGEMENT` is registered with
+`INHERIT_IF_LESS_PERMISSIVE`: a block set in the regular profile (for the
+site or as the default) shows in MoltNet, so `navigator.permissions.query`
+said "denied" for users who once blocked window management and "prompt"
+for everyone else, the same way after every New Identity. In MoltNet web
+content the `PermissionStatus` for window-management now always says
+"denied" (matching `getScreenDetails()`), and updates from the browser are
+dropped, so it never fires "change". Other permissions inherit blocks the
+same way; see the gaps.
+
+**Screen change events.** `window.screen` fired "change" whenever the real
+screen changed (the window moved to another monitor, the resolution or
+scale changed, the monitor was rotated), although no value the page sees
+in MoltNet changed: on its own that reveals a second monitor. In MoltNet
+`Screen::AreWebExposedScreenPropertiesEqual` now always says "equal", so
+no such event fires. (If `devicePixelRatio` stays real in MoltNet, a scale
+change keeps firing `matchMedia('(resolution: ...)')` listeners, but no
+longer `screen`'s "change".)
+
+Cost: multi-screen web apps (presenter views, dashboards that place
+windows) work on one screen only in MoltNet windows.
+
+### Screen orientation
+
+At 152, `screen.orientation.type` and `.angle` are what the browser sends
+in `ScreenInfo` for the real display (on desktop
+`DisplayUtil::GetOrientationTypeForDesktop`: portrait when the display is
+at least as tall as wide, primary or secondary by panel rotation; the angle
+is the panel rotation), cached by `ScreenOrientationController::
+UpdateOrientation`, with a "change" event when they change. So a MoltNet
+page saw, next to its letterboxed landscape screen, a pivoted monitor as
+`portrait-secondary` at 270 degrees.
+
+In MoltNet both are now computed when read, from the uniform screen
+(`UniformScreenRect`), with the browser's desktop rule and no rotation:
+angle 0, and **landscape-primary** whenever the rounded screen is wider
+than tall. That holds for every window at least 200 DIPs wider than tall,
+and always at the largest step (1400 x 900); but the steps round width and
+height separately, so a narrow window can round to a square or tall
+screen (a window snapped to half of a 1366 x 768 laptop gives 600 x 600)
+and then reports **portrait-primary**, which is what a real display of
+that size reports and keeps `screen.orientation` consistent with
+`screen.width/height`. (Should letterboxing make the uniform screen
+always landscape, the orientation follows by itself.) No orientation
+"change" events fire in MoltNet.
+
+Checked and left alone: the CSS `orientation` media query is evaluated
+from the viewport (`OrientationMediaFeatureEval` compares the viewport's
+width and height; a square viewport is portrait), not from the screen, so
+it says what `innerWidth/innerHeight` already say (the letterboxing
+work); forcing it would break responsive layouts. `window.orientation` and
+`orientationchange` are behind the Android-only `OrientationEvent` flag.
+`screen.orientation.lock()` fails the same way for everyone on desktop (no
+orientation delegate).
+
+### Form controls in en-US
+
+**Where they come from at 152.**
+
+* *Formats* (field order and separators of date, time, month, week and
+  datetime-local inputs; month and weekday names; AM/PM; digits, decimal
+  and group separators; the first day of the week): form controls ask
+  `Element::GetLocale()`, i.e. `Document::GetCachedLocale()`, which
+  returns `Locale::DefaultLocale()` (the `lang` attribute is only used
+  with `LangAttributeAwareFormControlUI`, off on desktop).
+  `DefaultLocale()` is `Locale::Create(DefaultLanguage())`, and
+  `DefaultLanguage()` is `Platform::DefaultLocale()`, the renderer's
+  `--lang` switch: the browser's UI language. `Locale::Create` is
+  `LocaleIcu` on Linux; `LocaleMac` on macOS, which uses `[NSLocale
+  currentLocale]` (the user's region and custom formats) whenever the
+  language matches; and `LocaleWin` on Windows, which uses
+  `LOCALE_USER_DEFAULT` with the user's overrides whenever the language
+  matches. A page can't read the formats directly, but it can measure the
+  inputs, and number formatting shows in validation messages.
+* *Strings* (`validationMessage`, "Choose File" / "No file chosen", the
+  default "Details" summary, the default submit/reset labels, date-field
+  placeholders such as "mm/dd/yyyy"): `Locale::QueryString` ignores the
+  `Locale` and calls `Platform::QueryLocalizedString`, which ends in
+  `ChromeContentClient::GetLocalizedString` and the renderer's resource
+  bundle: the locale pak named by `--lang` (loaded in
+  `ChromeMainDelegate::PreSandboxStartup`) or, on Linux, the one the zygote
+  loaded for the environment's locale before any profile existed.
+* `LocaleController`, through which MoltNet already forces en-US (and
+  DevTools emulates locales), only sets ICU's default locale and tells V8:
+  `Intl` and `Date` follow it, Blink's form `Locale` never reads it. So it
+  covers neither.
+
+**What MoltNet does.** `Configure(kUniform)` installs a fixed en-US
+`Locale` as `Locale::DefaultLocale()` for the whole process, through a new
+`Locale::SetDefaultLocaleOverride()` (two small additions to
+`platform_locale.{h,cc}`). Its data (`moltnet_values.h`) is exactly what
+`LocaleIcu` computes for en-US at the pinned ICU (checked against ICU):
+"M/d/yy", "h:mm:ss a" and "h:mm a" with the narrow no-break space of CLDR
+42 and later, "MMMM yyyy", English month names, narrow weekday names, AM
+and PM, Sunday first, ASCII digits, "." and ",". So a date input shows
+`03/05/2024` and a time input `1:04:09 PM` for every MoltNet user, on
+macOS and Windows as on Linux, whatever the UI language and regional
+settings. The date and colour picker popups are separate pages a site
+can't read, and keep the user's language and formats.
+
+**Not done: the strings** (still in the browser's UI language). Loading
+the en-US pak in MoltNet renderers is a larger change with user-visible
+costs, so it is left as a design:
+
+1. *Recommended: override only the strings pages can observe.* In MoltNet
+   renderers, `ChromeContentRendererClient::RenderThreadStarted` (where the
+   mode is configured) calls `ui::ResourceBundle::
+   OverrideLocaleStringResource(id, text)` for the page-observable ids
+   (the `IDS_FORM_*` strings of validation messages, file inputs, buttons
+   and date/time fields, `IDS_DETAILS_WITHOUT_SUMMARY_LABEL`, ...), with
+   their en-US text taken from `blink_strings.grd` at build time (a small
+   generated table, with a test that compares it to the `.grd`). The same
+   on every OS, no zygote work, and the browser UI, error pages and
+   accessibility names stay in the user's language. Needs an audit of the
+   `Locale::QueryString` / `QueryLocalizedString` callers to list the ids.
+2. *`--lang=en-US` for MoltNet renderers.* MoltBrowser's
+   `AppendRendererSwitches` could add it, but at 152
+   `RenderProcessHostImpl::AppendRendererCommandLine` appends `--lang`
+   after the embedder's switches, so content needs a one-line change to
+   keep an embedder-set `--lang`. On macOS and Windows renderers then load
+   en-US.pak before the sandbox, and `DefaultLanguage()` becomes en-US on
+   every thread, which also fixes the default text locale (below). On
+   Linux renderers are forked from the zygote, which loaded its pak before
+   any profile existed and can't open another after the fork: it would
+   need to preload en-US.pak and switch to it after forking a MoltNet
+   renderer, for which `ResourceBundle` has no API. And every
+   renderer-generated text in MoltNet tabs turns English: network error
+   pages, media-control labels and screen-reader names, the pickers, parts
+   of `chrome://` pages. (Tor Browser asks the user before requesting
+   English pages.)
+
+`DefaultLanguage()` also names the default text locale
+(`LayoutLocale::GetDefault()`), used for text without a `lang` attribute,
+for instance to pick the Han glyph variants of CJK text when the
+Accept-Language list (en-US in MoltNet) doesn't decide
+(`LayoutLocale::LocaleForHan`): a Japanese or Chinese UI language still
+shows there. Option 2 fixes it; with option 1 it needs its own override of
+`DefaultLanguage()` in MoltNet (`platform/language.cc`, all threads).
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_values_unittest.cc` (5 tests:
+the orientation rule over the letterbox steps, the touch values, the en-US
+data and its consistency) passes with g++ (ASan/UBSan) and clang (UBSan
+trap, `-fno-exceptions -Wunsafe-buffer-usage -Wshorten-64-to-32
+-Wimplicit-int-conversion -Wexit-time-destructors -Wglobal-constructors`),
+with `farbling_unittest.cc` and `fonts_unittest.cc` still passing; the
+en-US data matches what ICU's own `LocaleIcu` calls return for en-US.
+`moltnet_uniformity.cc` and `molt_fingerprinting.cc` type-check with the
+same strict clang flags against stand-ins of the pinned Blink signatures
+(the `Locale` interface copied from the pinned `platform_locale.h`), and an
+8-test harness runs the real glue in all three modes, including real
+kUniform: `Touch.screenX/Y` equal to MouseEvent's, the contact, pens and
+mice left alone, Shields off ignored, non-web pages, `getScreenDetails()`
+and the permission, the orientation of real uniform screens (rotated
+monitor, snapped window, early and detached frames), `Configure` pinning
+the locale; 8 mutations of the glue all fail it. The hook statements type-check with their upstream argument
+types. **Needs the build machine:** compiling Blink with the hooks,
+`blink_unittests` (`MoltNetUniformityTest.*`, `MoltNetValuesTest.*`), and in
+a MoltNet window on a touchscreen laptop (Windows and Linux) and on macOS
+and Windows machines with non-English UI and regional settings: touch
+event test pages, a multi-screen setup (`getScreenDetails()`,
+`permissions.query`, moving the window between monitors), a pivoted
+monitor, and date/time/number inputs and their validation messages.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
@@ -897,12 +1147,23 @@ Honest list; anything not in the table above is not covered.
 * No real letterboxing of the window: `innerWidth/innerHeight`, CSS
   `width/height` media queries and layout still reveal the true viewport,
   and `screen.width` can be smaller than `innerWidth`.
-* CSS `device-width/device-height` media queries, `devicePixelRatio`,
-  `TouchEvent` screen coordinates, the Window Management API
-  (`getScreenDetails()`).
-* Renderer-side UI strings (`validationMessage`, the file input's label) and
-  date/time form-control formats follow the browser's UI language, not
-  en-US.
+* CSS `device-width/device-height` media queries, `devicePixelRatio`.
+* Renderer-side UI strings (`validationMessage`, the file input's labels,
+  the default `<details>` summary and button labels, date-field
+  placeholders) follow the browser's UI language, not en-US; the
+  form-control formats are en-US ([design for the
+  strings](#form-controls-in-en-us)).
+* Text without a `lang` attribute uses the browser's UI language as its
+  default locale (`LayoutLocale::GetDefault()`), which shows in the Han
+  glyph variants of CJK text, among others (same section).
+* A touchscreen itself shows: `navigator.maxTouchPoints` (and its value),
+  the `pointer` / `any-pointer` / `hover` media queries and touch-event
+  support; pen pressure, tilt and twist stay real (touch contact and
+  coordinates are uniform, see [Touches](#touches)).
+* Permission states MoltNet's profile inherits from the regular profile
+  (a block, for a site or as the default) show through
+  `navigator.permissions.query` for every permission except
+  window-management, the same after every New Identity.
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 
@@ -1072,5 +1333,11 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
    them against the WebGL reports of real Macs, Windows and Linux machines
    in MoltNet windows.
 7. Per-document Shields-off delivery instead of a per-profile list.
-8. MoltNet: renderer UI strings and form-control formats in en-US; touch
-   coordinates; Window Management API.
+8. MoltNet: renderer UI strings in en-US (design in [Form controls in
+   en-US](#form-controls-in-en-us)) and the default text locale; then a
+   touchscreen-less look (`maxTouchPoints`, pointer media queries) and
+   permission states that don't inherit the regular profile's blocks.
+   Done: touch coordinates and contact, the Window Management API, screen
+   orientation, form-control formats ([MoltNet: touches, screens,
+   orientation and form
+   controls](#moltnet-touches-screens-orientation-and-form-controls)).
