@@ -62,6 +62,10 @@ class ContentsWebView : public views::WebView,
   void RenderViewReady() override;
   void OnLetterboxingChanged() override;
   void SetWebContents(content::WebContents* web_contents) override;
+  // MoltBrowser: MoltNet windows letterbox the page (molt_letterbox_view.h).
+  gfx::Insets GetInsets() const override;
+  void DidToggleFullscreenModeForTab(bool entered_fullscreen,
+                                     bool will_cause_resize) override;
 
   // content::WebContentsObserver overrides:
   // Overridden to track physical interactions (mouse/touch) on the WebContents.

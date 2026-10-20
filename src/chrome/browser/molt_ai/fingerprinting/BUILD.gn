@@ -5,7 +5,8 @@
 # session seed, the renderer mode switch (hooked from
 # ChromeContentBrowserClient::AppendExtraCommandLineSwitches) and the
 # channel-associated configuration sent at RenderProcessWillLaunch (session
-# seed, Shields-off sites). The engine itself lives in Blink:
+# seed, Shields-off sites), and MoltNet's letterboxing of the page in the
+# window (:letterbox, :letterbox_view). The engine itself lives in Blink:
 # //third_party/blink/renderer/core/molt_fingerprinting.
 
 source_set("fingerprinting") {
@@ -33,5 +34,46 @@ source_set("fingerprinting") {
     "//crypto",
     "//ipc",
     "//mojo/public/cpp/bindings",
+  ]
+}
+
+# MoltNet letterboxing: the geometry (std-only, constexpr).
+source_set("letterbox") {
+  sources = [ "molt_letterbox.h" ]
+}
+
+# ... and where it meets the window: the hooks in ContentsWebView
+# (chrome/browser/ui/views/frame/contents_web_view.cc) call these. Views
+# only, so desktop only (see the molt_ai group).
+source_set("letterbox_view") {
+  sources = [
+    "molt_letterbox_view.cc",
+    "molt_letterbox_view.h",
+  ]
+  public_deps = [
+    "//skia",
+    "//ui/gfx/geometry",
+  ]
+  deps = [
+    ":fingerprinting",
+    ":letterbox",
+    "//chrome/browser/ui/color:color_headers",
+    "//content/public/browser",
+    "//ui/color",
+    "//ui/views",
+    "//ui/views/controls/webview",
+  ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "molt_letterbox_unittest.cc" ]
+  deps = [
+    ":letterbox",
+    "//testing/gtest",
+
+    # The letterbox steps must match Blink's (std + //base + //crypto only).
+    "//third_party/blink/renderer/core/molt_fingerprinting:farbling",
   ]
 }

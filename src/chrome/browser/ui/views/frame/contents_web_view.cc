@@ -6,6 +6,7 @@
 
 #include "base/debug/dump_without_crashing.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.h"  // MoltBrowser
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/status_bubble_views.h"
@@ -142,6 +143,23 @@ void ContentsWebView::OnLetterboxingChanged() {
   }
 }
 
+// MoltBrowser: MoltNet windows letterbox the page, which views::WebView lays
+// out in GetContentsBounds().
+gfx::Insets ContentsWebView::GetInsets() const {
+  return views::WebView::GetInsets() +
+         molt_ai::fingerprinting::LetterboxInsets(*this);
+}
+
+// MoltBrowser: the letterbox margins turn dark while the tab is fullscreen.
+void ContentsWebView::DidToggleFullscreenModeForTab(bool entered_fullscreen,
+                                                    bool will_cause_resize) {
+  views::WebView::DidToggleFullscreenModeForTab(entered_fullscreen,
+                                                will_cause_resize);
+  if (GetWidget()) {
+    UpdateBackgroundColor();
+  }
+}
+
 void ContentsWebView::SetWebContents(content::WebContents* web_contents) {
   views::WebView::SetWebContents(web_contents);
   if (web_contents == nullptr) {
@@ -200,8 +218,11 @@ void ContentsWebView::UpdateBackgroundColor() {
   }
 
   auto* background_layer = layer()->AsSolidColor();
-  background_layer->SetColor(
-      SkColor4f::FromColor(background_visible_ ? color : SK_ColorTRANSPARENT));
+  // MoltBrowser: in MoltNet windows the layer shows as the letterbox margins.
+  const SkColor layer_color =
+      molt_ai::fingerprinting::LetterboxMarginColor(*this).value_or(color);
+  background_layer->SetColor(SkColor4f::FromColor(
+      background_visible_ ? layer_color : SK_ColorTRANSPARENT));
 
   if (web_contents()) {
     content::RenderWidgetHostView* rwhv =
