@@ -269,6 +269,10 @@ video pipelines, PBO readback).
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
 | Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
 | Permission and content-setting state (`navigator.permissions.query`, embargo, blocked JavaScript/images/..., Shields off), third-party cookies, Privacy Sandbox APIs | the profile's | **defaults + this session's changes** only, nothing from the regular profile | same |
+| Installed extensions: web-accessible resources, page-to-extension messaging (`chrome.runtime`), content-script changes, blocked or rewritten requests | the user's (in Incognito: those allowed there) | **none**; only the built-in PDF viewer ([details](MOLTNET_COMPLIANCE.md#2-how-it-is-built)) | `extension_util.cc`: `IsIncognitoEnabled`, `IsExtensionVisibleToContext`; `web_request_api.cc` |
+| Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
+| `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
+| Third-party cookies, Shared Storage | the user's settings | **blocked**, **off** (as in Incognito) | `cookie_settings_factory.cc`, `privacy_sandbox_settings_delegate.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
 | `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
@@ -1549,9 +1553,7 @@ Honest list; anything not in the table above is not covered.
   forced-colors and contrast settings, MoltShield's global switch and
   filter lists, and `prefers-color-scheme`, which is dark for everyone
   only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
-  otherwise follows the regular profile's theme); settings an extension
-  controls (`chrome.fontSettings`, `chrome.privacy`) rank above MoltNet's
-  defaults.
+  otherwise follows the regular profile's theme).
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 

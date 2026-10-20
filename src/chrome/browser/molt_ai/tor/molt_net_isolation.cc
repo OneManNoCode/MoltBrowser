@@ -5,71 +5,135 @@
 
 #include <string>
 #include <utility>
-#include <vector>
 
-#include "base/check.h"
-#include "base/functional/bind.h"
-#include "base/values.h"
+#include "base/base64.h"
+#include "base/functional/callback.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/tor/molt_net_isolation_policy.h"
-#include "components/prefs/pref_service.h"
-#include "components/prefs/pref_store.h"
-#include "components/sync_preferences/pref_service_syncable.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "components/prefs/value_map_pref_store.h"
+#include "components/security_interstitials/content/stateful_ssl_host_state_delegate.h"
+#include "content/public/browser/browser_context.h"
+#include "extensions/buildflags/buildflags.h"
+#include "net/base/hash_value.h"
+#include "net/base/net_errors.h"
+#include "net/cert/x509_certificate.h"
 
-namespace molt_ai::tor {
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+#endif
+
+namespace molt_ai {
+namespace tor {
 
 namespace {
 
-void CollectPinnedPref(std::vector<std::string>* names,
-                       const std::string& name,
-                       const base::Value& /*value*/) {
-  if (IsMoltNetPinnedPref(name)) {
-    names->push_back(name);
+// StatefulSSLHostStateDelegate keeps certificate-error exceptions for the
+// default storage partition in the profile's HostContentSettingsMap
+// (ContentSettingsType::SSL_CERT_DECISIONS, INHERIT_IN_INCOGNITO), so an
+// off-the-record profile honours every "Proceed (unsafe)" the user clicked
+// in the regular profile. For MoltNet that would skip the interstitial for
+// a certificate the user accepted outside Tor, and lets anyone who once got
+// the user past a warning for their certificate recognise the same user in
+// every MoltNet session. This one keeps MoltNet's own exceptions in memory
+// and never reads the map for them.
+class MoltNetSSLHostStateDelegate : public StatefulSSLHostStateDelegate {
+ public:
+  using StatefulSSLHostStateDelegate::StatefulSSLHostStateDelegate;
+
+  MoltNetSSLHostStateDelegate(const MoltNetSSLHostStateDelegate&) = delete;
+  MoltNetSSLHostStateDelegate& operator=(const MoltNetSSLHostStateDelegate&) =
+      delete;
+  ~MoltNetSSLHostStateDelegate() override = default;
+
+  // content::SSLHostStateDelegate:
+  void AllowCert(const std::string& host,
+                 const net::X509Certificate& cert,
+                 net::Error error,
+                 content::StoragePartition* storage_partition) override {
+    cert_decisions_.Allow(host, DecisionKey(cert, error));
   }
-}
+
+  CertJudgment QueryPolicy(
+      const std::string& host,
+      const net::X509Certificate& cert,
+      net::Error error,
+      content::StoragePartition* storage_partition) override {
+    return cert_decisions_.IsAllowed(host, DecisionKey(cert, error)) ? ALLOWED
+                                                                     : DENIED;
+  }
+
+  bool HasAllowException(
+      const std::string& host,
+      content::StoragePartition* storage_partition) override {
+    return cert_decisions_.HasAnyFor(host) ||
+           HasHttpAllowException(host, storage_partition);
+  }
+
+  void RevokeUserAllowExceptions(const std::string& host) override {
+    cert_decisions_.Revoke(host);
+    StatefulSSLHostStateDelegate::RevokeUserAllowExceptions(host);
+  }
+
+  void Clear(
+      base::RepeatingCallback<bool(const std::string&)> host_filter) override {
+    if (host_filter.is_null()) {
+      cert_decisions_.Clear();
+    } else {
+      cert_decisions_.RemoveIf(
+          [&host_filter](const std::string& host) {
+            return host_filter.Run(host);
+          });
+    }
+    StatefulSSLHostStateDelegate::Clear(std::move(host_filter));
+  }
+
+ private:
+  // The same certificate + error identity StatefulSSLHostStateDelegate uses.
+  static std::string DecisionKey(const net::X509Certificate& cert,
+                                 net::Error error) {
+    return base::NumberToString(error) +
+           base::Base64Encode(cert.CalculateChainFingerprint256());
+  }
+
+  CertDecisionMemory cert_decisions_;
+};
 
 }  // namespace
 
-std::unique_ptr<sync_preferences::PrefServiceSyncable> CreateMoltNetPrefService(
-    sync_preferences::PrefServiceSyncable* regular_prefs,
-    scoped_refptr<PrefStore> incognito_extension_pref_store) {
-  CHECK(regular_prefs);
-  // What CreateAutomationPrefService() does for DevTools browser contexts:
-  // the Incognito overlay, but with no persistent prefs, so nothing MoltNet
-  // writes reaches the regular profile.
-  std::unique_ptr<sync_preferences::PrefServiceSyncable> prefs =
-      regular_prefs->CreateIncognitoPrefService(
-          std::move(incognito_extension_pref_store),
-          /*persistent_pref_names=*/{});
-  PinMoltNetPrefsToDefaults(prefs.get());
-  return prefs;
+bool IsMoltNetContext(content::BrowserContext* context) {
+  return context && IsMoltNetProfile(Profile::FromBrowserContext(context));
 }
 
-size_t PinMoltNetPrefsToDefaults(PrefService* prefs) {
-  if (!prefs) {
-    return 0;
+bool IsExtensionKeptOutOf(const extensions::Extension* extension,
+                          content::BrowserContext* context) {
+  if (!IsMoltNetContext(context)) {
+    return false;
   }
-  // Every registered pref, by name (iterates the registry, not the stores).
-  // Collected first: writing while iterating is fine for the registry, but
-  // this way the writes don't depend on that.
-  std::vector<std::string> names;
-  prefs->IteratePreferenceValues(
-      base::BindRepeating(&CollectPinnedPref, base::Unretained(&names)));
-  size_t pinned = 0;
-  for (const std::string& name : names) {
-    // The registered default, including MoltBrowser's overrides of it
-    // (molt_privacy_prefs.cc): the forked registry shares the regular
-    // profile's defaults.
-    const base::Value* default_value = prefs->GetDefaultPrefValue(name);
-    if (!default_value) {
-      continue;
-    }
-    // An explicit value in MoltNet's own in-memory store, even though it
-    // equals the default: that is what stops the overlay from reading the
-    // regular profile's value. PrefService::Set() stores it as is.
-    prefs->Set(name, *default_value);
-    ++pinned;
-  }
-  return pinned;
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+  const bool is_component =
+      extension &&
+      extensions::Manifest::IsComponentLocation(extension->location());
+#else
+  const bool is_component = false;
+#endif
+  return IsKeptOutOfMoltNet(
+      ClassifyExtension(/*known=*/extension != nullptr, is_component));
 }
 
-}  // namespace molt_ai::tor
+scoped_refptr<PrefStore> CreateMoltNetExtensionPrefStore() {
+  return base::MakeRefCounted<ValueMapPrefStore>();
+}
+
+std::unique_ptr<KeyedService> CreateMoltNetSSLHostStateDelegate(
+    Profile* profile,
+    HostContentSettingsMap* host_content_settings_map) {
+  return std::make_unique<MoltNetSSLHostStateDelegate>(
+      profile, host_content_settings_map);
+}
+
+}  // namespace tor
+}  // namespace molt_ai

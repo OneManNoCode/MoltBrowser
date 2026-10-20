@@ -1,7 +1,7 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 
-#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"
+#include "chrome/browser/molt_ai/tor/molt_net_pref_isolation.h"
 
 #include <memory>
 #include <string>
@@ -12,7 +12,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
-#include "chrome/browser/molt_ai/tor/molt_net_isolation_policy.h"
+#include "chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h"
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/browser/content_settings_registry.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
@@ -34,7 +34,7 @@
 namespace molt_ai::tor {
 namespace {
 
-// The literals in molt_net_isolation_policy.h are Chromium's pref names;
+// The literals in molt_net_pref_isolation_policy.h are Chromium's pref names;
 // a rename at a rebase must not silently unpin a pref.
 TEST(MoltNetIsolationTest, PinnedNamesMatchChromiumsConstants) {
   for (const char* name : {

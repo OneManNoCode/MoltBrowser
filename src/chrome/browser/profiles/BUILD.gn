@@ -106,7 +106,7 @@ source_set("misc") {
     "//chrome/browser/lifetime",
 
     # MoltBrowser: MoltNet's pref service (off_the_record_profile_impl.cc).
-    "//chrome/browser/molt_ai/tor:isolation",
+    "//chrome/browser/molt_ai/tor:pref_isolation",
     "//chrome/browser/net",
     "//chrome/browser/origin_trials",
     "//chrome/browser/password_manager/factories",

@@ -37,6 +37,7 @@
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_pref_isolation.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
@@ -178,11 +179,13 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(
                                     CreateExtensionPrefStore(profile_, true));
   } else if (molt_ai::tor::IsMoltNetOtrProfileId(otr_profile_id)) {
     // MoltBrowser: MoltNet writes nothing into the regular profile's prefs,
-    // and its pages see MoltBrowser's defaults instead of the user's
-    // settings, site permissions and exceptions (molt_net_isolation.h).
+    // its pages see MoltBrowser's defaults instead of the user's settings,
+    // site permissions and exceptions (molt_net_pref_isolation.h), and no
+    // extension-controlled setting (proxy, privacy, fonts, ...) applies
+    // (molt_net_isolation.h).
     prefs_ = molt_ai::tor::CreateMoltNetPrefService(
         PrefServiceSyncableFromProfile(profile_),
-        CreateExtensionPrefStore(profile_, true));
+        molt_ai::tor::CreateMoltNetExtensionPrefStore());
   } else {
     prefs_ = CreateIncognitoPrefServiceSyncable(
         PrefServiceSyncableFromProfile(profile_),

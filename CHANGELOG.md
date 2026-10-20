@@ -204,6 +204,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   their noise 2-4x faster: a 720p camera-like frame takes 5 ms of CPU
   instead of 15 ms on a 2.1 GHz test VM. The noise itself is exactly the
   same, so no site sees different values.
+- **Your extensions and regular browsing stay out of MoltNet.** Extensions
+  you installed no longer run in MoltNet windows or see their tabs,
+  requests and events, even when allowed in Incognito (the built-in PDF
+  viewer still works), and settings they control (proxy, privacy, fonts)
+  don't apply there. MoltNet also stops showing sites what your regular
+  browsing taught the browser: sites you watch a lot don't autoplay with
+  sound, `navigator.storage.persist()` no longer reveals bookmarked or
+  favourite sites, lookalike-domain warnings ignore the sites you use, and
+  certificate warnings you clicked through in a regular window come back.
+  Third-party cookies and Shared Storage are always off in MoltNet, and it
+  never sends your Windows or Kerberos sign-in.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
