@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..b74efe61a63de2d4045180a6942509c158da833b 100644
+index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..64929ab50353ba999bcf44df929ad7b798a34894 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
-@@ -57,6 +57,7 @@ import("//third_party/blink/renderer/core/mathml/build.gni")
+@@ -57,6 +57,8 @@ import("//third_party/blink/renderer/core/mathml/build.gni")
  import("//third_party/blink/renderer/core/messaging/build.gni")
  import("//third_party/blink/renderer/core/mobile_metrics/build.gni")
  import("//third_party/blink/renderer/core/mojo/build.gni")
 +import("//third_party/blink/renderer/core/molt_fingerprinting/build.gni")
++import("//third_party/blink/renderer/core/molt_net/build.gni")
  import("//third_party/blink/renderer/core/navigation_api/build.gni")
  import("//third_party/blink/renderer/core/offscreencanvas/build.gni")
  import("//third_party/blink/renderer/core/origin_trials/build.gni")
-@@ -328,6 +329,12 @@ component("core") {
+@@ -328,6 +330,16 @@ component("core") {
    sources +=
        rebase_path(blink_core_sources_mobile_metrics, "", "mobile_metrics")
    sources += rebase_path(blink_core_sources_mojo, "", "mojo")
@@ -26,10 +27,14 @@ index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..b74efe61a63de2d4045180a6942509c1
 +  sources += rebase_path(blink_core_sources_molt_fingerprinting,
 +                         "",
 +                         "molt_fingerprinting")
++
++  # MoltBrowser: MoltNet renderer state (no RTCPeerConnection), independent
++  # of fingerprinting protection.
++  sources += rebase_path(blink_core_sources_molt_net, "", "molt_net")
    sources +=
        rebase_path(blink_core_sources_navigation_api, "", "navigation_api")
    sources +=
-@@ -436,6 +443,9 @@ component("core") {
+@@ -436,6 +448,9 @@ component("core") {
      "//third_party/blink/public/strings:generate_permission_element_strings_mono_grd",
      "//third_party/blink/public/strings:permission_element_generated_strings",
      "//third_party/blink/public/strings:permission_element_strings_grit",
@@ -39,17 +44,18 @@ index 8969a71c827f03bfa1b472b2ec30f8b5c6726c1f..b74efe61a63de2d4045180a6942509c1
      "//third_party/rust/xml/v1:lib",
      "//tools/v8_context_snapshot:buildflags",
      "//ui/base/cursor/mojom:cursor_type_blink",
-@@ -1531,6 +1541,9 @@ source_set("unit_tests") {
+@@ -1531,6 +1546,10 @@ source_set("unit_tests") {
    sources += rebase_path(blink_core_tests_mathml, "", "mathml")
    sources += rebase_path(blink_core_tests_messaging, "", "messaging")
    sources += rebase_path(blink_core_tests_mobile_metrics, "", "mobile_metrics")
 +  sources += rebase_path(blink_core_tests_molt_fingerprinting,
 +                         "",
 +                         "molt_fingerprinting")
++  sources += rebase_path(blink_core_tests_molt_net, "", "molt_net")
    sources += rebase_path(blink_core_tests_navigation_api, "", "navigation_api")
    sources += rebase_path(blink_core_tests_origin_trials, "", "origin_trials")
    sources += rebase_path(blink_core_tests_page, "", "page")
-@@ -1606,6 +1619,9 @@ source_set("unit_tests") {
+@@ -1606,6 +1625,9 @@ source_set("unit_tests") {
      "//third_party/blink/renderer/core",
      "//third_party/blink/renderer/core:testing",
      "//third_party/blink/renderer/core:unit_test_support",

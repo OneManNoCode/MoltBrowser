@@ -1,0 +1,12 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+# MoltNet's per-process renderer state (blink::WebMoltNet), compiled into the
+# core component like every other core subdirectory. Read by
+# modules/peerconnection/rtc_peer_connection.cc.
+blink_core_sources_molt_net = [
+  "molt_net_renderer.cc",
+  "molt_net_renderer.h",
+]
+
+blink_core_tests_molt_net = [ "molt_net_renderer_test.cc" ]

@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53c31a6421 100644
+index bddbd4bf5230a0988b73ecda2d270437852bc9a7..92651f64a7aea4c119b2ab769eec03230e9eaef6 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -116,6 +116,16 @@
+@@ -116,6 +116,17 @@
  #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
  #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
  #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
@@ -19,13 +19,14 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
 +#include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 +#include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 +#include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
++#include "chrome/browser/molt_ai/tor/molt_net_webrtc.h"
 +#include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
 +#include "chrome/browser/molt_ai/tor/onion_request_blocker.h"
 +#include "chrome/common/molt_ai/shield/molt_shield_features.h"
  #include "chrome/browser/metrics/chrome_feature_list_creator.h"
  #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
  #include "chrome/browser/net/chrome_network_delegate.h"
-@@ -865,11 +875,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
+@@ -865,11 +876,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
  }
  
  // Handles the rewriting of the new tab page URL based on group policy.
@@ -48,7 +49,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
      return false;
    }
  
-@@ -880,18 +899,98 @@ bool HandleNewTabPageLocationOverride(
+@@ -880,18 +900,98 @@ bool HandleNewTabPageLocationOverride(
      return false;
    }
  
@@ -75,12 +76,8 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
 +bool HandleMoltSchemeRewrite(GURL* url,
 +                              content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(chrome::kMoltScheme)) {
-     return false;
-   }
--  url::Component scheme;
--  if (!url::ExtractScheme(ntp_location, &scheme)) {
--    ntp_location = base::StrCat(
--        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
++    return false;
++  }
 +
 +  auto host = url->host();
 +  std::string new_host;
@@ -105,9 +102,8 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
 +    new_host = chrome::kChromeUISettingsHost;
 +  } else {
 +    return false;
-   }
- 
--  *url = GURL(ntp_location);
++  }
++
 +  GURL::Replacements replacements;
 +  replacements.SetSchemeStr(content::kChromeUIScheme);
 +  replacements.SetHostStr(new_host);
@@ -121,8 +117,12 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
 +bool HandleMoltSchemeReverseRewrite(GURL* url,
 +                                     content::BrowserContext* browser_context) {
 +  if (!url->SchemeIs(content::kChromeUIScheme)) {
-+    return false;
-+  }
+     return false;
+   }
+-  url::Component scheme;
+-  if (!url::ExtractScheme(ntp_location, &scheme)) {
+-    ntp_location = base::StrCat(
+-        {url::kHttpsScheme, url::kStandardSchemeSeparator, ntp_location});
 +
 +  auto host = url->host();
 +  std::string new_host;
@@ -146,8 +146,9 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
 +    new_host = chrome::kMoltSettingsHost;
 +  } else {
 +    return false;
-+  }
-+
+   }
+ 
+-  *url = GURL(ntp_location);
 +  GURL::Replacements replacements;
 +  replacements.SetSchemeStr(chrome::kMoltScheme);
 +  replacements.SetHostStr(new_host);
@@ -155,7 +156,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
    return true;
  }
  
-@@ -1913,6 +2012,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+@@ -1913,6 +2013,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
      service->InitializeRenderer(host);
    }
  
@@ -166,7 +167,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
    for (auto& part : extra_parts_) {
      part->RenderProcessWillLaunch(host);
    }
-@@ -3212,6 +3315,18 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -3212,6 +3316,22 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
      };
  
      command_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
@@ -182,10 +183,14 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
 +    // MoltBrowser: fingerprinting protection mode (the seed goes over mojo).
 +    molt_ai::fingerprinting::AppendRendererSwitches(
 +        content::RenderProcessHost::FromID(child_process_id), command_line);
++    // MoltBrowser: --molt-net-renderer for MoltNet's renderers, whose Blink
++    // then refuses RTCPeerConnection (molt_ai/tor/molt_net_webrtc.h).
++    molt_ai::tor::AppendMoltNetRendererSwitches(
++        content::RenderProcessHost::FromID(child_process_id), command_line);
    } else if (process_type == switches::kUtilityProcess) {
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
      static const char* const kSwitchNames[] = {
-@@ -5100,6 +5215,12 @@ bool ChromeContentBrowserClient::
+@@ -5100,6 +5220,12 @@ bool ChromeContentBrowserClient::
  
  void ChromeContentBrowserClient::BrowserURLHandlerCreated(
      BrowserURLHandler* handler) {
@@ -198,7 +203,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
    // The group policy NTP URL handler must be registered before the other NTP
    // URL handlers below. Also register it before the "parts" handlers, so the
    // NTP policy takes precedence over extensions that override the NTP.
-@@ -5610,7 +5731,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
+@@ -5610,7 +5736,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
  
  void ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationThrottleRegistry& registry) {
@@ -215,7 +220,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
  }
  
  std::vector<std::unique_ptr<content::CommitDeferringCondition>>
-@@ -6129,6 +6259,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
+@@ -6129,6 +6264,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(google_throttle));
    }
  
@@ -229,7 +234,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
    return result;
  }
  
-@@ -6722,6 +6859,19 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6722,6 +6864,19 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
  #endif  // BUILDFLAG (ENABLE_EXTENSIONS_CORE)
  #endif  // BUILDFLAG(ENABLE_GUEST_VIEW)
  
@@ -249,7 +254,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
    // WARNING: This must be the last interceptor in the chain as the proxying
    // URLLoaderFactory installed by this needs to be the one actually sending
    // packets over the network (to effectively target `bound_network`).
-@@ -6780,6 +6930,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
+@@ -6780,6 +6935,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
      }
    }
  
@@ -264,7 +269,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
    return interceptors;
  }
  
-@@ -6798,8 +6956,24 @@ ChromeContentBrowserClient::
+@@ -6798,8 +6961,24 @@ ChromeContentBrowserClient::
    return prefetch_handler;
  }
  
@@ -289,7 +294,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    if (!frame) {
      return false;
-@@ -6845,6 +7019,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
+@@ -6845,6 +7024,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
      mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
          handshake_client,
      content::ContentBrowserClient::WebSocketOptions options) {
@@ -325,7 +330,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..1e73ab9434c078f67293a0a6bdc7bc53
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
    if (!frame) {
-@@ -9547,9 +9750,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9547,9 +9755,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {

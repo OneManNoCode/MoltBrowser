@@ -215,6 +215,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   certificate warnings you clicked through in a regular window come back.
   Third-party cookies and Shared Storage are always off in MoltNet, and it
   never sends your Windows or Kerberos sign-in.
+- **No WebRTC in MoltNet windows**, as in Tor Browser. A page could give
+  WebRTC a relay server or a peer by name and make your own DNS resolver
+  (often your ISP's) look that name up outside Tor, which could tie a
+  MoltNet window to your network. Now `RTCPeerConnection` reports WebRTC
+  as unavailable there, and the browser gives MoltNet pages no WebRTC name
+  lookups, sockets or local-network (mDNS) announcements, even if a page's
+  process ignores that. Video calls don't work in MoltNet windows; regular
+  and incognito windows are unchanged.
+- **MoltNet pages can't reach your machine or local network.** Requests
+  to `localhost`, loopback and link-local addresses used to skip Tor, so a
+  page could probe the services running on your computer or devices on
+  your network. They now go to Tor, which refuses them, as in Tor Browser
+  (use a regular window for a local development server).
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

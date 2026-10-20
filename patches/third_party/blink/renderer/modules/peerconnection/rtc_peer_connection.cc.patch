@@ -1,0 +1,36 @@
+MoltBrowser patch for third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+index fe62cba2b18a2d886801ea744a14c9211110627c..97c521517f342ffa6fce760c38cbaa7dca55780a 100644
+--- a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
++++ b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+@@ -92,6 +92,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_client.h"
++#include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/crypto/crypto_result_impl.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_constraints_impl.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
+@@ -649,6 +650,17 @@ RTCPeerConnection* RTCPeerConnection::Create(
+     return nullptr;
+   }
+ 
++  // MoltBrowser: no WebRTC in MoltNet (Tor) windows, as in Tor Browser; the
++  // browser refuses their P2P sockets too (chrome/browser/molt_ai/tor/
++  // molt_net_webrtc.h). Chromium's own "WebRTC is disabled" error, thrown
++  // before the configuration and its ICE server names are read.
++  if (MoltNetWebRtcPeerConnectionsDisabled()) {
++    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
++                                      "No PeerConnection handler can be "
++                                      "created, perhaps WebRTC is disabled?");
++    return nullptr;
++  }
++
+   // Count number of PeerConnections that could potentially be impacted by CSP
+   auto* content_security_policy = context->GetContentSecurityPolicy();
+   if (content_security_policy &&

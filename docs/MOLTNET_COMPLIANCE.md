@@ -102,6 +102,12 @@ claims below as the design intent, not as measured results.
     window are shown again. Third-party cookies and Shared Storage are
     always off in MoltNet windows, and MoltNet never sends your Windows or
     Kerberos sign-in to a site.
+12. **No WebRTC.** As in Tor Browser, pages in a MoltNet window can't open
+    WebRTC connections: `RTCPeerConnection` reports that WebRTC is
+    unavailable, and the browser gives those pages none of WebRTC's network
+    access (no name lookups, no sockets, nothing announced on your local
+    network). Video calls and other WebRTC sites don't work there; use a
+    regular window for them.
 
 ## 2. How it is built
 
@@ -147,22 +153,66 @@ MoltNet windows are never restored after a restart.
 | Setting | Why |
 |---|---|
 | `socks5://` proxy | hostnames are resolved by Tor, not your DNS resolver |
-| WebRTC `disable_non_proxied_udp` | WebRTC gathers no local or public address and opens no direct connection: no UDP or STUN, only TCP to relay (TURN) servers through Tor; set by MoltNet whatever your regular windows use |
+| WebRTC off | `RTCPeerConnection` throws, and the browser gives MoltNet pages no WebRTC sockets, name lookups or local-network (mDNS) announcements; the WebRTC policy `disable_non_proxied_udp` (no UDP, STUN or local addresses) stays set underneath, whatever your regular windows use |
 | Network prediction off | no DNS prefetch / preconnect outside the proxy |
 | HTTPS-Only mode on | warns before any plain-HTTP page, which the exit relay could read or modify (not for `.onion`, which never leaves Tor) |
 | Connections partitioned by top-level site | no socket reuse across sites; enables per-site circuits |
+| No proxy bypass (`<-loopback>`) | `localhost`, loopback and link-local addresses go to Tor too, which refuses them: pages can't probe local services |
 
-**WebRTC.** Tor Browser turns WebRTC off; MoltNet keeps it but restricts
-it. With `disable_non_proxied_udp` (Chromium 152, read in the code, not
-yet tested in a built browser), a page's `RTCPeerConnection` enumerates no
-network interfaces and gathers no host or STUN candidates; UDP and UDP
-relays are off and the browser doesn't listen for TCP. What is left is TCP
-to the page's relay (TURN) servers, which the network service opens
-through the profile's proxy, so through Tor, and those relays see a Tor
-exit. Your real IP address therefore never reaches a candidate or a
-connection. The setting is MoltNet's own: it doesn't follow your regular
-windows' WebRTC setting, and if a policy overrides it, MoltNet
-refuses to open (extension-controlled settings don't apply in MoltNet). The relays' host names are another matter (§5).
+**WebRTC.** MoltNet turns WebRTC peer connections off, as Tor Browser
+does (Chromium 152, read in the code and checked against stand-ins of its
+interfaces, not yet tested in a built browser). Keeping WebRTC under
+`disable_non_proxied_udp` was not enough. That policy leaves WebRTC only
+TCP connections to the page's relay (TURN) servers, made through Tor, but
+the *names* a page hands WebRTC (a relay or STUN server given by name, or
+a peer's address added with `addIceCandidate()`) were looked up by the
+network service's WebRTC socket manager with MoltBrowser's own DNS
+resolver, outside Tor (`P2PSocketManager::GetHostAddress`; `.local` names
+by multicast DNS on your local network). A page could make your DNS
+resolver look up a name it chose, such as `<unique>.attacker.example`, and
+whoever runs that name's DNS servers would see your resolver, often your
+ISP's. The policy was also only applied by the page's own renderer
+process; the socket manager gives any renderer that asks your network
+interfaces and plain UDP sockets. Now, decided by the window being a
+MoltNet window and nothing else (not the fingerprinting switch):
+
+- *In the browser*, a MoltNet page never reaches the network service's
+  WebRTC socket manager or its mDNS responder. It gets a stand-in that
+  answers every name lookup with "not found", opens no socket and lists no
+  network interface, and its mDNS connection is closed. This holds
+  whatever the page's renderer process does.
+- *In the page*, MoltNet's renderer processes are told so when they start,
+  and `new RTCPeerConnection()` throws `NotSupportedError` ("No
+  PeerConnection handler can be created, perhaps WebRTC is disabled?",
+  Chromium's usual message) before it reads the configuration, so a page
+  fails at once instead of waiting.
+
+`disable_non_proxied_udp` stays set underneath. It is MoltNet's own
+setting: it doesn't follow your regular windows' WebRTC setting, and if a
+policy overrides it, MoltNet refuses to open (extension-controlled
+settings don't apply in MoltNet). Regular and Incognito windows keep
+WebRTC. The code is in `chrome/browser/molt_ai/tor/molt_net_webrtc.h`
+(hooked into Chromium's frame interface binders and renderer command
+lines) and Blink's `RTCPeerConnection::Create()`.
+
+**Other ways a page could make the browser look up a name.** Checked in
+the Chromium 152 code for MoltNet windows; none of them reaches your DNS
+resolver. `<link rel=dns-prefetch>` and `<link rel=preconnect>` go to the
+browser's preconnect service, which off-the-record profiles don't have,
+so nothing happens (and with network prediction off, speculative prefetch
+and its origin check don't run either). Early-hints preconnects,
+WebSockets, `fetch()`, `navigator.sendBeacon()`, `<a ping>`, Reporting
+API and Network Error Logging reports all go through the proxy, so the
+name goes to Tor inside the SOCKS5 request. WebTransport refuses to
+connect through a proxy before it looks anything up. Local Network Access
+checks use the address of the connection itself (for a proxied one:
+unknown) and look nothing up. The Network Information API reads values the
+browser already has. Direct Sockets is only for isolated web apps and
+Chrome Apps, which MoltNet windows can't host. Chromium's built-in proxy
+exceptions (`localhost`, loopback and link-local addresses) are switched off
+for MoltNet (`<-loopback>`): those requests go to Tor too, which refuses
+them, so a MoltNet page can't reach or probe services on your machine or
+your local network.
 
 **Nothing from the regular profile (extensions and services).** The MoltNet
 profile is an off-the-record profile of your regular one, and Chromium
@@ -298,6 +348,9 @@ gpg-verified steps documented in that script.
 | Which settings MoltNet takes from MoltBrowser's defaults (§1.10): the list, prefix matching, look-alike names | 6 unit tests (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
 | MoltNet's settings store: the regular profile's values and later changes don't show, MoltNet's own values and policy still apply, nothing is written back (an Incognito-style store leaks both ways) | Unit tests (`molt_ai_unittests`), run against stand-ins of Chromium's settings classes; the hook that picks MoltNet's store, checked the same way | Pass (standalone stand-ins); the real-class tests need a Chromium build |
 | Site settings with Chromium's real content-settings code: blocked JavaScript, a blocked permission, Shields off and a permission embargo in the regular profile, none of them in MoltNet; changes in a MoltNet window stay there | Unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
+| No WebRTC in MoltNet (§1.12): the decision (MoltNet profiles only, whatever fingerprinting protection says), the renderer switch, the stand-in socket manager (no name resolved, including relay names, `.local` names and IP literals; no socket for any socket type; an empty interface list; its connection kept open), the closed mDNS responder, other profiles keeping Chromium's own, and the four hooks in Chromium files | 6 unit tests (`molt_ai_unittests`); standalone harness with clang `-fno-exceptions` and g++ ASan/UBSan, with and without WebRTC support compiled in: the same logic, the Chromium glue and the hooks (taken verbatim from the changed files) against stand-ins with the 152 signatures, 13 mutants all caught | Pass (built standalone; not yet built in the Chromium tree) |
+| The same over real mojo connections, and Blink's switch | Unit tests (`molt_ai_unittests`, `blink_unittests`) | Written; need a Chromium build |
+| `RTCPeerConnection` throws in a MoltNet window and no relay or peer name is looked up (§4 step 18) | Needs a Chromium build | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | Independent third-party audit | — | **Not done** |
 
@@ -409,6 +462,40 @@ Do all of this in a MoltNet window unless the step says otherwise.
     MoltNet must warn again. With third-party cookies allowed in regular
     settings, a cross-site iframe in MoltNet must not get its cookies, and
     `sharedStorage.set()` must reject.
+18. **No WebRTC, and no name lookups for it.** Pick two names nobody has
+    looked up before (e.g. `wrtc-<random>.example.com`, `<name1>` and
+    `<name2>` below). Watch DNS: a logging resolver (e.g. `dnsmasq
+    --log-queries`) as your system resolver, or
+    `sudo tcpdump -n -l 'port 53 or port 5353'`. In a MoltNet window, open
+    a test page with this `<script type="module">`:
+
+    ```js
+    try {
+      const pc = new RTCPeerConnection({iceServers: [{
+          urls: "turn:<name1>:3478?transport=tcp",
+          username: "u", credential: "c"}]});
+      pc.createDataChannel("x");
+      await pc.setLocalDescription(await pc.createOffer());  // TURN lookup
+      const peer = new RTCPeerConnection();
+      await peer.setRemoteDescription(pc.localDescription);
+      await peer.setLocalDescription(await peer.createAnswer());
+      for (const host of ["<name2>", crypto.randomUUID() + ".local"]) {
+        await peer.addIceCandidate({sdpMid: "0",
+            candidate: `candidate:1 1 udp 2122260223 ${host} 9 typ host`});
+      }
+      console.log("WebRTC available");
+    } catch (e) { console.log(e.name, e.message); }
+    ```
+
+    The console must show `NotSupportedError No PeerConnection handler can
+    be created, perhaps WebRTC is disabled?`, and neither name, nor any
+    `.local` name, may appear in the resolver's log or in tcpdump; tcpdump
+    must show no UDP from the browser other than to the Tor guard (or
+    bridge). browserleaks.com/webrtc must show no IP address at all (it
+    can't create a connection).
+    Run the same page in a regular window: it prints `WebRTC available`
+    and both names are looked up by your resolver, as in any Chromium
+    (that is the leak MoltNet closes).
 
 ## 5. What MoltNet does *not* do
 
@@ -446,8 +533,9 @@ Do all of this in a MoltNet window unless the step says otherwise.
      Incognito profile only; third-party cookies, Shared Storage and
      ambient authentication are fixed for MoltNet, the rest haven't been
      reviewed one by one yet.
-   - Requests to `localhost` / loopback addresses bypass the proxy (they stay on
-     your machine, but a page can probe local services).
+   - Local servers don't open in MoltNet windows: `localhost`, loopback
+     and link-local addresses go to Tor, which refuses them (see §2). Use
+     a regular window for a local development server.
    - If Tor stops, another local program could take over its old port; MoltNet
      windows would then talk to that program. Close MoltNet windows when you
      turn MoltNet off.
@@ -468,12 +556,6 @@ Do all of this in a MoltNet window unless the step says otherwise.
    - Bridges have been validated as configuration, and Tor has been seen
      starting the distribution's transports; connecting to the Tor network
      through snowflake/obfs4 has not been tested yet.
-   - WebRTC host names (from reading the code; not yet tested): when a
-     page gives WebRTC a relay (TURN) server or a peer by name, the name is
-     looked up by MoltBrowser's own DNS resolver, not through Tor. That
-     can't reveal your IP address to the page, but your DNS resolver (and
-     whoever runs the name's DNS servers) sees a lookup the page chose,
-     which can link the MoltNet window to your network.
    - Settings that apply to the whole browser rather than to your regular
      profile still reach MoltNet windows (§1.10 covers the profile's):
      page colours and your system's high-contrast and accessibility

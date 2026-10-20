@@ -12,8 +12,12 @@
 #                              settings pinned to MoltBrowser's defaults
 #   molt_net_isolation*      — keeps the regular profile's extensions and
 #                              services out of MoltNet windows
+#   molt_net_webrtc*         — no WebRTC networking in MoltNet windows (no
+#                              P2P sockets, host-name lookups or mDNS for
+#                              their frames; RTCPeerConnection throws)
 
 import("//extensions/buildflags/buildflags.gni")
+import("//services/network/public/cpp/features.gni")
 
 # Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
 # bridge-line validation, which pluggable transports may run, and .onion /
@@ -158,6 +162,51 @@ source_set("isolation") {
   }
 }
 
+# The frame binders that keep WebRTC networking away from MoltNet frames
+# (molt_net_webrtc_binders.h): a P2PSocketManager that resolves no name,
+# opens no socket and lists no interface, and a closed mDNS responder. No
+# Profile or content implementation, so molt_ai_unittests drives it over
+# real mojo pipes.
+source_set("webrtc_binders") {
+  sources = [
+    "molt_net_webrtc_binders.cc",
+    "molt_net_webrtc_binders.h",
+  ]
+  public_deps = [
+    "//chrome/common/molt_ai/tor:webrtc_policy",
+    "//mojo/public/cpp/bindings",
+    "//services/network/public/cpp:buildflags",
+    "//services/network/public/mojom",
+  ]
+  deps = [
+    "//base",
+    "//net",
+  ]
+  if (is_p2p_enabled) {
+    deps += [ "//services/network/public/cpp:cpp_p2p" ]
+  }
+}
+
+# Applies them to MoltNet frames and marks MoltNet renderer processes
+# (molt_net_webrtc.h). Called from hooks marked "MoltBrowser:" in
+# chrome_content_browser_client_receiver_bindings.cc and
+# chrome_content_browser_client.cc (//chrome/browser), which link this via
+# //chrome/browser/molt_ai; the reverse dep would be a cycle, as for :tor.
+source_set("webrtc") {
+  sources = [
+    "molt_net_webrtc.cc",
+    "molt_net_webrtc.h",
+  ]
+  public_deps = [ "//mojo/public/cpp/bindings" ]
+  deps = [
+    ":webrtc_binders",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common/molt_ai/tor:webrtc_policy",
+    "//content/public/browser",
+  ]
+}
+
 # Onion-Location (header and <meta>) and onion request-URL glue (GURL,
 # base::Value, net::HttpResponseHeaders) around onion_util, kept out of
 # :onion so molt_ai_unittests can test it.
@@ -227,8 +276,9 @@ source_set("onion") {
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
 # generation, bridge-line validation, .onion / Onion-Location, which prefs
-# MoltNet pins and which extensions it admits) and MoltNet's pref service
-# against real pref stores and a real HostContentSettingsMap. Picked up by
+# MoltNet pins and which extensions it admits), MoltNet's pref service
+# against real pref stores and a real HostContentSettingsMap, and the
+# WebRTC binders over real mojo pipes. Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
@@ -236,6 +286,7 @@ source_set("unit_tests") {
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
+    "molt_net_webrtc_binders_unittest.cc",
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",
     "pluggable_transports_unittest.cc",
@@ -248,6 +299,7 @@ source_set("unit_tests") {
     ":pref_isolation",
     ":pref_isolation_policy",
     ":protocol",
+    ":webrtc_binders",
     "//base",
     "//base/test:test_support",
 
@@ -262,8 +314,16 @@ source_set("unit_tests") {
     "//components/privacy_sandbox:privacy_sandbox_prefs",
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
     "//net",
+    "//net:test_support",
+    "//services/network/public/cpp:buildflags",
+    "//services/network/public/mojom",
     "//testing/gtest",
     "//url",
   ]
+  if (is_p2p_enabled) {
+    deps += [ "//services/network/public/cpp:cpp_p2p" ]
+  }
 }
