@@ -639,6 +639,227 @@ running WebGL report pages (e.g. webglreport.com, three.js and Babylon.js
 examples, a KTX2 sample) and a WebGPU sample (null adapter, WebGL fallback)
 on a Mac, a Windows and a Linux machine, comparing their reports.
 
+## Letterboxing (MoltNet)
+
+MoltNet windows used to report a rounded screen size while the page itself
+kept the window's true content area: `innerWidth`/`innerHeight`, the CSS
+`width`/`height` media queries, `vw`/`vh` and layout showed a size that
+depends on the window size, the toolbars (bookmarks bar, infobars), the OS,
+the DPI and so on, one of the strongest MoltNet fingerprints left. Now the
+browser rounds the page's area itself, Tor Browser style: the tab's content
+area is rounded **down** to 200 x 100 DIP steps, capped at 1400 x 900, and
+the page is centred in it with margins around. A page's size is then one of
+63 (7 widths x 9 heights), the same for everybody whose window rounds the
+same way.
+
+### What a MoltNet page sees
+
+| Value | MoltNet |
+|---|---|
+| `innerWidth`/`innerHeight`, CSS `width`/`height`/`aspect-ratio` media queries, `vw`/`vh`, layout | the letterboxed size: a multiple of 200 x 100, at most 1400 x 900 (at 100% zoom) |
+| `screen.width/height/availWidth/availHeight`, `outerWidth/outerHeight` | the same size (`screen.*` now counts the page's scrollbars, as `innerWidth` does) |
+| CSS `device-width`, `device-height`, `device-aspect-ratio` | the same size |
+| `devicePixelRatio`, the `resolution` / `-webkit-device-pixel-ratio` media queries, the density `srcset` / `<picture>` / `image-set()` candidates are picked for | **1** (see [Device pixel ratio](#device-pixel-ratio)) |
+| page zoom | starts at 100% (see [Zoom](#zoom)) |
+
+Normal and Incognito windows are unchanged (their goal is per-site
+unlinkability; a rounded window would only make users look like other
+MoltBrowser users). The kill switch turns all of this off with the rest of
+the protection.
+
+**The browser side.** The active tab's page is shown by `ContentsWebView`, a
+`views::WebView` that lays the page's native view out in its
+`GetContentsBounds()`. In MoltNet profiles `ContentsWebView::GetInsets()`
+returns the letterbox margins (`molt_letterbox_view.cc`), so the page gets
+the rounded, centred rectangle and is resized only when the rounded size
+changes (a few times while dragging a window edge, not on every pixel).
+The view's solid-colour layer, under the page, shows in the margins.
+Everything else in the content area (DevTools, overlays, dialogs, the status
+bubble) still uses the view's full bounds, so none of it moves. The geometry
+is a constexpr function (`molt_letterbox.h`); the steps and caps are Blink's
+(`farbling.h`), duplicated because browser code can't include renderer
+headers, and `molt_letterbox_unittest.cc` checks both the constants and that
+Blink's rounding of every letterboxed size is that size again.
+
+**The renderer side** (`core/molt_fingerprinting/letterbox.{h,cc}`). The
+uniform screen is now computed from the main frame's size *with* its
+scrollbars (before: without, so a page with a classic scrollbar got a screen
+one step narrower than its `innerWidth`), converted to DIPs with
+`innerWidth`'s own rounding (`AdjustForAbsoluteZoom::AdjustInt`), then
+bucketed. On a letterboxed page `screen.width` and `innerWidth` are
+therefore the same number; a page the browser couldn't letterbox (below)
+still gets a bucketed screen. `device-width`/`device-height` come from the
+same screen (hooked in `MediaValues`, so `matchMedia`, `<source media>` and
+the preload scanner agree); Blink already re-evaluates device media queries
+when the page's size changes.
+
+### Margins
+
+The margins take the **toolbar colour** (`kColorToolbar`): the surface the
+page sits on, the colour split view shows between and around its panes. It
+follows light and dark mode and the theme (and is forced opaque). In tab
+fullscreen they take Chrome's own colour around letterboxed fullscreen
+content (`kColorWebContentsBackgroundLetterboxing`, near black), like the
+bars around a film. The page never sees the margins or their colour.
+
+### Browser UI around the page
+
+* **DevTools docked**: takes its space from the content area first; the page
+  is letterboxed in what is left. Docking DevTools or dragging its splitter
+  moves the page from one bucket to another, never to an unrounded size.
+  DevTools itself isn't letterboxed. Its device emulation overrides the
+  page's size (a developer tool): the screen is then the emulated size,
+  bucketed.
+* **Side panel** (AI chat, agent, reading list, ...): sits beside the
+  content area, so opening it narrows the area and the page drops to a
+  smaller bucket.
+* **Find bar**: a separate widget floating over the content area; it doesn't
+  resize the page and may sit over a margin.
+* **Infobars and the bookmarks bar**: above the content area. They change
+  the page's height only when they push the area below a multiple of 100;
+  usually the vertical margin absorbs them.
+* **Tab-modal dialogs, permission prompts, the status bubble**: overlays,
+  unchanged (the status bubble sits in the content area's corner, over the
+  margin).
+* **Split view**: each pane is letterboxed on its own.
+* **Popups** (`window.open` with a size, `resizeTo`): letterboxed like any
+  window, so a requested size larger than the screen no longer shows the
+  screen's real size either.
+
+### Fullscreen
+
+Tor Browser lifts letterboxing in fullscreen (by what Mullvad Browser users,
+on the same code, report), so a page that gets fullscreen learns the
+monitor's real size. **MoltBrowser keeps the letterbox in fullscreen**,
+browser fullscreen and tab fullscreen (`requestFullscreen()`, video players)
+alike: a page only needs one click from the user to ask for fullscreen, and
+an exact monitor size (1512 x 982 is a 14-inch MacBook Pro, 1728 x 1117 the
+16-inch) is a strong identifier. The cost is on monitors larger than
+1400 x 900 DIPs: fullscreen video plays in a 1400 x 900 box with dark
+margins (about 73% of the width of a 1920-DIP screen). A page that is being
+tab-captured while fullscreen is sized to the capture by Chrome's own
+capture letterboxing; that size comes from the capturing site, not the
+screen.
+
+### Zoom
+
+Page zoom changes CSS pixels: at 125%, a 1400-DIP page is 1120 CSS pixels
+wide. **MoltNet resets zoom but doesn't lock it.**
+
+* MoltNet's profile used to copy, and keep following, the regular profile's
+  default zoom and per-site zoom levels (Chromium does that for every
+  off-the-record profile). A site zoomed in a regular window opened zoomed
+  in MoltNet, which both broke the letterbox and linked the two profiles.
+  Now MoltNet pages always start at 100% (`OffTheRecordProfileImpl::Init`
+  skips `TrackZoomLevelsFromParent` for MoltNet).
+* The user can still zoom (an accessibility need; Tor Browser doesn't lock
+  zoom either). A zoom chosen in a MoltNet window applies to that site for
+  the MoltNet session and is forgotten at New Identity. While a page is
+  zoomed its `innerWidth`/`innerHeight` show the zoom factor (the screen
+  doesn't change); `devicePixelRatio` stays 1, so it doesn't.
+* Not done: letterboxing the CSS size instead of the DIP size (so zoom would
+  stop showing), which needs the browser to re-letterbox on zoom changes.
+
+### Device pixel ratio
+
+**MoltNet pages report a device pixel ratio of 1**, Tor Browser's choice
+too (in 2024 it reverted a change to 2). The real value splits users into
+1x, 1.25x, 1.5x, 1.75x, 2x, ... groups, which differ by OS and machine
+(every Retina Mac is 2x); one value for everybody is the point of MoltNet,
+and 1 is the one that matches the uniform screen as a plain standard-density
+screen and costs nothing extra over Tor (2 would make every 1x user download
+images four times as large).
+
+* Covered: `window.devicePixelRatio`; the `resolution` and
+  `-webkit-device-pixel-ratio` media queries (`matchMedia`, `<source
+  media>`, the preload scanner); the density `srcset` and `<picture>`
+  candidates are picked for, on the main path and in the preload scanner,
+  and `image-set()`, so the images a page fetches don't tell its server the
+  real ratio either. Page zoom doesn't change it.
+* Only what pages read changes: Blink still renders at the real scale, so
+  text, borders, SVG and video stay sharp.
+* Cost on high-density screens: pages that size canvases by
+  `devicePixelRatio` draw them at 1x (blurry charts, maps and games), and
+  `srcset`/`image-set()` images are the 1x ones (softer, but smaller over
+  Tor).
+* Internal pages (`chrome://` and the like) keep the real ratio.
+* Not covered, so a script that looks for it still finds the real ratio:
+  layout snapping to device pixels (thin borders, for example, can be
+  measured), `ResizeObserver`'s `devicePixelContentBoxSize`, the DPR client
+  hints (`Sec-CH-DPR`, sent only to sites that ask with `Accept-CH`) and the
+  favicon size the browser fetches. As with the WebGL baselines, this stops
+  scripts that read the value, not ones written against MoltBrowser.
+
+### Known gaps (letterboxing)
+
+* A content area narrower than 200 DIPs or shorter than 100 DIPs is not
+  letterboxed (there is no smaller step); the screen still reports one step.
+* Cross-process iframes only know the main frame's size *without* its
+  scrollbars, so with classic (Windows, Linux) scrollbars a scrolling main
+  frame's cross-site iframes can report a screen one step narrower than the
+  main frame's. Device media queries in an iframe whose own size doesn't
+  change are re-evaluated at its next media-value change.
+* At a device scale factor of 1.2, Chromium's float rounding gives the page
+  one device pixel more than the browser laid out at some sizes, so
+  `innerWidth` is one more than the letterbox (1401 for 1400); the screen
+  still says 1400.
+* Zoom shows while a page is zoomed (above).
+* A maximised window on a large monitor shows the page at 1400 x 900 with
+  wide margins: the cap is what makes everyone with a large window
+  identical. New MoltNet windows still open at the regular window size
+  (follow-up: open them at a 1400 x 900 page).
+* During the side panel's flyover animation the page's clip rectangle is
+  computed for the view without its margins, so the page can be clipped a
+  margin's width off for the length of the animation (cosmetic).
+
+### Code
+
+| Where | What |
+|---|---|
+| `chrome/browser/molt_ai/fingerprinting/molt_letterbox.h` | the geometry, constexpr and std-only (+ `molt_letterbox_unittest.cc` in `molt_ai_unittests`, against Blink's constants and rounding) |
+| `chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.{h,cc}` | which tabs, the insets, the margin colour (desktop only, `:letterbox_view`) |
+| `core/molt_fingerprinting/letterbox.{h,cc}` | the screen size with scrollbars, the device pixel ratio (+ `letterbox_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`): browser
+`chrome/browser/ui/views/frame/contents_web_view.{h,cc}` (`GetInsets`,
+`UpdateBackgroundColor`, `DidToggleFullscreenModeForTab`) and
+`chrome/browser/profiles/off_the_record_profile_impl.cc` (`Init`); Blink
+`css/media_values.cc` (`CalculateDeviceWidth`, `CalculateDeviceHeight`,
+`CalculateDevicePixelRatio`), `frame/local_dom_window.cc`
+(`devicePixelRatio`), `html/html_image_element.cc`
+(`FindBestFitImageFromPictureParent`, `SelectSourceURL`) and
+`css/resolver/style_resolver_state.cc` (the constructor's image density).
+`UniformScreenRect()` (`molt_fingerprinting.cc`) now takes its size from
+`letterbox.cc`.
+
+**Verified without a Chromium checkout:** `molt_letterbox_unittest.cc`
+(4 tests and static_asserts) passes standalone against the real
+`farbling.cc` with g++ (ASan/UBSan) and clang (UBSan trap,
+`-Wunsafe-buffer-usage -Wshorten-64-to-32 -fno-exceptions`);
+`letterbox.cc` and `molt_fingerprinting.cc` type-check with the strict
+flags against stand-ins of the pinned Blink signatures, and a harness runs
+the real glue in real kUniform mode: for 13 device scale factors and every
+content area up to 4000 DIPs, the renderer's size (`ceil(DIP x scale)`, as
+content computes it) gives a screen equal to `innerWidth`/`innerHeight` and
+to the browser's letterbox size (with the 1.2 drift above); cross-process
+and same-process frames; the density for web, opaque, `chrome://`,
+extension and `file://` top-level frames. Seven mutants of `letterbox.cc`
+(scrollbars left out, the old flooring, no web check, ...) all fail it. The earlier glue
+harness passes with its screen test now expecting scrollbars to count.
+`molt_letterbox_view.cc` type-checks against stand-ins of the pinned
+views/content/color signatures and runs, with the `ContentsWebView` hook
+expressions, under ASan/UBSan (insets, margin colours, fullscreen, no page,
+kill switch); the Blink hook expressions type-check with their upstream
+argument types. **Needs the build machine:** compiling the hooks,
+`letterbox_test.cc` (`MoltLetterboxTest.*`) in `blink_unittests`, the
+unit test in `molt_ai_unittests`, and in a MoltNet window on a Mac, a
+Windows and a Linux machine (1x and 2x): resizing the window (the page
+steps, `screen.width == innerWidth` throughout, e.g. with a page printing
+both on `resize`), DevTools docked on each side, the side panel, an
+infobar, split view, browser and tab fullscreen, light and dark mode, a
+regular-profile zoom not carried over, and `devicePixelRatio`, `srcset` and
+`image-set()` on a 2x screen.
+
 ## Fonts
 
 The set of installed font families is one of the strongest fingerprinting
@@ -894,10 +1115,12 @@ Honest list; anything not in the table above is not covered.
 
 **MoltNet uniformity not done**
 
-* No real letterboxing of the window: `innerWidth/innerHeight`, CSS
-  `width/height` media queries and layout still reveal the true viewport,
-  and `screen.width` can be smaller than `innerWidth`.
-* CSS `device-width/device-height` media queries, `devicePixelRatio`,
+* Letterboxing ([Letterboxing](#letterboxing-moltnet)): a zoomed page's
+  `innerWidth`/`innerHeight` show the zoom; the real device pixel ratio
+  shows through device-pixel snapping, `devicePixelContentBoxSize` and DPR
+  client hints; cross-process iframes can report a screen one step
+  narrower than a main frame with a classic scrollbar.
+* The rest of the screen surface:
   `TouchEvent` screen coordinates, the Window Management API
   (`getScreenDetails()`).
 * Renderer-side UI strings (`validationMessage`, the file input's label) and
@@ -1061,8 +1284,11 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
    prompt before canvas readback, not a noise revision.)
 4. (Done: third-party shared workers use their top-level site's key, see
    [Shared workers](#shared-workers).)
-5. Real letterboxing of MoltNet windows (round the content area itself), then
-   CSS device media queries and `devicePixelRatio`.
+5. (Done: real letterboxing of MoltNet windows, CSS device media queries and
+   `devicePixelRatio`, see [Letterboxing](#letterboxing-moltnet).) Left:
+   letterboxing the CSS size so zoom stops showing, dropping DPR client
+   hints in MoltNet, opening MoltNet windows at a 1400 x 900 page, and the
+   checks on the build machine listed there.
 6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
    version, pin the generic-font settings in MoltNet, and text metrics /

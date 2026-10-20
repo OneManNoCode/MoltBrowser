@@ -28,6 +28,9 @@ source_set("farbling") {
     ":*",
     "//chrome/browser/molt_ai/test:*",
     "//third_party/blink/renderer/core:*",
+
+    # Its test checks the browser's letterbox steps against Blink's.
+    "//chrome/browser/molt_ai/fingerprinting:unit_tests",
   ]
 }
 

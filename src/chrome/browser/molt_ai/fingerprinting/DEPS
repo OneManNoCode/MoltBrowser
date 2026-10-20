@@ -1,0 +1,13 @@
+include_rules = [
+  # molt_letterbox_view.cc: the page's view in the window and its colours
+  # (ContentsWebView calls in from chrome/browser/ui/views/frame).
+  "+chrome/browser/ui/color/chrome_color_id.h",
+  "+ui/views/controls/webview/webview.h",
+]
+
+specific_include_rules = {
+  # The letterbox steps must match Blink's; farbling.h is std + //base only.
+  "molt_letterbox_unittest\.cc": [
+    "+third_party/blink/renderer/core/molt_fingerprinting/farbling.h",
+  ],
+}

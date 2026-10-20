@@ -172,6 +172,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   23 common extensions and fixed shader precision, never more than the GPU
   really has; WebGPU finds no adapter, so sites fall back to WebGL. Normal
   and incognito windows are unchanged.
+- **MoltNet windows letterbox the page.** The page area is rounded down to
+  200 x 100-pixel steps (at most 1400 x 900) and centred, with margins in
+  the toolbar colour, so a page's size no longer gives away your window,
+  screen or toolbars; it is exactly the screen size MoltNet reports, and so
+  are the `device-width`/`device-height` media queries. Fullscreen stays
+  letterboxed. MoltNet pages also report a pixel ratio of 1 and pick their
+  images for it (canvases and images can look softer on high-density
+  screens), and they open at 100% zoom instead of following your regular
+  zoom settings.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
