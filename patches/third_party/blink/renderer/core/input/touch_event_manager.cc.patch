@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/core/input/touch_event_manager.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/input/touch_event_manager.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/input/touch_event_manager.cc b/third_party/blink/renderer/core/input/touch_event_manager.cc
+index 9b52f901a7915d2d05e286edc73ffd7f7881f0b5..0f83edeaad5081b93a98af63b942919a52d0c77b 100644
+--- a/third_party/blink/renderer/core/input/touch_event_manager.cc
++++ b/third_party/blink/renderer/core/input/touch_event_manager.cc
+@@ -21,6 +21,7 @@
+ #include "third_party/blink/renderer/core/input/event_handling_util.h"
+ #include "third_party/blink/renderer/core/input/touch_action_util.h"
+ #include "third_party/blink/renderer/core/layout/hit_test_canvas_result.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/platform/instrumentation/histogram.h"
+@@ -213,6 +214,10 @@ Touch* TouchEventManager::CreateDomTouch(
+   gfx::SizeF adjusted_radius = gfx::ScaleSize(
+       gfx::SizeF(transformed_event.width / 2.f, transformed_event.height / 2.f),
+       scale_factor);
++  // MoltBrowser: in MoltNet windows screenX/Y are MouseEvent's (relative to
++  // the viewport) and the contact's size, angle and pressure are hidden.
++  molt_fingerprinting::UniformTouch(target_frame->DomWindow(),
++                                    transformed_event, adjusted_radius);
+ 
+   return MakeGarbageCollected<Touch>(
+       target_frame, touch_node, point_attr->event_.id,

@@ -612,6 +612,200 @@ TEST(MoltFarblingTest, AnalyserBytesKeepNeutralAndMoveByAtMostOne) {
   }
 }
 
+// --- Output stability --------------------------------------------------------
+
+// FNV-1a over the bytes: pins a whole output in one constant.
+uint64_t Digest(base::span<const uint8_t> bytes) {
+  uint64_t hash = 0xcbf29ce484222325ull;
+  for (uint8_t b : bytes) {
+    hash = (hash ^ b) * 0x100000001b3ull;
+  }
+  return hash;
+}
+
+void AppendLE(std::vector<uint8_t>& out, uint32_t value, size_t bytes) {
+  for (size_t b = 0; b < bytes; ++b) {
+    out.push_back(static_cast<uint8_t>((value >> (8 * b)) & 0xff));
+  }
+}
+
+// Pixels that take every path through the buffer loops: runs of one colour,
+// colours seen a few pixels earlier, every alpha (0 included), opaque
+// stretches and greys. Not premultiplied: some channels exceed alpha.
+std::vector<uint8_t> MixedPixels(size_t count, uint64_t seed) {
+  TestRng rng(seed);
+  std::vector<uint8_t> out;
+  while (out.size() < 4 * count) {
+    std::array<uint8_t, 4> px = {rng.Byte(), rng.Byte(), rng.Byte(),
+                                 rng.Byte()};
+    switch (rng.Next() % 4) {
+      case 0:
+        px[3] = 255;
+        break;
+      case 1:
+        px[1] = px[2] = px[0];
+        break;
+      case 2:
+        if (out.size() >= 64) {
+          const size_t back = 4 * (1 + rng.Next() % 16);
+          for (size_t c = 0; c < 4; ++c) {
+            px[c] = out[out.size() - back + c];
+          }
+        }
+        break;
+      default:
+        break;
+    }
+    for (size_t run = 1 + rng.Next() % 3; run > 0; --run) {
+      out.insert(out.end(), px.begin(), px.end());
+    }
+  }
+  out.resize(4 * count);
+  return out;
+}
+
+TEST(MoltFarblingTest, OutputsMatchTheGoldenDigests) {
+  // Digests of every buffer entry point's output for fixed keys and inputs,
+  // recorded before the loops were optimised: a faster implementation must
+  // produce exactly the same bytes, or every site's fingerprint changes.
+  // (Inputs avoid libm, so they are the same on every platform.)
+  const SiteKey keys[] = {
+      KeyFromByte(1),
+      KeyFromByte(7),
+      KeyFromByte(31),
+      KeyFromByte(0xa5),
+      KeyFromByte(0xff),
+      DeriveSiteKey(TestSeed(), "https://example.com", ""),
+      DeriveSiteKey(TestSeed(), "https://a.example", ""),
+      DeriveSiteKey(TestSeed(), "https://example.com", "nonce")};
+  const std::vector<uint8_t> pixels = MixedPixels(5000, 1);
+  // A trailing partial pixel must be left alone.
+  const std::vector<uint8_t> pixels_odd(pixels.begin(), pixels.end() - 1);
+  // Floats: special values first (+0, +0, -0, NaN, infinity, the smallest
+  // subnormal, 1, 0.5), then the 8-bit grid, values around [0, 1] and random
+  // bit patterns (NaN, infinities, subnormals, negatives, huge values); and
+  // all of them as halves.
+  const uint32_t kSpecials[] = {0x00000000, 0x00000000, 0x80000000, 0x7fc00000,
+                                0x7f800000, 0x00000001, 0x3f800000, 0x3f000000};
+  TestRng rng(2);
+  std::vector<uint8_t> floats;
+  std::vector<uint8_t> floats_as_halves;
+  for (uint32_t bits : kSpecials) {
+    AppendLE(floats, bits, 4);
+    AppendLE(floats_as_halves, FloatToHalf(std::bit_cast<float>(bits)), 2);
+  }
+  for (uint8_t byte : pixels) {
+    float value = byte / 255.0f;
+    switch (rng.Next() % 4) {
+      case 0:
+        value = std::bit_cast<float>(static_cast<uint32_t>(rng.Next()));
+        break;
+      case 1:
+        value = (static_cast<float>(rng.Next() % 4001) - 1000.0f) / 1000.0f;
+        break;
+      default:
+        break;
+    }
+    AppendLE(floats, std::bit_cast<uint32_t>(value), 4);
+    AppendLE(floats_as_halves, FloatToHalf(value), 2);
+  }
+  // Every half, then the halves above again.
+  std::vector<uint8_t> halves;
+  for (uint32_t h = 0; h <= 0xffff; ++h) {
+    AppendLE(halves, h, 2);
+  }
+  halves.insert(halves.end(), floats_as_halves.begin(), floats_as_halves.end());
+  // Audio: the special values, then random samples, held for a few frames,
+  // and silence.
+  std::vector<float> samples;
+  for (uint32_t bits : kSpecials) {
+    samples.push_back(std::bit_cast<float>(bits));
+  }
+  while (samples.size() < 20000) {
+    const float sample =
+        rng.Next() % 8 == 0
+            ? 0.0f
+            : (static_cast<float>(rng.Next() % 2000001) - 1000000.0f) /
+                  1000000.0f;
+    samples.insert(samples.end(), 1 + rng.Next() % 3, sample);
+  }
+
+  using Buffer = base::span<uint8_t>;
+  struct Case {
+    const char* name;
+    std::vector<uint8_t> input;
+    void (*farble)(const Farbler&, Buffer);
+    uint64_t digest;
+  };
+  const Case cases[] = {
+      {"RGBA8", pixels,
+       [](const Farbler& f, Buffer b) {
+         f.FarbleRGBA8(b, ChannelOrder::kRGBA);
+       },
+       0xe2bcc44470efbe6aull},
+      {"BGRA8", pixels_odd,
+       [](const Farbler& f, Buffer b) {
+         f.FarbleRGBA8(b, ChannelOrder::kBGRA);
+       },
+       0xdf761a8e9e2a857cull},
+      {"RGBA8 premultiplied", pixels,
+       [](const Farbler& f, Buffer b) {
+         f.FarbleRGBA8Premul(b, ChannelOrder::kRGBA);
+       },
+       0xae32aab6bffd478full},
+      {"BGRA8 premultiplied", pixels_odd,
+       [](const Farbler& f, Buffer b) {
+         f.FarbleRGBA8Premul(b, ChannelOrder::kBGRA);
+       },
+       0xa8ad51f5ada1ba4eull},
+      {"RED", pixels_odd,
+       [](const Farbler& f, Buffer b) { f.FarbleUnorm8(b, 1); },
+       0xf5c7d0b3eea7ea26ull},
+      {"RG", pixels_odd,
+       [](const Farbler& f, Buffer b) { f.FarbleUnorm8(b, 2); },
+       0xccc81c17d6110a07ull},
+      {"RGB", pixels_odd,
+       [](const Farbler& f, Buffer b) { f.FarbleUnorm8(b, 3); },
+       0x000ef18d75f06511ull},
+      {"RGBA F16", floats_as_halves,
+       [](const Farbler& f, Buffer b) { f.FarbleRGBAF16(b); },
+       0xc68a12d356262e26ull},
+      {"RGBA F32", floats,
+       [](const Farbler& f, Buffer b) { f.FarbleRGBAF32(b); },
+       0x80ca8e6a5c06eb6eull},
+      {"float16", halves,
+       [](const Farbler& f, Buffer b) { f.FarbleFloat16(b); },
+       0x628e6a3346c82c0aull},
+      {"float32", floats,
+       [](const Farbler& f, Buffer b) { f.FarbleFloat32(b); },
+       0x7398724a58bd4e64ull},
+      {"analyser bytes", pixels,
+       [](const Farbler& f, Buffer b) {
+         f.FarbleAudioBytes(b.first(b.size() / 2), 0);
+         f.FarbleAudioBytes(b.subspan(b.size() / 2), 128);
+       },
+       0xa3e04d59cdb7b9e5ull},
+  };
+  for (const Case& c : cases) {
+    std::vector<uint8_t> all;
+    for (const SiteKey& key : keys) {
+      std::vector<uint8_t> buffer = c.input;
+      c.farble(Farbler(key), buffer);
+      all.insert(all.end(), buffer.begin(), buffer.end());
+    }
+    EXPECT_EQ(Digest(all), c.digest) << c.name;
+  }
+  std::vector<uint8_t> audio;
+  for (const SiteKey& key : keys) {
+    std::vector<float> out = samples;
+    Farbler(key).FarbleAudio(out);
+    for (float sample : out) {
+      AppendLE(audio, std::bit_cast<uint32_t>(sample), 4);
+    }
+  }
+  EXPECT_EQ(Digest(audio), 0xa9bb15e17fbfb2c1ull);
+}
+
 // --- hardwareConcurrency -----------------------------------------------------
 
 TEST(MoltFarblingTest, HardwareConcurrencyStaysInRange) {

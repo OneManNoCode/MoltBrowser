@@ -1,0 +1,43 @@
+MoltBrowser patch for third_party/blink/renderer/platform/text/platform_locale.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/text/platform_locale.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/text/platform_locale.cc b/third_party/blink/renderer/platform/text/platform_locale.cc
+index 33977b7d48eb5741108bd94112eb0c45628db41d..c7a4f2d5144be2659c47fb86e56232e79f5fddd9 100644
+--- a/third_party/blink/renderer/platform/text/platform_locale.cc
++++ b/third_party/blink/renderer/platform/text/platform_locale.cc
+@@ -43,6 +43,7 @@ namespace blink {
+ 
+ namespace {
+ Locale* g_default_locale;
++Locale* g_default_locale_override;  // MoltBrowser: SetDefaultLocaleOverride.
+ }
+ 
+ class DateTimeStringBuilder : private DateTimeFormat::TokenHandler {
+@@ -186,6 +187,9 @@ String DateTimeStringBuilder::ToString() {
+ 
+ Locale& Locale::DefaultLocale() {
+   DCHECK(IsMainThread());
++  if (g_default_locale_override) {  // MoltBrowser
++    return *g_default_locale_override;
++  }
+   if (!g_default_locale)
+     g_default_locale = Locale::Create(DefaultLanguage()).release();
+   return *g_default_locale;
+@@ -198,6 +202,14 @@ void Locale::ResetDefaultLocale() {
+   g_default_locale = nullptr;
+ }
+ 
++// MoltBrowser: set once, before any document exists (form controls keep
++// references to the default locale).
++void Locale::SetDefaultLocaleOverride(std::unique_ptr<Locale> locale) {
++  DCHECK(IsMainThread());
++  delete g_default_locale_override;
++  g_default_locale_override = locale.release();
++}
++
+ Locale::~Locale() = default;
+ 
+ String Locale::QueryString(int resource_id) {

@@ -42,6 +42,15 @@
 //                                                      AllowInstalledFont
 //            FontAccess::DidGetEnumerationResponse -> AllowEnumeratedFont
 //            (all in system_fonts.h)
+//   MoltNet  MediaValues::CalculateDeviceWidth/Height -> UniformScreenRect;
+//            MediaValues::CalculateDevicePixelRatio,
+//            LocalDOMWindow::devicePixelRatio, HTMLImageElement (srcset),
+//            StyleResolverState (image-set())     -> DevicePixelRatioFor
+//            (letterbox.h; the browser letterboxes the page itself)
+//   MoltNet  Touch / PointerEvent (touch) coordinates and contact,
+//            getScreenDetails(), the window-management permission,
+//            screen and orientation "change" events, screen.orientation,
+//            the form-control Locale            -> moltnet_uniformity.h
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:
@@ -269,8 +278,9 @@ CORE_EXPORT std::optional<Farbler> SiteFarblerFor(ExecutionContext* context,
 // --- MoltNet uniformity -----------------------------------------------------
 
 // In kUniform mode: the screen rect every Screen getter reports -- origin
-// (0, 0), size = the outermost main frame's viewport in DIPs rounded down to
-// the letterbox steps. nullopt otherwise.
+// (0, 0), size = the outermost main frame's size in DIPs (scrollbars
+// included, as innerWidth/innerHeight) rounded down to the letterbox steps
+// (UniformScreenSizeOf in letterbox.h). nullopt otherwise.
 CORE_EXPORT std::optional<gfx::Rect> UniformScreenRect(LocalFrame* frame);
 // In kUniform mode: MouseEvent.screenX/Y for a pointer at
 // `position_in_widget` (physical pixels): the same point in DIPs relative to

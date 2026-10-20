@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index 511fce6b8fada409373d828cf1cb1a95421dd97b..4242f87c25bd8d7d8106fbbbe10d1c503e5b2b08 100644
+index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596d96c27e0 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -123,6 +123,7 @@
+@@ -123,6 +123,8 @@
  #include "third_party/blink/renderer/core/layout/layout_view.h"
  #include "third_party/blink/renderer/core/loader/document_loader.h"
  #include "third_party/blink/renderer/core/loader/frame_load_request.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 +#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
  #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
  #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
  #include "third_party/blink/renderer/core/page/chrome_client.h"
-@@ -1678,6 +1679,10 @@ int LocalDOMWindow::outerHeight() const {
+@@ -1678,6 +1680,10 @@ int LocalDOMWindow::outerHeight() const {
    if (frame->IsInFencedFrameTree()) {
      return innerHeight();
    }
@@ -27,7 +28,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..4242f87c25bd8d7d8106fbbbe10d1c50
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1710,6 +1715,10 @@ int LocalDOMWindow::outerWidth() const {
+@@ -1710,6 +1716,10 @@ int LocalDOMWindow::outerWidth() const {
    if (frame->IsInFencedFrameTree()) {
      return innerWidth();
    }
@@ -38,7 +39,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..4242f87c25bd8d7d8106fbbbe10d1c50
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1786,6 +1795,10 @@ int LocalDOMWindow::screenX() const {
+@@ -1786,6 +1796,10 @@ int LocalDOMWindow::screenX() const {
    if (!frame) {
      return 0;
    }
@@ -49,7 +50,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..4242f87c25bd8d7d8106fbbbe10d1c50
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1811,6 +1824,10 @@ int LocalDOMWindow::screenY() const {
+@@ -1811,6 +1825,10 @@ int LocalDOMWindow::screenY() const {
    if (!frame) {
      return 0;
    }
@@ -60,3 +61,14 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..4242f87c25bd8d7d8106fbbbe10d1c50
  
    Page* page = frame->GetPage();
    if (!page) {
+@@ -1938,7 +1956,9 @@ double LocalDOMWindow::devicePixelRatio() const {
+     return 0.0;
+   }
+ 
+-  return GetFrame()->DevicePixelRatio();
++  // MoltBrowser: MoltNet pages report one density (letterbox.h).
++  return molt_fingerprinting::DevicePixelRatioFor(
++      GetFrame(), GetFrame()->DevicePixelRatio());
+ }
+ 
+ ScriptPromise<ScrollResult> LocalDOMWindow::scrollBy(ScriptState* script_state,

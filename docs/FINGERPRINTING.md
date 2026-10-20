@@ -259,6 +259,15 @@ video pipelines, PBO readback).
 | `outerWidth/outerHeight` | real | = `innerWidth/innerHeight` | `local_dom_window.cc` |
 | `screenX/screenY/screenLeft/screenTop` | real | **0** | `local_dom_window.cc` |
 | `MouseEvent`/`PointerEvent`/`WheelEvent`/`DragEvent` `.screenX/Y` | real | relative to the viewport (as if the window sat at 0,0 with no browser chrome) | `mouse_event.cc`: `SetCoordinatesFromWebPointerProperties` |
+| Page size (`innerWidth/innerHeight`, layout, width/height media queries) | real | **letterboxed**: the page area itself is rounded down to the screen steps above and centred ([details](#letterboxing-moltnet)) | browser: `contents_web_view.cc`: `GetInsets` |
+| `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
+| `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
+| Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
+| `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
+| `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
+| `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
+| `screen.orientation.type/angle` | real | from the uniform screen, angle **0** | `screen_orientation.cc` |
+| Date/time/number form-control formats | UI language and region | **en-US** | `platform_locale.cc`: `DefaultLocale` |
 | Time zone (`Date`, `Intl`) | real | **Etc/UTC** (renderer-wide `TimeZoneController` override) | glue: `Configure` |
 | `Intl` / ICU default locale | real | **en-US** (`LocaleController` override) | glue: `Configure` |
 | `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`) | `molt_net_routing.cc` (MoltBrowser file) |
@@ -357,20 +366,51 @@ read, or the rest of the buffer.
   on, so pages sizing worker pools from it don't oversubscribe weak machines,
   while 2 would needlessly halve throughput on most.
 
-**Cost** (measured with a scratch benchmark of `farbling.cc`, `-O2`, median
-of 7 runs, on the 2.1 GHz VM these changes were developed on, where a warm
-8 MB `memcpy` takes about 0.7 ms; expect a fraction of this on a current
-Mac):
+**Cost.** Measured with a scratch benchmark that links the previous loops
+("before") and the current ones ("after") into one binary and runs them
+alternately on the same inputs, calling them as `molt_fingerprinting.cc`
+does (one call per row; one per buffer for audio). Clang 18, `-O2
+-ffp-contract=off` as in Chromium builds, unchecked spans as in the earlier
+figures; each figure is the median of 6 runs of the median of 15, on the
+2.1 GHz VM these changes were developed on, where a warm 8 MB `memcpy`
+takes about 0.65 ms. Expect a fraction of this on a current Mac. The two
+versions' outputs were compared byte for byte (identical).
 
-| Path | Content | Time |
-|---|---|---|
-| canvas readback, 1920x1080 RGBA8 | flat / text-like / every pixel distinct | ~3 / ~10 / ~35-50 ms |
-| exported frame (premultiplied), 640x360 | canvas-like / camera-like | 0.8 / 5.2 ms |
-| exported frame, 1280x720 | canvas-like / camera-like | 3.3 / 16 ms |
-| exported frame, 1920x1080 | canvas-like / camera-like | 7.8 / 42 ms |
-| `readPixels` 1024x1024 | `RGB`/`UNSIGNED_BYTE`, `RGBA`/`FLOAT`, `RGBA`/`HALF_FLOAT` | 18, 17, 60 ms |
-| `AudioWorklet` render quantum | 128 frames, stereo | 0.8 µs |
-| 10 s of 44.1 kHz audio | `getChannelData` | ~1.4 ms |
+| Path | Content | Before | After |
+|---|---|---|---|
+| canvas readback, 1920x1080 RGBA8 | flat | 2.9 ms | 1.5 ms |
+| | text-like | 8.6 ms | 5.2 ms |
+| | gradient | 6.8 ms | 2.9 ms |
+| | camera-like | 32 ms | 12 ms |
+| | every pixel distinct | 35 ms | 11 ms |
+| | random, alpha included | 43 ms | 23 ms |
+| canvas readback, 1920x1080, `float16` / `float32` storage | camera-like | 64 / 49 ms | 40 / 30 ms |
+| exported frame (premultiplied), 640x360 | canvas-like / camera-like | 0.75 / 3.9 ms | 0.28 / 1.3 ms |
+| exported frame, 1280x720 | canvas-like / camera-like | 3.0 / 15 ms | 1.1 / 5.4 ms |
+| exported frame, 1920x1080 | canvas-like / camera-like | 6.7 / 35 ms | 2.5 / 12.5 ms |
+| `readPixels` 1024x1024 | `RGB`/`UNSIGNED_BYTE`, random | 18 ms | 7.3 ms |
+| | `RGBA`/`FLOAT`, random in [0, 1) | 15 ms | 13 ms |
+| | `RGBA`/`HALF_FLOAT`, random in [0, 1) / smooth render | 57 / 37 ms | 15 / 15 ms |
+| `AudioWorklet` render quantum | 128 frames, stereo | 0.73 µs | 0.71 µs |
+| 10 s of 44.1 kHz audio | `getChannelData` | 1.3 ms | 1.25 ms |
+| `AnalyserNode` byte data | 16384 bins | 165 µs | 47 µs |
+
+Where the time went: whether a pair collapses (one in eight) and onto
+which value (one in two) are coin flips, and the old loops branched on
+them; those branches were mispredicted so often that they cost more than
+the PRF. The loops now compute both outcomes and select (with
+`__builtin_unpredictable` where the compiler has it), derive the farbled
+channel once per alpha per call (the float pixel paths derived it for
+every pixel) and a half's pair context once per sign, and still reuse the
+result for runs of one colour. Float32 and audio were already bound by
+their two mix rounds (four 64-bit multiplies) per distinct value, and stay
+as they were. With bounds-checked spans and hardened libc++, as in a
+Chromium build, both versions are up to 50% slower (most on flat content,
+hardly at all on distinct pixels) and the speedups are the same. Tried and
+dropped: a per-call cache of recent colours (text 20% faster, camera-like
+and distinct pixels 15-30% slower: its hit-or-miss branch is as
+unpredictable as the one removed), and keeping the key in local registers
+(no measurable difference).
 
 On top of the CPU work: exported frames from accelerated canvases need a
 synchronous GPU readback and become CPU-backed (`captureStream` loses its
@@ -379,13 +419,16 @@ one-copy GPU path while farbling), and every farbled `readPixels` into a
 mapping), so the async-readback idiom loses its asynchrony. Pages that
 stream a canvas as video (canvas recording, effects pipelines in video
 calls that build frames with `new VideoFrame(canvas)` or `captureStream()`)
-would pay the export cost on every frame: at 720p on this VM that is about
-half a core at 30 fps. **So the two per-frame hooks (`VideoFrame` from a
-canvas, `captureStream`) only run in MoltNet windows** (`FarblesVideoExports()`
-in `molt_fingerprinting.h`), and normal windows keep the one-copy GPU capture
-path. The cost of that choice: in normal windows a script can still read
-unfarbled canvas pixels by wrapping the canvas in a `VideoFrame` and calling
-`copyTo()`, or through a `captureStream()` track processor. Planned fix:
+would pay the export cost on every frame: at 720p on this VM, camera-like
+content costs 5.4 ms of CPU per frame, about a sixth of a core at 30 fps
+(half a core before the loops above were optimised), plus the GPU readback,
+which this benchmark can't measure. **So the two per-frame hooks
+(`VideoFrame` from a canvas, `captureStream`) only run in MoltNet windows**
+(`FarblesVideoExports()` in `molt_fingerprinting.h`), and normal windows
+keep the one-copy GPU capture path. The cost of that choice: in normal
+windows a script can still read unfarbled canvas pixels by wrapping the
+canvas in a `VideoFrame` and calling `copyTo()`, or through a
+`captureStream()` track processor. Planned fix:
 farble at those readback points (`VideoFrame.copyTo`, `MediaStreamTrackProcessor`
 frames) instead of on every exported frame, then turn them on everywhere.
 WebGPU uploads from a canvas stay farbled in both (they are per upload, not
@@ -639,6 +682,227 @@ running WebGL report pages (e.g. webglreport.com, three.js and Babylon.js
 examples, a KTX2 sample) and a WebGPU sample (null adapter, WebGL fallback)
 on a Mac, a Windows and a Linux machine, comparing their reports.
 
+## Letterboxing (MoltNet)
+
+MoltNet windows used to report a rounded screen size while the page itself
+kept the window's true content area: `innerWidth`/`innerHeight`, the CSS
+`width`/`height` media queries, `vw`/`vh` and layout showed a size that
+depends on the window size, the toolbars (bookmarks bar, infobars), the OS,
+the DPI and so on, one of the strongest MoltNet fingerprints left. Now the
+browser rounds the page's area itself, Tor Browser style: the tab's content
+area is rounded **down** to 200 x 100 DIP steps, capped at 1400 x 900, and
+the page is centred in it with margins around. A page's size is then one of
+63 (7 widths x 9 heights), the same for everybody whose window rounds the
+same way.
+
+### What a MoltNet page sees
+
+| Value | MoltNet |
+|---|---|
+| `innerWidth`/`innerHeight`, CSS `width`/`height`/`aspect-ratio` media queries, `vw`/`vh`, layout | the letterboxed size: a multiple of 200 x 100, at most 1400 x 900 (at 100% zoom) |
+| `screen.width/height/availWidth/availHeight`, `outerWidth/outerHeight` | the same size (`screen.*` now counts the page's scrollbars, as `innerWidth` does) |
+| CSS `device-width`, `device-height`, `device-aspect-ratio` | the same size |
+| `devicePixelRatio`, the `resolution` / `-webkit-device-pixel-ratio` media queries, the density `srcset` / `<picture>` / `image-set()` candidates are picked for | **1** (see [Device pixel ratio](#device-pixel-ratio)) |
+| page zoom | starts at 100% (see [Zoom](#zoom)) |
+
+Normal and Incognito windows are unchanged (their goal is per-site
+unlinkability; a rounded window would only make users look like other
+MoltBrowser users). The kill switch turns all of this off with the rest of
+the protection.
+
+**The browser side.** The active tab's page is shown by `ContentsWebView`, a
+`views::WebView` that lays the page's native view out in its
+`GetContentsBounds()`. In MoltNet profiles `ContentsWebView::GetInsets()`
+returns the letterbox margins (`molt_letterbox_view.cc`), so the page gets
+the rounded, centred rectangle and is resized only when the rounded size
+changes (a few times while dragging a window edge, not on every pixel).
+The view's solid-colour layer, under the page, shows in the margins.
+Everything else in the content area (DevTools, overlays, dialogs, the status
+bubble) still uses the view's full bounds, so none of it moves. The geometry
+is a constexpr function (`molt_letterbox.h`); the steps and caps are Blink's
+(`farbling.h`), duplicated because browser code can't include renderer
+headers, and `molt_letterbox_unittest.cc` checks both the constants and that
+Blink's rounding of every letterboxed size is that size again.
+
+**The renderer side** (`core/molt_fingerprinting/letterbox.{h,cc}`). The
+uniform screen is now computed from the main frame's size *with* its
+scrollbars (before: without, so a page with a classic scrollbar got a screen
+one step narrower than its `innerWidth`), converted to DIPs with
+`innerWidth`'s own rounding (`AdjustForAbsoluteZoom::AdjustInt`), then
+bucketed. On a letterboxed page `screen.width` and `innerWidth` are
+therefore the same number; a page the browser couldn't letterbox (below)
+still gets a bucketed screen. `device-width`/`device-height` come from the
+same screen (hooked in `MediaValues`, so `matchMedia`, `<source media>` and
+the preload scanner agree); Blink already re-evaluates device media queries
+when the page's size changes.
+
+### Margins
+
+The margins take the **toolbar colour** (`kColorToolbar`): the surface the
+page sits on, the colour split view shows between and around its panes. It
+follows light and dark mode and the theme (and is forced opaque). In tab
+fullscreen they take Chrome's own colour around letterboxed fullscreen
+content (`kColorWebContentsBackgroundLetterboxing`, near black), like the
+bars around a film. The page never sees the margins or their colour.
+
+### Browser UI around the page
+
+* **DevTools docked**: takes its space from the content area first; the page
+  is letterboxed in what is left. Docking DevTools or dragging its splitter
+  moves the page from one bucket to another, never to an unrounded size.
+  DevTools itself isn't letterboxed. Its device emulation overrides the
+  page's size (a developer tool): the screen is then the emulated size,
+  bucketed.
+* **Side panel** (AI chat, agent, reading list, ...): sits beside the
+  content area, so opening it narrows the area and the page drops to a
+  smaller bucket.
+* **Find bar**: a separate widget floating over the content area; it doesn't
+  resize the page and may sit over a margin.
+* **Infobars and the bookmarks bar**: above the content area. They change
+  the page's height only when they push the area below a multiple of 100;
+  usually the vertical margin absorbs them.
+* **Tab-modal dialogs, permission prompts, the status bubble**: overlays,
+  unchanged (the status bubble sits in the content area's corner, over the
+  margin).
+* **Split view**: each pane is letterboxed on its own.
+* **Popups** (`window.open` with a size, `resizeTo`): letterboxed like any
+  window, so a requested size larger than the screen no longer shows the
+  screen's real size either.
+
+### Fullscreen
+
+Tor Browser lifts letterboxing in fullscreen (by what Mullvad Browser users,
+on the same code, report), so a page that gets fullscreen learns the
+monitor's real size. **MoltBrowser keeps the letterbox in fullscreen**,
+browser fullscreen and tab fullscreen (`requestFullscreen()`, video players)
+alike: a page only needs one click from the user to ask for fullscreen, and
+an exact monitor size (1512 x 982 is a 14-inch MacBook Pro, 1728 x 1117 the
+16-inch) is a strong identifier. The cost is on monitors larger than
+1400 x 900 DIPs: fullscreen video plays in a 1400 x 900 box with dark
+margins (about 73% of the width of a 1920-DIP screen). A page that is being
+tab-captured while fullscreen is sized to the capture by Chrome's own
+capture letterboxing; that size comes from the capturing site, not the
+screen.
+
+### Zoom
+
+Page zoom changes CSS pixels: at 125%, a 1400-DIP page is 1120 CSS pixels
+wide. **MoltNet resets zoom but doesn't lock it.**
+
+* MoltNet's profile used to copy, and keep following, the regular profile's
+  default zoom and per-site zoom levels (Chromium does that for every
+  off-the-record profile). A site zoomed in a regular window opened zoomed
+  in MoltNet, which both broke the letterbox and linked the two profiles.
+  Now MoltNet pages always start at 100% (`OffTheRecordProfileImpl::Init`
+  skips `TrackZoomLevelsFromParent` for MoltNet).
+* The user can still zoom (an accessibility need; Tor Browser doesn't lock
+  zoom either). A zoom chosen in a MoltNet window applies to that site for
+  the MoltNet session and is forgotten at New Identity. While a page is
+  zoomed its `innerWidth`/`innerHeight` show the zoom factor (the screen
+  doesn't change); `devicePixelRatio` stays 1, so it doesn't.
+* Not done: letterboxing the CSS size instead of the DIP size (so zoom would
+  stop showing), which needs the browser to re-letterbox on zoom changes.
+
+### Device pixel ratio
+
+**MoltNet pages report a device pixel ratio of 1**, Tor Browser's choice
+too (in 2024 it reverted a change to 2). The real value splits users into
+1x, 1.25x, 1.5x, 1.75x, 2x, ... groups, which differ by OS and machine
+(every Retina Mac is 2x); one value for everybody is the point of MoltNet,
+and 1 is the one that matches the uniform screen as a plain standard-density
+screen and costs nothing extra over Tor (2 would make every 1x user download
+images four times as large).
+
+* Covered: `window.devicePixelRatio`; the `resolution` and
+  `-webkit-device-pixel-ratio` media queries (`matchMedia`, `<source
+  media>`, the preload scanner); the density `srcset` and `<picture>`
+  candidates are picked for, on the main path and in the preload scanner,
+  and `image-set()`, so the images a page fetches don't tell its server the
+  real ratio either. Page zoom doesn't change it.
+* Only what pages read changes: Blink still renders at the real scale, so
+  text, borders, SVG and video stay sharp.
+* Cost on high-density screens: pages that size canvases by
+  `devicePixelRatio` draw them at 1x (blurry charts, maps and games), and
+  `srcset`/`image-set()` images are the 1x ones (softer, but smaller over
+  Tor).
+* Internal pages (`chrome://` and the like) keep the real ratio.
+* Not covered, so a script that looks for it still finds the real ratio:
+  layout snapping to device pixels (thin borders, for example, can be
+  measured), `ResizeObserver`'s `devicePixelContentBoxSize`, the DPR client
+  hints (`Sec-CH-DPR`, sent only to sites that ask with `Accept-CH`) and the
+  favicon size the browser fetches. As with the WebGL baselines, this stops
+  scripts that read the value, not ones written against MoltBrowser.
+
+### Known gaps (letterboxing)
+
+* A content area narrower than 200 DIPs or shorter than 100 DIPs is not
+  letterboxed (there is no smaller step); the screen still reports one step.
+* Cross-process iframes only know the main frame's size *without* its
+  scrollbars, so with classic (Windows, Linux) scrollbars a scrolling main
+  frame's cross-site iframes can report a screen one step narrower than the
+  main frame's. Device media queries in an iframe whose own size doesn't
+  change are re-evaluated at its next media-value change.
+* At a device scale factor of 1.2, Chromium's float rounding gives the page
+  one device pixel more than the browser laid out at some sizes, so
+  `innerWidth` is one more than the letterbox (1401 for 1400); the screen
+  still says 1400.
+* Zoom shows while a page is zoomed (above).
+* A maximised window on a large monitor shows the page at 1400 x 900 with
+  wide margins: the cap is what makes everyone with a large window
+  identical. New MoltNet windows still open at the regular window size
+  (follow-up: open them at a 1400 x 900 page).
+* During the side panel's flyover animation the page's clip rectangle is
+  computed for the view without its margins, so the page can be clipped a
+  margin's width off for the length of the animation (cosmetic).
+
+### Code
+
+| Where | What |
+|---|---|
+| `chrome/browser/molt_ai/fingerprinting/molt_letterbox.h` | the geometry, constexpr and std-only (+ `molt_letterbox_unittest.cc` in `molt_ai_unittests`, against Blink's constants and rounding) |
+| `chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.{h,cc}` | which tabs, the insets, the margin colour (desktop only, `:letterbox_view`) |
+| `core/molt_fingerprinting/letterbox.{h,cc}` | the screen size with scrollbars, the device pixel ratio (+ `letterbox_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`): browser
+`chrome/browser/ui/views/frame/contents_web_view.{h,cc}` (`GetInsets`,
+`UpdateBackgroundColor`, `DidToggleFullscreenModeForTab`) and
+`chrome/browser/profiles/off_the_record_profile_impl.cc` (`Init`); Blink
+`css/media_values.cc` (`CalculateDeviceWidth`, `CalculateDeviceHeight`,
+`CalculateDevicePixelRatio`), `frame/local_dom_window.cc`
+(`devicePixelRatio`), `html/html_image_element.cc`
+(`FindBestFitImageFromPictureParent`, `SelectSourceURL`) and
+`css/resolver/style_resolver_state.cc` (the constructor's image density).
+`UniformScreenRect()` (`molt_fingerprinting.cc`) now takes its size from
+`letterbox.cc`.
+
+**Verified without a Chromium checkout:** `molt_letterbox_unittest.cc`
+(4 tests and static_asserts) passes standalone against the real
+`farbling.cc` with g++ (ASan/UBSan) and clang (UBSan trap,
+`-Wunsafe-buffer-usage -Wshorten-64-to-32 -fno-exceptions`);
+`letterbox.cc` and `molt_fingerprinting.cc` type-check with the strict
+flags against stand-ins of the pinned Blink signatures, and a harness runs
+the real glue in real kUniform mode: for 13 device scale factors and every
+content area up to 4000 DIPs, the renderer's size (`ceil(DIP x scale)`, as
+content computes it) gives a screen equal to `innerWidth`/`innerHeight` and
+to the browser's letterbox size (with the 1.2 drift above); cross-process
+and same-process frames; the density for web, opaque, `chrome://`,
+extension and `file://` top-level frames. Seven mutants of `letterbox.cc`
+(scrollbars left out, the old flooring, no web check, ...) all fail it. The earlier glue
+harness passes with its screen test now expecting scrollbars to count.
+`molt_letterbox_view.cc` type-checks against stand-ins of the pinned
+views/content/color signatures and runs, with the `ContentsWebView` hook
+expressions, under ASan/UBSan (insets, margin colours, fullscreen, no page,
+kill switch); the Blink hook expressions type-check with their upstream
+argument types. **Needs the build machine:** compiling the hooks,
+`letterbox_test.cc` (`MoltLetterboxTest.*`) in `blink_unittests`, the
+unit test in `molt_ai_unittests`, and in a MoltNet window on a Mac, a
+Windows and a Linux machine (1x and 2x): resizing the window (the page
+steps, `screen.width == innerWidth` throughout, e.g. with a page printing
+both on `resize`), DevTools docked on each side, the side panel, an
+infobar, split view, browser and tab fullscreen, light and dark mode, a
+regular-profile zoom not carried over, and `devicePixelRatio`, `srcset` and
+`image-set()` on a 2x screen.
+
 ## Fonts
 
 The set of installed font families is one of the strongest fingerprinting
@@ -820,6 +1084,256 @@ and in a running browser on each OS: font-probing pages and suites
 windows, with Shields on and off; East Asian sites; design tools with
 `queryLocalFonts()`.
 
+## MoltNet: touches, screens, orientation and form controls
+
+Four more things that told MoltNet users apart: where a touch lands on
+the physical screen and how big and firm it is, the user's monitors, the
+screen's orientation, and the language and regional settings that form
+controls follow. Normal and Incognito windows are unchanged: none of these
+values can vary per site in a useful way, and fixing them would only make
+a user look like other MoltBrowser users.
+
+| API | MoltNet windows | Hook (upstream file: function) |
+|---|---|---|
+| `Touch.screenX/Y` | MouseEvent's value: the point relative to the viewport | `touch_event_manager.cc`: `CreateDomTouch` |
+| `Touch.radiusX/Y`, `rotationAngle`, `force` | **0** (the spec's "unknown") | same |
+| `PointerEvent` with `pointerType` "touch": `width`/`height`, `pressure`, `tiltX/Y`, `twist`, `tangentialPressure` | **1**/**1**, **0.5** while down (else 0), **0** | `pointer_event_factory.cc`: `UpdateCommonPointerEventInit` |
+| `window.getScreenDetails()` | rejects: `NotAllowedError: Permission denied.`, no prompt | `window_screen_details.cc`: `GetScreenDetails` |
+| `navigator.permissions.query({name: 'window-management'})` | **"denied"**, never changes | `permission_status_listener.cc`: `state`, `OnPermissionStatusChange` |
+| `window.screen` "change" event | never fires | `screen.cc`: `AreWebExposedScreenPropertiesEqual` |
+| `screen.orientation.type`, `.angle` | the uniform screen's: **landscape-primary**, **0** (see below) | `screen_orientation.cc`: `type`, `angle` |
+| `screen.orientation` "change" event | never fires | `screen_orientation_controller.cc`: `NotifyOrientationChangedInternal` |
+| Date, time, month, week and number fields, numbers in validation messages | **en-US** formats on every OS | `platform_locale.{h,cc}`: `Locale::DefaultLocale`, set by `Configure` |
+
+The values are in `moltnet_values.{h,cc}` (std only, tested standalone),
+the Blink side in `moltnet_uniformity.{h,cc}`. Which contexts: what
+continues an existing MoltNet treatment follows it, so `Touch.screenX/Y`
+(MouseEvent's), the orientation (the uniform screen's) and the missing
+screen events apply to the whole MoltNet process like the screen values
+themselves, and the form locale is per process like the time zone and the
+Intl locale. The new treatments (touch contact, `getScreenDetails()`, the
+window-management permission) apply to web content only, like the WebGL
+baselines: pages whose top-level site isn't http(s) keep the real values.
+MoltNet ignores Shields off, as elsewhere.
+
+### Touches
+
+At 152 `TouchEventManager::CreateDomTouch` copies the touch point's
+position on the physical screen into the `Touch`, so `screenX - clientX`
+gave the window position plus the browser chrome, which mouse events in
+MoltNet no longer show. Touch pointer events already went through
+MouseEvent's hook (`UpdateCommonPointerEventInit` calls
+`MouseEvent::SetCoordinatesFromWebPointerProperties`). The hook now passes
+the touch point through the same `UniformScreenPoint()`, with the same
+root-frame position, so a `Touch` and the `PointerEvent` of the same
+finger report the same `screenX/Y`, relative to the viewport.
+
+The contact is hardware-revealing too: whether and how a digitizer reports
+the contact ellipse and pressure (many report nothing, others a fixed size,
+others real values at their own resolution) differs between touchscreens,
+and the contact size of a real finger is the user's. The same numbers
+reach pages twice: `Touch.radiusX` is half of `PointerEvent.width`, and
+`Touch.force` feeds `PointerEvent.pressure`. So both are fixed for touch
+pointers: the `Touch` gets the Touch Events spec's values for "unknown"
+(0), the `PointerEvent` the Pointer Events spec's values for hardware
+without contact geometry or pressure (1 x 1, 0.5 while down, 0 otherwise;
+no tilt, twist or barrel pressure). Pens and mice are untouched: pen
+pressure and tilt are what drawing apps need. Cost: pages that use touch
+size or pressure (some drawing apps and games) see none in MoltNet.
+
+### Screens (Window Management API)
+
+`screen.isExtended` is already false for the whole MoltNet process
+(`Screen::isExtended` returns before the permissions-policy check). For
+`window.getScreenDetails()` there were two options: report one screen
+equal to the uniform screen, or reject as if the permission were denied.
+MoltNet rejects, because at 152 that is one hook that cannot leak:
+
+* `getScreenDetails()` is the only way to a `ScreenDetails` or
+  `ScreenDetailed` object, so rejecting there closes every attribute they
+  have (`left/top`, `isPrimary`, `isInternal`, `label`,
+  `devicePixelRatio`, `hdrHeadroom` and the `CanvasHDR` colour primaries),
+  their three change events, and whatever a later Chromium adds. A fake
+  screen needs a hook per attribute and event, and has to stay consistent
+  with what the browser still does with the real screens once the
+  permission is granted (window placement on other screens, fullscreen on
+  a chosen screen, fullscreen popups); the user would also still be asked
+  for the permission.
+* Denial is a state every site already handles: users deny it, and
+  Firefox and Safari don't have the API at all. Together with
+  `isExtended = false` a MoltNet window looks like a one-screen user who
+  said no.
+
+The rejection is the one a real denial gives (`NotAllowedError`,
+"Permission denied."), returned without asking the browser: no prompt and
+no permission state is consulted.
+
+**The permission query did leak.** MoltNet's profile is an off-the-record
+profile of the regular one, and `WINDOW_MANAGEMENT` is registered with
+`INHERIT_IF_LESS_PERMISSIVE`: a block set in the regular profile (for the
+site or as the default) shows in MoltNet, so `navigator.permissions.query`
+said "denied" for users who once blocked window management and "prompt"
+for everyone else, the same way after every New Identity. In MoltNet web
+content the `PermissionStatus` for window-management now always says
+"denied" (matching `getScreenDetails()`), and updates from the browser are
+dropped, so it never fires "change". Other permissions inherit blocks the
+same way; see the gaps.
+
+**Screen change events.** `window.screen` fired "change" whenever the real
+screen changed (the window moved to another monitor, the resolution or
+scale changed, the monitor was rotated), although no value the page sees
+in MoltNet changed: on its own that reveals a second monitor. In MoltNet
+`Screen::AreWebExposedScreenPropertiesEqual` now always says "equal", so
+no such event fires. (If `devicePixelRatio` stays real in MoltNet, a scale
+change keeps firing `matchMedia('(resolution: ...)')` listeners, but no
+longer `screen`'s "change".)
+
+Cost: multi-screen web apps (presenter views, dashboards that place
+windows) work on one screen only in MoltNet windows.
+
+### Screen orientation
+
+At 152, `screen.orientation.type` and `.angle` are what the browser sends
+in `ScreenInfo` for the real display (on desktop
+`DisplayUtil::GetOrientationTypeForDesktop`: portrait when the display is
+at least as tall as wide, primary or secondary by panel rotation; the angle
+is the panel rotation), cached by `ScreenOrientationController::
+UpdateOrientation`, with a "change" event when they change. So a MoltNet
+page saw, next to its letterboxed landscape screen, a pivoted monitor as
+`portrait-secondary` at 270 degrees.
+
+In MoltNet both are now computed when read, from the uniform screen
+(`UniformScreenRect`), with the browser's desktop rule and no rotation:
+angle 0, and **landscape-primary** whenever the rounded screen is wider
+than tall. That holds for every window at least 200 DIPs wider than tall,
+and always at the largest step (1400 x 900); but the steps round width and
+height separately, so a narrow window can round to a square or tall
+screen (a window snapped to half of a 1366 x 768 laptop gives 600 x 600)
+and then reports **portrait-primary**, which is what a real display of
+that size reports and keeps `screen.orientation` consistent with
+`screen.width/height`. (Should letterboxing make the uniform screen
+always landscape, the orientation follows by itself.) No orientation
+"change" events fire in MoltNet.
+
+Checked and left alone: the CSS `orientation` media query is evaluated
+from the viewport (`OrientationMediaFeatureEval` compares the viewport's
+width and height; a square viewport is portrait), not from the screen, so
+it says what `innerWidth/innerHeight` already say (the letterboxing
+work); forcing it would break responsive layouts. `window.orientation` and
+`orientationchange` are behind the Android-only `OrientationEvent` flag.
+`screen.orientation.lock()` fails the same way for everyone on desktop (no
+orientation delegate).
+
+### Form controls in en-US
+
+**Where they come from at 152.**
+
+* *Formats* (field order and separators of date, time, month, week and
+  datetime-local inputs; month and weekday names; AM/PM; digits, decimal
+  and group separators; the first day of the week): form controls ask
+  `Element::GetLocale()`, i.e. `Document::GetCachedLocale()`, which
+  returns `Locale::DefaultLocale()` (the `lang` attribute is only used
+  with `LangAttributeAwareFormControlUI`, off on desktop).
+  `DefaultLocale()` is `Locale::Create(DefaultLanguage())`, and
+  `DefaultLanguage()` is `Platform::DefaultLocale()`, the renderer's
+  `--lang` switch: the browser's UI language. `Locale::Create` is
+  `LocaleIcu` on Linux; `LocaleMac` on macOS, which uses `[NSLocale
+  currentLocale]` (the user's region and custom formats) whenever the
+  language matches; and `LocaleWin` on Windows, which uses
+  `LOCALE_USER_DEFAULT` with the user's overrides whenever the language
+  matches. A page can't read the formats directly, but it can measure the
+  inputs, and number formatting shows in validation messages.
+* *Strings* (`validationMessage`, "Choose File" / "No file chosen", the
+  default "Details" summary, the default submit/reset labels, date-field
+  placeholders such as "mm/dd/yyyy"): `Locale::QueryString` ignores the
+  `Locale` and calls `Platform::QueryLocalizedString`, which ends in
+  `ChromeContentClient::GetLocalizedString` and the renderer's resource
+  bundle: the locale pak named by `--lang` (loaded in
+  `ChromeMainDelegate::PreSandboxStartup`) or, on Linux, the one the zygote
+  loaded for the environment's locale before any profile existed.
+* `LocaleController`, through which MoltNet already forces en-US (and
+  DevTools emulates locales), only sets ICU's default locale and tells V8:
+  `Intl` and `Date` follow it, Blink's form `Locale` never reads it. So it
+  covers neither.
+
+**What MoltNet does.** `Configure(kUniform)` installs a fixed en-US
+`Locale` as `Locale::DefaultLocale()` for the whole process, through a new
+`Locale::SetDefaultLocaleOverride()` (two small additions to
+`platform_locale.{h,cc}`). Its data (`moltnet_values.h`) is exactly what
+`LocaleIcu` computes for en-US at the pinned ICU (checked against ICU):
+"M/d/yy", "h:mm:ss a" and "h:mm a" with the narrow no-break space of CLDR
+42 and later, "MMMM yyyy", English month names, narrow weekday names, AM
+and PM, Sunday first, ASCII digits, "." and ",". So a date input shows
+`03/05/2024` and a time input `1:04:09 PM` for every MoltNet user, on
+macOS and Windows as on Linux, whatever the UI language and regional
+settings. The date and colour picker popups are separate pages a site
+can't read, and keep the user's language and formats.
+
+**Not done: the strings** (still in the browser's UI language). Loading
+the en-US pak in MoltNet renderers is a larger change with user-visible
+costs, so it is left as a design:
+
+1. *Recommended: override only the strings pages can observe.* In MoltNet
+   renderers, `ChromeContentRendererClient::RenderThreadStarted` (where the
+   mode is configured) calls `ui::ResourceBundle::
+   OverrideLocaleStringResource(id, text)` for the page-observable ids
+   (the `IDS_FORM_*` strings of validation messages, file inputs, buttons
+   and date/time fields, `IDS_DETAILS_WITHOUT_SUMMARY_LABEL`, ...), with
+   their en-US text taken from `blink_strings.grd` at build time (a small
+   generated table, with a test that compares it to the `.grd`). The same
+   on every OS, no zygote work, and the browser UI, error pages and
+   accessibility names stay in the user's language. Needs an audit of the
+   `Locale::QueryString` / `QueryLocalizedString` callers to list the ids.
+2. *`--lang=en-US` for MoltNet renderers.* MoltBrowser's
+   `AppendRendererSwitches` could add it, but at 152
+   `RenderProcessHostImpl::AppendRendererCommandLine` appends `--lang`
+   after the embedder's switches, so content needs a one-line change to
+   keep an embedder-set `--lang`. On macOS and Windows renderers then load
+   en-US.pak before the sandbox, and `DefaultLanguage()` becomes en-US on
+   every thread, which also fixes the default text locale (below). On
+   Linux renderers are forked from the zygote, which loaded its pak before
+   any profile existed and can't open another after the fork: it would
+   need to preload en-US.pak and switch to it after forking a MoltNet
+   renderer, for which `ResourceBundle` has no API. And every
+   renderer-generated text in MoltNet tabs turns English: network error
+   pages, media-control labels and screen-reader names, the pickers, parts
+   of `chrome://` pages. (Tor Browser asks the user before requesting
+   English pages.)
+
+`DefaultLanguage()` also names the default text locale
+(`LayoutLocale::GetDefault()`), used for text without a `lang` attribute,
+for instance to pick the Han glyph variants of CJK text when the
+Accept-Language list (en-US in MoltNet) doesn't decide
+(`LayoutLocale::LocaleForHan`): a Japanese or Chinese UI language still
+shows there. Option 2 fixes it; with option 1 it needs its own override of
+`DefaultLanguage()` in MoltNet (`platform/language.cc`, all threads).
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_values_unittest.cc` (5 tests:
+the orientation rule over the letterbox steps, the touch values, the en-US
+data and its consistency) passes with g++ (ASan/UBSan) and clang (UBSan
+trap, `-fno-exceptions -Wunsafe-buffer-usage -Wshorten-64-to-32
+-Wimplicit-int-conversion -Wexit-time-destructors -Wglobal-constructors`),
+with `farbling_unittest.cc` and `fonts_unittest.cc` still passing; the
+en-US data matches what ICU's own `LocaleIcu` calls return for en-US.
+`moltnet_uniformity.cc` and `molt_fingerprinting.cc` type-check with the
+same strict clang flags against stand-ins of the pinned Blink signatures
+(the `Locale` interface copied from the pinned `platform_locale.h`), and an
+8-test harness runs the real glue in all three modes, including real
+kUniform: `Touch.screenX/Y` equal to MouseEvent's, the contact, pens and
+mice left alone, Shields off ignored, non-web pages, `getScreenDetails()`
+and the permission, the orientation of real uniform screens (rotated
+monitor, snapped window, early and detached frames), `Configure` pinning
+the locale; 8 mutations of the glue all fail it. The hook statements type-check with their upstream argument
+types. **Needs the build machine:** compiling Blink with the hooks,
+`blink_unittests` (`MoltNetUniformityTest.*`, `MoltNetValuesTest.*`), and in
+a MoltNet window on a touchscreen laptop (Windows and Linux) and on macOS
+and Windows machines with non-English UI and regional settings: touch
+event test pages, a multi-screen setup (`getScreenDetails()`,
+`permissions.query`, moving the window between monitors), a pivoted
+monitor, and date/time/number inputs and their validation messages.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
@@ -894,15 +1408,27 @@ Honest list; anything not in the table above is not covered.
 
 **MoltNet uniformity not done**
 
-* No real letterboxing of the window: `innerWidth/innerHeight`, CSS
-  `width/height` media queries and layout still reveal the true viewport,
-  and `screen.width` can be smaller than `innerWidth`.
-* CSS `device-width/device-height` media queries, `devicePixelRatio`,
-  `TouchEvent` screen coordinates, the Window Management API
-  (`getScreenDetails()`).
-* Renderer-side UI strings (`validationMessage`, the file input's label) and
-  date/time form-control formats follow the browser's UI language, not
-  en-US.
+* Letterboxing ([Letterboxing](#letterboxing-moltnet)): a zoomed page's
+  `innerWidth`/`innerHeight` show the zoom; the real device pixel ratio
+  shows through device-pixel snapping, `devicePixelContentBoxSize` and DPR
+  client hints; cross-process iframes can report a screen one step
+  narrower than a main frame with a classic scrollbar.
+* Renderer-side UI strings (`validationMessage`, the file input's labels,
+  the default `<details>` summary and button labels, date-field
+  placeholders) follow the browser's UI language, not en-US; the
+  form-control formats are en-US ([design for the
+  strings](#form-controls-in-en-us)).
+* Text without a `lang` attribute uses the browser's UI language as its
+  default locale (`LayoutLocale::GetDefault()`), which shows in the Han
+  glyph variants of CJK text, among others (same section).
+* A touchscreen itself shows: `navigator.maxTouchPoints` (and its value),
+  the `pointer` / `any-pointer` / `hover` media queries and touch-event
+  support; pen pressure, tilt and twist stay real (touch contact and
+  coordinates are uniform, see [Touches](#touches)).
+* Permission states MoltNet's profile inherits from the regular profile
+  (a block, for a site or as the default) show through
+  `navigator.permissions.query` for every permission except
+  window-management, the same after every New Identity.
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 
@@ -964,8 +1490,9 @@ Honest list; anything not in the table above is not covered.
 
 Verified without a Chromium checkout (scratch harnesses, not in the repo):
 
-* `farbling_unittest.cc` (26 tests: v1's 22 plus premultiplied, narrow
-  `readPixels`, float32 and float16 noise) passes standalone with g++
+* `farbling_unittest.cc` (27 tests: v1's 22 plus premultiplied, narrow
+  `readPixels`, float32 and float16 noise, and golden digests of every
+  entry point's output) passes standalone with g++
   (ASan/UBSan/LSan) and clang (UBSan trap; `-Wunsafe-buffer-usage
   -Wshorten-64-to-32 -Wimplicit-int-conversion -fno-exceptions`); HMAC
   vectors from Python's `hmac`, and 140,000 random outputs (the 80,000 of v1
@@ -1018,6 +1545,8 @@ on a canvas-effects video call.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.{h,cc}` | Blink glue (+ `molt_fingerprinting_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.{h,cc}` | a shared worker's storage key, handed to its thread (+ `shared_worker_key_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/webgl_uniform.{h,cc}`, `gpu_uniformity.{h,cc}` | MoltNet WebGL baselines (pure, + `webgl_uniform_unittest.cc`) and their Blink glue, incl. WebGPU (+ `gpu_uniformity_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/letterbox.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_letterbox.h`, `molt_letterbox_view.{h,cc}` | MoltNet screen size, pixel ratio (+ `letterbox_test.cc`); the browser-side letterbox geometry and margins (+ `molt_letterbox_unittest.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, Shields-off sites) |
 | `src/chrome/common/molt_ai/fingerprinting/` | feature, mode switch, `molt_fingerprinting.mojom` |
@@ -1045,7 +1574,14 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 `web_shared_worker.h`, `web_shared_worker_impl.{h,cc}`; MoltNet GPU:
 `gpu.cc` (WebGPU); fonts: `font_selector.{h,cc}`,
 `font_fallback_list.cc`, `css_font_selector_base.{h,cc}`,
-`local_font_face_source.cc`, `font_access.cc`.
+`local_font_face_source.cc`, `font_access.cc`; letterboxing:
+`chrome/browser/ui/views/frame/contents_web_view.{h,cc}`,
+`chrome/browser/profiles/off_the_record_profile_impl.cc`,
+`media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc`;
+MoltNet touches, screens and forms: `touch_event_manager.cc`,
+`pointer_event_factory.cc`, `window_screen_details.cc`,
+`permission_status_listener.cc`, `screen_orientation.cc`,
+`screen_orientation_controller.cc`, `platform_locale.{h,cc}`.
 
 ## Follow-ups
 
@@ -1053,16 +1589,24 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
    (canvas/WebGL/audio values stable within a site, different across sites
    and sessions, unfarbled with Shields off; MoltNet values uniform; the
    seed absent from renderer command lines).
-2. Make canvas-to-video export cheap enough for video-call effects: a
-   faster farbling loop, or noise applied on the GPU in the copy that
-   `captureStream` / `VideoFrame` already do.
+2. Canvas-to-video export in normal windows. The farbling loop is now 2-4x
+   faster (see Cost), which puts a 720p frame at about 1-5 ms of CPU; what
+   is left is the synchronous GPU readback per frame, which needs measuring
+   on real hardware (720p30 and 1080p30/60 `captureStream` /
+   `new VideoFrame(canvas)` test pages, exports forced on and off). The
+   better design is still to farble where a script reads pixels
+   (`VideoFrame.copyTo`, `MediaStreamTrackProcessor`) instead of on every
+   frame.
 3. (Dropped: the channel vote, see known attacks. A real answer to
    scripts written against the noise is a different design, such as a
    prompt before canvas readback, not a noise revision.)
 4. (Done: third-party shared workers use their top-level site's key, see
    [Shared workers](#shared-workers).)
-5. Real letterboxing of MoltNet windows (round the content area itself), then
-   CSS device media queries and `devicePixelRatio`.
+5. (Done: real letterboxing of MoltNet windows, CSS device media queries and
+   `devicePixelRatio`, see [Letterboxing](#letterboxing-moltnet).) Left:
+   letterboxing the CSS size so zoom stops showing, dropping DPR client
+   hints in MoltNet, opening MoltNet windows at a 1400 x 900 page, and the
+   checks on the build machine listed there.
 6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
    version, pin the generic-font settings in MoltNet, and text metrics /
@@ -1072,5 +1616,11 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
    them against the WebGL reports of real Macs, Windows and Linux machines
    in MoltNet windows.
 7. Per-document Shields-off delivery instead of a per-profile list.
-8. MoltNet: renderer UI strings and form-control formats in en-US; touch
-   coordinates; Window Management API.
+8. MoltNet: renderer UI strings in en-US (design in [Form controls in
+   en-US](#form-controls-in-en-us)) and the default text locale; then a
+   touchscreen-less look (`maxTouchPoints`, pointer media queries) and
+   permission states that don't inherit the regular profile's blocks.
+   Done: touch coordinates and contact, the Window Management API, screen
+   orientation, form-control formats ([MoltNet: touches, screens,
+   orientation and form
+   controls](#moltnet-touches-screens-orientation-and-form-controls)).

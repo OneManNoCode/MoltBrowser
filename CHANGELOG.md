@@ -172,6 +172,28 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   23 common extensions and fixed shader precision, never more than the GPU
   really has; WebGPU finds no adapter, so sites fall back to WebGL. Normal
   and incognito windows are unchanged.
+- **MoltNet windows letterbox the page.** The page area is rounded down to
+  200 x 100-pixel steps (at most 1400 x 900) and centred, with margins in
+  the toolbar colour, so a page's size no longer gives away your window,
+  screen or toolbars; it is exactly the screen size MoltNet reports, and so
+  are the `device-width`/`device-height` media queries. Fullscreen stays
+  letterboxed. MoltNet pages also report a pixel ratio of 1 and pick their
+  images for it (canvases and images can look softer on high-density
+  screens), and they open at 100% zoom instead of following your regular
+  zoom settings.
+- **More of MoltNet looks the same for everyone.** Touches report their
+  position relative to the page, like mouse clicks, and no finger size or
+  pressure; sites can't see your other monitors (`getScreenDetails()` is
+  always denied, without a prompt, and moving the window between screens
+  goes unnoticed); `screen.orientation` matches the uniform screen size;
+  date, time and number fields use US English formats whatever your
+  system's language and regional settings. Built-in form messages such as
+  "Please fill out this field" still follow the browser's language.
+- **Fingerprinting noise costs less.** Canvas and WebGL readback,
+  half-float WebGL reads and (in MoltNet windows) canvas video frames get
+  their noise 2-4x faster: a 720p camera-like frame takes 5 ms of CPU
+  instead of 15 ms on a 2.1 GHz test VM. The noise itself is exactly the
+  same, so no site sees different values.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

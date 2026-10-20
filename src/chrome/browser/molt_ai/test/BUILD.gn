@@ -56,5 +56,8 @@ test("molt_ai_unittests") {
     # math (it depends only on //base and //crypto, so it runs here too).
     "//chrome/common/molt_ai/fingerprinting:unit_tests",
     "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
+
+    # MoltNet letterboxing geometry, checked against Blink's rounding.
+    "//chrome/browser/molt_ai/fingerprinting:unit_tests",
   ]
 }

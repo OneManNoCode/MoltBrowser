@@ -27,6 +27,8 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timezone/timezone_controller.h"
@@ -569,6 +571,8 @@ void Configure(Mode mode) {
     const String error = LocaleController::instance().SetLocaleOverride(
         String(kUniformLocale), /*is_claiming_override=*/true);
     DCHECK(error.empty()) << error;
+    // Form controls don't use ICU's default locale (moltnet_uniformity.h).
+    PinUniformFormLocale();
   }
 }
 
@@ -957,20 +961,8 @@ std::optional<gfx::Rect> UniformScreenRect(LocalFrame* frame) {
   if (!IsUniform() || !frame) {
     return std::nullopt;
   }
-  gfx::Size viewport;
-  const LocalFrame& root = frame->LocalFrameRoot();
-  // GetOutermostMainFrameSize() reads the main frame's view, which doesn't
-  // exist yet very early in a main frame's life.
-  if (!root.IsOutermostMainFrame() || root.View()) {
-    viewport = frame->GetOutermostMainFrameSize();
-  }
-  const float scale =
-      frame->GetChromeClient().GetScreenInfo(*frame).device_scale_factor;
-  const float dsf = scale > 0 ? scale : 1.0f;
-  const LetterboxSize size =
-      LetterboxBucket(base::ClampFloor(viewport.width() / dsf),
-                      base::ClampFloor(viewport.height() / dsf));
-  return gfx::Rect(0, 0, size.width, size.height);
+  // Scrollbars included, rounded like innerWidth / innerHeight (letterbox.h).
+  return gfx::Rect(UniformScreenSizeOf(*frame));
 }
 
 std::optional<gfx::PointF> UniformScreenPoint(

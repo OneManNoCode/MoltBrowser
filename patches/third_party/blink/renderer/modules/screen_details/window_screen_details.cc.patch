@@ -1,0 +1,33 @@
+MoltBrowser patch for third_party/blink/renderer/modules/screen_details/window_screen_details.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/modules/screen_details/window_screen_details.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/screen_details/window_screen_details.cc b/third_party/blink/renderer/modules/screen_details/window_screen_details.cc
+index f7619fdcfd6764145c060684d1af1d292ed9e209..dd3846e018caffa73514c7ad3dc4057c0c4cedfc 100644
+--- a/third_party/blink/renderer/modules/screen_details/window_screen_details.cc
++++ b/third_party/blink/renderer/modules/screen_details/window_screen_details.cc
+@@ -11,6 +11,7 @@
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/permissions/permission_utils.h"
+ #include "third_party/blink/renderer/modules/screen_details/screen_details.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+@@ -78,6 +79,14 @@ ScriptPromise<ScreenDetails> WindowScreenDetails::GetScreenDetails(
+       mojom::blink::PermissionName::WINDOW_MANAGEMENT);
+   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<ScreenDetails>>(
+       script_state, exception_state.GetContext());
++  // MoltBrowser: MoltNet windows never share screen details: denied without
++  // asking the browser (no prompt, and no permission state is consulted).
++  if (molt_fingerprinting::HidesScreenDetails(window)) {
++    auto promise = resolver->Promise();
++    resolver->RejectWithDOMException(DOMExceptionCode::kNotAllowedError,
++                                     "Permission denied.");
++    return promise;
++  }
+   const bool has_transient_user_activation =
+       LocalFrame::HasTransientUserActivation(GetSupplementable()->GetFrame());
+   // Only request permission with transient activation, otherwise check quietly.

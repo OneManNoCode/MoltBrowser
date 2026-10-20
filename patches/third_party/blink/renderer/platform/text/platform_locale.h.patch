@@ -1,0 +1,20 @@
+MoltBrowser patch for third_party/blink/renderer/platform/text/platform_locale.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/text/platform_locale.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/text/platform_locale.h b/third_party/blink/renderer/platform/text/platform_locale.h
+index 14ee9782227826050d63c909428f53dd168f75cb..3109715b8309149c282141e03d2312b57908c8d6 100644
+--- a/third_party/blink/renderer/platform/text/platform_locale.h
++++ b/third_party/blink/renderer/platform/text/platform_locale.h
+@@ -43,6 +43,9 @@ class PLATFORM_EXPORT Locale {
+   static std::unique_ptr<Locale> Create(const String& locale_identifier);
+   static Locale& DefaultLocale();
+   static void ResetDefaultLocale();
++  // MoltBrowser: DefaultLocale() returns `locale` from now on (null: undo).
++  // MoltNet renderers pin it to fixed en-US data before any document exists.
++  static void SetDefaultLocaleOverride(std::unique_ptr<Locale> locale);
+ 
+   String QueryString(int resource_id);
+   String QueryString(int resource_id, const String& parameter);

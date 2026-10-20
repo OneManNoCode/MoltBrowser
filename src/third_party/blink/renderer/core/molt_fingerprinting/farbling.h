@@ -142,17 +142,35 @@ class Farbler {
 
  private:
   // The pair collapse on values in [0, max]: pairs {2k + a, 2k + 1 + a}, the
-  // alignment `a` from the key and `context`, one pair in kCollapseOneIn
-  // collapsed onto one of its two values.
-  uint32_t FarbleValue(uint32_t value, uint32_t max, uint64_t context) const;
-  uint8_t FarbleByte(uint8_t value, uint64_t context) const;
+  // alignment `a` from the key and a context, one pair in kCollapseOneIn
+  // collapsed onto one of its two values. Split in two so that loops derive
+  // the context's part once where the context is fixed (a half's sign,
+  // analyser bytes).
+  struct PairContext {
+    uint32_t align;  // `a`.
+    uint64_t seed;   // The PRF input bits that don't depend on the pair.
+  };
+  PairContext PairContextFor(uint64_t context) const;
+  static uint32_t CollapsePair(uint32_t value,
+                               uint32_t max,
+                               const PairContext& pair);
+  // `channel` (0-2, from ChannelFor(alpha)) of a canonical pixel, given its
+  // value, the other two colour channels in the order (channel + 1) % 3,
+  // (channel + 2) % 3, and alpha.
+  uint8_t FarbleChannel(size_t channel,
+                        uint8_t value,
+                        uint8_t other1,
+                        uint8_t other2,
+                        uint8_t alpha) const;
   size_t ChannelFor(uint8_t alpha) const;
-  std::array<uint8_t, 4> FarblePixelInChannel(
-      const std::array<uint8_t, 4>& rgba,
-      size_t channel) const;
+  // FarbleHalf(), given the pair context of the half's sign.
+  static uint16_t FarbleHalfIn(uint16_t half, const PairContext& pair);
   void FarbleRGBA8Impl(base::span<uint8_t> pixels,
                        ChannelOrder order,
                        bool premultiplied) const;
+  // FarbleRGBAF16 (2-byte components) and FarbleRGBAF32 (4-byte).
+  template <size_t kComponentSize>
+  void FarbleRGBAFloat(base::span<uint8_t> pixels) const;
 
   std::array<uint64_t, 4> k_;
 };

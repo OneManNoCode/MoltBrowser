@@ -226,6 +226,9 @@ group("molt_ai") {
   if (!is_android && !is_ios) {
     deps += [
       ":molt_ai_side_panel",
+
+      # MoltNet letterboxing in the window (ContentsWebView's hooks).
+      "fingerprinting:letterbox_view",
     ]
   }
 }
