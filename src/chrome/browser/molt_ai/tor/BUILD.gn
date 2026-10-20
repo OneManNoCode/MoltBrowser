@@ -7,6 +7,8 @@
 #   tor_control_connection.* — SAFECOOKIE-authenticated control client
 #   tor_service.*            — read-only circuit/status queries
 #   molt_net_routing.*       — the isolated MoltNet (Tor) profile
+#   molt_net_isolation_policy.* — which regular-profile prefs MoltNet
+#                              must not use
 
 # Pure, I/O-free logic: control-protocol parsing, SAFECOOKIE, torrc generation,
 # bridge-line validation, which pluggable transports may run, and .onion /
@@ -27,6 +29,15 @@ source_set("protocol") {
     "//base",
     # SAFECOOKIE control-port auth (HMAC-SHA256).
     "//crypto",
+  ]
+}
+
+# Which of the regular profile's prefs MoltNet must not use. Pure (std
+# only), so molt_ai_unittests tests it standalone.
+source_set("isolation_policy") {
+  sources = [
+    "molt_net_isolation_policy.cc",
+    "molt_net_isolation_policy.h",
   ]
 }
 
@@ -154,11 +165,13 @@ source_set("onion") {
 }
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
-# generation, bridge-line validation, .onion / Onion-Location). Picked up by
+# generation, bridge-line validation, .onion / Onion-Location, which prefs
+# MoltNet pins). Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_isolation_policy_unittest.cc",
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",
     "pluggable_transports_unittest.cc",
@@ -166,6 +179,7 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":isolation_policy",
     ":onion_location",
     ":protocol",
     "//base",
