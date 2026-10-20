@@ -123,6 +123,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
@@ -1955,7 +1956,9 @@ double LocalDOMWindow::devicePixelRatio() const {
     return 0.0;
   }
 
-  return GetFrame()->DevicePixelRatio();
+  // MoltBrowser: MoltNet pages report one density (letterbox.h).
+  return molt_fingerprinting::DevicePixelRatioFor(
+      GetFrame(), GetFrame()->DevicePixelRatio());
 }
 
 ScriptPromise<ScrollResult> LocalDOMWindow::scrollBy(ScriptState* script_state,

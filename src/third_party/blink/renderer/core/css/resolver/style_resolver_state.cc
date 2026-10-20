@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/style/computed_style.h"
 
 namespace blink {
@@ -111,9 +112,11 @@ StyleResolverState::StyleResolverState(
       pseudo_request_type_(style_request.type),
       font_builder_(&document),
       styled_element_(ComputeStyledElement(style_request, element)),
+      // MoltBrowser: MoltNet pages pick image-set() images for one density.
       element_style_resources_(
           GetStyledElement() ? *GetStyledElement() : GetElement(),
-          document.DevicePixelRatio()),
+          molt_fingerprinting::DevicePixelRatioFor(
+              document.GetFrame(), document.DevicePixelRatio())),
       pseudo_id_(style_request.pseudo_id),
       originating_element_style_(style_request.originating_element_style),
       is_for_highlight_(IsHighlightPseudoElement(style_request.pseudo_id)),

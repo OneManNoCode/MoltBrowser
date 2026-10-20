@@ -22,6 +22,8 @@
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/media_type_names.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/preferences/preference_overrides.h"
@@ -164,6 +166,10 @@ double MediaValues::CalculateDynamicViewportHeight(LocalFrame* frame) {
 
 int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
   DCHECK(frame && frame->View() && frame->GetSettings() && frame->GetPage());
+  // MoltBrowser: in MoltNet, device-width is the uniform screen's width.
+  if (const auto uniform = molt_fingerprinting::UniformScreenRect(frame)) {
+    return uniform->width();
+  }
   const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   int device_width = screen_info.rect.width();
@@ -176,6 +182,10 @@ int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
 
 int MediaValues::CalculateDeviceHeight(LocalFrame* frame) {
   DCHECK(frame && frame->View() && frame->GetSettings() && frame->GetPage());
+  // MoltBrowser: in MoltNet, device-height is the uniform screen's height.
+  if (const auto uniform = molt_fingerprinting::UniformScreenRect(frame)) {
+    return uniform->height();
+  }
   const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   int device_height = screen_info.rect.height();
@@ -193,7 +203,9 @@ bool MediaValues::CalculateStrictMode(LocalFrame* frame) {
 }
 
 float MediaValues::CalculateDevicePixelRatio(LocalFrame* frame) {
-  return frame->DevicePixelRatio();
+  // MoltBrowser: MoltNet pages report one density (resolution queries).
+  return molt_fingerprinting::DevicePixelRatioFor(frame,
+                                                  frame->DevicePixelRatio());
 }
 
 bool MediaValues::CalculateDeviceSupportsHDR(LocalFrame* frame) {
