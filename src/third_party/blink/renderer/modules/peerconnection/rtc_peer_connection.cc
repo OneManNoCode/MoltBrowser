@@ -92,6 +92,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
+#include "third_party/blink/renderer/core/molt_net/molt_net_renderer.h"  // MoltBrowser
 #include "third_party/blink/renderer/modules/crypto/crypto_result_impl.h"
 #include "third_party/blink/renderer/modules/mediastream/media_constraints_impl.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
@@ -646,6 +647,17 @@ RTCPeerConnection* RTCPeerConnection::Create(
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
         "PeerConnections may not be created in detached documents.");
+    return nullptr;
+  }
+
+  // MoltBrowser: no WebRTC in MoltNet (Tor) windows, as in Tor Browser; the
+  // browser refuses their P2P sockets too (chrome/browser/molt_ai/tor/
+  // molt_net_webrtc.h). Chromium's own "WebRTC is disabled" error, thrown
+  // before the configuration and its ICE server names are read.
+  if (MoltNetWebRtcPeerConnectionsDisabled()) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
+                                      "No PeerConnection handler can be "
+                                      "created, perhaps WebRTC is disabled?");
     return nullptr;
   }
 

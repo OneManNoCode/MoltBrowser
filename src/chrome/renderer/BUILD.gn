@@ -129,6 +129,9 @@ static_library("renderer") {
 
     # MoltBrowser: MoltShield cosmetic filtering (CosmeticFilterAgent).
     "//chrome/renderer/molt_ai/shield",
+
+    # MoltBrowser: no RTCPeerConnection in MoltNet renderers.
+    "//chrome/renderer/molt_ai/tor",
     "//chrome/services/speech/buildflags",
     "//components/actor/core:task_id",
     "//components/autofill/content/renderer",

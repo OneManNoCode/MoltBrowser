@@ -123,6 +123,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/molt_net_webrtc.h"
 #include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
 #include "chrome/browser/molt_ai/tor/onion_request_blocker.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
@@ -3326,6 +3327,10 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 
     // MoltBrowser: fingerprinting protection mode (the seed goes over mojo).
     molt_ai::fingerprinting::AppendRendererSwitches(
+        content::RenderProcessHost::FromID(child_process_id), command_line);
+    // MoltBrowser: --molt-net-renderer for MoltNet's renderers, whose Blink
+    // then refuses RTCPeerConnection (molt_ai/tor/molt_net_webrtc.h).
+    molt_ai::tor::AppendMoltNetRendererSwitches(
         content::RenderProcessHost::FromID(child_process_id), command_line);
   } else if (process_type == switches::kUtilityProcess) {
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)

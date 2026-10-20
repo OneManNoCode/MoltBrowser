@@ -64,6 +64,7 @@
 #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
 #include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"  // MoltBrowser
 #include "chrome/renderer/molt_ai/shield/cosmetic_filter_agent.h"  // MoltBrowser
+#include "chrome/renderer/molt_ai/tor/molt_net_renderer.h"  // MoltBrowser
 #include "chrome/renderer/net/net_error_helper.h"
 #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
 #include "chrome/renderer/plugins/pdf_plugin_placeholder.h"
@@ -389,6 +390,9 @@ void ChromeContentRendererClient::RenderThreadStarted() {
 
   // MoltBrowser: fingerprinting protection, before any frame or worker exists.
   molt_ai::fingerprinting::ConfigureRendererProcess();
+  // MoltBrowser: no RTCPeerConnection in a MoltNet renderer (the browser's
+  // --molt-net-renderer switch; not tied to fingerprinting protection).
+  molt_ai::tor::ConfigureMoltNetRendererProcess();
 
   main_thread_profiler_->SetAuxUnwinderFactory(base::BindRepeating(
       &CreateV8Unwinder, base::Unretained(v8::Isolate::GetCurrent())));

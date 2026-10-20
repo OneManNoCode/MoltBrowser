@@ -342,6 +342,9 @@ source_set("blink_headers") {
 
     # MoltBrowser: fingerprinting protection entry point.
     "web/web_molt_fingerprinting.h",
+
+    # MoltBrowser: what a MoltNet renderer refuses (RTCPeerConnection).
+    "web/web_molt_net.h",
     "web/web_navigation_control.h",
     "web/web_navigation_params.h",
     "web/web_navigation_policy.h",

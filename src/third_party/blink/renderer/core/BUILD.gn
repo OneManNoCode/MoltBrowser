@@ -58,6 +58,7 @@ import("//third_party/blink/renderer/core/messaging/build.gni")
 import("//third_party/blink/renderer/core/mobile_metrics/build.gni")
 import("//third_party/blink/renderer/core/mojo/build.gni")
 import("//third_party/blink/renderer/core/molt_fingerprinting/build.gni")
+import("//third_party/blink/renderer/core/molt_net/build.gni")
 import("//third_party/blink/renderer/core/navigation_api/build.gni")
 import("//third_party/blink/renderer/core/offscreencanvas/build.gni")
 import("//third_party/blink/renderer/core/origin_trials/build.gni")
@@ -335,6 +336,10 @@ component("core") {
   sources += rebase_path(blink_core_sources_molt_fingerprinting,
                          "",
                          "molt_fingerprinting")
+
+  # MoltBrowser: MoltNet renderer state (no RTCPeerConnection), independent
+  # of fingerprinting protection.
+  sources += rebase_path(blink_core_sources_molt_net, "", "molt_net")
   sources +=
       rebase_path(blink_core_sources_navigation_api, "", "navigation_api")
   sources +=
@@ -1544,6 +1549,7 @@ source_set("unit_tests") {
   sources += rebase_path(blink_core_tests_molt_fingerprinting,
                          "",
                          "molt_fingerprinting")
+  sources += rebase_path(blink_core_tests_molt_net, "", "molt_net")
   sources += rebase_path(blink_core_tests_navigation_api, "", "navigation_api")
   sources += rebase_path(blink_core_tests_origin_trials, "", "origin_trials")
   sources += rebase_path(blink_core_tests_page, "", "page")
