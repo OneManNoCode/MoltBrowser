@@ -3,9 +3,11 @@
 
 #include "third_party/blink/renderer/core/molt_fingerprinting/farbling.h"
 
+#include <algorithm>
 #include <bit>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "build/build_config.h"
 #include "crypto/hmac.h"
 
@@ -14,6 +16,15 @@
 #if defined(ARCH_CPU_BIG_ENDIAN)
 #error "molt_fingerprinting assumes a little-endian CPU"
 #endif
+
+// Speed. The buffer loops run over every pixel or sample a page reads back
+// (and over whole video frames where exports are farbled), so:
+//  * the pair collapse selects instead of branching on PRF output;
+//  * what depends only on alpha (the farbled channel) or on a half's sign
+//    (its pair context) is derived once per call, not per pixel or value;
+//  * a pixel or value equal to the previous one reuses its result.
+// The output is unchanged, bit for bit: farbling_unittest.cc pins it with
+// digests recorded before these loops were optimised.
 
 namespace blink::molt_fingerprinting {
 
@@ -43,6 +54,10 @@ constexpr uint64_t kHalfContextTag = uint64_t{1} << 41;
 constexpr uint32_t kHalfMaxFinite = 0x7bff;
 constexpr uint32_t kHalfInfinity = 0x7c00;
 
+// Byte offsets of the canonical R, G and B channels in a 4-byte pixel.
+constexpr std::array<size_t, 3> kRGBAOffsets = {0, 1, 2};
+constexpr std::array<size_t, 3> kBGRAOffsets = {2, 1, 0};
+
 // splitmix64's finalizer: a full-avalanche 64-bit mixer.
 constexpr uint64_t Mix(uint64_t z) {
   z ^= z >> 30;
@@ -61,21 +76,21 @@ uint64_t LoadU64LE(base::span<const uint8_t> bytes) {
   return value;
 }
 
-uint16_t LoadU16LE(base::span<const uint8_t> bytes) {
+uint16_t LoadU16LE(base::span<const uint8_t, 2> bytes) {
   return static_cast<uint16_t>(bytes[0] | (bytes[1] << 8));
 }
 
-void StoreU16LE(base::span<uint8_t> bytes, uint16_t value) {
+void StoreU16LE(base::span<uint8_t, 2> bytes, uint16_t value) {
   bytes[0] = static_cast<uint8_t>(value & 0xff);
   bytes[1] = static_cast<uint8_t>(value >> 8);
 }
 
-uint32_t LoadU32LE(base::span<const uint8_t> bytes) {
+uint32_t LoadU32LE(base::span<const uint8_t, 4> bytes) {
   return uint32_t{bytes[0]} | (uint32_t{bytes[1]} << 8) |
          (uint32_t{bytes[2]} << 16) | (uint32_t{bytes[3]} << 24);
 }
 
-void StoreU32LE(base::span<uint8_t> bytes, uint32_t value) {
+void StoreU32LE(base::span<uint8_t, 4> bytes, uint32_t value) {
   for (size_t i = 0; i < 4; ++i) {
     bytes[i] = static_cast<uint8_t>((value >> (8 * i)) & 0xff);
   }
@@ -125,54 +140,52 @@ uint64_t Farbler::Prf(uint64_t domain, uint64_t input) const {
   return Mix(Mix(input ^ k_[0] ^ (domain * kGolden)) ^ k_[1]) ^ k_[2];
 }
 
-uint32_t Farbler::FarbleValue(uint32_t value,
-                              uint32_t max,
-                              uint64_t context) const {
-  // This runs once per distinct pixel, so it is kept to one multiply for the
-  // pair alignment (which depends only on the context: the other channels +
-  // alpha) and one mix round for the pair decision. Pairs are
-  // {2k + align, 2k + 1 + align}; with align == 1 the values 0 and `max`
-  // (when even) are singletons and never move.
+Farbler::PairContext Farbler::PairContextFor(uint64_t context) const {
+  // One multiply for the pair alignment, which depends only on the context
+  // (for pixels: the other channels + alpha).
   const uint32_t align =
       static_cast<uint32_t>(((context ^ k_[3]) * (k_[1] | 1)) >> 63);
-  if (value < align || value > max) {
-    return value;
-  }
-  const uint32_t k = (value - align) >> 1;
-  const uint32_t lo = 2 * k + align;
-  const uint32_t hi = lo + 1;
-  if (hi > max) {
-    return value;
-  }
-  const uint64_t r = Mix(context ^ k_[0] ^ ((uint64_t{k} + 1) * kGolden) ^
-                         (uint64_t{align} << 63));
-  if ((r & (kCollapseOneIn - 1)) != 0) {
-    return value;
-  }
-  return (r / kCollapseOneIn) & 1 ? hi : lo;
+  return {align, context ^ k_[0] ^ (uint64_t{align} << 63)};
 }
 
-uint8_t Farbler::FarbleByte(uint8_t value, uint64_t context) const {
-  return static_cast<uint8_t>(FarbleValue(value, 255, context));
+// static
+uint32_t Farbler::CollapsePair(uint32_t value,
+                               uint32_t max,
+                               const PairContext& pair) {
+  // Pairs are {2k + align, 2k + 1 + align}; with align == 1 the values 0 and
+  // `max` (when even) are singletons and never move. One mix round decides
+  // pair k: it collapses one time in kCollapseOneIn, onto lo or hi.
+  const uint32_t k = (value - pair.align) >> 1;  // Unused if value < align.
+  const uint32_t lo = 2 * k + pair.align;
+  const uint64_t r = Mix(pair.seed ^ ((uint64_t{k} + 1) * kGolden));
+  const bool in_pair = value >= pair.align && lo + 1 <= max;
+  const bool collapse = in_pair && (r & (kCollapseOneIn - 1)) == 0;
+  const uint32_t target = lo + static_cast<uint32_t>((r / kCollapseOneIn) & 1);
+  // Both outcomes are coin flips, so this is a select, not a branch: a branch
+  // on them is mispredicted so often that it costs more than the mix.
+#if HAS_BUILTIN(__builtin_unpredictable)
+  return __builtin_unpredictable(collapse) ? target : value;
+#else
+  return collapse ? target : value;
+#endif
+}
+
+uint8_t Farbler::FarbleChannel(size_t channel,
+                               uint8_t value,
+                               uint8_t other1,
+                               uint8_t other2,
+                               uint8_t alpha) const {
+  // The farbled channel depends only on alpha, and the pair only on the
+  // other channels, so moving the channel never changes either decision:
+  // that is what makes the mapping idempotent.
+  const uint64_t context = uint64_t{channel} | (uint64_t{other1} << 8) |
+                           (uint64_t{other2} << 16) | (uint64_t{alpha} << 24);
+  return static_cast<uint8_t>(
+      CollapsePair(value, 255, PairContextFor(context)));
 }
 
 size_t Farbler::ChannelFor(uint8_t alpha) const {
   return static_cast<size_t>(Prf(kDomainChannel, alpha) % 3);
-}
-
-std::array<uint8_t, 4> Farbler::FarblePixelInChannel(
-    const std::array<uint8_t, 4>& rgba,
-    size_t channel) const {
-  // The farbled channel depends only on alpha, and the pair only on the
-  // other channels, so moving the channel never changes either decision:
-  // that is what makes the mapping idempotent.
-  const uint64_t other1 = rgba[(channel + 1) % 3];
-  const uint64_t other2 = rgba[(channel + 2) % 3];
-  const uint64_t context = uint64_t{channel} | (other1 << 8) | (other2 << 16) |
-                           (uint64_t{rgba[3]} << 24);
-  std::array<uint8_t, 4> out = rgba;
-  out[channel] = FarbleByte(rgba[channel], context);
-  return out;
 }
 
 std::array<uint8_t, 4> Farbler::FarblePixel(
@@ -180,7 +193,11 @@ std::array<uint8_t, 4> Farbler::FarblePixel(
   if (rgba[3] == 0) {
     return rgba;
   }
-  return FarblePixelInChannel(rgba, ChannelFor(rgba[3]));
+  const size_t channel = ChannelFor(rgba[3]);
+  std::array<uint8_t, 4> out = rgba;
+  out[channel] = FarbleChannel(channel, rgba[channel], rgba[(channel + 1) % 3],
+                               rgba[(channel + 2) % 3], rgba[3]);
+  return out;
 }
 
 void Farbler::FarbleRGBA8(base::span<uint8_t> pixels,
@@ -196,47 +213,63 @@ void Farbler::FarbleRGBA8Premul(base::span<uint8_t> pixels,
 void Farbler::FarbleRGBA8Impl(base::span<uint8_t> pixels,
                               ChannelOrder order,
                               bool premultiplied) const {
-  const size_t r_index = order == ChannelOrder::kBGRA ? 2 : 0;
-  const size_t b_index = 2 - r_index;
-  const size_t count = pixels.size() / 4;
-  // Canvases are full of runs of one colour and mostly of one alpha: skip
-  // the PRFs for repeats. (last_in == 0 is transparent, which is never
-  // looked up.)
-  uint32_t last_in = 0;
-  std::array<uint8_t, 4> last_out = {0, 0, 0, 0};
-  bool last_changed = false;
+  const std::array<size_t, 3>& offsets =
+      order == ChannelOrder::kBGRA ? kBGRAOffsets : kRGBAOffsets;
+  // What depends only on alpha, which pixels mostly share: the farbled
+  // channel, the byte offsets of it and of the two others, and the largest
+  // value it may take.
   int last_alpha = -1;
   size_t channel = 0;
-  for (size_t p = 0; p < 4 * count; p += 4) {
-    const uint8_t alpha = pixels[p + 3];
+  size_t at = 0;
+  size_t other1_at = 0;
+  size_t other2_at = 0;
+  uint8_t ceiling = 255;
+  // ChannelFor() each alpha, derived on first use (anti-aliased edges cycle
+  // through many alphas).
+  constexpr uint8_t kNotDerived = 0xff;
+  std::array<uint8_t, 256> channel_for_alpha;
+  channel_for_alpha.fill(kNotDerived);
+  // Canvases are full of runs of one colour: a repeat reuses the previous
+  // result. (The all-zero pixel is transparent, so it never needs one.)
+  uint32_t last_pixel = 0;
+  uint8_t last_in = 0;
+  uint8_t last_out = 0;
+  for (size_t p = 0; p + 4 <= pixels.size(); p += 4) {
+    const base::span<uint8_t, 4> px = pixels.subspan(p).first<4u>();
+    const uint32_t pixel = LoadU32LE(px);
+    if (pixel == last_pixel) {
+      if (last_out != last_in) {
+        px[at] = last_out;
+      }
+      continue;
+    }
+    const uint8_t alpha = px[3];
     if (alpha == 0) {
       continue;
     }
-    const std::array<uint8_t, 4> rgba = {pixels[p + r_index], pixels[p + 1],
-                                         pixels[p + b_index], alpha};
-    const uint32_t packed = uint32_t{rgba[0]} | (uint32_t{rgba[1]} << 8) |
-                            (uint32_t{rgba[2]} << 16) | (uint32_t{alpha} << 24);
-    if (packed != last_in) {
-      last_in = packed;
-      if (alpha != last_alpha) {
-        last_alpha = alpha;
-        channel = ChannelFor(alpha);
+    if (alpha != last_alpha) {
+      last_alpha = alpha;
+      uint8_t& derived = channel_for_alpha[alpha];
+      if (derived == kNotDerived) {
+        derived = static_cast<uint8_t>(ChannelFor(alpha));
       }
-      last_out = FarblePixelInChannel(rgba, channel);
-      if (premultiplied && last_out[channel] > alpha) {
-        // Premultiplied colour channels can't exceed alpha. Not moving is
-        // still idempotent: the decision for this tuple is the same next
-        // time, and it is again refused.
-        last_out = rgba;
-      }
-      last_changed = last_out != rgba;
+      channel = derived;
+      at = offsets[channel];
+      other1_at = offsets[(channel + 1) % 3];
+      other2_at = offsets[(channel + 2) % 3];
+      ceiling = premultiplied ? alpha : 255;
     }
-    if (!last_changed) {
-      continue;
+    last_pixel = pixel;
+    last_in = px[at];
+    last_out =
+        FarbleChannel(channel, last_in, px[other1_at], px[other2_at], alpha);
+    if (last_out > ceiling) {
+      // Premultiplied colour channels can't exceed alpha. Not moving is
+      // still idempotent: the decision for this tuple is the same next
+      // time, and it is again refused.
+      last_out = last_in;
     }
-    pixels[p + r_index] = last_out[0];
-    pixels[p + 1] = last_out[1];
-    pixels[p + b_index] = last_out[2];
+    px[at] = last_out;
   }
 }
 
@@ -255,63 +288,86 @@ void Farbler::FarbleUnorm8(base::span<uint8_t> pixels, size_t channels) const {
     // read). The RGBA read of the same data moves that channel, not R.
     return;
   }
-  const size_t count = pixels.size() / channels;
-  for (size_t i = 0; i < count; ++i) {
-    base::span<uint8_t> px = pixels.subspan(channels * i, channels);
-    std::array<uint8_t, 4> rgba = {0, 0, 0, 255};
-    for (size_t c = 0; c < channels; ++c) {
-      rgba[c] = px[c];
+  // Components the format doesn't return are 0 for the decision.
+  const size_t other1 = (channel + 1) % 3;
+  const size_t other2 = (channel + 2) % 3;
+  // A repeat reuses the previous result (1 << 24 matches no pixel).
+  uint32_t last_pixel = uint32_t{1} << 24;
+  uint8_t last_out = 0;
+  for (size_t p = 0; p + channels <= pixels.size(); p += channels) {
+    const base::span<uint8_t> px = pixels.subspan(p, channels);
+    const uint8_t value = px[channel];
+    const uint8_t value1 = other1 < channels ? px[other1] : 0;
+    const uint8_t value2 = other2 < channels ? px[other2] : 0;
+    const uint32_t pixel =
+        value | (uint32_t{value1} << 8) | (uint32_t{value2} << 16);
+    if (pixel != last_pixel) {
+      last_pixel = pixel;
+      last_out = FarbleChannel(channel, value, value1, value2, 255);
     }
-    px[channel] = FarblePixelInChannel(rgba, channel)[channel];
+    px[channel] = last_out;
   }
 }
 
 void Farbler::FarbleRGBAF16(base::span<uint8_t> pixels) const {
-  const size_t count = pixels.size() / 8;
-  for (size_t i = 0; i < count; ++i) {
-    base::span<uint8_t> px = pixels.subspan(8 * i, 8u);
-    std::array<uint8_t, 4> rgba;
-    std::array<bool, 4> in_range;
-    for (size_t c = 0; c < 4; ++c) {
-      bool ok = false;
-      rgba[c] = ToUnorm8(HalfToFloat(LoadU16LE(px.subspan(2 * c, 2u))), &ok);
-      in_range[c] = ok;
-    }
-    if (rgba[3] == 0) {
-      continue;
-    }
-    const std::array<uint8_t, 4> out = FarblePixel(rgba);
-    for (size_t c = 0; c < 3; ++c) {
-      if (out[c] != rgba[c] && in_range[c]) {
-        // Snap to the target 8-bit level so an 8-bit read of the same data,
-        // and a second pass, see exactly `out[c]`.
-        StoreU16LE(px.subspan(2 * c, 2u), FloatToHalf(out[c] / 255.0f));
-      }
-    }
-  }
+  FarbleRGBAFloat<2>(pixels);
 }
 
 void Farbler::FarbleRGBAF32(base::span<uint8_t> pixels) const {
-  const size_t count = pixels.size() / 16;
-  for (size_t i = 0; i < count; ++i) {
-    base::span<uint8_t> px = pixels.subspan(16 * i, 16u);
+  FarbleRGBAFloat<4>(pixels);
+}
+
+template <size_t kComponentSize>
+void Farbler::FarbleRGBAFloat(base::span<uint8_t> pixels) const {
+  constexpr size_t kPixelSize = 4 * kComponentSize;
+  // A component of `px` as a float, and a float stored as a component.
+  auto load = [](base::span<const uint8_t> component) {
+    if constexpr (kComponentSize == 2) {
+      return HalfToFloat(LoadU16LE(component.first<2u>()));
+    } else {
+      return std::bit_cast<float>(LoadU32LE(component.first<4u>()));
+    }
+  };
+  auto store = [](base::span<uint8_t> component, float value) {
+    if constexpr (kComponentSize == 2) {
+      StoreU16LE(component.first<2u>(), FloatToHalf(value));
+    } else {
+      StoreU32LE(component.first<4u>(), std::bit_cast<uint32_t>(value));
+    }
+  };
+  int last_alpha = -1;
+  size_t channel = 0;
+  // A repeat of the previous pixel (as stored) gets the result the previous
+  // pixel got, which sits just before it.
+  std::array<uint8_t, kPixelSize> previous = {};
+  for (size_t p = 0; p + kPixelSize <= pixels.size(); p += kPixelSize) {
+    base::span<uint8_t, kPixelSize> px = pixels.subspan(p).first<kPixelSize>();
+    if (p > 0 && std::ranges::equal(px, previous)) {
+      px.copy_from(pixels.subspan(p - kPixelSize).first<kPixelSize>());
+      continue;
+    }
+    base::span(previous).copy_from(px);
     std::array<uint8_t, 4> rgba;
     std::array<bool, 4> in_range;
     for (size_t c = 0; c < 4; ++c) {
       bool ok = false;
-      rgba[c] =
-          ToUnorm8(std::bit_cast<float>(LoadU32LE(px.subspan(4 * c, 4u))), &ok);
+      rgba[c] = ToUnorm8(load(px.subspan(c * kComponentSize)), &ok);
       in_range[c] = ok;
     }
     if (rgba[3] == 0) {
       continue;
     }
-    const std::array<uint8_t, 4> out = FarblePixel(rgba);
-    for (size_t c = 0; c < 3; ++c) {
-      if (out[c] != rgba[c] && in_range[c]) {
-        StoreU32LE(px.subspan(4 * c, 4u),
-                   std::bit_cast<uint32_t>(out[c] / 255.0f));
-      }
+    if (rgba[3] != last_alpha) {
+      last_alpha = rgba[3];
+      channel = ChannelFor(rgba[3]);
+    }
+    const uint8_t out =
+        FarbleChannel(channel, rgba[channel], rgba[(channel + 1) % 3],
+                      rgba[(channel + 2) % 3], rgba[3]);
+    if (out != rgba[channel] && in_range[channel]) {
+      // Snap to the target 8-bit level so an 8-bit read of the same data,
+      // and a second pass, see exactly `out`.
+      store(px.subspan(channel * kComponentSize), out / 255.0f);
     }
   }
 }
@@ -331,77 +387,72 @@ float Farbler::FarbleSample(float sample) const {
 }
 
 void Farbler::FarbleAudio(base::span<float> samples) const {
-  float last_in = 0.0f;
+  // A repeat (compared as bits: NaN != NaN, and -0 vs +0 must stay distinct)
+  // reuses the previous result. FarbleSample() leaves +0 alone.
+  uint32_t last_in = 0;
   float last_out = 0.0f;
-  bool have_last = false;
-  for (size_t i = 0; i < samples.size(); ++i) {
-    const float sample = samples[i];
-    // Compare bit patterns: NaN != NaN, and -0 vs +0 must stay distinct.
-    if (!have_last ||
-        std::bit_cast<uint32_t>(sample) != std::bit_cast<uint32_t>(last_in)) {
-      last_in = sample;
+  for (float& sample : samples) {
+    const uint32_t bits = std::bit_cast<uint32_t>(sample);
+    if (bits != last_in) {
+      last_in = bits;
       last_out = FarbleSample(sample);
-      have_last = true;
     }
-    samples[i] = last_out;
+    sample = last_out;
   }
 }
 
 void Farbler::FarbleFloat32(base::span<uint8_t> bytes) const {
-  const size_t count = bytes.size() / 4;
+  // As FarbleAudio().
   uint32_t last_in = 0;
   uint32_t last_out = 0;
-  bool have_last = false;
-  for (size_t i = 0; i < count; ++i) {
-    base::span<uint8_t> value = bytes.subspan(4 * i, 4u);
+  for (size_t i = 0; i + 4 <= bytes.size(); i += 4) {
+    const base::span<uint8_t, 4> value = bytes.subspan(i).first<4u>();
     const uint32_t bits = LoadU32LE(value);
-    if (!have_last || bits != last_in) {
+    if (bits != last_in) {
       last_in = bits;
       last_out =
           std::bit_cast<uint32_t>(FarbleSample(std::bit_cast<float>(bits)));
-      have_last = true;
     }
-    if (last_out != bits) {
-      StoreU32LE(value, last_out);
-    }
+    StoreU32LE(value, last_out);
   }
 }
 
-uint16_t Farbler::FarbleHalf(uint16_t half) const {
+// static
+uint16_t Farbler::FarbleHalfIn(uint16_t half, const PairContext& pair) {
   const uint32_t sign = half & 0x8000u;
   const uint32_t magnitude = half & 0x7fffu;
-  if (magnitude == 0 || magnitude >= kHalfInfinity) {
-    // Zero, infinity, NaN.
-    return half;
-  }
   // Adjacent finite non-zero magnitudes are adjacent values, one ulp apart
   // (also across exponent boundaries). Shifting by one keeps 0 out of every
   // pair, and capping at the largest finite magnitude keeps infinity out.
-  const uint32_t moved = FarbleValue(magnitude - 1, kHalfMaxFinite - 1,
-                                     kHalfContextTag | (sign >> 15)) +
-                         1;
-  return static_cast<uint16_t>(sign | moved);
+  const uint32_t moved =
+      CollapsePair(magnitude - 1, kHalfMaxFinite - 1, pair) + 1;
+  // Zero, infinity and NaN never move.
+  const bool finite_non_zero = magnitude != 0 && magnitude < kHalfInfinity;
+  return finite_non_zero ? static_cast<uint16_t>(sign | moved) : half;
+}
+
+uint16_t Farbler::FarbleHalf(uint16_t half) const {
+  return FarbleHalfIn(half,
+                      PairContextFor(kHalfContextTag | (uint64_t{half} >> 15)));
 }
 
 void Farbler::FarbleFloat16(base::span<uint8_t> bytes) const {
-  const size_t count = bytes.size() / 2;
-  for (size_t i = 0; i < count; ++i) {
-    base::span<uint8_t> value = bytes.subspan(2 * i, 2u);
+  // A half's context is just its sign: derive both once.
+  const std::array<PairContext, 2> pairs = {
+      PairContextFor(kHalfContextTag), PairContextFor(kHalfContextTag | 1)};
+  for (size_t i = 0; i + 2 <= bytes.size(); i += 2) {
+    const base::span<uint8_t, 2> value = bytes.subspan(i).first<2u>();
     const uint16_t half = LoadU16LE(value);
-    const uint16_t out = FarbleHalf(half);
-    if (out != half) {
-      StoreU16LE(value, out);
-    }
+    StoreU16LE(value, FarbleHalfIn(half, pairs[size_t{half} >> 15]));
   }
 }
 
 void Farbler::FarbleAudioBytes(base::span<uint8_t> bytes,
                                uint8_t neutral) const {
-  const uint64_t context = kAudioByteContextTag | neutral;
-  for (size_t i = 0; i < bytes.size(); ++i) {
-    if (bytes[i] != neutral) {
-      bytes[i] = FarbleByte(bytes[i], context);
-    }
+  const PairContext pair = PairContextFor(kAudioByteContextTag | neutral);
+  for (uint8_t& byte : bytes) {
+    const uint8_t moved = static_cast<uint8_t>(CollapsePair(byte, 255, pair));
+    byte = byte == neutral ? byte : moved;
   }
 }
 

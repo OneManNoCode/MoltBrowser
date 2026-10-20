@@ -189,6 +189,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   date, time and number fields use US English formats whatever your
   system's language and regional settings. Built-in form messages such as
   "Please fill out this field" still follow the browser's language.
+- **Fingerprinting noise costs less.** Canvas and WebGL readback,
+  half-float WebGL reads and (in MoltNet windows) canvas video frames get
+  their noise 2-4x faster: a 720p camera-like frame takes 5 ms of CPU
+  instead of 15 ms on a 2.1 GHz test VM. The noise itself is exactly the
+  same, so no site sees different values.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
