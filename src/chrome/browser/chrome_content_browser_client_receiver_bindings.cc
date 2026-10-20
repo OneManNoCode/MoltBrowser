@@ -15,6 +15,7 @@
 #include "chrome/browser/chrome_content_browser_client_parts.h"
 #include "chrome/browser/content_settings/content_settings_manager_delegate.h"
 #include "chrome/browser/headless/headless_mode_util.h"
+#include "chrome/browser/molt_ai/tor/molt_net_webrtc.h"  // MoltBrowser
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/net_benchmarking.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
@@ -325,6 +326,10 @@ void ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
     mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
   chrome::internal::PopulateChromeFrameBinders(map, render_frame_host);
   chrome::internal::PopulateChromeWebUIFrameBinders(map, render_frame_host);
+  // MoltBrowser: a MoltNet frame gets no P2P sockets (and so no host-name
+  // lookups) or mDNS responder (chrome/browser/molt_ai/tor/molt_net_webrtc.h).
+  // Nothing below registers either interface.
+  molt_ai::tor::RegisterMoltNetFrameBinders(render_frame_host, map);
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   if (!render_frame_host->GetSiteInstance()->GetSecurityPrincipal().SchemeIs(

@@ -215,6 +215,9 @@ group("molt_ai") {
     # Keeps the regular profile's extensions and services out of MoltNet
     # windows; called from the extensions, profiles and ssl hooks.
     "tor:isolation",
+    # No WebRTC networking in MoltNet windows; called from
+    # chrome_content_browser_client{,_receiver_bindings}.cc.
+    "tor:webrtc",
 
     # Fingerprinting protection: session seed + renderer switches (the engine
     # is in Blink, //third_party/blink/renderer/core/molt_fingerprinting).
