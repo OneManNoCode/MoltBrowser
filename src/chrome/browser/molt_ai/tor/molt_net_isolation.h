@@ -17,7 +17,9 @@
 //     as not allowed in Incognito, and as invisible to MoltNet renderers,
 //     for MoltNet profiles (no background page or service worker, content
 //     script, extension page, web-accessible resource, page-to-extension
-//     messaging, toolbar button, omnibox keyword or new-tab override);
+//     messaging, toolbar button, omnibox keyword or chrome:// override);
+//     MoltNet windows list no side panel of theirs
+//     (extension_side_panel_manager.cc);
 //   * events about MoltNet (tabs, windows, webNavigation, downloads,
 //     cookies, context menus, commands, ...) never reach them
 //     (events/event_dispatch_helper.cc);

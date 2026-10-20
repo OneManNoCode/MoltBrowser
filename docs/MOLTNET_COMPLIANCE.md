@@ -134,8 +134,8 @@ would link MoltNet to your regular browsing. So:
   allowed there: MoltNet renderers don't load it, so it has no content
   scripts and pages can't message it or load its web-accessible resources
   (which is how sites detect extensions); it gets no background page or
-  service worker, extension pages, toolbar button, omnibox keyword or page
-  override in MoltNet; no events about MoltNet tabs, windows, navigations,
+  service worker, extension pages, toolbar button, side panel, omnibox
+  keyword or page override in MoltNet; no events about MoltNet tabs, windows, navigations,
   downloads, cookies, context menus or keyboard shortcuts reach it; the
   tabs and windows APIs and `chrome.debugger` don't show it MoltNet windows
   or pages; it can't open tabs in a MoltNet window; MoltNet's requests,

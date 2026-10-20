@@ -6,6 +6,7 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/actions/chrome_actions.h"
@@ -92,6 +93,11 @@ void ExtensionSidePanelManager::MaybeCreateActionItemForExtension(
                        mojom::APIPermissionID::kSidePanel)) {
     return;
   }
+  // MoltBrowser: no side panel of an extension kept out of MoltNet (Tor)
+  // windows (molt_ai/tor/molt_net_isolation.h).
+  if (molt_ai::tor::IsExtensionKeptOutOf(extension, profile_)) {
+    return;
+  }
 
   actions::ActionId extension_action_id =
       GetOrCreateActionIdForExtension(extension);
@@ -163,6 +169,10 @@ void ExtensionSidePanelManager::OnExtensionUnloaded(
 
 void ExtensionSidePanelManager::MaybeCreateExtensionSidePanelCoordinator(
     const Extension* extension) {
+  // MoltBrowser: see MaybeCreateActionItemForExtension().
+  if (molt_ai::tor::IsExtensionKeptOutOf(extension, profile_)) {
+    return;
+  }
   if (extension->permissions_data()->HasAPIPermission(
           mojom::APIPermissionID::kSidePanel)) {
     coordinators_.emplace(extension->id(),
