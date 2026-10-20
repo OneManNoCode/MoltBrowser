@@ -24,9 +24,10 @@
 //   * MoltNet requests are never proxied for webRequest or
 //     declarativeNetRequest (api/web_request/web_request_api.cc);
 //   * MoltNet windows and tabs are invisible to the tabs and windows APIs
-//     (browser_extension_window_controller.cc), never the "current window"
-//     an extension opens tabs in (chrome_extension_function_details.cc),
-//     and can't be debugged (api/debugger/debugger_api.cc);
+//     (browser_extension_window_controller.cc), never the window an
+//     extension opens tabs in (chrome_extension_function_details.cc,
+//     browser_window_util.cc), and can't be debugged
+//     (api/debugger/debugger_api.cc);
 //   * no extension-controlled preference applies to MoltNet's prefs
 //     (off_the_record_profile_impl.cc).
 //
@@ -35,8 +36,16 @@
 //     (CreateMoltNetSSLHostStateDelegate; the regular profile's are
 //     inherited by an off-the-record HostContentSettingsMap).
 //   * The rest are one-line hooks next to the code they change, each
-//     asking IsMoltNetProfile() (molt_net_profile_id.h); docs/
-//     MOLTNET_COMPLIANCE.md lists them.
+//     asking IsMoltNetProfile() (molt_net_profile_id.h): no high media
+//     engagement (media_engagement_service.cc), no engaged sites for
+//     lookalike warnings (lookalike_url_navigation_throttle.cc), no
+//     navigator.storage.persist() grant (persistent_storage_permission_
+//     context.cc), Incognito's third-party-cookie blocking and Privacy
+//     Sandbox off (cookie_settings_factory.cc, privacy_sandbox_settings_
+//     delegate.cc), no ambient authentication (profile_network_context_
+//     service.cc) and no "unfamiliar site" heuristic
+//     (site_familiarity_utils.cc). docs/MOLTNET_COMPLIANCE.md §2 explains
+//     what each one stops a page from seeing.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_ISOLATION_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_ISOLATION_H_

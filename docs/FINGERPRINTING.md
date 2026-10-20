@@ -263,6 +263,10 @@ video pipelines, PBO readback).
 | `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
 | `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
+| Installed extensions: web-accessible resources, page-to-extension messaging (`chrome.runtime`), content-script changes, blocked or rewritten requests | the user's (in Incognito: those allowed there) | **none**; only the built-in PDF viewer ([details](MOLTNET_COMPLIANCE.md#2-how-it-is-built)) | `extension_util.cc`: `IsIncognitoEnabled`, `IsExtensionVisibleToContext`; `web_request_api.cc` |
+| Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
+| `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
+| Third-party cookies, Shared Storage | the user's settings | **blocked**, **off** (as in Incognito) | `cookie_settings_factory.cc`, `privacy_sandbox_settings_delegate.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
 | `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
@@ -1429,6 +1433,11 @@ Honest list; anything not in the table above is not covered.
   (a block, for a site or as the default) show through
   `navigator.permissions.query` for every permission except
   window-management, the same after every New Identity.
+* Other site settings MoltNet's profile inherits show too: MoltShield's
+  per-site "Shields off" (that site's ads and trackers load in MoltNet as
+  well), dismissed install prompts, and site settings an extension made
+  for Incognito. (Extensions themselves, media engagement, bookmarks and
+  the other services in the table above no longer reach MoltNet.)
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 
