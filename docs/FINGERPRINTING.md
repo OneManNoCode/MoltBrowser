@@ -204,9 +204,13 @@ worklets it creates and service and shared workers under that site
 (third-party ones included).
 MoltNet keeps farbling regardless: there the point is to look like every
 other MoltNet user, and the real canvas/audio values would link New
-Identity sessions on that site. MoltShield's *global* switch and the `ADS`
-*default* don't affect farbling (independence from `--disable-molt-shield`
-is deliberate, see the kill switch below).
+Identity sessions on that site. MoltNet windows also don't inherit the
+regular profile's Shields-off sites, so MoltShield filters them there
+([settings from the regular
+profile](#moltnet-settings-from-the-regular-profile)); turning Shields off
+in a MoltNet window lasts for that session. MoltShield's *global* switch
+and the `ADS` *default* don't affect farbling (independence from
+`--disable-molt-shield` is deliberate, see the kill switch below).
 
 * **Which exceptions count.** The browser turns each Shields-down exception
   into its top-level site (`net::SchemefulSite` of the pattern's host,
@@ -263,6 +267,8 @@ video pipelines, PBO readback).
 | `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
 | `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
+| Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
+| Permission and content-setting state (`navigator.permissions.query`, embargo, blocked JavaScript/images/..., Shields off), third-party cookies, Privacy Sandbox APIs | the profile's | **defaults + this session's changes** only, nothing from the regular profile | same |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
 | `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
@@ -1055,7 +1061,12 @@ from the next document (MoltShield reloads the page).
   metrics, different glyphs). Some default settings (per-script CJK
   fonts, `math`) are lists from which Chromium takes the first installed
   family, so those generics also tell which candidate is installed.
-  MoltNet should eventually pin these settings.
+  MoltNet windows use MoltBrowser's default font settings, not the user's
+  ([settings from the regular
+  profile](#moltnet-settings-from-the-regular-profile)), but those
+  defaults come from the UI language's resources (and, for the fixed font
+  on Windows, the ClearType setting), so users with different UI
+  languages still differ there.
 * Users whose machine lacks an allow-listed font (removed by an
   administrator, minimal Linux installs) remain distinguishable by that.
 * In normal windows, a sampled name that resolves to a hidden family costs a
@@ -1176,8 +1187,11 @@ said "denied" for users who once blocked window management and "prompt"
 for everyone else, the same way after every New Identity. In MoltNet web
 content the `PermissionStatus` for window-management now always says
 "denied" (matching `getScreenDetails()`), and updates from the browser are
-dropped, so it never fires "change". Other permissions inherit blocks the
-same way; see the gaps.
+dropped, so it never fires "change". Other permissions inherited blocks the
+same way; MoltNet no longer inherits any permission state from the regular
+profile ([settings from the regular
+profile](#moltnet-settings-from-the-regular-profile)), and this override
+stays so the query keeps matching `getScreenDetails()`.
 
 **Screen change events.** `window.screen` fired "change" whenever the real
 screen changed (the window moved to another monitor, the resolution or
@@ -1334,6 +1348,105 @@ event test pages, a multi-screen setup (`getScreenDetails()`,
 `permissions.query`, moving the window between monitors), a pivoted
 monitor, and date/time/number inputs and their validation messages.
 
+## MoltNet: settings from the regular profile
+
+MoltNet's profile is an off-the-record profile of the user's regular one,
+and Chromium builds an off-the-record profile's prefs as an in-memory
+overlay that reads every pref it hasn't written itself from the parent.
+Content settings are prefs too, so this is also how Incognito inherits
+site permissions and the content-setting defaults
+(`INHERIT_IN_INCOGNITO`, `INHERIT_IF_LESS_PERMISSIVE`). In MoltNet that
+let pages see the user's own settings: the same in every MoltNet session,
+after every New Identity, and the same as in the user's regular windows.
+At 152 this included, with how a page sees it:
+
+* **Permissions and content settings, every type.** A site's block (or the
+  user's default) for camera, microphone, location, notifications and the
+  rest showed in `navigator.permissions.query` and in what a request
+  returns; blocked JavaScript, images, pop-ups or sound showed directly;
+  permission **embargo** (`PERMISSION_AUTOBLOCKER_DATA`, inherited, read by
+  `PermissionDecisionAutoBlocker` from MoltNet's own map) turned a "prompt"
+  into "denied"; engagement data and MoltShield's per-site *Shields off*
+  (`ADS`) were inherited too.
+* **WebPreferences**: the font family of every generic family for every
+  script, the default and minimum font sizes (`ChromeContentBrowserClient::
+  OverrideWebPreferences`, `FontFamilyCache`), the default encoding of
+  pages that don't declare one (`document.characterSet`), Tab-to-links,
+  force-dark, Encrypted Media, the animation policy, focus rings on mouse
+  focus (`:focus-visible`), forced-colors exceptions, default scrollbar
+  styles.
+* **RendererPreferences** (`renderer_preferences_util.cc`): Do Not Track
+  (`navigator.doNotTrack` and the `DNT` header), caret browsing, the
+  Accept-Language list.
+* **Third-party cookies.** `CookieSettings` and `PrivacySandboxSettings`
+  only treat the *primary* Incognito profile as Incognito, so in MoltNet
+  the third-party cookie mode (which Incognito even writes back into the
+  regular profile) and the Privacy Sandbox switches (Protected Audience,
+  Attribution Reporting, Topics) came straight from the user's settings;
+  so did `canMakePayment()`'s switch and MoltShield's "Strip tracking
+  parameters".
+
+**What MoltNet does now.** MoltNet's profile gets its own pref service
+(`molt_net_isolation.{h,cc}`, one hook in `OffTheRecordProfileImpl`'s
+constructor):
+
+* every pref `molt_net_isolation_policy.h` lists (the groups above, by
+  prefix for fonts and content settings, so new scripts and new content
+  types are covered) is set to MoltBrowser's registered default in
+  MoltNet's own store before anything reads it, so the overlay never reads
+  the regular profile's value, and later changes there don't reach MoltNet
+  either;
+* nothing is written through to the regular profile (DevTools' throwaway
+  browser contexts work the same way), so nothing done in a MoltNet window
+  changes the user's settings.
+
+Because it works at the pref layer, everything downstream follows without
+hooks of its own: `HostContentSettingsMap`'s providers (and so
+`PermissionContextBase`, `navigator.permissions.query`, embargo, Shields
+off), WebPreferences, RendererPreferences, `CookieSettings`,
+`PrivacySandboxSettings` and the network context's Accept-Language.
+
+**Kept:** changes made inside the MoltNet session (a permission granted,
+Shields turned off for a site; in memory, gone at New Identity), MoltNet's
+own values (proxy, WebRTC policy, prediction, HTTPS-Only, en-US), values an
+administrator sets by policy, and prefs pages can't observe (bookmarks
+bar, download folder, spell checking, Safe Browsing level, the user's
+choices about quiet permission prompts).
+
+The `window-management` override in `permission_status_listener.cc` is no
+longer what stops the regular profile's state from showing, but it stays:
+it keeps `navigator.permissions.query` consistent with
+`getScreenDetails()`, which rejects without asking.
+
+**Costs for MoltNet users.** Their own font and font-size settings don't
+apply in MoltNet windows (zoom still works, per site, for the session);
+nor do blocked-by-default JavaScript or images, their site permissions
+(sites ask again in every MoltNet session), their Shields-off sites, Do Not
+Track, or allowed third-party cookies. Accessibility settings that pages
+can detect (caret browsing, focus highlight, animation policy, default
+scrollbars) are at their defaults in MoltNet windows; caret browsing can
+be turned on there with F7, for the session.
+
+**Verification.** `molt_net_isolation_policy_unittest.cc` (6 tests) passes
+standalone with g++ (ASan/UBSan) and clang (`-Wunsafe-buffer-usage
+-Wshorten-64-to-32 -Wimplicit-int-conversion -Wexit-time-destructors
+-Wglobal-constructors -fno-exceptions`). `molt_net_isolation.cc` and the
+pref-service cases of `molt_net_isolation_unittest.cc` run against
+stand-ins of the pinned `PrefService`, `PrefServiceSyncable` and
+`OverlayUserPrefStore` (the regular profile's values and later changes
+don't show, policy still wins, nothing is written through, while an
+Incognito-style service with the persistent list leaks both ways); a
+mutation that drops the pinning fails them. The constructor hook compiles
+against stand-ins of the pinned `Profile::OTRProfileID` and
+`pref_service_syncable_util.h` and picks MoltNet's service only for
+MoltNet ids. **Needs the build machine:** `molt_ai_unittests`
+(`MoltNetIsolationTest.*`, `MoltNetPrefServiceTest.*`,
+`MoltNetContentSettingsTest.*` with a real `HostContentSettingsMap`:
+blocked JavaScript, a window-management block, Shields off and an embargo
+in the regular profile, none of them in MoltNet, while an Incognito-style
+profile inherits all four), and in a running browser the checks in
+`docs/MOLTNET_COMPLIANCE.md` §4.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
@@ -1343,7 +1456,9 @@ no longer forces en-US; relaunch to apply it to every renderer. It is
 independent of `--disable-molt-shield` on purpose: that switch is an
 ad-blocking escape hatch and must not silently drop MoltNet uniformity. The
 per-site escape hatch is [Shields off](#shields-off) (normal and Incognito
-windows only).
+windows only). MoltNet's [settings
+isolation](#moltnet-settings-from-the-regular-profile) doesn't depend on
+the switch.
 
 ## Known gaps and attacks
 
@@ -1425,10 +1540,18 @@ Honest list; anything not in the table above is not covered.
   the `pointer` / `any-pointer` / `hover` media queries and touch-event
   support; pen pressure, tilt and twist stay real (touch contact and
   coordinates are uniform, see [Touches](#touches)).
-* Permission states MoltNet's profile inherits from the regular profile
-  (a block, for a site or as the default) show through
-  `navigator.permissions.query` for every permission except
-  window-management, the same after every New Identity.
+* (Closed: permission and content-setting state, fonts and other user
+  settings MoltNet inherited from the regular profile, see [settings from
+  the regular profile](#moltnet-settings-from-the-regular-profile).) What
+  is left there: MoltBrowser's defaults for fonts, font sizes and the
+  default encoding depend on the UI language; browser-wide state isn't per
+  profile and still shows in MoltNet (page colours and the system's
+  forced-colors and contrast settings, MoltShield's global switch and
+  filter lists, and `prefers-color-scheme`, which is dark for everyone
+  only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
+  otherwise follows the regular profile's theme); settings an extension
+  controls (`chrome.fontSettings`, `chrome.privacy`) rank above MoltNet's
+  defaults.
 * DevTools' timezone/locale emulation can't be used in MoltNet windows (the
   overrides are held for the life of the renderer).
 
@@ -1554,6 +1677,7 @@ on a canvas-effects video call.
 | `src/chrome/browser/molt_ai/shield/molt_shield_site_exceptions.{h,cc}` | Shields-off sites from content settings (+ unit test) |
 | `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode, seed and sites to Blink |
 | `src/chrome/browser/molt_ai/tor/molt_net_routing.cc` | MoltNet `Accept-Language` |
+| `src/chrome/browser/molt_ai/tor/molt_net_isolation_policy.{h,cc}`, `molt_net_isolation.{h,cc}` | which regular-profile prefs MoltNet uses MoltBrowser's defaults for (pure, + `molt_net_isolation_policy_unittest.cc`) and MoltNet's pref service (+ `molt_net_isolation_unittest.cc`) |
 
 Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 `chrome/browser/chrome_content_browser_client.cc`,
@@ -1581,7 +1705,9 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
-`screen_orientation_controller.cc`, `platform_locale.{h,cc}`.
+`screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet
+settings isolation: `off_the_record_profile_impl.cc` (constructor),
+`chrome/browser/profiles/BUILD.gn`.
 
 ## Follow-ups
 
@@ -1609,18 +1735,22 @@ MoltNet touches, screens and forms: `touch_event_manager.cc`,
    checks on the build machine listed there.
 6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
-   version, pin the generic-font settings in MoltNet, and text metrics /
-   per-character fallback. The WebGL parameter surface and WebGPU in
-   MoltNet are done (fixed WebGL baselines, no WebGPU adapter); left: a
-   mobile look at the baselines if MoltNet comes to Android, and checking
-   them against the WebGL reports of real Macs, Windows and Linux machines
-   in MoltNet windows.
+   version, fixed generic-font settings in MoltNet that don't depend on
+   the UI language (MoltNet already ignores the user's own, see [settings
+   from the regular profile](#moltnet-settings-from-the-regular-profile)),
+   and text metrics / per-character fallback. The WebGL parameter surface
+   and WebGPU in MoltNet are done (fixed WebGL baselines, no WebGPU
+   adapter); left: a mobile look at the baselines if MoltNet comes to
+   Android, and checking them against the WebGL reports of real Macs,
+   Windows and Linux machines in MoltNet windows.
 7. Per-document Shields-off delivery instead of a per-profile list.
 8. MoltNet: renderer UI strings in en-US (design in [Form controls in
    en-US](#form-controls-in-en-us)) and the default text locale; then a
-   touchscreen-less look (`maxTouchPoints`, pointer media queries) and
-   permission states that don't inherit the regular profile's blocks.
+   touchscreen-less look (`maxTouchPoints`, pointer media queries).
    Done: touch coordinates and contact, the Window Management API, screen
    orientation, form-control formats ([MoltNet: touches, screens,
    orientation and form
-   controls](#moltnet-touches-screens-orientation-and-form-controls)).
+   controls](#moltnet-touches-screens-orientation-and-form-controls)), and
+   permission state and user settings that no longer come from the regular
+   profile ([settings from the regular
+   profile](#moltnet-settings-from-the-regular-profile)).
