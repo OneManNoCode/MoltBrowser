@@ -12,6 +12,7 @@
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/engagement/important_sites_util.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
@@ -67,7 +68,13 @@ void PersistentStoragePermissionContext::DecidePermission(
 
   // Durable is only allowed to be granted to the top-level origin. Embedding
   // origin is the last committed navigation origin to the web contents.
-  if (request_data->requesting_origin != request_data->embedding_origin) {
+  // MoltBrowser: and never in MoltNet (Tor) windows. The checks below read the
+  // regular profile's bookmarks, installed apps and site engagement, so
+  // navigator.storage.persist() would tell a page whether the user
+  // bookmarked or often uses it outside MoltNet.
+  if (request_data->requesting_origin != request_data->embedding_origin ||
+      molt_ai::tor::IsMoltNetProfile(
+          Profile::FromBrowserContext(browser_context()))) {
     NotifyPermissionSet(*request_data, std::move(callback),
                         /*persist=*/false,
                         /*permission_result=*/nullptr,

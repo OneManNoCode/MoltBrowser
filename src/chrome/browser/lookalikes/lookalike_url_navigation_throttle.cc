@@ -25,6 +25,7 @@
 #include "chrome/browser/lookalikes/lookalike_url_service.h"
 #include "chrome/browser/lookalikes/lookalike_url_service_factory.h"
 #include "chrome/browser/lookalikes/lookalike_url_tab_storage.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_selections.h"
@@ -84,9 +85,16 @@ bool IsLookalikeUrl(Profile* profile,
                     GURL* suggested_url,
                     base::TimeDelta* get_domain_info_duration) {
   DCHECK(get_domain_info_duration->is_zero());
+  // MoltBrowser: MoltNet (Tor) windows check against the built-in top domains
+  // only. Their engaged sites would be the regular profile's (an off-the-
+  // record profile inherits site engagement), and whether a navigation gets
+  // this warning would tell a site which sites the user uses outside MoltNet.
+  const std::vector<DomainInfo> no_engaged_sites;
   LookalikeUrlService::LookalikeUrlCheckResult result =
       LookalikeUrlServiceFactory::GetForProfile(profile)->CheckUrlForLookalikes(
-          url, engaged_sites,
+          url,
+          molt_ai::tor::IsMoltNetProfile(profile) ? no_engaged_sites
+                                                  : engaged_sites,
           /*stop_checking_on_allowlist_or_ignore=*/true);
   if (result.action_type == LookalikeActionType::kNone) {
     return false;

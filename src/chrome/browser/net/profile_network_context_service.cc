@@ -38,6 +38,7 @@
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -222,6 +223,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
   // let user login.
   if (profile->IsRegularProfile() || profile->IsSystemProfile()) {
     return true;
+  }
+
+  // MoltBrowser: MoltNet (Tor) windows never answer an authentication
+  // challenge with the OS user's NTLM / Kerberos credentials. (MoltNet is a
+  // non-primary OTR profile *with* browser windows, unlike the rule below
+  // assumes.)
+  if (molt_ai::tor::IsMoltNetProfile(profile)) {
+    return false;
   }
 
   // Non-primary OTR profiles are not used to create browser windows and are

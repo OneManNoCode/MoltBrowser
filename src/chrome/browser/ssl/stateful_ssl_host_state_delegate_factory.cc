@@ -7,6 +7,8 @@
 #include <memory>
 
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/security_interstitials/content/stateful_ssl_host_state_delegate.h"
 
@@ -15,6 +17,12 @@ namespace {
 std::unique_ptr<KeyedService> BuildStatefulSSLHostStateDelegate(
     content::BrowserContext* context) {
   Profile* profile = Profile::FromBrowserContext(context);
+  // MoltBrowser: MoltNet (Tor) profiles keep their certificate-error
+  // exceptions in memory and never inherit the regular profile's.
+  if (molt_ai::tor::IsMoltNetProfile(profile)) {
+    return molt_ai::tor::CreateMoltNetSSLHostStateDelegate(
+        profile, HostContentSettingsMapFactory::GetForProfile(profile));
+  }
   return std::make_unique<StatefulSSLHostStateDelegate>(
       profile, HostContentSettingsMapFactory::GetForProfile(profile));
 }

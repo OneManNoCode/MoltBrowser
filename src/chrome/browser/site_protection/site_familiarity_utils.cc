@@ -6,6 +6,7 @@
 
 #include "base/metrics/field_trial_params.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "components/content_settings/browser/ui/javascript_optimizer_setting.h"
@@ -42,6 +43,12 @@ bool AreV8OptimizationsDisabledOnUnfamiliarSites(Profile* profile) {
 }
 
 bool CanEnableBlockingJavascriptOptimizersForUnfamiliarSites(Profile* profile) {
+  // MoltBrowser: never in MoltNet (Tor) windows. "Familiar" is decided from
+  // the regular profile's history and site engagement, and whether a page's
+  // JavaScript runs optimized is measurable by the page.
+  if (molt_ai::tor::IsMoltNetProfile(profile)) {
+    return false;
+  }
   if (!safe_browsing::IsSafeBrowsingEnabled(*profile->GetPrefs())) {
     // Blocking js-opt on unfamiliar sites requires Safe Browsing to be enabled.
     return false;

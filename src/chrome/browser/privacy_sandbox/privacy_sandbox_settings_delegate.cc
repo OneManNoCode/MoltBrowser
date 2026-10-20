@@ -16,6 +16,7 @@
 #include "build/buildflag.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_notice_confirmation.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -125,7 +126,10 @@ bool PrivacySandboxSettingsDelegate::IsSubjectToM1NoticeRestricted() const {
 }
 
 bool PrivacySandboxSettingsDelegate::IsIncognitoProfile() const {
-  return profile_->IsIncognitoProfile();
+  // MoltBrowser: the Privacy Sandbox APIs are off in MoltNet (Tor) windows as
+  // in Incognito, whatever the regular profile's settings.
+  return profile_->IsIncognitoProfile() ||
+         molt_ai::tor::IsMoltNetProfile(profile_);
 }
 
 bool PrivacySandboxSettingsDelegate::HasAppropriateTopicsConsent() const {

@@ -7,6 +7,7 @@
 #include "base/check_op.h"
 #include "base/metrics/histogram_functions.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/webid/federated_identity_account_keyed_permission_context.h"
@@ -101,7 +102,11 @@ CookieSettingsFactory::BuildServiceInstanceFor(
           },
           profile, scoped_refptr(host_content_settings_map));
 
+  // MoltBrowser: MoltNet (Tor) profiles block third-party cookies like
+  // Incognito, whatever the regular profile's setting; IsIncognitoProfile()
+  // is true for the primary off-the-record profile only.
   return new content_settings::CookieSettings(
-      host_content_settings_map, prefs, profile->IsIncognitoProfile(),
+      host_content_settings_map, prefs,
+      profile->IsIncognitoProfile() || molt_ai::tor::IsMoltNetProfile(profile),
       compute_fedcm_sharing_permissions, extension_scheme);
 }
