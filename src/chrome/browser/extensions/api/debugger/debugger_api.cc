@@ -29,6 +29,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/lifetime/termination_notification.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/common/chrome_switches.h"
@@ -161,6 +162,10 @@ bool ExtensionMayAttachToTargetProfile(Profile* extension_profile,
   Profile* profile =
       Profile::FromBrowserContext(agent_host.GetBrowserContext());
   if (!profile) {
+    return false;
+  }
+  // MoltBrowser: no extension lists or attaches to a MoltNet (Tor) page.
+  if (molt_ai::tor::IsMoltNetProfile(profile)) {
     return false;
   }
   if (!extension_profile->IsSameOrParent(profile)) {

@@ -83,6 +83,13 @@ bool ExtensionIsFromWebstore(const Extension& extension) {
 // This is safe to call even when the extension is completely unloaded.
 bool IsIncognitoEnabledForIdAndContext(const ExtensionId& extension_id,
                                        content::BrowserContext* context) {
+  // MoltBrowser: an extension known only by its ID is never let into a
+  // MoltNet (Tor) profile (ExtensionsBrowserClient::
+  // IsExtensionKeptOutOfContext), whatever its "Allow in Incognito" pref.
+  if (ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
+          /*extension=*/nullptr, context)) {
+    return false;
+  }
 #if BUILDFLAG(IS_CHROMEOS)
   // An OTR Profile is used for captive portal signin to hide PII from
   // captive portals (which require HTTP redirects to function).
@@ -113,6 +120,13 @@ bool CanBeIncognitoEnabled(const Extension* extension) {
 
 bool IsIncognitoEnabled(const Extension* extension,
                         content::BrowserContext* context) {
+  // MoltBrowser: in a MoltNet (Tor) profile this is false for every extension
+  // but MoltBrowser's own component ones.
+  if (extension &&
+      ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(extension,
+                                                                  context)) {
+    return false;
+  }
   if (extension) {
     if (!CanBeIncognitoEnabled(extension)) {
       return false;
@@ -358,6 +372,14 @@ bool IsExtensionVisibleToContext(const Extension& extension,
                                  content::BrowserContext* browser_context) {
   // Renderers don't need to know about themes.
   if (extension.is_theme()) {
+    return false;
+  }
+
+  // MoltBrowser: MoltNet (Tor) renderers don't know about extensions kept out
+  // of MoltNet either, including those that can't be enabled in Incognito
+  // (no content scripts, and pages can't message or detect them).
+  if (ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
+          &extension, browser_context)) {
     return false;
   }
 

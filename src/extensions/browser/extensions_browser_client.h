@@ -269,6 +269,16 @@ class ExtensionsBrowserClient {
       const extensions::Extension* extension,
       content::BrowserContext* context) const = 0;
 
+  // MoltBrowser: returns true if `extension` must stay out of `context`
+  // altogether, whatever its incognito settings: it may not run there or load
+  // into its renderers, and may not see its tabs, requests or events.
+  // `extension` is null when only an ID is known. The default is false;
+  // Chrome returns true for MoltNet (Tor) profiles and every extension but
+  // MoltBrowser's own component ones (molt_ai/tor/molt_net_isolation.h).
+  virtual bool IsExtensionKeptOutOfContext(
+      const Extension* extension,
+      content::BrowserContext* context) const;
+
   // Return the resource relative path and id for the given request.
   virtual base::FilePath GetBundleResourcePath(
       const network::ResourceRequest& request,

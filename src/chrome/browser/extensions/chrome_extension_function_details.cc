@@ -7,6 +7,7 @@
 #include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
+#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
@@ -62,7 +63,11 @@ WindowController* ChromeExtensionFunctionDetails::GetCurrentWindowController()
       [&](BrowserWindowInterface* browser) {
         if (browser->GetProfile() == profile ||
             (function_->include_incognito_information() &&
-             browser->GetProfile()->GetOriginalProfile() == profile)) {
+             browser->GetProfile()->GetOriginalProfile() == profile &&
+             // MoltBrowser: never a MoltNet (Tor) window the extension is
+             // kept out of (molt_ai/tor/molt_net_isolation.h).
+             !molt_ai::tor::IsExtensionKeptOutOf(function_->extension(),
+                                                browser->GetProfile()))) {
           window_controller = BrowserExtensionWindowController::From(browser);
           return false;  // Stop iterating.
         }

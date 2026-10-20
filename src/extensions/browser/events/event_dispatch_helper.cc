@@ -51,6 +51,17 @@ bool CanDispatchEventToBrowserContext(BrowserContext& context,
   if (!crosses_incognito) {
     return true;
   }
+  // MoltBrowser: events about a MoltNet (Tor) profile (its tabs, windows,
+  // navigations, downloads, menus, commands, ...) never reach an extension
+  // kept out of it, whatever its incognito access. The event's context is
+  // only looked at while the embedder still knows it (see the note on
+  // Event::restrict_to_browser_context).
+  ExtensionsBrowserClient* client = ExtensionsBrowserClient::Get();
+  if (client->IsValidContext(event.restrict_to_browser_context) &&
+      client->IsExtensionKeptOutOfContext(extension,
+                                          event.restrict_to_browser_context)) {
+    return false;
+  }
   return ExtensionsBrowserClient::Get()->CanExtensionCrossIncognito(extension,
                                                                     &context);
 }

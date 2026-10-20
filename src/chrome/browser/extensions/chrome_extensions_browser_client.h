@@ -125,6 +125,11 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
   bool CanExtensionCrossIncognito(
       const Extension* extension,
       content::BrowserContext* context) const override;
+  // MoltBrowser: MoltNet (Tor) profiles admit MoltBrowser's component
+  // extensions only.
+  bool IsExtensionKeptOutOfContext(
+      const Extension* extension,
+      content::BrowserContext* context) const override;
   base::FilePath GetBundleResourcePath(
       const network::ResourceRequest& request,
       const base::FilePath& extension_resources_path,

@@ -117,6 +117,13 @@ bool ExtensionsBrowserClient::IsExtensionEnabled(
   return false;
 }
 
+// MoltBrowser: see the declaration.
+bool ExtensionsBrowserClient::IsExtensionKeptOutOfContext(
+    const Extension* extension,
+    content::BrowserContext* context) const {
+  return false;
+}
+
 bool ExtensionsBrowserClient::IsWebUIAllowedToMakeNetworkRequests(
     const url::Origin& origin) {
   return false;

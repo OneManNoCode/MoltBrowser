@@ -851,6 +851,13 @@ WebRequestAPI::ProxyDecision WebRequestAPI::MaybeProxyURLLoaderFactoryInternal(
     const url::Origin& request_initiator) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+  // MoltBrowser: requests of a MoltNet (Tor) profile are never proxied, so no
+  // extension sees or changes them (webRequest, declarativeNetRequest).
+  if (ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
+          /*extension=*/nullptr, browser_context)) {
+    return ProxyDecision::kWillNotProxy;
+  }
+
   ProxyDecision decision = ProxyDecision::kWillNotProxy;
   if (base::FeatureList::IsEnabled(
           extensions_features::kOptimizeWebRequestProxy)) {
@@ -1029,6 +1036,13 @@ bool WebRequestAPI::MayHaveProxies() const {
 
 bool WebRequestAPI::MayHaveProxiesForFrame(
     content::RenderFrameHost* render_frame_host) const {
+  // MoltBrowser: nor its WebSockets or WebTransport sessions (see
+  // MaybeProxyURLLoaderFactoryInternal).
+  if (render_frame_host &&
+      ExtensionsBrowserClient::Get()->IsExtensionKeptOutOfContext(
+          /*extension=*/nullptr, render_frame_host->GetBrowserContext())) {
+    return false;
+  }
   if (base::FeatureList::IsEnabled(
           extensions_features::kOptimizeWebRequestProxy)) {
     return HasWebRequestOrDeclarativeWebRequestExtension() ||

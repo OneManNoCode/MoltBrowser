@@ -36,6 +36,8 @@
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
 #include "chrome/browser/origin_trials/origin_trials_factory.h"
@@ -177,7 +179,11 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(
   } else {
     prefs_ = CreateIncognitoPrefServiceSyncable(
         PrefServiceSyncableFromProfile(profile_),
-        CreateExtensionPrefStore(profile_, true));
+        // MoltBrowser: no extension-controlled setting (proxy, privacy,
+        // fonts, ...) applies in MoltNet (Tor) windows.
+        molt_ai::tor::IsMoltNetProfile(this)
+            ? molt_ai::tor::CreateMoltNetExtensionPrefStore()
+            : CreateExtensionPrefStore(profile_, true));
   }
 
   key_->SetPrefs(prefs_.get());

@@ -13,6 +13,7 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/window_controller_list.h"
+#include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -180,6 +181,12 @@ bool BrowserExtensionWindowController::IsVisibleToTabsAPIForExtension(
   // pass in mojom::ContextType or some way to detect caller type.
   // Platform apps can only see their own windows.
   if (extension && extension->is_platform_app()) {
+    return false;
+  }
+
+  // MoltBrowser: MoltNet (Tor) windows, and so their tabs, are invisible to
+  // extensions kept out of MoltNet (molt_ai/tor/molt_net_isolation.h).
+  if (extension && molt_ai::tor::IsExtensionKeptOutOf(extension, profile())) {
     return false;
   }
 

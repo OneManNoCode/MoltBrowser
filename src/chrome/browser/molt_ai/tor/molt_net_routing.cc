@@ -307,14 +307,16 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
 
   if (ProxyExternallyControlled(prefs) || !ProxyPointsAtTor(prefs, socks_port)) {
     *error =
-        "A policy, extension or command-line flag controls the proxy, so "
-        "MoltNet can't guarantee Tor routing";
+        // Extension-controlled settings never reach MoltNet's profile
+        // (molt_net_isolation.h: CreateMoltNetExtensionPrefStore).
+        "A policy or command-line flag controls the proxy, so MoltNet "
+        "can't guarantee Tor routing";
     return false;
   }
   if (!LeakPrefsInPlace(prefs)) {
     *error =
-        "A policy or extension overrides MoltNet's WebRTC / prediction / "
-        "HTTPS-Only settings";
+        "A policy overrides MoltNet's WebRTC / prediction / HTTPS-Only "
+        "settings";
     return false;
   }
   return true;
