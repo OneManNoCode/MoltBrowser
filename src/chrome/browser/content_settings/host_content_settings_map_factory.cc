@@ -10,6 +10,7 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "chrome/browser/content_settings/one_time_permission_provider.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/permissions/one_time_permissions_tracker_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_key.h"
@@ -144,16 +145,20 @@ scoped_refptr<RefcountedKeyedService>
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // These must be registered before before the HostSettings are passed over to
   // the IOThread.  Simplest to do this on construction.
-  settings_map->RegisterProvider(
-      ProviderType::kCustomExtensionProvider,
-      std::make_unique<content_settings::CustomExtensionProvider>(
-          extensions::ContentSettingsService::Get(original_profile)
-              ->content_settings_store(),
-          // TODO(crbug.com/40199565): This is the only call site, so can we
-          // remove this constructor parameter, or should this actually reflect
-          // the case where profile->IsOffTheRecord() is true? And what is the
-          // interaction with profile->IsGuestSession()?
-          false));
+  // MoltBrowser: no site settings made by an extension in MoltNet profiles,
+  // which keep every installed extension out (molt_net_isolation.h).
+  if (!molt_ai::tor::IsMoltNetProfile(profile)) {
+    settings_map->RegisterProvider(
+        ProviderType::kCustomExtensionProvider,
+        std::make_unique<content_settings::CustomExtensionProvider>(
+            extensions::ContentSettingsService::Get(original_profile)
+                ->content_settings_store(),
+            // TODO(crbug.com/40199565): This is the only call site, so can we
+            // remove this constructor parameter, or should this actually
+            // reflect the case where profile->IsOffTheRecord() is true? And
+            // what is the interaction with profile->IsGuestSession()?
+            false));
+  }
 
   settings_map->RegisterProvider(
       ProviderType::kExtensionInstallTimePermissionProvider,

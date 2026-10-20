@@ -435,11 +435,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
      individually: Safe Browsing's real-time hash-prefix checks, the AI side
      panel (cloud AI providers), and other features may make requests outside
      the MoltNet profile's network context.
-   - Site settings MoltNet's profile inherits from the regular profile
-     (permission blocks and embargoes, MoltShield's per-site "Shields off",
-     dismissed install prompts, and site settings an extension made for
-     Incognito) are not covered by §2's extension and service isolation.
-     Context-menu items that a split-mode extension's Incognito copy adds
+   - Context-menu items that a split-mode extension's Incognito copy adds
      can still appear in a MoltNet page's menu; choosing one does nothing
      (the extension gets no event). Likewise an extension's keyboard
      shortcut is still caught in a MoltNet window (the page doesn't get
