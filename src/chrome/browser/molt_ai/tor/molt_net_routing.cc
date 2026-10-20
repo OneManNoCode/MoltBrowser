@@ -281,9 +281,10 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
     *error = "MoltNet's Tor isn't running";
     return false;
   }
-  // These writes land in the OTR profile's in-memory overlay store: none of
-  // these prefs is on the incognito "persistent" allowlist, so nothing
-  // reaches the regular profile or disk.
+  // These writes land in the OTR profile's in-memory overlay store. MoltNet's
+  // pref service writes nothing through to the regular profile or disk
+  // (molt_net_isolation.h), and these values replace the defaults it pinned
+  // when the profile was created.
   PrefService* prefs = moltnet_profile->GetPrefs();
   // socks5:// = remote DNS (hostnames go to Tor, never the local resolver)
   // and no DIRECT fallback = fail-closed when Tor is unreachable.
