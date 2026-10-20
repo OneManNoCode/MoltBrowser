@@ -189,6 +189,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   date, time and number fields use US English formats whatever your
   system's language and regional settings. Built-in form messages such as
   "Please fill out this field" still follow the browser's language.
+- **Your settings stay out of MoltNet windows.** Sites in a MoltNet window
+  no longer see how you set up your regular browser: not your site
+  permissions or blocked sites (including Shields off and sites that may
+  no longer ask for a permission), your content defaults (such as blocked
+  JavaScript), font and font-size settings, default encoding, Do Not
+  Track, third-party cookie choice, ad privacy choices or detectable
+  accessibility settings. MoltNet uses MoltBrowser's defaults for them, the
+  same for everyone and after every New Identity; what you change in a
+  MoltNet window lasts for that session, and nothing done there changes
+  your regular settings.
 - **Fingerprinting noise costs less.** Canvas and WebGL readback,
   half-float WebGL reads and (in MoltNet windows) canvas video frames get
   their noise 2-4x faster: a 720p camera-like frame takes 5 ms of CPU

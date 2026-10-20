@@ -25,18 +25,25 @@ namespace tor {
 // Must match the literal in Profile::OTRProfileID::AllowsBrowserWindows().
 inline constexpr char kMoltNetOtrProfilePrefix[] = "MoltNet::Tor";
 
+// True iff |otr_profile_id| is a MoltNet (Tor) profile's id. Usable before
+// the profile exists (OffTheRecordProfileImpl's constructor builds MoltNet's
+// pref service with it, molt_net_isolation.h).
+inline bool IsMoltNetOtrProfileId(const Profile::OTRProfileID& otr_profile_id) {
+  // OTRProfileID only exposes its string form through operator<< (found by
+  // ADL); CreateUnique() yields "<prefix>-<uuid>".
+  std::ostringstream id;
+  id << otr_profile_id;
+  const std::string value = id.str();
+  const std::string prefix = std::string(kMoltNetOtrProfilePrefix) + "-";
+  return value.compare(0, prefix.size(), prefix) == 0;
+}
+
 // True iff |profile| is a MoltNet (Tor) profile.
 inline bool IsMoltNetProfile(const Profile* profile) {
   if (!profile || !profile->IsOffTheRecord()) {
     return false;
   }
-  // OTRProfileID only exposes its string form through operator<< (found by
-  // ADL); CreateUnique() yields "<prefix>-<uuid>".
-  std::ostringstream id;
-  id << profile->GetOTRProfileID();
-  const std::string value = id.str();
-  const std::string prefix = std::string(kMoltNetOtrProfilePrefix) + "-";
-  return value.compare(0, prefix.size(), prefix) == 0;
+  return IsMoltNetOtrProfileId(profile->GetOTRProfileID());
 }
 
 }  // namespace tor
