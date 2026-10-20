@@ -1,0 +1,21 @@
+MoltBrowser patch for chrome/browser/ui/views/frame/contents_web_view.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/ui/views/frame/contents_web_view.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/views/frame/contents_web_view.h b/chrome/browser/ui/views/frame/contents_web_view.h
+index dba4f324e7e9d3a8c60a5b0e807912b7051d03fb..b6ad6f4b3b760b44a541dc513ecdd125be0189b3 100644
+--- a/chrome/browser/ui/views/frame/contents_web_view.h
++++ b/chrome/browser/ui/views/frame/contents_web_view.h
+@@ -62,6 +62,10 @@ class ContentsWebView : public views::WebView,
+   void RenderViewReady() override;
+   void OnLetterboxingChanged() override;
+   void SetWebContents(content::WebContents* web_contents) override;
++  // MoltBrowser: MoltNet windows letterbox the page (molt_letterbox_view.h).
++  gfx::Insets GetInsets() const override;
++  void DidToggleFullscreenModeForTab(bool entered_fullscreen,
++                                     bool will_cause_resize) override;
+ 
+   // content::WebContentsObserver overrides:
+   // Overridden to track physical interactions (mouse/touch) on the WebContents.

@@ -1,0 +1,46 @@
+MoltBrowser patch for third_party/blink/renderer/core/html/html_image_element.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/html/html_image_element.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/html/html_image_element.cc b/third_party/blink/renderer/core/html/html_image_element.cc
+index 2c0aef4955706b176587027856e907bae301f567..e83c3896b93358704301aeb9ef6b90b20770561e 100644
+--- a/third_party/blink/renderer/core/html/html_image_element.cc
++++ b/third_party/blink/renderer/core/html/html_image_element.cc
+@@ -69,6 +69,7 @@
+ #include "third_party/blink/renderer/core/loader/resource/image_resource.h"
+ #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
+ #include "third_party/blink/renderer/core/media_type_names.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/paint/timing/paint_timing.h"
+@@ -550,9 +551,11 @@ ImageCandidate HTMLImageElement::FindBestFitImageFromPictureParent() {
+     if (!source->MediaQueryMatches())
+       continue;
+ 
++    // MoltBrowser: MoltNet pages pick images for one density (letterbox.h).
+     ImageCandidate candidate = BestFitSourceForSrcsetAttribute(
+-        GetDocument().DevicePixelRatio(), SourceSize(*source), srcset,
+-        &GetDocument());
++        molt_fingerprinting::DevicePixelRatioFor(
++            GetDocument().GetFrame(), GetDocument().DevicePixelRatio()),
++        SourceSize(*source), srcset, &GetDocument());
+     if (candidate.IsEmpty())
+       continue;
+     source_ = source;
+@@ -1075,9 +1078,11 @@ void HTMLImageElement::SelectSourceURL(
+   if (candidate.IsEmpty()) {
+     const float source_size{SourceSize(*this)};
+ 
++    // MoltBrowser: MoltNet pages pick images for one density (letterbox.h).
+     candidate = BestFitSourceForImageAttributes(
+-        GetDocument().DevicePixelRatio(), source_size,
+-        FastGetAttribute(html_names::kSrcAttr),
++        molt_fingerprinting::DevicePixelRatioFor(
++            GetDocument().GetFrame(), GetDocument().DevicePixelRatio()),
++        source_size, FastGetAttribute(html_names::kSrcAttr),
+         FastGetAttribute(html_names::kSrcsetAttr), &GetDocument());
+   }
+   if (old_source != source_)

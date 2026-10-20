@@ -1,0 +1,28 @@
+MoltBrowser patch for third_party/blink/renderer/core/events/pointer_event_factory.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/events/pointer_event_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/events/pointer_event_factory.cc b/third_party/blink/renderer/core/events/pointer_event_factory.cc
+index 31ebb95dae3bdfdb0238911903537236e018d835..9aa3d15dc0098842e11d80601d343dbe296b9cdf 100644
+--- a/third_party/blink/renderer/core/events/pointer_event_factory.cc
++++ b/third_party/blink/renderer/core/events/pointer_event_factory.cc
+@@ -12,6 +12,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/pointer_type_names.h"
+@@ -135,6 +136,9 @@ void UpdateCommonPointerEventInit(const WebPointerEvent& web_pointer_event,
+   pointer_event_init->setTangentialPressure(
+       web_pointer_event.tangential_pressure);
+   pointer_event_init->setTwist(web_pointer_event.twist);
++  // MoltBrowser: MoltNet windows hide touch contact size and pressure.
++  molt_fingerprinting::UniformTouchPointerEventInit(
++      dom_window, web_pointer_event, pointer_event_init);
+ }
+ 
+ }  // namespace

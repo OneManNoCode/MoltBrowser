@@ -1,0 +1,43 @@
+MoltBrowser patch for third_party/blink/renderer/modules/permissions/permission_status_listener.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/modules/permissions/permission_status_listener.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/permissions/permission_status_listener.cc b/third_party/blink/renderer/modules/permissions/permission_status_listener.cc
+index 76d4cfc253060d66da0e2fc7d01935a4e7628666..ff7e256cf98d365ec1c6524f0a2326a6d477b127 100644
+--- a/third_party/blink/renderer/modules/permissions/permission_status_listener.cc
++++ b/third_party/blink/renderer/modules/permissions/permission_status_listener.cc
+@@ -9,6 +9,7 @@
+ #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_permission_state.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
+ #include "third_party/blink/renderer/modules/permissions/permissions.h"
+ 
+ namespace blink {
+@@ -65,6 +66,11 @@ void PermissionStatusListener::NotifyEventListener(
+ 
+ void PermissionStatusListener::OnPermissionStatusChange(
+     MojoPermissionStatusWithDetails status) {
++  // MoltBrowser: fixed in MoltNet windows (see state()).
++  if (molt_fingerprinting::ReportsPermissionDenied(GetExecutionContext(),
++                                                   descriptor_->name)) {
++    return;
++  }
+   if (status_.Equals(status)) {
+     return;
+   }
+@@ -124,6 +130,12 @@ bool PermissionStatusListener::HasPendingActivity() {
+ }
+ 
+ V8PermissionState PermissionStatusListener::state() const {
++  // MoltBrowser: MoltNet windows report window-management as denied for
++  // everybody, as getScreenDetails() behaves there.
++  if (molt_fingerprinting::ReportsPermissionDenied(GetExecutionContext(),
++                                                   descriptor_->name)) {
++    return V8PermissionState(V8PermissionState::Enum::kDenied);
++  }
+   return ToV8PermissionState(status_->status);
+ }
+ 

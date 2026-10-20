@@ -5,18 +5,31 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
-index ed5028943e3d702f7332807f7fdff73c906dde51..7ae3e41d14e3ecc5d7f5dfaece062eac3ea70557 100644
+index ed5028943e3d702f7332807f7fdff73c906dde51..56bbc7fd10c678ab6bd6712d4c1fadc3301e2d7c 100644
 --- a/third_party/blink/renderer/core/frame/screen.cc
 +++ b/third_party/blink/renderer/core/frame/screen.cc
-@@ -35,6 +35,7 @@
+@@ -35,6 +35,8 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
 +#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"  // MoltBrowser
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "ui/display/screen_info.h"
  #include "ui/display/screen_infos.h"
-@@ -109,6 +110,10 @@ unsigned Screen::colorDepth() const {
+@@ -48,6 +50,11 @@ Screen::Screen(LocalDOMWindow* window, int64_t display_id)
+ bool Screen::AreWebExposedScreenPropertiesEqual(
+     const display::ScreenInfo& prev,
+     const display::ScreenInfo& current) {
++  // MoltBrowser: MoltNet windows show a uniform screen, so real changes
++  // (another monitor, resolution, rotation) fire no "change" events.
++  if (molt_fingerprinting::HidesScreenChanges()) {
++    return true;
++  }
+   // height() and width() use rect.size()
+   if (prev.rect.size() != current.rect.size()) {
+     return false;
+@@ -109,6 +116,10 @@ unsigned Screen::colorDepth() const {
    if (!DomWindow()) {
      return unknown_color_depth;
    }
@@ -27,7 +40,7 @@ index ed5028943e3d702f7332807f7fdff73c906dde51..7ae3e41d14e3ecc5d7f5dfaece062eac
    return GetScreenInfo().depth == 0
               ? unknown_color_depth
               : base::saturated_cast<unsigned>(GetScreenInfo().depth);
-@@ -160,6 +165,10 @@ bool Screen::isExtended() const {
+@@ -160,6 +171,10 @@ bool Screen::isExtended() const {
    if (!DomWindow()) {
      return false;
    }
@@ -38,7 +51,7 @@ index ed5028943e3d702f7332807f7fdff73c906dde51..7ae3e41d14e3ecc5d7f5dfaece062eac
    auto* context = GetExecutionContext();
    if (!context->IsFeatureEnabled(
            network::mojom::PermissionsPolicyFeature::kWindowManagement)) {
-@@ -173,6 +182,12 @@ gfx::Rect Screen::GetRect(bool available) const {
+@@ -173,6 +188,12 @@ gfx::Rect Screen::GetRect(bool available) const {
    if (!DomWindow())
      return gfx::Rect();
    LocalFrame* frame = DomWindow()->GetFrame();
