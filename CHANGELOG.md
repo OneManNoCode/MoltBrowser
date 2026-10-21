@@ -228,6 +228,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page could probe the services running on your computer or devices on
   your network. They now go to Tor, which refuses them, as in Tor Browser
   (use a regular window for a local development server).
+- **Nothing a MoltNet window does goes around Tor.** Some browser features
+  sent what a MoltNet window gave them outside Tor, or to someone who knows
+  who you are. Now the AI chat in a MoltNet window uses on-device models
+  only (a cloud provider would get your API key with every page), its
+  sandbox tab opens in MoltNet instead of Incognito, its actions and links
+  stay in its own window, and it can't set up page watchers that would
+  later fetch the page outside Tor. Safe Browsing (which sent download
+  URLs and file hashes to Google from your own IP), Google image
+  descriptions, location, Cast, phone passkeys and shopping lookups are
+  off in MoltNet windows, and "Open all" bookmarks there no longer spill
+  into a regular window. What is still outside Tor is listed in
+  `docs/MOLTNET_COMPLIANCE.md` §5.7.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
