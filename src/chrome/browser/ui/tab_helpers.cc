@@ -48,6 +48,8 @@
 #include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 #include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 #include "chrome/browser/molt_ai/memory/memory_recorder.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
 #include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
@@ -451,9 +453,17 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
 #endif  // BUILDFLAG(IS_ANDROID)
   client_hints::ClientHintsWebContentsObserver::CreateForWebContents(
       web_contents);
+  // MoltBrowser: a MoltNet tab doesn't tell the regular profile's
+  // ShoppingService (which off-the-record tabs get) about its pages: it
+  // would look their URLs up outside Tor (molt_net_requests_policy.h).
+  // CommerceTabHelper does nothing without a service.
   commerce::CommerceTabHelper::CreateForWebContents(
       web_contents, profile->IsOffTheRecord(),
-      commerce::ShoppingServiceFactory::GetForBrowserContext(profile),
+      molt_ai::tor::MoltNetRequestAccessForProfile(
+          molt_ai::tor::IsMoltNetProfile(profile))
+              .commerce
+          ? commerce::ShoppingServiceFactory::GetForBrowserContext(profile)
+          : nullptr,
       ISOLATED_WORLD_ID_CHROME_INTERNAL);
   ConnectionHelpTabHelper::CreateForWebContents(web_contents);
   content_settings::PageSpecificContentSettings::CreateForWebContents(

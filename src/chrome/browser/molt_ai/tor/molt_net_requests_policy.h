@@ -72,6 +72,14 @@ struct MoltNetRequestAccess {
   // keys and the platform's own authenticator stay available.
   bool relay_authenticators = true;
 
+  // Shopping features (product info, price insights, discounts) on the
+  // pages a tab shows. An off-the-record tab gets the regular profile's
+  // ShoppingService, which looks the page's URL up with the regular
+  // profile's optimization guide and commerce servers, through the regular
+  // profile's network context. Chromium keeps the tab's own UI for them
+  // out of Incognito only (IsIncognitoProfile()), not out of MoltNet.
+  bool commerce = true;
+
   friend constexpr bool operator==(const MoltNetRequestAccess&,
                                    const MoltNetRequestAccess&) = default;
 };
@@ -89,6 +97,7 @@ constexpr MoltNetRequestAccess MoltNetRequestAccessForProfile(
   access.geolocation = false;
   access.cast = false;
   access.relay_authenticators = false;
+  access.commerce = false;
   return access;
 }
 

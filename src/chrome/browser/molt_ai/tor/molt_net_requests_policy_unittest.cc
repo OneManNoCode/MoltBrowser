@@ -21,6 +21,7 @@ TEST(MoltNetRequestsPolicyTest, OtherProfilesKeepEveryFeature) {
   EXPECT_TRUE(access.geolocation);
   EXPECT_TRUE(access.cast);
   EXPECT_TRUE(access.relay_authenticators);
+  EXPECT_TRUE(access.commerce);
 }
 
 TEST(MoltNetRequestsPolicyTest, MoltNetGetsNoneOfThem) {
@@ -33,6 +34,7 @@ TEST(MoltNetRequestsPolicyTest, MoltNetGetsNoneOfThem) {
   EXPECT_FALSE(access.geolocation);
   EXPECT_FALSE(access.cast);
   EXPECT_FALSE(access.relay_authenticators);
+  EXPECT_FALSE(access.commerce);
 }
 
 TEST(MoltNetRequestsPolicyTest, IsAConstantExpression) {
