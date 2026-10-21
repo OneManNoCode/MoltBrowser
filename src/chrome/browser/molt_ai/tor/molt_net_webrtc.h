@@ -25,6 +25,9 @@
 //     So no MoltNet renderer, even one that ignores the switch below, can
 //     make the browser resolve a name of its choosing, open a socket
 //     outside the proxy or learn the machine's addresses through WebRTC.
+//     The same call also replaces the image-description annotator and the
+//     location service of a MoltNet frame, which would send what they get
+//     outside Tor (molt_net_request_binders.h).
 //
 //   * Renderer (clean failure). AppendMoltNetRendererSwitches(), called
 //     from ChromeContentBrowserClient::AppendExtraCommandLineSwitches, puts

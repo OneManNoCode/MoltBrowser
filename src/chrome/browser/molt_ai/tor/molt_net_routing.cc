@@ -17,6 +17,7 @@
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -27,6 +28,7 @@
 #include "components/proxy_config/proxy_config_dictionary.h"
 #include "components/proxy_config/proxy_config_pref_names.h"
 #include "components/proxy_config/proxy_prefs.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "net/base/net_errors.h"
@@ -51,6 +53,15 @@ constexpr char kWebRtcDisableNonProxiedUdp[] = "disable_non_proxied_udp";
 // prefetch::NetworkPredictionOptions::kDisabled. Preconnect / DNS prefetch
 // resolve via the host resolver directly, i.e. OUTSIDE the SOCKS proxy.
 constexpr int kNetworkPredictionDisabled = 2;
+
+// Safe Browsing in MoltNet: off. Its URL checks, download pings and
+// password-reuse pings go through Safe Browsing's own network context, which
+// an off-the-record profile shares with its regular profile (safe_browsing::
+// NetworkContextServiceFactory redirects to the original), so they would
+// leave outside Tor with the download URL, the pages that led to it and the
+// page the password was typed on (molt_net_requests_policy.h).
+constexpr bool kMoltNetSafeBrowsingEnabled =
+    MoltNetRequestAccessForProfile(/*is_moltnet_profile=*/true).safe_browsing;
 
 // What pre-isolation builds wrote to the regular profile + local state.
 constexpr char kLegacyTorProxy[] = "socks5://127.0.0.1:9050";
@@ -116,7 +127,10 @@ bool LeakPrefsInPlace(PrefService* prefs) {
          prefs->GetInteger(prefs::kNetworkPredictionOptions) ==
              kNetworkPredictionDisabled &&
          IsUserControlled(prefs, prefs::kHttpsOnlyModeEnabled) &&
-         prefs->GetBoolean(prefs::kHttpsOnlyModeEnabled);
+         prefs->GetBoolean(prefs::kHttpsOnlyModeEnabled) &&
+         IsUserControlled(prefs, prefs::kSafeBrowsingEnabled) &&
+         prefs->GetBoolean(prefs::kSafeBrowsingEnabled) ==
+             kMoltNetSafeBrowsingEnabled;
 }
 
 bool ProxyPointsAtTor(PrefService* prefs, uint16_t socks_port) {
@@ -302,6 +316,10 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   // HTTPS-Only (strict): the exit relay could otherwise read/modify
   // plain-HTTP traffic. Users get a warning interstitial before any HTTP.
   prefs->SetBoolean(prefs::kHttpsOnlyModeEnabled, true);
+  // Safe Browsing off: nothing about MoltNet pages or downloads goes to
+  // Google outside Tor (see kMoltNetSafeBrowsingEnabled). Download warnings
+  // for dangerous file types are local and stay.
+  prefs->SetBoolean(prefs::kSafeBrowsingEnabled, kMoltNetSafeBrowsingEnabled);
   // Uniformity: the same languages for everyone. (The renderer side -- UTC,
   // the en-US Intl locale, letterboxed screen metrics -- is configured per
   // renderer process; see chrome/browser/molt_ai/fingerprinting.)
@@ -320,8 +338,8 @@ bool MoltNetRouting::ApplyRoutingPrefs(Profile* moltnet_profile,
   }
   if (!LeakPrefsInPlace(prefs)) {
     *error =
-        "A policy overrides MoltNet's WebRTC / prediction / HTTPS-Only "
-        "settings";
+        "A policy overrides MoltNet's WebRTC / prediction / HTTPS-Only / "
+        "Safe Browsing settings";
     return false;
   }
   return true;
