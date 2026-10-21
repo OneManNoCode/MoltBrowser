@@ -15,6 +15,8 @@
 #   molt_net_webrtc*         — no WebRTC networking in MoltNet windows (no
 #                              P2P sockets, host-name lookups or mDNS for
 #                              their frames; RTCPeerConnection throws)
+#   molt_net_incognito_parity* — Chromium's Incognito-only protections for
+#                              MoltNet's non-primary off-the-record profile
 
 import("//extensions/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
@@ -39,6 +41,15 @@ source_set("protocol") {
     # SAFECOOKIE control-port auth (HMAC-SHA256).
     "//crypto",
   ]
+}
+
+# Which profiles get Chromium's Incognito protections at the hooks listed in
+# molt_net_incognito_parity.h (Incognito and MoltNet), and the MoltNet
+# profile-id check molt_net_profile_id.h uses. Std-only and header-only, so
+# every upstream hook can include it without a link dependency and
+# molt_ai_unittests tests it without a Profile.
+source_set("incognito_parity_policy") {
+  sources = [ "molt_net_incognito_parity_policy.h" ]
 }
 
 # Which of the regular profile's prefs MoltNet must not use. Pure (std
@@ -69,6 +80,10 @@ source_set("pref_isolation") {
 source_set("tor") {
   sources = [
     "exit_country_names.h",
+
+    # Header-only: Chromium's Incognito protections for MoltNet; the
+    # upstream hooks marked "MoltBrowser:" include it.
+    "molt_net_incognito_parity.h",
     "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
@@ -83,6 +98,7 @@ source_set("tor") {
   ]
 
   public_deps = [
+    ":incognito_parity_policy",
     ":pref_isolation",
     ":protocol",
   ]
@@ -107,6 +123,10 @@ source_set("tor") {
     "//crypto",
     "//mojo/public/cpp/bindings",
     "//net",
+
+    # ENABLE_PRINT_PREVIEW: molt_net_window.cc drops a MoltNet profile's
+    # print-preview contents before discarding it, as Incognito's are.
+    "//printing/buildflags",
     "//services/network/public/mojom",
     "//url",
   ]
@@ -276,13 +296,15 @@ source_set("onion") {
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
 # generation, bridge-line validation, .onion / Onion-Location, which prefs
-# MoltNet pins and which extensions it admits), MoltNet's pref service
+# MoltNet pins and which extensions it admits, which profiles count as
+# MoltNet and get Incognito's protections), MoltNet's pref service
 # against real pref stores and a real HostContentSettingsMap, and the
 # WebRTC binders over real mojo pipes. Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
@@ -294,6 +316,7 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":incognito_parity_policy",
     ":isolation_policy",
     ":onion_location",
     ":pref_isolation",

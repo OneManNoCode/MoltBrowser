@@ -18,6 +18,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
+#include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -29,6 +30,7 @@
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "content/public/browser/web_contents.h"
+#include "printing/buildflags/buildflags.h"
 #include "ui/base/base_window.h"
 #include "url/gurl.h"
 
@@ -92,6 +94,17 @@ void DestroyIfUnused(base::FilePath path,
     return;
   }
   MoltNetRouting::ForgetMoltNetProfile(moltnet);
+#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+  // As BrowserManagerService does for Incognito (only): the print-preview
+  // contents of jobs that haven't finished spooling are this profile's, so
+  // drop them first; otherwise their renderers can outlast the destroyer's
+  // timeout below, which then frees the profile under them
+  // (crbug.com/41235373).
+  if (g_browser_process && g_browser_process->background_printing_manager()) {
+    g_browser_process->background_printing_manager()
+        ->DeletePreviewContentsForBrowserContext(moltnet);
+  }
+#endif
   // Waits for its renderers to go away, then frees the in-memory cookies,
   // cache and storage.
   ProfileDestroyer::DestroyOTRProfileWhenAppropriate(moltnet);
