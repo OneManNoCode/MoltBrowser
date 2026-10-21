@@ -14,6 +14,7 @@
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -112,8 +113,10 @@ GCMProfileService* GCMProfileServiceFactory::GetForProfile(
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
   // On desktop, incognito profiles are checked with IsIncognitoProfile().
   // It's possible for non-incognito profiles to also be off-the-record.
-  bool is_profile_supported =
-      !Profile::FromBrowserContext(profile)->IsIncognitoProfile();
+  // MoltBrowser: nor in MoltNet, whose GCM store would be the regular
+  // profile's "GCM Store" folder (molt_net_incognito_parity.h).
+  bool is_profile_supported = !molt_ai::tor::GetsIncognitoProtections(
+      Profile::FromBrowserContext(profile));
 #else
   bool is_profile_supported = !profile->IsOffTheRecord();
 #endif

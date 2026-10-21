@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "chrome/browser/gcm/gcm_profile_service_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/gcm_driver/gcm_profile_service.h"
 #include "components/gcm_driver/instance_id/instance_id_profile_service.h"
@@ -23,8 +24,10 @@ InstanceIDProfileService* InstanceIDProfileServiceFactory::GetForProfile(
   // from guest profiles, the menu item "New incognito window" is not
   // available.  So, if this is a guest session, allow it only if it is a
   // child OTR profile as well.
-  bool is_profile_supported =
-      !Profile::FromBrowserContext(profile)->IsIncognitoProfile();
+  // MoltBrowser: not for MoltNet either, which gets no GCM service
+  // (gcm_profile_service_factory.cc, molt_net_incognito_parity.h).
+  bool is_profile_supported = !molt_ai::tor::GetsIncognitoProtections(
+      Profile::FromBrowserContext(profile));
 #else
   bool is_profile_supported = !profile->IsOffTheRecord();
 #endif

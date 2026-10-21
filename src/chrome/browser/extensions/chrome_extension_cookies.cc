@@ -10,6 +10,7 @@
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/chrome_extension_cookies_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -42,7 +43,10 @@ ChromeExtensionCookies::ChromeExtensionCookies(Profile* profile)
 
   std::optional<content::CookieStoreConfig> creation_config;
 
-  if (profile_->IsIncognitoProfile() || profile_->AsTestingProfile()) {
+  // MoltBrowser: a MoltNet profile keeps them in memory too, rather than in
+  // the regular profile's folder (its GetPath()) (molt_net_incognito_parity.h).
+  if (molt_ai::tor::GetsIncognitoProtections(profile_) ||
+      profile_->AsTestingProfile()) {
     creation_config.emplace(content::CookieStoreConfig());
   } else {
     creation_config.emplace(content::CookieStoreConfig(

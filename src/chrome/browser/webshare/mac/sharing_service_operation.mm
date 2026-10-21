@@ -16,6 +16,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webshare/prepare_directory_task.h"
 #include "chrome/browser/webshare/prepare_subdirectory_task.h"
@@ -75,7 +76,10 @@ void SharingServiceOperation::Share(
   // To prevent sites from using that to detect whether incognito mode is
   // active, we deny after a random time delay, to simulate a user cancelling
   // the share.
-  if (profile->IsIncognitoProfile() && !shared_files_.empty()) {
+  // MoltBrowser: the same in MoltNet, whose files would land in the regular
+  // profile's folder (molt_net_incognito_parity.h).
+  if (molt_ai::tor::GetsIncognitoProtections(profile) &&
+      !shared_files_.empty()) {
     // Random number of seconds in the range [1.0, 2.0).
     double delay_seconds = 1.0 + 1.0 * base::RandDouble();
     visibility_timer::VisibilityTimerTabHelper::CreateForWebContents(
