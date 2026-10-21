@@ -37,6 +37,7 @@
 #include "chrome/browser/devtools/process_sharing_infobar_delegate.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/confirm_infobar_creator.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
 #include "chrome/browser/policy/developer_tools_policy_checker.h"
 #include "chrome/browser/policy/developer_tools_policy_checker_factory.h"
@@ -851,7 +852,12 @@ Profile* DevToolsWindow::GetProfileForDevToolsWindow(
     content::WebContents* web_contents) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (profile->IsPrimaryOTRProfile() || profile->IsDevToolsOTRProfile()) {
+  // MoltBrowser: as for Incognito, DevTools for a MoltNet page runs in the
+  // MoltNet profile, not the regular one, so its settings (console history,
+  // breakpoints, ...) stay in MoltNet's in-memory prefs and its window and
+  // services are MoltNet's (molt_net_incognito_parity.h).
+  if (profile->IsPrimaryOTRProfile() || profile->IsDevToolsOTRProfile() ||
+      molt_ai::tor::IsMoltNetProfile(profile)) {
     return profile;
   }
   return profile->GetOriginalProfile();
