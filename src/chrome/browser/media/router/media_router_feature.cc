@@ -17,6 +17,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -114,6 +116,17 @@ bool MediaRouterEnabled(content::BrowserContext* context) {
     return false;
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+  // MoltBrowser: no Cast, Presentation API or Remote Playback in MoltNet
+  // windows. Discovery broadcasts on the local network, and a Cast device
+  // loads what it is sent from the user's own network, outside Tor
+  // (chrome/browser/molt_ai/tor/molt_net_requests_policy.h). Fixed for the
+  // life of the profile, as this function requires.
+  if (!molt_ai::tor::MoltNetRequestAccessForProfile(
+           molt_ai::tor::IsMoltNetProfile(Profile::FromBrowserContext(context)))
+           .cast) {
+    return false;
+  }
 
   // If the Media Router was already enabled or disabled for |context|, then it
   // must remain so.  The Media Router does not support dynamic
