@@ -45,6 +45,10 @@ PLATFORM_EXPORT wtf_size_t
 IndexOfBestMatchingLanguageInList(const AtomicString& language,
                                   const Vector<AtomicString>& language_list);
 PLATFORM_EXPORT void InitializePlatformLanguage();
+// MoltBrowser: from now on DefaultLanguage() and UserPreferredLanguages()
+// return `language` (a string literal; null: the UI language again) on every
+// thread. MoltNet renderers pin en-US (molt_fingerprinting/moltnet_locale.h).
+PLATFORM_EXPORT void SetPlatformLanguageOverride(const char* language);
 
 }  // namespace blink
 

@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
@@ -573,6 +574,8 @@ void Configure(Mode mode) {
     DCHECK(error.empty()) << error;
     // Form controls don't use ICU's default locale (moltnet_uniformity.h).
     PinUniformFormLocale();
+    // Nor does text without a lang attribute (moltnet_locale.h).
+    PinUniformTextLocale();
   }
 }
 
