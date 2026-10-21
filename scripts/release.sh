@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 # Release builds: bundle downloads must match their pins (no dev override).
 export MOLT_RELEASE_BUILD=1
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-bundled-helpers.sh"
 
 # Defaults
 VERSION=""
@@ -188,6 +190,22 @@ fi
 # ---- Step 4: Code Sign ----
 STEP=$((STEP + 1))
 echo ""
+# The bundled helpers (Resources/tor, ocr, whisper) are not build outputs:
+# they are whatever the bundle-*.sh scripts last put into this app, and the
+# build above doesn't run them. v0.2.5 shipped a tesseract that loaded its
+# libraries from the build machine's /opt/homebrew, which the helper sandbox
+# refuses, so OCR failed on every Mac. Refuse such a helper before signing.
+if ! check_bundled_helper_libraries "$APP_PATH"; then
+  echo ""
+  echo "  ❌ FATAL: a bundled helper loads code from outside the app (above)."
+  echo "     Re-bundle it: ./scripts/bundle-tesseract.sh --app \"$APP_PATH\""
+  echo "     (whisper: ./scripts/bundle-whisper.sh). DO NOT SHIP THIS BUILD."
+  exit 1
+fi
+for _helper in "${MOLT_SANDBOXED_HELPERS[@]}"; do
+  [ -f "$APP_PATH/Contents/Resources/$_helper" ] ||
+    echo "  WARNING: no bundled $_helper; this release ships without it"
+done
 if [ -n "$SIGN_IDENTITY" ]; then
   echo "[$STEP/$STEPS_TOTAL] Code signing..."
 
@@ -217,16 +235,10 @@ if [ -n "$SIGN_IDENTITY" ]; then
 
   # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper).
   # codesign --deep treats Resources/ as DATA and skips them; sign each Mach-O
-  # explicitly (before the app seal), same Developer ID/team.
-  for d in tor ocr whisper; do
-    if [ -d "$APP_PATH/Contents/Resources/$d" ]; then
-      find "$APP_PATH/Contents/Resources/$d" -type f | while read -r f; do
-        if file "$f" | grep -q "Mach-O"; then
-          codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f" 2>/dev/null || true
-        fi
-      done
-    fi
-  done
+  # explicitly (before the app seal), same Developer ID/team. That includes
+  # ocr/lib/*.dylib: tesseract runs with the hardened runtime, so library
+  # validation refuses a lib/ dylib left ad hoc. A failure here is fatal.
+  sign_bundled_helpers "$APP_PATH" "$SIGN_IDENTITY"
 
   # 2b. GPU/GL dylibs inside the framework's Libraries/ (libEGL.dylib,
   # libGLESv2.dylib, libvk_swiftshader.dylib). The linker emits these ad-hoc
@@ -270,9 +282,23 @@ if [ -n "$SIGN_IDENTITY" ]; then
   codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp \
     --entitlements "$ENT_DIR/app-entitlements.plist" "$APP_PATH"
   codesign --verify --deep --strict "$APP_PATH"
+  # --deep doesn't look at Resources/ either.
+  if ! verify_bundled_helper_signatures "$APP_PATH"; then
+    echo "  ❌ FATAL: bundled helpers not signed for library validation (above)."
+    exit 1
+  fi
   echo "  Code signing complete and verified"
 else
   echo "[$STEP/$STEPS_TOTAL] Skipping code signing (no --identity)"
+fi
+
+# The bundled tesseract, as it ships, reads a test image under the real
+# helper sandbox (the AI chat's image OCR path), or nothing ships.
+if [ -f "$APP_PATH/Contents/Resources/ocr/tesseract" ]; then
+  if ! "$REPO_DIR/tools/ocr_smoke/ocr_smoke_mac.sh" --app "$APP_PATH"; then
+    echo "  ❌ FATAL: OCR doesn't work in this build (above). DO NOT SHIP IT."
+    exit 1
+  fi
 fi
 
 # ---- Step 5: Package DMG ----

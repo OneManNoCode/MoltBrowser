@@ -55,8 +55,13 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - **macOS:** codesign the bundled `tor`/`ocr`/`whisper` binaries under
   `Contents/Resources/` **explicitly** with the hardened runtime — `codesign
   --deep` skips `Resources/`, so they ship unsigned and fail notarization
-  otherwise. On a shared mac+linux Chromium checkout, `gclient` `target_os` must
-  list **both** `mac` and `linux`; use depot_tools' bundled `python3` (not
+  otherwise. That includes tesseract's dylibs in `Resources/ocr/lib/` (copied
+  from Homebrew and rewritten by `scripts/macho_bundle_deps.py`): the helper
+  sandbox maps code only from the helper's directory and the OS, and library
+  validation refuses an ad hoc lib. `release.sh`, `sign-app.sh` and
+  `dev-install-mac.sh` refuse a helper that loads from outside the app
+  (shared steps: `scripts/lib-bundled-helpers.sh`). On a shared mac+linux
+  Chromium checkout, `gclient` `target_os` must list **both** `mac` and `linux`; use depot_tools' bundled `python3` (not
   Homebrew 3.14); set `enable_supervised_users=true` + `safe_browsing_mode=1` to
   match linux/windows; download the Metal toolchain via `xcodebuild
   -downloadComponent MetalToolchain`.
@@ -93,6 +98,7 @@ autoninja -C chromium/src/out/MoltBrowser chrome
 - **Editing `src/chrome/common/webui_url_constants.h` fans out a ~2h full recompile** on this machine (every WebUI host/URL constant + `kMoltBrowserVersion` live there). Plan version bumps accordingly.
 - After a build, **grep the full output for `error:` / "finished with an error"** — the `autoninja` wrapper can print "finished successfully" and exit 0 even on a failed compile. The real product code is in `Contents/Frameworks/MoltBrowser Framework.framework/…` (the `Contents/MacOS/MoltBrowser` binary is a thin launcher stub — its mtime/`strings` are meaningless).
 - **Local macOS build+install loop: `./scripts/dev-install-mac.sh`** — stages the out-dir app, carries the tor/ocr/whisper/molt_models payloads + regenerates the REQUIRED `default.metallib` (wiped on every rebuild; built from llama.cpp's split kernels by `scripts/build-ggml-metallib.sh`), does the inside-out per-helper codesign (allow-jit on Renderer/GPU) with the real Developer ID, and installs to /Applications. This is the day-to-day loop after `autoninja … chrome`.
+  It re-bundles a carried-over tesseract that loads libraries from outside the app, and won't install unless tesseract reads a test image under the real helper sandbox (`tools/ocr_smoke/ocr_smoke_mac.sh`; run it alone with `--app /Applications/MoltBrowser.app`).
 
 ### WebUI Pattern (strict CSP — see `ui/webui/molt_ai/molt_webui_csp.h`)
 - JS → C++: `chrome.send('methodName', [args])`

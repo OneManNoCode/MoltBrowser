@@ -9,7 +9,9 @@ name: Lint
 #     (tools/chromium/verify_patches.py; non-blocking until the patch series
 #     becomes the build input, see docs/REBASING.md)
 #   * the macOS helper dylib bundler (scripts/macho_bundle_deps.py) against
-#     arm64 Mach-O fixtures built with clang + lld (blocking)
+#     arm64 Mach-O fixtures built with clang + lld, and that the macOS OCR
+#     smoke test's driver (tools/ocr_smoke/) still builds against
+#     seatbelt_profile.cc and prints a sandbox-exec command line (blocking)
 
 on:
   push:
@@ -56,7 +58,7 @@ jobs:
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
           shellcheck --version | head -2
-          shellcheck -S warning scripts/*.sh build/docker/*.sh tools/chromium/*.sh
+          shellcheck -S warning scripts/*.sh build/docker/*.sh tools/chromium/*.sh tools/ocr_smoke/*.sh
 
   patches-in-sync:
     runs-on: ubuntu-latest
@@ -82,3 +84,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang lld llvm
       - name: scripts/macho_bundle_deps_test.py
         run: MOLT_REQUIRE_MACHO_TOOLS=1 python3 scripts/macho_bundle_deps_test.py -v
+      - name: tools/ocr_smoke/sandbox_exec_argv builds and runs
+        run: |
+          set -euo pipefail
+          clang++ -std=c++20 -Wall -Wextra -Werror -I src \
+            tools/ocr_smoke/sandbox_exec_argv.cc \
+            src/chrome/browser/molt_ai/common/seatbelt_profile.cc \
+            -o "$RUNNER_TEMP/sandbox_exec_argv"
+          touch "$RUNNER_TEMP/tesseract"
+          "$RUNNER_TEMP/sandbox_exec_argv" "$RUNNER_TEMP/tesseract" "$RUNNER_TEMP" \
+              "$RUNNER_TEMP" -- in.png in -l eng | tr '\0' '\n' > "$RUNNER_TEMP/argv"
+          head -1 "$RUNNER_TEMP/argv" | grep -qx /usr/bin/sandbox-exec
+          grep -q '(deny default)' "$RUNNER_TEMP/argv"
+          grep -qx 'READ_0=.*' "$RUNNER_TEMP/argv"
+          tail -1 "$RUNNER_TEMP/argv" | grep -qx eng

@@ -27,6 +27,9 @@
 
 set -euo pipefail
 
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/lib-bundled-helpers.sh"
+
 APP="${APP_PATH:-chromium/src/out/MoltBrowser/MoltBrowser.app}"
 IDENTITY="-"
 NOTARIZE=0
@@ -74,6 +77,16 @@ entitlements_for() {
     *) echo "" ;;
   esac
 }
+
+# The bundled helpers (Resources/tor, ocr, whisper) come from the bundle-*.sh
+# scripts, not the build. Don't sign one that loads code from outside the app
+# (the helper sandbox refuses it; v0.2.5's tesseract loaded /opt/homebrew).
+if ! check_bundled_helper_libraries "$APP"; then
+  echo "ERROR: a bundled helper loads code from outside the app (above)."
+  echo "  Re-bundle it: ./scripts/bundle-tesseract.sh --app \"$APP\""
+  echo "  (whisper: ./scripts/bundle-whisper.sh)"
+  exit 1
+fi
 
 echo "Signing $APP"
 echo "Identity: $IDENTITY"
@@ -143,6 +156,12 @@ codesign -dv "$APP" 2>&1 | grep -E "Signature|TeamIdentifier|Identifier|Authorit
 echo ""
 echo "Entitlements check on renderer (should include allow-jit):"
 codesign -d --entitlements - "$APP/Contents/Frameworks/MoltBrowser Framework.framework/Versions/Current/Helpers/MoltBrowser Helper (Renderer).app" 2>&1 | grep -E "allow-jit|cs.allow" | head -3
+if [[ "$IDENTITY" != "-" ]]; then
+  # Signed in step 1; library validation needs the app's team on each.
+  echo "Bundled helpers (Resources/tor, ocr, whisper, their lib/ included):"
+  verify_bundled_helper_signatures "$APP"
+  echo "  signed by the app's team with the hardened runtime"
+fi
 
 if [[ "$NOTARIZE" == "1" ]]; then
   if [[ "$IDENTITY" == "-" ]]; then

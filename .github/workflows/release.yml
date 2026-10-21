@@ -112,9 +112,19 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD"
 
+          # Also refuses a bundled helper that loads code from outside the
+          # app, and checks each one carries the app's team signature.
           ./scripts/sign-app.sh \
             --identity "$MAC_SIGNING_IDENTITY" \
             --notarize
+
+          # The bundled tesseract, as signed, reads a test image under the
+          # real helper sandbox (the AI chat's image OCR path).
+          if [ -f chromium/src/out/MoltBrowser/MoltBrowser.app/Contents/Resources/ocr/tesseract ]; then
+            ./tools/ocr_smoke/ocr_smoke_mac.sh --app chromium/src/out/MoltBrowser/MoltBrowser.app
+          else
+            echo "::warning::no bundled tesseract: this release ships without OCR"
+          fi
 
           mkdir -p dist
           rm -f dist/MoltBrowser-macOS-arm64.dmg

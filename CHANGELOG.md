@@ -87,8 +87,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pointed at the build machine's Homebrew libraries, so on other Macs it
   couldn't start (and the sandbox wouldn't let it load them anyway). The
   app now carries every library tesseract and whisper need inside its own
-  folder, and the build fails rather than ship a helper that loads code
-  from outside the app.
+  folder, and bundling fails rather than ship a helper that loads code
+  from outside the app. The release and local-install scripts check again
+  before signing (they used to sign whatever helper was in the build
+  folder, which is how v0.2.5 shipped the broken one), make sure each
+  bundled library carries the release signature, and have tesseract read
+  a test image under the real sandbox before a build ships or installs.
 - The AI library no longer forks the browser and starts a debugger found on
   PATH (with permission to read the browser's memory) when it hits an
   internal error.

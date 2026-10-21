@@ -18,9 +18,18 @@
 #    llama.cpp update never reuses a metallib built from other kernels.
 #  - tor/ocr/whisper/molt_models are packaging-time payloads, not build
 #    outputs; carried over from the previously installed app.
+#  - A carried-over tesseract can predate its bundled libraries (v0.2.5's
+#    loads leptonica etc. from /opt/homebrew, which the helper sandbox
+#    refuses: "tesseract exit=...: dyld[...]" in the chat). A helper that
+#    loads code from outside the app is re-bundled, every Mach-O under
+#    Resources/{tor,ocr,whisper} (ocr/lib/*.dylib included) must sign with the
+#    Developer ID, and tesseract has to read a test image under the real
+#    helper sandbox before anything is installed.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$REPO_DIR/scripts/lib-bundled-helpers.sh"
 OUT_APP="$REPO_DIR/chromium/src/out/MoltBrowser/MoltBrowser.app"
 STAGE="$(mktemp -d)/MoltBrowser.app"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)}"
@@ -35,6 +44,24 @@ for d in tor ocr whisper molt_models; do
   SRC="/Applications/MoltBrowser.app/Contents/Resources/$d"
   [ -d "$SRC" ] && ditto "$SRC" "$STAGE/Contents/Resources/$d" && echo "  + $d"
 done
+# ditto merges, and the installed copy may be older than the libraries the
+# helper needs: re-bundle one that doesn't load only from the app and the OS.
+# bundle-tesseract.sh just copies the Homebrew tesseract (without one, OCR is
+# left out); bundle-whisper.sh rebuilds from its cache.
+OCR_BIN="$STAGE/Contents/Resources/ocr/tesseract"
+if [ ! -f "$OCR_BIN" ] ||
+   ! python3 "$REPO_DIR/scripts/macho_bundle_deps.py" --check "$OCR_BIN" \
+       --lib-dir "$(dirname "$OCR_BIN")/lib"; then
+  echo "  ocr: re-bundling tesseract"
+  "$REPO_DIR/scripts/bundle-tesseract.sh" --app "$STAGE"
+fi
+WHISPER_BIN="$STAGE/Contents/Resources/whisper/whisper-cli"
+if [ -f "$WHISPER_BIN" ] &&
+   ! python3 "$REPO_DIR/scripts/macho_bundle_deps.py" --check "$WHISPER_BIN" \
+       --lib-dir "$(dirname "$WHISPER_BIN")/lib"; then
+  echo "  whisper: re-bundling whisper-cli"
+  "$REPO_DIR/scripts/bundle-whisper.sh" --app "$STAGE"
+fi
 
 echo "[3/7] Ensure default.metallib (llama.cpp Metal)"
 # Resources/ of the framework: the dir //third_party/llama_cpp bundles
@@ -51,11 +78,8 @@ fi
 
 echo "[4/7] Sign (inside-out, per-helper entitlements)"
 codesign --force --deep --sign "$SIGN_IDENTITY" --options runtime --timestamp "$STAGE" 2>/dev/null
-for d in tor ocr whisper; do
-  [ -d "$STAGE/Contents/Resources/$d" ] && find "$STAGE/Contents/Resources/$d" -type f | while read -r f; do
-    file "$f" | grep -q "Mach-O" && codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f" 2>/dev/null || true
-  done
-done
+# Resources/{tor,ocr,whisper}: every Mach-O, ocr/lib/*.dylib included.
+sign_bundled_helpers "$STAGE" "$SIGN_IDENTITY"
 REN=$(find "$STAGE/Contents/Frameworks" -type d -name "*Helper (Renderer).app" | head -1)
 for helper in "$(dirname "$REN")/"*.app; do
   case "$(basename "$helper")" in
@@ -69,16 +93,22 @@ codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$STAGE/C
 codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp --entitlements "$ENT_DIR/app-entitlements.plist" "$STAGE" 2>/dev/null
 codesign --verify --deep --strict "$STAGE"
 codesign -d --entitlements - "$REN" 2>&1 | grep -q allow-jit || { echo "FATAL: renderer lost allow-jit"; exit 1; }
-echo "  signature valid, allow-jit intact"
+verify_bundled_helper_signatures "$STAGE" || { echo "FATAL: bundled helpers not signed for library validation"; exit 1; }
+echo "  signature valid, allow-jit intact, bundled helpers signed"
 
-echo "[5/7] Renderer gate (headless)"
+echo "[5/7] Gates (headless renderer, sandboxed OCR)"
 PROF=$(mktemp -d)
 ( "$STAGE/Contents/MacOS/MoltBrowser" --headless=new --user-data-dir="$PROF" --disable-gpu \
     --no-first-run --use-mock-keychain --dump-dom "data:text/html,<h1>GATE_OK</h1>" > /tmp/devgate.out 2>/dev/null & )
 sleep 22
 grep -q "GATE_OK" /tmp/devgate.out || { echo "FATAL: renderer gate failed — NOT installing"; pkill -9 -f "$PROF" 2>/dev/null; exit 1; }
 pkill -9 -f "$PROF" 2>/dev/null || true
-echo "  gate passed"
+echo "  renderer gate passed"
+if [ -f "$OCR_BIN" ]; then
+  "$REPO_DIR/tools/ocr_smoke/ocr_smoke_mac.sh" --app "$STAGE" || { echo "FATAL: sandboxed OCR gate failed — NOT installing"; exit 1; }
+else
+  echo "  no bundled tesseract (brew install tesseract to bundle it): OCR unavailable in this build"
+fi
 
 echo "[6/7] Install to /Applications"
 osascript -e 'tell application "MoltBrowser" to quit' 2>/dev/null || true
