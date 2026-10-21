@@ -55,6 +55,7 @@
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/mac/auth_session_request.h"
 #include "chrome/browser/mac/key_window_notifier.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
@@ -2584,7 +2585,10 @@ void OpenStartupTabsInBrowserWithProfile(const StartupTabs& tabs,
   if (!profile)
     return;  // No suitable profile to open the URLs, do nothing.
   // Prefer a regular (non-incognito) profile
-  if (profile->IsIncognitoProfile()) {
+  // MoltBrowser: also when a MoltNet window was the last active one, so a
+  // link from another app never lands in MoltNet's Tor identity
+  // (molt_net_incognito_parity.h).
+  if (molt_ai::tor::GetsIncognitoProtections(profile)) {
     profile = ProfileManager::MaybeForceOffTheRecordMode(
         profile->GetOriginalProfile());
   }

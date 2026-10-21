@@ -13,6 +13,7 @@
 #include "chrome/browser/media/media_engagement_service.h"  // nogncheck crbug.com/422038808
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/permissions/permission_decision_auto_blocker_factory.h"
 #include "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_observer_helper_base.h"
 #include "chrome/browser/picture_in_picture/auto_picture_in_picture_window_occlusion_helper_base.h"
@@ -700,8 +701,10 @@ bool AutoPictureInPictureTabHelper::IsEligibleForAutoPictureInPicture(
     }
     return false;
   } else if (setting == CONTENT_SETTING_ASK &&
-             Profile::FromBrowserContext(web_contents()->GetBrowserContext())
-                 ->IsIncognitoProfile()) {
+             // MoltBrowser: and in a MoltNet window
+             // (molt_net_incognito_parity.h).
+             molt_ai::tor::GetsIncognitoProtections(Profile::FromBrowserContext(
+                 web_contents()->GetBrowserContext()))) {
     blocked_due_to_content_setting_ = true;
 
     if (should_record_blocking_metrics) {
