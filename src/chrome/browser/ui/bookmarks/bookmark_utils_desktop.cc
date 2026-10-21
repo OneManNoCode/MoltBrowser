@@ -16,6 +16,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/bookmarks/url_and_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/page_load_metrics/chrome_initiator_location.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -135,6 +136,11 @@ OpenedWebContentsSet OpenAllHelper(
   if (profile) {
     opening_urls_in_incognito =
         profile->IsIncognitoProfile() ||
+        // MoltBrowser: bookmarks opened from a MoltNet window stay in
+        // MoltNet, as Incognito's stay in Incognito. Otherwise, once a
+        // chrome:// bookmark (Settings, History, ...) opened in a regular
+        // window, the rest followed it there and loaded outside Tor.
+        molt_ai::tor::IsMoltNetProfile(profile) ||
         initial_disposition == WindowOpenDisposition::OFF_THE_RECORD;
   } else {
     opening_urls_in_incognito =
@@ -221,7 +227,8 @@ OpenedWebContentsSet OpenAllHelper(
     // the disposition and the URL type.
     Profile* new_tab_profile =
         Profile::FromBrowserContext(opened_tab->GetBrowserContext());
-    if (new_tab_profile->IsIncognitoProfile()) {
+    if (new_tab_profile->IsIncognitoProfile() ||
+        molt_ai::tor::IsMoltNetProfile(new_tab_profile)) {  // MoltBrowser
       if (!incognito_browser) {
         auto* tab_browser =
             ProfileBrowserCollection::GetForProfile(new_tab_profile)
