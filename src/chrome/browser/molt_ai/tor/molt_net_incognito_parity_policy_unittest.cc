@@ -34,6 +34,9 @@ TEST(MoltNetIncognitoParityPolicyTest, RejectsOtherProfileIds) {
            " MoltNet::Tor-1",
            "xMoltNet::Tor-1",
            "Devtools::BrowserContext-MoltNet::Tor-1",
+           // 12 characters and a dash, then the prefix: only the start
+           // counts.
+           "Test::OTR-12-MoltNet::Tor-1",
            // Chromium's own OTR profile ids.
            "profile::primary_otr",
            "Devtools::BrowserContext-3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f",
