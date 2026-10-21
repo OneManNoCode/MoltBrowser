@@ -108,6 +108,21 @@ claims below as the design intent, not as measured results.
     access (no name lookups, no sockets, nothing announced on your local
     network). Video calls and other WebRTC sites don't work there; use a
     regular window for them.
+13. **At least as private as Incognito.** Like an Incognito window, a
+    MoltNet window adds nothing to your history, downloads list, saved
+    passwords, autofill data or recently closed tabs, and its cookies,
+    cache and site data never touch the disk. Chromium gives a few of its
+    private-window protections to Incognito alone; MoltNet gets those
+    too: DevTools opened on a MoltNet page keeps its settings (console
+    history, breakpoints) for that session only; your lock screen and
+    system media controls show "A site is playing media" instead of what
+    a MoltNet page plays; on macOS, a page can't share files (they would
+    be copied to your profile folder) and links you open from other apps
+    go to a regular window, never into MoltNet; a page using your camera
+    or microphone only switches to picture-in-picture by itself if you
+    allowed that site; and on Windows, error pages don't offer Windows
+    Network Diagnostics, which logs the page's address. A few Incognito
+    touches that only change how the window looks are not copied (§5).
 
 ## 2. How it is built
 
@@ -263,6 +278,80 @@ would link MoltNet to your regular browsing. So:
   reaches the primary Incognito profile). Push messaging and notifications
   aren't available in off-the-record profiles.
 
+**Nothing from the regular profile (Incognito's protections).** Chromium
+has two kinds of off-the-record profile: the primary one, Incognito
+(`Profile::IsIncognitoProfile()`), and non-primary ones (DevTools browser
+contexts, captive-portal windows, and MoltNet's `MoltNet::Tor-<uuid>`).
+Most private-mode behaviour keys on "off the record" and so covers both:
+the in-memory storage partition (cookies, site data, HTTP and code cache,
+media-license (CDM) storage), and every profile service, since in
+Chromium 152 `ProfileSelections` treats all off-the-record profiles alike
+(it no longer has a primary-only mode). But some protections test for
+Incognito itself. Every use of `IsIncognitoProfile()`,
+`IsPrimaryOTRProfile()`, `OTRProfileID::PrimaryID()` and the Incognito
+profile type in Chromium 152's `chrome/browser` (156 lines in 91 files,
+outside tests and the Android- and ChromeOS-only folders) was checked one
+by one, plus the components that get the answer through a delegate (the
+omnibox, page info, page-load metrics). Where MoltNet came out less
+private than Incognito, it now gets Incognito's behaviour
+(`chrome/browser/molt_ai/tor/molt_net_incognito_parity.h`, one hook per
+place, marked `MoltBrowser:`):
+
+- *Written to disk or into the regular profile.* DevTools opened on a
+  MoltNet page ran in the regular profile, so its settings, including the
+  console's command history and breakpoints with the page's script
+  addresses, were saved in the regular profile's preferences file and
+  outlived New Identity; it now runs in the MoltNet profile, whose settings
+  are in memory. Cookies of extension origins would have gone to an
+  "Extension Cookies" file in the regular profile's folder (an
+  off-the-record profile's folder is its parent's), files a page shares
+  on macOS (`navigator.share()`) were copied into that folder, and opening
+  `chrome://gcm-internals` in a MoltNet window started a second push
+  (GCM) client on the regular profile's store. Extension cookies are now
+  kept in memory, file shares are refused after a short random delay
+  (what Incognito does, so a page can't tell a refusal from a user
+  cancelling), and MoltNet gets no GCM client.
+- *Given to the operating system.* The system media controls (lock
+  screen, MPRIS on Linux, Now Playing on macOS, the Windows media overlay)
+  showed the title, artist or site, album and artwork of what a MoltNet
+  page played; they now show a placeholder. On Windows, MoltNet error pages
+  offered Windows Network Diagnostics, which logs the address it's run
+  with; they no longer do.
+- *Window behaviour.* On macOS a link opened from another application went
+  to the last active window's profile, so it could land in MoltNet's Tor
+  identity; it now opens in a regular window. Automatic picture-in-picture
+  (a page using the camera or microphone floating itself over other
+  windows when you switch tabs) needs the site to be allowed, as in
+  Incognito. And when the last MoltNet window closes, print previews
+  still spooling are dropped before the profile is discarded, as for
+  Incognito.
+
+Checked and already the same as Incognito (or stricter): history, top
+sites, Journeys and history search, visited-link colours, the omnibox's
+history, shortcuts and zero-suggest providers, the action predictor,
+search-engine keywords learned from sites, favicons; downloads (not
+persisted, not shown in regular windows, no source address in the file's
+metadata); password and autofill save prompts, autocomplete entries,
+address and card import; sync, send-to-your-devices and saved tab groups;
+session and tab restore and the recently-closed list (MoltNet windows are
+never restored); UKM (off while any off-the-record window is open) and
+background tracing; the clipboard (copies from MoltNet pages are marked
+to stay out of the system's clipboard history and cloud clipboard);
+Handoff and AppleScript on macOS; screenshot protection (on the desktop
+Chromium has it for managed data protection only, not for Incognito);
+third-party cookies, Shared Storage, ambient authentication and
+lookalike warnings (fixed earlier). MoltNet is
+stricter than Incognito for HTTPS (HTTPS-Only instead of Incognito's
+HTTPS-First), Accept-Language (a fixed en-US instead of your first
+language), `prefers-color-scheme` (the uniform dark toolbar's rather than
+your system's) and the settings Incognito writes back into the regular
+profile (MoltNet writes none). As in Incognito, what you save on purpose
+from a MoltNet window goes to your regular profile: bookmarks and
+reading-list entries you add, and words you add to the spelling
+dictionary. Saved passwords and addresses can be filled into MoltNet
+pages when you pick them, as in Incognito; MoltNet never offers to save
+new ones.
+
 **Onion addresses.** RFC 7686 reserves `.onion` for Tor, and the Chromium
 version MoltBrowser is built on doesn't special-case it, so MoltBrowser does,
 in four places outside MoltNet's Tor connection: a navigation check that runs
@@ -351,6 +440,9 @@ gpg-verified steps documented in that script.
 | No WebRTC in MoltNet (§1.12): the decision (MoltNet profiles only, whatever fingerprinting protection says), the renderer switch, the stand-in socket manager (no name resolved, including relay names, `.local` names and IP literals; no socket for any socket type; an empty interface list; its connection kept open), the closed mDNS responder, other profiles keeping Chromium's own, and the four hooks in Chromium files | 6 unit tests (`molt_ai_unittests`); standalone harness with clang `-fno-exceptions` and g++ ASan/UBSan, with and without WebRTC support compiled in: the same logic, the Chromium glue and the hooks (taken verbatim from the changed files) against stand-ins with the 152 signatures, 13 mutants all caught | Pass (built standalone; not yet built in the Chromium tree) |
 | The same over real mojo connections, and Blink's switch | Unit tests (`molt_ai_unittests`, `blink_unittests`) | Written; need a Chromium build |
 | `RTCPeerConnection` throws in a MoltNet window and no relay or peer name is looked up (§4 step 18) | Needs a Chromium build | **Not yet done** |
+| Which profiles get Incognito's protections (§1.13): MoltNet profile ids (look-alikes and Chromium's own off-the-record ids refused), the classification, and that every other profile keeps Chromium's answer | 5 unit tests (`molt_ai_unittests`); standalone with g++ ASan/UBSan and clang `-fno-exceptions` | Pass (built standalone; not yet built in the Chromium tree) |
+| The hooks themselves (DevTools profile, media-controls metadata, network diagnostics, extension cookies, Web Share files, GCM and Instance ID, links from other apps, automatic picture-in-picture) and the print-preview clean-up | Standalone harness: each hook copied verbatim from the changed file and compiled against stand-ins with the 152 signatures (g++ ASan/UBSan, clang `-fno-exceptions`); MoltNet gets Incognito's result, and regular, Incognito, guest, DevTools, media-router and look-alike profiles get exactly 152's; 20 mutants all caught | Pass (built standalone; not yet built in the Chromium tree) |
+| Incognito's protections in a running browser (§4 step 19) | Needs a Chromium build | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | Independent third-party audit | — | **Not done** |
 
@@ -496,6 +588,36 @@ Do all of this in a MoltNet window unless the step says otherwise.
     Run the same page in a regular window: it prints `WebRTC available`
     and both names are looked up by your resolver, as in any Chromium
     (that is the leak MoltNet closes).
+19. **Incognito's protections.** In a MoltNet window:
+    - Open DevTools on a page, run `"moltnet-devtools-check"` in the
+      console and set a breakpoint in one of the page's scripts. Close
+      every MoltNet window and quit MoltBrowser: `grep -c
+      moltnet-devtools-check "<profile folder>/Preferences"` prints `0`,
+      and the page's script address isn't in that file either. In a
+      regular window, DevTools' console history (arrow up) doesn't
+      contain the command.
+    - Play a video or song on a site that sets its title and artwork
+      (`navigator.mediaSession.metadata`). The lock screen and the system
+      media controls (`playerctl metadata` on Linux, Now Playing in the
+      macOS Control Centre, the Windows media overlay) show "A site is
+      playing media" and no title, artist, site or artwork. A regular
+      window still shows them.
+    - macOS: with the MoltNet window in front, run `open
+      https://example.com` in Terminal (or click a link in Mail): it opens
+      in a regular window. `navigator.share({files: [new File(["x"],
+      "x.txt")]})` on a MoltNet page rejects with `AbortError` after one
+      to two seconds, and no `WebShare` folder appears in the profile
+      folder.
+    - A page that shows your camera and registers for automatic
+      picture-in-picture (`navigator.mediaSession.setActionHandler(
+      "enterpictureinpicture", ...)`) doesn't open picture-in-picture
+      when you switch tabs (in a regular window it does, with a prompt).
+    - `chrome://gcm-internals` shows no GCM client, and the profile's
+      `GCM Store` folder isn't changed.
+    - Windows: an error page (e.g. `https://does-not-exist.invalid`) has
+      no "Running Windows Network Diagnostics" link.
+    - Print a page, close the MoltNet window while it's printing: no
+      crash, and the job finishes or is cancelled.
 
 ## 5. What MoltNet does *not* do
 
@@ -529,10 +651,21 @@ Do all of this in a MoltNet window unless the step says otherwise.
      those keys) and does nothing. An event the browser
      only dispatches after a MoltNet profile is gone falls back to
      Chromium's Incognito rules (events are normally sent while it exists).
-     Several of Chromium's Incognito protections test for the primary
-     Incognito profile only; third-party cookies, Shared Storage and
-     ambient authentication are fixed for MoltNet, the rest haven't been
-     reviewed one by one yet.
+   - Every Chromium check that gives Incognito alone a protection has been
+     reviewed, and MoltNet gets the protection wherever it was less
+     private (§2). What it still doesn't copy from Incognito only changes
+     the browser's own interface: MoltNet windows don't use Incognito's
+     dark window colours or "Incognito" labels (they carry the MoltNet
+     button instead); the app menu's profile entry shows your regular
+     profile (name, picture, sync status); closing the last MoltNet window
+     doesn't warn that downloads in progress will be cancelled, and the
+     "relaunch to update" warnings don't count MoltNet windows; *Clear
+     browsing data* opens your regular profile's settings (New Identity is
+     what clears MoltNet). Policies an administrator or parent sets for
+     Incognito don't cover MoltNet windows: turning Incognito off, the
+     Incognito-only URL blocklist, extensions required for Incognito
+     browsing, and closing a supervised user's Incognito windows (forcing
+     Incognito does stop MoltNet from opening).
    - Local servers don't open in MoltNet windows: `localhost`, loopback
      and link-local addresses go to Tor, which refuses them (see §2). Use
      a regular window for a local development server.

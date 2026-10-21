@@ -228,6 +228,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   page could probe the services running on your computer or devices on
   your network. They now go to Tor, which refuses them, as in Tor Browser
   (use a regular window for a local development server).
+- **MoltNet windows get Incognito's protections.** Several of Chromium's
+  private-window protections only covered Incognito itself. Now, in
+  MoltNet too: DevTools settings (including console history) stay in the
+  MoltNet session instead of your regular profile; your lock screen and
+  system media controls show "A site is playing media" instead of what a
+  MoltNet page plays; files a page shares (macOS) or extension cookies are
+  never written to your profile folder; links you open from other apps
+  (macOS) go to a regular window, never into MoltNet; automatic
+  picture-in-picture needs a site you allowed; and Windows Network
+  Diagnostics isn't offered on MoltNet error pages (it logs the address).
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
