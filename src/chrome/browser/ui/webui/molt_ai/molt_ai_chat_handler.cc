@@ -60,6 +60,9 @@
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
 #include "chrome/browser/molt_ai/voice/voice_service.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
+#include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
@@ -1071,6 +1074,16 @@ void MoltAIChatHandler::HandleLoadModel(const base::ListValue& args) {
   // last_requested_model_id_ here — that drives the LOCAL lazy-load path,
   // and the cloud send instead routes on the explicit args[5] model id.
   if (molt_ai::IsCloudModelId(model_id)) {
+    if (!CloudAiAllowed()) {
+      // MoltNet: the picker lists no cloud model, but refuse one anyway.
+      base::DictValue result;
+      result.Set("success", false);
+      result.Set("model_id", model_id);
+      result.Set("error", molt_ai::tor::kCloudAiRefusedInMoltNet);
+      ResolveJavascriptCallback(base::Value(callback_id),
+                                base::Value(std::move(result)));
+      return;
+    }
     FireWebUIListener("model-status", base::Value("ready"),
                       base::Value(model_id));
     base::DictValue result;
@@ -1538,6 +1551,13 @@ void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
                                          bool include_actions,
                                          base::DictValue attached) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!CloudAiAllowed()) {
+    // MoltNet: never to a cloud provider, not even through Tor (the
+    // request carries the user's API key). Said in the chat, not silent.
+    OnPromptComplete(std::move(callback_id), /*success=*/false, std::string(),
+                     molt_ai::tor::kCloudAiRefusedInMoltNet);
+    return;
+  }
   active_prompt_callback_id_ = callback_id;
   cloud_accumulated_text_.clear();
 
@@ -1747,7 +1767,8 @@ void MoltAIChatHandler::HandleGrantCloudConsent(const base::ListValue& args) {
   if (!HasCallbackArgs(args, 2u, __func__)) return;
   const std::string callback_id = args[0].GetString();
   const std::string provider_id = StringArg(args, 1);
-  if (!molt_ai::FindCloudProvider(provider_id) || !profile_) {
+  if (!molt_ai::FindCloudProvider(provider_id) || !profile_ ||
+      !CloudAiAllowed()) {
     base::DictValue result;
     result.Set("success", false);
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -1817,8 +1838,9 @@ void MoltAIChatHandler::HandleGetModelStatus(
   // selection (nothing to download or load), so is_downloaded/is_loaded
   // stay false; the picker renders them in its "Cloud · via your key"
   // group. Reading keys.enc is a tiny OSCrypt-decrypt on the UI thread,
-  // same idiom as the vault handlers.
-  {
+  // same idiom as the vault handlers. None in MoltNet windows, which use
+  // on-device models only.
+  if (CloudAiAllowed()) {
     ScopedAllowBlockingForMolt allow;
     for (const auto& [provider_id, cfg] : molt_ai::MoltKeysStore::LoadAll()) {
       const molt_ai::CloudProviderInfo* info =
@@ -1886,6 +1908,52 @@ content::WebContents* MoltAIChatHandler::GetActiveTabForChat() {
   content::WebContents* active_tab =
       browser->GetTabStripModel()->GetActiveWebContents();
   return active_tab == webui_contents ? nullptr : active_tab;
+}
+
+BrowserWindowInterface* MoltAIChatHandler::BrowserForChatAction(
+    bool* crossed_moltnet) {
+  *crossed_moltnet = false;
+  content::WebContents* webui_contents = web_ui()->GetWebContents();
+  GlobalBrowserCollection* browsers = GlobalBrowserCollection::GetInstance();
+  BrowserWindowInterface* browser =
+      browsers->FindBrowserWithTab(webui_contents);
+  if (!browser) {
+    // Side panel: not a tab, but it lives in its browser's window.
+    browser = browsers->FindBrowserWithWindow(
+        webui_contents->GetTopLevelNativeWindow());
+  }
+  if (!browser) {
+    // The most recently focused window, normally the one the user is
+    // looking at.
+    browser = browsers->GetLastActiveBrowser();
+  }
+  if (!browser) {
+    return nullptr;
+  }
+  Profile* chat_profile =
+      Profile::FromBrowserContext(webui_contents->GetBrowserContext());
+  Profile* window_profile = browser->GetProfile();
+  if (!molt_ai::tor::MayChatActInWindow(
+          molt_ai::tor::IsMoltNetProfile(chat_profile),
+          molt_ai::tor::IsMoltNetProfile(window_profile),
+          chat_profile == window_profile)) {
+    *crossed_moltnet = true;
+    return nullptr;
+  }
+  return browser;
+}
+
+bool MoltAIChatHandler::CloudAiAllowed() const {
+  return molt_ai::tor::MoltNetRequestAccessForProfile(
+             molt_ai::tor::IsMoltNetProfile(profile_))
+      .cloud_ai;
+}
+
+bool MoltAIChatHandler::SavedWorkflowsAllowed() {
+  return molt_ai::tor::MoltNetRequestAccessForProfile(
+             molt_ai::tor::IsMoltNetProfile(Profile::FromBrowserContext(
+                 web_ui()->GetWebContents()->GetBrowserContext())))
+      .saved_workflows;
 }
 
 // ------------------------------------------------------------------
@@ -2725,20 +2793,15 @@ void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   const std::string* sel = action.FindString("selector");
   const std::string* value = action.FindString("value");
 
-  // Resolve the browser window that should receive the action.
-  // The side-panel's WebContents is NOT a tab in the tab strip, so
-  // FindBrowserWithTab returns null for it. Fall back to
-  // GetLastActiveBrowser() — the most-recently-focused browser window,
-  // which is the one the user is actively looking at.
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser) {
-    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
-  }
+  // Resolve the browser window that should receive the action: the chat's
+  // own, never one across MoltNet's boundary (BrowserForChatAction).
+  bool crossed_moltnet = false;
+  BrowserWindowInterface* browser = BrowserForChatAction(&crossed_moltnet);
   if (!browser || !browser->GetTabStripModel()) {
     result.Set("success", false);
-    result.Set("error", "no active browser window");
+    result.Set("error", crossed_moltnet
+                            ? molt_ai::tor::kOtherWindowRefusedInMoltNet
+                            : "no active browser window");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
     return;
@@ -3282,6 +3345,15 @@ void MoltAIChatHandler::HandleCreateWatcher(const base::ListValue& args) {
   if (!url || url->empty() || !selector || selector->empty()) {
     out.Set("success", false);
     out.Set("error", "url and selector are required");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  if (!SavedWorkflowsAllowed()) {
+    // MoltNet: the regular profile's scheduler would fetch the page over
+    // and over outside Tor.
+    out.Set("success", false);
+    out.Set("error", molt_ai::tor::kSavedWorkflowRefusedInMoltNet);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
@@ -4230,6 +4302,30 @@ void MoltAIChatHandler::HandleOpenSandboxTab(const base::ListValue& args) {
                               base::Value(std::move(out)));
     return;
   }
+  if (molt_ai::tor::SandboxTabWindowFor(
+          molt_ai::tor::IsMoltNetProfile(profile)) ==
+      molt_ai::tor::SandboxTabWindow::kMoltNet) {
+    // From MoltNet an Incognito window would load the page outside Tor.
+    // A MoltNet window is just as throwaway (molt_net_requests_policy.h).
+    molt_ai::tor::MoltNetWindow::Open(
+        profile, g,
+        base::BindOnce(
+            [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
+               std::string url, bool ok, std::string error) {
+              if (!self || !self->IsJavascriptAllowed()) return;
+              base::DictValue result;
+              result.Set("success", ok);
+              if (ok) {
+                result.Set("url", url);
+              } else {
+                result.Set("error", error);
+              }
+              self->ResolveJavascriptCallback(base::Value(cb),
+                                              base::Value(std::move(result)));
+            },
+            weak_ptr_factory_.GetWeakPtr(), callback_id, g.spec()));
+    return;
+  }
   // OpenURLOffTheRecord wants the *original* (non-OTR) profile.
   Profile* original = profile->GetOriginalProfile();
   chrome::OpenURLOffTheRecord(original, g);
@@ -4277,18 +4373,16 @@ void MoltAIChatHandler::HandleOpenUrlInTab(const base::ListValue& args) {
     return;
   }
 
-  // Resolve the browser window that should receive the new tab. The
-  // side panel's WebContents is not a tab (FindBrowserWithTab returns
-  // null), so fall back to the most-recently-active browser window.
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser) {
-    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
-  }
+  // Resolve the browser window that should receive the new tab: the
+  // chat's own, never one across MoltNet's boundary (a link from a MoltNet
+  // chat must not load outside Tor).
+  bool crossed_moltnet = false;
+  BrowserWindowInterface* browser = BrowserForChatAction(&crossed_moltnet);
   if (!browser) {
     out.Set("success", false);
-    out.Set("error", "no active browser window");
+    out.Set("error", crossed_moltnet
+                         ? molt_ai::tor::kOtherWindowRefusedInMoltNet
+                         : "no active browser window");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
@@ -4929,6 +5023,14 @@ void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
   if (!args[1].is_dict()) {
     out.Set("success", false);
     out.Set("error", "expected plan dict");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(out)));
+    return;
+  }
+  if (!SavedWorkflowsAllowed()) {
+    // MoltNet: a saved plan would be run later from outside Tor.
+    out.Set("success", false);
+    out.Set("error", molt_ai::tor::kSavedWorkflowRefusedInMoltNet);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
