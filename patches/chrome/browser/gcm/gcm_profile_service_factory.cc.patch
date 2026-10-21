@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/gcm/gcm_profile_service_factory.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/gcm/gcm_profile_service_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/gcm/gcm_profile_service_factory.cc b/chrome/browser/gcm/gcm_profile_service_factory.cc
+index 8ed34e113b56ce238cb5d108fc52a332e5c4a389..92d9ef55b3ce1020e296be839837405526589d20 100644
+--- a/chrome/browser/gcm/gcm_profile_service_factory.cc
++++ b/chrome/browser/gcm/gcm_profile_service_factory.cc
+@@ -14,6 +14,7 @@
+ #include "base/task/thread_pool.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_key.h"
+ #include "chrome/browser/signin/identity_manager_factory.h"
+@@ -112,8 +113,10 @@ GCMProfileService* GCMProfileServiceFactory::GetForProfile(
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+   // On desktop, incognito profiles are checked with IsIncognitoProfile().
+   // It's possible for non-incognito profiles to also be off-the-record.
+-  bool is_profile_supported =
+-      !Profile::FromBrowserContext(profile)->IsIncognitoProfile();
++  // MoltBrowser: nor in MoltNet, whose GCM store would be the regular
++  // profile's "GCM Store" folder (molt_net_incognito_parity.h).
++  bool is_profile_supported = !molt_ai::tor::GetsIncognitoProtections(
++      Profile::FromBrowserContext(profile));
+ #else
+   bool is_profile_supported = !profile->IsOffTheRecord();
+ #endif

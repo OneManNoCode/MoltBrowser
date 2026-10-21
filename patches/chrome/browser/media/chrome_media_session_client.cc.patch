@@ -1,0 +1,30 @@
+MoltBrowser patch for chrome/browser/media/chrome_media_session_client.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/media/chrome_media_session_client.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/media/chrome_media_session_client.cc b/chrome/browser/media/chrome_media_session_client.cc
+index 7cb027e1f2d27a37a675f8dba3aa13eabee1d97d..c094566cfa97f123939fbd0e9777e5f182065e9e 100644
+--- a/chrome/browser/media/chrome_media_session_client.cc
++++ b/chrome/browser/media/chrome_media_session_client.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome_media_session_client.h"
+ 
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "chrome/grit/theme_resources.h"
+@@ -19,7 +20,10 @@ ChromeMediaSessionClient* ChromeMediaSessionClient::GetInstance() {
+ 
+ bool ChromeMediaSessionClient::ShouldHideMetadata(
+     content::BrowserContext* browser_context) const {
+-  return Profile::FromBrowserContext(browser_context)->IsIncognitoProfile();
++  // MoltBrowser: the operating system's media controls don't show what a
++  // MoltNet page plays either (molt_net_incognito_parity.h).
++  return molt_ai::tor::GetsIncognitoProtections(
++      Profile::FromBrowserContext(browser_context));
+ }
+ 
+ std::u16string ChromeMediaSessionClient::GetTitlePlaceholder() const {

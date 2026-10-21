@@ -5,21 +5,42 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 692ebd4c087d9c19d4d8f96c220506f198019bca..f26ecfdefad25d1391d9a471141f9a6c62c3a41a 100644
+index 692ebd4c087d9c19d4d8f96c220506f198019bca..c506aa4748e609487d0bed766215187c864c3cab 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -45,6 +45,10 @@
+@@ -45,6 +45,12 @@
  #include "chrome/browser/lookalikes/safety_tip_web_contents_observer.h"
  #include "chrome/browser/media/media_engagement_service.h"
  #include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_observer.h"
 +#include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 +#include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 +#include "chrome/browser/molt_ai/memory/memory_recorder.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
++#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 +#include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
  #include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
  #include "chrome/browser/net/net_error_tab_helper.h"
  #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
-@@ -657,6 +661,26 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -447,9 +453,17 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+ #endif  // BUILDFLAG(IS_ANDROID)
+   client_hints::ClientHintsWebContentsObserver::CreateForWebContents(
+       web_contents);
++  // MoltBrowser: a MoltNet tab doesn't tell the regular profile's
++  // ShoppingService (which off-the-record tabs get) about its pages: it
++  // would look their URLs up outside Tor (molt_net_requests_policy.h).
++  // CommerceTabHelper does nothing without a service.
+   commerce::CommerceTabHelper::CreateForWebContents(
+       web_contents, profile->IsOffTheRecord(),
+-      commerce::ShoppingServiceFactory::GetForBrowserContext(profile),
++      molt_ai::tor::MoltNetRequestAccessForProfile(
++          molt_ai::tor::IsMoltNetProfile(profile))
++              .commerce
++          ? commerce::ShoppingServiceFactory::GetForBrowserContext(profile)
++          : nullptr,
+       ISOLATED_WORLD_ID_CHROME_INTERNAL);
+   ConnectionHelpTabHelper::CreateForWebContents(web_contents);
+   content_settings::PageSpecificContentSettings::CreateForWebContents(
+@@ -657,6 +671,26 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
    vr::VrTabHelper::CreateForWebContents(web_contents);
    OneTimePermissionsTrackerHelper::CreateForWebContents(web_contents);
  

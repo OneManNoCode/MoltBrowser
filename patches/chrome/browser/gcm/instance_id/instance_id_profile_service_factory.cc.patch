@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc b/chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc
+index 843207b988a9f4f8b54c4795476b641b319d83f8..ccb03d81c24aa041b43032072e4ec1d613017dba 100644
+--- a/chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc
++++ b/chrome/browser/gcm/instance_id/instance_id_profile_service_factory.cc
+@@ -7,6 +7,7 @@
+ #include <memory>
+ 
+ #include "chrome/browser/gcm/gcm_profile_service_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/gcm_driver/gcm_profile_service.h"
+ #include "components/gcm_driver/instance_id/instance_id_profile_service.h"
+@@ -23,8 +24,10 @@ InstanceIDProfileService* InstanceIDProfileServiceFactory::GetForProfile(
+   // from guest profiles, the menu item "New incognito window" is not
+   // available.  So, if this is a guest session, allow it only if it is a
+   // child OTR profile as well.
+-  bool is_profile_supported =
+-      !Profile::FromBrowserContext(profile)->IsIncognitoProfile();
++  // MoltBrowser: not for MoltNet either, which gets no GCM service
++  // (gcm_profile_service_factory.cc, molt_net_incognito_parity.h).
++  bool is_profile_supported = !molt_ai::tor::GetsIncognitoProtections(
++      Profile::FromBrowserContext(profile));
+ #else
+   bool is_profile_supported = !profile->IsOffTheRecord();
+ #endif
