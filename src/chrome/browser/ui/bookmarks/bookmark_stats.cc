@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node_data.h"
@@ -21,7 +22,10 @@ bool IsBookmarkBarLocation(BookmarkLaunchLocation location) {
 
 auto GetMetricProfile(const Profile* profile) {
   DCHECK(profile);
-  DCHECK(profile->IsRegularProfile() || profile->IsIncognitoProfile());
+  // MoltBrowser: bookmarks also open from MoltNet windows, counted as
+  // Incognito (molt_net_incognito_parity.h).
+  DCHECK(profile->IsRegularProfile() ||
+         molt_ai::tor::GetsIncognitoProtections(profile));
   return profile->IsRegularProfile()
              ? profile_metrics::BrowserProfileType::kRegular
              : profile_metrics::BrowserProfileType::kIncognito;
