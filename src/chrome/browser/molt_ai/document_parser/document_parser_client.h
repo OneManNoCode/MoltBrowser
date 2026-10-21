@@ -19,11 +19,11 @@
 //     longer because PDFium does far more per page than the text scraper
 //     (decoding the scan's images, rasterizing up to 20 pages of up to 25 MP,
 //     PNG-encoding each). A 20-page scan at 200 dpi takes a few seconds; the
-//     limit only bounds a hung or hostile render, and leaves most of the OCR's
-//     overall deadline (ocr_service.h) to tesseract. On timeout the call
-//     fails, the pipe is closed and the process is terminated. Closing the
-//     pipe alone would not do: a process stuck inside a parse never gets to
-//     notice it.
+//     limit only bounds a hung or hostile render, and a render that comes
+//     close to it still leaves half of the OCR's overall deadline
+//     (ocr_service.h) to tesseract. On timeout the call fails, the pipe is
+//     closed and the process is terminated. Closing the pipe alone would not
+//     do: a process stuck inside a parse never gets to notice it.
 //   - A crashed or killed process fails its call (disconnect handler), so
 //     every call is answered exactly once.
 //   - Replies are untrusted: text or error strings that are not valid UTF-8

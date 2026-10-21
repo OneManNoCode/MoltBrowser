@@ -66,11 +66,12 @@ namespace ocr {
 
 // Deadlines. One image, or one page of a PDF: tesseract takes a few
 // seconds per page. A whole PDF (rendering, then up to kPdfOcrMaxPages
-// pages one after another): rendering takes at most
-// DocumentParserClient::kRenderTimeout, which leaves two minutes for
-// tesseract.
+// pages one after another) keeps the two minutes it had when tesseract was
+// handed the PDF itself: rendering a scan takes seconds and at most
+// DocumentParserClient::kRenderTimeout, so tesseract gets at least the
+// other minute and usually nearly all of it.
 inline constexpr base::TimeDelta kImageOcrTimeout = base::Seconds(60);
-inline constexpr base::TimeDelta kPdfOcrTimeout = base::Seconds(180);
+inline constexpr base::TimeDelta kPdfOcrTimeout = base::Seconds(120);
 // No page is started with less time than this left before the deadline.
 inline constexpr base::TimeDelta kMinPageOcrTime = base::Seconds(5);
 
@@ -193,7 +194,8 @@ OcrResult OcrRenderedPages(const std::vector<RenderedPdfPage>& pages,
 
 // OcrPdf without the singleton and with a given page OCR: renders |pdf|
 // through |parser| (which copies it before returning), then runs
-// OcrRenderedPages on a MayBlock thread-pool task. |on_done| runs on the
+// OcrRenderedPages on a MayBlock thread-pool task. An empty |pdf| fails
+// with "empty pdf" without reaching the parser. |on_done| runs on the
 // calling sequence, never synchronously, unless |parser| is destroyed while
 // rendering. Sets success, text and error only.
 void RenderAndOcrPdf(DocumentParserClient& parser,

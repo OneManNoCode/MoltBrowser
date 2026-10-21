@@ -239,7 +239,7 @@ repo/
   working directory, HOME and TMPDIR); the helper's own directory, its
   tessdata or model and the input are readable; no network; nothing of the
   browser's environment. A deadline kills the helper and its process group
-  (60 s for an image or a PDF page, all of a PDF within 180 s, 300 s for
+  (60 s for an image or a PDF page, all of a PDF within 120 s, 300 s for
   audio), output is read up to 256 KiB (tesseract) / 1 MiB (whisper), and
   files it leaves are read back only if they are plain single-link files
   (no symlink or hard link out of the sandbox). Callers get `timed out` / `sandbox unavailable`

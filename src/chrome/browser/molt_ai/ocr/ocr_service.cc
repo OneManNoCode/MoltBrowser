@@ -368,6 +368,14 @@ void RenderAndOcrPdf(DocumentParserClient& parser,
                      base::TimeTicks deadline,
                      PageOcrFunction ocr_page,
                      base::OnceCallback<void(OcrResult)> on_done) {
+  if (pdf.empty()) {
+    // The error OcrPdf has always given for this.
+    OcrResult result;
+    result.error = "empty pdf";
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(on_done), std::move(result)));
+    return;
+  }
   parser.RenderPdfPages(
       pdf, kPdfOcrMaxPages, kPdfOcrDpi,
       base::BindOnce(&OnPdfPagesRendered, max_chars, deadline,

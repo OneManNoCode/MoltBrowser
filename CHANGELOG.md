@@ -76,7 +76,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **OCR and voice helpers are sandboxed.** tesseract (scanned PDFs,
   attached images) and whisper (voice) now see only their own files, the
   input and a private scratch folder, get no network, and are stopped after
-  1 minute per image or PDF page (3 minutes for a whole scanned PDF) and 5
+  1 minute per image or PDF page (2 minutes for a whole scanned PDF) and 5
   minutes for audio. A malicious file that takes one over can't reach your
   files or the internet, and one that makes it hang no longer ties up the
   browser. Linux uses Landlock and seccomp (kernels older than 5.13 get the
@@ -305,8 +305,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   25 megapixels a page; no JavaScript, no system fonts) and tesseract reads
   those images one page at a time. The browser checks every page image
   before tesseract sees it. The text comes back with `--- Page N ---`
-  headers and says when pages were left out; one 3-minute limit covers the
-  whole PDF.
+  headers and says when pages were left out; the same 2-minute limit as
+  before covers the whole PDF.
 
 ### Engineering
 - Chromium is pinned in one place (`chromium_version.txt`); copied upstream

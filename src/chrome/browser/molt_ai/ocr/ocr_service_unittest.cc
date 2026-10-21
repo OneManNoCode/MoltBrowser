@@ -179,9 +179,11 @@ TEST_F(OcrRenderedPagesTest, FailedPagesAreSkipped) {
 }
 
 TEST_F(OcrRenderedPagesTest, OneDeadlineForAllPages) {
-  // Each page takes 70 s of the 180 s: the first two get the full
+  // The two minutes a PDF's OCR has always had, rendering included.
+  static_assert(kPdfOcrTimeout == base::Seconds(120));
+  // Each page takes 50 s of the 120 s: the first two get the full
   // per-page limit, the third what is left, and the fourth isn't started.
-  FakeOcr ocr(&clock_, /*seconds_per_page=*/70);
+  FakeOcr ocr(&clock_, /*seconds_per_page=*/50);
   OcrResult result =
       Run(FakePages({{0, "one"}, {1, "two"}, {2, "three"}, {3, "four"}}), 4,
           1000, ocr);
@@ -189,7 +191,7 @@ TEST_F(OcrRenderedPagesTest, OneDeadlineForAllPages) {
   ASSERT_EQ(ocr.timeouts().size(), 3u);
   EXPECT_EQ(ocr.timeouts()[0], kImageOcrTimeout);
   EXPECT_EQ(ocr.timeouts()[1], kImageOcrTimeout);
-  EXPECT_EQ(ocr.timeouts()[2], kPdfOcrTimeout - base::Seconds(140));
+  EXPECT_EQ(ocr.timeouts()[2], kPdfOcrTimeout - base::Seconds(100));
   EXPECT_TRUE(base::EndsWith(result.text, "--- OCR read 3 of 4 pages ---"));
   EXPECT_EQ(result.text.find("four"), std::string::npos);
 }
@@ -346,6 +348,22 @@ TEST_F(RenderAndOcrPdfTest, AnUnreadablePdfFailsWithTheParsersReason) {
   OcrResult result = OcrPdf("%PDF-1.7 locked");
   EXPECT_FALSE(result.success);
   EXPECT_EQ(result.error, "the PDF is password-protected");
+}
+
+TEST_F(RenderAndOcrPdfTest, AnEmptyPdfFailsAsItAlwaysHas) {
+  base::test::TestFuture<OcrResult> future;
+  internal::RenderAndOcrPdf(
+      parser_, base::span<const uint8_t>(), 1000,
+      base::TimeTicks::Now() + kPdfOcrTimeout,
+      base::BindRepeating([](base::span<const uint8_t>, size_t,
+                             base::TimeDelta) { return Text("never"); }),
+      future.GetCallback());
+  EXPECT_FALSE(future.IsReady());  // Never synchronously.
+  OcrResult result = future.Take();
+  EXPECT_FALSE(result.success);
+  // Not the parser's "the document is empty": it never got the call.
+  EXPECT_EQ(result.error, "empty pdf");
+  EXPECT_TRUE(receivers_.empty());
 }
 
 TEST_F(RenderAndOcrPdfTest, ARenderCrashFails) {
