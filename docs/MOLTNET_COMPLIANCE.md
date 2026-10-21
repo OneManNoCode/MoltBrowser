@@ -343,8 +343,9 @@ third-party cookies, Shared Storage, ambient authentication and
 lookalike warnings (fixed earlier). MoltNet is
 stricter than Incognito for HTTPS (HTTPS-Only instead of Incognito's
 HTTPS-First), Accept-Language (a fixed en-US instead of your first
-language), `prefers-color-scheme` (the uniform dark toolbar's rather than
-your system's) and the settings Incognito writes back into the regular
+language), `prefers-color-scheme` (dark for everyone while MoltBrowser's
+dark toolbar is on, the default, where Incognito follows your system; see
+§5.7) and the settings Incognito writes back into the regular
 profile (MoltNet writes none). As in Incognito, what you save on purpose
 from a MoltNet window goes to your regular profile: bookmarks and
 reading-list entries you add, and words you add to the spelling
