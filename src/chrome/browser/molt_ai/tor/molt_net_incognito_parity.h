@@ -18,8 +18,8 @@
 //     for a MoltNet page runs in the MoltNet profile, as for Incognito,
 //     instead of the regular one, so its settings (console history,
 //     breakpoints with the page's script URLs, network filters, workspace
-//     folders) stay in MoltNet's in-memory prefs and links it opens stay in
-//     MoltNet.
+//     folders) stay in MoltNet's in-memory prefs, and its window and the
+//     profile services it uses are MoltNet's.
 //   * extensions/chrome_extension_cookies.cc: cookies of extension origins
 //     are kept in memory, not in an "Extension Cookies" file in the regular
 //     profile's folder.
