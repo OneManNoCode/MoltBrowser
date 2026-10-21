@@ -123,6 +123,10 @@ source_set("tor") {
     "//crypto",
     "//mojo/public/cpp/bindings",
     "//net",
+
+    # ENABLE_PRINT_PREVIEW: molt_net_window.cc drops a MoltNet profile's
+    # print-preview contents before discarding it, as Incognito's are.
+    "//printing/buildflags",
     "//services/network/public/mojom",
     "//url",
   ]
