@@ -30,6 +30,8 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
@@ -506,8 +508,20 @@ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
     return;
   }
 
+  // MoltBrowser: no phone (hybrid) or Google Password Manager authenticator
+  // for MoltNet pages. Both reach their relay servers through the system
+  // network context below, outside Tor, and a phone connects from the
+  // user's own network (chrome/browser/molt_ai/tor/
+  // molt_net_requests_policy.h). Security keys and the platform
+  // authenticator are unaffected.
+  const bool relay_authenticators =
+      molt_ai::tor::MoltNetRequestAccessForProfile(
+          molt_ai::tor::IsMoltNetProfile(profile()))
+          .relay_authenticators;
+
   // Configure the enclave authenticator.
-  if (browser_provided_passkeys_available && !IsVirtualEnvironmentEnabled() &&
+  if (relay_authenticators &&  // MoltBrowser
+      browser_provided_passkeys_available && !IsVirtualEnvironmentEnabled() &&
       request_source == RequestSource::kWebAuthentication) {
     // Creating credentials in GPM can be disabled by policy, but get() is
     // always allowed.
@@ -579,9 +593,14 @@ void ChromeAuthenticatorRequestDelegate::ConfigureDiscoveries(
   }
 #endif
 
-  discovery_factory->set_cable_data(request_type, qr_generator_key);
+  // MoltBrowser: without cable data no hybrid discovery is created, and
+  // FidoRequestHandlerBase drops the transport (no "use a phone" option).
+  if (relay_authenticators) {
+    discovery_factory->set_cable_data(request_type, qr_generator_key);
+  }
 
-  if (SystemNetworkContextManager::GetInstance()) {
+  if (relay_authenticators &&  // MoltBrowser
+      SystemNetworkContextManager::GetInstance()) {
     // caBLE and the enclave depend on the network context factory.
     // TODO(nsatragno): this should probably use a storage partition network
     // context instead. See the SystemNetworkContextManager class comments.
