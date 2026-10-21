@@ -37,6 +37,7 @@
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
+class BrowserWindowInterface;
 class Profile;
 
 namespace molt_ai::memory {
@@ -343,6 +344,19 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // in. Null when the chat itself is that tab, or the window can't be
   // found. Works for the side panel too (its WebContents is not a tab).
   content::WebContents* GetActiveTabForChat();
+
+  // The window a chat action (navigate, click, type, ...) or a link from a
+  // reply goes to: the chat's own (holding it as a tab, or hosting its side
+  // panel), else the last active window. Null when there is none, or when
+  // that window is across MoltNet's boundary from the chat
+  // (molt_ai::tor::MayChatActInWindow); then `*crossed_moltnet` is true.
+  BrowserWindowInterface* BrowserForChatAction(bool* crossed_moltnet);
+
+  // What this chat may use outside on-device processing. False in MoltNet
+  // windows (molt_ai/tor/molt_net_requests_policy.h): cloud AI providers,
+  // and page watchers / saved plans, which run later outside Tor.
+  bool CloudAiAllowed() const;
+  bool SavedWorkflowsAllowed();
 
   // Ensure BrowserAIRuntime is created and initialized
   molt_ai::BrowserAIRuntime* GetOrCreateRuntime();

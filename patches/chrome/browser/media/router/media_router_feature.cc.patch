@@ -1,0 +1,37 @@
+MoltBrowser patch for chrome/browser/media/router/media_router_feature.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/media/router/media_router_feature.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/media/router/media_router_feature.cc b/chrome/browser/media/router/media_router_feature.cc
+index 049a25bbec0093053747261a7d39302523583435..2fb65c4c29d514136061df8a227d805f082da042 100644
+--- a/chrome/browser/media/router/media_router_feature.cc
++++ b/chrome/browser/media/router/media_router_feature.cc
+@@ -17,6 +17,8 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "build/build_config.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/chrome_switches.h"
+ #include "chrome/common/pref_names.h"
+@@ -115,6 +117,17 @@ bool MediaRouterEnabled(content::BrowserContext* context) {
+   }
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+ 
++  // MoltBrowser: no Cast, Presentation API or Remote Playback in MoltNet
++  // windows. Discovery broadcasts on the local network, and a Cast device
++  // loads what it is sent from the user's own network, outside Tor
++  // (chrome/browser/molt_ai/tor/molt_net_requests_policy.h). Fixed for the
++  // life of the profile, as this function requires.
++  if (!molt_ai::tor::MoltNetRequestAccessForProfile(
++           molt_ai::tor::IsMoltNetProfile(Profile::FromBrowserContext(context)))
++           .cast) {
++    return false;
++  }
++
+   // If the Media Router was already enabled or disabled for |context|, then it
+   // must remain so.  The Media Router does not support dynamic
+   // enabling/disabling.

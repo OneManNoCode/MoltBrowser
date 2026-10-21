@@ -1,0 +1,30 @@
+MoltBrowser patch for chrome/browser/ui/bookmarks/bookmark_stats.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/ui/bookmarks/bookmark_stats.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/ui/bookmarks/bookmark_stats.cc b/chrome/browser/ui/bookmarks/bookmark_stats.cc
+index fbaea519da90c9162a93517bb2f8d575302e51f8..df0924e60e943386ecaff6003d5c4e21d5274f4e 100644
+--- a/chrome/browser/ui/bookmarks/bookmark_stats.cc
++++ b/chrome/browser/ui/bookmarks/bookmark_stats.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/metrics/histogram_macros.h"
+ #include "base/metrics/user_metrics.h"
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/bookmarks/browser/bookmark_node_data.h"
+@@ -21,7 +22,10 @@ bool IsBookmarkBarLocation(BookmarkLaunchLocation location) {
+ 
+ auto GetMetricProfile(const Profile* profile) {
+   DCHECK(profile);
+-  DCHECK(profile->IsRegularProfile() || profile->IsIncognitoProfile());
++  // MoltBrowser: bookmarks also open from MoltNet windows, counted as
++  // Incognito (molt_net_incognito_parity.h).
++  DCHECK(profile->IsRegularProfile() ||
++         molt_ai::tor::GetsIncognitoProtections(profile));
+   return profile->IsRegularProfile()
+              ? profile_metrics::BrowserProfileType::kRegular
+              : profile_metrics::BrowserProfileType::kIncognito;

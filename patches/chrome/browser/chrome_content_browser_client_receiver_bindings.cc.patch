@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client_receiver_bindings.cc b/chrome/browser/chrome_content_browser_client_receiver_bindings.cc
-index 7d83cf933b630fcf2a7eea35b7c02e370eed3d74..3bed776f77c8064faba4d4560a08d8108e0bf775 100644
+index 7d83cf933b630fcf2a7eea35b7c02e370eed3d74..5d5e0da98dfbc72f556a2e5bd1e62ad0657db512 100644
 --- a/chrome/browser/chrome_content_browser_client_receiver_bindings.cc
 +++ b/chrome/browser/chrome_content_browser_client_receiver_bindings.cc
 @@ -15,6 +15,7 @@
@@ -16,13 +16,14 @@ index 7d83cf933b630fcf2a7eea35b7c02e370eed3d74..3bed776f77c8064faba4d4560a08d810
  #include "chrome/browser/net/net_error_tab_helper.h"
  #include "chrome/browser/net_benchmarking.h"
  #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-@@ -325,6 +326,10 @@ void ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
+@@ -325,6 +326,11 @@ void ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
      mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
    chrome::internal::PopulateChromeFrameBinders(map, render_frame_host);
    chrome::internal::PopulateChromeWebUIFrameBinders(map, render_frame_host);
 +  // MoltBrowser: a MoltNet frame gets no P2P sockets (and so no host-name
-+  // lookups) or mDNS responder (chrome/browser/molt_ai/tor/molt_net_webrtc.h).
-+  // Nothing below registers either interface.
++  // lookups) or mDNS responder (chrome/browser/molt_ai/tor/molt_net_webrtc.h),
++  // and no image-description or location service
++  // (molt_net_request_binders.h). Nothing below registers these interfaces.
 +  molt_ai::tor::RegisterMoltNetFrameBinders(render_frame_host, map);
  
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)

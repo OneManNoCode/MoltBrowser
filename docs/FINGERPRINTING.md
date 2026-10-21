@@ -1412,10 +1412,12 @@ off), WebPreferences, RendererPreferences, `CookieSettings`,
 
 **Kept:** changes made inside the MoltNet session (a permission granted,
 Shields turned off for a site; in memory, gone at New Identity), MoltNet's
-own values (proxy, WebRTC policy, prediction, HTTPS-Only, en-US), values an
-administrator sets by policy, and prefs pages can't observe (bookmarks
-bar, download folder, spell checking, Safe Browsing level, the user's
-choices about quiet permission prompts).
+own values (proxy, WebRTC policy, prediction, HTTPS-Only, Safe Browsing
+off, en-US), values an administrator sets by policy, and prefs pages can't
+observe (bookmarks bar, download folder, spell checking, the user's
+choices about quiet permission prompts). Safe Browsing is off in MoltNet
+because its pings would leave outside Tor (docs/MOLTNET_COMPLIANCE.md §2,
+"Requests outside Tor"); that isn't something pages can see.
 
 The `window-management` override in `permission_status_listener.cc` is no
 longer what stops the regular profile's state from showing, but it stays:
@@ -1560,6 +1562,12 @@ Honest list; anything not in the table above is not covered.
   docs/MOLTNET_COMPLIANCE.md §2), which is the same for everyone, but
   `RTCRtpSender.getCapabilities()` and `RTCRtpReceiver.getCapabilities()`
   still list the codecs this machine supports, hardware ones included.
+* Location is denied without a prompt in MoltNet windows, and the
+  Presentation and Remote Playback APIs find no screens (both would leave
+  Tor, docs/MOLTNET_COMPLIANCE.md §2). That is the same for everyone, but
+  `navigator.permissions.query({name: 'geolocation'})` still says
+  `prompt`, so a page can tell it is in a MoltNet window (as it can in
+  other ways, e.g. WebRTC).
 
 **Known attacks on the noise:**
 

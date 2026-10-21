@@ -17,13 +17,16 @@
 #include <sstream>
 #include <string>
 
+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity_policy.h"
 #include "chrome/browser/profiles/profile.h"
 
 namespace molt_ai {
 namespace tor {
 
-// Must match the literal in Profile::OTRProfileID::AllowsBrowserWindows().
-inline constexpr char kMoltNetOtrProfilePrefix[] = "MoltNet::Tor";
+// kMoltNetOtrProfilePrefix ("MoltNet::Tor", which must match the literal in
+// Profile::OTRProfileID::AllowsBrowserWindows()) and the id check itself
+// (IsMoltNetOtrProfileIdString()) live in the std-only
+// molt_net_incognito_parity_policy.h, where molt_ai_unittests tests them.
 
 // True iff |otr_profile_id| is a MoltNet (Tor) profile's id. Usable before
 // the profile exists (OffTheRecordProfileImpl's constructor builds MoltNet's
@@ -33,9 +36,7 @@ inline bool IsMoltNetOtrProfileId(const Profile::OTRProfileID& otr_profile_id) {
   // ADL); CreateUnique() yields "<prefix>-<uuid>".
   std::ostringstream id;
   id << otr_profile_id;
-  const std::string value = id.str();
-  const std::string prefix = std::string(kMoltNetOtrProfilePrefix) + "-";
-  return value.compare(0, prefix.size(), prefix) == 0;
+  return IsMoltNetOtrProfileIdString(id.str());
 }
 
 // True iff |profile| is a MoltNet (Tor) profile.

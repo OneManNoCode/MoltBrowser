@@ -21,7 +21,7 @@
 // Leak controls applied to the MoltNet profile (rationale in the .cc):
 //   proxy = socks5://127.0.0.1:<auto port> (remote DNS, fail-closed),
 //   WebRTC = disable_non_proxied_udp, network prediction = off,
-//   HTTPS-Only mode = on.
+//   HTTPS-Only mode = on, Safe Browsing = off.
 //
 // Lives in the low-level tor target so the WebUI handlers, the toolbar and
 // the chat handler share one implementation.

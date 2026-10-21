@@ -5,6 +5,8 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_request_binders.h"
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_webrtc_binders.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/molt_ai/tor/molt_net_webrtc_policy.h"
@@ -31,10 +33,14 @@ void RegisterMoltNetFrameBinders(
   // The frame's process, as ChromeContentBrowserClient::
   // RegisterBrowserInterfaceBindersForFrame itself reads it there; a
   // process only ever hosts one BrowserContext.
+  const bool is_moltnet = IsMoltNetBrowserContext(
+      render_frame_host->GetProcess()->GetBrowserContext());
   ApplyWebRtcNetworkAccessToFrameBinders(
-      WebRtcNetworkAccessForProfile(IsMoltNetBrowserContext(
-          render_frame_host->GetProcess()->GetBrowserContext())),
-      map);
+      WebRtcNetworkAccessForProfile(is_moltnet), map);
+  // No image descriptions or location service either: both would send what
+  // they get outside Tor (molt_net_request_binders.h).
+  ApplyMoltNetRequestAccessToFrameBinders(
+      MoltNetRequestAccessForProfile(is_moltnet), map);
 }
 
 void AppendMoltNetRendererSwitches(content::RenderProcessHost* host,

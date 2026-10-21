@@ -15,6 +15,13 @@
 #   molt_net_webrtc*         — no WebRTC networking in MoltNet windows (no
 #                              P2P sockets, host-name lookups or mDNS for
 #                              their frames; RTCPeerConnection throws)
+#   molt_net_incognito_parity* — Chromium's Incognito-only protections for
+#                              MoltNet's non-primary off-the-record profile
+#   molt_net_requests_policy — what a MoltNet window may not cause outside
+#                              Tor (cloud AI, Safe Browsing, image
+#                              descriptions, location, Cast, phone passkeys)
+#   molt_net_request_binders — no image-description or location service for
+#                              MoltNet frames
 
 import("//extensions/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
@@ -39,6 +46,15 @@ source_set("protocol") {
     # SAFECOOKIE control-port auth (HMAC-SHA256).
     "//crypto",
   ]
+}
+
+# Which profiles get Chromium's Incognito protections at the hooks listed in
+# molt_net_incognito_parity.h (Incognito and MoltNet), and the MoltNet
+# profile-id check molt_net_profile_id.h uses. Std-only and header-only, so
+# every upstream hook can include it without a link dependency and
+# molt_ai_unittests tests it without a Profile.
+source_set("incognito_parity_policy") {
+  sources = [ "molt_net_incognito_parity_policy.h" ]
 }
 
 # Which of the regular profile's prefs MoltNet must not use. Pure (std
@@ -66,9 +82,20 @@ source_set("pref_isolation") {
   ]
 }
 
+# What a MoltNet window may cause outside its own network context: nothing
+# (molt_net_requests_policy.h). Header-only and std-only, so the upstream
+# hooks that ask it need no link dependency and molt_ai_unittests tests it.
+source_set("requests_policy") {
+  sources = [ "molt_net_requests_policy.h" ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
+
+    # Header-only: Chromium's Incognito protections for MoltNet; the
+    # upstream hooks marked "MoltBrowser:" include it.
+    "molt_net_incognito_parity.h",
     "molt_net_profile_id.h",
     "molt_net_routing.cc",
     "molt_net_routing.h",
@@ -83,8 +110,10 @@ source_set("tor") {
   ]
 
   public_deps = [
+    ":incognito_parity_policy",
     ":pref_isolation",
     ":protocol",
+    ":requests_policy",
   ]
 
   deps = [
@@ -102,11 +131,18 @@ source_set("tor") {
     "//components/language/core/browser",
     "//components/prefs",
     "//components/proxy_config",
+
+    # MoltNet turns Safe Browsing off (molt_net_routing.cc).
+    "//components/safe_browsing/core/common:safe_browsing_prefs",
     "//content/public/browser",
     # Random SAFECOOKIE client nonces (crypto/random.h).
     "//crypto",
     "//mojo/public/cpp/bindings",
     "//net",
+
+    # ENABLE_PRINT_PREVIEW: molt_net_window.cc drops a MoltNet profile's
+    # print-preview contents before discarding it, as Incognito's are.
+    "//printing/buildflags",
     "//services/network/public/mojom",
     "//url",
   ]
@@ -187,8 +223,26 @@ source_set("webrtc_binders") {
   }
 }
 
-# Applies them to MoltNet frames and marks MoltNet renderer processes
-# (molt_net_webrtc.h). Called from hooks marked "MoltBrowser:" in
+# The frame binders that keep the image-description annotator and the
+# location service away from MoltNet frames (molt_net_request_binders.h).
+# Mojo only, so molt_ai_unittests drives it over real pipes.
+source_set("request_binders") {
+  sources = [
+    "molt_net_request_binders.cc",
+    "molt_net_request_binders.h",
+  ]
+  public_deps = [
+    ":requests_policy",
+    "//mojo/public/cpp/bindings",
+    "//services/image_annotation/public/mojom",
+    "//third_party/blink/public/mojom:mojom_platform",
+  ]
+  deps = [ "//services/device/public/mojom" ]
+}
+
+# Applies them (and the request binders) to MoltNet frames and marks
+# MoltNet renderer processes (molt_net_webrtc.h). Called from hooks marked
+# "MoltBrowser:" in
 # chrome_content_browser_client_receiver_bindings.cc and
 # chrome_content_browser_client.cc (//chrome/browser), which link this via
 # //chrome/browser/molt_ai; the reverse dep would be a cycle, as for :tor.
@@ -199,6 +253,8 @@ source_set("webrtc") {
   ]
   public_deps = [ "//mojo/public/cpp/bindings" ]
   deps = [
+    ":request_binders",
+    ":requests_policy",
     ":webrtc_binders",
     "//base",
     "//chrome/browser/profiles:profile",
@@ -276,16 +332,21 @@ source_set("onion") {
 
 # Pure-logic tests (control protocol parsing, SAFECOOKIE HMAC vectors, torrc
 # generation, bridge-line validation, .onion / Onion-Location, which prefs
-# MoltNet pins and which extensions it admits), MoltNet's pref service
-# against real pref stores and a real HostContentSettingsMap, and the
-# WebRTC binders over real mojo pipes. Picked up by
+# MoltNet pins and which extensions it admits, which profiles count as
+# MoltNet and get Incognito's protections, what MoltNet windows may cause
+# outside Tor), MoltNet's pref service against real pref stores and a real
+# HostContentSettingsMap, and the WebRTC, image-description and location
+# binders over real mojo pipes. Picked up by
 # //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_net_incognito_parity_policy_unittest.cc",
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
+    "molt_net_request_binders_unittest.cc",
+    "molt_net_requests_policy_unittest.cc",
     "molt_net_webrtc_binders_unittest.cc",
     "onion_location_unittest.cc",
     "onion_util_unittest.cc",
@@ -294,11 +355,14 @@ source_set("unit_tests") {
     "torrc_builder_unittest.cc",
   ]
   deps = [
+    ":incognito_parity_policy",
     ":isolation_policy",
     ":onion_location",
     ":pref_isolation",
     ":pref_isolation_policy",
     ":protocol",
+    ":request_binders",
+    ":requests_policy",
     ":webrtc_binders",
     "//base",
     "//base/test:test_support",
@@ -318,9 +382,12 @@ source_set("unit_tests") {
     "//mojo/public/cpp/system",
     "//net",
     "//net:test_support",
+    "//services/device/public/mojom",
+    "//services/image_annotation/public/mojom",
     "//services/network/public/cpp:buildflags",
     "//services/network/public/mojom",
     "//testing/gtest",
+    "//third_party/blink/public/mojom:mojom_platform",
     "//url",
   ]
   if (is_p2p_enabled) {

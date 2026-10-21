@@ -327,8 +327,9 @@ void ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
   chrome::internal::PopulateChromeFrameBinders(map, render_frame_host);
   chrome::internal::PopulateChromeWebUIFrameBinders(map, render_frame_host);
   // MoltBrowser: a MoltNet frame gets no P2P sockets (and so no host-name
-  // lookups) or mDNS responder (chrome/browser/molt_ai/tor/molt_net_webrtc.h).
-  // Nothing below registers either interface.
+  // lookups) or mDNS responder (chrome/browser/molt_ai/tor/molt_net_webrtc.h),
+  // and no image-description or location service
+  // (molt_net_request_binders.h). Nothing below registers these interfaces.
   molt_ai::tor::RegisterMoltNetFrameBinders(render_frame_host, map);
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)

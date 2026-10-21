@@ -1,0 +1,30 @@
+MoltBrowser patch for chrome/browser/app_controller_mac.mm
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/app_controller_mac.mm by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/app_controller_mac.mm b/chrome/browser/app_controller_mac.mm
+index a096792799d62121394b3a05b93f63228aeadab0..f4047ef2dd360fa2f6cf3b81d0d746eaaede83b1 100644
+--- a/chrome/browser/app_controller_mac.mm
++++ b/chrome/browser/app_controller_mac.mm
+@@ -55,6 +55,7 @@
+ #include "chrome/browser/lifetime/browser_shutdown.h"
+ #include "chrome/browser/mac/auth_session_request.h"
+ #include "chrome/browser/mac/key_window_notifier.h"
++#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+ #include "chrome/browser/policy/chrome_browser_policy_connector.h"
+ #include "chrome/browser/prefs/incognito_mode_prefs.h"
+ #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
+@@ -2584,7 +2585,10 @@ void OpenStartupTabsInBrowserWithProfile(const StartupTabs& tabs,
+   if (!profile)
+     return;  // No suitable profile to open the URLs, do nothing.
+   // Prefer a regular (non-incognito) profile
+-  if (profile->IsIncognitoProfile()) {
++  // MoltBrowser: also when a MoltNet window was the last active one, so a
++  // link from another app never lands in MoltNet's Tor identity
++  // (molt_net_incognito_parity.h).
++  if (molt_ai::tor::GetsIncognitoProtections(profile)) {
+     profile = ProfileManager::MaybeForceOffTheRecordMode(
+         profile->GetOriginalProfile());
+   }
