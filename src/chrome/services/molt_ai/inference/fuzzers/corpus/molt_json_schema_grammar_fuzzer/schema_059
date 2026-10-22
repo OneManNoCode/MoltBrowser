@@ -1,0 +1,4 @@
+{"$schema":"http://json-schema.org/draft-07/schema#","$id":"x","title":"t",
+          "description":"d","default":1,"examples":[1],"$comment":"c","deprecated":false,
+          "readOnly":true,"writeOnly":false,"$defs":{"a":{"$ref":"#"}},"definitions":{},
+          "type":"integer","minimum":1,"maximum":2}

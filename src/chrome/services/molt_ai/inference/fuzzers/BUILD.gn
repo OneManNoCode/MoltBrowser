@@ -1,0 +1,131 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# libFuzzer targets for the sandboxed inference service's parsers of
+# untrusted input: the JSON Schemas web pages pass (and the grammars made
+# of them, checked in llama.cpp's own grammar engine), model output, and
+# what a model file says about itself. See docs/FUZZING.md.
+#
+# Built with a fuzzing engine (use_libfuzzer / use_centipede, as ClusterFuzz
+# builds Chromium); a no-op group otherwise. The same sources build
+# standalone with tools/fuzz/molt_fuzz.py.
+
+import("//testing/libfuzzer/fuzzer_test.gni")
+
+fuzzer_test("molt_bounded_json_fuzzer") {
+  sources = [ "molt_bounded_json_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+  ]
+  dict = "dicts/json.dict"
+  seed_corpuses = [
+    "corpus/molt_bounded_json_fuzzer",
+    "corpus/molt_json_schema_grammar_fuzzer",
+  ]
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+fuzzer_test("molt_json_schema_grammar_fuzzer") {
+  sources = [ "molt_json_schema_grammar_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+  ]
+  dict = "dicts/json.dict"
+  seed_corpus = "corpus/molt_json_schema_grammar_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+# Every grammar the converter accepts goes through llama.cpp's GBNF parser
+# and a walk of its accept path (only this directory may link llama.cpp).
+fuzzer_test("molt_json_schema_grammar_llama_fuzzer") {
+  sources = [ "molt_json_schema_grammar_llama_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//third_party/llama_cpp",
+  ]
+  dict = "dicts/json.dict"
+  seed_corpus = "corpus/molt_json_schema_grammar_llama_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+fuzzer_test("molt_stream_filters_fuzzer") {
+  sources = [ "molt_stream_filters_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+  dict = "dicts/model_output.dict"
+  seed_corpus = "corpus/molt_stream_filters_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_grammar_tokens_fuzzer") {
+  sources = [ "molt_grammar_tokens_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+  seed_corpus = "corpus/molt_grammar_tokens_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
+fuzzer_test("molt_prompt_utils_fuzzer") {
+  sources = [ "molt_prompt_utils_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:inference_utils",
+  ]
+  dict = "dicts/model_output.dict"
+  seed_corpus = "corpus/molt_prompt_utils_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+fuzzer_test("molt_embedding_utils_fuzzer") {
+  sources = [ "molt_embedding_utils_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:embedding_utils",
+  ]
+  seed_corpus = "corpus/molt_embedding_utils_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+fuzzer_test("molt_image_input_fuzzer") {
+  sources = [ "molt_image_input_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:image_input",
+  ]
+  seed_corpus = "corpus/molt_image_input_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
+fuzzer_test("molt_context_budget_fuzzer") {
+  sources = [ "molt_context_budget_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:inference_utils",
+  ]
+  seed_corpus = "corpus/molt_context_budget_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
+# Reached from //chrome/browser/molt_ai/fuzzers:molt_fuzzers.
+group("fuzzers") {
+  testonly = true
+  deps = [
+    ":molt_bounded_json_fuzzer",
+    ":molt_context_budget_fuzzer",
+    ":molt_embedding_utils_fuzzer",
+    ":molt_grammar_tokens_fuzzer",
+    ":molt_image_input_fuzzer",
+    ":molt_json_schema_grammar_fuzzer",
+    ":molt_json_schema_grammar_llama_fuzzer",
+    ":molt_prompt_utils_fuzzer",
+    ":molt_stream_filters_fuzzer",
+  ]
+}

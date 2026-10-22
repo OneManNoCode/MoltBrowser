@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "product": "MoltBrowser",
+  "version": "0.3.0",
+  "tag": "v0.3.0",
+  "assets": [
+    {
+      "name": "MoltBrowser-macOS-arm64.dmg",
+      "size": 929292681,
+      "sha256": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "name": "MoltBrowser-Setup-x64.exe",
+      "size": 1,
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  ]
+}\Z{"algorithm": "ed25519", "key_id": "0011223344556677", "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="}\Zv0.3.0\Z0.2.5\Z

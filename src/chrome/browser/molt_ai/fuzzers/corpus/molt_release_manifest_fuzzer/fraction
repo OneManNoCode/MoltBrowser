@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "product": "MoltBrowser",
+  "version": "0.3.0",
+  "tag": "v0.3.0",
+  "assets": [
+    {
+      "name": "a.zip",
+      "size": 1.5,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}\Z{"algorithm": "ed25519", "key_id": "0011223344556677", "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="}\Zv0.3.0\Z0.2.5\Z

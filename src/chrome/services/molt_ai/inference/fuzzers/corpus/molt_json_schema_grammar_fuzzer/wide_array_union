@@ -1,0 +1,1 @@
+{"type":"array","maxItems":64,"items":{"anyOf":[{"type":"string","maxLength":3},{"type":"integer","minimum":0,"maximum":999},{"type":"number"},{"type":"boolean"},{"type":"null"},{"type":"object"},{"type":"array"},{"enum":["a","ab","abc",1,2]}]}}

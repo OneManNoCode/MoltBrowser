@@ -7,6 +7,7 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 
 namespace molt_ai {
@@ -25,11 +26,12 @@ int64_t GetInt64(const base::DictValue& d,
                  const std::string& key,
                  int64_t fallback) {
   // base::Value JSON ints round-trip as `int` for values that fit in 32 bits;
-  // larger timestamps may come back as Double.
+  // larger timestamps may come back as Double. Saturated: a double outside
+  // int64_t's range (an imported file can say 1e300) can't be cast.
   if (auto v = d.FindInt(key))
     return static_cast<int64_t>(*v);
   if (auto v = d.FindDouble(key))
-    return static_cast<int64_t>(*v);
+    return base::saturated_cast<int64_t>(*v);
   return fallback;
 }
 

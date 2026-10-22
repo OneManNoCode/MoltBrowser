@@ -1,0 +1,44 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# libFuzzer targets for the sandboxed document parser's own parsers: the PDF
+# text scraper (any PDF a website serves) and the .docx fallback (any file a
+# user attaches). See docs/FUZZING.md. The same sources build standalone with
+# tools/fuzz/molt_fuzz.py.
+
+import("//testing/libfuzzer/fuzzer_test.gni")
+
+fuzzer_test("molt_pdf_text_scraper_fuzzer") {
+  sources = [ "molt_pdf_text_scraper_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/document_parser/pdf",
+  ]
+  dict = "dicts/pdf.dict"
+  seed_corpus = "corpus/molt_pdf_text_scraper_fuzzer"
+  # Up to 64 MB inflated per file (pdf_text_scraper.h's caps).
+  libfuzzer_options = [
+    "max_len=65536",
+    "rss_limit_mb=2560",
+  ]
+}
+
+fuzzer_test("molt_docx_text_extractor_fuzzer") {
+  sources = [ "molt_docx_text_extractor_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/document_parser:lib",
+  ]
+  dict = "dicts/docx.dict"
+  seed_corpus = "corpus/molt_docx_text_extractor_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
+# Reached from //chrome/browser/molt_ai/fuzzers:molt_fuzzers.
+group("fuzzers") {
+  testonly = true
+  deps = [
+    ":molt_docx_text_extractor_fuzzer",
+    ":molt_pdf_text_scraper_fuzzer",
+  ]
+}
