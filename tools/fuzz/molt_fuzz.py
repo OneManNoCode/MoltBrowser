@@ -225,6 +225,14 @@ FUZZERS = {
         max_len=16384,
         smoke_runs=200000,
     ),
+    "molt_memory_query_fuzzer": dict(
+        dir=BROWSER,
+        sources=["src/components/omnibox/browser/molt_memory_query.cc"],
+        tier="std",
+        dict="dicts/memory_query.dict",
+        max_len=4096,
+        smoke_runs=100000,
+    ),
     # --- The browser: agents and workflows (//base stand-ins) -------------
     "molt_agent_actions_fuzzer": dict(
         dir=BROWSER,
