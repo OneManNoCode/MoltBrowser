@@ -62,9 +62,23 @@ source_set("automation") {
   # Script model + security policy are part of this target's API (its
   # headers include them), so dependents see them too.
   public_deps = [
+    ":ai_steps",
     ":automation_policy",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
+}
+
+# The answer formats of the runner's model decisions (AI_DECIDE, AI_EXTRACT,
+# selector recovery): the JSON Schemas the on-device model decodes under,
+# the conversion of a step's untrusted "schema", and the strict readers of
+# the replies (docs/design/AGENT_ACTIONS.md). Pure logic (base only).
+source_set("ai_steps") {
+  sources = [
+    "automation_ai_steps.cc",
+    "automation_ai_steps.h",
+  ]
+
+  public_deps = [ "//base" ]
 }
 
 # The .molt script model and the trust / whitelist policy. Pure logic (base +
@@ -90,11 +104,17 @@ source_set("automation_policy") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "automation_ai_steps_unittest.cc",
     "automation_security_unittest.cc",
   ]
   deps = [
+    ":ai_steps",
     ":automation_policy",
     "//base",
+
+    # Every schema the runner builds must be accepted by the inference
+    # service's converter; the tests run the real one (std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//testing/gtest",
     "//url",
   ]

@@ -28,6 +28,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/automation/automation_ai_steps.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "chrome/browser/molt_ai/automation/automation_storage.h"
@@ -262,7 +263,8 @@ class AutomationRunner {
                      base::OnceCallback<void(const std::string&)> cb);
 
   // Last-resort recovery: send page snippet + step description to the LLM
-  // and ask for a CSS selector. Returns "" if the model fails.
+  // and ask for a CSS selector ({"selector": ...}, read with
+  // ai_steps::ParseSelectorReply). Returns "" if the model fails.
   void AskLLMForSelector(
       const std::string& description,
       base::OnceCallback<void(const std::string&)> cb);
@@ -279,8 +281,12 @@ class AutomationRunner {
                     GenerationResult result);
   void OnSelectorLLMReply(base::OnceCallback<void(const std::string&)> cb,
                           GenerationResult result);
-  void OnAIDecideReply(GenerationResult result);
-  void OnAIExtractReply(std::string store_as, GenerationResult result);
+  // AI_DECIDE / AI_EXTRACT answers (ai_steps): stored only when they parse
+  // and validate; otherwise the step fails and nothing is stored.
+  void OnAIDecideReply(std::string store_as, GenerationResult result);
+  void OnAIExtractReply(std::string store_as,
+                        ai_steps::ExtractSpec spec,
+                        GenerationResult result);
 
   void EmitStepProgress(bool starting, bool succeeded,
                         const std::string& note);
