@@ -136,8 +136,8 @@ TEST(WebAISitePermissionsTest, AnAnswerEndsThePauseAndItsHistory) {
   EXPECT_EQ(table.Get(kA, kNow + 3), SiteConsent::kAllowed);
 }
 
-// The page raises the prompt on a click: a click that follows within the
-// double-click interval (a double click it asked for) is not an answer.
+// A click within the double-click interval of the prompt appearing is not
+// an answer.
 TEST(WebAISitePermissionsTest, AnswersTooSoonAfterThePromptDontCount) {
   EXPECT_FALSE(IsTimelyPromptAnswer(0));
   EXPECT_FALSE(IsTimelyPromptAnswer(1));

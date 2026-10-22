@@ -137,8 +137,8 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
   }
 
  private:
-  // Allow and Block count only once the bar has been up for a moment: the
-  // page raised it on a click and may have placed the user's next one.
+  // Allow and Block count only once the bar has been up for a moment
+  // (kPromptInputProtectionMs).
   bool IsTimely() const {
     return IsTimelyPromptAnswer(
         (base::TimeTicks::Now() - shown_).InMilliseconds());

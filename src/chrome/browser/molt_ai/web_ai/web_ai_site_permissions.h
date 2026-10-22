@@ -52,9 +52,8 @@ inline constexpr int64_t kEmbargoMs = int64_t{7} * 24 * 60 * 60 * 1000;
 
 // The prompt ignores Allow and Block for this long after it appears, as
 // Chromium's permission prompts ignore clicks that come too soon after they
-// show (views::InputEventActivationProtector, the double-click interval): a
-// page raises the bar on a click, so it could have the user's next click
-// (the second of a double click) land where the bar's buttons appear.
+// show (views::InputEventActivationProtector, the double-click interval),
+// so a click meant for the page can't answer the prompt.
 inline constexpr int64_t kPromptInputProtectionMs = 500;
 
 // Whether Allow or Block, |elapsed_ms| after the prompt appeared (on a
