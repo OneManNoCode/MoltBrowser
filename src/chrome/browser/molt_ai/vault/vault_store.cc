@@ -12,6 +12,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -90,11 +91,12 @@ std::optional<VaultEntry> VaultEntry::FromDict(const base::DictValue& d) {
   if (auto* s = d.FindString("password"))  e.password = *s;
   if (auto* s = d.FindString("notes"))     e.notes = *s;
   auto created = d.FindDouble("created_at_unix");
-  if (created) e.created_at_unix = static_cast<int64_t>(*created);
+  if (created) e.created_at_unix = base::saturated_cast<int64_t>(*created);
   auto last_used = d.FindDouble("last_used_unix");
-  if (last_used) e.last_used_unix = static_cast<int64_t>(*last_used);
+  if (last_used) e.last_used_unix = base::saturated_cast<int64_t>(*last_used);
   auto last_changed = d.FindDouble("last_changed_unix");
-  if (last_changed) e.last_changed_unix = static_cast<int64_t>(*last_changed);
+  if (last_changed)
+    e.last_changed_unix = base::saturated_cast<int64_t>(*last_changed);
   return e;
 }
 

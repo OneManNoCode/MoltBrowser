@@ -14,6 +14,7 @@
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/process/process_handle.h"
@@ -292,7 +293,8 @@ void UpdateManager::OnCheckResponse(bool user_initiated,
                  name->find(matcher) != std::string::npos) {
         installer_url = *dl;
         asset_name_ = *name;
-        asset_size_ = static_cast<int64_t>(ad.FindDouble("size").value_or(0));
+        asset_size_ = base::saturated_cast<int64_t>(
+            ad.FindDouble("size").value_or(0));
       }
     }
   }
