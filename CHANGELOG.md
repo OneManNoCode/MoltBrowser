@@ -457,6 +457,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   still acts only on listed elements, and asks before forms, other sites
   and payment fields. Text-only models work as before; turn it off at
   `chrome://flags/#molt-agent-screenshots`.
+- **The web agent can use a site's own tools.** On a page that offers
+  tools for AI agents (WebMCP, in Chromium 152's origin trial), the agent
+  sees them next to the page's buttons and fields and can call one
+  instead of clicking through forms: only the page's own tools, on the
+  sites the run may use, with arguments checked against the tool's
+  description of them. A tool the site doesn't mark as read-only, a form
+  tool, and one that takes a payment card or a one-time code ask you
+  first, showing every argument; tools that take a password or a file are
+  never offered. What a tool answers is treated as page text. Turn it off
+  at `chrome://flags/#molt-agent-site-tools`.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

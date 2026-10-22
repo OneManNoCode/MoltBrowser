@@ -708,6 +708,7 @@ void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
     case agent_actions::ActionType::kObserve:
     case agent_actions::ActionType::kDone:
     case agent_actions::ActionType::kError:
+    case agent_actions::ActionType::kCallTool:  // never in the chat's set
       ResolveChatAction(callback_id, RunError("Not a page action."));
       return;
   }

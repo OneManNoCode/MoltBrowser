@@ -46,6 +46,14 @@
 //     only, an http(s) page in scope, sensitive fields and frames masked,
 //     the element ids tagged. It goes with the user turn as page content
 //     and changes nothing above: the reply is still one action on an id.
+//   - A page that offers tools (WebMCP, document.modelContext) gets a TOOLS
+//     list in its observation and the model may CALL_TOOL one by id
+//     (agent_tools.h): the document's own tools only, listed and called
+//     from the agent's isolated world on the page the run is in scope for;
+//     names, descriptions and answers are fenced page text; arguments are
+//     checked against the tool's (converted) schema; a call runs only if
+//     the page still lists the same tool, and one the page doesn't
+//     annotate read-only asks the user first.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
@@ -59,10 +67,12 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/agent_prompt.h"
 #include "chrome/browser/molt_ai/agents/agent_screenshot.h"
+#include "chrome/browser/molt_ai/agents/agent_tools.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -89,11 +99,13 @@ class WebAgent : public content::WebContentsObserver {
   struct Step {
     int number = 0;
     std::string action;      // NAVIGATE, SEARCH, CLICK, TYPE, FILL_FORM,
-                             // SCROLL, OBSERVE, DONE, ERROR
+                             // SCROLL, OBSERVE, DONE, ERROR, CALL_TOOL
     std::string target;      // URL, search query, the element acted on
-                             // (`button "Search"`), or the DONE / ERROR
+                             // (`button "Search"`), the tool
+                             // (`tool "search"`), or the DONE / ERROR
                              // result
-    std::string value;       // Text to type, scroll direction, etc.
+    std::string value;       // Text to type, scroll direction, a tool's
+                             // arguments, etc.
     std::string reason;      // LLM's stated rationale
     std::string observation; // Page snapshot taken after the action
     bool success = false;
@@ -111,7 +123,8 @@ class WebAgent : public content::WebContentsObserver {
   // denies it (see the safety model above).
   struct ConfirmRequest {
     int id = 0;
-    std::string action;   // NAVIGATE, CLICK, TYPE, FILL_FORM or CONTINUE
+    std::string action;   // NAVIGATE, CLICK, TYPE, FILL_FORM, CALL_TOOL or
+                          // CONTINUE
     std::string message;  // e.g. "Open https://example.com"
   };
   // Called on the UI thread when the run pauses for approval. Answer with
@@ -158,6 +171,7 @@ class WebAgent : public content::WebContentsObserver {
   void DoFillForm();          // Several text fields
   void DoScroll();            // window.scrollBy, then observe
   void DoObserve();           // Just ObservePage (explicit OBSERVE action)
+  void DoCallTool();          // a site tool: ask if needed, then call it
 
   // Second halves of the executors, run once the element probe (and any
   // user confirmation) is done.
@@ -172,6 +186,31 @@ class WebAgent : public content::WebContentsObserver {
   void OnFillFormProbed(FieldList fields,
                         std::vector<agent_safety::ElementProbe> probes);
   void FillNow(FieldList fields, std::string note);
+  void CallToolNow();
+  void OnToolCallStarted(base::Value result);
+
+  // -- Site tools (WebMCP) ------------------------------------------
+  // Isolated-world scripts don't wait for promises: the agent's tool
+  // scripts start the work and a poll script reports it. PollIsolatedWorld
+  // runs |script| until it no longer answers {state: 'pending'} (kSettled,
+  // with that answer), |deadline| passes (kTimedOut), or |document| is no
+  // longer the tab's (kDocumentChanged; it never polls another document).
+  enum class PollEnd { kSettled, kTimedOut, kDocumentChanged };
+  using PollCallback = base::OnceCallback<void(PollEnd, base::Value)>;
+  void PollIsolatedWorld(std::string script,
+                         content::WeakDocumentPtr document,
+                         base::TimeTicks deadline,
+                         PollCallback done);
+  void OnPolled(std::string script,
+                content::WeakDocumentPtr document,
+                base::TimeTicks deadline,
+                PollCallback done,
+                base::Value result);
+  // |document| is still the tab's primary main document.
+  bool IsCurrentDocument(const content::WeakDocumentPtr& document) const;
+  void OnToolCallSettled(PollEnd end, base::Value result);
+  // Observes once the page that a tool loaded has loaded.
+  void WaitForLoadThenObserve();
 
   // Probes |selectors| in the page (see agent_safety::ElementProbe).
   void ProbeElements(
@@ -189,6 +228,29 @@ class WebAgent : public content::WebContentsObserver {
   void OnElementsObserved(const StructuredPage& page,
                           content::WeakDocumentPtr document,
                           base::Value snapshot);
+  // The page's own tools, if the switch is on and it offers any
+  // (agent_tools::ShouldListTools), added to observation_.
+  void ListSiteTools(const StructuredPage& page,
+                     content::WeakDocumentPtr document,
+                     std::string observed_origin,
+                     bool origin_allowed);
+  void OnSiteToolListStarted(const StructuredPage& page,
+                             content::WeakDocumentPtr document,
+                             std::string observed_origin,
+                             bool origin_allowed,
+                             std::string request_id,
+                             base::Value result);
+  void OnSiteToolsListed(const StructuredPage& page,
+                         content::WeakDocumentPtr document,
+                         std::string observed_origin,
+                         bool origin_allowed,
+                         PollEnd end,
+                         base::Value result);
+  // The page state for the prompt, and the screenshot.
+  void ContinueObservation(const StructuredPage& page,
+                           content::WeakDocumentPtr document,
+                           std::string observed_origin,
+                           bool origin_allowed);
   // The observation's screenshot, if any (AgentScreenshotter).
   void OnScreenshot(const StructuredPage& page,
                     std::optional<ModelImage> image);
@@ -273,6 +335,18 @@ class WebAgent : public content::WebContentsObserver {
   bool sent_screenshot_ = false;
   // A request with a screenshot failed: the rest of the run is text-only.
   bool screenshots_failed_ = false;
+
+  // The site tool being called (a copy: the observation is replaced when
+  // the page is observed again), the call's id in the isolated world and
+  // the document it was started in.
+  agent_tools::SiteTool action_tool_;
+  int next_tool_request_ = 0;
+  std::string tool_call_id_;
+  content::WeakDocumentPtr tool_document_;
+  // The finished call's answer (agent_tools::DescribeToolResult), put
+  // into the next observation; and the step's note.
+  std::string tool_result_;
+  std::string tool_call_note_;
 
   int iteration_ = 0;
   static constexpr int kMaxIterations = 20;

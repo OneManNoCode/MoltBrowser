@@ -339,6 +339,7 @@ std::string DescribeProposal(const AgentAction& action,
     case ActionType::kObserve:
     case ActionType::kDone:
     case ActionType::kError:
+    case ActionType::kCallTool:  // never in the chat's set
       break;
   }
   return "No page action";
@@ -366,6 +367,7 @@ std::vector<std::string> TargetSelectors(const AgentAction& action,
     case ActionType::kObserve:
     case ActionType::kDone:
     case ActionType::kError:
+    case ActionType::kCallTool:  // never in the chat's set
       break;
   }
   return out;
@@ -494,6 +496,7 @@ Check CheckProposal(const AgentAction& action,
       return act();
     case ActionType::kObserve:
     case ActionType::kError:
+    case ActionType::kCallTool:  // never in the chat's set
       break;
   }
   return refuse("Not a page action.");
@@ -553,6 +556,7 @@ ScriptOutcome InterpretScriptResult(const AgentAction& action,
     case ActionType::kObserve:
     case ActionType::kDone:
     case ActionType::kError:
+    case ActionType::kCallTool:  // never in the chat's set
       break;
   }
   return {false, kDidNotWork};

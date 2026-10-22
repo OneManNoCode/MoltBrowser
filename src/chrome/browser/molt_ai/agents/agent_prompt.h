@@ -57,6 +57,9 @@ struct PromptInput {
   std::string retry_note;
   // A screenshot of the current page goes with this prompt.
   bool with_screenshot = false;
+  // The current page offers tools (a TOOLS list in |page_state|): the
+  // rules describe CALL_TOOL. Without, the prompt doesn't mention it.
+  bool with_tools = false;
 };
 
 struct AgentPrompt {
