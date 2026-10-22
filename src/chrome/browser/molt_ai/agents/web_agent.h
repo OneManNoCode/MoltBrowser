@@ -6,7 +6,14 @@
 // Implements a ReAct (Reason+Act) loop:
 //   IterateOnce → AskLLM → OnLLMDecision → DispatchAction
 //   → (DOM/nav callback) → ObservePage → OnPageObserved
-//   → OnActionDone → IterateOnce  [loop]
+//   → OnElementsObserved → OnActionDone → IterateOnce  [loop]
+//
+// The model picks each step as one JSON object, under grammar-constrained
+// decoding (agent_actions.h, docs/design/AGENT_ACTIONS.md): one of the
+// actions below, acting on an element id (e1, e2, ...) from the last
+// observation rather than a CSS selector of its own. The browser parses
+// and validates the reply again; an unusable reply is asked for again a
+// bounded number of times, then the run stops.
 //
 // All methods run on the browser UI thread except RunPrompt() which is
 // dispatched via ThreadPool and the reply comes back to the UI thread.
@@ -30,6 +37,10 @@
 //   - The agent never types into password fields.
 //   - Page content reaches the LLM fenced and sanitized
 //     (agent_safety::FenceUntrustedText) with rules that it is data only.
+//   - The model can't name arbitrary elements: CLICK / TYPE / FILL_FORM
+//     take an element id from the observation (TYPE / FILL_FORM only text
+//     fields, never a password field), which the browser maps to the
+//     selector its own snapshot script built.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
@@ -44,6 +55,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -69,7 +81,9 @@ class WebAgent : public content::WebContentsObserver {
     int number = 0;
     std::string action;      // NAVIGATE, SEARCH, CLICK, TYPE, FILL_FORM,
                              // SCROLL, OBSERVE, DONE, ERROR
-    std::string target;      // URL, CSS selector, or search query
+    std::string target;      // URL, search query, the element acted on
+                             // (`button "Search"`), or the DONE / ERROR
+                             // result
     std::string value;       // Text to type, scroll direction, etc.
     std::string reason;      // LLM's stated rationale
     std::string observation; // Page snapshot taken after the action
@@ -120,18 +134,20 @@ class WebAgent : public content::WebContentsObserver {
   // -- ReAct loop --------------------------------------------------
   void IterateOnce();     // Entry: kick off one LLM round-trip
   void AskLLM();         // Post RunPrompt to ThreadPool
-  void OnLLMDecision(std::string response); // Parse LLM output → pending_step_
+  // Validates the reply (agent_actions::InterpretReply) → pending_action_,
+  // asks again, or stops the run.
+  void OnLLMDecision(GenerationResult result);
   void DispatchAction(); // Origin check, then RunAction()
   void AllowOriginAndDispatch(const url::Origin& origin);
-  void RunAction();      // Route pending_step_ to the right executor
+  void RunAction();      // Route pending_action_ to the right executor
 
   // -- Executors ----------------------------------------------------
-  void DoNavigate();          // http(s) + origin check, then LoadAndWait
-  void DoSearch();            // Navigate to search URL (same as DoNavigate)
+  void DoNavigate(const std::string& spec);  // http(s) + origin check
+  void DoSearch();            // Navigate to the search URL for the query
   void DoClick();             // probe, confirm if needed, then click()
   void DoType();              // probe, confirm if needed, then set value
-  void DoFillForm();          // Multiple selector=value pairs
-  void DoScroll();            // window.scrollBy
+  void DoFillForm();          // Several text fields
+  void DoScroll();            // window.scrollBy, then observe
   void DoObserve();           // Just ObservePage (explicit OBSERVE action)
 
   // Second halves of the executors, run once the element probe (and any
@@ -158,7 +174,9 @@ class WebAgent : public content::WebContentsObserver {
   void OnPageObserved(const StructuredPage& page);
   void AllowOriginAndContinue(const url::Origin& origin,
                               const StructuredPage& page);
+  // Lists the page's interactive elements (the ids the model may use).
   void ContinueAfterObserve(const StructuredPage& page);
+  void OnElementsObserved(const StructuredPage& page, base::Value snapshot);
 
   // -- Origin scope / user confirmation ------------------------------
   bool IsOriginAllowed(const url::Origin& origin) const;
@@ -185,7 +203,9 @@ class WebAgent : public content::WebContentsObserver {
   // -- LLM context ------------------------------------------------
   std::string BuildPrompt() const;
   std::string HistoryText() const;
-  bool ParseLLMResponse(const std::string& text);
+  // pending_step_ for the trace and the UI: the action's name, and the
+  // elements it acts on described rather than as ids or selectors.
+  Step DescribeAction(const agent_actions::AgentAction& action) const;
 
   // -- State -------------------------------------------------------
   raw_ptr<content::WebContents> web_contents_;  // not owned
@@ -212,6 +232,20 @@ class WebAgent : public content::WebContentsObserver {
   std::vector<Step> history_;
   Step pending_step_;
   std::string current_page_state_;  // compact text from last ObservePage
+  // The elements of the last observation: the ids the schema offers and
+  // ParseAction accepts, and the selectors they stand for.
+  agent_actions::Observation observation_;
+  // The validated action being carried out.
+  agent_actions::AgentAction pending_action_;
+  // The selector of the CLICK / TYPE target, resolved from observation_
+  // when the action starts.
+  std::string action_selector_;
+  // Unusable model replies (see agent_actions::InterpretReply): in a row
+  // for the current step, and in the whole run; and the note the next
+  // prompt carries about the last one.
+  int bad_replies_in_a_row_ = 0;
+  int bad_replies_total_ = 0;
+  std::string retry_note_;
 
   int iteration_ = 0;
   static constexpr int kMaxIterations = 20;
