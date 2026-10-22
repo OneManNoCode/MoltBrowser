@@ -24,7 +24,7 @@ name: Release Windows build (self-hosted)
 # SDK, ~100GB disk, Git for Windows. Runner registered as self-hosted, with
 # a builder label for the build provenance in the runner's .env file:
 # MOLT_BUILDER_ID=<name> (never the PC's hostname; docs/SIGNED_UPDATES.md,
-# "Label your build machines").
+# "One-time: label your build machines").
 #
 # Run it from the tag (gh workflow run ... --ref vX.Y.Z -f tag=vX.Y.Z): the
 # build provenance records the commit that was built, and publishing

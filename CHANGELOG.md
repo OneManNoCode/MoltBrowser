@@ -490,6 +490,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   signed offline with a separate archive key (`docs/LINUX_REPOSITORIES.md`).
   The `.deb` and tarball now install root-owned files, and the `.deb` uses
   xz, which Debian 11 can unpack.
+- Releases: signed build provenance. Each platform build records what it
+  was built from (commit, Chromium, patches, GN args, vendored crates,
+  bundled models) and how (a builder label, never the hostname; toolchain
+  versions; build times) as an in-toto / SLSA v1 statement covering its
+  installers, SBOMs and checksums. The owner signs the statements offline
+  with the release key, and publishing and CI refuse a release without
+  them. Anyone can check one with `molt_provenance.py verify`
+  (`docs/SIGNED_UPDATES.md`, "Build provenance").
 - Full GPLv3 licence text, llama.cpp licence notice, Code of Conduct,
   issue/PR templates; unused code and Sparkle leftovers removed, including
   the never-wired `browser.ai.*` stub (whose permission check allowed every

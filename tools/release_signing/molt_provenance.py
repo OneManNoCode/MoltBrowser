@@ -235,9 +235,9 @@ def check_label(label):
     if not label:
         raise Error('no builder label: set MOLT_BUILDER_ID to a name for this '
                     'build machine, e.g. MOLT_BUILDER_ID=geneye-mac-1 '
-                    '(docs/SIGNED_UPDATES.md, "Label your build machines"). '
-                    'It is published in every release; do not use your '
-                    'hostname or user name.')
+                    '(docs/SIGNED_UPDATES.md, "One-time: label your build '
+                    'machines"). It is published in every release; do not '
+                    'use your hostname or user name.')
     if not LABEL.match(label):
         raise Error('builder label %r: use 1-64 lower-case letters, digits, '
                     '".", "_" or "-"' % label)

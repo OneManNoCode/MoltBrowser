@@ -23,7 +23,7 @@ name: Release
 #     (scripts/release-provenance.sh), which the owner signs offline with
 #     the manifest into molt-build-provenance.intoto.jsonl. The runner needs
 #     a builder label: MOLT_BUILDER_ID=<name> in its .env file (never its
-#     hostname; docs/SIGNED_UPDATES.md, "Label your build machines").
+#     hostname; docs/SIGNED_UPDATES.md#one-time-label-your-build-machines).
 #   * Each installer gets an SPDX 2.3 SBOM next to it (scripts/release-sbom.sh,
 #     docs/SBOM.md), named after it with "." -> "-" (never ".dmg"/".deb"/...:
 #     the updater picks installers by those). The SBOMs are in the checksums,
