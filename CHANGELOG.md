@@ -495,6 +495,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the never-wired `browser.ai.*` stub (whose permission check allowed every
   caller), the prompt router, personas, the old agent engine and the model
   manager.
+- **Fuzzing** (`docs/FUZZING.md`): 28 libFuzzer targets cover MoltBrowser's
+  own parsers and validators of untrusted input: page HTML and text, the
+  built-in AI APIs' arguments, everything the sandboxed inference service
+  sends back, model-file metadata, JSON Schemas (each grammar also checked
+  in llama.cpp's own grammar engine), agent actions, imported workflows,
+  PDFs and .docx files, canvas/audio noise and font names, Tor's control
+  port and bridge lines, and signed release manifests. They check each
+  parser's promises, not just "no crash", build as Chromium `fuzzer_test`
+  targets and standalone with clang (`tools/fuzz/molt_fuzz.py`), and CI
+  runs a fixed-seed smoke pass on every pull request. They found two bugs,
+  both fixed: a control character inside an angle-bracket look-alike got
+  it past the agents' untrusted-text sanitizer, and an imported workflow
+  with an out-of-range timestamp hit undefined behaviour.
 
 ---
 

@@ -1,0 +1,263 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# libFuzzer targets for the browser's own parsers and validators of
+# untrusted input: what the sandboxed inference service sends back, what
+# web pages pass to the Web AI APIs, page text, model-proposed agent
+# actions, imported workflows, Tor's control port and the release manifest.
+# See docs/FUZZING.md.
+#
+# Built with a fuzzing engine (use_libfuzzer / use_centipede, as ClusterFuzz
+# builds Chromium); a no-op group otherwise. The same sources build
+# standalone with tools/fuzz/molt_fuzz.py.
+
+import("//testing/libfuzzer/fuzzer_test.gni")
+
+_model_output_dict =
+    "//chrome/services/molt_ai/inference/fuzzers/dicts/model_output.dict"
+_json_dict = "//chrome/services/molt_ai/inference/fuzzers/dicts/json.dict"
+
+# --- What the inference service sends back ---------------------------------
+
+fuzzer_test("molt_stream_validator_fuzzer") {
+  sources = [ "molt_stream_validator_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/runtime:stream_validator",
+  ]
+  dict = _model_output_dict
+  seed_corpus = "corpus/molt_stream_validator_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_embedding_validator_fuzzer") {
+  sources = [ "molt_embedding_validator_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/runtime:embedding_validator",
+  ]
+  seed_corpus = "corpus/molt_embedding_validator_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+# --- The Web AI APIs (arguments from web pages) ----------------------------
+
+fuzzer_test("molt_web_ai_translation_fuzzer") {
+  sources = [ "molt_web_ai_translation_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/web_ai:logic",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+  dict = "dicts/page_text.dict"
+  seed_corpus = "corpus/molt_web_ai_translation_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_web_ai_policy_fuzzer") {
+  sources = [ "molt_web_ai_policy_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/web_ai:logic",
+  ]
+  seed_corpus = "corpus/molt_web_ai_policy_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+fuzzer_test("molt_web_ai_conversation_fuzzer") {
+  sources = [ "molt_web_ai_conversation_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/runtime:model_image",
+    "//chrome/browser/molt_ai/web_ai:logic",
+  ]
+  seed_corpus = "corpus/molt_web_ai_conversation_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_web_ai_site_permissions_fuzzer") {
+  sources = [ "molt_web_ai_site_permissions_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/web_ai:logic",
+  ]
+  seed_corpus = "corpus/molt_web_ai_site_permissions_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+# --- Page text ---------------------------------------------------------------
+
+fuzzer_test("molt_dom_interpreter_fuzzer") {
+  sources = [ "molt_dom_interpreter_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai:molt_ai_dom_interpreter",
+  ]
+  dict = "dicts/html.dict"
+  seed_corpus = "corpus/molt_dom_interpreter_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
+fuzzer_test("molt_memory_snippet_fuzzer") {
+  sources = [ "molt_memory_snippet_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/memory:memory_core",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+  dict = "dicts/page_text.dict"
+  seed_corpus = "corpus/molt_memory_snippet_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+# --- Agents and workflows ------------------------------------------------------
+
+fuzzer_test("molt_agent_actions_fuzzer") {
+  sources = [ "molt_agent_actions_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_actions",
+    "//chrome/browser/molt_ai/agents:chat_actions",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//url",
+  ]
+  dict = "dicts/agent.dict"
+  seed_corpus = "corpus/molt_agent_actions_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_agent_vision_fuzzer") {
+  sources = [ "molt_agent_vision_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_vision",
+    "//chrome/browser/molt_ai/runtime:model_image",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/services/molt_ai/inference/engine:image_input",
+  ]
+  seed_corpus = "corpus/molt_agent_vision_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_agent_safety_fuzzer") {
+  sources = [ "molt_agent_safety_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//url",
+  ]
+  dict = "dicts/page_text.dict"
+  seed_corpus = "corpus/molt_agent_safety_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_automation_script_fuzzer") {
+  sources = [ "molt_automation_script_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:ai_steps",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+  ]
+  dict = "dicts/agent.dict"
+  seed_corpus = "corpus/molt_automation_script_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_automation_ai_steps_fuzzer") {
+  sources = [ "molt_automation_ai_steps_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:ai_steps",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+  ]
+  dict = "dicts/agent.dict"
+  seed_corpus = "corpus/molt_automation_ai_steps_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+# --- MoltNet -------------------------------------------------------------------
+
+fuzzer_test("molt_onion_location_fuzzer") {
+  sources = [ "molt_onion_location_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/tor:protocol",
+  ]
+  dict = "dicts/tor.dict"
+  seed_corpus = "corpus/molt_onion_location_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+fuzzer_test("molt_torrc_fuzzer") {
+  sources = [ "molt_torrc_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/tor:protocol",
+  ]
+  dict = "dicts/tor.dict"
+  seed_corpus = "corpus/molt_torrc_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+fuzzer_test("molt_tor_control_protocol_fuzzer") {
+  sources = [ "molt_tor_control_protocol_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/tor:protocol",
+  ]
+  dict = "dicts/tor.dict"
+  seed_corpus = "corpus/molt_tor_control_protocol_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
+}
+
+# --- In-app updates --------------------------------------------------------------
+
+fuzzer_test("molt_release_manifest_fuzzer") {
+  sources = [ "molt_release_manifest_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai:molt_update",
+    "//third_party/boringssl",
+  ]
+  dict = _json_dict
+  seed_corpus = "corpus/molt_release_manifest_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
+group("fuzzers") {
+  testonly = true
+  deps = [
+    ":molt_agent_actions_fuzzer",
+    ":molt_agent_safety_fuzzer",
+    ":molt_agent_vision_fuzzer",
+    ":molt_automation_ai_steps_fuzzer",
+    ":molt_automation_script_fuzzer",
+    ":molt_dom_interpreter_fuzzer",
+    ":molt_embedding_validator_fuzzer",
+    ":molt_memory_snippet_fuzzer",
+    ":molt_onion_location_fuzzer",
+    ":molt_release_manifest_fuzzer",
+    ":molt_stream_validator_fuzzer",
+    ":molt_tor_control_protocol_fuzzer",
+    ":molt_torrc_fuzzer",
+    ":molt_web_ai_conversation_fuzzer",
+    ":molt_web_ai_policy_fuzzer",
+    ":molt_web_ai_site_permissions_fuzzer",
+    ":molt_web_ai_translation_fuzzer",
+  ]
+}
+
+# Every MoltBrowser fuzzer, reached from
+# //chrome/browser/molt_ai:molt_ai_tests so the targets are part of `all`.
+group("molt_fuzzers") {
+  testonly = true
+  deps = [
+    ":fuzzers",
+    "//chrome/services/molt_ai/document_parser/fuzzers",
+    "//chrome/services/molt_ai/inference/fuzzers",
+    "//third_party/blink/renderer/core/molt_fingerprinting:molt_farbling_fuzzer",
+  ]
+}

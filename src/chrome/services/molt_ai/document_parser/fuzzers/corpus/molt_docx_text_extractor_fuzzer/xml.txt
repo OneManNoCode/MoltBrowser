@@ -1,0 +1,1 @@
+<?xml version="1.0"?><w:document><w:body><w:p><w:r><w:t>Hello</w:t></w:r><w:r><w:tab/><w:t xml:space="preserve"> world &amp;lt; &lt;b&gt; &quot;q&quot; &apos;a&apos;</w:t></w:r></w:p><w:p><w:r><w:br/><w:t>café</w:t><w:cr/></w:r></w:p></w:body></w:document>

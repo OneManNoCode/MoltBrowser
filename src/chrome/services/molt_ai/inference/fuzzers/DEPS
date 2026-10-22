@@ -1,0 +1,5 @@
+include_rules = [
+  # molt_json_schema_grammar_llama_fuzzer drives llama.cpp's grammar engine
+  # directly (its internal API, as llama.cpp's own grammar tests do).
+  "+third_party/llama_cpp/src/llama-grammar.h",
+]

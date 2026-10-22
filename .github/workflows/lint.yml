@@ -23,6 +23,10 @@ name: Lint
 #     recorded sample run, its servers and DevTools pipe client; shellcheck
 #     on its scripts (blocking; the kit itself needs a built browser and
 #     root, see docs/LEAK_TESTING.md)
+#   * fuzz smoke: the libFuzzer targets that need no //base (std, zlib and
+#     llama tiers) built with clang + ASan/UBSan and run over their seed
+#     corpora with a fixed seed and run count (tools/fuzz/molt_fuzz.py;
+#     blocking; see docs/FUZZING.md)
 
 on:
   push:
@@ -159,3 +163,30 @@ jobs:
           shellcheck tools/leak_test/*.sh tools/leak_test/leakkit/*.sh
       - name: tools/leak_test unit tests (no root, no browser)
         run: python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test -v
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    # The runs are bounded by count (each fuzzer's smoke_runs) with a 60 s
+    # guard each; this caps the whole job.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install clang with libFuzzer and the sanitizer runtimes, zlib
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang libclang-rt-dev zlib1g-dev
+          clang++ --version | head -1
+      - name: Every fuzzer is a GN fuzzer_test with the same options and seeds
+        run: python3 tools/fuzz/molt_fuzz.py check
+      - name: Build and run the std, zlib and llama fuzzers (fixed seed and runs)
+        run: python3 tools/fuzz/molt_fuzz.py smoke --seed 1
+      - name: Keep the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: fuzz-smoke-artifacts
+          path: out/fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

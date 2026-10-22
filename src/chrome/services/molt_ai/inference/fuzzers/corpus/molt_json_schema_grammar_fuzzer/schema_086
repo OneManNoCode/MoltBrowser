@@ -1,0 +1,1 @@
+{"properties":{"a":{"items":{"anyOf":[{"$ref":"#"}]}}}}

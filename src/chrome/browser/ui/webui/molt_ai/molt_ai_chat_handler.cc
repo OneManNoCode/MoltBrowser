@@ -31,6 +31,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
@@ -5961,7 +5962,7 @@ void MoltAIChatHandler::HandleWebAgentConfirm(const base::ListValue& args) {
   if (args[0].is_int()) {
     request_id = args[0].GetInt();
   } else if (args[0].is_double()) {
-    request_id = static_cast<int>(args[0].GetDouble());
+    request_id = base::saturated_cast<int>(args[0].GetDouble());
   } else {
     return;
   }

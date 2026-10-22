@@ -1,0 +1,14 @@
+{
+    "type": "object",
+    "properties": {
+      "title": {"type": "string", "maxLength": 20},
+      "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+      "sentiment": {"enum": ["positive", "neutral", "negative"]},
+      "tags": {"type": "array", "items": {"type": "string", "maxLength": 10}, "maxItems": 3},
+      "author": {"type": ["object", "null"], "properties": {"name": {"type": "string"}},
+                 "required": ["name"], "additionalProperties": false},
+      "score": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "required": ["title", "rating", "sentiment"],
+    "additionalProperties": false
+  }

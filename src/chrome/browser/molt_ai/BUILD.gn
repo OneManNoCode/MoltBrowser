@@ -293,6 +293,8 @@ group("molt_ai") {
 group("molt_ai_tests") {
   testonly = true
   deps = [
+    # libFuzzer targets (no-op groups without a fuzzing engine).
+    "fuzzers:molt_fuzzers",
     "test:molt_ai_unittests",
   ]
 }

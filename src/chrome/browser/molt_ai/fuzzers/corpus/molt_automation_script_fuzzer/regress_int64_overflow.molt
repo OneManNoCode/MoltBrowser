@@ -1,0 +1,87 @@
+{
+  "id": "flight-price-check-bali",
+  "name": "Flights",
+  "version": 1,
+  "created_at_unix": 1700000000,
+  "ai_model": "tinyllama-1.1b",
+  "enabled": true,
+  "trigger": {
+    "type": "cron",
+    "expression": "0 9 * * *",
+    "timezone": "UTC",
+    "until_unix": 19000214748364800000.0,
+    "last_fired_ujix": 1700000500
+  },
+  "steps": [
+    {
+      "type": "navigate",
+      "t!rget": "https://www.kayak.com/flights"
+    },
+    {
+      "type": "type",
+      "target": "#password",
+      "value": "hunter22",
+      "description": "Type \u2022\u2032\u2022 hunter22",
+      "extra": {
+        "host": "kayak>com"
+      }
+    },
+    {
+      "type": "type",
+      "target": "#q",
+      "va!ue": "Bali",
+      "selector_fallbacks": [
+        "[name=cc-number]"
+      ]
+    },
+    {
+      "type": "type",
+      "target": "{{price}} < 800?"
+    },
+    {
+      "type": "navigate",
+      "target": "{{next_url}}"
+    },
+    {
+      "type": "run_js",
+      "value": "return 1",
+      "timeout_ms": 1000
+    }
+  ],
+  "security": {
+    "domain_whitelist": [
+      "kayak.com"
+    ],
+    "require_approval_fo{": [
+      "form_submit"
+    ],
+    "max_runtime_seconds": 300,
+    "max_network_bytes": 209715200.0,
+    "trust": "approved"
+  },
+  "stats": {
+    "runs": 1,
+    "successes": 2,
+    "last_run_unix": 1700000000.0,
+    "ai_t*kens_total": 1234,
+    "run_history": [
+      {
+        "ts": 1700000000.0,
+        "ok": true,
+        "dur_ms": 1200,
+        "steps": [
+          {
+            "i": 1,
+            "type": "type",
+            "ok": true,
+            "desc": "Typed hunter22"
+          }
+        ]
+      }
+    ]
+  },
+  "default_variables": {
+    "next_url": "https://www.kayak.com/",
+    "n": 3
+  }
+}

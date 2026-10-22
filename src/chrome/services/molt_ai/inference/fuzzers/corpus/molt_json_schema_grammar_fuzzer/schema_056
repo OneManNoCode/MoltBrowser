@@ -1,0 +1,2 @@
+{"anyOf":[{"type":"object","properties":{"k":{"const":"a"},"n":{"type":"integer"}},"required":["k","n"]},
+                   {"type":"object","properties":{"k":{"const":"b"}},"required":["k"]}]}

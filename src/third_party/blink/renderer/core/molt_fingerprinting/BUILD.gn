@@ -11,6 +11,8 @@
 #   build.gni   - the Blink glue (molt_fingerprinting.{h,cc}), compiled into
 #                 the core component like every other core subdirectory.
 
+import("//testing/libfuzzer/fuzzer_test.gni")
+
 source_set("farbling") {
   sources = [
     "farbling.cc",
@@ -61,4 +63,16 @@ source_set("unit_tests") {
     "//base",
     "//testing/gtest",
   ]
+}
+
+# The pixel, audio and font-name rules on what a page reads back and asks
+# for (docs/FUZZING.md). Reached from //chrome/browser/molt_ai/fuzzers.
+fuzzer_test("molt_farbling_fuzzer") {
+  sources = [ "molt_farbling_fuzzer.cc" ]
+  deps = [
+    ":farbling",
+    "//base",
+  ]
+  seed_corpus = "corpus/molt_farbling_fuzzer"
+  libfuzzer_options = [ "max_len=8192" ]
 }

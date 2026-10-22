@@ -1,0 +1,113 @@
+{
+  "id": "flight-price-check-bali",
+  "name": "Flights",
+  "version": 1,
+  "created_at_unix": 1700000000,
+  "ai_model": "tinyllama-1.1b",
+  "enabled": true,
+  "trigger": {
+    "type": "cron",
+    "expression": "0 9 * * *",
+    "timezone": "UTC",
+    "until_unix": 1900000000.0,
+    "last_fired_unix": 1700000500
+  },
+  "steps": [
+    {
+      "type": "navigate",
+      "target": "https://www.kayak.com/flights"
+    },
+    {
+      "type": "type",
+      "target": "#password",
+      "value": "hunter22",
+      "description": "Type \u2022\u2022\u2022 hunter22",
+      "extra": {
+        "host": "kayak.com"
+      }
+    },
+    {
+      "type": "type",
+      "target": "#q",
+      "value": "Bali",
+      "selector_fallbacks": [
+        "[name=cc-number]"
+      ]
+    },
+    {
+      "type": "type",
+      "target": "#otp",
+      "value": "123456",
+      "extra": {
+        "secret": "vault",
+        "secret_kind": "one_time_code"
+      }
+    },
+    {
+      "type": "click",
+      "target": "button[type=submit]",
+      "retries": 2
+    },
+    {
+      "type": "ai_extract",
+      "value": "Find the price",
+      "store_as": "price",
+      "extra": {
+        "schema": {
+          "price": "int",
+          "airline": "string",
+          "tags": "string[]"
+        }
+      }
+    },
+    {
+      "type": "ai_decide",
+      "value": "Is {{price}} < 800?"
+    },
+    {
+      "type": "navigate",
+      "target": "{{next_url}}"
+    },
+    {
+      "type": "run_js",
+      "value": "return 1",
+      "timeout_ms": 1000
+    }
+  ],
+  "security": {
+    "domain_whitelist": [
+      "kayak.com"
+    ],
+    "require_approval_for": [
+      "form_submit"
+    ],
+    "max_runtime_seconds": 300,
+    "max_network_bytes": 209715200.0,
+    "trust": "approved"
+  },
+  "stats": {
+    "runs": 3,
+    "successes": 2,
+    "last_run_unix": 1700000000.0,
+    "ai_tokens_total": 1234,
+    "run_history": [
+      {
+        "ts": 1700000000.0,
+        "ok": true,
+        "dur_ms": 1200,
+        "steps": [
+          {
+            "i": 1,
+            "type": "type",
+            "ok": true,
+            "desc": "Typed hunter22"
+          }
+        ]
+      }
+    ]
+  },
+  "default_variables": {
+    "next_url": "https://www.kayak.com/",
+    "n": 3
+  }
+}

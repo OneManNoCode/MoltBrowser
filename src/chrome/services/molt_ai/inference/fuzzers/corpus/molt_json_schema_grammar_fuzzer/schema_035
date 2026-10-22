@@ -1,0 +1,3 @@
+{"type":"object","properties":{
+      "a":{"type":"integer"},"b":{"type":"boolean"},"c":{"type":"null"}},
+      "required":["a","c"],"additionalProperties":false}
