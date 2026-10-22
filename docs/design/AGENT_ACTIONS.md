@@ -272,7 +272,12 @@ masked pixel survives (tested with a 4-pixel fringe). Masked:
   anyway (§6).
 
 More than 32 regions in view, or more than 50,000 elements to walk, and the
-step has no screenshot: a mask can't be skipped.
+step has no screenshot: a mask can't be skipped. Nor can a frame the script
+can't find: before and after the copy the browser counts the frames the
+observed document owns (its iframes, frames, fenced frames and embedded
+guests, `ChildFrameCount()` in `agent_screenshot.cc`), and if there are more
+than the frame elements the script found (one inside a closed shadow root),
+the step has no screenshot (`FoundEveryFrame()`).
 
 **Tags ("set of marks").** The model must link what it sees to an id
 without writing coordinates (small vision models are weakest at
@@ -1191,7 +1196,9 @@ about it:
   them, and the model can't be talked into typing them into a field the
   page reads.
 - *Other sites' content in frames* (a payment provider's card form, a
-  signed-in widget): every frame is masked, for the same reason.
+  signed-in widget): every frame is masked, for the same reason; a page
+  with a frame the script can't find (in a closed shadow root) gets no
+  screenshot.
 - *Not masked*: images, videos, canvases and CSS backgrounds from other
   sites that the page displays without being able to read them. A page
   could show such a resource and ask the model to transcribe it. With
@@ -1199,7 +1206,8 @@ about it:
   loads without the user's cookies for that site, so it shows what the page
   could fetch itself; a user who allows third-party cookies widens this.
   Closed shadow roots can't be searched for fields to mask (their password
-  fields still render as dots).
+  fields still render as dots). Frames in them are caught by the frame
+  count above.
 
 **Races.** The geometry is measured before and after the copy and must
 match. A page that moves a masked element away and back between the two

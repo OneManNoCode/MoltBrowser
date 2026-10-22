@@ -40,6 +40,32 @@ using agent_vision::CaptureDecision;
 // How long the compositor may take for the copy.
 constexpr base::TimeDelta kCopyTimeout = base::Seconds(3);
 
+// The frames |document| owns: its iframes, frames and fenced frames, and
+// guests it embeds. Their own frames are drawn inside them.
+size_t ChildFrameCount(content::RenderFrameHost* document) {
+  size_t count = 0;
+  document->ForEachRenderFrameHostWithAction(
+      [document, &count](content::RenderFrameHost* rfh) {
+        if (rfh == document) {
+          return content::RenderFrameHost::FrameIterationAction::kContinue;
+        }
+        if (rfh->GetParentOrOuterDocumentOrEmbedder() == document) {
+          ++count;
+        }
+        return content::RenderFrameHost::FrameIterationAction::kSkipChildren;
+      });
+  return count;
+}
+
+// The geometry measured in the observed document found all of its frames
+// (a frame in a closed shadow root can't be found, so it can't be masked).
+bool FramesAllFound(const agent_vision::ScreenshotGeometry& geometry,
+                    const content::WeakDocumentPtr& document) {
+  content::RenderFrameHost* frame = document.AsRenderFrameHostIfValid();
+  return frame &&
+         agent_vision::FoundEveryFrame(geometry, ChildFrameCount(frame));
+}
+
 // On a worker: scale (Skia), then mask and tag. Work grows with the
 // bitmap, which is at most kCaptureMaxSide on its long side.
 std::optional<ModelImage> PrepareScreenshot(
@@ -168,7 +194,8 @@ void AgentScreenshotter::OnGeometryBefore(std::unique_ptr<Pending> pending,
                                   pending->request.observation.elements.size());
   // Measured in the observed document, which hasn't navigated since.
   if (!geometry || geometry->origin != pending->request.observed_origin ||
-      Decide(pending->request) != CaptureDecision::kCapture) {
+      Decide(pending->request) != CaptureDecision::kCapture ||
+      !FramesAllFound(*geometry, pending->request.document)) {
     DVLOG(1) << "[WebAgent] No screenshot: no usable geometry";
     Finish(std::move(pending), std::nullopt);
     return;
@@ -231,7 +258,8 @@ void AgentScreenshotter::OnGeometryAfter(std::unique_ptr<Pending> pending,
       agent_vision::ParseGeometry(result,
                                   pending->request.observation.elements.size());
   if (!after || !agent_vision::SameGeometry(pending->before, *after) ||
-      Decide(pending->request) != CaptureDecision::kCapture) {
+      Decide(pending->request) != CaptureDecision::kCapture ||
+      !FramesAllFound(*after, pending->request.document)) {
     DVLOG(1) << "[WebAgent] No screenshot: the page moved during the copy";
     Finish(std::move(pending), std::nullopt);
     return;

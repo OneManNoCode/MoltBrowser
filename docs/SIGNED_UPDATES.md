@@ -384,6 +384,10 @@ python3 tools/release_signing/molt_provenance.py verify \
 
 - It checks every signature against the trusted keys, then the file's
   SHA-256 against its statement, and prints what the file was built from.
+  A file no build produces (the manifest, its signature, the Linux
+  repository bundle) isn't covered: it is listed as such, and given alone
+  it is an error; check those with `molt_release_sign.py verify`. A
+  `molt-provenance-*.json` given is compared with its signed copy.
 - `--json` prints the verified statements. To read one without checking
   it: `head -n1 molt-build-provenance.intoto.jsonl | jq -r .payload | base64 -d | jq .`
 - For a whole downloaded release, as the workflow does:

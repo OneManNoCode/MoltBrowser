@@ -735,21 +735,26 @@ CallState CallStateFromName(std::string_view name) {
 
 // The parts both page scripts share: the <form toolname> of a tool and
 // its controls' (type, autocomplete), at most kMaxFormControls + 1 (one
-// more shows the form is over the cap).
+// more shows the form is over the cap). A form's named controls take
+// precedence over its own members (HTMLFormElement is
+// [LegacyOverrideBuiltIns]), so the controls and attributes are read
+// through the prototypes' accessors.
 constexpr char kFormHelpers[] = R"JS(
+    const controlsOf = Object.getOwnPropertyDescriptor(
+        HTMLFormElement.prototype, 'elements').get;
+    const attrOf = Element.prototype.getAttribute;
     const formOf = (name) => {
       for (const f of document.querySelectorAll('form[toolname]')) {
-        if (f.getAttribute('toolname') === name) return f;
+        if (attrOf.call(f, 'toolname') === name) return f;
       }
       return null;
     };
     const fieldsOf = (f) => {
       const out = [];
-      for (const el of f.elements) {
+      for (const el of controlsOf.call(f)) {
         if (out.length > 64) break;
         out.push([String(el.type || '').toLowerCase().slice(0, 24),
-                  String((el.getAttribute && el.getAttribute('autocomplete'))
-                         || '').slice(0, 64)]);
+                  String(attrOf.call(el, 'autocomplete') || '').slice(0, 64)]);
       }
       return out;
     };)JS";

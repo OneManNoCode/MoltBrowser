@@ -11,7 +11,9 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
 #include "chrome/browser/infobars/confirm_infobar_creator.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_service.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/infobars/content/content_infobar_manager.h"
@@ -40,7 +42,9 @@ void AnswerLater(base::OnceCallback<void(SiteConsent)> callback,
 class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   WebAIConsentInfoBarDelegate(const url::Origin& origin, bool needs_model)
-      : origin_(origin), needs_model_(needs_model) {}
+      : origin_(origin),
+        needs_model_(needs_model),
+        shown_(base::TimeTicks::Now()) {}
   WebAIConsentInfoBarDelegate(const WebAIConsentInfoBarDelegate&) = delete;
   WebAIConsentInfoBarDelegate& operator=(const WebAIConsentInfoBarDelegate&) =
       delete;
@@ -79,6 +83,9 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
     return needs_model_ ? u"Choose a model" : u"Allow";
   }
   bool Accept() override {
+    if (!IsTimely()) {
+      return false;  // Too soon after the bar appeared: it stays.
+    }
     content::WebContents* contents =
         infobars::ContentInfoBarManager::WebContentsFromInfoBar(infobar());
     WebAISitePermissions* answers = Permissions(contents);
@@ -101,6 +108,9 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
     return true;
   }
   bool Cancel() override {
+    if (!IsTimely()) {
+      return false;
+    }
     WebAISitePermissions* answers = Permissions(
         infobars::ContentInfoBarManager::WebContentsFromInfoBar(infobar()));
     if (answers) {
@@ -127,6 +137,13 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
   }
 
  private:
+  // Allow and Block count only once the bar has been up for a moment
+  // (kPromptInputProtectionMs).
+  bool IsTimely() const {
+    return IsTimelyPromptAnswer(
+        (base::TimeTicks::Now() - shown_).InMilliseconds());
+  }
+
   static WebAISitePermissions* Permissions(content::WebContents* contents) {
     return contents ? WebAISitePermissions::Get(contents->GetBrowserContext())
                     : nullptr;
@@ -142,6 +159,7 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   const url::Origin origin_;
   const bool needs_model_;
+  const base::TimeTicks shown_;
   std::vector<base::OnceCallback<void(SiteConsent)>> callbacks_;
 };
 

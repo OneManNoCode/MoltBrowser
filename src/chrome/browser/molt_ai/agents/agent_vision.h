@@ -73,6 +73,8 @@ inline constexpr int kMaskMargin = 5;
 // Geometry the parser accepts (CSS pixels).
 inline constexpr int kMaxViewportSide = 16384;
 inline constexpr int kMaxCoordinate = 1000000;
+// Elements the geometry script walks at most (more: no screenshot).
+inline constexpr int kMaxGeometryWalk = 50000;
 
 // ---------------------------------------------------------------------------
 // Whether to capture
@@ -177,6 +179,8 @@ struct ScreenshotGeometry {
   // fields, and frames (iframe, frame, embed, object, fencedframe), in the
   // document and its open shadow roots.
   std::vector<Box> masks;
+  // The frame elements the script found there, in view or not.
+  size_t frame_elements = 0;
 };
 
 // A script (run it in the agent's isolated world) that measures the
@@ -193,10 +197,17 @@ std::string BuildGeometryScript(const agent_actions::Observation& observation);
 std::optional<ScreenshotGeometry> ParseGeometry(const base::Value& result,
                                                 size_t element_count);
 
+// Whether the script found every frame of the document it measured:
+// |child_frames| is the browser's count of the frames that document owns
+// (its iframes, frames and fenced frames, and guests it embeds). A frame
+// the script can't find, such as one inside a closed shadow root, would
+// be drawn unmasked, so then there is no screenshot.
+bool FoundEveryFrame(const ScreenshotGeometry& geometry, size_t child_frames);
+
 // Whether the page stood still while it was captured: the geometry
 // measured before and after the capture match (same origin, viewport and
-// scroll position; every box and mask within 1 CSS pixel). Otherwise the
-// tags and masks could miss what the screenshot shows.
+// scroll position, frame count; every box and mask within 1 CSS pixel).
+// Otherwise the tags and masks could miss what the screenshot shows.
 bool SameGeometry(const ScreenshotGeometry& before,
                   const ScreenshotGeometry& after);
 

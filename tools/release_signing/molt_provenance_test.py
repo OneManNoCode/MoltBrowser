@@ -28,6 +28,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -728,6 +729,35 @@ class ProvenanceTest(unittest.TestCase):
         expect('is not a subject', files=[os.path.join(d, prov.LINUX_REPOSITORY_NAME),
                                           path, os.path.join(self.tmp, 'MoltBrowser',
                                                              'README.md')])
+        # Given alone, a release file that no build produced is refused, not
+        # passed over: verify never says OK about a file it didn't check.
+        for name in (prov.LINUX_REPOSITORY_NAME, rs.MANIFEST_NAME,
+                     rs.SIGNATURE_NAME):
+            expect('%s is not a build output' % re.escape(name),
+                   files=[os.path.join(d, name)])
+        r = self.w.run([sys.executable, self.w.tool, 'verify', '--bundle',
+                        os.path.join(d, prov.BUNDLE_NAME),
+                        os.path.join(d, prov.LINUX_REPOSITORY_NAME)],
+                       check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn(b'OK', r.stdout)
+        # With an installer, the installer is checked and the other file is
+        # named as not covered.
+        r = self.w.run([sys.executable, self.w.tool, 'verify', '--bundle',
+                        os.path.join(d, prov.BUNDLE_NAME), deb,
+                        os.path.join(d, prov.LINUX_REPOSITORY_NAME)])
+        self.assertIn(b'MoltBrowser-Linux-x64.deb', r.stdout)
+        self.assertIn(b'not covered by the build provenance (check it with '
+                      b'molt_release_sign.py verify): '
+                      b'MoltBrowser-Linux-repository.tar', r.stdout)
+        # A statement given alone is checked against its signed copy.
+        self.verify(d, files=[path])
+        write(path, plain.replace(FINISHED.encode(), b'2026-10-01T13:31:00Z'))
+        expect('differs from its signed copy', files=[path])
+        write(path, plain)
+        expect('molt-provenance-macos-arm64.json is not in the signed',
+               [good[0]], files=[os.path.join(
+                   d, 'molt-provenance-macos-arm64.json')])
         # Still good after all that.
         self.verify(d, tag='v0.3.0', expect_commit=self.w.commit, require_all=True)
 

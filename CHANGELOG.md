@@ -133,6 +133,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   you can start over and the old file is kept as a backup.
 - Malformed messages to internal pages no longer crash the browser; AI
   automation steps no longer freeze it.
+- Hardening of the built-in AI APIs' consent prompt, error answers and
+  limits, the web agent's screenshot masks and page scripts, and the build
+  provenance verifier, after an adversarial review
+  (`docs/SECURITY_REVIEWS.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
