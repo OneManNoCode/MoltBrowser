@@ -1,0 +1,20 @@
+MoltBrowser patch for content/browser/service_worker/fake_service_worker.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/browser/service_worker/fake_service_worker.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/service_worker/fake_service_worker.cc b/content/browser/service_worker/fake_service_worker.cc
+index 314cc065cf334e5addca3e980f2add4111d907ad..f8610bd342e98cb433d6923ed6e6c9b931a09bf5 100644
+--- a/content/browser/service_worker/fake_service_worker.cc
++++ b/content/browser/service_worker/fake_service_worker.cc
+@@ -61,7 +61,8 @@ void FakeServiceWorker::InitializeGlobalScope(
+     blink::mojom::ServiceWorkerObjectInfoPtr service_worker_info,
+     blink::mojom::FetchHandlerExistence fetch_handler_existence,
+     blink::mojom::AncestorFrameType ancestor_frame_type,
+-    const blink::StorageKey& storage_key) {
++    const blink::StorageKey& storage_key,
++    bool molt_shields_down) {  // MoltBrowser
+   host_.Bind(std::move(service_worker_host));
+ 
+   // Enable callers to use these endpoints without us actually binding them

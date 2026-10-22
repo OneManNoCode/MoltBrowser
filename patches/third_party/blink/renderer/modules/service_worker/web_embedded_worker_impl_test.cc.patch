@@ -1,0 +1,19 @@
+MoltBrowser patch for third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc b/third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc
+index e87ba46b16079c47db74db51349fc64c74692077..f54d3a48d41586dd2f10246fc9a08c5d2b1083ca 100644
+--- a/third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc
++++ b/third_party/blink/renderer/modules/service_worker/web_embedded_worker_impl_test.cc
+@@ -458,7 +458,7 @@ class MockServiceWorkerContextClient final
+             service_worker_object.InitWithNewEndpointAndPassReceiver()),
+         mojom::blink::FetchHandlerExistence::EXISTS,
+         /*ancestor_frame_type=*/mojom::blink::AncestorFrameType::kNormalFrame,
+-        blink::BlinkStorageKey());
++        blink::BlinkStorageKey(), /*molt_shields_down=*/false);  // MoltBrowser
+ 
+     MockPolicyContainerHost mock_policy_container_host;
+     web_policy_container_->remote =

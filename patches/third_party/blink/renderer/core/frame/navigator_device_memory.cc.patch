@@ -1,0 +1,26 @@
+MoltBrowser patch for third_party/blink/renderer/core/frame/navigator_device_memory.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/frame/navigator_device_memory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+index 05fa33e4568e8eea926a0d97c1d83a4000fa6b3f..8905052a533041da36b60f16ea268f1c66fe86d2 100644
+--- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
++++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+@@ -8,11 +8,14 @@
+ #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_device.h"  // MoltBrowser
+ 
+ namespace blink {
+ 
+ float NavigatorDeviceMemory::deviceMemory() const {
+-  return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
++  // MoltBrowser: the same for every MoltNet user.
++  return molt_fingerprinting::DeviceMemory(
++      ApproximatedDeviceMemory::GetApproximatedDeviceMemory());
+ }
+ 
+ }  // namespace blink

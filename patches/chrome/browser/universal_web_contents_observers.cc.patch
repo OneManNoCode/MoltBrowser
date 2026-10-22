@@ -1,0 +1,28 @@
+MoltBrowser patch for chrome/browser/universal_web_contents_observers.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/universal_web_contents_observers.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/universal_web_contents_observers.cc b/chrome/browser/universal_web_contents_observers.cc
+index 70c84066d5da97b6c2806495e3f4c85849b9102d..e46b7550f0160cf1b53818eede6e7b2b3107c3d1 100644
+--- a/chrome/browser/universal_web_contents_observers.cc
++++ b/chrome/browser/universal_web_contents_observers.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/universal_web_contents_observers.h"
+ 
++#include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"  // MoltBrowser
+ #include "components/performance_manager/embedder/performance_manager_registry.h"
+ #include "content/public/browser/web_contents.h"
+ #include "extensions/buildflags/buildflags.h"
+@@ -36,4 +37,9 @@ void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {
+           performance_manager::PerformanceManagerRegistry::GetInstance()) {
+     pm_registry->MaybeCreatePageNodeForWebContents(web_contents);
+   }
++
++  // MoltBrowser: fingerprinting protection's Shields decision, sent to every
++  // committing document (tabs or not).
++  molt_ai::fingerprinting::ShieldsDecisionObserver::MaybeCreateForWebContents(
++      web_contents);
+ }

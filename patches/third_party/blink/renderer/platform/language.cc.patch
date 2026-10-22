@@ -1,0 +1,61 @@
+MoltBrowser patch for third_party/blink/renderer/platform/language.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/language.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/language.cc b/third_party/blink/renderer/platform/language.cc
+index 238920d61b7c4d45d6f6c812ddba6dd4e0bfb40e..9e00609b84274bc870230bfd5a202793cc869ba0 100644
+--- a/third_party/blink/renderer/platform/language.cc
++++ b/third_party/blink/renderer/platform/language.cc
+@@ -25,6 +25,8 @@
+ 
+ #include "third_party/blink/renderer/platform/language.h"
+ 
++#include <atomic>  // MoltBrowser
++
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/renderer/platform/text/platform_locale.h"
+ #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+@@ -58,6 +60,10 @@ Vector<AtomicString>& PreferredLanguagesOverride() {
+   return *thread_specific_languages;
+ }
+ 
++// MoltBrowser: SetPlatformLanguageOverride(); a string literal, so threads
++// share the pointer, never an AtomicString.
++std::atomic<const char*> g_platform_language_override{nullptr};
++
+ }  // namespace
+ 
+ void InitializePlatformLanguage() {
+@@ -81,6 +87,10 @@ void InitializePlatformLanguage() {
+   g_platform_language = &platform_language;
+ }
+ 
++void SetPlatformLanguageOverride(const char* language) {  // MoltBrowser
++  g_platform_language_override.store(language, std::memory_order_release);
++}
++
+ void OverrideUserPreferredLanguagesForTesting(
+     const Vector<AtomicString>& override) {
+   Vector<AtomicString>& canonicalized = PreferredLanguagesOverride();
+@@ -95,6 +105,10 @@ AtomicString DefaultLanguage() {
+   Vector<AtomicString>& override = PreferredLanguagesOverride();
+   if (!override.empty())
+     return override[0];
++  if (const char* language =  // MoltBrowser: SetPlatformLanguageOverride.
++          g_platform_language_override.load(std::memory_order_acquire)) {
++    return AtomicString(language);
++  }
+   return PlatformLanguage();
+ }
+ 
+@@ -105,7 +119,7 @@ Vector<AtomicString> UserPreferredLanguages() {
+ 
+   Vector<AtomicString> languages;
+   languages.ReserveInitialCapacity(1);
+-  languages.push_back(PlatformLanguage());
++  languages.push_back(DefaultLanguage());  // MoltBrowser: PlatformLanguage()
+   return languages;
+ }
+ 

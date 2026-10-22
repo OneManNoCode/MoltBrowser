@@ -1,0 +1,21 @@
+MoltBrowser patch for content/public/browser/client_hints_controller_delegate.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/public/browser/client_hints_controller_delegate.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/public/browser/client_hints_controller_delegate.h b/content/public/browser/client_hints_controller_delegate.h
+index ac3c34105094237c06a2c9f970cd8a4eef40b81d..8c0758f6fc42c70f1379e904af9525c870c7b860 100644
+--- a/content/public/browser/client_hints_controller_delegate.h
++++ b/content/public/browser/client_hints_controller_delegate.h
+@@ -82,6 +82,10 @@ class CONTENT_EXPORT ClientHintsControllerDelegate {
+   virtual void ForceEmptyViewportSizeForTesting(
+       bool should_force_empty_viewport_size) {}
+   virtual bool ShouldForceEmptyViewportSize();
++
++  // MoltBrowser: hints this browser context never sends, whatever enabled
++  // them (MoltNet's, chrome/browser/molt_ai/fingerprinting/).
++  virtual bool IsClientHintWithheld(network::mojom::WebClientHintsType type);
+ };
+ 
+ }  // namespace content

@@ -1,0 +1,21 @@
+MoltBrowser patch for third_party/blink/renderer/platform/language.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/language.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/language.h b/third_party/blink/renderer/platform/language.h
+index 62bd667dcf40fccf066d71052d1b562b749fbe54..19c78b365984be344a129acd2009edbe97d08267 100644
+--- a/third_party/blink/renderer/platform/language.h
++++ b/third_party/blink/renderer/platform/language.h
+@@ -45,6 +45,10 @@ PLATFORM_EXPORT wtf_size_t
+ IndexOfBestMatchingLanguageInList(const AtomicString& language,
+                                   const Vector<AtomicString>& language_list);
+ PLATFORM_EXPORT void InitializePlatformLanguage();
++// MoltBrowser: from now on DefaultLanguage() and UserPreferredLanguages()
++// return `language` (a string literal; null: the UI language again) on every
++// thread. MoltNet renderers pin en-US (molt_fingerprinting/moltnet_locale.h).
++PLATFORM_EXPORT void SetPlatformLanguageOverride(const char* language);
+ 
+ }  // namespace blink
+ 

@@ -1,0 +1,21 @@
+MoltBrowser patch for third_party/blink/public/mojom/worker/shared_worker_info.mojom
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/public/mojom/worker/shared_worker_info.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/public/mojom/worker/shared_worker_info.mojom b/third_party/blink/public/mojom/worker/shared_worker_info.mojom
+index edf8fb5f683b169a0f9aa2667fde8441e7e311cc..5bc62cd05c64c284d0e677299e173106879b9647 100644
+--- a/third_party/blink/public/mojom/worker/shared_worker_info.mojom
++++ b/third_party/blink/public/mojom/worker/shared_worker_info.mojom
+@@ -35,4 +35,10 @@ struct SharedWorkerInfo {
+   // have been destructed.
+   // See: https://github.com/whatwg/html/issues/10997
+   bool extended_lifetime;
++
++  // MoltBrowser: set by the browser when it starts the worker
++  // (SharedWorkerHost::Start): MoltShield is off for the top-level site of
++  // the constructor's storage key, so fingerprinting protection leaves the
++  // worker alone. Ignored when a renderer sends this struct.
++  [MinVersion=1] bool molt_shields_down;
+ };
