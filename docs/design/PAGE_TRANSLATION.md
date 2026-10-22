@@ -18,7 +18,7 @@ that revision; line numbers below are 152's.
 2. **One seam: the Translate driver.** A subclass of upstream's
    `ContentTranslateDriver` replaces what happens on *Translate* and *Show
    original*; Translate's UI, prefs, language detection and metrics stay
-   upstream's. Six small hooks in seven upstream files (§3).
+   upstream's. Small hooks in seven upstream files (§3).
 3. **Isolated world only.** The page's text is read and written from the
    browser by a script in Translate's isolated world
    (`ISOLATED_WORLD_ID_TRANSLATE`), never in the page's main world, and
