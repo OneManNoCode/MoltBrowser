@@ -64,10 +64,11 @@ void TranslateService::Initialize() {
   // MoltBrowser: Translate offers the on-device translator's languages, and
   // its list is never fetched from Google. Before requests are allowed
   // below, so none is ever made (docs/design/PAGE_TRANSLATION.md).
-  translate::TranslateDownloadManager::GetInstance()
-      ->language_list()
-      ->SetLocalLanguages(
-          molt_ai::page_translate::PageTranslateLanguageCodes());
+  if (translate::TranslateLanguageList* language_list =
+          translate::TranslateDownloadManager::GetInstance()->language_list()) {
+    language_list->SetLocalLanguages(
+        molt_ai::page_translate::PageTranslateLanguageCodes());
+  }
 
   g_translate_service = new TranslateService;
   // Initialize the allowed state for resource requests.
