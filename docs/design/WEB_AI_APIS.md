@@ -651,12 +651,12 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   removal, the Clear browsing data range (half-open) and filters, the
   bounds and what goes first, and the stored form's rules (versions, bad
   values, round trip), plus random operations against the invariants.
-- `web_ai_site_permissions_service_unittest.cc` (10): the service over a
+- `web_ai_site_permissions_service_unittest.cc` (11): the service over a
   `TestingPrefServiceSimple`: answers and pauses survive a restart, the
   stored format, a damaged pref ignored and cleaned on the next write,
   versions, Incognito never writing, non-http(s) and opaque origins,
-  observers, removal, Clear browsing data with a URL filter, no writes
-  after shutdown.
+  observers, removal, Clear browsing data with a URL filter, a pause
+  renewed past the stored count's cap, no writes after shutdown.
 - `web_ai_prompts_unittest.cc` (10): every option → prompt mapping and
   reply budget.
 - `web_ai_conversation_unittest.cc` (10): quota accounting, whole-exchange
@@ -689,7 +689,7 @@ mutations of the logic were all caught.
 For the remembered answers, the pause, the settings page and
 LanguageDetector (same harness): the 19 table tests with the pure tests
 (clang ASan/UBSan, g++ `-O2 -Werror`, `-fno-exceptions -fno-rtti`); the
-10 service tests and the argument-helper tests against functional
+11 service tests and the argument-helper tests against functional
 stand-ins of `base::Value`, `PrefService`, `GURL` and `url::Origin`; the
 41 manager tests; the factory, the binder, the infobar, the settings
 switch, the WebUI handler, the edited *Save* / *Reset* handlers and the
