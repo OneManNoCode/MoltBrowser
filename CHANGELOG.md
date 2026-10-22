@@ -288,6 +288,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   smaller on screen rather than showing more of it. At 33% and 67% zoom,
   and on a few screen scales, a page can be one step smaller than the window
   allows.
+- **Scrollbars and page sizes no longer show the zoom in MoltNet.** A
+  page's scrollbar used to be as wide in screen pixels at every zoom (and
+  15 or 17 pixels depending on the OS), so measuring it gave away the zoom
+  level and the OS. In MoltNet windows scrollbars that take room now
+  measure 16 page pixels on every OS (12 when a page asks for thin ones)
+  and zoom with the page, so the measurement no longer changes with the
+  zoom level (bar a pixel at a few levels; see `docs/FINGERPRINTING.md`).
+  Page-size media queries, `vw`/`vh` units and `visualViewport` also
+  report whole pixels, so `(width > 1400px)` no longer matches a
+  1400-pixel page at 90% zoom. Regular and incognito windows are
+  unchanged.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

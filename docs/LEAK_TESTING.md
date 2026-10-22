@@ -269,7 +269,10 @@ level, and in one browser launch per device scale factor
   `availLeft/Top`, `screenX/Y` 0; `devicePixelRatio` 1 and the `resolution`
   query; `device-width/height` match; colour depth 24; `isExtended` false;
   orientation from the uniform screen, angle 0; mouse `screenX/Y` equal to
-  `clientX/Y`.
+  `clientX/Y`; the `width`/`height` media queries and `vw`/`vh` exactly
+  `innerWidth` x `innerHeight` (strict comparisons included); a classic
+  scrollbar 16 CSS pixels wide (0 with overlay scrollbars; 15 or 17 by
+  design at 33% and 67% zoom, which the default zoom list leaves out).
 * **Once per launch:** UTC (also `Date` strings), en-US (`Intl`, numbers,
   `navigator.language(s)`, `Accept-Language`), 4 cores, 8 GB,
   `cpuPerformance` 0, a mouse-only desktop (touch points, pointer/hover
@@ -287,8 +290,8 @@ level, and in one browser launch per device scale factor
   the built-in AI APIs unavailable, the reduced user agent.
 * **Recorded, not promised** (shown when two runs differ): media device
   kinds, storage quota, JS heap limit, speech voices, battery, keyboard
-  layout, `navigator.connection`, WebRTC codecs, `system-ui` width,
-  scrollbar width.
+  layout, `navigator.connection`, WebRTC codecs, `system-ui` width, the
+  test page's own scrollbar width.
 
 A regular-window fingerprint is recorded as a control. The report lists the
 values that are already uniform outside MoltNet on this machine (for

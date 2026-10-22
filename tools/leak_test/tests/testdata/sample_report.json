@@ -724,6 +724,20 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual true, expected true",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.viewport_exact",
+   "status": "PASS",
+   "title": "mq.viewport_exact is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected [0, null]"
@@ -985,6 +999,20 @@
    "id": "uniform.screenDetails.error",
    "status": "PASS",
    "title": "screenDetails.error is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 16, expected [0, 16]",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 16, expected [0, 16]",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 16, expected [0, 16]",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 16, expected [0, 16]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.scrollbar.box",
+   "status": "PASS",
+   "title": "scrollbar.box is uniform"
   },
   {
    "details": null,
@@ -2230,7 +2258,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 97,
+  "PASS": 99,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2281,6 +2309,7 @@
     "mq.pointer_coarse": false,
     "mq.pointer_fine": true,
     "mq.resolution_1dppx": true,
+    "mq.viewport_exact": true,
     "nav.cpuPerformance": 0,
     "nav.deviceMemory": 8,
     "nav.doNotTrack": null,
@@ -2306,6 +2335,7 @@
     "screen.pixelDepth": 24,
     "screen.width": 1400,
     "screenDetails.error": "NotAllowedError",
+    "scrollbar.box": 16,
     "sharedStorage.set": "rejected",
     "storage.persist": false,
     "storage.quota": 1717986918,
@@ -2373,6 +2403,7 @@
     "mouse.screen_equals_client": true,
     "mq.device_size_matches": true,
     "mq.resolution_1dppx": true,
+    "mq.viewport_exact": true,
     "screen.availHeight": 600,
     "screen.availLeft": 0,
     "screen.availTop": 0,
@@ -2384,6 +2415,7 @@
     "screen.orientation.type": "landscape-primary",
     "screen.pixelDepth": 24,
     "screen.width": 1200,
+    "scrollbar.box": 16,
     "win.devicePixelRatio": 1,
     "win.innerHeight": 600,
     "win.innerWidth": 1200,
@@ -2409,6 +2441,7 @@
     "mouse.screen_equals_client": true,
     "mq.device_size_matches": true,
     "mq.resolution_1dppx": true,
+    "mq.viewport_exact": true,
     "screen.availHeight": 900,
     "screen.availLeft": 0,
     "screen.availTop": 0,
@@ -2420,6 +2453,7 @@
     "screen.orientation.type": "landscape-primary",
     "screen.pixelDepth": 24,
     "screen.width": 1401,
+    "scrollbar.box": 16,
     "win.devicePixelRatio": 1,
     "win.innerHeight": 900,
     "win.innerWidth": 1401,
@@ -2446,6 +2480,7 @@
     "mouse.screen_equals_client": true,
     "mq.device_size_matches": true,
     "mq.resolution_1dppx": true,
+    "mq.viewport_exact": true,
     "screen.availHeight": 800,
     "screen.availLeft": 0,
     "screen.availTop": 0,
@@ -2457,6 +2492,7 @@
     "screen.orientation.type": "landscape-primary",
     "screen.pixelDepth": 24,
     "screen.width": 1400,
+    "scrollbar.box": 16,
     "win.devicePixelRatio": 1,
     "win.innerHeight": 800,
     "win.innerWidth": 1400,
