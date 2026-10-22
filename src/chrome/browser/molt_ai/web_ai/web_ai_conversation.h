@@ -15,6 +15,11 @@
 //    gets a contextoverflow event.
 //  * A prompt and its reply join the context only when the reply completes;
 //    a failed, aborted or cancelled prompt leaves the context unchanged.
+//  * Images (image input) go with user turns and count kImageInputTokens
+//    each. The model sees at most kMaxContextImages per request, the
+//    newest, so the context keeps the pixels of the newest ones only; an
+//    older image still counts against the quota (it was part of the turn)
+//    until its turn is evicted.
 
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_CONVERSATION_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_CONVERSATION_H_
@@ -26,18 +31,37 @@
 #include <utility>
 #include <vector>
 
+#include "chrome/browser/molt_ai/runtime/model_image.h"
+
 namespace molt_ai::web_ai {
 
 enum class Role { kUser, kAssistant };
 
+// The most images a request shows the model (the inference service's
+// kMaxImagesPerRequest), and so the most a context keeps the pixels of.
+inline constexpr size_t kMaxContextImages = 4;
+
 struct Turn {
+  Turn();
+  Turn(Turn&&);
+  Turn& operator=(Turn&&);
+  Turn(const Turn&);
+  Turn& operator=(const Turn&);
+  ~Turn();
+
   Role role = Role::kUser;
   std::string text;
-  // EstimateMessageTokens(text).
+  // A user turn's images, in the page's order (shown to the model before
+  // the text). May be emptied when newer images replace them (see above).
+  std::vector<ModelImage> images;
+  // EstimateMessageTokens(text) plus kImageInputTokens per image the turn
+  // was made with.
   uint32_t tokens = 0;
 };
 
-Turn MakeTurn(Role role, std::string text);
+// A turn of |text| that will hold |image_count| images (counted now; the
+// pixels are added to Turn::images once they are ready).
+Turn MakeTurn(Role role, std::string text, size_t image_count = 0);
 
 class Conversation {
  public:
@@ -55,6 +79,8 @@ class Conversation {
   uint32_t input_quota() const { return input_quota_; }
   uint32_t input_usage() const;
   const std::deque<Turn>& turns() const { return turns_; }
+  // The images whose pixels the context keeps (at most kMaxContextImages).
+  size_t image_count() const;
 
   struct Plan {
     // False: the system prompt and the new turns alone exceed the quota.
@@ -66,7 +92,8 @@ class Conversation {
   };
   Plan PlanAdd(const std::vector<Turn>& added) const;
 
-  // Commits |added|, evicting |plan.evict| turns first. |plan| must come
+  // Commits |added|, evicting |plan.evict| turns first, then lets go of the
+  // pixels of all but the newest kMaxContextImages images. |plan| must come
   // from PlanAdd(added) on the current state and fit.
   void Add(const Plan& plan, std::vector<Turn> added);
 
@@ -76,15 +103,27 @@ class Conversation {
 
   // What the runtime gets for the context as it would be after
   // Add(plan, added): runs of turns with the same role merged (chat
-  // templates expect alternating roles), and the trailing user turn as the
-  // new message.
+  // templates expect alternating roles; their images joined in order), and
+  // the trailing user turn as the new message. Only the newest
+  // kMaxContextImages images are in it (copies).
   struct Shape {
+    Shape();
+    Shape(Shape&&);
+    Shape& operator=(Shape&&);
+    ~Shape();
+
     std::vector<std::pair<Role, std::string>> history;
+    // Each history entry's images: empty, or one entry per history entry.
+    std::vector<std::vector<ModelImage>> history_images;
     std::string user_message;
+    std::vector<ModelImage> user_images;
   };
   Shape ShapeAfter(const Plan& plan, const std::vector<Turn>& added) const;
 
  private:
+  // Lets go of the pixels of all but the newest kMaxContextImages images.
+  void KeepNewestImages();
+
   uint32_t input_quota_;
   std::string system_prompt_;
   uint32_t system_tokens_ = 0;

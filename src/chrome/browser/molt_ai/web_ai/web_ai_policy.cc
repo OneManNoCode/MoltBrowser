@@ -62,6 +62,17 @@ constexpr LanguageName kLanguageNames[] = {
 // Availability and create()
 // ---------------------------------------------------------------------------
 
+bool IsUsableImageSource(int64_t width, int64_t height) {
+  if (width <= 0 || height <= 0 ||
+      width > static_cast<int64_t>(kMaxImageSourcePixels) ||
+      height > static_cast<int64_t>(kMaxImageSourcePixels)) {
+    return false;
+  }
+  // Both sides are at most 2^26 here, so the product fits.
+  return static_cast<uint64_t>(width) * static_cast<uint64_t>(height) <=
+         kMaxImageSourcePixels;
+}
+
 bool IsContextEligible(const ContextFacts& c) {
   return c.feature_enabled && c.enterprise_allowed && c.user_enabled &&
          !c.moltnet && c.is_document && c.http_top_level;
@@ -264,19 +275,21 @@ std::string LanguageNameForPrompt(std::string_view tag) {
 // Which model serves pages
 // ---------------------------------------------------------------------------
 
-std::string PickWebModel(std::string_view loaded_model_id,
-                         std::string_view default_model_id,
-                         const std::vector<ModelCandidate>& models) {
-  if (!loaded_model_id.empty()) {
-    return std::string(loaded_model_id);
-  }
+namespace {
+
+// The default if it is downloaded, else the smallest downloaded model
+// (by RAM, then id); among those that see images only if |need_images|.
+const ModelCandidate* PickAmong(std::string_view default_model_id,
+                                const std::vector<ModelCandidate>& models,
+                                bool need_images) {
   const ModelCandidate* smallest = nullptr;
   for (const ModelCandidate& m : models) {
-    if (!m.downloaded || m.model_id.empty()) {
+    if (!m.downloaded || m.model_id.empty() ||
+        (need_images && !m.sees_images)) {
       continue;
     }
     if (m.model_id == default_model_id) {
-      return m.model_id;
+      return &m;
     }
     if (!smallest || m.ram_required_bytes < smallest->ram_required_bytes ||
         (m.ram_required_bytes == smallest->ram_required_bytes &&
@@ -284,7 +297,26 @@ std::string PickWebModel(std::string_view loaded_model_id,
       smallest = &m;
     }
   }
-  return smallest ? smallest->model_id : std::string();
+  return smallest;
+}
+
+}  // namespace
+
+std::string PickWebModel(std::string_view loaded_model_id,
+                         std::string_view default_model_id,
+                         const std::vector<ModelCandidate>& models,
+                         bool wants_images) {
+  if (!loaded_model_id.empty()) {
+    return std::string(loaded_model_id);
+  }
+  const ModelCandidate* pick = nullptr;
+  if (wants_images) {
+    pick = PickAmong(default_model_id, models, /*need_images=*/true);
+  }
+  if (!pick) {
+    pick = PickAmong(default_model_id, models, /*need_images=*/false);
+  }
+  return pick ? pick->model_id : std::string();
 }
 
 bool AnyModelInstalled(const std::vector<ModelCandidate>& models) {
@@ -432,6 +464,42 @@ void GenerationScheduler::RemoveSession(const std::string& site) {
 size_t GenerationScheduler::SessionsForSite(const std::string& site) const {
   auto it = sessions_by_site_.find(site);
   return it == sessions_by_site_.end() ? 0 : it->second;
+}
+
+bool GenerationScheduler::TryHoldImages(const std::string& site,
+                                        size_t count) {
+  if (count == 0) {
+    return true;
+  }
+  const size_t held = ImagesHeldForSite(site);
+  // Written so that no sum can wrap.
+  if (count > kMaxHeldImagesPerSite - held ||
+      count > kMaxHeldImagesTotal - images_held_total_) {
+    return false;
+  }
+  images_by_site_[site] = held + count;
+  images_held_total_ += count;
+  return true;
+}
+
+void GenerationScheduler::ReleaseImages(const std::string& site,
+                                        size_t count) {
+  auto it = images_by_site_.find(site);
+  if (it == images_by_site_.end() || count == 0) {
+    return;
+  }
+  const size_t released = std::min(count, it->second);
+  images_held_total_ -= released;
+  if (released == it->second) {
+    images_by_site_.erase(it);
+  } else {
+    it->second -= released;
+  }
+}
+
+size_t GenerationScheduler::ImagesHeldForSite(const std::string& site) const {
+  auto it = images_by_site_.find(site);
+  return it == images_by_site_.end() ? 0 : it->second;
 }
 
 }  // namespace molt_ai::web_ai

@@ -16,7 +16,11 @@
 //    model), whether or not a model is installed.
 //  * inputQuota: one of two buckets (kSmallInputQuota, kLargeInputQuota).
 //  * Token counts: EstimateTokens(), from the text alone, never the model's
-//    tokenizer (whose counts would name the model).
+//    tokenizer (whose counts would name the model); an image counts
+//    kImageInputTokens, whatever its size.
+//  * Image input: availability() answers the same with or without it; only
+//    create(), on a site the user allowed, can fail because the model in
+//    use doesn't see images.
 
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_POLICY_H_
@@ -61,7 +65,8 @@ enum class UnavailableReason {
   kDisabled,
   // BuiltInAIAPIsEnabled or GenAILocalFoundationalModelSettings policy.
   kEnterprisePolicy,
-  // Image or audio input, tools, or other options a text model can't serve.
+  // Audio input, tools, or other options the on-device models can't serve
+  // (image input with the multimodal-input feature off).
   kUnsupportedOptions,
   // A language tag that isn't a well-formed BCP 47 tag.
   kUnsupportedLanguage,
@@ -88,6 +93,10 @@ struct ContextFacts {
   // The top-level document is http(s) (not an extension, file:// or an
   // internal page).
   bool http_top_level = false;
+  // LanguageModel image input: Blink's kAIPromptAPIMultimodalInput (as
+  // upstream's AIManager checks it). The same for every user with the same
+  // flags; whether a model can see images is never part of availability().
+  bool image_input_enabled = false;
 };
 
 // Facts about this device, from the on-device runtime and settings.json.
@@ -164,6 +173,31 @@ struct LanguageModelLimits {
 
 // |context_tokens|: the loaded model's context window (0 if unknown).
 LanguageModelLimits LanguageModelLimitsFor(uint32_t context_tokens);
+
+// ---------------------------------------------------------------------------
+// Image input (LanguageModel expectedInputs "image")
+// ---------------------------------------------------------------------------
+
+// What one image counts against inputQuota, whatever its size and whatever
+// the model: a page's images are scaled to at most 768 pixels a side
+// (runtime/model_image.h kWebImageMaxSide), which a vision encoder with a
+// 32-pixel token grid turns into at most 576 tokens.
+inline constexpr uint32_t kImageInputTokens = 576;
+
+// The largest bitmap a page may send (64 megapixels, beyond any camera
+// photo): scaling work grows with it, so bigger ones are refused unread.
+inline constexpr uint64_t kMaxImageSourcePixels = uint64_t{1} << 26;
+
+// A page's bitmap of |width| x |height| may be scaled for the model: both
+// sides positive and at most kMaxImageSourcePixels pixels.
+bool IsUsableImageSource(int64_t width, int64_t height);
+
+// Model images held in the browser for pages (those of requests not
+// answered yet, and those kept in sessions' contexts), per site and in
+// total: at most 1.7 MB each (768 x 768 RGB), so about 82 MB for every page
+// together. A request over either cap fails.
+inline constexpr size_t kMaxHeldImagesPerSite = 16;
+inline constexpr size_t kMaxHeldImagesTotal = 48;
 
 // ---------------------------------------------------------------------------
 // Counting page text
@@ -247,16 +281,24 @@ struct ModelCandidate {
   std::string model_id;
   bool downloaded = false;
   uint64_t ram_required_bytes = 0;
+  // It has a vision projector (image input).
+  bool sees_images = false;
 };
 
 // The model a page's request runs on:
-//  1. the model already loaded (the chat's), so a page never swaps it;
-//  2. else settings.json's default_model, if downloaded;
-//  3. else the smallest downloaded model (by RAM, then id).
+//  1. the model already loaded (the chat's), so a page never swaps it, even
+//     for images it can't see;
+//  2. else settings.json's default_model, if downloaded (and, when
+//     |wants_images|, if it sees images);
+//  3. else, when |wants_images|, the smallest downloaded model that sees
+//     images;
+//  4. else the default, then the smallest downloaded model (by RAM, then
+//     id).
 // Empty if nothing is downloaded.
 std::string PickWebModel(std::string_view loaded_model_id,
                          std::string_view default_model_id,
-                         const std::vector<ModelCandidate>& models);
+                         const std::vector<ModelCandidate>& models,
+                         bool wants_images = false);
 
 bool AnyModelInstalled(const std::vector<ModelCandidate>& models);
 
@@ -322,6 +364,14 @@ class GenerationScheduler {
   void RemoveSession(const std::string& site);
   size_t SessionsForSite(const std::string& site) const;
 
+  // Model images held for pages: false (and nothing held) if |count| more
+  // would exceed kMaxHeldImagesPerSite or kMaxHeldImagesTotal. Releasing
+  // more than |site| holds releases what it holds.
+  bool TryHoldImages(const std::string& site, size_t count);
+  void ReleaseImages(const std::string& site, size_t count);
+  size_t ImagesHeldForSite(const std::string& site) const;
+  size_t images_held_total() const { return images_held_total_; }
+
  private:
   struct Entry {
     uint64_t id;
@@ -340,6 +390,8 @@ class GenerationScheduler {
   std::map<std::string, uint64_t> last_start_by_site_;
   uint64_t starts_ = 0;
   std::map<std::string, size_t> sessions_by_site_;
+  std::map<std::string, size_t> images_by_site_;
+  size_t images_held_total_ = 0;
 };
 
 }  // namespace molt_ai::web_ai

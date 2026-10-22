@@ -223,7 +223,10 @@ class MoltAIManager : public base::SupportsUserData::Data,
   void StartCreate(std::unique_ptr<CreateRequest> request);
   void OnCreateDeviceFacts(uint64_t id, DeviceFacts device);
   void OnCreateConsent(uint64_t id, SiteConsent consent);
-  void OnCreateModelReady(uint64_t id, bool ok, uint32_t context_tokens);
+  void OnCreateModelReady(uint64_t id,
+                          bool ok,
+                          uint32_t context_tokens,
+                          bool sees_images);
   // Removes and returns request |id| if it is still wanted (its client is
   // connected); fails and drops it otherwise.
   std::unique_ptr<CreateRequest> TakeCreate(uint64_t id);

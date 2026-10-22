@@ -2,8 +2,9 @@
 
 Status: implemented (October 2026), pending a compile on the build machine
 and the in-browser checks in §12. Remembered answers, the prompt's pause
-and the settings page (§4.1-§4.5), LanguageDetector's "unavailable" and
-the Translator on the user's model (§10) followed the same month. Roadmap
+and the settings page (§4.1-§4.5), LanguageDetector's "unavailable", the
+Translator on the user's model (§10) and the Prompt API's image input
+(§5.1) followed the same month. Roadmap
 item "Web-standard AI APIs, without Google". The Prompt API
 (`LanguageModel`), `Summarizer`, `Writer`, `Rewriter` and `Translator` run
 on the user's own on-device model through `BrowserAIRuntime`, never on
@@ -96,6 +97,15 @@ at that revision with `upshow new`.
     fixed MoltBrowser instruction and decoded under the JSON Schema
     `{"translation": string}`, so the model can only reply with the
     translation. Long text goes piece by piece (§10).
+13. **Image input without a new bit.** `LanguageModel` takes images
+    (`expectedInputs` `"image"`, image content in `prompt()` and
+    `append()`) when the model in use has a vision projector.
+    `availability()` answers exactly as for text, so whether the user's
+    model sees images is never part of it; a model that can't makes
+    `create()` fail with the generic error, after the user allowed the
+    site. Pages' images are scaled in the browser to 768 pixels and sent
+    as raw pixels; each counts 576 tokens; the model sees the newest four;
+    the images pages hold are capped per site and in total (§5.1).
 
 ```
 renderer (Blink, unchanged)                 browser process
@@ -220,12 +230,12 @@ All new code is under `src/chrome/browser/molt_ai/web_ai/`:
 
 | File | What it is |
 |---|---|
-| `web_ai_policy.{h,cc}` | Pure: the availability state machine, create actions, quota buckets, token estimator, sampling clamps, language tags, model pick, `GenerationScheduler`. |
+| `web_ai_policy.{h,cc}` | Pure: the availability state machine, create actions, quota buckets, token estimator, sampling clamps, language tags, model pick, image sizes, `GenerationScheduler` (with the image holds). |
 | `web_ai_site_permissions.{h,cc}` | Pure: `SitePermissionTable`, the per-site answers and the prompt's pause (embargo), their bounds and stored form (§4.1-§4.2). |
 | `web_ai_prompts.{h,cc}` | Pure: Summarizer/Writer/Rewriter options → system prompt, context and reply budget. |
 | `web_ai_translation.{h,cc}` | Pure: the Translator's language table and best fit, the pieces a text is cut into, the instruction, the response schema and the cleanup of a translation (§10). |
-| `web_ai_conversation.{h,cc}` | Pure: a `LanguageModel` session's context, quota accounting and eviction. |
-| `web_ai_backend.{h,cc}` | The interface between the manager and the runtime (`GenerationJob`, device facts, cancel). |
+| `web_ai_conversation.{h,cc}` | Pure: a `LanguageModel` session's context (images included), quota accounting and eviction. |
+| `web_ai_backend.{h,cc}` | The interface between the manager and the runtime (`GenerationJob`, device facts, cancel, scaling a page's images, the image holds). |
 | `molt_ai_manager.{h,cc}` | `MoltAIManager`: `blink.mojom.AIManager` and `blink.mojom.TranslationManager`, the create flow. |
 | `web_ai_sessions.{h,cc}` | `LanguageModelSession`, `SummarizerSession`, `WriterSession`, `RewriterSession`: queueing, streaming, abort; requests answered in several generations. |
 | `web_ai_translator_session.{h,cc}` | `TranslatorSession`: `blink.mojom.Translator`, piece by piece. |
@@ -234,10 +244,12 @@ All new code is under `src/chrome/browser/molt_ai/web_ai/`:
 | `web_ai_site_permissions_service.{h,cc}` | `WebAISitePermissions`: a profile's table, kept in the `molt_ai.web_ai.sites` pref (or in memory), with observers and the Clear browsing data operations. |
 | `web_ai_site_permissions_factory.{h,cc}` | Its keyed-service factory (pref registration, which profiles get one) and the hooks Clear browsing data and profile reset call. |
 | `web_ai_settings_switch.{h,cc}` | Reads and writes `"web_ai_apis"` in `settings.json`, keeping every other key. |
-| `runtime_web_ai_backend.{h,cc}` | `RuntimeWebAIBackend` over `BrowserAIRuntime`: device facts, model load, the scheduler, deadlines. |
+| `runtime_web_ai_backend.{h,cc}` | `RuntimeWebAIBackend` over `BrowserAIRuntime`: device facts, model load, the scheduler, deadlines, images scaled on a worker. |
 
 `BrowserAIRuntime` gained `GetLoadedContextTokens()` (the loaded model's
-context size, for the quota bucket). The settings section is
+context size, for the quota bucket) and, for image input (§5.1),
+`LoadedModelSeesImages()` and images on `ChatPrompt`'s user turns; pages'
+images are scaled with `runtime/model_image_prep.h`. The settings section is
 `src/chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.{h,cc}`
 (§4.5).
 
@@ -487,9 +499,10 @@ MoltBrowser owns. The pref won:
   maximum: top-K 128, temperature 2.0; defaults 40 and 0.7), the sampling
   modes, `expectedInputs`/`expectedOutputs` with type `"text"` and
   languages (one output language is passed to the model as an
-  instruction). Not supported, reported `"unavailable"` or failed: image
-  and audio inputs, tools, `prefix` (assistant prefill), regex
-  `responseConstraint`.
+  instruction), `expectedInputs` with type `"image"` (§5.1). Not
+  supported, reported `"unavailable"` or failed: audio input, outputs
+  other than text, tools, `prefix` (assistant prefill), regex
+  `responseConstraint`, images in `initialPrompts`.
 
 **Structured output: `responseConstraint`** (LanguageModel `prompt()` /
 `promptStreaming()`).
@@ -538,6 +551,82 @@ MoltBrowser owns. The pref won:
   | Answer isn't complete JSON, or the model couldn't continue the format | `kErrorResponseParsingFailed` | `UnknownError`: "Failed to parse the response." |
 
   `promptStreaming()` errors its stream with the same exception.
+
+### 5.1 Image input
+
+A `LanguageModel` created with `expectedInputs: [{type: "image"}]` takes
+images in user messages: `prompt()`, `promptStreaming()`, `append()` and
+`measureInputUsage()`. Blink decodes the page's `ImageBitmapSource` (an
+image element, a canvas, a `Blob`, ...) and sends a bitmap
+(`skia.mojom.BitmapN32`); the browser never parses an image file for it.
+
+**Availability: the text answer, whatever the model.**
+
+- `availability()` with `"image"` in `expectedInputs` returns exactly what
+  it returns without: no model is asked whether it sees images, and the
+  device facts are the same (tested over every consent and model state).
+  It changes only where it changes for everyone with the same browser:
+  Blink's `AIPromptAPIMultimodalInput` feature off (on by default at 152)
+  makes it `"unavailable"`, as upstream; MoltNet, workers, policies and
+  the switches as for text. Audio, tools and any output but text stay
+  `"unavailable"`.
+- **Why.** Upstream answers from the model's capabilities, so on Chrome a
+  page learns whether the (one, Google-supplied) model takes images. Here
+  the model is the user's own choice, and "this user's model sees images"
+  is a bit about which model they have, which §0.4 and §8 keep from pages
+  (no model name, size or exact context window). One answer for everyone
+  adds no bit. Rejected: `"unavailable"` unless a vision model is
+  downloaded (a bit about installed models, to every site);
+  `"downloadable"` for images (it would promise a download no page can
+  start).
+- **The cost.** `create()` can fail after `"available"`: when the model in
+  use can't see images, `create()` fails with the generic
+  `kUnableToCreateSession`, after the infobar and the model load, like any
+  other failed `create()`. Only a site the user allowed gets that far, and
+  it could tell the same from the model's answers (§8's documented gap).
+
+**create().** As for text: user activation, the infobar, the model. When
+a model has to be loaded, a downloaded one that sees images is preferred
+(§0.2's pick among those first: the default if it sees images, else the
+smallest that does); the loaded model is never swapped out for a page. The
+session's instance info lists text and image as its input types.
+
+**Images in a request.**
+
+- User messages only. An image in an assistant message, or in a session
+  created without `"image"`, fails the request with `kErrorInvalidRequest`
+  (`NotSupportedError`), as upstream answers content its session can't
+  take. Images in `initialPrompts` fail `create()`.
+- At most 4 per call. A bitmap without pixels or over 64 megapixels is
+  refused before anything is done with it; the same error.
+- Each is scaled on a worker to at most 768 pixels a side (Skia,
+  `runtime/model_image_prep.h`), turned into RGB with transparent pixels
+  over grey, padded to the inference service's bounds, checked when the
+  worker hands it back and again in the service (SANDBOXED_INFERENCE.md
+  §10). A request whose images aren't ready yet waits, and the requests
+  behind it wait too, so a session's requests still run in order.
+- **Quota.** Each image counts 576 tokens (`kImageInputTokens`), whatever
+  its size or the model, in `inputUsage`, `measureInputUsage()` and the
+  quota check: a 768-pixel image is at most 576 tokens on a vision encoder
+  with a 32-pixel grid (Qwen-VL's). The small bucket (1024) holds one
+  image with its text; the large one seven.
+- **What the model sees.** The newest four images of the context (the
+  inference service's per-request cap), each with its turn. An older
+  image's turn keeps its text and still counts against the quota until it
+  is evicted, but the model no longer sees the image, and the context
+  keeps no pixels for it.
+- **Memory.** The images pages hold (those of requests not answered yet,
+  and those kept in contexts, at most 1.7 MB each) are capped at 16 per
+  site and 48 in total (`GenerationScheduler`); a clone holds its copies
+  or isn't made. Over a cap a request fails with a generic error (never
+  `kErrorRequestThrottled`). Ending a session, aborting a request or a
+  failed request lets its images go.
+
+| Case | Status | `prompt()` rejects with |
+|---|---|---|
+| Image in a session created without `"image"`, in an assistant message, a fifth image in a call, a bitmap without pixels or over 64 MP, one the worker couldn't scale | `kErrorInvalidRequest` | `NotSupportedError` |
+| Images over the quota | `kErrorInputTooLarge` | `QuotaExceededError` |
+| Over the image caps; the model in use no longer sees images (the chat swapped it, or another one was loaded after an idle unload) | `kErrorGenericFailure` | a generic error |
 
 **Summarizer, Writer, Rewriter** (`WritingSession`; prompts in
 `web_ai_prompts.cc`): `sharedContext` (at create) and `context` (per call)
@@ -613,6 +702,12 @@ writing APIs.
   linear scan after the BCP 47 shape check; only the table's English names
   reach the instruction. A translation is read from the model's reply with
   `base::JSONReader`.
+- Images (§5.1) arrive decoded by Blink; the browser checks their size
+  before doing anything with them, scales them with Skia on a worker,
+  and sends raw pixels within the inference service's bounds, which the
+  service checks again. They go with user turns only, as untrusted
+  content, and page text can't place, move or add an image
+  (SANDBOXED_INFERENCE.md §10).
 - Renderer input never reaches a `CHECK`. A permissions-policy or
   feature-flag violation that Blink itself prevents is a bad message (as
   upstream); everything else is an ordinary error.
@@ -636,6 +731,10 @@ What a page can learn, per call:
   tokenizer.
 - **Parameters**: the default and maximum top-K and temperature
   (`GetLanguageModelParams`) are the same for every user.
+- **Image input** (§5.1): `availability()` is the same with and without
+  images; the scale, the per-image count and the caps are fixed. Only an
+  allowed site can learn, from `create()` failing or from the model's
+  answers, whether the model in use sees images.
 - **Structured output**: which schemas are enforced or refused is the
   same for every user and model. A refused schema fails before any token
   is generated. (A model whose vocabulary can't continue a grammar fails
@@ -1014,13 +1113,15 @@ Google. It now keeps upstream's default, on:
 
 In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
 
-- `web_ai_policy_unittest.cc` (20): the availability table, including an
+- `web_ai_policy_unittest.cc` (22): the availability table, including an
   exhaustive check of invariants over every input combination (an
   unallowed site never sees "available", MoltNet and workers always see
   "unavailable", ...), create actions, buckets, the estimator and its
-  size shortcut, saturation, sampling clamps, language tags, model pick,
-  and the scheduler (one at a time, foreground first, sites in turn, caps,
-  cancel).
+  size shortcut, saturation, sampling clamps, language tags, model pick
+  (with the preference for a model that sees images), image sources (the
+  64-megapixel cap at its edges, hostile sizes), and the scheduler (one at
+  a time, foreground first, sites in turn, caps, cancel, image holds per
+  site and in total).
 - `web_ai_site_permissions_unittest.cc` (19): key shapes, answers, the
   pause (third close, its end to the millisecond, the count kept, an
   answer clearing it, clock changes either way), the settings list, exact
@@ -1035,8 +1136,11 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   renewed past the stored count's cap, no writes after shutdown.
 - `web_ai_prompts_unittest.cc` (10): every option → prompt mapping and
   reply budget.
-- `web_ai_conversation_unittest.cc` (10): quota accounting, whole-exchange
-  eviction, rollback.
+- `web_ai_conversation_unittest.cc` (15): quota accounting, whole-exchange
+  eviction, rollback; images: their fixed count (saturating), the context
+  keeping the newest four (a turn its last ones) while the others still
+  count, eviction, what a request sends (merged turns, newest first, never
+  more than four over every split of up to twelve).
 - `web_ai_translation_unittest.cc` (18): the language table (fixed,
   sorted, every code its own best fit, 380 supported pairs), best fit by
   language and by Chinese script and region, malformed and unsupported
@@ -1047,7 +1151,7 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   instruction (names the languages, never holds page text), the response
   schema accepted by the inference service's converter, and the cleanup
   (whitespace, quotation marks added or kept, empty replies).
-- `molt_ai_manager_unittest.cc` (68): the mojo surface over real pipes with
+- `molt_ai_manager_unittest.cc` (84): the mojo surface over real pipes with
   a fake runtime and a fake environment: availability per state, MoltNet
   never calling the runtime, policies, permissions policy as a bad message,
   consent (allow, block, dismiss, needs-model), an answer taken back
@@ -1061,6 +1165,24 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   - non-JSON replies fail without touching the context;
   - each failure maps to its Blink status;
   - an oversized or empty schema is refused at once.
+
+  Image input (16):
+  - `availability()` with images is the text answer in every consent and
+    model state, and asks no model; the multimodal feature off and MoltNet
+    make it `"unavailable"`; audio and image output stay unavailable;
+  - `create()` on a model that can't see images fails after consent and
+    the load (which preferred a model that sees images); on one that can,
+    the session lists text and image;
+  - a prompt with an image reaches the job, counts 576, and comes back
+    with its turn in the history; destroying the session lets go of it;
+  - refusals before any work: a text-only session, an assistant message, a
+    fifth image; the bitmap check on its own (none, no pixels, over the
+    cap with and without pixels, exactly at it);
+  - a worker that can't scale an image, or hands back too few or broken
+    ones: the request fails, the session goes on;
+  - order kept while images are scaled; aborting meanwhile releases them;
+  - the per-site cap (a generic failure; text still goes); the newest four
+    images sent and kept; the quota; clones holding their copies.
 
   The Translator (23): availability follows the site's answer and depends
   only on the pair (every consent and model state against supported and
@@ -1082,6 +1204,17 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   hostile values.
 - `molt_feature_overrides_unittest.cc`: Writer and Rewriter are enabled by
   default and can be turned off.
+
+For image input (same harness): the policy and conversation tests (37)
+with the pure tests, `-fno-exceptions -fno-rtti` and Chromium's warning
+set; the 84 manager tests with ASan/UBSan/LSan and g++, with `SkBitmap`
+and the mojom union's bitmap member added to the stand-ins; the runtime
+backend syntax-checked. Of 36 mutations of the image checks (the policy,
+the conversation, the sessions and the manager), 35 were caught. The
+survivor removes the session's call of the bitmap check: only a bitmap
+mojo's traits refuse, or one of 256 MB, reaches it, so the check is tested
+on its own instead. The std-only image tests have their own
+(SANDBOXED_INFERENCE.md §10.6).
 
 Run here (no Chromium checkout): the 42 pure tests with clang
 (ASan/UBSan) and g++ `-O2 -Werror`, and compiled with `-fno-exceptions
@@ -1130,6 +1263,11 @@ generation; the chat and a page generating at the same time; `Writer` and
 `prompt()` with a `responseConstraint` on each catalog model (the answer
 parses and matches; an unsupported schema rejects with
 `NotSupportedError`).
+For image input (once a vision model is pinned): `prompt()` with an image
+element, a canvas, a `Blob` and a huge photo; four images then a fifth;
+an image in an assistant message; `availability()` the same with a text
+model and a vision model; `create()` with images on a text model (the
+generic error after the infobar); an abort while images are scaled.
 For the Translator: `availability()` and `create()` from a page whose
 first AI call is a Translator one (the document is found), from an iframe
 (with and without `allow="translator"`), from a worker (`"unavailable"`)
@@ -1161,8 +1299,15 @@ in every window, with Translate still detecting page languages.
 - Removing an allowed site ends its sessions; an answer changed while a
   generation is running cancels it, but the page still holds the text it
   already received.
-- Regex `responseConstraint`, `prefix`, images, audio and tools are
-  unsupported. A JSON-schema `responseConstraint` is enforced only within
+- Regex `responseConstraint`, `prefix`, audio and tools are
+  unsupported; so are images in `initialPrompts`. Image input needs a
+  model with a vision projector: the registry's (§5.1) is offered only
+  once pinned, and downloading its projector isn't wired into the
+  model picker yet (SANDBOXED_INFERENCE.md §10.4). A session created for
+  images fails its prompts if the model in use changes to one that can't
+  see them (the chat swaps it; an idle unload and a text default). The
+  model sees four images per request, so older ones in a long
+  conversation are dropped while their turns still count. A JSON-schema `responseConstraint` is enforced only within
   the subset in §5 (others fail), reasoning is skipped for it, and the
   constrained reply isn't streamed (SANDBOXED_INFERENCE.md §9.4).
 - Workers and extensions (pages and service workers) get

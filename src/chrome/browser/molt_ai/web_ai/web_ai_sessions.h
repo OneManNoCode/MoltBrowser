@@ -10,6 +10,11 @@
 // inference service's grammar sampler) and its reply reaches the page
 // whole, only after it parsed as JSON here.
 //
+// Image input (a LanguageModel created with expectedInputs "image"): a
+// request's bitmaps are held (WebAIBackend::TryHoldImages()) and turned
+// into model images on a worker as soon as it arrives; it starts only once
+// they are ready, so requests still run in order.
+//
 // Ending a request: the page aborting it (its responder pipe closes) cancels
 // the generation; destroy(), the page dropping the session, a navigation or
 // the frame going away (MoltAIManager destroyed) cancel everything.
@@ -47,6 +52,12 @@ namespace molt_ai::web_ai {
 
 class MoltAIManager;
 
+// A page's bitmap (decoded by Blink) the model may be shown, scaled down:
+// it has pixels, and IsUsableImageSource() holds for its size. Checked
+// before any work is done on it; mojo's bitmap traits already refuse a
+// bitmap without pixels, so that half only guards against their change.
+bool IsUsableBitmapForModel(const SkBitmap& bitmap);
+
 class WebAISession {
  public:
   WebAISession(MoltAIManager& manager, uint64_t id);
@@ -78,6 +89,13 @@ class WebAISession {
     // reaches the page only whole, once it parsed as JSON.
     std::string json_schema;
     bool constrained = false;
+    // LanguageModel image input: the turn of |turns| each of the request's
+    // images belongs to, in order. Until they are ready (|images_pending|)
+    // the request can't start. |held_images| of the session's image hold
+    // are this request's.
+    std::vector<size_t> image_turns;
+    bool images_pending = false;
+    size_t held_images = 0;
     // Summarizer / Writer / Rewriter: the prompt, built when queued.
     TaskPrompt task;
     // Translator: the input in pieces, and the next one to look at.
@@ -86,7 +104,15 @@ class WebAISession {
   };
 
   // Queues |request| (failing it if kMaxQueuedPerSession wait already).
-  void Enqueue(Request request);
+  // |bitmaps|, one per entry of |request.image_turns|, are held and turned
+  // into model images first (failing the request with a generic error over
+  // the image caps, and as an invalid request if they can't be used).
+  void Enqueue(Request request, std::vector<SkBitmap> bitmaps = {});
+
+  // The images the session's context keeps (held with its requests').
+  virtual size_t ContextImages() const;
+  // Adds |count| to the session's image hold; false over the caps.
+  bool HoldImages(size_t count);
 
   // The request at the head of the queue starts. Returns the generation to
   // run, or nullopt if the request was answered without the model (an
@@ -125,6 +151,11 @@ class WebAISession {
   void OnDone(uint64_t request_id, GenerationStatus status);
   void OnResponderDisconnected(uint64_t request_id);
   void Flush();
+  void OnImagesReady(uint64_t request_id,
+                     std::optional<std::vector<ModelImage>> images);
+  // Lets go of the images the session holds beyond its waiting and running
+  // requests' and its context's (never takes more).
+  void SyncHeldImages();
 
   const raw_ref<MoltAIManager> manager_;
   const uint64_t id_;
@@ -138,6 +169,7 @@ class WebAISession {
   base::TimeTicks last_flush_;
   const base::TimeDelta stream_interval_;
   bool closed_ = false;
+  size_t held_images_ = 0;
 
   base::WeakPtrFactory<WebAISession> weak_factory_{this};
 };
@@ -157,6 +189,9 @@ class LanguageModelSession : public WebAISession,
     uint32_t max_reply_tokens = kSmallMaxReplyTokens;
     // Built from validated language tags only.
     std::string system_prompt;
+    // Created with expectedInputs "image" on a model that sees images:
+    // user turns may hold images.
+    bool image_input = false;
   };
 
   LanguageModelSession(
@@ -170,6 +205,9 @@ class LanguageModelSession : public WebAISession,
   blink::mojom::AILanguageModelInstanceInfoPtr GetInfo() const;
   const Config& config() const { return config_; }
   const Conversation& conversation() const { return conversation_; }
+  // A clone holds the images of the context it was given; false over the
+  // caps (the clone can't be made).
+  bool HoldContextImages();
 
   // blink::mojom::AILanguageModel:
   void Prompt(std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
@@ -192,6 +230,7 @@ class LanguageModelSession : public WebAISession,
   std::optional<GenerationJob> Begin(Request& request) override;
   blink::mojom::ModelExecutionContextInfoPtr Commit(Request& request,
                                                     std::string reply) override;
+  size_t ContextImages() const override;
 
   void Queue(std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
              bool append_only,
