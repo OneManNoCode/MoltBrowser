@@ -138,6 +138,7 @@
 #include "third_party/blink/renderer/core/media_type_names.h"
 #include "third_party/blink/renderer/core/mobile_metrics/mobile_friendliness_checker.h"
 #include "third_party/blink/renderer/core/mobile_metrics/tap_friendliness_checker.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
@@ -950,7 +951,8 @@ gfx::SizeF LocalFrameView::SmallViewportSizeForViewportUnits() const {
 
   gfx::SizeF layout_size(layout_view->GetLayoutSize(kIncludeScrollbars));
   layout_size.InvScale(zoom);
-  return layout_size;
+  // MoltBrowser: whole CSS pixels in MoltNet (molt_fingerprinting/letterbox.h).
+  return molt_fingerprinting::UniformViewportSize(GetFrame(), layout_size);
 }
 
 gfx::SizeF LocalFrameView::LargeViewportSizeForViewportUnits() const {
@@ -998,7 +1000,9 @@ gfx::SizeF LocalFrameView::ViewportSizeForMediaQueries() const {
   if (!frame_->GetDocument()->Printing()) {
     viewport_size.Scale(1 / GetFrame().LayoutZoomFactor());
   }
-  return viewport_size;
+  // MoltBrowser: whole CSS pixels in MoltNet, as innerWidth/innerHeight
+  // (molt_fingerprinting/letterbox.h).
+  return molt_fingerprinting::UniformViewportSize(GetFrame(), viewport_size);
 }
 
 gfx::SizeF LocalFrameView::DynamicViewportSizeForViewportUnits() const {

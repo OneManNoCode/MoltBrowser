@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/text_utils.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
@@ -71,9 +72,11 @@ void StyleDidChange(HTMLElement* inner_editor,
 
 int ScrollbarThickness(const LayoutBox& box) {
   const Page& page = *box.GetDocument().GetPage();
-  return page.GetScrollbarTheme().ScrollbarThickness(
+  // MoltBrowser: MoltNet's classic scrollbars (molt_fingerprinting/letterbox.h).
+  return molt_fingerprinting::ScrollbarThicknessFor(
+      page.GetScrollbarTheme(),
       page.GetChromeClient().WindowToViewportScalar(box.GetFrame(), 1.0f),
-      box.StyleRef().UsedScrollbarWidth());
+      box.StyleRef().UsedScrollbarWidth(), &box.GetDocument());
 }
 
 void HitInnerEditorElement(const LayoutBox& box,

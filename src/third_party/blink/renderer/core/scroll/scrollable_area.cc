@@ -62,6 +62,7 @@
 #include "third_party/blink/renderer/core/layout/layout_shift_tracker.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
@@ -1421,8 +1422,11 @@ ScrollableArea* ScrollableArea::GetForScrolling(const LayoutBox* layout_box) {
 float ScrollableArea::ScaleFromDIP() const {
   auto* client = GetChromeClient();
   auto* document = GetDocument();
+  // MoltBrowser: MoltNet's classic scrollbars follow the page zoom
+  // (molt_fingerprinting/letterbox.h).
   if (client && document)
-    return client->WindowToViewportScalar(document->GetFrame(), 1.0f);
+    return molt_fingerprinting::ScrollbarScaleFromDIP(
+        *this, client->WindowToViewportScalar(document->GetFrame(), 1.0f));
   return 1.0f;
 }
 

@@ -100,6 +100,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/overscroll/overscroll_area_tracker.h"
 #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
@@ -1637,8 +1638,10 @@ int PaintLayerScrollableArea::ComputeHypotheticalScrollbarThickness(
   ScrollbarTheme& theme = GetPageScrollbarTheme();
   if (theme.UsesOverlayScrollbars() && !should_include_overlay_thickness)
     return 0;
-  return theme.ScrollbarThickness(ScaleFromDIP(),
-                                  style_source.StyleRef().UsedScrollbarWidth());
+  // MoltBrowser: MoltNet's classic scrollbars (molt_fingerprinting/letterbox.h).
+  return molt_fingerprinting::ScrollbarThicknessFor(
+      theme, ScaleFromDIP(), style_source.StyleRef().UsedScrollbarWidth(),
+      GetDocument());
 }
 
 bool PaintLayerScrollableArea::NeedsScrollbarReconstruction() const {
@@ -1707,8 +1710,11 @@ gfx::Size PaintLayerScrollableArea::ComputeScrollbarWidthsForViewportUnits(
 
   const Page* page = GetDocument()->GetFrame()->GetPage();
   const ScrollbarTheme& theme = page->GetScrollbarTheme();
+  // MoltBrowser: MoltNet's classic scrollbars, in CSS pixels
+  // (molt_fingerprinting/letterbox.h).
   const int scrollbar_thickness =
-      theme.ScrollbarThickness(1.f, scrollbar_properties.width);
+      molt_fingerprinting::ScrollbarThicknessForViewportUnits(
+          theme, scrollbar_properties.width, GetDocument());
   gfx::Size scrollbar_thicknesses;
   if (h_mode == mojom::blink::ScrollbarMode::kAlwaysOn) {
     scrollbar_thicknesses.set_height(scrollbar_thickness);

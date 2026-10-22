@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/scrolling/sync_scroll_attempt_heuristic.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
@@ -152,8 +153,12 @@ double DOMVisualViewport::width() const {
                                             frame->LayoutZoomFactor());
   }
 
-  if (Page* page = frame->GetPage())
-    return page->GetVisualViewport().Width();
+  if (Page* page = frame->GetPage()) {
+    // MoltBrowser: whole CSS pixels in MoltNet, like the media queries
+    // (molt_fingerprinting/letterbox.h).
+    return molt_fingerprinting::UniformViewportLength(
+        *frame, page->GetVisualViewport().Width());
+  }
 
   return 0;
 }
@@ -174,8 +179,12 @@ double DOMVisualViewport::height() const {
                                             frame->LayoutZoomFactor());
   }
 
-  if (Page* page = frame->GetPage())
-    return page->GetVisualViewport().Height();
+  if (Page* page = frame->GetPage()) {
+    // MoltBrowser: whole CSS pixels in MoltNet, like the media queries
+    // (molt_fingerprinting/letterbox.h).
+    return molt_fingerprinting::UniformViewportLength(
+        *frame, page->GetVisualViewport().Height());
+  }
 
   return 0;
 }
