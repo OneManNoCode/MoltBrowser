@@ -1,0 +1,19 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+3 0 obj
+<< /Length 230 >>
+stream
+BT /F1 12 Tf 72 712 Td (Hello, world!) Tj ET
+BT [(Kerned) -120 (text) 50 (array)] TJ ET
+(Next line) ' (Quoted \(parens\) \\ and \101\102\103) "
+(Escapes: \n\r\t\b\f end\
+next) Tj
+(\0\00\000\777 octal) Tj (nested (parens) here) Tj
+
+endstream
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF

@@ -1,0 +1,14 @@
+{
+    "type": "object",
+    "properties": {
+      "title": {"type": "string", "maxLength": 20},
+      "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+      "sentiment": {"enum": ["positive", "neutral", "negative"]},
+      "tags": {"type": "array", "items": {"type": "string", "maxLength": 10}, "maxItems": 3},
+      "author": {"type": ["object", "null"], "properties": {"name": {"type": "string"}},
+                 "required": ["name"], "additionalProperties": false},
+      "score": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "required": ["title", "rating", "sentiment"],
+    "additionalProperties": false
+  }\Zœ*tû­·`9_{è “„†—[% ?Î²­‡;:~¼ÝX“>mA7ä`q€L}fÈÏô·~,ó0ÎhÔ£-ýÜë"ƒÜL§cÇXN×îýj¹­ó%eu.Ewx²µ7BKòözîPPBByºW&zIròÙt""OÂú/7´^IºõuÏÛ'Fäc(uyáï›=aD™¥¢M;†¶•@Íî¤HR¥cfTÖ®u©¤´ò¡²ñyãàÏt·`ºI±mµ­·ð¤×ÏîqwØ-j˜§ÖªŠö,·ü]Uã‹§S+“Ø4ºÊ«S°´Ÿœ8Òó/Úsõ6{#

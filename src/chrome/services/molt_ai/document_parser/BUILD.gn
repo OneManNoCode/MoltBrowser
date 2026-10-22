@@ -49,6 +49,7 @@ source_set("lib") {
 
   visibility = [
     ":unit_tests",
+    "//chrome/services/molt_ai/document_parser/fuzzers:*",
     "//chrome/utility",
   ]
 }

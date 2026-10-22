@@ -19,6 +19,7 @@ source_set("pdf") {
   visibility = [
     ":unit_tests",
     "//chrome/services/molt_ai/document_parser:*",
+    "//chrome/services/molt_ai/document_parser/fuzzers:*",
   ]
 }
 

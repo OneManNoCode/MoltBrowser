@@ -1,0 +1,6 @@
+250+config-text=
+SocksPort 9050
+250 OK
+.
+250-version=1
+250 OK
