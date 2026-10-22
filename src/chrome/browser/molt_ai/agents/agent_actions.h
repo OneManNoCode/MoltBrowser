@@ -23,6 +23,11 @@
 // The AI chat's page actions (chat_actions.h) use the same format with a
 // smaller set of actions (ActionSet).
 //
+// CALL_TOOL calls a tool the page itself offers (WebMCP; agent_tools.h,
+// docs/design/AGENT_ACTIONS.md §2.7): a tool id from the observation and
+// its arguments, under a schema built from the page's own, which
+// agent_tools converts only when it fits the grammar's subset.
+//
 // Pure logic (base::Value, no content/), unit-tested in molt_ai_unittests.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ACTIONS_H_
@@ -36,6 +41,7 @@
 #include <utility>
 #include <vector>
 
+#include "chrome/browser/molt_ai/agents/agent_tools.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 
 namespace base {
@@ -55,6 +61,7 @@ enum class ActionType {
   kObserve,
   kDone,
   kError,
+  kCallTool,  // a site tool (WebMCP): the web agent only
 };
 
 // The wire name ("NAVIGATE", "FILL_FORM", ...), used in the schema, the
@@ -78,7 +85,7 @@ inline constexpr ActionSet kAgentActions =
     ActionBit(ActionType::kClick) | ActionBit(ActionType::kType) |
     ActionBit(ActionType::kFillForm) | ActionBit(ActionType::kScroll) |
     ActionBit(ActionType::kObserve) | ActionBit(ActionType::kDone) |
-    ActionBit(ActionType::kError);
+    ActionBit(ActionType::kError) | ActionBit(ActionType::kCallTool);
 
 // Caps. Lengths count characters (Unicode code points), as the grammar's
 // maxLength does.
@@ -141,8 +148,11 @@ struct Observation {
 
   const ObservedElement* Find(std::string_view ref) const;
   bool HasTypeable() const;
+  const agent_tools::SiteTool* FindTool(std::string_view ref) const;
 
   std::vector<ObservedElement> elements;
+  // The page's own tools (t1 ... t8), added by AddSiteTools().
+  std::vector<agent_tools::SiteTool> tools;
 };
 
 // A script (run it in an isolated world) that lists the page's visible
@@ -165,6 +175,15 @@ std::string DescribeElement(const ObservedElement& element);
 // One `e3 button "Search"` line per element, for the prompt. The caller
 // fences it with the rest of the page text.
 std::string DescribeElements(const Observation& observation);
+
+// Adds the page's tools (agent_tools::MakeSiteTool()) to |observation|, in
+// order, as t1, t2, ...: at most agent_tools::kMaxSiteTools, names not
+// repeated, the TOOLS text within agent_tools::kMaxToolsTextChars, and
+// each kept only if the web agent's action schema with it is still one the
+// inference service converts (JsonSchemaToGrammar(), the service's own
+// converter). A tool that doesn't fit is left out, never cut down.
+void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
+                  Observation* observation);
 
 // ---------------------------------------------------------------------------
 // The action and its schema
@@ -192,14 +211,22 @@ struct AgentAction {
   std::vector<FormFieldValue> fields;  // kFillForm
   std::string direction;               // kScroll: "down" or "up"
   std::string result;                  // kDone, kError
+  std::string tool;                    // kCallTool: the tool's id ("t1")
+  // kCallTool: the arguments the tool gets (JSON, written by the browser)
+  // and as the user reads them (agent_tools::ToolArguments).
+  std::string tool_arguments;
+  std::string tool_arguments_text;
 };
 
 // The JSON Schema for the next reply, given what the model was shown.
 // An anyOf of one object per action in |allowed|, every key required and
 // no others, "reason" first. CLICK needs an element and TYPE / FILL_FORM a
 // text field; their branches are left out when the observation has none.
+// CALL_TOOL is an anyOf of one object per tool of the observation (its id
+// as a const, its arguments' schema), left out without tools.
 // Always inside the inference service's supported subset and caps
-// (json_schema_grammar.h; checked by the unit tests).
+// (json_schema_grammar.h; checked by the unit tests, and for tools by
+// AddSiteTools()).
 std::string BuildActionSchema(const Observation& observation,
                               ActionSet allowed = kAgentActions);
 
@@ -216,6 +243,8 @@ enum class ActionError {
   kDuplicateField,  // FILL_FORM names the same element twice
   kTooManyFields,   // FILL_FORM with none, or more than kMaxFormFields
   kBadDirection,    // SCROLL other than "down" / "up"
+  kUnknownTool,     // CALL_TOOL names a tool that isn't in the observation
+  kBadArguments,    // CALL_TOOL's arguments don't match the tool's
 };
 
 // Fixed text, for the retry note the model sees ("it named an element

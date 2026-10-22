@@ -12,6 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
 
 namespace molt_ai {
 namespace agent_actions {
@@ -20,14 +21,16 @@ namespace {
 
 using agent_safety::FieldKind;
 
-// The reply's nesting: object > "fields" list > field object. A deeper
-// reply is refused by the reader itself.
+// The reply's nesting: object > "fields" list > field object, or object >
+// "arguments" object > list argument. A deeper reply is refused by the
+// reader itself.
 constexpr size_t kMaxReplyJsonDepth = 4;
 
 constexpr ActionType kAllActions[] = {
     ActionType::kNavigate, ActionType::kSearch,   ActionType::kClick,
     ActionType::kType,     ActionType::kFillForm, ActionType::kScroll,
     ActionType::kObserve,  ActionType::kDone,     ActionType::kError,
+    ActionType::kCallTool,
 };
 
 // ---- Text checks ------------------------------------------------------------
@@ -167,6 +170,8 @@ std::vector<std::string_view> KeysFor(ActionType type) {
     case ActionType::kDone:
     case ActionType::kError:
       return {"reason", "action", "result"};
+    case ActionType::kCallTool:
+      return {"reason", "action", "tool", "arguments"};
   }
   return {};
 }
@@ -367,6 +372,8 @@ std::string_view ActionName(ActionType type) {
       return "DONE";
     case ActionType::kError:
       return "ERROR";
+    case ActionType::kCallTool:
+      return "CALL_TOOL";
   }
   return "";
 }
@@ -408,6 +415,14 @@ const ObservedElement* Observation::Find(std::string_view ref) const {
 bool Observation::HasTypeable() const {
   return std::any_of(elements.begin(), elements.end(),
                      [](const ObservedElement& e) { return e.typeable; });
+}
+
+const agent_tools::SiteTool* Observation::FindTool(std::string_view ref) const {
+  for (const agent_tools::SiteTool& t : tools) {
+    if (t.ref == ref)
+      return &t;
+  }
+  return nullptr;
 }
 
 std::string BuildElementSnapshotScript() {
@@ -589,6 +604,32 @@ std::string DescribeElements(const Observation& observation) {
   return out;
 }
 
+void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
+                  Observation* observation) {
+  for (agent_tools::SiteTool& tool : tools) {
+    if (observation->tools.size() >= agent_tools::kMaxSiteTools)
+      break;
+    const bool repeated = std::any_of(
+        observation->tools.begin(), observation->tools.end(),
+        [&](const agent_tools::SiteTool& t) { return t.name == tool.name; });
+    if (repeated)
+      continue;
+    tool.ref = "t" + base::NumberToString(observation->tools.size() + 1);
+    observation->tools.push_back(std::move(tool));
+    // The schema is built here, but its arguments come from the page: run
+    // it through the service's own converter, so a tool that would make
+    // the service refuse the schema (its size, the grammar's repetition
+    // and rule budgets, too many live alternatives) is left out instead.
+    const bool fits =
+        CountChars(agent_tools::DescribeTools(observation->tools)) <=
+            agent_tools::kMaxToolsTextChars &&
+        JsonSchemaToGrammar(BuildActionSchema(*observation, kAgentActions))
+                .status == SchemaGrammarStatus::kOk;
+    if (!fits)
+      observation->tools.pop_back();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Action
 // ---------------------------------------------------------------------------
@@ -675,6 +716,26 @@ std::string BuildActionSchema(const Observation& observation,
       case ActionType::kError:
         props.emplace_back("result", StringSchema(1, kMaxResultChars));
         break;
+      case ActionType::kCallTool: {
+        if (observation.tools.empty())
+          continue;
+        // One object per tool, so the grammar ties each tool to its own
+        // arguments: {"reason", "action", "tool": const id, "arguments"}.
+        std::string tools = "{\"anyOf\":[";
+        for (size_t i = 0; i < observation.tools.size(); ++i) {
+          const agent_tools::SiteTool& tool = observation.tools[i];
+          if (i)
+            tools += ',';
+          Properties tool_props = props;
+          tool_props.emplace_back("tool",
+                                  "{\"const\":" + Quote(tool.ref) + "}");
+          tool_props.emplace_back("arguments",
+                                  agent_tools::BuildArgumentsSchema(tool));
+          tools += ObjectSchema(tool_props);
+        }
+        branches.push_back(tools + "]}");
+        continue;
+      }
     }
     branches.push_back(ObjectSchema(props));
   }
@@ -713,6 +774,10 @@ std::string_view ActionErrorText(ActionError error) {
       return "FILL_FORM needs 1 to 8 fields";
     case ActionError::kBadDirection:
       return "SCROLL takes \"down\" or \"up\"";
+    case ActionError::kUnknownTool:
+      return "it named a tool that is not in TOOLS";
+    case ActionError::kBadArguments:
+      return "its arguments did not match that tool's";
   }
   return "";
 }
@@ -775,6 +840,39 @@ ParsedAction ParseAction(std::string_view json,
         e = ReadText(*dict, "result", kMaxResultChars, /*required=*/true,
                      /*multiline=*/true, &a.result);
         break;
+      case ActionType::kCallTool: {
+        const std::string* ref = dict->FindString("tool");
+        const agent_tools::SiteTool* tool =
+            ref ? observation.FindTool(*ref) : nullptr;
+        if (!ref) {
+          e = ActionError::kWrongKeys;
+          break;
+        }
+        if (!tool) {
+          e = ActionError::kUnknownTool;
+          break;
+        }
+        agent_tools::ToolArguments arguments;
+        switch (agent_tools::ReadArguments(*dict->Find("arguments"), *tool,
+                                           &arguments)) {
+          case agent_tools::ArgumentsError::kNone:
+            a.tool = *ref;
+            a.tool_arguments = std::move(arguments.json);
+            a.tool_arguments_text = std::move(arguments.text);
+            break;
+          case agent_tools::ArgumentsError::kTooLong:
+            e = ActionError::kTooLong;
+            break;
+          case agent_tools::ArgumentsError::kBadCharacters:
+            e = ActionError::kBadCharacters;
+            break;
+          case agent_tools::ArgumentsError::kWrongKeys:
+          case agent_tools::ArgumentsError::kBadValue:
+            e = ActionError::kBadArguments;
+            break;
+        }
+        break;
+      }
     }
   }
   if (e != ActionError::kNone)
