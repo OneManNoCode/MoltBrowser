@@ -376,8 +376,12 @@ TEST(ChatActionsTest, InterpretDecisionActsRetriesAndStops) {
   cut.truncated = true;
   EXPECT_EQ(InterpretDecision(cut, SampleObservation(), 0).decision,
             ReplyDecision::kRetry);
-  EXPECT_EQ(InterpretDecision(cut, SampleObservation(), 2).decision,
-            ReplyDecision::kStop);
+  // The last cut-off reply stops as unusable, not as a model failure.
+  cut.error_message = "The answer was cut off before the JSON was complete.";
+  o = InterpretDecision(cut, SampleObservation(), 2);
+  EXPECT_EQ(o.decision, ReplyDecision::kStop);
+  EXPECT_NE(o.message.find("couldn't be used as a page action"),
+            std::string::npos);
 }
 
 TEST(ChatActionsTest, InterpretDecisionStopsInTheChatsWords) {
@@ -496,14 +500,14 @@ TEST(ChatActionsTest, DescriptionsAreOneShortLine) {
             "Type \"line1 line2 end\" into input[search] \"Search products\"");
   a.text = std::string(400, 'x');
   const std::string d = DescribeProposal(a, o);
-  EXPECT_NE(d.find(std::string(199, 'x') + "…\""), std::string::npos);
+  EXPECT_NE(d.find(std::string(199, 'x') + "\u2026\""), std::string::npos);
   EXPECT_EQ(d.find(std::string(200, 'x')), std::string::npos);
   // Multi-byte text is cut at a character boundary.
   a.text.clear();
   for (int i = 0; i < 300; ++i)
-    a.text += "é";
+    a.text += "\u00e9";
   const std::string e = DescribeProposal(a, o);
-  EXPECT_NE(e.find("é…\""), std::string::npos);
+  EXPECT_NE(e.find("\u00e9\u2026\""), std::string::npos);
 }
 
 TEST(ChatActionsTest, TargetSelectorsComeFromTheObservation) {
@@ -526,7 +530,7 @@ TEST(ChatActionsTest, NavigationUrls) {
   EXPECT_EQ(NavigationURL(ParseOk(R"({"reason":"r","action":"SEARCH",)"
                                   R"("query":"a b&c"})")),
             "https://search.brave.com/search?q=a+b%26c");
-  EXPECT_EQ(agent_actions::BuildSearchURL("é/?#"),
+  EXPECT_EQ(agent_actions::BuildSearchURL("\u00e9/?#"),
             "https://search.brave.com/search?q=%C3%A9%2F%3F%23");
   EXPECT_EQ(NavigationURL(ParseOk(
                 R"({"reason":"r","action":"CLICK","target":"e3"})")),
@@ -551,6 +555,9 @@ TEST(ChatActionsTest, ScopeIsThePageTheSearchEngineAndTypedUrls) {
   // Nothing non-web joins, even as the page.
   const Scope odd = Scope::ForRequest(url::Origin(), "");
   EXPECT_FALSE(odd.Contains(url::Origin()));
+  const url::Origin ftp = url::Origin::Create(GURL("ftp://files.example/"));
+  ASSERT_FALSE(ftp.opaque());
+  EXPECT_FALSE(Scope::ForRequest(ftp, "").Contains(ftp));
 }
 
 TEST(ChatActionsTest, NavigationChecks) {
@@ -644,6 +651,13 @@ TEST(ChatActionsTest, TypeAndFillChecks) {
             Verdict::kRefuse);
   EXPECT_EQ(CheckProposal(fill, o, scope, Shop(), {Found()}).verdict,
             Verdict::kRefuse);
+  EXPECT_EQ(
+      CheckProposal(fill, o, scope, Shop(), {Found(), Found(), Found()}).verdict,
+      Verdict::kRefuse);
+  AgentAction no_fields;
+  no_fields.type = ActionType::kFillForm;
+  EXPECT_EQ(CheckProposal(no_fields, o, scope, Shop(), {}).verdict,
+            Verdict::kRefuse);
   EXPECT_EQ(CheckProposal(fill, o, scope, Shop(), {Found(), ElementProbe()})
                 .verdict,
             Verdict::kRefuse);
@@ -713,6 +727,8 @@ TEST(ChatActionsTest, ScriptResults) {
   AgentAction scroll;
   scroll.type = ActionType::kScroll;
   EXPECT_TRUE(InterpretScriptResult(scroll, base::Value("scrolled")).success);
+  EXPECT_FALSE(InterpretScriptResult(scroll, base::Value()).success);
+  EXPECT_FALSE(InterpretScriptResult(scroll, base::Value("typed")).success);
   AgentAction nav;
   nav.type = ActionType::kNavigate;
   EXPECT_FALSE(InterpretScriptResult(nav, base::Value("clicked")).success);
@@ -721,7 +737,7 @@ TEST(ChatActionsTest, ScriptResults) {
 // The page scripts take every value as JSON text: a hostile selector, text
 // or origin can't close the string or the <script>.
 TEST(ChatActionsTest, PageScriptsQuoteTheirInputs) {
-  const std::string hostile = "\"');alert(1);//</script> ";
+  const std::string hostile = "\"');alert(1);//</script>\u2028";
   for (const std::string& js :
        {agent_actions::BuildClickScript(hostile, hostile),
         agent_actions::BuildTypeScript(hostile, hostile, hostile),
@@ -733,7 +749,7 @@ TEST(ChatActionsTest, PageScriptsQuoteTheirInputs) {
       EXPECT_EQ(js[p - 1], '\\') << js;
     }
     EXPECT_EQ(js.find("</script>"), std::string::npos);
-    EXPECT_EQ(js.find(" "), std::string::npos);
+    EXPECT_EQ(js.find("\u2028"), std::string::npos);
     EXPECT_EQ(js.find("%s"), std::string::npos);
     EXPECT_NE(js.find("if (location.origin !== \"\\\"');alert(1);"),
               std::string::npos)

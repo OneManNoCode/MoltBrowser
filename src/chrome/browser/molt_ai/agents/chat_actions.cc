@@ -67,7 +67,7 @@ std::string_view TruncateChars(std::string_view s, size_t max_chars) {
 }
 
 // One line of at most |max_chars| characters: control characters become
-// spaces, and a cut value ends with "…".
+// spaces, and a cut value ends with an ellipsis (U+2026).
 std::string OneLine(std::string_view s, size_t max_chars) {
   std::string out;
   const bool cut = CountChars(s) > max_chars;
@@ -76,7 +76,7 @@ std::string OneLine(std::string_view s, size_t max_chars) {
     out += (c < 0x20 || c == 0x7F) ? ' ' : ch;
   }
   if (cut)
-    out += "…";
+    out += "\u2026";
   return out;
 }
 
@@ -201,7 +201,7 @@ bool LooksLikePageActionRequest(std::string_view message) {
       c = static_cast<char>(c - 'A' + 'a');
   }
   const std::vector<std::string_view> words = Words(lower);
-  if (words.empty() || words.size() > kMaxRequestWords)
+  if (words.size() > kMaxRequestWords)
     return false;
 
   static constexpr std::string_view kFillers[] = {
