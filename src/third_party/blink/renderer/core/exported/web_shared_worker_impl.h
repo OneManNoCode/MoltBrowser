@@ -135,7 +135,8 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
       CrossVariantMojoReceiver<mojom::blink::ReportingObserverInterfaceBase>
           dip_reporting_observer,
       bool is_cross_origin_isolated,
-      const StorageKey& constructor_key);  // MoltBrowser
+      const StorageKey& constructor_key,  // MoltBrowser
+      bool molt_shields_down);            // MoltBrowser
 
   void DispatchPendingConnections();
   void ConnectToChannel(int connection_request_id,

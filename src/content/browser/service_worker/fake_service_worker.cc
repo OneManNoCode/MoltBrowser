@@ -61,7 +61,8 @@ void FakeServiceWorker::InitializeGlobalScope(
     blink::mojom::ServiceWorkerObjectInfoPtr service_worker_info,
     blink::mojom::FetchHandlerExistence fetch_handler_existence,
     blink::mojom::AncestorFrameType ancestor_frame_type,
-    const blink::StorageKey& storage_key) {
+    const blink::StorageKey& storage_key,
+    bool molt_shields_down) {  // MoltBrowser
   host_.Bind(std::move(service_worker_host));
 
   // Enable callers to use these endpoints without us actually binding them

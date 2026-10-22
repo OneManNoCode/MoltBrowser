@@ -35,4 +35,10 @@ struct SharedWorkerInfo {
   // have been destructed.
   // See: https://github.com/whatwg/html/issues/10997
   bool extended_lifetime;
+
+  // MoltBrowser: set by the browser when it starts the worker
+  // (SharedWorkerHost::Start): MoltShield is off for the top-level site of
+  // the constructor's storage key, so fingerprinting protection leaves the
+  // worker alone. Ignored when a renderer sends this struct.
+  [MinVersion=1] bool molt_shields_down;
 };

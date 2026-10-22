@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
@@ -133,8 +134,8 @@ TEST_F(MoltSystemFontsTest, WebSitesSeeTheAllowListAndTheirSample) {
 
 TEST_F(MoltSystemFontsTest, ShieldsOffSitesSeeEveryFont) {
   Farble();
-  SetUnfarbledSites({"https://a.example"});
   LocalDOMWindow& a = Window("https://a.example/");
+  SetWindowShieldsDecision(a, /*shields_down=*/true, "https://a.example");
   EXPECT_FALSE(SystemFontVisibility(&a).restricts());
   EXPECT_TRUE(SystemFontVisibility(&Window("https://b.example/")).restricts());
 }

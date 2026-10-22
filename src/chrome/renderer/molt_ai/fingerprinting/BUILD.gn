@@ -4,12 +4,15 @@
 # Renderer half of MoltBrowser's fingerprinting protection: hands the
 # browser's mode (command line) to Blink at renderer start
 # (ChromeContentRendererClient::RenderThreadStarted), then the session seed
-# and the Shields-off sites as they arrive over the channel.
+# as it arrives over the channel, and each document's Shields decision as it
+# arrives for its frame (ChromeContentRendererClient::RenderFrameCreated).
 
 source_set("fingerprinting") {
   sources = [
     "molt_fingerprinting_renderer.cc",
     "molt_fingerprinting_renderer.h",
+    "molt_shields_decision_agent.cc",
+    "molt_shields_decision_agent.h",
   ]
   deps = [
     "//base",

@@ -1111,6 +1111,12 @@ bool ContentBrowserClient::ShouldBlockWorkerWebSocket(BrowserContext*,
   return false;
 }
 
+bool ContentBrowserClient::AreMoltShieldsDownForWorker(
+    BrowserContext*,
+    const blink::StorageKey&) {
+  return false;
+}
+
 ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
 ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =

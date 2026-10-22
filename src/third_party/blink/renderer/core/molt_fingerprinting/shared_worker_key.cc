@@ -5,6 +5,7 @@
 
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
@@ -46,6 +47,7 @@ const char MoltSharedWorkerStorageKey::kSupplementName[] =
 }  // namespace
 
 void ProvideToSharedWorker(const StorageKey& constructor_key,
+                           bool shields_down,
                            WorkerClients* worker_clients) {
   if (!worker_clients || GetMode() == Mode::kOff) {
     return;
@@ -53,6 +55,7 @@ void ProvideToSharedWorker(const StorageKey& constructor_key,
   Supplement<WorkerClients>::ProvideTo(
       *worker_clients, MakeGarbageCollected<MoltSharedWorkerStorageKey>(
                            *worker_clients, constructor_key));
+  ProvideShieldsDecisionToWorker(shields_down, worker_clients);
 }
 
 const StorageKey* SharedWorkerStorageKey(WorkerClients* worker_clients) {

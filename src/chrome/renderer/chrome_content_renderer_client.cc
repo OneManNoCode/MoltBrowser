@@ -63,6 +63,7 @@
 #include "chrome/renderer/media/flash_embed_rewrite.h"
 #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
 #include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"  // MoltBrowser
+#include "chrome/renderer/molt_ai/fingerprinting/molt_shields_decision_agent.h"  // MoltBrowser
 #include "chrome/renderer/molt_ai/shield/cosmetic_filter_agent.h"  // MoltBrowser
 #include "chrome/renderer/molt_ai/tor/molt_net_renderer.h"  // MoltBrowser
 #include "chrome/renderer/net/net_error_helper.h"
@@ -635,6 +636,8 @@ void ChromeContentRendererClient::RenderFrameCreated(
   // MoltBrowser: MoltShield hide CSS + scriptlets at document start (unless
   // its kill switch is off).
   molt_ai::shield::CosmeticFilterAgent::MaybeCreate(render_frame);
+  // MoltBrowser: fingerprinting protection's per-document Shields decision.
+  molt_ai::fingerprinting::ShieldsDecisionAgent::MaybeCreate(render_frame);
 
   auto content_settings_delegate =
       std::make_unique<ChromeContentSettingsAgentDelegate>(render_frame);

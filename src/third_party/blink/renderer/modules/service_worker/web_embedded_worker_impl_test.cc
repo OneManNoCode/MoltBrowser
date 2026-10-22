@@ -458,7 +458,7 @@ class MockServiceWorkerContextClient final
             service_worker_object.InitWithNewEndpointAndPassReceiver()),
         mojom::blink::FetchHandlerExistence::EXISTS,
         /*ancestor_frame_type=*/mojom::blink::AncestorFrameType::kNormalFrame,
-        blink::BlinkStorageKey());
+        blink::BlinkStorageKey(), /*molt_shields_down=*/false);  // MoltBrowser
 
     MockPolicyContainerHost mock_policy_container_host;
     web_policy_container_->remote =

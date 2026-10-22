@@ -4,7 +4,6 @@
 #include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"
 
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #include "base/command_line.h"
@@ -51,9 +50,6 @@ class ConfigurationReceiver : public content::RenderThreadObserver,
   void SetSessionSeed(const std::vector<uint8_t>& seed) override {
     // Blink ignores anything but the first 32-byte seed.
     blink::WebMoltFingerprinting::SetSessionSeed(seed);
-  }
-  void SetUnfarbledSites(const std::vector<std::string>& sites) override {
-    blink::WebMoltFingerprinting::SetUnfarbledSites(sites);
   }
 
  private:

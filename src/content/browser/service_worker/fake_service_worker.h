@@ -70,7 +70,8 @@ class FakeServiceWorker : public blink::mojom::ServiceWorker {
       blink::mojom::ServiceWorkerObjectInfoPtr service_worker_info,
       FetchHandlerExistence fetch_handler_existence,
       blink::mojom::AncestorFrameType ancestor_frame_type,
-      const blink::StorageKey& storage_key) override;
+      const blink::StorageKey& storage_key,
+      bool molt_shields_down) override;  // MoltBrowser
   void DispatchInstallEvent(DispatchInstallEventCallback callback) override;
   void DispatchActivateEvent(DispatchActivateEventCallback callback) override;
   void DispatchBackgroundFetchAbortEvent(

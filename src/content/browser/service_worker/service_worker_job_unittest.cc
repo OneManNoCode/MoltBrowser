@@ -1723,7 +1723,8 @@ class UpdateJobTestHelper : public EmbeddedWorkerTestHelper,
         blink::mojom::ServiceWorkerObjectInfoPtr,
         blink::mojom::FetchHandlerExistence,
         blink::mojom::AncestorFrameType,
-        const blink::StorageKey& storage_key) override {
+        const blink::StorageKey& storage_key,
+        bool /*molt_shields_down*/) override {  // MoltBrowser
       client_->SimulateFailureOfScriptEvaluation();
       // Set `client_` to nullptr to prevent it from dangling, since
       // `SimulateFailureOfScriptEvaluation()` will ensure failure and destroy

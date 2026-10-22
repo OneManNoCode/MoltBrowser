@@ -88,18 +88,20 @@ void ReadKeyOnWorkerThread(WorkerThread* thread,
 
 // A worker global scope on its own thread, set up the way
 // WebSharedWorkerImpl::StartWorkerContext sets up a shared worker: no
-// top-level frame origin, and the constructor's storage key handed over
-// through its WorkerClients before the thread starts.
+// top-level frame origin, and the constructor's storage key and the
+// browser's Shields decision handed over through its WorkerClients before the
+// thread starts.
 class TestSharedWorker {
  public:
-  explicit TestSharedWorker(const BlinkStorageKey& constructor_key)
+  explicit TestSharedWorker(const BlinkStorageKey& constructor_key,
+                            bool shields_down = false)
       : thread_(std::make_unique<WorkerThreadForTest>(reporting_proxy_)) {
     std::unique_ptr<GlobalScopeCreationParams> params =
         GlobalScopeCreationParams::CreateForWorkerForTesting(
             Origin("https://worker.example/").get(),
             KURL("https://worker.example/worker.js"));
     ProvideToSharedWorker(static_cast<StorageKey>(constructor_key),
-                          params->worker_clients.Get());
+                          shields_down, params->worker_clients.Get());
     thread_->Start(std::move(params),
                    WorkerBackingThreadStartupData::CreateDefault(),
                    std::make_unique<WorkerDevToolsParams>());
@@ -245,34 +247,34 @@ TEST_F(MoltSharedWorkerKeyTest, KeyNeededBeforeTheSeedStaysRandom) {
   EXPECT_EQ(late.Key(), Derived("https://a.example"));
 }
 
-TEST_F(MoltSharedWorkerKeyTest, ShieldsOffFollowsTheTopLevelSite) {
+TEST_F(MoltSharedWorkerKeyTest, ShieldsOffComesWithTheStart) {
   if (!StorageKey::IsThirdPartyStoragePartitioningEnabled()) {
     GTEST_SKIP() << "third-party storage partitioning is off";
   }
   Start();
-  TestSharedWorker worker(
-      ThirdPartyKey("https://tracker.example/", "https://a.example/"));
-  SetUnfarbledSites({"https://a.example"});
-  EXPECT_FALSE(worker.Key().has_value());
-  // The worker's own site doesn't count, as for its iframes.
-  SetUnfarbledSites({"https://tracker.example"});
-  EXPECT_EQ(worker.Key(), Derived("https://a.example"));
-  SetUnfarbledSites({});
-  EXPECT_EQ(worker.Key(), Derived("https://a.example"));
+  const BlinkStorageKey under_a =
+      ThirdPartyKey("https://tracker.example/", "https://a.example/");
+  // The browser decided, when it started the worker, that MoltShield is off
+  // for a.example (the key's top-level site).
+  TestSharedWorker down(under_a, /*shields_down=*/true);
+  EXPECT_FALSE(down.Key().has_value());
+  // Without that decision the worker is farbled, with a.example's key.
+  TestSharedWorker up(under_a);
+  EXPECT_EQ(up.Key(), Derived("https://a.example"));
 }
 
 TEST_F(MoltSharedWorkerKeyTest, NothingIsHandedOverWhenOff) {
   const StorageKey key = static_cast<StorageKey>(
       BlinkStorageKey::CreateFirstParty(Origin("https://a.example/")));
   WorkerClients* off = MakeGarbageCollected<WorkerClients>();
-  ProvideToSharedWorker(key, off);
+  ProvideToSharedWorker(key, /*shields_down=*/false, off);
   EXPECT_EQ(SharedWorkerStorageKey(off), nullptr);
-  ProvideToSharedWorker(key, nullptr);
+  ProvideToSharedWorker(key, /*shields_down=*/false, nullptr);
   EXPECT_EQ(SharedWorkerStorageKey(nullptr), nullptr);
 
   Start();
   WorkerClients* on = MakeGarbageCollected<WorkerClients>();
-  ProvideToSharedWorker(key, on);
+  ProvideToSharedWorker(key, /*shields_down=*/false, on);
   const StorageKey* handed_over = SharedWorkerStorageKey(on);
   ASSERT_NE(handed_over, nullptr);
   EXPECT_EQ(*handed_over, key);

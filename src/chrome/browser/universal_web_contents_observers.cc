@@ -4,6 +4,7 @@
 
 #include "chrome/browser/universal_web_contents_observers.h"
 
+#include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"  // MoltBrowser
 #include "components/performance_manager/embedder/performance_manager_registry.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/buildflags/buildflags.h"
@@ -36,4 +37,9 @@ void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {
           performance_manager::PerformanceManagerRegistry::GetInstance()) {
     pm_registry->MaybeCreatePageNodeForWebContents(web_contents);
   }
+
+  // MoltBrowser: fingerprinting protection's Shields decision, sent to every
+  // committing document (tabs or not).
+  molt_ai::fingerprinting::ShieldsDecisionObserver::MaybeCreateForWebContents(
+      web_contents);
 }

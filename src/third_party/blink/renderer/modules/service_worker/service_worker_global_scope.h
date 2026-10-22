@@ -487,7 +487,8 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       mojom::blink::ServiceWorkerObjectInfoPtr service_worker_info,
       mojom::blink::FetchHandlerExistence fetch_handler_existence,
       mojom::blink::AncestorFrameType ancestor_frame_type,
-      const blink::BlinkStorageKey& storage_key) override;
+      const blink::BlinkStorageKey& storage_key,
+      bool molt_shields_down) override;  // MoltBrowser
   void DispatchInstallEvent(DispatchInstallEventCallback callback) override;
   void AbortInstallEvent(int event_id,
                          mojom::blink::ServiceWorkerEventStatus status);

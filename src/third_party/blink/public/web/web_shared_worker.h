@@ -105,8 +105,10 @@ class BLINK_EXPORT WebSharedWorker {
           dip_reporting_observer,
       bool is_cross_origin_isolated,
       // MoltBrowser: the constructor's storage key, as the browser sent it
-      // (fingerprinting protection uses its top-level site).
-      const StorageKey& constructor_key);
+      // (fingerprinting protection uses its top-level site), and the
+      // browser's Shields decision for that site.
+      const StorageKey& constructor_key,
+      bool molt_shields_down);
 
   // Sends a connect event to the SharedWorker context.
   virtual void Connect(int connection_request_id,

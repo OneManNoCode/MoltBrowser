@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/loader/worker_fetch_context.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -590,6 +591,9 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
       origin_ ? origin_->IsolatedCopy() : nullptr,
       std::move(coep_reporting_observer), std::move(dip_reporting_observer));
   params->dedicated_worker_start_time = start_time_;
+  // MoltBrowser: the worker inherits its creator's Shields decision.
+  molt_fingerprinting::ProvideShieldsDecisionToDedicatedWorker(
+      *execution_context, params->worker_clients.Get());
   return params;
 }
 

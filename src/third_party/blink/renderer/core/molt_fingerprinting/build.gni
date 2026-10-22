@@ -17,6 +17,8 @@ blink_core_sources_molt_fingerprinting = [
   "letterbox.h",
   "moltnet_uniformity.cc",
   "moltnet_uniformity.h",
+  "shields_decision.cc",
+  "shields_decision.h",
 ]
 
 blink_core_tests_molt_fingerprinting = [
@@ -26,4 +28,5 @@ blink_core_tests_molt_fingerprinting = [
   "system_fonts_test.cc",
   "letterbox_test.cc",
   "moltnet_uniformity_test.cc",
+  "shields_decision_test.cc",
 ]
