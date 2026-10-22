@@ -21,6 +21,15 @@
 //    without a KV cache), llama_get_embeddings_seq, llama_pooling_type,
 //    llama_n_ubatch, llama_model_n_embd_out, llama_vocab_get_add_eos,
 //    llama_vocab_get_add_sep: no throw on the inputs used there.
+//  - Constrained decoding (grammar_sampler.cc, which details each):
+//    llama_sampler_init_grammar (the GBNF parser catches its own throws and
+//    returns nullptr), llama_sampler_apply on the grammar (asserts that can
+//    only fail after a bad accept), llama_sampler_accept on the grammar
+//    (throws on a token the grammar rejects, aborts on an early
+//    end-of-generation token: only tokens that passed the same grammar
+//    check, strict UTF-8 and the token bans are accepted, never an
+//    end-of-generation token), llama_sampler_apply on the chain, and
+//    llama_get_logits_ith (catches; nullptr on a bad index).
 // Re-check these when updating the vendored llama.cpp.
 
 #include "chrome/services/molt_ai/inference/llama_engine.h"
@@ -35,6 +44,7 @@
 #include "chrome/services/molt_ai/inference/engine/context_budget.h"
 #include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
+#include "chrome/services/molt_ai/inference/grammar_sampler.h"
 #include "third_party/llama_cpp/include/llama.h"
 
 namespace molt_ai {
@@ -45,6 +55,15 @@ constexpr uint64_t kGiB = 1024ULL * 1024 * 1024;
 
 // Prompt tokens kept free beyond the plan, for template/tokenizer drift.
 constexpr int kContextSlack = 4;
+
+// Constrained answers: prompt room for the prefill that skips reasoning,
+// and the prefills themselves (special tokens of those vocabularies).
+constexpr int kPrefillReserveTokens = 16;
+// gpt-oss: the generation prompt ends "<|start|>assistant"; the answer goes
+// in the final channel.
+constexpr char kHarmonyFinalPrefill[] = "<|channel|>final<|message|>";
+// Qwen3 without thinking, as its own chat template writes it.
+constexpr char kQwen3NoThinkPrefill[] = "<think>\n\n</think>\n\n";
 
 // Memory budget under a sandbox limit (design section 2.5): weights that may
 // be repacked into anonymous memory (at most the whole file), a minimal KV
@@ -280,6 +299,9 @@ struct LlamaEngine::Model {
   // belong to; used to reuse the common prefix across turns.
   std::vector<llama_token> kv_tokens;
   std::string kv_key;
+  // Built on the first constrained generation (GrammarVocab::Build reads
+  // every token once). Doesn't use the vocab after Build().
+  std::unique_ptr<GrammarVocab> grammar_vocab;
 };
 
 struct LlamaEngine::DecodeParams {
@@ -292,6 +314,8 @@ struct LlamaEngine::DecodeParams {
   float top_p = 0.9f;
   int top_k = 40;
   std::vector<std::string> stop_sequences;
+  // GBNF; "" = unconstrained.
+  std::string grammar;
 };
 
 // static
@@ -461,12 +485,16 @@ EngineSummary LlamaEngine::Raw(const EngineRawRequest& request,
                           ? static_cast<int>(std::min<uint32_t>(
                                 params.max_visible_tokens, INT32_MAX / 4))
                           : AdaptiveReplyTokens(n_ctx);
-  const int hidden = params.max_reasoning_tokens > 0
-                         ? static_cast<int>(std::min<uint32_t>(
-                               params.max_reasoning_tokens, INT32_MAX / 4))
-                         : (IsReasoningArch(m.arch)
-                                ? AdaptiveReasoningTokens(n_ctx)
-                                : 64);
+  // A constrained answer has no hidden reasoning (the grammar applies from
+  // the first token).
+  int hidden = 0;
+  if (params.grammar.empty()) {
+    hidden = params.max_reasoning_tokens > 0
+                 ? static_cast<int>(std::min<uint32_t>(
+                       params.max_reasoning_tokens, INT32_MAX / 4))
+                 : (IsReasoningArch(m.arch) ? AdaptiveReasoningTokens(n_ctx)
+                                            : 64);
+  }
   const int reply_reserve = std::min(visible + hidden, n_ctx / 2);
 
   // Agent and automation prompts carry page text. parse_special=false is not
@@ -521,6 +549,7 @@ EngineSummary LlamaEngine::Raw(const EngineRawRequest& request,
   dp.top_p = params.top_p;
   dp.top_k = static_cast<int>(std::min<uint32_t>(params.top_k, INT32_MAX));
   dp.stop_sequences = params.stop_sequences;
+  dp.grammar = params.grammar;
   // Raw prompts never share a conversation prefix.
   summary.status =
       Generate(tokens, /*reuse_key=*/std::string(), dp, callbacks, &summary);
@@ -536,16 +565,19 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
   const llama_vocab* vocab = m.vocab;
   const int n_ctx = m.n_ctx;
   const std::string& arch = m.arch;
+  // A constrained answer starts at the first token: no reasoning.
+  const bool constrained = !params.grammar.empty();
+  const bool reasoning_on = params.reasoning_on && !constrained;
 
   // ---- Reasoning control ----
   std::string system_text;
   if (arch == "gpt-oss") {
     // Harmony reads the reasoning effort from the system message.
     system_text =
-        params.reasoning_on ? "Reasoning: medium\n\n" : "Reasoning: low\n\n";
+        reasoning_on ? "Reasoning: medium\n\n" : "Reasoning: low\n\n";
   }
   system_text += chat.system_prompt;
-  if (IsQwen3Arch(arch) && !params.reasoning_on) {
+  if (IsQwen3Arch(arch) && !reasoning_on) {
     // Qwen3 soft switch. Kept in the (stable) system message so it doesn't
     // break KV-prefix reuse across turns. Qwen3 still emits an empty
     // <think></think> block, which the stream filter hides.
@@ -557,10 +589,12 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
                                 params.max_visible_tokens, INT32_MAX / 4))
                           : AdaptiveReplyTokens(n_ctx);
   int hidden = 64;  // room for an empty <think></think> block
-  if (params.max_reasoning_tokens > 0) {
+  if (constrained) {
+    hidden = 0;
+  } else if (params.max_reasoning_tokens > 0) {
     hidden = static_cast<int>(
         std::min<uint32_t>(params.max_reasoning_tokens, INT32_MAX / 4));
-  } else if (params.reasoning_on || arch == "gpt-oss") {
+  } else if (reasoning_on || arch == "gpt-oss") {
     hidden = AdaptiveReasoningTokens(n_ctx);
   }
 
@@ -649,6 +683,10 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
         static_cast<int>(TokenizeText(vocab, empty_chat, true, true).size()) / 2 +
         1;
   }
+  if (constrained) {
+    // Room for the prefill below.
+    in.safety_margin += kPrefillReserveTokens;
+  }
 
   std::vector<llama_token> tokens;
   int reply_tokens = 0;
@@ -734,6 +772,33 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
   dp.top_k = static_cast<int>(std::min<uint32_t>(params.top_k, INT32_MAX));
   dp.stop_sequences = params.stop_sequences;
 
+  if (constrained) {
+    // The grammar applies from the first generated token, and the
+    // reasoning filters don't run: start the answer past any reasoning
+    // block the template opened or the model would open. Our own text,
+    // tokenized with its special tokens.
+    const char* prefill = nullptr;
+    if (arch == "gpt-oss") {
+      prefill = kHarmonyFinalPrefill;
+    } else if (m.thought_channels && dp.thought_start_inside) {
+      prefill = GemmaThoughtFilter::kForceClose;
+    } else if (dp.think_start_inside) {
+      prefill = ThinkTagFilter::kForceClose;
+    } else if (IsQwen3Arch(arch)) {
+      prefill = kQwen3NoThinkPrefill;
+    }
+    if (prefill) {
+      const std::vector<llama_token> t =
+          TokenizeText(vocab, prefill, /*add_special=*/false,
+                       /*parse_special=*/true);
+      tokens.insert(tokens.end(), t.begin(), t.end());
+      summary.prompt_tokens = ToU32(tokens.size());
+    }
+    dp.grammar = params.grammar;
+    dp.think_start_inside = false;
+    dp.thought_start_inside = false;
+  }
+
   summary.status =
       Generate(tokens, params.conversation_key, dp, callbacks, &summary);
   return summary;
@@ -752,6 +817,19 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   auto cancelled = [&]() {
     return callbacks.is_cancelled && callbacks.is_cancelled();
   };
+
+  // ---- Constrained decoding ----
+  // Set up before anything touches the KV cache, so a grammar llama.cpp
+  // refuses changes nothing. Bounded work: the converter caps the
+  // grammar's size, and the vocabulary is read once per model.
+  std::unique_ptr<GrammarSampler> grammar;
+  if (!p.grammar.empty()) {
+    if (!m.grammar_vocab) m.grammar_vocab = GrammarVocab::Build(vocab);
+    if (m.grammar_vocab) {
+      grammar = GrammarSampler::Create(m.grammar_vocab.get(), p.grammar);
+    }
+    if (!grammar) return EngineStatus::kConstraintFailed;
+  }
 
   // ---- KV prefix reuse ----
   size_t n_keep = 0;
@@ -838,6 +916,13 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   // Visible text waiting to be sent: one chunk per sampled token at most.
   std::string out;
   auto feed = [&](const std::string& piece) {
+    if (grammar) {
+      // No reasoning filters: the visible text is exactly what the grammar
+      // matched (valid UTF-8 by construction; ToDisplayText changes
+      // nothing).
+      out += stop.Feed(ToDisplayText(utf8.Push(piece)));
+      return;
+    }
     std::string text = harmony.Feed(piece);
     if (gemma_thoughts) text = gemma.Feed(text);
     out += stop.Feed(ToDisplayText(utf8.Push(think.Feed(text))));
@@ -849,7 +934,8 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
     last_progress = Clock::now();
   };
   auto hiding = [&]() {
-    return harmony.hiding() || gemma.hiding() || think.in_think();
+    return !grammar &&
+           (harmony.hiding() || gemma.hiding() || think.in_think());
   };
 
   int visible_tokens = 0;
@@ -868,7 +954,27 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
       break;
     }
 
-    llama_token tok = llama_sampler_sample(sampler, m.ctx, -1);
+    llama_token tok;
+    if (grammar) {
+      const float* logits = llama_get_logits_ith(m.ctx, -1);
+      if (!logits) {
+        status = fail_decode();
+        break;
+      }
+      const std::optional<llama_token> next = grammar->Sample(sampler, logits);
+      if (!next) {
+        // No token of this vocabulary continues the grammar.
+        status = EngineStatus::kConstraintFailed;
+        break;
+      }
+      tok = *next;
+      if (!llama_vocab_is_eog(vocab, tok) && !grammar->Accept(tok)) {
+        status = EngineStatus::kConstraintFailed;  // not reached
+        break;
+      }
+    } else {
+      tok = llama_sampler_sample(sampler, m.ctx, -1);
+    }
     llama_sampler_accept(sampler, tok);
 
     // Stop on ANY end-of-generation token (EOS, <|eot_id|>, <|im_end|>,
@@ -980,7 +1086,8 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   out += stop.Flush();
   send();
   if (stop.stopped() && status != EngineStatus::kCancelled &&
-      status != EngineStatus::kDecodeFailed) {
+      status != EngineStatus::kDecodeFailed &&
+      status != EngineStatus::kConstraintFailed) {
     status = EngineStatus::kStopSequence;
   }
   return status;

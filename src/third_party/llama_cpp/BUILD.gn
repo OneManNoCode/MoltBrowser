@@ -713,6 +713,9 @@ source_set("llama_cpp") {
 # -fno-rtti rejects, and the list below has never covered all of common/ (no
 # sampling.cpp, jinja/*.cpp, ...). Same situation at b8284 (where arg.cpp and
 # json-schema-to-grammar.cpp also needed vendor/nlohmann, not vendored).
+# Constrained decoding doesn't use it either: the JSON Schema -> GBNF
+# converter is MoltBrowser's own, std-only and bounded
+# (//chrome/services/molt_ai/inference/engine:constrained_decoding).
 source_set("llama_common") {
   visibility = _llama_cpp_visibility
 
