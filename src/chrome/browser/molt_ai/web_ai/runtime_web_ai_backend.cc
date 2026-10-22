@@ -337,6 +337,9 @@ GenerationStatus RuntimeWebAIBackend::RunJob(
   options.stream = true;
   options.request_id = request_id;
   options.conversation_key = job.conversation_key;
+  // Enforced by the inference service (constrained decoding); the reply is
+  // checked to be complete JSON before it counts as a success.
+  options.json_schema = std::move(job.json_schema);
 
   const GenerationResult result = runtime->StreamChat(
       chat,
@@ -353,7 +356,17 @@ GenerationStatus RuntimeWebAIBackend::RunJob(
   if (result.was_cancelled) {
     return GenerationStatus::kCancelled;
   }
-  return result.success ? GenerationStatus::kOk : GenerationStatus::kFailed;
+  if (result.success) {
+    return GenerationStatus::kOk;
+  }
+  if (result.constraint_unsupported) {
+    return GenerationStatus::kConstraintUnsupported;
+  }
+  if (result.invalid_output) {
+    return result.truncated ? GenerationStatus::kOutputTruncated
+                            : GenerationStatus::kInvalidOutput;
+  }
+  return GenerationStatus::kFailed;
 }
 
 void RuntimeWebAIBackend::OnJobChunk(uint64_t id, std::string text) {

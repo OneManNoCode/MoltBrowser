@@ -102,6 +102,12 @@ struct EngineGenerationParams {
   uint32_t top_k = 40;
   std::string conversation_key;
   std::vector<std::string> stop_sequences;
+  // Constrained decoding: GBNF (start rule "root") from
+  // JsonSchemaToGrammar(), never from elsewhere; "" = none. The visible
+  // answer then matches the grammar: reasoning is skipped (the prompt is
+  // pre-filled past any reasoning block) and the reasoning filters don't
+  // run, so the text is exactly what the grammar matched.
+  std::string grammar;
 };
 
 enum class EngineStatus {
@@ -114,6 +120,9 @@ enum class EngineStatus {
   kSystemPromptTooLong,
   kTokenizeFailed,
   kDecodeFailed,
+  // llama.cpp refused the grammar, or no token of this vocabulary can
+  // continue it.
+  kConstraintFailed,
 };
 
 struct EngineSummary {

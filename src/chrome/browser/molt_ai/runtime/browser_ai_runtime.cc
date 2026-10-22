@@ -20,6 +20,7 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/memory_pressure_listener.h"
@@ -380,7 +381,23 @@ mojom::GenerationParamsPtr ToServiceParams(const PromptOptions& o) {
   p->top_k = o.top_k > 0 ? static_cast<uint32_t>(o.top_k) : 0u;
   p->conversation_key = ConversationKeyForService(o.conversation_key);
   p->stop_sequences = StopSequencesForService(o.stop_sequences);
+  // Not parsed here: the schema may be a web page's, and only the
+  // sandboxed service reads it (Generate() checked its size).
+  if (!o.json_schema.empty()) {
+    p->constraint = mojom::OutputConstraint::NewJsonSchema(o.json_schema);
+  }
   return p;
+}
+
+constexpr char kConstraintUnsupportedError[] =
+    "The on-device model can't follow this output format (the JSON Schema "
+    "uses something it doesn't support).";
+
+// A constrained answer is used only if it is complete JSON. base::JSONReader
+// is memory-safe (Rust), so the browser can parse what the untrusted
+// service sent; RFC 8259, the whole text, nesting within its own cap.
+bool IsCompleteJson(const std::string& text) {
+  return base::JSONReader::Read(text, base::JSON_PARSE_RFC).has_value();
 }
 
 // The trust labels stay structural: browser-authored text goes in
@@ -504,11 +521,19 @@ std::string GenerationError(const InferenceOutcome& outcome,
   result->tokens_reused = static_cast<int>(s.reused_tokens);
   result->tokens_generated = static_cast<int>(s.generated_tokens);
   switch (static_cast<mojom::GenerationStatus>(s.status)) {
-    case mojom::GenerationStatus::kEndOfGeneration:
     case mojom::GenerationStatus::kMaxTokens:
-    case mojom::GenerationStatus::kStopSequence:
     case mojom::GenerationStatus::kContextFull:
+      result->truncated = true;
       return std::string();
+    case mojom::GenerationStatus::kEndOfGeneration:
+    case mojom::GenerationStatus::kStopSequence:
+      return std::string();
+    case mojom::GenerationStatus::kConstraintUnsupported:
+      result->constraint_unsupported = true;
+      return kConstraintUnsupportedError;
+    case mojom::GenerationStatus::kConstraintFailed:
+      result->invalid_output = true;
+      return "The model couldn't produce an answer in the required format.";
     case mojom::GenerationStatus::kCancelled:
       result->was_cancelled = true;
       return std::string();
@@ -1460,6 +1485,13 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
     done();
     return result;
   }
+  if (options.json_schema.size() > mojom::kMaxConstraintSchemaBytes) {
+    // The service would take it as a bad message.
+    result.constraint_unsupported = true;
+    result.error_message = kConstraintUnsupportedError;
+    done();
+    return result;
+  }
 
   ScopedRequest req(this, options.request_id);
   const auto start = Clock::now();
@@ -1562,6 +1594,16 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
 
   result.model_used = model_id;
   result.error_message = GenerationError(outcome, &result);
+  if (!options.json_schema.empty() && result.error_message.empty() &&
+      !result.was_cancelled && !IsCompleteJson(result.text)) {
+    // The text was streamed as it came; callers that must only show valid
+    // JSON (the web AI APIs) hold it back until this verdict.
+    result.invalid_output = true;
+    result.error_message =
+        result.truncated
+            ? "The answer was cut off before the JSON was complete."
+            : "The model's answer isn't valid JSON.";
+  }
   result.success = result.error_message.empty();
   result.generation_time_ms = std::chrono::duration<float, std::milli>(
                                   Clock::now() - start)

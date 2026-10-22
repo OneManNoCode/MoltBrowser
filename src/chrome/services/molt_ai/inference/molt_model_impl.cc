@@ -6,12 +6,15 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 
 namespace molt_ai {
@@ -41,7 +44,36 @@ const char* CheckParams(const mojom::GenerationParams& p) {
       return "bad stop sequence";
     }
   }
+  if (p.constraint && p.constraint->is_json_schema() &&
+      p.constraint->get_json_schema().size() >
+          mojom::kMaxConstraintSchemaBytes) {
+    return "constraint over the cap";
+  }
   return nullptr;
+}
+
+// The grammar for |constraint| ("" for none), or nullopt if it is outside
+// the supported subset. The schema is untrusted (a web page's
+// responseConstraint): the converter is linear in its size, which
+// CheckParams() capped, and bounds the grammar it produces, so this runs
+// on the main sequence when the request arrives.
+std::optional<std::string> GrammarFor(
+    const mojom::OutputConstraintPtr& constraint) {
+  if (!constraint) return std::string();
+  if (!constraint->is_json_schema()) return std::nullopt;
+  SchemaGrammar g = JsonSchemaToGrammar(constraint->get_json_schema());
+  if (g.status != SchemaGrammarStatus::kOk) return std::nullopt;
+  return std::move(g.gbnf);
+}
+
+// Answers a request whose constraint was refused, without queueing it.
+void AnswerUnsupported(
+    mojo::PendingRemote<mojom::GenerationStreamer> pending_streamer) {
+  mojo::Remote<mojom::GenerationStreamer> streamer(
+      std::move(pending_streamer));
+  auto summary = mojom::GenerationSummary::New();
+  summary->status = mojom::GenerationStatus::kConstraintUnsupported;
+  streamer->OnComplete(std::move(summary));
 }
 
 EngineGenerationParams ToEngine(const mojom::GenerationParams& p) {
@@ -81,6 +113,8 @@ mojom::GenerationStatus ToMojo(EngineStatus status) {
       return mojom::GenerationStatus::kTokenizeFailed;
     case EngineStatus::kDecodeFailed:
       return mojom::GenerationStatus::kDecodeFailed;
+    case EngineStatus::kConstraintFailed:
+      return mojom::GenerationStatus::kConstraintFailed;
   }
   return mojom::GenerationStatus::kDecodeFailed;
 }
@@ -162,7 +196,13 @@ void MoltModelImpl::StreamChat(
     r->chat.history.push_back(
         {turn->role == mojom::ChatRole::kUser, std::move(turn->content)});
   }
+  std::optional<std::string> grammar = GrammarFor(params->constraint);
+  if (!grammar) {
+    AnswerUnsupported(std::move(streamer));
+    return;
+  }
   r->params = ToEngine(*params);
+  r->params.grammar = std::move(*grammar);
   r->streamer.Bind(std::move(streamer));
   Enqueue(std::move(r));
 }
@@ -180,11 +220,17 @@ void MoltModelImpl::StreamPrompt(
     receiver_.ReportBadMessage("prompt over the caps");
     return;
   }
+  std::optional<std::string> grammar = GrammarFor(params->constraint);
+  if (!grammar) {
+    AnswerUnsupported(std::move(streamer));
+    return;
+  }
   auto r = std::make_unique<Request>();
   r->is_chat = false;
   r->raw.system_prompt = std::move(request->system_prompt);
   r->raw.prompt = std::move(request->prompt);
   r->params = ToEngine(*params);
+  r->params.grammar = std::move(*grammar);
   r->streamer.Bind(std::move(streamer));
   Enqueue(std::move(r));
 }

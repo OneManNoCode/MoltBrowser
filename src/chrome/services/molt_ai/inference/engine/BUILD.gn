@@ -26,6 +26,21 @@ source_set("inference_utils") {
   public_deps = [ ":stream_filters" ]
 }
 
+# Constrained decoding (docs/design/SANDBOXED_INFERENCE.md section 9): the
+# bounded JSON reader, JSON Schema -> GBNF, and the token rules the grammar
+# sampler (//chrome/services/molt_ai/inference:grammar_sampler.cc) applies.
+source_set("constrained_decoding") {
+  sources = [
+    "bounded_json.cc",
+    "bounded_json.h",
+    "grammar_tokens.cc",
+    "grammar_tokens.h",
+    "json_schema_grammar.cc",
+    "json_schema_grammar.h",
+  ]
+  deps = [ ":inference_utils" ]
+}
+
 # Token fitting and vector normalization for the embedding engine
 # (llama_embedding_engine.cc; docs/design/SEMANTIC_SEARCH.md).
 source_set("embedding_utils") {
@@ -39,12 +54,16 @@ source_set("embedding_utils") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "bounded_json_unittest.cc",
     "context_budget_unittest.cc",
     "embedding_utils_unittest.cc",
+    "grammar_tokens_unittest.cc",
+    "json_schema_grammar_unittest.cc",
     "prompt_utils_unittest.cc",
     "stream_filters_unittest.cc",
   ]
   deps = [
+    ":constrained_decoding",
     ":embedding_utils",
     ":inference_utils",
     "//testing/gtest",

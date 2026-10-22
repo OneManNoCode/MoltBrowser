@@ -34,7 +34,16 @@ process (the browser then reports the model as stopped; repeated
 crashes are rate-limited). Model loading and context creation catch
 everything upstream; see the llama-vocab.cpp patch below for
 tokenization, and the list of checked calls at the top of
-chrome/services/molt_ai/inference/llama_engine.cc.
+chrome/services/molt_ai/inference/llama_engine.cc. Constrained decoding
+uses the grammar sampler (src/llama-grammar.cpp) unpatched: its parser
+catches its own throws, and the accept path's throw and aborts are made
+unreachable by the caller (chrome/services/molt_ai/inference/
+grammar_sampler.cc: token bans, strict UTF-8 across pieces, only checked
+tokens accepted). Re-check that file when updating. The lazy /
+trigger-pattern grammars (std::regex on model output) are not used, and
+common/json-schema-to-grammar.cpp is replaced by MoltBrowser's own
+converter (chrome/services/molt_ai/inference/engine/
+json_schema_grammar.cc).
 
 Local Modifications:
 - BUILD.gn: GN build for Chromium (not upstream). Every target that
