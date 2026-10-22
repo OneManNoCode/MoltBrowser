@@ -58,8 +58,9 @@ MoltBrowser
  |    +-- OnionBlockingURLLoaderFactory: no .onion requests outside MoltNet,
  |    |   even through a user proxy
  |
- +-- WebAgent (molt_ai/agents) — chat-driven page actions, gated by
- |    molt_ai/security/agent_safety
+ +-- WebAgent and the chat's proposed page actions (molt_ai/agents:
+ |    agent_actions, chat_actions) — one validated action at a time, gated
+ |    by molt_ai/security/agent_safety
  |    +-- DOMInterpreter (linear-time, thread pool, 2 MiB cap) /
  |        DOMContentBridge (isolated-world page reads)
  |
@@ -129,7 +130,8 @@ repo/
  |    +-- chrome/browser/ui/webui/molt_ai/  # WebUI pages
  |    |    +-- molt_ai_ui.*            # chrome://molt-ai/
  |    |    +-- molt_ai_chat_ui.*       # chrome://molt-ai-chat/
- |    |    +-- molt_ai_chat_handler.*  # WebUI message handler (bridge JS<>C++)
+ |    |    +-- molt_ai_chat_handler.*  # WebUI message handler (bridge JS<>C++);
+ |    |    |                           #   _actions.cc: proposed page actions
  |    |    +-- molt_ai_settings_ui.*   # chrome://molt-ai-settings/
  |    |    +-- molt_ai_agent_ui.*      # chrome://molt-ai-agent/
  |    +-- chrome/services/molt_ai/document_parser/  # utility-process parsers
@@ -346,8 +348,14 @@ repo/
   `schema` from a `.molt` file, untrusted and converted with caps, lists
   them; size, depth and key names otherwise; `automation/automation_ai_steps.*`).
   An unusable answer is never acted on or stored. The page-facing checks
-  (`agent_safety`, `automation_security`) are unchanged. Design and
-  prompt-injection posture: `docs/design/AGENT_ACTIONS.md`.
+  (`agent_safety`, `automation_security`) are unchanged. The AI chat's
+  replies are text only and never parsed for actions: when the user types
+  a request to act on the page, the browser asks the on-device model for
+  one action in the agent's format (`agents/chat_actions.*`,
+  `ui/webui/molt_ai/molt_ai_chat_handler_actions.cc`), describes it, and
+  runs it only on the document it was proposed for, after the user's OK
+  in Ask-first mode. Design and prompt-injection posture:
+  `docs/design/AGENT_ACTIONS.md`.
 
 ### Fingerprinting protection
 - Engine side in Blink: `third_party/blink/renderer/core/molt_fingerprinting/`

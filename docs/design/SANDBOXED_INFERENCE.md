@@ -466,7 +466,7 @@ A hostile or corrupt model, including the "unverified" unpinned downloads, no lo
 ### 5.2 What a compromised inference process can still do
 
 1. **Return arbitrary text.**
-   - Chat answers, `[[ACTION]]` blocks, and `NAVIGATE`/`CLICK`/`TYPE` steps for `WebAgent` and automation.
+   - Chat answers, and `NAVIGATE`/`CLICK`/`TYPE` steps for `WebAgent`, the chat's proposed page actions and automation (docs/design/AGENT_ACTIONS.md).
    - This equals a perfect prompt injection (S6). The boundary is the `agent_safety`/`automation_security` gates: http(s)-only, origin scope, confirmations, credential-field detection.
    - Residual risk: Auto mode skips confirmation, so a compromised service can act inside approved origins in the user's logged-in profile.
 2. **Read everything it is sent and mix conversations.**
