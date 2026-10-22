@@ -33,6 +33,9 @@ source_set("farbling") {
 
     # Its test checks the browser's letterbox steps against Blink's.
     "//chrome/browser/molt_ai/fingerprinting:unit_tests",
+
+    # Its test checks MoltNet's default fonts against the allow-lists.
+    "//chrome/browser/molt_ai/tor:unit_tests",
   ]
 }
 

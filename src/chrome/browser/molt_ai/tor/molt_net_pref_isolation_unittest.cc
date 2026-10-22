@@ -182,6 +182,74 @@ TEST_F(MoltNetPrefServiceTest, PinsOnlyPinnedPrefs) {
   EXPECT_EQ(PinMoltNetPrefsToDefaults(nullptr), 0u);
 }
 
+// Chromium registers the default fonts, the minimum logical font size and
+// the default encoding from the UI language's resources; MoltNet uses fixed
+// per-OS values instead (molt_net_locale_prefs.h). Here, the registry is the
+// one a Japanese UI gives on Windows.
+TEST(MoltNetLocalePinTest, LocaleDependentDefaultsAreFixed) {
+  static constexpr char kStandard[] = "webkit.webprefs.fonts.standard.Zyyy";
+  static constexpr char kStandardJapanese[] =
+      "webkit.webprefs.fonts.standard.Jpan";
+  static constexpr char kStandardThai[] = "webkit.webprefs.fonts.standard.Thai";
+  static constexpr char kMinimumLogical[] =
+      "webkit.webprefs.minimum_logical_font_size";
+  static constexpr char kEncoding[] = "intl.charset_default";
+  static constexpr char kDefaultSize[] = "webkit.webprefs.default_font_size";
+
+  sync_preferences::TestingPrefServiceSyncable japanese_ui;
+  user_prefs::PrefRegistrySyncable* registry = japanese_ui.registry();
+  registry->RegisterStringPref(kStandard, "Meiryo");
+  // The UI language's own script gets no per-script default.
+  registry->RegisterStringPref(kStandardJapanese, "");
+  registry->RegisterStringPref(kStandardThai, "");
+  registry->RegisterIntegerPref(kMinimumLogical, 10);
+  registry->RegisterStringPref(kEncoding, "Shift_JIS");
+  registry->RegisterIntegerPref(kDefaultSize, 16);
+  japanese_ui.SetString(kStandard, "MS Mincho");
+  japanese_ui.SetInteger(kDefaultSize, 20);
+
+  std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
+      CreateMoltNetPrefService(&japanese_ui, nullptr);
+
+  EXPECT_EQ(moltnet->GetString(kEncoding), "windows-1252");
+  EXPECT_EQ(moltnet->GetInteger(kDefaultSize), 16);
+  EXPECT_EQ(moltnet->GetString(kStandardThai), "");
+#if BUILDFLAG(IS_WIN)
+  EXPECT_EQ(moltnet->GetString(kStandard), "Times New Roman");
+  EXPECT_EQ(moltnet->GetString(kStandardJapanese), "Yu Gothic");
+  EXPECT_EQ(moltnet->GetInteger(kMinimumLogical), 6);
+#elif BUILDFLAG(IS_MAC)
+  EXPECT_EQ(moltnet->GetString(kStandard), "Times");
+  EXPECT_EQ(moltnet->GetString(kStandardJapanese),
+            "Hiragino Kaku Gothic ProN");
+  EXPECT_EQ(moltnet->GetInteger(kMinimumLogical), 9);
+#elif BUILDFLAG(IS_LINUX)
+  EXPECT_EQ(moltnet->GetString(kStandard), "Liberation Serif");
+  EXPECT_EQ(moltnet->GetString(kStandardJapanese), "Liberation Serif");
+  EXPECT_EQ(moltnet->GetInteger(kMinimumLogical), 6);
+#else
+  // No MoltNet font table here: the registered defaults.
+  EXPECT_EQ(moltnet->GetString(kStandard), "Meiryo");
+  EXPECT_EQ(moltnet->GetInteger(kMinimumLogical), 10);
+#endif
+  // The regular profile keeps the user's own settings and its defaults.
+  EXPECT_EQ(japanese_ui.GetString(kStandard), "MS Mincho");
+  EXPECT_EQ(japanese_ui.GetString(kEncoding), "Shift_JIS");
+}
+
+// A fixed value of the wrong type for what is registered (a retyped pref)
+// leaves the registered default.
+TEST(MoltNetLocalePinTest, TypeMismatchKeepsTheRegisteredDefault) {
+  sync_preferences::TestingPrefServiceSyncable prefs;
+  prefs.registry()->RegisterIntegerPref("intl.charset_default", 3);
+  prefs.registry()->RegisterStringPref(
+      "webkit.webprefs.minimum_logical_font_size", "10");
+  EXPECT_EQ(PinMoltNetPrefsToDefaults(&prefs), 2u);
+  EXPECT_EQ(prefs.GetInteger("intl.charset_default"), 3);
+  EXPECT_EQ(prefs.GetString("webkit.webprefs.minimum_logical_font_size"),
+            "10");
+}
+
 // Content settings live in prefs, so MoltNet's HostContentSettingsMap starts
 // from the registered defaults: no site exception, changed default, embargo
 // or "Shields off" from the regular profile.

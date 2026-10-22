@@ -20,6 +20,8 @@
 //    the same font on every machine.
 //  * `alias_of` entries are for names that resolve to different families on
 //    different machines (see font_allowlists.h).
+//  * MoltNet's default font settings are picked from these lists: after an
+//    edit, run tools/moltnet_locale/generate_tables.py --write.
 
 #include "third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.h"
 

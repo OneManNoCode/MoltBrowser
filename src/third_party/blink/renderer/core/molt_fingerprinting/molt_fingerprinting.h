@@ -51,6 +51,8 @@
 //            getScreenDetails(), the window-management permission,
 //            screen and orientation "change" events, screen.orientation,
 //            the form-control Locale            -> moltnet_uniformity.h
+//   MoltNet  DefaultLanguage(), UserPreferredLanguages() (language.cc; the
+//              default text locale)                 -> moltnet_locale.h
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:

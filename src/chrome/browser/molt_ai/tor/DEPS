@@ -1,0 +1,8 @@
+specific_include_rules = {
+  # MoltNet's default fonts must be ones every machine of the OS has: the
+  # test checks them against Blink's allow-lists (std + //base only).
+  "molt_net_locale_prefs_unittest\.cc": [
+    "+third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.h",
+    "+third_party/blink/renderer/core/molt_fingerprinting/fonts.h",
+  ],
+}

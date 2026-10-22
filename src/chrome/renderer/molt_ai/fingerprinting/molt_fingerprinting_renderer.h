@@ -15,7 +15,8 @@ namespace molt_ai::fingerprinting {
 // Call once from ChromeContentRendererClient::RenderThreadStarted (main
 // thread, after Blink is initialized, before any frame or worker exists).
 // A missing or malformed mode switch leaves protection off and doesn't
-// expose the configuration interface.
+// expose the configuration interface. In kUniform (MoltNet) it also pins the
+// renderer strings pages can read to en-US (moltnet_locale_strings.h).
 void ConfigureRendererProcess();
 
 }  // namespace molt_ai::fingerprinting

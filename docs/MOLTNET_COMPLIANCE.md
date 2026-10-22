@@ -88,7 +88,12 @@ claims below as the design intent, not as measured results.
     permission (after you dismissed it several times) can ask again.
     Permissions you grant and changes you make in a MoltNet window last
     until New Identity or until the last MoltNet window closes, and nothing
-    done in a MoltNet window changes your regular settings.
+    done in a MoltNet window changes your regular settings. Nor does the
+    language of MoltBrowser's interface show: text the browser puts in
+    pages (form messages such as "Please fill out this field.", "Choose
+    File", the date picker) is in US English in MoltNet windows, and the
+    default fonts and text encoding are the same for everyone on your
+    operating system.
 11. **Your extensions and your regular browsing stay out.** Extensions you
     or an administrator installed don't run in MoltNet windows and can't
     see them, even when they're allowed in Incognito; only the browser's
@@ -850,11 +855,10 @@ Do all of this in a MoltNet window unless the step says otherwise.
    - Settings that apply to the whole browser rather than to your regular
      profile still reach MoltNet windows (§1.10 covers the profile's):
      page colours and your system's high-contrast and accessibility
-     settings, MoltShield's on/off switch and its filter lists, and the
-     language of MoltBrowser's own interface, which picks MoltBrowser's
-     default fonts and text encoding. `prefers-color-scheme` is dark for
-     everyone while MoltBrowser's dark toolbar is on (the default); with it
-     off, MoltNet windows follow your regular windows' theme.
+     settings, and MoltShield's on/off switch and its filter lists.
+     `prefers-color-scheme` is dark for everyone while MoltBrowser's dark
+     toolbar is on (the default); with it off, MoltNet windows follow your
+     regular windows' theme.
 
 ## 6. Privacy defaults for regular windows
 

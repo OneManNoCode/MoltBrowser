@@ -1,0 +1,5 @@
+include_rules = [
+  # MoltNet's en-US strings (moltnet_locale_strings_table.cc); blink_strings.h
+  # is allowed by chrome/renderer/DEPS already.
+  "+third_party/blink/public/strings/grit/permission_element_strings.h",
+]

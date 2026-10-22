@@ -187,8 +187,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   always denied, without a prompt, and moving the window between screens
   goes unnoticed); `screen.orientation` matches the uniform screen size;
   date, time and number fields use US English formats whatever your
-  system's language and regional settings. Built-in form messages such as
-  "Please fill out this field" still follow the browser's language.
+  system's language and regional settings.
+- **MoltNet windows don't show the browser's language.** Text the browser
+  puts in pages that sites can read (form messages such as "Please fill
+  out this field.", "Choose File", the default "Details" and "Submit"
+  labels, date-field placeholders) is in US English in MoltNet windows,
+  and so is the language assumed for text that doesn't declare one (which
+  decided the look of Chinese and Japanese characters). The default fonts,
+  minimum font size and text encoding there are fixed for your operating
+  system instead of following MoltBrowser's language. Regular windows and
+  the browser's own interface keep your language.
 - **Your settings stay out of MoltNet windows.** Sites in a MoltNet window
   no longer see how you set up your regular browser: not your site
   permissions or blocked sites (including Shields off and sites that may
