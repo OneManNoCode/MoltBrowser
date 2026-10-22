@@ -155,6 +155,21 @@ fuzzer_test("molt_agent_tools_fuzzer") {
   libfuzzer_options = [ "max_len=65536" ]
 }
 
+fuzzer_test("molt_agent_plan_fuzzer") {
+  sources = [ "molt_agent_plan_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_actions",
+    "//chrome/browser/molt_ai/agents:agent_plan",
+    "//chrome/browser/molt_ai/agents:agent_prompt",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+  ]
+  dict = "dicts/agent_plan.dict"
+  seed_corpus = "corpus/molt_agent_plan_fuzzer"
+  libfuzzer_options = [ "max_len=32768" ]
+}
+
 fuzzer_test("molt_agent_vision_fuzzer") {
   sources = [ "molt_agent_vision_fuzzer.cc" ]
   deps = [
@@ -259,6 +274,7 @@ group("fuzzers") {
   testonly = true
   deps = [
     ":molt_agent_actions_fuzzer",
+    ":molt_agent_plan_fuzzer",
     ":molt_agent_safety_fuzzer",
     ":molt_agent_tools_fuzzer",
     ":molt_agent_vision_fuzzer",
