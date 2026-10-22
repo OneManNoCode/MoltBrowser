@@ -570,45 +570,78 @@ gpg-verified steps documented in that script.
 | The image-description and location stand-ins over real mojo pipes | 5 unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
 | Nothing outside Tor from the chat, downloads, location, Cast, passkeys or bookmarks in a running browser (§4 step 20) | Needs a Chromium build | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
+| An automated leak and uniformity test of a built browser (§4, FINGERPRINTING.md) | `tools/leak_test/` ([LEAK_TESTING.md](LEAK_TESTING.md)): its analysis checked against a recorded sample run; the harness run against stock Chromium, where it finds the WebRTC, DNS-prefetch, mDNS, onion and LAN leaks that MoltNet closes | Kit ready; **not yet run on a MoltBrowser build** |
 | Independent third-party audit | — | **Not done** |
 
 ## 4. Check it yourself (do this on every release build)
 
 Do all of this in a MoltNet window unless the step says otherwise.
 
-1. **You are on Tor.** Open `check.torproject.org`: it must say you are using
+**Most of it is automated.** On Linux, `sudo tools/leak_test/leaktest.sh
+run --browser <moltbrowser>` runs a MoltNet window in a network namespace
+where only Tor's traffic may leave, captures every packet, drives the steps
+below through the DevTools pipe and writes a report
+([LEAK_TESTING.md](LEAK_TESTING.md)). Each step says what the kit covers.
+"Automated" means the kit checks the whole step; "partial" means the rest
+of the step is still done by hand as written; "manual" means the kit doesn't
+help. The last column names the report's checks.
+
+| Step | Kit | Checks |
+|---|---|---|
+| 1 | partial (needs an exit to the public internet) | `moltnet.on_tor` |
+| 2 | partial | regular-window tests reach the kit's local pages directly |
+| 3 | replaced | the network tests below exercise the same mechanisms locally |
+| 4 | automated | `harness.firewall`, every `net.*` check |
+| 5 | automated | `identity.fail_closed`, `identity.no_restore` |
+| 6 | automated | `identity.separate` |
+| 7 | automated (exit IP only online) | `identity.new_identity` |
+| 8 | automated | `identity.per_site_circuits` |
+| 9 | partial | `identity.override_refused` |
+| 10 | automated (offline, against Tor's consensus) | `identity.relays_real` |
+| 11 | partial | `net.onion_http.*`, `net.onion_https.*` |
+| 12 | automated | `net.regular_onion_*`, `regular.onion_interstitial` |
+| 13 | partial (no service worker) | `regular.proxy_no_onion` |
+| 14 | manual | |
+| 15 | automated (seeded settings) | `uniform.nav.doNotTrack`, `uniform.css.default_font_size`, `uniform.hdr.accept-language`, `uniform.cookies.third_party`, `uniform.js.enabled_on_blocked_site`, `uniform.perm.geolocation` |
+| 16 | partial | `net.extension.*` |
+| 17 | partial | `uniform.autoplay.mediaelement`, `uniform.storage.persist`, `uniform.cookies.third_party`, `uniform.sharedStorage.set` |
+| 18 | automated | `net.webrtc.*` |
+| 19 | manual | |
+| 20 | partial | `net.download.*`, `net.geolocation.*`, `net.builtin_ai.*` |
+
+1. **You are on Tor.** (Kit: partial.) Open `check.torproject.org`: it must say you are using
    Tor and show an IP that isn't yours. The panel's *Verify* must show the
    same exit IP.
-2. **Regular windows are untouched.** In a regular window, the same page must
+2. **Regular windows are untouched.** (Kit: partial; the toolbar label is manual.) In a regular window, the same page must
    show your normal IP and "not using Tor"; the toolbar shows "MoltNet", not
    "Tor".
-3. **No IP, DNS, WebRTC or IPv6 leak.** ipleak.net, browserleaks.com/ip,
+3. **No IP, DNS, WebRTC or IPv6 leak.** (Kit: replaced by its network tests; these sites remain an optional cross-check.) ipleak.net, browserleaks.com/ip,
    browserleaks.com/webrtc, dnsleaktest.com (extended), test-ipv6.com: none may
    show your real IPv4/IPv6 address, your ISP's DNS resolver, or a local IP.
-4. **Watch the wire (decisive).** While loading a site in a MoltNet window:
+4. **Watch the wire (decisive).** (Kit: automated, for the whole run.) While loading a site in a MoltNet window:
    `sudo tcpdump -n host <that site's IP>` must show nothing, and
    `sudo tcpdump -n udp port 53 or udp port 443` must show nothing caused by the
    page; only the Tor guard (or bridge) should be contacted.
-5. **Fail-closed.** Turn MoltNet off from a regular window, or kill the `tor`
+5. **Fail-closed.** (Kit: automated by killing Tor; turning MoltNet off from a regular window is manual.) Turn MoltNet off from a regular window, or kill the `tor`
    process: pages in an open MoltNet window must fail with a proxy error,
    never load directly. Restart MoltBrowser: no MoltNet window comes back.
-6. **Separate identity.** Log in to a site in a regular window; open it in a
+6. **Separate identity.** (Kit: automated.) Log in to a site in a regular window; open it in a
    MoltNet window: you must not be logged in. Set a cookie in a MoltNet window,
    close all MoltNet windows, open a new one: the cookie must be gone.
-7. **New Identity.** Note the exit IP, press *New Identity*: the MoltNet windows
+7. **New Identity.** (Kit: automated.) Note the exit IP, press *New Identity*: the MoltNet windows
    close, a new one opens, cookies are gone, and the exit IP normally changes.
-8. **Per-site circuits.** Open two different sites in MoltNet tabs and compare
+8. **Per-site circuits.** (Kit: automated, from the SOCKS usernames in the capture.) Open two different sites in MoltNet tabs and compare
    the exit IP each one sees (e.g. two different IP-echo sites): they should
    normally differ. In Tor's log with `SafeLogging 0` + `Log info`, streams for
    different sites carry different SOCKS usernames.
-9. **Overrides are refused.** Start MoltBrowser with `--proxy-server=...` (or a
+9. **Overrides are refused.** (Kit: the `--proxy-server` half; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
    allowed in Incognito, MoltNet must open and step 1 must pass.
-10. **The relays are real.** *Copy route evidence* in the panel, then look up
+10. **The relays are real.** (Kit: automated against the consensus Tor downloaded.) *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.
-11. **Onion sites.** In a MoltNet window, open an onion address both as
+11. **Onion sites.** (Kit: the `http://` and `https://` loads; the Onion-Location bar is manual.) In a MoltNet window, open an onion address both as
     `https://` and as `http://`: both must load, with no HTTPS-Only warning
     for `http://`. Open `https://www.torproject.org`: a bar must offer the
     onion version, and nothing may change until you click it. A test page
@@ -616,13 +649,13 @@ Do all of this in a MoltNet window unless the step says otherwise.
     http-equiv="onion-location" content="http://<v3 onion>/">` in its
     `<head>` must get the same bar; with two such elements, or with the
     element in `<body>`, no bar.
-12. **No onion names outside Tor (regular window).** Run
+12. **No onion names outside Tor (regular window).** (Kit: automated; every lookup goes to the kit's resolver, so DoH needs no separate check.) Run
     `sudo tcpdump -n -l port 53 | grep -i onion`, then type an onion address
     in a regular window's address bar and press Enter: the "Tor onion site"
     page must appear and tcpdump must print nothing. The button must open the
     address in a MoltNet window. With DNS-over-HTTPS on, no DoH request may be
     made for it (check `chrome://net-export`).
-13. **No onion names to a proxy (regular window).** Start a logging proxy
+13. **No onion names to a proxy (regular window).** (Kit: automated with its logging proxy for the image, fetch, redirect, WebSocket, dedicated and shared worker cases; the service worker case is manual.) Start a logging proxy
     (e.g. `mitmdump -p 8888`) and MoltBrowser with
     `--proxy-server=http://127.0.0.1:8888` (MoltNet then refuses to open,
     see step 9; this step is about regular windows). Open a test page that
@@ -632,7 +665,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
     same from a dedicated worker, a shared worker and a service worker: the
     proxy must log none of them, and
     DevTools must show the requests failing with `ERR_BLOCKED_BY_CLIENT`.
-14. **Bridges with your distribution's transports (Linux).** Install
+14. **Bridges with your distribution's transports (Linux).** (Kit: manual.) Install
     `obfs4proxy` (or `lyrebird`) and `snowflake-client`, paste obfs4 bridges
     from bridges.torproject.org under *Custom bridges*, and turn MoltNet on:
     `~/.moltbrowser/tor/torrc` must contain `ClientTransportPlugin obfs4 exec
@@ -641,7 +674,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
     Remove the package: settings must name the package to install, and
     turning MoltNet on must fail with that message rather than connect
     without bridges.
-15. **Your settings don't follow you.** In a regular window, on a test
+15. **Your settings don't follow you.** (Kit: automated with settings seeded into the regular profile: Do Not Track, font size and family, language, third-party cookies, a site with JavaScript and location blocked. Notifications, Shields and changing a setting while the window is open are manual.) In a regular window, on a test
     site: block its location permission and its JavaScript, turn Shields off
     for it, dismiss its notification prompt three times; then in Settings
     turn on Do Not Track, set a large font size and a different standard
@@ -654,7 +687,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
     a regular setting back while the MoltNet window is open: nothing changes
     in it. Allow a permission and turn Shields off in the MoltNet window:
     neither shows in a regular window, and both are gone after New Identity.
-16. **Extensions stay out.** In a regular window install a test extension
+16. **Extensions stay out.** (Kit: partial: content script, web-accessible resource, `chrome.runtime`, `tabs` and `webRequest` events; the rest is manual.) In a regular window install a test extension
     with a content script on `<all_urls>` that marks the page, a
     web-accessible resource, `externally_connectable` for `<all_urls>`,
     `tabs`, `webRequest`, `declarativeNetRequest` (a rule that blocks
@@ -670,7 +703,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
     as before. Repeat with `"incognito": "split"`. A PDF opens in MoltNet's
     PDF viewer. `chrome-extension://<id>/page.html` typed in a MoltNet
     window shows a blocked page.
-17. **No regular-profile carry-over.** In a regular window, watch a video
+17. **No regular-profile carry-over.** (Kit: partial: it reads the MoltNet values, but doesn't prepare media engagement, a bookmark or a certificate exception.) In a regular window, watch a video
     with sound on a site until `chrome://media-engagement` lists it as
     high; on that site in a MoltNet window,
     `navigator.getAutoplayPolicy("mediaelement")` must be `"allowed-muted"`.
@@ -680,7 +713,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
     MoltNet must warn again. With third-party cookies allowed in regular
     settings, a cross-site iframe in MoltNet must not get its cookies, and
     `sharedStorage.set()` must reject.
-18. **No WebRTC, and no name lookups for it.** Pick two names nobody has
+18. **No WebRTC, and no name lookups for it.** (Kit: automated, with the TURN and STUN servers also given as IP literals.) Pick two names nobody has
     looked up before (e.g. `wrtc-<random>.example.com`, `<name1>` and
     `<name2>` below). Watch DNS: a logging resolver (e.g. `dnsmasq
     --log-queries`) as your system resolver, or
@@ -714,7 +747,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
     Run the same page in a regular window: it prints `WebRTC available`
     and both names are looked up by your resolver, as in any Chromium
     (that is the leak MoltNet closes).
-19. **Incognito's protections.** In a MoltNet window:
+19. **Incognito's protections.** (Kit: manual.) In a MoltNet window:
     - Open DevTools on a page, run `"moltnet-devtools-check"` in the
       console and set a breakpoint in one of the page's scripts. Close
       every MoltNet window and quit MoltBrowser: `grep -c
@@ -744,7 +777,7 @@ Do all of this in a MoltNet window unless the step says otherwise.
       no "Running Windows Network Diagnostics" link.
     - Print a page, close the MoltNet window while it's printing: no
       crash, and the job finishes or is cancelled.
-20. **Nothing goes around Tor.** Keep
+20. **Nothing goes around Tor.** (Kit: the download, geolocation and the built-in AI APIs; the AI chat, Cast, passkeys and bookmarks are manual.) Keep
     `sudo tcpdump -n 'not host <Tor guard or bridge IP>' and not port 53`
     and a DNS log (as in step 18) running, connect an AI provider in a
     regular window (molt://ai-settings) and make it the default model,
