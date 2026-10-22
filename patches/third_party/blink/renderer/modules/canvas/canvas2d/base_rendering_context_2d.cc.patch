@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 1ab234ddb6343a7280bbbb01602d02693b10f206..818c0741cf909f3c6e111a0f930deccd1106a438 100644
+index 1ab234ddb6343a7280bbbb01602d02693b10f206..832e61b7ae32f82adfe51b886a8a7ba7c5c2f855 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -57,6 +57,7 @@
+@@ -57,6 +57,8 @@
  #include "third_party/blink/renderer/core/html/canvas/text_metrics.h"
  #include "third_party/blink/renderer/core/html/canvas/unique_font_selector.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
 +#include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"  // MoltBrowser
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/style/computed_style.h"
  #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h"
-@@ -514,6 +515,9 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -514,6 +516,9 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
        DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
      }
@@ -26,3 +27,17 @@ index 1ab234ddb6343a7280bbbb01602d02693b10f206..818c0741cf909f3c6e111a0f930deccd
    }
  
    return image_data;
+@@ -1200,9 +1205,12 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
+   TextDirection direction =
+       ToTextDirection(state.GetDirection(), host, computed_style);
+ 
+-  return MakeGarbageCollected<TextMetrics>(
++  TextMetrics* metrics = MakeGarbageCollected<TextMetrics>(
+       font, direction, state.GetTextBaseline(), state.GetTextAlign(), text,
+       host->GetPlainTextPainter());
++  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
++  molt_fingerprinting::UniformTextMetrics(GetTopExecutionContext(), *metrics);
++  return metrics;
+ }
+ 
+ String BaseRenderingContext2D::lang() const {
