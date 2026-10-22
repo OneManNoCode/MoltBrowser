@@ -75,6 +75,7 @@ GOOD_FP = {
     'webgl2.context': False,
     'webgpu.adapter': None,
     'fonts.visible': ['DejaVu Sans', 'Liberation Sans', 'Arial', 'Ubuntu'],
+    'text.metrics_whole': True,
     'form.validationMessage': 'Please fill out this field.',
     'form.numberMessage': 'Value must be greater than or equal to 10.',
     'doc.characterSet_undeclared': 'windows-1252',

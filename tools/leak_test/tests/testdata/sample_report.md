@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 99 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 100 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -223,6 +223,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | scrollbar.box is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | sharedStorage.set is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | storage.persist is uniform | MOLTNET_COMPLIANCE.md §1.11 |
+| PASS | text.metrics_whole is uniform | FINGERPRINTING.md "Text metrics (MoltNet)" |
 | PASS | touch.createEvent is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | touch.ontouchstart is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | tz.date_string_utc is uniform | FINGERPRINTING.md "Surface covered" |
