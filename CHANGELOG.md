@@ -390,6 +390,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   same bar and remembers the same answer as the other web AI APIs, returns
   only the translation, handles long text piece by piece, and is off in
   MoltNet. The `TranslatorAPIAllowed` policy still turns it off.
+- **Images for the Prompt API.** With a model that sees images (Qwen3-VL
+  2B, Apache 2.0, offered once its download is pinned), a site you allowed
+  can ask your on-device model about images: `LanguageModel` with
+  `expectedInputs` `"image"`, up to four per prompt. Images are decoded by
+  Chromium's own decoders and scaled in the browser; the AI sandbox gets
+  only raw pixels within fixed limits, never an image file. Whether your
+  model sees images doesn't change what `availability()` tells a site.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
