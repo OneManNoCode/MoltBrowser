@@ -68,8 +68,8 @@ source_set("site_permissions") {
 # The browser side: the binder ChromeContentBrowserClient calls, the
 # document environment (MoltNet, policies, permissions policy, the
 # top-level site), the consent infobar, the factory of the per-profile
-# answers (Clear browsing data and profile reset call its hooks) and the
-# BrowserAIRuntime backend.
+# answers (Clear browsing data and profile reset call its hooks), the
+# settings.json switch and the BrowserAIRuntime backend.
 source_set("web_ai") {
   sources = [
     "molt_ai_manager_binder.cc",
@@ -78,6 +78,8 @@ source_set("web_ai") {
     "runtime_web_ai_backend.h",
     "web_ai_consent.cc",
     "web_ai_consent.h",
+    "web_ai_settings_switch.cc",
+    "web_ai_settings_switch.h",
     "web_ai_site_permissions_factory.cc",
     "web_ai_site_permissions_factory.h",
   ]

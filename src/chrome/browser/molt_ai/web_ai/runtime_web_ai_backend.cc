@@ -175,10 +175,19 @@ DeviceFacts RuntimeWebAIBackend::ReadDeviceFacts(BrowserAIRuntime* runtime) {
   return facts;
 }
 
+void RuntimeWebAIBackend::InvalidateDeviceFacts() {
+  device_facts_.reset();
+  discard_pending_facts_ = device_facts_pending_;
+}
+
 void RuntimeWebAIBackend::OnDeviceFacts(DeviceFacts facts) {
   device_facts_pending_ = false;
-  device_facts_ = facts;
-  device_facts_time_ = base::TimeTicks::Now();
+  if (discard_pending_facts_) {
+    discard_pending_facts_ = false;
+  } else {
+    device_facts_ = facts;
+    device_facts_time_ = base::TimeTicks::Now();
+  }
   std::vector<DeviceCallback> waiters;
   waiters.swap(device_waiters_);
   for (DeviceCallback& callback : waiters) {
