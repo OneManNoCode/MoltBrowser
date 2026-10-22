@@ -1,0 +1,2 @@
+{"client": "127.0.0.1", "proto": "udp", "qname": "update.googleapis.com", "qtype": "A", "server": "127.0.0.1", "ts": 1760000003.001, "txid": 4660}
+{"client": "127.0.0.1", "proto": "udp", "qname": "stun-bbbbbb2222.moltleak.test", "qtype": "A", "server": "127.0.0.1", "ts": 1760000021.001, "txid": 4660}

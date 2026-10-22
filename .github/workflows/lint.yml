@@ -18,6 +18,11 @@ name: Lint
 #     createrepo_c and `apt-get update` against the result (blocking)
 #   * the model pinning tool (tools/models/pin_models.py) parses both model
 #     registries and pins a copy offline; a half-filled pin fails (blocking)
+#   * the MoltNet leak test kit (tools/leak_test/): capture reader,
+#     dissectors, classification, uniformity rules and report against a
+#     recorded sample run, its servers and DevTools pipe client; shellcheck
+#     on its scripts (blocking; the kit itself needs a built browser and
+#     root, see docs/LEAK_TESTING.md)
 
 on:
   push:
@@ -129,3 +134,17 @@ jobs:
           persist-credentials: false
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
+
+  leak-test-kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck tools/leak_test
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck tools/leak_test/*.sh tools/leak_test/leakkit/*.sh
+      - name: tools/leak_test unit tests (no root, no browser)
+        run: python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test -v

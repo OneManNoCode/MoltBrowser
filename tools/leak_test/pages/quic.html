@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3. -->
+<!-- MoltNet leak kit test page: HTTP/3 and QUIC. Served by leakkit/services.py,
+     which fills in the {{...}} values for this test. -->
+<html lang="en" data-nonce="{{NONCE}}" data-canary="{{CANARY}}"
+    data-cip4="{{CIP4}}" data-cip6="{{CIP6}}" data-lport="{{LPORT}}"
+    data-gw="{{GW}}" data-gw6="{{GW6}}" data-nsip="{{NSIP}}"
+    data-base-http="{{BASE_HTTP}}" data-base-https="{{BASE_HTTPS}}"
+    data-base-b-https="{{BASE_B_HTTPS}}" data-onion-a="{{ONION_A}}">
+<head>
+<meta charset="utf-8">
+<title>moltleak: HTTP/3 and QUIC</title>
+<script src="/static/ml.js"></script>
+</head>
+<body>
+<script src="/static/quic.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- Copyright 2026 GenEye AI Labs Inc. Licensed under GPLv3. -->
+<!-- MoltNet leak kit test page: fonts, favicons, images. Served by leakkit/services.py,
+     which fills in the {{...}} values for this test. -->
+<html lang="en" data-nonce="{{NONCE}}" data-canary="{{CANARY}}"
+    data-cip4="{{CIP4}}" data-cip6="{{CIP6}}" data-lport="{{LPORT}}"
+    data-gw="{{GW}}" data-gw6="{{GW6}}" data-nsip="{{NSIP}}"
+    data-base-http="{{BASE_HTTP}}" data-base-https="{{BASE_HTTPS}}"
+    data-base-b-https="{{BASE_B_HTTPS}}" data-onion-a="{{ONION_A}}">
+<head>
+<meta charset="utf-8">
+<title>moltleak: fonts, favicons, images</title>
+<link rel="icon" href="https://{{H:favicon}}/favicon.ico">
+<link rel="apple-touch-icon" href="https://{{H:touchicon}}/i.png">
+<link rel="manifest" href="https://{{H:manifest}}/m.json">
+<link rel="stylesheet" href="https://{{H:css}}/s.css">
+<style>
+@font-face { font-family: MLRemote; src: url(https://{{H:font}}/f.woff2) format("woff2"); }
+@font-face { font-family: MLSame; src: url(/canary/font-{{NONCE}}.woff2) format("woff2"); }
+@font-face { font-family: MLIp; src: url(http://{{CIP4}}:8080/f.woff2); }
+.r { font-family: MLRemote, sans-serif; } .s { font-family: MLSame; } .i { font-family: MLIp; }
+body { background-image: url(https://{{H:bgimage}}/b.png); }
+</style>
+<script src="/static/ml.js"></script>
+</head>
+<body>
+<p class="r">remote font</p><p class="s">same-origin font</p><p class="i">IP font</p>
+<img src="https://{{H:img}}/i.png" alt=""> <img src="http://{{CIP4}}:8080/i.png" alt="">
+<img src="http://[{{CIP6}}]:8080/i.png" alt=""> <img srcset="https://{{H:srcset}}/a.png 1x, https://{{H:srcset2x}}/b.png 2x" alt="">
+<script src="/static/fonts.js"></script>
+</body>
+</html>

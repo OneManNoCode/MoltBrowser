@@ -361,6 +361,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   whole PDF.
 
 ### Engineering
+- **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):
+  one command runs a built browser's MoltNet window in a network namespace
+  where only Tor's traffic may leave. It captures every packet and every
+  name lookup. It drives 21 leak tests (WebRTC, DNS prefetch, prefetch and
+  prerender, fonts and favicons, beacons and pings, CSP/NEL reports,
+  WebSocket, WebTransport, workers, downloads, localhost and LAN, QUIC,
+  mDNS, certificate fetches, the built-in AI APIs, geolocation, extensions,
+  and onion addresses in regular windows), the identity and fail-closed
+  steps, and the uniformity checks at several window sizes, zoom levels and
+  scale factors. It writes a pass/fail report with evidence, plus JSON; a
+  `diff` command compares two machines or two locales. It covers most of
+  MOLTNET_COMPLIANCE.md §4. The kit's own tests run in CI.
 - Chromium is pinned in one place (`chromium_version.txt`); copied upstream
   files are tracked as a patch series with rebase tooling (`docs/REBASING.md`).
 - CI: actions pinned to commits, least-privilege tokens, new WebUI checks
