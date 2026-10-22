@@ -7063,6 +7063,13 @@
     "expiry_milestone": -1
   },
   {
+    // MoltBrowser: the web agent's site tools (WebMCP) switch; never
+    // expires.
+    "name": "molt-agent-site-tools",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     // MoltBrowser: fingerprinting protection kill switch; never expires.
     "name": "molt-fingerprinting-protection",
     "owners": [ "moltbrowser" ],

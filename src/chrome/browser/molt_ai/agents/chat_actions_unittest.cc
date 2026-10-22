@@ -236,6 +236,37 @@ TEST(ChatActionsTest, RefusesAgentOnlyAndUnknownVerbs) {
                   .action);
 }
 
+TEST(ChatActionsTest, NeverOffersOrRunsSiteTools) {
+  // Site tools (WebMCP) are the web agent's only: an observation that has
+  // some still gives the chat no CALL_TOOL.
+  Observation o = SampleObservation();
+  agent_tools::ListedTool listed;
+  listed.name = "search";
+  listed.description = "Search.";
+  listed.read_only = true;
+  std::vector<agent_tools::SiteTool> tools;
+  tools.push_back(*agent_tools::MakeSiteTool(listed));
+  agent_actions::AddSiteTools(std::move(tools), &o);
+  ASSERT_EQ(o.tools.size(), 1u);
+  EXPECT_EQ(BuildDecisionSchema(o).find("CALL_TOOL"), std::string::npos);
+  const std::string call =
+      R"({"reason":"r","action":"CALL_TOOL","tool":"t1","arguments":{}})";
+  EXPECT_EQ(agent_actions::ParseAction(call, o, kChatActions).error,
+            ActionError::kUnknownAction);
+  EXPECT_TRUE(agent_actions::ParseAction(call, o).action);
+
+  // And should one get this far, nothing runs it.
+  AgentAction a;
+  a.type = ActionType::kCallTool;
+  a.tool = "t1";
+  EXPECT_EQ(CheckProposal(a, o, Scope::ForRequest(Shop(), ""), Shop(), {})
+                .verdict,
+            Verdict::kRefuse);
+  EXPECT_EQ(DescribeProposal(a, o), "No page action");
+  EXPECT_TRUE(TargetSelectors(a, o).empty());
+  EXPECT_FALSE(InterpretScriptResult(a, base::Value("clicked")).success);
+}
+
 TEST(ChatActionsTest, OldActionTokensAreNeverActions) {
   // The old in-reply format, as a model (or a page it read) would write it.
   for (const char* reply : {

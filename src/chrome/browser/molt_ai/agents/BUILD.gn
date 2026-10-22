@@ -14,6 +14,32 @@ source_set("agent_actions") {
     "agent_actions.h",
   ]
 
+  public_deps = [
+    ":agent_tools",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+
+  deps = [
+    "//base",
+
+    # AddSiteTools() keeps a page's tool only if the action schema with it
+    # is one the inference service converts: it runs the service's own
+    # converter (std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+  ]
+}
+
+# Site tools (WebMCP) for the web agent: listing a page's tools, converting
+# their input schemas to the grammar's subset, checking the model's
+# arguments, the call scripts and when a call asks the user
+# (docs/design/AGENT_ACTIONS.md §2.7). Pure logic (no content/), so
+# molt_ai_unittests links it; fuzzed by molt_agent_tools_fuzzer.
+source_set("agent_tools") {
+  sources = [
+    "agent_tools.cc",
+    "agent_tools.h",
+  ]
+
   public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
 
   deps = [ "//base" ]
@@ -79,8 +105,8 @@ source_set("agent_vision") {
   ]
 }
 
-# chrome://flags/#molt-agent-screenshots (about_flags.cc includes
-# agent_about_flags.h).
+# chrome://flags/#molt-agent-screenshots and #molt-agent-site-tools
+# (about_flags.cc includes agent_about_flags.h).
 source_set("features") {
   sources = [
     "agent_about_flags.h",
@@ -97,12 +123,14 @@ source_set("unit_tests") {
   sources = [
     "agent_actions_unittest.cc",
     "agent_prompt_unittest.cc",
+    "agent_tools_unittest.cc",
     "agent_vision_unittest.cc",
     "chat_actions_unittest.cc",
   ]
   deps = [
     ":agent_actions",
     ":agent_prompt",
+    ":agent_tools",
     ":agent_vision",
     ":chat_actions",
     "//base",

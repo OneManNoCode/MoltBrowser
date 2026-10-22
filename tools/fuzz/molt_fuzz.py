@@ -229,6 +229,7 @@ FUZZERS = {
     "molt_agent_actions_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/agents/agent_actions.cc",
+                 f"{MOLT_AI}/agents/agent_tools.cc",
                  f"{MOLT_AI}/agents/chat_actions.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
@@ -241,6 +242,7 @@ FUZZERS = {
         dir=BROWSER,
         sources=[f"{MOLT_AI}/agents/agent_vision.cc",
                  f"{MOLT_AI}/agents/agent_actions.cc",
+                 f"{MOLT_AI}/agents/agent_tools.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{MOLT_AI}/runtime/model_image.cc",
                  f"{ENGINE}/image_input.cc",

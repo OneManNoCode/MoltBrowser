@@ -15,6 +15,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/agents/agent_features.h"
 #include "chrome/browser/molt_ai/agents/agent_vision.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
@@ -90,6 +91,11 @@ void WebAgent::Start(const std::string& goal,
   screenshot_.reset();
   sent_screenshot_ = false;
   screenshots_failed_ = false;
+  action_tool_ = agent_tools::SiteTool();
+  tool_call_id_.clear();
+  tool_document_ = content::WeakDocumentPtr();
+  tool_result_.clear();
+  tool_call_note_.clear();
   goal_       = goal;
   step_cb_    = std::move(on_step);
   done_cb_    = std::move(on_done);
@@ -266,10 +272,11 @@ void WebAgent::DispatchAction() {
 
   const ActionType a = pending_action_.type;
   if (a == ActionType::kClick || a == ActionType::kType ||
-      a == ActionType::kFillForm) {
+      a == ActionType::kFillForm || a == ActionType::kCallTool) {
     // The page may have changed origin since the last observation (a
     // redirect or script navigation after a click), so check again right
-    // before acting on it.
+    // before acting on it. A site tool runs only on the page it was listed
+    // on, which this keeps in the run's scope.
     url::Origin current;
     if (web_contents_ && web_contents_->GetPrimaryMainFrame())
       current = web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin();
@@ -314,6 +321,7 @@ void WebAgent::RunAction() {
     case ActionType::kObserve:  DoObserve(); break;
     case ActionType::kDone:     Finish(true, pending_action_.result); break;
     case ActionType::kError:    Finish(false, pending_action_.result); break;
+    case ActionType::kCallTool: DoCallTool(); break;
   }
 }
 
@@ -600,6 +608,161 @@ void WebAgent::DoObserve() {
 }
 
 // ----------------------------------------------------------------
+// Site tools (WebMCP)
+// ----------------------------------------------------------------
+
+void WebAgent::DoCallTool() {
+  // ParseAction checked the id and the arguments against observation_,
+  // which hasn't changed since the model was shown it.
+  const agent_tools::SiteTool* tool = observation_.FindTool(pending_action_.tool);
+  if (!tool) {
+    OnActionDone(false, std::string(agent_tools::CallFailureNote(
+                            agent_tools::CallState::kNotFound)));
+    return;
+  }
+  action_tool_ = *tool;
+  // DispatchAction set action_origin_: the page's origin, in scope.
+  const agent_tools::CallCheck check = agent_tools::CheckToolCall(
+      action_tool_, pending_action_.tool_arguments_text,
+      action_origin_.Serialize());
+  if (check.ask) {
+    RequestConfirmation(
+        "CALL_TOOL", check.message,
+        base::BindOnce(&WebAgent::CallToolNow, weak_factory_.GetWeakPtr()));
+    return;
+  }
+  CallToolNow();
+}
+
+void WebAgent::CallToolNow() {
+  if (cancelled_) return;
+  content::RenderFrameHost* main =
+      web_contents_ ? web_contents_->GetPrimaryMainFrame() : nullptr;
+  if (!main) {
+    OnActionDone(false, "No active tab");
+    return;
+  }
+  tool_document_ = main->GetWeakDocumentPtr();
+  tool_call_id_ = "c" + base::NumberToString(++next_tool_request_);
+  // The script calls the tool only on action_origin_, only if the page
+  // still lists it exactly as observed, with the arguments the browser
+  // wrote (agent_tools::ReadArguments).
+  EvalJS(agent_tools::BuildToolCallScript(tool_call_id_,
+                                          action_origin_.Serialize(),
+                                          action_tool_,
+                                          pending_action_.tool_arguments),
+         base::BindOnce(&WebAgent::OnToolCallStarted,
+                        weak_factory_.GetWeakPtr()));
+}
+
+void WebAgent::OnToolCallStarted(base::Value result) {
+  if (cancelled_) return;
+  const agent_tools::CallOutcome started =
+      agent_tools::ParseToolCallStart(result);
+  if (started.state != agent_tools::CallState::kStarted) {
+    OnActionDone(false,
+                 std::string(agent_tools::CallFailureNote(started.state)));
+    return;
+  }
+  PollIsolatedWorld(
+      agent_tools::BuildToolCallPollScript(tool_call_id_), tool_document_,
+      base::TimeTicks::Now() +
+          base::Milliseconds(agent_tools::kCallTimeoutMs),
+      base::BindOnce(&WebAgent::OnToolCallSettled,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void WebAgent::OnToolCallSettled(PollEnd end, base::Value result) {
+  if (cancelled_) return;
+  switch (end) {
+    case PollEnd::kTimedOut:
+      OnActionDone(false, std::string(agent_tools::CallFailureNote(
+                              agent_tools::CallState::kTimedOut)));
+      return;
+    case PollEnd::kDocumentChanged:
+      // The tool loaded another page (a <form> tool submits its form): that
+      // page is its answer. Observe it once it has loaded; a page off the
+      // run's sites asks the user first (OnPageObserved).
+      tool_call_note_ = "The tool loaded another page";
+      WaitForLoadThenObserve();
+      return;
+    case PollEnd::kSettled:
+      break;
+  }
+  const agent_tools::CallOutcome outcome =
+      agent_tools::ParseToolCallPoll(result);
+  if (outcome.state != agent_tools::CallState::kDone) {
+    OnActionDone(false,
+                 std::string(agent_tools::CallFailureNote(outcome.state)));
+    return;
+  }
+  // Page text: it goes into the next observation, inside the page fence.
+  tool_result_ = agent_tools::DescribeToolResult(action_tool_, outcome);
+  tool_call_note_ = "The tool answered";
+  // The tool may have changed the page too: observe it again.
+  ObservePage();
+}
+
+void WebAgent::WaitForLoadThenObserve() {
+  if (cancelled_) return;
+  if (!web_contents_ || !web_contents_->IsLoading()) {
+    ObservePage();
+    return;
+  }
+  waiting_for_nav_ = true;
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&WebAgent::MaybeNavDone, weak_factory_.GetWeakPtr()),
+      base::Seconds(kNavTimeoutSeconds));
+}
+
+void WebAgent::PollIsolatedWorld(std::string script,
+                                 content::WeakDocumentPtr document,
+                                 base::TimeTicks deadline,
+                                 PollCallback done) {
+  if (cancelled_) return;
+  if (!IsCurrentDocument(document)) {
+    std::move(done).Run(PollEnd::kDocumentChanged, base::Value());
+    return;
+  }
+  const std::string js = script;
+  EvalJS(js, base::BindOnce(&WebAgent::OnPolled, weak_factory_.GetWeakPtr(),
+                            std::move(script), std::move(document), deadline,
+                            std::move(done)));
+}
+
+void WebAgent::OnPolled(std::string script,
+                        content::WeakDocumentPtr document,
+                        base::TimeTicks deadline,
+                        PollCallback done,
+                        base::Value result) {
+  if (cancelled_) return;
+  const std::string* state =
+      result.is_dict() ? result.GetDict().FindString("state") : nullptr;
+  if (!state || *state != "pending") {
+    std::move(done).Run(PollEnd::kSettled, std::move(result));
+    return;
+  }
+  if (base::TimeTicks::Now() >= deadline) {
+    std::move(done).Run(PollEnd::kTimedOut, base::Value());
+    return;
+  }
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&WebAgent::PollIsolatedWorld, weak_factory_.GetWeakPtr(),
+                     std::move(script), std::move(document), deadline,
+                     std::move(done)),
+      base::Milliseconds(agent_tools::kPollIntervalMs));
+}
+
+bool WebAgent::IsCurrentDocument(
+    const content::WeakDocumentPtr& document) const {
+  content::RenderFrameHost* rfh = document.AsRenderFrameHostIfValid();
+  return rfh && web_contents_ && rfh == web_contents_->GetPrimaryMainFrame() &&
+         rfh->IsActive();
+}
+
+// ----------------------------------------------------------------
 // Page observation
 // ----------------------------------------------------------------
 
@@ -668,21 +831,115 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   if (web_contents_ && web_contents_->GetPrimaryMainFrame())
     current = web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin();
   const bool origin_allowed = IsWebOrigin(current) && IsOriginAllowed(current);
-  if (!origin_allowed || snapshot_origin != current.Serialize()) {
+  const bool snapshot_is_current = snapshot_origin == current.Serialize();
+  if (!origin_allowed || !snapshot_is_current) {
     observation_ = agent_actions::Observation();
   }
+
+  // The page's own tools (WebMCP), from the same document and origin.
+  agent_tools::ListFacts facts;
+  facts.switched_on = agent_features::AgentSiteToolsEnabled();
+  facts.origin_allowed = origin_allowed;
+  facts.snapshot_is_current = snapshot_is_current && IsCurrentDocument(document);
+  if (agent_tools::ShouldListTools(facts)) {
+    ListSiteTools(page, std::move(document), std::move(snapshot_origin),
+                  origin_allowed);
+    return;
+  }
+  ContinueObservation(page, std::move(document), std::move(snapshot_origin),
+                      origin_allowed);
+}
+
+void WebAgent::ListSiteTools(const StructuredPage& page,
+                             content::WeakDocumentPtr document,
+                             std::string observed_origin,
+                             bool origin_allowed) {
+  if (cancelled_) return;
+  std::string request_id = "l" + base::NumberToString(++next_tool_request_);
+  const std::string js = agent_tools::BuildToolListScript(request_id);
+  EvalJS(js, base::BindOnce(&WebAgent::OnSiteToolListStarted,
+                            weak_factory_.GetWeakPtr(), page,
+                            std::move(document), std::move(observed_origin),
+                            origin_allowed, std::move(request_id)));
+}
+
+void WebAgent::OnSiteToolListStarted(const StructuredPage& page,
+                                     content::WeakDocumentPtr document,
+                                     std::string observed_origin,
+                                     bool origin_allowed,
+                                     std::string request_id,
+                                     base::Value result) {
+  if (cancelled_) return;
+  // 'unavailable' (no WebMCP on this page, the common case) or a failure:
+  // no tools, and no polling.
+  if (agent_tools::ParseToolList(result).state !=
+      agent_tools::ListState::kPending) {
+    ContinueObservation(page, std::move(document), std::move(observed_origin),
+                        origin_allowed);
+    return;
+  }
+  content::WeakDocumentPtr polled = document;
+  PollIsolatedWorld(
+      agent_tools::BuildToolListPollScript(request_id), std::move(polled),
+      base::TimeTicks::Now() +
+          base::Milliseconds(agent_tools::kListTimeoutMs),
+      base::BindOnce(&WebAgent::OnSiteToolsListed, weak_factory_.GetWeakPtr(),
+                     page, std::move(document), std::move(observed_origin),
+                     origin_allowed));
+}
+
+void WebAgent::OnSiteToolsListed(const StructuredPage& page,
+                                 content::WeakDocumentPtr document,
+                                 std::string observed_origin,
+                                 bool origin_allowed,
+                                 PollEnd end,
+                                 base::Value result) {
+  if (cancelled_) return;
+  if (end == PollEnd::kSettled && IsCurrentDocument(document)) {
+    agent_tools::ToolList list = agent_tools::ParseToolList(result);
+    // Only the observed document's tools, at the origin its snapshot read.
+    if (list.state == agent_tools::ListState::kDone &&
+        list.origin == observed_origin) {
+      std::vector<agent_tools::SiteTool> tools;
+      for (const agent_tools::ListedTool& listed : list.tools) {
+        std::optional<agent_tools::SiteTool> tool =
+            agent_tools::MakeSiteTool(listed);
+        if (tool)
+          tools.push_back(std::move(*tool));
+      }
+      agent_actions::AddSiteTools(std::move(tools), &observation_);
+    }
+  }
+  DVLOG(1) << "[WebAgent] " << observation_.tools.size() << " site tool(s)";
+  ContinueObservation(page, std::move(document), std::move(observed_origin),
+                      origin_allowed);
+}
+
+void WebAgent::ContinueObservation(const StructuredPage& page,
+                                   content::WeakDocumentPtr document,
+                                   std::string observed_origin,
+                                   bool origin_allowed) {
+  if (cancelled_) return;
 
   std::string compact = page.ToCompactText();
   if (static_cast<int>(compact.size()) > kMaxPageChars)
     compact = compact.substr(0, kMaxPageChars) + "\n[… truncated]";
 
   // Everything here is page-controlled; BuildPrompt fences it. The element
-  // ids are the browser's; their labels are page text.
-  current_page_state_ = "URL: " + page.page_url +
+  // and tool ids are the browser's; labels, tool names, descriptions and a
+  // tool's answer are page text. The answer of the tool just called comes
+  // first, so the step's history keeps it.
+  current_page_state_ = tool_result_ +
+                         "URL: " + page.page_url +
                          "\nTitle: " + page.page_title +
                          "\n\n" + compact +
                          "\nELEMENTS:\n" +
                          agent_actions::DescribeElements(observation_);
+  tool_result_.clear();
+  if (!observation_.tools.empty()) {
+    current_page_state_ += "TOOLS (functions this page offers):\n" +
+                           agent_tools::DescribeTools(observation_.tools);
+  }
 
   // A new observation: the last one's screenshot no longer applies. Take
   // one of this one if the model sees images (AgentScreenshotter decides,
@@ -691,7 +948,7 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   AgentScreenshotter::Request request;
   request.observation = observation_;
   request.document = std::move(document);
-  request.observed_origin = snapshot_origin;
+  request.observed_origin = std::move(observed_origin);
   request.origin_allowed = origin_allowed;
   request.model_sees_images = runtime_ && runtime_->LoadedModelSeesImages();
   request.run_allows_images = !screenshots_failed_;
@@ -730,6 +987,9 @@ void WebAgent::FinishObservation(const StructuredPage& page) {
       break;
     case ActionType::kScroll:
       OnActionDone(true, "Scrolled");
+      break;
+    case ActionType::kCallTool:
+      OnActionDone(true, tool_call_note_);
       break;
     default:
       OnActionDone(true, "Page observed");
@@ -802,9 +1062,11 @@ void WebAgent::OnActionDone(bool ok, std::string note) {
   if (cancelled_) return;
 
   // TYPE and FILL_FORM write to the page without observing it again: the
-  // screenshot would show the fields as they were.
+  // screenshot would show the fields as they were. So may a tool call that
+  // failed (one that succeeded observed the page again).
   if (pending_action_.type == ActionType::kType ||
-      pending_action_.type == ActionType::kFillForm) {
+      pending_action_.type == ActionType::kFillForm ||
+      (pending_action_.type == ActionType::kCallTool && !ok)) {
     screenshot_.reset();
   }
 
@@ -884,6 +1146,7 @@ agent_prompt::PromptInput WebAgent::BuildPromptInput() const {
   input.steps_remaining = kMaxIterations - iteration_;
   input.retry_note = retry_note_;
   input.with_screenshot = screenshot_.has_value();
+  input.with_tools = !observation_.tools.empty();
   return input;
 }
 
@@ -932,6 +1195,12 @@ WebAgent::Step WebAgent::DescribeAction(
     case ActionType::kError:
       step.target = action.result;
       break;
+    case ActionType::kCallTool: {
+      const agent_tools::SiteTool* tool = observation_.FindTool(action.tool);
+      step.target = tool ? "tool \"" + tool->name + "\"" : action.tool;
+      step.value = action.tool_arguments_text;
+      break;
+    }
   }
   return step;
 }

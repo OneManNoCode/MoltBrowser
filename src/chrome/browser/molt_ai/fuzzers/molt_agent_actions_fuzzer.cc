@@ -151,6 +151,11 @@ void CheckAction(const AgentAction& a,
       CHECK(!a.result.empty() && CountChars(a.result) <= kMaxResultChars);
       CHECK(!HasControl(a.result, true));
       break;
+    case ActionType::kCallTool:
+      // Site tools have their own fuzzer (molt_agent_tools_fuzzer); this
+      // observation has none, so no call can be accepted.
+      CHECK(observation.FindTool(a.tool)) << "a call to a tool not offered";
+      break;
   }
 }
 
