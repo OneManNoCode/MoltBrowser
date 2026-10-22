@@ -127,6 +127,19 @@ fuzzer_test("molt_agent_actions_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+fuzzer_test("molt_agent_vision_fuzzer") {
+  sources = [ "molt_agent_vision_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/agents:agent_vision",
+    "//chrome/browser/molt_ai/runtime:model_image",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/services/molt_ai/inference/engine:image_input",
+  ]
+  seed_corpus = "corpus/molt_agent_vision_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 fuzzer_test("molt_agent_safety_fuzzer") {
   sources = [ "molt_agent_safety_fuzzer.cc" ]
   deps = [
@@ -219,6 +232,7 @@ group("fuzzers") {
   deps = [
     ":molt_agent_actions_fuzzer",
     ":molt_agent_safety_fuzzer",
+    ":molt_agent_vision_fuzzer",
     ":molt_automation_ai_steps_fuzzer",
     ":molt_automation_script_fuzzer",
     ":molt_dom_interpreter_fuzzer",

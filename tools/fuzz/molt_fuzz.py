@@ -237,6 +237,18 @@ FUZZERS = {
         dict="dicts/agent.dict",
         max_len=16384,
     ),
+    "molt_agent_vision_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/agents/agent_vision.cc",
+                 f"{MOLT_AI}/agents/agent_actions.cc",
+                 f"{MOLT_AI}/security/agent_safety.cc",
+                 f"{MOLT_AI}/runtime/model_image.cc",
+                 f"{ENGINE}/image_input.cc",
+                 f"{ENGINE}/json_schema_grammar.cc",
+                 f"{ENGINE}/bounded_json.cc"],
+        tier="stand_ins",
+        max_len=16384,
+    ),
     "molt_agent_safety_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/security/agent_safety.cc"],

@@ -109,6 +109,7 @@ Ordered by exposure: input a page or a model controls comes first.
 | `molt_dom_interpreter_fuzzer` | page HTML (page) | std | linear scanners: no timeout on 64 KB; no tag left in the main text; links/buttons/forms are the ones `ParseHTML()` reports |
 | `molt_agent_safety_fuzzer` | page text, script results, selectors (page, workflow file) | stand_ins | sanitized text can't forge the untrusted-content fence or a chat-template token; only http(s) URLs pass; probes keep their count |
 | `molt_agent_actions_fuzzer` | element snapshot (page), model reply (model) | stand_ins | observations capped and clean; every action schema is in the service's subset; accepted actions name listed elements and respect every cap; the chat never types model text into a password field |
+| `molt_agent_vision_fuzzer` | geometry script result, selectors and labels (page) | stand_ins | only in-range geometry is accepted, deterministically; tags never overlap and stay inside the image (at most the cap); annotation never touches the padding and leaves no original pixel inside any mask, so a password field's pixels never reach the model |
 | `molt_automation_ai_steps_fuzzer` | model answers to AI steps (model), field lists (workflow file) | stand_ins | decisions only from exact `SUCCESS`/`FAIL`; extracted values typed and capped |
 | `molt_stream_filters_fuzzer` | model output, split anywhere (model) | std | every chunk sent is valid UTF-8 without NUL; no stop string shown; the result doesn't depend on how the output is split |
 | `molt_stream_validator_fuzzer` | the service's messages, in any order (compromised service) | std | the browser passes on only valid UTF-8 within its byte and chunk caps; nothing after completion |
@@ -196,10 +197,10 @@ campaign: longer runs happen locally or on ClusterFuzz-style infrastructure.
   yet walk each action grammar in llama.cpp and check that `ParseAction()`
   accepts every reply the grammar allows.
 - **Code that landed alongside this work.** These files have no targets
-  yet: the web agent's prompt and screenshot logic
-  (`agents/agent_prompt.*`, `agents/agent_vision.*`), the model download
-  plan (`models/model_download_plan.*`) and the chat's form-fill proposals
-  (`ui/webui/molt_ai/molt_ai_chat_form_fill.*`). The form fill reads model
+  yet: the web agent's prompt (`agents/agent_prompt.*`), the model
+  download plan (`models/model_download_plan.*`) and the chat's form-fill
+  proposals (`ui/webui/molt_ai/molt_ai_chat_form_fill.*`). The screenshot
+  logic (`agents/agent_vision.*`) has `molt_agent_vision_fuzzer`. The form fill reads model
   replies with `ParseAction()` and fences page text with the chat's
   decision prompt, and both of those are fuzzed. Its own formatting of
   pasted text and profile data is not.

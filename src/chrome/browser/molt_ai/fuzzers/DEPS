@@ -1,6 +1,7 @@
 include_rules = [
   # The std-only engine headers the browser's parsers share with the
   # inference service (as runtime/DEPS allows them).
+  "+chrome/services/molt_ai/inference/engine/image_input.h",
   "+chrome/services/molt_ai/inference/engine/json_schema_grammar.h",
   "+chrome/services/molt_ai/inference/engine/stream_filters.h",
   # molt_release_manifest_fuzzer signs manifests with a test key.
