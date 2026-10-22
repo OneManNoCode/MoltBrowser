@@ -1,10 +1,17 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# The web's built-in AI APIs (LanguageModel, Summarizer, Writer, Rewriter)
-# served by the user's own on-device model instead of upstream's AIManager.
-# Hooked from ChromeContentBrowserClient::BindAIManager.
+# The web's built-in AI APIs (LanguageModel, Summarizer, Writer, Rewriter,
+# Translator) served by the user's own on-device model instead of upstream's
+# AIManager and TranslationManagerImpl. Hooked from
+# ChromeContentBrowserClient::BindAIManager and BindTranslationManager.
 # Design: docs/design/WEB_AI_APIS.md.
+#
+# Nothing here depends on //components/component_updater or on
+# //components/on_device_translation beyond its buildflag and its pref name:
+# a page's Translator can't reach TranslateKit through this code.
+
+import("//components/on_device_translation/buildflags/features.gni")
 
 # The decisions (availability, consent, buckets, counting, limits, which
 # model), the option -> prompt mapping, the Translator's languages, pieces
@@ -26,9 +33,10 @@ source_set("logic") {
   ]
 }
 
-# blink.mojom.AIManager and the session interfaces, over an abstract
-# environment (the document) and backend (the runtime). No //content, so
-# molt_ai_unittests drives it over real mojo pipes with fakes.
+# blink.mojom.AIManager, blink.mojom.TranslationManager and the session
+# interfaces, over an abstract environment (the document) and backend (the
+# runtime). No //content, so molt_ai_unittests drives it over real mojo
+# pipes with fakes.
 source_set("manager") {
   sources = [
     "molt_ai_manager.cc",
@@ -37,6 +45,8 @@ source_set("manager") {
     "web_ai_backend.h",
     "web_ai_sessions.cc",
     "web_ai_sessions.h",
+    "web_ai_translator_session.cc",
+    "web_ai_translator_session.h",
   ]
   public_deps = [
     ":logic",
@@ -68,7 +78,7 @@ source_set("site_permissions") {
   ]
 }
 
-# The browser side: the binder ChromeContentBrowserClient calls, the
+# The browser side: the binders ChromeContentBrowserClient calls, the
 # document environment (MoltNet, policies, permissions policy, the
 # top-level site), the consent infobar, the factory of the per-profile
 # answers (Clear browsing data and profile reset call its hooks), the
@@ -101,6 +111,9 @@ source_set("web_ai") {
     "//components/infobars/content",
     "//components/infobars/core",
     "//components/keyed_service/core",
+
+    # ENABLE_ON_DEVICE_TRANSLATION, for the TranslatorAPIAllowed pref name.
+    "//components/on_device_translation/buildflags",
     "//components/optimization_guide/core:features",
     "//components/policy/core/common:common_constants",
     "//components/pref_registry",
@@ -114,6 +127,10 @@ source_set("web_ai") {
     "//ui/base",
     "//url",
   ]
+  if (enable_on_device_translation) {
+    # pref_names.h only (prefs::kTranslatorAPIAllowed).
+    deps += [ "//components/on_device_translation:public" ]
+  }
 
   # g_browser_process (browser_process.h) and CreateConfirmInfoBar
   # (//chrome/browser/infobars) live in targets that depend on this one

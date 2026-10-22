@@ -2,10 +2,10 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // The decisions behind the built-in AI APIs MoltBrowser gives web pages
-// (LanguageModel, Summarizer, Writer, Rewriter), backed by the user's own
-// on-device model: what availability() reports, what create() does, how big
-// a session may be, how page text is counted, which model serves pages, and
-// the per-site limits. Standard library only, so molt_ai_unittests tests it
+// (LanguageModel, Summarizer, Writer, Rewriter, Translator), backed by the
+// user's own on-device model: what availability() reports, what create()
+// does, how big a session may be, how page text is counted, which model
+// serves pages, and the per-site limits. Standard library only, so molt_ai_unittests tests it
 // without a browser. Design: docs/design/WEB_AI_APIS.md.
 //
 // Fingerprinting: everything a page can read back from here is a small,

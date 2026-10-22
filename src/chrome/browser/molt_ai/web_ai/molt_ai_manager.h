@@ -1,22 +1,24 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// MoltBrowser's implementation of blink::mojom::AIManager: the browser side
-// of the web's built-in AI APIs (LanguageModel, Summarizer, Writer,
-// Rewriter), served by the user's own on-device model through
-// BrowserAIRuntime instead of upstream's AIManager (Gemini Nano via the
-// optimization guide). Bound by ChromeContentBrowserClient::BindAIManager
-// (see molt_ai_manager_binder.h) for every document and worker; one
-// instance per document or worker, owned by its user data, so navigating
-// away or closing the frame destroys it and every session, cancelling their
-// generations. Design: docs/design/WEB_AI_APIS.md.
+// MoltBrowser's implementation of blink::mojom::AIManager and
+// blink::mojom::TranslationManager: the browser side of the web's built-in
+// AI APIs (LanguageModel, Summarizer, Writer, Rewriter, Translator), served
+// by the user's own on-device model through BrowserAIRuntime instead of
+// upstream's AIManager (Gemini Nano via the optimization guide) and
+// TranslationManagerImpl (TranslateKit via the component updater). Bound by
+// ChromeContentBrowserClient::BindAIManager and BindTranslationManager (see
+// molt_ai_manager_binder.h) for every document and worker; one instance per
+// document or worker, owned by its user data and shared by both
+// interfaces, so navigating away or closing the frame destroys it and every
+// session, cancelling their generations. Design: docs/design/WEB_AI_APIS.md.
 //
 // Everything a page sends is untrusted: sizes are checked before anything
 // is stored, text goes to the model only in the fields the inference service
 // neutralizes, and the renderer is never CHECKed.
 //
-// Translator, LanguageDetector, Proofreader and the semantic embedder are
-// not served: they report "unavailable" and create() fails.
+// LanguageDetector, Proofreader and the semantic embedder are not served:
+// they report "unavailable" and create() fails.
 
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_MOLT_AI_MANAGER_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_MOLT_AI_MANAGER_H_
@@ -41,6 +43,7 @@
 #include "third_party/blink/public/mojom/ai/ai_common.mojom.h"
 #include "third_party/blink/public/mojom/ai/ai_language_model.mojom.h"
 #include "third_party/blink/public/mojom/ai/ai_manager.mojom.h"
+#include "third_party/blink/public/mojom/on_device_translation/translation_manager.mojom.h"
 
 namespace molt_ai::web_ai {
 
@@ -52,6 +55,7 @@ enum class WebAIApi {
   kSummarizer,
   kWriter,
   kRewriter,
+  kTranslator,
 };
 
 // What MoltAIManager needs to know about the document or worker it serves
@@ -61,10 +65,12 @@ class WebAIEnvironment {
  public:
   virtual ~WebAIEnvironment() = default;
 
+  // For kTranslator, |enterprise_allowed| also covers the
+  // TranslatorAPIAllowed policy.
   virtual ContextFacts GetContextFacts(WebAIApi api) = 0;
-  // The "language-model", "summarizer", "writer" and "rewriter" permissions
-  // policy features. Blink checks them first, so false here means a
-  // renderer that skipped the check.
+  // The "language-model", "summarizer", "writer", "rewriter" and
+  // "translator" permissions policy features. Blink checks them first, so
+  // false here means a renderer that skipped the check.
   virtual bool IsAllowedByPermissionsPolicy(WebAIApi api) = 0;
   // The user's answer for the top-level origin.
   virtual SiteConsent GetConsent() = 0;
@@ -86,7 +92,8 @@ class WebAIEnvironment {
 };
 
 class MoltAIManager : public base::SupportsUserData::Data,
-                      public blink::mojom::AIManager {
+                      public blink::mojom::AIManager,
+                      public blink::mojom::TranslationManager {
  public:
   // |backend| outlives this (the real one is a process-wide singleton).
   MoltAIManager(std::unique_ptr<WebAIEnvironment> environment,
@@ -96,6 +103,8 @@ class MoltAIManager : public base::SupportsUserData::Data,
   ~MoltAIManager() override;
 
   void AddReceiver(mojo::PendingReceiver<blink::mojom::AIManager> receiver);
+  void AddTranslationReceiver(
+      mojo::PendingReceiver<blink::mojom::TranslationManager> receiver);
 
   // blink::mojom::AIManager:
   void CanCreateLanguageModel(
@@ -145,10 +154,23 @@ class MoltAIManager : public base::SupportsUserData::Data,
       mojo::PendingRemote<on_device_model::mojom::DownloadObserver> monitor)
       override;
 
+  // blink::mojom::TranslationManager (the Translator API; the language
+  // table and the pieces are in web_ai_translation.h):
+  void CreateTranslator(
+      mojo::PendingRemote<blink::mojom::TranslationManagerCreateTranslatorClient>
+          client,
+      blink::mojom::TranslatorCreateOptionsPtr options) override;
+  void TranslationAvailable(blink::mojom::TranslatorLanguageCodePtr source_lang,
+                            blink::mojom::TranslatorLanguageCodePtr target_lang,
+                            TranslationAvailableCallback callback) override;
+
   // For the sessions.
   WebAIBackend* backend() { return backend_; }
   const std::string& site_key();
   bool IsForeground();
+  // The context may still use |api| (IsContextEligible(): the feature,
+  // policies, the On-device AI switch), read now.
+  bool IsContextStillEligible(WebAIApi api);
   // Ends session |session_id| (destroy() or its pipe closed). It is
   // deleted asynchronously, never while it is still on the stack.
   void CloseSession(uint64_t session_id);
@@ -176,9 +198,10 @@ class MoltAIManager : public base::SupportsUserData::Data,
             typename Session,
             typename Options>
   class WritingCreate;
+  class TranslatorCreate;
 
-  using AvailabilityCallback =
-      base::OnceCallback<void(blink::mojom::ModelAvailabilityCheckResult)>;
+  // Each interface turns the decision into its own mojo answer.
+  using AvailabilityCallback = base::OnceCallback<void(AvailabilityDecision)>;
 
   // availability() for |api|.
   void CheckAvailability(WebAIApi api,
@@ -219,6 +242,7 @@ class MoltAIManager : public base::SupportsUserData::Data,
   base::TimeDelta stream_interval_ = base::Milliseconds(kStreamIntervalMs);
 
   mojo::ReceiverSet<blink::mojom::AIManager> receivers_;
+  mojo::ReceiverSet<blink::mojom::TranslationManager> translation_receivers_;
   std::map<uint64_t, std::unique_ptr<CreateRequest>> creates_;
   uint64_t next_create_id_ = 1;
   std::map<uint64_t, std::unique_ptr<WebAISession>> sessions_;
