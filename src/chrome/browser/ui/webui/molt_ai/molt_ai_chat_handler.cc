@@ -46,6 +46,7 @@
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#include "chrome/browser/molt_ai/agents/chat_actions.h"
 #include "chrome/browser/molt_ai/automation/agent_inbox_registry.h"
 #include "chrome/browser/molt_ai/automation/automation_runner.h"
 #include "chrome/browser/molt_ai/automation/automation_script.h"
@@ -205,6 +206,14 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "runMoltAction",
       base::BindRepeating(&MoltAIChatHandler::HandleRunMoltAction,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "proposeChatAction",
+      base::BindRepeating(&MoltAIChatHandler::HandleProposeChatAction,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "runChatProposal",
+      base::BindRepeating(&MoltAIChatHandler::HandleRunChatProposal,
                           base::Unretained(this)));
   // Personal Vector Memory grounding — top-K relevant chunks from
   // the user's full browsing history. Args: [callback_id, query, top_k].
@@ -464,14 +473,14 @@ using molt_ai::chat_handler_helpers::StringArg;
 // THE PARROT FIX — system-prompt diet + context gating.
 //
 // The old monolithic system prompt (~3.4K chars, ~73% of it the
-// [[ACTION]] DSL) shipped with EVERY message, and the JS side injected
-// page excerpts + memory hits unconditionally, so small on-device
-// models parroted instructions and page text back at the user. The
-// prompt is now a compact always-on core (kCoreSystemPrompt) plus an
-// opt-in action block (kActionDslPrompt), and the page/memory context
-// sections arriving in the page_ctx argument are gated by the send
-// origin ('chat' | 'page-action' | 'agent') and the cheap keyword
-// heuristics below.
+// in-reply action syntax the chat no longer has) shipped with EVERY
+// message, and the JS side injected page excerpts + memory hits
+// unconditionally, so small on-device models parroted instructions and
+// page text back at the user. The prompt is now a compact always-on core
+// (kCoreSystemPrompt) plus a short note for messages that ask to act on
+// the page (kPageActionNote), and the page/memory context sections
+// arriving in the page_ctx argument are gated by the send origin
+// ('chat' | 'page-action') and the cheap keyword heuristics below.
 // ------------------------------------------------------------------
 
 // Always-on core: identity, tone, brevity, anti-parrot. Two identity lines:
@@ -503,66 +512,18 @@ constexpr char kContextPreamble[] =
     "\n\nContext (use only if relevant; do not enumerate or mention "
     "unprompted):\n";
 
-// [[ACTION]] DSL — included only for agent sends or messages that
-// look like a browsing command (kActionIntentKeywords). Plain chat
-// never sees this block.
-constexpr char kActionDslPrompt[] =
-    "AGENTIC ACTIONS — when the user asks you to interact with the "
-    "page (click, fill a form, scroll, navigate, choose a dropdown "
-    "option, drag, etc.), emit one or more action tokens on their "
-    "own line. The browser dispatches each token in sequence as "
-    "soon as it's emitted.\n"
-    "\n"
-    "CRITICAL RULE — every ACTION token MUST contain real, concrete "
-    "values. Never emit angle-bracket placeholders like <full-url>, "
-    "<css-selector>, <text-to-type>, <milliseconds>, or <from-user>. "
-    "Those are description syntax, NOT something to copy. If you "
-    "don't know the real value, ASK the user instead of guessing.\n"
-    "\n"
-    "Real-world examples (always use this style):\n"
-    "  User: 'open nasa.com'\n"
-    "  → [[ACTION navigate:https://nasa.com]]\n"
-    "    Opening NASA's website.\n"
-    "\n"
-    "  User: 'search for puppies on google'\n"
-    "  → [[ACTION navigate:https://google.com]]\n"
-    "    [[ACTION wait-for:input[name=q]|3000]]\n"
-    "    [[ACTION type:input[name=q]|puppies]]\n"
-    "    [[ACTION click:button[type=submit]]]\n"
-    "    Searching Google for puppies.\n"
-    "\n"
-    "  User: 'scroll down a bit'\n"
-    "  → [[ACTION scroll:600]]\n"
-    "    Scrolling down 600 pixels.\n"
-    "\n"
-    "Token grammar (use real values, never the bracketed names):\n"
-    "  click:SELECTOR              — e.g. click:#search-button\n"
-    "  type:SELECTOR|TEXT          — e.g. type:input[name=q]|hello\n"
-    "  select:SELECTOR|VALUE       — e.g. select:#country|US\n"
-    "  hover:SELECTOR              — e.g. hover:.tooltip-trigger\n"
-    "  right-click:SELECTOR        — e.g. right-click:.menu\n"
-    "  drag:SRC|DST                — e.g. drag:#a|#b\n"
-    "  scroll:PIXELS               — e.g. scroll:400\n"
-    "  navigate:URL                — e.g. navigate:https://nasa.com\n"
-    "  wait:MS                     — e.g. wait:1500\n"
-    "  wait-for:SELECTOR|MS        — e.g. wait-for:#results|3000\n"
-    "\n"
-    "If you don't know whether a selector exists (CAPTCHA, A/B test), "
-    "use wait-for with a short timeout — if it doesn't appear, the "
-    "run fails cleanly and the user sees the failure in the chat.\n"
-    "\n"
-    "File uploads: dispatch a click on the file input "
-    "([[ACTION click:input[type=file]]]). The native picker opens "
-    "and the user selects the file themselves.\n"
-    "\n"
-    "Rules for action tokens:\n"
-    "  - One token per line, exact syntax with the double brackets.\n"
-    "  - Prefer specific selectors: id (#name), data-testid, "
-    "aria-label, name attribute. CSS classes only if necessary.\n"
-    "  - Always include a one-sentence natural-language explanation "
-    "of what you're doing AFTER the token(s).\n"
-    "  - If the user just asks a question, do NOT emit any action "
-    "token — only emit when they ask you to DO something.";
+// For a typed message that asks to act on the page
+// (chat_actions::LooksLikePageActionRequest). The reply is text only:
+// the browser asks the on-device model for the action separately, in a
+// fixed format it validates (HandleProposeChatAction), and nothing in a
+// reply is ever executed. Plain chat never sees this block.
+constexpr char kPageActionNote[] =
+    "PAGE ACTIONS: the user is asking for something to be done in the web "
+    "page they are looking at. Answer in one short sentence saying what "
+    "should happen; do not claim it has been done. MoltBrowser itself "
+    "proposes the page action after your reply and shows it to the user. "
+    "Never write commands, CSS selectors or markup such as "
+    "\"[[ACTION ...]]\": they are not run.";
 
 // Case-insensitive cues that a typed chat message plausibly refers to
 // the current page. Single words match on word boundaries; entries
@@ -579,12 +540,6 @@ constexpr const char* kMemoryReferenceKeywords[] = {
     "that",      "article",  "read",      "earlier",   "before",
     "yesterday", "history",  "remember",  "was there", "last week",
     "last time", "visited",  "browsing",  "past"};
-
-// Imperative browsing verbs → include the [[ACTION]] DSL block.
-constexpr const char* kActionIntentKeywords[] = {
-    "open",   "go to",    "click", "search for", "type",
-    "scroll", "navigate", "fill",  "close tab",  "find on",
-    "press",  "select",   "hover", "drag",       "visit"};
 
 // Section markers produced by the JS context assembler (sendMessage in
 // molt_ai_chat_ui_js.h). Must stay byte-identical with the JS strings.
@@ -834,12 +789,12 @@ MoltAISettings LoadUserSettings() {
 
 // System prompt shared by the local and cloud send paths: identity (local
 // vs. cloud — never claim on-device to a cloud model), core rules, the
-// user's custom settings.json system_prompt, and the [[ACTION]] DSL when
-// requested. The gated page context is NOT part of it: the local runtime
-// budgets context separately (it may be trimmed; the system prompt never
-// is), and the cloud path appends it below.
+// user's custom settings.json system_prompt, and kPageActionNote when the
+// message asks to act on the page. The gated page context is NOT part of
+// it: the local runtime budgets context separately (it may be trimmed; the
+// system prompt never is), and the cloud path appends it below.
 std::string BuildSystemPrompt(const MoltAISettings& settings,
-                              bool include_actions,
+                              bool page_action_note,
                               const std::string& cloud_provider_name) {
   std::string system_msg;
   if (cloud_provider_name.empty()) {
@@ -853,9 +808,9 @@ std::string BuildSystemPrompt(const MoltAISettings& settings,
     system_msg += "\n\n";
     system_msg += settings.system_prompt;
   }
-  if (include_actions) {
+  if (page_action_note) {
     system_msg += "\n\n";
-    system_msg += kActionDslPrompt;
+    system_msg += kPageActionNote;
   }
   return system_msg;
 }
@@ -900,9 +855,9 @@ std::vector<std::pair<std::string, std::string>> BuildCloudChatMessages(
     const std::string& prompt,
     const std::string& history,
     const std::string& page_ctx,
-    bool include_actions) {
+    bool page_action_note) {
   std::string system_msg =
-      BuildSystemPrompt(settings, include_actions, provider_name);
+      BuildSystemPrompt(settings, page_action_note, provider_name);
   if (!page_ctx.empty()) {
     system_msg += kContextPreamble + page_ctx;
   }
@@ -1203,13 +1158,18 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
 
   // Optional 5th arg: send origin — 'chat' (typed message, default
   // when absent), 'page-action' (Summarize/Extract/Explain/Translate
-  // chips), or 'agent'. Unknown values are treated as 'chat'.
+  // chips), or 'agent'. Unknown values are treated as 'chat' for the
+  // context gating below. Only an explicit 'chat' is a message the user
+  // typed in the composer (sendMessage); the slash commands and molt://ai
+  // send '' and never get a page action.
   std::string origin = "chat";
   if (args.size() >= 5u && args[4].is_string() &&
       (args[4].GetString() == "page-action" ||
        args[4].GetString() == "agent")) {
     origin = args[4].GetString();
   }
+  const bool typed_in_composer =
+      args.size() >= 5u && args[4].is_string() && args[4].GetString() == "chat";
 
   // Optional 6th arg: the picked model id. A plain local GGUF id routes to
   // the on-device runtime; a namespaced "provider:model" cloud id (e.g.
@@ -1244,8 +1204,10 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   //  - Memory ('Relevant past reading'): plain chat only, >= 4 words,
   //    and the message must reference past reading. Never for
   //    greetings/short messages. Deduped by URL, capped at 2 hits.
-  //  - [[ACTION]] DSL: agent sends, or messages that read like a
-  //    browsing command.
+  //  - Page-action note: a message the user typed in the composer that
+  //    asks to act on the page (chat_actions::LooksLikePageActionRequest).
+  //    Its reply carries `action_request`, and the page then asks for one
+  //    proposed action (HandleProposeChatAction).
   // PDF/attachment sections always pass (explicit user actions).
   const std::string lower_prompt = base::ToLowerASCII(prompt_text);
   const bool include_page =
@@ -1255,24 +1217,33 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
   const bool include_memory =
       origin == "chat" && CountWords(prompt_text) >= 4 &&
       MatchesAnyKeyword(lower_prompt, kMemoryReferenceKeywords);
-  // The action-intent keyword scan must only apply to TYPED chat. Quick-action
-  // chips (Summarize/Extract/Explain/Translate) send origin=="page-action" with
-  // 2-3k chars of raw page text embedded, which frequently contains action
-  // verbs ("open", "select", "visit") and would otherwise re-attach the whole
-  // ACTION DSL to the very flows the prompt-diet is meant to slim. Chips never
-  // need the DSL; the agent path always gets it; typed slash-commands like
-  // /plan and /fill ai carry origin=="chat" and keep matching by keyword.
-  const bool include_actions =
-      origin == "agent" ||
-      (origin == "chat" &&
-       MatchesAnyKeyword(lower_prompt, kActionIntentKeywords));
+  // Only what the user typed can ask for a page action: never the
+  // quick-action chips (their prompt embeds page text) or the slash
+  // commands (/translate, /plan, /fill ai, ... build prompts from page
+  // text, clipboard or the profile).
+  const bool page_action_note =
+      typed_in_composer &&
+      molt_ai::chat_actions::LooksLikePageActionRequest(prompt_text);
+
+  // A new message: an earlier message's pending request or unanswered
+  // proposal is stale, and so is a decision still running for it.
+  chat_action_token_ = 0;
+  chat_action_prompt_callback_id_.clear();
+  chat_action_request_.clear();
+  chat_proposal_.reset();
+  ++chat_action_epoch_;
+  if (page_action_note) {
+    chat_action_token_ = ++next_chat_action_token_;
+    chat_action_prompt_callback_id_ = callback_id;
+    chat_action_request_ = prompt_text;
+  }
 
   const GatedContext gated =
       BuildGatedPageContext(page_context, include_page, include_memory);
   page_context = gated.text;
 
   LOG(INFO) << "[MoltAI] sendPrompt blocks: origin=" << origin
-            << " core=1 actions=" << include_actions
+            << " core=1 page_action=" << page_action_note
             << " page=" << gated.page_included
             << " pdf=" << gated.pdf_included
             << " attachment=" << gated.attachment_included
@@ -1292,7 +1263,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
     // /ask-tabs builds its own context from every open tab.
     attached.Set("tabs", page_context.rfind("Cross-tab Q&A", 0) == 0);
     StartCloudPrompt(callback_id, model_id, prompt_text, history_text,
-                     page_context, include_actions, std::move(attached));
+                     page_context, page_action_note, std::move(attached));
     return;
   }
 
@@ -1356,7 +1327,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       base::BindOnce(
           [](molt_ai::BrowserAIRuntime* rt, const std::string& prompt,
              const std::string& history, const std::string& page_ctx,
-             const std::string& lazy_model, bool include_actions,
+             const std::string& lazy_model, bool page_action_note,
              uint64_t request_id, const std::string& conversation_key,
              base::WeakPtr<MoltAIChatHandler> weak_self)
               -> molt_ai::GenerationResult {
@@ -1451,7 +1422,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             // template and fits the window — whole oldest turns first, then
             // the page context; the system prompt is never cut.
             molt_ai::ChatPrompt chat;
-            chat.system_prompt = BuildSystemPrompt(settings, include_actions,
+            chat.system_prompt = BuildSystemPrompt(settings, page_action_note,
                                                    /*cloud_provider_name=*/"");
             chat.context_preamble = kContextPreamble;
             chat.context = page_ctx;
@@ -1492,7 +1463,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
             return result;
           },
           base::Unretained(runtime), prompt_text, history_text,
-          page_context, lazy_model, include_actions, request_id,
+          page_context, lazy_model, page_action_note, request_id,
           conversation_key, weak_ptr_factory_.GetWeakPtr()),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -1524,6 +1495,19 @@ void MoltAIChatHandler::OnPromptComplete(std::string callback_id,
   result.Set("success", success);
   result.Set("text", full_text);
   result.Set("error", error);
+  // The reply to a typed message that asks to act on the page: the page
+  // may now ask for one proposed action (HandleProposeChatAction). A
+  // failed reply gets none. Stop already dropped the request.
+  if (chat_action_token_ != 0 &&
+      chat_action_prompt_callback_id_ == callback_id) {
+    if (success) {
+      result.Set("action_request", chat_action_token_);
+    } else {
+      chat_action_token_ = 0;
+      chat_action_prompt_callback_id_.clear();
+      chat_action_request_.clear();
+    }
+  }
 
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(std::move(result)));
@@ -1548,7 +1532,7 @@ void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
                                          std::string prompt_text,
                                          std::string history_text,
                                          std::string page_context,
-                                         bool include_actions,
+                                         bool page_action_note,
                                          base::DictValue attached) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!CloudAiAllowed()) {
@@ -1582,7 +1566,7 @@ void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
       base::BindOnce(
           [](std::string provider_id, std::string provider_name,
              std::string model, std::string prompt, std::string history,
-             std::string page_ctx, bool include_actions,
+             std::string page_ctx, bool page_action_note,
              base::FilePath consent_path) -> CloudPromptPrep {
             CloudPromptPrep prep;
             // Nothing is assembled (let alone sent) before the user has
@@ -1607,14 +1591,14 @@ void MoltAIChatHandler::StartCloudPrompt(std::string callback_id,
             }
             for (auto& msg : BuildCloudChatMessages(
                      settings, provider_name, prompt, history, page_ctx,
-                     include_actions)) {
+                     page_action_note)) {
               req.messages.push_back(
                   {std::move(msg.first), std::move(msg.second)});
             }
             return prep;
           },
           provider_id, provider_name, model, std::move(prompt_text),
-          std::move(history_text), std::move(page_context), include_actions,
+          std::move(history_text), std::move(page_context), page_action_note,
           consent_path),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb,
@@ -1735,6 +1719,13 @@ void MoltAIChatHandler::HandleCancelGeneration(
   if (active_request_id_) {
     GetOrCreateRuntime()->CancelRequest(active_request_id_);
   }
+  // Stop also means no page action for this message: drop a request that
+  // waits for its reply, and end a decision in progress (its generation,
+  // if running, is the request cancelled above).
+  chat_action_token_ = 0;
+  chat_action_prompt_callback_id_.clear();
+  chat_action_request_.clear();
+  ++chat_action_epoch_;
   // Drop any in-flight cloud stream — destroying the CloudChatStream
   // cancels the underlying loader and stops all further token/done
   // callbacks (its contract). Because an explicit Cancel()/destruction
@@ -2746,10 +2737,12 @@ void MoltAIChatHandler::ResolveConversationCallback(std::string callback_id,
 
 // ------------------------------------------------------------------
 // HandleRunMoltAction: Run one automation action against the active
-// tab in this WebUI's owning Browser. Used by the side-panel chat to
-// let users (or, downstream, the LLM) drive page actions in plain
-// language. The chat HTML side parses /click /type /scroll /navigate
-// slash-commands and posts them here.
+// tab in this WebUI's owning Browser, for a command the USER typed: the
+// chat page parses its /click /type /scroll /navigate ... slash commands
+// and "open nasa.com"-style messages and posts them here, always with
+// confirmed:true. Model output never comes here; the model's page actions
+// are browser-validated proposals (HandleProposeChatAction /
+// HandleRunChatProposal in molt_ai_chat_handler_actions.cc).
 //
 // JS: chrome.send('runMoltAction',
 //                  [callback_id,
@@ -2760,13 +2753,11 @@ void MoltAIChatHandler::ResolveConversationCallback(std::string callback_id,
 //
 // Safety gate (enforced here, not only in the chat JS):
 //   - navigate only accepts http(s) URLs, always.
-//   - Unless the action dict carries confirmed:true (set by the chat UI
-//     after the user tapped Allow, or for a command the user typed),
-//     a cross-origin navigate, a click that follows a link to another
-//     origin, and typing / selecting into a password, payment-card or
-//     one-time-code field are NOT performed; the result is
-//     {success:false, needs_confirmation:true, reason} and the UI asks.
-//     This holds in the chat's Auto mode too.
+//   - Unless the action dict carries confirmed:true (the chat page sets
+//     it for a command the user typed), a cross-origin navigate, a click
+//     that follows a link to another origin, and typing / selecting into
+//     a password, payment-card or one-time-code field are NOT performed;
+//     the result is {success:false, needs_confirmation:true, reason}.
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleRunMoltAction(const base::ListValue& args) {
   AllowJavascript();
@@ -5238,7 +5229,11 @@ static constexpr char kFormProbeJS[] = R"JS(
 })()
 )JS";
 
-// JS shim that applies a {selector: value} map to the active page.
+// JS shim that applies a {selector: value} map to the active page. The
+// map's selectors come from the model (/fill ai, /paste), so only text
+// inputs and textareas that the user could type into are written, and
+// never a password field (as for the agent's and the chat's actions,
+// docs/design/AGENT_ACTIONS.md).
 static constexpr char kFormFillByMapJS[] = R"JS(
 (function(map) {
   function setNative(el, value) {
@@ -5255,7 +5250,12 @@ static constexpr char kFormFillByMapJS[] = R"JS(
     total++;
     var el;
     try { el = document.querySelector(sel); } catch (e) { return; }
-    if (!el) return;
+    if (!el || el.disabled || el.readOnly) return;
+    if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
+    var t = String(el.type || '').toLowerCase();
+    if (t === 'password' || t === 'hidden' || t === 'file' ||
+        t === 'checkbox' || t === 'radio' || t === 'submit' ||
+        t === 'button' || t === 'image' || t === 'reset') return;
     setNative(el, String(map[sel]));
     filled++;
   });

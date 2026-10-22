@@ -448,22 +448,15 @@ function startAiMessage() {
   m.scrollTop = m.scrollHeight;
   currentAiMessageEl = d.querySelector('.text');
   currentAiText = '';
-  // P3: reset streaming-action parser state for the new response.
-  streamLastParsedIdx = 0;
   return d;
 }
 
 function appendToken(token) {
   if (!currentAiMessageEl) return;
   currentAiText += token;
-  // P3 streaming dispatch: as each token chunk arrives, scan for
-  // newly-complete [[ACTION ...]] markers past our last parse index
-  // and enqueue them. The dispatcher drains the queue sequentially
-  // so a chain of "type → click → wait-for → click" runs in order
-  // even though the LLM streams them.
-  scanStreamForActions();
-  // Render with action tokens stripped so the user never sees them.
-  var visible = currentAiText.replace(ACTION_TOKEN_REGEX, '').trim();
+  // A reply is text, never scanned for actions: page actions are
+  // proposed by the browser after the reply (runPageActionProposal).
+  var visible = currentAiText.trim();
   currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visible) + '<span class="cursor"></span>');
   var m = document.getElementById('messages');
   m.scrollTop = m.scrollHeight;
@@ -482,13 +475,7 @@ function scrubSpecialTokens(t) {
 
 function finishAiMessage() {
   if (currentAiMessageEl) {
-    // P3 streaming: tokens were already dispatched in appendToken.
-    // Run one final scan in case the last token landed without a
-    // followup append (LLM finishes exactly on `]]`).
-    scanStreamForActions(true);
-    var visibleText =
-        scrubSpecialTokens(currentAiText.replace(ACTION_TOKEN_REGEX, ''))
-            .trim();
+    var visibleText = scrubSpecialTokens(currentAiText).trim();
     currentAiMessageEl.innerHTML = moltHTML(renderMarkdown(visibleText));
     // Add copy response button
     var actions = document.createElement('div');
@@ -516,159 +503,75 @@ function appendToAiMessage(text) {
 }
 
 // --------------------------------------------------------------
-// P3: LLM action-token parser with streaming + sequential dispatch.
+// Page actions the model proposes (docs/design/AGENT_ACTIONS.md §4).
 //
-// Contract — the system prompt teaches the LLM these verbs:
-//   [[ACTION click:<sel>]]
-//   [[ACTION type:<sel>|<text>]]
-//   [[ACTION select:<sel>|<value>]]
-//   [[ACTION hover:<sel>]]
-//   [[ACTION right-click:<sel>]]
-//   [[ACTION drag:<source-sel>|<target-sel>]]
-//   [[ACTION scroll:<pixels>]]
-//   [[ACTION navigate:<url>]]
-//   [[ACTION wait:<ms>]]
-//   [[ACTION wait-for:<sel>|<timeout-ms>]]
+// A reply is text: nothing in it is parsed or run, whatever it says.
+// Old "[[ACTION ...]]" lines (in a reply, in page text the model
+// echoed, in a saved conversation) are shown as text and do nothing.
 //
-// Lifecycle per response:
-//   - startAiMessage resets streamLastParsedIdx to 0.
-//   - appendToken calls scanStreamForActions, which exec()s the
-//     regex past streamLastParsedIdx. Each complete match (i.e. the
-//     trailing `]]` has landed in currentAiText) is parsed and
-//     enqueued. The cursor moves to the end of the match.
-//   - actionQueue / drainActionQueue runs in the background as an
-//     async function: shift one, await runMoltAction, append a
-//     [system-message] row with ✓ or ✗, then loop. This serializes
-//     long chains like "type ... wait-for ... click".
-//   - finishAiMessage runs one last scan and strips tokens from the
-//     visible text. The bare prose is what the user sees.
+// When the user typed a message that asks to act on the page, the
+// browser's sendPrompt result carries `action_request`. After the
+// reply, the page asks the browser for one proposal
+// (proposeChatAction): the browser observes the page, has the
+// on-device model choose one action in a fixed format it validates,
+// and answers with its own description (`summary`) and, when the
+// action must be approved even in Auto mode, a `reason` (another site,
+// a form submission, a payment-card or one-time-code field). The page
+// sends back only the proposal's id and the user's Allow
+// (runChatProposal); no selector, URL or text from the model passes
+// through it. Typed slash commands (/click, /navigate ...) are the
+// user's own and keep using runMoltAction.
 // --------------------------------------------------------------
-// Verb allows hyphens (wait-for, right-click). Args are matched
-// lazily up to the first `]]` that is NOT followed by another `]`,
-// so CSS attribute selectors survive: in
-// [[ACTION type:input[name=q]|puppies]] the `]` inside the selector
-// no longer kills the match, and [[ACTION click:input[name=q]]]
-// yields the full selector `input[name=q]`. `.` (not [\s\S]) keeps
-// a malformed unterminated token from swallowing following lines.
-var ACTION_TOKEN_REGEX = /\[\[ACTION\s+([\w-]+):(.+?)\]\](?!\])/g;
-var streamLastParsedIdx = 0;
-var actionQueue = [];
-var actionQueueDraining = false;
 
 // Session permission mode: 'ask' shows a confirm chip before every
-// dangerous action; 'auto' executes same-origin, non-sensitive actions
-// immediately. Even in 'auto', the C++ side (HandleRunMoltAction) refuses
-// a cross-origin navigation / link and any password, payment-card or
-// one-time-code field until the user confirms: it answers
-// {needs_confirmation:true, reason} and drainActionQueue shows the chip.
-// Set by the permission banner shown at the start of each new chat.
+// proposed page action (except scrolling); 'auto' runs a proposal at
+// once unless the browser gives a reason to ask, which it does in both
+// modes. Set by the mode chip; every new chat starts in 'ask'.
 var actionAutoMode = false;
 
-function parseActionPayload(verb, args) {
-  verb = verb.toLowerCase();
-  args = (args || '').trim();
-  // Reject placeholder syntax: small models sometimes regurgitate the
-  // example tokens from the system prompt verbatim (e.g. <full-url>,
-  // <css-selector>, <text-to-type>). Drop these silently rather than
-  // showing the user a wall of "Invalid URL" / "selector not found"
-  // error chips.
-  if (/<[a-z][^>]*>/i.test(args)) return null;
-  if (verb === 'click' || verb === 'hover' || verb === 'right-click') {
-    return {type: verb, selector: args};
-  }
-  if (verb === 'type' || verb === 'select' || verb === 'drag') {
-    var bar = args.indexOf('|');
-    if (bar < 0) return null;
-    return {type: verb, selector: args.slice(0, bar).trim(),
-            value: args.slice(bar + 1)};
-  }
-  if (verb === 'scroll') return {type: 'scroll', value: args};
-  if (verb === 'wait') return {type: 'wait', value: args || '1000'};
-  if (verb === 'wait-for' || verb === 'waitfor') {
-    var bar2 = args.indexOf('|');
-    if (bar2 < 0) return {type: 'wait-for', selector: args, value: '5000'};
-    return {type: 'wait-for', selector: args.slice(0, bar2).trim(),
-            value: args.slice(bar2 + 1)};
-  }
-  if (verb === 'navigate' || verb === 'nav' || verb === 'goto') {
-    var url = args.trim();
-    if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
-    return {type: 'navigate', value: url};
-  }
-  return null;
-}
+// Proposals that run without a chip in Ask mode: they only move the
+// view.
+var PROPOSAL_WITHOUT_CHIP = {SCROLL: 1};
 
-function scanStreamForActions(isFinal) {
-  if (!currentAiText) return;
-  ACTION_TOKEN_REGEX.lastIndex = streamLastParsedIdx;
-  var m;
-  while ((m = ACTION_TOKEN_REGEX.exec(currentAiText)) !== null) {
-    // Mid-stream, a match that touches the end of the buffer can still
-    // be incomplete — `[[ACTION click:input[name=q]]` parses as a full
-    // token while the selector's closing `]` is in flight. Defer it to
-    // the next append (or the final pass from finishAiMessage).
-    if (!isFinal && m.index + m[0].length >= currentAiText.length) break;
-    var action = parseActionPayload(m[1], m[2]);
-    if (action) enqueueAction(action);
-    streamLastParsedIdx = m.index + m[0].length;
-  }
-}
+// Set while a proposal is being chosen; Stop (cancelGeneration) calls it
+// so the composer is never left waiting for an answer.
+var abortPageActionProposal = null;
 
-function enqueueAction(action) {
-  actionQueue.push(action);
-  if (!actionQueueDraining) drainActionQueue();
-}
-
-// Action types that CAN modify state on the active tab. Each one
-// requires a one-tap user confirmation before dispatch. Read-only
-// or strictly local actions (scroll, wait, wait-for) auto-run.
-//
-// This is the defense against prompt injection in any third-party
-// content the LLM consumes (PDF text, page captures, YouTube
-// transcripts, bookmark titles, vault notes) emitting
-// [[ACTION navigate:phishing.example]] / [[ACTION click:#delete]] /
-// [[ACTION type:#pw|secret]] and having it run silently. Code-review
-// finding HIGH #2 from 2026-05-20.
-var DANGEROUS_ACTION_TYPES = {
-  click: 1, type: 1, select: 1, hover: 1, 'right-click': 1,
-  drag: 1, navigate: 1
-};
-
-function _renderActionLabel(action) {
-  return action.type +
-         (action.selector ? ' ' + action.selector : '') +
-         ((action.value && action.type !== 'wait-for')
-             ? ' = ' + action.value : '');
-}
-
-// |reason| (optional) is why the browser insists on asking, e.g. "Opens a
-// different site: https://x.example" — shown as the chip title.
-function _renderConfirmChip(action, reason, onAllow, onDeny) {
+// |title| and |label| are browser-written text that quotes page labels
+// and model text: they are set as text, never markup.
+function _renderConfirmChip(title, label, onAllow, onDeny) {
   var msgs = document.getElementById('messages');
   if (!msgs) { onDeny(); return; }
   var d = document.createElement('div');
   d.className = 'molt-action-confirm';
-  var label = _renderActionLabel(action);
-  var title = reason ? 'Confirm: ' + reason : 'AI proposes an action';
   // Stylesheet for this chip is added inline so it can't be skinned
   // out by site CSS injection into our message area.
   d.innerHTML =
     moltHTML('<span class="ac-icon">⚡</span>' +
     '<div class="ac-body">' +
-      '<div class="ac-title">' + esc(title) + '</div>' +
-      '<div class="ac-label">' + esc(label) + '</div>' +
+      '<div class="ac-title"></div>' +
+      '<div class="ac-label"></div>' +
     '</div>' +
     '<div class="ac-buttons">' +
       '<button class="ac-deny">Deny</button>' +
       '<button class="ac-allow">Allow</button>' +
     '</div>');
+  d.querySelector('.ac-title').textContent = title;
+  var labelEl = d.querySelector('.ac-label');
+  labelEl.textContent = label;
+  // The user approves all of it: no ellipsis.
+  labelEl.style.whiteSpace = 'normal';
+  labelEl.style.wordBreak = 'break-word';
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
   // Single-use handlers; remove the chip on either path so the chat
   // stays clean.
+  var settled = false;
   var settle = function(handler) {
-    return function(){
-      try { d.parentNode && d.parentNode.removeChild(d); } catch(e) {}
+    return function() {
+      if (settled) return;
+      settled = true;
+      try { d.parentNode && d.parentNode.removeChild(d); } catch (e) {}
       handler();
     };
   };
@@ -680,71 +583,98 @@ function _renderConfirmChip(action, reason, onAllow, onDeny) {
 // browser actually loading the page, not just a silent result chip.
 // Returns the chip element (or null) so a caller can drop it again.
 function appendNavigatingChip(url) {
+  return appendStatusChip('🌐', 'Navigating to ' + url);
+}
+
+// A muted one-line status row with a spinner; |text| is shown as text.
+function appendStatusChip(icon, text) {
   var m = document.getElementById('messages');
   if (!m) return null;
   var d = document.createElement('div');
   d.className = 'molt-navigating-chip';
-  d.innerHTML = moltHTML('<span class="nav-icon">🌐</span>' +
-                '<span class="nav-label">Navigating to ' + esc(url) + '</span>' +
+  d.innerHTML = moltHTML('<span class="nav-icon"></span>' +
+                '<span class="nav-label"></span>' +
                 '<span class="nav-spinner"></span>');
+  d.querySelector('.nav-icon').textContent = icon;
+  d.querySelector('.nav-label').textContent = text;
   m.appendChild(d);
   m.scrollTop = m.scrollHeight;
   return d;
 }
 
-function drainActionQueue() {
-  if (actionQueueDraining) return;
-  actionQueueDraining = true;
-  var loop = function() {
-    if (actionQueue.length === 0) {
-      actionQueueDraining = false;
-      return;
-    }
-    var action = actionQueue.shift();
-    var label = _renderActionLabel(action);
-    var deny = function() {
-      appendActionResult(false, label, 'denied by user');
-      loop();
+// After the reply to a typed page-action request (|token| is the
+// reply's action_request): asks the browser for one proposal and shows
+// it. Resolves once the proposal is chosen (or not); running it may
+// still wait for the user's Allow. Never rejects.
+function runPageActionProposal(token) {
+  return new Promise(function(resolve) {
+    var row = appendStatusChip('⚡', 'Choosing a page action…');
+    var done = false;
+    var finish = function() {
+      if (done) return false;
+      done = true;
+      abortPageActionProposal = null;
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+      resolve();
+      return true;
     };
-    // |confirmed| is true only after the user tapped Allow on a chip for
-    // this exact action; it is never taken from the model's token.
-    var dispatch = function(confirmed) {
-      // Show real-time chip for navigate so user sees the browser move
-      var navChip = null;
-      if (action.type === 'navigate') {
-        navChip = appendNavigatingChip(action.value || label);
-      }
-      var payload = {type: action.type};
-      if (action.selector !== undefined) payload.selector = action.selector;
-      if (action.value !== undefined) payload.value = action.value;
-      if (confirmed) payload.confirmed = true;
-      sendWithPromise('runMoltAction', payload).then(function(r) {
-        if (r && r.needs_confirmation && !confirmed) {
-          // The browser found a cross-origin target or a credential /
-          // payment field: ask, even in Auto mode.
-          if (navChip && navChip.parentNode) navChip.remove();
-          _renderConfirmChip(action, r.reason || '',
-                             function() { dispatch(true); }, deny);
+    // Stop: the browser cancels the decision; don't wait for its answer.
+    abortPageActionProposal = finish;
+    sendWithPromise('proposeChatAction', token).then(function(r) {
+      if (finish()) handleChatProposal(r);
+    }, function() { finish(); });
+  });
+}
+
+function handleChatProposal(r) {
+  if (!r || typeof r !== 'object') return;
+  if (r.status === 'proposal') {
+    var p = {id: Number(r.id) || 0, verb: String(r.verb || ''),
+             summary: String(r.summary || ''),
+             reason: String(r.reason || '')};
+    if (!p.id || !p.summary) return;
+    if (p.reason || (!actionAutoMode && !PROPOSAL_WITHOUT_CHIP[p.verb])) {
+      askThenRunChatProposal(p, p.reason);
+    } else {
+      runChatProposal(p, false);
+    }
+  } else if (r.status === 'unavailable' || r.status === 'failed') {
+    appendActionResult(false, 'No page action', String(r.message || ''));
+  }
+  // 'none' (no action fits the request) and 'cancelled': nothing to show.
+}
+
+function askThenRunChatProposal(p, reason) {
+  _renderConfirmChip(reason ? 'Confirm: ' + reason : 'AI proposes a page action',
+                     p.summary,
+                     function() { runChatProposal(p, true); },
+                     function() {
+                       appendActionResult(false, p.summary, 'denied by user');
+                     });
+}
+
+// |confirmed| is true only after the user tapped Allow on a chip for
+// this proposal; the browser then acts on the reason it last showed.
+function runChatProposal(p, confirmed) {
+  var nav = (p.verb === 'NAVIGATE' || p.verb === 'SEARCH')
+      ? appendStatusChip('🌐', p.summary) : null;
+  sendWithPromise('runChatProposal', p.id, confirmed === true).then(
+      function(r) {
+        if (nav && nav.parentNode) nav.parentNode.removeChild(nav);
+        if (r && r.needs_confirmation) {
+          // The browser found (or the page changed to) something the user
+          // must approve first, even in Auto mode.
+          askThenRunChatProposal(p, String(r.reason || ''));
           return;
         }
-        appendActionResult(r && r.success, label,
-                            r ? (r.message || r.error || '') : '');
-        loop();
-      }, function(err) {
-        appendActionResult(false, label, String(err || 'failed'));
-        loop();
+        var ok = !!(r && r.success);
+        appendActionResult(ok, p.summary,
+                           r ? String((ok ? r.message : r.error) || '') : '');
+      },
+      function(err) {
+        if (nav && nav.parentNode) nav.parentNode.removeChild(nav);
+        appendActionResult(false, p.summary, String(err || 'failed'));
       });
-    };
-    // In auto mode actions run immediately (the browser still stops
-    // cross-origin / sensitive ones for a chip); in ask mode dangerous
-    // actions need one-tap user approval before dispatch.
-    if (!actionAutoMode && DANGEROUS_ACTION_TYPES[action.type]) {
-      _renderConfirmChip(action, '', function() { dispatch(true); }, deny);
-    } else {
-      dispatch(false);
-    }
-  };
-  loop();
 }
 
 function appendActionResult(ok, label, detail) {
@@ -3021,9 +2951,8 @@ function rankChunksByQuery(chunks, query, topK) {
 // Direct-navigate intent: if the user types something that's obviously
 // a navigation request — "open nasa.com", "go to github.com/x", or just
 // a bare URL like "nasa.com" — skip the LLM entirely and navigate the
-// active tab. This avoids the small-model failure mode where the 8B
-// LLaMA regurgitates [[ACTION navigate:<full-url>]] placeholders from
-// the system-prompt examples.
+// active tab. The user typed the address, so it needs neither a model
+// nor a confirmation (small models also tend to garble URLs).
 function tryDispatchNavigateIntent(text) {
   var url = null;
   // Imperative: "open X" / "go to X" / "visit X" / "navigate to X" /
@@ -3110,8 +3039,9 @@ function sendMessage() {
   // Slash-command shortcut: any `/click /type /scroll /navigate` line
   // bypasses the LLM and runs as a one-shot automation action on the
   // active tab. Lets the user drive page actions in plain language
-  // without waiting on inference. The LLM-emit-actions path is a
-  // follow-up that wraps the same runMoltAction IPC.
+  // without waiting on inference. Only the user's own commands use
+  // runMoltAction; the model's actions are browser-validated proposals
+  // (runPageActionProposal).
   if (text.charAt(0) === '/' && tryDispatchActionCommand(text)) {
     conversationHistory.push({role: 'user', content: text});
     trimHistory();
@@ -3441,11 +3371,20 @@ function sendMessage() {
     var aiText = scrubSpecialTokens(currentAiText).trim();
     if (aiText) conversationHistory.push({role: 'assistant', content: aiText});
     finishAiMessage();
-    setGenerating(false);
     updateContextBar();
-    if (!result.success && result.error) {
+    if (result && !result.success && result.error) {
       addErrorMessage(result.error);
     }
+    // The message asked to act on the page: the browser now proposes one
+    // action. The composer stays busy meanwhile; Stop ends it.
+    var actionRequest = (result && result.success)
+        ? Number(result.action_request) || 0 : 0;
+    if (actionRequest > 0) {
+      return runPageActionProposal(actionRequest).then(function() {
+        setGenerating(false);
+      });
+    }
+    setGenerating(false);
   }).catch(function(err) {
     finishAiMessage();
     setGenerating(false);
@@ -3645,8 +3584,9 @@ function quickAction(action) {
 // ---- Agent-action permission mode (Ask first / Auto) ----
 // The picker is the mode chip at the left of the composer row (a
 // Claude-Code-style chip that opens an upward menu). actionAutoMode
-// gates the confirm-chip pipeline in drainActionQueue — the
-// prompt-injection defense for LLM-emitted [[ACTION ...]] tokens.
+// decides whether a page action the browser proposes gets a confirm
+// chip before it runs (handleChatProposal); the browser's own reasons to
+// ask (another site, a form, payment fields) apply in both modes.
 
 function setActionMode(mode) {
   actionAutoMode = (mode === 'auto');
@@ -3760,6 +3700,9 @@ function newChat() {
 
 function cancelGeneration() {
   chrome.send('cancelGeneration', []);
+  // Stop while a page action is being chosen: the browser ends it; stop
+  // waiting for its answer here.
+  if (abortPageActionProposal) abortPageActionProposal();
 }
 
 // ---- Model Management ----
@@ -4654,10 +4597,10 @@ function renderConversationDOM(messages) {
     } else {
       var d = document.createElement('div');
       d.className = 'message ai';
-      // History stores the raw assistant text; strip [[ACTION ...]]
-      // tokens here too so Recents restore / import never shows them.
-      var visible = scrubSpecialTokens(
-          String(msg.content || '').replace(ACTION_TOKEN_REGEX, '')).trim();
+      // History stores the raw assistant text. It is only ever shown:
+      // "[[ACTION ...]]" lines in a conversation saved by an older version
+      // (or imported) render as text and run nothing.
+      var visible = scrubSpecialTokens(String(msg.content || '')).trim();
       d.innerHTML = moltHTML('<div class="sender">AI Assistant</div><div class="text">' + renderMarkdown(visible) + '</div>' +
         '<div class="msg-actions"><button class="msg-action" data-on-click="copyResponse">Copy response</button></div>');
       m.appendChild(d);

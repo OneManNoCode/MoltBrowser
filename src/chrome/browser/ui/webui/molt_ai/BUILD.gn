@@ -9,6 +9,7 @@ source_set("molt_ai") {
     "molt_ai_automation_ui.h",
     "molt_ai_chat_handler.cc",
     "molt_ai_chat_handler.h",
+    "molt_ai_chat_handler_actions.cc",
     "molt_ai_chat_handler_helpers.h",
     "molt_ai_chat_handler_tor.cc",
     "molt_ai_chat_handler_vault.cc",
@@ -48,6 +49,9 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai:molt_ai_import",
     "//chrome/browser/molt_ai:molt_ai_runtime",
     "//chrome/browser/molt_ai:molt_update",
+
+    # The chat's page actions: one validated proposal per typed request.
+    "//chrome/browser/molt_ai/agents:chat_actions",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/cloud",
     "//chrome/browser/molt_ai/common",
