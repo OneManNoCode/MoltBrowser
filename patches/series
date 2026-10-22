@@ -217,7 +217,9 @@ third_party/blink/renderer/core/events/pointer_event_factory.cc.patch
 third_party/blink/renderer/core/execution_context/navigator_base.cc.patch
 third_party/blink/renderer/core/exported/web_shared_worker_impl.cc.patch
 third_party/blink/renderer/core/exported/web_shared_worker_impl.h.patch
+third_party/blink/renderer/core/frame/dom_visual_viewport.cc.patch
 third_party/blink/renderer/core/frame/local_dom_window.cc.patch
+third_party/blink/renderer/core/frame/local_frame_view.cc.patch
 third_party/blink/renderer/core/frame/navigator_device_memory.cc.patch
 third_party/blink/renderer/core/frame/navigator_ua.cc.patch
 third_party/blink/renderer/core/frame/screen.cc.patch
@@ -225,7 +227,11 @@ third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc.patch
 third_party/blink/renderer/core/html/canvas/html_canvas_element.cc.patch
 third_party/blink/renderer/core/html/html_image_element.cc.patch
 third_party/blink/renderer/core/input/touch_event_manager.cc.patch
+third_party/blink/renderer/core/layout/forms/layout_text_control.cc.patch
 third_party/blink/renderer/core/loader/frame_fetch_context.cc.patch
+third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc.patch
+third_party/blink/renderer/core/scroll/scrollable_area.cc.patch
+third_party/blink/renderer/core/scroll/scrollbar.cc.patch
 third_party/blink/renderer/core/workers/dedicated_worker.cc.patch
 third_party/blink/renderer/core/workers/threaded_worklet_messaging_proxy.cc.patch
 third_party/blink/renderer/modules/ai/ai_interface_proxy.cc.patch
