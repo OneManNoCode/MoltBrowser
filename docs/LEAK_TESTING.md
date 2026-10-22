@@ -304,8 +304,10 @@ MoltNet checks above must still read MoltBrowser's defaults, and the
 fingerprint page itself runs on the onion where JavaScript is "blocked".
 
 **Zoom.** DevTools has no page-zoom command, so the kit sends Ctrl+= / Ctrl+-
-key events and reads the zoom back (`Page.getLayoutMetrics`). If the zoom
-didn't change, the level is reported as SKIP ("check this level by hand").
+key events with a native key code (which DevTools passes on to the browser's
+shortcuts; checked with stock Chromium 141: 90% and 125% took effect) and
+reads the zoom back (`Page.getLayoutMetrics`). If the zoom didn't change,
+the level is reported as SKIP ("check this level by hand").
 
 ## What is still manual
 

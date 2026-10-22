@@ -869,9 +869,9 @@ class Run(object):
                self.page_zoom(sid), 'kind': 'full', 'target': target,
                'values': values}
         self.manifest['fingerprints'].append(rec)
-        if not geometry or target != 'moltnet':
+        if not geometry:
             return
-        tid = self.moltnet[0]
+        tid = self.moltnet[0] if target == 'moltnet' else self.regular[0]
         try:
             win = self.cdp.call('Browser.getWindowForTarget',
                                 {'targetId': tid})
@@ -1282,7 +1282,7 @@ class Run(object):
             try:
                 phase['data']['result'] = self.molt_net_call(
                     'moltnet.openWindow', timeout=self.opts.open_timeout)
-            except cdplib.CdpError as e:
+            except (cdplib.CdpError, RuntimeError) as e:
                 phase['data']['result'] = {'error': 'harness: %s' % e}
             time.sleep(3)
             phase['data']['moltnet_pages'] = len(self.moltnet_pages())
