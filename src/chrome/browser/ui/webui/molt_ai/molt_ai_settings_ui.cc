@@ -44,6 +44,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
@@ -69,7 +70,8 @@ const char kSettingsFileName[] = "settings.json";
 // Keys the form below doesn't manage, which Save and Reset keep: the switch
 // for the built-in AI APIs has its own section ("Sites using on-device AI")
 // and applies at once.
-const char* const kKeysKeptOnSaveAndReset[] = {"web_ai_apis"};
+const char* const kKeysKeptOnSaveAndReset[] = {
+    molt_ai::web_ai::kWebAIApisSettingsKey};
 
 base::FilePath GetSettingsFilePath() {
   base::FilePath home_dir;

@@ -149,11 +149,13 @@ void WebAISitePermissions::RecordDismissal(const url::Origin& origin) {
   if (key.empty()) {
     return;
   }
-  const SiteRecord* before = table_.Find(key);
-  const uint32_t dismissals_before = before ? before->dismissals : 0;
+  const SiteRecord* record = table_.Find(key);
+  if (record && record->answer != SiteConsent::kAsk) {
+    return;  // Answered: no prompt is shown, so nothing to count.
+  }
   table_.RecordDismissal(key, NowMs());
-  const SiteRecord* after = table_.Find(key);
-  if (after && after->dismissals != dismissals_before) {
+  // Even at the stored count's cap the time moved (a new pause).
+  if (table_.Find(key)) {
     Changed();
   }
 }

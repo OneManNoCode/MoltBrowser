@@ -241,6 +241,23 @@ TEST_F(WebAISitePermissionsServiceTest, ClearBrowsingData) {
       NewService()->List().empty());  // and on disk
 }
 
+// A site closed more often than the stored count's cap still gets a new
+// pause, and it is written.
+TEST_F(WebAISitePermissionsServiceTest, PauseRenewedPastTheCountsCap) {
+  base::DictValue sites;
+  sites.Set("https://a.example", base::DictValue()
+                                     .Set("dismissals", 100)
+                                     .Set("last_dismissal", 1000.0));
+  Store(base::DictValue().Set("version", 1).Set("sites", std::move(sites)));
+  auto service = NewService();
+  EXPECT_EQ(service->GetConsent(O("https://a.example")), SiteConsent::kAsk);
+  service->RecordDismissal(O("https://a.example"));
+  EXPECT_EQ(service->GetConsent(O("https://a.example")),
+            SiteConsent::kBlocked);
+  EXPECT_EQ(NewService()->GetConsent(O("https://a.example")),
+            SiteConsent::kBlocked);
+}
+
 TEST_F(WebAISitePermissionsServiceTest, NoWritesAfterShutdown) {
   auto service = NewService();
   service->Shutdown();
