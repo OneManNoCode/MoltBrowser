@@ -423,7 +423,8 @@ mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
     r->history.push_back(mojom::ChatTurn::New(
         turns[i]->role == "user" ? mojom::ChatRole::kUser
                                  : mojom::ChatRole::kAssistant,
-        CapRequestText(turns[i]->content)));
+        CapRequestText(turns[i]->content),
+        std::vector<mojom::ImageInputPtr>()));
   }
   return r;
 }

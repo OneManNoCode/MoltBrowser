@@ -10,6 +10,7 @@
 // defence.
 module molt_ai.mojom;
 
+import "mojo/public/mojom/base/big_buffer.mojom";
 import "mojo/public/mojom/base/big_string.mojom";
 import "mojo/public/mojom/base/file.mojom";
 import "sandbox/policy/mojom/context.mojom";
@@ -33,6 +34,29 @@ const uint32 kMaxArchitectureBytes = 64;
 // Smallest context the browser accepts in a ModelDescription.
 const uint32 kMinDescribedContextTokens = 256;
 
+// Image input (docs/design/SANDBOXED_INFERENCE.md section 10). The same
+// bounds as chrome/services/molt_ai/inference/engine/image_input.h; an image
+// outside them is a bad message.
+const uint32 kMaxImageSide = 1024;
+const uint32 kMinImageSide = 32;
+// The long side is at most this many times the short side.
+const uint32 kMaxImageAspectRatio = 8;
+// Images in one request: the new message's and the history's together.
+const uint32 kMaxImagesPerRequest = 4;
+
+// An image for the model: already decoded, scaled and padded by the browser
+// (Chromium's sandboxed image decoders; nothing in the service decodes a
+// compressed image), 8-bit RGB, row-major, no row padding. Untrusted
+// content, like page text: it may come from a web page.
+struct ImageInput {
+  // In [kMinImageSide, kMaxImageSide]; the long side at most
+  // kMaxImageAspectRatio times the short one.
+  uint32 width;
+  uint32 height;
+  // Exactly width * height * 3 bytes.
+  mojo_base.mojom.BigBuffer rgb;
+};
+
 struct ModelLoadParams {
   // Opened read-only by the browser (never a path). Must not be async
   // (overlapped on Windows): llama.cpp reads it synchronously.
@@ -48,6 +72,13 @@ struct ModelLoadParams {
   // CPU weight repacking (use_extra_bufts). The service turns it off when
   // its sandbox memory limit is too small for it (cpu_repack_used says).
   bool allow_cpu_repack = true;
+  // The model's vision projector (a second GGUF, llama.cpp's "mmproj"), for
+  // image input; opened read-only like |weights|, not async. Null for a
+  // text-only model.
+  mojo_base.mojom.ReadOnlyFile? vision_projector;
+  // Its size as the browser saw it (0 without one); the service refuses a
+  // file of another size.
+  uint64 vision_projector_size = 0;
 };
 
 enum LoadModelStatus {
@@ -60,6 +91,9 @@ enum LoadModelStatus {
   kOutOfMemory,
   // No usable compute backend.
   kBackendUnavailable,
+  // The vision projector isn't one llama.cpp can load for this model (not a
+  // projector, made for another model, wrong size, or unreadable).
+  kInvalidVisionProjector,
 };
 
 struct ModelDescription {
@@ -72,6 +106,8 @@ struct ModelDescription {
   uint32 train_context_tokens;
   uint32 vocab_size;
   bool cpu_repack_used;
+  // A vision projector is loaded: chat requests may carry images.
+  bool vision = false;
 };
 
 // The model service. One process per loaded model.
@@ -142,13 +178,19 @@ struct GenerationParams {
 struct ChatTurn {
   ChatRole role;
   mojo_base.mojom.BigString content;
+  // A user turn's images, shown to the model before its text. On an
+  // assistant turn they are a bad message.
+  array<ImageInput> images;
 };
 
 // Mirrors molt_ai::ChatPrompt. The trust labels are the field names:
 // system_prompt and context_preamble are browser-authored; context, history
 // and user_message are untrusted and are neutralized before
 // parse_special=true tokenization. The browser never concatenates untrusted
-// text into system_prompt.
+// text into system_prompt. Images (user_images and the history's) are
+// untrusted too; a request with images needs a model with vision
+// (ModelDescription.vision), else it completes with kImagesUnsupported
+// before it is queued. At most kMaxImagesPerRequest images in all.
 struct ChatRequest {
   string system_prompt;
   string context_preamble;
@@ -156,6 +198,8 @@ struct ChatRequest {
   // Oldest first; at most kMaxHistoryTurns.
   array<ChatTurn> history;
   mojo_base.mojom.BigString user_message;
+  // The new message's images, shown before its text.
+  array<ImageInput> user_images;
 };
 
 // Agents and automation (BrowserAIRuntime::StreamPrompt / RunPrompt): no chat
@@ -191,6 +235,9 @@ enum GenerationStatus {
   // no token of this model's vocabulary continues it. The text so far is
   // incomplete.
   kConstraintFailed,
+  // The request has images and the model has no vision projector. Nothing
+  // was generated.
+  kImagesUnsupported,
 };
 
 struct GenerationSummary {
