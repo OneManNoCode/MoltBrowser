@@ -679,3 +679,184 @@ Where the code differs from the sections above, and why.
 - **The mojom**, with upstream's parser and C++ generator at the pin and `//mojo/public/mojom/base`'s typemaps.
 - **Syntax** of the service, `InferenceProcessHost`, `BrowserAIRuntime` and the host unittest: `clang++ -fsyntax-only` against stand-in headers that mimic the generated bindings and the `//base`, mojo and content APIs used.
 - **The NSIS script**, built with makensis 3.09; the SIDs it grants were compared with the upstream source.
+
+## 9. Constrained decoding (structured output)
+
+Status: implemented (October 2026), pending a compile on the build machine. The service can force the visible answer to follow a JSON Schema, with llama.cpp's grammar sampler. Used by the web AI APIs' `responseConstraint` (docs/design/WEB_AI_APIS.md §5); open to every `BrowserAIRuntime` caller through `PromptOptions::json_schema` (the agent doesn't use it yet).
+
+### 9.1 The request field and the flow
+
+```mojom
+const uint32 kMaxConstraintSchemaBytes = 32768;
+
+union OutputConstraint {
+  string json_schema;   // JSON Schema as JSON text; over the cap = bad message
+};
+
+struct GenerationParams {
+  ...
+  OutputConstraint? constraint;   // null = free text
+};
+
+enum GenerationStatus {
+  ...
+  kConstraintUnsupported,   // outside the subset / over a cap; nothing generated
+  kConstraintFailed,        // llama.cpp refused the grammar, or no token continues it
+};
+```
+
+A union, so a regex or a caller-written grammar can be added later without changing the field.
+
+1. **Browser** (`BrowserAIRuntime`): checks the size and passes the text on. It never parses it.
+2. **Service, on arrival** (`MoltModelImpl`, main sequence): `JsonSchemaToGrammar()` (`engine/json_schema_grammar.{h,cc}`, std-only) turns the schema into GBNF. A refused schema is answered at once with `OnComplete(kConstraintUnsupported)`. It never enters the queue, so it doesn't wait behind other requests.
+3. **Service, when the request runs** (`LlamaEngine::Generate`):
+   - The grammar sampler is created before the KV cache is touched. If llama.cpp refuses the grammar, the request ends with `kConstraintFailed` and nothing is decoded.
+   - A per-model token table (`GrammarVocab`, `grammar_sampler.{h,cc}`) is built on first use. It reads every token once, about 150 ms for 150k tokens.
+   - Each token is picked by `GrammarSampler` (§9.3) and accepted into the grammar only after it was checked.
+4. **Browser, at the end**: the stream is validated as always (`StreamValidator`). On completion, `base::JSONReader` (RFC 8259, memory-safe Rust) checks that the text is complete JSON. If it isn't, the result fails with `invalid_output` (and `truncated` if the token budget ran out).
+
+What a constraint changes in the engine:
+
+- **Reasoning is off.** The grammar applies from the first generated token.
+- **The prompt is pre-filled past any reasoning block,** so the model starts in its answer state. The prefill is our own text, tokenized with its special tokens; 16 prompt tokens are kept free for it.
+
+  | Model or template | Prefill |
+  |---|---|
+  | gpt-oss | `<\|channel\|>final<\|message\|>`, after the template's `<\|start\|>assistant` |
+  | Gemma 4 template that leaves a thought block open | `\n<channel\|>` |
+  | Template that pre-opens `<think>` | `\n</think>\n\n` |
+  | Qwen3 and Qwen3-MoE | `<think>\n\n</think>\n\n` (what Qwen3's own template writes with thinking off) |
+
+- **The reasoning filters don't run** (Harmony, the Gemma thought filter, `<think>`). The visible text is exactly what the grammar matched. Stop sequences still apply.
+
+### 9.2 Why the service converts the schema
+
+The schema is page text, and turning it into a grammar is non-trivial processing of untrusted input in C++. By the Rule of 2 that belongs in the sandbox:
+
+- A converter bug there is contained like a tokenizer bug.
+- The grammar it produces feeds llama.cpp's GBNF parser in the same process, so whatever the caps miss is contained too.
+- The browser has to check the result anyway, because a compromised service can return any text. It does so with `base::JSONReader`, which is memory-safe.
+
+**Rejected alternative:** the browser parses the schema with `base::JSONReader`, walks it in C++ and sends GBNF. That puts a C++ walk of page input in the unsandboxed process, and the service would have to trust a grammar from the browser.
+
+**The cost:** an unsupported schema is reported only once the request reaches the service. The web AI scheduler may hold it behind another page's generation first; the service itself answers it at once.
+
+### 9.3 Threat model for grammar input
+
+**Attackers:**
+
+- A web page, which chooses the schema and the prompt (and so steers the model).
+- A malicious or odd GGUF, which chooses the vocabulary.
+
+**Goals:**
+
+- Crash the inference process. A crash also feeds the crash-loop guard (§4.3): three generation crashes in ten minutes lock the model for the user.
+- Hang it, or exhaust its memory.
+- Make a page or a caller receive text that isn't JSON.
+- Smuggle markup into the answer.
+
+**1. Converter bounds** (`engine/json_schema_grammar.h`, `engine/bounded_json.h`):
+
+| What | Cap |
+|---|---|
+| Input | 32 KiB |
+| JSON values | 4096 |
+| JSON nesting | 48 (the reader refuses deeper input before recursing) |
+| Schema nesting | 12 |
+| Properties per object | 64 |
+| `anyOf` / `oneOf` alternatives | 16 |
+| Enum values | 256, each at most 1 KiB |
+| `maxLength` | 1024 |
+| `minItems` / `maxItems` | 64 |
+| Integer ranges | 1001 values |
+| Output grammar | 128 KiB and 2048 rules |
+| Sum of counted repetitions | 8192 (llama.cpp's parser expands each into rules and refuses more than 2000 in one) |
+
+- **No recursion:** `$ref` is refused, so a schema can't express cycles.
+- **Linear time:** enums and ranges are tries, and duplicate keys are found by sorting.
+- **Live alternatives ≤ 64.** These are the alternatives the sampler can have alive at once: `anyOf` branches of the same kind, and an object's optional keys. Each costs a pass over the vocabulary when the fast path misses.
+- **Grammar shape:**
+  - ASCII only.
+  - At most two levels of parentheses (llama.cpp's parser recurses per level).
+  - No rule starts with itself (llama.cpp refuses left recursion).
+  - Empty alternatives come first, because the parser reads past a line break after a trailing `|`.
+- **Output is RFC 8259 JSON** that `base::JSONReader` accepts:
+  - whitespace is bounded, so the model can't stall on blank lines;
+  - numbers have at most 16 integer and 16 fraction digits and a 2-digit exponent;
+  - `\u` escapes exclude surrogates.
+
+**2. llama.cpp calls, audited at b11641** (listed at the top of `llama_engine.cc` and `grammar_sampler.cc`):
+
+- **`llama_sampler_init_grammar`:** the parser catches its own `std::runtime_error` / `std::out_of_range` and returns `nullptr`. Its `GGML_ASSERT` (`n_prev_rules >= 1`) can't fail.
+- **`llama_sampler_apply` on the grammar:** asserts a non-empty stack set, which only a bad accept could empty.
+- **`llama_sampler_accept` on the grammar:** *throws* when a token leaves no stack, and *aborts* on an end-of-generation token before the value is complete. A candidate can pass `apply` yet do that on `accept` in two ways:
+  - **A piece whose UTF-8 decodes to code point 0** (an overlong form in one token, or continuation bytes completing one). `apply` reads the 0 as the end of the piece; `accept` consumes it and throws. A negative-control test shows this against llama.cpp directly.
+  - **A NUL byte.** The grammar stops reading the piece there while the text goes on.
+
+  Both are unreachable:
+  - `Utf8Prefix` allows only strictly valid UTF-8 across pieces.
+  - Pieces with NUL are banned.
+  - `GrammarSampler::Accept()` takes only the token `Sample()` just checked, with the same grammar call on the same code points, and never an end-of-generation token.
+
+No local patch to llama.cpp is needed. The lazy and trigger-pattern grammars, which run `std::regex` on model output, are not used.
+
+**3. Token bans under a grammar** (`engine/grammar_tokens.h`):
+
+- **Control, unknown and unused tokens.** llama.cpp's grammar sees their markup (its piece cache renders with `special=true`) while the visible text is empty, so the two would disagree.
+- **User-defined tokens that look like markup** (`<think>`, `<|channel>`).
+- **Pieces with a NUL byte.**
+- **Pieces over 256 bytes.** llama.cpp's candidate check recurses once per character of a piece.
+
+**4. Time and memory:**
+
+- Grammar setup (the parse, and the token table the first time) runs when the request starts, just before its first `OnProgress`. The browser's clocks for a running request already cover it: liveness (120 s without a message), the hard deadline (15 min) and the web AI 5-minute deadline. Cancellation is polled per token.
+- Rejection-first sampling keeps the common case cheap. The chain picks from all logits as usual; only a pick the grammar refuses leads to a full pass over the filtered vocabulary.
+- **Worst case measured:** about 45-50 ms per token (unconstrained: 2.4 ms), with
+  - a 150k-token vocabulary;
+  - schemas at the caps (64 live alternatives, the 1024-character string, the any-value grammar);
+  - a random-weight model that misses the fast path on nearly every token;
+  - an `-O1` build.
+- **Memory per generation:** the stacks (bounded by the live-alternative cap and the nesting) and one candidate array.
+
+**5. Output:**
+
+- The text is what the grammar matched; strict UTF-8 makes `ToDisplayText` a no-op.
+- The browser still parses it with `base::JSONReader`.
+- A compromised service can return any valid JSON, or fail. It could always return arbitrary text, and §5.2 still applies.
+
+**6. Logging:**
+
+- Refusal reasons are fixed text. An unknown keyword's name is not repeated, since it is page text.
+- llama.cpp prints a grammar it refuses to stderr, schema text included. That is unreachable with converter output, which the tests check always parses.
+
+### 9.4 Not done
+
+- **Regex constraints.** Blink sends only the pattern's source, without its flags (`/i`, `/u`), so it can't be applied faithfully. Refused, as before.
+- **Reasoning before a constrained answer.** It would need a lazy grammar triggered after the reasoning block. Reasoning is skipped instead.
+- **Streaming constrained text to pages.** The web AI session holds it back until it parses (WEB_AI_APIS.md §5).
+- **Numeric bounds** beyond the forms listed in `json_schema_grammar.h`; `pattern`, `format` and the other refused keywords.
+
+### 9.5 Tests
+
+**In `molt_ai_unittests`** (std-only):
+
+- `engine/json_schema_grammar_unittest.cc`:
+  - every supported form, with accepted and refused texts per schema (through a small test-only GBNF recognizer);
+  - every refusal class;
+  - hostile schemas: nesting up to 10,000 deep, huge input, huge enums, wide objects and `anyOf`, nested `anyOf` past and exactly at the ambiguity cap, `$ref` cycles, the grammar-size and repetition budgets, and linear time.
+- `engine/bounded_json_unittest.cc` and `engine/grammar_tokens_unittest.cc`.
+- `inference_process_host_unittest.cc`: a request answered before its turn.
+
+**Run outside the repo:**
+
+- **End to end** against the vendored llama.cpp built with the GN flags, with tiny random-weight GGUFs (llama and qwen3 architectures), also under ASan and UBSan:
+  - 195 constrained answers (16 schemas, three temperatures) all complete, parse, and validate against their schemas with Python's `jsonschema`;
+  - raw prompts, refused grammars, cancellation, stop sequences, KV reuse and the Qwen3 prefill;
+  - `GrammarSampler` with hand-made logits that favour every hostile token never picks one;
+  - the llama.cpp negative control above.
+- **Mutation checks:**
+  - converter, reader and token rules: 74 of 75 mutations caught;
+  - sampler and the engine's constrained path: 9 of 11 caught.
+
+  The three survivors are equivalent (a redundant cap, pieces stored for banned tokens too, a filter flag that is already false under a grammar).
+- **Syntax** of the service and browser code against stand-ins; **the mojom** with upstream's generator.

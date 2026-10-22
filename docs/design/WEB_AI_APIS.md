@@ -60,6 +60,11 @@ at that revision with `upshow new`.
 10. **Upstream files touched:** `chrome/browser/chrome_content_browser_client.cc`
     (one hook) and `components/infobars/core/infobar_delegate.h` (one enum
     value). Both were already MoltBrowser-patched.
+11. **`responseConstraint` is enforced.** A JSON schema is turned into a
+    grammar inside the sandboxed inference service, and the model can only
+    write JSON that matches it. The page gets the answer whole, once it
+    parses. A schema outside the supported subset, or a regular expression,
+    fails with `NotSupportedError` (§5).
 
 ```
 renderer (Blink, unchanged)                 browser process
@@ -124,8 +129,15 @@ Chrome's override stores one `AIManager` under `kAIManagerUserDataKey`.
 - The writing APIs' `inputQuota` is the Blink constant
   `kWritingAssistanceMaxInputTokenSize` (9216); usage is measured by the
   browser.
-- `responseConstraint` (JSON schema) is turned into prompt text by Blink
-  before the prompt is sent.
+- `responseConstraint` (`language_model.cc`, `ParseConstraint`):
+  - An object is `JSON.stringify`'d and sent with `Prompt()` as
+    `ResponseConstraint::NewJsonSchema`. A `RegExp` is sent as its source
+    only, without its flags.
+  - Unless the page sets `omitResponseConstraintInput`, Blink also appends
+    the schema to the prompt text (`GetSchemaForInput`).
+  - Upstream answers a constraint its model can't apply with
+    `kErrorInvalidRequest` (`ai_language_model.cc`,
+    `GenerateError::kInvalidConstraint`).
 - Answers `kErrorInvalidRequest` and `kErrorRequestThrottled` make the
   renderer file a crash report (`DumpWithoutCrashing`), so MoltBrowser uses
   them only where upstream does.
@@ -259,9 +271,55 @@ a revoke UI are a follow-up (§13).
   languages (one output language is passed to the model as an
   instruction). Not supported, reported `"unavailable"` or failed: image
   and audio inputs, tools, `prefix` (assistant prefill), regex
-  `responseConstraint`. A JSON-schema `responseConstraint` is accepted;
-  Blink puts the schema in the prompt, and the model is not forced to
-  follow it (no constrained decoding yet).
+  `responseConstraint`.
+
+**Structured output: `responseConstraint`** (LanguageModel `prompt()` /
+`promptStreaming()`).
+
+- **A JSON schema is enforced.**
+  - The session passes it with the generation job. The browser checks only
+    its size (at most 32 KiB) and never parses it.
+  - The sandboxed inference service turns it into a grammar. llama.cpp's
+    grammar sampler then allows only tokens that keep the answer inside it
+    (SANDBOXED_INFERENCE.md §9).
+  - Reasoning is skipped for the request.
+  - Blink's copy of the schema in the prompt text stays as Blink sends it
+    (`omitResponseConstraintInput` is honoured by Blink, unchanged).
+- **The reply is held back.** It goes to the page as one chunk at the end,
+  and only once it parses as JSON (`base::JSONReader`, RFC 8259; the
+  runtime checks too). So `promptStreaming()` with a constraint delivers
+  the whole answer at once. A failed request leaves the context unchanged.
+- **The supported subset** (details in
+  `chrome/services/molt_ai/inference/engine/json_schema_grammar.h`):
+  - `{}` / `true` (any value, nested at most 3 deep);
+  - `type`, one or a list: object, array, string, number, integer, boolean,
+    null;
+  - `properties` (generated in the order given), `required`,
+    `additionalProperties`: `false`/`true`/absent (no extra keys are
+    generated), or a schema when there are no `properties` (a map);
+  - `items` (one schema), `minItems`/`maxItems` up to 64;
+  - `minLength`/`maxLength` up to 1024;
+  - integer `minimum`/`maximum`/`exclusiveMinimum`/`exclusiveMaximum`
+    giving a range of at most 1001 values, or a minimum of 0 or 1 alone;
+  - number `minimum: 0` alone, or whole-number bounds 0 ≤ min ≤ max with a
+    span of at most 1000;
+  - `enum` (up to 256 values), `const`;
+  - `anyOf`/`oneOf` of these, on their own (oneOf is treated as anyOf);
+  - annotations (`title`, `description`, `default`, `examples`,
+    `$schema`, ...) are ignored.
+- **Refused:** everything else, e.g. `$ref`, `pattern`, `format`, `allOf`,
+  `not`, `if`, `prefixItems`, `uniqueItems: true`, `multipleOf`, unknown
+  keywords. Also refused: schemas over the size, nesting (12) or ambiguity
+  caps, and schemas no value can match.
+- **What the page sees** (Blink's `ConvertModelStreamingResponseErrorToDOMException`):
+
+  | Case | Status | `prompt()` rejects with |
+  |---|---|---|
+  | Schema refused (as above), not JSON, empty or over 32 KiB; a regex | `kErrorInvalidRequest` | `NotSupportedError`: "The request is invalid - the input or options could not be processed." Blink also calls `DumpWithoutCrashing`, as for upstream's invalid constraint. |
+  | Answer cut off by the reply budget (512 or 1024 tokens) before the JSON closed | `kErrorResponseExceedsMaxTokens` | `QuotaExceededError`: "The response exceeded output limits and was truncated." |
+  | Answer isn't complete JSON, or the model couldn't continue the format | `kErrorResponseParsingFailed` | `UnknownError`: "Failed to parse the response." |
+
+  `promptStreaming()` errors its stream with the same exception.
 
 **Summarizer, Writer, Rewriter** (`WritingSession`; prompts in
 `web_ai_prompts.cc`): `sharedContext` (at create) and `context` (per call)
@@ -316,6 +374,11 @@ estimated tokens. The functions are pure and tested option by option.
 - Text is made valid UTF-8 with no NUL bytes (`ToDisplayText`).
 - Language tags are checked by a linear BCP 47 shape check (35 bytes max)
   before they are named in a prompt.
+- A `responseConstraint` schema is not parsed in the browser; only its
+  size is checked. The sandboxed inference service parses and converts it,
+  with bounded, linear code (SANDBOXED_INFERENCE.md §9.2-9.3). The
+  constrained reply is parsed with `base::JSONReader`, which is
+  memory-safe.
 - Everything from the page (system prompt, turns, input, context) is put in
   the `ChatPrompt` fields the inference service treats as untrusted and
   neutralizes (chat-template tokens can't be injected). MoltBrowser's own
@@ -343,6 +406,10 @@ What a page can learn, per call:
   tokenizer.
 - **Parameters**: the default and maximum top-K and temperature
   (`GetLanguageModelParams`) are the same for every user.
+- **Structured output**: which schemas are enforced or refused is the
+  same for every user and model. A refused schema fails before any token
+  is generated. (A model whose vocabulary can't continue a grammar fails
+  differently, but no catalog model is expected to.)
 - **Not hidden** (documented gaps): token timing (the stream reveals the
   model's speed, so roughly the hardware class and model size), the model's
   own behaviour (its answers identify the model family to a determined
@@ -429,24 +496,31 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   reply budget.
 - `web_ai_conversation_unittest.cc` (10): quota accounting, whole-exchange
   eviction, rollback.
-- `molt_ai_manager_unittest.cc` (39): the mojo surface over real pipes with
+- `molt_ai_manager_unittest.cc` (43): the mojo surface over real pipes with
   a fake runtime and a fake environment: availability per state, MoltNet
   never calling the runtime, policies, permissions policy as a bad message,
   consent (allow, block, dismiss, needs-model), aborted `create()`, quotas,
   overflow, append, abort and destroy cancelling the generation, the
   document going away, clone, measure, unsupported prompts, throttling and
-  failures, queue limits, and all three writing APIs.
+  failures, queue limits, and all three writing APIs. Constrained prompts:
+  - the schema reaches the job;
+  - the reply is held back, then delivered whole once it is JSON;
+  - non-JSON replies fail without touching the context;
+  - each failure maps to its Blink status;
+  - an oversized or empty schema is refused at once.
 - `molt_feature_overrides_unittest.cc`: Writer and Rewriter are enabled by
   default and can be turned off.
 
 Run here (no Chromium checkout): the 42 pure tests with clang
 (ASan/UBSan) and g++ `-O2 -Werror`, and compiled with `-fno-exceptions
--fno-rtti`; the 39 manager tests against small functional stand-ins of
+-fno-rtti`; the 43 manager tests against small functional stand-ins of
 `base` and mojo (ASan/UBSan/LSan and g++), with mojom stand-ins written
-from the 152 `.mojom` files; the binder, consent, runtime backend and the
+from the 152 `.mojom` files (and a `base::JSONReader` stand-in over the
+engine's strict reader); the binder, consent, runtime backend and the
 `BindAIManager` hook syntax-checked against stand-ins with the 152
 signatures; all of it clean under Chromium's clang warning set. 31
-mutations of the logic were all caught.
+mutations of the logic were all caught. Constrained decoding has its own
+tests (SANDBOXED_INFERENCE.md §9.5).
 
 **Needs the build machine:** the real compile and link (generated mojo
 bindings, GN deps and visibility), `molt_ai_unittests`, and in a browser:
@@ -454,7 +528,10 @@ each API from a page in a regular, Incognito and MoltNet window; the
 infobar (allow, block, choose a model, navigation); abort during a
 generation; the chat and a page generating at the same time; `Writer` and
 `Rewriter` present without an origin-trial token; `Translator` reporting
-`"unavailable"` with no component-update request in a traffic capture.
+`"unavailable"` with no component-update request in a traffic capture;
+`prompt()` with a `responseConstraint` on each catalog model (the answer
+parses and matches; an unsupported schema rejects with
+`NotSupportedError`).
 
 ## 13. Gaps and follow-ups
 
@@ -465,8 +542,10 @@ generation; the chat and a page generating at the same time; `Writer` and
   top-level site.
 - Dismissing the infobar isn't remembered, so a page can ask again after
   each click (there is no embargo).
-- No constrained decoding: JSON-schema `responseConstraint` is best effort;
-  regex constraints, `prefix`, images, audio and tools are unsupported.
+- Regex `responseConstraint`, `prefix`, images, audio and tools are
+  unsupported. A JSON-schema `responseConstraint` is enforced only within
+  the subset in §5 (others fail), reasoning is skipped for it, and the
+  constrained reply isn't streamed (SANDBOXED_INFERENCE.md §9.4).
 - Workers and extensions (pages and service workers) get
   `"unavailable"`.
 - A writing-API call near the 9216-token limit on a model with a small

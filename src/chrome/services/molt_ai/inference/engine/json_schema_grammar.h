@@ -28,8 +28,9 @@
 //  * integer: "minimum" / "maximum" / "exclusiveMinimum" /
 //    "exclusiveMaximum" (numbers) giving a range of at most kMaxRangeSize
 //    values, or a lower bound of 0 or 1 alone.
-//  * number: "minimum": 0 alone, or integer "minimum" and "maximum" with
-//    0 <= minimum < maximum and a span of at most kMaxRangeSize.
+//  * number: "minimum": 0 alone, or whole-number "minimum" and "maximum"
+//    with 0 <= minimum <= maximum and at most kMaxRangeSize whole numbers
+//    in between (any fraction is allowed below the maximum).
 //  * "enum" (at most kMaxEnumValues) and "const", optionally with "type"
 //    (values of other types are dropped). The value is written compactly,
 //    exactly as JSON.stringify would.

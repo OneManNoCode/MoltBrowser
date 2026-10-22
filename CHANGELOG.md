@@ -347,6 +347,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   ask) running in the AI sandbox. Memory is re-indexed in the background,
   only while Memory is on; keyword matching stays the fallback. The model is
   offered once its download is pinned.
+- **Structured answers for sites.** A page's
+  `LanguageModel.prompt(..., {responseConstraint})` JSON Schema is now
+  enforced: the on-device model can only write JSON that matches it, and the
+  page gets the answer only once it parses. Common schemas are supported
+  (types, properties, required, items, enums, small numeric and length
+  bounds, anyOf); others, and regular expressions, fail with
+  `NotSupportedError`. The schema is read only inside the AI sandbox.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
