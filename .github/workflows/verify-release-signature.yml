@@ -6,6 +6,12 @@ name: Verify release signature
 # src/chrome/browser/molt_ai/update/update_signing_keys.cc, and the attached
 # assets must be exactly the signed ones with matching sizes and SHA-256.
 # A red run here means users' browsers will refuse the update.
+#
+# It also checks the signed build provenance
+# (molt-build-provenance.intoto.jsonl): signed by the same keys, one
+# statement per platform build matching the molt-provenance-*.json on the
+# release byte for byte, every installer, SBOM and checksum file covered with
+# its SHA-256, and built from the commit the release's tag points to.
 # Runbook: docs/SIGNED_UPDATES.md
 
 on:
@@ -41,3 +47,12 @@ jobs:
             --manifest assets/molt-release-manifest.json \
             --sig assets/molt-release-manifest.json.sig \
             --require-all assets/*
+      - name: Verify signed build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          python3 tools/release_signing/molt_provenance.py verify \
+            --bundle assets/molt-build-provenance.intoto.jsonl \
+            --tag "$TAG" --expect-commit "$commit" --require-all assets/*

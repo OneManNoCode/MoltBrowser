@@ -23,6 +23,13 @@ name: Release Windows build
 # Manual only. Windows builds are paused (see CLAUDE.md), and an automatic
 # run on every v* tag could publish a build restored from an unvetted
 # artifact (see the restore step below).
+#
+# No build provenance: a resumed run builds on a Chromium tree restored from
+# an Actions artifact, without its git metadata, so nothing can say what it
+# was built from. scripts/publish-release-signature.sh needs signed
+# provenance for every installer, so its drafts can't be published as they
+# are; ship Windows from release-windows-selfhosted.yml or
+# release-windows-fast.yml (docs/SIGNED_UPDATES.md, "Build provenance").
 on:
   workflow_dispatch:
     inputs:

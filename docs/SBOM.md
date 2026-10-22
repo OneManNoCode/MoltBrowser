@@ -77,14 +77,25 @@ The SBOM is itself covered by everything that protects the installers:
 
 ```bash
 sha256sum -c --ignore-missing SHA256SUMS-linux-x64        # the SBOM is listed
-gh attestation verify MoltBrowser-Linux-x64-deb.spdx.json \
-  --repo OneManNoCode/MoltBrowser                          # built by our CI
+python3 tools/release_signing/molt_provenance.py verify \
+  --bundle molt-build-provenance.intoto.jsonl \
+  MoltBrowser-Linux-x64-deb.spdx.json                      # signed provenance
 python3 tools/sbom/molt_sbom.py validate \
   --artifact MoltBrowser-Linux-x64.deb MoltBrowser-Linux-x64-deb.spdx.json
 ```
 
-The last command checks the SPDX structure and that the SBOM describes
-exactly that file (same name, same SHA-256).
+- The second command checks the release's signed build provenance: the
+  SBOM is a subject of its build's statement, so this proves it came out
+  of that build, with the installer it describes. See
+  [SIGNED_UPDATES.md, "Build provenance"](SIGNED_UPDATES.md#build-provenance).
+- The last command checks the SPDX structure and that the SBOM describes
+  exactly that file (same name, same SHA-256).
+- Builds that ran in GitHub Actions also carry GitHub's attestation:
+  `gh attestation verify <file> --repo OneManNoCode/MoltBrowser`.
+
+The provenance and the SBOM complement each other. The SBOM lists what is
+inside an installer; the provenance says what it was built from (commit,
+Chromium, patches, GN args, toolchain) and on which builder.
 
 The offline-signed release manifest (`molt-release-manifest.json`,
 [SIGNED_UPDATES.md](SIGNED_UPDATES.md)) lists every release asset with its

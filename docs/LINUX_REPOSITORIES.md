@@ -30,8 +30,9 @@ it (GitHub Pages) hold no keys and are not trusted.
   release's `.rpm` plus its signature; its header and payload digests are
   unchanged.
 
-The repository's packages are also covered by the release checksums, the
-build-provenance attestation and the offline-signed release manifest.
+The repository's packages are also covered by the release checksums and
+by the offline-signed release manifest and build provenance
+([SIGNED_UPDATES.md](SIGNED_UPDATES.md#build-provenance)).
 
 ## The archive key
 
