@@ -1,12 +1,13 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// The session objects behind LanguageModel, Summarizer, Writer and Rewriter.
-// Owned by MoltAIManager. Each serves its requests one at a time, in order
-// (a prompt sees the appends before it), through the backend's queue; the
-// streamed text reaches the page at most every kStreamIntervalMs. A prompt
-// with a JSON-schema responseConstraint is decoded under that constraint
-// (the inference service's grammar sampler) and its reply reaches the page
+// The session objects behind LanguageModel, Summarizer, Writer and Rewriter
+// (the Translator's is in web_ai_translator_session.h). Owned by
+// MoltAIManager. Each serves its requests one at a time, in order (a prompt
+// sees the appends before it), through the backend's queue; the streamed
+// text reaches the page at most every kStreamIntervalMs. A prompt with a
+// JSON-schema responseConstraint is decoded under that constraint (the
+// inference service's grammar sampler) and its reply reaches the page
 // whole, only after it parsed as JSON here.
 //
 // Ending a request: the page aborting it (its responder pipe closes) cancels
@@ -31,6 +32,7 @@
 #include "chrome/browser/molt_ai/web_ai/web_ai_backend.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_conversation.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_prompts.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_translation.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -78,6 +80,9 @@ class WebAISession {
     bool constrained = false;
     // Summarizer / Writer / Rewriter: the prompt, built when queued.
     TaskPrompt task;
+    // Translator: the input in pieces, and the next one to look at.
+    std::vector<TranslationPiece> pieces;
+    size_t next_piece = 0;
   };
 
   // Queues |request| (failing it if kMaxQueuedPerSession wait already).
@@ -93,6 +98,17 @@ class WebAISession {
   virtual blink::mojom::ModelExecutionContextInfoPtr Commit(
       Request& request,
       std::string reply) = 0;
+  // A constrained generation of |request| completed with |reply| (complete
+  // JSON): the text the page gets for it. By default the reply itself;
+  // nullopt fails the request (kInvalidOutput).
+  virtual std::optional<std::string> ConstrainedText(Request& request,
+                                                     const std::string& reply);
+  // A request answered in several generations (Translator: one per piece
+  // of a long input). Called after each successful generation, once its
+  // text was sent: the next generation for |request|, which keeps running,
+  // or nullopt when it is complete (then Commit() and OnCompletion()). By
+  // default every request takes one generation.
+  virtual std::optional<GenerationJob> NextJob(Request& request);
 
   // A job with the session's scheduling fields filled in.
   GenerationJob NewJob();
@@ -103,6 +119,8 @@ class WebAISession {
 
  private:
   void MaybeStartNext();
+  // Runs |job| for the running request.
+  void StartJob(GenerationJob job);
   void OnChunk(uint64_t request_id, const std::string& text);
   void OnDone(uint64_t request_id, GenerationStatus status);
   void OnResponderDisconnected(uint64_t request_id);

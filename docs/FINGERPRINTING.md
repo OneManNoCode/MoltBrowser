@@ -2559,10 +2559,11 @@ also sets the browser's interface language) and once without, then
 
 ## Built-in AI APIs
 
-`LanguageModel`, `Summarizer`, `Writer` and `Rewriter` run on the user's
-on-device model ([design](design/WEB_AI_APIS.md), §8). What they expose:
+`LanguageModel`, `Summarizer`, `Writer`, `Rewriter` and `Translator` run
+on the user's on-device model ([design](design/WEB_AI_APIS.md), §8,
+§10). What they expose:
 
-* **Presence:** all four interfaces exist on every http(s) page in every
+* **Presence:** all five interfaces exist on every http(s) page in every
   window (MoltBrowser turns `Writer` and `Rewriter` on), so their presence
   says nothing about the user.
 * **`availability()`:** `"downloadable"` to every site the user hasn't
@@ -2586,11 +2587,25 @@ on-device model ([design](design/WEB_AI_APIS.md), §8). What they expose:
 * **MoltNet:** every API reports `"unavailable"`, the same for every
   MoltNet user. **Shields** are not consulted: the APIs are granted per
   site, and with Shields off a site learns nothing more.
-* **Translator** is off (`"unavailable"`) in every window: its upstream
-  backend downloads Google's components. **LanguageDetector** is
-  `"unavailable"` in every window for every user (its upstream model needs
-  a Google API key, so it used to say `"downloadable"` in a keyless build
-  and `"available"` with the user's own key: about one bit).
+* **Translator:** the supported pairs are a fixed table of 20 languages,
+  the same for every user and model; any other pair, or a language with
+  itself, is `"unavailable"`. For a supported pair the answer is exactly
+  the site's `LanguageModel` answer above, so the Translator adds nothing
+  but whether a pair is in a public table. It never depends on the
+  installed models, the OS language or Accept-Language, and keeps no
+  per-pair or per-site state. Upstream's answer did: `"available"` only
+  for pairs whose TranslateKit language packs were installed (from what
+  the user translated anywhere) when both languages were in Accept-Language
+  or English, or the origin had created that pair before (a stored site
+  setting). The codes a Translator reports back are the table's best fit
+  (`en` for `en-US`). `inputQuota` (Infinity) and `measureInputUsage()`
+  (0) are renderer constants; translations come piece by piece from the
+  same model, so their speed and wording are visible to allowed sites like
+  the other APIs' ([design §10](design/WEB_AI_APIS.md)).
+* **LanguageDetector** is `"unavailable"` in every window for every user
+  (its upstream model needs a Google API key, so it used to say
+  `"downloadable"` in a keyless build and `"available"` with the user's own
+  key: about one bit).
 
 ## Kill switch
 

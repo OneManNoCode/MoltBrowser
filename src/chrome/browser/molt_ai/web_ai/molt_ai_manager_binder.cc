@@ -23,11 +23,14 @@
 #include "chrome/browser/molt_ai/web_ai/web_ai_consent.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/on_device_translation/buildflags/buildflags.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/document_user_data.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/common/page_visibility_state.h"
 #include "net/base/schemeful_site.h"
@@ -35,6 +38,10 @@
 #include "third_party/blink/public/common/features_generated.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
+
+#if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+#include "components/on_device_translation/public/pref_names.h"
+#endif
 
 namespace molt_ai::web_ai {
 
@@ -56,6 +63,8 @@ bool IsApiFeatureEnabled(WebAIApi api) {
       return base::FeatureList::IsEnabled(blink::features::kAIWriterAPI);
     case WebAIApi::kRewriter:
       return base::FeatureList::IsEnabled(blink::features::kAIRewriterAPI);
+    case WebAIApi::kTranslator:
+      return base::FeatureList::IsEnabled(blink::features::kTranslationAPI);
   }
   return false;
 }
@@ -70,8 +79,25 @@ network::mojom::PermissionsPolicyFeature PolicyFeature(WebAIApi api) {
       return network::mojom::PermissionsPolicyFeature::kWriter;
     case WebAIApi::kRewriter:
       return network::mojom::PermissionsPolicyFeature::kRewriter;
+    case WebAIApi::kTranslator:
+      return network::mojom::PermissionsPolicyFeature::kTranslator;
   }
   return network::mojom::PermissionsPolicyFeature::kLanguageModel;
+}
+
+// The TranslatorAPIAllowed policy (upstream's only switch for Translator;
+// its pref's default is upstream's, true). It stays the enterprise kill
+// switch for the Translator now served on the user's model.
+bool TranslatorAllowedByPolicy(Profile* profile) {
+#if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+  PrefService* profile_prefs = profile ? profile->GetPrefs() : nullptr;
+  if (profile_prefs &&
+      profile_prefs->FindPreference(::prefs::kTranslatorAPIAllowed) &&
+      !profile_prefs->GetBoolean(::prefs::kTranslatorAPIAllowed)) {
+    return false;
+  }
+#endif
+  return true;
 }
 
 // The policies upstream's AIManager honours: BuiltInAIAPIsEnabled (profile)
@@ -131,7 +157,11 @@ class FrameEnvironment : public WebAIEnvironment {
     facts.feature_enabled = IsApiFeatureEnabled(api);
     Profile* profile = Profile::FromBrowserContext(browser_context_);
     facts.moltnet = tor::IsMoltNetProfile(profile);
-    facts.enterprise_allowed = EnterpriseAllows(profile);
+    // Translator runs on the same model as the other APIs, so the policies
+    // that turn those off turn it off too, besides its own.
+    facts.enterprise_allowed =
+        EnterpriseAllows(profile) &&
+        (api != WebAIApi::kTranslator || TranslatorAllowedByPolicy(profile));
     facts.user_enabled = UserAllows();
     content::RenderFrameHost* rfh = document_.AsRenderFrameHostIfValid();
     facts.is_document = is_document_ && rfh && rfh->IsActive();
@@ -210,16 +240,49 @@ class FrameEnvironment : public WebAIEnvironment {
   base::CallbackListSubscription consent_subscription_;
 };
 
-}  // namespace
+// Put in a context's user data for a moment, to find the document it
+// belongs to.
+class DocumentMarker : public base::SupportsUserData::Data {};
+const char kDocumentMarkerKey[] = "molt_web_ai_document_marker";
 
-void BindMoltAIManager(
-    content::BrowserContext* browser_context,
-    base::SupportsUserData* context_user_data,
-    content::RenderFrameHost* rfh,
-    const void* user_data_key,
-    mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
-  // Only MoltBrowser stores anything under this key now (upstream's
-  // AIManager is never created), so the cast is exact.
+// The document whose associated data |context_user_data| is, or nullptr
+// (a worker host, or no such document in |process_host| any more).
+// Content's frame binder passes RenderFrameHostImpl's
+// document_associated_data() as the user data (browser_interface_binders.cc
+// at 152), which is also where DocumentUserData lives, so a marker set on
+// one is seen through the other. Speculative frames are skipped, and they
+// can't bind interfaces. Linear in the process's frames, once per binding.
+content::RenderFrameHost* FindDocument(
+    content::RenderProcessHost* process_host,
+    base::SupportsUserData* context_user_data) {
+  if (!process_host) {
+    return nullptr;
+  }
+  auto owned = std::make_unique<DocumentMarker>();
+  const base::SupportsUserData::Data* marker = owned.get();
+  context_user_data->SetUserData(kDocumentMarkerKey, std::move(owned));
+  content::RenderFrameHost* found = nullptr;
+  process_host->ForEachRenderFrameHost(
+      [&found, marker](content::RenderFrameHost* rfh) {
+        // DocumentUserData's own accessor, without a typed DocumentUserData
+        // (which can only be created for a known RenderFrameHost).
+        if (!found && content::internal::GetDocumentUserData(
+                          rfh, kDocumentMarkerKey) == marker) {
+          found = rfh;
+        }
+      });
+  context_user_data->RemoveUserData(kDocumentMarkerKey);
+  return found;
+}
+
+// The context's manager, created on first use with |rfh| (null: a worker).
+// Only MoltBrowser stores anything under |user_data_key| (upstream's
+// AIManager is never created, and TranslationManagerImpl uses its own key
+// and is never created either), so the cast is exact.
+MoltAIManager* GetOrCreateManager(content::BrowserContext* browser_context,
+                                  base::SupportsUserData* context_user_data,
+                                  content::RenderFrameHost* rfh,
+                                  const void* user_data_key) {
   auto* manager =
       static_cast<MoltAIManager*>(context_user_data->GetUserData(user_data_key));
   if (!manager) {
@@ -229,7 +292,38 @@ void BindMoltAIManager(
     manager = owned.get();
     context_user_data->SetUserData(user_data_key, std::move(owned));
   }
-  manager->AddReceiver(std::move(receiver));
+  return manager;
+}
+
+}  // namespace
+
+void BindMoltAIManager(
+    content::BrowserContext* browser_context,
+    base::SupportsUserData* context_user_data,
+    content::RenderFrameHost* rfh,
+    const void* user_data_key,
+    mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
+  GetOrCreateManager(browser_context, context_user_data, rfh, user_data_key)
+      ->AddReceiver(std::move(receiver));
+}
+
+void BindMoltTranslationManager(
+    content::RenderProcessHost* process_host,
+    content::BrowserContext* browser_context,
+    base::SupportsUserData* context_user_data,
+    const void* user_data_key,
+    mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
+  MoltAIManager* manager = static_cast<MoltAIManager*>(
+      context_user_data->GetUserData(user_data_key));
+  if (!manager) {
+    // The context's first AI binding: find its document. A worker host (or
+    // a document that is gone) has none and gets "unavailable", as for the
+    // other APIs: this fails closed.
+    manager = GetOrCreateManager(browser_context, context_user_data,
+                                 FindDocument(process_host, context_user_data),
+                                 user_data_key);
+  }
+  manager->AddTranslationReceiver(std::move(receiver));
 }
 
 }  // namespace molt_ai::web_ai
