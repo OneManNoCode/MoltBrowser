@@ -12,10 +12,8 @@
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/farbling.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
-#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/frame_tree.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
-#include "ui/display/screen_info.h"
 
 namespace blink::molt_fingerprinting {
 
@@ -66,16 +64,29 @@ gfx::Size UniformScreenSizeOf(LocalFrame& frame) {
     // no view yet; the size is then empty, which buckets to one step.)
     viewport = view->Size();
   }
-  const float scale =
-      frame.GetChromeClient().GetScreenInfo(frame).device_scale_factor;
-  const float dsf = scale > 0 ? scale : 1.0f;
-  // Device pixels to DIPs with innerWidth / innerHeight's own rounding (at
-  // 100% zoom their zoom factor is the device scale factor), so a
-  // letterboxed page's screen size and inner size are the same number.
-  const LetterboxSize size =
-      LetterboxBucket(AdjustForAbsoluteZoom::AdjustInt(viewport.width(), dsf),
-                      AdjustForAbsoluteZoom::AdjustInt(viewport.height(), dsf));
+  // Device pixels to the page's CSS pixels with innerWidth / innerHeight's
+  // own rounding and zoom, so a letterboxed page's screen size and inner
+  // size are the same number at every zoom level.
+  const float scale = UniformScreenScale(frame);
+  const LetterboxSize size = LetterboxBucket(
+      AdjustForAbsoluteZoom::AdjustInt(viewport.width(), scale),
+      AdjustForAbsoluteZoom::AdjustInt(viewport.height(), scale));
   return gfx::Size(size.width, size.height);
+}
+
+float UniformScreenScale(const LocalFrame& frame) {
+  const LocalFrame& root = frame.LocalFrameRoot();
+  float scale = root.LayoutZoomFactor();
+  if (!root.IsOutermostMainFrame()) {
+    // WebFrameWidgetImpl::SetZoomInternal() gives a frame's local root the
+    // page's layout zoom times the CSS zoom of the element embedding it.
+    const float css_zoom = root.CssZoomFactor();
+    if (css_zoom > 0) {
+      scale /= css_zoom;
+    }
+  }
+  // A NaN fails the comparison too.
+  return scale > 0 ? scale : 1.0f;
 }
 
 double DevicePixelRatioFor(const LocalFrame* frame, double real) {
