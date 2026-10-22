@@ -15,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_routing.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -24,14 +25,21 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
+#include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
 #include "content/public/browser/web_contents.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/base_window.h"
+#include "ui/base/mojom/window_show_state.mojom.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 namespace molt_ai {
@@ -160,6 +168,58 @@ void CloseMoltNetWindows(Profile* original) {
   }
 }
 
+// New MoltNet windows open at a size whose page area is exactly one
+// letterbox size, the largest that fits on the screen (1400 x 900 DIPs
+// where there is room), so they start without margins
+// (docs/FINGERPRINTING.md, "Letterboxing"). Only while the page is
+// letterboxed, i.e. while fingerprinting protection is on.
+bool OpensAtLetterboxSize() {
+  return fingerprinting::IsFingerprintingProtectionEnabled();
+}
+
+// How often FitPageToLetterbox() looks again for a window whose page area
+// hasn't been laid out yet.
+constexpr int kMaxWaitsForLayout = 10;
+
+// Resizes `weak_browser`'s window so that its page area (the active tab's
+// contents) is WindowLetterboxSize(): the browser UI around the page keeps
+// its size, and the window stays on its screen. Leaves maximized,
+// minimized and fullscreen windows alone (the user, the window manager or
+// --start-maximized chose those; the margins then do the rest).
+void FitPageToLetterbox(base::WeakPtr<BrowserWindowInterface> weak_browser,
+                        int waits_left) {
+  BrowserWindowInterface* const browser = weak_browser.get();
+  BrowserWindow* const window =
+      browser ? BrowserWindow::FromBrowser(browser) : nullptr;
+  display::Screen* const screen = display::Screen::Get();
+  if (!window || !screen || window->IsMaximized() || window->IsMinimized() ||
+      window->IsFullscreen()) {
+    return;
+  }
+  const gfx::Size page = window->GetContentsSize();
+  if (page.IsEmpty()) {
+    if (waits_left > 0) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, base::BindOnce(&FitPageToLetterbox,
+                                    std::move(weak_browser), waits_left - 1));
+    }
+    return;
+  }
+  const gfx::Rect bounds = window->GetBounds();
+  const gfx::Rect work_area =
+      screen->GetDisplayNearestWindow(window->GetNativeWindow()).work_area();
+  const fingerprinting::LetterboxSize target =
+      fingerprinting::WindowLetterboxSize(
+          bounds.width(), bounds.height(), page.width(), page.height(),
+          work_area.width(), work_area.height());
+  if (target.IsEmpty()) {
+    return;
+  }
+  // Grows or shrinks the window by the difference, then moves it back onto
+  // the work area if it now sticks out.
+  window->SetContentsSize(gfx::Size(target.width, target.height));
+}
+
 void OpenVerifiedWindow(base::FilePath path,
                         GURL url,
                         MoltNetWindow::DoneCallback done,
@@ -180,12 +240,24 @@ void OpenVerifiedWindow(base::FilePath path,
     return;
   }
   EnsureReaper();
-  Browser* browser = Browser::Create(Browser::CreateParams(
-      Browser::TYPE_NORMAL, moltnet, /*user_gesture=*/true));
+  Browser::CreateParams params(Browser::TYPE_NORMAL, moltnet,
+                               /*user_gesture=*/true);
+  const bool letterbox_size = OpensAtLetterboxSize();
+  if (letterbox_size) {
+    // Not maximized like the last window, which would give a wide screen
+    // margins: restored, at the size FitPageToLetterbox() picks.
+    params.initial_show_state = ui::mojom::WindowShowState::kNormal;
+  }
+  Browser* browser = Browser::Create(params);
   const GURL target = url.is_valid() && url.SchemeIsHTTPOrHTTPS() ? url
                                                                    : GURL();
   // GURL() opens the new-tab page.
   chrome::AddTabAt(browser, target, /*index=*/-1, /*foreground=*/true);
+  if (letterbox_size) {
+    // Before showing, if the window is laid out already (no visible
+    // resize); otherwise as soon as it is.
+    FitPageToLetterbox(browser->GetWeakPtr(), kMaxWaitsForLayout);
+  }
   browser->GetWindow()->Show();
   std::move(done).Run(true, std::string());
 }
