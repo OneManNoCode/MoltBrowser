@@ -48,9 +48,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   The agent takes one action at a time on an element it listed from the
   page (never typing into a password field), and stops after a few
   unusable answers instead of guessing. "AI decision" reads SUCCESS or
-  FAIL exactly ("unsuccessful" used to count as success), and "AI extract"
-  stores only checked, typed values, never the model's raw text; field
-  lists in imported workflows are capped and checked. Page text can still
+  FAIL exactly ("unsuccessful" used to count as success). "AI extract"
+  still saves a JSON object your later steps can read, but only one that
+  passes checks on its size, depth and field names (typed fields when the
+  workflow lists them), never the model's raw text; field lists in
+  imported workflows are capped and checked. Page text can still
   influence what the model chooses, so the site, form and password rules
   above still apply to every action.
 - **Safer secrets and cloud keys.** Vault autofill checks the site and

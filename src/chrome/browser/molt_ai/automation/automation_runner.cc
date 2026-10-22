@@ -1675,10 +1675,12 @@ void AutomationRunner::OnAIDecideReply(std::string store_as,
 
 void AutomationRunner::DoAIExtract(const Step& s) {
   // extra["schema"] lists the fields wanted, e.g. {"price": "int",
-  // "airline": "string"}; without one the answer is a single text. It comes
-  // from the .molt file (perhaps an imported one), so ai_steps converts it
-  // with caps into the JSON Schema the model's answer is constrained to,
-  // and validates the answer against it before anything is stored.
+  // "airline": "string"}. It comes from the .molt file (perhaps an
+  // imported one), so ai_steps converts it with caps into the JSON Schema
+  // the model's answer is constrained to, and validates the answer against
+  // it before anything is stored. Without one (studio-recorded steps) the
+  // answer is any JSON object, as before, checked for depth, size, key
+  // names and key count.
   ai_steps::ExtractSpecResult spec = ai_steps::ExtractSpecFromStep(s.extra);
   if (!spec.spec) {
     // The workflow itself is wrong; retrying can't help.
@@ -1705,10 +1707,10 @@ void AutomationRunner::DoAIExtract(const Step& s) {
               std::string format =
                   spec.fields.empty()
                       ? std::string(
-                            "Reply with a JSON object {\"answer\": \"...\"} "
-                            "holding what the task asks for as short text "
-                            "(an empty string if the page doesn't show "
-                            "it).\n")
+                            "Reply with a single JSON object holding what "
+                            "the task asks for. Name its fields with "
+                            "letters, digits, spaces, _ or -, and nest it at "
+                            "most 3 levels deep.\n")
                       : "Reply with a JSON object with exactly these "
                         "fields:\n" +
                             ai_steps::DescribeExtractFields(spec) +

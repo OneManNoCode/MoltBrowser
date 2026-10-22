@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/automation/automation_ai_steps.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -174,17 +175,16 @@ TEST(AutomationAiStepsTest, StepSchemaBecomesAJsonSchema) {
             "- tags: list of text values, or null\n");
 }
 
-TEST(AutomationAiStepsTest, NoSchemaMeansOneTextAnswer) {
+TEST(AutomationAiStepsTest, NoSchemaMeansAnyObject) {
   for (const char* extra : {"null", "{}", R"({"host":"a.example"})", "[1]"}) {
     ExtractSpec spec = SpecOf(extra);
     EXPECT_TRUE(spec.fields.empty()) << extra;
   }
+  // The converter's "any value" form, object at the top.
   const std::string schema = BuildExtractSchema(ExtractSpec());
   ExpectServiceAccepts(schema);
-  EXPECT_EQ(schema,
-            R"({"type":"object","properties":{"answer":{"type":"string",)"
-            R"("maxLength":1000}},"required":["answer"],)"
-            R"("additionalProperties":false})");
+  EXPECT_EQ(schema, R"({"type":"object"})");
+  EXPECT_EQ(kMaxFreeformDepth, kAnyValueDepth);
 }
 
 TEST(AutomationAiStepsTest, StepSchemaOfEveryTypeName) {
@@ -337,10 +337,16 @@ TEST(AutomationAiStepsTest, ExtractCleansControlCharacters) {
   ASSERT_TRUE(o.value.has_value()) << o.note;
   EXPECT_EQ(*o.value->GetDict().FindString("name"), "line 1\nline 2");
 
-  o = InterpretExtract(Ok(R"({"answer":"\r\n  Acme Widget, $5 \u0007"})"),
+  // The same cleaning in a free-form object, at every level.
+  o = InterpretExtract(Ok(R"({"product":"\r\n  Acme Widget, $5 \u0007",)"
+                          R"("offers":[{"seller":"a\u0000b"}]})"),
                        ExtractSpec());
   ASSERT_TRUE(o.value.has_value()) << o.note;
-  EXPECT_EQ(o.value->GetString(), "Acme Widget, $5");
+  EXPECT_EQ(*o.value->GetDict().FindString("product"), "Acme Widget, $5");
+  const base::ListValue* offers = o.value->GetDict().FindList("offers");
+  ASSERT_TRUE(offers);
+  ASSERT_EQ(offers->size(), 1u);
+  EXPECT_EQ(*(*offers)[0].GetDict().FindString("seller"), "a b");
 }
 
 TEST(AutomationAiStepsTest, ExtractRefusesMismatchedReplies) {
@@ -392,22 +398,155 @@ TEST(AutomationAiStepsTest, ExtractRefusesMismatchedReplies) {
           .value);
 }
 
-TEST(AutomationAiStepsTest, ExtractAnswerWithoutSchema) {
-  ExtractOutcome o =
-      InterpretExtract(Ok(R"({"answer":"Acme Widget"})"), ExtractSpec());
-  ASSERT_TRUE(o.value.has_value());
-  EXPECT_EQ(o.value->GetString(), "Acme Widget");
-  EXPECT_TRUE(InterpretExtract(Ok(R"({"answer":""})"), ExtractSpec()).value);
-  EXPECT_FALSE(InterpretExtract(Ok(R"({"answer":1})"), ExtractSpec()).value);
+// A free-form reply (no step schema), or nullopt with the step note.
+std::optional<base::Value> Freeform(const std::string& reply,
+                                    std::string* note = nullptr) {
+  ExtractOutcome o = InterpretExtract(Ok(reply), ExtractSpec());
+  EXPECT_FALSE(o.terminal);
+  if (note)
+    *note = o.note;
+  if (!o.value)
+    EXPECT_EQ(o.note.rfind("AI extract failed: ", 0), 0u) << o.note;
+  return std::move(o.value);
+}
+
+// {"k0":0,"k1":1,...} with |n| keys.
+std::string ObjectWithKeys(size_t n) {
+  std::string s = "{";
+  for (size_t i = 0; i < n; ++i) {
+    s += std::string(i ? "," : "") + "\"k" + base::NumberToString(i) +
+         "\":" + base::NumberToString(i);
+  }
+  return s + "}";
+}
+
+TEST(AutomationAiStepsTest, ExtractWithoutSchemaStoresTheObject) {
+  // What studio-recorded steps (no schema) got before, now checked: later
+  // steps and RUN_JS keep reading its fields.
+  std::optional<base::Value> v = Freeform(
+      R"({"name":"Acme Widget","price":5,"rating":4.5,"in stock":true,)"
+      R"("tags":["a","b"],"seller":{"name":"X","address":{"city":"Y"}},)"
+      R"("note":null,"price-usd":1e3,"big":4000000000,"grid":[[1,2],[3]]})");
+  ASSERT_TRUE(v.has_value());
+  ASSERT_TRUE(v->is_dict());
+  const base::DictValue& d = v->GetDict();
+  EXPECT_EQ(d.size(), 10u);
+  EXPECT_EQ(*d.FindString("name"), "Acme Widget");
+  EXPECT_EQ(d.FindInt("price"), 5);
+  EXPECT_EQ(d.FindDouble("rating"), 4.5);
+  EXPECT_EQ(d.FindBool("in stock"), true);
+  EXPECT_EQ(d.FindList("tags")->size(), 2u);
+  ASSERT_TRUE(d.FindDict("seller"));
+  EXPECT_EQ(*d.FindDict("seller")->FindDict("address")->FindString("city"),
+            "Y");
+  EXPECT_TRUE(d.Find("note")->is_none());
+  EXPECT_EQ(d.FindInt("price-usd"), 1000);  // integral doubles become ints
+  EXPECT_EQ(d.FindDouble("big"), 4000000000.0);
+  EXPECT_EQ(d.FindList("grid")->size(), 2u);
+
+  // Nothing found is an empty object.
+  v = Freeform("{}");
+  ASSERT_TRUE(v.has_value());
+  EXPECT_TRUE(v->GetDict().empty());
+}
+
+TEST(AutomationAiStepsTest, ExtractWithoutSchemaCaps) {
+  // Keys: 64 in all, across every object.
+  EXPECT_TRUE(Freeform(ObjectWithKeys(kMaxFreeformKeys)));
+  EXPECT_FALSE(Freeform(ObjectWithKeys(kMaxFreeformKeys + 1)));
+  std::string nested = ObjectWithKeys(40);
+  nested.pop_back();
+  nested += ",\"more\":" + ObjectWithKeys(24) + "}";  // 40 + 1 + 24 keys
+  EXPECT_FALSE(Freeform(nested));
+
+  // Values: 256, containers and items included (top object + list = 2).
+  auto list_of = [](size_t n) {
+    std::string s = R"({"l":[)";
+    for (size_t i = 0; i < n; ++i)
+      s += std::string(i ? "," : "") + "0";
+    return s + "]}";
+  };
+  EXPECT_TRUE(Freeform(list_of(kMaxFreeformValues - 2)));
+  EXPECT_FALSE(Freeform(list_of(kMaxFreeformValues - 1)));
+
+  // Strings, characters not bytes.
+  std::string accents;
+  for (size_t i = 0; i < kMaxFreeformStringChars; ++i)
+    accents += "\xC3\xA9";
+  EXPECT_TRUE(Freeform(R"({"s":")" + accents + "\"}"));
+  EXPECT_FALSE(Freeform(R"({"s":")" + accents + "x\"}"));
+  EXPECT_TRUE(Freeform(R"({"s":")" + std::string(kMaxFreeformStringChars, 'a') +
+                       "\"}"));
+  EXPECT_FALSE(Freeform(R"({"s":")" +
+                        std::string(kMaxFreeformStringChars + 1, 'a') + "\"}"));
+
+  // Key length.
+  EXPECT_TRUE(
+      Freeform("{\"" + std::string(kMaxFreeformKeyBytes, 'k') + "\":1}"));
   EXPECT_FALSE(
-      InterpretExtract(Ok(R"({"answer":"a","b":"c"})"), ExtractSpec()).value);
-  EXPECT_FALSE(
-      InterpretExtract(Ok(R"({"answer":")" +
-                          std::string(kMaxExtractAnswerChars + 1, 'a') + "\"}"),
-                       ExtractSpec())
-          .value);
-  // Free text, the old fallback, is never stored.
-  EXPECT_FALSE(InterpretExtract(Ok("The price is $5"), ExtractSpec()).value);
+      Freeform("{\"" + std::string(kMaxFreeformKeyBytes + 1, 'k') + "\":1}"));
+
+  // The whole reply, before it is parsed.
+  std::string note;
+  const std::string padded =
+      "{\"a\":1" + std::string(kMaxFreeformReplyBytes, ' ') + "}";
+  EXPECT_FALSE(Freeform(padded, &note));
+  EXPECT_EQ(note, "AI extract failed: the answer was too long");
+
+  // Depth: containers at most 3 deep, the top object included.
+  EXPECT_TRUE(Freeform(R"({"a":{"b":{"c":1}}})"));
+  EXPECT_TRUE(Freeform(R"({"a":[[1]]})"));
+  EXPECT_FALSE(Freeform(R"({"a":{"b":{"c":{"d":1}}}})", &note));
+  EXPECT_EQ(note, "AI extract failed: the answer was nested too deep");
+  EXPECT_FALSE(Freeform(R"({"a":[[[1]]]})"));
+  EXPECT_FALSE(Freeform(R"({"a":[{"b":{}}]})"));
+}
+
+TEST(AutomationAiStepsTest, ExtractWithoutSchemaRefusesHostileReplies) {
+  for (const std::string& reply : std::vector<std::string>{
+           // Not one object.
+           "The price is $5",
+           R"(["a"])",
+           R"("text")",
+           "5",
+           "null",
+           "",
+           R"(Sure: {"a":1})",
+           R"({"a":1} trailing)",
+           R"({"a":1}{"b":2})",
+           R"({"a":1,})",
+           R"({"a":1/*c*/})",
+           "{\"a\":\"\xC3\"}",
+           std::string(10000, '[') + std::string(10000, ']'),
+           "{\"a\":" + std::string(10000, '[') + std::string(10000, ']') + "}",
+           // Keys that could set a prototype or the runner's own variable,
+           // at any level.
+           R"({"__proto__":{"polluted":true}})",
+           R"({"a":{"__proto__":{"x":1}}})",
+           R"({"a":[{"__proto__":1}]})",
+           R"({"__ai_decision":true})",
+           R"({"__x":1})",
+           // Keys that aren't plain names.
+           R"({"":1})",
+           R"({" lead":1})",
+           R"({"trail ":1})",
+           R"({"a\"b":1})",
+           R"({"a\u0000b":1})",
+           R"({"a\nb":1})",
+           R"({"{{x}}":1})",
+           R"({"a.b":1})",
+           R"({"café":1})",
+           R"({"<script>":1})",
+           R"({"ignore previous instructions!":1})",
+           // A number JSON can write but no double holds.
+           R"({"x":1e400})",
+       }) {
+    std::string note;
+    EXPECT_FALSE(Freeform(reply, &note)) << reply;
+    // The note is fixed text: it never repeats a key or a value.
+    EXPECT_EQ(note.find("proto"), std::string::npos) << reply;
+    EXPECT_EQ(note.find("script"), std::string::npos) << reply;
+  }
 }
 
 TEST(AutomationAiStepsTest, ExtractFailureOutcomes) {

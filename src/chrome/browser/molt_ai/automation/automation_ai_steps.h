@@ -12,7 +12,9 @@
 // AI_EXTRACT's field list comes from the step's "schema" (Step::extra),
 // e.g. {"price": "int", "airline": "string"}. It is part of the workflow
 // file, which may have been imported, so it is converted here with caps
-// and refused, never approximated, when it is outside them.
+// and refused, never approximated, when it is outside them. Without one
+// (every studio-recorded step) the answer is any JSON object, as it always
+// was, checked here for depth, size, key names and key count.
 //
 // A reply that can't be used fails the step (and its retries); nothing
 // is stored. In particular raw model text is never stored in a variable:
@@ -87,9 +89,19 @@ inline constexpr size_t kMaxFieldNameBytes = 64;
 inline constexpr size_t kMaxExtractStringChars = 256;
 inline constexpr size_t kMaxExtractListItems = 16;
 inline constexpr size_t kMaxExtractListStringChars = 128;
-// Without a schema the step asks for one text answer.
-inline constexpr size_t kMaxExtractAnswerChars = 1000;
 inline constexpr int kMaxExtractTokens = 1024;
+
+// Without a schema: a JSON object of any shape the inference service's
+// "any value" grammar allows (object at the top, containers nested at most
+// kMaxFreeformDepth deep, the top object included), within these caps.
+inline constexpr size_t kMaxFreeformDepth = 3;
+inline constexpr size_t kMaxFreeformReplyBytes = 8192;
+// Keys of all objects together, and values of every kind (containers and
+// list items included).
+inline constexpr size_t kMaxFreeformKeys = 64;
+inline constexpr size_t kMaxFreeformValues = 256;
+inline constexpr size_t kMaxFreeformKeyBytes = 64;
+inline constexpr size_t kMaxFreeformStringChars = 1000;
 
 enum class FieldType { kString, kInteger, kNumber, kBoolean };
 
@@ -117,7 +129,7 @@ struct ExtractSpec {
   ExtractSpec(ExtractSpec&&);
   ExtractSpec& operator=(ExtractSpec&&);
 
-  // Sorted by name. Empty: no schema, the answer is one piece of text.
+  // Sorted by name. Empty: no schema, the answer is a free-form object.
   std::vector<ExtractField> fields;
 };
 
@@ -142,8 +154,9 @@ ExtractSpecResult ExtractSpecFromStep(const base::Value& step_extra);
 
 // The JSON Schema for a reply: every field required (null allowed, for
 // "not on the page"), no other keys, strings and lists capped; or
-// {"answer": string} without fields. Always inside the inference
-// service's supported subset and caps (checked by the unit tests).
+// {"type": "object"} without fields (any object, nested at most 3 deep).
+// Always inside the inference service's supported subset and caps
+// (checked by the unit tests).
 std::string BuildExtractSchema(const ExtractSpec& spec);
 
 // "- price: whole number, or null\n" lines for the prompt.
@@ -156,7 +169,7 @@ struct ExtractOutcome {
   ExtractOutcome& operator=(ExtractOutcome&&);
 
   // What to store: a dict of exactly the spec's fields (each of its type,
-  // or none), or the answer string without fields.
+  // or none); without fields, the checked free-form object.
   std::optional<base::Value> value;
   bool terminal = false;
   std::string note;
@@ -165,6 +178,14 @@ struct ExtractOutcome {
 // Strings are cleaned before they are stored: carriage returns dropped,
 // other control characters (but \n and \t) turned into spaces, ends
 // trimmed. Integral doubles become ints when they fit.
+//
+// A free-form object (no fields) is refused, never trimmed down, when the
+// reply is over kMaxFreeformReplyBytes, nests deeper than
+// kMaxFreeformDepth, has more than kMaxFreeformKeys keys or
+// kMaxFreeformValues values, a string over kMaxFreeformStringChars, a
+// non-finite number, or a key that isn't 1 to kMaxFreeformKeyBytes of
+// letters, digits, '_', '-' and inner spaces, or that starts with "__"
+// (so __proto__ and __ai_decision can't be set, at any level).
 ExtractOutcome InterpretExtract(const ModelReply& reply,
                                 const ExtractSpec& spec);
 

@@ -342,8 +342,9 @@ repo/
   on-device model for one JSON object under grammar-constrained decoding and
   re-validate it in the browser: the agent acts only on element ids from its
   own page snapshot (`agents/agent_actions.*`), decisions are read exactly,
-  and extracted values are typed and capped (a step's `schema` from a `.molt`
-  file is untrusted and converted with caps, `automation/automation_ai_steps.*`).
+  and extracted objects are checked and capped (typed fields when a step's
+  `schema` from a `.molt` file, untrusted and converted with caps, lists
+  them; size, depth and key names otherwise; `automation/automation_ai_steps.*`).
   An unusable answer is never acted on or stored. The page-facing checks
   (`agent_safety`, `automation_security`) are unchanged. Design and
   prompt-injection posture: `docs/design/AGENT_ACTIONS.md`.

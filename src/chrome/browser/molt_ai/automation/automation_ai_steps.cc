@@ -302,6 +302,107 @@ std::optional<base::Value> ReadField(const base::Value& v,
   return base::Value(std::move(out));
 }
 
+// ---- Free-form objects (no step schema) -------------------------------------
+
+// 1 to kMaxFreeformKeyBytes of ASCII letters, digits, '_', '-' and inner
+// spaces ("price", "flight_no", "Product name"), not starting with "__":
+// __proto__ in RUN_JS's `vars` object literal would set a prototype, and
+// __ai_decision is the runner's own.
+bool IsFreeformKey(std::string_view key) {
+  if (key.empty() || key.size() > kMaxFreeformKeyBytes)
+    return false;
+  if (key.size() >= 2 && key[0] == '_' && key[1] == '_')
+    return false;
+  if (key.front() == ' ' || key.back() == ' ')
+    return false;
+  for (char c : key) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') || c == '_' || c == '-' || c == ' ';
+    if (!ok)
+      return false;
+  }
+  return true;
+}
+
+struct FreeformBudget {
+  size_t keys = 0;
+  size_t values = 0;
+};
+
+// |v| as stored. |depth| is the container depth |v| is at (the top object
+// is 1). nullopt, with |error|, when anything is over a cap or not allowed.
+std::optional<base::Value> ReadFreeform(const base::Value& v,
+                                        size_t depth,
+                                        FreeformBudget* budget,
+                                        std::string* error) {
+  if (++budget->values > kMaxFreeformValues) {
+    *error = "the answer had too many values";
+    return std::nullopt;
+  }
+  if ((v.is_dict() || v.is_list()) && depth > kMaxFreeformDepth) {
+    *error = "the answer was nested too deep";
+    return std::nullopt;
+  }
+  if (v.is_dict()) {
+    base::DictValue out;
+    for (const auto& [key, item] : v.GetDict()) {
+      if (++budget->keys > kMaxFreeformKeys) {
+        *error = "the answer had too many keys";
+        return std::nullopt;
+      }
+      if (!IsFreeformKey(key)) {
+        *error = "the answer had a key that isn't a plain name";
+        return std::nullopt;
+      }
+      std::optional<base::Value> read =
+          ReadFreeform(item, depth + 1, budget, error);
+      if (!read)
+        return std::nullopt;
+      out.Set(key, std::move(*read));
+    }
+    return base::Value(std::move(out));
+  }
+  if (v.is_list()) {
+    base::ListValue out;
+    for (const base::Value& item : v.GetList()) {
+      std::optional<base::Value> read =
+          ReadFreeform(item, depth + 1, budget, error);
+      if (!read)
+        return std::nullopt;
+      out.Append(std::move(*read));
+    }
+    return base::Value(std::move(out));
+  }
+  if (v.is_string()) {
+    if (CountChars(v.GetString()) > kMaxFreeformStringChars) {
+      *error = "a text value was too long";
+      return std::nullopt;
+    }
+    return base::Value(CleanText(v.GetString()));
+  }
+  if (v.is_int())
+    return base::Value(v.GetInt());
+  if (v.is_double()) {
+    const double d = v.GetDouble();
+    if (!std::isfinite(d)) {
+      *error = "a number wasn't finite";
+      return std::nullopt;
+    }
+    if (std::trunc(d) == d && d >= std::numeric_limits<int>::min() &&
+        d <= std::numeric_limits<int>::max()) {
+      return base::Value(static_cast<int>(d));
+    }
+    return base::Value(d);
+  }
+  if (v.is_bool())
+    return base::Value(v.GetBool());
+  if (v.is_none())
+    return base::Value();
+  // Nothing else comes out of the JSON reader.
+  *error = "the answer wasn't in the required format";
+  return std::nullopt;
+}
+
 }  // namespace
 
 ModelReply::ModelReply() = default;
@@ -431,7 +532,10 @@ ExtractSpecResult ExtractSpecFromStep(const base::Value& step_extra) {
 
 std::string BuildExtractSchema(const ExtractSpec& spec) {
   if (spec.fields.empty()) {
-    return SingleStringObjectSchema("answer", 0, kMaxExtractAnswerChars);
+    // The converter's "any value" form with an object at the top: keys
+    // and values of any kind, containers nested at most 3 deep
+    // (kMaxFreeformDepth).
+    return "{\"type\":\"object\"}";
   }
   std::string properties;
   std::string required;
@@ -464,18 +568,28 @@ ExtractOutcome InterpretExtract(const ModelReply& reply,
                                 const ExtractSpec& spec) {
   ExtractOutcome out;
   std::string problem = ReplyProblem(reply, &out.terminal);
-  if (problem.empty()) {
+  if (problem.empty() && spec.fields.empty()) {
+    // A free-form object, checked whole before anything is read: size
+    // first, then the reader's own depth limit (one level of margin; the
+    // walk enforces the exact one).
+    if (reply.text.size() > kMaxFreeformReplyBytes) {
+      problem = "the answer was too long";
+    } else {
+      std::optional<base::Value> parsed = base::JSONReader::Read(
+          reply.text, base::JSON_PARSE_RFC, kMaxFreeformDepth + 1);
+      if (!parsed || !parsed->is_dict()) {
+        problem = "the answer wasn't in the required format";
+      } else {
+        FreeformBudget budget;
+        out.value = ReadFreeform(*parsed, 1, &budget, &problem);
+        if (out.value)
+          return out;
+      }
+    }
+  } else if (problem.empty()) {
     std::optional<base::DictValue> dict = base::JSONReader::ReadDict(
         reply.text, base::JSON_PARSE_RFC, kMaxReplyJsonDepth);
-    if (spec.fields.empty()) {
-      const std::string* answer = SingleString(dict, "answer");
-      if (answer && CountChars(*answer) <= kMaxExtractAnswerChars) {
-        out.value = base::Value(CleanText(*answer));
-        return out;
-      }
-      problem = answer ? "the answer was too long"
-                       : "the answer wasn't in the required format";
-    } else if (!dict || dict->size() != spec.fields.size()) {
+    if (!dict || dict->size() != spec.fields.size()) {
       problem = "the answer wasn't in the required format";
     } else {
       base::DictValue values;

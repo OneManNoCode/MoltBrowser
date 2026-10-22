@@ -12,7 +12,7 @@ strictly. The page-facing checks are unchanged: `agent_safety` and
 |---|---|---|
 | The web agent's next step | `agents/agent_actions.*`, `agents/web_agent.cc` | one action object (§2) |
 | `ai_decide` step | `automation/automation_ai_steps.*`, `automation_runner.cc` | `{"decision": "SUCCESS" \| "FAIL"}` (§3.1) |
-| `ai_extract` step | same | the step's fields, or `{"answer": "..."}` (§3.2) |
+| `ai_extract` step | same | the step's fields, or any object within caps (§3.2) |
 | Selector recovery (a recorded element is lost) | same | `{"selector": "..."}` (§3.3) |
 
 Not covered: the AI chat's `[[ACTION ...]]` / slash-command actions
@@ -219,14 +219,34 @@ characters; lists at most 16 items of strings of at most 128 characters
 well inside the converter's caps; the tests check it. The prompt lists the
 fields ("- price: whole number, or null"). Budget: 1024 tokens.
 
-Without a schema the answer is `{"answer": "..."}` (at most 1000
-characters) and the variable holds that text. Before, it held whatever
-JSON object the model wrote, or its raw text.
+**Without a schema** (every step the studio records) the answer stays
+what it was, a JSON object of the model's choosing, so workflows that
+read its fields in later steps or in RUN_JS keep working. The schema is
+`{"type": "object"}`, the converter's "any value" form with an object at
+the top: containers nested at most 3 deep (the top object included),
+anything in them. The grammar can't constrain key names or counts, so the
+browser checks the whole object before storing it and refuses it, never
+trims it, when:
 
-**Validation and coercion** (`InterpretExtract`): exactly the spec's keys;
-each value null or of its type; integers as ints (an integral double from
-the reader becomes an int when it fits, else stays a double); finite
-numbers; list sizes. Strings are cleaned before they are stored: `\r`
+| Check | Cap |
+|---|---|
+| reply size (before parsing) | 8 KiB |
+| container depth, top object included | 3 (the reader's own limit is 4) |
+| keys, all objects together | 64 |
+| values, containers and list items included | 256 |
+| one string | 1000 characters |
+| a key | 1-64 bytes of ASCII letters, digits, `_`, `-` and inner spaces, not starting with `__` (at any level: `__proto__`, `__ai_decision`) |
+| a number | finite |
+
+The top level must be an object (not a list, string or number). Strings
+are cleaned and integral doubles become ints, as with a schema. Before,
+the step stored whatever JSON the model wrote (any shape, any keys, any
+size), or its raw text when it didn't parse.
+
+**Validation and coercion with a schema** (`InterpretExtract`): exactly
+the spec's keys; each value null or of its type; integers as ints (an
+integral double from the reader becomes an int when it fits, else stays a
+double); finite numbers; list sizes. Strings are cleaned before they are stored: `\r`
 dropped, other control characters except `\n` and `\t` turned into
 spaces, ends trimmed. Too long, wrong type, missing or extra key: the step
 fails.
@@ -266,10 +286,13 @@ trustworthy.
   enforce it).
 - **Flipping a decision with wording.** `ai_decide` reads two exact
   values; "unsuccessful" is not SUCCESS.
-- **Smuggling text into variables.** `ai_extract` stores only typed,
-  bounded, cleaned values, never raw output.
+- **Smuggling text into variables.** `ai_extract` stores only a checked
+  object (typed fields with a schema; bounded, cleaned values under plain
+  keys without one), never raw output, and never a `__proto__` or
+  `__ai_decision` key.
 - **Oversized output.** Every string has a cap (typed text 500, URLs
-  1024, results 1000, extracted strings 256).
+  1024, results 1000, extracted strings 256, or 1000 in a free-form
+  object), and a free-form object is capped as a whole.
 
 **What it doesn't change:**
 
@@ -323,23 +346,30 @@ trustworthy.
   names and types, a full JSON Schema refused, 16 fields at the caps with
   64-byte names accepted by the service's converter, 100,000 fields
   refused, a schema arriving through `Script::FromJSONString`); typed
-  extraction, coercion, cleaning, mismatches and caps; the answer form;
-  selector replies.
+  extraction, coercion, cleaning, mismatches and caps; free-form objects
+  without a schema (stored with nesting, coercion and cleaning at every
+  level; each cap at and over its limit: keys across nested objects,
+  values, string characters, key bytes, reply bytes, depth; hostile
+  replies: other top-level types, prose, trailing text, two objects,
+  nesting 10,000 deep, `__proto__` / `__ai_decision` / `__x` keys at any
+  level, keys with quotes, NUL, line breaks, dots, `{{`, non-ASCII or
+  edge spaces, a number too big for a double); selector replies.
 
 **Run outside the repo** (standalone, against `//base` stand-ins):
 
-- Both test files above, with the real converter (47 tests), also under
+- Both test files above, with the real converter (49 tests), also under
   ASan and UBSan.
-- Mutation checks: 30 single-point mutations of the parsers, validators,
-  caps and outcome rules; 29 caught, and a test was added for the one that
-  survived (`\r` in the middle of extracted text).
+- Mutation checks: 46 single-point mutations of the parsers, validators,
+  caps and outcome rules, free-form objects included; all are caught. Two
+  survived at first (`\r` in the middle of extracted text, and the
+  free-form string cap counted in bytes) and got a test each.
 - Grammar agreement: each schema through the real converter into a GBNF
   recognizer (the one in `json_schema_grammar_unittest.cc`); hand-picked
   replies accepted or refused by the grammar match the browser parsers,
   including the caps at their limits.
 - llama.cpp: every schema at its caps (40 text fields, no elements,
-  buttons only; 16 extract fields with 64-byte names; decision, answer,
-  selector) through the converter into the vendored b11641
+  buttons only; 16 extract fields with 64-byte names; the free-form
+  object; decision; selector) through the converter into the vendored b11641
   `llama_grammar_init_impl`, which accepts each grammar, then sample
   replies fed code point by code point with `llama_grammar_accept`:
   accepted and refused as expected.
