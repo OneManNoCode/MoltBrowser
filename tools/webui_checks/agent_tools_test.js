@@ -173,6 +173,24 @@ const SEARCH = {
   p.run(listScript('l6'));
   await settle();
   assert.strictEqual(p.run(listPoll('l6')).tools[0].form.length, 65);
+  // In Chromium a form's named controls override its members
+  // ([LegacyOverrideBuiltIns]; jsdom doesn't, so the test defines them on
+  // the form): the fields read are still the form's own controls.
+  {
+    const q = page(ORIGIN, [{name: 'login', description: 'Log in.'}], {html:
+        '<form toolname="login"><input type="password" name="pw">' +
+        '<select name="elements"><option>a</option></select>' +
+        '<input name="getAttribute"></form>'});
+    const form = q.w.document.querySelector('form');
+    Object.defineProperty(form, 'elements',
+                          {value: form.querySelector('select')});
+    Object.defineProperty(form, 'getAttribute',
+                          {value: form.querySelector('[name=getAttribute]')});
+    q.run(listScript('l7'));
+    await settle();
+    assert.deepStrictEqual(q.run(listPoll('l7')).tools[0].form,
+                           [['password', ''], ['select-one', ''], ['text', '']]);
+  }
 
   // ---- Calling ------------------------------------------------------------
 
