@@ -343,19 +343,28 @@ std::vector<ElementProbe> ParseElementProbes(const base::Value& result,
 // ---------------------------------------------------------------------------
 
 std::string SanitizeUntrustedText(std::string_view text) {
-  // 1. Fold non-ASCII angle-bracket look-alikes to ASCII.
-  std::string folded(text);
+  // 1. Drop control characters. First: dropping one later could join the
+  //    bytes around it ("\xE2\x80" "\x00" "\xB9") into a look-alike that
+  //    step 2 had already passed over.
+  std::string folded;
+  folded.reserve(text.size());
+  for (char ch : text) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    if ((c < 0x20 && c != '\n' && c != '\t') || c == 0x7f)
+      continue;
+    folded.push_back(ch);
+  }
+
+  // 2. Fold non-ASCII angle-bracket look-alikes to ASCII.
   for (const auto& [from, to] : kAngleLookalikes)
     ReplaceAll(folded, from, std::string_view(&to, 1));
 
-  // 2. Drop control characters; cap '<' / '>' runs at two so the fence
-  //    markers (which open with "<<<") can never appear in page text.
+  // 3. Cap '<' / '>' runs at two so the fence markers (which open with
+  //    "<<<") can never appear in page text.
   std::string out;
   out.reserve(folded.size());
   for (size_t i = 0; i < folded.size(); ++i) {
     const unsigned char c = static_cast<unsigned char>(folded[i]);
-    if ((c < 0x20 && c != '\n' && c != '\t') || c == 0x7f)
-      continue;
     if (c == '<' || c == '>') {
       size_t j = i;
       while (j < folded.size() && folded[j] == folded[i])
@@ -367,7 +376,7 @@ std::string SanitizeUntrustedText(std::string_view text) {
     out.push_back(static_cast<char>(c));
   }
 
-  // 3. Defang chat-template control tokens (<|im_start|>, <|eot_id|>,
+  // 4. Defang chat-template control tokens (<|im_start|>, <|eot_id|>,
   //    <|start_header_id|>, ...) and the fence's own wording.
   ReplaceAll(out, "<|", "< |");
   ReplaceAll(out, "|>", "| >");
