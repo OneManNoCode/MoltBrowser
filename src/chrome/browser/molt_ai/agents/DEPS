@@ -1,0 +1,13 @@
+include_rules = [
+  # The web agent's screenshots: the bounds and plan a model image follows
+  # (std-only), as in runtime/.
+  "+chrome/services/molt_ai/inference/engine/image_input.h",
+]
+
+specific_include_rules = {
+  # The schemas the agent and the chat build must be accepted by the
+  # inference service's own converter (std-only).
+  "(agent|chat)_actions_unittest\.cc": [
+    "+chrome/services/molt_ai/inference/engine/json_schema_grammar.h",
+  ],
+}

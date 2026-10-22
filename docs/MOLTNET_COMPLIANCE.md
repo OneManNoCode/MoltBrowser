@@ -391,7 +391,10 @@ from your own IP address. We went through the candidates in the Chromium
   check for a `www.` address after a certificate name error; payment
   method manifests; FedCM; Lens and "Search image with ..." (they open
   in the MoltNet window); the AI chat's `/pdf` download, its model
-  downloads and its web agent, which acts in the chat's own tab.
+  downloads and its web agent, which acts in the chat's own tab (with a
+  model that sees images, the agent's screenshots of that tab go only to
+  the on-device model: no request at all, docs/design/AGENT_ACTIONS.md
+  §2.6).
 - *Never sent from an off-the-record profile* (Chromium's own rules):
   address-bar suggestions, including the on-focus ones; adding search
   engines a page announces; Google's spelling service; real-time and

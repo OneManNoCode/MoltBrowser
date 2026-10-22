@@ -419,6 +419,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Chromium's own decoders and scaled in the browser; the AI sandbox gets
   only raw pixels within fixed limits, never an image file. Whether your
   model sees images doesn't change what `availability()` tells a site.
+- **The web agent can see the page.** With a model that sees images, the
+  agent also gets a screenshot of the visible part of the tab it works in,
+  at each step, so it can pick icon-only buttons and find its way on
+  visual pages. Only http(s) pages on the sites the run may use, never
+  `molt://` or `chrome://` pages; password, payment, one-time-code and
+  autofilled fields and embedded frames are greyed out first, and each
+  element the agent can act on is tagged with its id. The screenshot stays
+  on your device, isn't saved, and doesn't change the rules: the agent
+  still acts only on listed elements, and asks before forms, other sites
+  and payment fields. Text-only models work as before; turn it off at
+  `chrome://flags/#molt-agent-screenshots`.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
