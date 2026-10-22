@@ -406,11 +406,17 @@ std::string BuildElementSnapshotScript() {
   // selectors are capped here and again in ParseElementSnapshot. The
   // selector is the element's #id when that resolves to it, else an
   // nth-of-type path from <html> (at most 64 levels).
-  return std::string(R"JS((() => {
+  //
+  // One complete script, so tools/webui_checks/check_embedded_js.py can
+  // parse it: the two limits are written in, and kept equal to the C++
+  // constants by the static_asserts below.
+  static_assert(kMaxObservedElements == 40,
+                "update MAX in the snapshot script");
+  static_assert(kMaxSelectorBytes == 1024,
+                "update the selector cap in the snapshot script");
+  return R"JS((() => {
   try {
-    const MAX = )JS") +
-         base::NumberToString(kMaxObservedElements) +
-         R"JS(, SCAN = 4000;
+    const MAX = 40, SCAN = 4000;
     const q = 'a[href],area[href],button,input,textarea,select,summary,' +
         '[role="button"],[role="link"],[role="tab"],[role="menuitem"],' +
         '[role="checkbox"],[role="radio"],[role="switch"],[role="option"],' +
@@ -495,8 +501,7 @@ std::string BuildElementSnapshotScript() {
     return {origin: String(location.origin), elements: chosen.map((c) => {
       const el = c[2], kind = c[3];
       const sel = path(el);
-      return {sel: sel.length <= )JS" +
-         base::NumberToString(kMaxSelectorBytes) + R"JS( ? sel : '', kind: kind,
+      return {sel: sel.length <= 1024 ? sel : '', kind: kind,
               type: kind === 'input' ?
                   String(el.type || '').toLowerCase().slice(0, 24) : '',
               ac: String(el.getAttribute('autocomplete') || '').slice(0, 64),
