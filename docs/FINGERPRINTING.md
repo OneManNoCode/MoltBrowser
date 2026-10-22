@@ -831,6 +831,13 @@ running WebGL report pages (e.g. webglreport.com, three.js and Babylon.js
 examples, a KTX2 sample) and a WebGPU sample (null adapter, WebGL fallback)
 on a Mac, a Windows and a Linux machine, comparing their reports.
 
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md) on Linux, in a MoltNet window: every limit, range,
+the viewport and every precision format against its baseline (equal, or
+below it on a GPU that lacks it, never above), the sample counts, the
+extension allow-list, no `WEBGL_debug_renderer_info` and the null WebGPU
+adapter; `leaktest.sh diff` compares two machines' runs. Still manual: the
+report pages, engine samples and the KTX2 sample, and macOS and Windows.
+
 ## Letterboxing (MoltNet)
 
 MoltNet windows used to report a rounded screen size while the page itself
@@ -1229,6 +1236,14 @@ infobar, split view, browser and tab fullscreen, light and dark mode, a
 regular-profile zoom not carried over, and `devicePixelRatio`, `srcset` and
 `image-set()` on a 2x screen.
 
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md) on Linux: the page and screen size,
+`outer*`, `screenX/Y`, `availLeft/Top`, `devicePixelRatio`, the
+`resolution` and device-size media queries, the orientation and mouse
+`screenX/Y`, at five window sizes and at 1x and 2x
+(`--force-device-scale-factor`). Still manual: DevTools docked, the side
+panel, infobars, split view, fullscreen, light and dark mode, `srcset` and
+`image-set()` selection, a regular-profile zoom, macOS and Windows.
+
 **New windows, verified without a Chromium checkout:** the two new
 `molt_letterbox_unittest.cc` tests and seven static_asserts pass
 standalone (g++ ASan/UBSan, clang UBSan trap with the strict flags): every
@@ -1245,6 +1260,10 @@ opening MoltNet windows on Windows, macOS and Linux (X11 and Wayland) at 1x
 and 2x, after a maximized regular window and with the bookmarks bar shown:
 the page must start at 1400 x 900 (or the largest step) with no margins and
 without a visible resize.
+
+[`tools/leak_test`](LEAK_TESTING.md) checks that the first MoltNet window on its 1920 x 1080 Xvfb screen
+opens with a 1400 x 900 page (`uniform.new_window_size`); the other
+platforms and a maximized regular window first stay manual.
 
 **Zoom, verified without a Chromium checkout** (scratch harnesses):
 
@@ -1304,6 +1323,11 @@ from a zoomed page; a site zoomed in another tab; navigating between sites
 at different zoom levels (cross-site and same-site); the PDF viewer
 (manual zoom); moving the window between screens of different scale
 factors.
+
+[`tools/leak_test`](LEAK_TESTING.md) tries every listed zoom level through DevTools key events
+(Ctrl+= / Ctrl+-) and checks the letterbox rules at each; when the browser
+doesn't take the keys from DevTools, the level is reported as SKIP and stays
+manual, like the rest of this list.
 
 ## MoltNet: no touchscreen, client hints, memory and CPU
 
@@ -1544,6 +1568,13 @@ an iframe `allow="ch-dpr"`) showing only the allowed headers on documents,
 iframes and images; `getHighEntropyValues()` and `navigator.cpuPerformance`
 on Windows, macOS and Linux.
 
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md) on Linux: the pointer and hover queries,
+`maxTouchPoints`, touch-event detection, `deviceMemory`, `cpuPerformance`,
+blank `getHighEntropyValues()`, and the hints a server receives on a
+subresource request after asking for every hint with `Accept-CH` and
+`Critical-CH` (the navigation's headers are in the run's server log). Still
+manual: touchscreens, `delegate-ch` and iframe delegation, Windows and macOS.
+
 ## Fonts
 
 The set of installed font families is one of the strongest fingerprinting
@@ -1729,6 +1760,10 @@ and in a running browser on each OS: font-probing pages and suites
 (FingerprintJS, CreepJS font tests) in normal, Incognito and MoltNet
 windows, with Shields on and off; East Asian sites; design tools with
 `queryLocalFonts()`.
+
+[`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with `document.fonts.check()` in a MoltNet
+window and fails any visible family outside the Linux allow-list; on other
+OSes it records the visible set for `diff`.
 
 ## MoltNet: touches, screens, orientation and form controls
 
@@ -1960,6 +1995,12 @@ event test pages, a multi-screen setup (`getScreenDetails()`,
 `permissions.query`, moving the window between monitors), a pivoted
 monitor, and date/time/number inputs and their validation messages.
 
+**Automated** by [`tools/leak_test`](LEAK_TESTING.md): `getScreenDetails()`, the `window-management`
+permission, the orientation of the uniform screen at five window sizes,
+mouse `screenX/Y`, the en-US validation messages, and the form controls'
+sizes (compared between two runs with `--locale`). Touch, several monitors
+and a pivoted monitor stay manual.
+
 ## MoltNet: settings from the regular profile
 
 MoltNet's profile is an off-the-record profile of the user's regular one,
@@ -2063,6 +2104,10 @@ blocked JavaScript, a window-management block, Shields off and an embargo
 in the regular profile, none of them in MoltNet, while an Incognito-style
 profile inherits all four), and in a running browser the checks in
 `docs/MOLTNET_COMPLIANCE.md` §4.
+
+[`tools/leak_test`](LEAK_TESTING.md) seeds the regular profile (Do Not Track, font size and family,
+language, third-party cookies, JavaScript and location blocked for the test
+site) and checks that a MoltNet window shows none of it.
 
 ## MoltNet: the browser's UI language
 
@@ -2288,6 +2333,10 @@ an empty required field, the size of `<input type=file>`, `<details>` and
 measured width of unstyled, `serif` and `monospace` text, and CJK text
 without `lang` (glyph variants), all identical to an English-interface
 MoltNet window on the same OS.
+
+With [`tools/leak_test`](LEAK_TESTING.md): run once with `--locale ja_JP.UTF-8` (on Linux the OS locale
+also sets the browser's interface language) and once without, then
+`leaktest.sh diff` the two reports; it compares exactly these values.
 
 ## Built-in AI APIs
 
@@ -2550,6 +2599,12 @@ window, with Shields on and off, the seed absent from `ps`/`chrome://
 process-internals` command lines, plus fingerprinting suites (e.g. CreepJS,
 FingerprintJS) across two sites and two sessions, and the frame-rate cost
 on a canvas-effects video call.
+
+[`tools/leak_test`](LEAK_TESTING.md) scripts the MoltNet part of this on Linux: every uniform value
+above, the canvas readback differing between two sites and changing with
+New Identity. Normal and Incognito windows, the per-API farbling pages,
+Shields on and off, the seed on command lines and fingerprinting suites stay
+manual.
 
 ## Code map
 

@@ -218,6 +218,17 @@ Run this on the build machine for every release candidate, on macOS arm64
 first, then Linux. It turns every **Likely** and **Capture** above into a
 measured result.
 
+**Partly automated on Linux.** The MoltNet leak kit
+([LEAK_TESTING.md](LEAK_TESTING.md)) logs every name the browser looks up
+outside Tor during its run and checks it against this page:
+`tools/leak_test/leakkit/background.py` mirrors the Summary table and the
+pass criteria below. A host that must not appear fails, and a host on no
+list has to be triaged (added here and there, with the reason, or treated as
+a leak). Because the kit lets nothing but Tor out, it only sees the first
+lookup of each host, not URLs, request bodies, timing over hours, or what a
+successful request would lead to. The capture below remains the full
+procedure.
+
 ### 1. Setup
 
 ```bash

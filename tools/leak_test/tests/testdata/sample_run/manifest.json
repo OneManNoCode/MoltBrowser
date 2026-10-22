@@ -1,0 +1,564 @@
+{
+ "browser": {
+  "path": "/opt/moltbrowser/moltbrowser",
+  "product": "MoltBrowser",
+  "version": "0.3.0"
+ },
+ "canary": {
+  "domain": "moltleak.test",
+  "loopback_port": 47321
+ },
+ "captures": {
+  "all": "capture/all.pcap",
+  "blocked": "capture/blocked.pcap",
+  "tor": "capture/tor.pcap"
+ },
+ "errors": [],
+ "fingerprints": [
+  {
+   "dsf": 1.0,
+   "kind": "full",
+   "label": "initial",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "ai.LanguageModel": "unavailable",
+    "ai.Rewriter": "unavailable",
+    "ai.Summarizer": "unavailable",
+    "ai.Translator": "unavailable",
+    "ai.Writer": "unavailable",
+    "autoplay.mediaelement": "allowed-muted",
+    "canvas.hash": "0123456789abcdef01234567",
+    "cookies.third_party": false,
+    "css.default_font_size": "16px",
+    "doc.characterSet_undeclared": "windows-1252",
+    "fonts.visible": [
+     "DejaVu Sans",
+     "Liberation Sans",
+     "Arial",
+     "Ubuntu"
+    ],
+    "form.numberMessage": "Value must be greater than or equal to 10.",
+    "form.validationMessage": "Please fill out this field.",
+    "hdr.accept-language": "en-US",
+    "hdr.client_hints": {
+     "sec-ch-ua": "\"Chromium\";v=\"152\"",
+     "sec-ch-ua-mobile": "?0",
+     "sec-ch-ua-platform": "\"Linux\""
+    },
+    "hdr.dnt": null,
+    "hdr.sec-gpc": "1",
+    "intl.locale": "en-US",
+    "intl.number": "1,234,567.891",
+    "js.enabled_on_blocked_site": true,
+    "media.devices": {
+     "audiooutput": 1
+    },
+    "mouse.screen_equals_client": true,
+    "mq.any_hover_none": false,
+    "mq.any_pointer_coarse": false,
+    "mq.device_size_matches": true,
+    "mq.hover_hover": true,
+    "mq.pointer_coarse": false,
+    "mq.pointer_fine": true,
+    "mq.resolution_1dppx": true,
+    "nav.cpuPerformance": 0,
+    "nav.deviceMemory": 8,
+    "nav.doNotTrack": null,
+    "nav.globalPrivacyControl": true,
+    "nav.hardwareConcurrency": 8,
+    "nav.language": "en-US",
+    "nav.languages": [
+     "en-US"
+    ],
+    "nav.maxTouchPoints": 0,
+    "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "perm.geolocation": "prompt",
+    "perm.window-management": "denied",
+    "screen.availHeight": 900,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1400,
+    "screen.colorDepth": 24,
+    "screen.height": 900,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1400,
+    "screenDetails.error": "NotAllowedError",
+    "sharedStorage.set": "rejected",
+    "storage.persist": false,
+    "storage.quota": 1717986918,
+    "touch.createEvent": "NotSupportedError",
+    "touch.ontouchstart": false,
+    "tz.date_string_utc": true,
+    "tz.offset_jan": 0,
+    "tz.offset_jul": 0,
+    "tz.resolved": "UTC",
+    "ua.reduced": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "uad.high_entropy": {
+     "architecture": "",
+     "bitness": "",
+     "formFactors": [],
+     "fullVersionList": [],
+     "model": "",
+     "platformVersion": "",
+     "uaFullVersion": "",
+     "wow64": false
+    },
+    "uad.platform": "Linux",
+    "webgl.context": true,
+    "webgl.debug_renderer_info": false,
+    "webgl.extensions": [
+     "ANGLE_instanced_arrays",
+     "OES_texture_float"
+    ],
+    "webgl.p.ALIASED_POINT_SIZE_RANGE": [
+     1,
+     255
+    ],
+    "webgl.p.MAX_TEXTURE_SIZE": 8192,
+    "webgl.p.MAX_VARYING_VECTORS": 15,
+    "webgl.p.MAX_VIEWPORT_DIMS": [
+     8192,
+     8192
+    ],
+    "webgl.precision.FRAGMENT_SHADER.HIGH_FLOAT": [
+     127,
+     127,
+     23
+    ],
+    "webgl2.context": false,
+    "webgpu.adapter": null,
+    "webrtc.error": "NotSupportedError",
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 900,
+    "win.innerWidth": 1400,
+    "win.outerHeight": 900,
+    "win.outerWidth": 1400,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": null,
+   "zoom_actual": 1.0,
+   "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "geometry",
+   "label": "window",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "mouse.screen_equals_client": true,
+    "mq.device_size_matches": true,
+    "mq.resolution_1dppx": true,
+    "screen.availHeight": 600,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1200,
+    "screen.colorDepth": 24,
+    "screen.height": 600,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1200,
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 600,
+    "win.innerWidth": 1200,
+    "win.outerHeight": 600,
+    "win.outerWidth": 1200,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": [
+    1366,
+    768
+   ],
+   "zoom_actual": 1.0,
+   "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "geometry",
+   "label": "window",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "mouse.screen_equals_client": true,
+    "mq.device_size_matches": true,
+    "mq.resolution_1dppx": true,
+    "screen.availHeight": 900,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1401,
+    "screen.colorDepth": 24,
+    "screen.height": 900,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1401,
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 900,
+    "win.innerWidth": 1401,
+    "win.outerHeight": 900,
+    "win.outerWidth": 1401,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": [
+    1280,
+    800
+   ],
+   "zoom_actual": 1.0,
+   "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "geometry",
+   "label": "zoom",
+   "note": "Ctrl++ through DevTools did not change the zoom",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "mouse.screen_equals_client": true,
+    "mq.device_size_matches": true,
+    "mq.resolution_1dppx": true,
+    "screen.availHeight": 800,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1400,
+    "screen.colorDepth": 24,
+    "screen.height": 800,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1400,
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 800,
+    "win.innerWidth": 1400,
+    "win.outerHeight": 800,
+    "win.outerWidth": 1400,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": [
+    1920,
+    1080
+   ],
+   "zoom_actual": null,
+   "zoom_requested": 125
+  },
+  {
+   "dsf": 1.0,
+   "kind": "full",
+   "label": "initial",
+   "phase": "main",
+   "target": "regular",
+   "values": {
+    "mq.pointer_fine": true,
+    "nav.hardwareConcurrency": 8,
+    "tz.resolved": "Europe/Berlin"
+   },
+   "window": null,
+   "zoom_requested": 100
+  }
+ ],
+ "finished": "2025-10-09T08:56:00+00:00",
+ "host": {
+  "os": "Linux-6.8-x86_64",
+  "python": "3.12.3"
+ },
+ "kit_version": "1.0",
+ "logs": {
+  "dns": "logs/dns_canary.jsonl",
+  "loopback": "logs/loopback_canary.jsonl",
+  "proxy": "logs/proxy.jsonl",
+  "server": "logs/server.jsonl"
+ },
+ "net": {
+  "gw_ipv4": "10.231.7.1",
+  "gw_ipv6": "fd6d:6c6b:7::1",
+  "ns_ipv4": "10.231.7.2",
+  "ns_ipv6": "fd6d:6c6b:7::2",
+  "subnet": "10.231.7.0/30"
+ },
+ "onion": {
+  "a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+  "b": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion"
+ },
+ "options": {
+  "dsfs": [
+   1.0
+  ]
+ },
+ "phases": [
+  {
+   "data": {
+    "context": "CTX1",
+    "result": {
+     "running": true
+    },
+    "seconds": 12.5
+   },
+   "end": 1760000002.0,
+   "name": "open_moltnet",
+   "start": 1760000001.0,
+   "target": "moltnet"
+  },
+  {
+   "data": {
+    "regular": {
+     "doNotTrack": "1",
+     "fontSize": "24px",
+     "js_ran_on_blocked": false,
+     "languages": [
+      "de-DE",
+      "de"
+     ]
+    }
+   },
+   "end": 1760000000.9,
+   "name": "settings_seed",
+   "start": 1760000000.5,
+   "target": "regular"
+  },
+  {
+   "name": "verify_exit",
+   "skipped": "--offline"
+  },
+  {
+   "data": {
+    "consensus_relays": 7000,
+    "hops": [
+     {
+      "fingerprint": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "in_consensus": true,
+      "ip": "192.0.2.50",
+      "nickname": "g1",
+      "role": "guard"
+     },
+     {
+      "fingerprint": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "in_consensus": true,
+      "ip": "192.0.2.60",
+      "nickname": "m1",
+      "role": "middle"
+     },
+     {
+      "fingerprint": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "in_consensus": true,
+      "ip": "192.0.2.70",
+      "nickname": "e1",
+      "role": "exit"
+     }
+    ]
+   },
+   "end": 1760000003.0,
+   "name": "circuit",
+   "start": 1760000002.0
+  },
+  {
+   "data": {
+    "canvas_a": "11",
+    "canvas_b": "22",
+    "cookie_after_close": false,
+    "regular_cookie_in_moltnet": false,
+    "same_context_after_close": false
+   },
+   "end": 1760000090.0,
+   "name": "identity",
+   "start": 1760000080.0
+  },
+  {
+   "data": {
+    "canvas_after": "44",
+    "canvas_before": "33",
+    "cookie_after": false,
+    "new_context": "CTX3",
+    "old_context": "CTX2",
+    "result": {
+     "running": true
+    }
+   },
+   "end": 1760000100.0,
+   "name": "new_identity",
+   "start": 1760000090.0
+  },
+  {
+   "data": {
+    "killed": [
+     4242
+    ],
+    "loaded": false,
+    "nav_error": "net::ERR_SOCKS_CONNECTION_FAILED"
+   },
+   "end": 1760000105.0,
+   "name": "fail_closed",
+   "start": 1760000100.0
+  },
+  {
+   "data": {
+    "moltnet_pages": 0
+   },
+   "end": 1760000120.0,
+   "name": "restart",
+   "start": 1760000110.0
+  },
+  {
+   "data": {
+    "flag": "--proxy-server=http://127.0.0.1:18888",
+    "moltnet_pages": 0,
+    "result": {
+     "error": "A command-line flag controls the proxy."
+    }
+   },
+   "end": 1760000130.0,
+   "name": "override",
+   "start": 1760000120.0,
+   "target": "regular"
+  },
+  {
+   "name": "extension",
+   "skipped": "--no-extension"
+  }
+ ],
+ "run_id": "sample",
+ "schema": "moltleak-run/1",
+ "started": "2025-10-09T08:53:20+00:00",
+ "t0": 1760000000.0,
+ "target": "moltnet",
+ "tests": [
+  {
+   "end": 1760000013.0,
+   "id": "onion_http",
+   "ipv4": "198.51.100.10",
+   "ipv6": "2001:db8::10",
+   "nonce": "aaaaaa1111",
+   "results": {
+    "loaded": true,
+    "secure_context": false
+   },
+   "settle_end": 1760000015.0,
+   "start": 1760000010.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/aaaaaa1111/x.html"
+  },
+  {
+   "end": 1760000028.0,
+   "id": "webrtc",
+   "ipv4": "198.51.100.12",
+   "ipv6": "2001:db8::12",
+   "nonce": "bbbbbb2222",
+   "results": {
+    "pc": {
+     "error": "NotSupportedError",
+     "message": "No PeerConnection handler can be created, perhaps WebRTC is disabled?"
+    }
+   },
+   "settle_end": 1760000030.0,
+   "start": 1760000020.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/bbbbbb2222/x.html"
+  },
+  {
+   "end": 1760000038.0,
+   "id": "dns_prefetch",
+   "ipv4": "198.51.100.13",
+   "ipv6": "2001:db8::13",
+   "nonce": "cccccc3333",
+   "results": {
+    "loaded": true
+   },
+   "settle_end": 1760000040.0,
+   "start": 1760000030.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/cccccc3333/x.html"
+  },
+  {
+   "end": 1760000048.0,
+   "forbidden_hosts": [
+    "sb-ssl.google.com"
+   ],
+   "id": "download",
+   "ipv4": "198.51.100.21",
+   "ipv6": "2001:db8::1b",
+   "nonce": "dddddd4444",
+   "results": {
+    "clicked": true
+   },
+   "settle_end": 1760000050.0,
+   "start": 1760000040.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/dddddd4444/x.html"
+  },
+  {
+   "end": 1760000058.0,
+   "id": "localhost_lan",
+   "ipv4": "198.51.100.22",
+   "ipv6": "2001:db8::1c",
+   "nonce": "eeeeee5555",
+   "results": {
+    "fetch": {
+     "gateway": {
+      "error": "TypeError",
+      "ok": false
+     },
+     "loopback4": {
+      "error": "TypeError",
+      "ok": false
+     }
+    }
+   },
+   "settle_end": 1760000060.0,
+   "start": 1760000050.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/eeeeee5555/x.html"
+  },
+  {
+   "end": 1760000068.0,
+   "id": "builtin_ai",
+   "ipv4": "198.51.100.26",
+   "ipv6": "2001:db8::20",
+   "nonce": "ffffff6666",
+   "results": {
+    "availability": {
+     "LanguageModel": "unavailable",
+     "Rewriter": "unavailable",
+     "Summarizer": "unavailable",
+     "Translator": "unavailable",
+     "Writer": "unavailable"
+    }
+   },
+   "settle_end": 1760000070.0,
+   "start": 1760000060.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/ffffff6666/x.html"
+  },
+  {
+   "end": 1760000073.0,
+   "id": "regular_onion_navigation",
+   "ipv4": "198.51.100.28",
+   "ipv6": "2001:db8::22",
+   "nonce": "gggggg7777",
+   "results": {
+    "title": "Tor onion site",
+    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/"
+   },
+   "settle_end": 1760000075.0,
+   "start": 1760000070.0,
+   "target": "regular",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/gggggg7777/x.html"
+  },
+  {
+   "id": "mdns",
+   "nonce": "hhhhhh8888",
+   "skipped": "not selected",
+   "target": "moltnet"
+  }
+ ]
+}

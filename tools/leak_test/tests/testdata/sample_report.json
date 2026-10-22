@@ -1,0 +1,3089 @@
+{
+ "checks": [
+  {
+   "details": null,
+   "doc": "NETWORK_TRAFFIC.md \"Pass criteria\"",
+   "evidence": [
+    "dns accounts.google.com A x1 at +4.0s: must not appear: no Google sign-in [firewall log]"
+   ],
+   "group": "background",
+   "id": "background.must_not_appear",
+   "status": "FAIL",
+   "title": "No host NETWORK_TRAFFIC.md says must not appear"
+  },
+  {
+   "details": null,
+   "doc": "docs/LEAK_TESTING.md \"How the capture works\"",
+   "evidence": [
+    "escaped: tcp 10.231.7.2 -> 203.0.113.99:80 (1 packets)"
+   ],
+   "group": "harness",
+   "id": "harness.firewall",
+   "status": "FAIL",
+   "title": "Nothing left the namespace except Tor's own connections"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14; FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "unexplained during this test: dns cdn.example.net A x1 at +65.5s: a name looked up outside Tor that no list explains [firewall log]"
+   ],
+   "group": "network",
+   "id": "net.builtin_ai.traffic",
+   "status": "FAIL",
+   "title": "Built-in AI APIs and Translator (no component download): nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14, \u00a74 step 20",
+   "evidence": [
+    "LEAK dns sb-ssl.google.com A x1 at +45.0s: looked up outside Tor during this test: Safe Browsing download checks (\u00a72) [firewall log]",
+    "not requested (info): /dl/dddddd4444/molt-leak-test.exe"
+   ],
+   "group": "network",
+   "id": "net.download.traffic",
+   "status": "FAIL",
+   "title": "A download (no Safe Browsing ping outside Tor): nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (<-loopback>), \u00a75.7",
+   "evidence": [
+    "LEAK local 127.0.0.1:47321 (GET / HTTP/1.1) x1 at +55.0s: a page reached a service on this machine (the loopback canary) [firewall log, loopback canary]"
+   ],
+   "group": "network",
+   "id": "net.localhost_lan.traffic",
+   "status": "FAIL",
+   "title": "localhost, loopback, the machine's own and LAN addresses: nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 4",
+   "evidence": [
+    "dns bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion A x1 at +5.0s: an onion name was looked up outside Tor [firewall log]",
+    "multicast 224.0.0.251 (joined multicast group 224.0.0.251) x1 at +8.0s: a socket joined the mDNS group [firewall log]",
+    "mdns printer.local PTR x1 at +9.0s: multicast DNS on the local network [firewall log]"
+   ],
+   "group": "network",
+   "id": "net.unattributed_leaks",
+   "status": "FAIL",
+   "title": "No leak-shaped traffic outside the tests (onion names, mDNS, LAN, STUN, QUIC, canaries)"
+  },
+  {
+   "details": null,
+   "doc": "triage: a new background host goes into leakkit/background.py and docs/NETWORK_TRAFFIC.md; anything else is a leak",
+   "evidence": [
+    "dns weird.example.org A x1 at +6.0s: a name looked up outside Tor that no list explains [firewall log]"
+   ],
+   "group": "network",
+   "id": "net.unexplained",
+   "status": "FAIL",
+   "title": "Every lookup or connection outside Tor is explained"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.12, \u00a74 step 18",
+   "evidence": [
+    "LEAK dns stun-bbbbbb2222.moltleak.test A x1 at +21.0s: a test page's canary name was looked up outside Tor [firewall log, kit resolver]",
+    "LEAK dns stun-bbbbbb2222.moltleak.test AAAA x1 at +21.1s: a test page's canary name was looked up outside Tor [firewall log]",
+    "LEAK udp 198.51.100.12:3478 x1 at +22.0s: a packet to a test page's IP literal outside Tor [firewall log]"
+   ],
+   "group": "network",
+   "id": "net.webrtc.traffic",
+   "status": "FAIL",
+   "title": "WebRTC: STUN/TURN servers, peer and .local candidates: nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 13",
+   "evidence": [
+    "the proxy saw 1 request(s)",
+    "ONION via proxy: GET http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/x"
+   ],
+   "group": "regular-window",
+   "id": "regular.proxy_no_onion",
+   "status": "FAIL",
+   "title": "Regular window: no onion request reaches a configured proxy"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Fonts\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"DejaVu Sans\", \"Liberation Sans\", \"Arial\", \"Ubuntu\"], expected a subset of the 19 allowed (not on the list: Ubuntu)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.fonts.visible",
+   "status": "FAIL",
+   "title": "fonts.visible is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 8, expected 4"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.hardwareConcurrency",
+   "status": "FAIL",
+   "title": "nav.hardwareConcurrency is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1401, expected a multiple of 200, at most 1400"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.innerWidth",
+   "status": "FAIL",
+   "title": "win.innerWidth is uniform"
+  },
+  {
+   "details": null,
+   "doc": "",
+   "evidence": [
+    "all: 18 frames, 18 IP, 0 malformed",
+    "firewall log: 12 frames",
+    "Tor connections: 2 frames",
+    "loopback packets: 6"
+   ],
+   "group": "harness",
+   "id": "harness.capture",
+   "status": "PASS",
+   "title": "The packet capture recorded traffic"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 15",
+   "evidence": [
+    "regular window: {\"doNotTrack\": \"1\", \"fontSize\": \"24px\", \"js_ran_on_blocked\": false, \"languages\": [\"de-DE\", \"de\"]}"
+   ],
+   "group": "harness",
+   "id": "harness.settings_seed",
+   "status": "PASS",
+   "title": "The seeded regular-profile settings took effect (control for the settings checks)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 4 (\"only the Tor guard (or bridge) should be contacted\")",
+   "evidence": [
+    "tcp 192.0.2.50:9001, 1 connection(s)",
+    "tcp 192.0.2.51:443, 1 connection(s)"
+   ],
+   "group": "harness",
+   "id": "harness.tor_traffic",
+   "status": "PASS",
+   "title": "Tor (and only Tor) reached the network"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 Fail-closed",
+   "evidence": [
+    "openWindow -> {\"running\": true}",
+    "MoltNet page target in its own browser context after 12.5s"
+   ],
+   "group": "harness",
+   "id": "moltnet.open",
+   "status": "PASS",
+   "title": "A MoltNet window opened (Tor bootstrapped, routing verified)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 5",
+   "evidence": [
+    "tor killed: [4242]",
+    "navigation after the kill: net::ERR_SOCKS_CONNECTION_FAILED"
+   ],
+   "group": "identity",
+   "id": "identity.fail_closed",
+   "status": "PASS",
+   "title": "Fail-closed: with Tor killed, pages fail with a proxy error"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 7",
+   "evidence": [
+    "newIdentity -> {\"running\": true}",
+    "cookie gone after New Identity",
+    "canvas readback changed (new farbling seed)"
+   ],
+   "group": "identity",
+   "id": "identity.new_identity",
+   "status": "PASS",
+   "title": "New Identity: new profile, cookies gone, new farbling seed"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 5",
+   "evidence": [
+    "0 MoltNet page(s) after relaunching with the same profile"
+   ],
+   "group": "identity",
+   "id": "identity.no_restore",
+   "status": "PASS",
+   "title": "No MoltNet window comes back after a restart"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 9",
+   "evidence": [
+    "launched with --proxy-server=http://127.0.0.1:18888",
+    "openWindow -> {\"error\": \"A command-line flag controls the proxy.\"}",
+    "MoltNet pages: 0"
+   ],
+   "group": "identity",
+   "id": "identity.override_refused",
+   "status": "PASS",
+   "title": "A --proxy-server override blocks MoltNet"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
+   "evidence": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion']",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion']"
+   ],
+   "group": "identity",
+   "id": "identity.per_site_circuits",
+   "status": "PASS",
+   "title": "Different sites use different SOCKS usernames (per-site circuits)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 10",
+   "evidence": [
+    "guard g1 192.0.2.50 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA in consensus: True",
+    "middle m1 192.0.2.60 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB in consensus: True",
+    "exit e1 192.0.2.70 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC in consensus: True"
+   ],
+   "group": "identity",
+   "id": "identity.relays_real",
+   "status": "PASS",
+   "title": "The panel's relays are in the consensus Tor downloaded"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 6",
+   "evidence": [
+    "a cookie set for the onion in the regular profile is not visible in MoltNet",
+    "after the last MoltNet window closed, its cookie is gone",
+    "canvas readback on two sites: different"
+   ],
+   "group": "identity",
+   "id": "identity.separate",
+   "status": "PASS",
+   "title": "Separate identity: cookies don't cross, and go with the last window"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14; FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "availability.LanguageModel = \"unavailable\""
+   ],
+   "group": "network",
+   "id": "net.builtin_ai.a1",
+   "status": "PASS",
+   "title": "Built-in AI APIs and Translator (no component download): LanguageModel is unavailable"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14; FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "availability.Summarizer = \"unavailable\""
+   ],
+   "group": "network",
+   "id": "net.builtin_ai.a2",
+   "status": "PASS",
+   "title": "Built-in AI APIs and Translator (no component download): Summarizer is unavailable"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14; FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "availability.Writer = \"unavailable\""
+   ],
+   "group": "network",
+   "id": "net.builtin_ai.a3",
+   "status": "PASS",
+   "title": "Built-in AI APIs and Translator (no component download): Writer is unavailable"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14; FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "availability.Rewriter = \"unavailable\""
+   ],
+   "group": "network",
+   "id": "net.builtin_ai.a4",
+   "status": "PASS",
+   "title": "Built-in AI APIs and Translator (no component download): Rewriter is unavailable"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.14; FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "availability.Translator = \"unavailable\""
+   ],
+   "group": "network",
+   "id": "net.builtin_ai.a5",
+   "status": "PASS",
+   "title": "Built-in AI APIs and Translator (no component download): Translator is unavailable"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (other ways to look up a name)",
+   "evidence": [
+    "sent to Tor inside SOCKS5: anchor-cccccc3333.moltleak.test:443 (username 'http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion')"
+   ],
+   "group": "network",
+   "id": "net.dns_prefetch.traffic",
+   "status": "PASS",
+   "title": "DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (<-loopback>), \u00a75.7",
+   "evidence": [
+    "fetch = {\"gateway\": {\"error\": \"TypeError\", \"ok\": false}, \"loopback4\": {\"error\": \"TypeError\", \"ok\": false}}"
+   ],
+   "group": "network",
+   "id": "net.localhost_lan.a1",
+   "status": "PASS",
+   "title": "localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 steps 1, 11",
+   "evidence": [
+    "loaded = true"
+   ],
+   "group": "network",
+   "id": "net.onion_http.a1",
+   "status": "PASS",
+   "title": "A MoltNet window loads an http:// onion site: the page loaded (no HTTPS-Only interstitial for http:// onion)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 steps 1, 11",
+   "evidence": [
+    "secure_context = false"
+   ],
+   "group": "network",
+   "id": "net.onion_http.a2",
+   "status": "PASS",
+   "title": "A MoltNet window loads an http:// onion site: http:// onion is not a secure context (known gap \u00a75.7)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 steps 1, 11",
+   "evidence": [
+    "reached the kit's page server (through Tor): /t/aaaaaa1111/basic.html"
+   ],
+   "group": "network",
+   "id": "net.onion_http.traffic",
+   "status": "PASS",
+   "title": "A MoltNet window loads an http:// onion site: nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.12, \u00a74 step 18",
+   "evidence": [
+    "pc.error = \"NotSupportedError\""
+   ],
+   "group": "network",
+   "id": "net.webrtc.a1",
+   "status": "PASS",
+   "title": "WebRTC: STUN/TURN servers, peer and .local candidates: new RTCPeerConnection() throws NotSupportedError"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.12, \u00a74 step 18",
+   "evidence": [
+    "pc.message = \"No PeerConnection handler can be created, perhaps WebRTC is disabled?\""
+   ],
+   "group": "network",
+   "id": "net.webrtc.a2",
+   "status": "PASS",
+   "title": "WebRTC: STUN/TURN servers, peer and .local candidates: with Chromium's message"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.9, \u00a74 step 12",
+   "evidence": [],
+   "group": "regular-window",
+   "id": "net.regular_onion_navigation.traffic",
+   "status": "PASS",
+   "title": "Regular window: typing an onion address: no onion name looked up, nothing leaked"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.9, \u00a74 step 12",
+   "evidence": [
+    "title: 'Tor onion site'",
+    "url: http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/"
+   ],
+   "group": "regular-window",
+   "id": "regular.onion_interstitial",
+   "status": "PASS",
+   "title": "Regular window: an onion address shows the \"Tor onion site\" page"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"unavailable\", expected [\"unavailable\", \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.ai.LanguageModel",
+   "status": "PASS",
+   "title": "ai.LanguageModel is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"unavailable\", expected [\"unavailable\", \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.ai.Rewriter",
+   "status": "PASS",
+   "title": "ai.Rewriter is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"unavailable\", expected [\"unavailable\", \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.ai.Summarizer",
+   "status": "PASS",
+   "title": "ai.Summarizer is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"unavailable\", expected [\"unavailable\", \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.ai.Translator",
+   "status": "PASS",
+   "title": "ai.Translator is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Built-in AI APIs\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"unavailable\", expected [\"unavailable\", \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.ai.Writer",
+   "status": "PASS",
+   "title": "ai.Writer is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.11",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"allowed-muted\", expected allowed-muted"
+   ],
+   "group": "uniformity",
+   "id": "uniform.autoplay.mediaelement",
+   "status": "PASS",
+   "title": "autoplay.mediaelement is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.11",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.cookies.third_party",
+   "status": "PASS",
+   "title": "cookies.third_party is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: settings from the regular profile\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"16px\", expected 16px"
+   ],
+   "group": "uniformity",
+   "id": "uniform.css.default_font_size",
+   "status": "PASS",
+   "title": "css.default_font_size is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the browser's UI language\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"windows-1252\", expected windows-1252"
+   ],
+   "group": "uniformity",
+   "id": "uniform.doc.characterSet_undeclared",
+   "status": "PASS",
+   "title": "doc.characterSet_undeclared is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the browser's UI language\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"Value must be greater than or equal to 10.\", expected Value must be greater than or equal to 10."
+   ],
+   "group": "uniformity",
+   "id": "uniform.form.numberMessage",
+   "status": "PASS",
+   "title": "form.numberMessage is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: the browser's UI language\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"Please fill out this field.\", expected Please fill out this field."
+   ],
+   "group": "uniformity",
+   "id": "uniform.form.validationMessage",
+   "status": "PASS",
+   "title": "form.validationMessage is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"en-US\", expected en-US"
+   ],
+   "group": "uniformity",
+   "id": "uniform.hdr.accept-language",
+   "status": "PASS",
+   "title": "hdr.accept-language is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"sec-ch-ua\": \"\\\"Chromium\\\";v=\\\"152\\\"\", \"sec-ch-ua-mobile\": \"?0\", \"sec-ch-ua-platform\": \"\\\"Linux\\\"\"}, expected only sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform, save-data, sec-ch-prefers-color-scheme, sec-ch-prefers-reduced-motion, sec-ch-prefers-reduced-transparency"
+   ],
+   "group": "uniformity",
+   "id": "uniform.hdr.client_hints",
+   "status": "PASS",
+   "title": "hdr.client_hints is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: settings from the regular profile\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected null"
+   ],
+   "group": "uniformity",
+   "id": "uniform.hdr.dnt",
+   "status": "PASS",
+   "title": "hdr.dnt is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a76",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"1\", expected 1"
+   ],
+   "group": "uniformity",
+   "id": "uniform.hdr.sec-gpc",
+   "status": "PASS",
+   "title": "hdr.sec-gpc is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"en-US\", expected en-US"
+   ],
+   "group": "uniformity",
+   "id": "uniform.intl.locale",
+   "status": "PASS",
+   "title": "intl.locale is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"1,234,567.891\", expected 1,234,567.891"
+   ],
+   "group": "uniformity",
+   "id": "uniform.intl.number",
+   "status": "PASS",
+   "title": "intl.number is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 15",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.js.enabled_on_blocked_site",
+   "status": "PASS",
+   "title": "js.enabled_on_blocked_site is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual true, expected true",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mouse.screen_equals_client",
+   "status": "PASS",
+   "title": "mouse.screen_equals_client is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.any_hover_none",
+   "status": "PASS",
+   "title": "mq.any_hover_none is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.any_pointer_coarse",
+   "status": "PASS",
+   "title": "mq.any_pointer_coarse is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual true, expected true",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.device_size_matches",
+   "status": "PASS",
+   "title": "mq.device_size_matches is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.hover_hover",
+   "status": "PASS",
+   "title": "mq.hover_hover is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.pointer_coarse",
+   "status": "PASS",
+   "title": "mq.pointer_coarse is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.pointer_fine",
+   "status": "PASS",
+   "title": "mq.pointer_fine is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Device pixel ratio\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual true, expected true",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual true, expected true",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.mq.resolution_1dppx",
+   "status": "PASS",
+   "title": "mq.resolution_1dppx is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected [0, null]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.cpuPerformance",
+   "status": "PASS",
+   "title": "nav.cpuPerformance is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 8, expected 8"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.deviceMemory",
+   "status": "PASS",
+   "title": "nav.deviceMemory is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: settings from the regular profile\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected null"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.doNotTrack",
+   "status": "PASS",
+   "title": "nav.doNotTrack is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a76",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.globalPrivacyControl",
+   "status": "PASS",
+   "title": "nav.globalPrivacyControl is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"en-US\", expected en-US"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.language",
+   "status": "PASS",
+   "title": "nav.language is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"en-US\"], expected [\"en-US\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.languages",
+   "status": "PASS",
+   "title": "nav.languages is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.maxTouchPoints",
+   "status": "PASS",
+   "title": "nav.maxTouchPoints is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Known gaps\": a documented giveaway",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"prompt\", expected prompt"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perm.geolocation",
+   "status": "PASS",
+   "title": "perm.geolocation is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: touches, screens, orientation and form controls\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"denied\", expected denied"
+   ],
+   "group": "uniformity",
+   "id": "uniform.perm.window-management",
+   "status": "PASS",
+   "title": "perm.window-management is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 900, expected screen.height (900)",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 600, expected screen.height (600)",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 900, expected screen.height (900)",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 800, expected screen.height (800)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.availHeight",
+   "status": "PASS",
+   "title": "screen.availHeight is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 0, expected 0",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.availLeft",
+   "status": "PASS",
+   "title": "screen.availLeft is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 0, expected 0",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.availTop",
+   "status": "PASS",
+   "title": "screen.availTop is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 1400, expected screen.width (1400)",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 1200, expected screen.width (1200)",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1401, expected screen.width (1401)",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 1400, expected screen.width (1400)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.availWidth",
+   "status": "PASS",
+   "title": "screen.availWidth is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 24, expected 24",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 24, expected 24",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 24, expected 24",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 24, expected 24"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.colorDepth",
+   "status": "PASS",
+   "title": "screen.colorDepth is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 900, expected win.innerHeight (900)",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 600, expected win.innerHeight (600)",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 900, expected win.innerHeight (900)",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 800, expected win.innerHeight (800)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.height",
+   "status": "PASS",
+   "title": "screen.height is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual false, expected false",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual false, expected false",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.isExtended",
+   "status": "PASS",
+   "title": "screen.isExtended is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: touches, screens, orientation and form controls\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 0, expected 0",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.orientation.angle",
+   "status": "PASS",
+   "title": "screen.orientation.angle is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: touches, screens, orientation and form controls\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"landscape-primary\", expected landscape-primary",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual \"landscape-primary\", expected landscape-primary",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual \"landscape-primary\", expected landscape-primary",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual \"landscape-primary\", expected landscape-primary"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.orientation.type",
+   "status": "PASS",
+   "title": "screen.orientation.type is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 24, expected 24",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 24, expected 24",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 24, expected 24",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 24, expected 24"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.pixelDepth",
+   "status": "PASS",
+   "title": "screen.pixelDepth is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 1400, expected win.innerWidth (1400)",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 1200, expected win.innerWidth (1200)",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1401, expected win.innerWidth (1401)",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 1400, expected win.innerWidth (1400)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screen.width",
+   "status": "PASS",
+   "title": "screen.width is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: touches, screens, orientation and form controls\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotAllowedError\", expected NotAllowedError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.screenDetails.error",
+   "status": "PASS",
+   "title": "screenDetails.error is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.11",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"rejected\", expected [\"rejected\", \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.sharedStorage.set",
+   "status": "PASS",
+   "title": "sharedStorage.set is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.11",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.storage.persist",
+   "status": "PASS",
+   "title": "storage.persist is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotSupportedError\", expected NotSupportedError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.touch.createEvent",
+   "status": "PASS",
+   "title": "touch.createEvent is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.touch.ontouchstart",
+   "status": "PASS",
+   "title": "touch.ontouchstart is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.tz.date_string_utc",
+   "status": "PASS",
+   "title": "tz.date_string_utc is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.tz.offset_jan",
+   "status": "PASS",
+   "title": "tz.offset_jan is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.tz.offset_jul",
+   "status": "PASS",
+   "title": "tz.offset_jul is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"UTC\", expected [\"UTC\", \"Etc/UTC\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.tz.resolved",
+   "status": "PASS",
+   "title": "tz.resolved is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36\", expected Chrome/\\d+\\.0\\.0\\.0 "
+   ],
+   "group": "uniformity",
+   "id": "uniform.ua.reduced",
+   "status": "PASS",
+   "title": "ua.reduced is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"architecture\": \"\", \"bitness\": \"\", \"formFactors\": [], \"fullVersionList\": [], \"model\": \"\", \"platformVersion\": \"\", \"uaFullVersion\": \"\", \"wow64\": false}, expected blank"
+   ],
+   "group": "uniformity",
+   "id": "uniform.uad.high_entropy",
+   "status": "PASS",
+   "title": "uad.high_entropy is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual false, expected false"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.debug_renderer_info",
+   "status": "PASS",
+   "title": "webgl.debug_renderer_info is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [\"ANGLE_instanced_arrays\", \"OES_texture_float\"], expected a subset of the 23 allowed"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.extensions",
+   "status": "PASS",
+   "title": "webgl.extensions is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [1, 255], expected [1.0, 255.0]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.ALIASED_POINT_SIZE_RANGE",
+   "status": "PASS",
+   "title": "webgl.p.ALIASED_POINT_SIZE_RANGE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 8192, expected 8192"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_TEXTURE_SIZE",
+   "status": "PASS",
+   "title": "webgl.p.MAX_TEXTURE_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 15, expected 30 (below the baseline: this GPU lacks it)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_VARYING_VECTORS",
+   "status": "PASS",
+   "title": "webgl.p.MAX_VARYING_VECTORS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [8192, 8192], expected [null, 8192]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_VIEWPORT_DIMS",
+   "status": "PASS",
+   "title": "webgl.p.MAX_VIEWPORT_DIMS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual [127, 127, 23], expected [127, 127, 23]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.FRAGMENT_SHADER.HIGH_FLOAT",
+   "status": "PASS",
+   "title": "webgl.precision.FRAGMENT_SHADER.HIGH_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [null, \"absent\"]"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgpu.adapter",
+   "status": "PASS",
+   "title": "webgpu.adapter is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.12",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotSupportedError\", expected NotSupportedError"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webrtc.error",
+   "status": "PASS",
+   "title": "webrtc.error is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Device pixel ratio\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 1, expected 1",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 1, expected 1",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1, expected 1",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 1, expected 1"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.devicePixelRatio",
+   "status": "PASS",
+   "title": "win.devicePixelRatio is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Letterboxing (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 900, expected a multiple of 100, at most 900",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 600, expected a multiple of 100, at most 900",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 900, expected a multiple of 100, at most 900",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 800, expected a multiple of 100, at most 900"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.innerHeight",
+   "status": "PASS",
+   "title": "win.innerHeight is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 900, expected win.innerHeight (900)",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 600, expected win.innerHeight (600)",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 900, expected win.innerHeight (900)",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 800, expected win.innerHeight (800)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.outerHeight",
+   "status": "PASS",
+   "title": "win.outerHeight is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 1400, expected win.innerWidth (1400)",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 1200, expected win.innerWidth (1200)",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 1401, expected win.innerWidth (1401)",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 1400, expected win.innerWidth (1400)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.outerWidth",
+   "status": "PASS",
+   "title": "win.outerWidth is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 0, expected 0",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.screenX",
+   "status": "PASS",
+   "title": "win.screenX is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"Surface covered\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1366x768|zoom=100|moltnet: actual 0, expected 0",
+    "window|dsf=1.0|window=1280x800|zoom=100|moltnet: actual 0, expected 0",
+    "zoom|dsf=1.0|window=1920x1080|zoom=125|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.win.screenY",
+   "status": "PASS",
+   "title": "win.screenY is uniform"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 16",
+   "evidence": [
+    "--no-extension"
+   ],
+   "group": "harness",
+   "id": "identity.extension_loaded",
+   "status": "SKIP",
+   "title": "The test extension loaded and ran in a regular window (control for the extension test)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 1",
+   "evidence": [
+    "--offline"
+   ],
+   "group": "identity",
+   "id": "moltnet.on_tor",
+   "status": "SKIP",
+   "title": "check.torproject.org says the MoltNet window uses Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a71.12, \u00a72",
+   "evidence": [
+    "not selected"
+   ],
+   "group": "network",
+   "id": "net.mdns",
+   "status": "SKIP",
+   "title": "mDNS (.local names)"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [1.0, 1.0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.ALIASED_LINE_WIDTH_RANGE",
+   "status": "SKIP",
+   "title": "webgl.p.ALIASED_LINE_WIDTH_RANGE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 32 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_COMBINED_TEXTURE_IMAGE_UNITS",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_COMBINED_TEXTURE_IMAGE_UNITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8192 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_CUBE_MAP_TEXTURE_SIZE",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_CUBE_MAP_TEXTURE_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 1024 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_FRAGMENT_UNIFORM_VECTORS",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_FRAGMENT_UNIFORM_VECTORS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8192 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_RENDERBUFFER_SIZE",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_RENDERBUFFER_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_TEXTURE_IMAGE_UNITS",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_TEXTURE_IMAGE_UNITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_TEXTURE_MAX_ANISOTROPY_EXT",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_TEXTURE_MAX_ANISOTROPY_EXT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_VERTEX_ATTRIBS",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_VERTEX_ATTRIBS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_VERTEX_TEXTURE_IMAGE_UNITS",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_VERTEX_TEXTURE_IMAGE_UNITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 1024 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.MAX_VERTEX_UNIFORM_VECTORS",
+   "status": "SKIP",
+   "title": "webgl.p.MAX_VERTEX_UNIFORM_VECTORS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.p.SUBPIXEL_BITS",
+   "status": "SKIP",
+   "title": "webgl.p.SUBPIXEL_BITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [31, 30, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.FRAGMENT_SHADER.HIGH_INT",
+   "status": "SKIP",
+   "title": "webgl.precision.FRAGMENT_SHADER.HIGH_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.FRAGMENT_SHADER.LOW_FLOAT",
+   "status": "SKIP",
+   "title": "webgl.precision.FRAGMENT_SHADER.LOW_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.FRAGMENT_SHADER.LOW_INT",
+   "status": "SKIP",
+   "title": "webgl.precision.FRAGMENT_SHADER.LOW_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.FRAGMENT_SHADER.MEDIUM_FLOAT",
+   "status": "SKIP",
+   "title": "webgl.precision.FRAGMENT_SHADER.MEDIUM_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.FRAGMENT_SHADER.MEDIUM_INT",
+   "status": "SKIP",
+   "title": "webgl.precision.FRAGMENT_SHADER.MEDIUM_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [127, 127, 23] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.VERTEX_SHADER.HIGH_FLOAT",
+   "status": "SKIP",
+   "title": "webgl.precision.VERTEX_SHADER.HIGH_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [31, 30, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.VERTEX_SHADER.HIGH_INT",
+   "status": "SKIP",
+   "title": "webgl.precision.VERTEX_SHADER.HIGH_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.VERTEX_SHADER.LOW_FLOAT",
+   "status": "SKIP",
+   "title": "webgl.precision.VERTEX_SHADER.LOW_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.VERTEX_SHADER.LOW_INT",
+   "status": "SKIP",
+   "title": "webgl.precision.VERTEX_SHADER.LOW_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.VERTEX_SHADER.MEDIUM_FLOAT",
+   "status": "SKIP",
+   "title": "webgl.precision.VERTEX_SHADER.MEDIUM_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl.precision.VERTEX_SHADER.MEDIUM_INT",
+   "status": "SKIP",
+   "title": "webgl.precision.VERTEX_SHADER.MEDIUM_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected false (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.debug_renderer_info",
+   "status": "SKIP",
+   "title": "webgl2.debug_renderer_info is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [\"ANGLE_instanced_arrays\", \"EXT_blend_minmax\", \"EXT_color_buffer_float\", \"EXT_color_buffer_half_float\", \"EXT_frag_depth\" (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.extensions",
+   "status": "SKIP",
+   "title": "webgl2.extensions is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [1.0, 1.0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.ALIASED_LINE_WIDTH_RANGE",
+   "status": "SKIP",
+   "title": "webgl2.p.ALIASED_LINE_WIDTH_RANGE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [1.0, 255.0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.ALIASED_POINT_SIZE_RANGE",
+   "status": "SKIP",
+   "title": "webgl2.p.ALIASED_POINT_SIZE_RANGE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 2048 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_3D_TEXTURE_SIZE",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_3D_TEXTURE_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 2048 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_ARRAY_TEXTURE_LAYERS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_ARRAY_TEXTURE_LAYERS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_COLOR_ATTACHMENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_COLOR_ATTACHMENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 53248 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 32 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_COMBINED_TEXTURE_IMAGE_UNITS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_COMBINED_TEXTURE_IMAGE_UNITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 24 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_COMBINED_UNIFORM_BLOCKS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_COMBINED_UNIFORM_BLOCKS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 53248 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8192 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_CUBE_MAP_TEXTURE_SIZE",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_CUBE_MAP_TEXTURE_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_DRAW_BUFFERS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_DRAW_BUFFERS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 2048 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_ELEMENTS_INDICES",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_ELEMENTS_INDICES is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 2048 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_ELEMENTS_VERTICES",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_ELEMENTS_VERTICES is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4294967295 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_ELEMENT_INDEX",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_ELEMENT_INDEX is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 120 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_FRAGMENT_INPUT_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_FRAGMENT_INPUT_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 12 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_FRAGMENT_UNIFORM_BLOCKS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_FRAGMENT_UNIFORM_BLOCKS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4096 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_FRAGMENT_UNIFORM_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_FRAGMENT_UNIFORM_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 1024 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_FRAGMENT_UNIFORM_VECTORS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_FRAGMENT_UNIFORM_VECTORS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 7 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_PROGRAM_TEXEL_OFFSET",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_PROGRAM_TEXEL_OFFSET is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8192 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_RENDERBUFFER_SIZE",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_RENDERBUFFER_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_SAMPLES",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_SAMPLES is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 0 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_SERVER_WAIT_TIMEOUT",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_SERVER_WAIT_TIMEOUT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TEXTURE_IMAGE_UNITS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TEXTURE_IMAGE_UNITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 2.0 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TEXTURE_LOD_BIAS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TEXTURE_LOD_BIAS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TEXTURE_MAX_ANISOTROPY_EXT",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TEXTURE_MAX_ANISOTROPY_EXT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 8192 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TEXTURE_SIZE",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TEXTURE_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 64 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TRANSFORM_FEEDBACK_SEPARATE_ATTRIBS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16384 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_UNIFORM_BLOCK_SIZE",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_UNIFORM_BLOCK_SIZE is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 24 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_UNIFORM_BUFFER_BINDINGS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_UNIFORM_BUFFER_BINDINGS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 120 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VARYING_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VARYING_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 30 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VARYING_VECTORS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VARYING_VECTORS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VERTEX_ATTRIBS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VERTEX_ATTRIBS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 120 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VERTEX_OUTPUT_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VERTEX_OUTPUT_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 16 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VERTEX_TEXTURE_IMAGE_UNITS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VERTEX_TEXTURE_IMAGE_UNITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 12 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VERTEX_UNIFORM_BLOCKS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VERTEX_UNIFORM_BLOCKS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4096 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VERTEX_UNIFORM_COMPONENTS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VERTEX_UNIFORM_COMPONENTS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 1024 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VERTEX_UNIFORM_VECTORS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VERTEX_UNIFORM_VECTORS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [null, 8192] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MAX_VIEWPORT_DIMS",
+   "status": "SKIP",
+   "title": "webgl2.p.MAX_VIEWPORT_DIMS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected -8 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.MIN_PROGRAM_TEXEL_OFFSET",
+   "status": "SKIP",
+   "title": "webgl2.p.MIN_PROGRAM_TEXEL_OFFSET is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.SUBPIXEL_BITS",
+   "status": "SKIP",
+   "title": "webgl2.p.SUBPIXEL_BITS is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 256 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.p.UNIFORM_BUFFER_OFFSET_ALIGNMENT",
+   "status": "SKIP",
+   "title": "webgl2.p.UNIFORM_BUFFER_OFFSET_ALIGNMENT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [127, 127, 23] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.FRAGMENT_SHADER.HIGH_FLOAT",
+   "status": "SKIP",
+   "title": "webgl2.precision.FRAGMENT_SHADER.HIGH_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [31, 30, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.FRAGMENT_SHADER.HIGH_INT",
+   "status": "SKIP",
+   "title": "webgl2.precision.FRAGMENT_SHADER.HIGH_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.FRAGMENT_SHADER.LOW_FLOAT",
+   "status": "SKIP",
+   "title": "webgl2.precision.FRAGMENT_SHADER.LOW_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.FRAGMENT_SHADER.LOW_INT",
+   "status": "SKIP",
+   "title": "webgl2.precision.FRAGMENT_SHADER.LOW_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.FRAGMENT_SHADER.MEDIUM_FLOAT",
+   "status": "SKIP",
+   "title": "webgl2.precision.FRAGMENT_SHADER.MEDIUM_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.FRAGMENT_SHADER.MEDIUM_INT",
+   "status": "SKIP",
+   "title": "webgl2.precision.FRAGMENT_SHADER.MEDIUM_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [127, 127, 23] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.VERTEX_SHADER.HIGH_FLOAT",
+   "status": "SKIP",
+   "title": "webgl2.precision.VERTEX_SHADER.HIGH_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [31, 30, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.VERTEX_SHADER.HIGH_INT",
+   "status": "SKIP",
+   "title": "webgl2.precision.VERTEX_SHADER.HIGH_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.VERTEX_SHADER.LOW_FLOAT",
+   "status": "SKIP",
+   "title": "webgl2.precision.VERTEX_SHADER.LOW_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.VERTEX_SHADER.LOW_INT",
+   "status": "SKIP",
+   "title": "webgl2.precision.VERTEX_SHADER.LOW_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 15, 10] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.VERTEX_SHADER.MEDIUM_FLOAT",
+   "status": "SKIP",
+   "title": "webgl2.precision.VERTEX_SHADER.MEDIUM_FLOAT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected [15, 14, 0] (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.precision.VERTEX_SHADER.MEDIUM_INT",
+   "status": "SKIP",
+   "title": "webgl2.precision.VERTEX_SHADER.MEDIUM_INT is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"WebGL and WebGPU in MoltNet windows\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual null, expected 4 (not collected)"
+   ],
+   "group": "uniformity",
+   "id": "uniform.webgl2.samples_rgba8",
+   "status": "SKIP",
+   "title": "webgl2.samples_rgba8 is uniform"
+  },
+  {
+   "details": null,
+   "doc": "docs/LEAK_TESTING.md \"Zoom\"",
+   "evidence": [
+    "Ctrl++ through DevTools did not change the zoom"
+   ],
+   "group": "uniformity",
+   "id": "uniform.zoom_driven.zoom",
+   "status": "SKIP",
+   "title": "Zoom level 125% could be set"
+  },
+  {
+   "details": null,
+   "doc": "NETWORK_TRAFFIC.md",
+   "evidence": [
+    "dns update.googleapis.com A x1 at +3.0s: component updater (NETWORK_TRAFFIC.md \u00a71) [firewall log, kit resolver] during phase:circuit"
+   ],
+   "group": "background",
+   "id": "background.expected",
+   "status": "INFO",
+   "title": "Background lookups outside Tor (expected, MOLTNET_COMPLIANCE.md \u00a75.6; DNS level only)"
+  },
+  {
+   "details": null,
+   "doc": "",
+   "evidence": [
+    "mq.pointer_fine"
+   ],
+   "group": "uniformity",
+   "id": "uniformity.control",
+   "status": "INFO",
+   "title": "Regular-window control: values that are already uniform outside MoltNet on this machine (their MoltNet check proves less here)"
+  }
+ ],
+ "counts": {
+  "ERROR": 0,
+  "FAIL": 12,
+  "INFO": 2,
+  "PASS": 97,
+  "SKIP": 84
+ },
+ "fingerprints": [
+  {
+   "dsf": 1.0,
+   "kind": "full",
+   "label": "initial",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "ai.LanguageModel": "unavailable",
+    "ai.Rewriter": "unavailable",
+    "ai.Summarizer": "unavailable",
+    "ai.Translator": "unavailable",
+    "ai.Writer": "unavailable",
+    "autoplay.mediaelement": "allowed-muted",
+    "canvas.hash": "0123456789abcdef01234567",
+    "cookies.third_party": false,
+    "css.default_font_size": "16px",
+    "doc.characterSet_undeclared": "windows-1252",
+    "fonts.visible": [
+     "DejaVu Sans",
+     "Liberation Sans",
+     "Arial",
+     "Ubuntu"
+    ],
+    "form.numberMessage": "Value must be greater than or equal to 10.",
+    "form.validationMessage": "Please fill out this field.",
+    "hdr.accept-language": "en-US",
+    "hdr.client_hints": {
+     "sec-ch-ua": "\"Chromium\";v=\"152\"",
+     "sec-ch-ua-mobile": "?0",
+     "sec-ch-ua-platform": "\"Linux\""
+    },
+    "hdr.dnt": null,
+    "hdr.sec-gpc": "1",
+    "intl.locale": "en-US",
+    "intl.number": "1,234,567.891",
+    "js.enabled_on_blocked_site": true,
+    "media.devices": {
+     "audiooutput": 1
+    },
+    "mouse.screen_equals_client": true,
+    "mq.any_hover_none": false,
+    "mq.any_pointer_coarse": false,
+    "mq.device_size_matches": true,
+    "mq.hover_hover": true,
+    "mq.pointer_coarse": false,
+    "mq.pointer_fine": true,
+    "mq.resolution_1dppx": true,
+    "nav.cpuPerformance": 0,
+    "nav.deviceMemory": 8,
+    "nav.doNotTrack": null,
+    "nav.globalPrivacyControl": true,
+    "nav.hardwareConcurrency": 8,
+    "nav.language": "en-US",
+    "nav.languages": [
+     "en-US"
+    ],
+    "nav.maxTouchPoints": 0,
+    "nav.userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "perm.geolocation": "prompt",
+    "perm.window-management": "denied",
+    "screen.availHeight": 900,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1400,
+    "screen.colorDepth": 24,
+    "screen.height": 900,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1400,
+    "screenDetails.error": "NotAllowedError",
+    "sharedStorage.set": "rejected",
+    "storage.persist": false,
+    "storage.quota": 1717986918,
+    "touch.createEvent": "NotSupportedError",
+    "touch.ontouchstart": false,
+    "tz.date_string_utc": true,
+    "tz.offset_jan": 0,
+    "tz.offset_jul": 0,
+    "tz.resolved": "UTC",
+    "ua.reduced": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "uad.high_entropy": {
+     "architecture": "",
+     "bitness": "",
+     "formFactors": [],
+     "fullVersionList": [],
+     "model": "",
+     "platformVersion": "",
+     "uaFullVersion": "",
+     "wow64": false
+    },
+    "uad.platform": "Linux",
+    "webgl.context": true,
+    "webgl.debug_renderer_info": false,
+    "webgl.extensions": [
+     "ANGLE_instanced_arrays",
+     "OES_texture_float"
+    ],
+    "webgl.p.ALIASED_POINT_SIZE_RANGE": [
+     1,
+     255
+    ],
+    "webgl.p.MAX_TEXTURE_SIZE": 8192,
+    "webgl.p.MAX_VARYING_VECTORS": 15,
+    "webgl.p.MAX_VIEWPORT_DIMS": [
+     8192,
+     8192
+    ],
+    "webgl.precision.FRAGMENT_SHADER.HIGH_FLOAT": [
+     127,
+     127,
+     23
+    ],
+    "webgl2.context": false,
+    "webgpu.adapter": null,
+    "webrtc.error": "NotSupportedError",
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 900,
+    "win.innerWidth": 1400,
+    "win.outerHeight": 900,
+    "win.outerWidth": 1400,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": null,
+   "zoom_actual": 1.0,
+   "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "geometry",
+   "label": "window",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "mouse.screen_equals_client": true,
+    "mq.device_size_matches": true,
+    "mq.resolution_1dppx": true,
+    "screen.availHeight": 600,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1200,
+    "screen.colorDepth": 24,
+    "screen.height": 600,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1200,
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 600,
+    "win.innerWidth": 1200,
+    "win.outerHeight": 600,
+    "win.outerWidth": 1200,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": [
+    1366,
+    768
+   ],
+   "zoom_actual": 1.0,
+   "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "geometry",
+   "label": "window",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "mouse.screen_equals_client": true,
+    "mq.device_size_matches": true,
+    "mq.resolution_1dppx": true,
+    "screen.availHeight": 900,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1401,
+    "screen.colorDepth": 24,
+    "screen.height": 900,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1401,
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 900,
+    "win.innerWidth": 1401,
+    "win.outerHeight": 900,
+    "win.outerWidth": 1401,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": [
+    1280,
+    800
+   ],
+   "zoom_actual": 1.0,
+   "zoom_requested": 100
+  },
+  {
+   "dsf": 1.0,
+   "kind": "geometry",
+   "label": "zoom",
+   "note": "Ctrl++ through DevTools did not change the zoom",
+   "phase": "main",
+   "target": "moltnet",
+   "values": {
+    "mouse.screen_equals_client": true,
+    "mq.device_size_matches": true,
+    "mq.resolution_1dppx": true,
+    "screen.availHeight": 800,
+    "screen.availLeft": 0,
+    "screen.availTop": 0,
+    "screen.availWidth": 1400,
+    "screen.colorDepth": 24,
+    "screen.height": 800,
+    "screen.isExtended": false,
+    "screen.orientation.angle": 0,
+    "screen.orientation.type": "landscape-primary",
+    "screen.pixelDepth": 24,
+    "screen.width": 1400,
+    "win.devicePixelRatio": 1,
+    "win.innerHeight": 800,
+    "win.innerWidth": 1400,
+    "win.outerHeight": 800,
+    "win.outerWidth": 1400,
+    "win.screenX": 0,
+    "win.screenY": 0
+   },
+   "window": [
+    1920,
+    1080
+   ],
+   "zoom_actual": null,
+   "zoom_requested": 125
+  },
+  {
+   "dsf": 1.0,
+   "kind": "full",
+   "label": "initial",
+   "phase": "main",
+   "target": "regular",
+   "values": {
+    "mq.pointer_fine": true,
+    "nav.hardwareConcurrency": 8,
+    "tz.resolved": "Europe/Berlin"
+   },
+   "window": null,
+   "zoom_requested": 100
+  }
+ ],
+ "kit_version": "1.0",
+ "manual_steps": [
+  {
+   "automation": "partial",
+   "note": "check.torproject.org through Tor and the panel's Verify (needs an exit to reach the public internet); the onion tests prove Tor routing offline",
+   "step": 1,
+   "title": "You are on Tor"
+  },
+  {
+   "automation": "partial",
+   "note": "a regular window reaches the kit's local page directly, not through Tor; the toolbar label stays manual",
+   "step": 2,
+   "title": "Regular windows are untouched"
+  },
+  {
+   "automation": "replaced",
+   "note": "the leak suite tests the same mechanisms locally; the public sites stay an optional manual cross-check",
+   "step": 3,
+   "title": "No IP, DNS, WebRTC or IPv6 leak (leak sites)"
+  },
+  {
+   "automation": "automated",
+   "note": "every packet is captured in a namespace where only Tor may leave",
+   "step": 4,
+   "title": "Watch the wire"
+  },
+  {
+   "automation": "automated",
+   "note": "tor is killed: pages must fail with a proxy error; after a restart no MoltNet window returns",
+   "step": 5,
+   "title": "Fail-closed"
+  },
+  {
+   "automation": "automated",
+   "note": "a regular-profile cookie doesn't show in MoltNet; a MoltNet cookie is gone after the last window closes",
+   "step": 6,
+   "title": "Separate identity"
+  },
+  {
+   "automation": "automated",
+   "note": "new profile, cookies gone, new canvas key; the exit IP check needs the public internet",
+   "step": 7,
+   "title": "New Identity"
+  },
+  {
+   "automation": "automated",
+   "note": "different SOCKS usernames per site, read from the loopback capture and Tor's circuit list",
+   "step": 8,
+   "title": "Per-site circuits"
+  },
+  {
+   "automation": "partial",
+   "note": "--proxy-server blocks MoltNet; the extension-set proxy case is manual",
+   "step": 9,
+   "title": "Overrides are refused"
+  },
+  {
+   "automation": "automated",
+   "note": "the circuit's fingerprints are in the consensus Tor downloaded; the onionoo lookup is optional",
+   "step": 10,
+   "title": "The relays are real"
+  },
+  {
+   "automation": "partial",
+   "note": "http:// and https:// onions load; the Onion-Location bar is browser UI and stays manual",
+   "step": 11,
+   "title": "Onion sites"
+  },
+  {
+   "automation": "automated",
+   "note": "the interstitial shows and no onion name is looked up; DoH is covered because every lookup lands on the kit's resolver",
+   "step": 12,
+   "title": "No onion names outside Tor (regular window)"
+  },
+  {
+   "automation": "partial",
+   "note": "a logging proxy must see no onion request (image, fetch, redirect, WebSocket, dedicated and shared worker); the service worker case is manual",
+   "step": 13,
+   "title": "No onion names to a proxy (regular window)"
+  },
+  {
+   "automation": "manual",
+   "note": "",
+   "step": 14,
+   "title": "Bridges with the distribution's transports"
+  },
+  {
+   "automation": "automated",
+   "note": "seeded regular-profile settings (Do Not Track, fonts, language, third-party cookies, a blocked JavaScript site) must not show in MoltNet",
+   "step": 15,
+   "title": "Your settings don't follow you"
+  },
+  {
+   "automation": "partial",
+   "note": "a test extension allowed in Incognito must not see or mark MoltNet pages; split mode, shortcuts and the toolbar stay manual",
+   "step": 16,
+   "title": "Extensions stay out"
+  },
+  {
+   "automation": "partial",
+   "note": "autoplay policy, persist(), third-party cookies and Shared Storage are read in MoltNet; media engagement, bookmarks and certificate exceptions need a prepared regular profile",
+   "step": 17,
+   "title": "No regular-profile carry-over"
+  },
+  {
+   "automation": "automated",
+   "note": "",
+   "step": 18,
+   "title": "No WebRTC, and no name lookups for it"
+  },
+  {
+   "automation": "manual",
+   "note": "DevTools prefs, media controls, macOS, picture-in-picture, GCM, printing",
+   "step": 19,
+   "title": "Incognito's protections"
+  },
+  {
+   "automation": "partial",
+   "note": "downloads, geolocation and the built-in AI are automated; the AI chat, Cast menu, phone passkeys and \"Open all\" bookmarks stay manual",
+   "step": 20,
+   "title": "Nothing goes around Tor"
+  }
+ ],
+ "os": [
+  "Linux"
+ ],
+ "run": {
+  "browser": {
+   "path": "/opt/moltbrowser/moltbrowser",
+   "product": "MoltBrowser",
+   "version": "0.3.0"
+  },
+  "finished": "2025-10-09T08:56:00+00:00",
+  "host": {
+   "os": "Linux-6.8-x86_64",
+   "python": "3.12.3"
+  },
+  "onion": {
+   "a": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+   "b": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion"
+  },
+  "options": {
+   "dsfs": [
+    1.0
+   ]
+  },
+  "run_id": "sample",
+  "started": "2025-10-09T08:53:20+00:00",
+  "target": "moltnet"
+ },
+ "schema": "moltleak-report/1",
+ "tests": [
+  {
+   "error": null,
+   "id": "onion_http",
+   "load_error": null,
+   "nonce": "aaaaaa1111",
+   "results": {
+    "loaded": true,
+    "secure_context": false
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/aaaaaa1111/x.html"
+  },
+  {
+   "error": null,
+   "id": "webrtc",
+   "load_error": null,
+   "nonce": "bbbbbb2222",
+   "results": {
+    "pc": {
+     "error": "NotSupportedError",
+     "message": "No PeerConnection handler can be created, perhaps WebRTC is disabled?"
+    }
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/bbbbbb2222/x.html"
+  },
+  {
+   "error": null,
+   "id": "dns_prefetch",
+   "load_error": null,
+   "nonce": "cccccc3333",
+   "results": {
+    "loaded": true
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/cccccc3333/x.html"
+  },
+  {
+   "error": null,
+   "id": "download",
+   "load_error": null,
+   "nonce": "dddddd4444",
+   "results": {
+    "clicked": true
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/dddddd4444/x.html"
+  },
+  {
+   "error": null,
+   "id": "localhost_lan",
+   "load_error": null,
+   "nonce": "eeeeee5555",
+   "results": {
+    "fetch": {
+     "gateway": {
+      "error": "TypeError",
+      "ok": false
+     },
+     "loopback4": {
+      "error": "TypeError",
+      "ok": false
+     }
+    }
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/eeeeee5555/x.html"
+  },
+  {
+   "error": null,
+   "id": "builtin_ai",
+   "load_error": null,
+   "nonce": "ffffff6666",
+   "results": {
+    "availability": {
+     "LanguageModel": "unavailable",
+     "Rewriter": "unavailable",
+     "Summarizer": "unavailable",
+     "Translator": "unavailable",
+     "Writer": "unavailable"
+    }
+   },
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/ffffff6666/x.html"
+  },
+  {
+   "error": null,
+   "id": "regular_onion_navigation",
+   "load_error": null,
+   "nonce": "gggggg7777",
+   "results": {
+    "title": "Tor onion site",
+    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/"
+   },
+   "target": "regular",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/gggggg7777/x.html"
+  },
+  {
+   "error": null,
+   "id": "mdns",
+   "load_error": null,
+   "nonce": "hhhhhh8888",
+   "results": null,
+   "target": "moltnet",
+   "url": null
+  }
+ ],
+ "traffic": {
+  "capture_stats": {
+   "all": {
+    "decoded": 18,
+    "frames": 18,
+    "linktypes": [
+     276
+    ],
+    "malformed": 0,
+    "non_ip": 0,
+    "truncated_file": false
+   },
+   "blocked": {
+    "decoded": 12,
+    "frames": 12,
+    "linktypes": [
+     239
+    ],
+    "malformed": 0,
+    "non_ip": 0,
+    "truncated_file": false
+   },
+   "loopback_packets": 6,
+   "tor": {
+    "decoded": 2,
+    "frames": 2,
+    "linktypes": [
+     239
+    ],
+    "malformed": 0,
+    "non_ip": 0,
+    "truncated_file": false
+   }
+  },
+  "escaped": [
+   {
+    "dport": 80,
+    "dst": "203.0.113.99",
+    "first": 1760000007.0,
+    "packets": 1,
+    "proto": "tcp",
+    "src": "10.231.7.2"
+   }
+  ],
+  "events": [
+   {
+    "attribution": "window",
+    "category": "background",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000003.0,
+    "kind": "dns",
+    "last": 1760000003.0,
+    "proto": "udp",
+    "qname": "update.googleapis.com",
+    "qtype": "A",
+    "reason": "component updater (NETWORK_TRAFFIC.md \u00a71)",
+    "rel": 3.0,
+    "sources": [
+     "firewall log",
+     "kit resolver"
+    ],
+    "test": "phase:circuit"
+   },
+   {
+    "attribution": "window",
+    "category": "forbidden",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000004.0,
+    "kind": "dns",
+    "last": 1760000004.0,
+    "proto": "udp",
+    "qname": "accounts.google.com",
+    "qtype": "A",
+    "reason": "must not appear: no Google sign-in",
+    "rel": 4.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": "phase:circuit"
+   },
+   {
+    "attribution": null,
+    "category": "leak",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "192.0.2.53",
+    "first": 1760000005.0,
+    "kind": "dns",
+    "last": 1760000005.0,
+    "proto": "udp",
+    "qname": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "qtype": "A",
+    "reason": "an onion name was looked up outside Tor",
+    "rel": 5.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": null
+   },
+   {
+    "attribution": null,
+    "category": "unexplained",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000006.0,
+    "kind": "dns",
+    "last": 1760000006.0,
+    "proto": "udp",
+    "qname": "weird.example.org",
+    "qtype": "A",
+    "reason": "a name looked up outside Tor that no list explains",
+    "rel": 6.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": null
+   },
+   {
+    "attribution": null,
+    "category": "leak",
+    "count": 1,
+    "detail": "joined multicast group 224.0.0.251",
+    "dport": null,
+    "dst": "224.0.0.251",
+    "first": 1760000008.0,
+    "kind": "multicast",
+    "last": 1760000008.0,
+    "proto": "igmp",
+    "qname": null,
+    "qtype": null,
+    "reason": "a socket joined the mDNS group",
+    "rel": 8.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": null
+   },
+   {
+    "attribution": null,
+    "category": "leak",
+    "count": 1,
+    "detail": "",
+    "dport": 5353,
+    "dst": "224.0.0.251",
+    "first": 1760000009.0,
+    "kind": "mdns",
+    "last": 1760000009.0,
+    "proto": "udp",
+    "qname": "printer.local",
+    "qtype": "PTR",
+    "reason": "multicast DNS on the local network",
+    "rel": 9.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": null
+   },
+   {
+    "attribution": "nonce",
+    "category": "leak",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000021.0,
+    "kind": "dns",
+    "last": 1760000021.0,
+    "proto": "udp",
+    "qname": "stun-bbbbbb2222.moltleak.test",
+    "qtype": "A",
+    "reason": "a test page's canary name was looked up outside Tor",
+    "rel": 21.0,
+    "sources": [
+     "firewall log",
+     "kit resolver"
+    ],
+    "test": "webrtc"
+   },
+   {
+    "attribution": "nonce",
+    "category": "leak",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000021.1,
+    "kind": "dns",
+    "last": 1760000021.1,
+    "proto": "udp",
+    "qname": "stun-bbbbbb2222.moltleak.test",
+    "qtype": "AAAA",
+    "reason": "a test page's canary name was looked up outside Tor",
+    "rel": 21.1,
+    "sources": [
+     "firewall log"
+    ],
+    "test": "webrtc"
+   },
+   {
+    "attribution": "ip",
+    "category": "leak",
+    "count": 1,
+    "detail": "",
+    "dport": 3478,
+    "dst": "198.51.100.12",
+    "first": 1760000022.0,
+    "kind": "udp",
+    "last": 1760000022.0,
+    "proto": "udp",
+    "qname": null,
+    "qtype": null,
+    "reason": "a packet to a test page's IP literal outside Tor",
+    "rel": 22.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": "webrtc"
+   },
+   {
+    "attribution": "window",
+    "category": "leak",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000045.0,
+    "kind": "dns",
+    "last": 1760000045.0,
+    "proto": "udp",
+    "qname": "sb-ssl.google.com",
+    "qtype": "A",
+    "reason": "looked up outside Tor during this test: Safe Browsing download checks (\u00a72)",
+    "rel": 45.0,
+    "sources": [
+     "firewall log"
+    ],
+    "test": "download"
+   },
+   {
+    "attribution": "window",
+    "category": "leak",
+    "count": 1,
+    "detail": "GET / HTTP/1.1",
+    "dport": 47321,
+    "dst": "127.0.0.1",
+    "first": 1760000055.0,
+    "kind": "local",
+    "last": 1760000055.0,
+    "proto": "tcp",
+    "qname": null,
+    "qtype": null,
+    "reason": "a page reached a service on this machine (the loopback canary)",
+    "rel": 55.0,
+    "sources": [
+     "firewall log",
+     "loopback canary"
+    ],
+    "test": "localhost_lan"
+   },
+   {
+    "attribution": "window",
+    "category": "unexplained",
+    "count": 1,
+    "detail": "",
+    "dport": 53,
+    "dst": "127.0.0.1",
+    "first": 1760000065.5,
+    "kind": "dns",
+    "last": 1760000065.5,
+    "proto": "udp",
+    "qname": "cdn.example.net",
+    "qtype": "A",
+    "reason": "a name looked up outside Tor that no list explains",
+    "rel": 65.5,
+    "sources": [
+     "firewall log"
+    ],
+    "test": "builtin_ai"
+   }
+  ],
+  "socks": [
+   {
+    "client_port": 52000,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "port": 80,
+    "server_port": 9150,
+    "test": "onion_http",
+    "ts": 1760000011.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52001,
+    "command": 1,
+    "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "port": 443,
+    "server_port": 9150,
+    "test": "onion_http",
+    "ts": 1760000012.0,
+    "username": "https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion"
+   },
+   {
+    "client_port": 52002,
+    "command": 1,
+    "host": "anchor-cccccc3333.moltleak.test",
+    "port": 443,
+    "server_port": 9150,
+    "test": "dns_prefetch",
+    "ts": 1760000031.0,
+    "username": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   }
+  ],
+  "tor_connections": 2,
+  "tor_destinations": [
+   {
+    "connections": 1,
+    "dport": 9001,
+    "dst": "192.0.2.50",
+    "first": 1760000001.5,
+    "proto": "tcp"
+   },
+   {
+    "connections": 1,
+    "dport": 443,
+    "dst": "192.0.2.51",
+    "first": 1760000001.6,
+    "proto": "tcp"
+   }
+  ]
+ },
+ "verdict": "FAIL"
+}
