@@ -134,6 +134,15 @@ MTMD_API mtmd_context * mtmd_init_from_file(const char * mmproj_fname,
                                             const struct llama_model * text_model,
                                             const struct mtmd_context_params ctx_params);
 
+// MoltBrowser: like mtmd_init_from_file(), reading the projector from
+// |mmproj_file|: opened by the caller (read-only), not closed here, and not
+// needed once this returns (the weights are copied into backend buffers).
+// The sandboxed inference service can't open paths.
+// return nullptr on failure
+MTMD_API mtmd_context * mtmd_init_from_file_ptr(FILE * mmproj_file,
+                                                const struct llama_model * text_model,
+                                                const struct mtmd_context_params ctx_params);
+
 MTMD_API void mtmd_free(mtmd_context * ctx);
 
 // whether we need to set non-causal mask before llama_decode

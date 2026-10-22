@@ -225,7 +225,13 @@ struct clip_ctx {
             ggml_backend_sched_set_eval_callback(sched.get(), ctx_params.cb_eval, ctx_params.cb_eval_user_data);
         }
 
+#if defined(LLAMA_MOLTBROWSER_SANDBOXED)
+        // MoltBrowser: no environment-controlled dump of image embeddings
+        // (derived from the user's or a page's images) to the log or a file.
+        debug_output_embeddings = false;
+#else
         debug_output_embeddings = std::getenv("MTMD_DEBUG_EMBEDDINGS") != nullptr;
+#endif
     }
 
     ~clip_ctx() {
@@ -1192,6 +1198,10 @@ struct clip_model_loader {
     gguf_context_ptr ctx_gguf;
 
     std::string fname;
+    // MoltBrowser: the model as a stream the caller opened (not owned); read
+    // instead of |fname| when set. The sandboxed inference service can't open
+    // paths.
+    FILE * file = nullptr;
 
     size_t model_size = 0; // in bytes
 
@@ -1206,8 +1216,10 @@ struct clip_model_loader {
     clip_model_loader(const char * fname,
             bool skip_tensors = false,
             mtmd_progress_callback progress_cb = nullptr,
-            void * progress_user_data = nullptr)
+            void * progress_user_data = nullptr,
+            FILE * file = nullptr)
         : fname(fname),
+          file(file),
           progress_callback(progress_cb),
           progress_callback_user_data(progress_user_data) {
         struct ggml_context * meta = nullptr;
@@ -1217,7 +1229,12 @@ struct clip_model_loader {
             /*.ctx      = */ &meta,
         };
 
-        ctx_gguf = gguf_context_ptr(gguf_init_from_file(fname, params));
+        // MoltBrowser: from the caller's stream when there is one.
+        if (file && fseek(file, 0, SEEK_SET) != 0) {
+            throw std::runtime_error(string_format("%s: failed to rewind the CLIP model stream\n", __func__));
+        }
+        ctx_gguf = gguf_context_ptr(file ? gguf_init_from_file_ptr(file, params)
+                                         : gguf_init_from_file(fname, params));
         if (!ctx_gguf.get()) {
             throw std::runtime_error(string_format("%s: failed to load CLIP model from %s. Does this file exist?\n", __func__, fname));
         }
@@ -2197,9 +2214,13 @@ struct clip_model_loader {
         std::map<std::string, size_t> tensor_offset;
         std::vector<ggml_tensor *> tensors_to_load;
 
-        auto fin = open_ifstream_binary(fname);
-        if (!fin) {
-            throw std::runtime_error(string_format("%s: failed to open %s\n", __func__, fname.c_str()));
+        // MoltBrowser: no ifstream when the model is the caller's stream.
+        std::ifstream fin;
+        if (!file) {
+            fin = open_ifstream_binary(fname);
+            if (!fin) {
+                throw std::runtime_error(string_format("%s: failed to open %s\n", __func__, fname.c_str()));
+            }
         }
 
         // TODO @ngxson : support both audio and video in the future
@@ -2296,8 +2317,8 @@ struct clip_model_loader {
 
             const size_t n_elems = n_bytes / sizeof(float);
             result.resize(n_elems);
-            fin.seekg(it->second, std::ios::beg);
-            fin.read(reinterpret_cast<char*>(result.data()), n_bytes);
+            // MoltBrowser: through read_tensor_data() (|file| when set).
+            read_tensor_data(fin, it->second, result.data(), n_elems * sizeof(float), name.c_str());
             return result;
         };
 
@@ -3737,18 +3758,15 @@ struct clip_model_loader {
                     auto it_off = tensor_offset.find(t->name);
                     GGML_ASSERT(it_off != tensor_offset.end() && "no offset for tensor");
                     const size_t offset = it_off->second;
-                    fin.seekg(offset, std::ios::beg);
-                    if (!fin) {
-                        throw std::runtime_error(string_format("%s: failed to seek for tensor %s\n", __func__, t->name));
-                    }
                     size_t num_bytes = ggml_nbytes(cur);
+                    // MoltBrowser: read_tensor_data() reads |file| when set.
                     if (ggml_backend_buft_is_host(buft)) {
                         // for the CPU and Metal backend, we can read directly into the tensor
-                        fin.read(reinterpret_cast<char *>(cur->data), num_bytes);
+                        read_tensor_data(fin, offset, cur->data, num_bytes, t->name);
                     } else {
                         // read into a temporary buffer first, then copy to device memory
                         read_buf.resize(num_bytes);
-                        fin.read(reinterpret_cast<char *>(read_buf.data()), num_bytes);
+                        read_tensor_data(fin, offset, read_buf.data(), num_bytes, t->name);
                         ggml_backend_tensor_set(cur, read_buf.data(), 0, num_bytes);
                     }
                     data_loaded += num_bytes;
@@ -3763,9 +3781,32 @@ struct clip_model_loader {
             } else {
                 LOG_DBG("%s: no_alloc is set, skipping tensor data loading (%zu tensors)\n", __func__, tensors_to_load.size());
             }
-            fin.close();
+            if (!file) {
+                fin.close();
+            }
         }
 
+    }
+
+    // MoltBrowser: |num_bytes| at |offset| of the model file into |dst|: from
+    // |file| when set (a short read fails), else from |fin| as upstream did.
+    void read_tensor_data(std::ifstream & fin, size_t offset, void * dst, size_t num_bytes, const char * name) {
+        if (file) {
+#if defined(_WIN32)
+            const bool sought = _fseeki64(file, (__int64) offset, SEEK_SET) == 0;
+#else
+            const bool sought = fseeko(file, (off_t) offset, SEEK_SET) == 0;
+#endif
+            if (!sought || fread(dst, 1, num_bytes, file) != num_bytes) {
+                throw std::runtime_error(string_format("%s: failed to read tensor %s\n", __func__, name));
+            }
+            return;
+        }
+        fin.seekg(offset, std::ios::beg);
+        if (!fin) {
+            throw std::runtime_error(string_format("%s: failed to seek for tensor %s\n", __func__, name));
+        }
+        fin.read(reinterpret_cast<char *>(dst), num_bytes);
     }
 
     struct support_info_op {
@@ -4082,7 +4123,8 @@ struct clip_model_loader {
     }
 };
 
-struct clip_init_result clip_init(const char * fname, struct clip_context_params ctx_params) {
+// MoltBrowser: |file| (may be null) is read instead of |fname|.
+static struct clip_init_result clip_init_impl(const char * fname, FILE * file, struct clip_context_params ctx_params) {
     clip_ctx * ctx_vision = nullptr;
     clip_ctx * ctx_audio = nullptr;
     clip_ctx * ctx_gen_audio = nullptr;
@@ -4091,7 +4133,8 @@ struct clip_init_result clip_init(const char * fname, struct clip_context_params
         clip_model_loader loader(fname,
             /* skip_tensors */ false,
             ctx_params.progress_callback,
-            ctx_params.progress_callback_user_data);
+            ctx_params.progress_callback_user_data,
+            file);
         bool skip_audio = false;
 
         if (loader.has_vision) {
@@ -4137,6 +4180,18 @@ struct clip_init_result clip_init(const char * fname, struct clip_context_params
     }
 
     return {ctx_vision, ctx_audio, ctx_gen_audio};
+}
+
+struct clip_init_result clip_init(const char * fname, struct clip_context_params ctx_params) {
+    return clip_init_impl(fname, nullptr, ctx_params);
+}
+
+// MoltBrowser
+struct clip_init_result clip_init_from_file_ptr(FILE * file, struct clip_context_params ctx_params) {
+    if (file == nullptr) {
+        return {nullptr, nullptr, nullptr};
+    }
+    return clip_init_impl("(stream)", file, ctx_params);
 }
 
 struct clip_cap clip_get_cap(const char * fname) {

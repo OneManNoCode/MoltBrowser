@@ -67,6 +67,9 @@ struct clip_init_result {
 };
 
 struct clip_init_result clip_init(const char * fname, struct clip_context_params ctx_params);
+// MoltBrowser: like clip_init(), reading the model from |file| (opened by the
+// caller, read-only; not closed, and not needed after this returns).
+struct clip_init_result clip_init_from_file_ptr(FILE * file, struct clip_context_params ctx_params);
 
 // max number of output tokens per image, -1 if not dynamic size
 int clip_get_image_max_tokens(const struct clip_ctx * ctx);

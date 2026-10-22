@@ -569,10 +569,13 @@ struct mtmd_context {
 
     // TODO @ngxson : add timings
 
+    // MoltBrowser: |mmproj_file| (may be null) is read instead of
+    // |mmproj_fname|.
     mtmd_context(const char * mmproj_fname,
                    const llama_model * text_model,
                    const mtmd_context_params & ctx_params,
-                   bool no_alloc = false) :
+                   bool no_alloc = false,
+                   FILE * mmproj_file = nullptr) :
         print_timings   (ctx_params.print_timings),
         n_threads       (ctx_params.n_threads),
         media_marker    (ctx_params.media_marker),
@@ -621,10 +624,26 @@ struct mtmd_context {
             /* progress_callback_user_data */ ctx_params.progress_callback_user_data,
         };
 
-        auto res = clip_init(mmproj_fname, ctx_clip_params);
+        auto res = mmproj_file ? clip_init_from_file_ptr(mmproj_file, ctx_clip_params)
+                               : clip_init(mmproj_fname, ctx_clip_params);
         ctx_v = res.ctx_v;
         ctx_a = res.ctx_a;
         ctx_gen_a = res.ctx_gen_a;
+        // MoltBrowser: the destructor doesn't run when the rest of the
+        // constructor throws (a projector made for another model): free the
+        // clip contexts (weights and compute buffers) here instead of
+        // leaking them.
+        struct clip_free_on_throw {
+            mtmd_context * ctx;
+            bool armed = true;
+            ~clip_free_on_throw() {
+                if (armed) {
+                    clip_free(ctx->ctx_a);
+                    clip_free(ctx->ctx_v);
+                    clip_free(ctx->ctx_gen_a);
+                }
+            }
+        } free_on_throw{this};
         if (!ctx_v && !ctx_a) {
             throw std::runtime_error(string_format("Failed to load CLIP model from %s\n", mmproj_fname));
         }
@@ -664,6 +683,7 @@ struct mtmd_context {
         if (ctx_a) {
             init_audio();
         }
+        free_on_throw.armed = false;  // MoltBrowser
     }
 
     void init_vision() {
@@ -1158,6 +1178,21 @@ mtmd_context * mtmd_init_from_file(const char * mmproj_fname,
         const struct mtmd_context_params ctx_params) {
     try {
         return new mtmd_context(mmproj_fname, text_model, ctx_params);
+    } catch (const std::exception & e) {
+        LOG_ERR("%s: error: %s\n", __func__, e.what());
+        return nullptr;
+    }
+}
+
+// MoltBrowser
+mtmd_context * mtmd_init_from_file_ptr(FILE * mmproj_file,
+        const struct llama_model * text_model,
+        const struct mtmd_context_params ctx_params) {
+    if (mmproj_file == nullptr) {
+        return nullptr;
+    }
+    try {
+        return new mtmd_context("(stream)", text_model, ctx_params, /* no_alloc */ false, mmproj_file);
     } catch (const std::exception & e) {
         LOG_ERR("%s: error: %s\n", __func__, e.what());
         return nullptr;
