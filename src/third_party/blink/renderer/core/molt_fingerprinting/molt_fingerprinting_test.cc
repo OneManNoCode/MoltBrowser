@@ -14,6 +14,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/platform/graphics/test/fake_gles2_interface.h"
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
@@ -127,18 +128,22 @@ TEST_F(MoltFingerprintingTest, WindowsUseTheirTopLevelSitesKey) {
   EXPECT_FALSE(Same(*farbler, *FarblerFor(&Window("https://b.example/"))));
 }
 
-TEST_F(MoltFingerprintingTest, ShieldsOffSitesAreNotFarbled) {
+TEST_F(MoltFingerprintingTest, ShieldsOffDocumentsAreNotFarbled) {
   Configure(Mode::kFarble);
   SetSessionSeed(TestSeed());
   LocalDOMWindow& a = Window("https://a.example/");
   LocalDOMWindow& b = Window("https://b.example/");
+  // No decision: farbled.
   EXPECT_TRUE(IsFarbled(&a));
-  SetUnfarbledSites({"https://a.example"});
+  // The browser's decision for a.example's document (shields_decision.h).
+  SetWindowShieldsDecision(a, /*shields_down=*/true, "https://a.example");
   EXPECT_FALSE(IsFarbled(&a));
   EXPECT_FALSE(FarblerFor(&a).has_value());
   EXPECT_EQ(HardwareConcurrency(&a, 12), 12u);
+  // Other documents are unaffected.
   EXPECT_TRUE(IsFarbled(&b));
-  SetUnfarbledSites({});
+  // A later decision for the same document replaces it.
+  SetWindowShieldsDecision(a, /*shields_down=*/false, "https://a.example");
   EXPECT_TRUE(IsFarbled(&a));
 }
 

@@ -143,8 +143,9 @@ EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
       std::move(coep_reporting_observer), std::move(dip_reporting_observer),
       cross_origin_isolated,
       // MoltBrowser: Blink is otherwise only told the key's origin, and
-      // fingerprinting protection needs its top-level site.
-      constructor_key);
+      // fingerprinting protection needs its top-level site, and the
+      // browser's Shields decision for it.
+      constructor_key, info->molt_shields_down);
 
   // If the host drops its connection, then self-destruct.
   receiver_.set_disconnect_handler(base::BindOnce(

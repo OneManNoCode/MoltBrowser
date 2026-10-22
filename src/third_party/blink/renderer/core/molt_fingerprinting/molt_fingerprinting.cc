@@ -15,7 +15,6 @@
 #include "base/no_destructor.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/synchronization/lock.h"
 #include "crypto/random.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "net/cookies/site_for_cookies.h"
@@ -31,6 +30,7 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timezone/timezone_controller.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
@@ -78,12 +78,6 @@ void WebMoltFingerprinting::SetSessionSeed(
   molt_fingerprinting::SetSessionSeed(session_seed);
 }
 
-// static
-void WebMoltFingerprinting::SetUnfarbledSites(
-    const std::vector<std::string>& sites) {
-  molt_fingerprinting::SetUnfarbledSites(sites);
-}
-
 namespace molt_fingerprinting {
 
 namespace {
@@ -96,23 +90,6 @@ std::array<uint8_t, kSessionSeedSize> g_seed = {};
 std::atomic<Mode> g_mode{Mode::kOff};
 std::atomic<bool> g_configured{false};
 std::atomic<bool> g_have_seed{false};
-
-// Top-level sites with Shields off. Read from any thread.
-struct UnfarbledSites {
-  base::Lock lock;
-  std::vector<std::string> sorted;  // Guarded by `lock`.
-};
-
-UnfarbledSites& GetUnfarbledSites() {
-  static base::NoDestructor<UnfarbledSites> sites;
-  return *sites;
-}
-
-bool IsSiteUnfarbled(const std::string& site) {
-  UnfarbledSites& sites = GetUnfarbledSites();
-  base::AutoLock auto_lock(sites.lock);
-  return std::binary_search(sites.sorted.begin(), sites.sorted.end(), site);
-}
 
 // Per-execution-context cache of the derived key.
 class MoltFarblingState final : public GarbageCollected<MoltFarblingState>,
@@ -302,13 +279,13 @@ std::optional<SiteKey> SiteKeyFor(ExecutionContext* context) {
     case SiteKind::kHandedOver:
       return resolved.handed_over_key;
     case SiteKind::kWeb:
-      // MoltNet keeps farbling where Shields are off: there the point is to
-      // look like every other MoltNet user.
-      if (GetMode() == Mode::kFarble && IsSiteUnfarbled(resolved.site)) {
+    case SiteKind::kOpaque:
+      // The browser's Shields decision for this document or worker; none
+      // means farbled. MoltNet ignores it (AreShieldsDown is false there):
+      // the point is to look like every other MoltNet user.
+      if (AreShieldsDown(*context)) {
         return std::nullopt;
       }
-      break;
-    case SiteKind::kOpaque:
       break;
   }
   MoltFarblingState& state = MoltFarblingState::From(*context);
@@ -591,14 +568,6 @@ void SetSessionSeed(base::span<const uint8_t> session_seed) {
   g_have_seed.store(true, std::memory_order_release);
 }
 
-void SetUnfarbledSites(std::vector<std::string> sites) {
-  std::sort(sites.begin(), sites.end());
-  sites.erase(std::unique(sites.begin(), sites.end()), sites.end());
-  UnfarbledSites& unfarbled = GetUnfarbledSites();
-  base::AutoLock auto_lock(unfarbled.lock);
-  unfarbled.sorted.swap(sites);
-}
-
 Mode GetMode() {
   return g_mode.load(std::memory_order_acquire);
 }
@@ -612,7 +581,6 @@ void ResetForTesting() {
   g_configured.store(false);
   g_have_seed.store(false, std::memory_order_release);
   g_seed = {};
-  SetUnfarbledSites({});
 }
 
 std::optional<Farbler> FarblerFor(ExecutionContext* context) {
@@ -631,13 +599,15 @@ bool FarblesVideoExports(ExecutionContext* context) {
 }
 
 void SetServiceWorkerStorageKey(ExecutionContext& worker,
-                                const BlinkStorageKey& storage_key) {
+                                const BlinkStorageKey& storage_key,
+                                bool shields_down) {
   if (Supplement<ExecutionContext>::From<MoltServiceWorkerSite>(worker)) {
     return;  // Set once, before any script ran; never changes afterwards.
   }
   Supplement<ExecutionContext>::ProvideTo(
       worker, MakeGarbageCollected<MoltServiceWorkerSite>(
                   worker, FromStorageKey(storage_key)));
+  SetWorkerShieldsDecision(worker, shields_down);
 }
 
 void ProvideToWorklet(LocalDOMWindow& window, WorkerClients* worker_clients) {

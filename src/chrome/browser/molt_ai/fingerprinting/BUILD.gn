@@ -5,7 +5,8 @@
 # session seed, the renderer mode switch (hooked from
 # ChromeContentBrowserClient::AppendExtraCommandLineSwitches) and the
 # channel-associated configuration sent at RenderProcessWillLaunch (session
-# seed, Shields-off sites), MoltNet's letterboxing of the page in the
+# seed), the per-document and per-worker Shields decisions
+# (molt_shields_delivery.h), MoltNet's letterboxing of the page in the
 # window (:letterbox, :letterbox_view), and MoltNet's input devices, CPU
 # tier and client hints (:device, :client_hints). The engine itself lives
 # in Blink: //third_party/blink/renderer/core/molt_fingerprinting.
@@ -16,25 +17,43 @@ source_set("fingerprinting") {
     "molt_fingerprinting_about_flags.h",
     "molt_fingerprinting_browser.cc",
     "molt_fingerprinting_browser.h",
+    "molt_shields_delivery.cc",
+    "molt_shields_delivery.h",
   ]
   public_deps = [ "//chrome/common/molt_ai/fingerprinting" ]
   deps = [
+    ":shields_decision",
     "//base",
     "//chrome/browser/content_settings:content_settings_factory",
-
-    # Shields-off sites (molt_shield_site_settings.h).
-    "//chrome/browser/molt_ai/shield",
 
     # molt_net_profile_id.h (is this the MoltNet profile?).
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/profiles:profile",
     "//chrome/common/molt_ai/fingerprinting:mojom",
-    "//components/content_settings/core/browser",
-    "//components/content_settings/core/common",
     "//content/public/browser",
     "//crypto",
     "//ipc",
     "//mojo/public/cpp/bindings",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
+
+# Whether a document or worker has Shields down, from a profile's content
+# settings (no profile, so it is unit-tested in molt_ai_unittests).
+source_set("shields_decision") {
+  sources = [
+    "molt_shields_decision.cc",
+    "molt_shields_decision.h",
+  ]
+  public_deps = [ "//chrome/common/molt_ai/fingerprinting" ]
+  deps = [
+    # Which Shields-down exceptions count (molt_shield_site_exceptions.h).
+    "//chrome/browser/molt_ai/shield:site_exceptions",
+    "//components/content_settings/core/browser",
+    "//net",
+    "//third_party/blink/public/common",
+    "//url",
   ]
 }
 
@@ -117,14 +136,24 @@ source_set("unit_tests") {
   sources = [
     "molt_letterbox_unittest.cc",
     "molt_net_device_values_unittest.cc",
+    "molt_shields_decision_unittest.cc",
   ]
   deps = [
     ":device_values",
     ":letterbox",
+    ":shields_decision",
+    "//base",
+    "//base/test:test_support",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//components/sync_preferences:test_support",
+    "//net",
     "//testing/gtest",
+    "//third_party/blink/public/common",
 
     # The letterbox steps and MoltNet's client-hint rule must match Blink's
     # (std + //base + //crypto only).
     "//third_party/blink/renderer/core/molt_fingerprinting:farbling",
+    "//url",
   ]
 }

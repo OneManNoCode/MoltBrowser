@@ -1735,12 +1735,15 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
     mojom::blink::ServiceWorkerObjectInfoPtr service_worker_info,
     mojom::blink::FetchHandlerExistence fetch_hander_existence,
     mojom::blink::AncestorFrameType ancestor_frame_type,
-    const blink::BlinkStorageKey& storage_key) {
+    const blink::BlinkStorageKey& storage_key,
+    bool molt_shields_down) {  // MoltBrowser
   DCHECK(IsContextThread());
   DCHECK(!global_scope_initialized_);
   // MoltBrowser: farble with the registration's top-level site (third-party
-  // workers too), set before any script runs.
-  molt_fingerprinting::SetServiceWorkerStorageKey(*this, storage_key);
+  // workers too), unless the browser decided Shields are off for it; set
+  // before any script runs.
+  molt_fingerprinting::SetServiceWorkerStorageKey(*this, storage_key,
+                                                  molt_shields_down);
 
   DCHECK(service_worker_host.is_valid());
   DCHECK(!service_worker_host_.is_bound());

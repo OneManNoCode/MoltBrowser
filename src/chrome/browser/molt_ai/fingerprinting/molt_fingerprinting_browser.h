@@ -3,7 +3,8 @@
 //
 // Browser half of MoltBrowser's fingerprinting protection: one session seed
 // per BrowserContext, the renderer mode switch, and the channel that carries
-// the seed and the Shields-off sites to renderers.
+// the seed to renderers. The Shields decisions go per document and per
+// worker instead (molt_shields_delivery.h).
 //
 // The seed is 32 bytes from crypto::RandBytes, created the first time a
 // renderer of that BrowserContext is launched and kept only in memory (user
@@ -16,7 +17,8 @@
 // The seed never goes on a command line (other local processes can read
 // those): InitializeRenderer() sends it over the renderer's channel-
 // associated FingerprintingConfiguration interface, ordered before any
-// navigation or service worker start for that process.
+// navigation commit for that process (service and shared workers start over
+// other pipes and need it only at their first farbled read).
 
 #ifndef CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_FINGERPRINTING_BROWSER_H_
 #define CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_FINGERPRINTING_BROWSER_H_
@@ -46,8 +48,7 @@ void AppendRendererSwitches(content::RenderProcessHost* host,
 
 // Called from ChromeContentBrowserClient::RenderProcessWillLaunch (every
 // launch, relaunches included). Unless the mode is kOff, sends the session
-// seed and, for farbling profiles, the current Shields-off sites, and makes
-// sure later changes to those sites reach every renderer of the profile.
+// seed.
 void InitializeRenderer(content::RenderProcessHost* host);
 
 // kUniform for the MoltNet (Tor) profile, kFarble for every other profile
@@ -56,10 +57,6 @@ RendererMode ModeForBrowserContext(content::BrowserContext* context);
 
 // The in-memory session seed of `context`, created on first use.
 const SessionSeed& GetSessionSeed(content::BrowserContext* context);
-
-// What InitializeRenderer() sends as the Shields-off sites of `context`:
-// empty unless its mode is kFarble.
-std::vector<std::string> UnfarbledSitesFor(content::BrowserContext* context);
 
 }  // namespace molt_ai::fingerprinting
 

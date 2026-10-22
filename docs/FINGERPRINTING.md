@@ -63,8 +63,14 @@ Does not protect against (see [Known gaps and attacks](#known-gaps-and-attacks))
         |   channel-associated mojo,
         |   FingerprintingConfiguration:
         +-- SetSessionSeed(seed) ---------------->  WebMoltFingerprinting::SetSessionSeed
-        +-- SetUnfarbledSites(Shields-off) ------>  WebMoltFingerprinting::SetUnfarbledSites
-              (again on every change)                       |
+        |
+ per commit (ReadyToCommitNavigation),
+ frame-associated ShieldsDecision:
+        +-- SetForNextDocument(down, site) ----->  ShieldsDecisionAgent -> the new
+        |                                            document (DidCreateNewDocument)
+ per service / shared worker start:
+        +-- with its storage key --------------->  the worker, before its script
+                                                            |
                                                  Blink (core/molt_fingerprinting): per
                                                  execution context, key =
                                                  HMAC-SHA256(seed, top-level site)
@@ -90,17 +96,21 @@ in v1. The seed is a secret, so it travels over
 channel-associated interface (the same mechanism as Chrome's own
 `chrome::mojom::RendererConfiguration`). It is sent from
 `RenderProcessWillLaunch`, which `RenderProcessHostImpl::Init` calls after
-creating the channel and before `InitializeRenderer`, any frame creation,
-navigation commit or `SetUpEmbeddedWorkerChannelForServiceWorker`; channel
-messages are delivered in order, so documents and service workers always
-have it. Shared workers are started over their own pipe
-(`SharedWorkerFactory`), so in principle one could start before the seed
-is processed. A shared worker's key is only derived when the worker first
-needs one (once its script has been fetched and runs), not when it starts,
-so the seed only has to arrive before that first farbled read. Any context
-that does need a key before the seed arrived gets a random key for its
-whole life (fail closed: its values are unlinkable, just not stable). The
-renderer exposes the interface only when its mode is farble or uniform.
+creating the channel and before `InitializeRenderer`, any frame creation or
+navigation commit; channel messages are delivered in order, so documents
+always have it. Service and shared workers are started over other pipes (at
+152, `EmbeddedWorkerInstance` and `SharedWorkerServiceImpl` bind their
+clients with `RenderProcessHost::BindReceiver`, which goes over the
+`mojom::ChildProcess` pipe, not the channel), so in principle one could
+start before the seed is processed. A worker's key is only derived when
+the worker first needs one (once its script has been loaded and runs), not
+when it starts, so the seed only has to arrive before that first farbled
+read. Any context that does need a key before the seed arrived gets a
+random key for its whole life (fail closed: its values are unlinkable, just
+not stable). The renderer exposes the interface only when its mode is
+farble or uniform. This channel carries only the seed: whether Shields are
+off is decided per document and per worker and sent with each of them (see
+[Shields off](#shields-off)), never as a per-process list.
 
 **Seed lifetime.**
 
@@ -198,10 +208,11 @@ machine.
 
 MoltShield's per-site switch is stored as an explicit `ADS` content-settings
 exception (`molt_shield_site_settings.h`). In normal and Incognito windows,
-farbling is off for every top-level site the user turned Shields off for:
-the page, its iframes (they use the top-level site), its dedicated workers,
-worklets it creates and service and shared workers under that site
-(third-party ones included).
+farbling is off for every page whose top-level site the user turned Shields
+off for: the page, its iframes (they take the top-level site's decision),
+the dedicated workers and worklets it creates, and service and shared
+workers whose storage key has that top-level site (third-party ones
+included).
 MoltNet keeps farbling regardless: there the point is to look like every
 other MoltNet user, and the real canvas/audio values would link New
 Identity sessions on that site. MoltNet windows also don't inherit the
@@ -212,26 +223,149 @@ in a MoltNet window lasts for that session. MoltShield's *global* switch
 and the `ADS` *default* don't affect farbling (independence from
 `--disable-molt-shield` is deliberate, see the kill switch below).
 
-* **Which exceptions count.** The browser turns each Shields-down exception
-  into its top-level site (`net::SchemefulSite` of the pattern's host,
-  for each scheme the pattern allows) and keeps it only if that site's own
-  URL has Shields off (`molt_shield_site_exceptions.cc`). The site-scoped
+* **Which exceptions count.** A site has Shields off if its own URL
+  (`https://example.com/`) matches an explicit Shields-down exception
+  (`shield::HasShieldsDownException`). The site-scoped
   `https://[*.]example.com` the MoltShield UI writes therefore turns
   farbling off on all of example.com; a narrower exception (one subdomain)
   doesn't, because the farbling key is shared by the whole site.
-* **Propagation.** The list goes to every renderer of the profile at launch
-  and again whenever it changes (a content-settings observer per farbling
-  profile), over the same ordered channel as the seed. Blink matches it
-  against each context's resolved top-level site on every read, so a reload
-  after toggling Shields commits with the new state, and already-open pages
-  switch on their next read.
-* **Trade-off.** Every renderer of the profile learns the whole list, so a
-  compromised renderer could read which sites the user exempted. The
-  stricter design (a per-document flag at commit, plumbed to every kind of
-  worker) was not worth the extra upstream surface yet.
+
+### Per document and per worker, decided by the browser
+
+No renderer holds the profile's list of Shields-off sites. The browser
+decides "farble or not" for each document it commits and for each service
+or shared worker it starts, from the top-level site and the user's setting
+at that moment, and sends only that bit (with the site it was decided for),
+only to the renderer that gets the document or the worker. A renderer can't
+ask about a site.
+
+| Context | Decision | How it gets there |
+|---|---|---|
+| A document the browser commits (any cross-document navigation: links, reloads, error pages, `srcdoc`, `about:blank` and `data:` URLs that go through the browser, MHTML) | the Shields setting of the top-level site of its frame tree: for a main frame (outermost, a fenced frame's root, a prerendered page's) the origin it commits, for an iframe the committed origin of its tree's main frame; an opaque origin counts as its precursor's site (CSP-sandboxed pages) | `ShieldsDecisionObserver::ReadyToCommitNavigation` (browser) sends `ShieldsDecision.SetForNextDocument` to the committing frame; `ShieldsDecisionAgent::DidCreateNewDocument` (renderer) hands it to the new document (`WebMoltFingerprinting::SetDocumentShieldsDecision`) |
+| An iframe, cross-process ones included | the top-level site's, as above; its own site doesn't count | the same, to the iframe's own renderer |
+| An initial empty document (a new iframe, `window.open()`) | its parent's, or else its opener's, if that frame is in the same process | Blink, when the agent is created (`RenderFrameCreated`) |
+| A synchronous `about:blank`, `javascript:` URL or XSLT document | its frame's latest decision from the browser, or else its parent's or opener's | `DidCreateNewDocument` |
+| Same-document navigations | unchanged (same document) | nothing is sent |
+| Back/forward cache restores, prerender activations | unchanged: the documents keep the decisions they committed with | nothing is sent |
+| Dedicated workers (nested too) | their creator's | `DedicatedWorker::CreateGlobalScopeCreationParams` hands it over in the worker's `WorkerClients` |
+| Worklets | their creator's (the farbling key handed over, or none) | `ProvideToWorklet`, unchanged |
+| Service workers | the Shields setting of their storage key's top-level site, decided when the browser starts the worker | `ContentBrowserClient::AreMoltShieldsDownForWorker`; sent with the storage key in `ServiceWorker.InitializeGlobalScope` |
+| Shared workers | the same for the constructor's storage key | the same; sent in `SharedWorkerInfo` with `CreateSharedWorker` |
+
+**Fail safe.** A context without a decision is farbled: farbling can break a
+page, but it never gives a fingerprint away. And a window's decision only
+counts for the top-level site it was made for: Blink compares it with the
+site of the top frame of the window's frame tree (`FrameTree::Top()`, local
+or remote, the precursor's for an opaque origin) and farbles on any
+mismatch. Whatever the timing, a decision can't reach a document of another
+site.
+
+**Why the decision is there before any script runs (152).**
+
+1. `NavigationRequest::CommitNavigation()` (and `CommitErrorPage()`) call
+   `ReadyToCommitNavigation()`, which runs the `WebContentsObserver`s
+   synchronously, and only then send the commit
+   (`RenderFrameHostImpl::CommitNavigation` over `mojom::NavigationClient`).
+2. The observer sends the decision through
+   `RenderFrameHost::GetRemoteAssociatedInterfaces()`, the frame's route on
+   the renderer's IPC channel. For browser-initiated navigations the
+   `NavigationClient` comes from that same provider; for renderer-initiated
+   ones it is the renderer's own endpoint, passed over the channel-associated
+   `FrameHost`. Same channel, decision first.
+3. In the renderer, `ChannelAssociatedGroupController::Accept` posts every
+   message for a main-thread endpoint to the IPC task runner in arrival order
+   ("so that FIFO can be guaranteed across all interfaces"), also while the
+   endpoint is still being bound. So `SetForNextDocument` runs before
+   `CommitNavigation`. (The agent binds on `kInternalNavigationAssociated`,
+   like content's own frame interfaces.)
+4. `RenderFrameImpl::CommitNavigation` -> `DocumentLoader::CommitNavigation`
+   installs the new document and then calls
+   `RenderFrameImpl::DidCommitNavigation`, whose `DidCreateNewDocument`
+   gives Blink the decision, all synchronously and before
+   `StartLoadingResponse` creates the parser, so before any page script.
+   (MHTML archives commit later, still after the decision.) Only embedder
+   and DevTools hooks at script-context creation run in between (DevTools'
+   "evaluate on new document" scripts, for example); they see the fail-safe
+   (farbled).
+5. With RenderDocument (on for all frames at 152), every cross-document
+   navigation after a frame's first commits in a new RenderFrameHost, a
+   fresh provisional frame no script can reach, so the decision can only
+   be taken by the document it was sent for. Where a frame is reused (its
+   first navigation away from the initial empty document, or with
+   RenderDocument off), a document the renderer makes by itself between the
+   decision and the commit can pick it up, but only if it has the same
+   top-level site (the check above): the same decision, unless the user
+   toggled Shields for that very site in that very instant.
+
+Workers: a service worker's decision comes with
+`ServiceWorker.InitializeGlobalScope`, which must arrive before any of its
+script runs; a shared worker's with `CreateSharedWorker`, before its thread
+starts. Dedicated workers and worklets get theirs from their creator, on the
+creator's thread, before theirs starts.
+
+**Turning Shields off or on** applies from the next navigation: decisions
+are made from the settings as they are at each commit and worker start, and
+never change for a live document or worker. MoltShield's toggle reloads the
+page, so the page and its frames get the new decision; iframes that
+navigate later in a page that wasn't reloaded get the new one too. Pages in
+the back/forward cache or prerendered keep theirs: they already ran with
+it, so restoring them shows them nothing they hadn't seen. Service and
+shared workers get the new decision when they next start (an idle service
+worker stops after about 30 seconds).
+
+**Privacy.** A renderer learns a decision only for a document or worker it
+hosts, about that context's own top-level site, which the renderer is told
+anyway (the committed origin, the storage key). A compromised renderer
+can't list the user's Shields-off sites: it can't ask, and a site's
+documents only commit in its process where the browser puts them.
+Previously every renderer of the profile received the whole list
+(`SetUnfarbledSites`) at launch and on every change; that list, its
+renderer-side copy and the content-settings observer that re-sent it are
+gone (follow-up 7).
+
+**Choices.**
+
+* The decision follows the top frame of the frame tree, as the browser's
+  `RenderFrameHost::GetMainFrame()` and Blink's `FrameTree::Top()` agree:
+  a fenced frame takes its own root's site, a credentialless iframe the
+  page's. Their farbling keys stay nonce-keyed as before.
+* A sandboxed top-level page (opaque origin) takes its precursor's site's
+  decision; it used to be farbled even with Shields off.
+* A popup's initial empty document inherits its opener's decision only if
+  its own site matches. A popup that a third-party iframe opens has the
+  iframe's origin: it is that third party's own top-level page, so the
+  embedding page's "Shields off" doesn't follow it (farbled until its own
+  navigation commits).
+* The browser observer is attached to every WebContents
+  (`AttachUniversalWebContentsObservers`), not only tabs.
 
 Shields off is also the per-site escape hatch for the costs below (canvas
 video pipelines, PBO readback).
+
+**Verification.** Without a Chromium checkout: `shields_decision.cc`,
+`molt_fingerprinting.cc`, `shared_worker_key.cc` (and the other glue
+including them) type-check with the strict clang flags against stand-ins
+of the pinned Blink signatures, and a 17-test harness runs the real glue
+under ASan/UBSan in kOff, kFarble and kUniform (the fail-safe, the site
+check, MoltNet ignoring decisions, non-web and sandboxed top-level pages,
+inheritance from local and remote parents and from openers, a tracker's
+popup, the public entry points, dedicated, shared and service workers,
+worklets); 12 mutants of the glue all fail it. The browser side
+(`molt_shields_decision.cc`, `molt_shields_delivery.cc`) and the renderer
+agent type-check against stand-ins of the pinned content, mojo, url and
+net signatures, and a 9-test harness runs the real decision and delivery
+code (which origin a commit is decided for, which frame it is sent to,
+what is skipped, MoltNet and the kill switch, workers); 7 mutants all fail
+it. **Needs the build machine:** compiling the hooks and the mojom changes,
+`blink_unittests` (`MoltShieldsDecisionTest.*`,
+`MoltSharedWorkerKeyTest.*`, `MoltFingerprintingTest.*`,
+`MoltSystemFontsTest.*`), `molt_ai_unittests` (`MoltShieldsDecisionTest.*`,
+`MoltShieldSiteExceptionsTest.*` with a real `HostContentSettingsMap`),
+`content_unittests` (the service and shared worker fakes), and in a running
+browser: a page with Shields off and on (canvas, `hardwareConcurrency` in
+the page, an about:blank iframe, a cross-site iframe, a dedicated worker, a
+service worker and a shared worker; a popup), reloading after the toggle,
+back/forward, and a MoltNet window with Shields off.
 
 ## Surface covered
 
@@ -2115,7 +2249,10 @@ Honest list; anything not in the table above is not covered.
   local attacker who can read process memory (a debugger, a compromised
   renderer) can compute the per-site noise. It is no longer on the command
   line.
-* Every renderer of a profile receives the whole Shields-off list (see
+* Turning Shields off or on applies from the next navigation (MoltShield's
+  toggle reloads the page) and the next start of a service or shared
+  worker, not to documents and workers already running; pages restored
+  from the back/forward cache keep the decision they ran with (see
   [Shields off](#shields-off)).
 * `getChannelData()` writes the noise into a buffer that an
   `AudioBufferSourceNode` on the audio thread may be playing at the same
@@ -2146,14 +2283,16 @@ Verified without a Chromium checkout (scratch harnesses, not in the repo):
   key resolution for windows (site, nonce, opaque, non-web, re-derivation),
   dedicated workers, first- and third-party shared/service workers,
   service-worker storage keys, worklets (handed-over keys), Shields-off
-  sites (and MoltNet ignoring them), the seed arriving late or malformed,
+  decisions (and MoltNet ignoring them; the per-document harness is in
+  [Shields off](#shields-off)), the seed arriving late or malformed,
   WebGL pack layouts for every farbled format, PIXEL_PACK buffer mapping
   (in-place result equal to a client-memory read; chunked mapping of a
   27 MiB read; no mapping when not farbled; failed maps), the snapshot and
   export pipelines (premultiplied alpha preserved, never above alpha) and
   the uniform screen math and UTC/en-US side effects.
-* The chrome/{common,browser,renderer} glue (mode switch, mojo seed and
-  sites, content-settings observer, `ConfigurationReceiver`) and
+* The chrome/{common,browser,renderer} glue (mode switch, mojo seed,
+  `ConfigurationReceiver`, the per-commit Shields decision and its renderer
+  agent) and
   `molt_shield_site_{settings,exceptions}.cc` plus its unit test type-check
   against stand-ins of the pinned content/IPC/mojo/content-settings
   signatures (the generated mojom bindings are a hand-written stand-in);
@@ -2186,6 +2325,7 @@ on a canvas-effects video call.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/farbling.{h,cc}` | pure math (+ `farbling_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.{h,cc}` | Blink glue (+ `molt_fingerprinting_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.{h,cc}` | a shared worker's storage key, handed to its thread (+ `shared_worker_key_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/shields_decision.{h,cc}` | the Shields decision of each window and worker: fail-safe, site check, inheritance (+ `shields_decision_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/webgl_uniform.{h,cc}`, `gpu_uniformity.{h,cc}` | MoltNet WebGL baselines (pure, + `webgl_uniform_unittest.cc`) and their Blink glue, incl. WebGPU (+ `gpu_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/letterbox.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_letterbox.h`, `molt_letterbox_view.{h,cc}` | MoltNet screen size, pixel ratio (+ `letterbox_test.cc`); the browser-side letterbox geometry and margins (+ `molt_letterbox_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.{h,cc}`, `moltnet_device.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}`, `molt_net_client_hints.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_window.cc` | MoltNet memory, client hints, `userAgentData` (pure, + `moltnet_device_values_unittest.cc`; glue, + `moltnet_device_test.cc`); touch / pointer / hover, CPU tier and navigation client hints in the browser (+ `molt_net_device_values_unittest.cc`); the size new windows open at |
@@ -2195,11 +2335,12 @@ on a canvas-effects video call.
 | `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
 | `src/chrome/browser/molt_ai/tor/molt_net_locale_prefs.{h,cc}`, `molt_net_locale_prefs_table.h` | MoltNet's fixed default fonts, minimum logical font size and encoding (generated table, + `molt_net_locale_prefs_unittest.cc`) |
 | `tools/moltnet_locale/generate_tables.py` | generates and checks both tables from the pinned `.grd` files |
-| `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, Shields-off sites) |
+| `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, a document's Shields decision) |
 | `src/chrome/common/molt_ai/fingerprinting/` | feature, mode switch, `molt_fingerprinting.mojom` |
-| `src/chrome/browser/molt_ai/fingerprinting/` | session seed, mode switch, seed + sites over mojo, chrome://flags entry |
-| `src/chrome/browser/molt_ai/shield/molt_shield_site_exceptions.{h,cc}` | Shields-off sites from content settings (+ unit test) |
-| `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode, seed and sites to Blink |
+| `src/chrome/browser/molt_ai/fingerprinting/` | session seed, mode switch, seed over mojo, chrome://flags entry |
+| `src/chrome/browser/molt_ai/fingerprinting/molt_shields_decision.{h,cc}`, `molt_shields_delivery.{h,cc}` | the Shields decision for a top-level origin or a worker's storage key (+ `molt_shields_decision_unittest.cc`) and its delivery at each commit (`ShieldsDecisionObserver`) |
+| `src/chrome/browser/molt_ai/shield/molt_shield_site_exceptions.{h,cc}` | whether a site has Shields off, from content settings (+ unit test) |
+| `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode and seed to Blink; `molt_shields_decision_agent.{h,cc}` hands each new document its Shields decision |
 | `src/chrome/browser/molt_ai/tor/molt_net_routing.cc` | MoltNet `Accept-Language` |
 | `src/chrome/browser/molt_ai/tor/molt_net_isolation_policy.{h,cc}`, `molt_net_isolation.{h,cc}` | which regular-profile prefs MoltNet uses MoltBrowser's defaults for (pure, + `molt_net_isolation_policy_unittest.cc`) and MoltNet's pref service (+ `molt_net_isolation_unittest.cc`) |
 
@@ -2237,7 +2378,16 @@ MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet
 default text locale: `platform/language.{h,cc}`; MoltNet settings
 isolation: `off_the_record_profile_impl.cc` (constructor),
-`chrome/browser/profiles/BUILD.gn`.
+`chrome/browser/profiles/BUILD.gn`; Shields decisions:
+`chrome/browser/universal_web_contents_observers.cc`,
+`chrome/browser/chrome_content_browser_client.h`,
+`content/public/browser/content_browser_client.{h,cc}`,
+`content/browser/service_worker/service_worker_version.cc`,
+`content/browser/worker_host/shared_worker_host.cc`,
+`service_worker.mojom`, `shared_worker_info.mojom`,
+`service_worker_global_scope.h`, `dedicated_worker.cc`, and the test
+fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
+`web_embedded_worker_impl_test.cc`.
 
 ## Follow-ups
 
@@ -2274,7 +2424,9 @@ isolation: `off_the_record_profile_impl.cc` (constructor),
    adapter); left: a mobile look at the baselines if MoltNet comes to
    Android, and checking them against the WebGL reports of real Macs,
    Windows and Linux machines in MoltNet windows.
-7. Per-document Shields-off delivery instead of a per-profile list.
+7. (Done: Shields off is decided by the browser per document and per
+   worker and sent only with it; no renderer holds the list, see
+   [Shields off](#shields-off).)
 8. MoltNet: done: touch coordinates and contact, the Window Management
    API, screen orientation, form-control formats ([MoltNet: touches,
    screens, orientation and form

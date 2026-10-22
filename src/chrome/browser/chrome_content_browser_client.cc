@@ -118,6 +118,7 @@
 #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 #include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
 #include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
@@ -2014,8 +2015,8 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
     service->InitializeRenderer(host);
   }
 
-  // MoltBrowser: fingerprinting session seed and Shields-off sites, over the
-  // channel (never the command line).
+  // MoltBrowser: fingerprinting session seed, over the channel (never the
+  // command line).
   molt_ai::fingerprinting::InitializeRenderer(host);
 
   for (auto& part : extra_parts_) {
@@ -6972,6 +6973,15 @@ bool ChromeContentBrowserClient::ShouldBlockWorkerWebSocket(
   // MoltNet: shared and service workers' WebSockets to .onion hosts, outside
   // MoltNet (frames and dedicated workers go through CreateWebSocket()).
   return molt_ai::tor::IsOnionWorkerWebSocketBlocked(browser_context, url);
+}
+
+bool ChromeContentBrowserClient::AreMoltShieldsDownForWorker(
+    content::BrowserContext* browser_context,
+    const blink::StorageKey& storage_key) {
+  // MoltBrowser: fingerprinting protection's Shields decision for a service
+  // or shared worker, made when it starts.
+  return molt_ai::fingerprinting::AreShieldsDownForWorker(browser_context,
+                                                          storage_key);
 }
 
 bool ChromeContentBrowserClient::WillInterceptWebSocket(

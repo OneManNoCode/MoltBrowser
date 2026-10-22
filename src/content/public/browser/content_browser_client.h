@@ -2001,6 +2001,14 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool ShouldBlockWorkerWebSocket(BrowserContext* browser_context,
                                           const GURL& url);
 
+  // MoltBrowser: asked when a service or shared worker starts; true if the
+  // user turned MoltShield off for the top-level site of its `storage_key`,
+  // so fingerprinting protection leaves the worker alone. The answer goes to
+  // the worker with its start messages.
+  virtual bool AreMoltShieldsDownForWorker(
+      BrowserContext* browser_context,
+      const blink::StorageKey& storage_key);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();

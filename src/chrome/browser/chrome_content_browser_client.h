@@ -720,6 +720,9 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
   bool ShouldBlockWorkerWebSocket(content::BrowserContext* browser_context,
                                   const GURL& url) override;
+  bool AreMoltShieldsDownForWorker(
+      content::BrowserContext* browser_context,
+      const blink::StorageKey& storage_key) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

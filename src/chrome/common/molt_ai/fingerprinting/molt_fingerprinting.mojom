@@ -8,18 +8,31 @@ module molt_ai.fingerprinting.mojom;
 // Renderer side, one per renderer process, channel-associated: messages are
 // ordered with the rest of the renderer's channel traffic, so what the
 // browser sends at RenderProcessWillLaunch arrives before any navigation
-// commit or service worker start for that process. Only bound when the
-// renderer's --molt-fingerprinting-mode is farble or uniform.
+// commit for that process. (Service and shared workers are started over
+// other pipes; they need the seed only at their first farbled read.) Only
+// bound when the renderer's --molt-fingerprinting-mode is farble or uniform.
 interface FingerprintingConfiguration {
   // The BrowserContext's 32-byte session seed, sent once per renderer
   // launch. Anything but 32 bytes is ignored, and only the first seed
   // counts. Until it arrives, contexts that need a key get a random one.
   SetSessionSeed(array<uint8> seed);
+};
 
-  // Top-level sites ("https://example.com", as net::SchemefulSite
-  // serializes them) the user turned MoltShield off for. Farbling is off
-  // for documents and workers of those sites (MoltNet renderers ignore the
-  // list). Sent at launch and again, replacing the list, whenever it
-  // changes.
-  SetUnfarbledSites(array<string> sites);
+// Renderer side, one per frame (RenderFrame), frame-associated: the browser
+// gets it through the RenderFrameHost's remote associated interfaces, the
+// same provider its NavigationClient comes from, so a message sent from
+// ReadyToCommitNavigation is dispatched before the commit it precedes. Only
+// bound in renderers whose mode is farble (MoltNet ignores Shields).
+interface ShieldsDecision {
+  // MoltShield's per-site decision for the document the browser is about to
+  // commit in this frame: whether the user turned MoltShield off
+  // (`shields_down`) for `top_level_site`, the site of the top frame of the
+  // frame's tree ("https://example.com", as net::SchemefulSite serializes
+  // it; a sandboxed top-level document's precursor's), as the profile's
+  // content settings say at commit time. Applies to that document and the
+  // documents the renderer later creates in the frame by itself
+  // (javascript: URLs, XSLT); it only counts for a document whose own
+  // top-level site is `top_level_site`. Without one, a document inherits
+  // its parent's or opener's decision, or is farbled.
+  SetForNextDocument(bool shields_down, string top_level_site);
 };

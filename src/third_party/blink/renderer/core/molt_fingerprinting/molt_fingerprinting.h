@@ -56,6 +56,12 @@
 //   MoltNet  navigator.deviceMemory, subresource client hints
 //            (frame_fetch_context.cc), navigator.userAgentData's
 //            high-entropy values                -> moltnet_device.h
+//   shields  DedicatedWorker::CreateGlobalScopeCreationParams
+//              -> ProvideShieldsDecisionToDedicatedWorker
+//            ServiceWorkerGlobalScope::InitializeGlobalScope (the
+//              browser's decision)              -> SetServiceWorkerStorageKey
+//            (documents: the embedder, WebMoltFingerprinting; all in
+//            shields_decision.h)
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:
@@ -74,16 +80,18 @@
 //     creation (ProvideToWorklet);
 //   * contexts whose top-level site isn't http(s) (chrome://, extensions)
 //     are never farbled; opaque top-level sites get a random key;
-//   * in kFarble mode, top-level sites the user turned MoltShield off for
-//     ("Shields off", SetUnfarbledSites) are not farbled. MoltNet (kUniform)
-//     ignores that list.
+//   * in kFarble mode, contexts the browser decided Shields are off for
+//     (MoltShield turned off by the user for their top-level site) are not
+//     farbled; the browser sends that decision per document and per worker,
+//     and a context without one is farbled (shields_decision.h). MoltNet
+//     (kUniform) ignores it.
 //
 // The process gets its mode at start (command line) and its session seed a
 // moment later over a channel-associated mojo message that is ordered
-// before any navigation commit or service worker start. A context that
-// needs a key before the seed has arrived (in practice only a shared worker
-// racing the renderer's start-up) gets a random key for its lifetime: its
-// values are unlinkable, just not stable.
+// before any navigation commit. A context that needs a key before the seed
+// has arrived (in practice only a service or shared worker, which start
+// over other pipes, racing the renderer's start-up) gets a random key for
+// its lifetime: its values are unlinkable, just not stable.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLT_FINGERPRINTING_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_MOLT_FINGERPRINTING_MOLT_FINGERPRINTING_H_
@@ -134,11 +142,6 @@ CORE_EXPORT void Configure(Mode mode);
 // The profile's session seed (main thread). Only the first call with exactly
 // kSessionSeedSize bytes has an effect; it is ignored when the mode is kOff.
 CORE_EXPORT void SetSessionSeed(base::span<const uint8_t> session_seed);
-// Top-level sites ("https://example.com", as BlinkSchemefulSite serializes
-// them) with MoltShield turned off by the user: kFarble mode doesn't farble
-// documents and workers of those sites. Replaces the previous list; any
-// thread may read it concurrently.
-CORE_EXPORT void SetUnfarbledSites(std::vector<std::string> sites);
 CORE_EXPORT Mode GetMode();
 // True in MoltNet renderer processes.
 CORE_EXPORT bool IsUniform();
@@ -170,9 +173,12 @@ CORE_EXPORT void ProvideToWorklet(LocalDOMWindow& window,
 // Called on a service worker's thread when its global scope is initialized,
 // before any of its script runs: the worker farbles with the top-level site
 // (and nonce) of its registration's storage key, so third-party service
-// workers get their top-level site's key too.
+// workers get their top-level site's key too. `shields_down` is the
+// browser's Shields decision for that top-level site, made when it started
+// the worker (shields_decision.h).
 CORE_EXPORT void SetServiceWorkerStorageKey(ExecutionContext& worker,
-                                            const BlinkStorageKey& storage_key);
+                                            const BlinkStorageKey& storage_key,
+                                            bool shields_down);
 
 // --- Canvas -----------------------------------------------------------------
 
