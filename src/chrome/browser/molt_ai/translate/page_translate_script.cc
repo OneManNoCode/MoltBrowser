@@ -69,6 +69,21 @@ const char kPageTranslateScript[] = R"JS((function moltPageTranslate(args) {
         el.classList.contains('notranslate');
   }
 
+  // contenteditable on |el| itself (isContentEditable covers the rest).
+  function editableAttribute(el) {
+    const value = el.getAttribute('contenteditable');
+    return value !== null && value.toLowerCase() !== 'false';
+  }
+
+  // |el| is in editable content, whatever the page did since it was read.
+  function inEditable(el) {
+    if (el.isContentEditable === true) {
+      return true;
+    }
+    const host = el.closest('[contenteditable]');
+    return host !== null && editableAttribute(host);
+  }
+
   function extract() {
     restore();
     const caps = args.caps;
@@ -153,7 +168,10 @@ const char kPageTranslateScript[] = R"JS((function moltPageTranslate(args) {
         open = attribute(el, 'placeholder', PLACEHOLDER);
         return false;
       }
-      if (SKIP.has(name) || el.isContentEditable) {
+      // An editable ancestor was refused already, so its own attribute is
+      // enough here.
+      if (SKIP.has(name) || el.isContentEditable === true ||
+          editableAttribute(el)) {
         return false;
       }
       if (name === 'img') {
@@ -223,7 +241,7 @@ const char kPageTranslateScript[] = R"JS((function moltPageTranslate(args) {
   function writable(slot) {
     const el = slot.attr ? slot.target : slot.target.parentElement;
     return slot.target.isConnected && el !== null && !el.closest(UNSAFE) &&
-        !el.isContentEditable;
+        !inEditable(el);
   }
 
   function apply() {
