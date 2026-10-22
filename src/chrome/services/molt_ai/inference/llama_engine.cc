@@ -16,6 +16,11 @@
 //    returned.
 //  - The rest (decode, sampler chain, memory, metadata getters) don't throw
 //    on the inputs used here.
+//  - Embeddings (llama_embedding_engine.cc, which details each): decode
+//    with embeddings on (and through llama_context::encode() for models
+//    without a KV cache), llama_get_embeddings_seq, llama_pooling_type,
+//    llama_n_ubatch, llama_model_n_embd_out, llama_vocab_get_add_eos,
+//    llama_vocab_get_add_sep: no throw on the inputs used there.
 // Re-check these when updating the vendored llama.cpp.
 
 #include "chrome/services/molt_ai/inference/llama_engine.h"

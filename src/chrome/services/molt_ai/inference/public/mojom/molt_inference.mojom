@@ -80,6 +80,14 @@ interface MoltInferenceService {
   // which ends the process. `description` is set exactly when status is kOk.
   LoadModel(ModelLoadParams params, pending_receiver<Model> model)
       => (LoadModelStatus status, ModelDescription? description);
+
+  // A text-embedding model instead of a chat model (semantic memory search,
+  // docs/design/SEMANTIC_SEARCH.md). It counts as this process's one load:
+  // calling it after LoadModel, or LoadModel after it, is a bad message.
+  // `description` is set exactly when status is kOk.
+  LoadEmbeddingModel(EmbeddingModelLoadParams params,
+                     pending_receiver<EmbeddingModel> model)
+      => (LoadModelStatus status, EmbeddingModelDescription? description);
 };
 
 // Whether a reasoning-capable model should think before answering (hidden
@@ -206,4 +214,73 @@ interface Model {
 
   // Drops a cached KV prefix (conversation deleted or cleared).
   ForgetConversation(string conversation_key);
+};
+
+// ---- Text embeddings ---------------------------------------------------------
+// Semantic search over AI memory (docs/design/SEMANTIC_SEARCH.md). The model
+// is loaded with MoltInferenceService.LoadEmbeddingModel, in a process of its
+// own; everything it returns is checked by the browser
+// (chrome/browser/molt_ai/runtime/embedding_validator.h).
+
+// Caps on what the browser sends. A request over a cap is a bad message.
+const uint32 kMaxEmbedTexts = 16;              // texts per Embed() call
+const uint32 kMaxEmbedTextBytes = 32768;       // per text, UTF-8, not empty
+const uint32 kMinEmbedTokensPerText = 8;
+const uint32 kMaxEmbedTokensPerText = 2048;
+const uint32 kMaxEmbedTerminatorBytes = 64;
+// Longest vector the browser asks for (and accepts).
+const uint32 kMaxEmbeddingDimensions = 4096;
+
+// How the model's per-token states become one vector per text. Set by the
+// browser from its model registry (a GGUF doesn't always say).
+enum EmbeddingPooling {
+  kMean,
+  kCls,
+  kLast,
+};
+
+struct EmbeddingModelLoadParams {
+  // Opened read-only by the browser (never a path); not async.
+  mojo_base.mojom.ReadOnlyFile weights;
+  // The size the browser saw; the service refuses a file of another size.
+  uint64 file_size;
+  // n_threads / n_threads_batch. Clamped to [1, 256] by the service.
+  uint32 cpu_threads;
+  EmbeddingPooling pooling;
+  // Longer texts keep their first tokens (and the model's end marker). In
+  // [kMinEmbedTokensPerText, kMaxEmbedTokensPerText].
+  uint32 max_tokens_per_text;
+  // A special token of the vocab, given by its text (e.g. "<|endoftext|>"),
+  // that ends every text (models that pool the last token need it). "" =
+  // none. At most kMaxEmbedTerminatorBytes; a vocab without it fails the
+  // load with kInvalidModelFile.
+  string terminator;
+  // Length of the vectors Embed() returns: the first `dimensions` components
+  // of the model's vector (Matryoshka truncation), then L2-normalized. In
+  // [1, kMaxEmbeddingDimensions] and at most the model's own width.
+  uint32 dimensions;
+};
+
+struct EmbeddingModelDescription {
+  // GGUF general.architecture, [a-z0-9_.-], at most kMaxArchitectureBytes.
+  string architecture;
+  // "metal" | "cpu" | "vulkan".
+  string backend;
+  // The model's own vector width (n_embd_out).
+  uint32 native_dimensions;
+  // As requested.
+  uint32 dimensions;
+  // As requested, or less if the model's context is smaller.
+  uint32 max_tokens_per_text;
+  uint32 vocab_size;
+};
+
+// Served one call at a time, in arrival order.
+interface EmbeddingModel {
+  // One vector per text, concatenated in order: texts.size() * dimensions
+  // floats. Each vector has an L2 norm of 1, or is all zeros for a text with
+  // no tokens. Null if the model failed (the browser treats the whole call
+  // as failed). 1..kMaxEmbedTexts texts, each 1..kMaxEmbedTextBytes bytes of
+  // UTF-8; untrusted page text is fine (it is tokenized as plain text).
+  Embed(array<string> texts) => (array<float>? vectors);
 };

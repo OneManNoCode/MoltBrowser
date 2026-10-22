@@ -16,6 +16,7 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
+#include "chrome/services/molt_ai/inference/molt_embedding_model_impl.h"
 #include "chrome/services/molt_ai/inference/molt_model_impl.h"
 #include "third_party/llama_cpp/include/llama.h"
 
@@ -215,6 +216,96 @@ void MoltInferenceService::OnModelDisconnected() {
   // The browser unloaded the model; it drops the service pipe too, which
   // ends the process. Free the weights now regardless.
   model_.reset();
+}
+
+void MoltInferenceService::LoadEmbeddingModel(
+    mojom::EmbeddingModelLoadParamsPtr params,
+    mojo::PendingReceiver<mojom::EmbeddingModel> model,
+    LoadEmbeddingModelCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (load_requested_) {
+    receiver_.ReportBadMessage("a model was already loaded");
+    return;
+  }
+  // Caps from molt_inference.mojom (the browser never sends more).
+  if (params->dimensions == 0 ||
+      params->dimensions > mojom::kMaxEmbeddingDimensions ||
+      params->max_tokens_per_text < mojom::kMinEmbedTokensPerText ||
+      params->max_tokens_per_text > mojom::kMaxEmbedTokensPerText ||
+      params->terminator.size() > mojom::kMaxEmbedTerminatorBytes) {
+    receiver_.ReportBadMessage("embedding model parameters over the caps");
+    return;
+  }
+  load_requested_ = true;
+
+  if (!CpuSupported()) {
+    std::move(callback).Run(mojom::LoadModelStatus::kUnsupportedCpu, nullptr);
+    return;
+  }
+  ScopedStdioFile file = ToStdioFile(std::move(params->weights));
+  if (!file) {
+    std::move(callback).Run(mojom::LoadModelStatus::kInvalidModelFile,
+                            nullptr);
+    return;
+  }
+
+  EmbeddingLoadParams load;
+  load.file_size = params->file_size;
+  load.cpu_threads = std::clamp<uint32_t>(params->cpu_threads, 1, 256);
+  switch (params->pooling) {
+    case mojom::EmbeddingPooling::kMean:
+      load.pooling = EmbeddingPoolingType::kMean;
+      break;
+    case mojom::EmbeddingPooling::kCls:
+      load.pooling = EmbeddingPoolingType::kCls;
+      break;
+    case mojom::EmbeddingPooling::kLast:
+      load.pooling = EmbeddingPoolingType::kLast;
+      break;
+  }
+  load.max_tokens_per_text = params->max_tokens_per_text;
+  load.terminator = params->terminator;
+  load.dimensions = params->dimensions;
+
+  // As for LoadModel: never on the thread that receives mojo messages.
+  embedding_engine_ = base::SequenceBound<LlamaEmbeddingEngine>(
+      base::ThreadPool::CreateSequencedTaskRunner(
+          {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
+           base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}));
+  embedding_engine_.AsyncCall(&LlamaEmbeddingEngine::Load)
+      .WithArgs(std::move(file), load)
+      .Then(base::BindOnce(&MoltInferenceService::OnEmbeddingLoaded,
+                           weak_factory_.GetWeakPtr(), std::move(model),
+                           std::move(callback)));
+}
+
+void MoltInferenceService::OnEmbeddingLoaded(
+    mojo::PendingReceiver<mojom::EmbeddingModel> model,
+    LoadEmbeddingModelCallback callback,
+    EmbeddingLoadResult result) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (result.status != EngineLoadStatus::kOk) {
+    embedding_engine_.Reset();  // frees it on the engine sequence
+    std::move(callback).Run(ToMojo(result.status), nullptr);
+    return;
+  }
+  auto description = mojom::EmbeddingModelDescription::New();
+  description->architecture = std::move(result.info.architecture);
+  description->backend = std::move(result.info.backend);
+  description->native_dimensions = result.info.native_dimensions;
+  description->dimensions = result.info.dimensions;
+  description->max_tokens_per_text = result.info.max_tokens_per_text;
+  description->vocab_size = result.info.vocab_size;
+  // Closing the EmbeddingModel pipe frees the model, as for a chat model.
+  embedding_model_ = std::make_unique<MoltEmbeddingModelImpl>(
+      std::move(embedding_engine_), std::move(model),
+      base::BindOnce(
+          [](base::WeakPtr<MoltInferenceService> self) {
+            if (self) self->embedding_model_.reset();
+          },
+          weak_factory_.GetWeakPtr()));
+  std::move(callback).Run(mojom::LoadModelStatus::kOk,
+                          std::move(description));
 }
 
 std::unique_ptr<MoltInferenceService> RunMoltInferenceService(
