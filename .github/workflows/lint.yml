@@ -13,6 +13,11 @@ name: Lint
 #   * the release SBOM generator (tools/sbom/) against its fixtures and this
 #     repository, with every SBOM also checked by the official SPDX
 #     validator (blocking)
+#   * the signed build provenance (tools/release_signing/): generation from
+#     fake checkouts, scrubbing, signing with a throwaway key, tampering, the
+#     release and publish scripts, and every bundle checked by
+#     securesystemslib's DSSE verifier and the in-toto SLSA v1 schema
+#     (blocking)
 #   * the signed apt/rpm repository tooling (tools/linux_repo/): a .deb and
 #     an .rpm built in the test, a throwaway GnuPG key, gpgv, rpmkeys,
 #     createrepo_c and `apt-get update` against the result (blocking)
@@ -124,6 +129,20 @@ jobs:
         run: |
           MOLT_SPDX_TOOLS="$(python3 -m site --user-base)/bin/pyspdxtools" \
             MOLT_REQUIRE_SPDX_TOOLS=1 python3 tools/sbom/molt_sbom_test.py -v
+
+  build-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the signing tool's dependency and the interop checkers (pinned)
+        run: |
+          python3 -m pip install --user 'cryptography==46.0.3' \
+            'securesystemslib==1.6.0' 'in-toto-attestation==0.9.3'
+      - name: tools/release_signing/molt_provenance_test.py (throwaway keys)
+        run: MOLT_REQUIRE_INTEROP=1 python3 tools/release_signing/molt_provenance_test.py -v
 
   linux-repo:
     runs-on: ubuntu-latest
