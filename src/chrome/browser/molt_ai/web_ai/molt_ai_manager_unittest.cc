@@ -942,12 +942,126 @@ TEST_F(MoltAIManagerTest, UnsupportedPromptsAreRefused) {
     EXPECT_EQ(r->error, ModelStreamingResponseStatus::kErrorInvalidRequest);
   }
   EXPECT_TRUE(backend_.jobs.empty());
-  // A JSON schema is best effort: Blink already put it in the prompt.
+  // A JSON schema goes to the runtime, which enforces it.
   TestResponder json;
   client->session->Prompt(
       User("hi"),
       on_device_model::mojom::ResponseConstraint::NewJsonSchema("{}"),
       json.Remote());
+  RunUntilIdle();
+  ASSERT_EQ(backend_.jobs.size(), 1u);
+  EXPECT_EQ(backend_.Job(backend_.OnlyJob()).json_schema, "{}");
+}
+
+TEST_F(MoltAIManagerTest, ConstrainedReplyArrivesWholeOnceItIsJson) {
+  manager_->set_stream_interval_for_testing(base::Milliseconds(200));
+  auto client = AllowedLanguageModel();
+  const std::string schema =
+      R"({"type":"object","properties":{"a":{"type":"integer"}}})";
+  TestResponder responder;
+  client->session->Prompt(
+      User("hi"),
+      on_device_model::mojom::ResponseConstraint::NewJsonSchema(schema),
+      responder.Remote());
+  RunUntilIdle();
+  const uint64_t id = backend_.OnlyJob();
+  EXPECT_EQ(backend_.Job(id).json_schema, schema);
+  FakeBackend::Pending pending = std::move(backend_.jobs.at(id));
+  backend_.jobs.erase(id);
+  pending.on_chunk.Run("{\"a\":");
+  task_environment_.AdvanceClock(base::Milliseconds(250));
+  pending.on_chunk.Run(" 1");  // would flush an unconstrained reply
+  RunUntilIdle();
+  EXPECT_EQ(responder.chunks, 0);
+  pending.on_chunk.Run("}");
+  std::move(pending.on_done).Run(GenerationStatus::kOk);
+  RunUntilIdle();
+  EXPECT_EQ(responder.text, "{\"a\": 1}");
+  EXPECT_EQ(responder.chunks, 1);
+  EXPECT_TRUE(responder.completed);
+  // The reply joined the conversation like any other.
+  TestResponder next;
+  Prompt(*client, "again", next);
+  const GenerationJob& job = backend_.Job(backend_.OnlyJob());
+  ASSERT_EQ(job.history.size(), 2u);
+  EXPECT_EQ(job.history[1].second, "{\"a\": 1}");
+  EXPECT_TRUE(job.json_schema.empty());  // per prompt, not per session
+}
+
+TEST_F(MoltAIManagerTest, ConstrainedReplyThatIsNotJsonFails) {
+  auto client = AllowedLanguageModel();
+  const char* const kNotJson[] = {"{\"a\":", "{\"a\":1} trailing", "",
+                                  "{'a':1}", "[1,]"};
+  for (const char* reply : kNotJson) {
+    TestResponder responder;
+    client->session->Prompt(
+        User("hi"),
+        on_device_model::mojom::ResponseConstraint::NewJsonSchema("{}"),
+        responder.Remote());
+    RunUntilIdle();
+    backend_.Reply(backend_.OnlyJob(), {reply}, GenerationStatus::kOk);
+    RunUntilIdle();
+    EXPECT_EQ(responder.error,
+              ModelStreamingResponseStatus::kErrorResponseParsingFailed)
+        << reply;
+    EXPECT_TRUE(responder.text.empty()) << reply;
+    EXPECT_FALSE(responder.completed);
+  }
+  // Nothing was added to the conversation.
+  LanguageModelClient clone;
+  client->session->Fork(clone.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(clone.info->input_usage, 0u);
+}
+
+TEST_F(MoltAIManagerTest, ConstraintFailuresMapToBlinkErrors) {
+  auto client = AllowedLanguageModel();
+  struct Case {
+    GenerationStatus status;
+    ModelStreamingResponseStatus page_sees;
+  };
+  for (const Case& c :
+       {Case{GenerationStatus::kConstraintUnsupported,
+             ModelStreamingResponseStatus::kErrorInvalidRequest},
+        Case{GenerationStatus::kInvalidOutput,
+             ModelStreamingResponseStatus::kErrorResponseParsingFailed},
+        Case{GenerationStatus::kOutputTruncated,
+             ModelStreamingResponseStatus::kErrorResponseExceedsMaxTokens}}) {
+    TestResponder responder;
+    client->session->Prompt(
+        User("hi"),
+        on_device_model::mojom::ResponseConstraint::NewJsonSchema(
+            R"({"pattern":"a+"})"),
+        responder.Remote());
+    RunUntilIdle();
+    backend_.Reply(backend_.OnlyJob(), {"{\"partial"}, c.status);
+    RunUntilIdle();
+    EXPECT_EQ(responder.error, c.page_sees);
+    EXPECT_TRUE(responder.text.empty());
+  }
+}
+
+TEST_F(MoltAIManagerTest, OversizedOrEmptySchemaIsRefusedAtOnce) {
+  auto client = AllowedLanguageModel();
+  for (const std::string& schema :
+       {std::string(32 * 1024 + 1, ' '), std::string()}) {
+    TestResponder responder;
+    client->session->Prompt(
+        User("hi"),
+        on_device_model::mojom::ResponseConstraint::NewJsonSchema(schema),
+        responder.Remote());
+    RunUntilIdle();
+    EXPECT_EQ(responder.error,
+              ModelStreamingResponseStatus::kErrorInvalidRequest);
+    EXPECT_TRUE(backend_.jobs.empty());
+  }
+  // At the cap it goes through (the service judges the content).
+  TestResponder at_cap;
+  client->session->Prompt(
+      User("hi"),
+      on_device_model::mojom::ResponseConstraint::NewJsonSchema(
+          std::string(32 * 1024, ' ')),
+      at_cap.Remote());
   RunUntilIdle();
   EXPECT_EQ(backend_.jobs.size(), 1u);
 }

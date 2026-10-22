@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/molt_ai/web_ai/molt_ai_manager.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
@@ -17,23 +18,46 @@ namespace {
 
 using blink::mojom::ModelStreamingResponseStatus;
 
+// The largest responseConstraint schema the inference service takes
+// (molt_ai.mojom.kMaxConstraintSchemaBytes).
+constexpr size_t kMaxResponseConstraintBytes = 32 * 1024;
+
 blink::mojom::ModelExecutionContextInfoPtr ContextInfo(uint32_t usage) {
   return blink::mojom::ModelExecutionContextInfo::New(usage);
 }
 
 // The status a page gets for a generation that didn't complete. Never
-// kErrorInvalidRequest / kErrorRequestThrottled here: Blink files a crash
-// report for those.
+// kErrorRequestThrottled here, and kErrorInvalidRequest only where upstream
+// answers it (a response constraint the model can't apply): Blink files a
+// crash report for those.
 ModelStreamingResponseStatus StatusFor(GenerationStatus status) {
   switch (status) {
     case GenerationStatus::kCancelled:
       return ModelStreamingResponseStatus::kErrorCancelled;
+    case GenerationStatus::kConstraintUnsupported:
+      // NotSupportedError, "The request is invalid - the input or options
+      // could not be processed." (upstream's answer to kInvalidConstraint).
+      return ModelStreamingResponseStatus::kErrorInvalidRequest;
+    case GenerationStatus::kInvalidOutput:
+      // UnknownError, "Failed to parse the response."
+      return ModelStreamingResponseStatus::kErrorResponseParsingFailed;
+    case GenerationStatus::kOutputTruncated:
+      // QuotaExceededError, "The response exceeded output limits and was
+      // truncated."
+      return ModelStreamingResponseStatus::kErrorResponseExceedsMaxTokens;
     case GenerationStatus::kOk:
     case GenerationStatus::kThrottled:
     case GenerationStatus::kFailed:
       break;
   }
   return ModelStreamingResponseStatus::kErrorGenericFailure;
+}
+
+// A constrained reply goes to the page only if it is complete JSON. The
+// runtime checked it too; this is the page's boundary. base::JSONReader is
+// memory-safe (Rust), so parsing what the model produced here is fine.
+bool IsCompleteJson(const std::string& reply) {
+  return base::JSONReader::Read(reply, base::JSON_PARSE_RFC).has_value();
 }
 
 // The text of one prompt, or nullopt if it holds something a text model
@@ -178,7 +202,9 @@ void WebAISession::OnChunk(uint64_t request_id, const std::string& text) {
   }
   reply_ += text;
   unsent_ += text;
-  if (base::TimeTicks::Now() - last_flush_ >= stream_interval_) {
+  // A constrained reply is held back until it is complete and checked.
+  if (!running_->constrained &&
+      base::TimeTicks::Now() - last_flush_ >= stream_interval_) {
     Flush();
   }
 }
@@ -199,6 +225,10 @@ void WebAISession::OnDone(uint64_t request_id, GenerationStatus status) {
   job_id_ = 0;
   Request request = std::move(*running_);
   running_.reset();
+  if (status == GenerationStatus::kOk && request.constrained &&
+      !IsCompleteJson(reply_)) {
+    status = GenerationStatus::kInvalidOutput;
+  }
   if (status == GenerationStatus::kOk) {
     if (!unsent_.empty() && request.responder) {
       request.responder->OnStreaming(unsent_);
@@ -283,17 +313,27 @@ void LanguageModelSession::Prompt(
     on_device_model::mojom::ResponseConstraintPtr constraint,
     mojo::PendingRemote<blink::mojom::ModelStreamingResponder>
         pending_responder) {
-  // A JSON schema is already spelled out in the prompt by Blink; the model
-  // isn't forced to follow it (no constrained decoding yet). A regex can't
-  // be expressed at all.
-  if (constraint && !constraint->is_json_schema()) {
-    mojo::Remote<blink::mojom::ModelStreamingResponder> responder(
-        std::move(pending_responder));
-    responder->OnError(ModelStreamingResponseStatus::kErrorInvalidRequest,
-                       nullptr);
-    return;
+  // A JSON schema is enforced: the inference service turns it into a
+  // grammar for its sampler (Blink has also put it in the prompt, unless
+  // the page set omitResponseConstraintInput). A schema outside the
+  // supported subset fails the request (kErrorInvalidRequest, as upstream
+  // answers a constraint its model can't apply). A regular expression isn't
+  // supported: Blink sends only its source, without the flags, so it can't
+  // be applied faithfully.
+  std::string json_schema;
+  if (constraint) {
+    if (!constraint->is_json_schema() ||
+        constraint->get_json_schema().empty() ||
+        constraint->get_json_schema().size() > kMaxResponseConstraintBytes) {
+      mojo::Remote<blink::mojom::ModelStreamingResponder> responder(
+          std::move(pending_responder));
+      responder->OnError(ModelStreamingResponseStatus::kErrorInvalidRequest,
+                         nullptr);
+      return;
+    }
+    json_schema = constraint->get_json_schema();
   }
-  Queue(std::move(prompts), /*append_only=*/false,
+  Queue(std::move(prompts), /*append_only=*/false, std::move(json_schema),
         std::move(pending_responder));
 }
 
@@ -301,18 +341,21 @@ void LanguageModelSession::Append(
     std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
     mojo::PendingRemote<blink::mojom::ModelStreamingResponder>
         pending_responder) {
-  Queue(std::move(prompts), /*append_only=*/true,
+  Queue(std::move(prompts), /*append_only=*/true, std::string(),
         std::move(pending_responder));
 }
 
 void LanguageModelSession::Queue(
     std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
     bool append_only,
+    std::string json_schema,
     mojo::PendingRemote<blink::mojom::ModelStreamingResponder>
         pending_responder) {
   Request request;
   request.responder.Bind(std::move(pending_responder));
   request.append_only = append_only;
+  request.constrained = !json_schema.empty();
+  request.json_schema = std::move(json_schema);
 
   const uint32_t quota = conversation_.input_quota();
   const size_t bytes = PromptBytes(prompts);
@@ -380,6 +423,7 @@ std::optional<GenerationJob> LanguageModelSession::Begin(Request& request) {
   job.max_output_tokens = config_.max_reply_tokens;
   job.sampling = config_.sampling;
   job.conversation_key = conversation_key_;
+  job.json_schema = std::move(request.json_schema);
   return job;
 }
 

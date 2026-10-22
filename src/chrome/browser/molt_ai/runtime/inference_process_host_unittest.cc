@@ -346,6 +346,34 @@ TEST_F(InferenceProcessHostTest, QueuedRequestIsNotKilledWhileItWaits) {
   EXPECT_EQ(second->outcome().kind, Kind::kTimedOut);
 }
 
+// The service answers a request whose output constraint it refuses at
+// once, ahead of the one running: that one keeps running, unharmed.
+TEST_F(InferenceProcessHostTest, RequestAnsweredBeforeItsTurn) {
+  Load();
+  scoped_refptr<InferenceMailbox> first = Chat(1);
+  scoped_refptr<InferenceMailbox> second = Chat(2);
+  auto refused = mojom::GenerationSummary::New();
+  refused->status = mojom::GenerationStatus::kConstraintUnsupported;
+  service().streamer(1)->OnComplete(std::move(refused));
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(second.get()));
+  EXPECT_EQ(second->outcome().kind, Kind::kOk);
+  ASSERT_TRUE(second->outcome().has_summary);
+  EXPECT_EQ(
+      second->outcome().summary.status,
+      static_cast<int32_t>(mojom::GenerationStatus::kConstraintUnsupported));
+  EXPECT_FALSE(Finished(first.get()));
+  service().streamer(0)->OnChunk("x");
+  service().streamer(0)->OnComplete(Summary());
+  task_environment_.RunUntilIdle();
+  std::string text;
+  ASSERT_TRUE(Finished(first.get(), &text));
+  EXPECT_EQ(text, "x");
+  EXPECT_EQ(first->outcome().kind, Kind::kOk);
+  EXPECT_TRUE(bad_messages_.empty());
+  EXPECT_TRUE(delegate_.lost.empty());
+}
+
 TEST_F(InferenceProcessHostTest, FloodKillsTheProcess) {
   Load();
   scoped_refptr<InferenceMailbox> gen = Chat(1);
