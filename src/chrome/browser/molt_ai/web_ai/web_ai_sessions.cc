@@ -183,17 +183,31 @@ void WebAISession::MaybeStartNext() {
       running_.reset();
       continue;
     }
-    reply_.clear();
-    unsent_.clear();
-    last_flush_ = base::TimeTicks::Now();
-    const uint64_t request_id = running_->id;
-    job_id_ = manager_->backend()->Generate(
-        std::move(*job),
-        base::BindRepeating(&WebAISession::OnChunk, weak_factory_.GetWeakPtr(),
-                            request_id),
-        base::BindOnce(&WebAISession::OnDone, weak_factory_.GetWeakPtr(),
-                       request_id));
+    StartJob(std::move(*job));
   }
+}
+
+void WebAISession::StartJob(GenerationJob job) {
+  reply_.clear();
+  unsent_.clear();
+  last_flush_ = base::TimeTicks::Now();
+  const uint64_t request_id = running_->id;
+  job_id_ = manager_->backend()->Generate(
+      std::move(job),
+      base::BindRepeating(&WebAISession::OnChunk, weak_factory_.GetWeakPtr(),
+                          request_id),
+      base::BindOnce(&WebAISession::OnDone, weak_factory_.GetWeakPtr(),
+                     request_id));
+}
+
+std::optional<std::string> WebAISession::ConstrainedText(
+    Request& request,
+    const std::string& reply) {
+  return reply;
+}
+
+std::optional<GenerationJob> WebAISession::NextJob(Request& request) {
+  return std::nullopt;
 }
 
 void WebAISession::OnChunk(uint64_t request_id, const std::string& text) {
@@ -223,12 +237,31 @@ void WebAISession::OnDone(uint64_t request_id, GenerationStatus status) {
     return;
   }
   job_id_ = 0;
+  if (status == GenerationStatus::kOk && running_->constrained) {
+    // Held back until now: the page gets it only once it is complete JSON.
+    std::optional<std::string> text;
+    if (IsCompleteJson(reply_)) {
+      text = ConstrainedText(*running_, reply_);
+    }
+    if (text) {
+      unsent_ = std::move(*text);
+    } else {
+      status = GenerationStatus::kInvalidOutput;
+    }
+  }
+  // A closing session (destroy(), its pipe gone; Blink has already rejected
+  // the page's calls) starts no further generation.
+  if (status == GenerationStatus::kOk && !closed_) {
+    if (std::optional<GenerationJob> next = NextJob(*running_)) {
+      // One part of the request is done: its text goes out now, and the
+      // request keeps running with the next generation.
+      Flush();
+      StartJob(std::move(*next));
+      return;
+    }
+  }
   Request request = std::move(*running_);
   running_.reset();
-  if (status == GenerationStatus::kOk && request.constrained &&
-      !IsCompleteJson(reply_)) {
-    status = GenerationStatus::kInvalidOutput;
-  }
   if (status == GenerationStatus::kOk) {
     if (!unsent_.empty() && request.responder) {
       request.responder->OnStreaming(unsent_);

@@ -12,6 +12,8 @@
 #include "chrome/browser/molt_ai/web_ai/web_ai_conversation.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_prompts.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_sessions.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_translation.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_translator_session.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/mojom/ai/ai_proofreader.mojom.h"
@@ -19,12 +21,15 @@
 #include "third_party/blink/public/mojom/ai/ai_semantic_embedder.mojom.h"
 #include "third_party/blink/public/mojom/ai/ai_summarizer.mojom.h"
 #include "third_party/blink/public/mojom/ai/ai_writer.mojom.h"
+#include "third_party/blink/public/mojom/on_device_translation/translator.mojom.h"
 
 namespace molt_ai::web_ai {
 
 namespace {
 
 using blink::mojom::AIManagerCreateClientError;
+using blink::mojom::CanCreateTranslatorResult;
+using blink::mojom::CreateTranslatorError;
 using blink::mojom::ModelAvailabilityCheckResult;
 
 ModelAvailabilityCheckResult ToMojo(const AvailabilityDecision& decision) {
@@ -55,6 +60,39 @@ ModelAvailabilityCheckResult ToMojo(const AvailabilityDecision& decision) {
       break;
   }
   return ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled;
+}
+
+void AnswerModelAvailability(
+    base::OnceCallback<void(ModelAvailabilityCheckResult)> callback,
+    AvailabilityDecision decision) {
+  std::move(callback).Run(ToMojo(decision));
+}
+
+// Translator.availability(). "downloadable" is always
+// kAfterDownloadTranslatorCreationRequired, the value upstream uses to mask
+// installed language packs: nothing is downloaded here, and the value says
+// nothing about what is installed. Blink turns every kNo* answer into
+// "unavailable"; the reason only reaches the console.
+CanCreateTranslatorResult ToTranslatorResult(
+    const AvailabilityDecision& decision) {
+  switch (decision.availability) {
+    case Availability::kAvailable:
+      return CanCreateTranslatorResult::kReadily;
+    case Availability::kDownloadable:
+      return CanCreateTranslatorResult::
+          kAfterDownloadTranslatorCreationRequired;
+    case Availability::kUnavailable:
+      break;
+  }
+  return decision.reason == UnavailableReason::kUnsupportedLanguage
+             ? CanCreateTranslatorResult::kNoNotSupportedLanguage
+             : CanCreateTranslatorResult::kNoDisallowedByPolicy;
+}
+
+void AnswerTranslationAvailability(
+    base::OnceCallback<void(CanCreateTranslatorResult)> callback,
+    AvailabilityDecision decision) {
+  std::move(callback).Run(ToTranslatorResult(decision));
 }
 
 // Empty means "not specified".
@@ -367,6 +405,13 @@ class MoltAIManager::CreateRequest {
   virtual bool IsWanted() const = 0;
   virtual void Fail(AIManagerCreateClientError error,
                     blink::mojom::QuotaErrorInfoPtr quota) = 0;
+  // The API is unavailable to the page for |reason| (DecideAvailability()).
+  virtual void Reject(UnavailableReason reason) {
+    Fail(reason == UnavailableReason::kUnsupportedLanguage
+             ? AIManagerCreateClientError::kUnsupportedLanguage
+             : AIManagerCreateClientError::kUnableToCreateSession,
+         nullptr);
+  }
   // The user allowed the site and the model is loaded: make the session.
   virtual void Finish(MoltAIManager& manager, uint32_t context_tokens) = 0;
 
@@ -506,6 +551,73 @@ class MoltAIManager::WritingCreate : public CreateRequest {
   Options options_;
 };
 
+// Translator.create(). The languages were resolved against the fixed table
+// before the request was made.
+class MoltAIManager::TranslatorCreate : public CreateRequest {
+ public:
+  using Client = blink::mojom::TranslationManagerCreateTranslatorClient;
+
+  TranslatorCreate(mojo::PendingRemote<Client> client, TranslatorPair pair)
+      : CreateRequest(WebAIApi::kTranslator,
+                      /*options_supported=*/true,
+                      /*languages_supported=*/true),
+        client_(std::move(client)),
+        pair_(pair) {}
+
+  bool IsWanted() const override { return client_.is_connected(); }
+
+  void Fail(AIManagerCreateClientError error,
+            blink::mojom::QuotaErrorInfoPtr quota) override {
+    FailWith(error == AIManagerCreateClientError::kUnsupportedLanguage
+                 ? CreateTranslatorError::kNotSupportedLanguage
+                 : CreateTranslatorError::kFailedToCreateTranslator);
+  }
+
+  void Reject(UnavailableReason reason) override {
+    switch (reason) {
+      case UnavailableReason::kEnterprisePolicy:
+        FailWith(CreateTranslatorError::kDisallowedByPolicy);
+        return;
+      case UnavailableReason::kUnsupportedLanguage:
+        FailWith(CreateTranslatorError::kNotSupportedLanguage);
+        return;
+      case UnavailableReason::kNone:
+      case UnavailableReason::kDisabled:
+      case UnavailableReason::kUnsupportedOptions:
+      case UnavailableReason::kBlockedByUser:
+      case UnavailableReason::kDeviceNotEligible:
+        break;
+    }
+    FailWith(CreateTranslatorError::kFailedToCreateTranslator);
+  }
+
+  void Finish(MoltAIManager& manager, uint32_t context_tokens) override {
+    const uint64_t id = manager.ReserveSession();
+    if (id == 0) {
+      FailWith(CreateTranslatorError::kExceedsServiceCountLimitation);
+      return;
+    }
+    mojo::PendingRemote<blink::mojom::Translator> remote;
+    manager.AdoptSession(std::make_unique<TranslatorSession>(
+        manager, id, pair_, remote.InitWithNewPipeAndPassReceiver()));
+    // The page's Translator reports the table's codes ("en" for "en-US").
+    client_->OnResult(
+        blink::mojom::CreateTranslatorResult::NewTranslator(std::move(remote)),
+        blink::mojom::TranslatorLanguageCode::New(pair_.source->code),
+        blink::mojom::TranslatorLanguageCode::New(pair_.target->code));
+  }
+
+ private:
+  // Blink CHECKs that an error comes without language codes.
+  void FailWith(CreateTranslatorError error) {
+    client_->OnResult(blink::mojom::CreateTranslatorResult::NewError(error),
+                      nullptr, nullptr);
+  }
+
+  mojo::Remote<Client> client_;
+  const TranslatorPair pair_;
+};
+
 // ---------------------------------------------------------------------------
 // MoltAIManager
 // ---------------------------------------------------------------------------
@@ -527,6 +639,11 @@ MoltAIManager::~MoltAIManager() {
 void MoltAIManager::AddReceiver(
     mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
   receivers_.Add(this, std::move(receiver));
+}
+
+void MoltAIManager::AddTranslationReceiver(
+    mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
+  translation_receivers_.Add(this, std::move(receiver));
 }
 
 void MoltAIManager::OnConsentChanged() {
@@ -559,6 +676,10 @@ bool MoltAIManager::IsForeground() {
   return environment_->IsForeground();
 }
 
+bool MoltAIManager::IsContextStillEligible(WebAIApi api) {
+  return IsContextEligible(environment_->GetContextFacts(api));
+}
+
 // ---- availability() ----
 
 void MoltAIManager::CheckAvailability(WebAIApi api,
@@ -570,7 +691,7 @@ void MoltAIManager::CheckAvailability(WebAIApi api,
     // Answered without asking the runtime anything.
     AvailabilityInput input;
     input.context = context;
-    std::move(callback).Run(ToMojo(DecideAvailability(input)));
+    std::move(callback).Run(DecideAvailability(input));
     return;
   }
   backend_->GetDeviceFacts(base::BindOnce(
@@ -589,7 +710,7 @@ void MoltAIManager::OnAvailabilityDeviceFacts(WebAIApi api,
   input.options_supported = options_supported;
   input.languages_supported = languages_supported;
   input.consent = environment_->GetConsent();
-  std::move(callback).Run(ToMojo(DecideAvailability(input)));
+  std::move(callback).Run(DecideAvailability(input));
 }
 
 void MoltAIManager::CanCreateLanguageModel(
@@ -600,8 +721,9 @@ void MoltAIManager::CanCreateLanguageModel(
     return;
   }
   const LanguageModelOptionCheck check = CheckLanguageModelOptions(options);
-  CheckAvailability(WebAIApi::kLanguageModel, check.supported,
-                    check.languages_valid, std::move(callback));
+  CheckAvailability(
+      WebAIApi::kLanguageModel, check.supported, check.languages_valid,
+      base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
 void MoltAIManager::CanCreateSummarizer(
@@ -611,8 +733,10 @@ void MoltAIManager::CanCreateSummarizer(
     receivers_.ReportBadMessage("Permissions policy disabled");
     return;
   }
-  CheckAvailability(WebAIApi::kSummarizer, /*options_supported=*/true,
-                    WritingLanguagesValid(options), std::move(callback));
+  CheckAvailability(
+      WebAIApi::kSummarizer, /*options_supported=*/true,
+      WritingLanguagesValid(options),
+      base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
 void MoltAIManager::CanCreateWriter(
@@ -622,8 +746,10 @@ void MoltAIManager::CanCreateWriter(
     receivers_.ReportBadMessage("Permissions policy disabled");
     return;
   }
-  CheckAvailability(WebAIApi::kWriter, /*options_supported=*/true,
-                    WritingLanguagesValid(options), std::move(callback));
+  CheckAvailability(
+      WebAIApi::kWriter, /*options_supported=*/true,
+      WritingLanguagesValid(options),
+      base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
 void MoltAIManager::CanCreateRewriter(
@@ -633,8 +759,10 @@ void MoltAIManager::CanCreateRewriter(
     receivers_.ReportBadMessage("Permissions policy disabled");
     return;
   }
-  CheckAvailability(WebAIApi::kRewriter, /*options_supported=*/true,
-                    WritingLanguagesValid(options), std::move(callback));
+  CheckAvailability(
+      WebAIApi::kRewriter, /*options_supported=*/true,
+      WritingLanguagesValid(options),
+      base::BindOnce(&AnswerModelAvailability, std::move(callback)));
 }
 
 void MoltAIManager::CanCreateProofreader(
@@ -836,6 +964,61 @@ void MoltAIManager::CreateSemanticEmbedder(
   remote->OnError(AIManagerCreateClientError::kUnableToCreateSession);
 }
 
+// ---- Translator ----
+
+void MoltAIManager::TranslationAvailable(
+    blink::mojom::TranslatorLanguageCodePtr source_lang,
+    blink::mojom::TranslatorLanguageCodePtr target_lang,
+    TranslationAvailableCallback callback) {
+  // Blink answers "unavailable" itself where the "translator" permissions
+  // policy is off.
+  if (!environment_->IsAllowedByPermissionsPolicy(WebAIApi::kTranslator)) {
+    translation_receivers_.ReportBadMessage("Permissions policy disabled");
+    return;
+  }
+  // The pair decides by itself, from the fixed table: never the installed
+  // models, the OS language or Accept-Language.
+  const bool supported =
+      source_lang && target_lang &&
+      ResolveTranslatorPair(source_lang->code, target_lang->code).has_value();
+  CheckAvailability(
+      WebAIApi::kTranslator, /*options_supported=*/true, supported,
+      base::BindOnce(&AnswerTranslationAvailability, std::move(callback)));
+}
+
+void MoltAIManager::CreateTranslator(
+    mojo::PendingRemote<blink::mojom::TranslationManagerCreateTranslatorClient>
+        client,
+    blink::mojom::TranslatorCreateOptionsPtr options) {
+  // Blink checks these before create(); failing them is a bad renderer.
+  if (!environment_->GetContextFacts(WebAIApi::kTranslator).feature_enabled) {
+    translation_receivers_.ReportBadMessage("Feature not enabled");
+    return;
+  }
+  if (!environment_->IsAllowedByPermissionsPolicy(WebAIApi::kTranslator)) {
+    translation_receivers_.ReportBadMessage("Permissions policy disabled");
+    return;
+  }
+  std::optional<TranslatorPair> pair;
+  if (options && options->source_lang && options->target_lang) {
+    pair = ResolveTranslatorPair(options->source_lang->code,
+                                 options->target_lang->code);
+  }
+  if (!pair) {
+    // Blink asked availability() first, so only a racing or bad renderer
+    // gets here; nobody is asked anything.
+    mojo::Remote<blink::mojom::TranslationManagerCreateTranslatorClient>
+        remote(std::move(client));
+    remote->OnResult(blink::mojom::CreateTranslatorResult::NewError(
+                         CreateTranslatorError::kNotSupportedLanguage),
+                     nullptr, nullptr);
+    return;
+  }
+  // options->observer_remote stays unused: nothing is downloaded on a
+  // page's behalf, and the renderer reports progress 0 and 1 itself.
+  StartCreate(std::make_unique<TranslatorCreate>(std::move(client), *pair));
+}
+
 void MoltAIManager::StartCreate(std::unique_ptr<CreateRequest> request) {
   const uint64_t id = next_create_id_++;
   creates_[id] = std::move(request);
@@ -881,15 +1064,9 @@ void MoltAIManager::OnCreateDeviceFacts(uint64_t id, DeviceFacts device) {
   input.languages_supported = request->languages_supported();
   input.consent = environment_->GetConsent();
   switch (DecideCreateAction(input)) {
-    case CreateAction::kReject: {
-      const bool language = DecideAvailability(input).reason ==
-                            UnavailableReason::kUnsupportedLanguage;
-      TakeCreate(id)->Fail(
-          language ? AIManagerCreateClientError::kUnsupportedLanguage
-                   : AIManagerCreateClientError::kUnableToCreateSession,
-          nullptr);
+    case CreateAction::kReject:
+      TakeCreate(id)->Reject(DecideAvailability(input).reason);
       return;
-    }
     case CreateAction::kAskUser:
     case CreateAction::kNeedsModel:
       environment_->RequestConsent(

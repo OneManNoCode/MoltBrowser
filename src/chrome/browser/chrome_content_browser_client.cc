@@ -9409,9 +9409,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
     base::SupportsUserData* context_user_data,
     const url::Origin& origin,
     mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
-  on_device_translation::TranslationManagerImpl::Bind(
-      host, browser_context, context_user_data, origin,
-      g_browser_process->component_updater(), std::move(receiver));
+  // MoltBrowser: the Translator API runs on the user's own on-device model,
+  // sharing the document's MoltAIManager (and its consent and limits) with
+  // the other built-in AI APIs. Upstream's TranslationManagerImpl, and with
+  // it TranslateKit and the component updater, is never reached from a page
+  // (docs/design/WEB_AI_APIS.md, section 10).
+  molt_ai::web_ai::BindMoltTranslationManager(host, browser_context,
+                                              context_user_data,
+                                              kAIManagerUserDataKey,
+                                              std::move(receiver));
 }
 #endif
 

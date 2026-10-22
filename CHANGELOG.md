@@ -350,8 +350,6 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   of the tab; a site never starts a model download. They
   report only coarse limits, run one page request at a time beside your
   chat, and are off in MoltNet.
-  The upstream `Translator` API, which downloads Google's translation
-  components, is off.
 - **Sites using on-device AI.** Your Allow / Block answers for the web AI
   APIs are remembered per profile (Incognito keeps its own until it
   closes), and closing the bar three times stops a site asking for a week.
@@ -372,6 +370,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (types, properties, required, items, enums, small numeric and length
   bounds, anyOf); others, and regular expressions, fail with
   `NotSupportedError`. The schema is read only inside the AI sandbox.
+- **Translator API on your own model.** A page's `Translator` now
+  translates with your on-device model, never Google's TranslateKit, and a
+  page can no longer make the browser download translation components. It
+  serves a fixed set of 20 languages (the same for everyone), asks with the
+  same bar and remembers the same answer as the other web AI APIs, returns
+  only the translation, handles long text piece by piece, and is off in
+  MoltNet. The `TranslatorAPIAllowed` policy still turns it off.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

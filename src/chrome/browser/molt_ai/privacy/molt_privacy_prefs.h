@@ -24,10 +24,10 @@
 //     Google is expected to reject (docs/NETWORK_TRAFFIC.md lists it for
 //     the traffic capture). Turn this default back on if GenEye ever ships
 //     an API key.
-//   * The Translator web API off (TranslatorAPIAllowed) — upstream's
-//     Translator has the component updater fetch Google's TranslateKit and
-//     language packs, outside Tor, when a page asks for it
-//     (docs/design/WEB_AI_APIS.md). The policy can still turn it on.
+// (The Translator web API used to be off here, TranslatorAPIAllowed false,
+// because upstream's backend downloads Google's TranslateKit. It is served
+// on the user's own model now and keeps upstream's default;
+// docs/design/WEB_AI_APIS.md, section 10.)
 //
 // HTTPS-First "balanced" mode can't be expressed as a default (Chromium
 // only honors kHttpsFirstBalancedMode once a user value exists), so
