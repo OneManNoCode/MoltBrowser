@@ -86,7 +86,8 @@ source_set("molt_ai_agents") {
     ":molt_ai_runtime",
     "//base",
 
-    # chrome://flags/#molt-agent-screenshots.
+    # chrome://flags/#molt-agent-screenshots, #molt-agent-site-tools and
+    # #molt-agent-planner.
     "//chrome/browser/molt_ai/agents:features",
 
     # The screenshot scaled for the model on a worker (Skia).
@@ -110,10 +111,11 @@ source_set("molt_ai_agents") {
 
   # web_agent.h exposes agent_safety types (navigation allowlist, element
   # probe, prompt fencing), the action format (agents/agent_actions.h), the
-  # prompt (agents/agent_prompt.h) and the screenshot logic
-  # (agents/agent_vision.h, runtime/model_image.h).
+  # planner (agents/agent_plan.h), the prompt (agents/agent_prompt.h) and
+  # the screenshot logic (agents/agent_vision.h, runtime/model_image.h).
   public_deps = [
     "//chrome/browser/molt_ai/agents:agent_actions",
+    "//chrome/browser/molt_ai/agents:agent_plan",
     "//chrome/browser/molt_ai/agents:agent_prompt",
     "//chrome/browser/molt_ai/agents:agent_vision",
     "//chrome/browser/molt_ai/runtime:model_image",

@@ -52,7 +52,27 @@ constexpr char kRefusePasswordNote[] =
     "Refused: the agent never types into password fields. Ask the user to "
     "sign in themselves, then continue.";
 
+// The parts of a GenerationResult the reply decisions need
+// (agent_actions::InterpretReply, agent_plan::InterpretPlanReply).
+agent_actions::ModelReply ToModelReply(GenerationResult& result) {
+  agent_actions::ModelReply reply;
+  reply.success = result.success;
+  reply.cancelled = result.was_cancelled;
+  reply.constraint_unsupported = result.constraint_unsupported;
+  reply.invalid_output = result.invalid_output;
+  reply.truncated = result.truncated;
+  reply.text = std::move(result.text);
+  reply.error_message = std::move(result.error_message);
+  return reply;
+}
+
 }  // namespace
+
+WebAgent::PlanUpdate::PlanUpdate() = default;
+WebAgent::PlanUpdate::~PlanUpdate() = default;
+WebAgent::PlanUpdate::PlanUpdate(const PlanUpdate&) = default;
+WebAgent::PlanUpdate& WebAgent::PlanUpdate::operator=(const PlanUpdate&) =
+    default;
 
 // ----------------------------------------------------------------
 // Construction / destruction
@@ -75,7 +95,8 @@ WebAgent::~WebAgent() = default;
 void WebAgent::Start(const std::string& goal,
                      StepCallback on_step,
                      DoneCallback on_done,
-                     ConfirmCallback on_confirm) {
+                     ConfirmCallback on_confirm,
+                     PlanCallback on_plan) {
   cancelled_  = false;
   iteration_  = 0;
   history_.clear();
@@ -100,8 +121,19 @@ void WebAgent::Start(const std::string& goal,
   step_cb_    = std::move(on_step);
   done_cb_    = std::move(on_done);
   confirm_cb_ = std::move(on_confirm);
+  plan_cb_    = std::move(on_plan);
   pending_confirm_.Reset();
   pending_confirm_message_.clear();
+
+  // The planner: a plan is written after the first observation, before the
+  // first action. Without it the run is what it always was.
+  planner_on_ = agent_features::AgentPlannerEnabled();
+  plan_ = agent_plan::PlanTracker();
+  plan_needed_ = planner_on_;
+  earlier_plan_.clear();
+  replan_reason_.clear();
+  bad_plan_replies_ = 0;
+  plan_retry_note_.clear();
 
   // Origin scope for this run: where the user started, origins the goal
   // names explicitly (the user typed them), and the built-in search engine
@@ -162,6 +194,10 @@ void WebAgent::IterateOnce() {
                       base::NumberToString(kMaxIterations) + " steps.");
     return;
   }
+  if (plan_needed_) {
+    AskPlanner();
+    return;
+  }
   AskLLM();
 }
 
@@ -178,8 +214,10 @@ void WebAgent::AskLLM() {
   opts.temperature = 0.2f;
   opts.stream = false;
   // The reply must be one action on the elements the model is shown, with
-  // or without a screenshot.
-  opts.json_schema = agent_actions::BuildActionSchema(observation_);
+  // or without a screenshot; with a plan, it also names the plan step.
+  const std::optional<agent_actions::PlanSteps> plan = PlanStepsForNextStep();
+  opts.json_schema = agent_actions::BuildActionSchema(
+      observation_, ActionsForNextStep(), plan ? &*plan : nullptr);
 
   // At most one image, the current observation's; older ones are never
   // sent again.
@@ -216,20 +254,14 @@ void WebAgent::AskLLM() {
 void WebAgent::OnLLMDecision(GenerationResult result) {
   if (cancelled_) return;
 
-  agent_actions::ModelReply reply;
-  reply.success = result.success;
-  reply.cancelled = result.was_cancelled;
-  reply.constraint_unsupported = result.constraint_unsupported;
-  reply.invalid_output = result.invalid_output;
-  reply.truncated = result.truncated;
-  reply.text = std::move(result.text);
-  reply.error_message = std::move(result.error_message);
+  const bool images_unsupported = result.images_unsupported;
+  agent_actions::ModelReply reply = ToModelReply(result);
 
   // A request with a screenshot that failed (the model can't take images
   // after all, or the image couldn't be encoded) is asked again without
   // it, and the rest of the run is text-only. Not counted as a bad reply.
   if (sent_screenshot_ &&
-      agent_vision::ShouldRetryWithoutImage(reply, result.images_unsupported)) {
+      agent_vision::ShouldRetryWithoutImage(reply, images_unsupported)) {
     LOG(WARNING) << "[WebAgent] A request with a screenshot failed; "
                     "continuing without screenshots";
     screenshots_failed_ = true;
@@ -238,8 +270,12 @@ void WebAgent::OnLLMDecision(GenerationResult result) {
     return;
   }
 
+  // Read against what the request offered: the same observation, action
+  // set and plan steps (none of which changes while a request runs).
+  const std::optional<agent_actions::PlanSteps> plan = PlanStepsForNextStep();
   agent_actions::ReplyOutcome outcome = agent_actions::InterpretReply(
-      reply, observation_, bad_replies_in_a_row_, bad_replies_total_);
+      reply, observation_, bad_replies_in_a_row_, bad_replies_total_,
+      ActionsForNextStep(), plan ? &*plan : nullptr);
   // Model output can carry typed text — log only its shape, never its
   // content.
   DVLOG(1) << "[WebAgent] LLM replied (" << reply.text.size()
@@ -263,6 +299,10 @@ void WebAgent::OnLLMDecision(GenerationResult result) {
   bad_replies_in_a_row_ = 0;
   retry_note_.clear();
   pending_action_ = std::move(outcome.action);
+  // The next plan step: the current one is done. This only moves the
+  // marker the prompt and the user see; it allows nothing.
+  if (plan_.Report(pending_action_.plan_step))
+    ReportPlan(PlanEvent::kAdvanced, std::string());
   pending_step_ = DescribeAction(pending_action_);
   DispatchAction();
 }
@@ -322,6 +362,7 @@ void WebAgent::RunAction() {
     case ActionType::kDone:     Finish(true, pending_action_.result); break;
     case ActionType::kError:    Finish(false, pending_action_.result); break;
     case ActionType::kCallTool: DoCallTool(); break;
+    case ActionType::kReplan:   DoReplan(); break;
   }
 }
 
@@ -605,6 +646,13 @@ void WebAgent::DoScroll() {
 
 void WebAgent::DoObserve() {
   ObservePage();
+}
+
+void WebAgent::DoReplan() {
+  // Nothing happens on the page. OnActionDone records the step and has the
+  // plan rewritten before the next action (or stops the run when it has
+  // been rewritten too often).
+  OnActionDone(true, "Asked for a new plan");
 }
 
 // ----------------------------------------------------------------
@@ -907,7 +955,10 @@ void WebAgent::OnSiteToolsListed(const StructuredPage& page,
         if (tool)
           tools.push_back(std::move(*tool));
       }
-      agent_actions::AddSiteTools(std::move(tools), &observation_);
+      // With the planner on, a tool is kept only if the schema with a plan
+      // (the larger one) converts too.
+      agent_actions::AddSiteTools(std::move(tools), &observation_,
+                                  planner_on_);
     }
   }
   DVLOG(1) << "[WebAgent] " << observation_.tools.size() << " site tool(s)";
@@ -1079,16 +1130,30 @@ void WebAgent::OnActionDone(bool ok, std::string note) {
   // Skip recording the silent bootstrap observe.
   bool is_bootstrap = iteration_ == 0 && history_.empty() &&
                       pending_step_.action == "OBSERVE";
-  if (!pending_step_.action.empty() && !is_bootstrap) {
+  const bool recorded = !pending_step_.action.empty() && !is_bootstrap;
+  if (recorded) {
     history_.push_back(pending_step_);
     if (step_cb_)
       step_cb_.Run(pending_step_);
   }
 
   iteration_++;
+  const ActionType done_type = pending_action_.type;
   pending_step_ = Step();
   pending_action_ = agent_actions::AgentAction();
   action_selector_.clear();
+
+  // The plan is rewritten when the model asked (REPLAN), when actions keep
+  // failing on one step, or when one step takes too many actions.
+  if (recorded && plan_.has_plan()) {
+    const agent_plan::ReplanReason reason =
+        done_type == ActionType::kReplan ? agent_plan::ReplanReason::kAsked
+                                         : plan_.AfterAction(ok);
+    if (reason != agent_plan::ReplanReason::kNone &&
+        !ScheduleReplan(reason)) {
+      return;  // stopped: the plan has been rewritten too often
+    }
+  }
 
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
@@ -1127,9 +1192,8 @@ void WebAgent::EvalJS(const std::string& script,
 // LLM prompt construction
 // ----------------------------------------------------------------
 
-agent_prompt::PromptInput WebAgent::BuildPromptInput() const {
-  agent_prompt::PromptInput input;
-  input.goal = goal_;
+std::vector<agent_prompt::HistoryStep> WebAgent::HistoryForPrompt() const {
+  std::vector<agent_prompt::HistoryStep> history;
   for (const Step& step : history_) {
     agent_prompt::HistoryStep h;
     h.number = step.number;
@@ -1139,15 +1203,156 @@ agent_prompt::PromptInput WebAgent::BuildPromptInput() const {
     h.success = step.success;
     h.note = step.note;
     h.observation = step.observation;
-    input.history.push_back(std::move(h));
+    history.push_back(std::move(h));
   }
+  return history;
+}
+
+agent_prompt::PromptInput WebAgent::BuildPromptInput() const {
+  agent_prompt::PromptInput input;
+  input.goal = goal_;
+  input.history = HistoryForPrompt();
   input.page_state = current_page_state_;
   input.max_steps = kMaxIterations;
   input.steps_remaining = kMaxIterations - iteration_;
   input.retry_note = retry_note_;
   input.with_screenshot = screenshot_.has_value();
   input.with_tools = !observation_.tools.empty();
+  if (plan_.has_plan()) {
+    // Model output: agent_prompt fences it, apart from the GOAL.
+    input.plan = agent_plan::DescribePlan(plan_.plan());
+    input.plan_progress = plan_.DescribeProgress();
+  }
   return input;
+}
+
+// ----------------------------------------------------------------
+// Planner
+// ----------------------------------------------------------------
+
+void WebAgent::AskPlanner() {
+  if (cancelled_) return;
+
+  agent_prompt::PlanPromptInput input;
+  input.goal = goal_;
+  input.history = HistoryForPrompt();
+  input.page_state = current_page_state_;
+  input.earlier_plan = earlier_plan_;
+  input.replan_reason = replan_reason_;
+  input.retry_note = plan_retry_note_;
+  input.max_plan_steps = static_cast<int>(agent_plan::kMaxPlanSteps);
+  std::string prompt =
+      agent_prompt::ToRawPrompt(agent_prompt::BuildPlanPrompt(input));
+
+  PromptOptions opts;
+  opts.max_tokens = agent_plan::kMaxPlanReplyTokens;
+  opts.temperature = 0.2f;
+  opts.stream = false;
+  // The reply must be a plan: 1 to kMaxPlanSteps steps, each capped.
+  opts.json_schema = agent_plan::BuildPlanSchema();
+
+  // Text-only, even when the model sees images: a plan needs the page's
+  // text, and the screenshot belongs to the next action's request.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE,
+      {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(
+          [](BrowserAIRuntime* rt, std::string p,
+             PromptOptions opts) -> GenerationResult {
+            return rt->RunPrompt(p, opts);
+          },
+          runtime_.get(), std::move(prompt), std::move(opts)),
+      base::BindOnce(
+          [](base::WeakPtr<WebAgent> self, GenerationResult result) {
+            if (self) self->OnPlanReply(std::move(result));
+          },
+          weak_factory_.GetWeakPtr()));
+}
+
+void WebAgent::OnPlanReply(GenerationResult result) {
+  if (cancelled_) return;
+
+  agent_plan::PlanOutcome outcome = agent_plan::InterpretPlanReply(
+      ToModelReply(result), bad_plan_replies_);
+  // Model output: log only its shape.
+  DVLOG(1) << "[WebAgent] Plan reply: decision="
+           << static_cast<int>(outcome.decision);
+
+  switch (outcome.decision) {
+    case agent_plan::PlanDecision::kStop:
+      Finish(false, outcome.message);
+      return;
+    case agent_plan::PlanDecision::kRetry:
+      LOG(WARNING) << "[WebAgent] Unusable plan; asking again";
+      ++bad_plan_replies_;
+      plan_retry_note_ = std::move(outcome.message);
+      AskPlanner();
+      return;
+    case agent_plan::PlanDecision::kWithoutPlan:
+      // A plan only helps: without one the agent is what it was before the
+      // planner, with every check in place.
+      LOG(WARNING) << "[WebAgent] No usable plan; going on without one";
+      plan_needed_ = false;
+      plan_.Drop();
+      earlier_plan_.clear();
+      replan_reason_.clear();
+      bad_plan_replies_ = 0;
+      plan_retry_note_.clear();
+      ReportPlan(PlanEvent::kWithoutPlan, outcome.message);
+      AskLLM();
+      return;
+    case agent_plan::PlanDecision::kUse:
+      break;
+  }
+  const bool replanned = !earlier_plan_.empty();
+  plan_needed_ = false;
+  earlier_plan_.clear();
+  replan_reason_.clear();
+  bad_plan_replies_ = 0;
+  plan_retry_note_.clear();
+  plan_.Adopt(std::move(outcome.plan));
+  ReportPlan(replanned ? PlanEvent::kReplanned : PlanEvent::kPlanned,
+             std::string());
+  AskLLM();
+}
+
+bool WebAgent::ScheduleReplan(agent_plan::ReplanReason reason) {
+  const int step = plan_.current_step();
+  const int count = static_cast<int>(plan_.plan().size());
+  if (!plan_.UseReplan()) {
+    Finish(false, agent_plan::kReplanLimitMessage);
+    return false;
+  }
+  earlier_plan_ = agent_plan::DescribePlan(plan_.plan());
+  replan_reason_ = agent_plan::ReplanReasonText(reason, step, count);
+  plan_needed_ = true;
+  bad_plan_replies_ = 0;
+  plan_retry_note_.clear();
+  return true;
+}
+
+void WebAgent::ReportPlan(PlanEvent event, const std::string& note) {
+  if (!plan_cb_)
+    return;
+  PlanUpdate update;
+  update.event = event;
+  update.steps = plan_.plan();
+  update.current = plan_.current_step();
+  update.replans = plan_.replans();
+  update.note = note;
+  plan_cb_.Run(update);
+}
+
+agent_actions::ActionSet WebAgent::ActionsForNextStep() const {
+  return plan_.has_plan() ? agent_actions::kPlannedAgentActions
+                          : agent_actions::kAgentActions;
+}
+
+std::optional<agent_actions::PlanSteps> WebAgent::PlanStepsForNextStep()
+    const {
+  if (!plan_.has_plan())
+    return std::nullopt;
+  return plan_.Steps();
 }
 
 // ----------------------------------------------------------------
@@ -1159,6 +1364,7 @@ WebAgent::Step WebAgent::DescribeAction(
   Step step;
   step.action = std::string(agent_actions::ActionName(action.type));
   step.reason = action.reason;
+  step.plan_step = action.plan_step;
   auto describe = [&](const std::string& ref) {
     const ObservedElement* e = observation_.Find(ref);
     return e ? agent_actions::DescribeElement(*e) : ref;
@@ -1201,6 +1407,9 @@ WebAgent::Step WebAgent::DescribeAction(
       step.value = action.tool_arguments_text;
       break;
     }
+    case ActionType::kReplan:
+      step.target = "plan step " + base::NumberToString(action.plan_step);
+      break;
   }
   return step;
 }
