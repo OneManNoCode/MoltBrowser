@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/callback_list.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/molt_ai/web_ai/molt_ai_manager.h"
 #include "chrome/browser/molt_ai/web_ai/runtime_web_ai_backend.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_consent.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
 #include "components/policy/core/common/policy_pref_names.h"
@@ -154,8 +156,18 @@ class FrameEnvironment : public WebAIEnvironment {
     if (!rfh) {
       return SiteConsent::kAsk;
     }
-    return WebAIConsentStore::FromBrowserContext(browser_context_)
-        ->Get(TopLevelOrigin(rfh));
+    WebAISitePermissions* answers =
+        WebAISitePermissions::Get(browser_context_);
+    return answers ? answers->GetConsent(TopLevelOrigin(rfh))
+                   : SiteConsent::kAsk;
+  }
+
+  void ObserveConsent(base::RepeatingClosure on_change) override {
+    // Any site's change: the manager reads its own answer again.
+    if (WebAISitePermissions* answers =
+            WebAISitePermissions::Get(browser_context_)) {
+      consent_subscription_ = answers->AddObserver(std::move(on_change));
+    }
   }
 
   void RequestConsent(bool needs_model,
@@ -195,6 +207,7 @@ class FrameEnvironment : public WebAIEnvironment {
   const raw_ptr<content::BrowserContext> browser_context_;
   const bool is_document_;
   const content::WeakDocumentPtr document_;
+  base::CallbackListSubscription consent_subscription_;
 };
 
 }  // namespace

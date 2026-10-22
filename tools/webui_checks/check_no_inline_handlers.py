@@ -44,6 +44,7 @@ PAGE_SCRIPTS = {
     "molt_import_ui.cc": {"kImportPageJs": "molt-html"},
     "molt_net_ui.cc": {"kNetPageJs": "none"},
     "molt_ai_settings_ui.cc": {"kSettingsPageJs": "molt-html"},
+    "molt_web_ai_sites_handler.cc": {"kWebAISitesSettingsJs": "none"},
     "molt_ai_agent_ui.cc": {"kAgentPageJs": "none"},
     "molt_ai_automation_ui.cc": {"kAutomationPageJs": "molt-html"},
     "molt_ai_ui.cc": {"kMoltAIPageJs": "molt-html"},

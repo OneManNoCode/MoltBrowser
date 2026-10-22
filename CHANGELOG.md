@@ -336,11 +336,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **Web AI APIs on your own model.** Sites can use the Prompt API
   (`LanguageModel`), `Summarizer`, `Writer` and `Rewriter` on your
   on-device model, never Google's, after you allow them in a bar at the top
-  of the tab (for the session); a site never starts a model download. They
+  of the tab; a site never starts a model download. They
   report only coarse limits, run one page request at a time beside your
   chat, and are off in MoltNet.
   The upstream `Translator` API, which downloads Google's translation
   components, is off.
+- **Sites using on-device AI.** Your Allow / Block answers for the web AI
+  APIs are remembered per profile (Incognito keeps its own until it
+  closes), and closing the bar three times stops a site asking for a week.
+  Settings lists the sites you allowed, blocked or paused, with Remove
+  (which also ends that site's sessions) and a switch for the APIs; Clear
+  browsing data and a profile reset clear the answers. `LanguageDetector`,
+  whose model needs Google, now reports "unavailable" for everyone.
 - **Search memory by meaning.** molt://memory finds a page from what it was
   about, in your own words and language, with an optional on-device search
   model (Qwen3-Embedding 0.6B, Apache 2.0, about 640 MB, downloaded when you

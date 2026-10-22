@@ -58,6 +58,8 @@ struct EnvironmentState {
   bool last_needs_model = false;
   bool foreground = true;
   std::string site_key = "1|https://a.test";
+  // What the manager registered to hear about changed answers.
+  base::RepeatingClosure consent_changed;
 };
 
 class FakeEnvironment : public WebAIEnvironment {
@@ -81,6 +83,9 @@ class FakeEnvironment : public WebAIEnvironment {
   }
   std::string GetSiteKey() override { return state_->site_key; }
   bool IsForeground() override { return state_->foreground; }
+  void ObserveConsent(base::RepeatingClosure on_change) override {
+    state_->consent_changed = std::move(on_change);
+  }
 
  private:
   raw_ptr<EnvironmentState> state_;
@@ -121,6 +126,10 @@ class FakeBackend : public WebAIBackend {
   }
   void PrepareModel(PrepareCallback callback) override {
     ++prepare_calls;
+    if (hold_prepare) {
+      held_prepare.push_back(std::move(callback));
+      return;
+    }
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), prepare_ok, context_tokens));
@@ -180,6 +189,8 @@ class FakeBackend : public WebAIBackend {
   bool throttle = false;
   bool hold_device_facts = false;
   std::vector<DeviceCallback> held_device_facts;
+  bool hold_prepare = false;
+  std::vector<PrepareCallback> held_prepare;
   size_t session_cap = kMaxSessionsPerSite;
   int device_calls = 0;
   int prepare_calls = 0;
@@ -879,6 +890,53 @@ TEST_F(MoltAIManagerTest, DocumentGoneCancelsEverything) {
   EXPECT_TRUE(running.done());
   EXPECT_EQ(backend_.sessions[env_.site_key], 0u);
   EXPECT_FALSE(client->session.is_connected());
+}
+
+// The user removed or blocked the site in molt://ai-settings (or cleared site
+// settings): its live sessions end, their generations cancelled.
+TEST_F(MoltAIManagerTest, TakingBackTheAnswerEndsTheSitesSessions) {
+  auto client = AllowedLanguageModel();
+  auto other = AllowedLanguageModel();
+  TestResponder running;
+  Prompt(*client, "one", running);
+  const uint64_t id = backend_.OnlyJob();
+  ASSERT_TRUE(env_.consent_changed);
+  // A change that leaves this site allowed (another site's) changes nothing.
+  env_.consent_changed.Run();
+  RunUntilIdle();
+  EXPECT_EQ(manager_->session_count_for_testing(), 2u);
+  EXPECT_TRUE(backend_.cancelled.empty());
+
+  for (SiteConsent now : {SiteConsent::kAsk, SiteConsent::kBlocked}) {
+    env_.consent = now;
+    env_.consent_changed.Run();
+    RunUntilIdle();
+  }
+  EXPECT_EQ(backend_.cancelled, std::vector<uint64_t>{id});
+  EXPECT_TRUE(running.done());
+  EXPECT_EQ(manager_->session_count_for_testing(), 0u);
+  EXPECT_EQ(backend_.sessions[env_.site_key], 0u);
+  EXPECT_FALSE(client->session.is_connected());
+  EXPECT_FALSE(other->session.is_connected());
+  // The manager itself keeps working: create() asks again.
+  env_.consent = SiteConsent::kAsk;
+  env_.answer = SiteConsent::kAllowed;
+  auto again = CreateLanguageModel();
+  EXPECT_EQ(env_.prompts, 1);
+  EXPECT_TRUE(again->session.is_bound());
+}
+
+TEST_F(MoltAIManagerTest, TakenBackWhileTheModelLoadsFailsCreate) {
+  env_.consent = SiteConsent::kAllowed;
+  backend_.hold_prepare = true;
+  auto client = CreateLanguageModel();
+  ASSERT_EQ(backend_.held_prepare.size(), 1u);
+  env_.consent = SiteConsent::kAsk;
+  std::move(backend_.held_prepare[0]).Run(true, 8192);
+  RunUntilIdle();
+  EXPECT_EQ(client->error, AIManagerCreateClientError::kUnableToCreateSession);
+  EXPECT_FALSE(client->session.is_bound());
+  EXPECT_EQ(manager_->session_count_for_testing(), 0u);
 }
 
 TEST_F(MoltAIManagerTest, CloneCopiesTheCommittedContext) {

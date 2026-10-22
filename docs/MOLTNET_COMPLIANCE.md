@@ -133,8 +133,8 @@ claims below as the design intent, not as measured results.
     The AI chat in a MoltNet window uses on-device models only: a cloud AI
     provider would get your API key, which says who you are, with every
     page you ask about. Pages can't use the built-in AI APIs
-    (`LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator`):
-    they report "unavailable" in MoltNet windows
+    (`LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator`,
+    `LanguageDetector`): they report "unavailable" in MoltNet windows
     ([design](design/WEB_AI_APIS.md)). The chat's sandbox tab opens in a
     MoltNet window, its actions and links stay in its own window, and it
     can't set up page

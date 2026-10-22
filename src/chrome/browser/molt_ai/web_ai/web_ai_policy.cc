@@ -434,37 +434,4 @@ size_t GenerationScheduler::SessionsForSite(const std::string& site) const {
   return it == sessions_by_site_.end() ? 0 : it->second;
 }
 
-// ---------------------------------------------------------------------------
-// ConsentMap
-// ---------------------------------------------------------------------------
-
-ConsentMap::ConsentMap() = default;
-ConsentMap::~ConsentMap() = default;
-
-SiteConsent ConsentMap::Get(const std::string& origin) const {
-  auto it = answers_.find(origin);
-  return it == answers_.end() ? SiteConsent::kAsk : it->second;
-}
-
-void ConsentMap::Set(const std::string& origin, SiteConsent consent) {
-  auto it = answers_.find(origin);
-  if (it != answers_.end()) {
-    // Drop it from the age order; re-added below if still answered.
-    auto pos = std::find(order_.begin(), order_.end(), origin);
-    if (pos != order_.end()) {
-      order_.erase(pos);
-    }
-    answers_.erase(it);
-  }
-  if (consent == SiteConsent::kAsk) {
-    return;
-  }
-  while (answers_.size() >= kMaxEntries && !order_.empty()) {
-    answers_.erase(order_.front());
-    order_.pop_front();
-  }
-  answers_.emplace(origin, consent);
-  order_.push_back(origin);
-}
-
 }  // namespace molt_ai::web_ai

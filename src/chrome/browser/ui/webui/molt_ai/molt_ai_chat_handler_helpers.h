@@ -15,6 +15,7 @@
 #define CHROME_BROWSER_UI_WEBUI_MOLT_AI_MOLT_AI_CHAT_HANDLER_HELPERS_H_
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -67,6 +68,26 @@ inline std::string StringArg(const base::ListValue& args,
     return args[index].GetString();
   }
   return std::string(fallback);
+}
+
+// args[index] when it exists and is a bool, else nullopt.
+inline std::optional<bool> BoolArg(const base::ListValue& args, size_t index) {
+  if (index < args.size() && args[index].is_bool()) {
+    return args[index].GetBool();
+  }
+  return std::nullopt;
+}
+
+// args[index] when it exists, is a string and is at most |max_bytes| long,
+// else nullopt (an oversized string is refused, not cut).
+inline std::optional<std::string> BoundedStringArg(const base::ListValue& args,
+                                                   size_t index,
+                                                   size_t max_bytes) {
+  if (index < args.size() && args[index].is_string() &&
+      args[index].GetString().size() <= max_bytes) {
+    return args[index].GetString();
+  }
+  return std::nullopt;
 }
 
 // JSON-encode an arbitrary string so it can be safely embedded inside
