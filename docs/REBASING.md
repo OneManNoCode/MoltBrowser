@@ -109,7 +109,8 @@ line that does (expect M154 or M156).
    `tools/chromium/rebase.py <tag>` and read `report.md`. Same-branch respins
    are normally all clean.
 3. `tools/chromium/rebase.py <tag> --apply`, then
-   `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`.
+   `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`
+   and `tools/moltnet_locale/generate_tables.py` (step 5 below).
 4. Compile check and smoke test on the build machine (below), then release.
    Note the Chromium version in the release notes.
 
@@ -124,7 +125,12 @@ line that does (expect M154 or M156).
 3. Resolve (see below), until `grep -rn '^<<<<<<< ' src/` is empty.
 4. Handle the report's other sections: deleted/moved files, identical copies,
    collisions, the DEPS file, and the API changes in first-party code.
-5. `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`.
+5. `tools/chromium/overlay_to_patches.py && tools/chromium/verify_patches.py`,
+   then `tools/moltnet_locale/generate_tables.py`: MoltNet's en-US strings
+   and default fonts are generated from Chromium's `.grd` files. If it
+   reports drift, rerun it with `--write`; if it names a new Blink string,
+   decide whether pages can read it and classify it in the script
+   (docs/FINGERPRINTING.md, "MoltNet: the browser's UI language").
 6. Compile check, run `molt_ai_unittests`, smoke test, then merge and release.
 
 ### Resolving conflicts

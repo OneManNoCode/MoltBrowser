@@ -267,7 +267,7 @@ video pipelines, PBO readback).
 | `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
 | `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
-| Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
+| Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)); the default fonts, minimum logical font size and encoding **fixed per OS**, not by UI language ([details](#default-fonts-font-size-and-encoding)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
 | Permission and content-setting state (`navigator.permissions.query`, embargo, blocked JavaScript/images/..., Shields off), third-party cookies, Privacy Sandbox APIs | the profile's | **defaults + this session's changes** only, nothing from the regular profile | same |
 | Installed extensions: web-accessible resources, page-to-extension messaging (`chrome.runtime`), content-script changes, blocked or rewritten requests | the user's (in Incognito: those allowed there) | **none**; only the built-in PDF viewer ([details](MOLTNET_COMPLIANCE.md#2-how-it-is-built)) | `extension_util.cc`: `IsIncognitoEnabled`, `IsExtensionVisibleToContext`; `web_request_api.cc` |
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
@@ -278,6 +278,8 @@ video pipelines, PBO readback).
 | `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
 | `screen.orientation.type/angle` | real | from the uniform screen, angle **0** | `screen_orientation.cc` |
 | Date/time/number form-control formats | UI language and region | **en-US** | `platform_locale.cc`: `DefaultLocale` |
+| Renderer strings pages read or measure (`validationMessage`, the file input's labels, default `<details>` and button labels, date-field placeholders, permission element labels) | UI language | **en-US** ([details](#renderer-strings)) | none: `ui::ResourceBundle` overrides at renderer start (`moltnet_locale_strings.cc`) |
+| Default text locale (text without `lang`: CJK glyph variants, hyphenation, line breaking), date picker language | UI language | **en-US** ([details](#default-text-locale)) | `language.cc`: `DefaultLanguage`, `UserPreferredLanguages` |
 | Time zone (`Date`, `Intl`) | real | **Etc/UTC** (renderer-wide `TimeZoneController` override) | glue: `Configure` |
 | `Intl` / ICU default locale | real | **en-US** (`LocaleController` override) | glue: `Configure` |
 | `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`) | `molt_net_routing.cc` (MoltBrowser file) |
@@ -1065,12 +1067,12 @@ from the next document (MoltShield reloads the page).
   metrics, different glyphs). Some default settings (per-script CJK
   fonts, `math`) are lists from which Chromium takes the first installed
   family, so those generics also tell which candidate is installed.
-  MoltNet windows use MoltBrowser's default font settings, not the user's
-  ([settings from the regular
-  profile](#moltnet-settings-from-the-regular-profile)), but those
-  defaults come from the UI language's resources (and, for the fixed font
-  on Windows, the ClearType setting), so users with different UI
-  languages still differ there.
+  MoltNet windows don't use the user's settings ([settings from the
+  regular profile](#moltnet-settings-from-the-regular-profile)) nor these
+  defaults, which also follow the UI language and, for the fixed font on
+  Windows, the ClearType setting: they use fixed per-OS families, all on
+  the allow-list ([default fonts](#default-fonts-font-size-and-encoding)),
+  so every MoltNet user of an OS renders the generic families alike.
 * Users whose machine lacks an allow-listed font (removed by an
   administrator, minimal Linux installs) remain distinguishable by that.
 * In normal windows, a sampled name that resolves to a hidden family costs a
@@ -1119,6 +1121,7 @@ a user look like other MoltBrowser users.
 | `screen.orientation.type`, `.angle` | the uniform screen's: **landscape-primary**, **0** (see below) | `screen_orientation.cc`: `type`, `angle` |
 | `screen.orientation` "change" event | never fires | `screen_orientation_controller.cc`: `NotifyOrientationChangedInternal` |
 | Date, time, month, week and number fields, numbers in validation messages | **en-US** formats on every OS | `platform_locale.{h,cc}`: `Locale::DefaultLocale`, set by `Configure` |
+| `validationMessage`, the file input's labels and the other strings pages can read; text without `lang` | **en-US** ([details](#moltnet-the-browsers-ui-language)) | renderer `ResourceBundle` overrides; `language.cc`: `DefaultLanguage` |
 
 The values are in `moltnet_values.{h,cc}` (std only, tested standalone),
 the Blink side in `moltnet_uniformity.{h,cc}`. Which contexts: what
@@ -1285,46 +1288,20 @@ and PM, Sunday first, ASCII digits, "." and ",". So a date input shows
 `03/05/2024` and a time input `1:04:09 PM` for every MoltNet user, on
 macOS and Windows as on Linux, whatever the UI language and regional
 settings. The date and colour picker popups are separate pages a site
-can't read, and keep the user's language and formats.
+can't read; they now use en-US too (their labels are pinned with the
+strings, and the date picker's language is `DefaultLanguage()`, see
+below), so they match the fields.
 
-**Not done: the strings** (still in the browser's UI language). Loading
-the en-US pak in MoltNet renderers is a larger change with user-visible
-costs, so it is left as a design:
-
-1. *Recommended: override only the strings pages can observe.* In MoltNet
-   renderers, `ChromeContentRendererClient::RenderThreadStarted` (where the
-   mode is configured) calls `ui::ResourceBundle::
-   OverrideLocaleStringResource(id, text)` for the page-observable ids
-   (the `IDS_FORM_*` strings of validation messages, file inputs, buttons
-   and date/time fields, `IDS_DETAILS_WITHOUT_SUMMARY_LABEL`, ...), with
-   their en-US text taken from `blink_strings.grd` at build time (a small
-   generated table, with a test that compares it to the `.grd`). The same
-   on every OS, no zygote work, and the browser UI, error pages and
-   accessibility names stay in the user's language. Needs an audit of the
-   `Locale::QueryString` / `QueryLocalizedString` callers to list the ids.
-2. *`--lang=en-US` for MoltNet renderers.* MoltBrowser's
-   `AppendRendererSwitches` could add it, but at 152
-   `RenderProcessHostImpl::AppendRendererCommandLine` appends `--lang`
-   after the embedder's switches, so content needs a one-line change to
-   keep an embedder-set `--lang`. On macOS and Windows renderers then load
-   en-US.pak before the sandbox, and `DefaultLanguage()` becomes en-US on
-   every thread, which also fixes the default text locale (below). On
-   Linux renderers are forked from the zygote, which loaded its pak before
-   any profile existed and can't open another after the fork: it would
-   need to preload en-US.pak and switch to it after forking a MoltNet
-   renderer, for which `ResourceBundle` has no API. And every
-   renderer-generated text in MoltNet tabs turns English: network error
-   pages, media-control labels and screen-reader names, the pickers, parts
-   of `chrome://` pages. (Tor Browser asks the user before requesting
-   English pages.)
-
-`DefaultLanguage()` also names the default text locale
-(`LayoutLocale::GetDefault()`), used for text without a `lang` attribute,
-for instance to pick the Han glyph variants of CJK text when the
-Accept-Language list (en-US in MoltNet) doesn't decide
-(`LayoutLocale::LocaleForHan`): a Japanese or Chinese UI language still
-shows there. Option 2 fixes it; with option 1 it needs its own override of
-`DefaultLanguage()` in MoltNet (`platform/language.cc`, all threads).
+**The strings and the default text locale** (left as a design here
+before) are now en-US too, see [MoltNet: the browser's UI
+language](#moltnet-the-browsers-ui-language): the strings pages can read
+are overridden with their en-US text in the renderer's resource bundle
+(the recommended option of the design), and `DefaultLanguage()`, the
+default text locale, is pinned to en-US. `--lang=en-US` for MoltNet
+renderers was not taken: content appends `--lang` after the embedder's
+switches, Linux renderers fork from a zygote that loaded its pak before
+any profile existed, and every renderer-made text in MoltNet tabs (error
+pages, media controls, screen-reader names) would turn English.
 
 ### Verification
 
@@ -1425,7 +1402,10 @@ it keeps `navigator.permissions.query` consistent with
 `getScreenDetails()`, which rejects without asking.
 
 **Costs for MoltNet users.** Their own font and font-size settings don't
-apply in MoltNet windows (zoom still works, per site, for the session);
+apply in MoltNet windows (zoom still works, per site, for the session;
+MoltNet's default fonts, minimum logical font size and encoding are fixed
+per OS, not by the UI language: [default
+fonts](#default-fonts-font-size-and-encoding));
 nor do blocked-by-default JavaScript or images, their site permissions
 (sites ask again in every MoltNet session), their Shields-off sites, Do Not
 Track, or allowed third-party cookies. Accessibility settings that pages
@@ -1453,18 +1433,244 @@ in the regular profile, none of them in MoltNet, while an Incognito-style
 profile inherits all four), and in a running browser the checks in
 `docs/MOLTNET_COMPLIANCE.md` §4.
 
+## MoltNet: the browser's UI language
+
+MoltNet already showed en-US where pages ask for a language directly
+(`Accept-Language`, `navigator.language(s)`, `Intl`, `Date`) and in the
+formats of form controls. Three things still followed the language of
+MoltBrowser's interface (the renderer's `--lang`), so a MoltNet user with
+a Japanese, German or Russian interface stood out, in every session and
+after every New Identity:
+
+| What a page could see | Where it came from at 152 | MoltNet now |
+|---|---|---|
+| Text the renderer makes and pages read or measure: `validationMessage`, the file input's labels, the default `<details>` summary and button labels, date-field placeholders, the permission elements' labels, ... | `Platform::QueryLocalizedString` -> `ChromeContentClient::GetLocalizedString` -> the renderer's `ui::ResourceBundle`, i.e. the locale pak of `--lang` (on Linux, the one the zygote loaded) | **en-US**, the same text on every OS |
+| The default text locale: text without a `lang` attribute (the Han glyph variants of CJK text, hyphenation, line breaking, case mapping, the quotes of `<q>`), the date picker's language, the default caption track | `DefaultLanguage()` and `UserPreferredLanguages()` (`platform/language.cc`): `--lang` | **en-US** |
+| The fonts of the generic families, the minimum logical font size, the default encoding (`document.characterSet` of pages that don't declare one) | Chromium registers their defaults from the UI language's resources (`PrefsTabHelper::RegisterProfilePrefs`), and MoltNet's settings isolation pinned the registered default | **fixed per OS**: the OS's en-US defaults, each font resolved on the font allow-list; windows-1252 |
+
+Normal and Incognito windows are unchanged: the UI language is the same on
+every site, so fixing it there would only make users look like other
+MoltBrowser users.
+
+**Kill switch.** The strings and the default text locale are kUniform,
+like the time zone and the `Intl` locale: with
+`#molt-fingerprinting-protection` off, MoltNet's `Accept-Language` and
+`navigator.languages` go back to the UI language's default list (its first
+entry is the UI language), so English strings would hide nothing and only
+make such users stand out more. The `--molt-net-renderer` switch, which
+marks MoltNet renderers whatever the mode, was therefore not needed. The
+font, font-size and encoding defaults are part of MoltNet's settings
+isolation, which doesn't depend on the kill switch.
+
+### Renderer strings
+
+In a MoltNet renderer, `ConfigureRendererProcess()` (from
+`ChromeContentRendererClient::RenderThreadStarted`, before any frame or
+worker exists) overrides each page-readable string with its en-US text in
+the process's `ui::ResourceBundle`
+(`ResourceBundle::OverrideLocaleStringResource`, checked before the locale
+paks by every `GetLocalizedString`). So every Blink caller, on every
+thread, gets the en-US text; `$1`-style placeholders stay and Blink fills
+them in as before (with en-US number formats). It works the same on every
+OS, after the Linux zygote fork too, and nothing else changes: the browser
+UI, error pages, media controls and accessibility names keep the user's
+language. (`OverrideLocaleStringResource` isn't thread-safe; at that point
+no other thread reads strings yet.)
+
+**Pinned** (pages can read or measure them):
+
+* `validationMessage`, and the validation bubble that shows the same
+  text: all 34 `IDS_FORM_VALIDATION_*` messages (missing values of text
+  fields, checkboxes, file inputs, radio groups and selects; type
+  mismatches, including the detailed email ones; patterns; ranges and
+  steps; bad dates and numbers; too long, too short);
+* text laid out in the page, whose size a page can measure: `<details>`
+  without `<summary>` ("Details"); `<input type=submit>` and `reset`
+  without a value ("Submit", "Reset"); the alt text of an
+  `<input type=image>` without one ("Submit"); the file input ("Choose
+  File", "Choose Files", "No file chosen", "3 files"); the date-field
+  placeholders ("mm", "dd", "yyyy"); the week field's layout ("Week 51,
+  2012"); a `<select multiple>` drawn as a menu list ("3 selected");
+* the labels of the permission elements, all 14 ("Use location", "Use
+  camera", "Install", ...; `<geolocation>` and `<usermedia>` are on by
+  default at 152, `<install>` is an origin trial): an element with a
+  `lang` attribute gets per-language strings that are the same for
+  everybody, one without (most) got the UI language's;
+* the JSON viewer's "Pretty-print" label, in the document of a
+  same-origin frame;
+* the byte units (`IDS_UNITS_*`): no page-readable use was found at 152,
+  pinned anyway since English units cost nothing.
+
+**Pinned although pages can't read them:** the labels of the date, month,
+week and colour picker popups ("Today", "Clear", "This month", "This
+week", "Week", "Other..."), so the popup, whose month and weekday names
+now follow the en-US default language, isn't half English.
+
+**Left in the UI language** (only the user sees them): the media
+controls (their overflow and captions menus, cast and picture-in-picture
+texts, errors; in closed user-agent shadow trees, which don't change the
+media element's size), the media session's source name (browser UI), the
+plugin placeholder, DevTools' "Debugger paused in another tab", the
+view-source page's "Line wrap", and the accessibility names (`IDS_AX_*`,
+from `ui/strings`, never laid out).
+
+**The table** (`moltnet_locale_strings_table.cc`) is generated from
+`blink_strings.grd` and `permission_element_strings.grd` at the pin by
+`tools/moltnet_locale/generate_tables.py`, which reads them from the
+upstream cache (no checkout needed) and lists every message of both files
+as pinned or left localized, with the reason. A message that a rebase
+adds, removes or makes platform-dependent fails the script until someone
+decides, and `molt_ai_unittests` compares the table with the en-US paks
+grit builds. Run the script (`--write` to regenerate) after every
+Chromium rebase.
+
+### Default text locale
+
+`DefaultLanguage()` is the renderer's UI language, kept in a static string
+`InitializePlatformLanguage()` creates during Blink's start-up, before the
+embedder configures the process; by then the static string table is
+frozen. So the hook in `language.cc` is a pointer to a string literal
+(`SetPlatformLanguageOverride`, an atomic pointer) that `DefaultLanguage()`
+turns into an `AtomicString` on the reading thread, and
+`UserPreferredLanguages()` now goes through `DefaultLanguage()`.
+`Configure(kUniform)` sets it to en-US (`moltnet_locale.cc`) before any
+document or worker exists and before any text is laid out (`LayoutLocale`
+caches the default per thread). The testing override still wins.
+
+What changes for a MoltNet page: text without a `lang` attribute is laid
+out as en-US. For CJK text that matters most: `LayoutLocale::LocaleForHan`
+takes the first Han-capable language of Accept-Language (none: en-US),
+then the default locale (was a Japanese or Chinese UI, now en-US: none),
+then ICU's default (already en-US in MoltNet), so unlabelled Han text gets
+the same glyph variants and fallback fonts for everyone. Hyphenation
+(`hyphens: auto`), line breaking, case mapping and `<q>` quotes of
+unlabelled text use en-US; the date picker uses en-US names; and for
+users who asked for captions, a video's default caption track is picked
+for English.
+
+Not covered: code that reads `Platform::DefaultLocale()` itself rather
+than `DefaultLanguage()`; none was found that pages can observe, but
+without a checkout the search wasn't exhaustive.
+
+### Default fonts, font size and encoding
+
+At 152 Chromium registers these defaults from the UI language's resources
+(`chrome/browser/ui/prefs/prefs_tab_helper.cc`):
+
+* `webkit.webprefs.fonts.<generic>.<script>`, which `FontFamilyCache` reads
+  into WebPreferences: `IDS_*_FONT_FAMILY*` of
+  `locale_settings_{win,mac,linux}.grd`, translated per UI language (with
+  a Japanese UI the script-independent fonts are Japanese ones); the
+  per-script defaults for the UI language's own script are left out;
+  `",A,B,C"` lists resolve to the first installed family; on Windows the
+  fixed font is Consolas or Courier New by the ClearType setting;
+* `webkit.webprefs.minimum_logical_font_size`: 6 (Windows, Linux) or 9
+  (macOS) in English, 10 or 12 for some Japanese, Korean and Chinese UIs;
+* `intl.charset_default`: windows-1252 in English, Shift_JIS in Japanese,
+  GBK in Chinese, ...
+
+MoltNet's settings isolation pinned all of them to the registered default,
+so the user's own settings no longer showed, but those defaults did. Now
+`PinMoltNetPrefsToDefaults` (no new hook) gives these prefs fixed per-OS
+values (`molt_net_locale_prefs.{h,cc}`):
+
+* each font: the OS's en-US default, resolved the way a default install
+  resolves it: the first family of the default (or of its list) that is on
+  the OS's font allow-list ([Fonts](#fonts): installed on every supported
+  version), an alias replaced by the family it stands for (Linux: Times
+  New Roman -> Liberation Serif, Arial -> Liberation Sans), none when no
+  family is listed. Two exceptions: Windows' fixed font is always Consolas
+  (ClearType is on by default) and Linux's is DejaVu Sans Mono instead of
+  fontconfig's "Monospace", which distributions resolve to different
+  fonts. Every other font pref (most scripts) has no family, as in
+  Chromium; Blink then uses the script-independent one and, for a generic
+  family without one, the standard font;
+* the minimum logical font size: the OS's en-US value;
+* the default encoding: windows-1252, on every OS.
+
+| | standard / serif | sans-serif | monospace | cursive / fantasy / math | per-script (examples) |
+|---|---|---|---|---|---|
+| Windows | Times New Roman | Arial | Consolas | Comic Sans MS / Impact / Cambria Math | Japanese Yu Gothic (no serif: Yu Mincho and MS PMincho are optional features), Korean Malgun Gothic, Chinese Microsoft YaHei / JhengHei |
+| macOS | Times | Helvetica | Menlo | Apple Chancery / Papyrus / STIX Two Math | Hiragino, Apple SD Gothic Neo, PingFang, Songti |
+| Linux | Liberation Serif | Liberation Sans | DejaVu Sans Mono | none (Comic Sans MS, Impact and Latin Modern Math aren't on every distribution) | CJK: none listed, so per-character fallback |
+
+The table (`molt_net_locale_prefs_table.h`) is generated by the same
+script from the three `.grd` files, `components_locale_settings.grd` and
+`font_allowlists.cc` (so the script must be rerun after an allow-list
+edit); its en-US column is checked against the paks grit builds on each
+OS's build machine.
+
+### What a fixed language costs MoltNet users
+
+* Form validation bubbles, file inputs, the default `<details>` and button
+  labels and the date picker are in English in MoltNet windows.
+* For users whose captions setting asks for subtitles, videos pick English
+  caption tracks by default.
+* CJK text without a `lang` attribute no longer gets the glyph variants
+  of the user's language; pages that declare their language are
+  unaffected.
+* Old pages in a legacy CJK or Cyrillic encoding that don't declare it
+  rely on Chromium's encoding detector, as they do for English-language
+  users; the rare page it misses shows garbled text.
+* CJK users get the English minimum logical font size, so very small
+  relative font sizes stay smaller than in their regular windows.
+
+### Code and verification
+
+| Where | What |
+|---|---|
+| `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` (generated) | the page-readable strings, pinned in kUniform renderers (+ `moltnet_locale_strings_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_locale.{h,cc}` | pins `DefaultLanguage()` in `Configure(kUniform)` (+ `moltnet_locale_test.cc`) |
+| `src/chrome/browser/molt_ai/tor/molt_net_locale_prefs.{h,cc}`, `molt_net_locale_prefs_table.h`, `molt_net_locale_prefs_resource_ids.h` (generated) | MoltNet's fixed fonts, minimum logical font size and encoding (+ `molt_net_locale_prefs_unittest.cc`); applied in `molt_net_pref_isolation.cc` |
+| `tools/moltnet_locale/generate_tables.py` | generates and checks the tables from the pinned `.grd` files |
+
+Upstream hooks: `third_party/blink/renderer/platform/language.{h,cc}`
+(`SetPlatformLanguageOverride`, `DefaultLanguage`,
+`UserPreferredLanguages`). The renderer strings and the font defaults need
+no upstream hook (`ConfigureRendererProcess` and `PinMoltNetPrefsToDefaults`
+are MoltBrowser's).
+
+**Verified without a Chromium checkout:** the script regenerates both
+tables identically from the pinned `.grd` files, read both from the
+upstream cache and from files, and fails as it should on a new, renamed
+or changed message, a changed font default and a changed encoding. The
+renderer-strings code and its real unit test build and pass with g++
+(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions
+-Wunsafe-buffer-usage -Wshorten-64-to-32 -Wimplicit-int-conversion
+-Wexit-time-destructors -Wglobal-constructors`) against stand-ins of the
+pinned `ResourceBundle` and `DataPack` (fake en-US and "French" paks made
+from the `.grd` files); 4 mutants all fail it. `molt_net_locale_prefs.cc`,
+its real unit test (against the real Blink allow-lists and fonts matcher)
+and the real `molt_net_pref_isolation.cc` (against a `PrefService`
+stand-in, with a Japanese UI's registry) pass with the same compilers and
+flags; 9 mutants all fail them. The `language.cc` hook and
+`moltnet_locale.cc` compile against stand-ins of the pinned WTF types and
+pass a harness (pinned on the main and another thread, unpinned, the
+testing override first). **Needs the build machine:** compiling all of
+it; `molt_ai_unittests` (`MoltNetLocaleStringsTest.*`, against the real
+en-US and French paks; `MoltNetLocalePrefsTest.*` with the real paks of
+each OS; `MoltNetLocalePinTest.*`); `blink_unittests`
+(`MoltNetLocaleTest.*`); and, in MoltNet windows of builds with a
+Japanese, German and Russian interface on each OS: `validationMessage` of
+an empty required field, the size of `<input type=file>`, `<details>` and
+`<input type=date>`, `document.characterSet` of an undeclared page, the
+measured width of unstyled, `serif` and `monospace` text, and CJK text
+without `lang` (glyph variants), all identical to an English-interface
+MoltNet window on the same OS.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
 `MoltFingerprintingProtection`, enabled by default). When disabled, new
 renderers get no mode switch and no seed (Blink runs unmodified) and MoltNet
-no longer forces en-US; relaunch to apply it to every renderer. It is
+no longer forces en-US (languages, time zone, form controls, renderer
+strings, default text locale); relaunch to apply it to every renderer. It is
 independent of `--disable-molt-shield` on purpose: that switch is an
 ad-blocking escape hatch and must not silently drop MoltNet uniformity. The
 per-site escape hatch is [Shields off](#shields-off) (normal and Incognito
 windows only). MoltNet's [settings
-isolation](#moltnet-settings-from-the-regular-profile) doesn't depend on
-the switch.
+isolation](#moltnet-settings-from-the-regular-profile), including its
+fixed default fonts, font size and encoding, doesn't depend on the switch.
 
 ## Known gaps and attacks
 
@@ -1534,14 +1740,13 @@ Honest list; anything not in the table above is not covered.
   shows through device-pixel snapping, `devicePixelContentBoxSize` and DPR
   client hints; cross-process iframes can report a screen one step
   narrower than a main frame with a classic scrollbar.
-* Renderer-side UI strings (`validationMessage`, the file input's labels,
-  the default `<details>` summary and button labels, date-field
-  placeholders) follow the browser's UI language, not en-US; the
-  form-control formats are en-US ([design for the
-  strings](#form-controls-in-en-us)).
-* Text without a `lang` attribute uses the browser's UI language as its
-  default locale (`LayoutLocale::GetDefault()`), which shows in the Han
-  glyph variants of CJK text, among others (same section).
+* (Closed: renderer strings, the default text locale and the default
+  fonts, font size and encoding no longer follow the browser's UI
+  language, see [the browser's UI
+  language](#moltnet-the-browsers-ui-language).) What is left there:
+  renderer strings pages can't read (media controls, accessibility names)
+  stay in the UI language, and code reading `Platform::DefaultLocale()`
+  directly isn't covered (none found that pages can observe).
 * A touchscreen itself shows: `navigator.maxTouchPoints` (and its value),
   the `pointer` / `any-pointer` / `hover` media queries and touch-event
   support; pen pressure, tilt and twist stay real (touch contact and
@@ -1549,9 +1754,8 @@ Honest list; anything not in the table above is not covered.
 * (Closed: permission and content-setting state, fonts and other user
   settings MoltNet inherited from the regular profile, see [settings from
   the regular profile](#moltnet-settings-from-the-regular-profile).) What
-  is left there: MoltBrowser's defaults for fonts, font sizes and the
-  default encoding depend on the UI language; browser-wide state isn't per
-  profile and still shows in MoltNet (page colours and the system's
+  is left there: browser-wide state isn't per profile and still shows in
+  MoltNet (page colours and the system's
   forced-colors and contrast settings, MoltShield's global switch and
   filter lists, and `prefers-color-scheme`, which is dark for everyone
   only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
@@ -1685,6 +1889,10 @@ on a canvas-effects video call.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/letterbox.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_letterbox.h`, `molt_letterbox_view.{h,cc}` | MoltNet screen size, pixel ratio (+ `letterbox_test.cc`); the browser-side letterbox geometry and margins (+ `molt_letterbox_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
+| `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
+| `src/chrome/browser/molt_ai/tor/molt_net_locale_prefs.{h,cc}`, `molt_net_locale_prefs_table.h` | MoltNet's fixed default fonts, minimum logical font size and encoding (generated table, + `molt_net_locale_prefs_unittest.cc`) |
+| `tools/moltnet_locale/generate_tables.py` | generates and checks both tables from the pinned `.grd` files |
 | `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, Shields-off sites) |
 | `src/chrome/common/molt_ai/fingerprinting/` | feature, mode switch, `molt_fingerprinting.mojom` |
 | `src/chrome/browser/molt_ai/fingerprinting/` | session seed, mode switch, seed + sites over mojo, chrome://flags entry |
@@ -1720,7 +1928,8 @@ MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
 `screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet
-settings isolation: `off_the_record_profile_impl.cc` (constructor),
+default text locale: `platform/language.{h,cc}`; MoltNet settings
+isolation: `off_the_record_profile_impl.cc` (constructor),
 `chrome/browser/profiles/BUILD.gn`.
 
 ## Follow-ups
@@ -1747,24 +1956,25 @@ settings isolation: `off_the_record_profile_impl.cc` (constructor),
    letterboxing the CSS size so zoom stops showing, dropping DPR client
    hints in MoltNet, opening MoltNet windows at a 1400 x 900 page, and the
    checks on the build machine listed there.
-6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
+6. Fonts: the allow-lists are in (see [Fonts](#fonts)), and MoltNet's
+   generic-font settings are fixed per OS, from the allow-lists, whatever
+   the UI language ([default
+   fonts](#default-fonts-font-size-and-encoding)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
-   version, fixed generic-font settings in MoltNet that don't depend on
-   the UI language (MoltNet already ignores the user's own, see [settings
-   from the regular profile](#moltnet-settings-from-the-regular-profile)),
-   and text metrics / per-character fallback. The WebGL parameter surface
+   version (MoltNet's default fonts depend on them too), and text metrics
+   / per-character fallback. The WebGL parameter surface
    and WebGPU in MoltNet are done (fixed WebGL baselines, no WebGPU
    adapter); left: a mobile look at the baselines if MoltNet comes to
    Android, and checking them against the WebGL reports of real Macs,
    Windows and Linux machines in MoltNet windows.
 7. Per-document Shields-off delivery instead of a per-profile list.
-8. MoltNet: renderer UI strings in en-US (design in [Form controls in
-   en-US](#form-controls-in-en-us)) and the default text locale; then a
-   touchscreen-less look (`maxTouchPoints`, pointer media queries).
-   Done: touch coordinates and contact, the Window Management API, screen
-   orientation, form-control formats ([MoltNet: touches, screens,
-   orientation and form
-   controls](#moltnet-touches-screens-orientation-and-form-controls)), and
+8. MoltNet: a touchscreen-less look (`maxTouchPoints`, pointer media
+   queries). Done: touch coordinates and contact, the Window Management
+   API, screen orientation, form-control formats ([MoltNet: touches,
+   screens, orientation and form
+   controls](#moltnet-touches-screens-orientation-and-form-controls)),
+   renderer strings and the default text locale in en-US ([the browser's
+   UI language](#moltnet-the-browsers-ui-language)), and
    permission state and user settings that no longer come from the regular
    profile ([settings from the regular
    profile](#moltnet-settings-from-the-regular-profile)).
