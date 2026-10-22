@@ -7,9 +7,10 @@
 # Design: docs/design/WEB_AI_APIS.md.
 
 # The decisions (availability, consent, buckets, counting, limits, which
-# model), the option -> prompt mapping, and the per-site answers and prompt
-# pauses with their stored form. Standard library only, so the standalone
-# test build links it too.
+# model), the option -> prompt mapping, the Translator's languages, pieces
+# and instruction, and the per-site answers and prompt pauses with their
+# stored form. Standard library only, so the standalone test build links it
+# too.
 source_set("logic") {
   sources = [
     "web_ai_conversation.cc",
@@ -20,6 +21,8 @@ source_set("logic") {
     "web_ai_prompts.h",
     "web_ai_site_permissions.cc",
     "web_ai_site_permissions.h",
+    "web_ai_translation.cc",
+    "web_ai_translation.h",
   ]
 }
 
@@ -129,6 +132,7 @@ source_set("unit_tests") {
     "web_ai_prompts_unittest.cc",
     "web_ai_site_permissions_service_unittest.cc",
     "web_ai_site_permissions_unittest.cc",
+    "web_ai_translation_unittest.cc",
   ]
   deps = [
     ":logic",
@@ -136,6 +140,10 @@ source_set("unit_tests") {
     ":site_permissions",
     "//base",
     "//base/test:test_support",
+
+    # The Translator's response schema is checked with the converter the
+    # inference service uses.
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//components/prefs:test_support",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
