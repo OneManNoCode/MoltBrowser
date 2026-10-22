@@ -67,6 +67,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   fields. Choosing dropdown options, drag, hover, right-click and waits
   are no longer model actions (the `/` commands still have them), and
   page actions need an on-device model.
+- **`/fill ai` and `/paste` show every value before filling.** They used
+  to send your profile or clipboard to whichever model the chat used (a
+  cloud model too), cut a field-to-value map out of its reply and write
+  it into the page. Now the on-device model picks values for the page's
+  text fields (never a password field, at most 8 at a time) in the same
+  checked format as page actions; MoltBrowser lists each field and value
+  and fills nothing until you allow it, in Auto mode too. `/fill ai` had
+  never run at all: plain `/fill` answered it.
 - **Safer secrets and cloud keys.** Vault autofill checks the site and
   requires https; keys and passwords aren't stored without a real system
   keychain; cloud endpoints must use https; the Gemini key is no longer put
@@ -419,6 +427,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Chromium's own decoders and scaled in the browser; the AI sandbox gets
   only raw pixels within fixed limits, never an image file. Whether your
   model sees images doesn't change what `availability()` tells a site.
+  The model downloads together with its image component, each file
+  checked against its pinned hash, and counts as downloaded only when
+  both are complete.
 - **The web agent can see the page.** With a model that sees images, the
   agent also gets a screenshot of the visible part of the tab it works in,
   at each step, so it can pick icon-only buttons and find its way on
@@ -442,6 +453,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   before tesseract sees it. The text comes back with `--- Page N ---`
   headers and says when pages were left out; one 3-minute limit covers the
   whole PDF.
+- **The AI chat's commands work in the side panel.** The web agent, `/fill`,
+  `/vault fill`, `/vault find`, `/triage`, `/ask-tabs`, `/trackers`,
+  `/reputation`, `/hops` and `/js` looked for the chat's window in a way
+  that only finds a chat opened as a tab, so in the side panel they
+  answered "no owning browser" or found nothing. They now act on the page
+  in the chat's own window (never another window, never the chat itself;
+  MoltNet windows stay apart), and the agent no longer starts on the chat
+  when it is opened as a tab.
+- **Typing into multi-line text boxes works.** The agent's and the chat's
+  page actions failed on a `<textarea>` (a message or address box) and
+  only filled single-line fields.
 
 ### Engineering
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):

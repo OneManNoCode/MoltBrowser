@@ -6,7 +6,8 @@
 //   - which URL to fetch (pinned revision instead of a moving "main"),
 //   - whether a server response to a resumed (Range) request can be
 //     appended to the .partial file or the download must restart,
-//   - whether a finished file may replace the model (size + SHA-256).
+//   - whether a finished file may replace the model (size + SHA-256),
+//   - whether a file on disk counts as a downloaded model file.
 
 #ifndef CHROME_BROWSER_MOLT_AI_MODELS_DOWNLOAD_POLICY_H_
 #define CHROME_BROWSER_MOLT_AI_MODELS_DOWNLOAD_POLICY_H_
@@ -53,6 +54,13 @@ VerifyResult VerifyDownload(const std::string& actual_sha256,
                             int64_t actual_size,
                             const std::string& expected_sha256,
                             int64_t expected_size);
+
+// Whether a file at a model's final path counts as downloaded: it exists,
+// isn't empty and, for a pinned entry (|pinned_size| > 0), has exactly
+// that size. The download job moves only a verified file there, so this
+// catches a file truncated or replaced afterwards, and a leftover from
+// before the entry was pinned. A ".partial" file never counts.
+bool IsCompleteModelFile(bool exists, int64_t actual_size, int64_t pinned_size);
 
 }  // namespace models
 }  // namespace molt_ai

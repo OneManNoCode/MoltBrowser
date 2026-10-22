@@ -18,13 +18,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/vault/vault_host_match.h"
 #include "chrome/browser/molt_ai/vault/vault_store.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
@@ -111,18 +108,14 @@ void MoltAIChatHandler::HandleVaultFindForActive(
   const std::string callback_id = args[0].GetString();
   std::string host;
   bool fillable = false;
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (browser && browser->GetTabStripModel()) {
-    content::WebContents* t =
-        browser->GetTabStripModel()->GetActiveWebContents();
-    if (t) {
-      const url::Origin& origin =
-          t->GetPrimaryMainFrame()->GetLastCommittedOrigin();
-      host = origin.host();
-      fillable = molt_ai::vault::IsFillableOrigin(origin);
-    }
+  // The active tab of the chat's own window (a tab, or the window hosting
+  // its side panel), never the chat itself.
+  bool crossed_moltnet = false;
+  if (content::WebContents* t = ActiveTabForChatAction(&crossed_moltnet)) {
+    const url::Origin& origin =
+        t->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+    host = origin.host();
+    fillable = molt_ai::vault::IsFillableOrigin(origin);
   }
   std::vector<molt_ai::vault::VaultEntry> matches;
   {
@@ -277,18 +270,16 @@ void MoltAIChatHandler::HandleVaultAutofill(const base::ListValue& args) {
   const std::string entry_id = StringArg(args, 1);
   base::DictValue out;
 
-  // Resolve target tab.
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->GetTabStripModel()) {
-    ResolveError(out, "no owning browser");
+  // The active tab of the chat's own window (a tab, or the window hosting
+  // its side panel; never another window), never the chat itself.
+  bool crossed_moltnet = false;
+  content::WebContents* target = ActiveTabForChatAction(&crossed_moltnet);
+  if (crossed_moltnet) {
+    ResolveError(out, molt_ai::tor::kOtherWindowRefusedInMoltNet);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
-  content::WebContents* target =
-      browser->GetTabStripModel()->GetActiveWebContents();
   content::RenderFrameHost* frame =
       target ? target->GetPrimaryMainFrame() : nullptr;
   if (!frame) {

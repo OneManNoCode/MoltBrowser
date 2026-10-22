@@ -92,10 +92,14 @@ class ModelDownloadJob::Writer {
     return len;
   }
 
-  // Closes and deletes the .partial file (user cancelled).
-  void Discard() {
+  // Closes and deletes the .partial file (user cancelled), then
+  // |also_delete|.
+  void Discard(const std::vector<base::FilePath>& also_delete) {
     file_.Close();
     base::DeleteFile(partial_);
+    for (const base::FilePath& path : also_delete) {
+      base::DeleteFile(path);
+    }
   }
 
   bool Truncate() {
@@ -216,13 +220,16 @@ ModelDownloadJob::~ModelDownloadJob() {
   if (writer_) file_runner_->DeleteSoon(FROM_HERE, std::move(writer_));
 }
 
-void ModelDownloadJob::CancelAndDiscard() {
+void ModelDownloadJob::CancelAndDiscard(
+    std::vector<base::FilePath> also_delete) {
   loader_.reset();
   done_.Reset();
-  // Ordered after any pending write on the file sequence.
-  file_runner_->PostTask(FROM_HERE,
-                         base::BindOnce(&Writer::Discard,
-                                        base::Unretained(writer_.get())));
+  // Ordered after any pending write (or Finish's rename) on the file
+  // sequence.
+  file_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&Writer::Discard, base::Unretained(writer_.get()),
+                     std::move(also_delete)));
 }
 
 void ModelDownloadJob::OnPartialOpened(int64_t existing_bytes) {

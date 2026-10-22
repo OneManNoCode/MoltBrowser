@@ -36,6 +36,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/lifetime/termination_notification.h"
+#include "chrome/browser/molt_ai/models/download_policy.h"
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 #include "chrome/browser/molt_ai/runtime/stream_validator.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
@@ -1851,22 +1852,38 @@ size_t BrowserAIRuntime::GetModelMemoryUsage() const {
 
 void BrowserAIRuntime::RefreshModelStatus() {
   // Stat the files without holding the registry lock. A model with a
-  // vision projector is downloaded only when both files are there.
-  std::vector<std::pair<std::string, std::vector<std::string>>> paths;
+  // vision projector is downloaded only when both files are there, and a
+  // pinned file only at its exact size (models::IsCompleteModelFile): a
+  // download in progress (one file of two, a .partial) never counts.
+  // (path, pinned size or 0) per file.
+  using Files = std::vector<std::pair<std::string, int64_t>>;
+  std::vector<std::pair<std::string, Files>> paths;
   {
     std::lock_guard<std::mutex> lock(impl_->models_mutex);
     for (const auto& [id, info] : impl_->models) {
-      std::vector<std::string> files = {info.file_path};
-      if (info.has_vision()) files.push_back(info.vision_projector_path);
+      Files files = {{info.file_path,
+                      info.is_verified()
+                          ? static_cast<int64_t>(info.file_size_bytes)
+                          : 0}};
+      if (info.has_vision()) {
+        files.emplace_back(
+            info.vision_projector_path,
+            static_cast<int64_t>(info.vision_projector_size_bytes));
+      }
       paths.emplace_back(id, std::move(files));
     }
   }
   std::vector<std::pair<std::string, bool>> present;
   for (const auto& [id, files] : paths) {
     bool all = true;
-    for (const std::string& path : files) {
+    for (const auto& [path, pinned_size] : files) {
       std::error_code ec;
-      all = all && std::filesystem::exists(path, ec);
+      const bool is_file = std::filesystem::is_regular_file(path, ec);
+      const std::uintmax_t size =
+          is_file ? std::filesystem::file_size(path, ec) : 0;
+      all = all && !ec &&
+            models::IsCompleteModelFile(is_file, static_cast<int64_t>(size),
+                                        pinned_size);
     }
     present.emplace_back(id, all);
   }

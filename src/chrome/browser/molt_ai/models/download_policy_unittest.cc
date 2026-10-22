@@ -67,6 +67,19 @@ TEST(DownloadPolicyTest, UnpinnedEntriesAreAllowedButUnverified) {
   EXPECT_EQ(VerifyDownload(kHash, 10, "", 11), VerifyResult::kSizeMismatch);
 }
 
+TEST(DownloadPolicyTest, CompleteModelFile) {
+  EXPECT_TRUE(IsCompleteModelFile(true, 10, 10));
+  EXPECT_FALSE(IsCompleteModelFile(true, 9, 10));
+  EXPECT_FALSE(IsCompleteModelFile(true, 11, 10));
+  EXPECT_FALSE(IsCompleteModelFile(false, 10, 10));
+  EXPECT_FALSE(IsCompleteModelFile(true, 0, 10));
+  // Not pinned: any non-empty file.
+  EXPECT_TRUE(IsCompleteModelFile(true, 3, 0));
+  EXPECT_FALSE(IsCompleteModelFile(true, 0, 0));
+  EXPECT_FALSE(IsCompleteModelFile(true, -1, 0));
+  EXPECT_FALSE(IsCompleteModelFile(false, 3, 0));
+}
+
 }  // namespace
 }  // namespace models
 }  // namespace molt_ai

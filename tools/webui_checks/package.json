@@ -3,7 +3,7 @@
   "private": true,
   "description": "Checks for MoltBrowser's embedded WebUI code that run without a Chromium checkout.",
   "scripts": {
-    "test": "node markdown_renderer_test.js && node webui_smoke_test.js"
+    "test": "node markdown_renderer_test.js && node webui_smoke_test.js && node agent_scripts_test.js"
   },
   "devDependencies": {
     "jsdom": "25.0.1",

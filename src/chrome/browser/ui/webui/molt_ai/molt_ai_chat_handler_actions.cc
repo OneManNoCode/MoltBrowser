@@ -7,6 +7,10 @@
 // tab, asks the on-device model for one action under a grammar, validates
 // it and probes what it touches; the page shows the proposal, and it runs
 // only through HandleRunChatProposal, on the document it was proposed for.
+//
+// /fill ai and /paste (molt_ai_chat_form_fill.h, AGENT_ACTIONS.md §4.7)
+// take the same path with the user's data instead of a request: one
+// FILL_FORM of observed text fields, always confirmed.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
 
@@ -27,11 +31,14 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
+#include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_form_fill.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
@@ -44,16 +51,24 @@
 #include "url/url_constants.h"
 
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
+using molt_ai::chat_handler_helpers::StringArg;
 
 namespace agent_actions = molt_ai::agent_actions;
 namespace agent_safety = molt_ai::agent_safety;
 namespace chat_actions = molt_ai::chat_actions;
+namespace chat_form_fill = molt_ai::chat_form_fill;
 
 // Defined here: only this file's steps carry it.
 struct MoltAIChatHandler::ChatActionDecision {
   std::string callback_id;
-  // The user's words (the typed message).
+  // The user's words: the typed message, or for a form fill what they
+  // wrote after the command ("" if nothing).
   std::string request;
+  // A form fill (/fill ai, /paste): where its values come from, and the
+  // values (chat_form_fill::FormatProfile / FormatPasted). Unset for a
+  // typed request.
+  std::optional<chat_form_fill::Source> form_fill;
+  std::string form_data;
   // The document observed, its origin, URL and title.
   content::WeakDocumentPtr document;
   url::Origin origin;
@@ -86,6 +101,17 @@ constexpr char kNoWebPage[] =
 constexpr char kNoLocalModel[] =
     "Page actions are chosen by the on-device model, and none is loaded. "
     "Pick one in the model menu, then ask again.";
+// Form fills (/fill ai, /paste).
+constexpr char kNoTextField[] =
+    "There is no text field to fill on this page.";
+constexpr char kProfileEmpty[] =
+    "Your saved profile is empty. Type /profile to set it up.";
+constexpr char kProfileUnreadable[] =
+    "Your saved profile couldn't be decrypted (is your system keyring "
+    "locked?). Unlock the keyring and try again.";
+constexpr char kPasteEmpty[] = "The clipboard has no text to fill in.";
+constexpr char kPasteTooLong[] =
+    "The clipboard holds too much text. Copy less, then try again.";
 
 // A positive integer argument (JS numbers may arrive as doubles).
 std::optional<int> PositiveIntArg(const base::ListValue& args, size_t index) {
@@ -158,38 +184,125 @@ void MoltAIChatHandler::HandleProposeChatAction(const base::ListValue& args) {
   chat_action_prompt_callback_id_.clear();
   chat_action_request_.clear();
 
-  // The page: the active tab of the chat's own window, never one across
-  // MoltNet's boundary (BrowserForChatAction), and a web page.
-  bool crossed_moltnet = false;
-  BrowserWindowInterface* browser = BrowserForChatAction(&crossed_moltnet);
-  if (crossed_moltnet) {
-    ResolveChatAction(callback_id,
-                      ChatStatus("unavailable",
-                                 molt_ai::tor::kOtherWindowRefusedInMoltNet));
+  std::string unavailable;
+  content::RenderFrameHost* frame = PageForChatAction(&unavailable);
+  if (!frame) {
+    ResolveChatAction(callback_id, ChatStatus("unavailable", unavailable));
     return;
   }
-  content::WebContents* tab =
-      browser && browser->GetTabStripModel()
-          ? browser->GetTabStripModel()->GetActiveWebContents()
-          : nullptr;
-  content::RenderFrameHost* frame =
-      tab && tab != web_ui()->GetWebContents() ? tab->GetPrimaryMainFrame()
-                                               : nullptr;
-  if (!frame || !IsWebOrigin(frame->GetLastCommittedOrigin())) {
-    ResolveChatAction(callback_id, ChatStatus("unavailable", kNoWebPage));
+  auto decision = std::make_unique<ChatActionDecision>();
+  decision->callback_id = callback_id;
+  decision->request = std::move(request);
+  StartChatActionDecision(std::move(decision), frame);
+}
+
+// ------------------------------------------------------------------
+// proposeFormFill (/fill ai, /paste)
+// ------------------------------------------------------------------
+void MoltAIChatHandler::HandleProposeFormFill(const base::ListValue& args) {
+  AllowJavascript();
+  if (!HasCallbackArgs(args, 2u, __func__)) {
     return;
   }
-  // Decided on-device only: under a grammar, and the page's element list
-  // never leaves the device. A cloud chat proposes nothing unless an
-  // on-device model is loaded (nothing is loaded for it here).
-  if (GetOrCreateRuntime()->GetLoadedModelId().empty()) {
-    ResolveChatAction(callback_id, ChatStatus("unavailable", kNoLocalModel));
+  const std::string callback_id = args[0].GetString();
+  // A new command: an earlier message's request or proposal is stale, and
+  // so is a decision still running for it.
+  chat_action_token_ = 0;
+  chat_action_prompt_callback_id_.clear();
+  chat_action_request_.clear();
+  chat_proposal_.reset();
+  ++chat_action_epoch_;
+
+  const std::optional<chat_form_fill::Source> source =
+      chat_form_fill::SourceFromName(StringArg(args, 1));
+  if (!source) {
+    ResolveChatAction(callback_id, ChatStatus("failed", "Unknown command."));
     return;
+  }
+  std::string unavailable;
+  content::RenderFrameHost* frame = PageForChatAction(&unavailable);
+  if (!frame) {
+    ResolveChatAction(callback_id, ChatStatus("unavailable", unavailable));
+    return;
+  }
+
+  // The data. The profile is read here: the page never sends it. The
+  // pasted text is the page's, read from the clipboard on the user's
+  // command; it is data in the prompt, like the page's text.
+  std::string data;
+  if (*source == chat_form_fill::Source::kProfile) {
+    molt_ai::profile::ProfileLoadResult loaded;
+    {
+      ScopedAllowBlockingForMolt allow;
+      molt_ai::profile::MoltProfileStore store;
+      loaded = store.LoadWithStatus();
+    }
+    if (loaded.status == molt_ai::profile::ProfileReadStatus::kUnreadable) {
+      ResolveChatAction(callback_id, ChatStatus("failed", kProfileUnreadable));
+      return;
+    }
+    data = chat_form_fill::FormatProfile(loaded.profile);
+    if (data.empty()) {
+      ResolveChatAction(callback_id, ChatStatus("failed", kProfileEmpty));
+      return;
+    }
+  } else {
+    const std::optional<std::string> pasted =
+        molt_ai::chat_handler_helpers::BoundedStringArg(
+            args, 3, chat_form_fill::kMaxPastedBytes);
+    if (!pasted) {
+      ResolveChatAction(callback_id,
+                        ChatStatus("failed", args.size() > 3u
+                                                 ? kPasteTooLong
+                                                 : kPasteEmpty));
+      return;
+    }
+    data = chat_form_fill::FormatPasted(*pasted);
+    if (data.empty()) {
+      ResolveChatAction(callback_id, ChatStatus("failed", kPasteEmpty));
+      return;
+    }
   }
 
   auto decision = std::make_unique<ChatActionDecision>();
   decision->callback_id = callback_id;
-  decision->request = std::move(request);
+  decision->request = StringArg(args, 2);
+  decision->form_fill = source;
+  decision->form_data = std::move(data);
+  StartChatActionDecision(std::move(decision), frame);
+}
+
+content::RenderFrameHost* MoltAIChatHandler::PageForChatAction(
+    std::string* unavailable) {
+  // The active tab of the chat's own window (a tab, or the window hosting
+  // its side panel), never the chat itself or a window across MoltNet's
+  // boundary, and a web page.
+  bool crossed_moltnet = false;
+  content::WebContents* tab = ActiveTabForChatAction(&crossed_moltnet);
+  if (crossed_moltnet) {
+    *unavailable = molt_ai::tor::kOtherWindowRefusedInMoltNet;
+    return nullptr;
+  }
+  content::RenderFrameHost* frame = tab ? tab->GetPrimaryMainFrame() : nullptr;
+  if (!frame || !IsWebOrigin(frame->GetLastCommittedOrigin())) {
+    *unavailable = kNoWebPage;
+    return nullptr;
+  }
+  // Decided on-device only: under a grammar, and the page's element list
+  // (and a form fill's profile or pasted text) never leaves the device. A
+  // cloud chat proposes nothing unless an on-device model is loaded
+  // (nothing is loaded for it here).
+  if (GetOrCreateRuntime()->GetLoadedModelId().empty()) {
+    *unavailable = kNoLocalModel;
+    return nullptr;
+  }
+  return frame;
+}
+
+void MoltAIChatHandler::StartChatActionDecision(
+    std::unique_ptr<ChatActionDecision> decision,
+    content::RenderFrameHost* frame) {
+  content::WebContents* tab = content::WebContents::FromRenderFrameHost(frame);
   decision->document = frame->GetWeakDocumentPtr();
   decision->origin = frame->GetLastCommittedOrigin();
   decision->page_url = tab->GetLastCommittedURL().spec();
@@ -225,6 +338,21 @@ void MoltAIChatHandler::OnChatActionSnapshot(
   if (snapshot_origin != decision->origin.Serialize()) {
     decision->observation = agent_actions::Observation();
   }
+  if (decision->form_fill) {
+    // Fields an earlier form fill wrote on this same document are left
+    // out: the command continues with the others.
+    content::RenderFrameHost* frame =
+        decision->document.AsRenderFrameHostIfValid();
+    if (frame && frame == form_fill_document_.AsRenderFrameHostIfValid()) {
+      chat_form_fill::LeaveOutFilled(&decision->observation,
+                                     form_fill_done_selectors_);
+    }
+    if (!decision->observation.HasTypeable()) {
+      ResolveChatAction(decision->callback_id,
+                        ChatStatus("failed", kNoTextField));
+      return;
+    }
+  }
   RunChatActionDecision(std::move(decision));
 }
 
@@ -235,9 +363,15 @@ void MoltAIChatHandler::RunChatActionDecision(
   const uint64_t request_id = runtime->NewRequestId();
   active_request_id_ = request_id;
 
-  const chat_actions::DecisionPrompt prompt = chat_actions::BuildDecisionPrompt(
-      decision->request, decision->page_url, decision->page_title,
-      decision->observation, decision->retry_note);
+  const chat_actions::DecisionPrompt prompt =
+      decision->form_fill
+          ? chat_form_fill::BuildFormFillPrompt(
+                *decision->form_fill, decision->form_data, decision->request,
+                decision->page_url, decision->page_title,
+                decision->observation, decision->retry_note)
+          : chat_actions::BuildDecisionPrompt(
+                decision->request, decision->page_url, decision->page_title,
+                decision->observation, decision->retry_note);
   molt_ai::ChatPrompt chat;
   chat.system_prompt = prompt.system_prompt;
   chat.context_preamble = "\n\n";
@@ -249,9 +383,13 @@ void MoltAIChatHandler::RunChatActionDecision(
   opts.temperature = 0.2f;
   opts.reasoning = molt_ai::ReasoningMode::kOff;
   opts.request_id = request_id;
-  // One action on the elements the model is shown; checked again in
+  // One action on the elements the model is shown (a form fill: one
+  // FILL_FORM of its text fields, or DONE); checked again in
   // OnChatActionDecision (the reply is untrusted).
-  opts.json_schema = chat_actions::BuildDecisionSchema(decision->observation);
+  opts.json_schema =
+      decision->form_fill
+          ? chat_form_fill::BuildFormFillSchema(decision->observation)
+          : chat_actions::BuildDecisionSchema(decision->observation);
 
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
@@ -294,8 +432,12 @@ void MoltAIChatHandler::OnChatActionDecision(
   reply.truncated = result.truncated;
   reply.text = std::move(result.text);
   reply.error_message = std::move(result.error_message);
-  agent_actions::ReplyOutcome outcome = chat_actions::InterpretDecision(
-      reply, decision->observation, decision->bad_replies);
+  agent_actions::ReplyOutcome outcome =
+      decision->form_fill
+          ? chat_form_fill::InterpretFormFill(reply, decision->observation,
+                                              decision->bad_replies)
+          : chat_actions::InterpretDecision(reply, decision->observation,
+                                            decision->bad_replies);
   // The reply can carry typed text: log its shape only.
   DVLOG(1) << "[MoltAI] chat action reply (" << reply.text.size()
            << " chars) decision=" << static_cast<int>(outcome.decision);
@@ -321,8 +463,15 @@ void MoltAIChatHandler::OnChatActionDecision(
       break;
   }
   if (outcome.action.type == agent_actions::ActionType::kDone) {
-    // No page action for this request.
-    ResolveChatAction(decision->callback_id, ChatStatus("none"));
+    // No page action for this request. A form fill says so, in the
+    // browser's words (never the model's).
+    ResolveChatAction(
+        decision->callback_id,
+        decision->form_fill
+            ? ChatStatus("none",
+                         chat_form_fill::NothingToFillMessage(
+                             *decision->form_fill))
+            : ChatStatus("none"));
     return;
   }
   content::RenderFrameHost* frame = decision->document.AsRenderFrameHostIfValid();
@@ -336,10 +485,17 @@ void MoltAIChatHandler::OnChatActionDecision(
   proposal->id = ++next_chat_proposal_id_;
   proposal->action = std::move(outcome.action);
   proposal->observation = std::move(decision->observation);
-  proposal->scope =
-      chat_actions::Scope::ForRequest(decision->origin, decision->request);
+  // A form fill navigates nowhere: its scope is the page's origin.
+  proposal->scope = chat_actions::Scope::ForRequest(
+      decision->origin,
+      decision->form_fill ? std::string_view() : decision->request);
   proposal->document = decision->document;
   proposal->origin = decision->origin;
+  proposal->form_fill = decision->form_fill;
+  if (proposal->form_fill) {
+    proposal->form_fill_reason = chat_form_fill::ConfirmationReason(
+        *proposal->form_fill, proposal->action, proposal->origin);
+  }
   const std::vector<std::string> selectors =
       chat_actions::TargetSelectors(proposal->action, proposal->observation);
   ProbeChatActionTargets(
@@ -386,9 +542,7 @@ void MoltAIChatHandler::OnChatProposalProbed(
     ResolveChatAction(callback_id, ChatStatus("failed", kPageChanged));
     return;
   }
-  const chat_actions::Check check = chat_actions::CheckProposal(
-      proposal->action, proposal->observation, proposal->scope,
-      proposal->origin, probes);
+  const chat_actions::Check check = CheckChatProposal(*proposal, probes);
   if (check.verdict == chat_actions::Verdict::kRefuse) {
     ResolveChatAction(callback_id, ChatStatus("failed", check.message));
     return;
@@ -399,8 +553,13 @@ void MoltAIChatHandler::OnChatProposalProbed(
   base::DictValue result = ChatStatus("proposal");
   result.Set("id", proposal->id);
   result.Set("verb", agent_actions::ActionName(proposal->action.type));
-  result.Set("summary", chat_actions::DescribeProposal(proposal->action,
-                                                       proposal->observation));
+  // The browser's own description; a form fill's lists every value whole.
+  result.Set("summary",
+             proposal->form_fill
+                 ? chat_form_fill::DescribeFormFill(proposal->action,
+                                                    proposal->observation)
+                 : chat_actions::DescribeProposal(proposal->action,
+                                                  proposal->observation));
   result.Set("reason", proposal->shown_reason);
   chat_proposal_ = std::move(proposal);
   ResolveChatAction(callback_id, std::move(result));
@@ -460,9 +619,7 @@ void MoltAIChatHandler::OnChatProposalRechecked(
     ResolveChatAction(callback_id, RunError(error));
     return;
   }
-  const chat_actions::Check check = chat_actions::CheckProposal(
-      chat_proposal_->action, chat_proposal_->observation,
-      chat_proposal_->scope, chat_proposal_->origin, probes);
+  const chat_actions::Check check = CheckChatProposal(*chat_proposal_, probes);
   if (check.verdict == chat_actions::Verdict::kRefuse) {
     chat_proposal_.reset();
     ResolveChatAction(callback_id, RunError(check.message));
@@ -481,6 +638,20 @@ void MoltAIChatHandler::OnChatProposalRechecked(
   // A proposal runs once.
   std::unique_ptr<ChatProposal> proposal = std::move(chat_proposal_);
   RunChatProposalNow(callback_id, *proposal, frame);
+}
+
+molt_ai::chat_actions::Check MoltAIChatHandler::CheckChatProposal(
+    const ChatProposal& proposal,
+    const std::vector<agent_safety::ElementProbe>& probes) {
+  const chat_actions::Check check = chat_actions::CheckProposal(
+      proposal.action, proposal.observation, proposal.scope, proposal.origin,
+      probes);
+  // A form fill writes the user's data into the page: it always asks, in
+  // Auto mode too.
+  return proposal.form_fill
+             ? chat_form_fill::RequireConfirmation(check,
+                                                   proposal.form_fill_reason)
+             : check;
 }
 
 void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
@@ -540,22 +711,52 @@ void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
       ResolveChatAction(callback_id, RunError("Not a page action."));
       return;
   }
+  // A form fill: the fields it writes on this document (so the command
+  // continues with the others next time) and how to fill the rest.
+  std::vector<std::string> filled_selectors;
+  std::string more_note;
+  if (proposal.form_fill) {
+    filled_selectors =
+        chat_actions::TargetSelectors(action, proposal.observation);
+    more_note = chat_form_fill::MoreFieldsNote(*proposal.form_fill, action,
+                                               proposal.observation);
+  }
   frame->ExecuteJavaScriptInIsolatedWorld(
       base::UTF8ToUTF16(script),
       base::BindOnce(
           [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-             agent_actions::AgentAction action, base::Value v) {
+             agent_actions::AgentAction action,
+             content::WeakDocumentPtr document,
+             std::vector<std::string> filled_selectors,
+             std::string more_note, base::Value v) {
             if (!self || !self->IsJavascriptAllowed()) {
               return;
             }
-            const chat_actions::ScriptOutcome outcome =
+            chat_actions::ScriptOutcome outcome =
                 chat_actions::InterpretScriptResult(action, v);
+            if (outcome.success && !filled_selectors.empty()) {
+              content::RenderFrameHost* frame =
+                  document.AsRenderFrameHostIfValid();
+              if (!frame ||
+                  frame != self->form_fill_document_.AsRenderFrameHostIfValid()) {
+                self->form_fill_document_ = document;
+                self->form_fill_done_selectors_.clear();
+              }
+              for (std::string& selector : filled_selectors) {
+                self->form_fill_done_selectors_.push_back(std::move(selector));
+              }
+              if (!more_note.empty()) {
+                outcome.message += ". " + more_note;
+              }
+            }
             base::DictValue result;
             result.Set("success", outcome.success);
             result.Set(outcome.success ? "message" : "error", outcome.message);
             self->ResolveChatAction(cb_id, std::move(result));
           },
-          weak_ptr_factory_.GetWeakPtr(), callback_id, action),
+          weak_ptr_factory_.GetWeakPtr(), callback_id, action,
+          proposal.document, std::move(filled_selectors),
+          std::move(more_note)),
       content::ISOLATED_WORLD_ID_CONTENT_END);
 }
 

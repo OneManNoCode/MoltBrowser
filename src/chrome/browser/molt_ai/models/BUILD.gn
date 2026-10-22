@@ -11,12 +11,26 @@ source_set("download_policy") {
   ]
 }
 
+# A model download is one unit: the weights and, for a model that sees
+# images, its vision projector. Which files to fetch, the bytes and when the
+# unit counts as downloaded (std-only).
+source_set("download_plan") {
+  sources = [
+    "model_download_plan.cc",
+    "model_download_plan.h",
+  ]
+  deps = [ ":download_policy" ]
+}
+
 source_set("download") {
   sources = [
     "model_download_job.cc",
     "model_download_job.h",
   ]
-  public_deps = [ ":download_policy" ]
+  public_deps = [
+    ":download_plan",
+    ":download_policy",
+  ]
   deps = [
     "//base",
     "//crypto",
@@ -30,8 +44,12 @@ source_set("download") {
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "download_policy_unittest.cc" ]
+  sources = [
+    "download_policy_unittest.cc",
+    "model_download_plan_unittest.cc",
+  ]
   deps = [
+    ":download_plan",
     ":download_policy",
     "//testing/gtest",
   ]

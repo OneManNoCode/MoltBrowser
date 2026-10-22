@@ -90,6 +90,55 @@ inline std::optional<std::string> BoundedStringArg(const base::ListValue& args,
   return std::nullopt;
 }
 
+// ---- The chat's window ----
+//
+// The window a chat acts in (its page actions and slash commands, the web
+// agent, /fill, vault autofill, links from replies, the tab and privacy
+// commands) is its own, never another one:
+//  - a chat opened as a tab: the window holding that tab
+//    (BrowserCollection::FindBrowserWithTab, |tab_owner|);
+//  - the side panel: its WebContents is not a tab (views::WebView creates
+//    it, and only a TabModel registers a WebContents as a tab, so
+//    FindBrowserWithTab returns null for it); it is found by the window
+//    that hosts it, FindBrowserWithWindow(GetTopLevelNativeWindow())
+//    (|panel_host|).
+// No other window: not the last active one, which can be another window
+// (a page there would be the wrong page) and, in another profile, across
+// MoltNet's boundary. |may_act(window)| is that boundary
+// (molt_ai::tor::MayChatActInWindow for the chat's and the window's
+// profiles), checked on the window found.
+template <typename Window>
+struct ChatWindowChoice {
+  Window* window = nullptr;
+  // The chat's window was found but is across MoltNet's boundary.
+  bool crossed_moltnet = false;
+};
+
+template <typename Window, typename MayAct>
+ChatWindowChoice<Window> ChooseChatWindow(Window* tab_owner,
+                                          Window* panel_host,
+                                          MayAct may_act) {
+  ChatWindowChoice<Window> choice;
+  Window* own = tab_owner ? tab_owner : panel_host;
+  if (!own) {
+    return choice;
+  }
+  if (!may_act(own)) {
+    choice.crossed_moltnet = true;
+    return choice;
+  }
+  choice.window = own;
+  return choice;
+}
+
+// The page a chat action works on: the active tab of the chat's window,
+// but never the chat itself (a chat opened as a tab is its window's active
+// tab).
+template <typename Contents>
+Contents* ChatActionTarget(Contents* active_tab, const Contents* chat) {
+  return active_tab == chat ? nullptr : active_tab;
+}
+
 // JSON-encode an arbitrary string so it can be safely embedded inside
 // a JS source literal passed to ExecuteJavaScriptInIsolatedWorld.
 // Handles backslash, double-quote, all control characters, and the
