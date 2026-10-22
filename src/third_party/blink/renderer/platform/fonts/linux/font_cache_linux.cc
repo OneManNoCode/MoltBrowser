@@ -69,6 +69,11 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
     const SimpleFontData*,
     FontFallbackPriority fallback_priority) {
   if (IsEmojiPresentationEmoji(fallback_priority)) {
+    // MoltBrowser: MoltNet's emoji font first, when installed.
+    if (const SimpleFontData* uniform =
+            FontPlatformData::UniformEmojiFontData(font_description)) {
+      return uniform;
+    }
     // FIXME crbug.com/591346: We're overriding the fallback character here
     // with the FAMILY emoji in the hope to find a suitable emoji font.
     // This should be improved by supporting fallback for character

@@ -20,6 +20,8 @@
 
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 
+#include <atomic>  // MoltBrowser
+
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "build/build_config.h"
@@ -48,6 +50,42 @@
 #endif
 
 namespace blink {
+
+namespace {
+// MoltBrowser: SetUniformTextRendering().
+std::atomic<bool> g_uniform_geometric_precision{false};
+std::atomic<const char*> g_uniform_emoji_family{nullptr};
+}  // namespace
+
+// static
+void FontPlatformData::SetUniformTextRendering(  // MoltBrowser
+    const UniformTextRendering& rendering) {
+  g_uniform_emoji_family.store(rendering.emoji_family,
+                               std::memory_order_release);
+  g_uniform_geometric_precision.store(rendering.geometric_precision,
+                                      std::memory_order_release);
+}
+
+// static
+FontPlatformData::UniformTextRendering
+FontPlatformData::GetUniformTextRendering() {  // MoltBrowser
+  UniformTextRendering rendering;
+  rendering.geometric_precision =
+      g_uniform_geometric_precision.load(std::memory_order_acquire);
+  rendering.emoji_family =
+      g_uniform_emoji_family.load(std::memory_order_acquire);
+  return rendering;
+}
+
+// static
+const SimpleFontData* FontPlatformData::UniformEmojiFontData(  // MoltBrowser
+    const FontDescription& description) {
+  const char* family = g_uniform_emoji_family.load(std::memory_order_acquire);
+  return family ? FontCache::Get().GetFontData(description,
+                                               AtomicString(family))
+                : nullptr;
+}
+
 FontPlatformData::FontPlatformData(HashTableDeletedValueType)
     : is_hash_table_deleted_value_(true) {}
 
@@ -247,7 +285,9 @@ WebFontRenderStyle FontPlatformData::QuerySystemRenderStyle(
   // TODO(crbug.com/1327530): For now, do this only for Linux/Cros to minimize
   // the impact, and because they're the only platform that adjust these
   // settings by different device scale factors. See the doc link in the crbug.
-  if (text_rendering == TextRenderingMode::kGeometricPrecision &&
+  // MoltBrowser: MoltNet renders all text so (molt_fingerprinting).
+  if ((text_rendering == TextRenderingMode::kGeometricPrecision ||
+       GetUniformTextRendering().geometric_precision) &&
       result.use_anti_alias) {
     result.use_subpixel_positioning = true;
     result.use_hinting = false;

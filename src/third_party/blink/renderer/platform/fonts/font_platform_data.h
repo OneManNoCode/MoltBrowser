@@ -57,6 +57,7 @@ typedef const struct __CTFont* CTFontRef;
 namespace blink {
 
 class HarfBuzzFace;
+class SimpleFontData;  // MoltBrowser
 
 class PLATFORM_EXPORT FontPlatformData
     : public GarbageCollected<FontPlatformData> {
@@ -140,6 +141,22 @@ class PLATFORM_EXPORT FontPlatformData
 
   // Gets the postscript name from the typeface.
   String GetPostScriptName() const;
+
+  // MoltBrowser: how MoltNet renderers render text (Linux and ChromeOS), set
+  // once on the main thread before any font is created
+  // (molt_fingerprinting/moltnet_text.h).
+  struct UniformTextRendering {
+    // Every font as for text-rendering: geometricPrecision.
+    bool geometric_precision = false;
+    // The family emoji fall back to first (a string literal), or null.
+    const char* emoji_family = nullptr;
+  };
+  static void SetUniformTextRendering(const UniformTextRendering& rendering);
+  static UniformTextRendering GetUniformTextRendering();
+  // The emoji family's font for `description`, or null when there is no
+  // such family or it isn't installed.
+  static const SimpleFontData* UniformEmojiFontData(
+      const FontDescription& description);
 
  private:
 #if !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC)
