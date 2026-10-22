@@ -168,6 +168,7 @@ void PageTranslationJob::OnGenerationDone(web_ai::GenerationStatus status) {
               : ReadBatchReply(reply_, batch_->texts.size());
       if (translations) {
         failed_in_a_row_ = 0;
+        throttled_ = 0;
         writes = plan_->AcceptReply(*batch_, *translations);
       } else {
         ++failed_in_a_row_;

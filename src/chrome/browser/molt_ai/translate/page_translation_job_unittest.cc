@@ -411,6 +411,26 @@ TEST_F(PageTranslationJobTest, StopWaitsForAWriteInFlight) {
   EXPECT_TRUE(backend_.jobs.empty());
 }
 
+TEST_F(PageTranslationJobTest, StoppedBeforeReadingNothingElseHappens) {
+  page_.values = {"Hallo"};
+  job_ = std::make_unique<PageTranslationJob>(
+      std::make_unique<FakePage>(&page_),
+      *web_ai::ResolveTranslatorPair("de", "en"), backend_, "key",
+      base::DoNothing(),
+      base::BindOnce([](std::optional<JobResult>* out,
+                        JobResult result) { *out = result; },
+                     &result_));
+  job_->Start();
+  job_->Stop();
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(result_);
+  EXPECT_EQ(result_->end, JobEnd::kStopped);
+  // The device facts that arrive after Stop() start nothing.
+  EXPECT_EQ(page_.extracts, 0);
+  EXPECT_EQ(backend_.prepare_calls, 0);
+  EXPECT_EQ(backend_.generations, 0);
+}
+
 TEST_F(PageTranslationJobTest, TheDeadlineEndsTheJob) {
   Start({"Hallo"});
   ASSERT_EQ(backend_.jobs.size(), 1u);
