@@ -257,6 +257,7 @@ video pipelines, PBO readback).
 | `AudioWorkletProcessor.process()` `inputs` | farbled | farbled | `audio_worklet_processor.cc`: `CopyPortToArrayBuffers` |
 | `AnalyserNode.get{Float,Byte}{Frequency,TimeDomain}Data()` | farbled | farbled | `analyser_node.cc` |
 | `navigator.hardwareConcurrency` (window and workers) | per site, in [2, real] | **4** | `navigator_base.cc`: `hardwareConcurrency` |
+| `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **8**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
 | `screen.width/height/availWidth/availHeight` | real | viewport in DIPs rounded **down** to 200x100 steps, max 1400x900 | `screen.cc`: `GetRect` |
 | `screen.availLeft/availTop` | real | **0** | `screen.cc`: `GetRect` |
 | `screen.colorDepth/pixelDepth`, `screen.isExtended` | real | **24**, **false** | `screen.cc` |
@@ -266,6 +267,7 @@ video pipelines, PBO readback).
 | Page size (`innerWidth/innerHeight`, layout, width/height media queries) | real | **letterboxed**: the page area itself is rounded down to the screen steps above and centred ([details](#letterboxing-moltnet)) | browser: `contents_web_view.cc`: `GetInsets` |
 | `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
 | `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
+| Client hints (`Sec-CH-DPR`, viewport, width, memory, network, high-entropy `Sec-CH-UA-*`), `navigator.userAgentData.getHighEntropyValues()` | sent / real | **never sent** but `Sec-CH-UA`, `-Mobile`, `-Platform`, `Save-Data` and the preference hints; high-entropy values **blank** ([details](#client-hints)) | `frame_fetch_context.cc`, `navigator_ua.cc`; browser: `client_hints.cc` (content), `client_hints_factory.cc` |
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
 | Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
 | Permission and content-setting state (`navigator.permissions.query`, embargo, blocked JavaScript/images/..., Shields off), third-party cookies, Privacy Sandbox APIs | the profile's | **defaults + this session's changes** only, nothing from the regular profile | same |
@@ -274,6 +276,7 @@ video pipelines, PBO readback).
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
 | Third-party cookies, Shared Storage | the user's settings | **blocked**, **off** (as in Incognito) | `cookie_settings_factory.cc`, `privacy_sandbox_settings_delegate.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
+| `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
 | `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
 | `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
 | `screen.orientation.type/angle` | real | from the uniform screen, angle **0** | `screen_orientation.cc` |
@@ -794,6 +797,38 @@ tab-captured while fullscreen is sized to the capture by Chrome's own
 capture letterboxing; that size comes from the capturing site, not the
 screen.
 
+### New windows
+
+A new MoltNet window used to open at the size of the last window (or the
+saved one, or maximized like the last one), so its page started with
+margins of whatever size that left. Now it opens **restored, with a page
+area of exactly the largest letterbox size that fits on its screen**
+together with the browser UI around the page: 1400 x 900 wherever there is
+room (a 1920 x 1080 screen), 1200 x 600 on a 1366 x 768 laptop. Tor Browser
+opens its windows at a rounded size the same way.
+
+* **How.** `MoltNetWindow`, through which every MoltNet window opens (the
+  toolbar, Settings, the `.onion` interstitial and Onion-Location bar, New
+  Identity), creates the window with a normal show state instead of the
+  default one (which copies a maximized last window), then asks for that
+  page size: `WindowLetterboxSize()` (`molt_letterbox.h`) takes the
+  window's size minus its page area as the size of the browser UI (frame,
+  tab strip, toolbar, side panel) and returns the largest letterbox size
+  that fits in the screen's work area with it, and `BrowserWindow::
+  SetContentsSize()` grows or shrinks the window by the difference and
+  moves it back onto the work area if needed. The resize happens before the
+  window is shown when it has been laid out by then, else as soon as it has
+  (at most 10 posted retries).
+* **Left alone:** a window that is maximized, minimized or fullscreen
+  anyway (`--start-maximized`, the window manager), a screen too small for
+  one step, and windows that don't come from `MoltNetWindow`: popups a page
+  opens with a size and tabs dragged out of a MoltNet window (they keep
+  their size and get margins). (Ctrl+N in a MoltNet window opens a regular
+  window.) Resizing or maximizing the window later is up to the user; the
+  letterbox takes over from there.
+* The kill switch turns it off with the letterbox (the window then opens as
+  upstream does).
+
 ### Zoom
 
 Page zoom changes CSS pixels: at 125%, a 1400-DIP page is 1120 CSS pixels
@@ -838,10 +873,12 @@ images four times as large).
 * Internal pages (`chrome://` and the like) keep the real ratio.
 * Not covered, so a script that looks for it still finds the real ratio:
   layout snapping to device pixels (thin borders, for example, can be
-  measured), `ResizeObserver`'s `devicePixelContentBoxSize`, the DPR client
-  hints (`Sec-CH-DPR`, sent only to sites that ask with `Accept-CH`) and the
+  measured), `ResizeObserver`'s `devicePixelContentBoxSize` and the
   favicon size the browser fetches. As with the WebGL baselines, this stops
-  scripts that read the value, not ones written against MoltBrowser.
+  scripts that read the value, not ones written against MoltBrowser. The
+  DPR client hints (`Sec-CH-DPR`, `DPR`, and `Sec-CH-Width`, which is
+  multiplied by the ratio) are no longer sent in MoltNet ([client
+  hints](#client-hints)).
 
 ### Known gaps (letterboxing)
 
@@ -859,8 +896,8 @@ images four times as large).
 * Zoom shows while a page is zoomed (above).
 * A maximised window on a large monitor shows the page at 1400 x 900 with
   wide margins: the cap is what makes everyone with a large window
-  identical. New MoltNet windows still open at the regular window size
-  (follow-up: open them at a 1400 x 900 page).
+  identical. New MoltNet windows open without margins ([New
+  windows](#new-windows)); maximizing one brings them back.
 * During the side panel's flyover animation the page's clip rectangle is
   computed for the view without its margins, so the page can be clipped a
   margin's width off for the length of the animation (cosmetic).
@@ -869,8 +906,9 @@ images four times as large).
 
 | Where | What |
 |---|---|
-| `chrome/browser/molt_ai/fingerprinting/molt_letterbox.h` | the geometry, constexpr and std-only (+ `molt_letterbox_unittest.cc` in `molt_ai_unittests`, against Blink's constants and rounding) |
+| `chrome/browser/molt_ai/fingerprinting/molt_letterbox.h` | the geometry, constexpr and std-only, including the page size new windows open at (`WindowLetterboxSize`) (+ `molt_letterbox_unittest.cc` in `molt_ai_unittests`, against Blink's constants and rounding) |
 | `chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.{h,cc}` | which tabs, the insets, the margin colour (desktop only, `:letterbox_view`) |
+| `chrome/browser/molt_ai/tor/molt_net_window.cc` | new windows: restored, resized to that page size (`FitPageToLetterbox`) |
 | `core/molt_fingerprinting/letterbox.{h,cc}` | the screen size with scrollbars, the device pixel ratio (+ `letterbox_test.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`): browser
@@ -912,6 +950,262 @@ both on `resize`), DevTools docked on each side, the side panel, an
 infobar, split view, browser and tab fullscreen, light and dark mode, a
 regular-profile zoom not carried over, and `devicePixelRatio`, `srcset` and
 `image-set()` on a 2x screen.
+
+**New windows, verified without a Chromium checkout:** the two new
+`molt_letterbox_unittest.cc` tests and seven static_asserts pass
+standalone (g++ ASan/UBSan, clang UBSan trap with the strict flags): every
+combination of browser-UI size (0 to 320 x 141 DIPs) and work area up to
+3000 x 2000 gives a page with no margins, a window that fits, and the
+largest size that fits; the result doesn't depend on the previous window
+size. `FitPageToLetterbox()`, extracted verbatim from `molt_net_window.cc`,
+compiles against stand-ins of the pinned `BrowserWindow`, `ui::BaseWindow`
+and `display::Screen` signatures and runs in a harness (1400 x 900 on a
+1080p screen, 1200 x 600 on 1366 x 768, maximized, minimized and
+fullscreen windows left alone, waiting for layout and giving up after 10
+tries, a window closed meanwhile, no screen). **Needs the build machine:**
+opening MoltNet windows on Windows, macOS and Linux (X11 and Wayland) at 1x
+and 2x, after a maximized regular window and with the bookmarks bar shown:
+the page must start at 1400 x 900 (or the largest step) with no margins and
+without a visible resize.
+
+## MoltNet: no touchscreen, client hints, memory and CPU
+
+With the screen letterboxed and the GPU uniform, MoltNet users could still
+be told apart by whether they have a touchscreen, by the client hints a
+server can ask for (the real pixel ratio, memory, network quality, exact OS
+version, CPU architecture and browser build), by `navigator.deviceMemory`,
+by `navigator.cpuPerformance` (new at 152 and on by default: a CPU class
+derived from the CPU model) and by the high-entropy values of
+`navigator.userAgentData`. In MoltNet windows all of these are now the same
+for everyone:
+
+| API | Before, in MoltNet | Now | Where |
+|---|---|---|---|
+| `navigator.maxTouchPoints` | 0, or the touchscreen's contact count (often 10) | **0** | browser, `OverrideWebPreferences` |
+| `pointer` / `any-pointer` media queries | `fine`; `coarse` in tablet mode; any-pointer `coarse` and `fine` on a touchscreen laptop | **`fine`** / **`fine`** | same |
+| `hover` / `any-hover` media queries | `hover`; `none` in tablet mode; any-hover `none` and `hover` | **`hover`** / **`hover`** | same |
+| Touch-event feature detection: `ontouchstart` and the other `ontouch*` attributes, `document.createEvent('TouchEvent')` | off on desktop, on with `--touch-events` | **off** | same |
+| `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **8** | `navigator_device_memory.cc` |
+| `navigator.cpuPerformance` | the CPU's tier, 1 to 4 | **0** ("unknown") | browser, `GetCpuPerformanceTierOverride` |
+| `navigator.userAgentData.getHighEntropyValues()` | the real platform version, architecture, bitness, WoW64, full versions and form factors | **blank** | `navigator_ua.cc` |
+| Client hints | every hint a site asks for | **only** `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, `Save-Data` and the `Sec-CH-Prefers-*` hints | `frame_fetch_context.cc` (subresources); content's `client_hints.cc` and MoltNet's `ClientHintsControllerDelegate` (navigations) |
+
+Normal and Incognito windows are unchanged: their goal is per-site
+unlinkability, and none of these values can usefully vary per site (a
+random touch-point count or memory size per site would change layouts and
+download sizes from site to site; one fixed value would only make users
+look like other MoltBrowser users). MoltNet ignores Shields off, as
+elsewhere, and the kill switch turns all of it off.
+
+### Touchscreens
+
+**Where 152 decides.** Everything a page can learn about the touchscreen
+without being touched comes from six `WebPreferences` fields, which content
+fills from the devices in `SlowWebPreferenceCache::Update`:
+`touch_event_feature_detection_enabled` (the `--touch-events` switch;
+disabled on desktop by default, crbug.com/392584),
+`available_pointer_types` and `available_hover_types`
+(`ui::GetAvailablePointerAndHoverTypes`), `primary_pointer_type` and
+`primary_hover_type` (`ui::GetPrimaryPointerType` / `GetPrimaryHoverType`)
+and `pointer_events_max_touch_points` (`ui::MaxTouchPoints`).
+`WebContentsImpl::ComputeWebPreferences` loads them and then calls the
+embedder's `OverrideWebPreferences`, also when a device change (a
+touchscreen plugged in, tablet mode) recomputes them. Blink copies them
+into `Settings` and a runtime feature (`WebViewImpl::ApplyWebPreferences`),
+where `navigator.maxTouchPoints` (`NavigatorEvents`), the
+`pointer`/`hover` media queries (`MediaValues`) and touch-event feature
+detection (the `[RuntimeEnabled=TouchEventFeatureDetection]` `ontouch*`
+attributes, `Document::createEvent`) read them.
+
+**What MoltNet does: one browser-side override.** In MoltNet profiles
+`ChromeContentBrowserClient::OverrideWebPreferences` ends by setting the
+six fields to a mouse-only desktop (`molt_net_device.{h,cc}`): no touch
+points, a fine pointer that can hover, no touch-event feature detection.
+Chosen over Blink hooks because it is one hook for all four signals, in
+every frame and renderer of the profile; it holds when the devices change;
+and the real values never reach a MoltNet renderer.
+
+**Real touch input still works**, the way Chromium on any desktop delivers
+it while touch-event feature detection is off: a touch scrolls, zooms and
+taps; pages get pointer events (`pointerType` "touch", with the uniform
+contact of [Touches](#touches)), the compatibility mouse events and click
+of a tap, and touch events for listeners added with `addEventListener`.
+Input routing doesn't read these preferences; the other readers found are
+DevTools' emulation and the media controls' first guess (mouse until the
+first touch). `TouchEvent`, `Touch` and `TouchList` stay defined, as for
+every Chromium desktop user. **Cost:** pages that choose a touch layout from `maxTouchPoints` or
+`pointer: coarse` show their desktop layout (smaller targets; hover menus
+open on a tap through the compatibility events). Tor Browser reports the
+same desktop.
+
+**Not hidden: touching.** A page that waits for the user to touch the
+screen learns it is a touchscreen (`pointerType` "touch", touch events,
+`sourceCapabilities.firesTouchEvents`, the `pointercancel` of a pan). Hiding
+that would mean rewriting touches as mouse input, which breaks the pinch,
+pan and multi-finger handling of maps, drawing apps and games, and touch
+events would still give it away, so it isn't done. Pen pressure, tilt and
+twist stay real ([Touches](#touches)). DevTools' touch emulation still
+works.
+
+### Client hints
+
+**What MoltNet sent.** `devicePixelRatio` was already 1, but a site that
+asked (with `Accept-CH`, `<meta http-equiv="Accept-CH">`, `delegate-ch`, an
+iframe's `allow` attribute, `Critical-CH` or an HTTP/2 `ACCEPT_CH` frame)
+got, on its navigations and subresource requests:
+
+* `Sec-CH-DPR` / `DPR`: the real device scale factor (of the primary
+  display, on navigations) times the zoom;
+* `Sec-CH-Width` / `Width`: an image's layout width times that real ratio;
+* `Sec-CH-Viewport-Width` / `-Height`, `Viewport-Width`: the letterboxed
+  page size, which script reads anyway;
+* `Sec-CH-Device-Memory` / `Device-Memory`: 2 to 32;
+* `RTT`, `Downlink`, `ECT`: the browser's network-quality estimate, which
+  isn't specific to Tor's connection;
+* the high-entropy user-agent hints, which `getHighEntropyValues()` also
+  gave every page: `Sec-CH-UA-Platform-Version` (on Windows a version that
+  tells Windows 10 from 11 and their feature updates apart, such as
+  "10.0.0" or "19.0.0"; on macOS the exact release, such as "15.6.1"; empty
+  on Linux at 152), `-Arch` ("x86" or "arm"), `-Bitness`, `-WoW64`,
+  `-Model` (empty on desktop), `-Full-Version` and `-Full-Version-List`
+  (the exact build, 152.0.7977.169, which the reduced user-agent string
+  hides) and `-Form-Factors` ("Desktop").
+
+**What MoltNet sends now: only the low-entropy and preference hints.**
+`Sec-CH-UA`, `Sec-CH-UA-Mobile` and `Sec-CH-UA-Platform` (sent on every
+request by default, which sites and firewalls rely on, and the same for
+every MoltNet user of an OS and major version, like the user-agent
+string), `Save-Data` (only while data saver is on) and
+`Sec-CH-Prefers-Color-Scheme`, `-Reduced-Motion` and
+`-Reduced-Transparency` (which repeat media queries any page can
+evaluate). Every other hint is never sent, whatever the site asks for. The
+rule is an allow-list (`moltnet_device_values.h`), so a hint a later
+Chromium adds is withheld too.
+
+**Why withhold rather than send uniform values** (DPR 1, the letterboxed
+viewport, memory 8, ...): client hints are optional; Firefox, Safari and
+Tor Browser send none, so every site already works without them. Uniform
+values would each have to agree with the rest of the uniform device at
+every zoom level and stay in step with it, for nothing a script can't
+compute itself. And withholding is one rule at two choke points.
+
+**`getHighEntropyValues()`** returns what Chromium itself reports when it
+hides these values (with a `--user-agent` override): `platformVersion`,
+`architecture`, `bitness`, `model` and `uaFullVersion` are "",
+`fullVersionList` and `formFactors` are empty, `wow64` is false; `brands`,
+`mobile` and `platform` are unchanged. Sites that look for Windows 11 in
+`platformVersion` see no version and show their default.
+
+**Where.**
+
+* Subresource requests (Blink): `FrameFetchContext`'s
+  `ShouldSendClientHint`, the per-hint decision for every subresource
+  request of a document, asks `WithholdsClientHint`
+  (`moltnet_device.{h,cc}`). Workers' requests only carry `Save-Data` at
+  152.
+* Navigation requests (browser): content's `client_hints.cc` decides for
+  documents, iframes, prefetches, `Critical-CH` and `ACCEPT_CH` restarts
+  and the list it gives the network service. It enables a hint from the
+  profile's `ClientHintsControllerDelegate` (stored `Accept-CH`, additional
+  hints), from a prerendering page's `Accept-CH`, or from an iframe's
+  container policy (the `allow` attribute, `delegate-ch`); the last two
+  don't go through the delegate. So content's delegate interface gained
+  `IsClientHintWithheld()` (no hint by default) and `IsClientHintEnabled()`
+  asks it: a withheld hint is never enabled, whatever enabled it.
+  `ClientHintsFactory` builds MoltNet profiles a `MoltNetClientHints`
+  (`molt_net_client_hints.{h,cc}`), which answers from the same allow-list
+  (`molt_net_device_values.h`), doesn't even store a withheld hint from
+  `Accept-CH`, and reports only the low-entropy user-agent metadata. A
+  `Critical-CH` or `ACCEPT_CH` restart only happens for a header the
+  restart would add, and a withheld hint adds none.
+
+### Device memory and CPU performance
+
+* `navigator.deviceMemory` is **8** in MoltNet windows and workers: below
+  that, sites start serving "lite" pages; it is at or below the RAM of
+  nearly every machine that runs MoltBrowser's on-device model; and it was
+  the most any desktop Chromium reported before the cap went up to 32
+  (crbug.com/454354290), so it is a common value. The `Device-Memory`
+  hints aren't sent at all (above).
+* `navigator.cpuPerformance` (stable at 152, on secure pages) reports a
+  tier from 1 to 4 that content derives from the CPU model
+  (`content::cpu_performance::GetTier`) and hands to each renderer at
+  start. In MoltNet profiles `ChromeContentBrowserClient::
+  GetCpuPerformanceTierOverride` now returns **0**, the API's "unknown",
+  which pages already handle (CPUs the tier tables don't know report it);
+  it takes precedence over the user's and the enterprise override, which
+  would differ between users.
+
+### Which contexts
+
+The browser-side values (touch, pointer, hover, the CPU tier and the
+navigation hints) cover every frame of the MoltNet profile. The Blink-side
+ones (memory, subresource hints, `userAgentData`) cover the whole MoltNet
+renderer process, like `navigator.hardwareConcurrency` and the user agent
+itself. Both follow the kill switch.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_device_values.{h,cc}` | the client-hint allow-list and the memory value, std-only (+ `moltnet_device_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_device.{h,cc}` | Blink glue: memory, withheld hints, blank `userAgentData` values (+ `moltnet_device_test.cc`) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h` | the browser's values: the same allow-list, the input devices, the CPU tier; std-only (+ `molt_net_device_values_unittest.cc`, against Blink's) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_device.{h,cc}` | touch / pointer / hover WebPreferences and the CPU tier (`:device`) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_client_hints.{h,cc}` | MoltNet's `ClientHintsControllerDelegate` (`:client_hints`) |
+
+Upstream hooks (each marked `MoltBrowser:`): Blink
+`loader/frame_fetch_context.cc` (`ShouldSendClientHint`),
+`frame/navigator_ua.cc` (`NavigatorUA::userAgentData`),
+`frame/navigator_device_memory.cc` (`deviceMemory`); content
+`public/browser/client_hints_controller_delegate.{h,cc}` (new virtual
+`IsClientHintWithheld`, false by default) and
+`browser/client_hints/client_hints.cc` (`ClientHintsExtendedData` keeps
+the delegate, `IsClientHintEnabled` asks it); browser
+`chrome/browser/client_hints/client_hints_factory.cc`
+(`BuildServiceInstanceForBrowserContext`) and its `BUILD.gn`,
+`chrome/browser/chrome_content_browser_client.cc`
+(`OverrideWebPreferences`, `GetCpuPerformanceTierOverride`).
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_device_values_unittest.cc` (5
+tests) and `molt_net_device_values_unittest.cc` (3 tests, including the
+browser's allow-list against Blink's for every value from -8 to 255) pass
+with g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions
+-Wunsafe-buffer-usage -Wshorten-64-to-32 -Wimplicit-int-conversion
+-Wexit-time-destructors -Wglobal-constructors`), with the module's other
+pure tests still passing. `moltnet_device.cc`, `molt_net_device.cc`,
+`molt_net_client_hints.cc` and the changed
+`client_hints_controller_delegate.cc` type-check with the same strict
+flags against stand-ins of the pinned signatures (the pinned
+`client_hints.h`, `enabled_client_hints.h`, `pointer_device.h` and
+`user_agent_metadata.h` themselves; the enums generated from the pinned
+mojoms), and so do the hooked `navigator_ua.cc` and
+`navigator_device_memory.cc` as they are. Two harnesses run the real code
+under ASan/UBSan: the Blink one with `ShouldSendClientHint` extracted
+verbatim from `frame_fetch_context.cc` (6 tests: normal windows untouched,
+the allow-list, opt-in and permissions policy still applying, memory,
+`userAgentData` through the real `NavigatorUA::userAgentData`), the
+browser one with `IsClientHintEnabled` extracted verbatim from content (8
+tests: the factory and kill switch, a hint enabled by delegation still
+withheld, nothing withheld stored or reported, the low-entropy metadata,
+the input-device preferences for MoltNet only, the CPU tier). 26 mutants
+of the new code and hooks, the new-window code included (a hook removed,
+a value left real, the allow-list changed, every profile treated as
+MoltNet, ...), all fail these checks.
+**Needs the build machine:** compiling the hooks and the new targets
+(including `gn check`, DEPS and the new `ClientHintsControllerDelegate`
+virtual in every implementation), `blink_unittests`
+(`MoltNetDeviceTest.*`, which checks the headers of a real
+`FrameFetchContext`), `molt_ai_unittests`, and in a MoltNet window:
+`matchMedia('(pointer: fine)')`, `navigator.maxTouchPoints`, `'ontouchstart'
+in window` on a Windows touchscreen laptop (also in tablet mode and with
+`--touch-events`) and that touch scrolling, tapping and pinch-zoom still
+work; a client-hints test page (`Accept-CH`, `Critical-CH`, `delegate-ch`,
+an iframe `allow="ch-dpr"`) showing only the allowed headers on documents,
+iframes and images; `getHighEntropyValues()` and `navigator.cpuPerformance`
+on Windows, macOS and Linux.
 
 ## Fonts
 
@@ -1155,6 +1449,8 @@ without contact geometry or pressure (1 x 1, 0.5 while down, 0 otherwise;
 no tilt, twist or barrel pressure). Pens and mice are untouched: pen
 pressure and tilt are what drawing apps need. Cost: pages that use touch
 size or pressure (some drawing apps and games) see none in MoltNet.
+Whether there is a touchscreen at all is hidden too
+([Touchscreens](#touchscreens)).
 
 ### Screens (Window Management API)
 
@@ -1531,9 +1827,9 @@ Honest list; anything not in the table above is not covered.
 
 * Letterboxing ([Letterboxing](#letterboxing-moltnet)): a zoomed page's
   `innerWidth`/`innerHeight` show the zoom; the real device pixel ratio
-  shows through device-pixel snapping, `devicePixelContentBoxSize` and DPR
-  client hints; cross-process iframes can report a screen one step
-  narrower than a main frame with a classic scrollbar.
+  shows through device-pixel snapping and `devicePixelContentBoxSize`;
+  cross-process iframes can report a screen one step narrower than a main
+  frame with a classic scrollbar.
 * Renderer-side UI strings (`validationMessage`, the file input's labels,
   the default `<details>` summary and button labels, date-field
   placeholders) follow the browser's UI language, not en-US; the
@@ -1542,10 +1838,15 @@ Honest list; anything not in the table above is not covered.
 * Text without a `lang` attribute uses the browser's UI language as its
   default locale (`LayoutLocale::GetDefault()`), which shows in the Han
   glyph variants of CJK text, among others (same section).
-* A touchscreen itself shows: `navigator.maxTouchPoints` (and its value),
-  the `pointer` / `any-pointer` / `hover` media queries and touch-event
-  support; pen pressure, tilt and twist stay real (touch contact and
-  coordinates are uniform, see [Touches](#touches)).
+* A touchscreen shows once the user touches it (`pointerType` "touch",
+  touch events); `maxTouchPoints`, the pointer and hover media queries and
+  touch-event feature detection no longer show it
+  ([Touchscreens](#touchscreens)). Pen pressure, tilt and twist stay real
+  (touch contact and coordinates are uniform, see [Touches](#touches)).
+* `navigator.connection` (`effectiveType`, `rtt`, `downlink`) still shows
+  the browser's network-quality estimate, which isn't Tor's; the matching
+  `ECT`, `RTT` and `Downlink` client hints are no longer sent
+  ([Client hints](#client-hints)).
 * (Closed: permission and content-setting state, fonts and other user
   settings MoltNet inherited from the regular profile, see [settings from
   the regular profile](#moltnet-settings-from-the-regular-profile).) What
@@ -1683,6 +1984,7 @@ on a canvas-effects video call.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.{h,cc}` | a shared worker's storage key, handed to its thread (+ `shared_worker_key_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/webgl_uniform.{h,cc}`, `gpu_uniformity.{h,cc}` | MoltNet WebGL baselines (pure, + `webgl_uniform_unittest.cc`) and their Blink glue, incl. WebGPU (+ `gpu_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/letterbox.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_letterbox.h`, `molt_letterbox_view.{h,cc}` | MoltNet screen size, pixel ratio (+ `letterbox_test.cc`); the browser-side letterbox geometry and margins (+ `molt_letterbox_unittest.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.{h,cc}`, `moltnet_device.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}`, `molt_net_client_hints.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_window.cc` | MoltNet memory, client hints, `userAgentData` (pure, + `moltnet_device_values_unittest.cc`; glue, + `moltnet_device_test.cc`); touch / pointer / hover, CPU tier and navigation client hints in the browser (+ `molt_net_device_values_unittest.cc`); the size new windows open at |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, Shields-off sites) |
@@ -1716,6 +2018,11 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 `chrome/browser/ui/views/frame/contents_web_view.{h,cc}`,
 `chrome/browser/profiles/off_the_record_profile_impl.cc`,
 `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc`;
+MoltNet device and client hints: `frame_fetch_context.cc`,
+`navigator_ua.cc`, `navigator_device_memory.cc`,
+`content/public/browser/client_hints_controller_delegate.{h,cc}`,
+`content/browser/client_hints/client_hints.cc`,
+`chrome/browser/client_hints/client_hints_factory.cc` and `BUILD.gn`;
 MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
@@ -1742,11 +2049,11 @@ settings isolation: `off_the_record_profile_impl.cc` (constructor),
    prompt before canvas readback, not a noise revision.)
 4. (Done: third-party shared workers use their top-level site's key, see
    [Shared workers](#shared-workers).)
-5. (Done: real letterboxing of MoltNet windows, CSS device media queries and
-   `devicePixelRatio`, see [Letterboxing](#letterboxing-moltnet).) Left:
-   letterboxing the CSS size so zoom stops showing, dropping DPR client
-   hints in MoltNet, opening MoltNet windows at a 1400 x 900 page, and the
-   checks on the build machine listed there.
+5. (Done: real letterboxing of MoltNet windows, CSS device media queries,
+   `devicePixelRatio`, no DPR client hints, and new windows that open at a
+   1400 x 900 page, see [Letterboxing](#letterboxing-moltnet) and [client
+   hints](#client-hints).) Left: letterboxing the CSS size so zoom stops
+   showing, and the checks on the build machine listed there.
 6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
    version, fixed generic-font settings in MoltNet that don't depend on
@@ -1760,7 +2067,7 @@ settings isolation: `off_the_record_profile_impl.cc` (constructor),
 7. Per-document Shields-off delivery instead of a per-profile list.
 8. MoltNet: renderer UI strings in en-US (design in [Form controls in
    en-US](#form-controls-in-en-us)) and the default text locale; then a
-   touchscreen-less look (`maxTouchPoints`, pointer media queries).
+   touchscreen-less look (now done, see [Touchscreens](#touchscreens)).
    Done: touch coordinates and contact, the Window Management API, screen
    orientation, form-control formats ([MoltNet: touches, screens,
    orientation and form
