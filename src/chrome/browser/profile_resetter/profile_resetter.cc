@@ -24,7 +24,7 @@
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/google/google_brand.h"
-#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_service.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profile_resetter/brandcode_config_fetcher.h"
 #include "chrome/browser/profiles/profile.h"

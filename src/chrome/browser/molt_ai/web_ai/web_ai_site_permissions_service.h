@@ -15,8 +15,10 @@
 // infobar (web_ai_consent.cc) and the settings page (molt://ai-settings,
 // "Sites using on-device AI"), and cleared by Clear browsing data ("Site
 // settings" clears answers; history and site usage data clear the prompt's
-// history) and by a profile reset, through the hooks at the bottom.
-// Design: docs/design/WEB_AI_APIS.md §4.
+// history) and by a profile reset, through the hooks in
+// web_ai_site_permissions_factory.h, which also creates it per profile.
+// This file needs no Profile, so molt_ai_unittests tests it over a
+// TestingPrefServiceSimple. Design: docs/design/WEB_AI_APIS.md §4.
 
 #ifndef CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_SITE_PERMISSIONS_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_SITE_PERMISSIONS_SERVICE_H_
@@ -29,16 +31,13 @@
 #include "base/callback_list.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
-#include "base/no_destructor.h"
 #include "base/time/time.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class GURL;
 class PrefService;
-class Profile;
 
 namespace content {
 class BrowserContext;
@@ -47,10 +46,6 @@ class BrowserContext;
 namespace url {
 class Origin;
 }  // namespace url
-
-namespace user_prefs {
-class PrefRegistrySyncable;
-}  // namespace user_prefs
 
 namespace molt_ai::web_ai {
 
@@ -61,7 +56,8 @@ inline constexpr char kSitesPref[] = "molt_ai.web_ai.sites";
 class WebAISitePermissions : public KeyedService {
  public:
   // The service of |context|'s profile, created on first use; null where
-  // there is none (the system profile, MoltNet).
+  // there is none (the system profile, MoltNet). Defined with the factory
+  // (web_ai_site_permissions_factory.cc).
   static WebAISitePermissions* Get(content::BrowserContext* context);
 
   // |prefs|: where a regular profile keeps its answers. Null keeps them in
@@ -115,48 +111,6 @@ class WebAISitePermissions : public KeyedService {
   SitePermissionTable table_;
   base::RepeatingClosureList observers_;
 };
-
-class WebAISitePermissionsFactory : public ProfileKeyedServiceFactory {
- public:
-  static WebAISitePermissionsFactory* GetInstance();
-  static WebAISitePermissions* GetForProfile(Profile* profile);
-
-  WebAISitePermissionsFactory(const WebAISitePermissionsFactory&) = delete;
-  WebAISitePermissionsFactory& operator=(const WebAISitePermissionsFactory&) =
-      delete;
-
- private:
-  friend class base::NoDestructor<WebAISitePermissionsFactory>;
-
-  WebAISitePermissionsFactory();
-  ~WebAISitePermissionsFactory() override;
-
-  // BrowserContextKeyedServiceFactory:
-  std::unique_ptr<KeyedService> BuildServiceInstanceForBrowserContext(
-      content::BrowserContext* context) const override;
-  void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) override;
-};
-
-// ---- Hooks in upstream code (one call each) ----
-
-// ChromeBrowsingDataRemoverDelegate, DATA_TYPE_CONTENT_SETTINGS ("Site
-// settings"): answers given in [begin, end). |url_filter| may be null (all).
-void ClearWebAISiteAnswers(
-    Profile* profile,
-    base::Time begin,
-    base::Time end,
-    const base::RepeatingCallback<bool(const GURL&)>& url_filter);
-
-// ChromeBrowsingDataRemoverDelegate, DATA_TYPE_HISTORY and
-// DATA_TYPE_SITE_USAGE_DATA: the prompt's history and pauses, whenever
-// recorded (as PermissionDecisionAutoBlocker's embargoes).
-void ClearWebAIPromptHistory(
-    Profile* profile,
-    const base::RepeatingCallback<bool(const GURL&)>& url_filter);
-
-// ProfileResetter::ResetContentSettings: everything.
-void ResetWebAISitePermissions(Profile* profile);
 
 }  // namespace molt_ai::web_ai
 

@@ -9,10 +9,6 @@
 
 #include "base/functional/callback.h"
 #include "base/values.h"
-#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_selections.h"
-#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -82,14 +78,6 @@ base::DictValue WriteStoredSite(const StoredSite& stored) {
 // ---------------------------------------------------------------------------
 // WebAISitePermissions
 // ---------------------------------------------------------------------------
-
-// static
-WebAISitePermissions* WebAISitePermissions::Get(
-    content::BrowserContext* context) {
-  return context ? WebAISitePermissionsFactory::GetForProfile(
-                       Profile::FromBrowserContext(context))
-                 : nullptr;
-}
 
 WebAISitePermissions::WebAISitePermissions(PrefService* prefs)
     : prefs_(prefs), persistent_(prefs != nullptr) {
@@ -223,86 +211,6 @@ void WebAISitePermissions::RemovePromptHistory(
 base::CallbackListSubscription WebAISitePermissions::AddObserver(
     base::RepeatingClosure callback) {
   return observers_.Add(std::move(callback));
-}
-
-// ---------------------------------------------------------------------------
-// WebAISitePermissionsFactory
-// ---------------------------------------------------------------------------
-
-// static
-WebAISitePermissionsFactory* WebAISitePermissionsFactory::GetInstance() {
-  static base::NoDestructor<WebAISitePermissionsFactory> instance;
-  return instance.get();
-}
-
-// static
-WebAISitePermissions* WebAISitePermissionsFactory::GetForProfile(
-    Profile* profile) {
-  return static_cast<WebAISitePermissions*>(
-      GetInstance()->GetServiceForBrowserContext(profile, /*create=*/true));
-}
-
-WebAISitePermissionsFactory::WebAISitePermissionsFactory()
-    : ProfileKeyedServiceFactory(
-          "MoltWebAISitePermissions",
-          // Incognito gets its own instance (in memory, starting empty);
-          // the Guest session is an off-the-record profile.
-          ProfileSelections::Builder()
-              .WithRegular(ProfileSelection::kOwnInstance)
-              .WithGuest(ProfileSelection::kOffTheRecordOnly)
-              .WithSystem(ProfileSelection::kNone)
-              .Build()) {}
-
-WebAISitePermissionsFactory::~WebAISitePermissionsFactory() = default;
-
-std::unique_ptr<KeyedService>
-WebAISitePermissionsFactory::BuildServiceInstanceForBrowserContext(
-    content::BrowserContext* context) const {
-  Profile* profile = Profile::FromBrowserContext(context);
-  // MoltNet windows (an off-the-record profile) never offer the APIs.
-  if (tor::IsMoltNetProfile(profile)) {
-    return nullptr;
-  }
-  // Only a regular, on-disk profile keeps answers across restarts.
-  PrefService* prefs = profile->IsOffTheRecord() || profile->IsGuestSession()
-                           ? nullptr
-                           : profile->GetPrefs();
-  return std::make_unique<WebAISitePermissions>(prefs);
-}
-
-void WebAISitePermissionsFactory::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  // No SYNCABLE_PREF: which sites may use the on-device model stays on this
-  // device.
-  registry->RegisterDictionaryPref(kSitesPref);
-}
-
-// ---------------------------------------------------------------------------
-// Hooks
-// ---------------------------------------------------------------------------
-
-void ClearWebAISiteAnswers(
-    Profile* profile,
-    base::Time begin,
-    base::Time end,
-    const base::RepeatingCallback<bool(const GURL&)>& url_filter) {
-  if (WebAISitePermissions* service = WebAISitePermissions::Get(profile)) {
-    service->RemoveAnswersBetween(begin, end, url_filter);
-  }
-}
-
-void ClearWebAIPromptHistory(
-    Profile* profile,
-    const base::RepeatingCallback<bool(const GURL&)>& url_filter) {
-  if (WebAISitePermissions* service = WebAISitePermissions::Get(profile)) {
-    service->RemovePromptHistory(url_filter);
-  }
-}
-
-void ResetWebAISitePermissions(Profile* profile) {
-  if (WebAISitePermissions* service = WebAISitePermissions::Get(profile)) {
-    service->RemoveAll();
-  }
 }
 
 }  // namespace molt_ai::web_ai
