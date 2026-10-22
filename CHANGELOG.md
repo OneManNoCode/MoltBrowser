@@ -169,6 +169,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   This covers CSS, canvas text, `document.fonts.check()`, `local()` fonts
   and `queryLocalFonts()`. Generic fonts (serif, sans-serif, ...) and web
   fonts are unaffected; Shields off shows all your fonts to that site.
+- **MoltNet measures text alike on every machine of an OS.** On Linux,
+  MoltNet windows lay text out without hinting, as on high-density
+  screens, so text sizes no longer depend on your desktop's font settings
+  or screen scale, and emoji come from Noto Color Emoji when it is
+  installed. On every OS, canvas `measureText()` values are rounded to
+  whole pixels (coarser for very large text), so sub-pixel differences
+  between machines don't show; drawing is unchanged. Text can look a
+  little softer on standard-density Linux screens. Element sizes aren't
+  rounded, and font versions still differ between OS releases
+  (`docs/FINGERPRINTING.md`, "Text metrics").
 - **Global Privacy Control** is on: every request says `Sec-GPC: 1` and
   `navigator.globalPrivacyControl` is true
   (`chrome://flags/#enable-global-privacy-control` turns it off).

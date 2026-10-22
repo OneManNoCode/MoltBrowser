@@ -43,8 +43,10 @@ Does not protect against (see [Known gaps and attacks](#known-gaps-and-attacks))
 * local attackers who can read a renderer's memory (the seed is no longer
   on the command line, but it is in every renderer of the profile);
 * a compromised renderer;
-* fingerprinting surfaces outside the list below (font fallback and text
-  metrics, WebGL parameters, WebGPU rendering, `GPUAdapter.info`, ...).
+* fingerprinting surfaces outside the list below (per-character font
+  fallback, text measured through element geometry and, outside MoltNet,
+  `measureText()`, see [Text metrics](#text-metrics-moltnet); WebGL
+  parameters, WebGPU rendering, `GPUAdapter.info`, ...).
 
 ## How it works
 
@@ -387,6 +389,9 @@ back/forward, and a MoltNet window with Shields off.
 | WebGPU `navigator.gpu.requestAdapter()` | real | **null** (no adapter) | `gpu.cc`: `RequestAdapterImpl` |
 | Installed fonts: CSS `font-family`, canvas text, `document.fonts.check()`, `local()` | per-OS allow-list + 1 in 16 of the others, per site | **per-OS allow-list** ([details](#fonts)) | `font_fallback_list.cc`, `font_selector.{h,cc}`, `css_font_selector_base.{h,cc}`, `local_font_face_source.cc` |
 | `queryLocalFonts()` (after its permission prompt) | filtered like CSS | filtered like CSS | `font_access.cc`: `DidGetEnumerationResponse` |
+| Canvas `measureText()` (`TextMetrics`, the `ExtendedTextMetrics` methods), windows and workers | real | **rounded**: whole CSS pixels, a 64th to a 128th of the font size above 127px ([details](#text-metrics-moltnet)) | `base_rendering_context_2d.cc`: `measureText`; `text_metrics.{h,cc}` |
+| How glyphs are measured (canvas and layout), Linux | the desktop's hinting and the screen's scale factor | **unhinted with subpixel positioning** for everyone, as for `text-rendering: geometricPrecision` ([details](#text-metrics-moltnet)) | `font_platform_data.{h,cc}`: `QuerySystemRenderStyle` |
+| Emoji fallback font, Linux | fontconfig's first colour emoji font | **Noto Color Emoji** when installed | `font_cache_linux.cc`: `PlatformFallbackFontForCharacter` |
 | `AudioBuffer.getChannelData()`, `copyFromChannel()` (incl. `OfflineAudioContext` results and `ScriptProcessorNode`'s `inputBuffer`/`outputBuffer`) | farbled | farbled | `audio_buffer.cc` (binding entry points only) |
 | `AudioWorkletProcessor.process()` `inputs` | farbled | farbled | `audio_worklet_processor.cc`: `CopyPortToArrayBuffers` |
 | `AnalyserNode.get{Float,Byte}{Frequency,TimeDomain}Data()` | farbled | farbled | `analyser_node.cc` |
@@ -1933,9 +1938,13 @@ from the next document (MoltShield reloads the page).
 
 * **Per-character system fallback** (emoji, CJK, rare scripts): a page that
   renders characters no listed font has gets them from whatever installed
-  font covers them, and can measure that. Out of scope.
-* **Text metrics and rendering**: `measureText()` values and glyph pixels
-  are not noised beyond the canvas noise; hinting, anti-aliasing and font
+  font covers them, and can measure that. Out of scope, except emoji on
+  Linux in MoltNet ([Text metrics](#text-metrics-moltnet)).
+* **Text metrics and rendering**: in MoltNet windows glyphs are measured
+  alike on every machine of an OS and `measureText()` is rounded ([Text
+  metrics](#text-metrics-moltnet)); font versions still differ per OS
+  release. In normal windows `measureText()` values and glyph pixels are
+  not noised beyond the canvas noise; hinting, anti-aliasing and font
   versions differ between machines.
 * **Font settings**: the fonts the user chose for the generic families
   (and the minimum font size) stay visible through generic families and
@@ -1983,6 +1992,237 @@ windows, with Shields on and off; East Asian sites; design tools with
 [`tools/leak_test`](LEAK_TESTING.md) probes 68 family names with `document.fonts.check()` in a MoltNet
 window and fails any visible family outside the Linux allow-list; on other
 OSes it records the visible set for `diff`.
+
+## Text metrics (MoltNet)
+
+How wide and tall text comes out is one of the strongest fingerprints left
+once the installed fonts are limited: it depends on the font files, on how
+the machine rasterises them and on which fonts it falls back to. MoltNet
+windows now measure text the same way on every machine that has the same
+fonts, and round what canvas `measureText()` reports. Normal and Incognito
+windows are unchanged.
+
+### What a page can measure (152)
+
+| Channel | What it gives |
+|---|---|
+| Canvas `measureText()` | `width`, `actualBoundingBoxLeft/Right/Ascent/Descent`, `fontBoundingBoxAscent/Descent`, `alphabeticBaseline`, `hangingBaseline`, `ideographicBaseline` (shipped); `emHeightAscent/Descent`, `getSelectionRects()`, `getActualBoundingBox()`, `getIndexFromOffset()`, `getTextClusters()` (`ExtendedTextMetrics`: experimental, and an origin trial that accepts third-party tokens). Workers too (`OffscreenCanvas`) |
+| Element geometry | `offsetWidth`/`clientWidth`/`scrollWidth` (whole pixels); `getBoundingClientRect()`, `getClientRects()` and `Range` rects (64ths of a device pixel, scaled up by any transform); `ResizeObserver`, `IntersectionObserver`; `getComputedStyle()` of shrink-to-fit boxes; SVG `getComputedTextLength()`, `getSubStringLength()`, `getExtentOfChar()`, `getBBox()`; hit testing at fractional points (`elementFromPoint()`, `caretPositionFromPoint()`); where lines break; container queries on a box sized by its text |
+| `document.fonts.check()`, `local()`, `queryLocalFonts()` | which families exist: the allow-list in MoltNet ([Fonts](#fonts)) |
+| Canvas pixels of text | farbled per site ([The noise](#the-noise)); a script that rounds or hashes coarsely sees through it |
+| Emoji | which code points come out as one colour glyph, and their advances and ink boxes |
+
+### What already was uniform, and what still varied
+
+Before this change MoltNet already fixed the families pages can name
+(the per-OS allow-list), the fonts of the generic families, the minimum
+font size and the default text locale
+([default fonts](#default-fonts-font-size-and-encoding)), the reported
+pixel ratio and the zoom. So two MoltNet machines of one OS ask for the
+same fonts. What still differed:
+
+| Source | Across OSes | Machines of one OS |
+|---|---|---|
+| The font files | different fonts (Arial on Windows, Helvetica on macOS, Liberation Sans on Linux) | different versions per OS release (Windows 10 and 11, macOS 13 to 15) and per Linux distribution release (Liberation, Noto; DejaVu has been 2.37 everywhere for years) |
+| How glyphs are measured | Core Text (unhinted), DirectWrite, FreeType | **Linux:** the desktop's hinting style, anti-aliasing, autohinter and per-font fontconfig rules, and the screen's scale factor: at 1x with the usual slight hinting Skia measures glyphs hinted at their pixel size (ink edges move by up to a pixel); on a screen scaled above 1x (1.25, 1.5, 2x, ...) the browser turns hinting off and subpixel positioning on (`gfx::GetFontRenderParams`), and Skia measures unhinted outlines (linear metrics). Full or medium hinting also hints the advances (whole pixels) and takes ascent and descent from the font's VDMX table, and the font's descent borrows a pixel from its ascent only with subpixel positioning. So `width`, `actualBoundingBox*` and `fontBoundingBox*` differed between a 1x and a 2x screen and between desktop settings, by fractions of a pixel and by whole pixels. **Windows:** subpixel positioning only with font smoothing on (the default); whether ClearType settings change DirectWrite's metrics within one release is unverified. **macOS:** no setting known to change metrics |
+| Per-character fallback | different fonts | characters the requested font lacks (CJK, rare scripts, symbols) come from whatever installed font has them. **Emoji:** Segoe UI Emoji on Windows and Apple Color Emoji on macOS, in their OS release's version; on Linux fontconfig's first colour emoji font, Noto Color Emoji on most desktops but Twemoji, JoyPixels, Symbola, ... where installed and preferred |
+| Layout in device pixels | - | element geometry carries the device scale factor and the zoom in 64ths of a pixel ([Zoom](#zoom)) |
+
+### What MoltNet does now
+
+**1. One way of measuring on Linux.** MoltNet renderers lay every font out
+as upstream does for `text-rendering: geometricPrecision`
+(`FontPlatformData::QuerySystemRenderStyle`): no hinting and subpixel
+positioning, which makes Skia measure advances and ink bounds from the
+unhinted outlines (linear metrics), never reads VDMX, and applies the
+descent rule alike for everyone. Metrics then depend on the font files and
+on HarfBuzz and Skia, which ship inside MoltBrowser; not on desktop
+settings, FreeType's hinting engine or the screen's scale factor. It
+covers canvas text and element geometry alike, in documents and workers.
+It is process-wide in MoltNet renderers (fonts are shared by every frame
+and worker of a renderer), like the time zone and locale, so it also
+applies to the few internal pages a MoltNet window shows. Upstream applies
+geometricPrecision only to anti-aliased text, and so does MoltNet: with
+anti-aliasing turned off, unhinted text would be unreadable, so such
+users keep their own metrics. Windows and macOS are left as they are:
+DirectWrite and Core Text take no hinting style from the desktop. On
+Windows, turning font smoothing off (on by default) puts glyphs on whole
+pixels; that is left alone for the same reason.
+
+**2. Canvas `measureText()` rounded to a grid.** In MoltNet web content,
+every length `measureText()` reports is rounded to a grid: whole CSS
+pixels up to 127px text, then the largest power of two that is at most a
+64th of the font size (2px at 128 to 255px, 4px at 256 to 511px, ..., 16px
+at 1024px). Sub-pixel noise between machines that draw the same font (a
+different rasteriser build, float rounding, a font revision that moves a
+glyph by a few units) no longer shows, and drawing text larger doesn't
+buy precision back: the grid stays between a 64th and a 128th of an em.
+
+* **Lengths, not attributes.** The attributes are differences of a few
+  lengths: the advance, the ink box, the font's ascent, descent and em
+  box, its baselines and the offset of the chosen `textBaseline`, and the
+  alignment point (0, half or all of the width). MoltNet rounds those
+  lengths and derives the attributes from them exactly as upstream does.
+  Rounding the attributes instead would let a page measure one text under
+  several `textAlign` and `textBaseline` values and recover sub-grid
+  digits from the differences; this way every relation holds exactly
+  (`actualBoundingBoxLeft + actualBoundingBoxRight` is the same for every
+  alignment, centring moves the box by exactly half the width, every
+  baseline measured against itself is 0) and nothing below the grid is
+  left. Values are on the grid, or on its half around a centred
+  alignment point.
+* **The ink box is rounded outwards**, so a page that sizes a canvas from
+  `actualBoundingBox*` still holds every glyph; everything else rounds to
+  the nearest grid point, halves away from zero, and zero is always +0
+  (`Object.is(-0, 0)` is false). Values are first settled on a 1/1024-step
+  lattice so float noise neither moves an edge a step nor decides a tie.
+* **The `ExtendedTextMetrics` methods** use the rounded alignment and
+  baseline offsets: selection rects and clusters have their ends on the
+  grid, `getActualBoundingBox()` is rounded outwards like the ink box,
+  and `getIndexFromOffset()` answers for the grid point nearest the
+  offset, so a page can't bisect its way to exact caret positions.
+* **Which contexts:** MoltNet web content, documents and workers; a
+  `measureText()` without a context is rounded (fail closed);
+  `chrome://` and other non-http(s) top-level pages are exact. Shields
+  off doesn't lift it, as elsewhere in MoltNet.
+* **Drawing is unchanged.** `fillText()` and `strokeText()` draw exactly
+  as before; only what scripts read changes.
+
+**3. One emoji font on Linux.** MoltNet renderers on Linux take emoji
+(emoji presentation) from Noto Color Emoji whenever it is installed, as it
+is on most desktop distributions, instead of fontconfig's first colour
+emoji font; Noto Color Emoji is on the Linux allow-list, so pages could
+name it anyway. Where it isn't installed, upstream's fallback decides.
+Windows and macOS have one emoji font per release already.
+
+### What is left
+
+* **Per OS** everything about text differs: fonts, emoji, rasteriser.
+  Tor Browser accepts per-OS buckets too.
+* **Per OS release** the font versions differ (Windows 10 and 11, each
+  macOS, each Linux distribution release), and with them metrics and
+  which emoji exist. Tor Browser avoids that on Linux by shipping its own
+  fonts; MoltBrowser doesn't (see the follow-ups).
+* **Per machine** of one OS release: fonts missing from the allow-list
+  (removed by an administrator, minimal installs); Linux with
+  anti-aliasing off and Windows with font smoothing off (and possibly
+  ClearType tuning, unverified); on Linux, no Noto Color Emoji; installed
+  fallback fonts for CJK, rare scripts and symbols (restricting fallback
+  to the allow-list would turn CJK into boxes on Linux, whose list has no
+  CJK font).
+* **Element geometry is not rounded.** Layout reaches scripts through too
+  many paths for rounding some of them to hold: rounding
+  `getBoundingClientRect()` and `Range` rects would leave
+  `ResizeObserver`, hit testing, line breaks, container queries and SVG
+  text exact, would make them disagree with each other (which breaks
+  pages and is itself detectable), and a `transform: scale(64)` scales
+  sub-pixel widths past any grid. Changing layout itself is out of
+  bounds. Element geometry does benefit from 1 (on Linux, metrics no
+  longer depend on settings or the scale factor); it still carries the
+  scale factor and zoom in 64ths of a pixel ([Zoom](#zoom)).
+* **`measureText()` is only rounded.** The same lengths can be measured
+  through element geometry, exactly. The rounding stops scripts that
+  read `measureText()` (what fingerprinting libraries do), not ones
+  written against MoltBrowser.
+
+### What it costs MoltNet users
+
+* On Linux, text is unhinted at every scale factor, as Chrome draws it on
+  high-density screens and as macOS does: on 1x screens a little softer
+  than with the desktop's hinting.
+* Canvas apps that lay text out from `measureText()` get widths within
+  half a pixel: a canvas editor that places each word at the sum of
+  rounded widths can drift by a pixel or two across a line, centred text
+  moves by up to a quarter of a pixel, and ink boxes are up to a pixel
+  larger on each side (never smaller). Above 127px the error grows with
+  the size (half a 64th of the font size at most).
+* `getTextClusters()` (origin trial) positions are rounded, so text drawn
+  cluster by cluster can be up to half a grid step off.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_text_values.{h,cc}` | the grid, the rounding, the rounding of `TextMetrics` (lengths, then attributes), spans and ink boxes, the emoji family per platform (pure, + `moltnet_text_values_unittest.cc` in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_text.{h,cc}` | which contexts, `UniformTextMetrics()` (through `TextMetricsAccess`, a friend of `TextMetrics`), the `ExtendedTextMetrics` helpers, `PinUniformTextRendering()` from `Configure(kUniform)` (+ `moltnet_text_test.cc`) |
+
+Upstream hooks (each marked `MoltBrowser:`):
+`modules/canvas/canvas2d/base_rendering_context_2d.cc` (`measureText`),
+`core/html/canvas/text_metrics.h` (the friend and the grid member) and
+`text_metrics.cc` (`getSelectionRects`, `getActualBoundingBox`,
+`getTextClustersImpl`, `getIndexFromOffset`),
+`platform/fonts/font_platform_data.{h,cc}` (`SetUniformTextRendering`,
+`UniformEmojiFontData`, `QuerySystemRenderStyle`) and
+`platform/fonts/linux/font_cache_linux.cc`
+(`PlatformFallbackFontForCharacter`).
+
+**Verified without a Chromium checkout** (scratch harnesses):
+
+* `moltnet_text_values_unittest.cc` (16 tests) passes standalone with g++
+  (ASan/UBSan) and clang (UBSan trap; the new file also with
+  `-fno-exceptions -Wshorten-64-to-32 -Wimplicit-int-conversion
+  -Wunsafe-buffer-usage -Wimplicit-float-conversion -Wfloat-conversion
+  -Wexit-time-destructors -Wglobal-constructors`): against a model of
+  `TextMetrics::Update()`, rounding what it computes equals running it on
+  the rounded lengths for every alignment, baseline and baseline table,
+  at 6 sizes (43,200 cases); attributes on the grid or its half, never
+  -0; the relations above; idempotent; the ink box never shrinks;
+  measurements that differ below the grid read the same; a 256th of an
+  em hidden at 16px and mostly at 1000px; float noise; the emoji family
+  on the Linux allow-list.
+* The real `text_metrics.cc` (152 + the hooks) and `text_cluster.cc`,
+  `moltnet_text.cc`, `molt_fingerprinting.cc` and verbatim extracts of the
+  MoltBrowser parts of `font_platform_data.cc` (its `QuerySystemRenderStyle`
+  included) type-check with the strict clang flags against stand-ins of
+  the 152 signatures; the `measureText` and `font_cache_linux.cc` hook
+  statements, checked verbatim, type-check in place. A harness runs all
+  of it with a fake shaper (fractional advances and ink boxes, per-word
+  shape results as Blink's), 152's `web_font_render_style.cc` and a fake
+  fontconfig, under ASan/UBSan, in kOff, kFarble and real kUniform (8
+  tests): `measureText()` through `UniformTextMetrics()` equals the model
+  for 5 sizes x 5 alignments x 6 baselines, internal pages and other
+  modes exact; the `ExtendedTextMetrics` methods agree with the rounded
+  metrics; a 1x and a 2x screen and slight, medium and full hinting give
+  the same Skia settings once pinned (and differ without); the emoji
+  family only when installed. `moltnet_text_test.cc` itself (10 tests)
+  builds and passes against those stand-ins plus `DummyPageHolder` and
+  friends.
+* 34 mutants (the ink box to the nearest point or inwards, the alignment
+  offset from the exact width, the baseline offset or the hanging
+  baseline unrounded, attributes rounded instead of lengths, halves to
+  even, no settling, -0 kept, a grid that isn't a power of two or doesn't
+  grow, no emoji family, span ends unrounded, every context or internal
+  pages rounded, the rounded offsets or the grid not stored, right
+  alignment taken for left, selections rounded in the page's frame, the
+  ink bounds to the nearest point, carets unrounded, cluster baselines
+  unrounded, the rendering not pinned, no font size, each of the five
+  `text_metrics.cc` hooks removed, the geometricPrecision hook removed,
+  the emoji family never looked up or not stored, `Configure()` not
+  pinning) each fail one of them.
+
+**Needs the build machine:** compiling the hooks; `blink_unittests`
+(`MoltNetTextTest.*` with the real Roboto test font and shaper,
+`MoltNetTextValuesTest.*`); `molt_ai_unittests` (`MoltNetTextValuesTest.*`).
+In a running browser, MoltNet windows: on two Linux machines of one
+distribution release, one at 1x with full hinting and one at 2x, a page
+printing `measureText()` of a few strings and emoji widths must read the
+same, and a span's `getBoundingClientRect().width` within a 64th of a
+pixel (layout's own rounding at each scale factor), where regular windows
+differ by whole pixels; text on 1x Linux must still look acceptable;
+Windows 10 and 11 and macOS 13 to 15, two machines each (on Windows one
+with ClearType tuned differently): the same per release; canvas apps that
+lay text out from `measureText()` (a chart library, a canvas editor, a
+game's HUD) still look right; an `ExtendedTextMetrics` page with an
+origin-trial token.
+
+[`tools/leak_test`](LEAK_TESTING.md) records `text.metrics` (all
+attributes of one text in `sans-serif`, `serif` and `monospace` at 16 and
+48px), `text.emoji` and `text.dom_width` (a span's width), fails the run
+unless every `measureText()` value is a whole pixel
+(`text.metrics_whole`), and `leaktest.sh diff` fails when two runs on one
+OS release disagree on any of the three. It doesn't compare a run's 1x
+and 2x records with each other; their `text.metrics` and `text.emoji`
+should be equal (the Linux pin), which the report shows.
 
 ## MoltNet: touches, screens, orientation and form controls
 
@@ -2672,9 +2912,14 @@ Honest list; anything not in the table above is not covered.
   compiling ever bigger shaders) still finds the real limits; and the
   results of WebGL rendering and of shader arithmetic still differ by GPU
   under the readback noise.
-* Text metrics: `measureText()`/`TextMetrics`, `isPointInPath`. Installed
-  fonts are limited (see [Fonts](#fonts)), but per-character fallback
-  fonts, glyph rendering and the user's font settings still show.
+* Text metrics: in normal windows `measureText()`/`TextMetrics` and
+  `isPointInPath` are exact; installed fonts are limited (see
+  [Fonts](#fonts)), but per-character fallback fonts, glyph rendering and
+  the user's font settings still show. MoltNet measures glyphs alike on
+  every machine of an OS and rounds `measureText()`, but element geometry
+  is exact, font versions differ per OS release and per-character
+  fallback fonts (other than emoji on Linux) show ([Text
+  metrics](#text-metrics-moltnet)).
 
 **Context coverage**
 
@@ -2862,6 +3107,7 @@ manual.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_text_values.{h,cc}`, `moltnet_text.{h,cc}` | MoltNet's text metrics: the grid and rounding (pure, + `moltnet_text_values_unittest.cc`) and their Blink glue, the Linux rendering and emoji pin (+ `moltnet_text_test.cc`) |
 | `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
 | `src/chrome/browser/molt_ai/tor/molt_net_locale_prefs.{h,cc}`, `molt_net_locale_prefs_table.h` | MoltNet's fixed default fonts, minimum logical font size and encoding (generated table, + `molt_net_locale_prefs_unittest.cc`) |
 | `tools/moltnet_locale/generate_tables.py` | generates and checks both tables from the pinned `.grd` files |
@@ -2907,7 +3153,10 @@ MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
 `screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet
-default text locale: `platform/language.{h,cc}`; MoltNet settings
+default text locale: `platform/language.{h,cc}`; MoltNet text metrics:
+`base_rendering_context_2d.cc` (`measureText`), `text_metrics.{h,cc}`,
+`platform/fonts/font_platform_data.{h,cc}`,
+`platform/fonts/linux/font_cache_linux.cc`; MoltNet settings
 isolation: `off_the_record_profile_impl.cc` (constructor),
 `chrome/browser/profiles/BUILD.gn`; Shields decisions:
 `chrome/browser/universal_web_contents_observers.cc`,
@@ -2954,8 +3203,14 @@ fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
    the UI language ([default
    fonts](#default-fonts-font-size-and-encoding)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
-   version (MoltNet's default fonts depend on them too), and text metrics
-   / per-character fallback. The WebGL parameter surface
+   version (MoltNet's default fonts depend on them too). Text metrics in
+   MoltNet are done ([Text metrics](#text-metrics-moltnet): glyphs
+   measured alike on Linux, `measureText()` rounded, one emoji font on
+   Linux); left: shipping one font set and one emoji font with MoltBrowser
+   for MoltNet (Tor Browser's approach on Linux), which would make OS
+   releases and fallback alike too but means tens of megabytes of fonts
+   loaded into the sandboxed renderer, and checking whether Windows'
+   ClearType tuning changes DirectWrite's metrics. The WebGL parameter surface
    and WebGPU in MoltNet are done (fixed WebGL baselines, no WebGPU
    adapter); left: a mobile look at the baselines if MoltNet comes to
    Android, and checking them against the WebGL reports of real Macs,

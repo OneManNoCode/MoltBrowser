@@ -130,6 +130,7 @@ S_LANG = FP + ' "MoltNet: the browser\'s UI language"'
 S_SETTINGS = FP + ' "MoltNet: settings from the regular profile"'
 S_AI = FP + ' "Built-in AI APIs"'
 S_FONTS = FP + ' "Fonts"'
+S_TEXT = FP + ' "Text metrics (MoltNet)"'
 
 # Rules that hold for every fingerprint record (any window size, zoom or
 # scale factor).
@@ -193,6 +194,8 @@ FULL_RULES = (
     ('webgl2.extensions', 'subset', WEBGL_EXTENSIONS, S_WEBGL),
     ('webgpu.adapter', 'in', [None, 'absent'], S_WEBGL),
     ('fonts.visible', 'subset', 'per_os', S_FONTS),
+    # measureText() at 16 and 48px, left-aligned: every value a whole pixel.
+    ('text.metrics_whole', 'eq', True, S_TEXT),
     ('form.validationMessage', 'eq', 'Please fill out this field.', S_LANG),
     ('form.numberMessage', 'eq',
      'Value must be greater than or equal to 10.', S_LANG),
@@ -248,6 +251,9 @@ DIFF_KEYS = (
     'mq.dynamic_range_high', 'webgl.extensions', 'webgl2.extensions',
     'webgl.vendor', 'webgl.renderer', 'nav.pdfViewerEnabled',
     'nav.plugins', 'doc.characterSet_undeclared',
+    # The same fonts measure the same on every machine of an OS (on Linux,
+    # of a distribution release: font package versions differ).
+    'text.metrics', 'text.emoji', 'text.dom_width',
 )
 
 # Recorded and diffed, but nothing promises them uniform. A difference

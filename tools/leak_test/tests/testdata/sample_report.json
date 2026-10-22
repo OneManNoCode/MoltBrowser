@@ -1038,6 +1038,17 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"Text metrics (MoltNet)\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual true, expected true"
+   ],
+   "group": "uniformity",
+   "id": "uniform.text.metrics_whole",
+   "status": "PASS",
+   "title": "text.metrics_whole is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual \"NotSupportedError\", expected NotSupportedError"
@@ -2258,7 +2269,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 99,
+  "PASS": 100,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2339,6 +2350,7 @@
     "sharedStorage.set": "rejected",
     "storage.persist": false,
     "storage.quota": 1717986918,
+    "text.metrics_whole": true,
     "touch.createEvent": "NotSupportedError",
     "touch.ontouchstart": false,
     "tz.date_string_utc": true,
