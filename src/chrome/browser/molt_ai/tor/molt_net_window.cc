@@ -206,12 +206,16 @@ void FitPageToLetterbox(base::WeakPtr<BrowserWindowInterface> weak_browser,
     return;
   }
   const gfx::Rect bounds = window->GetBounds();
-  const gfx::Rect work_area =
-      screen->GetDisplayNearestWindow(window->GetNativeWindow()).work_area();
+  const display::Display display =
+      screen->GetDisplayNearestWindow(window->GetNativeWindow());
+  const gfx::Rect work_area = display.work_area();
+  // At the screen's scale factor (the one the page's renderer gets) and
+  // 100% zoom, where MoltNet pages start.
   const fingerprinting::LetterboxSize target =
       fingerprinting::WindowLetterboxSize(
           bounds.width(), bounds.height(), page.width(), page.height(),
-          work_area.width(), work_area.height());
+          work_area.width(), work_area.height(),
+          {display.device_scale_factor(), 1.0f});
   if (target.IsEmpty()) {
     return;
   }

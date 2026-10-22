@@ -278,6 +278,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   from the next page load (the Shields toggle reloads the page); a page
   that Back restores from memory keeps what it had. Sandboxed pages now
   follow their site's Shields setting too.
+- **Zooming no longer shows in MoltNet.** A zoomed MoltNet page used to
+  report a size that gave the zoom level away (1120 pixels wide at 125%
+  instead of 1400), and with it an accessibility need. The letterbox now
+  rounds the page's size as the page itself measures it, at every zoom level
+  and screen scale, and the screen size and mouse and touch positions follow
+  it, so a zoomed page looks like any other. Zooming in makes the page a
+  step smaller, like a smaller window; zooming out past 1400 x 900 makes it
+  smaller on screen rather than showing more of it. At 33% and 67% zoom,
+  and on a few screen scales, a page can be one step smaller than the window
+  allows.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
