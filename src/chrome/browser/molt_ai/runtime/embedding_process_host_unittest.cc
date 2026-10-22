@@ -203,7 +203,8 @@ class EmbeddingProcessHostTest : public testing::Test {
   }
 
   Result* Embed(std::vector<std::string> texts,
-                std::optional<EmbeddingModelConfig> config = std::nullopt) {
+                std::optional<EmbeddingModelConfig> config = std::nullopt,
+                bool urgent = false) {
     results_.push_back(std::make_unique<Result>());
     Result* r = results_.back().get();
     host_->Embed(config ? *config : Config(), std::move(texts),
@@ -214,7 +215,8 @@ class EmbeddingProcessHostTest : public testing::Test {
                        r->status = status;
                        r->vectors = std::move(vectors);
                      },
-                     base::Unretained(r)));
+                     base::Unretained(r)),
+                 urgent);
     task_environment_.RunUntilIdle();
     return r;
   }
@@ -305,6 +307,24 @@ TEST_F(EmbeddingProcessHostTest, BadRepliesKillTheProcess) {
     // Each violation counts against the model; start afresh.
     MakeHost();
   }
+}
+
+// A search goes ahead of queued background work.
+TEST_F(EmbeddingProcessHostTest, UrgentCallsGoFirst) {
+  Embed({"warm up"});
+  service().reply = FakeService::Reply::kHang;
+  Result* running = Embed({"background 1"});
+  service().reply = FakeService::Reply::kGood;
+  Result* queued = Embed({"background 2"});
+  Result* search = Embed({"query"}, std::nullopt, /*urgent=*/true);
+  std::move(service().pending).Run(std::vector<float>{1, 0, 0, 0});
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(running->status, EmbeddingStatus::kOk);
+  EXPECT_EQ(search->status, EmbeddingStatus::kOk);
+  EXPECT_EQ(queued->status, EmbeddingStatus::kOk);
+  ASSERT_EQ(service().received.size(), 4u);
+  EXPECT_EQ(service().received[2], std::vector<std::string>{"query"});
+  EXPECT_EQ(service().received[3], std::vector<std::string>{"background 2"});
 }
 
 TEST_F(EmbeddingProcessHostTest, ModelFailureKeepsTheProcess) {

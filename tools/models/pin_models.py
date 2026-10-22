@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
-"""Pin the on-device model registry to exact Hugging Face files.
+"""Pin the on-device model registries to exact Hugging Face files.
 
-For every entry of kModelRegistry in
-src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc this queries
+For every entry of the registries (the chat models' kModelRegistry in
+src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc, and the memory
+search model in src/chrome/browser/molt_ai/memory/embedding_model_registry.cc)
+this queries
 
     https://huggingface.co/api/models/<repo>/revision/<rev>?blobs=true
 
 and fills the entry's /*revision=*/ (commit sha), /*sha256=*/ (the GGUF's
 LFS sha256) and /*size=*/ (exact byte size). The browser then downloads
 from /resolve/<revision>/<file> and rejects any file whose size or SHA-256
-differs. Entries without a hash are downloaded as "unverified".
+differs. Chat models without a hash are downloaded as "unverified"; the
+memory search model is not offered at all until it is pinned (fail closed).
 
 Usage:
   tools/models/pin_models.py                  # dry run: show what changes
-  tools/models/pin_models.py --write          # rewrite the registry
+  tools/models/pin_models.py --write          # rewrite the registries
   tools/models/pin_models.py --only qwen3-8b  # one entry
   tools/models/pin_models.py --revision <sha> --only qwen3-8b
   tools/models/pin_models.py --from-json DIR  # offline: DIR/<owner>__<repo>.json
+  tools/models/pin_models.py --registry FILE  # only this registry (repeatable)
 
 Set HF_TOKEN for gated repositories. Review the diff, then re-check the
 licenses of new revisions before committing. Hidden registry entries
 (`hidden` = true, the trailing bool) are pinned too but stay hidden: flip
-them to false by hand once the repo/file names are confirmed.
+them to false by hand once the repo/file names are confirmed. The API's
+sha256 is what Hugging Face computed on upload: check it independently
+against a download before committing (docs/design/SEMANTIC_SEARCH.md,
+"Pinning the model").
 """
 
 import argparse
@@ -34,9 +41,11 @@ import sys
 import urllib.error
 import urllib.request
 
-REGISTRY = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src', 'chrome',
-    'browser', 'molt_ai', 'runtime', 'browser_ai_runtime.cc')
+_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
+                    'src', 'chrome', 'browser', 'molt_ai')
+REGISTRY = os.path.join(_SRC, 'runtime', 'browser_ai_runtime.cc')
+EMBEDDING_REGISTRY = os.path.join(_SRC, 'memory', 'embedding_model_registry.cc')
+REGISTRIES = [REGISTRY, EMBEDDING_REGISTRY]
 
 # One registry entry: {"<id>", "<display>", "<repo>", "<file>",
 #   /*revision=*/"...", /*sha256=*/"...", /*size=*/NULL, ...
@@ -88,31 +97,11 @@ def pin_entry(entry, info):
                                               revision))
 
 
-def main(argv):
-  ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-  ap.add_argument('--write', action='store_true',
-                  help='rewrite browser_ai_runtime.cc in place')
-  ap.add_argument('--only', action='append', default=[],
-                  help='model id(s) to pin (default: all)')
-  ap.add_argument('--revision', default='main',
-                  help='repo revision to pin to (default: main)')
-  ap.add_argument('--from-json', help='read API replies from this directory')
-  ap.add_argument('--registry', default=REGISTRY, help=argparse.SUPPRESS)
-  args = ap.parse_args(argv)
-
-  with open(args.registry) as f:
+def pin_registry(path, args):
+  """Pins the entries of one registry file. Returns (changed, failures)."""
+  with open(path) as f:
     src = f.read()
-
   entries = list(ENTRY_RE.finditer(src))
-  if not entries:
-    print('no registry entries found in %s' % args.registry, file=sys.stderr)
-    return 2
-  unknown = set(args.only) - {m.group('id') for m in entries}
-  if unknown:
-    print('unknown model id(s): %s' % ', '.join(sorted(unknown)),
-          file=sys.stderr)
-    return 2
-
   out = []
   last = 0
   changed = 0
@@ -129,7 +118,7 @@ def main(argv):
       info = fetch_info(e['repo'], args.revision, args.from_json)
       revision, sha256, size = pin_entry(e, info)
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError) as err:
-      print('FAIL %-18s %s: %s' % (e['id'], e['repo'], err), file=sys.stderr)
+      print('FAIL %-20s %s: %s' % (e['id'], e['repo'], err), file=sys.stderr)
       failures += 1
       out.append(text)
       continue
@@ -141,18 +130,56 @@ def main(argv):
     new_text = re.sub(r'/\*size=\*/\d+ULL', '/*size=*/%dULL' % size, new_text)
     if new_text != text:
       changed += 1
-      print('pin  %-18s %s@%s sha256=%s size=%d' %
+      print('pin  %-20s %s@%s sha256=%s size=%d' %
             (e['id'], e['repo'], revision[:12], sha256[:16] + '...', size))
     else:
-      print('ok   %-18s already pinned' % e['id'])
+      print('ok   %-20s already pinned' % e['id'])
     out.append(new_text)
   out.append(src[last:])
 
   if args.write and changed:
-    with open(args.registry, 'w') as f:
+    with open(path, 'w') as f:
       f.write(''.join(out))
-    print('wrote %d change(s) to %s' % (changed, args.registry))
-  elif changed:
+    print('wrote %d change(s) to %s' % (changed, path))
+  return changed, failures
+
+
+def main(argv):
+  ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+  ap.add_argument('--write', action='store_true',
+                  help='rewrite the registry files in place')
+  ap.add_argument('--only', action='append', default=[],
+                  help='model id(s) to pin (default: all)')
+  ap.add_argument('--revision', default='main',
+                  help='repo revision to pin to (default: main)')
+  ap.add_argument('--from-json', help='read API replies from this directory')
+  ap.add_argument('--registry', action='append', default=[],
+                  help='registry file(s) to pin (default: the chat models '
+                  'and the memory search model)')
+  args = ap.parse_args(argv)
+  registries = args.registry or REGISTRIES
+
+  ids = set()
+  for path in registries:
+    with open(path) as f:
+      found = {m.group('id') for m in ENTRY_RE.finditer(f.read())}
+    if not found:
+      print('no registry entries found in %s' % path, file=sys.stderr)
+      return 2
+    ids |= found
+  unknown = set(args.only) - ids
+  if unknown:
+    print('unknown model id(s): %s' % ', '.join(sorted(unknown)),
+          file=sys.stderr)
+    return 2
+
+  changed = 0
+  failures = 0
+  for path in registries:
+    c, f = pin_registry(path, args)
+    changed += c
+    failures += f
+  if changed and not args.write:
     print('%d change(s); re-run with --write to apply' % changed)
   return 1 if failures else 0
 

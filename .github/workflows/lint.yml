@@ -16,6 +16,8 @@ name: Lint
 #   * the signed apt/rpm repository tooling (tools/linux_repo/): a .deb and
 #     an .rpm built in the test, a throwaway GnuPG key, gpgv, rpmkeys,
 #     createrepo_c and `apt-get update` against the result (blocking)
+#   * the model pinning tool (tools/models/pin_models.py) parses both model
+#     registries and pins a copy offline; a half-filled pin fails (blocking)
 
 on:
   push:
@@ -117,3 +119,13 @@ jobs:
             dpkg-dev rpm createrepo-c apt-utils gnupg gpgv
       - name: tools/linux_repo/molt_linux_repo_test.py (throwaway keys)
         run: MOLT_REQUIRE_REPO_TOOLS=1 python3 tools/linux_repo/molt_linux_repo_test.py -v
+
+  model-pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tools/models/pin_models_test.py (offline, both registries)
+        run: python3 tools/models/pin_models_test.py -v

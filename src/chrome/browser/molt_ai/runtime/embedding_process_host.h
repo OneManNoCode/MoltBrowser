@@ -136,10 +136,13 @@ class EmbeddingProcessHost {
   // Embeds |texts| (at most mojom::kMaxEmbedTexts; each is made valid UTF-8
   // and cut to mojom::kMaxEmbedTextBytes) with |config|'s model, starting
   // its process if needed. A request for another model ends the current
-  // process first. |done| always runs, on this thread, never synchronously.
+  // process first. An |urgent| request (a search) goes ahead of queued
+  // background work. |done| always runs, on this thread, never
+  // synchronously.
   void Embed(const EmbeddingModelConfig& config,
              std::vector<std::string> texts,
-             EmbedCallback done);
+             EmbedCallback done,
+             bool urgent = false);
 
   // Ends the process (queued and running calls fail with kUnavailable) and
   // runs |done| once it has exited, e.g. before the model file is deleted.

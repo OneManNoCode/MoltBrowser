@@ -4,18 +4,27 @@
 # Personal Vector Memory — opt-in on-device semantic index of pages the
 # user reads. Encrypted at rest through molt_ai/keys:os_crypt (the
 # os_crypt_async Encryptor), queryable in sub-millisecond time from anywhere
-# in the browser.
+# in the browser. "Search by meaning" uses an on-device embedding model run
+# by the sandboxed inference service (docs/design/SEMANTIC_SEARCH.md).
 
-# Pure, std-only logic (embedder, hot index, text chunker). Split out so the
-# unit tests link without the profile / sql / encryption stack.
+# Pure, std-only logic (embedders' interface and hashing, hot index, text
+# chunker, vector spaces, the embedding model's registry entry, snippets).
+# Split out so the unit tests link without the profile / sql / encryption
+# stack.
 source_set("memory_core") {
   sources = [
+    "embedding_model_registry.cc",
+    "embedding_model_registry.h",
+    "embedding_space.cc",
+    "embedding_space.h",
     "memory_embedder.cc",
     "memory_embedder.h",
     "memory_extractor.cc",
     "memory_extractor.h",
     "memory_index.cc",
     "memory_index.h",
+    "memory_snippet.cc",
+    "memory_snippet.h",
     "memory_types.h",
   ]
 }
@@ -34,8 +43,36 @@ source_set("conversation_store") {
   ]
 }
 
+# The worker-sequence half of MemoryService: encrypted store, index,
+# embedders and background re-embedding. //base, //sql and molt_os_crypt
+# only, so molt_ai_unittests tests it against a real store.
+source_set("backend") {
+  sources = [
+    "memory_backend.cc",
+    "memory_backend.h",
+    "memory_storage.cc",
+    "memory_storage.h",
+  ]
+
+  public_deps = [
+    ":memory_core",
+    "//base",
+    "//sql",
+  ]
+
+  deps = [
+    "//chrome/browser/molt_ai/keys:os_crypt",
+    "//crypto",
+    "//url",
+  ]
+}
+
 source_set("memory") {
   sources = [
+    "embedding_model_manager.cc",
+    "embedding_model_manager.h",
+    "llama_embedder.cc",
+    "llama_embedder.h",
     "memory_prefs.cc",
     "memory_prefs.h",
     "memory_privacy.cc",
@@ -46,12 +83,11 @@ source_set("memory") {
     "memory_service.h",
     "memory_service_factory.cc",
     "memory_service_factory.h",
-    "memory_storage.cc",
-    "memory_storage.h",
   ]
 
   # conversation_store: the chat handler gets it through this target.
   public_deps = [
+    ":backend",
     ":conversation_store",
     ":memory_core",
   ]
@@ -62,13 +98,17 @@ source_set("memory") {
     "//chrome/browser/molt_ai/keys:os_crypt",
     # MemoryServiceFactory DependsOn() the factory that starts molt_os_crypt.
     "//chrome/browser/molt_ai/keys:os_crypt_startup",
+    "//chrome/browser/molt_ai/models:download",
+    "//chrome/browser/molt_ai/runtime:embedding_host",
     "//chrome/browser/profiles:profile",
+    "//chrome/services/molt_ai/inference/public/mojom",
     "//components/keyed_service/content",
     "//components/keyed_service/core",
     "//components/pref_registry",
     "//components/prefs",
     "//content/public/browser",
     "//crypto",
+    "//services/network/public/cpp",
     "//sql",
     "//url",
   ]
@@ -79,10 +119,14 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "conversation_store_unittest.cc",
+    "embedding_space_unittest.cc",
+    "memory_backend_unittest.cc",
     "memory_embedder_unittest.cc",
     "memory_index_unittest.cc",
+    "memory_snippet_unittest.cc",
   ]
   deps = [
+    ":backend",
     ":conversation_store",
     ":memory_core",
     "//base",

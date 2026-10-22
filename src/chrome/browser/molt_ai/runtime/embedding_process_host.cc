@@ -285,7 +285,8 @@ bool EmbeddingProcessHost::HasProcessForTesting() const {
 
 void EmbeddingProcessHost::Embed(const EmbeddingModelConfig& config,
                                  std::vector<std::string> texts,
-                                 EmbedCallback done) {
+                                 EmbedCallback done,
+                                 bool urgent) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (shutting_down_) {
     ReplySoon(std::move(done), EmbeddingStatus::kShuttingDown);
@@ -329,7 +330,11 @@ void EmbeddingProcessHost::Embed(const EmbeddingModelConfig& config,
     DropProcess(/*kill=*/false);
   }
   config_ = config;
-  queue_.push_back(std::move(request));
+  if (urgent) {
+    queue_.push_front(std::move(request));
+  } else {
+    queue_.push_back(std::move(request));
+  }
   idle_timer_.Stop();
   if (state_ == State::kNone) {
     StartLoad();

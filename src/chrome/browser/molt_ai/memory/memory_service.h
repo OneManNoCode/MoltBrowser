@@ -19,6 +19,13 @@
 // The DB is opened once molt_os_crypt has its Encryptor (early in startup).
 // Until then memory behaves as if it couldn't be opened: queries return
 // nothing, pages aren't recorded, deletes report failure.
+//
+// Search by meaning (docs/design/SEMANTIC_SEARCH.md): once the user has
+// installed the on-device embedding model (EmbeddingModelManager), the
+// backend re-embeds memory with it in the background (only while memory is
+// on and not paused) and then searches with it; HashingEmbedder stays the
+// fallback. The model runs in the sandboxed inference service, which only
+// ever sees text already in this (opt-in, never MoltNet) memory.
 
 #ifndef CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
 #define CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
@@ -33,6 +40,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/molt_ai/memory/embedding_model_manager.h"
 #include "chrome/browser/molt_ai/memory/memory_privacy.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -44,15 +52,12 @@ class Profile;
 namespace molt_ai {
 namespace memory {
 
-class MemoryService : public KeyedService {
+class MemoryBackend;
+
+class MemoryService : public KeyedService,
+                      public EmbeddingModelManager::Observer {
  public:
-  struct Stats {
-    int doc_count = 0;
-    int chunk_count = 0;
-    // Chunks currently in the hot (semantically searchable) index. Older
-    // chunks beyond kHotIndexCap stay on disk but are not searched.
-    int searchable_chunk_count = 0;
-  };
+  using Stats = MemoryStats;
 
   explicit MemoryService(Profile* profile);
   ~MemoryService() override;
@@ -87,6 +92,16 @@ class MemoryService : public KeyedService {
   void Query(const std::string& query_text, int top_k,
              base::OnceCallback<void(std::vector<QueryHit>)> on_results);
 
+  // molt://memory's "Search by meaning": the best chunk of each of the
+  // |top_k| best pages, with a snippet, and which embedder answered.
+  void SearchByMeaning(const std::string& query_text,
+                       int top_k,
+                       base::OnceCallback<void(SearchResult)> on_results);
+
+  // The vector index's state (model in use, re-embedding progress).
+  void GetSemanticStatus(
+      base::OnceCallback<void(SemanticIndexStatus)> on_done);
+
   // UI helpers used by molt://memory/.
   void GetStats(base::OnceCallback<void(Stats)> on_done);
   void ListRecent(
@@ -100,20 +115,28 @@ class MemoryService : public KeyedService {
   // KeyedService.
   void Shutdown() override;
 
- private:
-  // Worker-confined state (storage + index + embedder). Defined in the .cc.
-  struct Backend;
+  // EmbeddingModelManager::Observer:
+  void OnEmbeddingModelChanged() override;
 
+ private:
   // Posts the DB open to the worker; runs once molt_os_crypt is ready.
   void StartBackend();
   void OnPrefsChanged();
   void EnforceRetention();
+  // Tells the backend whether background embedding may run, and which
+  // model embedder to use (once the model's state is known).
+  void PushBackgroundAllowed();
+  void PushModelEmbedder();
+  void RunQuery(const std::string& query_text,
+                int top_k,
+                bool one_per_page,
+                base::OnceCallback<void(SearchResult)> on_results);
 
   raw_ptr<Profile> profile_;
   MemoryPrivacy privacy_;
   scoped_refptr<base::SequencedTaskRunner> worker_;
   // Owned here, used and destroyed only on |worker_| (see Shutdown()).
-  std::unique_ptr<Backend> backend_;
+  std::unique_ptr<MemoryBackend> backend_;
 
   PrefChangeRegistrar pref_registrar_;
   base::RepeatingTimer retention_timer_;
