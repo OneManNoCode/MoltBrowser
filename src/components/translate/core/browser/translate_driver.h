@@ -89,6 +89,13 @@ class TranslateDriver {
   // Returns whether the driver has access to the current page.
   virtual bool HasCurrentPage() const = 0;
 
+  // MoltBrowser: true when this driver translates the page on the device
+  // (molt_ai::page_translate::MoltTranslateDriver) instead of with Google's
+  // translate script. TranslateManager then fetches no script, needs no
+  // API key or network, offers no partial translate, and translates by
+  // itself only for "always translate" (docs/design/PAGE_TRANSLATION.md).
+  virtual bool TranslatesOnDevice() const { return false; }
+
  protected:
   const base::ObserverList<LanguageDetectionObserver, true>&
   language_detection_observers() const {

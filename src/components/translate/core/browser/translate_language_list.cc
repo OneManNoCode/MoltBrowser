@@ -449,6 +449,25 @@ void TranslateLanguageList::SetResourceRequestsAllowed(bool allowed) {
   }
 }
 
+// MoltBrowser: the on-device translator's languages, and no fetcher, so the
+// list is never requested from Google (docs/design/PAGE_TRANSLATION.md).
+void TranslateLanguageList::SetLocalLanguages(
+    const std::vector<std::string>& languages) {
+  std::vector<LanguageTag> tags;
+  for (const std::string& language : languages) {
+    if (std::optional<LanguageTag> tag =
+            LanguageTagConverter::GetInstance().FromString(language);
+        tag) {
+      tags.emplace_back(*tag);
+    }
+  }
+  SortAndUnique(tags);
+  supported_languages_ =
+      base::flat_set<LanguageTag>(base::sorted_unique, std::move(tags));
+  language_list_fetcher_.reset();
+  request_pending_ = false;
+}
+
 base::CallbackListSubscription TranslateLanguageList::RegisterEventCallback(
     const EventCallback& callback) {
   return callback_list_.Add(callback);

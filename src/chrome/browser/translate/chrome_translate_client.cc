@@ -21,6 +21,8 @@
 #include "chrome/browser/language/language_model_manager_factory.h"
 #include "chrome/browser/language/url_language_histogram_factory.h"
 #include "chrome/browser/language_detection/language_detection_model_service_factory.h"
+#include "chrome/browser/molt_ai/translate/molt_translate_driver.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/translate/page_translate_status.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/translate/translate_ranker_factory.h"
@@ -188,7 +190,9 @@ void OnPdfDocumentLoadComplete(
 ChromeTranslateClient::ChromeTranslateClient(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
       content::WebContentsUserData<ChromeTranslateClient>(*web_contents),
-      translate_driver_(new translate::ContentTranslateDriver(
+      // MoltBrowser: pages are translated on the device, never with
+      // Google's script (molt_ai/translate/molt_translate_driver.h).
+      translate_driver_(new molt_ai::page_translate::MoltTranslateDriver(
           *web_contents,
           UrlLanguageHistogramFactory::GetForBrowserContext(
               web_contents->GetBrowserContext()))),
@@ -298,6 +302,15 @@ bool ChromeTranslateClient::ShowTranslateUI(
 
   if (error_type != translate::TranslateErrors::NONE) {
     step = translate::TRANSLATE_STEP_TRANSLATE_ERROR;
+  }
+
+  // MoltBrowser: the offer doesn't pop up by itself until an on-device
+  // model is downloaded; the address bar icon and the menus still offer it,
+  // and then explain how to get one.
+  if (step == translate::TRANSLATE_STEP_BEFORE_TRANSLATE &&
+      !triggered_from_menu &&
+      !molt_ai::page_translate::ShouldOfferTranslationAutomatically()) {
+    return false;
   }
 
 // Translate uses a bubble UI on desktop and the Message UI on Android (here)

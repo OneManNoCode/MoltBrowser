@@ -70,6 +70,12 @@ class TranslateLanguageList {
   // pending request.
   void SetResourceRequestsAllowed(bool allowed);
 
+  // MoltBrowser: makes |languages| (Translate's codes) the whole list, for
+  // good: the list is never fetched from the translate server afterwards.
+  // TranslateService::Initialize() calls it with the on-device translator's
+  // languages (docs/design/PAGE_TRANSLATION.md).
+  void SetLocalLanguages(const std::vector<std::string>& languages);
+
   using EventCallbackList =
       base::RepeatingCallbackList<void(const TranslateEventDetails&)>;
   using EventCallback = EventCallbackList::CallbackType;

@@ -162,8 +162,11 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
 
 bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
   bool can_translate = true;
+  // MoltBrowser: on the device, translating needs neither a network nor a
+  // Google API key.
+  const bool on_device = translate_driver_->TranslatesOnDevice();
 
-  if (net::NetworkChangeNotifier::IsOffline()) {
+  if (!on_device && net::NetworkChangeNotifier::IsOffline()) {
     if (!menu_logging) {
       return false;
     }
@@ -173,7 +176,7 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
     can_translate = false;
   }
 
-  if (!ignore_missing_key_for_testing_ &&
+  if (!on_device && !ignore_missing_key_for_testing_ &&
       !::google_apis::HasAPIKeyConfigured()) {
     if (!menu_logging) {
       return false;
@@ -258,6 +261,11 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
 }
 
 bool TranslateManager::CanPartiallyTranslateTargetLanguage() {
+  // MoltBrowser: partial translate sends the selection to Google; on the
+  // device there is full-page translation only.
+  if (translate_driver_->TranslatesOnDevice()) {
+    return false;
+  }
   std::unique_ptr<TranslatePrefs> translate_prefs(
       translate_client_->GetTranslatePrefs());
   const std::string& source_language = language_state_.source_language();
@@ -398,6 +406,13 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
       std::string(target_lang), TranslateErrors::NONE, triggered_from_menu);
 
   GetActiveTranslateMetricsLogger()->LogTranslationStarted(translation_type);
+
+  // MoltBrowser: the driver translates on the device; Google's script is
+  // never fetched.
+  if (translate_driver_->TranslatesOnDevice()) {
+    DoTranslatePage(std::string_view(), source_lang, target_lang);
+    return;
+  }
 
   TranslateScript* script = TranslateDownloadManager::GetInstance()->script();
   DCHECK(script != nullptr);
@@ -820,6 +835,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
   FilterForHrefTranslate(&decision, translate_prefs, page_language_code);
   FilterForPredefinedTarget(&decision, translate_prefs, page_language_code);
 
+  // MoltBrowser: on the device, a page translates by itself only for
+  // "always translate" (FilterAutoTranslate()). An hrefTranslate link or a
+  // predefined target offers the UI instead.
+  if (translate_driver_->TranslatesOnDevice()) {
+    decision.PreventAutoHrefTranslate();
+    decision.PreventPredefinedLanguageAutoTranslate();
+  }
+
   return decision;
 }
 
@@ -857,15 +880,19 @@ void TranslateManager::FilterIsTranslatePossible(
         TriggerDecision::kDisabledDoesntNeedTranslation);
   }
 
+  // MoltBrowser: on the device, translating needs neither a network nor a
+  // Google API key.
+  const bool on_device = translate_driver_->TranslatesOnDevice();
+
   // Also, skip if the connection is currently offline - initiation doesn't make
   // sense there, either.
-  if (net::NetworkChangeNotifier::IsOffline()) {
+  if (!on_device && net::NetworkChangeNotifier::IsOffline()) {
     decision->PreventAllTriggering();
     GetActiveTranslateMetricsLogger()->LogTriggerDecision(
         TriggerDecision::kDisabledOffline);
   }
 
-  if (!ignore_missing_key_for_testing_ &&
+  if (!on_device && !ignore_missing_key_for_testing_ &&
       !::google_apis::HasAPIKeyConfigured()) {
     // Without an API key, translate won't work, so don't offer to translate in
     // the first place. Leave kOfferTranslateEnabled on, though, because that
@@ -954,7 +981,10 @@ void TranslateManager::FilterAutoTranslate(
         metrics::TranslateEventProto::AUTO_TRANSLATION_BY_PREF);
     GetActiveTranslateMetricsLogger()->LogTriggerDecision(
         TriggerDecision::kAutomaticTranslationByPref);
-  } else if (!link_auto_translate_target.empty()) {
+  } else if (!link_auto_translate_target.empty() &&
+             // MoltBrowser: not on the device, where only "always
+             // translate" translates by itself; the UI is offered instead.
+             !translate_driver_->TranslatesOnDevice()) {
     // This page was navigated through a click from a translated page.
     decision->auto_translate_target = link_auto_translate_target;
     decision->ranker_events.push_back(

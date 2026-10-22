@@ -20,6 +20,7 @@
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/app/vector_icons/vector_icons.h"
+#include "chrome/browser/molt_ai/translate/page_translate_footnote_view.h"  // MoltBrowser
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
@@ -96,7 +97,11 @@ bool UseGoogleTranslateBranding() {
 #endif
 }
 
-std::unique_ptr<views::View> CreateWordmarkView() {
+// MoltBrowser: takes the tab; in non-Google builds the footnote is
+// MoltBrowser's on-device status line (progress and Stop, or why it failed
+// and "Choose a model"), molt_ai/translate/page_translate_footnote_view.h.
+std::unique_ptr<views::View> CreateWordmarkView(
+    content::WebContents* web_contents) {
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   auto view = std::make_unique<views::View>();
   view->SetLayoutManager(std::make_unique<views::BoxLayout>());
@@ -110,7 +115,7 @@ std::unique_ptr<views::View> CreateWordmarkView() {
 
   return view;
 #else
-  return nullptr;
+  return molt_ai::page_translate::CreatePageTranslateFootnote(web_contents);
 #endif
 }
 
@@ -157,7 +162,7 @@ TranslateBubbleView::TranslateBubbleView(
         std::make_unique<WebContentMouseHandler>(this, web_contents);
   }
   SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
-  SetFootnoteView(CreateWordmarkView());
+  SetFootnoteView(CreateWordmarkView(web_contents));  // MoltBrowser: the tab
   SetProperty(views::kElementIdentifierKey, kIdentifier);
 }
 
@@ -1134,7 +1139,8 @@ void TranslateBubbleView::SwitchView(
       view_state == TranslateBubbleModel::VIEW_STATE_TARGET_LANGUAGE) {
     GetBubbleFrameView()->SetFootnoteView(nullptr);
   } else {
-    GetBubbleFrameView()->SetFootnoteView(CreateWordmarkView());
+    // MoltBrowser: the tab, for the on-device status line.
+    GetBubbleFrameView()->SetFootnoteView(CreateWordmarkView(web_contents()));
   }
 
   SwitchTabForViewState(view_state);
