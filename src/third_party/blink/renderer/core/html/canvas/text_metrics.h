@@ -44,6 +44,9 @@ class DOMRectReadOnly;
 class ExceptionState;
 class PlainTextPainter;
 class TextClusterOptions;
+namespace molt_fingerprinting {
+struct TextMetricsAccess;  // MoltBrowser: molt_fingerprinting/moltnet_text.h
+}  // namespace molt_fingerprinting
 
 class CORE_EXPORT TextMetrics final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
@@ -111,6 +114,9 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
   };
 
  private:
+  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
+  friend struct molt_fingerprinting::TextMetricsAccess;
+
   void Update(const Font*,
               const TextDirection& direction,
               V8CanvasTextBaseline::Enum baseline,
@@ -157,6 +163,9 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
       V8CanvasTextBaseline::Enum::kAlphabetic;
 
   HeapVector<RunWithOffset> runs_with_offset_;
+
+  // MoltBrowser: the grid MoltNet rounded the metrics to (0: exact).
+  double molt_net_grid_ = 0.0;
 };
 
 template <>

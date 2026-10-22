@@ -19,6 +19,8 @@ blink_core_sources_molt_fingerprinting = [
   "moltnet_uniformity.h",
   "moltnet_locale.cc",
   "moltnet_locale.h",
+  "moltnet_text.cc",
+  "moltnet_text.h",
   "moltnet_device.cc",
   "moltnet_device.h",
   "shields_decision.cc",
@@ -33,6 +35,7 @@ blink_core_tests_molt_fingerprinting = [
   "letterbox_test.cc",
   "moltnet_uniformity_test.cc",
   "moltnet_locale_test.cc",
+  "moltnet_text_test.cc",
   "moltnet_device_test.cc",
   "shields_decision_test.cc",
 ]
