@@ -1,0 +1,34 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# The web's built-in AI APIs (LanguageModel, Summarizer, Writer, Rewriter)
+# served by the user's own on-device model instead of upstream's AIManager.
+# Design: docs/design/WEB_AI_APIS.md.
+
+# The decisions (availability, consent, buckets, counting, limits, which
+# model) and the option -> prompt mapping. Standard library only, so the
+# standalone test build links it too.
+source_set("logic") {
+  sources = [
+    "web_ai_conversation.cc",
+    "web_ai_conversation.h",
+    "web_ai_policy.cc",
+    "web_ai_policy.h",
+    "web_ai_prompts.cc",
+    "web_ai_prompts.h",
+  ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "web_ai_conversation_unittest.cc",
+    "web_ai_policy_unittest.cc",
+    "web_ai_prompts_unittest.cc",
+  ]
+  deps = [
+    ":logic",
+    "//testing/gtest",
+  ]
+}
