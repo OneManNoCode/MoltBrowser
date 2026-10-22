@@ -67,7 +67,7 @@ and pick something to help with. Status is updated as work lands.
 | 📋 | **Semantic history search** with real on-device embeddings. |
 | 📋 | **On-device translation.** |
 | 📋 | **GPU inference on Windows and Linux** (Vulkan), with automatic CPU fallback. |
-| 🔨 | **Signed builds everywhere.** A signed Windows v0.3, signed apt/rpm repositories, published checksums, SBOM and build provenance. *Checksums and build provenance are done; Windows signing and apt/rpm repositories are next.* |
+| 🔨 | **Signed builds everywhere.** A signed Windows v0.3, signed apt/rpm repositories, published checksums, SBOM and build provenance. *Checksums, build provenance and an SPDX SBOM per installer ([SBOM.md](docs/SBOM.md)) are done. The apt/rpm repositories are built, signed offline and verified by tested tooling ([LINUX_REPOSITORIES.md](docs/LINUX_REPOSITORIES.md)); they go live once the offline archive key is created. Windows signing is next.* |
 | 📋 | **Android**, built from Chromium for Android with MoltBrowser's features. |
 | 📋 | **Independent security audit and bug bounty** before 1.0. |
 

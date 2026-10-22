@@ -14,7 +14,7 @@ Every release carries two extra assets next to the installers:
 
 | Asset | What it is |
 |---|---|
-| `molt-release-manifest.json` | Version, tag, and the exact size and SHA-256 of every installer |
+| `molt-release-manifest.json` | Version, tag, and the exact size and SHA-256 of every release asset |
 | `molt-release-manifest.json.sig` | Ed25519 signature over the manifest, made offline |
 
 When a browser finds a newer release, it:
@@ -32,6 +32,17 @@ When a browser finds a newer release, it:
 
 A build with no trusted key never installs updates. It sends users to the
 release page instead.
+
+The manifest lists **every** asset of the release, not just the installers:
+
+- the per-platform `SHA256SUMS-*`;
+- an SPDX SBOM per installer, `*.spdx.json` ([SBOM.md](SBOM.md));
+- the signed Linux package repository, `MoltBrowser-Linux-repository.tar`
+  ([LINUX_REPOSITORIES.md](LINUX_REPOSITORIES.md)).
+
+The repository has its own offline key, the **archive key** (OpenPGP),
+because apt and dnf can only check OpenPGP signatures. Its one-time setup
+and per-release step are below.
 
 Independently, the **Verify release signature** workflow re-checks every
 published release on GitHub. If it fails, users' browsers will refuse that
@@ -71,16 +82,112 @@ The private key file must never be copied to an online machine, a CI
 runner, a cloud drive or this repository. `.gitignore` blocks `*.key` as a
 safety net.
 
+## One-time: create the Linux archive key (offline)
+
+apt and dnf check OpenPGP signatures, so the Linux repository
+([LINUX_REPOSITORIES.md](LINUX_REPOSITORIES.md)) has its own key, the
+**archive key**. It follows the same rules as the release key: it is created
+and used only on the offline machine, never on a CI runner, a cloud machine
+or in this repository.
+
+1. **Tools (install while still online).**
+   - A Linux live USB (Fedora or Debian) is easiest:
+     ```bash
+     sudo dnf install gnupg2 rpm-sign createrepo_c dpkg      # Fedora
+     sudo apt install gnupg rpm createrepo-c dpkg-dev        # Debian/Ubuntu
+     ```
+   - On a Mac, use Homebrew: `brew install gnupg rpm createrepo_c dpkg`.
+   - Copy `tools/linux_repo/` and `tools/sbom/` next to
+     `tools/release_signing/`.
+2. **Disconnect from the network.** Keep the GnuPG home on the encrypted USB
+   drive:
+   ```bash
+   export GNUPGHOME=/Volumes/MOLTKEY/gnupg
+   mkdir -m 700 "$GNUPGHOME"
+   ```
+3. **Create the primary key.** It only certifies (`cert`), never signs
+   packages, and expires in 5 years:
+   ```bash
+   gpg --quick-generate-key \
+     'MoltBrowser Archive Key (GenEye AI Labs) <security@geneye.ai>' rsa4096 cert 5y
+   gpg --list-keys --with-fingerprint     # note the 40-hex fingerprint
+   ```
+   - Use a strong passphrase. Keep it in your password manager, not on the
+     drive.
+   - RSA-4096 rather than Ed25519, because older rpm versions (RHEL 8's)
+     can't check Ed25519 signatures.
+4. **Add the signing subkey** (expires in 2 years):
+   ```bash
+   gpg --quick-add-key <FINGERPRINT> rsa4096 sign 2y
+   ```
+   Signing with the primary fingerprint uses this subkey automatically.
+   Users trust the primary key, so extending the subkey's expiry (see
+   "Linux archive key: expiry, loss, compromise") never asks them to trust
+   a new key.
+5. **Keep the revocation certificate.** GnuPG wrote it when it created the
+   key, in `$GNUPGHOME/openpgp-revocs.d/<FINGERPRINT>.rev`.
+   - Print it, and copy it to a second, separate medium.
+   - Anyone holding it can revoke the key, so store it like the key itself.
+   - If the key is lost, it is the only way to tell users to stop trusting
+     it.
+6. **Back up** `$GNUPGHOME` to a second encrypted USB drive, stored
+   somewhere physically separate, as for the release key.
+7. **Publish the public key.**
+   ```bash
+   gpg --armor --export --export-options export-minimal <FINGERPRINT> \
+     > moltbrowser-archive-keyring.asc
+   ```
+   - Carry that file to a dev machine. Commit it as
+     `installer/linux/moltbrowser-archive-keyring.asc` in a PR.
+   - Until it is committed, nothing publishes a Linux repository:
+     `linux-repo-publish.sh` refuses and the Pages deploy skips it.
+   - Publish the fingerprint in several separate places:
+     - the table in `docs/LINUX_REPOSITORIES.md`;
+     - `SECURITY.md`;
+     - the website's download page;
+     - every release's notes.
+
+The archive key's secret parts must never be copied to an online machine.
+`.gitignore` blocks `*.key`; the GnuPG home has no business in this
+repository at all.
+
 ## Every release
 
 1. **Build and upload as a draft.** Build as usual and create the GitHub
-   release as a **draft**, with all installers attached.
+   release as a **draft**, with all installers attached. The release jobs
+   also attach an SBOM per installer and, for Linux, the **unsigned**
+   `MoltBrowser-Linux-repository.tar`.
 2. **Download the assets (online machine).**
    ```bash
    gh release download vX.Y.Z --repo OneManNoCode/MoltBrowser --dir release-vX.Y.Z
    ```
 3. **Copy `release-vX.Y.Z/` to the offline machine** on a USB drive.
-4. **Write and sign the manifest (offline).**
+4. **Check the SBOMs (offline).** Each one must describe its installer,
+   with the same SHA-256, and name the pinned Chromium:
+   ```bash
+   python3 tools/sbom/molt_sbom.py validate \
+     --artifacts-dir release-vX.Y.Z release-vX.Y.Z/*.spdx.json
+   ```
+5. **Sign the Linux repository (offline).** Skip this step if the release
+   has no Linux packages.
+   ```bash
+   export GNUPGHOME=/Volumes/MOLTKEY/gnupg GPG_TTY="$(tty)"
+   python3 tools/linux_repo/molt_linux_repo.py sign \
+     --bundle release-vX.Y.Z/MoltBrowser-Linux-repository.tar \
+     --key <ARCHIVE KEY FINGERPRINT>
+   ```
+   - It takes the `.deb`/`.rpm` from the same folder, by SHA-256.
+   - It checks that CI's `Packages`/`Release` match those packages.
+   - It shows what it will sign; you type the version to confirm.
+   - It then:
+     - signs the `.rpm` with `rpmsign` (only the signature header changes;
+       it checks that);
+     - rebuilds the rpm metadata with `createrepo_c`;
+     - signs `repomd.xml`, `InRelease` and `Release.gpg`;
+     - verifies every signature with `gpgv`.
+   - It **replaces the unsigned bundle in place** with the signed one. Do
+     this before the next step, so the manifest covers the signed bundle.
+6. **Write and sign the manifest (offline).**
    ```bash
    python3 tools/release_signing/molt_release_sign.py manifest \
      --tag vX.Y.Z release-vX.Y.Z/*
@@ -89,17 +196,25 @@ safety net.
    ```
    - `sign` shows every asset and its hash.
    - You must type the version to confirm before it signs.
-5. **Copy `molt-release-manifest.json` and `.sig` back** to the online
-   machine.
-6. **Upload and publish (online).**
+7. **Copy back** to the online machine:
+   - `molt-release-manifest.json` and `.sig`;
+   - the signed `MoltBrowser-Linux-repository.tar`.
+8. **Upload and publish (online).**
    ```bash
+   scripts/linux-repo-publish.sh --bundle MoltBrowser-Linux-repository.tar --tag vX.Y.Z
    scripts/publish-release-signature.sh vX.Y.Z molt-release-manifest.json molt-release-manifest.json.sig
    gh release edit vX.Y.Z --repo OneManNoCode/MoltBrowser --draft=false
    ```
-   - The script refuses to upload unless the signature verifies against the
-     keys in this checkout.
+   - `linux-repo-publish.sh` checks the bundle against the archive key
+     committed in `installer/linux/`, then replaces CI's unsigned bundle on
+     the draft.
+   - `publish-release-signature.sh` refuses to upload unless the signature
+     verifies against the keys in this checkout.
    - It also refuses unless the release's assets are exactly the signed ones.
-7. **Check the "Verify release signature" workflow run is green.**
+9. **Check the workflow runs are green:**
+   - "Verify release signature";
+   - "Deploy website to GitHub Pages". Publishing the release redeploys the
+     site, which serves the repository once its signatures verify.
 
 Never publish a release without its manifest and signature. Browsers on
 v0.3.0 or later will not install it.
@@ -125,6 +240,47 @@ v0.3.0 or later will not install it.
   2. Announce that users must download and install it manually once, because
      their installed browsers can't verify anything signed with the new key.
 
+## Linux archive key: expiry, loss, compromise
+
+- **Before it expires.** Extend the expiry at least 3 months ahead, offline:
+  ```bash
+  gpg --quick-set-expire <FINGERPRINT> 5y          # the primary key
+  gpg --quick-set-expire <FINGERPRINT> 2y '*'      # its subkeys
+  ```
+  - Export and commit the public key again (step 7 above). The next signed
+    bundle carries it too.
+  - The fingerprint doesn't change, but users keep a copy of the key. They
+    must download it again, or apt reports `EXPKEYSIG` once the old
+    expiry passes. Announce it with the release before the old date.
+- **Renew rather than rotate the signing subkey.** gpg always signs with the
+  newest signing subkey. A new subkey would therefore sign the very next
+  release, before users have it. If you must add one, publish the updated
+  public key one release ahead and keep signing with the old subkey:
+  `--key <OLD SUBKEY FINGERPRINT>!` (the `!` forces that subkey). The tools
+  only accept primary fingerprints, so do that signing by hand.
+- **Lost (no backup):**
+  1. Publish the revocation certificate. Import it into a copy of the
+     public key, export, commit and announce.
+  2. Create a new key.
+  3. Users must trust the new key by hand. The in-app update channel,
+     signed with the release key, can tell them.
+- **Stolen:**
+  1. Treat it as a security incident (see `SECURITY.md`).
+  2. Publish the revocation certificate the same way. apt and dnf then
+     refuse everything it signed.
+  3. Create a new key, and announce the new fingerprint everywhere the old
+     one was published.
+
+**Why no `Valid-Until`.** `Release` carries no `Valid-Until` by default.
+With it, apt refuses metadata that hasn't been re-signed recently, which
+stops a hostile mirror from serving an old, validly signed repository
+forever (a "freeze" attack). But every re-signing is an offline session, and
+a missed one would break updates for every user. The release cadence (each
+Chrome security release within 7 days) and the in-app update check, which
+reads the signed release manifest, make a long freeze visible. To use it,
+CI builds with `molt_linux_repo.py build --valid-days N`, and the owner
+re-signs before it expires.
+
 ## Transition note
 
 v0.2.5 and earlier use the old updater, which does not check signatures.
@@ -136,5 +292,11 @@ every update is verified.
 - `molt_ai_unittests --gtest_filter='ReleaseManifestTest.*'` covers signature,
   manifest and policy checks. Its vectors come from the Python tool with a
   public test key.
+- `python3 tools/linux_repo/molt_linux_repo_test.py` runs the whole Linux
+  repository flow with a throwaway OpenPGP key it creates and deletes. It
+  checks the result with `gpgv`, `rpmkeys` and `apt-get update`, and checks
+  that tampering is caught.
+- `python3 tools/sbom/molt_sbom_test.py` checks the SBOM generator against
+  fixtures and the official SPDX validator.
 - `python3 tools/release_signing/molt_release_sign.py verify --help` lists
   the options for checking any release by hand.

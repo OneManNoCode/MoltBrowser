@@ -342,6 +342,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - CI: actions pinned to commits, least-privilege tokens, new WebUI checks
   (fuzzed markdown renderer, jsdom smoke test of every page) and linting;
   releases are drafts until signed and publish checksums + build provenance.
+- Releases: every installer ships an SPDX 2.3 SBOM. It lists Chromium, each
+  third-party component of the build, MoltBrowser's vendored llama.cpp and
+  Rust crates, and every bundled helper file with its pin and SHA-256
+  (`docs/SBOM.md`). New tooling builds apt and dnf/yum repositories that are
+  signed offline with a separate archive key (`docs/LINUX_REPOSITORIES.md`).
+  The `.deb` and tarball now install root-owned files, and the `.deb` uses
+  xz, which Debian 11 can unpack.
 - Full GPLv3 licence text, llama.cpp licence notice, Code of Conduct,
   issue/PR templates; unused code and Sparkle leftovers removed, including
   the never-wired `browser.ai.*` stub (whose permission check allowed every
