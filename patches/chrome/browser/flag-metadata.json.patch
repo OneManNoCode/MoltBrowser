@@ -5,13 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/flag-metadata.json b/chrome/browser/flag-metadata.json
-index c0250d77719d9518c1d38f46b2961ae9e978d8d3..660a83ee95c5bffb581d53513583f5e95207b8c7 100644
+index c0250d77719d9518c1d38f46b2961ae9e978d8d3..d94343641562d446179338d0446456119da4391d 100644
 --- a/chrome/browser/flag-metadata.json
 +++ b/chrome/browser/flag-metadata.json
-@@ -7056,6 +7056,61 @@
+@@ -7056,6 +7056,67 @@
      ],
      "expiry_milestone": 160
    },
++  {
++    // MoltBrowser: the web agent's planner switch; never expires.
++    "name": "molt-agent-planner",
++    "owners": [ "moltbrowser" ],
++    "expiry_milestone": -1
++  },
 +  {
 +    // MoltBrowser: the web agent's screenshots switch; never expires.
 +    "name": "molt-agent-screenshots",
