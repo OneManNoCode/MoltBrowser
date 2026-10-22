@@ -217,6 +217,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   MoltBrowser turned off, back on. Everything the browser still contacts on
   its own is listed in `docs/NETWORK_TRAFFIC.md`, and the privacy policy
   now names each host.
+- **Translate runs on your device.** "Translate this page" now uses your
+  on-device AI model, like the web's Translator API: the page's text never
+  leaves the device, Google's translate script and language list are never
+  requested, and Translate offers the same 20 languages for everyone. It
+  translates only when you click (or for a language you set to "always
+  translate"), visible text first, with progress and Stop in the bubble,
+  and "Show original" restores the page exactly. Without a model it says
+  so and links to `molt://ai`; nothing is downloaded. MoltNet windows
+  translate on click only, and the bubble notes that the site sees the
+  translation. (Before, Translate couldn't run without a Google API key,
+  and with one it sent the page to Google.) `docs/design/PAGE_TRANSLATION.md`.
 - **MoltNet windows describe the same GPU for everyone.** WebGL there
   reports fixed limits (8192-pixel textures, for example), a fixed list of
   23 common extensions and fixed shader precision, never more than the GPU

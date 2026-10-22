@@ -964,6 +964,12 @@ Each piece (§10.7) is one generation:
   broken JSON fails the call with `kErrorResponseParsingFailed`
   (`UnknownError`); a reply cut off by its budget with
   `kErrorResponseExceedsMaxTokens`.
+- **Page translation** (the browser's own Translate button,
+  `docs/design/PAGE_TRANSLATION.md`) uses a batch form of this
+  instruction, `BuildTranslatorBatchPrompt()`: several texts as a JSON
+  array, decoded under `TranslatorBatchResponseSchema(n)` (exactly n
+  strings), each checked with `CleanTranslation()`. The Translator API
+  itself is unchanged.
 
 **Why constrained JSON rather than plain text with stripping.** Chat models
 asked to translate tend to add "Here is the translation:", wrap the answer
