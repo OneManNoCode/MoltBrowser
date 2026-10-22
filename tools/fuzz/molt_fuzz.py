@@ -227,7 +227,8 @@ FUZZERS = {
     ),
     "molt_memory_query_fuzzer": dict(
         dir=BROWSER,
-        sources=["src/components/omnibox/browser/molt_memory_query.cc"],
+        sources=["src/components/omnibox/browser/molt_memory_query.cc",
+                 "src/components/omnibox/browser/molt_local_input.cc"],
         tier="std",
         dict="dicts/memory_query.dict",
         max_len=4096,

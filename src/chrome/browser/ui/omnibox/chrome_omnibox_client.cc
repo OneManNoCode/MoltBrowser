@@ -85,8 +85,8 @@
 #include "components/omnibox/browser/autocomplete_result.h"
 #include "components/omnibox/browser/base_search_provider.h"
 #include "components/omnibox/browser/location_bar_model.h"
-// MoltBrowser: the @memory shortcut's text (molt_memory_query.h).
-#include "components/omnibox/browser/molt_memory_query.h"
+// MoltBrowser: local-only input, @memory and @ai (molt_local_input.h).
+#include "components/omnibox/browser/molt_local_input.h"
 #include "components/omnibox/browser/most_visited_sites_provider.h"
 #include "components/omnibox/browser/omnibox_prefs.h"
 #include "components/omnibox/browser/page_classification_functions.h"
@@ -759,9 +759,9 @@ void ChromeOmniboxClient::OnTextChanged(const AutocompleteMatch& current_match,
                                         bool has_focus) {
   AutocompleteActionPredictor::Action recommended_action =
       AutocompleteActionPredictor::ACTION_NONE;
-  // MoltBrowser: "@memory ..." text is never learned or predicted from (no
-  // preconnect or prerender of memory's pages; molt_memory_provider.h).
-  if (user_input_in_progress && !molt_memory::IsShortcutInput(user_text)) {
+  // MoltBrowser: "@memory ..." and "@ai ..." text is never learned or
+  // predicted from (no preconnect or prerender; molt_local_input.h).
+  if (user_input_in_progress && !molt_omnibox::IsLocalOnlyInput(user_text)) {
     content::WebContents* web_contents = location_bar_->GetWebContents();
     AutocompleteActionPredictor* action_predictor =
         predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_);
@@ -1084,9 +1084,9 @@ void ChromeOmniboxClient::OnSuccessfulNavigation(
     Profile* profile,
     const std::u16string& text,
     const AutocompleteMatch& match) {
-  // MoltBrowser: "@memory ..." text and memory's pages stay out of the
-  // shortcuts database; they live only in AI memory, which can be wiped.
-  if (molt_memory::IsShortcutInput(text)) {
+  // MoltBrowser: "@memory ..." and "@ai ..." text (and memory's pages) stay
+  // out of the shortcuts database (molt_local_input.h).
+  if (molt_omnibox::IsLocalOnlyInput(text)) {
     return;
   }
   auto shortcuts_backend = ShortcutsBackendFactory::GetForProfile(profile);

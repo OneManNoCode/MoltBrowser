@@ -133,6 +133,7 @@ source_set("unit_tests") {
     "memory_omnibox_provider_unittest.cc",
     "memory_omnibox_unittest.cc",
     "memory_snippet_unittest.cc",
+    "omnibox_local_input_unittest.cc",
   ]
   deps = [
     ":backend",
@@ -147,9 +148,11 @@ source_set("unit_tests") {
     # the pure query logic (components only, plus the WebUI URL constant).
     "//chrome/common:url_constants",
     "//components/omnibox/browser",
+    "//components/omnibox/browser:molt_local_input",
     "//components/omnibox/browser:molt_memory_query",
     "//components/omnibox/browser:molt_memory_search",
     "//components/omnibox/browser:test_support",
+    "//components/prefs",
     "//components/prefs:test_support",
     "//testing/gmock",
     "//testing/gtest",

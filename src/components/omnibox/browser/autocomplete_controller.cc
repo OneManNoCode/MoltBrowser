@@ -61,9 +61,9 @@
 #include "components/omnibox/browser/calculator_provider.h"
 // MoltBrowser: AI prompt provider
 #include "components/omnibox/browser/ai_prompt_provider.h"
-// MoltBrowser: the @memory shortcut
+// MoltBrowser: the @memory shortcut and local-only input (@memory, @ai)
+#include "components/omnibox/browser/molt_local_input.h"
 #include "components/omnibox/browser/molt_memory_provider.h"
-#include "components/omnibox/browser/molt_memory_query.h"
 #include "components/omnibox/browser/clipboard_provider.h"
 #include "components/omnibox/browser/contextual_search_provider.h"
 #include "components/omnibox/browser/cross_device_tab_provider.h"
@@ -695,9 +695,9 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
     // Starter Pack engines in keyword mode only run a subset of the providers,
     // so call `ShouldRunProvider()` to determine which ones should run.
     if (!ShouldRunProvider(provider.get())) {
-      // MoltBrowser: "@memory ..." also ends what the others still do for
-      // earlier text, so none of them updates later (molt_memory_query.h).
-      if (molt_memory::IsShortcutInput(input_.text())) {
+      // MoltBrowser: local-only input also ends what the others still do
+      // for earlier text, so none of them updates later (molt_local_input.h).
+      if (molt_omnibox::IsLocalOnlyInput(input_.text())) {
         provider->Stop(AutocompleteStopReason::kInteraction);
       }
       continue;
@@ -1128,11 +1128,16 @@ bool AutocompleteController::ShouldRunProvider(
     return false;
   }
 
-  // MoltBrowser: "@memory ..." input reaches the memory provider alone, in
-  // every profile and searchbox: no search engine, extension or other
-  // provider sees it (molt_memory_provider.h).
-  if (molt_memory::IsShortcutInput(input_.text())) {
-    return provider == molt_memory_provider_;
+  // MoltBrowser: "@memory ..." and "@ai ..." input reach their own provider
+  // alone, in every profile and searchbox: no search engine, extension or
+  // other provider sees them (molt_local_input.h).
+  switch (molt_omnibox::ClassifyLocalInput(input_.text())) {
+    case molt_omnibox::LocalInput::kMemoryShortcut:
+      return provider == molt_memory_provider_;
+    case molt_omnibox::LocalInput::kAiPrompt:
+      return provider == ai_prompt_provider_;
+    case molt_omnibox::LocalInput::kNone:
+      break;
   }
 
   // If zero prefix suggest is disabled for the Lens contextual searchbox, only
@@ -1403,7 +1408,9 @@ void AutocompleteController::InitializeSyncProviders(int provider_types) {
   }
   // MoltBrowser: Add AI prompt provider for "@ai " and "?" prefix detection.
   if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {
-    providers_.push_back(base::MakeRefCounted<AiPromptProvider>());
+    auto ai_prompt_provider = base::MakeRefCounted<AiPromptProvider>();
+    ai_prompt_provider_ = ai_prompt_provider.get();
+    providers_.push_back(std::move(ai_prompt_provider));
   }
   // MoltBrowser: the @memory shortcut (molt_memory_provider.h).
   if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {

@@ -14,8 +14,15 @@ class AutocompleteInput;
 // An AutocompleteProvider that detects AI prompts in the omnibox and offers
 // to route them to the local MoltBrowser AI engine. The provider recognizes
 // two trigger prefixes:
-//   - "@ai " followed by a prompt (e.g. "@ai summarize this page")
-//   - "?"   followed by a prompt (e.g. "?what is the speed of light")
+//   - "@ai " followed by a prompt (e.g. "@ai summarize this page"); any
+//     whitespace after "@ai" (molt_omnibox::AiPromptStart()). The
+//     autocomplete controller gives this input to this provider alone, so
+//     the prompt never reaches the search engine (molt_local_input.h).
+//   - "?"   followed by a prompt (e.g. "?what is the speed of light"). Only
+//     seen when the text keeps its "?" (pasted or dropped, or with no
+//     default search engine): typed first, "?" puts the omnibox in keyword
+//     mode for the default search engine (Chromium's forced web search),
+//     so "?" input is not gated and still goes to the search engine.
 //
 // When a trigger prefix is detected, the provider produces a single
 // AutocompleteMatch with high relevance (1500) that navigates to the
@@ -36,9 +43,6 @@ class AiPromptProvider : public AutocompleteProvider {
   // The relevance score assigned to AI prompt matches. Set high so the
   // suggestion appears at the top of the omnibox dropdown.
   static constexpr int kRelevance = 1500;
-
-  // The "@ai " prefix that triggers the provider (case-insensitive).
-  static constexpr char16_t kAtAiPrefix[] = u"@ai ";
 
   // The "?" prefix that triggers the provider.
   static constexpr char16_t kQuestionPrefix[] = u"?";

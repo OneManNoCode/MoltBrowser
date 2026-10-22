@@ -14,7 +14,9 @@
 // never empty; MemorySearchUrl() escapes everything but unreserved bytes
 // and QueryFromUrlQuery() gives its query back; only "@memory" input has a
 // shortcut query, and no input is both shortcut input and a keyword
-// prefix; suggestion rows only have http(s) URLs that pass
+// prefix; the controller's gate (molt_local_input.h) tells @memory and @ai
+// apart consistently and never claims text starting with "?" (a web
+// search); suggestion rows only have http(s) URLs that pass
 // IsSuggestibleUrl(), each once, within the row cap, with positive,
 // non-increasing relevance below the search row's.
 
@@ -29,6 +31,7 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "components/omnibox/browser/molt_local_input.h"
 #include "components/omnibox/browser/molt_memory_query.h"
 
 namespace {
@@ -138,6 +141,35 @@ std::string CheckSearchUrl(const std::string& url) {
   return url.substr(page.size() + 1);
 }
 
+char16_t Lower(char16_t c) {
+  return (c >= 'A' && c <= 'Z') ? static_cast<char16_t>(c + 32) : c;
+}
+
+// The gate's decision for |text| is consistent: memory and AI prompts are
+// told apart, the prompt starts inside the text right after "@ai" and one
+// character, and text starting with "?" is never local.
+void CheckLocalInput(const std::u16string& text) {
+  const molt_omnibox::LocalInput kind = molt_omnibox::ClassifyLocalInput(text);
+  const bool memory = molt_memory::IsShortcutInput(text);
+  const std::optional<size_t> ai = molt_omnibox::AiPromptStart(text);
+  CHECK(!(memory && ai)) << "both @memory and @ai";
+  CHECK(molt_omnibox::IsLocalOnlyInput(text) == (memory || ai.has_value()));
+  if (memory) {
+    CHECK(kind == molt_omnibox::LocalInput::kMemoryShortcut);
+  } else if (ai) {
+    CHECK(kind == molt_omnibox::LocalInput::kAiPrompt);
+    CHECK(*ai >= 4 && *ai <= text.size());
+    const size_t at = *ai - 4;
+    CHECK(text[at] == '@' && Lower(text[at + 1]) == 'a' &&
+          Lower(text[at + 2]) == 'i');
+  } else {
+    CHECK(kind == molt_omnibox::LocalInput::kNone);
+  }
+  if (!text.empty() && text[0] == '?') {
+    CHECK(kind == molt_omnibox::LocalInput::kNone) << "\"?\" is a web search";
+  }
+}
+
 std::u16string ToUtf16Units(const std::string& bytes) {
   std::u16string out;
   for (size_t i = 0; i + 1 < bytes.size(); i += 2) {
@@ -192,6 +224,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   CHECK(molt_memory::IsShortcutInput(with_keyword));
   CheckDisplaySafe(molt_memory::ShortcutQuery(with_keyword),
                    kMaxQueryCharacters);
+
+  // Local-only input (molt_local_input.h): the controller's gate.
+  CheckLocalInput(omnibox);
+  CheckLocalInput(u"@ai " + omnibox);
+  CheckLocalInput(u"?" + omnibox);
+  CHECK(molt_omnibox::ClassifyLocalInput(u"@ai " + omnibox) ==
+        molt_omnibox::LocalInput::kAiPrompt);
 
   // 4. Pages memory returned: URLs and titles from sites.
   std::vector<molt_memory::MemoryHit> hits;

@@ -116,6 +116,7 @@ fuzzer_test("molt_memory_query_fuzzer") {
   sources = [ "molt_memory_query_fuzzer.cc" ]
   deps = [
     "//base",
+    "//components/omnibox/browser:molt_local_input",
     "//components/omnibox/browser:molt_memory_query",
   ]
   dict = "dicts/memory_query.dict"

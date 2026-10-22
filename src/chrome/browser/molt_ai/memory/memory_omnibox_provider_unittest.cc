@@ -4,7 +4,7 @@
 // The @memory omnibox shortcut in the omnibox: MoltMemoryProvider's rows in
 // each kind of profile and Memory state, its two-step answers, that page
 // text only ever becomes match text, and the autocomplete controller's gate
-// that keeps "@memory ..." from every other provider
+// that keeps "@memory ..." and "@ai ..." from every other provider
 // (docs/design/SEMANTIC_SEARCH.md).
 
 #include "components/omnibox/browser/molt_memory_provider.h"
@@ -28,7 +28,9 @@
 #include "components/omnibox/browser/mock_autocomplete_provider_client.h"
 #include "components/omnibox/browser/molt_memory_query.h"
 #include "components/omnibox/browser/molt_memory_search.h"
+#include "components/omnibox/browser/omnibox_prefs.h"
 #include "components/omnibox/browser/test_scheme_classifier.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -296,9 +298,9 @@ TEST(MoltMemorySearchRegistryTest, FoundOnlyUnderItsOwnPrefs) {
 
 // ---- The controller's gate --------------------------------------------------
 
-// "@memory ..." reaches no provider but the memory one: not the search
-// provider (suggest requests), the document provider, extensions or any
-// other. Here the controller has no memory provider, so nothing runs.
+// "@memory ..." and "@ai ..." reach no provider but their own: not the
+// search provider (suggest requests), the document provider, extensions or
+// any other. Here the controller has neither of those, so nothing runs.
 TEST(MoltMemoryControllerGateTest, ShortcutInputReachesNoOtherProvider) {
   base::test::TaskEnvironment task_environment(
       base::test::TaskEnvironment::TimeSource::MOCK_TIME);
@@ -306,15 +308,18 @@ TEST(MoltMemoryControllerGateTest, ShortcutInputReachesNoOtherProvider) {
   ASSERT_FALSE(controller.providers().empty());
 
   for (const char16_t* text :
-       {u"@memory miso soup", u"@memory", u"  @MEMORY x"}) {
+       {u"@memory miso soup", u"@memory", u"  @MEMORY x",
+        u"@ai what is on my calendar", u"@AI ", u"@ai\u3000x"}) {
     controller.input_ = FakeAutocompleteController::CreateInput(text);
     for (const auto& provider : controller.providers()) {
       EXPECT_FALSE(controller.ShouldRunProvider(provider.get()))
           << provider->GetName();
     }
   }
-  // Other text, including the keyword's prefixes, runs them as before.
-  for (const char16_t* text : {u"@memo", u"@memoryx", u"miso soup"}) {
+  // Other text, including the keywords' prefixes and "?" (a web search),
+  // runs them as before.
+  for (const char16_t* text : {u"@memo", u"@memoryx", u"miso soup", u"@ai",
+                               u"@aim high", u"?what is gravity"}) {
     controller.input_ = FakeAutocompleteController::CreateInput(text);
     bool search_runs = false;
     for (const auto& provider : controller.providers()) {
@@ -326,32 +331,64 @@ TEST(MoltMemoryControllerGateTest, ShortcutInputReachesNoOtherProvider) {
   }
 }
 
-// Starting "@memory ..." stops what the other providers still do for the
-// text typed before it, so none of them updates the popup later.
+// Starting local-only input stops what the other providers still do for
+// the text typed before it, so none of them updates the popup later.
 TEST(MoltMemoryControllerGateTest, ShortcutInputStopsTheOthers) {
-  base::test::TaskEnvironment task_environment(
-      base::test::TaskEnvironment::TimeSource::MOCK_TIME);
-  FakeAutocompleteController controller(&task_environment);
-  for (size_t i = 0; i < controller.providers().size(); ++i) {
-    controller.GetFakeProvider(i).done_ = false;
-  }
-  controller.Start(FakeAutocompleteController::CreateInput(u"@memory miso"));
-  for (size_t i = 0; i < controller.providers().size(); ++i) {
-    EXPECT_TRUE(controller.GetFakeProvider(i).done_)
-        << controller.providers()[i]->GetName();
+  for (const char16_t* text : {u"@memory miso", u"@ai what is this"}) {
+    base::test::TaskEnvironment task_environment(
+        base::test::TaskEnvironment::TimeSource::MOCK_TIME);
+    FakeAutocompleteController controller(&task_environment);
+    for (size_t i = 0; i < controller.providers().size(); ++i) {
+      controller.GetFakeProvider(i).done_ = false;
+    }
+    controller.Start(FakeAutocompleteController::CreateInput(text));
+    for (size_t i = 0; i < controller.providers().size(); ++i) {
+      EXPECT_TRUE(controller.GetFakeProvider(i).done_)
+          << controller.providers()[i]->GetName();
+    }
   }
 }
 
-// The omnibox's controllers (TYPE_BUILTIN) get the memory provider, and it
-// is the only one "@memory ..." reaches.
-TEST(MoltMemoryControllerGateTest, BuiltinControllersHaveTheMemoryProvider) {
+// The omnibox's controllers (TYPE_BUILTIN) have both local providers, and
+// each local input reaches exactly one provider: "@ai ..." the AI prompt
+// provider (its row opens molt://ai with the prompt), "@memory ..." the
+// memory one. "?" is not local input.
+TEST(MoltMemoryControllerGateTest, BuiltinControllersRouteLocalInput) {
   base::test::TaskEnvironment task_environment;
   AutocompleteControllerConfig config;
   config.provider_types = AutocompleteProvider::TYPE_BUILTIN;
-  AutocompleteController controller(
-      std::make_unique<FakeAutocompleteProviderClient>(), config);
+  auto client = std::make_unique<FakeAutocompleteProviderClient>();
+  omnibox::RegisterProfilePrefs(static_cast<PrefRegistrySimple*>(
+      client->GetPrefs()->DeprecatedGetPrefRegistry()));
+  AutocompleteController controller(std::move(client), config);
   // BuiltinProvider, AiPromptProvider, MoltMemoryProvider.
-  EXPECT_EQ(controller.providers().size(), 3u);
+  ASSERT_EQ(controller.providers().size(), 3u);
+
+  auto running = [&controller]() {
+    std::vector<AutocompleteProvider*> out;
+    for (const auto& provider : controller.providers()) {
+      if (controller.ShouldRunProvider(provider.get())) {
+        out.push_back(provider.get());
+      }
+    }
+    return out;
+  };
+
+  controller.Start(
+      FakeAutocompleteController::CreateInput(u"@ai what is gravity"));
+  std::vector<AutocompleteProvider*> ai = running();
+  ASSERT_EQ(ai.size(), 1u);
+  ASSERT_FALSE(ai[0]->matches().empty());
+  EXPECT_EQ(ai[0]->matches()[0].destination_url,
+            GURL("chrome://molt-ai/?q=what+is+gravity"));
+
+  controller.Start(FakeAutocompleteController::CreateInput(u"@memory miso"));
+  std::vector<AutocompleteProvider*> memory = running();
+  ASSERT_EQ(memory.size(), 1u);
+  EXPECT_NE(memory[0], ai[0]);
+
+  controller.Start(FakeAutocompleteController::CreateInput(u"?what"));
+  EXPECT_EQ(running().size(), 3u);
 }
 
 }  // namespace
