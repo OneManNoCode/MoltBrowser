@@ -13,6 +13,8 @@
 //            chrome.send('initChat', [callback_id])
 //            chrome.send('proposeChatAction', [callback_id, action_request])
 //            chrome.send('runChatProposal', [callback_id, id, confirmed])
+//            chrome.send('proposeFormFill',
+//                [callback_id, source, hint, pasted_text])
 //
 // C++ → JS:  FireWebUIListener('ai-token', {token, is_done, ...})
 //            ResolveJavascriptCallback(callback_id, result)
@@ -22,6 +24,7 @@
 
 #include <cstdint>  // for uint64_t — required on Linux under -fmodules
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,8 +41,10 @@
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
+#include "chrome/browser/molt_ai/models/model_download_plan.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_form_fill.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -138,6 +143,17 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // |confirmed| is true only after the user's Allow; it approves the
   // reason last shown for this proposal, nothing else.
   void HandleRunChatProposal(const base::ListValue& args);
+  // /fill ai and /paste (molt_ai_chat_form_fill.h, AGENT_ACTIONS.md §4.7):
+  // the same machinery for a form fill. The browser observes the page,
+  // asks the on-device model for one FILL_FORM of its text fields (never a
+  // password field) with the saved profile (read here, never sent by the
+  // page) or the pasted text as data, validates it, and proposes it with
+  // its own description of every value. It always asks first; Allow runs
+  // it through runChatProposal like any proposal.
+  // Args: [callback_id, source ('profile' | 'paste'), hint, pasted_text]
+  //   -> as proposeChatAction, and {status: 'none', message} when nothing
+  //      in the data fits a field.
+  void HandleProposeFormFill(const base::ListValue& args);
   // Runs one of HandleRunMoltAction's direct-JS actions (select / hover /
   // right-click / drag) in |target| and resolves |callback_id|.
   void RunDirectPageAction(const std::string& callback_id,
@@ -291,13 +307,6 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void ParseAttachmentDocxText(const std::string& callback_id,
                                std::unique_ptr<std::string> docx,
                                std::string anydoc_error);
-  // Tier 4: Form filler v2 — LLM fallback. Two-phase:
-  //   1. HandleRunFormFillAI: probe visible form fields, return a
-  //      ready-to-send prompt for the LLM.
-  //   2. HandleApplyFormFillMap: take the LLM's parsed mapping
-  //      (selector → value) and apply it to the active tab.
-  void HandleRunFormFillAI(const base::ListValue& args);
-  void HandleApplyFormFillMap(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]
@@ -352,7 +361,22 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
     // The confirmation reason last sent to the page for it ("" if none):
     // a confirmed run acts on a kAsk check only for this same reason.
     std::string shown_reason;
+    // A form fill (/fill ai, /paste): where its values came from, and the
+    // reason it always asks with (chat_form_fill::RequireConfirmation).
+    std::optional<molt_ai::chat_form_fill::Source> form_fill;
+    std::string form_fill_reason;
   };
+  // CheckProposal() for |proposal| on |probes|; a form fill always asks.
+  molt_ai::chat_actions::Check CheckChatProposal(
+      const ChatProposal& proposal,
+      const std::vector<molt_ai::agent_safety::ElementProbe>& probes);
+  // The main frame a proposal is made for: the active tab of the chat's
+  // own window (ActiveTabForChatAction), showing an http(s) page, with an
+  // on-device model loaded. Else null, and |*unavailable| says why.
+  content::RenderFrameHost* PageForChatAction(std::string* unavailable);
+  // Pins |frame|'s document to |decision| and lists its elements.
+  void StartChatActionDecision(std::unique_ptr<ChatActionDecision> decision,
+                               content::RenderFrameHost* frame);
   // Snapshot of the page's interactive elements arrived.
   void OnChatActionSnapshot(std::unique_ptr<ChatActionDecision> decision,
                             base::Value snapshot);
@@ -397,13 +421,40 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void OnPromptComplete(std::string callback_id, bool success,
                         const std::string& full_text,
                         const std::string& error);
+  // What the download's worker found before anything is fetched.
+  struct DownloadPrecheck {
+    DownloadPrecheck();
+    ~DownloadPrecheck();
+    DownloadPrecheck(DownloadPrecheck&&);
+    DownloadPrecheck& operator=(DownloadPrecheck&&);
+
+    // The model's terms must be accepted first.
+    bool license_required = false;
+    // User-facing reason the download can't start ("" if it can).
+    std::string error;
+    // The files still to fetch, and the bytes.
+    molt_ai::models::DownloadPlan plan;
+  };
+  // A model download is one unit (molt_ai/models/model_download_plan.h):
+  // the weights and, for a model that sees images, its vision projector,
+  // each fetched and verified by its own ModelDownloadJob, in order. The
+  // model counts as downloaded only once every file is in place.
+  void OnDownloadPrecheckComplete(
+      std::string callback_id,
+      std::string model_id,
+      molt_ai::ModelInfo info,
+      std::vector<molt_ai::models::ModelFileSpec> files,
+      DownloadPrecheck precheck);
+  // Starts the job for download_queue_'s first file.
+  void StartNextModelFile();
   void OnDownloadProgress(int64_t received, int64_t total);
   void OnDownloadFinished(molt_ai::models::ModelDownloadJob::Result result);
-  void OnDownloadPrecheckComplete(std::string callback_id,
-                                  std::string model_id,
-                                  molt_ai::ModelInfo info,
-                                  base::DictValue precheck);
   void FinishDownload(bool success, bool verified, std::string error);
+  // Clears the download state (after FinishDownload, a cancel, or a
+  // precheck that didn't start one).
+  void ResetDownloadState();
+  // The size the model pickers show: the whole unit, in MB.
+  static int DownloadSizeMb(const molt_ai::ModelInfo& info);
   void OnModelDeleted(std::string callback_id, std::string model_id,
                       bool success);
   void OnHistoryExported(std::string callback_id,
@@ -439,17 +490,22 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
                               int nav_entry_id,
                               base::Value result);
 
-  // The page this chat is about: the active tab of the window the chat is
-  // in. Null when the chat itself is that tab, or the window can't be
-  // found. Works for the side panel too (its WebContents is not a tab).
+  // The page this chat is about: ActiveTabForChatAction(), for reading.
   content::WebContents* GetActiveTabForChat();
 
-  // The window a chat action (navigate, click, type, ...) or a link from a
-  // reply goes to: the chat's own (holding it as a tab, or hosting its side
-  // panel), else the last active window. Null when there is none, or when
-  // that window is across MoltNet's boundary from the chat
+  // The window everything the chat does goes to (page actions and slash
+  // commands, the web agent, /fill, vault autofill, links from replies, the
+  // tab and privacy commands): the chat's own only, the window holding it
+  // as a tab or hosting its side panel (chat_handler_helpers::
+  // ChooseChatWindow; the side panel's WebContents is not a tab, so
+  // FindBrowserWithTab alone misses it). Never another window. Null when
+  // there is none, or when it is across MoltNet's boundary from the chat
   // (molt_ai::tor::MayChatActInWindow); then `*crossed_moltnet` is true.
   BrowserWindowInterface* BrowserForChatAction(bool* crossed_moltnet);
+  // The active tab of that window, never the chat itself (a chat opened as
+  // a tab is its window's active tab). Null as above, or when the chat is
+  // the active tab.
+  content::WebContents* ActiveTabForChatAction(bool* crossed_moltnet);
 
   // What this chat may use outside on-device processing. False in MoltNet
   // windows (molt_ai/tor/molt_net_requests_policy.h): cloud AI providers,
@@ -525,8 +581,18 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // this: in a sandboxed utility process per call, never in the browser
   // process. Destroying it ends pending parses (and their processes).
   molt_ai::DocumentParserClient document_parser_;
+  // The download in progress, from its precheck to FinishDownload (one at a
+  // time; downloading_model_id_ is "" when there is none).
   std::string download_callback_id_;
   std::string downloading_model_id_;
+  // Its files (the weights, then a vision projector), the indices of
+  // those still to fetch (the first one is downloading), the complete
+  // files' bytes, and whether every file fetched matched its pin.
+  std::vector<molt_ai::models::ModelFileSpec> download_files_;
+  std::vector<size_t> download_queue_;
+  uint64_t download_done_bytes_ = 0;
+  bool download_verified_ = true;
+  // The whole unit's size, for progress.
   uint64_t download_total_bytes_ = 0;
   base::TimeTicks download_start_time_;
   uint64_t download_last_bytes_ = 0;
@@ -548,6 +614,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   int chat_action_epoch_ = 0;
   std::unique_ptr<ChatProposal> chat_proposal_;
   int next_chat_proposal_id_ = 0;
+  // The fields form fills wrote on one document (their selectors): the next
+  // /fill ai or /paste there leaves them out and continues with the others.
+  content::WeakDocumentPtr form_fill_document_;
+  std::vector<std::string> form_fill_done_selectors_;
 
   // Active cloud (frontier API) chat stream (null when no cloud send is
   // in flight). Kept alive for the stream's duration; destroying it or

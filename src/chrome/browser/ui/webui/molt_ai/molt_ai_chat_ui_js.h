@@ -602,31 +602,58 @@ function appendStatusChip(icon, text) {
   return d;
 }
 
+// Shows |label| while the browser chooses a proposal (|request()| asks
+// for it). Resolves with the browser's answer, or null after Stop (a
+// late answer is dropped). Never rejects.
+function askBrowserForProposal(label, request) {
+  return new Promise(function(resolve) {
+    var row = appendStatusChip('⚡', label);
+    var done = false;
+    var finish = function(r) {
+      if (done) return;
+      done = true;
+      abortPageActionProposal = null;
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+      resolve(r);
+    };
+    // Stop: the browser cancels the decision; don't wait for its answer.
+    abortPageActionProposal = function() { finish(null); };
+    request().then(finish, function() { finish(null); });
+  });
+}
+
 // After the reply to a typed page-action request (|token| is the
 // reply's action_request): asks the browser for one proposal and shows
 // it. Resolves once the proposal is chosen (or not); running it may
 // still wait for the user's Allow. Never rejects.
 function runPageActionProposal(token) {
-  return new Promise(function(resolve) {
-    var row = appendStatusChip('⚡', 'Choosing a page action…');
-    var done = false;
-    var finish = function() {
-      if (done) return false;
-      done = true;
-      abortPageActionProposal = null;
-      if (row && row.parentNode) row.parentNode.removeChild(row);
-      resolve();
-      return true;
-    };
-    // Stop: the browser cancels the decision; don't wait for its answer.
-    abortPageActionProposal = finish;
-    sendWithPromise('proposeChatAction', token).then(function(r) {
-      if (finish()) handleChatProposal(r);
-    }, function() { finish(); });
+  return askBrowserForProposal('Choosing a page action…', function() {
+    return sendWithPromise('proposeChatAction', token);
+  }).then(function(r) { handleChatProposal(r); });
+}
+
+// /fill ai and /paste (docs/design/AGENT_ACTIONS.md §4.7): the browser
+// reads the page's text fields, has the on-device model choose values
+// from the saved profile (|source| 'profile'; the browser reads it, it
+// never comes through this page) or the pasted text ('paste', |pasted|)
+// for at most 8 of them, checks the answer and describes every value
+// itself. A form fill always comes with a reason, so it is shown with
+// Allow / Deny in Ask first and Auto mode alike; Allow sends only the
+// proposal's id. |hint| is what the user wrote after the command.
+function runFormFillProposal(source, hint, pasted) {
+  return askBrowserForProposal('Choosing what to fill…', function() {
+    return sendWithPromise('proposeFormFill', source, hint, pasted);
+  }).then(function(r) {
+    if (r && typeof r === 'object' && r.status === 'none') {
+      appendActionResult(false, 'Nothing filled', String(r.message || ''));
+      return;
+    }
+    handleChatProposal(r, 'Nothing filled');
   });
 }
 
-function handleChatProposal(r) {
+// |failLabel| heads the browser's message when there is no proposal.
+function handleChatProposal(r, failLabel) {
   if (!r || typeof r !== 'object') return;
   if (r.status === 'proposal') {
     var p = {id: Number(r.id) || 0, verb: String(r.verb || ''),
@@ -639,7 +666,8 @@ function handleChatProposal(r) {
       runChatProposal(p, false);
     }
   } else if (r.status === 'unavailable' || r.status === 'failed') {
-    appendActionResult(false, 'No page action', String(r.message || ''));
+    appendActionResult(false, failLabel || 'No page action',
+                       String(r.message || ''));
   }
   // 'none' (no action fits the request) and 'cancelled': nothing to show.
 }
@@ -1627,6 +1655,8 @@ function tryDispatchFillCommand(text) {
     return true;
   }
   if (!/^\s*\/fill\b/i.test(text)) return false;
+  // "/fill ai" is tryDispatchFillAICommand's.
+  if (/^\s*\/fill\s+ai\b/i.test(text)) return false;
   addUserMessage(text);
   startAiMessage();
   appendToAiMessage('Filling form...');
@@ -2174,95 +2204,34 @@ function tryDispatchPlanCommand(text) {
 }
 
 // --------------------------------------------------------------
-// Smart paste: /paste [extra]
-// Reads the clipboard via navigator.clipboard.readText() (works in
-// privileged WebUI context with no prompt), then routes through
-// the existing Form Filler v2 path: probe active page → LLM maps
-// pasted blob to fields → apply.
+// Smart paste: /paste [hint]
+// Reads the clipboard (navigator.clipboard.readText(), no prompt in
+// privileged WebUI) and has the browser propose a form fill from it
+// (runFormFillProposal): the on-device model picks values for the
+// page's text fields, the browser checks and describes them, and
+// nothing is filled before Allow. The pasted text goes to the
+// on-device model only, as data, never to a cloud model.
 //
-// Optional [extra] text is appended to the LLM prompt as a hint:
+// Optional [hint] text goes with the request:
 //   /paste prefer phone over fax
-//
-// Privacy note: the pasted content goes to the LOCAL LLM only, never
-// over the network. The user pasted it; it doesn't leave the device.
 // --------------------------------------------------------------
 function tryDispatchPasteCommand(text) {
   var m = text.match(/^\s*\/paste\b\s*(.*)$/i);
   if (!m) return false;
   var hint = (m[1] || '').trim();
   addUserMessage(text);
-  startAiMessage();
-  appendToAiMessage('Reading clipboard...');
   if (!navigator.clipboard || !navigator.clipboard.readText) {
-    currentAiText = '✗ Clipboard API not available in this context.';
-    finishAiMessage();
+    appendActionResult(false, 'Nothing filled',
+                       'The clipboard isn\u2019t available here.');
     setGenerating(false);
     return true;
   }
   navigator.clipboard.readText().then(function(clip) {
-    clip = (clip || '').trim();
-    if (!clip) {
-      currentAiText = '✗ Clipboard is empty.';
-      finishAiMessage();
-      setGenerating(false);
-      return;
-    }
-    appendToAiMessage('\nProbing form fields...');
-    sendWithPromise('runFormFillAI').then(function(r) {
-      if (!r.success) {
-        currentAiText = '✗ ' + (r.error || 'probe failed');
-        finishAiMessage();
-        setGenerating(false);
-        return;
-      }
-      // Reframe the prompt: instead of mapping from PROFILE → fields,
-      // we map from PASTED BLOB → fields. We replace the "Profile:"
-      // section with a "Pasted content:" section.
-      var p = r.prompt;
-      p = p.replace(/Profile:\n[\s\S]*?\n\nForm fields:/,
-        'Pasted content (one blob, possibly multi-line):\n' + clip +
-        '\n\n' +
-        (hint ? 'Hint from user: ' + hint + '\n\n' : '') +
-        'Form fields:');
-      currentAiText = '';
-      sendWithPromise('sendPrompt', p, '', '', '',
-                      activeModelId || pickedModelId || '').then(function() {
-        var s = currentAiText;
-        var i = s.indexOf('{'), j = s.lastIndexOf('}');
-        if (i < 0 || j <= i) {
-          currentAiText += '\n\n✗ Could not parse JSON mapping.';
-          finishAiMessage();
-          setGenerating(false);
-          return;
-        }
-        var parsed;
-        try { parsed = JSON.parse(s.substring(i, j + 1)); }
-        catch (e) {
-          currentAiText += '\n\n✗ Invalid JSON: ' + e;
-          finishAiMessage();
-          setGenerating(false);
-          return;
-        }
-        if (!parsed || Object.keys(parsed).length === 0) {
-          currentAiText += '\n\n✗ Empty mapping — LLM didn\'t recognize ' +
-                            'how to split this content.';
-          finishAiMessage();
-          setGenerating(false);
-          return;
-        }
-        sendWithPromise('applyFormFillMap', {map: parsed}).then(function(r2){
-          currentAiText = r2.success
-              ? '✓ Smart-pasted into ' + r2.filled + ' of ' + r2.total +
-                ' fields.'
-              : '✗ ' + (r2.error || 'apply failed');
-          finishAiMessage();
-          setGenerating(false);
-        });
-      });
-    });
-  }, function(err) {
-    currentAiText = '✗ Could not read clipboard: ' + err;
-    finishAiMessage();
+    return runFormFillProposal('paste', hint, String(clip || ''));
+  }, function() {
+    appendActionResult(false, 'Nothing filled',
+                       'Couldn\u2019t read the clipboard.');
+  }).then(function() {
     setGenerating(false);
   });
   return true;
@@ -2600,61 +2569,17 @@ function tryDispatchTranslateCommand(text) {
 }
 
 // --------------------------------------------------------------
-// Form filler v2: /fill ai (LLM fallback)
-// Two-phase: phase 1 asks the C++ side to probe form fields and
-// return a ready prompt; phase 2 sends the LLM's JSON mapping back
-// for application.
+// Form filler with the on-device model: /fill ai [hint]
+// The browser reads your saved profile itself and proposes one form
+// fill (runFormFillProposal): at most 8 text fields, never a password
+// field, every value shown before you tap Allow, in either mode.
 // --------------------------------------------------------------
 function tryDispatchFillAICommand(text) {
   var m = text.match(/^\s*\/fill\s+ai\b\s*(.*)$/i);
   if (!m) return false;
   addUserMessage(text);
-  startAiMessage();
-  appendToAiMessage('Probing form fields...');
-  sendWithPromise('runFormFillAI').then(function(r) {
-    if (!r.success) {
-      currentAiText = '✗ ' + (r.error || 'probe failed');
-      finishAiMessage();
-      setGenerating(false);
-      return;
-    }
-    currentAiText = '';
-    sendWithPromise('sendPrompt', r.prompt, '', '', '',
-                    activeModelId || pickedModelId || '').then(function() {
-      // Parse JSON from currentAiText.
-      var s = currentAiText;
-      var i = s.indexOf('{'), j = s.lastIndexOf('}');
-      if (i < 0 || j <= i) {
-        currentAiText += '\n\n✗ Could not parse JSON mapping.';
-        finishAiMessage();
-        setGenerating(false);
-        return;
-      }
-      var parsed;
-      try { parsed = JSON.parse(s.substring(i, j + 1)); }
-      catch (e) {
-        currentAiText += '\n\n✗ Invalid JSON: ' + e;
-        finishAiMessage();
-        setGenerating(false);
-        return;
-      }
-      if (!parsed || typeof parsed !== 'object' ||
-          Object.keys(parsed).length === 0) {
-        currentAiText += '\n\n✗ Empty mapping — no fields confidently matched.';
-        finishAiMessage();
-        setGenerating(false);
-        return;
-      }
-      sendWithPromise('applyFormFillMap', {map: parsed})
-          .then(function(r2){
-            currentAiText = r2.success
-                ? '✓ Filled ' + r2.filled + ' of ' + r2.total +
-                  ' fields via AI mapping.'
-                : '✗ ' + (r2.error || 'apply failed');
-            finishAiMessage();
-            setGenerating(false);
-          });
-    });
+  runFormFillProposal('profile', (m[1] || '').trim(), '').then(function() {
+    setGenerating(false);
   });
   return true;
 }

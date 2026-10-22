@@ -109,7 +109,8 @@ repo/
  |    |    +-- runtime/                # BrowserAIRuntime, model catalog, client
  |    |    |                           #   of the inference service
  |    |    |                           #   (InferenceProcessHost, StreamValidator)
- |    |    +-- models/                 # ModelDownloadJob (verified downloads)
+ |    |    +-- models/                 # ModelDownloadJob (verified downloads),
+ |    |    |                           #   model + projector as one unit
  |    |    +-- agents/                 # WebAgent
  |    |    +-- automation/             # Agent mode (record/replay)
  |    |    +-- dom/                    # DOMInterpreter, DOMContentBridge
@@ -165,7 +166,8 @@ repo/
 - **Metal** GPU acceleration on macOS (Apple Silicon)
 - CPU inference on Linux/Windows today (Vulkan planned)
 - Models stored as GGUF files in `~/.moltbrowser/models/`, downloaded with a
-  pinned revision, size and SHA-256
+  pinned revision, size and SHA-256; a model that sees images is downloaded
+  with its vision projector as one unit (`models/model_download_plan.h`)
 - **Sandboxed.** llama.cpp runs only in a utility process,
   `molt_ai.mojom.MoltInferenceService` (`chrome/services/molt_ai/inference`),
   launched with Chromium's `kOnDeviceModelExecution` sandbox (Seatbelt with

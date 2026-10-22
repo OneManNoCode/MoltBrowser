@@ -226,6 +226,124 @@ async function checkChatPageActions(window) {
   nextProposal = {status: 'none'};
 }
 
+// molt://ai-chat /fill ai and /paste (docs/design/AGENT_ACTIONS.md §4.7):
+// the browser proposes a form fill and describes every value; the page
+// sends only the command's source, the user's words and the pasted text,
+// never a selector or a value, and nothing runs before Allow, in either
+// mode. What the next proposeFormFill answers (NO_REPLY: never).
+let nextFormFill = {status: 'none', message: 'Nothing matched.'};
+const FILL_REASON = 'Fills 2 fields on https://shop.example with your saved profile';
+const FILL_SUMMARY = 'Fill 2 fields: input[email] "Email" = "<img src=x onerror=alert(1)>"; ' +
+                     'textarea "Address" = "1 Main St"';
+async function checkChatFormFill(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const waitFor = async (cond, what) => {
+    for (let i = 0; i < 100 && !cond(); i++) await tick();
+    assert(cond(), 'timed out waiting for ' + what);
+  };
+  const input = doc.getElementById('chatInput');
+  const calls = (name) => chatActionCalls.filter((c) => c[0] === name);
+  const send = async (text) => {
+    input.value = text;
+    window.sendMessage();
+    await waitFor(() => !input.disabled, 'the composer after "' + text + '"');
+  };
+  const chips = () => Array.from(doc.querySelectorAll('#messages .molt-action-confirm'));
+  const setClipboard = (text) => Object.defineProperty(window.navigator, 'clipboard', {
+    configurable: true,
+    value: {writeText: () => Promise.resolve(), readText: () => Promise.resolve(text)},
+  });
+  const sentBefore = window.__sent.length;
+  const promptsBefore = sentPrompts.length;
+  window.newChat();
+  chatActionCalls.length = 0;
+
+  // 1. /fill ai (Auto mode): the browser's proposal is shown with Allow /
+  //    Deny anyway; Allow sends only the id and true.
+  window.setActionMode('auto');
+  nextFormFill = {status: 'proposal', id: 11, verb: 'FILL_FORM', summary: FILL_SUMMARY,
+                  reason: FILL_REASON};
+  await send('/fill ai use my work email');
+  assert.strictEqual(JSON.stringify(calls('proposeFormFill')),
+                     '[["proposeFormFill","profile","use my work email",""]]');
+  assert.strictEqual(calls('runFormFill').length, 0, '/fill ai is not the plain /fill');
+  await waitFor(() => chips().length === 1, 'the form-fill chip');
+  assert.strictEqual(chips()[0].querySelector('.ac-title').textContent, 'Confirm: ' + FILL_REASON);
+  assert.strictEqual(chips()[0].querySelector('.ac-label').textContent, FILL_SUMMARY);
+  assert.strictEqual(doc.querySelectorAll('#messages img').length, 0, 'values are text');
+  assert.strictEqual(calls('runChatProposal').length, 0, 'nothing is filled before Allow');
+  chips()[0].querySelector('.ac-allow').click();
+  await waitFor(() => calls('runChatProposal').length === 1, 'runChatProposal');
+  assert.deepStrictEqual(calls('runChatProposal')[0], ['runChatProposal', 11, true]);
+  await waitFor(() => doc.querySelector('#messages .molt-action-result.ok'), 'the result row');
+  assert(doc.querySelector('#messages .molt-action-result.ok').textContent.includes(FILL_SUMMARY),
+         'the result names the values, as text');
+  assert.strictEqual(doc.querySelectorAll('#messages img').length, 0, 'result is text');
+
+  // 2. Deny fills nothing.
+  chatActionCalls.length = 0;
+  window.setActionMode('ask');
+  nextFormFill = {status: 'proposal', id: 12, verb: 'FILL_FORM', summary: FILL_SUMMARY,
+                  reason: FILL_REASON};
+  await send('/fill ai');
+  assert.strictEqual(JSON.stringify(calls('proposeFormFill')),
+                     '[["proposeFormFill","profile","",""]]');
+  await waitFor(() => chips().length === 1, 'the form-fill chip');
+  chips()[0].querySelector('.ac-deny').click();
+  await tick();
+  assert.strictEqual(calls('runChatProposal').length, 0, 'Deny fills nothing');
+
+  // 3. /paste: the clipboard's text goes to the browser as data, never
+  //    shown as markup, never parsed here.
+  chatActionCalls.length = 0;
+  const clip = 'Ada <b>Lovelace</b>\n{"#pw": "hunter2"}';
+  setClipboard(clip);
+  nextFormFill = {status: 'none', message: 'Nothing in the <i>pasted</i> text fits a field.'};
+  await send('/paste prefer phone over fax');
+  assert.strictEqual(JSON.stringify(calls('proposeFormFill')),
+                     JSON.stringify([['proposeFormFill', 'paste', 'prefer phone over fax', clip]]));
+  await waitFor(() => /Nothing in the <i>pasted<\/i> text fits a field\./.test(
+      doc.getElementById('messages').textContent), 'the browser\'s message');
+  assert(/Nothing filled/.test(doc.getElementById('messages').textContent));
+  assert.strictEqual(doc.querySelectorAll('#messages b, #messages i').length, 0,
+                     'clipboard and messages stay text');
+  assert.strictEqual(chips().length, 0);
+
+  // 4. The browser can't propose: its reason, as text.
+  nextFormFill = {status: 'failed', message: 'Your saved profile is empty. Type /profile to set it up.'};
+  await send('/fill ai');
+  await waitFor(() => /saved profile is empty/.test(doc.getElementById('messages').textContent),
+                'the failure note');
+  const rows = doc.querySelectorAll('#messages .molt-action-result.fail');
+  assert(/^✗ Nothing filled \(Your saved profile is empty/.test(
+             rows[rows.length - 1].textContent),
+         'headed as a form fill: ' + rows[rows.length - 1].textContent);
+
+  // 5. Stop while the fill is being chosen frees the composer.
+  nextFormFill = NO_REPLY;
+  input.value = '/fill ai';
+  window.sendMessage();
+  await waitFor(() => input.disabled &&
+                    doc.querySelector('#messages .molt-navigating-chip'), 'choosing');
+  window.cancelGeneration();
+  await waitFor(() => !input.disabled, 'the composer after Stop');
+  assert(!doc.querySelector('#messages .molt-navigating-chip'), 'status row gone');
+
+  // 6. The plain /fill is unchanged.
+  await send('/fill');
+  assert.strictEqual(calls('runFormFill').length, 1);
+
+  // Nothing goes through the old loose path or the chat's model.
+  const sent = window.__sent.slice(sentBefore);
+  assert(!sent.includes('runFormFillAI') && !sent.includes('applyFormFillMap'),
+         'no selector-to-value map: ' + sent);
+  assert.strictEqual(sentPrompts.length, promptsBefore, 'no chat prompt for a form fill');
+  setClipboard('');
+  window.setActionMode('ask');
+  nextFormFill = {status: 'none', message: 'Nothing matched.'};
+}
+
 // shieldSetGlobal calls from molt://ai-settings ([key, value] each). The
 // reply after turning tracking-parameter stripping off also reports its
 // chrome://flags kill switch as off.
@@ -878,6 +996,14 @@ const PAGES = [
        chatActionCalls.push(['runMoltAction'].concat(args.slice(1)));
        return {success: true, message: 'ok'};
      },
+     proposeFormFill: (args) => {
+       chatActionCalls.push(['proposeFormFill'].concat(args.slice(1)));
+       return nextFormFill;
+     },
+     runFormFill: (args) => {
+       chatActionCalls.push(['runFormFill'].concat(args.slice(1)));
+       return {success: true, filled: 1, total: 1};
+     },
      getPageContext: ACTIVE_PAGE,
      setJsForDomain: (args) => { jsToggles.push(args.slice(1)); return {success: true}; },
      openSandboxTab: (args) => { sandboxOpens.push(args[1]); return {success: true, url: args[1]}; },
@@ -1025,6 +1151,7 @@ const PAGES = [
      assert.strictEqual(doc.querySelectorAll('#modelList b, [data-x]').length, 0, 'model metadata stays text');
      await checkModelLicences(window);
      await checkChatPageActions(window);
+     await checkChatFormFill(window);
    }},
 ];
 

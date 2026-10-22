@@ -18,6 +18,7 @@ decision format doesn't change.
 | `ai_extract` step | same | the step's fields, or any object within caps (§3.2) |
 | Selector recovery (a recorded element is lost) | same | `{"selector": "..."}` (§3.3) |
 | The AI chat's page action | `agents/chat_actions.*`, `ui/webui/molt_ai/molt_ai_chat_handler_actions.cc` | one action object, a smaller set (§4) |
+| The chat's `/fill ai` and `/paste` | `ui/webui/molt_ai/molt_ai_chat_form_fill.*`, the same handler file | one FILL_FORM or DONE (§4.7) |
 
 The chat's old in-reply syntax (`[[ACTION verb:args]]`) is gone: nothing
 in a chat reply is parsed for actions any more (§4.6). The chat's slash
@@ -479,10 +480,12 @@ short extra request, and that request reuses §2 rather than a new format.
 3. **The decision.** The page calls `proposeChatAction(token)` and shows
    "Choosing a page action..." (the composer stays busy; Stop ends it).
    The browser:
-   - takes the active tab of the chat's own window
-     (`BrowserForChatAction`, which refuses MoltNet's boundary, §4.5); it
-     must show an http(s) page, and an on-device model must be loaded
-     (never loaded for this, never a cloud model);
+   - takes the active tab of the chat's own window, never the chat itself
+     (`ActiveTabForChatAction` over `BrowserForChatAction`, which refuses
+     MoltNet's boundary, §4.5): the window holding the chat as a tab, or
+     the one hosting its side panel (§4.8); it must show an http(s) page,
+     and an on-device model must be loaded (never loaded for this, never a
+     cloud model);
    - lists its elements with the agent's snapshot script (§2.1), kept only
      if it ran in the origin observed, and pins the document
      (`content::WeakDocumentPtr`);
@@ -572,7 +575,10 @@ Before: a MoltNet chat's actions went to its own window only
 rule applies when the proposal is made and again when it runs, the
 decision is made only by the on-device model (no cloud request, and the
 page's element list never leaves the device), and the action is pinned to
-the document it was made for. Nothing was loosened.
+the document it was made for. Nothing was loosened. Since §4.8 the chat
+acts only in its own window: the fallback to the last active window, the
+one way a window across the boundary could be reached, is gone, and
+`MayChatActInWindow` is still checked on the chat's own window.
 
 ### 4.6 Replies and saved conversations
 
@@ -581,6 +587,122 @@ the dispatcher are gone from the page script. `[[ACTION ...]]` written by
 a model, echoed from a page, or stored in a conversation saved by an older
 version renders as text (through the same Markdown renderer as any reply)
 and runs nothing. The WebUI smoke test checks all three.
+
+### 4.7 `/fill ai` and `/paste`
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run with a real model.
+
+**Before.** The page asked the browser (`runFormFillAI`) for a prompt
+holding the profile and the page's inputs, sent it through `sendPrompt`
+with whichever model the chat used (a cloud model too: the profile and the
+form went to the provider), cut the reply from its first `{` to its last
+`}`, and sent the model's selector-to-value map back (`applyFormFillMap`)
+to be written. `/paste` spliced the clipboard into the same prompt with a
+regex. Only the fill script had been tightened (text inputs and textareas,
+never a password field). And `/fill ai` never ran: the plain `/fill`
+dispatcher (`/fill\b`) took it first and filled from the profile's
+heuristics instead.
+
+**Now** both are proposals made like §4.2's, in `molt_ai_chat_form_fill.*`
+and `HandleProposeFormFill`:
+
+1. **The command.** `/fill ai [hint]` and `/paste [hint]` send
+   `proposeFormFill(source, hint, pasted)`: `source` is `profile` or
+   `paste`, the hint is what the user wrote after the command, and for
+   `/paste` the page reads the clipboard and sends its text (more than
+   64 KiB is refused). The page never sends the profile, a selector or a
+   value, and nothing goes through `sendPrompt`.
+2. **The data.** The browser reads the saved profile itself
+   (`FormatProfile`: one `key: value` line per non-blank string value,
+   keys of 1-40 ASCII letters, digits and `_`, values on one line and cut
+   to 300 characters, at most 40 lines and 4000 characters). The pasted
+   text is cleaned (`\r` dropped, control characters other than line
+   breaks and tabs made spaces) and cut to 4000 characters
+   (`FormatPasted`). An unreadable or empty profile, or no text, ends with
+   the browser's message.
+3. **The page.** As in §4.2: the active tab of the chat's own window
+   (§4.8), an http(s) page, an on-device model loaded, never a cloud
+   model. The agent's snapshot lists the elements. Fields that an earlier
+   form fill wrote on the same document are left out
+   (`LeaveOutFilled`), so the command run again continues with the
+   others. A page without a text field ends there.
+4. **The decision.** `BuildFormFillPrompt`: the format and the rules in
+   the system prompt; the page's URL, title and ELEMENTS in the
+   untrusted-content fence, then DATA (the profile or the pasted text) in
+   a second fence, because the pasted text is whatever was copied (an
+   email, a page) and a profile value is text, never instructions; the
+   user turn holds the request and the hint, sanitized like page text
+   and kept on one line. The schema is `BuildActionSchema(observation,
+   FILL_FORM | DONE)`: 1 to 8 fields, text-field ids only, so never a
+   password field. The reply is read with `ParseAction` through
+   `InterpretFormFill` (§2.4's retries, in the form filler's words; at
+   most three replies).
+5. **The proposal.** DONE ends with "Nothing in your saved profile (the
+   pasted text) fits a field on this page", the browser's words, never
+   the model's. A FILL_FORM is probed and checked like any proposal
+   (`CheckProposal`, §4.4: a password field is refused, payment-card and
+   one-time-code fields ask), then `RequireConfirmation` turns an *act*
+   into an *ask* with "Fills N fields on `<origin>` with your saved
+   profile" (or "with the text you pasted"). A form fill therefore always
+   asks, in Ask first and Auto mode alike, and the browser enforces it
+   (`MayRun` needs the user's Allow for that reason). The summary is
+   `DescribeFormFill`: every field and its whole value on one line, with
+   characters that reorder or hide text (bidi controls, zero-width
+   characters, U+FEFF) shown as U+FFFD, so what the user approves is what
+   is typed (`DescribeProposal` shortens values to 80 characters).
+6. **Running.** Allow sends `runChatProposal(id, true)`, as for any
+   proposal (§4.2, 6): the same document in the same window, probed and
+   checked again, then agent_actions' fill script in an isolated world,
+   after an origin check, skipping password fields. When a proposal used
+   all 8 fields and the page has other text fields, the result says to
+   run the command again.
+
+The type and fill scripts (`agent_actions::Build{Type,FillForm}Script`)
+now set a textarea's value through `HTMLTextAreaElement`'s setter. They
+used `HTMLInputElement`'s for every element, which throws on a textarea:
+TYPE into a textarea failed and FILL_FORM skipped it, in the chat and the
+web agent alike.
+
+What this changes for the user: the profile and the pasted text reach the
+on-device model only; the model picks observed text fields by id, never a
+selector; nothing is written before the user approves the browser's
+description of every value; and a proposal fills at most 8 fields (before:
+every input the probe found), so a long form takes the command twice.
+
+### 4.8 The chat's window
+
+`HandleStartWebAgent`, `/fill ai` (`runFormFillAI`) and vault autofill
+found their window with `GlobalBrowserCollection::FindBrowserWithTab()`
+on the chat's WebContents. At 152 that finds a window only for a tab:
+`BrowserCollection::FindBrowserWithTab` goes through
+`tabs::TabInterface::MaybeGetFromContents`, which reads the
+`TabLookupFromWebContents` user data that only a `TabModel` attaches. The
+side panel's WebContents is created by `views::WebView`
+(`AiChatSidePanelWebView`, `WebView::CreateWebContents`) and never wrapped
+in a `TabModel`, so in the side panel, the chat's usual place, these
+answered "no owning browser". So did `/fill`, `/triage`, `/ask-tabs`,
+`/trackers`, `/reputation`, `/hops`, `/js` and `/vault find`, which used
+the same lookup. In a chat opened as a tab the active tab is the chat
+itself, and the agent started on `chrome://molt-ai-chat`.
+
+All of them now use the helpers the page actions use:
+
+- `BrowserForChatAction`: the window holding the chat as a tab
+  (`FindBrowserWithTab`), else the window whose native window hosts the
+  chat's WebContents (`FindBrowserWithWindow(GetTopLevelNativeWindow())`),
+  which is how the side panel is found; never another window. Its
+  fallback to the last active window is gone: that could be a window the
+  user isn't looking at. Then MoltNet's rule (§4.5). The choice is
+  `chat_handler_helpers::ChooseChatWindow`, unit-tested.
+- `ActiveTabForChatAction`: that window's active tab, never the chat
+  itself (`ChatActionTarget`). The page context, the proposals, the
+  agent, `/fill`, the vault and the privacy commands use it.
+- The side panel's close button closes the panel of the window hosting it
+  (it took the last active window too).
+
+`HandleOpenMoltSettings` keeps `FindBrowserWithTab` on purpose: it tells a
+chat in a tab from the side panel.
 
 ## 5. What this changes for prompt injection
 
@@ -703,13 +825,17 @@ working, so this tells it little more.
 
 ## 6. Not done
 
-- **`/fill ai` and `/paste`** in the chat still parse the model's JSON
-  loosely (first `{` to last `}`) into a selector-to-value map for
-  `applyFormFillMap`. They are commands the user types, but the selectors
-  are the model's and page labels steer them. The fill script now writes
-  only enabled text inputs and textareas, never a password field; the
-  rest should move to a FILL_FORM proposal (§4) with the profile or the
-  pasted text as data.
+- **More than 8 fields in one form fill.** `/fill ai` and `/paste` keep
+  FILL_FORM's cap (§2.2) and continue on the same document when run
+  again (§4.7). A larger cap needs the schema and grammar sizes checked
+  again.
+- **Select menus, checkboxes and radio buttons in form fills.** The
+  observation doesn't list a select's options (§4.3), so the model would
+  guess values; the old fill script didn't write them either.
+- **The user's own slash commands in a chat opened as a tab.** `/click`,
+  `/navigate` and "open nasa.com" (`runMoltAction`) act on the window's
+  active tab, which is the chat itself there; in the side panel they act
+  on the page.
 - **`/plan`** reads `STEP:` lines from the model into a saved workflow.
   It never runs by itself: it is saved as Casual and goes through
   `automation_security` when the user runs it.
@@ -758,6 +884,34 @@ working, so this tells it little more.
   observation; the scope; every `CheckProposal` row; `MayRun`; script
   results (page exception text never repeated); the page scripts quoting a
   hostile selector, text and origin.
+- `ui/webui/molt_ai/molt_ai_chat_form_fill_unittest.cc` (`/fill ai` and
+  `/paste`, §4.7): the command's sources; the profile and the pasted text
+  as DATA (key filter, one line, every cap, blank values, character
+  boundaries); the prompt (the page and DATA each fenced, a profile value
+  and a title that try to end the fence, template tokens, the hint on one
+  line and capped, the DATA cap, no other action in the rules, the retry
+  note); the schema (FILL_FORM and DONE only, text-field ids only: never
+  the password field, a button, a link or a select; accepted by the
+  service's converter with no text field and at 40); hostile replies, all
+  asked again with a note that never repeats them (the old
+  selector-to-value map alone, in prose or in a code fence, two objects,
+  trailing text, `[[ACTION ...]]`, every other action, lower-case names,
+  RUN_JS, the password field, a button, a link, a select, a CSS selector
+  or an unknown id as a target, extra and missing keys, wrong types, no
+  field, 9 fields, a field twice, control characters, a reason with a line
+  break, every cap over its limit, a blank DONE, not JSON, nesting 10,000
+  deep); the stop table in the form filler's words; the summary (every
+  value whole, line breaks as spaces, bidi, zero-width and C1 characters
+  shown, page labels too); confirmation (every fill asks with its reason,
+  a payment-card field keeps its own, a password field or a gone field is
+  refused confirmed or not, `MayRun` only for the reason shown);
+  `LeaveOutFilled`; `MoreFieldsNote`.
+- `ui/webui/molt_ai/molt_ai_chat_handler_helpers_unittest.cc` (the chat's
+  window, §4.8): a chat in a tab acts in the window holding it, the side
+  panel in the window hosting it, the tab owner first, no window of its
+  own means none (no fallback), MoltNet's boundary both ways and between
+  MoltNet profiles, asked only about the window found; the chat is never
+  its own target.
 
 - `agents/agent_actions_unittest.cc`: the snapshot parser (refs, field
   classification, malformed and oversized entries, the 40 cap, labels that
@@ -785,6 +939,21 @@ working, so this tells it little more.
   nesting 10,000 deep, `__proto__` / `__ai_decision` / `__x` keys at any
   level, keys with quotes, NUL, line breaks, dots, `{{`, non-ASCII or
   edge spaces, a number too big for a double); selector replies.
+
+**In `tools/webui_checks` (`npm test`, CI):**
+
+- `agent_scripts_test.js`: agent_actions' type and fill scripts, read from
+  the C++ source, run in jsdom: a text input and a textarea written
+  through their own value setters with input and change events, the
+  password field never, another origin and a missing element refused,
+  hostile values kept as values.
+- The chat page in the WebUI smoke test: `/fill ai` and `/paste` send only
+  the source, the hint and the pasted text; a form fill asks in Auto mode
+  too, shows the browser's summary and reason as text, and sends only the
+  id and `true` on Allow; Deny fills nothing; the clipboard text and the
+  browser's messages render as text; Stop frees the composer; plain
+  `/fill` is unchanged; nothing calls `runFormFillAI`, `applyFormFillMap`
+  or `sendPrompt` for a form fill.
 
 **Run outside the repo** (standalone, against `//base` stand-ins):
 
@@ -906,3 +1075,40 @@ For screenshots (§2.6):
   zoom); `:autofill` on autofill previews; and a run with the pinned
   vision model: whether tags help, image cost per step, the fallback when
   the model is swapped mid-run.
+
+For `/fill ai`, `/paste` and the chat's window (§4.7, §4.8), also run
+here:
+
+- `molt_ai_chat_form_fill_unittest.cc` (17 tests, with the real
+  `agent_actions`, `chat_actions`, `agent_safety` and the service's real
+  converter) and `molt_ai_chat_handler_helpers_unittest.cc` (13 tests),
+  also under ASan and UBSan; the existing `agent_actions` and
+  `chat_actions` tests (56) still pass with the changed fill scripts.
+- Mutation checks, all caught: 43 single-point mutations of
+  `molt_ai_chat_form_fill.cc` (the source names, the profile and pasted
+  text filters and caps, both fences, the hint's line and cap, the
+  retry note, the action set of the schema and the parser, the stop
+  messages, every range of hidden characters, the summary's labels and
+  values, the confirmation reason and `RequireConfirmation`,
+  `LeaveOutFilled`, `MoreFieldsNote`; two survived at first and got a
+  test each: a hint blank up to its cap, and elements other than text
+  fields counted as "more fields"); 6 of `ChooseChatWindow` and
+  `ChatActionTarget`; 10 of the page's form-fill flow (`/fill ai` taken
+  by `/fill`, the hint or the pasted text not sent, the reason ignored
+  in Auto mode, the "nothing to fill" note dropped, Stop, the failure
+  label, a markup sink in the result row, Allow sent unconfirmed; the
+  last two survived at first and got an assertion each); 4 of the type
+  and fill scripts (the textarea setter in each, the password checks).
+- The type and fill scripts against the code before this change, in
+  jsdom: TYPE into a textarea answered `error:'set value' called on an
+  object that is not a valid instance of HTMLInputElement`, and
+  FILL_FORM skipped it.
+- Syntax of `molt_ai_chat_handler_actions.cc`,
+  `molt_ai_chat_handler_vault.cc` and every changed function of
+  `molt_ai_chat_handler.cc` (verbatim, with the real header), at each
+  commit, with `-fno-exceptions`, against stand-ins with the 152
+  signatures (adding `GlobalBrowserCollection::FindBrowserWithTab` /
+  `FindBrowserWithWindow`, `WebContents::GetTopLevelNativeWindow`,
+  `SidePanelUI::Close`, `base::GetFileInfo`, `base::GetFileSize`). It
+  found one bug before commit: `/triage` still named a variable the new
+  window lookup had removed.

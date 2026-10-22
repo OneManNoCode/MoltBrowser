@@ -882,9 +882,9 @@ std::string BuildTypeScript(std::string_view origin,
           if (!el) return 'not_found';
           if (el.type === 'password') return 'refused_password';
           const nv = Object.getOwnPropertyDescriptor(
-              window.HTMLInputElement.prototype, 'value') ||
-              Object.getOwnPropertyDescriptor(
-              window.HTMLTextAreaElement.prototype, 'value');
+              el.localName === 'textarea' ?
+                  window.HTMLTextAreaElement.prototype :
+                  window.HTMLInputElement.prototype, 'value');
           if (nv && nv.set) { nv.set.call(el, %s); }
           else { el.value = %s; }
           el.dispatchEvent(new Event('input',  {bubbles:true}));
@@ -918,9 +918,9 @@ std::string BuildFillFormScript(
             const el = document.querySelector(f.sel);
             if (!el || el.type === 'password') return;
             const nv = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype, 'value') ||
-                Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype, 'value');
+                el.localName === 'textarea' ?
+                    window.HTMLTextAreaElement.prototype :
+                    window.HTMLInputElement.prototype, 'value');
             if (nv && nv.set) { nv.set.call(el, f.val); }
             else { el.value = f.val; }
             el.dispatchEvent(new Event('input',  {bubbles:true}));

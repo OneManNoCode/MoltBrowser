@@ -22,6 +22,7 @@
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/containers/span.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -80,6 +81,7 @@
 #include "chrome/browser/molt_ai/memory/conversation_store.h"
 #include "chrome/browser/molt_ai/models/download_policy.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
+#include "chrome/browser/molt_ai/models/model_download_plan.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
@@ -214,6 +216,12 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "runChatProposal",
       base::BindRepeating(&MoltAIChatHandler::HandleRunChatProposal,
+                          base::Unretained(this)));
+  // /fill ai and /paste: a form fill proposed like a page action.
+  // Args: [callback_id, 'profile' | 'paste', hint, pasted_text]
+  web_ui()->RegisterMessageCallback(
+      "proposeFormFill",
+      base::BindRepeating(&MoltAIChatHandler::HandleProposeFormFill,
                           base::Unretained(this)));
   // Personal Vector Memory grounding — top-K relevant chunks from
   // the user's full browsing history. Args: [callback_id, query, top_k].
@@ -357,15 +365,6 @@ void MoltAIChatHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "vaultAutofill",
       base::BindRepeating(&MoltAIChatHandler::HandleVaultAutofill,
-                          base::Unretained(this)));
-  // Tier 4: form filler v2 (LLM fallback).
-  web_ui()->RegisterMessageCallback(
-      "runFormFillAI",
-      base::BindRepeating(&MoltAIChatHandler::HandleRunFormFillAI,
-                          base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(
-      "applyFormFillMap",
-      base::BindRepeating(&MoltAIChatHandler::HandleApplyFormFillMap,
                           base::Unretained(this)));
   // Tier 5: voice mode — local whisper transcription.
   web_ui()->RegisterMessageCallback(
@@ -966,8 +965,7 @@ void MoltAIChatHandler::FinishInitChat(std::string callback_id,
     model_dict.Set("param_billions", m.parameter_count_billions);
     model_dict.Set("is_downloaded", m.is_downloaded);
     model_dict.Set("is_loaded", m.is_loaded);
-    model_dict.Set("file_size_mb",
-                   static_cast<int>(m.file_size_bytes / (1024 * 1024)));
+    model_dict.Set("file_size_mb", DownloadSizeMb(m));
     // S13: false until the registry entry is pinned (revision + SHA-256);
     // the picker labels such downloads "unverified".
     model_dict.Set("verified", m.is_verified());
@@ -1219,8 +1217,7 @@ void MoltAIChatHandler::HandleSendPrompt(const base::ListValue& args) {
       MatchesAnyKeyword(lower_prompt, kMemoryReferenceKeywords);
   // Only what the user typed can ask for a page action: never the
   // quick-action chips (their prompt embeds page text) or the slash
-  // commands (/translate, /plan, /fill ai, ... build prompts from page
-  // text, clipboard or the profile).
+  // commands (/translate, /plan, ... build prompts from page text).
   const bool page_action_note =
       typed_in_composer &&
       molt_ai::chat_actions::LooksLikePageActionRequest(prompt_text);
@@ -1813,8 +1810,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
     d.Set("is_loaded", m.is_loaded);
     // Explicit so the JS picker's is_cloud checks are unambiguous.
     d.Set("is_cloud", false);
-    d.Set("file_size_mb",
-          static_cast<int>(m.file_size_bytes / (1024 * 1024)));
+    d.Set("file_size_mb", DownloadSizeMb(m));
     d.Set("verified", m.is_verified());
     d.Set("license_name", m.license_name);
     d.Set("license_url", m.license_url);
@@ -1883,55 +1879,48 @@ void MoltAIChatHandler::HandleGetPageContext(const base::ListValue& args) {
 }
 
 content::WebContents* MoltAIChatHandler::GetActiveTabForChat() {
-  content::WebContents* webui_contents = web_ui()->GetWebContents();
-  GlobalBrowserCollection* browsers = GlobalBrowserCollection::GetInstance();
-  BrowserWindowInterface* browser =
-      browsers->FindBrowserWithTab(webui_contents);
-  if (!browser) {
-    // Side panel: not a tab, but it lives in its browser's window. Not
-    // GetLastActiveBrowser(): another window's tab would be the wrong page.
-    browser = browsers->FindBrowserWithWindow(
-        webui_contents->GetTopLevelNativeWindow());
-  }
-  if (!browser || !browser->GetTabStripModel()) {
-    return nullptr;
-  }
-  content::WebContents* active_tab =
-      browser->GetTabStripModel()->GetActiveWebContents();
-  return active_tab == webui_contents ? nullptr : active_tab;
+  bool crossed_moltnet = false;
+  return ActiveTabForChatAction(&crossed_moltnet);
 }
 
 BrowserWindowInterface* MoltAIChatHandler::BrowserForChatAction(
     bool* crossed_moltnet) {
-  *crossed_moltnet = false;
   content::WebContents* webui_contents = web_ui()->GetWebContents();
   GlobalBrowserCollection* browsers = GlobalBrowserCollection::GetInstance();
-  BrowserWindowInterface* browser =
+  // A chat opened as a tab ...
+  BrowserWindowInterface* tab_owner =
       browsers->FindBrowserWithTab(webui_contents);
-  if (!browser) {
-    // Side panel: not a tab, but it lives in its browser's window.
-    browser = browsers->FindBrowserWithWindow(
-        webui_contents->GetTopLevelNativeWindow());
-  }
-  if (!browser) {
-    // The most recently focused window, normally the one the user is
-    // looking at.
-    browser = browsers->GetLastActiveBrowser();
-  }
-  if (!browser) {
-    return nullptr;
-  }
+  // ... or the side panel, which is not a tab but lives in its browser's
+  // window. Never another window (GetLastActiveBrowser() can be one).
+  BrowserWindowInterface* panel_host =
+      tab_owner ? nullptr
+                : browsers->FindBrowserWithWindow(
+                      webui_contents->GetTopLevelNativeWindow());
   Profile* chat_profile =
       Profile::FromBrowserContext(webui_contents->GetBrowserContext());
-  Profile* window_profile = browser->GetProfile();
-  if (!molt_ai::tor::MayChatActInWindow(
-          molt_ai::tor::IsMoltNetProfile(chat_profile),
-          molt_ai::tor::IsMoltNetProfile(window_profile),
-          chat_profile == window_profile)) {
-    *crossed_moltnet = true;
+  const molt_ai::chat_handler_helpers::ChatWindowChoice<BrowserWindowInterface>
+      choice = molt_ai::chat_handler_helpers::ChooseChatWindow(
+          tab_owner, panel_host,
+          [chat_profile](BrowserWindowInterface* window) {
+            Profile* window_profile = window->GetProfile();
+            return molt_ai::tor::MayChatActInWindow(
+                molt_ai::tor::IsMoltNetProfile(chat_profile),
+                molt_ai::tor::IsMoltNetProfile(window_profile),
+                chat_profile == window_profile);
+          });
+  *crossed_moltnet = choice.crossed_moltnet;
+  return choice.window;
+}
+
+content::WebContents* MoltAIChatHandler::ActiveTabForChatAction(
+    bool* crossed_moltnet) {
+  BrowserWindowInterface* browser = BrowserForChatAction(crossed_moltnet);
+  if (!browser || !browser->GetTabStripModel()) {
     return nullptr;
   }
-  return browser;
+  return molt_ai::chat_handler_helpers::ChatActionTarget(
+      browser->GetTabStripModel()->GetActiveWebContents(),
+      web_ui()->GetWebContents());
 }
 
 bool MoltAIChatHandler::CloudAiAllowed() const {
@@ -1997,12 +1986,91 @@ bool RecordLicenseAcceptance(const base::FilePath& path,
   return true;
 }
 
+// The files of |info|'s download unit: the weights, then the vision
+// projector of a model that sees images, from the same repo and revision
+// (molt_ai/models/model_download_plan.h).
+std::vector<molt_ai::models::ModelFileSpec> DownloadUnitFor(
+    const molt_ai::ModelInfo& info) {
+  std::vector<molt_ai::models::ModelFileSpec> files;
+  molt_ai::models::ModelFileSpec weights;
+  weights.role = molt_ai::models::ModelFileRole::kWeights;
+  weights.repo = info.huggingface_id;
+  weights.revision = info.revision;
+  weights.filename = info.filename;
+  weights.final_path = info.file_path;
+  weights.sha256 = info.sha256;
+  weights.size = static_cast<int64_t>(info.file_size_bytes);
+  files.push_back(weights);
+  if (info.has_vision()) {
+    molt_ai::models::ModelFileSpec projector = weights;
+    projector.role = molt_ai::models::ModelFileRole::kVisionProjector;
+    projector.filename = info.vision_projector_filename;
+    projector.final_path = info.vision_projector_path;
+    projector.sha256 = info.vision_projector_sha256;
+    projector.size = static_cast<int64_t>(info.vision_projector_size_bytes);
+    files.push_back(std::move(projector));
+  }
+  return files;
+}
+
+// What is on disk for each file of a unit. Blocking.
+std::vector<molt_ai::models::ModelFileOnDisk> StatDownloadUnit(
+    const std::vector<molt_ai::models::ModelFileSpec>& files) {
+  std::vector<molt_ai::models::ModelFileOnDisk> out;
+  for (const molt_ai::models::ModelFileSpec& file : files) {
+    const base::FilePath path =
+        base::FilePath::FromUTF8Unsafe(file.final_path);
+    molt_ai::models::ModelFileOnDisk on_disk;
+    base::File::Info info;
+    if (base::GetFileInfo(path, &info) && !info.is_directory) {
+      on_disk.final_exists = true;
+      on_disk.final_size = info.size;
+    }
+    on_disk.partial_size =
+        base::GetFileSize(
+            molt_ai::models::ModelDownloadJob::PartialPathFor(path))
+            .value_or(0);
+    out.push_back(on_disk);
+  }
+  return out;
+}
+
+// Everything a unit can leave on disk: each file and its .partial.
+std::vector<base::FilePath> DownloadUnitPaths(
+    const std::vector<molt_ai::models::ModelFileSpec>& files) {
+  std::vector<base::FilePath> paths;
+  for (const molt_ai::models::ModelFileSpec& file : files) {
+    const base::FilePath path =
+        base::FilePath::FromUTF8Unsafe(file.final_path);
+    paths.push_back(path);
+    paths.push_back(molt_ai::models::ModelDownloadJob::PartialPathFor(path));
+  }
+  return paths;
+}
+
 }  // namespace
+
+// The model pickers' size: the whole unit (weights and projector).
+// static
+int MoltAIChatHandler::DownloadSizeMb(const molt_ai::ModelInfo& info) {
+  return static_cast<int>(
+      (static_cast<uint64_t>(info.file_size_bytes) +
+       static_cast<uint64_t>(info.vision_projector_size_bytes)) /
+      (1024 * 1024));
+}
+
+MoltAIChatHandler::DownloadPrecheck::DownloadPrecheck() = default;
+MoltAIChatHandler::DownloadPrecheck::~DownloadPrecheck() = default;
+MoltAIChatHandler::DownloadPrecheck::DownloadPrecheck(DownloadPrecheck&&) =
+    default;
+MoltAIChatHandler::DownloadPrecheck&
+MoltAIChatHandler::DownloadPrecheck::operator=(DownloadPrecheck&&) = default;
 
 // ------------------------------------------------------------------
 // HandleDownloadModel: Download a model from HuggingFace
 // JS: chrome.send('downloadModel', [callback_id, model_id])
-// Streams progress via FireWebUIListener('download-progress', ...).
+// Streams progress via FireWebUIListener('download-progress', ...), over
+// the whole unit (a vision model's projector included).
 // Resolves {success, verified?, error?} or, when the model's terms haven't
 // been accepted yet, {success:false, license_required:true, license_id,
 // license_name, license_url, error}.
@@ -2017,12 +2085,16 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   auto* runtime = GetOrCreateRuntime();
   auto info = runtime->GetModelInfo(model_id);
 
-  if (info.model_id.empty()) {
+  auto resolve_error = [&](const std::string& error) {
     base::DictValue result;
     result.Set("success", false);
-    result.Set("error", "Unknown model: " + model_id);
+    result.Set("error", error);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
+  };
+
+  if (info.model_id.empty()) {
+    resolve_error("Unknown model: " + model_id);
     return;
   }
 
@@ -2035,77 +2107,99 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
     return;
   }
 
-  if (download_job_) {
-    base::DictValue result;
-    result.Set("success", false);
-    result.Set("error", "Another download is already in progress");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+  // One download at a time, from its precheck on.
+  if (!downloading_model_id_.empty()) {
+    resolve_error("Another download is already in progress");
     return;
   }
 
-  // All filesystem checks (license record, CreateDirectory,
-  // AmountOfFreeDiskSpace, partial size) run on a ThreadPool worker. The
-  // network wiring continues on the UI thread once the precheck returns.
+  // Fail closed before any IO: a model with a vision projector is fetched
+  // only fully pinned (both files' revision, SHA-256 and size).
+  std::vector<molt_ai::models::ModelFileSpec> files = DownloadUnitFor(info);
+  const molt_ai::models::PlanError unit_error =
+      molt_ai::models::CheckUnit(files);
+  if (unit_error != molt_ai::models::PlanError::kNone) {
+    LOG(WARNING) << "[MoltAI] refusing to download " << model_id
+                 << ": its files aren't pinned";
+    resolve_error(
+        std::string(molt_ai::models::PlanErrorText(unit_error)));
+    return;
+  }
+
+  downloading_model_id_ = model_id;
+  download_callback_id_ = callback_id;
+
+  // All filesystem checks (license record, CreateDirectory, the files and
+  // their .partial leftovers, free disk space) run on a ThreadPool worker.
+  // The network wiring continues on the UI thread once the precheck
+  // returns.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
       base::BindOnce(
-          [](molt_ai::ModelInfo info) -> base::DictValue {
-            base::DictValue r;
+          [](molt_ai::ModelInfo info,
+             std::vector<molt_ai::models::ModelFileSpec> files)
+              -> DownloadPrecheck {
+            DownloadPrecheck r;
             if (!info.license_id.empty() &&
                 !IsLicenseAccepted(AcceptedLicensesPath(info.file_path),
                                    info.model_id, info.license_id)) {
-              r.Set("ok", false);
-              r.Set("license_required", true);
+              r.license_required = true;
               return r;
             }
-            base::FilePath final_path =
-                base::FilePath::FromUTF8Unsafe(info.file_path);
-            base::FilePath parent_dir = final_path.DirName();
+            const base::FilePath parent_dir =
+                base::FilePath::FromUTF8Unsafe(info.file_path).DirName();
             if (!base::DirectoryExists(parent_dir)) {
               base::CreateDirectory(parent_dir);
             }
-            const int64_t existing_bytes =
-                base::GetFileSize(
-                    molt_ai::models::ModelDownloadJob::PartialPathFor(
-                        final_path))
-                    .value_or(0);
+            r.plan = molt_ai::models::PlanModelDownload(
+                files, StatDownloadUnit(files));
+            if (r.plan.error != molt_ai::models::PlanError::kNone) {
+              r.error = molt_ai::models::PlanErrorText(r.plan.error);
+              return r;
+            }
+            // Room for every file still to fetch, less what their
+            // .partial files already hold.
             const int64_t disk_space =
                 base::SysInfo::AmountOfFreeDiskSpace(parent_dir)
                     .value_or(-1);
-            const int64_t required_bytes =
-                std::max<int64_t>(0, static_cast<int64_t>(
-                                         info.file_size_bytes) -
-                                         existing_bytes);
+            const int64_t required_bytes = r.plan.bytes_to_write;
             if (disk_space >= 0 && disk_space < required_bytes) {
-              r.Set("ok", false);
-              r.Set("error",
-                    "Not enough disk space. Need " +
+              r.error = "Not enough disk space. Need " +
                         std::to_string(required_bytes / (1024 * 1024)) +
                         " MB but only " +
                         std::to_string(disk_space / (1024 * 1024)) +
-                        " MB available.");
-              return r;
+                        " MB available.";
             }
-            r.Set("ok", true);
             return r;
           },
-          info),
+          info, files),
+      // A copy: the order in which the two callbacks are bound is
+      // unspecified.
       base::BindOnce(&MoltAIChatHandler::OnDownloadPrecheckComplete,
                      weak_ptr_factory_.GetWeakPtr(), callback_id, model_id,
-                     info));
+                     info, files));
 }
 
 void MoltAIChatHandler::OnDownloadPrecheckComplete(
     std::string callback_id,
     std::string model_id,
     molt_ai::ModelInfo info,
-    base::DictValue precheck) {
+    std::vector<molt_ai::models::ModelFileSpec> files,
+    DownloadPrecheck precheck) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!IsJavascriptAllowed()) return;
+  if (!IsJavascriptAllowed()) {
+    ResetDownloadState();
+    return;
+  }
 
-  if (precheck.FindBool("license_required").value_or(false)) {
+  auto resolve = [&](base::DictValue result) {
+    ResetDownloadState();
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  };
+
+  if (precheck.license_required) {
     base::DictValue result;
     result.Set("success", false);
     result.Set("license_required", true);
@@ -2118,58 +2212,85 @@ void MoltAIChatHandler::OnDownloadPrecheckComplete(
                             info.license_name +
                             ". Accept it in the AI chat's model menu to "
                             "download.");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    resolve(std::move(result));
     return;
   }
 
-  if (!precheck.FindBool("ok").value_or(false)) {
+  if (!precheck.error.empty()) {
     base::DictValue result;
     result.Set("success", false);
-    if (auto* err = precheck.FindString("error")) {
-      result.Set("error", *err);
-    } else {
-      result.Set("error", "Download precheck failed");
-    }
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    result.Set("error", precheck.error);
+    resolve(std::move(result));
     return;
   }
 
-  scoped_refptr<network::SharedURLLoaderFactory> factory =
-      GetUrlLoaderFactory();
-  if (!factory) {
+  if (precheck.plan.to_fetch.empty()) {
+    // Every file is already in place (the registry's view was stale).
+    ResetDownloadState();
+    auto* runtime = GetOrCreateRuntime();
+    base::ThreadPool::PostTaskAndReply(
+        FROM_HERE, {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+        base::BindOnce(&molt_ai::BrowserAIRuntime::RefreshModelStatus,
+                       base::Unretained(runtime)),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAIChatHandler> self, std::string cb) {
+              if (!self || !self->IsJavascriptAllowed()) return;
+              base::DictValue result;
+              result.Set("success", true);
+              result.Set("already_downloaded", true);
+              self->ResolveJavascriptCallback(base::Value(cb),
+                                              base::Value(std::move(result)));
+            },
+            weak_ptr_factory_.GetWeakPtr(), callback_id));
+    return;
+  }
+
+  if (!GetUrlLoaderFactory()) {
     base::DictValue result;
     result.Set("success", false);
     result.Set("error", "No network context available");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    resolve(std::move(result));
     return;
   }
 
-  molt_ai::models::ModelDownloadJob::Params params;
-  params.url = GURL(molt_ai::models::ModelDownloadUrl(
-      info.huggingface_id, info.revision, info.filename));
-  params.final_path = base::FilePath::FromUTF8Unsafe(info.file_path);
-  params.expected_sha256 = info.sha256;
-  // Sizes are only exact once an entry is pinned.
-  params.expected_size =
-      info.is_verified() ? static_cast<int64_t>(info.file_size_bytes) : 0;
   if (!info.is_verified()) {
     LOG(WARNING) << "[MoltAI] downloading " << model_id
                  << " UNVERIFIED: registry entry has no pinned revision/"
                     "SHA-256 (run tools/models/pin_models.py)";
   }
-  LOG(INFO) << "[MoltAI] Starting download: " << params.url.spec() << " -> "
-            << info.file_path;
 
-  // Store state for callbacks
-  download_callback_id_ = callback_id;
-  downloading_model_id_ = model_id;
-  download_total_bytes_ = info.file_size_bytes;
+  // State for the callbacks; downloading_model_id_ and the callback id
+  // were set when the precheck started.
+  download_files_ = std::move(files);
+  download_queue_ = std::move(precheck.plan.to_fetch);
+  download_done_bytes_ = static_cast<uint64_t>(precheck.plan.done_bytes);
+  download_total_bytes_ = static_cast<uint64_t>(precheck.plan.total_bytes);
+  download_verified_ = true;
   download_start_time_ = base::TimeTicks::Now();
   download_last_time_ = download_start_time_;
   download_last_bytes_ = 0;
+  StartNextModelFile();
+}
+
+void MoltAIChatHandler::StartNextModelFile() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      GetUrlLoaderFactory();
+  if (download_queue_.empty() || !factory) {
+    FinishDownload(false, false, "No network context available");
+    return;
+  }
+  const molt_ai::models::ModelFileSpec& file =
+      download_files_[download_queue_.front()];
+  molt_ai::models::ModelDownloadJob::Params params;
+  params.url = GURL(molt_ai::models::ModelFileUrl(file));
+  params.final_path = base::FilePath::FromUTF8Unsafe(file.final_path);
+  // The file's own pin: its SHA-256 and exact size (0 when not pinned,
+  // which only a text-only model can be).
+  params.expected_sha256 = file.sha256;
+  params.expected_size = molt_ai::models::ExpectedSizeForJob(file);
+  LOG(INFO) << "[MoltAI] Starting download: " << params.url.spec() << " -> "
+            << file.final_path;
 
   download_job_ = molt_ai::models::ModelDownloadJob::Start(
       std::move(params), std::move(factory),
@@ -2183,8 +2304,11 @@ void MoltAIChatHandler::OnDownloadProgress(int64_t received, int64_t total) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!IsJavascriptAllowed()) return;
 
-  const uint64_t current = static_cast<uint64_t>(std::max<int64_t>(0, received));
-  if (total > 0) download_total_bytes_ = static_cast<uint64_t>(total);
+  // Progress over the whole unit: the complete files plus this one.
+  const uint64_t current =
+      download_done_bytes_ +
+      static_cast<uint64_t>(std::max<int64_t>(0, received));
+  if (current > download_total_bytes_) download_total_bytes_ = current;
 
   // The job reports after every written chunk; forward at most two updates
   // a second (plus the first one) and compute speed/ETA over that window.
@@ -2222,19 +2346,34 @@ void MoltAIChatHandler::OnDownloadFinished(
   LOG(INFO) << "[MoltAI] Download finished: success=" << result.success
             << " verified=" << result.verified << " sha256=" << result.sha256
             << " error=" << result.error;
-  if (!result.success) {
-    FinishDownload(false, result.verified, result.error);
+  if (!result.success || download_queue_.empty()) {
+    // A file failed (network, size or hash): the model is not downloaded.
+    // Files already in place stay for the next attempt, which fetches only
+    // what is missing; Cancel removes them.
+    FinishDownload(false, false, result.error);
     return;
   }
-  // The job already verified and renamed the file; refresh the registry's
-  // on-disk view on a worker.
+  // The job verified the file and moved it into place.
+  const molt_ai::models::ModelFileSpec& file =
+      download_files_[download_queue_.front()];
+  download_done_bytes_ += static_cast<uint64_t>(std::max<int64_t>(
+      0, molt_ai::models::ExpectedSizeForJob(file)));
+  download_verified_ = download_verified_ && result.verified;
+  download_queue_.erase(download_queue_.begin());
+  if (!download_queue_.empty()) {
+    StartNextModelFile();
+    return;
+  }
+  // Every file is in place. No job runs while the registry is refreshed,
+  // so a Cancel now does nothing.
+  download_job_.reset();
   auto* runtime = GetOrCreateRuntime();
   base::ThreadPool::PostTaskAndReply(
       FROM_HERE, {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
       base::BindOnce(&molt_ai::BrowserAIRuntime::RefreshModelStatus,
                      base::Unretained(runtime)),
       base::BindOnce(&MoltAIChatHandler::FinishDownload,
-                     weak_ptr_factory_.GetWeakPtr(), true, result.verified,
+                     weak_ptr_factory_.GetWeakPtr(), true, download_verified_,
                      std::string()));
 }
 
@@ -2260,9 +2399,17 @@ void MoltAIChatHandler::FinishDownload(bool success,
                               base::Value(std::move(result)));
   }
 
+  ResetDownloadState();
+}
+
+void MoltAIChatHandler::ResetDownloadState() {
   download_job_.reset();
   download_callback_id_.clear();
   downloading_model_id_.clear();
+  download_files_.clear();
+  download_queue_.clear();
+  download_done_bytes_ = 0;
+  download_verified_ = true;
   download_total_bytes_ = 0;
   download_last_bytes_ = 0;
 }
@@ -2306,7 +2453,8 @@ void MoltAIChatHandler::HandleAcceptModelLicense(const base::ListValue& args) {
 }
 
 // ------------------------------------------------------------------
-// HandleDeleteModel: Delete a downloaded model file
+// HandleDeleteModel: Delete a downloaded model (its weights, and the vision
+// projector of a model that sees images)
 // JS: chrome.send('deleteModel', [callback_id, model_id])
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
@@ -2319,16 +2467,44 @@ void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
 
   auto* runtime = GetOrCreateRuntime();
 
+  if (!model_id.empty() && model_id == downloading_model_id_) {
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("model_id", model_id);
+    result.Set("error", "Cancel the download first.");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  // The whole unit goes: DeleteModel removes the weights and a vision
+  // model's projector; their .partial leftovers (an interrupted download)
+  // go with them.
+  std::vector<base::FilePath> partials;
+  for (const molt_ai::models::ModelFileSpec& file :
+       DownloadUnitFor(runtime->GetModelInfo(model_id))) {
+    if (!file.final_path.empty()) {
+      partials.push_back(molt_ai::models::ModelDownloadJob::PartialPathFor(
+          base::FilePath::FromUTF8Unsafe(file.final_path)));
+    }
+  }
+
   // DeleteModel touches the filesystem (std::filesystem::remove + GGUF unload).
   // Run on a worker, reply on UI thread.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
       base::BindOnce(
-          [](molt_ai::BrowserAIRuntime* rt, std::string mid) {
-            return rt->DeleteModel(mid);
+          [](molt_ai::BrowserAIRuntime* rt, std::string mid,
+             std::vector<base::FilePath> partials) {
+            const bool deleted = rt->DeleteModel(mid);
+            if (deleted) {
+              for (const base::FilePath& partial : partials) {
+                base::DeleteFile(partial);
+              }
+            }
+            return deleted;
           },
-          base::Unretained(runtime), model_id),
+          base::Unretained(runtime), model_id, std::move(partials)),
       base::BindOnce(&MoltAIChatHandler::OnModelDeleted,
                      weak_ptr_factory_.GetWeakPtr(), callback_id, model_id));
 }
@@ -2444,12 +2620,16 @@ void MoltAIChatHandler::OnPageContentExtracted(std::string callback_id,
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
   AllowJavascript();
+  // Nothing runs before the first file starts or once every file is in
+  // place.
   if (!download_job_) return;
   LOG(INFO) << "[MoltAI] Cancelling download of " << downloading_model_id_;
   const std::string cancelled_model = downloading_model_id_;
-  // Stops the transfer and deletes the .partial file on the job's file
-  // sequence (after any write still in flight).
-  download_job_->CancelAndDiscard();
+  // A model is downloaded whole or not at all: stop the transfer and
+  // delete its .partial file and every file of the unit already in place
+  // (the weights of a vision model whose projector was downloading), on
+  // the job's file sequence after any write or rename still queued there.
+  download_job_->CancelAndDiscard(DownloadUnitPaths(download_files_));
   download_job_.reset();
 
   FireWebUIListener("download-complete", base::Value(cancelled_model),
@@ -2464,10 +2644,7 @@ void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
                               base::Value(std::move(result)));
   }
 
-  download_callback_id_.clear();
-  downloading_model_id_.clear();
-  download_total_bytes_ = 0;
-  download_last_bytes_ = 0;
+  ResetDownloadState();
 }
 
 // ------------------------------------------------------------------
@@ -3159,12 +3336,14 @@ void MoltAIChatHandler::HandleListTabsInWindow(const base::ListValue& args) {
   base::DictValue out;
   base::ListValue tabs;
 
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  // The chat's own window (a tab, or the window hosting its side panel).
+  bool crossed_moltnet = false;
+  BrowserWindowInterface* browser = BrowserForChatAction(&crossed_moltnet);
   if (!browser || !browser->GetTabStripModel()) {
     out.Set("tabs", std::move(tabs));
-    out.Set("error", "no owning browser");
+    out.Set("error", crossed_moltnet
+                         ? molt_ai::tor::kOtherWindowRefusedInMoltNet
+                         : "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
@@ -3228,12 +3407,14 @@ void MoltAIChatHandler::HandleTriageActOnTabs(const base::ListValue& args) {
     return;
   }
 
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  // The chat's own window (a tab, or the window hosting its side panel).
+  bool crossed_moltnet = false;
+  BrowserWindowInterface* browser = BrowserForChatAction(&crossed_moltnet);
   if (!browser || !browser->GetTabStripModel()) {
     out.Set("success", false);
-    out.Set("error", "no owning browser");
+    out.Set("error", crossed_moltnet
+                         ? molt_ai::tor::kOtherWindowRefusedInMoltNet
+                         : "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
@@ -3266,7 +3447,7 @@ void MoltAIChatHandler::HandleTriageActOnTabs(const base::ListValue& args) {
     }
   } else if (*action == "bookmark") {
     Profile* profile = Profile::FromBrowserContext(
-        webui_wc->GetBrowserContext());
+        web_ui()->GetWebContents()->GetBrowserContext());
     bookmarks::BookmarkModel* bm =
         profile ? BookmarkModelFactory::GetForBrowserContext(profile)
                 : nullptr;
@@ -3692,19 +3873,17 @@ void MoltAIChatHandler::HandleRunFormFill(const base::ListValue& args) {
 
   base::DictValue out;
 
-  // Resolve target tab.
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->GetTabStripModel()) {
+  // The active tab of the chat's own window (a tab, or the window hosting
+  // its side panel), never the chat itself.
+  bool crossed_moltnet = false;
+  content::WebContents* target = ActiveTabForChatAction(&crossed_moltnet);
+  if (crossed_moltnet) {
     out.Set("success", false);
-    out.Set("error", "no owning browser");
+    out.Set("error", molt_ai::tor::kOtherWindowRefusedInMoltNet);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
-  content::WebContents* target =
-      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
     out.Set("success", false);
     out.Set("error", "active tab is not an http(s) page");
@@ -4162,15 +4341,17 @@ void MoltAIChatHandler::HandleExtractAllTabsText(
   if (args.size() > 1 && args[1].is_int())
     max_chars_per_tab = std::max(200, args[1].GetInt());
 
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
+  // The chat's own window (a tab, or the window hosting its side panel).
+  bool crossed_moltnet = false;
+  BrowserWindowInterface* browser = BrowserForChatAction(&crossed_moltnet);
 
   base::DictValue out;
   base::ListValue tabs;
   if (!browser || !browser->GetTabStripModel()) {
     out.Set("tabs", std::move(tabs));
-    out.Set("error", "no owning browser");
+    out.Set("error", crossed_moltnet
+                         ? molt_ai::tor::kOtherWindowRefusedInMoltNet
+                         : "no owning browser");
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
@@ -4462,9 +4643,10 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
 // ------------------------------------------------------------------
 // HandleCloseSidePanel: close the AI chat side panel from the in-page
 // close control. The panel's WebContents is not a tab, so
-// FindBrowserWithTab returns null — fall back to the last-active
-// browser, which hosts this panel. The AI chat entry is a kContent
-// side panel (see side_panel_helper.cc). Fire-and-forget: do NOT
+// FindBrowserWithTab returns null: the window hosting the panel is found
+// by its native window (never the last active window, which can be
+// another one). The AI chat entry is a kContent side panel (see
+// side_panel_helper.cc). Fire-and-forget: do NOT
 // AllowJavascript / resolve a callback because Close() tears down this
 // WebUI immediately.
 // Args: []
@@ -4472,10 +4654,8 @@ void MoltAIChatHandler::HandleOpenMoltSettings(const base::ListValue& args) {
 void MoltAIChatHandler::HandleCloseSidePanel(const base::ListValue& args) {
   content::WebContents* webui_wc = web_ui()->GetWebContents();
   BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser) {
-    browser = GlobalBrowserCollection::GetInstance()->GetLastActiveBrowser();
-  }
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithWindow(
+          webui_wc->GetTopLevelNativeWindow());
   if (!browser) {
     return;
   }
@@ -4506,17 +4686,15 @@ void MoltAIChatHandler::HandleGetTrackerBreakdown(
   const std::string callback_id = args[0].GetString();
 
   base::DictValue out;
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->GetTabStripModel()) {
-    out.Set("error", "no owning browser");
+  // The active tab of the chat's own window, never the chat itself.
+  bool crossed_moltnet = false;
+  content::WebContents* target = ActiveTabForChatAction(&crossed_moltnet);
+  if (crossed_moltnet) {
+    out.Set("error", molt_ai::tor::kOtherWindowRefusedInMoltNet);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(out)));
     return;
   }
-  content::WebContents* target =
-      browser->GetTabStripModel()->GetActiveWebContents();
   if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
     out.Set("error", "active tab is not an http(s) page");
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -4620,13 +4798,9 @@ void MoltAIChatHandler::HandleGetDomainReputation(
 
   // If no host was supplied, infer from the active tab.
   if (host.empty()) {
-    content::WebContents* webui_wc = web_ui()->GetWebContents();
-    BrowserWindowInterface* browser =
-        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-    if (browser && browser->GetTabStripModel()) {
-      content::WebContents* t =
-          browser->GetTabStripModel()->GetActiveWebContents();
-      if (t) host = std::string(t->GetLastCommittedURL().host());
+    bool crossed_moltnet = false;
+    if (content::WebContents* t = ActiveTabForChatAction(&crossed_moltnet)) {
+      host = std::string(t->GetLastCommittedURL().host());
     }
   }
   base::DictValue out;
@@ -4733,13 +4907,8 @@ void MoltAIChatHandler::HandleGetConnectionPath(
                             ? args[1].GetString()
                             : std::string();
 
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  content::WebContents* active =
-      (browser && browser->GetTabStripModel())
-          ? browser->GetTabStripModel()->GetActiveWebContents()
-          : nullptr;
+  bool crossed_moltnet = false;
+  content::WebContents* active = ActiveTabForChatAction(&crossed_moltnet);
   if (url_str.empty() && active) {
     url_str = active->GetLastCommittedURL().spec();
   }
@@ -4866,17 +5035,13 @@ void MoltAIChatHandler::HandleSetJsForDomain(const base::ListValue& args) {
       ContentSettingsType::JAVASCRIPT,
       enabled ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK);
 
-  // Reload the active tab so the change takes effect now.
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
-          web_ui()->GetWebContents());
-  if (browser && browser->GetTabStripModel()) {
-    content::WebContents* t =
-        browser->GetTabStripModel()->GetActiveWebContents();
-    if (t && std::string(t->GetLastCommittedURL().host()) == host) {
-      t->GetController().Reload(content::ReloadType::NORMAL,
-                                /*check_for_repost=*/false);
-    }
+  // Reload the active tab of the chat's window so the change takes effect
+  // now.
+  bool crossed_moltnet = false;
+  content::WebContents* t = ActiveTabForChatAction(&crossed_moltnet);
+  if (t && std::string(t->GetLastCommittedURL().host()) == host) {
+    t->GetController().Reload(content::ReloadType::NORMAL,
+                              /*check_for_repost=*/false);
   }
   out.Set("success", true);
   out.Set("host", host);
@@ -5150,330 +5315,8 @@ void MoltAIChatHandler::HandleSavePlanScript(const base::ListValue& args) {
 }
 
 
-// ==================================================================
-// Tier 4: Form filler v2 — LLM fallback path.
-//
-// The existing /fill works by heuristic matching on input
-// name/placeholder/autocomplete. When the heuristic misses (sites
-// with non-English labels, custom widget libraries, or fields named
-// "fld_3"), this path collects the page's visible input attributes,
-// sends them to the LLM with the user's profile, and asks the LLM
-// to emit a JSON mapping of field selector → profile key. We then
-// re-run a filler with that mapping.
-//
-// This is NOT bypass: if the heuristic finds matches, we still use
-// them. The LLM only fills the leftovers. Visible in /fill --ai or
-// `runFormFillAI` IPC.
-//
-// Args: [callback_id]
-// ==================================================================
-
-// JS probe that enumerates visible inputs and returns a compact
-// summary the LLM can reason over.
-static constexpr char kFormProbeJS[] = R"JS(
-(function() {
-  function isVisible(el) {
-    var r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return false;
-    var s = getComputedStyle(el);
-    return s.visibility !== 'hidden' && s.display !== 'none';
-  }
-  function cssPath(el) {
-    if (el.id) return '#' + CSS.escape(el.id);
-    var n = (el.getAttribute('name') || '').trim();
-    if (n) return el.tagName.toLowerCase() + '[name="' +
-                 n.replace(/"/g,'\\"') + '"]';
-    // Fallback: structural path.
-    var parts = [];
-    var cur = el;
-    for (var i = 0; cur && i < 6; i++) {
-      var sib = cur, idx = 1;
-      while ((sib = sib.previousElementSibling) != null) {
-        if (sib.tagName === cur.tagName) idx++;
-      }
-      parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + idx + ')');
-      cur = cur.parentElement;
-    }
-    return parts.join(' > ');
-  }
-  function labelFor(el) {
-    if (el.id) {
-      var L = document.querySelector('label[for="' + el.id + '"]');
-      if (L && L.innerText) return L.innerText.trim();
-    }
-    var p = el.parentElement;
-    if (p && p.tagName === 'LABEL') return p.innerText.trim();
-    return '';
-  }
-  var inputs = Array.from(document.querySelectorAll(
-      'input, textarea, select'));
-  var rows = [];
-  inputs.forEach(function(el) {
-    if (!isVisible(el)) return;
-    var t = (el.type || '').toLowerCase();
-    if (t === 'hidden' || t === 'submit' || t === 'button' ||
-        t === 'password') return;
-    if (el.disabled || el.readOnly) return;
-    rows.push({
-      selector: cssPath(el),
-      type: t,
-      name: el.getAttribute('name') || '',
-      id: el.id || '',
-      placeholder: el.getAttribute('placeholder') || '',
-      autocomplete: el.getAttribute('autocomplete') || '',
-      label: labelFor(el).slice(0, 60)
-    });
-    if (rows.length >= 40) return;
-  });
-  return JSON.stringify({inputs: rows});
-})()
-)JS";
-
-// JS shim that applies a {selector: value} map to the active page. The
-// map's selectors come from the model (/fill ai, /paste), so only text
-// inputs and textareas that the user could type into are written, and
-// never a password field (as for the agent's and the chat's actions,
-// docs/design/AGENT_ACTIONS.md).
-static constexpr char kFormFillByMapJS[] = R"JS(
-(function(map) {
-  function setNative(el, value) {
-    var proto = el.tagName === 'TEXTAREA'
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype;
-    var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-    setter.call(el, value);
-    el.dispatchEvent(new Event('input', {bubbles: true}));
-    el.dispatchEvent(new Event('change', {bubbles: true}));
-  }
-  var filled = 0, total = 0;
-  Object.keys(map).forEach(function(sel){
-    total++;
-    var el;
-    try { el = document.querySelector(sel); } catch (e) { return; }
-    if (!el || el.disabled || el.readOnly) return;
-    if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
-    var t = String(el.type || '').toLowerCase();
-    if (t === 'password' || t === 'hidden' || t === 'file' ||
-        t === 'checkbox' || t === 'radio' || t === 'submit' ||
-        t === 'button' || t === 'image' || t === 'reset') return;
-    setNative(el, String(map[sel]));
-    filled++;
-  });
-  return {filled: filled, total: total};
-})
-)JS";
-
-void MoltAIChatHandler::HandleRunFormFillAI(const base::ListValue& args) {
-  AllowJavascript();
-  if (!HasCallbackArgs(args, 1u, __func__)) return;
-  const std::string callback_id = args[0].GetString();
-  base::DictValue out;
-
-  // Resolve target tab.
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->GetTabStripModel()) {
-    out.Set("success", false);
-    out.Set("error", "no owning browser");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  content::WebContents* target =
-      browser->GetTabStripModel()->GetActiveWebContents();
-  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
-    out.Set("success", false);
-    out.Set("error", "active tab is not an http(s) page");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-
-  // Load profile.
-  molt_ai::profile::ProfileLoadResult loaded;
-  {
-    ScopedAllowBlockingForMolt allow;
-    molt_ai::profile::MoltProfileStore store;
-    loaded = store.LoadWithStatus();
-  }
-  base::DictValue profile = std::move(loaded.profile);
-  if (profile.empty()) {
-    out.Set("success", false);
-    out.Set("error",
-            loaded.status == molt_ai::profile::ProfileReadStatus::kUnreadable
-                ? kProfileUnreadableError
-                : "profile is empty — set one via /profile first");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-
-  std::string cb_id = callback_id;
-  auto weak_this = weak_ptr_factory_.GetWeakPtr();
-  base::DictValue profile_copy = profile.Clone();
-
-  // Step 1: enumerate visible form fields.
-  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
-      base::UTF8ToUTF16(std::string(kFormProbeJS)),
-      base::BindOnce(
-          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-             content::WebContents* target,
-             base::DictValue profile,
-             base::Value probe_result) {
-            if (!self) return;
-            base::DictValue out;
-            if (!probe_result.is_string()) {
-              out.Set("success", false);
-              out.Set("error", "form probe returned no data");
-              self->ResolveJavascriptCallback(
-                  base::Value(cb_id), base::Value(std::move(out)));
-              return;
-            }
-            auto parsed = base::JSONReader::Read(probe_result.GetString(),
-                                                  /*options=*/0);
-            if (!parsed || !parsed->is_dict()) {
-              out.Set("success", false);
-              out.Set("error", "probe parse failed");
-              self->ResolveJavascriptCallback(
-                  base::Value(cb_id), base::Value(std::move(out)));
-              return;
-            }
-            const base::ListValue* inputs =
-                parsed->GetDict().FindList("inputs");
-            if (!inputs || inputs->empty()) {
-              out.Set("success", false);
-              out.Set("error", "no fillable inputs found");
-              self->ResolveJavascriptCallback(
-                  base::Value(cb_id), base::Value(std::move(out)));
-              return;
-            }
-
-            // Step 2: build LLM prompt. We ask for a strict JSON
-            // object mapping CSS selector → string value to type.
-            std::string inputs_json;
-            base::JSONWriter::Write(*inputs, &inputs_json);
-            std::string profile_json;
-            base::JSONWriter::Write(profile, &profile_json);
-            std::string prompt =
-                "You are a web form filler. Below is the user's saved "
-                "profile (key → value) and the visible form fields on "
-                "the current page. Match each field to a profile value "
-                "if and only if the match is unambiguous. Respond with "
-                "ONE JSON object: keys are the field selectors, values "
-                "are the strings to type. Skip any field you can't "
-                "confidently match. No prose, no markdown.\n\n"
-                "Profile:\n" + profile_json +
-                "\n\nForm fields:\n" + inputs_json +
-                "\n\nMapping:";
-
-            // Use the existing sendPrompt pipeline by reaching into the
-            // runtime directly. We need the streaming machinery so we
-            // get the final text. Simplest path: kick off a normal
-            // sendPrompt and let the chat finalize it; the user sees
-            // the JSON in the chat, then a follow-up action fills.
-            //
-            // For a cleaner v1, we instead call the runtime synchronously
-            // through GetOrCreateRuntime() and a tiny wrapper. To keep
-            // this commit reviewable, route through the existing
-            // streaming sendPrompt path: emit the prompt text directly
-            // and have the JS side (which already drives /receipt and
-            // /plan) own the parse + fill step. That keeps the
-            // contract for /fill --ai identical to /receipt: LLM
-            // streams JSON, JS parses, JS calls a tiny IPC to apply.
-            //
-            // Here we just return the prompt + the JS shim so the
-            // JS layer can stream the LLM call itself.
-            out.Set("success", true);
-            out.Set("phase", "ready_for_llm");
-            out.Set("prompt", prompt);
-            self->ResolveJavascriptCallback(
-                base::Value(cb_id), base::Value(std::move(out)));
-          },
-          weak_this, cb_id, target, std::move(profile_copy)),
-      /*world_id=*/1);
-}
-
-// HandleApplyFormFillMap: phase 2 of the Form Filler v2. The JS
-// layer has already streamed the LLM, parsed its JSON output, and
-// now hands us a dict of {selector: value} pairs to apply.
-//
-// Args: [callback_id, {map: {selector: value, ...}}]
-// Returns: {success, filled, total}
-void MoltAIChatHandler::HandleApplyFormFillMap(
-    const base::ListValue& args) {
-  AllowJavascript();
-  if (!HasCallbackArgs(args, 2u, __func__)) return;
-  const std::string callback_id = args[0].GetString();
-  base::DictValue out;
-  if (!args[1].is_dict()) {
-    out.Set("success", false);
-    out.Set("error", "expected {map: {...}} dict");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  const base::DictValue& d = args[1].GetDict();
-  const base::DictValue* map = d.FindDict("map");
-  if (!map || map->empty()) {
-    out.Set("success", false);
-    out.Set("error", "empty mapping");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  // Resolve target tab.
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  if (!browser || !browser->GetTabStripModel()) {
-    out.Set("success", false);
-    out.Set("error", "no owning browser");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  content::WebContents* target =
-      browser->GetTabStripModel()->GetActiveWebContents();
-  if (!target || !target->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
-    out.Set("success", false);
-    out.Set("error", "active tab is not an http(s) page");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(out)));
-    return;
-  }
-  // Serialize the map and apply via the shim.
-  std::string map_json;
-  base::Value map_val(map->Clone());
-  base::JSONWriter::Write(map_val, &map_json);
-  std::string js = std::string(kFormFillByMapJS) + "(" + map_json + ")";
-
-  std::string cb_id = callback_id;
-  auto weak_this = weak_ptr_factory_.GetWeakPtr();
-  target->GetPrimaryMainFrame()->ExecuteJavaScriptInIsolatedWorld(
-      base::UTF8ToUTF16(js),
-      base::BindOnce(
-          [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
-             base::Value v) {
-            if (!self) return;
-            base::DictValue r;
-            if (v.is_dict()) {
-              const base::DictValue& d = v.GetDict();
-              auto filled = d.FindInt("filled");
-              auto total = d.FindInt("total");
-              r.Set("success", filled.value_or(0) > 0);
-              r.Set("filled", filled.value_or(0));
-              r.Set("total", total.value_or(0));
-            } else {
-              r.Set("success", false);
-              r.Set("error", "apply script returned no data");
-            }
-            self->ResolveJavascriptCallback(base::Value(cb_id),
-                                            base::Value(std::move(r)));
-          },
-          weak_this, cb_id),
-      /*world_id=*/1);
-}
+// /fill ai and /paste (the form filler with the on-device model) are
+// proposals: HandleProposeFormFill in molt_ai_chat_handler_actions.cc.
 
 // ==================================================================
 // Tier 5: Voice mode
@@ -6012,18 +5855,19 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
     return;
   }
 
-  // Find the active browsing tab (not the side-panel WebContents itself).
-  content::WebContents* webui_wc = web_ui()->GetWebContents();
-  BrowserWindowInterface* browser =
-      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(webui_wc);
-  content::WebContents* target_wc = nullptr;
-  if (browser) {
-    target_wc = browser->GetTabStripModel()->GetActiveWebContents();
-  }
+  // The active tab of the chat's own window: the window holding the chat
+  // as a tab, or hosting its side panel (whose WebContents is not a tab).
+  // Never the chat itself, another window, or across MoltNet's boundary.
+  bool crossed_moltnet = false;
+  content::WebContents* target_wc = ActiveTabForChatAction(&crossed_moltnet);
   if (!target_wc) {
     base::DictValue err;
     err.Set("success", false);
-    err.Set("result", "No active browser tab found");
+    err.Set("result", crossed_moltnet
+                          ? std::string(
+                                molt_ai::tor::kOtherWindowRefusedInMoltNet)
+                          : std::string("Open the page for the agent in a "
+                                        "tab of this window first."));
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(err)));
     return;

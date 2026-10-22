@@ -52,5 +52,10 @@ VerifyResult VerifyDownload(const std::string& actual_sha256,
                                           : VerifyResult::kHashMismatch;
 }
 
+bool IsCompleteModelFile(bool exists, int64_t actual_size, int64_t pinned_size) {
+  if (!exists || actual_size <= 0) return false;
+  return pinned_size <= 0 || actual_size == pinned_size;
+}
+
 }  // namespace models
 }  // namespace molt_ai
