@@ -55,6 +55,18 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   imported workflows are capped and checked. Page text can still
   influence what the model chooses, so the site, form and password rules
   above still apply to every action.
+- **The AI chat no longer acts on text in its replies.** It used to run
+  any `[[ACTION ...]]` line in a reply, so a page you asked it to
+  summarize or translate could make it click, type or navigate. Replies
+  are now only text (old saved chats show such lines as text). When you
+  type a request like "click the login button", the on-device model picks
+  one action from the elements on the page in the same checked format as
+  the agent; MoltBrowser describes it and, in Ask first mode, runs it only
+  after you allow it. In Auto mode it still asks before another site, a
+  form submission or a payment field, and it never types into password
+  fields. Choosing dropdown options, drag, hover, right-click and waits
+  are no longer model actions (the `/` commands still have them), and
+  page actions need an on-device model.
 - **Safer secrets and cloud keys.** Vault autofill checks the site and
   requires https; keys and passwords aren't stored without a real system
   keychain; cloud endpoints must use https; the Gemini key is no longer put

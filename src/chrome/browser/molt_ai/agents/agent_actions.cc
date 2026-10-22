@@ -8,7 +8,9 @@
 #include <utility>
 
 #include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 
 namespace molt_ai {
@@ -74,6 +76,14 @@ bool HasControlChars(std::string_view s, bool allow_newlines) {
       return true;
   }
   return false;
+}
+
+// |s| as a JSON string, for page scripts: base::JSONWriter escapes quotes,
+// backslashes, control characters, '<' and U+2028 / U+2029.
+std::string JsString(std::string_view s) {
+  std::string out;
+  base::JSONWriter::Write(base::Value(s), &out);
+  return out;
 }
 
 // JSON string literal for the schema text. Everything quoted here is our
@@ -607,7 +617,8 @@ ReplyOutcome::~ReplyOutcome() = default;
 ReplyOutcome::ReplyOutcome(ReplyOutcome&&) = default;
 ReplyOutcome& ReplyOutcome::operator=(ReplyOutcome&&) = default;
 
-std::string BuildActionSchema(const Observation& observation) {
+std::string BuildActionSchema(const Observation& observation,
+                              ActionSet allowed) {
   std::vector<std::string> all_refs;
   std::vector<std::string> text_refs;
   for (const ObservedElement& e : observation.elements) {
@@ -618,6 +629,8 @@ std::string BuildActionSchema(const Observation& observation) {
   const std::string reason = StringSchema(0, kMaxReasonChars);
   std::vector<std::string> branches;
   for (ActionType type : kAllActions) {
+    if (!HasAction(allowed, type))
+      continue;
     Properties props = {
         {"reason", reason},
         {"action", "{\"const\":" + Quote(ActionName(type)) + "}"},
@@ -705,14 +718,15 @@ std::string_view ActionErrorText(ActionError error) {
 }
 
 ParsedAction ParseAction(std::string_view json,
-                         const Observation& observation) {
+                         const Observation& observation,
+                         ActionSet allowed) {
   std::optional<base::DictValue> dict = base::JSONReader::ReadDict(
       json, base::JSON_PARSE_RFC, kMaxReplyJsonDepth);
   if (!dict)
     return Fail(ActionError::kNotJsonObject);
   const std::string* name = dict->FindString("action");
   std::optional<ActionType> type = name ? ActionFromName(*name) : std::nullopt;
-  if (!type)
+  if (!type || !HasAction(allowed, *type))
     return Fail(ActionError::kUnknownAction);
   if (!HasExactKeys(*dict, KeysFor(*type)))
     return Fail(ActionError::kWrongKeys);
@@ -773,7 +787,8 @@ ParsedAction ParseAction(std::string_view json,
 ReplyOutcome InterpretReply(const ModelReply& reply,
                             const Observation& observation,
                             int bad_in_a_row,
-                            int bad_total) {
+                            int bad_total,
+                            ActionSet allowed) {
   ReplyOutcome out;
   if (reply.cancelled) {
     out.message = "Stopped.";
@@ -794,7 +809,7 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
                       : "The on-device model failed: " + reply.error_message;
     return out;
   } else {
-    ParsedAction parsed = ParseAction(reply.text, observation);
+    ParsedAction parsed = ParseAction(reply.text, observation, allowed);
     if (parsed.action) {
       out.decision = ReplyDecision::kAct;
       out.action = std::move(*parsed.action);
@@ -813,6 +828,114 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
   out.decision = ReplyDecision::kRetry;
   out.message = note + kRetryTail;
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Carrying an action out
+// ---------------------------------------------------------------------------
+
+std::string BuildSearchURL(std::string_view query) {
+  static constexpr char kHex[] = "0123456789ABCDEF";
+  std::string url = kSearchURLPrefix;
+  for (char ch : query) {
+    const unsigned char c = static_cast<unsigned char>(ch);
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
+        c == '~') {
+      url += ch;
+    } else if (c == ' ') {
+      url += '+';
+    } else {
+      url += '%';
+      url += kHex[c >> 4];
+      url += kHex[c & 0xF];
+    }
+  }
+  return url;
+}
+
+std::string BuildClickScript(std::string_view origin,
+                             std::string_view selector) {
+  return base::StringPrintf(
+      R"JS((() => {
+        try {
+          if (location.origin !== %s) return 'origin_changed';
+          const el = document.querySelector(%s);
+          if (!el) return 'not_found';
+          el.scrollIntoView({block:'center',behavior:'instant'});
+          el.click();
+          return 'clicked';
+        } catch(e) { return 'error:'+e.message; }
+      })())JS",
+      JsString(origin).c_str(), JsString(selector).c_str());
+}
+
+std::string BuildTypeScript(std::string_view origin,
+                            std::string_view selector,
+                            std::string_view text) {
+  const std::string value = JsString(text);
+  return base::StringPrintf(
+      R"JS((() => {
+        try {
+          if (location.origin !== %s) return 'origin_changed';
+          const el = document.querySelector(%s);
+          if (!el) return 'not_found';
+          if (el.type === 'password') return 'refused_password';
+          const nv = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype, 'value') ||
+              Object.getOwnPropertyDescriptor(
+              window.HTMLTextAreaElement.prototype, 'value');
+          if (nv && nv.set) { nv.set.call(el, %s); }
+          else { el.value = %s; }
+          el.dispatchEvent(new Event('input',  {bubbles:true}));
+          el.dispatchEvent(new Event('change', {bubbles:true}));
+          return 'typed';
+        } catch(e) { return 'error:'+e.message; }
+      })())JS",
+      JsString(origin).c_str(), JsString(selector).c_str(), value.c_str(),
+      value.c_str());
+}
+
+std::string BuildFillFormScript(
+    std::string_view origin,
+    const std::vector<std::pair<std::string, std::string>>& fields) {
+  base::ListValue list;
+  for (const auto& [selector, text] : fields) {
+    base::DictValue f;
+    f.Set("sel", selector);
+    f.Set("val", text);
+    list.Append(std::move(f));
+  }
+  std::string fields_json;
+  base::JSONWriter::Write(list, &fields_json);
+  return base::StringPrintf(
+      R"JS((() => {
+        if (location.origin !== %s) return 'origin_changed';
+        const fields = %s;
+        let filled = 0;
+        fields.forEach(function(f){
+          try {
+            const el = document.querySelector(f.sel);
+            if (!el || el.type === 'password') return;
+            const nv = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value') ||
+                Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype, 'value');
+            if (nv && nv.set) { nv.set.call(el, f.val); }
+            else { el.value = f.val; }
+            el.dispatchEvent(new Event('input',  {bubbles:true}));
+            el.dispatchEvent(new Event('change', {bubbles:true}));
+            filled++;
+          } catch(e) {}
+        });
+        return filled;
+      })())JS",
+      JsString(origin).c_str(), fields_json.c_str());
+}
+
+std::string BuildScrollScript(std::string_view direction) {
+  return direction == "up" ? "window.scrollBy(0, -600); 'scrolled'"
+                           : "window.scrollBy(0, 600); 'scrolled'";
 }
 
 }  // namespace agent_actions

@@ -11,6 +11,8 @@
 //            chrome.send('cancelGeneration', [])
 //            chrome.send('getModelStatus', [callback_id])
 //            chrome.send('initChat', [callback_id])
+//            chrome.send('proposeChatAction', [callback_id, action_request])
+//            chrome.send('runChatProposal', [callback_id, id, confirmed])
 //
 // C++ → JS:  FireWebUIListener('ai-token', {token, is_done, ...})
 //            ResolveJavascriptCallback(callback_id, result)
@@ -21,6 +23,7 @@
 #include <cstdint>  // for uint64_t — required on Linux under -fmodules
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
@@ -29,16 +32,25 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/agent_actions.h"
+#include "chrome/browser/molt_ai/agents/chat_actions.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "content/public/browser/global_routing_id.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "url/origin.h"
 
 class BrowserWindowInterface;
 class Profile;
+
+namespace content {
+class RenderFrameHost;
+}  // namespace content
 
 namespace molt_ai::memory {
 class ConversationStore;
@@ -96,10 +108,36 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void HandleSaveConversation(const base::ListValue& args);
   void HandleLoadConversation(const base::ListValue& args);
   void HandleDeleteConversation(const base::ListValue& args);
-  // Side panel automation bridge. Runs a single click/type/scroll/
-  // navigate against the currently-active tab in the Browser that
-  // owns this WebUI's WebContents.
+  // Side panel automation bridge for the commands the USER types
+  // (/click, /type, /scroll, /navigate, ... and "open nasa.com"). Runs a
+  // single click/type/scroll/navigate against the currently-active tab in
+  // the Browser that owns this WebUI's WebContents. Model output never
+  // reaches it: the model's page actions are proposals (below).
   void HandleRunMoltAction(const base::ListValue& args);
+  // ---- Page actions the model proposes (molt_ai_chat_handler_actions.cc,
+  // molt_ai/agents/chat_actions.h, docs/design/AGENT_ACTIONS.md §4) -----
+  // After the text reply to a typed message that asks to act on the page,
+  // whose sendPrompt result carried `action_request`, the page asks for
+  // one proposed action. The browser observes the active tab of the
+  // chat's window (never across MoltNet's boundary), asks the on-device
+  // model for one action under a grammar, validates it, and probes the
+  // elements it touches.
+  // Args: [callback_id, action_request]
+  //   -> {status: 'proposal', id, verb, summary, reason}
+  //    | {status: 'none' | 'cancelled'}
+  //    | {status: 'unavailable' | 'failed', message}
+  // |summary| is the browser's description; |reason| (may be "") what the
+  // user must approve first, even in Auto mode.
+  void HandleProposeChatAction(const base::ListValue& args);
+  // Runs proposal |id| on the document it was proposed for, after probing
+  // the page again. A proposal runs once; a newer message or proposal
+  // replaces it.
+  // Args: [callback_id, id, confirmed]
+  //   -> {success, message} | {success: false, error}
+  //    | {success: false, needs_confirmation: true, reason}
+  // |confirmed| is true only after the user's Allow; it approves the
+  // reason last shown for this proposal, nothing else.
+  void HandleRunChatProposal(const base::ListValue& args);
   // Runs one of HandleRunMoltAction's direct-JS actions (select / hover /
   // right-click / drag) in |target| and resolves |callback_id|.
   void RunDirectPageAction(const std::string& callback_id,
@@ -290,6 +328,67 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Args: [request_id, allowed]
   void HandleWebAgentConfirm(const base::ListValue& args);
 
+  // ---- Page-action proposals: state and steps -----------------------
+  // One proposal being decided, carried through the asynchronous steps
+  // below (defined in molt_ai_chat_handler_actions.cc).
+  struct ChatActionDecision;
+  // The action proposed for the last typed request, until it runs, is
+  // refused, or another message or proposal replaces it.
+  struct ChatProposal {
+    ChatProposal();
+    ~ChatProposal();
+    ChatProposal(const ChatProposal&) = delete;
+    ChatProposal& operator=(const ChatProposal&) = delete;
+
+    int id = 0;
+    molt_ai::agent_actions::AgentAction action;
+    // The observation the model chose from: its element ids map to the
+    // browser's own selectors.
+    molt_ai::agent_actions::Observation observation;
+    molt_ai::chat_actions::Scope scope;
+    // The document it was proposed for; a navigation away invalidates it.
+    content::WeakDocumentPtr document;
+    url::Origin origin;
+    // The confirmation reason last sent to the page for it ("" if none):
+    // a confirmed run acts on a kAsk check only for this same reason.
+    std::string shown_reason;
+  };
+  // Snapshot of the page's interactive elements arrived.
+  void OnChatActionSnapshot(std::unique_ptr<ChatActionDecision> decision,
+                            base::Value snapshot);
+  // Asks the on-device model (again, after an unusable reply).
+  void RunChatActionDecision(std::unique_ptr<ChatActionDecision> decision);
+  void OnChatActionDecision(std::unique_ptr<ChatActionDecision> decision,
+                            uint64_t request_id,
+                            molt_ai::GenerationResult result);
+  // Probes |selectors| in |frame| (none: |done| runs with no probes).
+  void ProbeChatActionTargets(
+      content::RenderFrameHost* frame,
+      const std::vector<std::string>& selectors,
+      base::OnceCallback<void(std::vector<molt_ai::agent_safety::ElementProbe>)>
+          done);
+  void OnChatProposalProbed(
+      std::string callback_id,
+      std::unique_ptr<ChatProposal> proposal,
+      int epoch,
+      std::vector<molt_ai::agent_safety::ElementProbe> probes);
+  void OnChatProposalRechecked(
+      std::string callback_id,
+      int id,
+      bool confirmed,
+      std::vector<molt_ai::agent_safety::ElementProbe> probes);
+  void RunChatProposalNow(const std::string& callback_id,
+                          const ChatProposal& proposal,
+                          content::RenderFrameHost* frame);
+  // The frame of |proposal|'s document if it is still the active page of
+  // the chat's window (same document, same origin, primary main frame,
+  // active tab, same side of MoltNet's boundary); else null and |*error|
+  // says why.
+  content::RenderFrameHost* ChatProposalFrame(const ChatProposal& proposal,
+                                              std::string* error);
+  void ResolveChatAction(const std::string& callback_id,
+                         base::DictValue result);
+
   // Async callbacks (run on UI thread after background work)
   void FinishInitChat(std::string callback_id,
                       base::DictValue settings_dict);
@@ -378,7 +477,7 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
                         std::string prompt_text,
                         std::string history_text,
                         std::string page_context,
-                        bool include_actions,
+                        bool page_action_note,
                         base::DictValue attached);
   // Worker result for StartCloudPrompt.
   struct CloudPromptPrep {
@@ -435,6 +534,20 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
 
   // Active WebAgent (null when no agent task is running).
   std::unique_ptr<molt_ai::WebAgent> web_agent_;
+
+  // Page-action proposals (molt_ai_chat_handler_actions.cc). The typed
+  // message that asked to act on the page waits here for its text reply:
+  // the token the reply carries as `action_request` (0: none), the
+  // sendPrompt callback it belongs to, and the user's words.
+  int chat_action_token_ = 0;
+  int next_chat_action_token_ = 0;
+  std::string chat_action_prompt_callback_id_;
+  std::string chat_action_request_;
+  // Bumped by Stop and by every send; a decision started in an older epoch
+  // ends as cancelled.
+  int chat_action_epoch_ = 0;
+  std::unique_ptr<ChatProposal> chat_proposal_;
+  int next_chat_proposal_id_ = 0;
 
   // Active cloud (frontier API) chat stream (null when no cloud send is
   // in flight). Kept alive for the stream's duration; destroying it or

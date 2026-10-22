@@ -4,11 +4,9 @@
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 
 #include <algorithm>
-#include <cctype>
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -34,22 +32,12 @@ using agent_actions::ObservedElement;
 using agent_safety::ElementProbe;
 using agent_safety::FieldKind;
 
-// JSON-quote a string for safe embedding in JS source.
-std::string JSQ(const std::string& s) {
-  std::string out;
-  base::JSONWriter::Write(base::Value(s), &out);
-  return out;
-}
-
 // http(s) origins are the only ones the agent can act on; anything else
 // (opaque, chrome://, molt://, file://) never joins the allowed set.
 bool IsWebOrigin(const url::Origin& origin) {
   return !origin.opaque() && (origin.scheme() == url::kHttpScheme ||
                               origin.scheme() == url::kHttpsScheme);
 }
-
-// Search engine base URL (Brave Search — no tracking).
-constexpr char kSearchBase[] = "https://search.brave.com/search?q=";
 
 // Seconds to wait for page load before proceeding.
 constexpr int kNavTimeoutSeconds = 12;
@@ -168,7 +156,7 @@ void WebAgent::Start(const std::string& goal,
   if (web_contents_ && web_contents_->GetPrimaryMainFrame()) {
     AllowOrigin(web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin());
   }
-  AllowOrigin(url::Origin::Create(GURL(kSearchBase)));
+  AllowOrigin(url::Origin::Create(GURL(agent_actions::kSearchURLPrefix)));
   for (const std::string& spec : agent_safety::ExtractExplicitURLs(goal_)) {
     GURL url(spec);
     if (agent_safety::IsAllowedNavigationURL(url))
@@ -397,18 +385,7 @@ void WebAgent::LoadAndWait(const GURL& url) {
 }
 
 void WebAgent::DoSearch() {
-  // Percent-encode the query then navigate.
-  std::string encoded;
-  for (unsigned char c : pending_action_.query) {
-    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-      encoded += static_cast<char>(c);
-    } else if (c == ' ') {
-      encoded += '+';
-    } else {
-      encoded += base::StringPrintf("%%%02X", c);
-    }
-  }
-  DoNavigate(kSearchBase + encoded);
+  DoNavigate(agent_actions::BuildSearchURL(pending_action_.query));
 }
 
 void WebAgent::ProbeElements(
@@ -479,19 +456,8 @@ void WebAgent::AllowOriginAndClick(std::optional<url::Origin> origin) {
 }
 
 void WebAgent::ClickNow() {
-  std::string js = base::StringPrintf(
-      R"JS((() => {
-        try {
-          if (location.origin !== %s) return 'origin_changed';
-          const el = document.querySelector(%s);
-          if (!el) return 'not_found';
-          el.scrollIntoView({block:'center',behavior:'instant'});
-          el.click();
-          return 'clicked';
-        } catch(e) { return 'error:'+e.message; }
-      })())JS",
-      JSQ(action_origin_.Serialize()).c_str(),
-      JSQ(action_selector_).c_str());
+  std::string js = agent_actions::BuildClickScript(action_origin_.Serialize(),
+                                                   action_selector_);
 
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, base::Value v) {
@@ -547,28 +513,8 @@ void WebAgent::TypeNow() {
   // The observed field's selector and the text to type. The password
   // re-check runs in the same script as the write, so a field swapped in
   // after the probe is still refused.
-  std::string js = base::StringPrintf(
-      R"JS((() => {
-        try {
-          if (location.origin !== %s) return 'origin_changed';
-          const el = document.querySelector(%s);
-          if (!el) return 'not_found';
-          if (el.type === 'password') return 'refused_password';
-          const nv = Object.getOwnPropertyDescriptor(
-              window.HTMLInputElement.prototype, 'value') ||
-              Object.getOwnPropertyDescriptor(
-              window.HTMLTextAreaElement.prototype, 'value');
-          if (nv && nv.set) { nv.set.call(el, %s); }
-          else { el.value = %s; }
-          el.dispatchEvent(new Event('input',  {bubbles:true}));
-          el.dispatchEvent(new Event('change', {bubbles:true}));
-          return 'typed';
-        } catch(e) { return 'error:'+e.message; }
-      })())JS",
-      JSQ(action_origin_.Serialize()).c_str(),
-      JSQ(action_selector_).c_str(),
-      JSQ(pending_action_.text).c_str(),
-      JSQ(pending_action_.text).c_str());
+  std::string js = agent_actions::BuildTypeScript(
+      action_origin_.Serialize(), action_selector_, pending_action_.text);
 
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, base::Value v) {
@@ -639,40 +585,9 @@ void WebAgent::OnFillFormProbed(FieldList fields,
 }
 
 void WebAgent::FillNow(FieldList fields, std::string note) {
-  base::ListValue list;
-  for (const auto& [sel, val] : fields) {
-    base::DictValue f;
-    f.Set("sel", sel);
-    f.Set("val", val);
-    list.Append(std::move(f));
-  }
-  std::string fields_json;
-  base::JSONWriter::Write(list, &fields_json);
-
   // Password fields are skipped here too, atomically with the write.
-  std::string js = base::StringPrintf(
-      R"JS((() => {
-        if (location.origin !== %s) return 'origin_changed';
-        const fields = %s;
-        let filled = 0;
-        fields.forEach(function(f){
-          try {
-            const el = document.querySelector(f.sel);
-            if (!el || el.type === 'password') return;
-            const nv = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype, 'value') ||
-                Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype, 'value');
-            if (nv && nv.set) { nv.set.call(el, f.val); }
-            else { el.value = f.val; }
-            el.dispatchEvent(new Event('input',  {bubbles:true}));
-            el.dispatchEvent(new Event('change', {bubbles:true}));
-            filled++;
-          } catch(e) {}
-        });
-        return filled;
-      })())JS",
-      JSQ(action_origin_.Serialize()).c_str(), fields_json.c_str());
+  std::string js =
+      agent_actions::BuildFillFormScript(action_origin_.Serialize(), fields);
 
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, std::string note, base::Value v) {
@@ -690,9 +605,8 @@ void WebAgent::FillNow(FieldList fields, std::string note) {
 
 void WebAgent::DoScroll() {
   // "down" or "up" (ParseAction allows nothing else).
-  const std::string js = pending_action_.direction == "up"
-                             ? "window.scrollBy(0, -600); 'scrolled'"
-                             : "window.scrollBy(0, 600); 'scrolled'";
+  const std::string js =
+      agent_actions::BuildScrollScript(pending_action_.direction);
   // Observe afterwards: the element list favours what is in view.
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, base::Value) {

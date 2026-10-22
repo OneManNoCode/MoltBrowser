@@ -20,15 +20,20 @@
 // element probe (http(s) only, never a password field, approval for form
 // submits, other sites, payment and one-time-code fields).
 //
+// The AI chat's page actions (chat_actions.h) use the same format with a
+// smaller set of actions (ActionSet).
+//
 // Pure logic (base::Value, no content/), unit-tested in molt_ai_unittests.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ACTIONS_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ACTIONS_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "chrome/browser/molt_ai/security/agent_safety.h"
@@ -57,6 +62,23 @@ enum class ActionType {
 std::string_view ActionName(ActionType type);
 // Exact (case-sensitive) inverse of ActionName().
 std::optional<ActionType> ActionFromName(std::string_view name);
+
+// A set of actions: a bit mask of ActionBit()s. The schema offers only the
+// set's actions and ParseAction() refuses the others.
+using ActionSet = uint32_t;
+constexpr ActionSet ActionBit(ActionType type) {
+  return ActionSet{1} << static_cast<int>(type);
+}
+constexpr bool HasAction(ActionSet set, ActionType type) {
+  return (set & ActionBit(type)) != 0;
+}
+// The web agent's set: every action.
+inline constexpr ActionSet kAgentActions =
+    ActionBit(ActionType::kNavigate) | ActionBit(ActionType::kSearch) |
+    ActionBit(ActionType::kClick) | ActionBit(ActionType::kType) |
+    ActionBit(ActionType::kFillForm) | ActionBit(ActionType::kScroll) |
+    ActionBit(ActionType::kObserve) | ActionBit(ActionType::kDone) |
+    ActionBit(ActionType::kError);
 
 // Caps. Lengths count characters (Unicode code points), as the grammar's
 // maxLength does.
@@ -173,17 +195,18 @@ struct AgentAction {
 };
 
 // The JSON Schema for the next reply, given what the model was shown.
-// An anyOf of one object per action, every key required and no others,
-// "reason" first. CLICK needs an element and TYPE / FILL_FORM a text
-// field; their branches are left out when the observation has none.
+// An anyOf of one object per action in |allowed|, every key required and
+// no others, "reason" first. CLICK needs an element and TYPE / FILL_FORM a
+// text field; their branches are left out when the observation has none.
 // Always inside the inference service's supported subset and caps
 // (json_schema_grammar.h; checked by the unit tests).
-std::string BuildActionSchema(const Observation& observation);
+std::string BuildActionSchema(const Observation& observation,
+                              ActionSet allowed = kAgentActions);
 
 enum class ActionError {
   kNone,
   kNotJsonObject,  // not one JSON object (or nested too deep)
-  kUnknownAction,  // "action" missing or not one of ActionName()
+  kUnknownAction,  // "action" missing, or not an action of the set
   kWrongKeys,      // a key missing, an extra key, or a value's type
   kTooLong,
   kEmpty,           // a value that must not be blank
@@ -210,8 +233,10 @@ struct ParsedAction {
 };
 
 // Parses and validates a reply (untrusted: whatever the service sent)
-// against |observation|, the one BuildActionSchema() was given.
-ParsedAction ParseAction(std::string_view json, const Observation& observation);
+// against |observation| and |allowed|, what BuildActionSchema() was given.
+ParsedAction ParseAction(std::string_view json,
+                         const Observation& observation,
+                         ActionSet allowed = kAgentActions);
 
 // ---------------------------------------------------------------------------
 // What to do with a reply
@@ -262,7 +287,44 @@ struct ReplyOutcome {
 ReplyOutcome InterpretReply(const ModelReply& reply,
                             const Observation& observation,
                             int bad_in_a_row,
-                            int bad_total);
+                            int bad_total,
+                            ActionSet allowed = kAgentActions);
+
+// ---------------------------------------------------------------------------
+// Carrying an action out
+// ---------------------------------------------------------------------------
+
+// SEARCH loads this engine's results page (Brave Search: no tracking);
+// only the query is the model's.
+inline constexpr char kSearchURLPrefix[] = "https://search.brave.com/search?q=";
+
+// kSearchURLPrefix + |query|, form-encoded: ASCII letters, digits and
+// "-_.~" stay, a space becomes '+', every other byte is %XX.
+std::string BuildSearchURL(std::string_view query);
+
+// Scripts that carry out an action in the page, to run in an isolated
+// world. Selectors, text and the origin go in as JSON strings, never
+// spliced as code. The element scripts first check that the page still has
+// |origin| (location.origin, as url::Origin::Serialize() writes it) and
+// evaluate to 'origin_changed' if not.
+//
+// Click: 'clicked', 'not_found' or 'error:...'.
+std::string BuildClickScript(std::string_view origin,
+                             std::string_view selector);
+// Type: 'typed', 'not_found', 'refused_password' (re-checked in the same
+// script as the write, so a field swapped in after the probe is still
+// refused) or 'error:...'.
+std::string BuildTypeScript(std::string_view origin,
+                            std::string_view selector,
+                            std::string_view text);
+// Fill: the number of fields written; password fields and missing
+// elements are skipped. |fields| are (selector, text) pairs.
+std::string BuildFillFormScript(
+    std::string_view origin,
+    const std::vector<std::pair<std::string, std::string>>& fields);
+// Scroll by 600 px: |direction| "up" scrolls up, anything else down.
+// Evaluates to 'scrolled'.
+std::string BuildScrollScript(std::string_view direction);
 
 }  // namespace agent_actions
 }  // namespace molt_ai

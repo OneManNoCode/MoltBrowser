@@ -18,17 +18,42 @@ source_set("agent_actions") {
   deps = [ "//base" ]
 }
 
+# The AI chat's page actions: when to ask, the decision prompt, the
+# proposal's description and the checks before it runs (agent_actions'
+# format with a smaller action set; docs/design/AGENT_ACTIONS.md §4).
+# Pure logic (no content/), so molt_ai_unittests links it. The chat
+# handler (//chrome/browser/ui/webui/molt_ai) drives it.
+source_set("chat_actions") {
+  sources = [
+    "chat_actions.cc",
+    "chat_actions.h",
+  ]
+
+  public_deps = [
+    ":agent_actions",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//url",
+  ]
+
+  deps = [ "//base" ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "agent_actions_unittest.cc" ]
+  sources = [
+    "agent_actions_unittest.cc",
+    "chat_actions_unittest.cc",
+  ]
   deps = [
     ":agent_actions",
+    ":chat_actions",
     "//base",
 
-    # Every schema the agent builds must be accepted by the inference
-    # service's converter; the tests run the real one (std-only).
+    # Every schema the agent and the chat build must be accepted by the
+    # inference service's converter; the tests run the real one (std-only).
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//testing/gtest",
+    "//url",
   ]
 }
