@@ -20,10 +20,13 @@
 //     nothing done in a MoltNet window changes the regular profile.
 //   * Every pref that pages can observe (molt_net_pref_isolation_policy.h) is
 //     set to MoltBrowser's registered default in MoltNet's own store before
-//     anything reads it. The overlay then never reads the regular profile's
-//     value of those prefs, and later changes there don't reach MoltNet
-//     (OverlayUserPrefStore ignores the parent's changes to a pref its own
-//     store holds).
+//     anything reads it (where Chromium registers a default that follows
+//     the UI language -- font families, minimum logical font size, default
+//     encoding -- to MoltNet's fixed per-OS value instead,
+//     molt_net_locale_prefs.h). The overlay then never reads the regular
+//     profile's value of those prefs, and later changes there don't reach
+//     MoltNet (OverlayUserPrefStore ignores the parent's changes to a pref
+//     its own store holds).
 //
 // One hook makes it apply: OffTheRecordProfileImpl's constructor calls
 // CreateMoltNetPrefService() for MoltNet profile ids instead of building the
@@ -72,9 +75,11 @@ std::unique_ptr<sync_preferences::PrefServiceSyncable> CreateMoltNetPrefService(
     scoped_refptr<PrefStore> incognito_extension_pref_store);
 
 // Writes the registered default of every registered pref that
-// IsMoltNetPinnedPref() names into `prefs`' user store. Returns how many it
-// wrote. Only for a MoltNet pref service (on any other one it would replace
-// the user's settings), and before anything reads it.
+// IsMoltNetPinnedPref() names into `prefs`' user store (MoltNet's fixed
+// value for those whose default follows the UI language,
+// MoltNetLocaleIndependentDefault()). Returns how many it wrote. Only for a
+// MoltNet pref service (on any other one it would replace the user's
+// settings), and before anything reads it.
 size_t PinMoltNetPrefsToDefaults(PrefService* prefs);
 
 }  // namespace molt_ai::tor

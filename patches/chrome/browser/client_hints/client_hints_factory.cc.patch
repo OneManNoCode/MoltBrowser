@@ -1,0 +1,28 @@
+MoltBrowser patch for chrome/browser/client_hints/client_hints_factory.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/client_hints/client_hints_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/client_hints/client_hints_factory.cc b/chrome/browser/client_hints/client_hints_factory.cc
+index bffb4615fbf847fab05bbe7de941e9c39348c54d..27b53aadbd4eec68cc24e8723e96dc04c51d0280 100644
+--- a/chrome/browser/client_hints/client_hints_factory.cc
++++ b/chrome/browser/client_hints/client_hints_factory.cc
+@@ -7,6 +7,7 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/content_settings/cookie_settings_factory.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "chrome/browser/molt_ai/fingerprinting/molt_net_client_hints.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/client_hints/browser/client_hints.h"
+ #include "components/embedder_support/user_agent_utils.h"
+@@ -55,7 +56,8 @@ ClientHintsFactory::BuildServiceInstanceForBrowserContext(
+     content::BrowserContext* context) const {
+   // CookieSettingsFactory::GetForProfile can only be called on the UI thread.
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  return std::make_unique<client_hints::ClientHints>(
++  // MoltBrowser: MoltNet's withholds most hints (molt_net_client_hints.h).
++  return molt_ai::fingerprinting::CreateClientHints(
+       context, g_browser_process->network_quality_tracker(),
+       HostContentSettingsMapFactory::GetForProfile(context),
+       CookieSettingsFactory::GetForProfile(

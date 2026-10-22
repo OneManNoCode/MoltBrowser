@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/tor/molt_net_pref_isolation.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/tor/molt_net_locale_prefs.h"
 #include "chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/pref_store.h"
@@ -25,6 +27,27 @@ void CollectPinnedPref(std::vector<std::string>* names,
   if (IsMoltNetPinnedPref(name)) {
     names->push_back(name);
   }
+}
+
+// The value MoltNet pins `name` to: MoltNet's fixed default where Chromium's
+// registered one depends on the UI language (molt_net_locale_prefs.h), else
+// `registered`. A fixed value of another type than the registered one (a
+// renamed or retyped pref) is ignored.
+base::Value MoltNetDefault(const std::string& name,
+                           const base::Value& registered) {
+  const std::optional<LocaleIndependentDefault> fixed =
+      MoltNetLocaleIndependentDefault(name, CurrentLocalePrefsPlatform());
+  if (fixed) {
+    if (fixed->type == LocaleIndependentDefault::Type::kString &&
+        registered.is_string()) {
+      return base::Value(std::string(fixed->string_value));
+    }
+    if (fixed->type == LocaleIndependentDefault::Type::kInteger &&
+        registered.is_int()) {
+      return base::Value(fixed->integer_value);
+    }
+  }
+  return registered.Clone();
 }
 
 }  // namespace
@@ -65,8 +88,9 @@ size_t PinMoltNetPrefsToDefaults(PrefService* prefs) {
     }
     // An explicit value in MoltNet's own in-memory store, even though it
     // equals the default: that is what stops the overlay from reading the
-    // regular profile's value. PrefService::Set() stores it as is.
-    prefs->Set(name, *default_value);
+    // regular profile's value. PrefService::Set() stores it as is. Defaults
+    // that follow the UI language (fonts, ...) get MoltNet's fixed ones.
+    prefs->Set(name, MoltNetDefault(name, *default_value));
     ++pinned;
   }
   return pinned;

@@ -23,6 +23,8 @@ source_set("farbling") {
     "fonts.h",
     "moltnet_values.cc",
     "moltnet_values.h",
+    "moltnet_device_values.cc",
+    "moltnet_device_values.h",
   ]
   public_deps = [ "//base" ]
   deps = [ "//crypto" ]
@@ -33,6 +35,9 @@ source_set("farbling") {
 
     # Its test checks the browser's letterbox steps against Blink's.
     "//chrome/browser/molt_ai/fingerprinting:unit_tests",
+
+    # Its test checks MoltNet's default fonts against the allow-lists.
+    "//chrome/browser/molt_ai/tor:unit_tests",
   ]
 }
 
@@ -46,6 +51,7 @@ source_set("unit_tests") {
     "webgl_uniform_unittest.cc",
     "fonts_unittest.cc",
     "moltnet_values_unittest.cc",
+    "moltnet_device_values_unittest.cc",
   ]
   deps = [
     ":farbling",

@@ -63,8 +63,14 @@ Does not protect against (see [Known gaps and attacks](#known-gaps-and-attacks))
         |   channel-associated mojo,
         |   FingerprintingConfiguration:
         +-- SetSessionSeed(seed) ---------------->  WebMoltFingerprinting::SetSessionSeed
-        +-- SetUnfarbledSites(Shields-off) ------>  WebMoltFingerprinting::SetUnfarbledSites
-              (again on every change)                       |
+        |
+ per commit (ReadyToCommitNavigation),
+ frame-associated ShieldsDecision:
+        +-- SetForNextDocument(down, site) ----->  ShieldsDecisionAgent -> the new
+        |                                            document (DidCreateNewDocument)
+ per service / shared worker start:
+        +-- with its storage key --------------->  the worker, before its script
+                                                            |
                                                  Blink (core/molt_fingerprinting): per
                                                  execution context, key =
                                                  HMAC-SHA256(seed, top-level site)
@@ -90,17 +96,21 @@ in v1. The seed is a secret, so it travels over
 channel-associated interface (the same mechanism as Chrome's own
 `chrome::mojom::RendererConfiguration`). It is sent from
 `RenderProcessWillLaunch`, which `RenderProcessHostImpl::Init` calls after
-creating the channel and before `InitializeRenderer`, any frame creation,
-navigation commit or `SetUpEmbeddedWorkerChannelForServiceWorker`; channel
-messages are delivered in order, so documents and service workers always
-have it. Shared workers are started over their own pipe
-(`SharedWorkerFactory`), so in principle one could start before the seed
-is processed. A shared worker's key is only derived when the worker first
-needs one (once its script has been fetched and runs), not when it starts,
-so the seed only has to arrive before that first farbled read. Any context
-that does need a key before the seed arrived gets a random key for its
-whole life (fail closed: its values are unlinkable, just not stable). The
-renderer exposes the interface only when its mode is farble or uniform.
+creating the channel and before `InitializeRenderer`, any frame creation or
+navigation commit; channel messages are delivered in order, so documents
+always have it. Service and shared workers are started over other pipes (at
+152, `EmbeddedWorkerInstance` and `SharedWorkerServiceImpl` bind their
+clients with `RenderProcessHost::BindReceiver`, which goes over the
+`mojom::ChildProcess` pipe, not the channel), so in principle one could
+start before the seed is processed. A worker's key is only derived when
+the worker first needs one (once its script has been loaded and runs), not
+when it starts, so the seed only has to arrive before that first farbled
+read. Any context that does need a key before the seed arrived gets a
+random key for its whole life (fail closed: its values are unlinkable, just
+not stable). The renderer exposes the interface only when its mode is
+farble or uniform. This channel carries only the seed: whether Shields are
+off is decided per document and per worker and sent with each of them (see
+[Shields off](#shields-off)), never as a per-process list.
 
 **Seed lifetime.**
 
@@ -198,10 +208,11 @@ machine.
 
 MoltShield's per-site switch is stored as an explicit `ADS` content-settings
 exception (`molt_shield_site_settings.h`). In normal and Incognito windows,
-farbling is off for every top-level site the user turned Shields off for:
-the page, its iframes (they use the top-level site), its dedicated workers,
-worklets it creates and service and shared workers under that site
-(third-party ones included).
+farbling is off for every page whose top-level site the user turned Shields
+off for: the page, its iframes (they take the top-level site's decision),
+the dedicated workers and worklets it creates, and service and shared
+workers whose storage key has that top-level site (third-party ones
+included).
 MoltNet keeps farbling regardless: there the point is to look like every
 other MoltNet user, and the real canvas/audio values would link New
 Identity sessions on that site. MoltNet windows also don't inherit the
@@ -212,26 +223,149 @@ in a MoltNet window lasts for that session. MoltShield's *global* switch
 and the `ADS` *default* don't affect farbling (independence from
 `--disable-molt-shield` is deliberate, see the kill switch below).
 
-* **Which exceptions count.** The browser turns each Shields-down exception
-  into its top-level site (`net::SchemefulSite` of the pattern's host,
-  for each scheme the pattern allows) and keeps it only if that site's own
-  URL has Shields off (`molt_shield_site_exceptions.cc`). The site-scoped
+* **Which exceptions count.** A site has Shields off if its own URL
+  (`https://example.com/`) matches an explicit Shields-down exception
+  (`shield::HasShieldsDownException`). The site-scoped
   `https://[*.]example.com` the MoltShield UI writes therefore turns
   farbling off on all of example.com; a narrower exception (one subdomain)
   doesn't, because the farbling key is shared by the whole site.
-* **Propagation.** The list goes to every renderer of the profile at launch
-  and again whenever it changes (a content-settings observer per farbling
-  profile), over the same ordered channel as the seed. Blink matches it
-  against each context's resolved top-level site on every read, so a reload
-  after toggling Shields commits with the new state, and already-open pages
-  switch on their next read.
-* **Trade-off.** Every renderer of the profile learns the whole list, so a
-  compromised renderer could read which sites the user exempted. The
-  stricter design (a per-document flag at commit, plumbed to every kind of
-  worker) was not worth the extra upstream surface yet.
+
+### Per document and per worker, decided by the browser
+
+No renderer holds the profile's list of Shields-off sites. The browser
+decides "farble or not" for each document it commits and for each service
+or shared worker it starts, from the top-level site and the user's setting
+at that moment, and sends only that bit (with the site it was decided for),
+only to the renderer that gets the document or the worker. A renderer can't
+ask about a site.
+
+| Context | Decision | How it gets there |
+|---|---|---|
+| A document the browser commits (any cross-document navigation: links, reloads, error pages, `srcdoc`, `about:blank` and `data:` URLs that go through the browser, MHTML) | the Shields setting of the top-level site of its frame tree: for a main frame (outermost, a fenced frame's root, a prerendered page's) the origin it commits, for an iframe the committed origin of its tree's main frame; an opaque origin counts as its precursor's site (CSP-sandboxed pages) | `ShieldsDecisionObserver::ReadyToCommitNavigation` (browser) sends `ShieldsDecision.SetForNextDocument` to the committing frame; `ShieldsDecisionAgent::DidCreateNewDocument` (renderer) hands it to the new document (`WebMoltFingerprinting::SetDocumentShieldsDecision`) |
+| An iframe, cross-process ones included | the top-level site's, as above; its own site doesn't count | the same, to the iframe's own renderer |
+| An initial empty document (a new iframe, `window.open()`) | its parent's, or else its opener's, if that frame is in the same process | Blink, when the agent is created (`RenderFrameCreated`) |
+| A synchronous `about:blank`, `javascript:` URL or XSLT document | its frame's latest decision from the browser, or else its parent's or opener's | `DidCreateNewDocument` |
+| Same-document navigations | unchanged (same document) | nothing is sent |
+| Back/forward cache restores, prerender activations | unchanged: the documents keep the decisions they committed with | nothing is sent |
+| Dedicated workers (nested too) | their creator's | `DedicatedWorker::CreateGlobalScopeCreationParams` hands it over in the worker's `WorkerClients` |
+| Worklets | their creator's (the farbling key handed over, or none) | `ProvideToWorklet`, unchanged |
+| Service workers | the Shields setting of their storage key's top-level site, decided when the browser starts the worker | `ContentBrowserClient::AreMoltShieldsDownForWorker`; sent with the storage key in `ServiceWorker.InitializeGlobalScope` |
+| Shared workers | the same for the constructor's storage key | the same; sent in `SharedWorkerInfo` with `CreateSharedWorker` |
+
+**Fail safe.** A context without a decision is farbled: farbling can break a
+page, but it never gives a fingerprint away. And a window's decision only
+counts for the top-level site it was made for: Blink compares it with the
+site of the top frame of the window's frame tree (`FrameTree::Top()`, local
+or remote, the precursor's for an opaque origin) and farbles on any
+mismatch. Whatever the timing, a decision can't reach a document of another
+site.
+
+**Why the decision is there before any script runs (152).**
+
+1. `NavigationRequest::CommitNavigation()` (and `CommitErrorPage()`) call
+   `ReadyToCommitNavigation()`, which runs the `WebContentsObserver`s
+   synchronously, and only then send the commit
+   (`RenderFrameHostImpl::CommitNavigation` over `mojom::NavigationClient`).
+2. The observer sends the decision through
+   `RenderFrameHost::GetRemoteAssociatedInterfaces()`, the frame's route on
+   the renderer's IPC channel. For browser-initiated navigations the
+   `NavigationClient` comes from that same provider; for renderer-initiated
+   ones it is the renderer's own endpoint, passed over the channel-associated
+   `FrameHost`. Same channel, decision first.
+3. In the renderer, `ChannelAssociatedGroupController::Accept` posts every
+   message for a main-thread endpoint to the IPC task runner in arrival order
+   ("so that FIFO can be guaranteed across all interfaces"), also while the
+   endpoint is still being bound. So `SetForNextDocument` runs before
+   `CommitNavigation`. (The agent binds on `kInternalNavigationAssociated`,
+   like content's own frame interfaces.)
+4. `RenderFrameImpl::CommitNavigation` -> `DocumentLoader::CommitNavigation`
+   installs the new document and then calls
+   `RenderFrameImpl::DidCommitNavigation`, whose `DidCreateNewDocument`
+   gives Blink the decision, all synchronously and before
+   `StartLoadingResponse` creates the parser, so before any page script.
+   (MHTML archives commit later, still after the decision.) Only embedder
+   and DevTools hooks at script-context creation run in between (DevTools'
+   "evaluate on new document" scripts, for example); they see the fail-safe
+   (farbled).
+5. With RenderDocument (on for all frames at 152), every cross-document
+   navigation after a frame's first commits in a new RenderFrameHost, a
+   fresh provisional frame no script can reach, so the decision can only
+   be taken by the document it was sent for. Where a frame is reused (its
+   first navigation away from the initial empty document, or with
+   RenderDocument off), a document the renderer makes by itself between the
+   decision and the commit can pick it up, but only if it has the same
+   top-level site (the check above): the same decision, unless the user
+   toggled Shields for that very site in that very instant.
+
+Workers: a service worker's decision comes with
+`ServiceWorker.InitializeGlobalScope`, which must arrive before any of its
+script runs; a shared worker's with `CreateSharedWorker`, before its thread
+starts. Dedicated workers and worklets get theirs from their creator, on the
+creator's thread, before theirs starts.
+
+**Turning Shields off or on** applies from the next navigation: decisions
+are made from the settings as they are at each commit and worker start, and
+never change for a live document or worker. MoltShield's toggle reloads the
+page, so the page and its frames get the new decision; iframes that
+navigate later in a page that wasn't reloaded get the new one too. Pages in
+the back/forward cache or prerendered keep theirs: they already ran with
+it, so restoring them shows them nothing they hadn't seen. Service and
+shared workers get the new decision when they next start (an idle service
+worker stops after about 30 seconds).
+
+**Privacy.** A renderer learns a decision only for a document or worker it
+hosts, about that context's own top-level site, which the renderer is told
+anyway (the committed origin, the storage key). A compromised renderer
+can't list the user's Shields-off sites: it can't ask, and a site's
+documents only commit in its process where the browser puts them.
+Previously every renderer of the profile received the whole list
+(`SetUnfarbledSites`) at launch and on every change; that list, its
+renderer-side copy and the content-settings observer that re-sent it are
+gone (follow-up 7).
+
+**Choices.**
+
+* The decision follows the top frame of the frame tree, as the browser's
+  `RenderFrameHost::GetMainFrame()` and Blink's `FrameTree::Top()` agree:
+  a fenced frame takes its own root's site, a credentialless iframe the
+  page's. Their farbling keys stay nonce-keyed as before.
+* A sandboxed top-level page (opaque origin) takes its precursor's site's
+  decision; it used to be farbled even with Shields off.
+* A popup's initial empty document inherits its opener's decision only if
+  its own site matches. A popup that a third-party iframe opens has the
+  iframe's origin: it is that third party's own top-level page, so the
+  embedding page's "Shields off" doesn't follow it (farbled until its own
+  navigation commits).
+* The browser observer is attached to every WebContents
+  (`AttachUniversalWebContentsObservers`), not only tabs.
 
 Shields off is also the per-site escape hatch for the costs below (canvas
 video pipelines, PBO readback).
+
+**Verification.** Without a Chromium checkout: `shields_decision.cc`,
+`molt_fingerprinting.cc`, `shared_worker_key.cc` (and the other glue
+including them) type-check with the strict clang flags against stand-ins
+of the pinned Blink signatures, and a 17-test harness runs the real glue
+under ASan/UBSan in kOff, kFarble and kUniform (the fail-safe, the site
+check, MoltNet ignoring decisions, non-web and sandboxed top-level pages,
+inheritance from local and remote parents and from openers, a tracker's
+popup, the public entry points, dedicated, shared and service workers,
+worklets); 12 mutants of the glue all fail it. The browser side
+(`molt_shields_decision.cc`, `molt_shields_delivery.cc`) and the renderer
+agent type-check against stand-ins of the pinned content, mojo, url and
+net signatures, and a 9-test harness runs the real decision and delivery
+code (which origin a commit is decided for, which frame it is sent to,
+what is skipped, MoltNet and the kill switch, workers); 7 mutants all fail
+it. **Needs the build machine:** compiling the hooks and the mojom changes,
+`blink_unittests` (`MoltShieldsDecisionTest.*`,
+`MoltSharedWorkerKeyTest.*`, `MoltFingerprintingTest.*`,
+`MoltSystemFontsTest.*`), `molt_ai_unittests` (`MoltShieldsDecisionTest.*`,
+`MoltShieldSiteExceptionsTest.*` with a real `HostContentSettingsMap`),
+`content_unittests` (the service and shared worker fakes), and in a running
+browser: a page with Shields off and on (canvas, `hardwareConcurrency` in
+the page, an about:blank iframe, a cross-site iframe, a dedicated worker, a
+service worker and a shared worker; a popup), reloading after the toggle,
+back/forward, and a MoltNet window with Shields off.
 
 ## Surface covered
 
@@ -257,6 +391,7 @@ video pipelines, PBO readback).
 | `AudioWorkletProcessor.process()` `inputs` | farbled | farbled | `audio_worklet_processor.cc`: `CopyPortToArrayBuffers` |
 | `AnalyserNode.get{Float,Byte}{Frequency,TimeDomain}Data()` | farbled | farbled | `analyser_node.cc` |
 | `navigator.hardwareConcurrency` (window and workers) | per site, in [2, real] | **4** | `navigator_base.cc`: `hardwareConcurrency` |
+| `navigator.deviceMemory` (window and workers), `navigator.cpuPerformance` | real | **8**, **0** ("unknown") ([details](#moltnet-no-touchscreen-client-hints-memory-and-cpu)) | `navigator_device_memory.cc`; browser: `GetCpuPerformanceTierOverride` |
 | `screen.width/height/availWidth/availHeight` | real | viewport in DIPs rounded **down** to 200x100 steps, max 1400x900 | `screen.cc`: `GetRect` |
 | `screen.availLeft/availTop` | real | **0** | `screen.cc`: `GetRect` |
 | `screen.colorDepth/pixelDepth`, `screen.isExtended` | real | **24**, **false** | `screen.cc` |
@@ -266,18 +401,22 @@ video pipelines, PBO readback).
 | Page size (`innerWidth/innerHeight`, layout, width/height media queries) | real | **letterboxed**: the page area itself is rounded down to the screen steps above and centred ([details](#letterboxing-moltnet)) | browser: `contents_web_view.cc`: `GetInsets` |
 | `device-width/device-height` media queries | real | = the uniform screen | `media_values.cc` |
 | `devicePixelRatio`, `resolution` media queries, `srcset`/`<picture>`/`image-set()` selection | real | **1** | `local_dom_window.cc`, `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc` |
+| Client hints (`Sec-CH-DPR`, viewport, width, memory, network, high-entropy `Sec-CH-UA-*`), `navigator.userAgentData.getHighEntropyValues()` | sent / real | **never sent** but `Sec-CH-UA`, `-Mobile`, `-Platform`, `Save-Data` and the preference hints; high-entropy values **blank** ([details](#client-hints)) | `frame_fetch_context.cc`, `navigator_ua.cc`; browser: `client_hints.cc` (content), `client_hints_factory.cc` |
 | Page zoom | regular profile's | **100%**, not inherited from the regular profile | `off_the_record_profile_impl.cc`: `Init` |
-| Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
+| Font families and sizes, default encoding, other user settings in WebPreferences/RendererPreferences (Do Not Track, caret browsing, focus highlight, ...) | the user's | **MoltBrowser's defaults** ([details](#moltnet-settings-from-the-regular-profile)); the default fonts, minimum logical font size and encoding **fixed per OS**, not by UI language ([details](#default-fonts-font-size-and-encoding)) | `off_the_record_profile_impl.cc`: constructor (MoltNet's pref service) |
 | Permission and content-setting state (`navigator.permissions.query`, embargo, blocked JavaScript/images/..., Shields off), third-party cookies, Privacy Sandbox APIs | the profile's | **defaults + this session's changes** only, nothing from the regular profile | same |
 | Installed extensions: web-accessible resources, page-to-extension messaging (`chrome.runtime`), content-script changes, blocked or rewritten requests | the user's (in Incognito: those allowed there) | **none**; only the built-in PDF viewer ([details](MOLTNET_COMPLIANCE.md#2-how-it-is-built)) | `extension_util.cc`: `IsIncognitoEnabled`, `IsExtensionVisibleToContext`; `web_request_api.cc` |
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
 | Third-party cookies, Shared Storage | the user's settings | **blocked**, **off** (as in Incognito) | `cookie_settings_factory.cc`, `privacy_sandbox_settings_delegate.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
+| `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
 | `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
 | `screen` and orientation `change` events | real | **never fired** | `screen.cc`, `screen_orientation_controller.cc` |
 | `screen.orientation.type/angle` | real | from the uniform screen, angle **0** | `screen_orientation.cc` |
 | Date/time/number form-control formats | UI language and region | **en-US** | `platform_locale.cc`: `DefaultLocale` |
+| Renderer strings pages read or measure (`validationMessage`, the file input's labels, default `<details>` and button labels, date-field placeholders, permission element labels) | UI language | **en-US** ([details](#renderer-strings)) | none: `ui::ResourceBundle` overrides at renderer start (`moltnet_locale_strings.cc`) |
+| Default text locale (text without `lang`: CJK glyph variants, hyphenation, line breaking), date picker language | UI language | **en-US** ([details](#default-text-locale)) | `language.cc`: `DefaultLanguage`, `UserPreferredLanguages` |
 | Time zone (`Date`, `Intl`) | real | **Etc/UTC** (renderer-wide `TimeZoneController` override) | glue: `Configure` |
 | `Intl` / ICU default locale | real | **en-US** (`LocaleController` override) | glue: `Configure` |
 | `Accept-Language`, `navigator.language(s)` | real | **en-US** (MoltNet profile's `intl.accept_languages`) | `molt_net_routing.cc` (MoltBrowser file) |
@@ -794,6 +933,38 @@ tab-captured while fullscreen is sized to the capture by Chrome's own
 capture letterboxing; that size comes from the capturing site, not the
 screen.
 
+### New windows
+
+A new MoltNet window used to open at the size of the last window (or the
+saved one, or maximized like the last one), so its page started with
+margins of whatever size that left. Now it opens **restored, with a page
+area of exactly the largest letterbox size that fits on its screen**
+together with the browser UI around the page: 1400 x 900 wherever there is
+room (a 1920 x 1080 screen), 1200 x 600 on a 1366 x 768 laptop. Tor Browser
+opens its windows at a rounded size the same way.
+
+* **How.** `MoltNetWindow`, through which every MoltNet window opens (the
+  toolbar, Settings, the `.onion` interstitial and Onion-Location bar, New
+  Identity), creates the window with a normal show state instead of the
+  default one (which copies a maximized last window), then asks for that
+  page size: `WindowLetterboxSize()` (`molt_letterbox.h`) takes the
+  window's size minus its page area as the size of the browser UI (frame,
+  tab strip, toolbar, side panel) and returns the largest letterbox size
+  that fits in the screen's work area with it, and `BrowserWindow::
+  SetContentsSize()` grows or shrinks the window by the difference and
+  moves it back onto the work area if needed. The resize happens before the
+  window is shown when it has been laid out by then, else as soon as it has
+  (at most 10 posted retries).
+* **Left alone:** a window that is maximized, minimized or fullscreen
+  anyway (`--start-maximized`, the window manager), a screen too small for
+  one step, and windows that don't come from `MoltNetWindow`: popups a page
+  opens with a size and tabs dragged out of a MoltNet window (they keep
+  their size and get margins). (Ctrl+N in a MoltNet window opens a regular
+  window.) Resizing or maximizing the window later is up to the user; the
+  letterbox takes over from there.
+* The kill switch turns it off with the letterbox (the window then opens as
+  upstream does).
+
 ### Zoom
 
 Page zoom changes CSS pixels: at 125%, a 1400-DIP page is 1120 CSS pixels
@@ -838,10 +1009,12 @@ images four times as large).
 * Internal pages (`chrome://` and the like) keep the real ratio.
 * Not covered, so a script that looks for it still finds the real ratio:
   layout snapping to device pixels (thin borders, for example, can be
-  measured), `ResizeObserver`'s `devicePixelContentBoxSize`, the DPR client
-  hints (`Sec-CH-DPR`, sent only to sites that ask with `Accept-CH`) and the
+  measured), `ResizeObserver`'s `devicePixelContentBoxSize` and the
   favicon size the browser fetches. As with the WebGL baselines, this stops
-  scripts that read the value, not ones written against MoltBrowser.
+  scripts that read the value, not ones written against MoltBrowser. The
+  DPR client hints (`Sec-CH-DPR`, `DPR`, and `Sec-CH-Width`, which is
+  multiplied by the ratio) are no longer sent in MoltNet ([client
+  hints](#client-hints)).
 
 ### Known gaps (letterboxing)
 
@@ -859,8 +1032,8 @@ images four times as large).
 * Zoom shows while a page is zoomed (above).
 * A maximised window on a large monitor shows the page at 1400 x 900 with
   wide margins: the cap is what makes everyone with a large window
-  identical. New MoltNet windows still open at the regular window size
-  (follow-up: open them at a 1400 x 900 page).
+  identical. New MoltNet windows open without margins ([New
+  windows](#new-windows)); maximizing one brings them back.
 * During the side panel's flyover animation the page's clip rectangle is
   computed for the view without its margins, so the page can be clipped a
   margin's width off for the length of the animation (cosmetic).
@@ -869,8 +1042,9 @@ images four times as large).
 
 | Where | What |
 |---|---|
-| `chrome/browser/molt_ai/fingerprinting/molt_letterbox.h` | the geometry, constexpr and std-only (+ `molt_letterbox_unittest.cc` in `molt_ai_unittests`, against Blink's constants and rounding) |
+| `chrome/browser/molt_ai/fingerprinting/molt_letterbox.h` | the geometry, constexpr and std-only, including the page size new windows open at (`WindowLetterboxSize`) (+ `molt_letterbox_unittest.cc` in `molt_ai_unittests`, against Blink's constants and rounding) |
 | `chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.{h,cc}` | which tabs, the insets, the margin colour (desktop only, `:letterbox_view`) |
+| `chrome/browser/molt_ai/tor/molt_net_window.cc` | new windows: restored, resized to that page size (`FitPageToLetterbox`) |
 | `core/molt_fingerprinting/letterbox.{h,cc}` | the screen size with scrollbars, the device pixel ratio (+ `letterbox_test.cc`) |
 
 Upstream hooks (each marked `MoltBrowser:`): browser
@@ -912,6 +1086,262 @@ both on `resize`), DevTools docked on each side, the side panel, an
 infobar, split view, browser and tab fullscreen, light and dark mode, a
 regular-profile zoom not carried over, and `devicePixelRatio`, `srcset` and
 `image-set()` on a 2x screen.
+
+**New windows, verified without a Chromium checkout:** the two new
+`molt_letterbox_unittest.cc` tests and seven static_asserts pass
+standalone (g++ ASan/UBSan, clang UBSan trap with the strict flags): every
+combination of browser-UI size (0 to 320 x 141 DIPs) and work area up to
+3000 x 2000 gives a page with no margins, a window that fits, and the
+largest size that fits; the result doesn't depend on the previous window
+size. `FitPageToLetterbox()`, extracted verbatim from `molt_net_window.cc`,
+compiles against stand-ins of the pinned `BrowserWindow`, `ui::BaseWindow`
+and `display::Screen` signatures and runs in a harness (1400 x 900 on a
+1080p screen, 1200 x 600 on 1366 x 768, maximized, minimized and
+fullscreen windows left alone, waiting for layout and giving up after 10
+tries, a window closed meanwhile, no screen). **Needs the build machine:**
+opening MoltNet windows on Windows, macOS and Linux (X11 and Wayland) at 1x
+and 2x, after a maximized regular window and with the bookmarks bar shown:
+the page must start at 1400 x 900 (or the largest step) with no margins and
+without a visible resize.
+
+## MoltNet: no touchscreen, client hints, memory and CPU
+
+With the screen letterboxed and the GPU uniform, MoltNet users could still
+be told apart by whether they have a touchscreen, by the client hints a
+server can ask for (the real pixel ratio, memory, network quality, exact OS
+version, CPU architecture and browser build), by `navigator.deviceMemory`,
+by `navigator.cpuPerformance` (new at 152 and on by default: a CPU class
+derived from the CPU model) and by the high-entropy values of
+`navigator.userAgentData`. In MoltNet windows all of these are now the same
+for everyone:
+
+| API | Before, in MoltNet | Now | Where |
+|---|---|---|---|
+| `navigator.maxTouchPoints` | 0, or the touchscreen's contact count (often 10) | **0** | browser, `OverrideWebPreferences` |
+| `pointer` / `any-pointer` media queries | `fine`; `coarse` in tablet mode; any-pointer `coarse` and `fine` on a touchscreen laptop | **`fine`** / **`fine`** | same |
+| `hover` / `any-hover` media queries | `hover`; `none` in tablet mode; any-hover `none` and `hover` | **`hover`** / **`hover`** | same |
+| Touch-event feature detection: `ontouchstart` and the other `ontouch*` attributes, `document.createEvent('TouchEvent')` | off on desktop, on with `--touch-events` | **off** | same |
+| `navigator.deviceMemory` (window and workers) | the RAM rounded to a power of two, 2 to 32 | **8** | `navigator_device_memory.cc` |
+| `navigator.cpuPerformance` | the CPU's tier, 1 to 4 | **0** ("unknown") | browser, `GetCpuPerformanceTierOverride` |
+| `navigator.userAgentData.getHighEntropyValues()` | the real platform version, architecture, bitness, WoW64, full versions and form factors | **blank** | `navigator_ua.cc` |
+| Client hints | every hint a site asks for | **only** `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, `Save-Data` and the `Sec-CH-Prefers-*` hints | `frame_fetch_context.cc` (subresources); content's `client_hints.cc` and MoltNet's `ClientHintsControllerDelegate` (navigations) |
+
+Normal and Incognito windows are unchanged: their goal is per-site
+unlinkability, and none of these values can usefully vary per site (a
+random touch-point count or memory size per site would change layouts and
+download sizes from site to site; one fixed value would only make users
+look like other MoltBrowser users). MoltNet ignores Shields off, as
+elsewhere, and the kill switch turns all of it off.
+
+### Touchscreens
+
+**Where 152 decides.** Everything a page can learn about the touchscreen
+without being touched comes from six `WebPreferences` fields, which content
+fills from the devices in `SlowWebPreferenceCache::Update`:
+`touch_event_feature_detection_enabled` (the `--touch-events` switch;
+disabled on desktop by default, crbug.com/392584),
+`available_pointer_types` and `available_hover_types`
+(`ui::GetAvailablePointerAndHoverTypes`), `primary_pointer_type` and
+`primary_hover_type` (`ui::GetPrimaryPointerType` / `GetPrimaryHoverType`)
+and `pointer_events_max_touch_points` (`ui::MaxTouchPoints`).
+`WebContentsImpl::ComputeWebPreferences` loads them and then calls the
+embedder's `OverrideWebPreferences`, also when a device change (a
+touchscreen plugged in, tablet mode) recomputes them. Blink copies them
+into `Settings` and a runtime feature (`WebViewImpl::ApplyWebPreferences`),
+where `navigator.maxTouchPoints` (`NavigatorEvents`), the
+`pointer`/`hover` media queries (`MediaValues`) and touch-event feature
+detection (the `[RuntimeEnabled=TouchEventFeatureDetection]` `ontouch*`
+attributes, `Document::createEvent`) read them.
+
+**What MoltNet does: one browser-side override.** In MoltNet profiles
+`ChromeContentBrowserClient::OverrideWebPreferences` ends by setting the
+six fields to a mouse-only desktop (`molt_net_device.{h,cc}`): no touch
+points, a fine pointer that can hover, no touch-event feature detection.
+Chosen over Blink hooks because it is one hook for all four signals, in
+every frame and renderer of the profile; it holds when the devices change;
+and the real values never reach a MoltNet renderer.
+
+**Real touch input still works**, the way Chromium on any desktop delivers
+it while touch-event feature detection is off: a touch scrolls, zooms and
+taps; pages get pointer events (`pointerType` "touch", with the uniform
+contact of [Touches](#touches)), the compatibility mouse events and click
+of a tap, and touch events for listeners added with `addEventListener`.
+Input routing doesn't read these preferences; the other readers found are
+DevTools' emulation and the media controls' first guess (mouse until the
+first touch). `TouchEvent`, `Touch` and `TouchList` stay defined, as for
+every Chromium desktop user. **Cost:** pages that choose a touch layout from `maxTouchPoints` or
+`pointer: coarse` show their desktop layout (smaller targets; hover menus
+open on a tap through the compatibility events). Tor Browser reports the
+same desktop.
+
+**Not hidden: touching.** A page that waits for the user to touch the
+screen learns it is a touchscreen (`pointerType` "touch", touch events,
+`sourceCapabilities.firesTouchEvents`, the `pointercancel` of a pan). Hiding
+that would mean rewriting touches as mouse input, which breaks the pinch,
+pan and multi-finger handling of maps, drawing apps and games, and touch
+events would still give it away, so it isn't done. Pen pressure, tilt and
+twist stay real ([Touches](#touches)). DevTools' touch emulation still
+works.
+
+### Client hints
+
+**What MoltNet sent.** `devicePixelRatio` was already 1, but a site that
+asked (with `Accept-CH`, `<meta http-equiv="Accept-CH">`, `delegate-ch`, an
+iframe's `allow` attribute, `Critical-CH` or an HTTP/2 `ACCEPT_CH` frame)
+got, on its navigations and subresource requests:
+
+* `Sec-CH-DPR` / `DPR`: the real device scale factor (of the primary
+  display, on navigations) times the zoom;
+* `Sec-CH-Width` / `Width`: an image's layout width times that real ratio;
+* `Sec-CH-Viewport-Width` / `-Height`, `Viewport-Width`: the letterboxed
+  page size, which script reads anyway;
+* `Sec-CH-Device-Memory` / `Device-Memory`: 2 to 32;
+* `RTT`, `Downlink`, `ECT`: the browser's network-quality estimate, which
+  isn't specific to Tor's connection;
+* the high-entropy user-agent hints, which `getHighEntropyValues()` also
+  gave every page: `Sec-CH-UA-Platform-Version` (on Windows a version that
+  tells Windows 10 from 11 and their feature updates apart, such as
+  "10.0.0" or "19.0.0"; on macOS the exact release, such as "15.6.1"; empty
+  on Linux at 152), `-Arch` ("x86" or "arm"), `-Bitness`, `-WoW64`,
+  `-Model` (empty on desktop), `-Full-Version` and `-Full-Version-List`
+  (the exact build, 152.0.7977.169, which the reduced user-agent string
+  hides) and `-Form-Factors` ("Desktop").
+
+**What MoltNet sends now: only the low-entropy and preference hints.**
+`Sec-CH-UA`, `Sec-CH-UA-Mobile` and `Sec-CH-UA-Platform` (sent on every
+request by default, which sites and firewalls rely on, and the same for
+every MoltNet user of an OS and major version, like the user-agent
+string), `Save-Data` (only while data saver is on) and
+`Sec-CH-Prefers-Color-Scheme`, `-Reduced-Motion` and
+`-Reduced-Transparency` (which repeat media queries any page can
+evaluate). Every other hint is never sent, whatever the site asks for. The
+rule is an allow-list (`moltnet_device_values.h`), so a hint a later
+Chromium adds is withheld too.
+
+**Why withhold rather than send uniform values** (DPR 1, the letterboxed
+viewport, memory 8, ...): client hints are optional; Firefox, Safari and
+Tor Browser send none, so every site already works without them. Uniform
+values would each have to agree with the rest of the uniform device at
+every zoom level and stay in step with it, for nothing a script can't
+compute itself. And withholding is one rule at two choke points.
+
+**`getHighEntropyValues()`** returns what Chromium itself reports when it
+hides these values (with a `--user-agent` override): `platformVersion`,
+`architecture`, `bitness`, `model` and `uaFullVersion` are "",
+`fullVersionList` and `formFactors` are empty, `wow64` is false; `brands`,
+`mobile` and `platform` are unchanged. Sites that look for Windows 11 in
+`platformVersion` see no version and show their default.
+
+**Where.**
+
+* Subresource requests (Blink): `FrameFetchContext`'s
+  `ShouldSendClientHint`, the per-hint decision for every subresource
+  request of a document, asks `WithholdsClientHint`
+  (`moltnet_device.{h,cc}`). Workers' requests only carry `Save-Data` at
+  152.
+* Navigation requests (browser): content's `client_hints.cc` decides for
+  documents, iframes, prefetches, `Critical-CH` and `ACCEPT_CH` restarts
+  and the list it gives the network service. It enables a hint from the
+  profile's `ClientHintsControllerDelegate` (stored `Accept-CH`, additional
+  hints), from a prerendering page's `Accept-CH`, or from an iframe's
+  container policy (the `allow` attribute, `delegate-ch`); the last two
+  don't go through the delegate. So content's delegate interface gained
+  `IsClientHintWithheld()` (no hint by default) and `IsClientHintEnabled()`
+  asks it: a withheld hint is never enabled, whatever enabled it.
+  `ClientHintsFactory` builds MoltNet profiles a `MoltNetClientHints`
+  (`molt_net_client_hints.{h,cc}`), which answers from the same allow-list
+  (`molt_net_device_values.h`), doesn't even store a withheld hint from
+  `Accept-CH`, and reports only the low-entropy user-agent metadata. A
+  `Critical-CH` or `ACCEPT_CH` restart only happens for a header the
+  restart would add, and a withheld hint adds none.
+
+### Device memory and CPU performance
+
+* `navigator.deviceMemory` is **8** in MoltNet windows and workers: below
+  that, sites start serving "lite" pages; it is at or below the RAM of
+  nearly every machine that runs MoltBrowser's on-device model; and it was
+  the most any desktop Chromium reported before the cap went up to 32
+  (crbug.com/454354290), so it is a common value. The `Device-Memory`
+  hints aren't sent at all (above).
+* `navigator.cpuPerformance` (stable at 152, on secure pages) reports a
+  tier from 1 to 4 that content derives from the CPU model
+  (`content::cpu_performance::GetTier`) and hands to each renderer at
+  start. In MoltNet profiles `ChromeContentBrowserClient::
+  GetCpuPerformanceTierOverride` now returns **0**, the API's "unknown",
+  which pages already handle (CPUs the tier tables don't know report it);
+  it takes precedence over the user's and the enterprise override, which
+  would differ between users.
+
+### Which contexts
+
+The browser-side values (touch, pointer, hover, the CPU tier and the
+navigation hints) cover every frame of the MoltNet profile. The Blink-side
+ones (memory, subresource hints, `userAgentData`) cover the whole MoltNet
+renderer process, like `navigator.hardwareConcurrency` and the user agent
+itself. Both follow the kill switch.
+
+### Code
+
+| Where | What |
+|---|---|
+| `core/molt_fingerprinting/moltnet_device_values.{h,cc}` | the client-hint allow-list and the memory value, std-only (+ `moltnet_device_values_unittest.cc`, in `:unit_tests`) |
+| `core/molt_fingerprinting/moltnet_device.{h,cc}` | Blink glue: memory, withheld hints, blank `userAgentData` values (+ `moltnet_device_test.cc`) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h` | the browser's values: the same allow-list, the input devices, the CPU tier; std-only (+ `molt_net_device_values_unittest.cc`, against Blink's) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_device.{h,cc}` | touch / pointer / hover WebPreferences and the CPU tier (`:device`) |
+| `chrome/browser/molt_ai/fingerprinting/molt_net_client_hints.{h,cc}` | MoltNet's `ClientHintsControllerDelegate` (`:client_hints`) |
+
+Upstream hooks (each marked `MoltBrowser:`): Blink
+`loader/frame_fetch_context.cc` (`ShouldSendClientHint`),
+`frame/navigator_ua.cc` (`NavigatorUA::userAgentData`),
+`frame/navigator_device_memory.cc` (`deviceMemory`); content
+`public/browser/client_hints_controller_delegate.{h,cc}` (new virtual
+`IsClientHintWithheld`, false by default) and
+`browser/client_hints/client_hints.cc` (`ClientHintsExtendedData` keeps
+the delegate, `IsClientHintEnabled` asks it); browser
+`chrome/browser/client_hints/client_hints_factory.cc`
+(`BuildServiceInstanceForBrowserContext`) and its `BUILD.gn`,
+`chrome/browser/chrome_content_browser_client.cc`
+(`OverrideWebPreferences`, `GetCpuPerformanceTierOverride`).
+
+### Verification
+
+Standalone (no Chromium checkout): `moltnet_device_values_unittest.cc` (5
+tests) and `molt_net_device_values_unittest.cc` (3 tests, including the
+browser's allow-list against Blink's for every value from -8 to 255) pass
+with g++ (ASan/UBSan) and clang (UBSan trap, `-fno-exceptions
+-Wunsafe-buffer-usage -Wshorten-64-to-32 -Wimplicit-int-conversion
+-Wexit-time-destructors -Wglobal-constructors`), with the module's other
+pure tests still passing. `moltnet_device.cc`, `molt_net_device.cc`,
+`molt_net_client_hints.cc` and the changed
+`client_hints_controller_delegate.cc` type-check with the same strict
+flags against stand-ins of the pinned signatures (the pinned
+`client_hints.h`, `enabled_client_hints.h`, `pointer_device.h` and
+`user_agent_metadata.h` themselves; the enums generated from the pinned
+mojoms), and so do the hooked `navigator_ua.cc` and
+`navigator_device_memory.cc` as they are. Two harnesses run the real code
+under ASan/UBSan: the Blink one with `ShouldSendClientHint` extracted
+verbatim from `frame_fetch_context.cc` (6 tests: normal windows untouched,
+the allow-list, opt-in and permissions policy still applying, memory,
+`userAgentData` through the real `NavigatorUA::userAgentData`), the
+browser one with `IsClientHintEnabled` extracted verbatim from content (8
+tests: the factory and kill switch, a hint enabled by delegation still
+withheld, nothing withheld stored or reported, the low-entropy metadata,
+the input-device preferences for MoltNet only, the CPU tier). 26 mutants
+of the new code and hooks, the new-window code included (a hook removed,
+a value left real, the allow-list changed, every profile treated as
+MoltNet, ...), all fail these checks.
+**Needs the build machine:** compiling the hooks and the new targets
+(including `gn check`, DEPS and the new `ClientHintsControllerDelegate`
+virtual in every implementation), `blink_unittests`
+(`MoltNetDeviceTest.*`, which checks the headers of a real
+`FrameFetchContext`), `molt_ai_unittests`, and in a MoltNet window:
+`matchMedia('(pointer: fine)')`, `navigator.maxTouchPoints`, `'ontouchstart'
+in window` on a Windows touchscreen laptop (also in tablet mode and with
+`--touch-events`) and that touch scrolling, tapping and pinch-zoom still
+work; a client-hints test page (`Accept-CH`, `Critical-CH`, `delegate-ch`,
+an iframe `allow="ch-dpr"`) showing only the allowed headers on documents,
+iframes and images; `getHighEntropyValues()` and `navigator.cpuPerformance`
+on Windows, macOS and Linux.
 
 ## Fonts
 
@@ -1065,12 +1495,12 @@ from the next document (MoltShield reloads the page).
   metrics, different glyphs). Some default settings (per-script CJK
   fonts, `math`) are lists from which Chromium takes the first installed
   family, so those generics also tell which candidate is installed.
-  MoltNet windows use MoltBrowser's default font settings, not the user's
-  ([settings from the regular
-  profile](#moltnet-settings-from-the-regular-profile)), but those
-  defaults come from the UI language's resources (and, for the fixed font
-  on Windows, the ClearType setting), so users with different UI
-  languages still differ there.
+  MoltNet windows don't use the user's settings ([settings from the
+  regular profile](#moltnet-settings-from-the-regular-profile)) nor these
+  defaults, which also follow the UI language and, for the fixed font on
+  Windows, the ClearType setting: they use fixed per-OS families, all on
+  the allow-list ([default fonts](#default-fonts-font-size-and-encoding)),
+  so every MoltNet user of an OS renders the generic families alike.
 * Users whose machine lacks an allow-listed font (removed by an
   administrator, minimal Linux installs) remain distinguishable by that.
 * In normal windows, a sampled name that resolves to a hidden family costs a
@@ -1119,6 +1549,7 @@ a user look like other MoltBrowser users.
 | `screen.orientation.type`, `.angle` | the uniform screen's: **landscape-primary**, **0** (see below) | `screen_orientation.cc`: `type`, `angle` |
 | `screen.orientation` "change" event | never fires | `screen_orientation_controller.cc`: `NotifyOrientationChangedInternal` |
 | Date, time, month, week and number fields, numbers in validation messages | **en-US** formats on every OS | `platform_locale.{h,cc}`: `Locale::DefaultLocale`, set by `Configure` |
+| `validationMessage`, the file input's labels and the other strings pages can read; text without `lang` | **en-US** ([details](#moltnet-the-browsers-ui-language)) | renderer `ResourceBundle` overrides; `language.cc`: `DefaultLanguage` |
 
 The values are in `moltnet_values.{h,cc}` (std only, tested standalone),
 the Blink side in `moltnet_uniformity.{h,cc}`. Which contexts: what
@@ -1155,6 +1586,8 @@ without contact geometry or pressure (1 x 1, 0.5 while down, 0 otherwise;
 no tilt, twist or barrel pressure). Pens and mice are untouched: pen
 pressure and tilt are what drawing apps need. Cost: pages that use touch
 size or pressure (some drawing apps and games) see none in MoltNet.
+Whether there is a touchscreen at all is hidden too
+([Touchscreens](#touchscreens)).
 
 ### Screens (Window Management API)
 
@@ -1285,46 +1718,20 @@ and PM, Sunday first, ASCII digits, "." and ",". So a date input shows
 `03/05/2024` and a time input `1:04:09 PM` for every MoltNet user, on
 macOS and Windows as on Linux, whatever the UI language and regional
 settings. The date and colour picker popups are separate pages a site
-can't read, and keep the user's language and formats.
+can't read; they now use en-US too (their labels are pinned with the
+strings, and the date picker's language is `DefaultLanguage()`, see
+below), so they match the fields.
 
-**Not done: the strings** (still in the browser's UI language). Loading
-the en-US pak in MoltNet renderers is a larger change with user-visible
-costs, so it is left as a design:
-
-1. *Recommended: override only the strings pages can observe.* In MoltNet
-   renderers, `ChromeContentRendererClient::RenderThreadStarted` (where the
-   mode is configured) calls `ui::ResourceBundle::
-   OverrideLocaleStringResource(id, text)` for the page-observable ids
-   (the `IDS_FORM_*` strings of validation messages, file inputs, buttons
-   and date/time fields, `IDS_DETAILS_WITHOUT_SUMMARY_LABEL`, ...), with
-   their en-US text taken from `blink_strings.grd` at build time (a small
-   generated table, with a test that compares it to the `.grd`). The same
-   on every OS, no zygote work, and the browser UI, error pages and
-   accessibility names stay in the user's language. Needs an audit of the
-   `Locale::QueryString` / `QueryLocalizedString` callers to list the ids.
-2. *`--lang=en-US` for MoltNet renderers.* MoltBrowser's
-   `AppendRendererSwitches` could add it, but at 152
-   `RenderProcessHostImpl::AppendRendererCommandLine` appends `--lang`
-   after the embedder's switches, so content needs a one-line change to
-   keep an embedder-set `--lang`. On macOS and Windows renderers then load
-   en-US.pak before the sandbox, and `DefaultLanguage()` becomes en-US on
-   every thread, which also fixes the default text locale (below). On
-   Linux renderers are forked from the zygote, which loaded its pak before
-   any profile existed and can't open another after the fork: it would
-   need to preload en-US.pak and switch to it after forking a MoltNet
-   renderer, for which `ResourceBundle` has no API. And every
-   renderer-generated text in MoltNet tabs turns English: network error
-   pages, media-control labels and screen-reader names, the pickers, parts
-   of `chrome://` pages. (Tor Browser asks the user before requesting
-   English pages.)
-
-`DefaultLanguage()` also names the default text locale
-(`LayoutLocale::GetDefault()`), used for text without a `lang` attribute,
-for instance to pick the Han glyph variants of CJK text when the
-Accept-Language list (en-US in MoltNet) doesn't decide
-(`LayoutLocale::LocaleForHan`): a Japanese or Chinese UI language still
-shows there. Option 2 fixes it; with option 1 it needs its own override of
-`DefaultLanguage()` in MoltNet (`platform/language.cc`, all threads).
+**The strings and the default text locale** (left as a design here
+before) are now en-US too, see [MoltNet: the browser's UI
+language](#moltnet-the-browsers-ui-language): the strings pages can read
+are overridden with their en-US text in the renderer's resource bundle
+(the recommended option of the design), and `DefaultLanguage()`, the
+default text locale, is pinned to en-US. `--lang=en-US` for MoltNet
+renderers was not taken: content appends `--lang` after the embedder's
+switches, Linux renderers fork from a zygote that loaded its pak before
+any profile existed, and every renderer-made text in MoltNet tabs (error
+pages, media controls, screen-reader names) would turn English.
 
 ### Verification
 
@@ -1425,7 +1832,10 @@ it keeps `navigator.permissions.query` consistent with
 `getScreenDetails()`, which rejects without asking.
 
 **Costs for MoltNet users.** Their own font and font-size settings don't
-apply in MoltNet windows (zoom still works, per site, for the session);
+apply in MoltNet windows (zoom still works, per site, for the session;
+MoltNet's default fonts, minimum logical font size and encoding are fixed
+per OS, not by the UI language: [default
+fonts](#default-fonts-font-size-and-encoding));
 nor do blocked-by-default JavaScript or images, their site permissions
 (sites ask again in every MoltNet session), their Shields-off sites, Do Not
 Track, or allowed third-party cookies. Accessibility settings that pages
@@ -1453,18 +1863,244 @@ in the regular profile, none of them in MoltNet, while an Incognito-style
 profile inherits all four), and in a running browser the checks in
 `docs/MOLTNET_COMPLIANCE.md` §4.
 
+## MoltNet: the browser's UI language
+
+MoltNet already showed en-US where pages ask for a language directly
+(`Accept-Language`, `navigator.language(s)`, `Intl`, `Date`) and in the
+formats of form controls. Three things still followed the language of
+MoltBrowser's interface (the renderer's `--lang`), so a MoltNet user with
+a Japanese, German or Russian interface stood out, in every session and
+after every New Identity:
+
+| What a page could see | Where it came from at 152 | MoltNet now |
+|---|---|---|
+| Text the renderer makes and pages read or measure: `validationMessage`, the file input's labels, the default `<details>` summary and button labels, date-field placeholders, the permission elements' labels, ... | `Platform::QueryLocalizedString` -> `ChromeContentClient::GetLocalizedString` -> the renderer's `ui::ResourceBundle`, i.e. the locale pak of `--lang` (on Linux, the one the zygote loaded) | **en-US**, the same text on every OS |
+| The default text locale: text without a `lang` attribute (the Han glyph variants of CJK text, hyphenation, line breaking, case mapping, the quotes of `<q>`), the date picker's language, the default caption track | `DefaultLanguage()` and `UserPreferredLanguages()` (`platform/language.cc`): `--lang` | **en-US** |
+| The fonts of the generic families, the minimum logical font size, the default encoding (`document.characterSet` of pages that don't declare one) | Chromium registers their defaults from the UI language's resources (`PrefsTabHelper::RegisterProfilePrefs`), and MoltNet's settings isolation pinned the registered default | **fixed per OS**: the OS's en-US defaults, each font resolved on the font allow-list; windows-1252 |
+
+Normal and Incognito windows are unchanged: the UI language is the same on
+every site, so fixing it there would only make users look like other
+MoltBrowser users.
+
+**Kill switch.** The strings and the default text locale are kUniform,
+like the time zone and the `Intl` locale: with
+`#molt-fingerprinting-protection` off, MoltNet's `Accept-Language` and
+`navigator.languages` go back to the UI language's default list (its first
+entry is the UI language), so English strings would hide nothing and only
+make such users stand out more. The `--molt-net-renderer` switch, which
+marks MoltNet renderers whatever the mode, was therefore not needed. The
+font, font-size and encoding defaults are part of MoltNet's settings
+isolation, which doesn't depend on the kill switch.
+
+### Renderer strings
+
+In a MoltNet renderer, `ConfigureRendererProcess()` (from
+`ChromeContentRendererClient::RenderThreadStarted`, before any frame or
+worker exists) overrides each page-readable string with its en-US text in
+the process's `ui::ResourceBundle`
+(`ResourceBundle::OverrideLocaleStringResource`, checked before the locale
+paks by every `GetLocalizedString`). So every Blink caller, on every
+thread, gets the en-US text; `$1`-style placeholders stay and Blink fills
+them in as before (with en-US number formats). It works the same on every
+OS, after the Linux zygote fork too, and nothing else changes: the browser
+UI, error pages, media controls and accessibility names keep the user's
+language. (`OverrideLocaleStringResource` isn't thread-safe; at that point
+no other thread reads strings yet.)
+
+**Pinned** (pages can read or measure them):
+
+* `validationMessage`, and the validation bubble that shows the same
+  text: all 34 `IDS_FORM_VALIDATION_*` messages (missing values of text
+  fields, checkboxes, file inputs, radio groups and selects; type
+  mismatches, including the detailed email ones; patterns; ranges and
+  steps; bad dates and numbers; too long, too short);
+* text laid out in the page, whose size a page can measure: `<details>`
+  without `<summary>` ("Details"); `<input type=submit>` and `reset`
+  without a value ("Submit", "Reset"); the alt text of an
+  `<input type=image>` without one ("Submit"); the file input ("Choose
+  File", "Choose Files", "No file chosen", "3 files"); the date-field
+  placeholders ("mm", "dd", "yyyy"); the week field's layout ("Week 51,
+  2012"); a `<select multiple>` drawn as a menu list ("3 selected");
+* the labels of the permission elements, all 14 ("Use location", "Use
+  camera", "Install", ...; `<geolocation>` and `<usermedia>` are on by
+  default at 152, `<install>` is an origin trial): an element with a
+  `lang` attribute gets per-language strings that are the same for
+  everybody, one without (most) got the UI language's;
+* the JSON viewer's "Pretty-print" label, in the document of a
+  same-origin frame;
+* the byte units (`IDS_UNITS_*`): no page-readable use was found at 152,
+  pinned anyway since English units cost nothing.
+
+**Pinned although pages can't read them:** the labels of the date, month,
+week and colour picker popups ("Today", "Clear", "This month", "This
+week", "Week", "Other..."), so the popup, whose month and weekday names
+now follow the en-US default language, isn't half English.
+
+**Left in the UI language** (only the user sees them): the media
+controls (their overflow and captions menus, cast and picture-in-picture
+texts, errors; in closed user-agent shadow trees, which don't change the
+media element's size), the media session's source name (browser UI), the
+plugin placeholder, DevTools' "Debugger paused in another tab", the
+view-source page's "Line wrap", and the accessibility names (`IDS_AX_*`,
+from `ui/strings`, never laid out).
+
+**The table** (`moltnet_locale_strings_table.cc`) is generated from
+`blink_strings.grd` and `permission_element_strings.grd` at the pin by
+`tools/moltnet_locale/generate_tables.py`, which reads them from the
+upstream cache (no checkout needed) and lists every message of both files
+as pinned or left localized, with the reason. A message that a rebase
+adds, removes or makes platform-dependent fails the script until someone
+decides, and `molt_ai_unittests` compares the table with the en-US paks
+grit builds. Run the script (`--write` to regenerate) after every
+Chromium rebase.
+
+### Default text locale
+
+`DefaultLanguage()` is the renderer's UI language, kept in a static string
+`InitializePlatformLanguage()` creates during Blink's start-up, before the
+embedder configures the process; by then the static string table is
+frozen. So the hook in `language.cc` is a pointer to a string literal
+(`SetPlatformLanguageOverride`, an atomic pointer) that `DefaultLanguage()`
+turns into an `AtomicString` on the reading thread, and
+`UserPreferredLanguages()` now goes through `DefaultLanguage()`.
+`Configure(kUniform)` sets it to en-US (`moltnet_locale.cc`) before any
+document or worker exists and before any text is laid out (`LayoutLocale`
+caches the default per thread). The testing override still wins.
+
+What changes for a MoltNet page: text without a `lang` attribute is laid
+out as en-US. For CJK text that matters most: `LayoutLocale::LocaleForHan`
+takes the first Han-capable language of Accept-Language (none: en-US),
+then the default locale (was a Japanese or Chinese UI, now en-US: none),
+then ICU's default (already en-US in MoltNet), so unlabelled Han text gets
+the same glyph variants and fallback fonts for everyone. Hyphenation
+(`hyphens: auto`), line breaking, case mapping and `<q>` quotes of
+unlabelled text use en-US; the date picker uses en-US names; and for
+users who asked for captions, a video's default caption track is picked
+for English.
+
+Not covered: code that reads `Platform::DefaultLocale()` itself rather
+than `DefaultLanguage()`; none was found that pages can observe, but
+without a checkout the search wasn't exhaustive.
+
+### Default fonts, font size and encoding
+
+At 152 Chromium registers these defaults from the UI language's resources
+(`chrome/browser/ui/prefs/prefs_tab_helper.cc`):
+
+* `webkit.webprefs.fonts.<generic>.<script>`, which `FontFamilyCache` reads
+  into WebPreferences: `IDS_*_FONT_FAMILY*` of
+  `locale_settings_{win,mac,linux}.grd`, translated per UI language (with
+  a Japanese UI the script-independent fonts are Japanese ones); the
+  per-script defaults for the UI language's own script are left out;
+  `",A,B,C"` lists resolve to the first installed family; on Windows the
+  fixed font is Consolas or Courier New by the ClearType setting;
+* `webkit.webprefs.minimum_logical_font_size`: 6 (Windows, Linux) or 9
+  (macOS) in English, 10 or 12 for some Japanese, Korean and Chinese UIs;
+* `intl.charset_default`: windows-1252 in English, Shift_JIS in Japanese,
+  GBK in Chinese, ...
+
+MoltNet's settings isolation pinned all of them to the registered default,
+so the user's own settings no longer showed, but those defaults did. Now
+`PinMoltNetPrefsToDefaults` (no new hook) gives these prefs fixed per-OS
+values (`molt_net_locale_prefs.{h,cc}`):
+
+* each font: the OS's en-US default, resolved the way a default install
+  resolves it: the first family of the default (or of its list) that is on
+  the OS's font allow-list ([Fonts](#fonts): installed on every supported
+  version), an alias replaced by the family it stands for (Linux: Times
+  New Roman -> Liberation Serif, Arial -> Liberation Sans), none when no
+  family is listed. Two exceptions: Windows' fixed font is always Consolas
+  (ClearType is on by default) and Linux's is DejaVu Sans Mono instead of
+  fontconfig's "Monospace", which distributions resolve to different
+  fonts. Every other font pref (most scripts) has no family, as in
+  Chromium; Blink then uses the script-independent one and, for a generic
+  family without one, the standard font;
+* the minimum logical font size: the OS's en-US value;
+* the default encoding: windows-1252, on every OS.
+
+| | standard / serif | sans-serif | monospace | cursive / fantasy / math | per-script (examples) |
+|---|---|---|---|---|---|
+| Windows | Times New Roman | Arial | Consolas | Comic Sans MS / Impact / Cambria Math | Japanese Yu Gothic (no serif: Yu Mincho and MS PMincho are optional features), Korean Malgun Gothic, Chinese Microsoft YaHei / JhengHei |
+| macOS | Times | Helvetica | Menlo | Apple Chancery / Papyrus / STIX Two Math | Hiragino, Apple SD Gothic Neo, PingFang, Songti |
+| Linux | Liberation Serif | Liberation Sans | DejaVu Sans Mono | none (Comic Sans MS, Impact and Latin Modern Math aren't on every distribution) | CJK: none listed, so per-character fallback |
+
+The table (`molt_net_locale_prefs_table.h`) is generated by the same
+script from the three `.grd` files, `components_locale_settings.grd` and
+`font_allowlists.cc` (so the script must be rerun after an allow-list
+edit); its en-US column is checked against the paks grit builds on each
+OS's build machine.
+
+### What a fixed language costs MoltNet users
+
+* Form validation bubbles, file inputs, the default `<details>` and button
+  labels and the date picker are in English in MoltNet windows.
+* For users whose captions setting asks for subtitles, videos pick English
+  caption tracks by default.
+* CJK text without a `lang` attribute no longer gets the glyph variants
+  of the user's language; pages that declare their language are
+  unaffected.
+* Old pages in a legacy CJK or Cyrillic encoding that don't declare it
+  rely on Chromium's encoding detector, as they do for English-language
+  users; the rare page it misses shows garbled text.
+* CJK users get the English minimum logical font size, so very small
+  relative font sizes stay smaller than in their regular windows.
+
+### Code and verification
+
+| Where | What |
+|---|---|
+| `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` (generated) | the page-readable strings, pinned in kUniform renderers (+ `moltnet_locale_strings_unittest.cc`) |
+| `core/molt_fingerprinting/moltnet_locale.{h,cc}` | pins `DefaultLanguage()` in `Configure(kUniform)` (+ `moltnet_locale_test.cc`) |
+| `src/chrome/browser/molt_ai/tor/molt_net_locale_prefs.{h,cc}`, `molt_net_locale_prefs_table.h`, `molt_net_locale_prefs_resource_ids.h` (generated) | MoltNet's fixed fonts, minimum logical font size and encoding (+ `molt_net_locale_prefs_unittest.cc`); applied in `molt_net_pref_isolation.cc` |
+| `tools/moltnet_locale/generate_tables.py` | generates and checks the tables from the pinned `.grd` files |
+
+Upstream hooks: `third_party/blink/renderer/platform/language.{h,cc}`
+(`SetPlatformLanguageOverride`, `DefaultLanguage`,
+`UserPreferredLanguages`). The renderer strings and the font defaults need
+no upstream hook (`ConfigureRendererProcess` and `PinMoltNetPrefsToDefaults`
+are MoltBrowser's).
+
+**Verified without a Chromium checkout:** the script regenerates both
+tables identically from the pinned `.grd` files, read both from the
+upstream cache and from files, and fails as it should on a new, renamed
+or changed message, a changed font default and a changed encoding. The
+renderer-strings code and its real unit test build and pass with g++
+(ASan/UBSan) and clang (UBSan trap, `-fno-exceptions
+-Wunsafe-buffer-usage -Wshorten-64-to-32 -Wimplicit-int-conversion
+-Wexit-time-destructors -Wglobal-constructors`) against stand-ins of the
+pinned `ResourceBundle` and `DataPack` (fake en-US and "French" paks made
+from the `.grd` files); 4 mutants all fail it. `molt_net_locale_prefs.cc`,
+its real unit test (against the real Blink allow-lists and fonts matcher)
+and the real `molt_net_pref_isolation.cc` (against a `PrefService`
+stand-in, with a Japanese UI's registry) pass with the same compilers and
+flags; 9 mutants all fail them. The `language.cc` hook and
+`moltnet_locale.cc` compile against stand-ins of the pinned WTF types and
+pass a harness (pinned on the main and another thread, unpinned, the
+testing override first). **Needs the build machine:** compiling all of
+it; `molt_ai_unittests` (`MoltNetLocaleStringsTest.*`, against the real
+en-US and French paks; `MoltNetLocalePrefsTest.*` with the real paks of
+each OS; `MoltNetLocalePinTest.*`); `blink_unittests`
+(`MoltNetLocaleTest.*`); and, in MoltNet windows of builds with a
+Japanese, German and Russian interface on each OS: `validationMessage` of
+an empty required field, the size of `<input type=file>`, `<details>` and
+`<input type=date>`, `document.characterSet` of an undeclared page, the
+measured width of unstyled, `serif` and `monospace` text, and CJK text
+without `lang` (glyph variants), all identical to an English-interface
+MoltNet window on the same OS.
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature
 `MoltFingerprintingProtection`, enabled by default). When disabled, new
 renderers get no mode switch and no seed (Blink runs unmodified) and MoltNet
-no longer forces en-US; relaunch to apply it to every renderer. It is
+no longer forces en-US (languages, time zone, form controls, renderer
+strings, default text locale); relaunch to apply it to every renderer. It is
 independent of `--disable-molt-shield` on purpose: that switch is an
 ad-blocking escape hatch and must not silently drop MoltNet uniformity. The
 per-site escape hatch is [Shields off](#shields-off) (normal and Incognito
 windows only). MoltNet's [settings
-isolation](#moltnet-settings-from-the-regular-profile) doesn't depend on
-the switch.
+isolation](#moltnet-settings-from-the-regular-profile), including its
+fixed default fonts, font size and encoding, doesn't depend on the switch.
 
 ## Known gaps and attacks
 
@@ -1531,27 +2167,30 @@ Honest list; anything not in the table above is not covered.
 
 * Letterboxing ([Letterboxing](#letterboxing-moltnet)): a zoomed page's
   `innerWidth`/`innerHeight` show the zoom; the real device pixel ratio
-  shows through device-pixel snapping, `devicePixelContentBoxSize` and DPR
-  client hints; cross-process iframes can report a screen one step
-  narrower than a main frame with a classic scrollbar.
-* Renderer-side UI strings (`validationMessage`, the file input's labels,
-  the default `<details>` summary and button labels, date-field
-  placeholders) follow the browser's UI language, not en-US; the
-  form-control formats are en-US ([design for the
-  strings](#form-controls-in-en-us)).
-* Text without a `lang` attribute uses the browser's UI language as its
-  default locale (`LayoutLocale::GetDefault()`), which shows in the Han
-  glyph variants of CJK text, among others (same section).
-* A touchscreen itself shows: `navigator.maxTouchPoints` (and its value),
-  the `pointer` / `any-pointer` / `hover` media queries and touch-event
-  support; pen pressure, tilt and twist stay real (touch contact and
-  coordinates are uniform, see [Touches](#touches)).
+  shows through device-pixel snapping and `devicePixelContentBoxSize`;
+  cross-process iframes can report a screen one step narrower than a main
+  frame with a classic scrollbar.
+* (Closed: renderer strings, the default text locale and the default
+  fonts, font size and encoding no longer follow the browser's UI
+  language, see [the browser's UI
+  language](#moltnet-the-browsers-ui-language).) What is left there:
+  renderer strings pages can't read (media controls, accessibility names)
+  stay in the UI language, and code reading `Platform::DefaultLocale()`
+  directly isn't covered (none found that pages can observe).
+* A touchscreen shows once the user touches it (`pointerType` "touch",
+  touch events); `maxTouchPoints`, the pointer and hover media queries and
+  touch-event feature detection no longer show it
+  ([Touchscreens](#touchscreens)). Pen pressure, tilt and twist stay real
+  (touch contact and coordinates are uniform, see [Touches](#touches)).
+* `navigator.connection` (`effectiveType`, `rtt`, `downlink`) still shows
+  the browser's network-quality estimate, which isn't Tor's; the matching
+  `ECT`, `RTT` and `Downlink` client hints are no longer sent
+  ([Client hints](#client-hints)).
 * (Closed: permission and content-setting state, fonts and other user
   settings MoltNet inherited from the regular profile, see [settings from
   the regular profile](#moltnet-settings-from-the-regular-profile).) What
-  is left there: MoltBrowser's defaults for fonts, font sizes and the
-  default encoding depend on the UI language; browser-wide state isn't per
-  profile and still shows in MoltNet (page colours and the system's
+  is left there: browser-wide state isn't per profile and still shows in
+  MoltNet (page colours and the system's
   forced-colors and contrast settings, MoltShield's global switch and
   filter lists, and `prefers-color-scheme`, which is dark for everyone
   only while MoltBrowser's dark toolbar, `kGlassToolbar`, is on and
@@ -1610,7 +2249,10 @@ Honest list; anything not in the table above is not covered.
   local attacker who can read process memory (a debugger, a compromised
   renderer) can compute the per-site noise. It is no longer on the command
   line.
-* Every renderer of a profile receives the whole Shields-off list (see
+* Turning Shields off or on applies from the next navigation (MoltShield's
+  toggle reloads the page) and the next start of a service or shared
+  worker, not to documents and workers already running; pages restored
+  from the back/forward cache keep the decision they ran with (see
   [Shields off](#shields-off)).
 * `getChannelData()` writes the noise into a buffer that an
   `AudioBufferSourceNode` on the audio thread may be playing at the same
@@ -1641,14 +2283,16 @@ Verified without a Chromium checkout (scratch harnesses, not in the repo):
   key resolution for windows (site, nonce, opaque, non-web, re-derivation),
   dedicated workers, first- and third-party shared/service workers,
   service-worker storage keys, worklets (handed-over keys), Shields-off
-  sites (and MoltNet ignoring them), the seed arriving late or malformed,
+  decisions (and MoltNet ignoring them; the per-document harness is in
+  [Shields off](#shields-off)), the seed arriving late or malformed,
   WebGL pack layouts for every farbled format, PIXEL_PACK buffer mapping
   (in-place result equal to a client-memory read; chunked mapping of a
   27 MiB read; no mapping when not farbled; failed maps), the snapshot and
   export pipelines (premultiplied alpha preserved, never above alpha) and
   the uniform screen math and UTC/en-US side effects.
-* The chrome/{common,browser,renderer} glue (mode switch, mojo seed and
-  sites, content-settings observer, `ConfigurationReceiver`) and
+* The chrome/{common,browser,renderer} glue (mode switch, mojo seed,
+  `ConfigurationReceiver`, the per-commit Shields decision and its renderer
+  agent) and
   `molt_shield_site_{settings,exceptions}.cc` plus its unit test type-check
   against stand-ins of the pinned content/IPC/mojo/content-settings
   signatures (the generated mojom bindings are a hand-written stand-in);
@@ -1681,15 +2325,22 @@ on a canvas-effects video call.
 | `src/third_party/blink/renderer/core/molt_fingerprinting/farbling.{h,cc}` | pure math (+ `farbling_unittest.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.{h,cc}` | Blink glue (+ `molt_fingerprinting_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.{h,cc}` | a shared worker's storage key, handed to its thread (+ `shared_worker_key_test.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/shields_decision.{h,cc}` | the Shields decision of each window and worker: fail-safe, site check, inheritance (+ `shields_decision_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/webgl_uniform.{h,cc}`, `gpu_uniformity.{h,cc}` | MoltNet WebGL baselines (pure, + `webgl_uniform_unittest.cc`) and their Blink glue, incl. WebGPU (+ `gpu_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/letterbox.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_letterbox.h`, `molt_letterbox_view.{h,cc}` | MoltNet screen size, pixel ratio (+ `letterbox_test.cc`); the browser-side letterbox geometry and margins (+ `molt_letterbox_unittest.cc`) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.{h,cc}`, `moltnet_device.{h,cc}`; `src/chrome/browser/molt_ai/fingerprinting/molt_net_device_values.h`, `molt_net_device.{h,cc}`, `molt_net_client_hints.{h,cc}`; `src/chrome/browser/molt_ai/tor/molt_net_window.cc` | MoltNet memory, client hints, `userAgentData` (pure, + `moltnet_device_values_unittest.cc`; glue, + `moltnet_device_test.cc`); touch / pointer / hover, CPU tier and navigation client hints in the browser (+ `molt_net_device_values_unittest.cc`); the size new windows open at |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_values.{h,cc}`, `moltnet_uniformity.{h,cc}` | MoltNet touches, screen details, orientation, en-US form locale (pure, + `moltnet_values_unittest.cc`; glue, + `moltnet_uniformity_test.cc`) |
 | `src/third_party/blink/renderer/core/molt_fingerprinting/font_allowlists.{h,cc}`, `fonts.{h,cc}`, `system_fonts.{h,cc}` | font allow-lists and matcher (pure, + `fonts_unittest.cc`) and their Blink glue (+ `system_fonts_test.cc`) |
-| `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, Shields-off sites) |
+| `src/third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.{h,cc}` | MoltNet's default text locale (+ `moltnet_locale_test.cc`) |
+| `src/chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.{h,cc}`, `moltnet_locale_strings_table.cc` | MoltNet's en-US renderer strings (generated table, + `moltnet_locale_strings_unittest.cc`) |
+| `src/chrome/browser/molt_ai/tor/molt_net_locale_prefs.{h,cc}`, `molt_net_locale_prefs_table.h` | MoltNet's fixed default fonts, minimum logical font size and encoding (generated table, + `molt_net_locale_prefs_unittest.cc`) |
+| `tools/moltnet_locale/generate_tables.py` | generates and checks both tables from the pinned `.grd` files |
+| `src/third_party/blink/public/web/web_molt_fingerprinting.h` | embedder entry point (mode, seed, a document's Shields decision) |
 | `src/chrome/common/molt_ai/fingerprinting/` | feature, mode switch, `molt_fingerprinting.mojom` |
-| `src/chrome/browser/molt_ai/fingerprinting/` | session seed, mode switch, seed + sites over mojo, chrome://flags entry |
-| `src/chrome/browser/molt_ai/shield/molt_shield_site_exceptions.{h,cc}` | Shields-off sites from content settings (+ unit test) |
-| `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode, seed and sites to Blink |
+| `src/chrome/browser/molt_ai/fingerprinting/` | session seed, mode switch, seed over mojo, chrome://flags entry |
+| `src/chrome/browser/molt_ai/fingerprinting/molt_shields_decision.{h,cc}`, `molt_shields_delivery.{h,cc}` | the Shields decision for a top-level origin or a worker's storage key (+ `molt_shields_decision_unittest.cc`) and its delivery at each commit (`ShieldsDecisionObserver`) |
+| `src/chrome/browser/molt_ai/shield/molt_shield_site_exceptions.{h,cc}` | whether a site has Shields off, from content settings (+ unit test) |
+| `src/chrome/renderer/molt_ai/fingerprinting/` | hands mode and seed to Blink; `molt_shields_decision_agent.{h,cc}` hands each new document its Shields decision |
 | `src/chrome/browser/molt_ai/tor/molt_net_routing.cc` | MoltNet `Accept-Language` |
 | `src/chrome/browser/molt_ai/tor/molt_net_isolation_policy.{h,cc}`, `molt_net_isolation.{h,cc}` | which regular-profile prefs MoltNet uses MoltBrowser's defaults for (pure, + `molt_net_isolation_policy_unittest.cc`) and MoltNet's pref service (+ `molt_net_isolation_unittest.cc`) |
 
@@ -1716,12 +2367,27 @@ Upstream files with hooks (each marked `MoltBrowser:`; a few lines each):
 `chrome/browser/ui/views/frame/contents_web_view.{h,cc}`,
 `chrome/browser/profiles/off_the_record_profile_impl.cc`,
 `media_values.cc`, `html_image_element.cc`, `style_resolver_state.cc`;
+MoltNet device and client hints: `frame_fetch_context.cc`,
+`navigator_ua.cc`, `navigator_device_memory.cc`,
+`content/public/browser/client_hints_controller_delegate.{h,cc}`,
+`content/browser/client_hints/client_hints.cc`,
+`chrome/browser/client_hints/client_hints_factory.cc` and `BUILD.gn`;
 MoltNet touches, screens and forms: `touch_event_manager.cc`,
 `pointer_event_factory.cc`, `window_screen_details.cc`,
 `permission_status_listener.cc`, `screen_orientation.cc`,
 `screen_orientation_controller.cc`, `platform_locale.{h,cc}`; MoltNet
-settings isolation: `off_the_record_profile_impl.cc` (constructor),
-`chrome/browser/profiles/BUILD.gn`.
+default text locale: `platform/language.{h,cc}`; MoltNet settings
+isolation: `off_the_record_profile_impl.cc` (constructor),
+`chrome/browser/profiles/BUILD.gn`; Shields decisions:
+`chrome/browser/universal_web_contents_observers.cc`,
+`chrome/browser/chrome_content_browser_client.h`,
+`content/public/browser/content_browser_client.{h,cc}`,
+`content/browser/service_worker/service_worker_version.cc`,
+`content/browser/worker_host/shared_worker_host.cc`,
+`service_worker.mojom`, `shared_worker_info.mojom`,
+`service_worker_global_scope.h`, `dedicated_worker.cc`, and the test
+fakes `fake_service_worker.{h,cc}`, `service_worker_job_unittest.cc`,
+`web_embedded_worker_impl_test.cc`.
 
 ## Follow-ups
 
@@ -1742,29 +2408,32 @@ settings isolation: `off_the_record_profile_impl.cc` (constructor),
    prompt before canvas readback, not a noise revision.)
 4. (Done: third-party shared workers use their top-level site's key, see
    [Shared workers](#shared-workers).)
-5. (Done: real letterboxing of MoltNet windows, CSS device media queries and
-   `devicePixelRatio`, see [Letterboxing](#letterboxing-moltnet).) Left:
-   letterboxing the CSS size so zoom stops showing, dropping DPR client
-   hints in MoltNet, opening MoltNet windows at a 1400 x 900 page, and the
-   checks on the build machine listed there.
-6. Fonts: the allow-lists are in (see [Fonts](#fonts)); still to do: check
+5. (Done: real letterboxing of MoltNet windows, CSS device media queries,
+   `devicePixelRatio`, no DPR client hints, and new windows that open at a
+   1400 x 900 page, see [Letterboxing](#letterboxing-moltnet) and [client
+   hints](#client-hints).) Left: letterboxing the CSS size so zoom stops
+   showing, and the checks on the build machine listed there.
+6. Fonts: the allow-lists are in (see [Fonts](#fonts)), and MoltNet's
+   generic-font settings are fixed per OS, from the allow-lists, whatever
+   the UI language ([default
+   fonts](#default-fonts-font-size-and-encoding)); still to do: check
    the Windows and macOS lists against fresh installs of each supported
-   version, fixed generic-font settings in MoltNet that don't depend on
-   the UI language (MoltNet already ignores the user's own, see [settings
-   from the regular profile](#moltnet-settings-from-the-regular-profile)),
-   and text metrics / per-character fallback. The WebGL parameter surface
+   version (MoltNet's default fonts depend on them too), and text metrics
+   / per-character fallback. The WebGL parameter surface
    and WebGPU in MoltNet are done (fixed WebGL baselines, no WebGPU
    adapter); left: a mobile look at the baselines if MoltNet comes to
    Android, and checking them against the WebGL reports of real Macs,
    Windows and Linux machines in MoltNet windows.
-7. Per-document Shields-off delivery instead of a per-profile list.
-8. MoltNet: renderer UI strings in en-US (design in [Form controls in
-   en-US](#form-controls-in-en-us)) and the default text locale; then a
-   touchscreen-less look (`maxTouchPoints`, pointer media queries).
-   Done: touch coordinates and contact, the Window Management API, screen
-   orientation, form-control formats ([MoltNet: touches, screens,
-   orientation and form
-   controls](#moltnet-touches-screens-orientation-and-form-controls)), and
+7. (Done: Shields off is decided by the browser per document and per
+   worker and sent only with it; no renderer holds the list, see
+   [Shields off](#shields-off).)
+8. MoltNet: done: touch coordinates and contact, the Window Management
+   API, screen orientation, form-control formats ([MoltNet: touches,
+   screens, orientation and form
+   controls](#moltnet-touches-screens-orientation-and-form-controls)),
+   renderer strings and the default text locale in en-US ([the browser's
+   UI language](#moltnet-the-browsers-ui-language)), a touchscreen-less
+   look ([Touchscreens](#touchscreens)), and
    permission state and user settings that no longer come from the regular
    profile ([settings from the regular
    profile](#moltnet-settings-from-the-regular-profile)).

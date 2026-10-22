@@ -4,14 +4,18 @@
 # Renderer half of MoltBrowser's fingerprinting protection: hands the
 # browser's mode (command line) to Blink at renderer start
 # (ChromeContentRendererClient::RenderThreadStarted), then the session seed
-# and the Shields-off sites as they arrive over the channel.
+# as it arrives over the channel, and each document's Shields decision as it
+# arrives for its frame (ChromeContentRendererClient::RenderFrameCreated).
 
 source_set("fingerprinting") {
   sources = [
     "molt_fingerprinting_renderer.cc",
     "molt_fingerprinting_renderer.h",
+    "molt_shields_decision_agent.cc",
+    "molt_shields_decision_agent.h",
   ]
   deps = [
+    ":locale_strings",
     "//base",
     "//chrome/common/molt_ai/fingerprinting",
     "//chrome/common/molt_ai/fingerprinting:mojom",
@@ -19,5 +23,44 @@ source_set("fingerprinting") {
     "//mojo/public/cpp/bindings",
     "//third_party/blink/public:blink",
     "//third_party/blink/public/common",
+  ]
+}
+
+# MoltNet (kUniform): the renderer strings pages can read, pinned to en-US in
+# the process's ResourceBundle. The table is generated from Chromium's .grd
+# files by tools/moltnet_locale/generate_tables.py.
+source_set("locale_strings") {
+  sources = [
+    "moltnet_locale_strings.cc",
+    "moltnet_locale_strings.h",
+    "moltnet_locale_strings_table.cc",
+  ]
+  deps = [
+    "//base",
+    "//third_party/blink/public/strings",
+    "//third_party/blink/public/strings:permission_element_strings",
+    "//ui/base",
+  ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "moltnet_locale_strings_unittest.cc" ]
+  deps = [
+    ":locale_strings",
+    "//base",
+    "//testing/gtest",
+    "//third_party/blink/public/strings",
+    "//third_party/blink/public/strings:permission_element_strings",
+    "//ui/base",
+  ]
+
+  # The paks grit builds from the two .grd files: en-US (the table must
+  # match it) and French (a UI language the overrides must win over).
+  data = [
+    "$root_gen_dir/third_party/blink/public/strings/blink_strings_en-US.pak",
+    "$root_gen_dir/third_party/blink/public/strings/blink_strings_fr.pak",
+    "$root_gen_dir/third_party/blink/public/strings/permission_element_strings_en-US.pak",
   ]
 }

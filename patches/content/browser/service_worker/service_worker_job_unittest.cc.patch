@@ -1,0 +1,20 @@
+MoltBrowser patch for content/browser/service_worker/service_worker_job_unittest.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/browser/service_worker/service_worker_job_unittest.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/service_worker/service_worker_job_unittest.cc b/content/browser/service_worker/service_worker_job_unittest.cc
+index f7d7459e3c5c6917b74e2ef46b7db71df22a2b34..10649cccbbdc22e9a85486b49a47ca7c14dfdf68 100644
+--- a/content/browser/service_worker/service_worker_job_unittest.cc
++++ b/content/browser/service_worker/service_worker_job_unittest.cc
+@@ -1723,7 +1723,8 @@ class UpdateJobTestHelper : public EmbeddedWorkerTestHelper,
+         blink::mojom::ServiceWorkerObjectInfoPtr,
+         blink::mojom::FetchHandlerExistence,
+         blink::mojom::AncestorFrameType,
+-        const blink::StorageKey& storage_key) override {
++        const blink::StorageKey& storage_key,
++        bool /*molt_shields_down*/) override {  // MoltBrowser
+       client_->SimulateFailureOfScriptEvaluation();
+       // Set `client_` to nullptr to prevent it from dangling, since
+       // `SimulateFailureOfScriptEvaluation()` will ensure failure and destroy

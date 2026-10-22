@@ -187,8 +187,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   always denied, without a prompt, and moving the window between screens
   goes unnoticed); `screen.orientation` matches the uniform screen size;
   date, time and number fields use US English formats whatever your
-  system's language and regional settings. Built-in form messages such as
-  "Please fill out this field" still follow the browser's language.
+  system's language and regional settings.
+- **MoltNet windows don't show the browser's language.** Text the browser
+  puts in pages that sites can read (form messages such as "Please fill
+  out this field.", "Choose File", the default "Details" and "Submit"
+  labels, date-field placeholders) is in US English in MoltNet windows,
+  and so is the language assumed for text that doesn't declare one (which
+  decided the look of Chinese and Japanese characters). The default fonts,
+  minimum font size and text encoding there are fixed for your operating
+  system instead of following MoltBrowser's language. Regular windows and
+  the browser's own interface keep your language.
 - **Your settings stay out of MoltNet windows.** Sites in a MoltNet window
   no longer see how you set up your regular browser: not your site
   permissions or blocked sites (including Shields off and sites that may
@@ -250,6 +258,26 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   off in MoltNet windows, and "Open all" bookmarks there no longer spill
   into a regular window. What is still outside Tor is listed in
   `docs/MOLTNET_COMPLIANCE.md` §5.7.
+- **MoltNet hides your touchscreen, memory, CPU and exact system.** MoltNet
+  pages now all see the same mouse-and-keyboard desktop: no touch points, a
+  fine pointer that can hover and no touch-event detection (your
+  touchscreen still works), 8 GB of memory and an unknown CPU class. Sites
+  can no longer ask for your screen's pixel density, viewport, memory,
+  network speed, exact OS version, CPU architecture or exact browser
+  version through client hints: MoltNet only sends the basic browser,
+  platform and preference hints, and `navigator.userAgentData` leaves those
+  details blank. New MoltNet windows open at the largest letterbox size
+  that fits your screen (1400 x 900 where there is room), so pages start
+  without margins.
+- **Your Shields-off sites stay in the browser.** Page processes used to
+  get your whole list of sites with Shields off, to know where to switch
+  the fingerprinting noise off. Now the browser decides for each page and
+  each worker as it loads and tells only that page's process, before any
+  of its scripts run, so a compromised page process can't read the list.
+  Anything that isn't told is protected. Turning Shields off or on applies
+  from the next page load (the Shields toggle reloads the page); a page
+  that Back restores from memory keeps what it had. Sandboxed pages now
+  follow their site's Shields setting too.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

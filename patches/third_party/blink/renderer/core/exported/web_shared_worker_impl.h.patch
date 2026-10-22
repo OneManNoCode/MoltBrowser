@@ -5,16 +5,17 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.h b/third_party/blink/renderer/core/exported/web_shared_worker_impl.h
-index 4e80c2984b75ce6ae9022c773774a895e4d04136..7dffaf9c89f316de015161fefc0fc89b0c583521 100644
+index 4e80c2984b75ce6ae9022c773774a895e4d04136..5d3f82b98f7cebec5e86d07b2d94361aeede15cd 100644
 --- a/third_party/blink/renderer/core/exported/web_shared_worker_impl.h
 +++ b/third_party/blink/renderer/core/exported/web_shared_worker_impl.h
-@@ -134,7 +134,8 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
+@@ -134,7 +134,9 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
            coep_reporting_observer,
        CrossVariantMojoReceiver<mojom::blink::ReportingObserverInterfaceBase>
            dip_reporting_observer,
 -      bool is_cross_origin_isolated);
 +      bool is_cross_origin_isolated,
-+      const StorageKey& constructor_key);  // MoltBrowser
++      const StorageKey& constructor_key,  // MoltBrowser
++      bool molt_shields_down);            // MoltBrowser
  
    void DispatchPendingConnections();
    void ConnectToChannel(int connection_request_id,

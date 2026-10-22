@@ -1,0 +1,29 @@
+MoltBrowser patch for third_party/blink/renderer/core/loader/frame_fetch_context.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/loader/frame_fetch_context.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/loader/frame_fetch_context.cc b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+index 9e0a5ccdac505c701be2be0e5b8677bff0d1d824..b511a4266b7d551294c06540cce9e1f4181637f1 100644
+--- a/third_party/blink/renderer/core/loader/frame_fetch_context.cc
++++ b/third_party/blink/renderer/core/loader/frame_fetch_context.cc
+@@ -102,6 +102,7 @@ BASE_FEATURE(kFastMemoryCacheWithDevTools, base::FEATURE_ENABLED_BY_DEFAULT);
+ #include "third_party/blink/renderer/core/loader/resource_initiator_helper.h"
+ #include "third_party/blink/renderer/core/loader/resource_load_observer_for_frame.h"
+ #include "third_party/blink/renderer/core/loader/subresource_filter.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_device.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/paint/timing/first_meaningful_paint_detector.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+@@ -237,6 +238,10 @@ bool ShouldSendClientHint(const network::PermissionsPolicy& policy,
+                           const url::Origin& resource_origin,
+                           network::mojom::blink::WebClientHintsType type,
+                           const ClientHintsPreferences& hints_preferences) {
++  // MoltBrowser: MoltNet sends no device, network or high-entropy UA hints.
++  if (molt_fingerprinting::WithholdsClientHint(type)) {
++    return false;
++  }
+   // For subresource requests, sending the hint in the fetch request based on
+   // the permissions policy.
+   if (!policy.IsFeatureEnabledForOrigin(

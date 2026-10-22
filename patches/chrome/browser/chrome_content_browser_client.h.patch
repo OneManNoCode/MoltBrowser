@@ -5,15 +5,18 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 76a42bf288c100bca1fc797769fbd9f6f616e20c..8f9b9b7761269e02b8244eaf27c11fc5df6c2d05 100644
+index 76a42bf288c100bca1fc797769fbd9f6f616e20c..db6ffb3e6f01ed93c7877113fd9e059b7409a1a2 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -718,6 +718,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -718,6 +718,11 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        content::FrameTreeNodeId frame_tree_node_id,
        const network::ResourceRequest& resource_request) override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
 +  bool ShouldBlockWorkerWebSocket(content::BrowserContext* browser_context,
 +                                  const GURL& url) override;
++  bool AreMoltShieldsDownForWorker(
++      content::BrowserContext* browser_context,
++      const blink::StorageKey& storage_key) override;  // MoltBrowser
    content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
        content::RenderFrameHost* frame) override;
    void CreateWebSocket(

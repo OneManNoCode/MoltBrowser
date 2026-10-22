@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-index 368f30305278c88745933041c0e20c053bcba22c..a4b786c504cac1e42ec53be75811bc1f173f86c6 100644
+index 368f30305278c88745933041c0e20c053bcba22c..1edf1f710dac2019004c523f6fa109cd92c9f8ad 100644
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 @@ -83,6 +83,7 @@
@@ -16,13 +16,20 @@ index 368f30305278c88745933041c0e20c053bcba22c..a4b786c504cac1e42ec53be75811bc1f
  #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/core/script/classic_script.h"
-@@ -1737,6 +1738,9 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
-     const blink::BlinkStorageKey& storage_key) {
+@@ -1734,9 +1735,15 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
+     mojom::blink::ServiceWorkerObjectInfoPtr service_worker_info,
+     mojom::blink::FetchHandlerExistence fetch_hander_existence,
+     mojom::blink::AncestorFrameType ancestor_frame_type,
+-    const blink::BlinkStorageKey& storage_key) {
++    const blink::BlinkStorageKey& storage_key,
++    bool molt_shields_down) {  // MoltBrowser
    DCHECK(IsContextThread());
    DCHECK(!global_scope_initialized_);
 +  // MoltBrowser: farble with the registration's top-level site (third-party
-+  // workers too), set before any script runs.
-+  molt_fingerprinting::SetServiceWorkerStorageKey(*this, storage_key);
++  // workers too), unless the browser decided Shields are off for it; set
++  // before any script runs.
++  molt_fingerprinting::SetServiceWorkerStorageKey(*this, storage_key,
++                                                  molt_shields_down);
  
    DCHECK(service_worker_host.is_valid());
    DCHECK(!service_worker_host_.is_bound());

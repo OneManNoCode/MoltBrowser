@@ -88,7 +88,12 @@ claims below as the design intent, not as measured results.
     permission (after you dismissed it several times) can ask again.
     Permissions you grant and changes you make in a MoltNet window last
     until New Identity or until the last MoltNet window closes, and nothing
-    done in a MoltNet window changes your regular settings.
+    done in a MoltNet window changes your regular settings. Nor does the
+    language of MoltBrowser's interface show: text the browser puts in
+    pages (form messages such as "Please fill out this field.", "Choose
+    File", the date picker) is in US English in MoltNet windows, and the
+    default fonts and text encoding are the same for everyone on your
+    operating system.
 11. **Your extensions and your regular browsing stay out.** Extensions you
     or an administrator installed don't run in MoltNet windows and can't
     see them, even when they're allowed in Incognito; only the browser's
@@ -765,14 +770,16 @@ Do all of this in a MoltNet window unless the step says otherwise.
 
 ## 5. What MoltNet does *not* do
 
-1. **It is not Tor Browser.** MoltNet windows report the same time zone
-   (UTC), language (en-US), rounded screen size, CPU count and WebGL renderer
+1. **It is not Tor Browser.** MoltNet windows letterbox the page and report
+   the same time zone (UTC), language (en-US), screen size, pixel ratio, CPU
+   count, memory, WebGL limits and installed fonts (per operating system)
    for everyone, and canvas, WebGL and audio readback carry per-site noise
-   (docs/FINGERPRINTING.md). But the window itself isn't letterboxed, fonts
-   and the OS in the user agent are your real ones, and the protection hasn't
-   been tested against real fingerprinting scripts yet. Assume sites may still
-   recognise and link your visits. If your safety depends on not being
-   identified, use Tor Browser.
+   (docs/FINGERPRINTING.md). But the operating system is visible (in the
+   user agent and through the fonts it ships), the protection hasn't been
+   built and tested against real fingerprinting scripts yet, and Tor
+   Browser's design has had years of public review that MoltNet's hasn't.
+   Assume sites may still recognise and link your visits. If your safety
+   depends on not being identified, use Tor Browser.
 2. **It doesn't hide who you are from sites you log into.**
 3. **The exit relay can see unencrypted traffic.** HTTPS-Only mode warns you
    before plain HTTP; don't click through.
@@ -850,11 +857,10 @@ Do all of this in a MoltNet window unless the step says otherwise.
    - Settings that apply to the whole browser rather than to your regular
      profile still reach MoltNet windows (§1.10 covers the profile's):
      page colours and your system's high-contrast and accessibility
-     settings, MoltShield's on/off switch and its filter lists, and the
-     language of MoltBrowser's own interface, which picks MoltBrowser's
-     default fonts and text encoding. `prefers-color-scheme` is dark for
-     everyone while MoltBrowser's dark toolbar is on (the default); with it
-     off, MoltNet windows follow your regular windows' theme.
+     settings, and MoltShield's on/off switch and its filter lists.
+     `prefers-color-scheme` is dark for everyone while MoltBrowser's dark
+     toolbar is on (the default); with it off, MoltNet windows follow your
+     regular windows' theme.
 
 ## 6. Privacy defaults for regular windows
 

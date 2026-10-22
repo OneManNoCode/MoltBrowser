@@ -4,7 +4,6 @@
 #include "chrome/renderer/molt_ai/fingerprinting/molt_fingerprinting_renderer.h"
 
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #include "base/command_line.h"
@@ -12,6 +11,7 @@
 #include "base/no_destructor.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting.mojom.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_switches.h"
+#include "chrome/renderer/molt_ai/fingerprinting/moltnet_locale_strings.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_thread_observer.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
@@ -52,9 +52,6 @@ class ConfigurationReceiver : public content::RenderThreadObserver,
     // Blink ignores anything but the first 32-byte seed.
     blink::WebMoltFingerprinting::SetSessionSeed(seed);
   }
-  void SetUnfarbledSites(const std::vector<std::string>& sites) override {
-    blink::WebMoltFingerprinting::SetUnfarbledSites(sites);
-  }
 
  private:
   void Bind(mojo::PendingAssociatedReceiver<mojom::FingerprintingConfiguration>
@@ -78,6 +75,11 @@ void ConfigureRendererProcess() {
       mode == RendererMode::kUniform
           ? blink::WebMoltFingerprinting::Mode::kUniform
           : blink::WebMoltFingerprinting::Mode::kFarble);
+  if (mode == RendererMode::kUniform) {
+    // MoltNet: the strings pages can read in en-US, like the rest of what
+    // kUniform pins (Blink can't reach the ResourceBundle they come from).
+    PinMoltNetLocaleStrings();
+  }
   // Lives as long as the process; registering with the render thread exposes
   // the interface on the channel before any frame or worker exists.
   static base::NoDestructor<ConfigurationReceiver> receiver;

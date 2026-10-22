@@ -47,14 +47,6 @@ bool IsRemoveParamEnabledForContext(content::BrowserContext* context);
 // exception matches it), whatever MoltShield's global state.
 bool HasShieldsDownException(content::BrowserContext* context, const GURL& url);
 
-// Top-level sites ("https://example.com", as net::SchemefulSite serializes
-// them) whose own URL has a Shields-down exception, sorted and unique. This
-// is what fingerprinting protection leaves alone. Exceptions narrower than a
-// site (one subdomain, a host pattern without [*.]) only count if they also
-// match the site's own URL.
-std::vector<std::string> GetShieldsDownTopLevelSites(
-    content::BrowserContext* context);
-
 // Adds/removes the site-wide exception for `url`'s site.
 void SetShieldsUpForSite(content::BrowserContext* context,
                          const GURL& url,

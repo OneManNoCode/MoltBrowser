@@ -61,6 +61,9 @@ test("molt_ai_unittests") {
     "//chrome/common/molt_ai/fingerprinting:unit_tests",
     "//third_party/blink/renderer/core/molt_fingerprinting:unit_tests",
 
+    # MoltNet's en-US renderer strings, checked against the en-US paks.
+    "//chrome/renderer/molt_ai/fingerprinting:unit_tests",
+
     # MoltNet letterboxing geometry, checked against Blink's rounding.
     "//chrome/browser/molt_ai/fingerprinting:unit_tests",
   ]

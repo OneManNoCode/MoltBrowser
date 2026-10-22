@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 0b57cc869d78d870e86fd6d41660799dd4e160c6..23ab1c4db500d01c7275437f26660188face2dfc 100644
+index 0b57cc869d78d870e86fd6d41660799dd4e160c6..2d38ffa16a44080cdc3b549f3e40458256e77df1 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
-@@ -1993,6 +1993,14 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1993,6 +1993,22 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  
@@ -19,6 +19,14 @@ index 0b57cc869d78d870e86fd6d41660799dd4e160c6..23ab1c4db500d01c7275437f26660188
 +  // fails in the worker).
 +  virtual bool ShouldBlockWorkerWebSocket(BrowserContext* browser_context,
 +                                          const GURL& url);
++
++  // MoltBrowser: asked when a service or shared worker starts; true if the
++  // user turned MoltShield off for the top-level site of its `storage_key`,
++  // so fingerprinting protection leaves the worker alone. The answer goes to
++  // the worker with its start messages.
++  virtual bool AreMoltShieldsDownForWorker(
++      BrowserContext* browser_context,
++      const blink::StorageKey& storage_key);
 +
    struct CONTENT_EXPORT WebSocketOptions {
      WebSocketOptions();

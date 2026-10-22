@@ -1,0 +1,22 @@
+MoltBrowser patch for third_party/blink/public/mojom/service_worker/service_worker.mojom
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/public/mojom/service_worker/service_worker.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/public/mojom/service_worker/service_worker.mojom b/third_party/blink/public/mojom/service_worker/service_worker.mojom
+index fab1fcf2d45610edf9b6ae8893fd7d2b9d1a443c..6ec7cea5f17a82c11f8c0879f0fbe53a1d817e7b 100644
+--- a/third_party/blink/public/mojom/service_worker/service_worker.mojom
++++ b/third_party/blink/public/mojom/service_worker/service_worker.mojom
+@@ -214,7 +214,10 @@ interface ServiceWorker {
+       ServiceWorkerObjectInfo service_worker_info,
+       FetchHandlerExistence fetch_handler_existence,
+       AncestorFrameType ancestor_frame_type,
+-      blink.mojom.StorageKey storage_key);
++      blink.mojom.StorageKey storage_key,
++      // MoltBrowser: MoltShield is off for `storage_key`'s top-level site,
++      // so fingerprinting protection leaves the worker alone.
++      bool molt_shields_down);
+ 
+   // These methods dispatch InstallEvent and ActivateEvent to the
+   // ServiceWorkerGlobalScope.

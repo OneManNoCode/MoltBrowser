@@ -238,7 +238,8 @@ void WebSharedWorkerImpl::StartWorkerContext(
     CrossVariantMojoReceiver<mojom::blink::ReportingObserverInterfaceBase>
         dip_reporting_observer,
     bool is_cross_origin_isolated,
-    const StorageKey& constructor_key) {  // MoltBrowser
+    const StorageKey& constructor_key,  // MoltBrowser
+    bool molt_shields_down) {           // MoltBrowser
   DCHECK(IsMainThread());
   DCHECK(web_worker_fetch_context);
   CHECK(constructor_origin.Get()->CanAccessSharedWorkers() ||
@@ -307,9 +308,10 @@ void WebSharedWorkerImpl::StartWorkerContext(
       blink::SecurityOrigin::CreateFromUrlOrigin(
           url::Origin(origin_from_browser)),
       std::move(coep_reporting_observer), std::move(dip_reporting_observer));
-  // MoltBrowser: farble with the top-level site (and nonce) of this key.
+  // MoltBrowser: farble with the top-level site (and nonce) of this key,
+  // unless the browser decided Shields are off for it.
   molt_fingerprinting::ProvideToSharedWorker(
-      constructor_key, creation_params->worker_clients.Get());
+      constructor_key, molt_shields_down, creation_params->worker_clients.Get());
 
   auto thread_startup_data = WorkerBackingThreadStartupData::CreateDefault();
   thread_startup_data.atomics_wait_mode =
@@ -397,7 +399,8 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
     CrossVariantMojoReceiver<mojom::blink::ReportingObserverInterfaceBase>
         dip_reporting_observer,
     bool is_cross_origin_isolated,
-    const StorageKey& constructor_key) {  // MoltBrowser
+    const StorageKey& constructor_key,  // MoltBrowser
+    bool molt_shields_down) {           // MoltBrowser
   auto worker =
       base::WrapUnique(new WebSharedWorkerImpl(token, std::move(host), client));
   worker->StartWorkerContext(
@@ -410,7 +413,8 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
       std::move(policy_container), std::move(web_worker_fetch_context),
       ukm_source_id, require_cross_site_request_for_cookies,
       std::move(coep_reporting_observer), std::move(dip_reporting_observer),
-      is_cross_origin_isolated, constructor_key);  // MoltBrowser
+      is_cross_origin_isolated, constructor_key,  // MoltBrowser
+      molt_shields_down);                          // MoltBrowser
   return worker;
 }
 

@@ -1,0 +1,43 @@
+MoltBrowser patch for content/browser/client_hints/client_hints.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/browser/client_hints/client_hints.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
+index b1778eb6591728093d7da3fa51cdcd03489323ea..cc9b758527a9d7fd92526b7591efecf25c3667b3 100644
+--- a/content/browser/client_hints/client_hints.cc
++++ b/content/browser/client_hints/client_hints.cc
+@@ -12,6 +12,7 @@
+ #include "base/command_line.h"
+ #include "base/dcheck_is_on.h"
+ #include "base/feature_list.h"
++#include "base/memory/raw_ptr.h"  // MoltBrowser
+ #include "base/metrics/field_trial_params.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/numerics/safe_conversions.h"
+@@ -524,6 +525,7 @@ struct ClientHintsExtendedData {
+                           FrameTreeNode* frame_tree_node,
+                           ClientHintsControllerDelegate* delegate)
+       : resource_origin(origin) {
++    withholding_delegate = delegate;  // MoltBrowser
+     // If the current frame is the outermost main frame, the URL wasn't
+     // committed yet, so in order to get the main frame URL, we should use the
+     // provided URL instead. Otherwise, the current frame is a subframe and the
+@@ -592,10 +594,16 @@ struct ClientHintsExtendedData {
+   bool is_outermost_main_frame = false;
+   url::Origin main_frame_origin;
+   std::unique_ptr<network::PermissionsPolicy> permissions_policy;
++  // MoltBrowser: asked which hints its browser context withholds.
++  raw_ptr<ClientHintsControllerDelegate> withholding_delegate;
+ };
+ 
+ bool IsClientHintEnabled(const ClientHintsExtendedData& data,
+                          WebClientHintsType type) {
++  // MoltBrowser: a withheld hint is never enabled, whatever enabled it.
++  if (data.withholding_delegate->IsClientHintWithheld(type)) {
++    return false;
++  }
+   return blink::IsClientHintSentByDefault(type) || data.hints.IsEnabled(type);
+ }
+ 
