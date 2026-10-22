@@ -38,17 +38,35 @@ source_set("chat_actions") {
   deps = [ "//base" ]
 }
 
+# The web agent's prompt: the rules and the turn, as one raw prompt or as
+# a chat with a screenshot (docs/design/AGENT_ACTIONS.md §2.6). Pure logic,
+# so molt_ai_unittests links it.
+source_set("agent_prompt") {
+  sources = [
+    "agent_prompt.cc",
+    "agent_prompt.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "agent_actions_unittest.cc",
+    "agent_prompt_unittest.cc",
     "chat_actions_unittest.cc",
   ]
   deps = [
     ":agent_actions",
+    ":agent_prompt",
     ":chat_actions",
     "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
 
     # Every schema the agent and the chat build must be accepted by the
     # inference service's converter; the tests run the real one (std-only).

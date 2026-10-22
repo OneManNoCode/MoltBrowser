@@ -56,6 +56,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
+#include "chrome/browser/molt_ai/agents/agent_prompt.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -201,8 +202,8 @@ class WebAgent : public content::WebContentsObserver {
               base::OnceCallback<void(base::Value)> cb);
 
   // -- LLM context ------------------------------------------------
-  std::string BuildPrompt() const;
-  std::string HistoryText() const;
+  // The goal, history and current page for agent_prompt.
+  agent_prompt::PromptInput BuildPromptInput() const;
   // pending_step_ for the trace and the UI: the action's name, and the
   // elements it acts on described rather than as ids or selectors.
   Step DescribeAction(const agent_actions::AgentAction& action) const;
