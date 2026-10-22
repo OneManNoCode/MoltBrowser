@@ -46,6 +46,7 @@ EmbedOutcome OutcomeForStatus(EmbeddingStatus status) {
     case EmbeddingStatus::kNotEnoughMemory:
     case EmbeddingStatus::kBackingOff:
     case EmbeddingStatus::kShuttingDown:
+    case EmbeddingStatus::kNotLoaded:
       return EmbedOutcome::kRetryLater;
   }
   return EmbedOutcome::kRetryLater;
@@ -122,6 +123,41 @@ void LlamaEmbedder::EmbedBatch(std::vector<std::string> texts,
                 config, std::move(texts), std::move(on_done), urgent);
           },
           config_, std::move(texts), query,
+          base::BindOnce(reply, std::move(reply_runner), std::move(done))));
+}
+
+void LlamaEmbedder::EmbedQueryIfReady(std::string text,
+                                      BatchCallback done) const {
+  if (!text.empty() && !query_prefix_.empty()) {
+    text = query_prefix_ + text;
+  }
+  scoped_refptr<base::SequencedTaskRunner> reply_runner =
+      base::SequencedTaskRunner::GetCurrentDefault();
+  auto reply = [](scoped_refptr<base::SequencedTaskRunner> runner,
+                  BatchCallback cb, EmbeddingStatus status,
+                  std::vector<std::vector<float>> vectors) {
+    EmbedBatchResult result;
+    result.outcome = OutcomeForStatus(status);
+    result.vectors = std::move(vectors);
+    runner->PostTask(
+        FROM_HERE,
+        base::BindOnce([](BatchCallback cb,
+                          EmbedBatchResult r) { cb(std::move(r)); },
+                       std::move(cb), std::move(result)));
+  };
+  content::GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](EmbeddingModelConfig config, std::string text,
+             base::OnceCallback<void(EmbeddingStatus,
+                                     std::vector<std::vector<float>>)>
+                 on_done) {
+            // Never starts the model process: typing in the omnibox only
+            // uses it when it is already loaded.
+            EmbeddingProcessHost::GetInstance()->EmbedIfLoaded(
+                config, {std::move(text)}, std::move(on_done));
+          },
+          config_, std::move(text),
           base::BindOnce(reply, std::move(reply_runner), std::move(done))));
 }
 

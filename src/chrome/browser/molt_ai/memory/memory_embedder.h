@@ -109,6 +109,12 @@ class MemoryEmbedder {
                           EmbedPurpose purpose,
                           BatchCallback done) const;
 
+  // Embeds one query only if that starts nothing: an in-process embedder
+  // always does (EmbedBatch() with kQuery); the on-device model only when
+  // its process is already loaded, else |done| gets kRetryLater. For the
+  // omnibox, where typing must never load the model.
+  virtual void EmbedQueryIfReady(std::string text, BatchCallback done) const;
+
   // Most texts one EmbedBatch() call should carry.
   virtual size_t max_batch_size() const { return 64; }
 };
@@ -133,6 +139,14 @@ int HashingVersionOfSpaceKey(const std::string& key);
 // Convenience factory — every caller goes through this so the active
 // embedder can be swapped in one place.
 std::unique_ptr<MemoryEmbedder> CreateDefaultEmbedder();
+
+// The words of |text| as HashingEmbedder reads them: split on Unicode
+// spaces, punctuation and symbols, case-folded, soft hyphens and joiners
+// removed, each cut to its first 64 bytes; a malformed UTF-8 byte stays in
+// its word. At most |max_words|, in order. For keyword matching
+// (memory_keyword_match.h).
+std::vector<std::string> FoldedWords(const std::string& text,
+                                     size_t max_words);
 
 }  // namespace memory
 }  // namespace molt_ai

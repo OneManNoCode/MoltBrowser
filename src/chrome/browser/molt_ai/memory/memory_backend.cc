@@ -4,6 +4,8 @@
 #include "chrome/browser/molt_ai/memory/memory_backend.h"
 
 #include <algorithm>
+#include <map>
+#include <optional>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -11,6 +13,7 @@
 #include "base/logging.h"
 #include "chrome/browser/molt_ai/memory/embedding_space.h"
 #include "chrome/browser/molt_ai/memory/memory_extractor.h"
+#include "chrome/browser/molt_ai/memory/memory_keyword_match.h"
 #include "chrome/browser/molt_ai/memory/memory_snippet.h"
 #include "crypto/sha2.h"
 
@@ -395,11 +398,119 @@ void MemoryBackend::Query(const std::string& text,
       }));
 }
 
+void MemoryBackend::OmniboxSearch(
+    const std::string& text,
+    int top_k,
+    std::function<bool()> still_wanted,
+    std::function<void(OmniboxSearchResult)> done) {
+  if (!done || (still_wanted && !still_wanted())) return;
+  OmniboxSearchResult first;
+  MemoryEmbedder* committed = open_ ? CommittedEmbedder() : nullptr;
+  if (!open_ || text.empty() || top_k <= 0) {
+    done(std::move(first));
+    return;
+  }
+  const bool keyword_index = committed && committed->is_synchronous();
+  first.hits = KeywordSearch(text, top_k, keyword_index ? committed : nullptr);
+  // Ranked by meaning only with the on-device model's index, and only if
+  // its process is already loaded: typing never starts it.
+  const bool by_meaning = committed && !committed->is_synchronous();
+  first.final = !by_meaning;
+  if (!by_meaning) {
+    done(std::move(first));
+    return;
+  }
+  std::vector<QueryHit> keyword_hits = first.hits;
+  done(std::move(first));
+
+  const std::string space = committed->space().Key();
+  committed->EmbedQueryIfReady(
+      text,
+      Guarded([this, text, top_k, space, still_wanted, done,
+               keyword_hits](EmbedBatchResult r) {
+        if (still_wanted && !still_wanted()) return;
+        OmniboxSearchResult out;
+        out.hits = keyword_hits;
+        // The space may have changed meanwhile: a vector of another space
+        // is never compared with the index.
+        if (r.outcome == EmbedOutcome::kOk && r.vectors.size() == 1 &&
+            r.vectors[0].size() == kEmbeddingDim &&
+            storage_.committed_space() == space) {
+          std::vector<QueryHit> hits =
+              Search(r.vectors[0], text, top_k, /*one_per_page=*/true,
+                     /*with_snippets=*/false);
+          if (!hits.empty()) {
+            out.hits = std::move(hits);
+            out.semantic = true;
+          }
+        }
+        done(std::move(out));
+      }));
+}
+
+std::vector<QueryHit> MemoryBackend::KeywordSearch(
+    const std::string& text,
+    int top_k,
+    const MemoryEmbedder* keyword_index) {
+  const KeywordQuery query = ParseKeywordQuery(text);
+  if (query.words.empty() || top_k <= 0) return {};
+
+  std::vector<KeywordCandidate> candidates;
+  std::map<int64_t, Document> docs;
+  // Titles and URLs of the newest pages (also those still waiting for a
+  // vector).
+  for (Document& d : storage_.ListRecentDocuments(kKeywordScanDocs)) {
+    const float score = KeywordScore(query, d.title, d.url, std::string());
+    if (score <= 0.0f) continue;
+    candidates.push_back({d.doc_id, score, d.visited_at_unix});
+    const int64_t id = d.doc_id;
+    docs.emplace(id, std::move(d));
+  }
+  // The page text, through the keyword-hashing index: its nearest passages,
+  // the best one of each page, kept only if the words are all there.
+  if (keyword_index) {
+    const int want = std::min(kMaxCandidates, top_k * 8);
+    std::set<int64_t> seen;
+    for (const QueryHit& h : index_.Query(keyword_index->Embed(text), want)) {
+      if (!seen.insert(h.doc_id).second) continue;
+      auto it = docs.find(h.doc_id);
+      if (it == docs.end()) {
+        std::optional<Document> doc = storage_.GetDocument(h.doc_id);
+        if (!doc) continue;
+        it = docs.emplace(h.doc_id, std::move(*doc)).first;
+      }
+      std::optional<Chunk> chunk = storage_.GetChunk(h.chunk_id);
+      const float score =
+          KeywordScore(query, it->second.title, it->second.url,
+                       chunk ? chunk->text : std::string());
+      if (score <= 0.0f) continue;
+      candidates.push_back({h.doc_id, score, it->second.visited_at_unix});
+    }
+  }
+
+  std::vector<QueryHit> hits;
+  for (const KeywordCandidate& c :
+       RankKeywordCandidates(std::move(candidates),
+                             static_cast<size_t>(top_k))) {
+    auto it = docs.find(c.doc_id);
+    if (it == docs.end()) continue;
+    QueryHit h;
+    h.doc_id = c.doc_id;
+    h.score = c.score;
+    h.url = it->second.url;
+    h.title = it->second.title;
+    h.visited_at_unix = it->second.visited_at_unix;
+    hits.push_back(std::move(h));
+  }
+  return hits;
+}
+
 std::vector<QueryHit> MemoryBackend::Search(
     const std::vector<float>& query_vector,
     const std::string& query_text,
     int top_k,
-    bool one_per_page) {
+    bool one_per_page,
+    bool with_snippets) {
   const int want = one_per_page ? std::min(kMaxCandidates, top_k * 4) : top_k;
   std::vector<QueryHit> hits = index_.Query(query_vector, want);
   if (one_per_page) {
@@ -418,6 +529,7 @@ std::vector<QueryHit> MemoryBackend::Search(
       h.title = doc->title;
       h.visited_at_unix = doc->visited_at_unix;
     }
+    if (!with_snippets) continue;
     if (auto chunk = storage_.GetChunk(h.chunk_id)) {
       h.snippet = BestSnippet(chunk->text, query_text, kSnippetBytes);
     }

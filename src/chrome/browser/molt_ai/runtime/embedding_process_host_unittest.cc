@@ -405,6 +405,56 @@ TEST_F(EmbeddingProcessHostTest, IdleProcessEnds) {
   EXPECT_EQ(services_.size(), 2u);
 }
 
+// The omnibox's @memory shortcut: EmbedIfLoaded() uses a process that has
+// the model loaded, and never launches, loads or replaces one.
+TEST_F(EmbeddingProcessHostTest, EmbedIfLoadedNeverStartsTheModel) {
+  auto embed_if_loaded = [this](const EmbeddingModelConfig& config) {
+    results_.push_back(std::make_unique<Result>());
+    Result* r = results_.back().get();
+    host_->EmbedIfLoaded(config, {"query"},
+                         base::BindOnce(
+                             [](Result* r, EmbeddingStatus status,
+                                std::vector<std::vector<float>> vectors) {
+                               r->done = true;
+                               r->status = status;
+                               r->vectors = std::move(vectors);
+                             },
+                             base::Unretained(r)));
+    EXPECT_FALSE(r->done) << "never synchronously";
+    task_environment_.RunUntilIdle();
+    return r;
+  };
+
+  // No process: nothing is launched.
+  Result* r = embed_if_loaded(Config());
+  EXPECT_TRUE(r->done);
+  EXPECT_EQ(r->status, EmbeddingStatus::kNotLoaded);
+  EXPECT_TRUE(services_.empty());
+  EXPECT_FALSE(host_->HasProcessForTesting());
+
+  // Loaded (by background work): used.
+  Embed({"warm up"});
+  ASSERT_EQ(services_.size(), 1u);
+  r = embed_if_loaded(Config());
+  EXPECT_EQ(r->status, EmbeddingStatus::kOk);
+  ASSERT_EQ(r->vectors.size(), 1u);
+
+  // Another model is not this one: the loaded process stays.
+  EmbeddingModelConfig other = Config();
+  other.dimensions = 8;
+  r = embed_if_loaded(other);
+  EXPECT_EQ(r->status, EmbeddingStatus::kNotLoaded);
+  EXPECT_EQ(services_.size(), 1u);
+  EXPECT_TRUE(host_->HasProcessForTesting());
+
+  // Once the idle process has ended, typing doesn't bring it back.
+  task_environment_.FastForwardBy(base::Minutes(6));
+  ASSERT_FALSE(host_->HasProcessForTesting());
+  r = embed_if_loaded(Config());
+  EXPECT_EQ(r->status, EmbeddingStatus::kNotLoaded);
+  EXPECT_EQ(services_.size(), 1u);
+}
+
 TEST_F(EmbeddingProcessHostTest, AnotherModelReplacesTheProcess) {
   Embed({"a"});
   EmbeddingModelConfig other = Config();
