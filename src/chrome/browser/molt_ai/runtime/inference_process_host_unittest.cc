@@ -74,6 +74,10 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
       }
     }
   }
+  // Embedding models have their own host (embedding_process_host_unittest).
+  void LoadEmbeddingModel(mojom::EmbeddingModelLoadParamsPtr params,
+                          mojo::PendingReceiver<mojom::EmbeddingModel> model,
+                          LoadEmbeddingModelCallback callback) override {}
 
   // mojom::Model:
   void StreamChat(

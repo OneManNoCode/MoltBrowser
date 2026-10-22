@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/threading/sequence_bound.h"
+#include "chrome/services/molt_ai/inference/llama_embedding_engine.h"
 #include "chrome/services/molt_ai/inference/llama_engine.h"
 #include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -16,6 +17,7 @@
 
 namespace molt_ai {
 
+class MoltEmbeddingModelImpl;
 class MoltModelImpl;
 
 // molt_ai.mojom.MoltInferenceService: on-device llama.cpp inference in a
@@ -40,12 +42,20 @@ class MoltInferenceService : public mojom::MoltInferenceService {
   void LoadModel(mojom::ModelLoadParamsPtr params,
                  mojo::PendingReceiver<mojom::Model> model,
                  LoadModelCallback callback) override;
+  // Semantic search (docs/design/SEMANTIC_SEARCH.md); the process's one
+  // load, like LoadModel.
+  void LoadEmbeddingModel(mojom::EmbeddingModelLoadParamsPtr params,
+                          mojo::PendingReceiver<mojom::EmbeddingModel> model,
+                          LoadEmbeddingModelCallback callback) override;
 
  private:
   void OnLoaded(mojo::PendingReceiver<mojom::Model> model,
                 LoadModelCallback callback,
                 EngineLoadResult result);
   void OnModelDisconnected();
+  void OnEmbeddingLoaded(mojo::PendingReceiver<mojom::EmbeddingModel> model,
+                         LoadEmbeddingModelCallback callback,
+                         EmbeddingLoadResult result);
 
   SEQUENCE_CHECKER(sequence_checker_);
 
@@ -54,6 +64,9 @@ class MoltInferenceService : public mojom::MoltInferenceService {
   // The engine while it loads; moved into |model_| on success.
   base::SequenceBound<LlamaEngine> engine_;
   std::unique_ptr<MoltModelImpl> model_;
+  // The embedding engine while it loads; moved into |embedding_model_|.
+  base::SequenceBound<LlamaEmbeddingEngine> embedding_engine_;
+  std::unique_ptr<MoltEmbeddingModelImpl> embedding_model_;
 
   base::WeakPtrFactory<MoltInferenceService> weak_factory_{this};
 };

@@ -146,6 +146,25 @@ TEST(HashingEmbedderTest, LongWordsAreCutOnCodePointBoundaries) {
   EXPECT_NE(e.Embed(repeat("字", 20)), e.Embed(repeat("字", 21)));
 }
 
+// The batch interface of a synchronous embedder answers before returning,
+// one vector per text, and queries embed like documents.
+TEST(HashingEmbedderTest, EmbedBatchIsSynchronous) {
+  HashingEmbedder e;
+  EXPECT_TRUE(e.is_synchronous());
+  bool called = false;
+  e.EmbedBatch({"miso soup", "", "NASA"}, EmbedPurpose::kQuery,
+               [&](EmbedBatchResult r) {
+                 called = true;
+                 EXPECT_EQ(r.outcome, EmbedOutcome::kOk);
+                 ASSERT_EQ(r.vectors.size(), 3u);
+                 EXPECT_EQ(r.vectors[0], e.Embed("miso soup"));
+                 EXPECT_EQ(Norm(r.vectors[1]), 0.0f);
+                 EXPECT_EQ(r.vectors[2], e.Embed("nasa"));
+               });
+  EXPECT_TRUE(called);
+  EXPECT_EQ(e.space().Key(), "hashing-v3/256");
+}
+
 }  // namespace
 }  // namespace memory
 }  // namespace molt_ai

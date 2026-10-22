@@ -17,14 +17,47 @@ source_set("stream_validator") {
   ]
 }
 
+# Text embeddings for semantic memory search
+# (docs/design/SEMANTIC_SEARCH.md): checks on what the embedding model sends
+# (std-only, so the standalone test build links it too) ...
+source_set("embedding_validator") {
+  sources = [
+    "embedding_validator.cc",
+    "embedding_validator.h",
+  ]
+}
+
+# ... and the host of its sandboxed process (UI thread).
+source_set("embedding_host") {
+  sources = [
+    "embedding_process_host.cc",
+    "embedding_process_host.h",
+  ]
+  public_deps = [
+    ":stream_validator",
+    "//base",
+    "//chrome/services/molt_ai/inference/public/mojom",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+  ]
+  deps = [
+    ":embedding_validator",
+    "//chrome/browser/lifetime:termination_notification",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "embedding_process_host_unittest.cc",
+    "embedding_validator_unittest.cc",
     "inference_process_host_unittest.cc",
     "stream_validator_unittest.cc",
   ]
   deps = [
+    ":embedding_host",
+    ":embedding_validator",
     ":stream_validator",
     "//base",
     "//base/test:test_support",

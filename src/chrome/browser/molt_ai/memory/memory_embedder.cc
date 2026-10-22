@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
+#include <utility>
 
 #include "chrome/browser/molt_ai/memory/memory_types.h"
 
@@ -312,6 +314,48 @@ std::vector<float> HashingEmbedder::Embed(const std::string& text) const {
 
 std::unique_ptr<MemoryEmbedder> CreateDefaultEmbedder() {
   return std::make_unique<HashingEmbedder>();
+}
+
+std::string EmbedderSpace::Key() const {
+  return model + "/" + std::to_string(dimensions);
+}
+
+void MemoryEmbedder::EmbedBatch(std::vector<std::string> texts,
+                                EmbedPurpose purpose,
+                                BatchCallback done) const {
+  EmbedBatchResult result;
+  result.outcome = EmbedOutcome::kOk;
+  result.vectors.reserve(texts.size());
+  for (const std::string& text : texts) {
+    result.vectors.push_back(Embed(text));
+  }
+  if (done) done(std::move(result));
+}
+
+EmbedderSpace HashingEmbedder::space() const {
+  return HashingEmbedderSpace();
+}
+
+EmbedderSpace HashingEmbedderSpace() {
+  EmbedderSpace space;
+  space.model = "hashing-v" + std::to_string(kHashingEmbedderVersion);
+  space.dimensions = kEmbeddingDim;
+  return space;
+}
+
+int HashingVersionOfSpaceKey(const std::string& key) {
+  static constexpr char kPrefix[] = "hashing-v";
+  constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+  if (key.compare(0, kPrefixLen, kPrefix) != 0) return 0;
+  int version = 0;
+  size_t i = kPrefixLen;
+  for (; i < key.size() && key[i] >= '0' && key[i] <= '9'; ++i) {
+    if (version > 100000) return 0;
+    version = version * 10 + (key[i] - '0');
+  }
+  // Digits, then "/<dimensions>".
+  if (i == kPrefixLen || i >= key.size() || key[i] != '/') return 0;
+  return version;
 }
 
 }  // namespace memory

@@ -155,25 +155,135 @@ const SHIELD_STATE = {
   disabledByCommandLine: false, hooksOff: ['molt-shield-websocket'],
 };
 
+// molt://memory: what memSemanticStatus answers (the test changes it), and
+// the [query, top_k] of each memSearch.
+let memorySemanticStatus = {
+  available: true,
+  model: {state: 'not_installed', name: '<img src=x onerror=alert(1)>',
+          license_name: '<b>Apache</b>', license_url: 'javascript:alert(1)',
+          size_bytes: 640000000, received: 0, total: 0, reason: '', error: ''},
+  index: {model_active: false, migrating: false, done: 0, total: 0, pending: 0,
+          background_allowed: true, model_failed: false},
+};
+const memorySearches = [];
+
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
    listeners: ['#searchForm:submit', '.card.ai:click', '.card.net:click']},
   {name: 'molt://memory', file: 'molt_ai_memory_ui.cc',
    listeners: ['#search-btn:click', '#forget-domain-btn:click',
-               '#wipe-btn:click', '#q:keydown'],
+               '#wipe-btn:click', '#q:keydown', '#mem-enabled:change',
+               '#model-download-btn:click', '#model-cancel-btn:click',
+               '#model-remove-btn:click'],
    responses: {
      memStats: {docs: 2, chunks: 9},
      memListRecent: {docs: [
        {doc_id: 1, url: 'https://example.com/a"><img src=x>', title: '<b>t</b>',
         visited_at: 1700000000, word_count: 5},
        {doc_id: 2, url: 'javascript:alert(1)', title: 'js', visited_at: 0}]},
+     memSemanticStatus: () => memorySemanticStatus,
+     memSearch(args) {
+       memorySearches.push(Array.from(args).slice(1));  // a Node array
+       return {model: true, ok: true, hits: [
+         {url: 'https://example.com/r"><img src=x>', title: '<b>Miso soup</b>',
+          snippet: '… a <img src=x onerror=alert(1)> MISO-glazed soup, misoyaki …',
+          score: 0.71, visited_at: 1700000000},
+         {url: 'javascript:alert(1)', title: '<i>js</i>', snippet: 'plain', score: 0.2}]};
+     },
+     memModelRemove: {success: true},
    },
-   after(window) {
-     const links = window.document.querySelectorAll('#results a[target=_blank]');
+   async after(window) {
+     const doc = window.document;
+     const tick = () => new Promise((r) => setTimeout(r, 30));
+     const links = doc.querySelectorAll('#results a[target=_blank]');
      assert.strictEqual(links.length, 1, 'only the http(s) result is a link');
      assert(/^https:\/\/example\.com\//.test(links[0].href), links[0].href);
-     assert.strictEqual(window.document.querySelectorAll('#results img, #results b').length, 0,
+     assert.strictEqual(doc.querySelectorAll('#results img, #results b').length, 0,
                         'result text is not parsed as HTML');
+     assert(window.__sent.includes('memSemanticStatus'), 'model status asked on load');
+
+     // The model card: not installed, hostile name/licence stay text, a
+     // javascript: licence URL is not a link, only Download is offered.
+     assert(!doc.getElementById('search-model').hidden);
+     assert.strictEqual(doc.getElementById('model-name').textContent,
+                        '<img src=x onerror=alert(1)>');
+     assert.strictEqual(doc.querySelectorAll('#search-model img, #search-model a').length, 0);
+     assert(!doc.getElementById('model-download-btn').hidden);
+     assert(/640 MB/.test(doc.getElementById('model-download-btn').textContent));
+     assert(doc.getElementById('model-cancel-btn').hidden);
+     assert(doc.getElementById('model-remove-btn').hidden);
+     assert(/matching words/.test(doc.getElementById('engine').textContent));
+
+     // Search by meaning: one result per page with title, URL, date and a
+     // snippet whose matching words are <mark>ed as text.
+     doc.getElementById('q').value = '  miso soup ';
+     doc.getElementById('search-btn').click();
+     await tick();
+     assert.deepStrictEqual(memorySearches[memorySearches.length - 1], ['miso soup', 20]);
+     const hits = doc.querySelectorAll('#results .hit');
+     assert.strictEqual(hits.length, 2);
+     assert.strictEqual(doc.querySelectorAll('#results a[target=_blank]').length, 1);
+     assert.strictEqual(doc.querySelectorAll('#results img, #results b, #results i').length, 0);
+     assert.strictEqual(hits[0].querySelector('.hit-title').textContent, '<b>Miso soup</b>');
+     assert.strictEqual(hits[0].querySelector('.hit-url').textContent,
+                        'https://example.com/r"><img src=x>');
+     assert.strictEqual(hits[0].querySelector('.hit-snippet').textContent,
+                        '… a <img src=x onerror=alert(1)> MISO-glazed soup, misoyaki …');
+     assert.deepStrictEqual(
+         Array.from(hits[0].querySelectorAll('.hit-snippet mark')).map((m) => m.textContent),
+         ['MISO', 'soup', 'misoyaki']);
+     assert.strictEqual(hits[1].querySelector('.hit-title').textContent, '<i>js</i>');
+     assert(/by meaning/.test(doc.getElementById('timing').textContent));
+
+     // Enter in the box searches too.
+     doc.getElementById('q').dispatchEvent(
+         new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+     await tick();
+     assert.strictEqual(memorySearches.length, 2, 'Enter searches');
+
+     // Installed and building the index in the background: Remove offered,
+     // progress shown on the engine line.
+     memorySemanticStatus = Object.assign({}, memorySemanticStatus, {
+       model: Object.assign({}, memorySemanticStatus.model,
+                            {state: 'installed', license_url: 'https://example.com/lic'}),
+       index: {model_active: false, migrating: true, done: 1200, total: 3400,
+               pending: 0, background_allowed: false, model_failed: false}});
+     window.loadSemantic(false);
+     await tick();
+     assert(!doc.getElementById('model-remove-btn').hidden);
+     assert(doc.getElementById('model-download-btn').hidden);
+     assert(/1,200 of 3,400/.test(doc.getElementById('engine').textContent),
+            doc.getElementById('engine').textContent);
+     assert(/paused/.test(doc.getElementById('engine').textContent));
+     const lic = doc.querySelectorAll('#model-license a');
+     assert.strictEqual(lic.length, 1, 'an https licence URL is a link');
+     assert.strictEqual(lic[0].textContent, '<b>Apache</b>');
+
+     // Downloading: progress bar and Cancel.
+     memorySemanticStatus = Object.assign({}, memorySemanticStatus, {
+       model: Object.assign({}, memorySemanticStatus.model,
+                            {state: 'downloading', received: 320000000, total: 640000000})});
+     window.loadSemantic(false);
+     await tick();
+     assert(!doc.getElementById('model-progress').hidden);
+     assert.strictEqual(doc.getElementById('model-progress-bar').style.width, '50%');
+     assert(!doc.getElementById('model-cancel-btn').hidden);
+
+     // Not offered (e.g. not pinned yet): the reason as text, no buttons.
+     memorySemanticStatus = Object.assign({}, memorySemanticStatus, {
+       model: Object.assign({}, memorySemanticStatus.model,
+                            {state: 'not_offered', reason: '<b>not here</b>'})});
+     window.loadSemantic(false);
+     await tick();
+     assert.strictEqual(doc.getElementById('model-state').textContent, '<b>not here</b>');
+     for (const id of ['model-download-btn', 'model-cancel-btn', 'model-remove-btn']) {
+       assert(doc.getElementById(id).hidden, id);
+     }
+     // No memory in this profile (off-the-record): no model card.
+     memorySemanticStatus = {available: false};
+     window.loadSemantic(false);
+     await tick();
+     assert(doc.getElementById('search-model').hidden);
    }},
   {name: 'molt://ai-update', file: 'molt_ai_update_ui.cc', listeners: []},
   {name: 'molt://import', file: 'molt_import_ui.cc',
