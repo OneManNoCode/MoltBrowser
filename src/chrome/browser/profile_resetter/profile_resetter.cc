@@ -24,6 +24,7 @@
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/google/google_brand.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_service.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profile_resetter/brandcode_config_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
@@ -323,6 +324,10 @@ void ProfileResetter::ResetContentSettings() {
           FileSystemAccessPermissionContextFactory::GetForProfile(profile_)) {
     permission_context->RevokeAllActiveGrants();
   }
+
+  // MoltBrowser: the built-in AI APIs' per-site answers and prompt pauses
+  // are kept in a MoltBrowser pref, not in HostContentSettingsMap.
+  molt_ai::web_ai::ResetWebAISitePermissions(profile_);
 
   MarkAsDone(CONTENT_SETTINGS);
 }

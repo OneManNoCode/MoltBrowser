@@ -7,8 +7,9 @@
 # Design: docs/design/WEB_AI_APIS.md.
 
 # The decisions (availability, consent, buckets, counting, limits, which
-# model) and the option -> prompt mapping. Standard library only, so the
-# standalone test build links it too.
+# model), the option -> prompt mapping, and the per-site answers and prompt
+# pauses with their stored form. Standard library only, so the standalone
+# test build links it too.
 source_set("logic") {
   sources = [
     "web_ai_conversation.cc",
@@ -17,6 +18,8 @@ source_set("logic") {
     "web_ai_policy.h",
     "web_ai_prompts.cc",
     "web_ai_prompts.h",
+    "web_ai_site_permissions.cc",
+    "web_ai_site_permissions.h",
   ]
 }
 
@@ -44,7 +47,9 @@ source_set("manager") {
 
 # The browser side: the binder ChromeContentBrowserClient calls, the
 # document environment (MoltNet, policies, permissions policy, the
-# top-level site), the consent infobar and the BrowserAIRuntime backend.
+# top-level site), the consent infobar, the per-profile answers (a keyed
+# service over a profile pref; Clear browsing data and profile reset call
+# its hooks) and the BrowserAIRuntime backend.
 source_set("web_ai") {
   sources = [
     "molt_ai_manager_binder.cc",
@@ -53,6 +58,8 @@ source_set("web_ai") {
     "runtime_web_ai_backend.h",
     "web_ai_consent.cc",
     "web_ai_consent.h",
+    "web_ai_site_permissions_service.cc",
+    "web_ai_site_permissions_service.h",
   ]
   public_deps = [ ":manager" ]
   deps = [
@@ -65,8 +72,10 @@ source_set("web_ai") {
     "//chrome/common",
     "//components/infobars/content",
     "//components/infobars/core",
+    "//components/keyed_service/core",
     "//components/optimization_guide/core:features",
     "//components/policy/core/common:common_constants",
+    "//components/pref_registry",
     "//components/prefs",
     "//components/url_formatter",
     "//content/public/browser",
@@ -93,6 +102,7 @@ source_set("unit_tests") {
     "web_ai_conversation_unittest.cc",
     "web_ai_policy_unittest.cc",
     "web_ai_prompts_unittest.cc",
+    "web_ai_site_permissions_unittest.cc",
   ]
   deps = [
     ":logic",

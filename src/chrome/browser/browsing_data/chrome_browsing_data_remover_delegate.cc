@@ -56,6 +56,7 @@
 #include "chrome/browser/media/media_engagement_service.h"
 #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/password_manager/factories/account_password_store_factory.h"
@@ -768,6 +769,11 @@ void ChromeBrowsingDataRemoverDelegate::RemoveEmbedderData(
     ChromeTranslateClient::CreateTranslatePrefs(prefs)
         ->DeleteNeverPromptSitesBetween(delete_begin_, delete_end_);
 
+    // MoltBrowser: the built-in AI APIs' Allow / Block answers per site
+    // (docs/design/WEB_AI_APIS.md).
+    molt_ai::web_ai::ClearWebAISiteAnswers(profile_, delete_begin_, delete_end_,
+                                           nullable_filter);
+
     host_content_settings_map_->ClearSettingsForOneTypeWithPredicate(
         ContentSettingsType::PERMISSION_AUTOREVOCATION_DATA, delete_begin,
         delete_end, website_settings_filter);
@@ -932,6 +938,9 @@ void ChromeBrowsingDataRemoverDelegate::RemoveEmbedderData(
 
     PermissionDecisionAutoBlockerFactory::GetForProfile(profile_)
         ->RemoveEmbargoAndResetCounts(filter);
+    // MoltBrowser: the built-in AI APIs' prompt pauses, like the embargoes
+    // above.
+    molt_ai::web_ai::ClearWebAIPromptHistory(profile_, nullable_filter);
     if (base::FeatureList::IsEnabled(
             permissions::features::kPermissionHeuristicAutoGrant)) {
       PermissionActionsHistoryFactory::GetForProfile(profile_)

@@ -443,35 +443,5 @@ TEST(WebAIPolicyTest, SchedulerSessionSlots) {
   EXPECT_EQ(s.SessionsForSite("a"), 0u);
 }
 
-// ---------------------------------------------------------------------------
-// ConsentMap
-// ---------------------------------------------------------------------------
-
-TEST(WebAIPolicyTest, ConsentMap) {
-  ConsentMap map;
-  EXPECT_EQ(map.Get("https://a.test"), SiteConsent::kAsk);
-  map.Set("https://a.test", SiteConsent::kAllowed);
-  map.Set("https://b.test", SiteConsent::kBlocked);
-  EXPECT_EQ(map.Get("https://a.test"), SiteConsent::kAllowed);
-  EXPECT_EQ(map.Get("https://b.test"), SiteConsent::kBlocked);
-  map.Set("https://a.test", SiteConsent::kAsk);
-  EXPECT_EQ(map.Get("https://a.test"), SiteConsent::kAsk);
-  EXPECT_EQ(map.size(), 1u);
-}
-
-TEST(WebAIPolicyTest, ConsentMapForgetsTheOldestPastItsCap) {
-  ConsentMap map;
-  for (size_t i = 0; i < ConsentMap::kMaxEntries; ++i) {
-    map.Set("https://s" + std::to_string(i) + ".test", SiteConsent::kAllowed);
-  }
-  // Answering s0 again makes it the newest.
-  map.Set("https://s0.test", SiteConsent::kBlocked);
-  map.Set("https://new.test", SiteConsent::kAllowed);
-  EXPECT_EQ(map.size(), ConsentMap::kMaxEntries);
-  EXPECT_EQ(map.Get("https://s0.test"), SiteConsent::kBlocked);
-  EXPECT_EQ(map.Get("https://s1.test"), SiteConsent::kAsk);
-  EXPECT_EQ(map.Get("https://new.test"), SiteConsent::kAllowed);
-}
-
 }  // namespace
 }  // namespace molt_ai::web_ai

@@ -512,7 +512,10 @@ class MoltAIManager::WritingCreate : public CreateRequest {
 
 MoltAIManager::MoltAIManager(std::unique_ptr<WebAIEnvironment> environment,
                              WebAIBackend* backend)
-    : environment_(std::move(environment)), backend_(backend) {}
+    : environment_(std::move(environment)), backend_(backend) {
+  environment_->ObserveConsent(base::BindRepeating(
+      &MoltAIManager::OnConsentChanged, weak_factory_.GetWeakPtr()));
+}
 
 MoltAIManager::~MoltAIManager() {
   // Sessions cancel their generations and release their site slots while
@@ -524,6 +527,25 @@ MoltAIManager::~MoltAIManager() {
 void MoltAIManager::AddReceiver(
     mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
   receivers_.Add(this, std::move(receiver));
+}
+
+void MoltAIManager::OnConsentChanged() {
+  if (sessions_.empty()) {
+    return;
+  }
+  // Not now: the change may come from code a session is called from.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&MoltAIManager::CloseSessionsIfNotAllowed,
+                                weak_factory_.GetWeakPtr()));
+}
+
+void MoltAIManager::CloseSessionsIfNotAllowed() {
+  if (environment_->GetConsent() == SiteConsent::kAllowed) {
+    return;
+  }
+  // Revoked: each session cancels its generation and closes its pipe, so
+  // the page's calls fail; create() asks again.
+  sessions_.clear();
 }
 
 const std::string& MoltAIManager::site_key() {
@@ -911,6 +933,12 @@ void MoltAIManager::OnCreateModelReady(uint64_t id,
     return;
   }
   std::unique_ptr<CreateRequest> request = TakeCreate(id);
+  // The answer may have been taken back while the model loaded.
+  if (environment_->GetConsent() != SiteConsent::kAllowed) {
+    request->Fail(AIManagerCreateClientError::kUnableToCreateSession,
+                  nullptr);
+    return;
+  }
   if (!ok) {
     request->Fail(AIManagerCreateClientError::kUnableToCreateSession,
                   nullptr);
