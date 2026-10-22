@@ -15,6 +15,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/agents/agent_vision.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -61,7 +62,8 @@ WebAgent::WebAgent(content::WebContents* web_contents,
     : content::WebContentsObserver(web_contents),
       web_contents_(web_contents),
       runtime_(runtime),
-      dom_bridge_(std::make_unique<DOMContentBridge>(web_contents)) {}
+      dom_bridge_(std::make_unique<DOMContentBridge>(web_contents)),
+      screenshotter_(std::make_unique<AgentScreenshotter>(web_contents)) {}
 
 WebAgent::~WebAgent() = default;
 
@@ -84,6 +86,10 @@ void WebAgent::Start(const std::string& goal,
   bad_replies_in_a_row_ = 0;
   bad_replies_total_ = 0;
   retry_note_.clear();
+  screenshotter_->Cancel();
+  screenshot_.reset();
+  sent_screenshot_ = false;
+  screenshots_failed_ = false;
   goal_       = goal;
   step_cb_    = std::move(on_step);
   done_cb_    = std::move(on_done);
@@ -115,6 +121,7 @@ void WebAgent::Start(const std::string& goal,
 void WebAgent::Cancel() {
   cancelled_ = true;
   pending_confirm_.Reset();
+  screenshotter_->Cancel();
   weak_factory_.InvalidateWeakPtrs();
   DVLOG(1) << "[WebAgent] Cancelled";
 }
@@ -155,8 +162,8 @@ void WebAgent::IterateOnce() {
 void WebAgent::AskLLM() {
   if (cancelled_) return;
 
-  std::string prompt = agent_prompt::ToRawPrompt(
-      agent_prompt::BuildAgentPrompt(BuildPromptInput()));
+  agent_prompt::AgentPrompt prompt =
+      agent_prompt::BuildAgentPrompt(BuildPromptInput());
   BrowserAIRuntime* rt = runtime_;
   auto self = weak_factory_.GetWeakPtr();
 
@@ -164,19 +171,35 @@ void WebAgent::AskLLM() {
   opts.max_tokens = agent_actions::kMaxReplyTokens;
   opts.temperature = 0.2f;
   opts.stream = false;
-  // The reply must be one action on the elements the model is shown.
+  // The reply must be one action on the elements the model is shown, with
+  // or without a screenshot.
   opts.json_schema = agent_actions::BuildActionSchema(observation_);
 
-  // RunPrompt is blocking. Post it to a background thread; reply on UI.
+  // At most one image, the current observation's; older ones are never
+  // sent again.
+  sent_screenshot_ = screenshot_.has_value();
+
+  // Generation is blocking. Post it to a background thread; reply on UI.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
-          [](BrowserAIRuntime* rt, std::string p,
+          [](BrowserAIRuntime* rt, agent_prompt::AgentPrompt p,
+             std::optional<ModelImage> image,
              PromptOptions opts) -> GenerationResult {
-            return rt->RunPrompt(p, opts);
+            if (!image) {
+              // Text-only: one raw prompt, as without vision.
+              return rt->RunPrompt(agent_prompt::ToRawPrompt(p), opts);
+            }
+            // With a screenshot: a chat request, the rules as the system
+            // prompt and the image with the (untrusted) user turn.
+            ChatPrompt chat;
+            chat.system_prompt = std::move(p.system);
+            chat.user_message = std::move(p.user);
+            chat.user_images.push_back(std::move(*image));
+            return rt->StreamChat(chat, TokenCallback(), opts);
           },
-          rt, std::move(prompt), std::move(opts)),
+          rt, std::move(prompt), screenshot_, std::move(opts)),
       base::BindOnce(
           [](base::WeakPtr<WebAgent> self, GenerationResult result) {
             if (self) self->OnLLMDecision(std::move(result));
@@ -195,6 +218,20 @@ void WebAgent::OnLLMDecision(GenerationResult result) {
   reply.truncated = result.truncated;
   reply.text = std::move(result.text);
   reply.error_message = std::move(result.error_message);
+
+  // A request with a screenshot that failed (the model can't take images
+  // after all, or the image couldn't be encoded) is asked again without
+  // it, and the rest of the run is text-only. Not counted as a bad reply.
+  if (sent_screenshot_ &&
+      agent_vision::ShouldRetryWithoutImage(reply, result.images_unsupported)) {
+    LOG(WARNING) << "[WebAgent] A request with a screenshot failed; "
+                    "continuing without screenshots";
+    screenshots_failed_ = true;
+    screenshot_.reset();
+    AskLLM();
+    return;
+  }
+
   agent_actions::ReplyOutcome outcome = agent_actions::InterpretReply(
       reply, observation_, bad_replies_in_a_row_, bad_replies_total_);
   // Model output can carry typed text — log only its shape, never its
@@ -607,12 +644,18 @@ void WebAgent::AllowOriginAndContinue(const url::Origin& origin,
 
 void WebAgent::ContinueAfterObserve(const StructuredPage& page) {
   if (cancelled_) return;
+  // The document the snapshot runs in (EvalJS uses the primary main
+  // frame): a screenshot is taken only of that document.
+  content::WeakDocumentPtr document;
+  if (web_contents_ && web_contents_->GetPrimaryMainFrame())
+    document = web_contents_->GetPrimaryMainFrame()->GetWeakDocumentPtr();
   EvalJS(agent_actions::BuildElementSnapshotScript(),
          base::BindOnce(&WebAgent::OnElementsObserved,
-                        weak_factory_.GetWeakPtr(), page));
+                        weak_factory_.GetWeakPtr(), page, std::move(document)));
 }
 
 void WebAgent::OnElementsObserved(const StructuredPage& page,
+                                  content::WeakDocumentPtr document,
                                   base::Value snapshot) {
   if (cancelled_) return;
 
@@ -624,8 +667,8 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   url::Origin current;
   if (web_contents_ && web_contents_->GetPrimaryMainFrame())
     current = web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin();
-  if (!IsWebOrigin(current) || !IsOriginAllowed(current) ||
-      snapshot_origin != current.Serialize()) {
+  const bool origin_allowed = IsWebOrigin(current) && IsOriginAllowed(current);
+  if (!origin_allowed || snapshot_origin != current.Serialize()) {
     observation_ = agent_actions::Observation();
   }
 
@@ -640,6 +683,34 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
                          "\n\n" + compact +
                          "\nELEMENTS:\n" +
                          agent_actions::DescribeElements(observation_);
+
+  // A new observation: the last one's screenshot no longer applies. Take
+  // one of this one if the model sees images (AgentScreenshotter decides,
+  // and answers at once when it won't capture).
+  screenshot_.reset();
+  AgentScreenshotter::Request request;
+  request.observation = observation_;
+  request.document = std::move(document);
+  request.observed_origin = snapshot_origin;
+  request.origin_allowed = origin_allowed;
+  request.model_sees_images = runtime_ && runtime_->LoadedModelSeesImages();
+  request.run_allows_images = !screenshots_failed_;
+  screenshotter_->Capture(std::move(request),
+                          base::BindOnce(&WebAgent::OnScreenshot,
+                                         weak_factory_.GetWeakPtr(), page));
+}
+
+void WebAgent::OnScreenshot(const StructuredPage& page,
+                            std::optional<ModelImage> image) {
+  if (cancelled_) return;
+  screenshot_ = std::move(image);
+  DVLOG(1) << "[WebAgent] Observation " << (screenshot_ ? "with" : "without")
+           << " a screenshot";
+  FinishObservation(page);
+}
+
+void WebAgent::FinishObservation(const StructuredPage& page) {
+  if (cancelled_) return;
 
   // Bootstrap path: first observe before the very first LLM call.
   if (iteration_ == 0 && history_.empty() && pending_step_.action.empty()) {
@@ -730,6 +801,13 @@ void WebAgent::MaybeNavDone() {
 void WebAgent::OnActionDone(bool ok, std::string note) {
   if (cancelled_) return;
 
+  // TYPE and FILL_FORM write to the page without observing it again: the
+  // screenshot would show the fields as they were.
+  if (pending_action_.type == ActionType::kType ||
+      pending_action_.type == ActionType::kFillForm) {
+    screenshot_.reset();
+  }
+
   pending_step_.success = ok;
   pending_step_.note    = note;
   if (pending_step_.observation.empty())
@@ -805,6 +883,7 @@ agent_prompt::PromptInput WebAgent::BuildPromptInput() const {
   input.max_steps = kMaxIterations;
   input.steps_remaining = kMaxIterations - iteration_;
   input.retry_note = retry_note_;
+  input.with_screenshot = screenshot_.has_value();
   return input;
 }
 

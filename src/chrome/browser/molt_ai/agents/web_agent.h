@@ -41,6 +41,11 @@
 //     take an element id from the observation (TYPE / FILL_FORM only text
 //     fields, never a password field), which the browser maps to the
 //     selector its own snapshot script built.
+//   - When the loaded model sees images, each observation may also carry a
+//     screenshot of the visible viewport (AgentScreenshotter): this tab
+//     only, an http(s) page in scope, sensitive fields and frames masked,
+//     the element ids tagged. It goes with the user turn as page content
+//     and changes nothing above: the reply is still one action on an id.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
@@ -57,10 +62,13 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/agent_prompt.h"
+#include "chrome/browser/molt_ai/agents/agent_screenshot.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/runtime/model_image.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "url/origin.h"
 
@@ -177,7 +185,15 @@ class WebAgent : public content::WebContentsObserver {
                               const StructuredPage& page);
   // Lists the page's interactive elements (the ids the model may use).
   void ContinueAfterObserve(const StructuredPage& page);
-  void OnElementsObserved(const StructuredPage& page, base::Value snapshot);
+  // |document| is the one the snapshot ran in.
+  void OnElementsObserved(const StructuredPage& page,
+                          content::WeakDocumentPtr document,
+                          base::Value snapshot);
+  // The observation's screenshot, if any (AgentScreenshotter).
+  void OnScreenshot(const StructuredPage& page,
+                    std::optional<ModelImage> image);
+  // Completes the step the observation was for (or starts the run).
+  void FinishObservation(const StructuredPage& page);
 
   // -- Origin scope / user confirmation ------------------------------
   bool IsOriginAllowed(const url::Origin& origin) const;
@@ -212,6 +228,7 @@ class WebAgent : public content::WebContentsObserver {
   raw_ptr<content::WebContents> web_contents_;  // not owned
   raw_ptr<BrowserAIRuntime> runtime_;           // not owned
   std::unique_ptr<DOMContentBridge> dom_bridge_;
+  std::unique_ptr<AgentScreenshotter> screenshotter_;
 
   std::string goal_;
   StepCallback step_cb_;
@@ -247,6 +264,15 @@ class WebAgent : public content::WebContentsObserver {
   int bad_replies_in_a_row_ = 0;
   int bad_replies_total_ = 0;
   std::string retry_note_;
+
+  // The current observation's screenshot (masked and tagged), sent with
+  // the next request; dropped at the next observation, and by TYPE and
+  // FILL_FORM, which change the page without observing it again.
+  std::optional<ModelImage> screenshot_;
+  // The last request carried |screenshot_|.
+  bool sent_screenshot_ = false;
+  // A request with a screenshot failed: the rest of the run is text-only.
+  bool screenshots_failed_ = false;
 
   int iteration_ = 0;
   static constexpr int kMaxIterations = 20;

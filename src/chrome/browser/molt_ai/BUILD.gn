@@ -72,6 +72,8 @@ source_set("molt_ai_dom_unit_tests") {
 # through base::JSONWriter / JSQ().
 source_set("molt_ai_agents") {
   sources = [
+    "agents/agent_screenshot.cc",
+    "agents/agent_screenshot.h",
     "agents/web_agent.cc",
     "agents/web_agent.h",
   ]
@@ -80,17 +82,38 @@ source_set("molt_ai_agents") {
     ":molt_ai_dom",
     ":molt_ai_runtime",
     "//base",
+
+    # chrome://flags/#molt-agent-screenshots.
+    "//chrome/browser/molt_ai/agents:features",
+
+    # The screenshot scaled for the model on a worker (Skia).
+    "//chrome/browser/molt_ai/runtime:model_image_prep",
+
+    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
+    "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/profiles:profile",
+    "//chrome/services/molt_ai/inference/engine:image_input",
+
+    # The compositor's copy of the tab's view.
+    "//components/viz/common",
     "//content/public/browser",
+    "//content/public/common",
+    "//mojo/public/cpp/bindings",
+    "//skia",
     "//ui/base",
+    "//ui/gfx/geometry",
     "//url",
   ]
 
   # web_agent.h exposes agent_safety types (navigation allowlist, element
-  # probe, prompt fencing), the action format (agents/agent_actions.h) and
-  # the prompt (agents/agent_prompt.h).
+  # probe, prompt fencing), the action format (agents/agent_actions.h), the
+  # prompt (agents/agent_prompt.h) and the screenshot logic
+  # (agents/agent_vision.h, runtime/model_image.h).
   public_deps = [
     "//chrome/browser/molt_ai/agents:agent_actions",
     "//chrome/browser/molt_ai/agents:agent_prompt",
+    "//chrome/browser/molt_ai/agents:agent_vision",
+    "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
 }
@@ -230,6 +253,9 @@ group("molt_ai") {
     # Fingerprinting protection: session seed + renderer switches (the engine
     # is in Blink, //third_party/blink/renderer/core/molt_fingerprinting).
     "fingerprinting",
+
+    # The web agent's screenshots switch; about_flags.cc lists it.
+    "agents:features",
 
     # MoltNet's touch / pointer / hover preferences and CPU tier; called
     # from chrome_content_browser_client.cc.

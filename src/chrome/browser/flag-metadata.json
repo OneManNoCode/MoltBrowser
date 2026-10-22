@@ -7057,6 +7057,12 @@
     "expiry_milestone": 160
   },
   {
+    // MoltBrowser: the web agent's screenshots switch; never expires.
+    "name": "molt-agent-screenshots",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     // MoltBrowser: fingerprinting protection kill switch; never expires.
     "name": "molt-fingerprinting-protection",
     "owners": [ "moltbrowser" ],

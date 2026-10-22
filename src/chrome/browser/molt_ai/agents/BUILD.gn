@@ -1,7 +1,8 @@
 # Copyright 2026 GenEye AI Labs Inc.
 # Licensed under GPLv3. See LICENSE file.
 #
-# The web agent itself (web_agent.*) is //chrome/browser/molt_ai:molt_ai_agents.
+# The web agent itself (web_agent.*) and its screenshot capture
+# (agent_screenshot.*) are //chrome/browser/molt_ai:molt_ai_agents.
 
 # The agent's action format: the element snapshot, the JSON Schema the
 # model decodes under, and the strict parser of its replies
@@ -56,7 +57,8 @@ source_set("agent_prompt") {
 # The web agent's screenshots, the pure part: whether to capture, the
 # geometry script and its parser, masks and element tags drawn on the model
 # image (docs/design/AGENT_ACTIONS.md §2.6). No content/ and no Skia, so
-# molt_ai_unittests links it.
+# molt_ai_unittests links it. The capture is AgentScreenshotter
+# (//chrome/browser/molt_ai:molt_ai_agents).
 source_set("agent_vision") {
   sources = [
     "agent_vision.cc",
@@ -75,6 +77,18 @@ source_set("agent_vision") {
     "//chrome/browser/molt_ai/tor:requests_policy",
     "//chrome/services/molt_ai/inference/engine:image_input",
   ]
+}
+
+# chrome://flags/#molt-agent-screenshots (about_flags.cc includes
+# agent_about_flags.h).
+source_set("features") {
+  sources = [
+    "agent_about_flags.h",
+    "agent_features.cc",
+    "agent_features.h",
+  ]
+
+  public_deps = [ "//base" ]
 }
 
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
