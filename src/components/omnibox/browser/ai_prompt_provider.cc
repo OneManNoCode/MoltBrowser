@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/strings/escape.h"
-#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match.h"
@@ -58,15 +57,10 @@ bool AiPromptProvider::ExtractPrompt(const std::u16string& input_text,
     return true;
   }
 
-  // Check for the "?" prefix. Require at least one character after "?" so we
-  // do not trigger on a bare question mark (which the user may intend as a
-  // normal query).
-  if (base::StartsWith(input_text, kQuestionPrefix,
-                        base::CompareCase::SENSITIVE)) {
-    *prompt = input_text.substr(1);
-    return true;
-  }
-
+  // Not "?": typed first, it puts the omnibox in keyword mode for the
+  // default search engine (Chromium's forced web search), and pasted "?..."
+  // is a web search too, with suggestions, so offering the local AI for it
+  // would be offering it text the search engine already has.
   return false;
 }
 

@@ -352,7 +352,7 @@ TEST(MoltMemoryControllerGateTest, ShortcutInputStopsTheOthers) {
 // The omnibox's controllers (TYPE_BUILTIN) have both local providers, and
 // each local input reaches exactly one provider: "@ai ..." the AI prompt
 // provider (its row opens molt://ai with the prompt), "@memory ..." the
-// memory one. "?" is not local input.
+// memory one. "?" is not local input, and gets no AI row.
 TEST(MoltMemoryControllerGateTest, BuiltinControllersRouteLocalInput) {
   base::test::TaskEnvironment task_environment;
   AutocompleteControllerConfig config;
@@ -389,6 +389,7 @@ TEST(MoltMemoryControllerGateTest, BuiltinControllersRouteLocalInput) {
 
   controller.Start(FakeAutocompleteController::CreateInput(u"?what"));
   EXPECT_EQ(running().size(), 3u);
+  EXPECT_TRUE(ai[0]->matches().empty());
 }
 
 }  // namespace

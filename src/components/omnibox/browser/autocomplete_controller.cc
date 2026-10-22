@@ -1406,7 +1406,7 @@ void AutocompleteController::InitializeSyncProviders(int provider_types) {
     providers_.push_back(
         base::MakeRefCounted<BuiltinProvider>(provider_client_.get()));
   }
-  // MoltBrowser: Add AI prompt provider for "@ai " and "?" prefix detection.
+  // MoltBrowser: Add AI prompt provider for "@ai " prefix detection.
   if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {
     auto ai_prompt_provider = base::MakeRefCounted<AiPromptProvider>();
     ai_prompt_provider_ = ai_prompt_provider.get();

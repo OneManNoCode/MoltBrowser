@@ -476,17 +476,17 @@ Incognito or MoltNet still opens the local AI page.
 `@ai` followed by whitespace with no prompt yet is local too (no row, no
 request); `@ai` alone and `@aim ...` are ordinary text.
 
-**Not `?`.** `AiPromptProvider` also claims a leading `?`, but in 152 a
-typed `?` never gets there: `OmniboxEditModel` sees it as the first
-character and calls `EnterKeywordModeForDefaultSearchProvider()`, which
+**Not `?`.** In 152 a typed `?` as the first character makes
+`OmniboxEditModel` call `EnterKeywordModeForDefaultSearchProvider()`, which
 removes it and puts the omnibox in keyword mode for the default search
 engine, Chromium's "force a web search" (MoltBrowser doesn't change
 `omnibox_edit_model.cc`). The text that follows is a web search, with
-suggestions, by the user's choice. Only text that keeps its `?` (pasted,
-dropped, or with no default search engine) reaches `AiPromptProvider`'s
-`?` branch; it then gets the AI row as its default, and the rest of the
-omnibox treats it as a search for `?...`, as Chromium does. `?` is not
-gated.
+suggestions, by the user's choice. `AiPromptProvider` used to claim a
+leading `?` too, which only text that keeps its `?` (pasted, dropped, or
+with no default search engine) reached: it got "Ask MoltBrowser AI" as its
+default row while the rest of the omnibox had already sent it to the search
+engine for suggestions. That branch is gone, so `?` means one thing: a web
+search. `?` is not gated.
 
 ## 8. Not done, and why
 
