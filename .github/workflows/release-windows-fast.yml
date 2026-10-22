@@ -47,6 +47,9 @@ jobs:
       # User input reaches shell steps only through the environment.
       TAG: ${{ inputs.tag }}
       MOLT_RELEASE_BUILD: "1"   # bundle downloads must match their pins
+      # The builder recorded in the build provenance (docs/SIGNED_UPDATES.md):
+      # GitHub's hosted 16-core Windows runner, not one of our machines.
+      MOLT_BUILDER_ID: github-hosted-windows-16core
       DEPOT_TOOLS_WIN_TOOLCHAIN: "0"
       GYP_MSVS_VERSION: "2022"
       MSYS_NO_PATHCONV: "1"
@@ -87,6 +90,13 @@ jobs:
           cd "$HOME/depot_tools"
           ./update_depot_tools.bat || true
           ./gclient --version || true
+
+      # Build provenance: fails now, not after the build, if the checkout is
+      # not the clean, tagged source.
+      - name: Start build provenance
+        run: |
+          started="$(./scripts/release-provenance.sh --start --version "$TAG")"
+          echo "MOLT_BUILD_STARTED_ON=$started" >> "$GITHUB_ENV"
 
       - name: Sync Chromium source (pinned)
         env:
@@ -133,7 +143,7 @@ jobs:
           # dist/ may hold earlier packages: never let a stale one be published.
           rm -f dist/MoltBrowser-*-win-x64-setup.exe dist/MoltBrowser-*-win-x64-portable.zip \
             dist/MoltBrowser-Windows-x64-Setup.exe dist/MoltBrowser-Windows-x64.zip \
-            dist/MoltBrowser-Windows-x64-*.spdx.json
+            dist/MoltBrowser-Windows-x64-*.spdx.json dist/molt-provenance-windows-x64.json
           ./scripts/package-win.sh --version "$TAG"
           cd dist
           # Exactly one installer (required) and at most one portable zip.
@@ -162,6 +172,8 @@ jobs:
           fi
           files+=("${sboms[@]##*/}")
           ../scripts/release-checksums.sh SHA256SUMS-windows-x64 "${files[@]}"
+          ../scripts/release-provenance.sh --platform windows --arch x64 \
+            --version "$TAG" --out-dir . "${files[@]}" SHA256SUMS-windows-x64
           { echo "files<<EOF"; printf 'dist/%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
       - name: Build provenance attestation
@@ -177,5 +189,5 @@ jobs:
           ./scripts/release-draft.sh "$TAG" --repo "$GITHUB_REPOSITORY"
           mapfile -t files <<< "$FILES"
           gh release upload "$TAG" "${files[@]}" dist/SHA256SUMS-windows-x64 \
-            --repo "$GITHUB_REPOSITORY" --clobber
+            dist/molt-provenance-windows-x64.json --repo "$GITHUB_REPOSITORY" --clobber
           echo "Windows assets uploaded. The release stays a DRAFT until the signed manifest is attached."

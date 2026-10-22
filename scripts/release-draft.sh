@@ -3,11 +3,13 @@
 # Copyright 2026 GenEye AI Labs Inc.
 #
 # Every release script and workflow uploads into a draft. A release stays a
-# draft until the offline-signed manifest is attached:
+# draft until the offline-signed manifest and build provenance are attached:
 #   molt-release-manifest.json + molt-release-manifest.json.sig
+#   molt-build-provenance.intoto.jsonl
 # made with tools/release_signing/molt_release_sign.py on the OFFLINE
 # signing machine (the in-app updater rejects releases without a valid
-# signature). Only then publish it, by hand:
+# signature) and uploaded by scripts/publish-release-signature.sh. Only then
+# publish it, by hand:
 #   gh release edit vX.Y.Z --draft=false
 #
 # The tag must already be pushed (--verify-tag): gh would otherwise create
@@ -43,7 +45,7 @@ if gh release view "$TAG" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} >/dev/null 2>&1; the
   exit 0
 fi
 
-NOTES="DRAFT - do not publish until molt-release-manifest.json and molt-release-manifest.json.sig (signed offline with tools/release_signing/molt_release_sign.py) are attached, and the Linux repository bundle (MoltBrowser-Linux-repository.tar) has been signed offline. Each platform also ships SHA256SUMS-<platform>, an SPDX SBOM per installer (*.spdx.json) and a build-provenance attestation (gh attestation verify <file> --repo OneManNoCode/MoltBrowser)."
+NOTES="DRAFT - do not publish until molt-release-manifest.json, molt-release-manifest.json.sig and molt-build-provenance.intoto.jsonl (signed offline with tools/release_signing/molt_release_sign.py) are attached, and the Linux repository bundle (MoltBrowser-Linux-repository.tar) has been signed offline. Each platform also ships SHA256SUMS-<platform>, an SPDX SBOM per installer (*.spdx.json) and its build provenance statement (molt-provenance-<platform>-<arch>.json; check the signed copy with tools/release_signing/molt_provenance.py verify)."
 NOTES_ARGS=(--notes "$NOTES")
 [ -n "$NOTES_FILE" ] && NOTES_ARGS=(--notes-file "$NOTES_FILE")
 PRE_ARGS=()
