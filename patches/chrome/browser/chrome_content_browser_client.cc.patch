@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index bddbd4bf5230a0988b73ecda2d270437852bc9a7..80fe5ac233e7c82cec669dece482b8556fdd2f58 100644
+index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7480669db 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -116,6 +116,20 @@
@@ -375,7 +375,26 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..80fe5ac233e7c82cec669dece482b855
  }
  
  #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
-@@ -9488,6 +9709,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
+@@ -9188,9 +9409,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
+     base::SupportsUserData* context_user_data,
+     const url::Origin& origin,
+     mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
+-  on_device_translation::TranslationManagerImpl::Bind(
+-      host, browser_context, context_user_data, origin,
+-      g_browser_process->component_updater(), std::move(receiver));
++  // MoltBrowser: the Translator API runs on the user's own on-device model,
++  // sharing the document's MoltAIManager (and its consent and limits) with
++  // the other built-in AI APIs. Upstream's TranslationManagerImpl, and with
++  // it TranslateKit and the component updater, is never reached from a page
++  // (docs/design/WEB_AI_APIS.md, section 10).
++  molt_ai::web_ai::BindMoltTranslationManager(host, browser_context,
++                                              context_user_data,
++                                              kAIManagerUserDataKey,
++                                              std::move(receiver));
+ }
+ #endif
+ 
+@@ -9488,6 +9715,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
  
  std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
      content::BrowserContext* browser_context) {
@@ -387,7 +406,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..80fe5ac233e7c82cec669dece482b855
    if (browser_context) {
      const PrefService* prefs =
          Profile::FromBrowserContext(browser_context)->GetPrefs();
-@@ -9547,9 +9773,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9547,9 +9779,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {
