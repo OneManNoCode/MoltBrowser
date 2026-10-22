@@ -325,6 +325,150 @@ text couldn't (§5.1); and off, the feature would be invisible. A text-only
 model, which is every model until the vision model's pins are filled
 (SANDBOXED_INFERENCE.md §10.4), sees no change.
 
+### 2.7 Site tools (WebMCP)
+
+WebMCP is a proposed web API (webmachinelearning.github.io/webmcp) through
+which a page offers "tools" to an AI agent: named functions with a
+description and a JSON Schema for their arguments, which the agent can
+call instead of driving the page's controls. This section first records
+what Chromium 152.0.7977.169 has (read from the pinned tree, not from
+the explainer, which has moved on), then MoltBrowser's use of it.
+
+#### 2.7.1 What Chromium 152 has
+
+**The flag.** `third_party/blink/renderer/platform/runtime_enabled_features.json5`:
+
+| Feature | Status | Notes |
+|---|---|---|
+| `WebMCP` | `experimental` | `origin_trial_feature_name: "WebMCP"`, `origin_trial_allows_third_party: true`, `public: true`, `base_feature_status: "enabled"`, `copied_from_base_feature_if: "overridden"`; implied by the three below |
+| `WebMCPDeclarativeFileInput` | `test` | `<input type=file>` in declarative tools, filled from absolute local paths |
+| `WebMCPFormAssociatedCustomElements` | `experimental` | form-associated custom elements in declarative tools |
+| `WebMCPTesting` | `experimental` | |
+
+So the generated `blink::features::kWebMCP` is on by default, but a page
+gets the API only with an origin-trial token (its own, or a third-party
+script's), `--enable-experimental-web-platform-features`,
+`--enable-blink-features=WebMCP`, or `chrome://flags/#enable-webmcp-testing`
+(`about_flags.cc`; it overrides `kWebMCP`, which the runtime flag then
+copies). `chrome://flags/#devtools-webmcp-support`
+(`kDevToolsWebMCPSupport`, on) is DevTools' panel. MoltBrowser keeps
+Chromium's origin-trial public key and disables only the `HTMLInCanvas`
+trial (`components/embedder_support/origin_trials/origin_trial_policy_impl.cc`),
+so a site in the WebMCP trial has the API in MoltBrowser as in Chrome, in
+regular and MoltNet windows alike, whatever the agent does.
+
+**The API** lives in Blink core, `third_party/blink/renderer/core/script_tools/`
+(not `modules/`; there is no `navigator.modelContext` in this version):
+
+- `document.modelContext` (`model_context_supplement.idl`: `[SecureContext,
+  SameObject]` on `Document`, `RuntimeEnabled=WebMCP`).
+- `ModelContext : EventTarget` (`model_context.idl`):
+  `registerTool(tool, {signal, exposedTo})`,
+  `getTools({fromOrigins}) -> sequence<RegisteredTool>`,
+  `executeTool(registeredTool, DOMString inputArguments, {signal}) -> DOMString?`,
+  and `ontoolchange`.
+- `ModelContextTool` (`model_context_tool.idl`): `name` (required;
+  `[A-Za-z0-9_.-]{1,128}`, unique per document), `title` (optional),
+  `description` (required, not empty), `inputSchema` (any object; it is
+  `JSON.stringify`'d at registration and **not enforced** when the tool
+  runs, webmcp#92), `execute` (`Promise<any>(object input)`), and
+  `annotations` `{readOnlyHint = false, untrustedContentHint = false}`.
+  `RegisteredTool` (what `getTools()` returns) has `name`, `title`,
+  `description`, `inputSchema` (the string), `annotations`, and the owner's
+  `window` and `origin`.
+- **Declarative tools**: `<form toolname tooldescription tooltitle
+  toolautosubmit>`, with `toolparamdescription` on controls
+  (`core/html/forms/html_form_element.cc`, `form_mcp_schema.cc`). The input
+  schema is computed from the form's controls: text-like inputs
+  **including `type=password`**, hidden inputs that have a description,
+  dates, selects, checkboxes, radios, and file inputs with
+  `WebMCPDeclarativeFileInput`. Calling one fills the controls; with
+  `toolautosubmit` the form is submitted at once, without it the submit
+  button is focused, `ScriptToolHost.PauseExecution()` is sent, and the
+  call ends when the user submits. A submit that navigates gets its result
+  from the next document's `<script type="application/ld+json">` blocks
+  (`GetCrossDocumentScriptToolResult`); a page can answer in place with
+  `SubmitEvent.respondWith(promise)` (`SubmitEvent.agentInvoked` tells it
+  an agent submitted). CSS gets `:tool-form-active` and
+  `:tool-submit-active`.
+- Events on `window`: `toolactivated` (synchronous, once the tool has
+  started; a declarative form is already filled) and `toolcancel`
+  (`WebMCPEvent`).
+- A result is `JSON.stringify` of an object, else `toString()`, and
+  "Operation succeeded" when empty. Failures are `ScriptToolErrorCode`s:
+  invalid tool name, invalid input arguments, missing submit button,
+  invocation failed, cancelled.
+- All three methods need the permissions policy feature `tools` (default
+  allowlist `self`: top-level documents have it, cross-origin frames need
+  `allow="tools"`) and an origin-keyed agent cluster (they fail when
+  `document.domain` is used).
+
+**Mojo** (`third_party/blink/public/mojom/content_extraction/script_tools.mojom`):
+
+- `ScriptTool`: name, title, description, input_schema, annotations,
+  exposed_origins, tool_owner_frame_token, origin.
+- `ModelContextHost` (renderer to browser, one per document):
+  `BindModelContext`, `RegisterScriptTool`, `UnregisterScriptTool`,
+  `GetScriptTools(from_origins)`, `ExecuteRemoteScriptTool(invocation_id,
+  tool_owner_frame_token, expected_target_origin, name, input_arguments)
+  => (result, success)`.
+- `ModelContext` (browser to renderer): `NotifyToolChange`,
+  `ExecuteScriptTool(invocation_id, name, input_arguments) => (result,
+  success)`.
+- `ScriptToolHost.PauseExecution()` (renderer to browser): content binds
+  an empty binder; Chrome binds `actor::ActorScriptToolReceiver`.
+- `AIPageContentFrameData.script_tools` (`ai_page_content.mojom`): the
+  annotated page content that Chrome's actor reads lists each frame's tools.
+- `blink.mojom.LocalFrame.InvokeScriptToolForInspector` and
+  `NotifyInspectorOfCrossDocumentScriptToolResult`, for DevTools.
+
+**The browser side** is `content/browser/renderer_host/model_context_user_data.{h,cc}`:
+`ModelContextUserData` (a `DocumentUserData` implementing
+`ModelContextHost`, created when the page first reads
+`document.modelContext`) keeps each document's tools, and
+`ModelContextPageUserData` the calls in flight between documents of a
+page. It kills a renderer that registers without `kWebMCP` and the `tools`
+policy, registers a name twice, lists an `exposedTo` origin that isn't
+potentially trustworthy, or claims another frame or origin as the owner.
+It is **content-internal**: nothing in `content/public` lists or calls a
+page's tools from the browser process, and there is no
+`WebContentsObserver` or `ContentBrowserClient` hook for them.
+
+#### 2.7.2 What an embedder can hook
+
+| Hook | Where | Used by |
+|---|---|---|
+| `blink::WebDocument::ExecuteScriptTool`, `CancelScriptTool`, `GetCrossDocumentScriptToolResult` (`web_document.h`, `web_script_tool_types.h`) | the renderer | Chrome's actor: `chrome/renderer/actor/script_tool.cc`, driven from the browser by `chrome.mojom.ChromeRenderFrame.InvokeTool(actor.mojom.ToolInvocation{ScriptToolAction{name, input_arguments}})` |
+| `script_tools` in the annotated page content (`blink.mojom.AIPageContentAgent`) | renderer to browser | Chrome's actor, to list tools |
+| The experimental `WebMCP` DevTools domain (`enable`, `invokeTool`, `cancelInvocation`, `toolsAdded` / `toolsRemoved`) | DevTools protocol | DevTools |
+| The web API itself, from any script of the document, an isolated world included | the page's renderer | any extension, or MoltBrowser's agent (below) |
+
+`InvokeTool` in `chrome_render_frame.mojom` is Chrome's actor protocol
+(task ids, a journal, one call at a time), marked to move to content
+(crbug.com/515541906).
+
+#### 2.7.3 The platform's security model
+
+- **Who may register.** Any document in a secure context where the API is
+  on (trial token or flag), allowed the `tools` permissions policy, and
+  not using `document.domain`. A tool belongs to its document: it goes
+  when the document does, and its name is unique there.
+- **Who may see and call it.** Documents of the same page (frame tree,
+  never another tab or page) that are same-origin with the owner, plus
+  origins the owner lists in `exposedTo`. A caller sees another origin's
+  tools only if it names that origin in `fromOrigins` *and* the owner
+  exposed them to the caller. The browser checks the owner's origin again
+  when the call is made.
+- **What a call does.** It runs the page's own callback in the page's main
+  world, without user activation, with the arguments `JSON.parse`'d; the
+  schema is not checked, so the tool must validate them. The callback can
+  do anything the page's script can, including navigating. A declarative
+  tool fills and submits a form, password fields included.
+- **What comes back.** Page-chosen text (or nothing after a navigation).
+  The annotations are the page's own hints and nothing enforces them.
+- **Nothing in Chromium 152 asks the user** before a tool runs: that is
+  left to the agent.
+
 ## 3. Agent mode (`AutomationRunner`)
 
 All three use temperature 0.1 and `RunPromptAsync` as before. A failed
