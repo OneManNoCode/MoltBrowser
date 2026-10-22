@@ -127,7 +127,9 @@ build_tar() {
   echo "--- Creating tar.gz ---"
   TAR_NAME="MoltBrowser-$VERSION-linux-x64.tar.gz"
   cd "$STAGE_DIR"
-  tar czf "$DIST_DIR/$TAR_NAME" opt/ usr/
+  # Owned by root, not by the build user's uid (extracting as root would
+  # otherwise hand /opt/moltbrowser to whoever has that uid).
+  tar --owner=0 --group=0 --numeric-owner -czf "$DIST_DIR/$TAR_NAME" opt/ usr/
   echo "Tarball: $DIST_DIR/$TAR_NAME ($(du -sh "$DIST_DIR/$TAR_NAME" | cut -f1))"
 }
 
@@ -178,7 +180,11 @@ EOF
   chmod 755 "$DEB_DIR/DEBIAN/postinst"
 
   DEB_NAME="moltbrowser_${VERSION}_amd64.deb"
-  dpkg-deb --build "$DEB_DIR" "$DIST_DIR/$DEB_NAME"
+  # Files owned by root:root (without --root-owner-group dpkg installs them
+  # owned by the build user's uid). xz, not Ubuntu's zstd default: dpkg
+  # before 1.21.18 (Debian 11) cannot unpack zstd, and the repository tooling
+  # (tools/linux_repo/) can then read the control file with Python alone.
+  dpkg-deb -Zxz --root-owner-group --build "$DEB_DIR" "$DIST_DIR/$DEB_NAME"
   echo "Deb: $DIST_DIR/$DEB_NAME ($(du -sh "$DIST_DIR/$DEB_NAME" | cut -f1))"
   rm -rf "$DEB_DIR"
 }
