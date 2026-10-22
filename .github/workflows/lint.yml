@@ -10,6 +10,12 @@ name: Lint
 #     becomes the build input, see docs/REBASING.md)
 #   * the macOS helper dylib bundler (scripts/macho_bundle_deps.py) against
 #     arm64 Mach-O fixtures built with clang + lld (blocking)
+#   * the release SBOM generator (tools/sbom/) against its fixtures and this
+#     repository, with every SBOM also checked by the official SPDX
+#     validator (blocking)
+#   * the signed apt/rpm repository tooling (tools/linux_repo/): a .deb and
+#     an .rpm built in the test, a throwaway GnuPG key, gpgv, rpmkeys,
+#     createrepo_c and `apt-get update` against the result (blocking)
 
 on:
   push:
@@ -82,3 +88,32 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang lld llvm
       - name: scripts/macho_bundle_deps_test.py
         run: MOLT_REQUIRE_MACHO_TOOLS=1 python3 scripts/macho_bundle_deps_test.py -v
+
+  sbom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the SPDX validator (spdx-tools, pinned)
+        run: python3 -m pip install --user 'spdx-tools==0.8.3'
+      - name: tools/sbom/molt_sbom_test.py (fixtures, golden files, this repository)
+        run: |
+          MOLT_SPDX_TOOLS="$(python3 -m site --user-base)/bin/pyspdxtools" \
+            MOLT_REQUIRE_SPDX_TOOLS=1 python3 tools/sbom/molt_sbom_test.py -v
+
+  linux-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dpkg-dev, rpm, createrepo_c, apt-utils, gnupg
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev rpm createrepo-c apt-utils gnupg gpgv
+      - name: tools/linux_repo/molt_linux_repo_test.py (throwaway keys)
+        run: MOLT_REQUIRE_REPO_TOOLS=1 python3 tools/linux_repo/molt_linux_repo_test.py -v

@@ -1,0 +1,9 @@
+# Fixture for tools/sbom/molt_sbom_test.py: the Windows workflow's pin table.
+          $pins = @{
+            "7zr-24.08"           = "1b16c41ae39b679384b06f1492b587b650716430ff9c2e079dca2ad1f62c952d"
+            "tor-15.0.15"         = "d59385129782a8a44f074a91de4aa3c794d69d0ecfca6c4b4975f775c55dbebe"
+            "tesseract-5.4.0.20240606" = "c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9"
+            "whisper-bin-x64-v1.9.1"   = "7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539"
+            "ggml-tiny.en.bin"    = "C139EAD9D2BFAC381DB38E15ADEAF4FD0CF6E56D1CD948C822CA3E11BFC2768D"
+          }
+          $other = @{ "not-a-pin" = "0000" }

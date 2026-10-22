@@ -19,6 +19,13 @@ name: Release
 #   * Each job publishes SHA256SUMS-<platform> for its assets and a signed
 #     SLSA build-provenance attestation (gh attestation verify <file>
 #     --repo OneManNoCode/MoltBrowser).
+#   * Each installer gets an SPDX 2.3 SBOM next to it (scripts/release-sbom.sh,
+#     docs/SBOM.md), named after it with "." -> "-" (never ".dmg"/".deb"/...:
+#     the updater picks installers by those). The SBOMs are in the checksums,
+#     the attestation and, like every asset, the signed manifest.
+#   * The Linux job also attaches the UNSIGNED apt/rpm repository
+#     (MoltBrowser-Linux-repository.tar); the owner signs it offline and
+#     replaces it before signing the manifest (docs/SIGNED_UPDATES.md).
 #
 # Required GitHub Secrets (set under Settings → Secrets and variables →
 # Actions):
@@ -122,13 +129,25 @@ jobs:
             -srcfolder chromium/src/out/MoltBrowser/MoltBrowser.app \
             -ov -format UDZO dist/MoltBrowser-macOS-arm64.dmg
 
+      # After signing: the SBOM hashes the shipped (signed) helper binaries.
+      - name: SBOM
+        run: |
+          ./scripts/release-sbom.sh --platform macos --arch arm64 \
+            --version "$VERSION" \
+            --payload chromium/src/out/MoltBrowser/MoltBrowser.app \
+            dist/MoltBrowser-macOS-arm64.dmg
+
       - name: Checksums
-        run: ./scripts/release-checksums.sh dist/SHA256SUMS-macos-arm64 dist/MoltBrowser-macOS-arm64.dmg
+        run: |
+          ./scripts/release-checksums.sh dist/SHA256SUMS-macos-arm64 \
+            dist/MoltBrowser-macOS-arm64.dmg dist/MoltBrowser-macOS-arm64-dmg.spdx.json
 
       - name: Build provenance attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
-          subject-path: dist/MoltBrowser-macOS-arm64.dmg
+          subject-path: |
+            dist/MoltBrowser-macOS-arm64.dmg
+            dist/MoltBrowser-macOS-arm64-dmg.spdx.json
 
       - name: Upload to the DRAFT GitHub Release
         env:
@@ -136,7 +155,8 @@ jobs:
         run: |
           ./scripts/release-draft.sh "$GITHUB_REF_NAME"
           gh release upload "$GITHUB_REF_NAME" \
-            dist/MoltBrowser-macOS-arm64.dmg dist/SHA256SUMS-macos-arm64 \
+            dist/MoltBrowser-macOS-arm64.dmg dist/MoltBrowser-macOS-arm64-dmg.spdx.json \
+            dist/SHA256SUMS-macos-arm64 \
             --clobber
 
   # -------------------------------------------------------------------
@@ -192,6 +212,23 @@ jobs:
             echo "::error::no Linux packages in dist/"
             exit 1
           fi
+          # The unsigned apt/rpm repository (signed offline; not in the sums).
+          repo_pkgs=()
+          for f in "${files[@]}"; do
+            case "$f" in *.deb|*.rpm) repo_pkgs+=("$f") ;; esac
+          done
+          rm -f dist/MoltBrowser-Linux-repository.tar
+          if [ ${#repo_pkgs[@]} -gt 0 ]; then
+            ./scripts/linux-repo-build.sh dist/MoltBrowser-Linux-repository.tar "${repo_pkgs[@]}"
+          fi
+          # One SBOM per package (Linux packages bundle no helpers).
+          mapfile -t sboms < <(./scripts/release-sbom.sh --platform linux --arch x64 \
+            --version "$VERSION" "${files[@]}")
+          if [ ${#sboms[@]} -ne ${#files[@]} ]; then
+            echo "::error::SBOM generation failed"
+            exit 1
+          fi
+          files+=("${sboms[@]}")
           ./scripts/release-checksums.sh dist/SHA256SUMS-linux-x64 "${files[@]}"
           { echo "files<<EOF"; printf '%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
@@ -207,6 +244,7 @@ jobs:
         run: |
           ./scripts/release-draft.sh "$GITHUB_REF_NAME"
           mapfile -t files <<< "$FILES"
+          [ -f dist/MoltBrowser-Linux-repository.tar ] && files+=(dist/MoltBrowser-Linux-repository.tar)
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" dist/SHA256SUMS-linux-x64 --clobber
 
   # -------------------------------------------------------------------
@@ -266,6 +304,14 @@ jobs:
             echo "::error::no Windows packages in dist/"
             exit 1
           fi
+          # package-win.sh bundles no helpers (the SBOM tool checks the zip).
+          mapfile -t sboms < <(./scripts/release-sbom.sh --platform windows --arch x64 \
+            --version "$VERSION" "${files[@]}")
+          if [ ${#sboms[@]} -ne ${#files[@]} ]; then
+            echo "::error::SBOM generation failed"
+            exit 1
+          fi
+          files+=("${sboms[@]}")
           ./scripts/release-checksums.sh dist/SHA256SUMS-windows-x64 "${files[@]}"
           { echo "files<<EOF"; printf '%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 

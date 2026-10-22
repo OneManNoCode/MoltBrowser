@@ -1,0 +1,14 @@
+Name: llama.cpp
+Short Name: llama_cpp
+URL: https://github.com/ggml-org/llama.cpp
+Version: b11641
+Revision: 843e7dcc15098dd6b3aaf33b4847052293d8ef1a
+Update Mechanism: Manual
+License: MIT
+License File: LICENSE
+Security Critical: yes
+Shipped: yes
+
+Description:
+Fixture for tools/sbom/molt_sbom_test.py.
+Exceptions: lines that look like fields but are not known ones are ignored.

@@ -42,6 +42,20 @@ Releases page. From v0.3.0, MoltBrowser only installs updates whose installer
 matches a release manifest signed with GenEye's offline release key
 ([how it works](docs/SIGNED_UPDATES.md)).
 
+## Signing keys
+
+MoltBrowser releases are signed with keys that are kept offline and never
+touch CI or a cloud machine:
+
+| Key | Signs | Where to check it |
+|---|---|---|
+| Release key (Ed25519) | `molt-release-manifest.json`, which the in-app updater requires | public keys compiled into the browser: `src/chrome/browser/molt_ai/update/update_signing_keys.cc` ([runbook](docs/SIGNED_UPDATES.md)) |
+| Archive key (OpenPGP) | the apt and dnf/yum repositories and the repository's `.rpm` | fingerprint: *not created yet* ([docs/LINUX_REPOSITORIES.md](docs/LINUX_REPOSITORIES.md)) |
+
+Every release also has an SPDX SBOM per installer ([docs/SBOM.md](docs/SBOM.md)),
+SHA-256 checksums and a build-provenance attestation. If a signature or
+checksum does not verify, don't install it, and tell us.
+
 ## Scope
 
 **In scope** — anything in MoltBrowser's own code, for example:

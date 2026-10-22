@@ -1,0 +1,352 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "MoltBrowser-0.3.0-macos-repo",
+  "documentNamespace": "https://github.com/OneManNoCode/MoltBrowser/spdx/MoltBrowser-0.3.0-macos-repo-e4277525-60d9-5388-aed4-574ba74403f3",
+  "creationInfo": {
+    "created": "2026-09-21T14:13:20Z",
+    "creators": [
+      "Tool: molt_sbom.py-1",
+      "Organization: GenEye AI Labs Inc."
+    ]
+  },
+  "comment": "Repository-only SBOM: lists Chromium (pinned version), the components MoltBrowser vendors under src/third_party with the Rust crates they need from the vendored Cargo.lock, and the helper pins. Chromium's own third-party components are NOT enumerated; the release SBOMs list them from the build. Bundled helpers: as pinned by the bundle scripts (no files).",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-MoltBrowser",
+      "name": "MoltBrowser",
+      "downloadLocation": "git+https://github.com/OneManNoCode/MoltBrowser.git@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "GPL-3.0-only",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "SOURCE",
+      "versionInfo": "0.3.0",
+      "supplier": "Organization: GenEye AI Labs Inc.",
+      "homepage": "https://github.com/OneManNoCode/MoltBrowser",
+      "comment": "The MoltBrowser-owned parts of a macos build."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-chromium",
+      "name": "Chromium",
+      "downloadLocation": "git+https://chromium.googlesource.com/chromium/src.git@92a6f15143569cf59b340472d0b5030465d95722",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "FRAMEWORK",
+      "versionInfo": "152.0.7977.169",
+      "supplier": "Organization: The Chromium Authors",
+      "homepage": "https://www.chromium.org",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/chromium@152.0.7977.169?vcs_url=git%2Bhttps%3A//chromium.googlesource.com/chromium/src.git%4092a6f15143569cf59b340472d0b5030465d95722"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceType": "cpe23Type",
+          "referenceLocator": "cpe:2.3:a:google:chrome:152.0.7977.169:*:*:*:*:*:*:*"
+        }
+      ],
+      "sourceInfo": "Chromium 152.0.7977.169 at revision 92a6f15143569cf59b340472d0b5030465d95722 (chromium_version.txt). Its security fixes are tracked against Google Chrome 152.0.7977.169 in NVD, hence the CPE."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-llama-cpp-llama.cpp",
+      "name": "llama.cpp",
+      "downloadLocation": "git+https://github.com/ggml-org/llama.cpp@843e7dcc15098dd6b3aaf33b4847052293d8ef1a",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "b11641",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/ggml-org/llama.cpp",
+      "sourceInfo": "src/third_party/llama_cpp in the MoltBrowser repository (vendored by MoltBrowser); revision 843e7dcc15098dd6b3aaf33b4847052293d8ef1a"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-rust-anydoc-v0-1-anydoc",
+      "name": "anydoc",
+      "downloadLocation": "https://crates.io/api/v1/crates/anydoc/0.1.6/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "0.1.6",
+      "supplier": "NOASSERTION",
+      "homepage": "https://crates.io/crates/anydoc",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/anydoc@0.1.6"
+        }
+      ],
+      "sourceInfo": "src/third_party/rust/anydoc/v0_1 in the MoltBrowser repository (vendored by MoltBrowser); revision 2fc6c7ac5a4e60403eb7e2967dd631cd6c2ee95c"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-crate-adblock-0.13.3",
+      "name": "adblock",
+      "downloadLocation": "https://crates.io/api/v1/crates/adblock/0.13.3/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "0.13.3",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/adblock@0.13.3"
+        }
+      ],
+      "sourceInfo": "Rust crate MoltBrowser adds (src/third_party/rust/chromium_crates_io/Cargo.toml, adblock = \"=0.13.3\"), resolved in its Cargo.lock; vendored by scripts/vendor-rust-crates.sh.",
+      "comment": "Licence not recorded in this repository; the build machine SBOM takes it from the vendored README.chromium. Cargo.lock does not say whether it is linked on every platform or only used at build time, hence DEPENDS_ON."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-crate-memchr-2.8.2",
+      "name": "memchr",
+      "downloadLocation": "https://crates.io/api/v1/crates/memchr/2.8.2/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "2.8.2",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/memchr@2.8.2"
+        }
+      ],
+      "sourceInfo": "Rust crate required by a crate MoltBrowser adds (src/third_party/rust/chromium_crates_io/Cargo.lock); vendored by upstream Chromium or at build time.",
+      "comment": "Licence not recorded in this repository; the build machine SBOM takes it from the vendored README.chromium. Cargo.lock does not say whether it is linked on every platform or only used at build time, hence DEPENDS_ON."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-crate-seahash-4.1.0",
+      "name": "seahash",
+      "downloadLocation": "https://crates.io/api/v1/crates/seahash/4.1.0/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "4.1.0",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/seahash@4.1.0"
+        }
+      ],
+      "sourceInfo": "Rust crate required by a crate MoltBrowser adds (src/third_party/rust/chromium_crates_io/Cargo.lock); vendored by upstream Chromium or at build time.",
+      "comment": "Licence not recorded in this repository; the build machine SBOM takes it from the vendored README.chromium. Cargo.lock does not say whether it is linked on every platform or only used at build time, hence DEPENDS_ON."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-crate-zip-8.6.0",
+      "name": "zip",
+      "downloadLocation": "https://crates.io/api/v1/crates/zip/8.6.0/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "8.6.0",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/zip@8.6.0"
+        }
+      ],
+      "sourceInfo": "Rust crate required by a crate MoltBrowser adds (src/third_party/rust/chromium_crates_io/Cargo.lock); vendored by upstream Chromium or at build time.",
+      "comment": "Licence not recorded in this repository; the build machine SBOM takes it from the vendored README.chromium. Cargo.lock does not say whether it is linked on every platform or only used at build time, hence DEPENDS_ON."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tor-aarch64",
+      "name": "Tor Expert Bundle (aarch64)",
+      "downloadLocation": "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.15/tor-expert-bundle-macos-aarch64-15.0.15.tar.gz",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause AND BSD-2-Clause AND CC-BY-SA-4.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "15.0.15",
+      "supplier": "Organization: The Tor Project, Inc.",
+      "packageFileName": "tor-expert-bundle-macos-aarch64-15.0.15.tar.gz",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "d59385129782a8a44f074a91de4aa3c794d69d0ecfca6c4b4975f775c55dbebe"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-tor.sh."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tor-x86-64",
+      "name": "Tor Expert Bundle (x86_64)",
+      "downloadLocation": "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.15/tor-expert-bundle-macos-x86_64-15.0.15.tar.gz",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause AND BSD-2-Clause AND CC-BY-SA-4.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "15.0.15",
+      "supplier": "Organization: The Tor Project, Inc.",
+      "packageFileName": "tor-expert-bundle-macos-x86_64-15.0.15.tar.gz",
+      "sourceInfo": "Pinned in scripts/bundle-tor.sh; SHA-256 pin still empty."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-whisper",
+      "name": "whisper.cpp",
+      "downloadLocation": "git+https://github.com/ggerganov/whisper.cpp@51c6961c7b64b406833f4b6a4a20e67142f69225",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "1.7.5",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/ggerganov/whisper.cpp@v1.7.5"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-whisper.sh."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-whisper-model",
+      "name": "whisper ggml-tiny.en model",
+      "downloadLocation": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "supplier": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c139ead9d2bfac381db38e15adeaf4fd0cf6e56d1cd948c822ca3e11bfc2768d"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-whisper.sh."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tessdata-eng",
+      "name": "tessdata_fast eng.traineddata",
+      "downloadLocation": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "87416418657359cb625c412a48b6e1d6d41c29bd",
+      "supplier": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "51fcc257653cd31928f245f4fd768a73ee77df6372b08342deb4f85b8c4b5cc5"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-tesseract.sh."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tesseract",
+      "name": "tesseract",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/tesseract-ocr/tesseract",
+      "sourceInfo": "Copied from the build machine's Homebrew with the libraries it loads (scripts/bundle-tesseract.sh); versions are recorded at bundle time."
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-MoltBrowser"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-chromium"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-llama-cpp-llama.cpp"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-rust-anydoc-v0-1-anydoc"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-crate-adblock-0.13.3"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-crate-memchr-2.8.2"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-crate-seahash-4.1.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-crate-zip-8.6.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tor-aarch64"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tor-x86-64"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-whisper"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-whisper-model"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tessdata-eng"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tesseract"
+    }
+  ]
+}

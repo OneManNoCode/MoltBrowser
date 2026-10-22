@@ -132,7 +132,8 @@ jobs:
         run: |
           # dist/ may hold earlier packages: never let a stale one be published.
           rm -f dist/MoltBrowser-*-win-x64-setup.exe dist/MoltBrowser-*-win-x64-portable.zip \
-            dist/MoltBrowser-Windows-x64-Setup.exe dist/MoltBrowser-Windows-x64.zip
+            dist/MoltBrowser-Windows-x64-Setup.exe dist/MoltBrowser-Windows-x64.zip \
+            dist/MoltBrowser-Windows-x64-*.spdx.json
           ./scripts/package-win.sh --version "$TAG"
           cd dist
           # Exactly one installer (required) and at most one portable zip.
@@ -151,6 +152,15 @@ jobs:
           ls -lh
           files=(MoltBrowser-Windows-x64-Setup.exe)
           [ -f MoltBrowser-Windows-x64.zip ] && files+=(MoltBrowser-Windows-x64.zip)
+          # One SBOM per installer (docs/SBOM.md). package-win.sh bundles no
+          # helpers; the SBOM tool checks the zip for any it would miss.
+          mapfile -t sboms < <(../scripts/release-sbom.sh --platform windows --arch x64 \
+            --version "$TAG" "${files[@]}")
+          if [ ${#sboms[@]} -ne ${#files[@]} ]; then
+            echo "::error::SBOM generation failed"
+            exit 1
+          fi
+          files+=("${sboms[@]##*/}")
           ../scripts/release-checksums.sh SHA256SUMS-windows-x64 "${files[@]}"
           { echo "files<<EOF"; printf 'dist/%s\n' "${files[@]}"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 
