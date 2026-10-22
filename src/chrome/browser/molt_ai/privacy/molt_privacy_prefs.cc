@@ -8,9 +8,14 @@
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/embedder_support/pref_names.h"
+#include "components/on_device_translation/buildflags/buildflags.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+
+#if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+#include "components/on_device_translation/public/pref_names.h"
+#endif
 
 namespace molt_ai {
 namespace privacy {
@@ -44,6 +49,18 @@ void SetPrivacyPrefDefaults(user_prefs::PrefRegistrySyncable* registry) {
   registry->SetDefaultPrefValue(
       password_manager::prefs::kPasswordLeakDetectionEnabled,
       base::Value(false));
+#if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
+  // The Translator web API (the TranslatorAPIAllowed policy's pref,
+  // registered by on_device_translation::RegisterProfilePrefs()). Upstream's
+  // Translator has the component updater fetch Google's TranslateKit and
+  // language packs once a page asks after a click, outside Tor even for a
+  // MoltNet page. Off, it reports "unavailable" and create() fails before
+  // any download (docs/design/WEB_AI_APIS.md). The policy can turn it on.
+  // Incognito and MoltNet profiles fork this registry, so they get the same
+  // default.
+  registry->SetDefaultPrefValue(prefs::kTranslatorAPIAllowed,
+                                base::Value(false));
+#endif
 }
 
 void ApplyPrivacyPrefMigrations(PrefService* prefs) {

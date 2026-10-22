@@ -75,6 +75,19 @@ void AppendDefaultFeatureOverrides(
       // a setting; MoltBrowser sends the signal by default, as Brave does.
       // chrome://flags (#enable-global-privacy-control) can still turn it off.
       &blink::features::kGlobalPrivacyControlForce,
+
+      // The Writer and Rewriter web APIs. At 152 Blink ships them only
+      // behind an origin trial or the experimental web platform features
+      // flag (LanguageModel and Summarizer are stable). MoltBrowser serves
+      // all four from the user's own on-device model, and exposes the
+      // interfaces to every page so their presence says nothing about the
+      // user: availability() reports what a site may use
+      // (docs/design/WEB_AI_APIS.md). Overriding the base::Feature turns the
+      // Blink feature on ("copied_from_base_feature_if: overridden" in
+      // runtime_enabled_features.json5); chrome://flags or
+      // --disable-features can still turn them off.
+      &blink::features::kAIWriterAPI,
+      &blink::features::kAIRewriterAPI,
   };
   AppendOverrides(kEnabledByDefault, base::FeatureList::OVERRIDE_ENABLE_FEATURE,
                   overrides);
