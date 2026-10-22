@@ -8,6 +8,11 @@ manifest signed by a key listed in
 src/chrome/browser/molt_ai/update/update_signing_keys.cc. This tool creates
 that key, writes and signs manifests, and verifies published releases.
 
+`sign` also signs the release's build provenance (the
+molt-provenance-<platform>-<arch>.json statements the release scripts wrote,
+see molt_provenance.py) with the same key, into
+molt-build-provenance.intoto.jsonl.
+
 Run `keygen` and `sign` ONLY on an offline machine. The private key must never
 be copied to a CI runner, a cloud machine, or this repository. See
 docs/SIGNED_UPDATES.md for the full runbook.
@@ -17,7 +22,9 @@ Commands:
   pubkey   --key FILE              print the public key of a signing key
   add-key  PUBLIC_KEY              trust a public key in the browser build
   manifest --tag vX.Y.Z FILES...   write molt-release-manifest.json
-  sign     --key FILE --manifest F write molt-release-manifest.json.sig
+  sign     --key FILE --assets-dir DIR
+                                   write molt-release-manifest.json.sig and
+                                   molt-build-provenance.intoto.jsonl
   verify   --manifest F --sig F [FILES...]
                                    check a signature (and asset hashes)
 
@@ -43,10 +50,17 @@ except ImportError:  # pragma: no cover
     sys.exit('This tool needs the "cryptography" package: '
              'python3 -m pip install cryptography')
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import molt_provenance as prov  # noqa: E402  (same folder)
+
 # Must match release_manifest.h exactly.
 SIGNING_CONTEXT = b'MoltBrowser release manifest v1\n'
 MANIFEST_NAME = 'molt-release-manifest.json'
 SIGNATURE_NAME = MANIFEST_NAME + '.sig'
+# Signed with the same key, next to the manifest; like the signature it is
+# not listed in the manifest (it is made in the same signing step).
+PROVENANCE_NAME = prov.BUNDLE_NAME
+NOT_MANIFEST_ASSETS = (MANIFEST_NAME, SIGNATURE_NAME, PROVENANCE_NAME)
 PRODUCT = 'MoltBrowser'
 SCHEMA = 1
 MAX_MANIFEST_BYTES = 64 * 1024
@@ -62,8 +76,7 @@ PLAIN_NAME = re.compile(r'^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$')
 VERSION = re.compile(r'^\d+(\.\d+)*$')
 
 
-class Error(Exception):
-    pass
+Error = prov.Error  # one error type for both tools
 
 
 # ---------------------------------------------------------------- key helpers
@@ -234,7 +247,7 @@ def cmd_manifest(args):
     assets = []
     for path in sorted(args.files, key=os.path.basename):
         name = os.path.basename(path)
-        if name in (MANIFEST_NAME, SIGNATURE_NAME):
+        if name in NOT_MANIFEST_ASSETS:
             continue
         if not PLAIN_NAME.match(name):
             raise Error(f'asset name {name!r} must be a plain file name')
@@ -253,13 +266,57 @@ def cmd_manifest(args):
         print(f'  {a["sha256"]}  {a["size"]:>12}  {a["name"]}')
 
 
+def provenance_for_signing(m, assets_dir):
+    """[(name, statement bytes, facts)] for the build provenance statements
+    the manifest lists, read from ASSETS_DIR and checked: exactly the bytes
+    the manifest lists, valid release statements for this version, and
+    together covering every asset a build produced, with the same hashes."""
+    names = sorted(a['name'] for a in m['assets']
+                   if prov.STATEMENT_NAME.match(a['name']))
+    if not names:
+        raise Error('the manifest lists no build provenance '
+                    '(molt-provenance-<platform>-<arch>.json). Release builds '
+                    'write it next to the SBOMs; rebuild with the release '
+                    'scripts, or pass --no-provenance (the release then '
+                    'cannot be published)')
+    if not assets_dir:
+        raise Error('pass --assets-dir with the folder of the release assets '
+                    '(the provenance statements are read from there)')
+    by_name = {a['name']: a for a in m['assets']}
+    out = []
+    for name in names:
+        with open(os.path.join(assets_dir, name), 'rb') as f:
+            data = f.read(prov.MAX_STATEMENT_BYTES + 1)
+        if len(data) != by_name[name]['size'] or \
+                hashlib.sha256(data).hexdigest() != by_name[name]['sha256']:
+            raise Error(f'{name} in {assets_dir} is not the file the manifest '
+                        'lists')
+        st = prov.validate_statement(data, release=True)
+        if prov.statement_facts(st)['name'] != name:
+            raise Error(f'{name} holds the statement of another build')
+        out.append((name, data, st))
+    facts = prov.check_release(
+        [st for _, _, st in out], {a['name']: a['sha256'] for a in m['assets']},
+        tag=m['tag'], require_all=True)
+    return [(name, data, f) for (name, data, _), f in zip(out, facts)]
+
+
 def cmd_sign(args):
     with open(args.manifest, 'rb') as f:
         data = f.read()
     m = validate_manifest(data)
+    statements = [] if args.no_provenance else \
+        provenance_for_signing(m, args.assets_dir)
     print(f'About to sign MoltBrowser {m["version"]} (tag {m["tag"]}):')
     for a in m['assets']:
         print(f'  {a["sha256"]}  {a["size"]:>12}  {a["name"]}')
+    if statements:
+        print('and its build provenance:')
+        for _, _, facts in statements:
+            print('  ' + prov.summarize(facts))
+    else:
+        print('WITHOUT build provenance: publish-release-signature.sh will '
+              'refuse this release.', file=sys.stderr)
     if not args.yes:
         typed = input(f'Type the version ({m["version"]}) to sign: ').strip()
         if typed != m['version']:
@@ -275,6 +332,18 @@ def cmd_sign(args):
         json.dump(sig_doc, f, indent=2, sort_keys=True)
         f.write('\n')
     print(f'Wrote {out} (key id {key_id(raw)}).')
+    if statements:
+        # DSSE envelopes (domain-separated from the manifest signature: the
+        # signed bytes start with "DSSEv1 ", a manifest's with "MoltBrowser").
+        bundle = prov.sign_bundle([(n, d) for n, d, _ in statements], key.sign,
+                                  key_id(raw))
+        prov.verify_bundle(bundle, [(key_id(raw), key.public_key())])
+        bundle_out = args.provenance_out or os.path.join(
+            os.path.dirname(args.manifest), PROVENANCE_NAME)
+        with open(bundle_out, 'wb') as f:
+            f.write(bundle)
+        print(f'Wrote {bundle_out} ({len(statements)} build(s), key id '
+              f'{key_id(raw)}).')
     try:
         trusted = trusted_keys_from_source()
     except (OSError, Error):
@@ -316,8 +385,7 @@ def verify_files(manifest_path, sig_path, keys_b64, asset_paths=(),
                     if keys_b64 else 'no trusted key to verify with')
     m = validate_manifest(data)
     by_name = {a['name']: a for a in m['assets']}
-    given = {os.path.basename(p) for p in asset_paths} - {MANIFEST_NAME,
-                                                           SIGNATURE_NAME}
+    given = {os.path.basename(p) for p in asset_paths} - set(NOT_MANIFEST_ASSETS)
     if require_all and set(by_name) != given:
         missing = sorted(set(by_name) - given)
         extra = sorted(given - set(by_name))
@@ -326,7 +394,7 @@ def verify_files(manifest_path, sig_path, keys_b64, asset_paths=(),
                     + (f'; unsigned: {", ".join(extra)}' if extra else ''))
     for path in asset_paths:
         name = os.path.basename(path)
-        if name in (MANIFEST_NAME, SIGNATURE_NAME):
+        if name in NOT_MANIFEST_ASSETS:
             continue
         if name not in by_name:
             raise Error(f'{name} is not listed in the signed manifest')
@@ -341,7 +409,7 @@ def cmd_verify(args):
     m, kid = verify_files(args.manifest, args.sig, keys, args.files,
                           require_all=args.require_all)
     n = len([f for f in args.files if os.path.basename(f) not in
-             (MANIFEST_NAME, SIGNATURE_NAME)])
+             NOT_MANIFEST_ASSETS])
     print(f'OK: MoltBrowser {m["version"]} manifest signed by key {kid}; '
           f'{n} asset(s) match.')
 
@@ -360,6 +428,12 @@ def main(argv=None):
     s.set_defaults(fn=cmd_manifest)
     s = sub.add_parser('sign'); s.add_argument('--key', required=True)
     s.add_argument('--manifest', default=MANIFEST_NAME); s.add_argument('--out')
+    s.add_argument('--assets-dir', help='the release assets, for the build '
+                   'provenance statements the manifest lists')
+    s.add_argument('--provenance-out', help=f'default: {PROVENANCE_NAME} next '
+                   'to the manifest')
+    s.add_argument('--no-provenance', action='store_true',
+                   help='sign the manifest only (not publishable)')
     s.add_argument('--yes', action='store_true', help='skip the version prompt')
     s.set_defaults(fn=cmd_sign)
     s = sub.add_parser('verify'); s.add_argument('--manifest', default=MANIFEST_NAME)

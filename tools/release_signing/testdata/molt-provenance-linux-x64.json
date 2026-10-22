@@ -1,0 +1,139 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://github.com/OneManNoCode/MoltBrowser/blob/main/docs/SIGNED_UPDATES.md#provenance-format-v1",
+      "externalParameters": {
+        "arch": "x64",
+        "gnArgsFile": "configs/linux-x64.gn",
+        "platform": "linux",
+        "releaseBuild": true,
+        "source": "git+https://github.com/OneManNoCode/MoltBrowser@refs/tags/v0.3.0",
+        "tag": "v0.3.0",
+        "version": "0.3.0"
+      },
+      "internalParameters": {
+        "gnArgs": [
+          {
+            "args": [
+              "google_api_key = \"\"",
+              "is_official_build = true",
+              "safe_browsing_mode = 1",
+              "target_cpu = \"x64\"",
+              "target_os = \"linux\""
+            ],
+            "matchesArgsFile": true,
+            "outDir": "out/MoltBrowser"
+          }
+        ]
+      },
+      "resolvedDependencies": [
+        {
+          "digest": {
+            "gitCommit": "3c2da04662d3222cffca0d248952cbc0bfa868d1"
+          },
+          "name": "moltbrowser",
+          "uri": "git+https://github.com/OneManNoCode/MoltBrowser@refs/tags/v0.3.0"
+        },
+        {
+          "digest": {
+            "gitCommit": "0c74645fd0fac59a6c2e238f94d7411616427ebf"
+          },
+          "name": "chromium",
+          "uri": "git+https://chromium.googlesource.com/chromium/src@refs/tags/152.0.7977.169"
+        },
+        {
+          "digest": {
+            "gitTree": "7f29e094d11ad6cf78d74f760dd28f666b9c543d",
+            "sha256": "71dd6731a4465ef9e99de1e2ac5ad37dc2469f2f15c0b9ea3455f8f94481e526"
+          },
+          "name": "patches",
+          "uri": "git+https://github.com/OneManNoCode/MoltBrowser@3c2da04662d3222cffca0d248952cbc0bfa868d1#patches"
+        },
+        {
+          "digest": {
+            "gitBlob": "57ab3348b4ea1753eec8f8ffd1a0b504c7ca57eb",
+            "sha256": "d5df5b6e1f7976231868e2b1b15957cf10b09144dcbc57bd688642ab4b207a32"
+          },
+          "name": "configs/linux-x64.gn",
+          "uri": "git+https://github.com/OneManNoCode/MoltBrowser@3c2da04662d3222cffca0d248952cbc0bfa868d1#configs/linux-x64.gn"
+        },
+        {
+          "digest": {
+            "gitTree": "408a2683c637dda34e5dd2a80f8599bee2e78f4c",
+            "sha256": "d4dc8dbd4cf8da599794ca840f9c8114bedf1a0d2f5cd88647672994c5bb3371"
+          },
+          "name": "src/third_party/rust",
+          "uri": "git+https://github.com/OneManNoCode/MoltBrowser@3c2da04662d3222cffca0d248952cbc0bfa868d1#src/third_party/rust"
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "builderDependencies": [
+          {
+            "digest": {
+              "gitCommit": "6f82588f7923c01c231e15c1c154548e4505640d"
+            },
+            "name": "depot_tools",
+            "uri": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+          }
+        ],
+        "id": "https://github.com/OneManNoCode/MoltBrowser/builders/test-builder-1",
+        "version": {
+          "clang": "clang version 23.0.0git (https://chromium.googlesource.com/a/external/github.com/llvm/llvm-project 53d18800)",
+          "rustc": "rustc 1.92.0 b998449636a4 (b998449636a48e2c4a362809085b600a0174e1f2-5-llvmorg-23-init-19482-g53d18800 chromium)"
+        }
+      },
+      "metadata": {
+        "finishedOn": "2026-10-01T13:30:00Z",
+        "startedOn": "2026-10-01T09:00:00Z"
+      }
+    }
+  },
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subject": [
+    {
+      "digest": {
+        "sha256": "70feff47709221eeab733b3161c7be320e09547830309da1d21cffd7659d629e"
+      },
+      "name": "MoltBrowser-Linux-x64-deb.spdx.json"
+    },
+    {
+      "digest": {
+        "sha256": "35083b0d25562837825e0042101336f5b2baf782fb371671426e10ed7fffaa2f"
+      },
+      "name": "MoltBrowser-Linux-x64-rpm.spdx.json"
+    },
+    {
+      "digest": {
+        "sha256": "9b06815a3d96470747c0653e1923652463e2e1eb63e0102054524c1892eb38ba"
+      },
+      "name": "MoltBrowser-Linux-x64-tar-gz.spdx.json"
+    },
+    {
+      "digest": {
+        "sha256": "b65ab1ed14ad372bfc5603e921bad94b9843ecfa709b9b988dea6ce4624ee581"
+      },
+      "name": "MoltBrowser-Linux-x64.deb"
+    },
+    {
+      "digest": {
+        "sha256": "83502ba35826a8634bfea9ddbecaa72549ad9b5a315cb60d4fcdb122fe163e0e"
+      },
+      "name": "MoltBrowser-Linux-x64.rpm"
+    },
+    {
+      "digest": {
+        "sha256": "9e0170a8bed717fa6465ae2aa45454708e05681254cf1ba927e63564d20241e2"
+      },
+      "name": "MoltBrowser-Linux-x64.tar.gz"
+    },
+    {
+      "digest": {
+        "sha256": "3f6c90a81a714ebbf00fe6ec1c85f8fc17dc7d523018df3b551052649e63991c"
+      },
+      "name": "SHA256SUMS-linux-x64"
+    }
+  ]
+}
