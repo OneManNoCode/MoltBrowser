@@ -18,7 +18,9 @@
 // rounding, match Blink's.
 //
 // Std-only and constexpr, so it is unit-tested standalone and with
-// static_asserts. Where it meets the window: molt_letterbox_view.h.
+// static_asserts. Where it meets the window: molt_letterbox_view.h (the
+// margins) and chrome/browser/molt_ai/tor/molt_net_window.cc (the size new
+// MoltNet windows open at, WindowLetterboxSize()).
 
 #ifndef CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_LETTERBOX_H_
 #define CHROME_BROWSER_MOLT_AI_FINGERPRINTING_MOLT_LETTERBOX_H_
@@ -76,6 +78,46 @@ constexpr LetterboxMargins LetterboxMarginsFor(int width, int height) {
     margins.bottom = spare_height - margins.top;
   }
   return margins;
+}
+
+struct LetterboxSize {
+  int width = 0;
+  int height = 0;
+
+  constexpr bool IsEmpty() const { return width <= 0 || height <= 0; }
+  friend constexpr bool operator==(const LetterboxSize&,
+                                   const LetterboxSize&) = default;
+};
+
+// The page size a new MoltNet window opens with (molt_net_window.cc), so it
+// starts without margins: the largest letterbox size -- whole steps, at
+// most kLetterboxMax{Width,Height} (1400 x 900) -- that fits on the screen
+// together with the browser UI around the page. `window_*` is the window's
+// current size and `page_*` its page area's, so the difference is that UI
+// (frame, tab strip, toolbar, side panel, ...); `work_area_*` is the size of
+// the screen's work area. All in DIPs. Empty when there is no room for one
+// step, or the sizes make no sense: the window then keeps its size and the
+// letterbox margins do the rest.
+constexpr LetterboxSize WindowLetterboxSize(int window_width,
+                                            int window_height,
+                                            int page_width,
+                                            int page_height,
+                                            int work_area_width,
+                                            int work_area_height) {
+  if (page_width <= 0 || page_height <= 0 || window_width < page_width ||
+      window_height < page_height || work_area_width <= 0 ||
+      work_area_height <= 0) {
+    return {};
+  }
+  // Both differences are in [0, window size], so nothing overflows.
+  const int room_width = work_area_width - (window_width - page_width);
+  const int room_height = work_area_height - (window_height - page_height);
+  if (room_width < kLetterboxStepWidth || room_height < kLetterboxStepHeight) {
+    return {};
+  }
+  return {
+      LetterboxLength(room_width, kLetterboxStepWidth, kLetterboxMaxWidth),
+      LetterboxLength(room_height, kLetterboxStepHeight, kLetterboxMaxHeight)};
 }
 
 }  // namespace molt_ai::fingerprinting

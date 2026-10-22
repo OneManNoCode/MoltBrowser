@@ -53,6 +53,9 @@
 //            the form-control Locale            -> moltnet_uniformity.h
 //   MoltNet  DefaultLanguage(), UserPreferredLanguages() (language.cc; the
 //              default text locale)                 -> moltnet_locale.h
+//   MoltNet  navigator.deviceMemory, subresource client hints
+//            (frame_fetch_context.cc), navigator.userAgentData's
+//            high-entropy values                -> moltnet_device.h
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:

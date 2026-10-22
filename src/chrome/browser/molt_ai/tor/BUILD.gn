@@ -136,6 +136,11 @@ source_set("tor") {
     # Which tor binary may run: bundled, or a root-owned system tor on Linux
     # (audit S18).
     "//chrome/browser/molt_ai/common:helper_binary",
+
+    # The size new MoltNet windows open at (molt_net_window.cc; the
+    # letterbox geometry is header-only and std-only).
+    "//chrome/browser/molt_ai/fingerprinting:letterbox",
+
     # molt_net_routing.cc applies the Tor proxy + leak-safe prefs to the
     # isolated MoltNet OTR profile (never the regular profile).
     "//chrome/browser/profiles:profile",
@@ -159,6 +164,9 @@ source_set("tor") {
     # print-preview contents before discarding it, as Incognito's are.
     "//printing/buildflags",
     "//services/network/public/mojom",
+    "//ui/base",
+    "//ui/display",
+    "//ui/gfx/geometry",
     "//url",
   ]
 

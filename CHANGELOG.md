@@ -258,6 +258,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   off in MoltNet windows, and "Open all" bookmarks there no longer spill
   into a regular window. What is still outside Tor is listed in
   `docs/MOLTNET_COMPLIANCE.md` §5.7.
+- **MoltNet hides your touchscreen, memory, CPU and exact system.** MoltNet
+  pages now all see the same mouse-and-keyboard desktop: no touch points, a
+  fine pointer that can hover and no touch-event detection (your
+  touchscreen still works), 8 GB of memory and an unknown CPU class. Sites
+  can no longer ask for your screen's pixel density, viewport, memory,
+  network speed, exact OS version, CPU architecture or exact browser
+  version through client hints: MoltNet only sends the basic browser,
+  platform and preference hints, and `navigator.userAgentData` leaves those
+  details blank. New MoltNet windows open at the largest letterbox size
+  that fits your screen (1400 x 900 where there is room), so pages start
+  without margins.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock

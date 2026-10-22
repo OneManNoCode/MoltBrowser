@@ -3,11 +3,19 @@ include_rules = [
   # (ContentsWebView calls in from chrome/browser/ui/views/frame).
   "+chrome/browser/ui/color/chrome_color_id.h",
   "+ui/views/controls/webview/webview.h",
+  # molt_net_client_hints.cc: MoltNet's ClientHintsControllerDelegate.
+  "+components/client_hints/browser/client_hints.h",
+  "+components/embedder_support/user_agent_utils.h",
 ]
 
 specific_include_rules = {
   # The letterbox steps must match Blink's; farbling.h is std + //base only.
   "molt_letterbox_unittest\.cc": [
     "+third_party/blink/renderer/core/molt_fingerprinting/farbling.h",
+  ],
+  # MoltNet's client-hint rule and device values must match Blink's
+  # (std-only).
+  "molt_net_device_values_unittest\.cc": [
+    "+third_party/blink/renderer/core/molt_fingerprinting/moltnet_device_values.h",
   ],
 }

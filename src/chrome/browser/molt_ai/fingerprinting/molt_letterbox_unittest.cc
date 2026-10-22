@@ -103,5 +103,76 @@ TEST(MoltLetterboxTest, TinyAreasAreNotLetterboxed) {
   EXPECT_EQ(narrow.top + narrow.bottom, 50);
 }
 
+// New MoltNet windows: a 1024 x 700 window whose page area is 1008 x 610
+// (16 DIPs of frame, 90 of frame, tab strip and toolbar).
+static_assert(WindowLetterboxSize(1024, 700, 1008, 610, 1920, 1040) ==
+              LetterboxSize{1400, 900});
+static_assert(WindowLetterboxSize(1024, 700, 1008, 610, 1366, 728) ==
+              LetterboxSize{1200, 600});
+static_assert(WindowLetterboxSize(1024, 700, 1008, 610, 1416, 990) ==
+              LetterboxSize{1400, 900});
+static_assert(WindowLetterboxSize(1024, 700, 1008, 610, 1415, 989) ==
+              LetterboxSize{1200, 800});
+static_assert(WindowLetterboxSize(1024, 700, 1008, 610, 200, 600).IsEmpty());
+static_assert(WindowLetterboxSize(1024, 700, 0, 610, 1920, 1040).IsEmpty());
+static_assert(WindowLetterboxSize(1000, 600, 1008, 610, 1920, 1040).IsEmpty());
+
+// The window that results: its page area is the letterbox size (so the
+// page gets no margins), and the window fits on the screen; and no larger
+// letterbox size would have fit.
+TEST(MoltLetterboxTest, NewWindowsOpenAtTheLargestLetterboxThatFits) {
+  for (int chrome_width : {0, 2, 16, 320}) {
+    for (int chrome_height : {0, 31, 90, 141}) {
+      for (int work_width = 0; work_width <= 3000; work_width += 23) {
+        for (int work_height = 0; work_height <= 2000; work_height += 19) {
+          const LetterboxSize page =
+              WindowLetterboxSize(800 + chrome_width, 600 + chrome_height, 800,
+                                  600, work_width, work_height);
+          const int room_width = work_width - chrome_width;
+          const int room_height = work_height - chrome_height;
+          if (room_width < kLetterboxStepWidth ||
+              room_height < kLetterboxStepHeight) {
+            EXPECT_TRUE(page.IsEmpty());
+            continue;
+          }
+          ASSERT_FALSE(page.IsEmpty());
+          // A letterbox size: the page gets no margins in that window.
+          EXPECT_EQ(LetterboxMarginsFor(page.width, page.height),
+                    LetterboxMargins{});
+          EXPECT_EQ(page.width % kLetterboxStepWidth, 0);
+          EXPECT_EQ(page.height % kLetterboxStepHeight, 0);
+          EXPECT_LE(page.width, kLetterboxMaxWidth);
+          EXPECT_LE(page.height, kLetterboxMaxHeight);
+          // The window fits.
+          EXPECT_LE(page.width + chrome_width, work_width);
+          EXPECT_LE(page.height + chrome_height, work_height);
+          // The largest that fits.
+          EXPECT_TRUE(page.width == kLetterboxMaxWidth ||
+                      page.width + kLetterboxStepWidth + chrome_width >
+                          work_width);
+          EXPECT_TRUE(page.height == kLetterboxMaxHeight ||
+                      page.height + kLetterboxStepHeight + chrome_height >
+                          work_height);
+        }
+      }
+    }
+  }
+}
+
+// Whatever size the window had before (the last window's, the saved one),
+// the result depends only on the browser UI's size and the screen.
+TEST(MoltLetterboxTest, NewWindowSizeDoesNotDependOnThePreviousSize) {
+  const LetterboxSize expected =
+      WindowLetterboxSize(1000, 700, 984, 610, 1680, 1010);
+  EXPECT_EQ(expected, (LetterboxSize{1400, 900}));
+  for (int page_width = 1; page_width <= 2500; page_width += 37) {
+    for (int page_height = 1; page_height <= 1500; page_height += 29) {
+      EXPECT_EQ(WindowLetterboxSize(page_width + 16, page_height + 90,
+                                    page_width, page_height, 1680, 1010),
+                expected);
+    }
+  }
+}
+
 }  // namespace
 }  // namespace molt_ai::fingerprinting

@@ -770,14 +770,16 @@ Do all of this in a MoltNet window unless the step says otherwise.
 
 ## 5. What MoltNet does *not* do
 
-1. **It is not Tor Browser.** MoltNet windows report the same time zone
-   (UTC), language (en-US), rounded screen size, CPU count and WebGL renderer
+1. **It is not Tor Browser.** MoltNet windows letterbox the page and report
+   the same time zone (UTC), language (en-US), screen size, pixel ratio, CPU
+   count, memory, WebGL limits and installed fonts (per operating system)
    for everyone, and canvas, WebGL and audio readback carry per-site noise
-   (docs/FINGERPRINTING.md). But the window itself isn't letterboxed, fonts
-   and the OS in the user agent are your real ones, and the protection hasn't
-   been tested against real fingerprinting scripts yet. Assume sites may still
-   recognise and link your visits. If your safety depends on not being
-   identified, use Tor Browser.
+   (docs/FINGERPRINTING.md). But the operating system is visible (in the
+   user agent and through the fonts it ships), the protection hasn't been
+   built and tested against real fingerprinting scripts yet, and Tor
+   Browser's design has had years of public review that MoltNet's hasn't.
+   Assume sites may still recognise and link your visits. If your safety
+   depends on not being identified, use Tor Browser.
 2. **It doesn't hide who you are from sites you log into.**
 3. **The exit relay can see unencrypted traffic.** HTTPS-Only mode warns you
    before plain HTTP; don't click through.

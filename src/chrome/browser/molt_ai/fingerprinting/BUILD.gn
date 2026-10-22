@@ -5,9 +5,10 @@
 # session seed, the renderer mode switch (hooked from
 # ChromeContentBrowserClient::AppendExtraCommandLineSwitches) and the
 # channel-associated configuration sent at RenderProcessWillLaunch (session
-# seed, Shields-off sites), and MoltNet's letterboxing of the page in the
-# window (:letterbox, :letterbox_view). The engine itself lives in Blink:
-# //third_party/blink/renderer/core/molt_fingerprinting.
+# seed, Shields-off sites), MoltNet's letterboxing of the page in the
+# window (:letterbox, :letterbox_view), and MoltNet's input devices, CPU
+# tier and client hints (:device, :client_hints). The engine itself lives
+# in Blink: //third_party/blink/renderer/core/molt_fingerprinting.
 
 source_set("fingerprinting") {
   sources = [
@@ -65,15 +66,65 @@ source_set("letterbox_view") {
   ]
 }
 
+# MoltNet's uniform device, browser side: the values (std-only, constexpr;
+# the client-hint rule is Blink's, compared by the unit test) ...
+source_set("device_values") {
+  sources = [ "molt_net_device_values.h" ]
+}
+
+# ... the touch / pointer / hover WebPreferences and the CPU performance tier
+# (molt_net_device.h), called from chrome_content_browser_client.cc ...
+source_set("device") {
+  sources = [
+    "molt_net_device.cc",
+    "molt_net_device.h",
+  ]
+  deps = [
+    ":device_values",
+    ":fingerprinting",
+    "//content/public/browser",
+    "//third_party/blink/public/common",
+    "//third_party/blink/public/mojom:mojom_platform",
+    "//ui/base",
+  ]
+}
+
+# ... and MoltNet's ClientHintsControllerDelegate (molt_net_client_hints.h),
+# which ClientHintsFactory (//chrome/browser/client_hints) builds.
+source_set("client_hints") {
+  sources = [
+    "molt_net_client_hints.cc",
+    "molt_net_client_hints.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/client_hints/browser",
+    "//services/network/public/mojom",
+  ]
+  deps = [
+    ":device_values",
+    ":fingerprinting",
+    "//components/embedder_support:user_agent",
+    "//services/network/public/cpp",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
+
 # Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
-  sources = [ "molt_letterbox_unittest.cc" ]
+  sources = [
+    "molt_letterbox_unittest.cc",
+    "molt_net_device_values_unittest.cc",
+  ]
   deps = [
+    ":device_values",
     ":letterbox",
     "//testing/gtest",
 
-    # The letterbox steps must match Blink's (std + //base + //crypto only).
+    # The letterbox steps and MoltNet's client-hint rule must match Blink's
+    # (std + //base + //crypto only).
     "//third_party/blink/renderer/core/molt_fingerprinting:farbling",
   ]
 }
