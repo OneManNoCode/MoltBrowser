@@ -674,7 +674,8 @@ writing APIs.
 - **Fairness.** Requests from visible pages go before hidden ones; within
   each, sites take turns (round-robin by when each site last ran).
 - **Limits.** 16 live sessions per site (top-level site, per profile), 16
-  queued generations per site, 64 in total, 32 per session. Over a limit
+  queued generations per site, 64 in total, 32 per session; 16 `create()`
+  calls of one document waiting for an answer (`kMaxPendingCreates`). Over a limit
   `create()` fails or the request gets a generic failure (never
   `kErrorRequestThrottled`, which crash-reports in the renderer).
 - **Deadline.** A page generation, model load included, is cancelled after

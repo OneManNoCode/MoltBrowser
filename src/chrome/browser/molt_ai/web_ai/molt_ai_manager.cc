@@ -1067,6 +1067,11 @@ void MoltAIManager::CreateTranslator(
 }
 
 void MoltAIManager::StartCreate(std::unique_ptr<CreateRequest> request) {
+  if (creates_.size() >= kMaxPendingCreates) {
+    request->Fail(AIManagerCreateClientError::kUnableToCreateSession,
+                  nullptr);
+    return;
+  }
   const uint64_t id = next_create_id_++;
   creates_[id] = std::move(request);
   backend_->GetDeviceFacts(base::BindOnce(&MoltAIManager::OnCreateDeviceFacts,

@@ -1284,6 +1284,39 @@ TEST_F(MoltAIManagerTest, AbortedCreateStopsBeforeThePrompt) {
   EXPECT_EQ(manager_->pending_create_count_for_testing(), 0u);
 }
 
+// A document holds at most kMaxPendingCreates unanswered create() calls
+// (each keeps its options until the user answers); more fail at once.
+TEST_F(MoltAIManagerTest, PendingCreatesAreBounded) {
+  env_.consent = SiteConsent::kAsk;
+  backend_.hold_device_facts = true;
+  std::vector<std::unique_ptr<LanguageModelClient>> clients;
+  for (size_t i = 0; i < kMaxPendingCreates + 3; ++i) {
+    clients.push_back(std::make_unique<LanguageModelClient>());
+    remote_->CreateLanguageModel(
+        clients.back()->Remote(),
+        blink::mojom::AILanguageModelCreateOptions::New(), mojo::NullRemote());
+  }
+  RunUntilIdle();
+  EXPECT_EQ(manager_->pending_create_count_for_testing(), kMaxPendingCreates);
+  for (size_t i = 0; i < clients.size(); ++i) {
+    if (i < kMaxPendingCreates) {
+      EXPECT_FALSE(clients[i]->error) << i;
+    } else {
+      EXPECT_EQ(clients[i]->error,
+                AIManagerCreateClientError::kUnableToCreateSession)
+          << i;
+    }
+  }
+  // Answered (and their sessions dropped), they make room again.
+  backend_.ReleaseDeviceFacts();
+  RunUntilIdle();
+  EXPECT_EQ(manager_->pending_create_count_for_testing(), 0u);
+  clients.clear();
+  RunUntilIdle();
+  auto later = CreateLanguageModel();
+  EXPECT_TRUE(later->session.is_bound());
+}
+
 TEST_F(MoltAIManagerTest, AModelThatWontLoadFailsCreate) {
   env_.consent = SiteConsent::kAllowed;
   backend_.prepare_ok = false;
