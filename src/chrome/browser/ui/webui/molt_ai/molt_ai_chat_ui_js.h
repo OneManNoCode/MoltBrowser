@@ -5311,7 +5311,8 @@ function _stopRecording() {
 
 // ============================================================
 // WebAgent UI — autonomous browsing agent in the side panel
-// Streams step-by-step progress via the 'agent-step' WebUI event.
+// Streams step-by-step progress via the 'agent-step' WebUI event, and the
+// agent's plan and its current step via 'agent-plan'.
 // Triggered by the "Browse" button next to the chat input.
 // ============================================================
 (function(){
@@ -5341,6 +5342,18 @@ function _stopRecording() {
 .badge-SCROLL,.badge-OBSERVE{color:var(--faint)}
 .badge-DONE{color:var(--ok)}
 .badge-ERROR{color:var(--err)}
+.badge-REPLAN{color:var(--muted)}
+.agent-plan{display:none;margin:0 0 6px;padding:6px 8px;border-radius:6px;
+  background:var(--surface2)}
+.agent-plan.shown{display:block}
+.agent-plan-title{font-size:9px;font-weight:700;letter-spacing:0.5px;color:var(--muted);
+  margin-bottom:3px}
+.agent-plan-steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
+.agent-plan-step{font-size:10px;color:var(--muted);word-break:break-word}
+.agent-plan-step.done{color:var(--faint);text-decoration:line-through}
+.agent-plan-step.current{color:var(--text);font-weight:600}
+.agent-plan-check{font-size:9px;color:var(--faint);font-weight:400}
+.agent-plan-note{font-size:10px;color:var(--muted);word-break:break-word}
 .agent-step-body{flex:1;min-width:0}
 .agent-step-target{font-size:10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .agent-step-reason{font-size:9px;color:var(--faint);margin-top:1px}
@@ -5375,6 +5388,7 @@ function _stopRecording() {
         '<span class="agent-bar-title">&#129302; AGENT RUNNING</span>' +
         '<button class="agent-stop-btn" id="agentStopBtn">&#9632; Stop</button>' +
       '</div>' +
+      '<div class="agent-plan" id="agentPlan"></div>' +
       '<div class="agent-steps" id="agentSteps"></div>' +
       '<div id="agentResult" style="display:none"></div>');
     var inputArea = document.getElementById('inputArea') ||
@@ -5403,6 +5417,12 @@ function _stopRecording() {
           goal.replace(/[<>&]/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}) +
         '</div></div></div>');
     document.getElementById('agentResult').style.display = 'none';
+    // A new run has no plan yet.
+    var plan = document.getElementById('agentPlan');
+    if (plan) {
+      while (plan.firstChild) plan.removeChild(plan.firstChild);
+      plan.classList.remove('shown');
+    }
     var hdr = document.querySelector('.agent-bar-title');
     if (hdr) hdr.textContent = '\u{1F916} AGENT RUNNING';
     var stopBtn = document.getElementById('agentStopBtn');
@@ -5442,6 +5462,62 @@ function _stopRecording() {
     row.querySelector('.agent-step-badge').textContent = badge;
     steps.appendChild(row);
     steps.scrollTop = steps.scrollHeight;
+  });
+
+  // The agent's plan (#molt-agent-planner) and its current step. The model
+  // wrote it from the goal and the pages the agent read, so a page can
+  // shape it: every step is shown as text (DOM nodes + textContent), never
+  // markup, and the plan never changes what the agent may do.
+  // update: {event, steps: [{goal, done_when}], current, replans, note}.
+  function renderPlan(update) {
+    var box = document.getElementById('agentPlan');
+    if (!box || !update || typeof update !== 'object') return;
+    while (box.firstChild) box.removeChild(box.firstChild);
+    var steps = Array.isArray(update.steps) ? update.steps.slice(0, 6) : [];
+    var current = Number(update.current) || 0;
+    var replans = Number(update.replans) || 0;
+    var title = document.createElement('div');
+    title.className = 'agent-plan-title';
+    box.appendChild(title);
+    if (!steps.length) {
+      // No usable plan: the browser's note; the agent goes on without one.
+      title.textContent = 'NO PLAN';
+      var note = document.createElement('div');
+      note.className = 'agent-plan-note';
+      note.textContent = String(update.note || '').substring(0, 300);
+      box.appendChild(note);
+      box.classList.add('shown');
+      return;
+    }
+    title.textContent = replans > 0
+        ? 'PLAN (rewritten ' + (replans === 1 ? 'once' : replans + ' times') + ')'
+        : 'PLAN';
+    var list = document.createElement('ol');
+    list.className = 'agent-plan-steps';
+    steps.forEach(function(s, i) {
+      var n = i + 1;
+      var item = document.createElement('li');
+      item.className = 'agent-plan-step' +
+          (n < current ? ' done' : n === current ? ' current' : '');
+      if (n === current) item.setAttribute('aria-current', 'step');
+      var goal = document.createElement('div');
+      goal.className = 'agent-plan-goal';
+      goal.textContent = String((s && s.goal) || '').substring(0, 200);
+      var check = document.createElement('div');
+      check.className = 'agent-plan-check';
+      check.textContent =
+          'Done when: ' + String((s && s.done_when) || '').substring(0, 200);
+      item.appendChild(goal);
+      item.appendChild(check);
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+    box.classList.add('shown');
+  }
+
+  cr.addWebUiListener('agent-plan', function(update) {
+    if (!agentRunning) return;
+    renderPlan(update);
   });
 
   // The agent paused on a sensitive action (leaving the task's sites,

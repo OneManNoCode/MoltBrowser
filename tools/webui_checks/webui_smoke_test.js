@@ -344,6 +344,109 @@ async function checkChatFormFill(window) {
   nextFormFill = {status: 'none', message: 'Nothing matched.'};
 }
 
+// molt://ai-chat's agent bar and its plan (docs/design/AGENT_ACTIONS.md
+// §2.8): the steps are model text, written from page text, so they render
+// as text only; the current step is marked; a rewrite, the "no plan" note
+// and junk events don't break the bar; nothing is shown once the run is
+// over, and a new run starts without the old plan. The goals the page
+// sent to startWebAgent (which never answers here: the run stays open).
+const agentGoals = [];
+const HOSTILE_PLAN_STEP = '<img src=x onerror=alert(1)>Search flights';
+async function checkChatAgentPlan(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const fire = (event, value) => window.cr.webUIListenerCallback(event, value);
+  const items = () => Array.from(doc.querySelectorAll('#agentPlan li'));
+  const title = () => doc.querySelector('#agentPlan .agent-plan-title');
+  const steps = [
+    {goal: HOSTILE_PLAN_STEP, done_when: 'results <b>listed</b>'},
+    {goal: 'Sort by price', done_when: 'cheapest first'},
+  ];
+
+  window.startWebAgent('Find the cheapest flight');
+  await tick();
+  assert.deepStrictEqual(agentGoals, ['Find the cheapest flight']);
+  const plan = doc.getElementById('agentPlan');
+  assert(plan, 'the bar has a plan box');
+  assert(!plan.classList.contains('shown'), 'no plan before one is written');
+
+  // The first plan: text only, the first step current.
+  fire('agent-plan', {event: 'planned', steps, current: 1, replans: 0, note: ''});
+  await tick();
+  assert(plan.classList.contains('shown'));
+  assert.strictEqual(title().textContent, 'PLAN');
+  assert.strictEqual(items().length, 2);
+  assert.strictEqual(items()[0].querySelector('.agent-plan-goal').textContent,
+                     HOSTILE_PLAN_STEP);
+  assert.strictEqual(items()[0].querySelector('.agent-plan-check').textContent,
+                     'Done when: results <b>listed</b>');
+  assert(items()[0].classList.contains('current'));
+  assert.strictEqual(items()[0].getAttribute('aria-current'), 'step');
+  assert(!items()[1].classList.contains('current'));
+  assert.strictEqual(doc.querySelectorAll('#agentBar img, #agentBar b').length, 0,
+                     'plan text stays text');
+
+  // The next step.
+  fire('agent-plan', {event: 'advanced', steps, current: 2, replans: 0, note: ''});
+  await tick();
+  assert(items()[0].classList.contains('done'));
+  assert(items()[1].classList.contains('current'));
+  assert.strictEqual(items()[0].getAttribute('aria-current'), null);
+
+  // A step row of a REPLAN, as text.
+  fire('agent-step', {number: 3, action: 'REPLAN', target: 'plan step 2',
+                      reason: '<b>the page changed</b>', success: true, plan_step: 2});
+  await tick();
+  const rows = doc.querySelectorAll('#agentSteps .agent-step');
+  assert.strictEqual(rows[rows.length - 1].querySelector('.agent-step-badge').textContent,
+                     'REPLAN');
+  assert.strictEqual(doc.querySelectorAll('#agentBar b').length, 0);
+
+  // A rewritten plan replaces the old one.
+  fire('agent-plan', {event: 'replanned', current: 1, replans: 1, note: '',
+                      steps: [{goal: 'Open the cart', done_when: 'the cart is open'}]});
+  await tick();
+  assert.strictEqual(title().textContent, 'PLAN (rewritten once)');
+  assert.strictEqual(items().length, 1);
+  fire('agent-plan', {event: 'replanned', current: 1, replans: 2, note: '',
+                      steps: [{goal: 'x', done_when: 'y'}]});
+  await tick();
+  assert.strictEqual(title().textContent, 'PLAN (rewritten 2 times)');
+
+  // No usable plan: the browser's note, as text.
+  fire('agent-plan', {event: 'none', steps: [], current: 0, replans: 2,
+                      note: 'The model couldn\'t write a <i>usable</i> plan'});
+  await tick();
+  assert.strictEqual(title().textContent, 'NO PLAN');
+  assert.strictEqual(items().length, 0);
+  assert.strictEqual(plan.querySelector('.agent-plan-note').textContent,
+                     'The model couldn\'t write a <i>usable</i> plan');
+  assert.strictEqual(doc.querySelectorAll('#agentBar i').length, 0);
+
+  // Junk doesn't break the bar; at most six steps are shown.
+  for (const junk of [null, 'x', 7, {steps: 'nope'}, {steps: [null, 5, {goal: {}}]},
+                      {steps: Array(20).fill({goal: 'g', done_when: 'd'}), current: 'x'}]) {
+    fire('agent-plan', junk);
+    await tick();
+  }
+  assert.strictEqual(items().length, 6);
+  assert.strictEqual(doc.querySelectorAll('#agentPlan .current').length, 0);
+
+  // Once the run is over, nothing more is shown; a new run starts clean.
+  doc.getElementById('agentStopBtn').click();
+  await tick();
+  assert(window.__sent.includes('cancelWebAgent'));
+  fire('agent-plan', {event: 'planned', steps, current: 1, replans: 0, note: ''});
+  await tick();
+  assert.strictEqual(items().length, 6, 'a finished run ignores plan events');
+  window.startWebAgent('Again');
+  await tick();
+  assert(!plan.classList.contains('shown'), 'a new run has no plan yet');
+  assert.strictEqual(items().length, 0);
+  doc.getElementById('agentStopBtn').click();
+  await tick();
+}
+
 // shieldSetGlobal calls from molt://ai-settings ([key, value] each). The
 // reply after turning tracking-parameter stripping off also reports its
 // chrome://flags kill switch as off.
@@ -1048,6 +1151,7 @@ const PAGES = [
        chatActionCalls.push(['runFormFill'].concat(args.slice(1)));
        return {success: true, filled: 1, total: 1};
      },
+     startWebAgent: (args) => { agentGoals.push(args[1]); return NO_REPLY; },
      getPageContext: ACTIVE_PAGE,
      setJsForDomain: (args) => { jsToggles.push(args.slice(1)); return {success: true}; },
      openSandboxTab: (args) => { sandboxOpens.push(args[1]); return {success: true, url: args[1]}; },
@@ -1196,6 +1300,7 @@ const PAGES = [
      await checkModelLicences(window);
      await checkChatPageActions(window);
      await checkChatFormFill(window);
+     await checkChatAgentPlan(window);
    }},
 ];
 

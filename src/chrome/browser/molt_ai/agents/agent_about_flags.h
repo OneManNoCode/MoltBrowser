@@ -2,10 +2,11 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // chrome://flags entries for the web agent (agent_features.h): its
-// screenshots and its use of site tools. Expanded inside kFeatureEntries in
-// chrome/browser/about_flags.cc next to the other MoltBrowser entries, so
-// the upstream file only gains an include and one macro line. Both default
-// to Enabled and take effect at the agent's next step.
+// screenshots, its use of site tools and its planner. Expanded inside
+// kFeatureEntries in chrome/browser/about_flags.cc next to the other
+// MoltBrowser entries, so the upstream file only gains an include and one
+// macro line. All default to Enabled; the first two take effect at the
+// agent's next step, the planner at its next run.
 //
 // The macro uses about_flags.cc's kOsAll and FEATURE_VALUE_TYPE.
 
@@ -32,7 +33,17 @@
      "asks you first. Disabled, the agent never reads or calls a page's "     \
      "tools.",                                                                \
      kOsAll,                                                                  \
-     FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentSiteTools)}
+     FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentSiteTools)},       \
+    {molt_ai::agent_features::flags::kPlanner,                                \
+     "MoltBrowser: planner for the web agent",                                \
+     "Before the AI agent acts, the on-device model writes a short plan for " \
+     "the task (at most 6 steps), which you see while the agent works. The "  \
+     "agent follows it step by step and has it rewritten when a step "        \
+     "fails. A plan never lets the agent do more: every action is checked "   \
+     "and asks you as before. Disabled, the agent picks one action at a "     \
+     "time without a plan.",                                                  \
+     kOsAll,                                                                  \
+     FEATURE_VALUE_TYPE(molt_ai::agent_features::kMoltAgentPlanner)}
 // clang-format on
 
 #endif  // CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ABOUT_FLAGS_H_

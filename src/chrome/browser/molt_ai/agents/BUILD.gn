@@ -65,9 +65,25 @@ source_set("chat_actions") {
   deps = [ "//base" ]
 }
 
+# The web agent's planner: the plan's schema and strict parser, what to do
+# with a plan reply, and the run's progress through the plan (when to
+# rewrite it) (docs/design/AGENT_ACTIONS.md §2.8). Pure logic (no
+# content/), so molt_ai_unittests links it; fuzzed by molt_agent_plan_fuzzer.
+source_set("agent_plan") {
+  sources = [
+    "agent_plan.cc",
+    "agent_plan.h",
+  ]
+
+  # PlanSteps and ModelReply.
+  public_deps = [ ":agent_actions" ]
+
+  deps = [ "//base" ]
+}
+
 # The web agent's prompt: the rules and the turn, as one raw prompt or as
-# a chat with a screenshot (docs/design/AGENT_ACTIONS.md §2.6). Pure logic,
-# so molt_ai_unittests links it.
+# a chat with a screenshot (docs/design/AGENT_ACTIONS.md §2.6), and the
+# planner's request (§2.8). Pure logic, so molt_ai_unittests links it.
 source_set("agent_prompt") {
   sources = [
     "agent_prompt.cc",
@@ -105,8 +121,8 @@ source_set("agent_vision") {
   ]
 }
 
-# chrome://flags/#molt-agent-screenshots and #molt-agent-site-tools
-# (about_flags.cc includes agent_about_flags.h).
+# chrome://flags/#molt-agent-screenshots, #molt-agent-site-tools and
+# #molt-agent-planner (about_flags.cc includes agent_about_flags.h).
 source_set("features") {
   sources = [
     "agent_about_flags.h",
@@ -122,6 +138,7 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "agent_actions_unittest.cc",
+    "agent_plan_unittest.cc",
     "agent_prompt_unittest.cc",
     "agent_tools_unittest.cc",
     "agent_vision_unittest.cc",
@@ -129,6 +146,7 @@ source_set("unit_tests") {
   ]
   deps = [
     ":agent_actions",
+    ":agent_plan",
     ":agent_prompt",
     ":agent_tools",
     ":agent_vision",

@@ -28,6 +28,10 @@
 // its arguments, under a schema built from the page's own, which
 // agent_tools converts only when it fits the grammar's subset.
 //
+// With a plan (the planner, agent_plan.h, §2.8), every action also says
+// which plan step it works on ("step", PlanSteps), and REPLAN asks for a
+// new plan. Without one, the schema and the parser are what they were.
+//
 // Pure logic (base::Value, no content/), unit-tested in molt_ai_unittests.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_ACTIONS_H_
@@ -62,6 +66,7 @@ enum class ActionType {
   kDone,
   kError,
   kCallTool,  // a site tool (WebMCP): the web agent only
+  kReplan,    // ask for a new plan (agent_plan.h): the web agent only
 };
 
 // The wire name ("NAVIGATE", "FILL_FORM", ...), used in the schema, the
@@ -79,13 +84,16 @@ constexpr ActionSet ActionBit(ActionType type) {
 constexpr bool HasAction(ActionSet set, ActionType type) {
   return (set & ActionBit(type)) != 0;
 }
-// The web agent's set: every action.
+// The web agent's set: every action but REPLAN.
 inline constexpr ActionSet kAgentActions =
     ActionBit(ActionType::kNavigate) | ActionBit(ActionType::kSearch) |
     ActionBit(ActionType::kClick) | ActionBit(ActionType::kType) |
     ActionBit(ActionType::kFillForm) | ActionBit(ActionType::kScroll) |
     ActionBit(ActionType::kObserve) | ActionBit(ActionType::kDone) |
     ActionBit(ActionType::kError) | ActionBit(ActionType::kCallTool);
+// ... and while it follows a plan (agent_plan.h): REPLAN too.
+inline constexpr ActionSet kPlannedAgentActions =
+    kAgentActions | ActionBit(ActionType::kReplan);
 
 // Caps. Lengths count characters (Unicode code points), as the grammar's
 // maxLength does.
@@ -181,13 +189,35 @@ std::string DescribeElements(const Observation& observation);
 // repeated, the TOOLS text within agent_tools::kMaxToolsTextChars, and
 // each kept only if the web agent's action schema with it is still one the
 // inference service converts (JsonSchemaToGrammar(), the service's own
-// converter). A tool that doesn't fit is left out, never cut down.
+// converter). A tool that doesn't fit is left out, never cut down. With
+// |with_plan| (the run has the planner on) the schema checked is the one
+// with a plan (kPlannedAgentActions, kWidestPlanSteps), which is the
+// largest the run sends.
 void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
-                  Observation* observation);
+                  Observation* observation,
+                  bool with_plan = false);
 
 // ---------------------------------------------------------------------------
 // The action and its schema
 // ---------------------------------------------------------------------------
+
+// With a plan (agent_plan.h), every action also carries "step", after
+// "reason": the number (1-based) of the plan step it works on. That is
+// |current|, or |current| + 1 when |current| < |count|, which reports the
+// current step done. Nothing else: a plan step is never skipped, and the
+// number only moves the browser's marker of the current step.
+struct PlanSteps {
+  int current = 1;
+  int count = 1;
+};
+
+// The step numbers |plan| allows, in order (|current| clamped to
+// 1..|count|).
+std::vector<int> AllowedPlanSteps(const PlanSteps& plan);
+
+// The PlanSteps AddSiteTools() checks a tool against when the run may have
+// a plan: the widest "step" (two numbers) and REPLAN.
+inline constexpr PlanSteps kWidestPlanSteps = {1, 2};
 
 struct FormFieldValue {
   std::string ref;
@@ -216,6 +246,8 @@ struct AgentAction {
   // and as the user reads them (agent_tools::ToolArguments).
   std::string tool_arguments;
   std::string tool_arguments_text;
+  // With a plan: the plan step it works on (1-based, PlanSteps); 0 without.
+  int plan_step = 0;
 };
 
 // The JSON Schema for the next reply, given what the model was shown.
@@ -224,11 +256,15 @@ struct AgentAction {
 // text field; their branches are left out when the observation has none.
 // CALL_TOOL is an anyOf of one object per tool of the observation (its id
 // as a const, its arguments' schema), left out without tools.
+// With |plan|, every object also has "step" (an enum of
+// AllowedPlanSteps()) after "reason"; null means no plan (and the schema is
+// exactly what it was before the planner).
 // Always inside the inference service's supported subset and caps
 // (json_schema_grammar.h; checked by the unit tests, and for tools by
 // AddSiteTools()).
 std::string BuildActionSchema(const Observation& observation,
-                              ActionSet allowed = kAgentActions);
+                              ActionSet allowed = kAgentActions,
+                              const PlanSteps* plan = nullptr);
 
 enum class ActionError {
   kNone,
@@ -245,6 +281,7 @@ enum class ActionError {
   kBadDirection,    // SCROLL other than "down" / "up"
   kUnknownTool,     // CALL_TOOL names a tool that isn't in the observation
   kBadArguments,    // CALL_TOOL's arguments don't match the tool's
+  kBadPlanStep,     // "step" is neither the current plan step nor the next
 };
 
 // Fixed text, for the retry note the model sees ("it named an element
@@ -262,10 +299,14 @@ struct ParsedAction {
 };
 
 // Parses and validates a reply (untrusted: whatever the service sent)
-// against |observation| and |allowed|, what BuildActionSchema() was given.
+// against |observation|, |allowed| and |plan|, what BuildActionSchema() was
+// given. With |plan|, "step" must be a whole number AllowedPlanSteps()
+// lists (AgentAction::plan_step); without, the key is refused like any
+// other extra key.
 ParsedAction ParseAction(std::string_view json,
                          const Observation& observation,
-                         ActionSet allowed = kAgentActions);
+                         ActionSet allowed = kAgentActions,
+                         const PlanSteps* plan = nullptr);
 
 // ---------------------------------------------------------------------------
 // What to do with a reply
@@ -317,7 +358,8 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
                             const Observation& observation,
                             int bad_in_a_row,
                             int bad_total,
-                            ActionSet allowed = kAgentActions);
+                            ActionSet allowed = kAgentActions,
+                            const PlanSteps* plan = nullptr);
 
 // ---------------------------------------------------------------------------
 // Carrying an action out

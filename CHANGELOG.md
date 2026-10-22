@@ -471,6 +471,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   first, showing every argument; tools that take a password or a file are
   never offered. What a tool answers is treated as page text. Turn it off
   at `chrome://flags/#molt-agent-site-tools`.
+- **The web agent plans first.** Before it acts, the on-device model writes
+  a short plan for the task (at most 6 steps, each with how to tell it's
+  done), shown above the agent's steps with the current one marked. The
+  agent follows it step by step and has it rewritten when the model asks,
+  when actions keep failing or when a step drags on; the third time a plan
+  fails, the run stops with a clear message. A plan never lets the agent do
+  more: it is treated as page-influenced text, and every action is still
+  checked and asks you exactly as before. If the model can't write a usable
+  plan, the agent works as it did without one. Turn it off at
+  `chrome://flags/#molt-agent-planner`.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

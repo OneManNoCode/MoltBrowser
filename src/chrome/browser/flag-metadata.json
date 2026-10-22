@@ -7057,6 +7057,12 @@
     "expiry_milestone": 160
   },
   {
+    // MoltBrowser: the web agent's planner switch; never expires.
+    "name": "molt-agent-planner",
+    "owners": [ "moltbrowser" ],
+    "expiry_milestone": -1
+  },
+  {
     // MoltBrowser: the web agent's screenshots switch; never expires.
     "name": "molt-agent-screenshots",
     "owners": [ "moltbrowser" ],
