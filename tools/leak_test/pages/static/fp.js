@@ -23,6 +23,30 @@ function mq(q) {
   }
 }
 
+// A classic scrollbar's width in CSS pixels, from a box that always has one
+// (0 with overlay scrollbars).
+function scrollbarBox() {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:0;top:0;width:200px;' +
+      'height:100px;overflow:scroll;visibility:hidden';
+  document.body.appendChild(box);
+  const width = box.offsetWidth - box.clientWidth;
+  box.remove();
+  return width;
+}
+
+// Whether the width/height media queries and vw/vh see exactly the page's
+// innerWidth x innerHeight, strict comparisons included (1400.0001 would
+// match (width > 1400px)).
+function viewportExact() {
+  const w = innerWidth + 'px';
+  const h = innerHeight + 'px';
+  return mq('(width: ' + w + ') and (height: ' + h + ')') === true &&
+      [`(width > ${w})`, `(width < ${w})`, `(height > ${h})`,
+        `(height < ${h})`, '(width > 100vw)', '(width < 100vw)',
+        '(height > 100vh)', '(height < 100vh)'].every((q) => mq(q) === false);
+}
+
 window.mlGeometry = () => {
   const s = screen;
   const v = {
@@ -41,6 +65,8 @@ window.mlGeometry = () => {
     'mq.device_size_matches': mq('(device-width: ' + s.width +
         'px) and (device-height: ' + s.height + 'px)'),
     'scrollbar.width': innerWidth - document.documentElement.clientWidth,
+    'scrollbar.box': scrollbarBox(),
+    'mq.viewport_exact': viewportExact(),
     'vv.width': visualViewport ? visualViewport.width : null,
     'vv.height': visualViewport ? visualViewport.height : null,
     'vv.scale': visualViewport ? visualViewport.scale : null,

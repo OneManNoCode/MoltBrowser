@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 97 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 99 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -198,6 +198,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | mq.pointer_coarse is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.pointer_fine is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | mq.resolution_1dppx is uniform | FINGERPRINTING.md "Device pixel ratio" |
+| PASS | mq.viewport_exact is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | nav.cpuPerformance is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | nav.deviceMemory is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |
 | PASS | nav.doNotTrack is uniform | FINGERPRINTING.md "MoltNet: settings from the regular profile" |
@@ -219,6 +220,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | screen.pixelDepth is uniform | FINGERPRINTING.md "Surface covered" |
 | PASS | screen.width is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | screenDetails.error is uniform | FINGERPRINTING.md "MoltNet: touches, screens, orientation and form controls" |
+| PASS | scrollbar.box is uniform | FINGERPRINTING.md "Letterboxing (MoltNet)" |
 | PASS | sharedStorage.set is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | storage.persist is uniform | MOLTNET_COMPLIANCE.md §1.11 |
 | PASS | touch.createEvent is uniform | FINGERPRINTING.md "MoltNet: no touchscreen, client hints, memory and CPU" |

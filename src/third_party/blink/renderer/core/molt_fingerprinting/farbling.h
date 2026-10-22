@@ -206,9 +206,52 @@ LetterboxSize LetterboxBucket(int viewport_width, int viewport_height);
 //                          (device scale factor x page zoom);
 //   PageMediaQueryPixels() LocalFrameView::ViewportSizeForMediaQueries():
 //                          the width/height media queries and vw/vh.
+//   PageViewportPixels()   LocalFrameView::SmallViewportSizeForViewportUnits()
+//                          (vw/vh) and VisualViewport::VisibleWidthCSSPx()
+//                          (visualViewport.width/height): the same length
+//                          as the media queries', but divided, not
+//                          multiplied by the reciprocal (which rounds twice:
+//                          1260 device pixels at 90% are 1400 here and
+//                          1400.0001 for the media queries).
 int PageDevicePixels(int dips, float device_scale_factor);
 int PageCssPixels(int device_pixels, float layout_zoom);
 float PageMediaQueryPixels(int device_pixels, float layout_zoom);
+float PageViewportPixels(int device_pixels, float layout_zoom);
+
+// MoltNet's viewport lengths. The media queries, the viewport units and
+// visualViewport report a page's size in CSS pixels as a float: its device
+// pixels over its layout zoom (itself a float), so a letterboxed page that is
+// exactly 1400 CSS pixels wide (innerWidth) can come out 1400.0001 wide, which
+// a strict (width > 1400px) sees, at some zoom levels and scale factors and
+// not others. Within kViewportSnapTolerance of a whole number of CSS pixels,
+// MoltNet reports the whole number: that is Blink's own tolerance for the
+// media queries' =, <= and >= comparisons (LayoutUnit::Epsilon()) and the
+// precision of layout, so nothing a page lays out moves. Further off (the
+// few pages the browser can't letterbox exactly, see molt_letterbox.h) the
+// length is left alone. NaN and infinities are left alone too.
+inline constexpr double kViewportSnapTolerance = 1.0 / 64;
+double SnapViewportLength(double css_length);
+
+// MoltNet's scrollbars. Classic (non-overlay) scrollbars are a fixed number
+// of DIPs upstream (15 on Linux and in Windows' Fluent theme, 17 in classic
+// Windows, 15 for macOS's legacy scrollbars) at every page zoom, so their
+// width in CSS pixels (innerWidth - document.documentElement.clientWidth)
+// shows both the OS and the zoom. In MoltNet they take this many CSS pixels
+// of the document they scroll, everywhere: 16 is a whole number of device
+// pixels on 1, 1.25, 1.5, 1.75, 2, 2.5 and 3x screens at 100%, and at more
+// zoom levels than 15 or 17 (in 126 of the 238 preset zoom x usual scale
+// factor pairs, 15 in 82).
+inline constexpr int kUniformScrollbarThickness = 16;
+// scrollbar-width: thin (upstream two thirds of the above; three quarters
+// here, a whole number of device pixels wherever 16 is and at 33% and 67%).
+inline constexpr int kUniformThinScrollbarThickness = 12;
+
+// A scrollbar `css_thickness` CSS pixels thick in a document at
+// `layout_zoom` (device scale factor x page zoom), in device pixels (the
+// unit Blink lays scrollbars out in): the whole number nearest to
+// css_thickness x layout_zoom (halves up), at least 1; 0 for 0 or less. A
+// zoom the renderer can't have (not in (0, 1000), NaN) counts as 1.
+int UniformScrollbarDevicePixels(int css_thickness, float layout_zoom);
 
 // Every MoltNet window reports these.
 inline constexpr unsigned kUniformHardwareConcurrency = 4;

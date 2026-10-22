@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/fingerprinting/molt_letterbox.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -332,6 +333,114 @@ TEST(MoltLetterboxTest, ZoomedPagesAreLetterboxedInCssPixels) {
     EXPECT_GT(counts.exact, counts.letterboxed / 2);
     EXPECT_GT(counts.within_tolerance, counts.letterboxed / 10 * 9);
   }
+}
+
+// What a letterboxed page then sees in MoltNet, by the renderer's arithmetic
+// (farbling.h): its media-query length and its viewport-unit and
+// visualViewport length are exactly its innerWidth/innerHeight whenever the
+// browser could letterbox it exactly; and with a classic scrollbar,
+// innerWidth - documentElement.clientWidth and the visualViewport length
+// are the CSS thickness exactly wherever that thickness is a whole number of
+// device pixels. Counts the pages and how many of them see whole lengths.
+struct ViewportCounts {
+  int letterboxed = 0;
+  int whole_lengths = 0;         // media queries, vw/vh, visualViewport
+  int scrollbar_whole_zoom = 0;  // pages at a zoom where 16 CSS px are whole
+  int scrollbar_exact = 0;       // clientWidth and visualViewport both exact
+};
+ViewportCounts CheckWhatThePageSees(int step,
+                                    int max,
+                                    int limit,
+                                    const PageScale& scale) {
+  namespace mf = blink::molt_fingerprinting;
+  ViewportCounts counts;
+  const float zoom = PageLayoutZoom(scale);
+  const int thickness =
+      mf::UniformScrollbarDevicePixels(mf::kUniformScrollbarThickness, zoom);
+  const double exact_thickness =
+      mf::kUniformScrollbarThickness * static_cast<double>(zoom);
+  const bool whole_thickness = std::abs(thickness - exact_thickness) < 1e-3;
+  for (int area = 1; area <= limit; ++area) {
+    const int page = LetterboxPageLength(area, step, max, scale);
+    const int css = PageCssLength(page, scale);
+    if (PageCssLength(area, scale) < step || css < step || css % step) {
+      continue;
+    }
+    ++counts.letterboxed;
+    const int device_pixels = PageDevicePixels(page, scale.device_scale_factor);
+    const float media = PageMediaQueryPixels(device_pixels, zoom);
+    const double snapped_media = mf::SnapViewportLength(media);
+    const double snapped_units =
+        mf::SnapViewportLength(mf::PageViewportPixels(device_pixels, zoom));
+    const double target = css;
+    if (std::abs(media - static_cast<float>(css)) <= 1.0f / 64) {
+      // The browser letterboxed it exactly: every length is the step.
+      EXPECT_EQ(snapped_media, target) << area;
+      EXPECT_EQ(snapped_units, target) << area;
+      ++counts.whole_lengths;
+    } else {
+      // The browser's fallback: left as it is, and the same for both.
+      EXPECT_NE(snapped_media, target) << area;
+      EXPECT_LE(std::abs(snapped_media - snapped_units), 0.001) << area;
+    }
+    // A classic scrollbar across this dimension.
+    const int client = PageCssPixels(device_pixels - thickness, zoom);
+    const double visual = mf::SnapViewportLength(
+        mf::PageViewportPixels(device_pixels - thickness, zoom));
+    const bool exact = css - client == mf::kUniformScrollbarThickness &&
+                       visual == css - mf::kUniformScrollbarThickness;
+    if (whole_thickness) {
+      ++counts.scrollbar_whole_zoom;
+      if (std::abs(media - static_cast<float>(css)) <= 1.0f / 64) {
+        EXPECT_TRUE(exact) << area << ": clientWidth " << client
+                           << ", visualViewport " << visual;
+      }
+    }
+    counts.scrollbar_exact += exact;
+  }
+  return counts;
+}
+
+TEST(MoltLetterboxTest, PagesSeeWholeViewportLengthsAndScrollbars) {
+  ViewportCounts total;
+  int whole_pairs = 0;
+  int pairs = 0;
+  for (float scale_factor : kScaleFactors) {
+    for (float zoom : PresetZoomFactors()) {
+      SCOPED_TRACE(testing::Message()
+                   << "scale " << scale_factor << " zoom " << zoom);
+      const PageScale scale{scale_factor, zoom};
+      for (const ViewportCounts& one :
+           {CheckWhatThePageSees(kLetterboxStepWidth, kLetterboxMaxWidth, 3000,
+                                 scale),
+            CheckWhatThePageSees(kLetterboxStepHeight, kLetterboxMaxHeight,
+                                 2000, scale)}) {
+        total.letterboxed += one.letterboxed;
+        total.whole_lengths += one.whole_lengths;
+        total.scrollbar_whole_zoom += one.scrollbar_whole_zoom;
+        total.scrollbar_exact += one.scrollbar_exact;
+      }
+      ++pairs;
+      const float layout_zoom = PageLayoutZoom(scale);
+      whole_pairs +=
+          std::abs(blink::molt_fingerprinting::UniformScrollbarDevicePixels(
+                       16, layout_zoom) -
+                   16 * static_cast<double>(layout_zoom)) < 1e-3;
+      if (::testing::Test::HasFailure()) {
+        return;
+      }
+    }
+  }
+  // As measured when this was written: 96.5% of the letterboxed pages see
+  // whole lengths (the rest are the browser's fallback, mostly pages a few
+  // hundred CSS pixels across at high zoom and 4/3 screens); 16 CSS pixels
+  // are whole device pixels at 126 of the 238 zoom x screen pairs, and the
+  // scrollbar shows exactly 16 CSS pixels on about half of all pages.
+  EXPECT_GT(total.whole_lengths, total.letterboxed / 100 * 96);
+  EXPECT_EQ(pairs, 14 * 17);
+  EXPECT_GE(whole_pairs, 126);
+  EXPECT_GT(total.scrollbar_exact, total.letterboxed / 2);
+  EXPECT_GT(total.scrollbar_exact, total.scrollbar_whole_zoom * 9 / 10);
 }
 
 // At 100% on the usual screens the page is letterboxed in DIPs, as before
