@@ -296,7 +296,11 @@ answer is needed and no model is loaded.
 iframe asks on behalf of the page the user sees. Only the tab's current
 page can raise it (not a prerendered page or one in the back/forward
 cache). Requests from the same tab and origin share one infobar. *Allow*
-and *Block* are remembered (§4.1). Closing the infobar with its close
+and *Block* are remembered (§4.1). A click on either within half a second
+of the bar appearing does nothing and leaves the bar up
+(`kPromptInputProtectionMs`, as Chromium's permission prompts ignore early
+clicks): the page raised the bar on a click, so it could otherwise ask for
+a double click whose second half lands on *Allow*. Closing the infobar with its close
 button answers nothing and counts towards a pause (§4.2); an infobar that
 goes away by itself (the page navigates, the tab closes, a newer infobar
 replaces it) answers nothing and doesn't count. With no model downloaded,

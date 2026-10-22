@@ -66,6 +66,10 @@ bool IsPlausibleSiteKey(std::string_view site) {
   return true;
 }
 
+bool IsTimelyPromptAnswer(int64_t elapsed_ms) {
+  return elapsed_ms >= kPromptInputProtectionMs;
+}
+
 bool IsUnderEmbargo(const SiteRecord& record, int64_t now_ms) {
   if (record.answer != SiteConsent::kAsk ||
       record.dismissals < kDismissalsBeforeEmbargo) {

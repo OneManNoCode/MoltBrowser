@@ -50,6 +50,18 @@ inline constexpr uint32_t kDismissalsBeforeEmbargo = 3;
 // count isn't reset when a pause ends), as in Chromium.
 inline constexpr int64_t kEmbargoMs = int64_t{7} * 24 * 60 * 60 * 1000;
 
+// The prompt ignores Allow and Block for this long after it appears, as
+// Chromium's permission prompts ignore clicks that come too soon after they
+// show (views::InputEventActivationProtector, the double-click interval): a
+// page raises the bar on a click, so it could have the user's next click
+// (the second of a double click) land where the bar's buttons appear.
+inline constexpr int64_t kPromptInputProtectionMs = 500;
+
+// Whether Allow or Block, |elapsed_ms| after the prompt appeared (on a
+// monotonic clock), is the user's answer. Too soon, the click does nothing
+// and the prompt stays.
+bool IsTimelyPromptAnswer(int64_t elapsed_ms);
+
 // Close counts are stored up to this; only ">= kDismissalsBeforeEmbargo"
 // matters.
 inline constexpr uint32_t kMaxStoredDismissals = 100;

@@ -136,6 +136,20 @@ TEST(WebAISitePermissionsTest, AnAnswerEndsThePauseAndItsHistory) {
   EXPECT_EQ(table.Get(kA, kNow + 3), SiteConsent::kAllowed);
 }
 
+// The page raises the prompt on a click: a click that follows within the
+// double-click interval (a double click it asked for) is not an answer.
+TEST(WebAISitePermissionsTest, AnswersTooSoonAfterThePromptDontCount) {
+  EXPECT_FALSE(IsTimelyPromptAnswer(0));
+  EXPECT_FALSE(IsTimelyPromptAnswer(1));
+  EXPECT_FALSE(IsTimelyPromptAnswer(kPromptInputProtectionMs - 1));
+  EXPECT_TRUE(IsTimelyPromptAnswer(kPromptInputProtectionMs));
+  EXPECT_TRUE(IsTimelyPromptAnswer(60 * 1000));
+  // A monotonic clock never goes back, but if it did, it isn't an answer.
+  EXPECT_FALSE(IsTimelyPromptAnswer(-1));
+  EXPECT_FALSE(IsTimelyPromptAnswer(std::numeric_limits<int64_t>::min()));
+  EXPECT_GE(kPromptInputProtectionMs, 500);
+}
+
 TEST(WebAISitePermissionsTest, ClockChangesNeverStretchAPause) {
   SiteRecord record;
   record.dismissals = kDismissalsBeforeEmbargo;
