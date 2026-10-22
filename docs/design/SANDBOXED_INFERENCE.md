@@ -682,7 +682,7 @@ Where the code differs from the sections above, and why.
 
 ## 9. Constrained decoding (structured output)
 
-Status: implemented (October 2026), pending a compile on the build machine. The service can force the visible answer to follow a JSON Schema, with llama.cpp's grammar sampler. Used by the web AI APIs' `responseConstraint` (docs/design/WEB_AI_APIS.md §5); open to every `BrowserAIRuntime` caller through `PromptOptions::json_schema` (the agent doesn't use it yet).
+Status: implemented (October 2026), pending a compile on the build machine. The service can force the visible answer to follow a JSON Schema, with llama.cpp's grammar sampler. Used by the web AI APIs' `responseConstraint` (docs/design/WEB_AI_APIS.md §5); open to every `BrowserAIRuntime` caller through `PromptOptions::json_schema`, and used by the web agent and Agent mode's AI steps (docs/design/AGENT_ACTIONS.md).
 
 ### 9.1 The request field and the flow
 
