@@ -2,10 +2,10 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // MoltNet's uniform device, browser side: the values the browser decides
-// for MoltNet windows (molt_net_client_hints.h). Std-only and constexpr, so
-// molt_ai_unittests checks them standalone and against the enums they
-// mirror (molt_net_client_hints.cc static_asserts the same against the
-// real ones).
+// for MoltNet windows (molt_net_device.h, molt_net_client_hints.h). Std-only
+// and constexpr, so molt_ai_unittests checks them standalone and against
+// the enums they mirror (molt_net_device.cc and molt_net_client_hints.cc
+// static_assert the same against the real ones).
 //
 // The client-hint rule is Blink's (moltnet_device_values.h in
 // third_party/blink/renderer/core/molt_fingerprinting/), duplicated because
@@ -41,6 +41,32 @@ constexpr bool MoltNetSendsClientHint(int32_t hint) {
       return false;
   }
 }
+
+// --- Touch, pointer and hover ------------------------------------------------
+//
+// A desktop with a mouse and no touchscreen, for every MoltNet user:
+// navigator.maxTouchPoints 0, the pointer / any-pointer media queries "fine",
+// hover / any-hover "hover", and no touch-event feature detection
+// ('ontouchstart' in window is false, document.createEvent('TouchEvent')
+// throws). Real touch input still works (see molt_net_device.h).
+
+inline constexpr bool kMoltNetTouchEventFeatureDetection = false;
+inline constexpr int kMoltNetMaxTouchPoints = 0;
+// ui::POINTER_TYPE_FINE, the bit set of available pointers.
+inline constexpr int kMoltNetAvailablePointerTypes = 1 << 2;
+// blink::mojom::PointerType::kPointerFineType.
+inline constexpr int kMoltNetPrimaryPointerType = 4;
+// ui::HOVER_TYPE_HOVER, the bit set of available hover types.
+inline constexpr int kMoltNetAvailableHoverTypes = 1 << 1;
+// blink::mojom::HoverType::kHoverHoverType.
+inline constexpr int kMoltNetPrimaryHoverType = 2;
+
+// --- navigator.cpuPerformance ------------------------------------------------
+
+// blink::mojom::PerformanceTier::kUnknown (0): the API's "no information",
+// which pages must already handle (CPUs the tier tables don't know report
+// it). The real tier (1 to 4) comes from the CPU model.
+inline constexpr int kMoltNetCpuPerformanceTier = 0;
 
 }  // namespace molt_ai::fingerprinting
 

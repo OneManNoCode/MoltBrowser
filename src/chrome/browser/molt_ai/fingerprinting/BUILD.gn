@@ -6,9 +6,9 @@
 # ChromeContentBrowserClient::AppendExtraCommandLineSwitches) and the
 # channel-associated configuration sent at RenderProcessWillLaunch (session
 # seed, Shields-off sites), MoltNet's letterboxing of the page in the
-# window (:letterbox, :letterbox_view), and MoltNet's client hints
-# (:client_hints). The engine itself lives in Blink:
-# //third_party/blink/renderer/core/molt_fingerprinting.
+# window (:letterbox, :letterbox_view), and MoltNet's input devices, CPU
+# tier and client hints (:device, :client_hints). The engine itself lives
+# in Blink: //third_party/blink/renderer/core/molt_fingerprinting.
 
 source_set("fingerprinting") {
   sources = [
@@ -70,6 +70,23 @@ source_set("letterbox_view") {
 # the client-hint rule is Blink's, compared by the unit test) ...
 source_set("device_values") {
   sources = [ "molt_net_device_values.h" ]
+}
+
+# ... the touch / pointer / hover WebPreferences and the CPU performance tier
+# (molt_net_device.h), called from chrome_content_browser_client.cc ...
+source_set("device") {
+  sources = [
+    "molt_net_device.cc",
+    "molt_net_device.h",
+  ]
+  deps = [
+    ":device_values",
+    ":fingerprinting",
+    "//content/public/browser",
+    "//third_party/blink/public/common",
+    "//third_party/blink/public/mojom:mojom_platform",
+    "//ui/base",
+  ]
 }
 
 # ... and MoltNet's ClientHintsControllerDelegate (molt_net_client_hints.h),

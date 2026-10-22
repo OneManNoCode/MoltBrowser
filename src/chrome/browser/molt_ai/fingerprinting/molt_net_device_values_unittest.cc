@@ -43,5 +43,27 @@ TEST(MoltNetBrowserDeviceValuesTest, ClientHintRuleMatchesBlinks) {
   }
 }
 
+// A mouse-only desktop. The pointer and hover values are bit sets in
+// WebPreferences (ui::PointerType / ui::HoverType) and single values for the
+// primary device (blink::mojom::PointerType / HoverType); both use 1 for
+// "none", so "fine" and "hover" must be single, non-"none" bits.
+TEST(MoltNetBrowserDeviceValuesTest, InputDevicesAreAMouseOnlyDesktop) {
+  EXPECT_FALSE(kMoltNetTouchEventFeatureDetection);
+  EXPECT_EQ(kMoltNetMaxTouchPoints, 0);
+  EXPECT_EQ(kMoltNetAvailablePointerTypes, 4);  // fine only
+  EXPECT_EQ(kMoltNetPrimaryPointerType, 4);     // fine
+  EXPECT_EQ(kMoltNetAvailableHoverTypes, 2);    // hover only
+  EXPECT_EQ(kMoltNetPrimaryHoverType, 2);       // hover
+  EXPECT_EQ(kMoltNetAvailablePointerTypes & 1, 0);
+  EXPECT_EQ(kMoltNetAvailablePointerTypes & 2, 0);  // no coarse pointer
+  EXPECT_EQ(kMoltNetAvailableHoverTypes & 1, 0);
+}
+
+TEST(MoltNetBrowserDeviceValuesTest, CpuPerformanceTierIsUnknown) {
+  // blink::mojom::PerformanceTier: kUnknown 0, kLow 1 ... kUltra 4; the
+  // content side CHECKs that an override is in that range.
+  EXPECT_EQ(kMoltNetCpuPerformanceTier, 0);
+}
+
 }  // namespace
 }  // namespace molt_ai::fingerprinting
