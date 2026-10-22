@@ -17,6 +17,37 @@ source_set("stream_validator") {
   ]
 }
 
+# Images for the on-device model (docs/design/SANDBOXED_INFERENCE.md
+# section 10): ModelImage and how a request's images are chosen. Std-only,
+# so the web AI session context (and its standalone tests) can hold images.
+source_set("model_image") {
+  sources = [
+    "model_image.cc",
+    "model_image.h",
+  ]
+  deps = [ "//chrome/services/molt_ai/inference/engine:image_input" ]
+}
+
+# Making model images: Skia scales a decoded bitmap down; image files are
+# decoded in Chromium's sandboxed data decoder process. Nothing here or in
+# the inference service decodes a compressed image itself.
+source_set("model_image_prep") {
+  sources = [
+    "model_image_prep.cc",
+    "model_image_prep.h",
+  ]
+  public_deps = [
+    ":model_image",
+    "//base",
+  ]
+  deps = [
+    "//chrome/services/molt_ai/inference/engine:image_input",
+    "//services/data_decoder/public/cpp",
+    "//skia",
+    "//ui/gfx/geometry",
+  ]
+}
+
 # Text embeddings for semantic memory search
 # (docs/design/SEMANTIC_SEARCH.md): checks on what the embedding model sends
 # (std-only, so the standalone test build links it too) ...
@@ -53,19 +84,27 @@ source_set("unit_tests") {
     "embedding_process_host_unittest.cc",
     "embedding_validator_unittest.cc",
     "inference_process_host_unittest.cc",
+    "model_image_prep_unittest.cc",
+    "model_image_unittest.cc",
     "stream_validator_unittest.cc",
   ]
   deps = [
     ":embedding_host",
     ":embedding_validator",
+    ":model_image",
+    ":model_image_prep",
     ":stream_validator",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/public/mojom",
     "//mojo/core/embedder",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
+    "//services/data_decoder/public/cpp:test_support",
+    "//skia",
     "//testing/gtest",
+    "//ui/gfx/codec",
   ]
 }

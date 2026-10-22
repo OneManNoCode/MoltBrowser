@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <optional>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -36,9 +38,11 @@
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 #include "chrome/browser/molt_ai/runtime/stream_validator.h"
+#include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
 #include "content/public/browser/browser_thread.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 
 // No llama.cpp here: the model runs in the sandboxed inference service
 // (//third_party/llama_cpp is visible only to chrome/services/molt_ai/
@@ -56,6 +60,9 @@ constexpr base::TimeDelta kDefaultIdleUnload = base::Minutes(10);
 // Runtime overhead (compute buffers, a small KV cache, allocator slack) on
 // top of the GGUF weights when deciding whether a model fits right now.
 constexpr uint64_t kRuntimeOverheadBytes = 1024ULL * 1024 * 1024;
+// The vision encoder's compute buffers, on top of its projector's weights
+// (the service reserves the same, llama_engine.cc).
+constexpr uint64_t kVisionOverheadBytes = 512ULL * 1024 * 1024;
 
 // A model is never allowed to need more than this share of physical RAM.
 constexpr double kMaxShareOfTotalRam = 0.9;
@@ -256,6 +263,28 @@ const ModelRegistryEntry kModelRegistry[] = {
      "mit",
      false},
 
+    // Qwen (Alibaba) — Qwen3-VL 2B Instruct, Apache 2.0: a small
+    // vision-language model (image input, docs/design/SANDBOXED_INFERENCE.md
+    // section 10: pages' Prompt API images, agent screenshots later). Strong
+    // at reading text in screenshots and documents for its size; supported
+    // by the vendored llama.cpp's multimodal library (Qwen3-VL projector,
+    // M-RoPE). Loads with its vision projector (kVisionProjectors). Offered
+    // only once the model and its projector are both pinned (fail closed,
+    // IsPinnedForVision()): until then it is not in the catalogue at all.
+    {"qwen3-vl-2b",
+     "Qwen3-VL 2B (sees images)",
+     "Qwen/Qwen3-VL-2B-Instruct-GGUF",  // TODO(pin): confirm repo name
+     "Qwen3VL-2B-Instruct-Q4_K_M.gguf",  // TODO(pin): confirm file name
+     /*revision=*/"",
+     /*sha256=*/"",
+     /*size=*/0ULL,
+     4294967296ULL,           // 4GB RAM (conservative until measured)
+     2,
+     "Q4_K_M",
+     "Qwen",
+     "apache-2.0",
+     false},
+
     // OpenAI — gpt-oss 20B, Apache 2.0 open weights (native MXFP4 quant).
     {"gpt-oss-20b",
      "gpt-oss 20B",
@@ -274,6 +303,52 @@ const ModelRegistryEntry kModelRegistry[] = {
 
 constexpr size_t kModelRegistrySize =
     sizeof(kModelRegistry) / sizeof(kModelRegistry[0]);
+
+// Vision projectors (image input): the second GGUF a vision-language model
+// loads (llama.cpp's "mmproj"), from the model's repo at the model's pinned
+// revision; tools/models/pin_models.py pins both from the same revision. A
+// model listed here is offered only when its entry above AND its projector
+// are pinned (revision, both SHA-256s, both sizes): fail closed, like the
+// memory search model (memory/embedding_model_registry.cc), because an
+// unpinned projector is untrusted model code's input.
+struct VisionProjectorEntry {
+  const char* model_id;
+  const char* filename;
+  const char* sha256;      // lowercase hex; "" = not pinned
+  size_t file_size_bytes;  // exact; 0 = not pinned
+};
+const VisionProjectorEntry kVisionProjectors[] = {
+    // Q8_0: about half the size of F16 for a negligible loss in a vision
+    // encoder.
+    {"qwen3-vl-2b",
+     "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",  // TODO(pin): confirm file name
+     /*mmproj_sha256=*/"",
+     /*mmproj_size=*/0ULL},
+};
+
+const VisionProjectorEntry* FindVisionProjector(const char* model_id) {
+  for (const VisionProjectorEntry& p : kVisionProjectors) {
+    if (std::string_view(p.model_id) == model_id) return &p;
+  }
+  return nullptr;
+}
+
+bool IsLowerHex(const char* s, size_t length) {
+  if (!s || std::string_view(s).size() != length) return false;
+  for (size_t i = 0; i < length; ++i) {
+    const char c = s[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  }
+  return true;
+}
+
+// Fail closed for vision models: the model and its projector both pinned.
+bool IsPinnedForVision(const ModelRegistryEntry& entry,
+                       const VisionProjectorEntry& projector) {
+  return IsLowerHex(entry.revision, 40) && IsLowerHex(entry.sha256, 64) &&
+         entry.file_size_bytes > 0 && IsLowerHex(projector.sha256, 64) &&
+         projector.file_size_bytes > 0;
+}
 
 // The terms each model's weights are distributed under, shown in the model
 // picker (A13). Those with requires_acceptance must also be accepted (once
@@ -400,9 +475,43 @@ bool IsCompleteJson(const std::string& text) {
   return base::JSONReader::Read(text, base::JSON_PARSE_RFC).has_value();
 }
 
+constexpr char kImagesUnsupportedError[] =
+    "The on-device model can't see images. Pick a model that can (\"sees "
+    "images\") in the model menu.";
+
+// The pixels, copied into the message (a shared-memory region when large).
+// The image was checked with ModelImage::IsValid().
+mojom::ImageInputPtr ToServiceImage(const ModelImage& image) {
+  return mojom::ImageInput::New(image.width, image.height,
+                                mojo_base::BigBuffer(image.rgb));
+}
+
+// The images a request sends (PlanRequestImages(): per history turn, how
+// many of its newest images). nullopt if the new message alone has too
+// many, or an image is out of bounds (the service would take it as a bad
+// message).
+std::optional<std::vector<size_t>> PlanImages(
+    const ChatPrompt& chat,
+    const std::vector<const ChatMessage*>& turns) {
+  for (const ModelImage& image : chat.user_images) {
+    if (!image.IsValid()) return std::nullopt;
+  }
+  std::vector<size_t> counts;
+  counts.reserve(turns.size());
+  for (const ChatMessage* turn : turns) {
+    const bool user = turn->role == "user";
+    for (const ModelImage& image : turn->images) {
+      if (user && !image.IsValid()) return std::nullopt;
+    }
+    counts.push_back(user ? turn->images.size() : 0);
+  }
+  return PlanRequestImages(chat.user_images.size(), counts);
+}
+
 // The trust labels stay structural: browser-authored text goes in
 // system_prompt / context_preamble only; page text, history and the user's
-// message keep their own fields so the service neutralizes them.
+// message keep their own fields so the service neutralizes them. Images go
+// with user turns only. nullptr if the images can't be sent (PlanImages()).
 mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
   auto r = mojom::ChatRequest::New();
   r->system_prompt = CapRequestText(chat.system_prompt);
@@ -411,7 +520,7 @@ mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
   r->user_message = CapRequestText(chat.user_message);
   std::vector<const ChatMessage*> turns;
   for (const ChatMessage& m : chat.history) {
-    if (m.content.empty()) continue;
+    if (m.content.empty() && (m.role != "user" || m.images.empty())) continue;
     if (m.role != "user" && m.role != "assistant") continue;
     turns.push_back(&m);
   }
@@ -419,14 +528,34 @@ mojom::ChatRequestPtr ToServiceChat(const ChatPrompt& chat) {
   const size_t from = turns.size() > mojom::kMaxHistoryTurns
                           ? turns.size() - mojom::kMaxHistoryTurns
                           : 0;
-  for (size_t i = from; i < turns.size(); ++i) {
+  turns.erase(turns.begin(),
+              turns.begin() + static_cast<std::ptrdiff_t>(from));
+  const std::optional<std::vector<size_t>> sent = PlanImages(chat, turns);
+  if (!sent) return nullptr;
+  for (size_t i = 0; i < turns.size(); ++i) {
+    std::vector<mojom::ImageInputPtr> images;
+    const std::vector<ModelImage>& all = turns[i]->images;
+    // A turn's newest images are its last ones.
+    for (size_t j = all.size() - (*sent)[i]; j < all.size(); ++j) {
+      images.push_back(ToServiceImage(all[j]));
+    }
     r->history.push_back(mojom::ChatTurn::New(
         turns[i]->role == "user" ? mojom::ChatRole::kUser
                                  : mojom::ChatRole::kAssistant,
-        CapRequestText(turns[i]->content),
-        std::vector<mojom::ImageInputPtr>()));
+        CapRequestText(turns[i]->content), std::move(images)));
+  }
+  for (const ModelImage& image : chat.user_images) {
+    r->user_images.push_back(ToServiceImage(image));
   }
   return r;
+}
+
+bool HasImages(const ChatPrompt& chat) {
+  if (!chat.user_images.empty()) return true;
+  for (const ChatMessage& m : chat.history) {
+    if (m.role == "user" && !m.images.empty()) return true;
+  }
+  return false;
 }
 
 // User-facing text for a load that didn't succeed.
@@ -455,6 +584,11 @@ std::string LoadError(const InferenceOutcome& outcome, const std::string& name) 
         case mojom::LoadModelStatus::kBackendUnavailable:
           return "Couldn't start " + name +
                  ": on-device AI found no way to run it on this device.";
+        case mojom::LoadModelStatus::kInvalidVisionProjector:
+          return "Couldn't load the part of " + name +
+                 " that sees images. Its vision file may be incomplete — "
+                 "try deleting and re-downloading the model from the model "
+                 "menu.";
       }
       return "Couldn't load " + name + ".";
     case Kind::kProcessGone:
@@ -535,6 +669,9 @@ std::string GenerationError(const InferenceOutcome& outcome,
     case mojom::GenerationStatus::kConstraintFailed:
       result->invalid_output = true;
       return "The model couldn't produce an answer in the required format.";
+    case mojom::GenerationStatus::kImagesUnsupported:
+      result->images_unsupported = true;
+      return kImagesUnsupportedError;
     case mojom::GenerationStatus::kCancelled:
       result->was_cancelled = true;
       return std::string();
@@ -580,6 +717,8 @@ struct BrowserAIRuntime::Impl {
   std::string loaded_crash_key;
   // The loaded model's context window (InferenceOutcome::context_tokens).
   uint32_t loaded_context_tokens = 0;
+  // Its vision projector is loaded (InferenceOutcome::vision).
+  bool loaded_vision = false;
   int active_generations = 0;
   bool is_loading = false;
 
@@ -649,6 +788,11 @@ struct BrowserAIRuntime::Impl {
     for (size_t i = 0; i < kModelRegistrySize; ++i) {
       const auto& entry = kModelRegistry[i];
       if (entry.hidden) continue;  // not offered until pinned
+      const VisionProjectorEntry* projector =
+          FindVisionProjector(entry.model_id);
+      if (projector && !IsPinnedForVision(entry, *projector)) {
+        continue;  // fail closed: a vision model only when fully pinned
+      }
       ModelInfo info;
       info.model_id = entry.model_id;
       info.display_name = entry.display_name;
@@ -679,6 +823,13 @@ struct BrowserAIRuntime::Impl {
       // by RefreshModelStatus() on a worker thread to keep Initialize()
       // non-blocking on the UI thread.
       info.file_path = model_directory + "/" + entry.filename;
+      if (projector) {
+        info.vision_projector_filename = projector->filename;
+        info.vision_projector_path =
+            model_directory + "/" + projector->filename;
+        info.vision_projector_sha256 = projector->sha256;
+        info.vision_projector_size_bytes = projector->file_size_bytes;
+      }
       info.is_downloaded = false;
       info.is_loaded = false;
 
@@ -716,6 +867,7 @@ struct BrowserAIRuntime::Impl {
     loaded_arch = arch;
     loaded_crash_key = crash_key;
     loaded_context_tokens = 0;
+    loaded_vision = false;
   }
 
   // Posts |task| to the host on the UI thread. False if there is no host or
@@ -1061,6 +1213,9 @@ RamCheck BrowserAIRuntime::CheckRamForModel(const std::string& model_id) const {
     for (const auto& [id, m] : impl_->models) {
       if (m.is_loaded && id != model_id) {
         reclaimable += m.file_size_bytes + kRuntimeOverheadBytes;
+        if (m.has_vision()) {
+          reclaimable += m.vision_projector_size_bytes + kVisionOverheadBytes;
+        }
       }
     }
   }
@@ -1073,6 +1228,10 @@ RamCheck BrowserAIRuntime::CheckRamForModel(const std::string& model_id) const {
   const uint64_t weights = info.file_size_bytes ? info.file_size_bytes
                                                 : info.ram_required_bytes;
   rc.needed_bytes = weights + kRuntimeOverheadBytes;
+  if (info.has_vision()) {
+    // The projector is copied into memory (not mapped).
+    rc.needed_bytes += info.vision_projector_size_bytes + kVisionOverheadBytes;
+  }
   rc.exceeds_total =
       static_cast<double>(rc.needed_bytes) >
       static_cast<double>(rc.total_bytes) * kMaxShareOfTotalRam;
@@ -1175,6 +1334,27 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
               "from the model menu.");
     return false;
   }
+  // Image input: the vision projector, opened the same way.
+  base::File projector;
+  uint64_t projector_size = 0;
+  if (info.has_vision()) {
+    projector = base::File(
+        base::FilePath::FromUTF8Unsafe(info.vision_projector_path),
+        base::File::FLAG_OPEN | base::File::FLAG_READ |
+            base::File::FLAG_WIN_SHARE_DELETE);
+    base::File::Info projector_info;
+    if (!projector.IsValid() || !projector.GetInfo(&projector_info) ||
+        projector_info.is_directory || projector_info.size <= 0 ||
+        static_cast<uint64_t>(projector_info.size) !=
+            info.vision_projector_size_bytes) {
+      // Vision models are offered only when pinned, so the size is exact.
+      set_error("Couldn't open the part of " + name +
+                " that sees images. Try deleting and re-downloading it from "
+                "the model menu.");
+      return false;
+    }
+    projector_size = static_cast<uint64_t>(projector_info.size);
+  }
   const std::string crash_key =
       model_id + ":" + base::NumberToString(file_size) + ":" +
       base::NumberToString(static_cast<int64_t>(
@@ -1227,6 +1407,8 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
   request.crash_key = crash_key;
   request.file = std::move(file);
   request.file_size = file_size;
+  request.vision_projector = std::move(projector);
+  request.vision_projector_size = projector_size;
   request.total_ram_bytes = impl_->hardware.total_ram_bytes;
   const int cores = impl_->hardware.cpu_cores;
   request.cpu_threads =
@@ -1239,7 +1421,10 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
   const uint64_t kv_bound = std::max<uint64_t>(
       1 * kGiB, ram > file_size + 4 * kGiB ? (ram - file_size - 4 * kGiB) / 2
                                            : 0);
-  const uint64_t expected = file_size + kv_bound + 2 * kGiB;
+  const uint64_t expected = file_size + kv_bound + 2 * kGiB +
+                            (projector_size ? projector_size +
+                                                  kVisionOverheadBytes
+                                            : 0);
   request.footprint_limit_bytes = expected + expected / 2;
 
   auto mailbox = base::MakeRefCounted<InferenceMailbox>();
@@ -1278,13 +1463,15 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     std::lock_guard<std::mutex> lock(impl_->state_mutex);
     if (impl_->loaded_model_id == model_id) {
       impl_->loaded_context_tokens = outcome.context_tokens;
+      impl_->loaded_vision = outcome.vision;
     }
   }
   LOG(INFO) << "[MoltAI] model loaded in the inference process: " << model_id
             << " (arch=" << outcome.architecture
             << " backend=" << outcome.backend
             << " ctx=" << outcome.context_tokens
-            << " repack=" << outcome.cpu_repack_used << ")";
+            << " repack=" << outcome.cpu_repack_used
+            << " vision=" << outcome.vision << ")";
   TouchActivity();
   return true;
 }
@@ -1335,6 +1522,11 @@ uint32_t BrowserAIRuntime::GetLoadedContextTokens() const {
   return impl_->loaded_context_tokens;
 }
 
+bool BrowserAIRuntime::LoadedModelSeesImages() const {
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
+  return !impl_->loaded_model_id.empty() && impl_->loaded_vision;
+}
+
 ModelInfo BrowserAIRuntime::GetModelInfo(const std::string& model_id) const {
   std::lock_guard<std::mutex> lock(impl_->models_mutex);
   auto it = impl_->models.find(model_id);
@@ -1362,6 +1554,9 @@ bool BrowserAIRuntime::DeleteModel(const std::string& model_id) {
   UnloadModel(model_id);
   std::error_code ec;
   std::filesystem::remove(info.file_path, ec);
+  if (info.has_vision()) {
+    std::filesystem::remove(info.vision_projector_path, ec);
+  }
   std::lock_guard<std::mutex> lock(impl_->models_mutex);
   impl_->models[model_id].is_downloaded = false;
   return true;
@@ -1494,6 +1689,26 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
     return result;
   }
 
+  // Image input (chat only): the loaded model must see images, and every
+  // image must be within the service's bounds (it would take anything else
+  // as a bad message).
+  mojom::ChatRequestPtr service_chat;
+  if (is_chat) {
+    service_chat = ToServiceChat(*chat);
+    if (!service_chat) {
+      result.error_message =
+          "An image couldn't be given to the on-device model.";
+      done();
+      return result;
+    }
+    if (HasImages(*chat) && !LoadedModelSeesImages()) {
+      result.images_unsupported = true;
+      result.error_message = kImagesUnsupportedError;
+      done();
+      return result;
+    }
+  }
+
   ScopedRequest req(this, options.request_id);
   const auto start = Clock::now();
   if (impl_->IsCancelled(req.id())) {
@@ -1551,7 +1766,7 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
           h->StartChat(t, std::move(r), std::move(p), std::move(l),
                        std::move(m));
         },
-        token, ToServiceChat(*chat), ToServiceParams(options),
+        token, std::move(service_chat), ToServiceParams(options),
         std::move(limits), mailbox));
   } else {
     auto raw = mojom::RawPromptRequest::New();
@@ -1635,18 +1850,25 @@ size_t BrowserAIRuntime::GetModelMemoryUsage() const {
 }
 
 void BrowserAIRuntime::RefreshModelStatus() {
-  // Stat the files without holding the registry lock.
-  std::vector<std::pair<std::string, std::string>> paths;
+  // Stat the files without holding the registry lock. A model with a
+  // vision projector is downloaded only when both files are there.
+  std::vector<std::pair<std::string, std::vector<std::string>>> paths;
   {
     std::lock_guard<std::mutex> lock(impl_->models_mutex);
     for (const auto& [id, info] : impl_->models) {
-      paths.emplace_back(id, info.file_path);
+      std::vector<std::string> files = {info.file_path};
+      if (info.has_vision()) files.push_back(info.vision_projector_path);
+      paths.emplace_back(id, std::move(files));
     }
   }
   std::vector<std::pair<std::string, bool>> present;
-  for (const auto& [id, path] : paths) {
-    std::error_code ec;
-    present.emplace_back(id, std::filesystem::exists(path, ec));
+  for (const auto& [id, files] : paths) {
+    bool all = true;
+    for (const std::string& path : files) {
+      std::error_code ec;
+      all = all && std::filesystem::exists(path, ec);
+    }
+    present.emplace_back(id, all);
   }
   std::lock_guard<std::mutex> lock(impl_->models_mutex);
   for (const auto& [id, exists] : present) {

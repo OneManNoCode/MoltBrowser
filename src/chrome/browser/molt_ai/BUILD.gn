@@ -18,6 +18,7 @@ source_set("molt_ai_runtime") {
 
   public_deps = [
     "//base",
+    "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/runtime:stream_validator",
     "//chrome/services/molt_ai/inference/public/mojom",
     "//content/public/browser",
@@ -25,7 +26,9 @@ source_set("molt_ai_runtime") {
 
   deps = [
     "//chrome/browser/lifetime:termination_notification",
+    "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:stream_filters",
+    "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
   ]
 }
