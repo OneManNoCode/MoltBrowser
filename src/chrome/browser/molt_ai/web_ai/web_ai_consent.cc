@@ -63,12 +63,15 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
   std::u16string GetMessageText() const override {
     const std::u16string site = url_formatter::FormatOriginForSecurityDisplay(
         origin_, url_formatter::SchemeDisplay::OMIT_HTTP_AND_HTTPS);
+    // The model runs here, but the site does get the model's replies, so
+    // don't claim that nothing leaves the device.
     return needs_model_
-               ? site + u" wants to use on-device AI. Choose a model to "
-                        u"download first. It runs on this device; nothing "
-                        u"is sent anywhere."
-               : site + u" wants to use the AI model on this device. It "
-                        u"runs locally; nothing is sent anywhere.";
+               ? site + u" wants to use on-device AI. Allow it and choose a "
+                        u"model to download? The model runs on this device, "
+                        u"not in the cloud."
+               : site + u" wants to use the AI model on this device. The "
+                        u"model runs locally, not in the cloud; the site "
+                        u"gets its replies.";
   }
   int GetButtons() const override { return BUTTON_OK | BUTTON_CANCEL; }
   std::u16string GetButtonLabel(InfoBarButton button) const override {
