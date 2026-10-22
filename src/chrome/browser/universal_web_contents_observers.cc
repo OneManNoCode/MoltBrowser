@@ -4,10 +4,15 @@
 
 #include "chrome/browser/universal_web_contents_observers.h"
 
+#include "build/build_config.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"  // MoltBrowser
 #include "components/performance_manager/embedder/performance_manager_registry.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/buildflags/buildflags.h"
+
+#if !BUILDFLAG(IS_ANDROID)  // MoltBrowser
+#include "chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.h"
+#endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 #include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
@@ -42,4 +47,9 @@ void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {
   // committing document (tabs or not).
   molt_ai::fingerprinting::ShieldsDecisionObserver::MaybeCreateForWebContents(
       web_contents);
+#if !BUILDFLAG(IS_ANDROID)
+  // MoltBrowser: MoltNet background tabs stay letterboxed at their zoom.
+  molt_ai::fingerprinting::BackgroundTabLetterbox::MaybeCreateForWebContents(
+      web_contents);
+#endif
 }

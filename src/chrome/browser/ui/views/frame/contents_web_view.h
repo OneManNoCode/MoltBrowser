@@ -66,6 +66,8 @@ class ContentsWebView : public views::WebView,
   gfx::Insets GetInsets() const override;
   void DidToggleFullscreenModeForTab(bool entered_fullscreen,
                                      bool will_cause_resize) override;
+  void PrimaryMainFrameWasResized(bool width_changed) override;
+  void PrimaryPageChanged(content::Page& page) override;
 
   // content::WebContentsObserver overrides:
   // Overridden to track physical interactions (mouse/touch) on the WebContents.
@@ -84,6 +86,7 @@ class ContentsWebView : public views::WebView,
   void DestroyClonedLayer() override;
 
  private:
+  void UpdateLetterbox();  // MoltBrowser
   void UpdateBackgroundColor();
   std::unique_ptr<StatusBubbleViews> status_bubble_;
   std::unique_ptr<WebContentsCloseHandler> web_contents_close_handler_;
