@@ -146,7 +146,14 @@ std::string Normalize(Next next, size_t max_characters) {
   return out;
 }
 
-char16_t AsciiLower(char16_t c) {
+// A keyword character as compared: full-width forms (what an East Asian
+// IME types in full-width mode, "\uFF20\uFF4D...") folded to ASCII, then
+// ASCII lower case. Each is one UTF-16 unit either way, so positions in
+// the text don't change.
+char16_t FoldKeywordChar(char16_t c) {
+  if (c >= 0xFF01 && c <= 0xFF5E) {
+    c = static_cast<char16_t>(c - 0xFEE0);
+  }
   return (c >= 'A' && c <= 'Z') ? static_cast<char16_t>(c + ('a' - 'A')) : c;
 }
 
@@ -167,7 +174,7 @@ size_t KeywordEnd(std::u16string_view text) {
     return kNotFound;
   }
   for (size_t k = 0; k < kKeyword.size(); ++k) {
-    if (AsciiLower(text[i + k]) != kKeyword[k]) {
+    if (FoldKeywordChar(text[i + k]) != kKeyword[k]) {
       return kNotFound;
     }
   }
@@ -248,7 +255,7 @@ bool IsShortcutPrefix(std::u16string_view text) {
     return false;
   }
   for (size_t k = 0; k < rest.size(); ++k) {
-    if (AsciiLower(rest[k]) != kKeyword[k]) {
+    if (FoldKeywordChar(rest[k]) != kKeyword[k]) {
       return false;
     }
   }

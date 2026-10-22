@@ -25,7 +25,8 @@
 
 namespace molt_omnibox {
 
-// The AI prompt keyword, matched ASCII-case-insensitively.
+// The AI prompt keyword, matched ASCII-case-insensitively, with full-width
+// forms ("\uFF20\uFF41\uFF49", from an IME) folded to ASCII.
 inline constexpr char16_t kAiPromptKeyword[] = u"@ai";
 
 // Where the prompt starts when |text|, after leading whitespace, is "@ai"

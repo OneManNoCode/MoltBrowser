@@ -156,7 +156,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   address bar used to be sent to your search engine for suggestions as you
   typed, passed to extensions that watch the address bar, and kept in the
   address bar's prediction and shortcut data. Now it reaches only the local AI prompt row, in every
-  window. A leading `?` means "search the web" (Chromium's forced-search
+  window, also when typed in full-width (`＠ａｉ`) with an East Asian
+  input method. A leading `?` means "search the web" (Chromium's forced-search
   shortcut) and goes to your search engine; pasted `?...` text no longer
   offers "Ask MoltBrowser AI" for text the search engine already has.
 - Cloud AI replies are labeled with the provider, and each provider asks for
