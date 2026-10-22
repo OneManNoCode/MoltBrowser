@@ -34,6 +34,11 @@ namespace molt_ai {
 // stops at the next prompt chunk or token. Chunks and progress are posted
 // back here and forwarded in order; OnComplete is sent last, then the
 // streamer is closed.
+//
+// An output constraint (a JSON Schema) is turned into a grammar when the
+// request arrives (engine/json_schema_grammar.h, bounded and linear); one
+// outside the supported subset is answered at once with
+// kConstraintUnsupported and never queued.
 class MoltModelImpl : public mojom::Model {
  public:
   // |on_disconnect| runs when the browser closes the Model pipe.

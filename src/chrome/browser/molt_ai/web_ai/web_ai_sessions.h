@@ -4,7 +4,10 @@
 // The session objects behind LanguageModel, Summarizer, Writer and Rewriter.
 // Owned by MoltAIManager. Each serves its requests one at a time, in order
 // (a prompt sees the appends before it), through the backend's queue; the
-// streamed text reaches the page at most every kStreamIntervalMs.
+// streamed text reaches the page at most every kStreamIntervalMs. A prompt
+// with a JSON-schema responseConstraint is decoded under that constraint
+// (the inference service's grammar sampler) and its reply reaches the page
+// whole, only after it parsed as JSON here.
 //
 // Ending a request: the page aborting it (its responder pipe closes) cancels
 // the generation; destroy(), the page dropping the session, a navigation or
@@ -68,6 +71,11 @@ class WebAISession {
     std::vector<Turn> turns;
     bool append_only = false;
     Conversation::Plan plan;
+    // LanguageModel responseConstraint (a JSON Schema; "" = none). Moved
+    // into the job when it starts; |constrained| stays: a constrained reply
+    // reaches the page only whole, once it parsed as JSON.
+    std::string json_schema;
+    bool constrained = false;
     // Summarizer / Writer / Rewriter: the prompt, built when queued.
     TaskPrompt task;
   };
@@ -169,6 +177,7 @@ class LanguageModelSession : public WebAISession,
 
   void Queue(std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
              bool append_only,
+             std::string json_schema,
              mojo::PendingRemote<blink::mojom::ModelStreamingResponder>
                  pending_responder);
 

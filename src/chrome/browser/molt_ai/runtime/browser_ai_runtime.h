@@ -129,6 +129,16 @@ struct PromptOptions {
   // Visible-text stop strings (at most 8, each 1-64 bytes of UTF-8; others
   // are ignored). The answer ends before the first one; it isn't included.
   std::vector<std::string> stop_sequences;
+  // Constrained decoding: a JSON Schema (as JSON text, at most 32 KiB) the
+  // answer must follow. The inference service turns it into a grammar for
+  // its sampler (the supported subset is in
+  // chrome/services/molt_ai/inference/engine/json_schema_grammar.h);
+  // reasoning is skipped. On success the text is JSON that matched the
+  // schema's grammar, checked here with base::JSONReader. A schema outside
+  // the subset fails with GenerationResult::constraint_unsupported. May be
+  // untrusted (a web page's): only the sandboxed service parses it. Empty =
+  // free text.
+  std::string json_schema;
 };
 
 // Generation result
@@ -143,6 +153,16 @@ struct GenerationResult {
   bool was_cancelled = false;
   bool success = false;
   std::string error_message;
+  // The answer stopped at the token budget or the end of the context window
+  // (still a success for free text; a constrained answer is then incomplete
+  // and fails).
+  bool truncated = false;
+  // PromptOptions::json_schema is outside the supported subset or too
+  // large; nothing was generated.
+  bool constraint_unsupported = false;
+  // A constrained answer that isn't complete JSON (cut off: also
+  // |truncated|), or one the model couldn't continue in the format.
+  bool invalid_output = false;
 };
 
 // Result of the "can this model load right now?" RAM check.

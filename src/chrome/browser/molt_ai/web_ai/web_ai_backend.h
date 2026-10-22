@@ -45,6 +45,11 @@ struct GenerationJob {
   // KV-cache reuse across the turns of one LanguageModel session; empty for
   // the writing-assistance APIs.
   std::string conversation_key;
+  // LanguageModel responseConstraint: a JSON Schema as JSON text (Blink's
+  // JSON.stringify of the page's object), enforced by the inference
+  // service's grammar sampler; "" = none. Page text: only the sandboxed
+  // service parses it. On kOk the reply is complete JSON.
+  std::string json_schema;
 };
 
 enum class GenerationStatus {
@@ -55,6 +60,12 @@ enum class GenerationStatus {
   kThrottled,
   // No model could be loaded, or the model process failed.
   kFailed,
+  // json_schema is outside what the on-device model can enforce.
+  kConstraintUnsupported,
+  // A constrained reply that isn't complete JSON.
+  kInvalidOutput,
+  // A constrained reply cut off by the reply budget.
+  kOutputTruncated,
 };
 
 class WebAIBackend {

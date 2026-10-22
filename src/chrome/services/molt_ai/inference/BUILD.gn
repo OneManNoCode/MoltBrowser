@@ -12,6 +12,8 @@ assert(!is_android && !is_ios,
 
 source_set("inference") {
   sources = [
+    "grammar_sampler.cc",
+    "grammar_sampler.h",
     "llama_embedding_engine.cc",
     "llama_embedding_engine.h",
     "llama_engine.cc",
@@ -31,6 +33,7 @@ source_set("inference") {
   ]
 
   deps = [
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//chrome/services/molt_ai/inference/engine:embedding_utils",
     "//chrome/services/molt_ai/inference/engine:inference_utils",
     "//third_party/llama_cpp",

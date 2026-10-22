@@ -23,6 +23,9 @@ const uint32 kMaxStopSequenceBytes = 64;
 // Per text field of a request (system prompt, context, a turn, the message).
 const uint32 kMaxRequestTextBytes = 33554432;  // 32 MiB
 const uint32 kMaxTokenizeTextBytes = 4194304;  // 4 MiB
+// OutputConstraint.json_schema. Matches the converter's own cap
+// (engine/json_schema_grammar.h kMaxSchemaBytes).
+const uint32 kMaxConstraintSchemaBytes = 32768;  // 32 KiB
 
 // Caps on what the service sends.
 const uint32 kMaxChunkBytes = 4096;
@@ -102,6 +105,20 @@ enum ChatRole {
   kAssistant,
 };
 
+// A structure the visible answer must follow (constrained decoding,
+// docs/design/SANDBOXED_INFERENCE.md section 9). Untrusted: it may come from
+// a web page (LanguageModel.prompt()'s responseConstraint). The service
+// converts it to a grammar for llama.cpp's grammar sampler; anything outside
+// the supported subset completes the request with kConstraintUnsupported
+// before it is queued.
+union OutputConstraint {
+  // A JSON Schema as JSON text, at most kMaxConstraintSchemaBytes (more is a
+  // bad message). The answer is then JSON matching it, nothing else (no
+  // reasoning, no surrounding text). The subset:
+  // chrome/services/molt_ai/inference/engine/json_schema_grammar.h.
+  string json_schema;
+};
+
 struct GenerationParams {
   // Visible-answer token budget; 0 = adaptive (AdaptiveReplyTokens).
   uint32 max_visible_tokens = 0;
@@ -118,6 +135,8 @@ struct GenerationParams {
   // not emitted). At most kMaxStopSequences, each 1..kMaxStopSequenceBytes
   // bytes of UTF-8.
   array<string> stop_sequences;
+  // Null = free text. With a constraint, `reasoning` is ignored (off).
+  OutputConstraint? constraint;
 };
 
 struct ChatTurn {
@@ -164,6 +183,14 @@ enum GenerationStatus {
   kSystemPromptTooLong,
   kTokenizeFailed,
   kDecodeFailed,
+  // The OutputConstraint is outside the supported subset (an unsupported
+  // keyword, invalid JSON, over a size, depth or ambiguity cap, or matching
+  // nothing). Nothing was generated.
+  kConstraintUnsupported,
+  // The constraint couldn't be followed: llama.cpp refused the grammar, or
+  // no token of this model's vocabulary continues it. The text so far is
+  // incomplete.
+  kConstraintFailed,
 };
 
 struct GenerationSummary {
