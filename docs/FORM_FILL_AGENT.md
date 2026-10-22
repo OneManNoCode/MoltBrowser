@@ -50,7 +50,8 @@ or profile leaves the machine.
    instruction}`, asks the local LLM for a strict-JSON **FillPlan**:
    `[{selector, label, value, confidence, source, needs_user}]`. Never fabricates —
    an unconfident/missing match sets `needs_user=true` and leaves the field blank.
-   Reuses the `AI_EXTRACT` parse-and-repair loop for malformed JSON.
+   Asks for it under grammar-constrained decoding and validates it, as
+   `AI_EXTRACT` does (docs/design/AGENT_ACTIONS.md §3.2).
 4. **`SensitiveFieldGuard`** — hard blocklist that is *never* auto-filled: passwords
    (`type=password`), card number/CVV (`autocomplete=cc-number|cc-csc`), SSN/national
    ID, bank account, security-question answers. Detected by input type + autocomplete

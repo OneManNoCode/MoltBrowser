@@ -11,7 +11,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,6 +29,8 @@ namespace molt_ai {
 
 namespace {
 
+using agent_actions::ActionType;
+using agent_actions::ObservedElement;
 using agent_safety::ElementProbe;
 using agent_safety::FieldKind;
 
@@ -38,19 +39,6 @@ std::string JSQ(const std::string& s) {
   std::string out;
   base::JSONWriter::Write(base::Value(s), &out);
   return out;
-}
-
-// Trim leading and trailing ASCII whitespace from |s| in-place.
-std::string Trim(const std::string& s) {
-  size_t start = s.find_first_not_of(" \t\r\n");
-  if (start == std::string::npos) return {};
-  size_t end = s.find_last_not_of(" \t\r\n");
-  return s.substr(start, end - start + 1);
-}
-
-// Case-insensitive prefix check.
-bool HasPrefixI(const std::string& line, const char* prefix) {
-  return base::StartsWith(line, prefix, base::CompareCase::INSENSITIVE_ASCII);
 }
 
 // http(s) origins are the only ones the agent can act on; anything else
@@ -74,36 +62,45 @@ constexpr char kRefusePasswordNote[] =
     "Refused: the agent never types into password fields. Ask the user to "
     "sign in themselves, then continue.";
 
-// System prompt for all LLM calls inside the agent loop.
+// System prompt for all LLM calls inside the agent loop. The reply format
+// is also enforced: the model decodes under the grammar of
+// agent_actions::BuildActionSchema(), and the browser re-checks the reply.
 const char kSystemPrompt[] =
     "You are a web browsing agent running inside MoltBrowser. "
     "You complete tasks by controlling the browser one action at a time.\n"
     "\n"
-    "AVAILABLE ACTIONS — output EXACTLY one per turn:\n"
-    "  NAVIGATE: <url>                         — load a full URL\n"
-    "  SEARCH: <query>                         — search the web\n"
-    "  CLICK: <css_selector>                   — click an element\n"
-    "  TYPE: <css_selector> | <text>           — type text into a field\n"
-    "  FILL_FORM: sel1=val1; sel2=val2         — fill multiple inputs\n"
-    "  SCROLL: down | up | <pixels>            — scroll the page\n"
-    "  OBSERVE: current                        — re-read the current page\n"
-    "  DONE: <result summary>                  — task complete; give result\n"
-    "  ERROR: <reason>                         — task impossible\n"
+    "Each turn, reply with ONE JSON object: \"reason\" (one short sentence) "
+    "first, then \"action\" and its fields. The actions:\n"
+    "  {\"reason\":\"...\",\"action\":\"NAVIGATE\",\"url\":\"https://...\"}\n"
+    "      load a full http(s) URL\n"
+    "  {\"reason\":\"...\",\"action\":\"SEARCH\",\"query\":\"...\"}\n"
+    "      search the web\n"
+    "  {\"reason\":\"...\",\"action\":\"CLICK\",\"target\":\"e3\"}\n"
+    "      click element e3\n"
+    "  {\"reason\":\"...\",\"action\":\"TYPE\",\"target\":\"e4\","
+    "\"text\":\"...\"}\n"
+    "      type text into text field e4\n"
+    "  {\"reason\":\"...\",\"action\":\"FILL_FORM\",\"fields\":"
+    "[{\"target\":\"e4\",\"text\":\"...\"},{\"target\":\"e5\","
+    "\"text\":\"...\"}]}\n"
+    "      fill several text fields\n"
+    "  {\"reason\":\"...\",\"action\":\"SCROLL\",\"direction\":\"down\"}\n"
+    "      scroll \"down\" or \"up\"\n"
+    "  {\"reason\":\"...\",\"action\":\"OBSERVE\"}\n"
+    "      read the current page again\n"
+    "  {\"reason\":\"...\",\"action\":\"DONE\",\"result\":\"...\"}\n"
+    "      the task is complete; give the result\n"
+    "  {\"reason\":\"...\",\"action\":\"ERROR\",\"result\":\"...\"}\n"
+    "      the task is impossible; say why\n"
     "\n"
     "RULES:\n"
-    "- After NAVIGATE or SEARCH the page is observed automatically.\n"
-    "- After CLICK use OBSERVE to see the updated page state.\n"
-    "- For FILL_FORM separate pairs with semicolons: sel=val; sel=val\n"
-    "- CSS selectors: #id  .class  [name=\"x\"]  input[type=\"search\"]\n"
-    "  button[type=\"submit\"]  a[href*=\"keyword\"]\n"
-    "- Read the page content carefully before choosing a selector.\n"
-    "- Maximum %d total steps. Be efficient.\n"
-    "\n"
-    "OUTPUT FORMAT (strict — no extra text):\n"
-    "ACTION: <action_type>\n"
-    "TARGET: <url or selector or query or direction>\n"
-    "VALUE: <text if needed, else leave blank>\n"
-    "REASON: <one-sentence reasoning>\n";
+    "- \"target\" is an element id (e1, e2, ...) from the ELEMENTS list of "
+    "the CURRENT PAGE; no other ids exist. TYPE and FILL_FORM take only "
+    "elements marked (text field).\n"
+    "- After NAVIGATE, SEARCH, CLICK or SCROLL the page is observed "
+    "automatically.\n"
+    "- Read the page content carefully before choosing an element.\n"
+    "- Maximum %d total steps. Be efficient.\n";
 
 // Prompt-injection rules. Built at runtime so the fence markers quoted here
 // always match agent_safety::FenceUntrustedText.
@@ -151,6 +148,12 @@ void WebAgent::Start(const std::string& goal,
   history_.clear();
   current_page_state_.clear();
   pending_step_ = Step();
+  pending_action_ = agent_actions::AgentAction();
+  action_selector_.clear();
+  observation_ = agent_actions::Observation();
+  bad_replies_in_a_row_ = 0;
+  bad_replies_total_ = 0;
+  retry_note_.clear();
   goal_       = goal;
   step_cb_    = std::move(on_step);
   done_cb_    = std::move(on_done);
@@ -226,47 +229,76 @@ void WebAgent::AskLLM() {
   BrowserAIRuntime* rt = runtime_;
   auto self = weak_factory_.GetWeakPtr();
 
+  PromptOptions opts;
+  opts.max_tokens = agent_actions::kMaxReplyTokens;
+  opts.temperature = 0.2f;
+  opts.stream = false;
+  // The reply must be one action on the elements the model is shown.
+  opts.json_schema = agent_actions::BuildActionSchema(observation_);
+
   // RunPrompt is blocking. Post it to a background thread; reply on UI.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(
-          [](BrowserAIRuntime* rt, std::string p) -> std::string {
-            PromptOptions opts;
-            opts.max_tokens  = 300;
-            opts.temperature = 0.2f;
-            opts.stream      = false;
-            return rt->RunPrompt(p, opts).text;
+          [](BrowserAIRuntime* rt, std::string p,
+             PromptOptions opts) -> GenerationResult {
+            return rt->RunPrompt(p, opts);
           },
-          rt, std::move(prompt)),
+          rt, std::move(prompt), std::move(opts)),
       base::BindOnce(
-          [](base::WeakPtr<WebAgent> self, std::string response) {
-            if (self) self->OnLLMDecision(std::move(response));
+          [](base::WeakPtr<WebAgent> self, GenerationResult result) {
+            if (self) self->OnLLMDecision(std::move(result));
           },
           self));
 }
 
-void WebAgent::OnLLMDecision(std::string response) {
+void WebAgent::OnLLMDecision(GenerationResult result) {
   if (cancelled_) return;
 
-  if (!ParseLLMResponse(response)) {
-    LOG(WARNING) << "[WebAgent] Unparseable response — observing to retry";
-    pending_step_.action = "OBSERVE";
-    pending_step_.target = "current";
-    pending_step_.reason = "Unparseable LLM output";
+  agent_actions::ModelReply reply;
+  reply.success = result.success;
+  reply.cancelled = result.was_cancelled;
+  reply.constraint_unsupported = result.constraint_unsupported;
+  reply.invalid_output = result.invalid_output;
+  reply.truncated = result.truncated;
+  reply.text = std::move(result.text);
+  reply.error_message = std::move(result.error_message);
+  agent_actions::ReplyOutcome outcome = agent_actions::InterpretReply(
+      reply, observation_, bad_replies_in_a_row_, bad_replies_total_);
+  // Model output can carry typed text — log only its shape, never its
+  // content.
+  DVLOG(1) << "[WebAgent] LLM replied (" << reply.text.size()
+           << " chars) decision=" << static_cast<int>(outcome.decision);
+
+  switch (outcome.decision) {
+    case agent_actions::ReplyDecision::kStop:
+      Finish(false, outcome.message);
+      return;
+    case agent_actions::ReplyDecision::kRetry:
+      // No step is taken or counted; the next prompt says what was wrong.
+      LOG(WARNING) << "[WebAgent] Unusable model reply; asking again";
+      ++bad_replies_in_a_row_;
+      ++bad_replies_total_;
+      retry_note_ = std::move(outcome.message);
+      AskLLM();
+      return;
+    case agent_actions::ReplyDecision::kAct:
+      break;
   }
-  // Model output can carry typed text (VALUE:, FILL_FORM pairs) — log only
-  // its shape, never its content.
-  DVLOG(1) << "[WebAgent] LLM replied (" << response.size()
-           << " chars) action=" << pending_step_.action;
+  bad_replies_in_a_row_ = 0;
+  retry_note_.clear();
+  pending_action_ = std::move(outcome.action);
+  pending_step_ = DescribeAction(pending_action_);
   DispatchAction();
 }
 
 void WebAgent::DispatchAction() {
   if (cancelled_) return;
 
-  const std::string& a = pending_step_.action;
-  if (a == "CLICK" || a == "TYPE" || a == "FILL_FORM") {
+  const ActionType a = pending_action_.type;
+  if (a == ActionType::kClick || a == ActionType::kType ||
+      a == ActionType::kFillForm) {
     // The page may have changed origin since the last observation (a
     // redirect or script navigation after a click), so check again right
     // before acting on it.
@@ -304,28 +336,28 @@ void WebAgent::RunAction() {
   DVLOG(1) << "[WebAgent] step=" << (iteration_ + 1)
            << " action=" << pending_step_.action;
 
-  const std::string& a = pending_step_.action;
-  if      (a == "NAVIGATE")  DoNavigate();
-  else if (a == "SEARCH")    DoSearch();
-  else if (a == "CLICK")     DoClick();
-  else if (a == "TYPE")      DoType();
-  else if (a == "FILL_FORM") DoFillForm();
-  else if (a == "SCROLL")    DoScroll();
-  else if (a == "OBSERVE")   DoObserve();
-  else if (a == "DONE")      Finish(true,  pending_step_.target);
-  else if (a == "ERROR")     Finish(false, pending_step_.target);
-  else                        DoObserve();  // Unknown — observe and try again.
+  switch (pending_action_.type) {
+    case ActionType::kNavigate: DoNavigate(pending_action_.url); break;
+    case ActionType::kSearch:   DoSearch(); break;
+    case ActionType::kClick:    DoClick(); break;
+    case ActionType::kType:     DoType(); break;
+    case ActionType::kFillForm: DoFillForm(); break;
+    case ActionType::kScroll:   DoScroll(); break;
+    case ActionType::kObserve:  DoObserve(); break;
+    case ActionType::kDone:     Finish(true, pending_action_.result); break;
+    case ActionType::kError:    Finish(false, pending_action_.result); break;
+  }
 }
 
 // ----------------------------------------------------------------
 // Action executors
 // ----------------------------------------------------------------
 
-void WebAgent::DoNavigate() {
+void WebAgent::DoNavigate(const std::string& spec) {
   if (!web_contents_) { OnActionDone(false, "No active tab"); return; }
-  GURL url(pending_step_.target);
+  GURL url(spec);
   if (!url.is_valid()) {
-    OnActionDone(false, "Invalid URL: " + pending_step_.target);
+    OnActionDone(false, "Invalid URL: " + spec);
     return;
   }
   // Model output never reaches javascript:, data:, file:, chrome:, molt: …
@@ -367,7 +399,7 @@ void WebAgent::LoadAndWait(const GURL& url) {
 void WebAgent::DoSearch() {
   // Percent-encode the query then navigate.
   std::string encoded;
-  for (unsigned char c : pending_step_.target) {
+  for (unsigned char c : pending_action_.query) {
     if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
       encoded += static_cast<char>(c);
     } else if (c == ' ') {
@@ -376,8 +408,7 @@ void WebAgent::DoSearch() {
       encoded += base::StringPrintf("%%%02X", c);
     }
   }
-  pending_step_.target = kSearchBase + encoded;
-  DoNavigate();
+  DoNavigate(kSearchBase + encoded);
 }
 
 void WebAgent::ProbeElements(
@@ -394,7 +425,15 @@ void WebAgent::ProbeElements(
 }
 
 void WebAgent::DoClick() {
-  ProbeElements({pending_step_.target},
+  // ParseAction checked the id against observation_, which hasn't changed
+  // since the model was shown it.
+  const ObservedElement* element = observation_.Find(pending_action_.ref);
+  if (!element) {
+    OnActionDone(false, "Click failed: not_found");
+    return;
+  }
+  action_selector_ = element->selector;
+  ProbeElements({action_selector_},
                 base::BindOnce(&WebAgent::OnClickProbed,
                                weak_factory_.GetWeakPtr()));
 }
@@ -452,7 +491,7 @@ void WebAgent::ClickNow() {
         } catch(e) { return 'error:'+e.message; }
       })())JS",
       JSQ(action_origin_.Serialize()).c_str(),
-      JSQ(pending_step_.target).c_str());
+      JSQ(action_selector_).c_str());
 
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, base::Value v) {
@@ -470,7 +509,13 @@ void WebAgent::ClickNow() {
 }
 
 void WebAgent::DoType() {
-  ProbeElements({pending_step_.target},
+  const ObservedElement* element = observation_.Find(pending_action_.ref);
+  if (!element || !element->typeable) {
+    OnActionDone(false, "not_found");
+    return;
+  }
+  action_selector_ = element->selector;
+  ProbeElements({action_selector_},
                 base::BindOnce(&WebAgent::OnTypeProbed,
                                weak_factory_.GetWeakPtr()));
 }
@@ -499,9 +544,9 @@ void WebAgent::OnTypeProbed(std::vector<ElementProbe> probes) {
 }
 
 void WebAgent::TypeNow() {
-  // TARGET = CSS selector, VALUE = text to type. The password re-check runs
-  // in the same script as the write, so a field swapped in after the probe
-  // is still refused.
+  // The observed field's selector and the text to type. The password
+  // re-check runs in the same script as the write, so a field swapped in
+  // after the probe is still refused.
   std::string js = base::StringPrintf(
       R"JS((() => {
         try {
@@ -521,9 +566,9 @@ void WebAgent::TypeNow() {
         } catch(e) { return 'error:'+e.message; }
       })())JS",
       JSQ(action_origin_.Serialize()).c_str(),
-      JSQ(pending_step_.target).c_str(),
-      JSQ(pending_step_.value).c_str(),
-      JSQ(pending_step_.value).c_str());
+      JSQ(action_selector_).c_str(),
+      JSQ(pending_action_.text).c_str(),
+      JSQ(pending_action_.text).c_str());
 
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, base::Value v) {
@@ -538,20 +583,14 @@ void WebAgent::TypeNow() {
 }
 
 void WebAgent::DoFillForm() {
-  // TARGET: "sel1=val1; sel2=val2; ..."
-  auto pairs = base::SplitString(pending_step_.target, ";",
-                                  base::TRIM_WHITESPACE,
-                                  base::SPLIT_WANT_NONEMPTY);
+  // Each field is an observed text field (ParseAction checked that).
   FieldList fields;
   std::vector<std::string> selectors;
-  for (const auto& pair : pairs) {
-    auto eq = pair.find('=');
-    if (eq == std::string::npos) continue;
-    std::string sel = Trim(pair.substr(0, eq));
-    std::string val = Trim(pair.substr(eq + 1));
-    if (sel.empty()) continue;
-    selectors.push_back(sel);
-    fields.emplace_back(std::move(sel), std::move(val));
+  for (const agent_actions::FormFieldValue& f : pending_action_.fields) {
+    const ObservedElement* element = observation_.Find(f.ref);
+    if (!element || !element->typeable) continue;
+    selectors.push_back(element->selector);
+    fields.emplace_back(element->selector, f.text);
   }
   if (fields.empty()) {
     OnActionDone(false, "Filled 0 fields");
@@ -650,20 +689,14 @@ void WebAgent::FillNow(FieldList fields, std::string note) {
 }
 
 void WebAgent::DoScroll() {
-  std::string dir = base::ToLowerASCII(Trim(pending_step_.target));
-  std::string js;
-  if (dir == "down") {
-    js = "window.scrollBy(0, 600); 'scrolled'";
-  } else if (dir == "up") {
-    js = "window.scrollBy(0, -600); 'scrolled'";
-  } else {
-    int px = 0;
-    base::StringToInt(dir, &px);
-    js = "window.scrollBy(0," + base::NumberToString(px) + "); 'scrolled'";
-  }
+  // "down" or "up" (ParseAction allows nothing else).
+  const std::string js = pending_action_.direction == "up"
+                             ? "window.scrollBy(0, -600); 'scrolled'"
+                             : "window.scrollBy(0, 600); 'scrolled'";
+  // Observe afterwards: the element list favours what is in view.
   EvalJS(js, base::BindOnce(
       [](base::WeakPtr<WebAgent> self, base::Value) {
-        if (self) self->OnActionDone(true, "Scrolled");
+        if (self) self->ObservePage();
       },
       weak_factory_.GetWeakPtr()));
 }
@@ -717,15 +750,39 @@ void WebAgent::AllowOriginAndContinue(const url::Origin& origin,
 
 void WebAgent::ContinueAfterObserve(const StructuredPage& page) {
   if (cancelled_) return;
+  EvalJS(agent_actions::BuildElementSnapshotScript(),
+         base::BindOnce(&WebAgent::OnElementsObserved,
+                        weak_factory_.GetWeakPtr(), page));
+}
+
+void WebAgent::OnElementsObserved(const StructuredPage& page,
+                                  base::Value snapshot) {
+  if (cancelled_) return;
+
+  std::string snapshot_origin;
+  observation_ =
+      agent_actions::ParseElementSnapshot(snapshot, &snapshot_origin);
+  // Elements only from the page the run is on: an http(s) page in the
+  // allowed set (OnPageObserved checked it), and the one the snapshot read.
+  url::Origin current;
+  if (web_contents_ && web_contents_->GetPrimaryMainFrame())
+    current = web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+  if (!IsWebOrigin(current) || !IsOriginAllowed(current) ||
+      snapshot_origin != current.Serialize()) {
+    observation_ = agent_actions::Observation();
+  }
 
   std::string compact = page.ToCompactText();
   if (static_cast<int>(compact.size()) > kMaxPageChars)
     compact = compact.substr(0, kMaxPageChars) + "\n[… truncated]";
 
-  // Everything here is page-controlled; BuildPrompt fences it.
+  // Everything here is page-controlled; BuildPrompt fences it. The element
+  // ids are the browser's; their labels are page text.
   current_page_state_ = "URL: " + page.page_url +
                          "\nTitle: " + page.page_title +
-                         "\n\n" + compact;
+                         "\n\n" + compact +
+                         "\nELEMENTS:\n" +
+                         agent_actions::DescribeElements(observation_);
 
   // Bootstrap path: first observe before the very first LLM call.
   if (iteration_ == 0 && history_.empty() && pending_step_.action.empty()) {
@@ -735,12 +792,20 @@ void WebAgent::ContinueAfterObserve(const StructuredPage& page) {
 
   // All other paths — the observe completes the current action.
   pending_step_.observation = current_page_state_;
-  if (pending_step_.action == "NAVIGATE" || pending_step_.action == "SEARCH") {
-    OnActionDone(true, "Navigated to " + page.page_url);
-  } else if (pending_step_.action == "CLICK") {
-    OnActionDone(true, "Clicked and re-observed page");
-  } else {
-    OnActionDone(true, "Page observed");
+  switch (pending_action_.type) {
+    case ActionType::kNavigate:
+    case ActionType::kSearch:
+      OnActionDone(true, "Navigated to " + page.page_url);
+      break;
+    case ActionType::kClick:
+      OnActionDone(true, "Clicked and re-observed page");
+      break;
+    case ActionType::kScroll:
+      OnActionDone(true, "Scrolled");
+      break;
+    default:
+      OnActionDone(true, "Page observed");
+      break;
   }
 }
 
@@ -825,6 +890,8 @@ void WebAgent::OnActionDone(bool ok, std::string note) {
 
   iteration_++;
   pending_step_ = Step();
+  pending_action_ = agent_actions::AgentAction();
+  action_selector_.clear();
 
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
@@ -874,7 +941,9 @@ std::string WebAgent::BuildPrompt() const {
        agent_safety::FenceUntrustedText(current_page_state_) + "\n";
   p += "\nSteps remaining: " +
        base::NumberToString(kMaxIterations - iteration_) + "\n";
-  p += "\nOutput your next action:\n";
+  if (!retry_note_.empty())
+    p += "\nNOTE: " + retry_note_ + "\n";
+  p += "\nOutput your next action as one JSON object:\n";
   return p;
 }
 
@@ -903,54 +972,52 @@ std::string WebAgent::HistoryText() const {
 }
 
 // ----------------------------------------------------------------
-// LLM response parsing
+// Step description
 // ----------------------------------------------------------------
 
-bool WebAgent::ParseLLMResponse(const std::string& text) {
-  pending_step_ = Step();
-
-  for (const auto& raw_line :
-       base::SplitString(text, "\n", base::KEEP_WHITESPACE,
-                          base::SPLIT_WANT_NONEMPTY)) {
-    std::string line = Trim(raw_line);
-    if (HasPrefixI(line, "ACTION:")) {
-      pending_step_.action = base::ToUpperASCII(Trim(line.substr(7)));
-    } else if (HasPrefixI(line, "TARGET:")) {
-      pending_step_.target = Trim(line.substr(7));
-    } else if (HasPrefixI(line, "VALUE:")) {
-      pending_step_.value = Trim(line.substr(6));
-    } else if (HasPrefixI(line, "REASON:")) {
-      pending_step_.reason = Trim(line.substr(7));
-    }
-  }
-
-  // For DONE / ERROR the result may be on the same line: "DONE: Found $834…"
-  if ((pending_step_.action == "DONE" || pending_step_.action == "ERROR") &&
-      pending_step_.target.empty()) {
-    for (const auto& raw_line :
-         base::SplitString(text, "\n", base::KEEP_WHITESPACE,
-                            base::SPLIT_WANT_NONEMPTY)) {
-      std::string line = Trim(raw_line);
-      std::string upper = base::ToUpperASCII(line);
-      if (base::StartsWith(upper, "DONE:", base::CompareCase::SENSITIVE) ||
-          base::StartsWith(upper, "ERROR:", base::CompareCase::SENSITIVE)) {
-        size_t colon = line.find(':');
-        if (colon != std::string::npos)
-          pending_step_.target = Trim(line.substr(colon + 1));
+WebAgent::Step WebAgent::DescribeAction(
+    const agent_actions::AgentAction& action) const {
+  Step step;
+  step.action = std::string(agent_actions::ActionName(action.type));
+  step.reason = action.reason;
+  auto describe = [&](const std::string& ref) {
+    const ObservedElement* e = observation_.Find(ref);
+    return e ? agent_actions::DescribeElement(*e) : ref;
+  };
+  switch (action.type) {
+    case ActionType::kNavigate:
+      step.target = action.url;
+      break;
+    case ActionType::kSearch:
+      step.target = action.query;
+      break;
+    case ActionType::kClick:
+      step.target = describe(action.ref);
+      break;
+    case ActionType::kType:
+      step.target = describe(action.ref);
+      step.value = action.text;
+      break;
+    case ActionType::kFillForm:
+      step.target = base::NumberToString(action.fields.size()) + " field(s)";
+      for (const agent_actions::FormFieldValue& f : action.fields) {
+        if (!step.value.empty())
+          step.value += "; ";
+        step.value += describe(f.ref) + " = " + f.text;
       }
-    }
+      break;
+    case ActionType::kScroll:
+      step.target = action.direction;
+      break;
+    case ActionType::kObserve:
+      step.target = "current";
+      break;
+    case ActionType::kDone:
+    case ActionType::kError:
+      step.target = action.result;
+      break;
   }
-
-  // TYPE may encode selector and text as "selector | text" in TARGET.
-  if (pending_step_.action == "TYPE" && pending_step_.value.empty()) {
-    auto bar = pending_step_.target.find(" | ");
-    if (bar != std::string::npos) {
-      pending_step_.value  = Trim(pending_step_.target.substr(bar + 3));
-      pending_step_.target = Trim(pending_step_.target.substr(0, bar));
-    }
-  }
-
-  return !pending_step_.action.empty() && !pending_step_.target.empty();
+  return step;
 }
 
 }  // namespace molt_ai
