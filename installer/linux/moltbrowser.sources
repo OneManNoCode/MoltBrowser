@@ -1,0 +1,10 @@
+# MoltBrowser apt repository (deb822). Install as
+#   /etc/apt/sources.list.d/moltbrowser.sources
+# after putting the archive key in /etc/apt/keyrings/moltbrowser.gpg and
+# checking its fingerprint: docs/LINUX_REPOSITORIES.md.
+Types: deb
+URIs: https://onemannocode.github.io/MoltBrowser/linux/apt
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/moltbrowser.gpg

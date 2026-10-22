@@ -1,0 +1,904 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "MoltBrowser-macOS-arm64.dmg",
+  "documentNamespace": "https://github.com/OneManNoCode/MoltBrowser/spdx/MoltBrowser-macOS-arm64.dmg-eee3f631-7dbd-5a7c-975a-3853a23ba843",
+  "creationInfo": {
+    "created": "2026-09-21T14:13:20Z",
+    "creators": [
+      "Tool: molt_sbom.py-1",
+      "Organization: GenEye AI Labs Inc."
+    ]
+  },
+  "comment": "Chromium third-party components: every shipped component of //chrome:chrome, as listed by tools/licenses/licenses.py in the Chromium checkout, with versions from their README.chromium files. Bundled helpers: scanned from MoltBrowser.app, every file with its SHA-1 and SHA-256.",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-MoltBrowser",
+      "name": "MoltBrowser",
+      "downloadLocation": "https://github.com/OneManNoCode/MoltBrowser/releases/download/v0.3.0/MoltBrowser-macOS-arm64.dmg",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "GPL-3.0-only",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "INSTALL",
+      "versionInfo": "0.3.0",
+      "supplier": "Organization: GenEye AI Labs Inc.",
+      "packageFileName": "MoltBrowser-macOS-arm64.dmg",
+      "homepage": "https://github.com/OneManNoCode/MoltBrowser",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "2241840ba7df305006d17a73de27704e0fd43595"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "205c9a7ca9cdb75bd98262966e8bad0133bd73e5928bb4a40fe27e3aa1513c4b"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/OneManNoCode/MoltBrowser@v0.3.0"
+        }
+      ],
+      "sourceInfo": "Built from https://github.com/OneManNoCode/MoltBrowser at commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.",
+      "comment": "MoltBrowser 0.3.0 for macos (arm64). MoltBrowser's own code is GPL-3.0-only; the components it contains keep their own licences."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-chromium",
+      "name": "Chromium",
+      "downloadLocation": "git+https://chromium.googlesource.com/chromium/src.git@92a6f15143569cf59b340472d0b5030465d95722",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "FRAMEWORK",
+      "versionInfo": "152.0.7977.169",
+      "supplier": "Organization: The Chromium Authors",
+      "homepage": "https://www.chromium.org",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/chromium@152.0.7977.169?vcs_url=git%2Bhttps%3A//chromium.googlesource.com/chromium/src.git%4092a6f15143569cf59b340472d0b5030465d95722"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceType": "cpe23Type",
+          "referenceLocator": "cpe:2.3:a:google:chrome:152.0.7977.169:*:*:*:*:*:*:*"
+        }
+      ],
+      "sourceInfo": "Chromium 152.0.7977.169 at revision 92a6f15143569cf59b340472d0b5030465d95722 (chromium_version.txt). Its security fixes are tracked against Google Chrome 152.0.7977.169 in NVD, hence the CPE."
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-rust-adblock-v0-13-adblock",
+      "name": "adblock",
+      "downloadLocation": "https://crates.io/api/v1/crates/adblock/0.13.3/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MPL-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "0.13.3",
+      "supplier": "NOASSERTION",
+      "homepage": "https://crates.io/crates/adblock",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/adblock@0.13.3"
+        }
+      ],
+      "sourceInfo": "//third_party/rust/adblock/v0_13 in the Chromium checkout; revision 5f1f8a1a9b0e7b3d6c2e4f5a6b7c8d9e0f1a2b3c"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-rust-anydoc-v0-1-anydoc",
+      "name": "anydoc",
+      "downloadLocation": "https://crates.io/api/v1/crates/anydoc/0.1.6/download",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "0.1.6",
+      "supplier": "NOASSERTION",
+      "homepage": "https://crates.io/crates/anydoc",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/anydoc@0.1.6"
+        }
+      ],
+      "sourceInfo": "//third_party/rust/anydoc/v0_1 in the Chromium checkout; vendored by MoltBrowser (src/third_party/rust/anydoc/v0_1); revision 2fc6c7ac5a4e60403eb7e2967dd631cd6c2ee95c"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-boringssl-BoringSSL",
+      "name": "BoringSSL",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-BSDish",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "supplier": "NOASSERTION",
+      "homepage": "https://boringssl.googlesource.com/boringssl/",
+      "sourceInfo": "//third_party/boringssl in the Chromium checkout"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-libxml-libxml",
+      "name": "libxml",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "2.14.0",
+      "supplier": "NOASSERTION",
+      "homepage": "http://xmlsoft.org",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceType": "cpe23Type",
+          "referenceLocator": "cpe:2.3:a:xmlsoft:libxml2:2.14.0:*:*:*:*:*:*:*"
+        }
+      ],
+      "sourceInfo": "//third_party/libxml in the Chromium checkout"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-libxml-libxml-test-data",
+      "name": "libxml test data",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0 AND LicenseRef-BSD",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "0123456789abcdef0123456789abcdef01234567",
+      "supplier": "NOASSERTION",
+      "homepage": "http://xmlsoft.org",
+      "sourceInfo": "//third_party/libxml in the Chromium checkout"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-llama-cpp-llama.cpp",
+      "name": "llama.cpp",
+      "downloadLocation": "git+https://github.com/ggml-org/llama.cpp@843e7dcc15098dd6b3aaf33b4847052293d8ef1a",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "b11641",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/ggml-org/llama.cpp",
+      "sourceInfo": "//third_party/llama_cpp in the Chromium checkout; vendored by MoltBrowser (src/third_party/llama_cpp); revision 843e7dcc15098dd6b3aaf33b4847052293d8ef1a"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tp-third-party-zlib-zlib",
+      "name": "zlib",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Zlib",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "1.3.1",
+      "supplier": "NOASSERTION",
+      "homepage": "http://zlib.net/",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceType": "cpe22Type",
+          "referenceLocator": "cpe:/a:zlib:zlib:1.3.1"
+        }
+      ],
+      "sourceInfo": "//third_party/zlib in the Chromium checkout; revision 82b0e4ef9e6ed21b0bf7ae2bc5ef3d1bde4ab0d1"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tor",
+      "name": "Tor Expert Bundle",
+      "downloadLocation": "https://archive.torproject.org/tor-package-archive/torbrowser/15.0.15/tor-expert-bundle-macos-aarch64-15.0.15.tar.gz",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause AND BSD-2-Clause AND CC-BY-SA-4.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "15.0.15",
+      "supplier": "Organization: The Tor Project, Inc.",
+      "packageFileName": "tor-expert-bundle-macos-aarch64-15.0.15.tar.gz",
+      "homepage": "https://www.torproject.org",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "d59385129782a8a44f074a91de4aa3c794d69d0ecfca6c4b4975f775c55dbebe"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-tor.sh (PINNED_TOR_VERSION, EXPECTED_SHA256_TOR_AARCH64); the checksum is the pinned SHA-256 of the downloaded archive.",
+      "comment": "tor and libevent (BSD-3-Clause), the lyrebird (BSD-2-Clause) and snowflake (BSD-3-Clause) pluggable transports, and the geoip databases derived from the IPFire location database (CC-BY-SA-4.0). Bundled by scripts/bundle-tor.sh; MoltNet runs only this copy.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "6ff5b6469054aa3b368e23f4a26cf0474bb67842"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tesseract",
+      "name": "tesseract",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "5.5.0",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/tesseract-ocr/tesseract",
+      "sourceInfo": "Copied from the build machine (/opt/homebrew/Cellar/tesseract/5.5.0/bin/tesseract) by scripts/bundle-tesseract.sh.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "062cab0559ef1ffedf58ad4c28dcfce8568b1d05"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tesseract-lib-leptonica",
+      "name": "leptonica",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "1.85.0",
+      "supplier": "NOASSERTION",
+      "sourceInfo": "Library copied next to the bundled tesseract by scripts/macho_bundle_deps.py from /opt/homebrew/Cellar/leptonica/1.85.0/lib/libleptonica.6.dylib.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "6d16787e2ee1d7977cccdf5d606816361cbae765"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tesseract-lib-libpng",
+      "name": "libpng",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "1.6.47",
+      "supplier": "NOASSERTION",
+      "sourceInfo": "Library copied next to the bundled tesseract by scripts/macho_bundle_deps.py from /opt/homebrew/Cellar/libpng/1.6.47/lib/libpng16.16.dylib.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "b5619b91e510df86f95a6616af153c48dec6b1a5"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-tessdata-eng",
+      "name": "tessdata_fast eng.traineddata",
+      "downloadLocation": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "87416418657359cb625c412a48b6e1d6d41c29bd",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/tesseract-ocr/tessdata_fast",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "51fcc257653cd31928f245f4fd768a73ee77df6372b08342deb4f85b8c4b5cc5"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-tesseract.sh (TESSDATA_COMMIT, EXPECTED_SHA256_TESSDATA_ENG).",
+      "comment": "Trained model data for tesseract (English, fast).",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "d012947790dcb89ca6b80715b19b07d14d1a072d"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-whisper",
+      "name": "whisper.cpp",
+      "downloadLocation": "git+https://github.com/ggerganov/whisper.cpp@51c6961c7b64b406833f4b6a4a20e67142f69225",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "1.7.5",
+      "supplier": "NOASSERTION",
+      "homepage": "https://github.com/ggml-org/whisper.cpp",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/ggerganov/whisper.cpp@v1.7.5"
+        }
+      ],
+      "sourceInfo": "Built from source at the commit pinned in scripts/bundle-whisper.sh (WHISPER_TAG, EXPECTED_COMMIT_WHISPER_*).",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "ab5fddd5bb802f3c218f4d602f5f1edd75c4dd70"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-whisper-cli-lib-libomp",
+      "name": "libomp",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "versionInfo": "20.1.8",
+      "supplier": "NOASSERTION",
+      "sourceInfo": "Library copied next to the bundled whisper-cli by scripts/macho_bundle_deps.py from /opt/homebrew/Cellar/libomp/20.1.8/lib/libomp.dylib.",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "3b80b6790b188989be705b4752df2bceabdf2601"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-whisper-model",
+      "name": "whisper ggml-tiny.en model",
+      "downloadLocation": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "supplier": "NOASSERTION",
+      "homepage": "https://huggingface.co/ggerganov/whisper.cpp",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c139ead9d2bfac381db38e15adeaf4fd0cf6e56d1cd948c822ca3e11bfc2768d"
+        }
+      ],
+      "sourceInfo": "Pinned in scripts/bundle-whisper.sh (EXPECTED_SHA256_WHISPER_TINY_EN)",
+      "comment": "Speech-recognition model weights (OpenAI Whisper tiny.en, converted to ggml).",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "fdaf05b98929ef82ce891176fdc7d67a529ad74d"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-helper-model-tinyllama-1.1b",
+      "name": "TinyLlama 1.1B Chat",
+      "downloadLocation": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/fe8a4ea1ffedaf415f4da2f062534de366a451e6/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+      "filesAnalyzed": true,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "OTHER",
+      "versionInfo": "fe8a4ea1ffedaf415f4da2f062534de366a451e6",
+      "supplier": "NOASSERTION",
+      "packageFileName": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+      "homepage": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "f45760d86c0c5abf036f826be8431d323fefe074f64e36ce18859917e6a076ef"
+        }
+      ],
+      "sourceInfo": "Model registry entry \"tinyllama-1.1b\" in src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc (revision and sha256 pins).",
+      "comment": "On-device language model weights (GGUF).",
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "29d8eb78e2f1616a0841c4fc142676b93a95e1f7"
+      },
+      "licenseInfoFromFiles": [
+        "NOASSERTION"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-geoip",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/geoip",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "3524d903f5a3471aa62f3a8767e07e591605f6f9"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "4f20de405bd464a564492cacb7fc49fc0c2a7c3d3b9bcb9222b90af64f48c175"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-geoip6",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/geoip6",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "1c78226c4717f4f15585793f0215a2b1256ba7b7"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "f000c91c345001aee232e4864aaecff249de7717cbb83376226dd31e287a9dfb"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-libevent-2.1.7.dylib",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/libevent-2.1.7.dylib",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "d6afaa95ecfe90f299e6f8f46ea2e4958001b44e"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "7f798dcfe6a7032a4f93c00b4156bf233b90d5d51732db17bdddaa888f02931d"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-tor",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/tor",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "9accc97df54e7d57902f92e0c96da14f41b4eca9"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "151452e1ecaedf1e85968f994f3e10921fb206c7fd9e24cf138d08cdbfc8d497"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-pluggable-transports-lyrebird",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/pluggable_transports/lyrebird",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "9db5558d7d1825b8f3627612d4654785dfa60588"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "aff9bceeae12dfd2d95a019c168d31b6d61e774980d3807f16c284647ce4ec9a"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-pluggable-transports-pt-config.json",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/pluggable_transports/pt_config.json",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "5f36b2ea290645ee34d943220a14b54ee5ea5be5"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-pluggable-transports-snowflake-client",
+      "fileName": "./MoltBrowser.app/Contents/Resources/tor/pluggable_transports/snowflake-client",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "05048faf2a8a7ea9d2b944def5ef2c6ccc75a445"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "622f569b37646d3bd66497b5b8995bad4714b15ceaa248c4615a86af5874931c"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-tesseract",
+      "fileName": "./MoltBrowser.app/Contents/Resources/ocr/tesseract",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "1c53669a4f58ee83954c3e988ca617856a550368"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "cae11bd6476ffb97aedfbc4427ca7604b8fefed96b66f1968e3206ea892723b5"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-lib-libtesseract.5.dylib",
+      "fileName": "./MoltBrowser.app/Contents/Resources/ocr/lib/libtesseract.5.dylib",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "dc9768bd56985555ec49eaec253561622b3b16eb"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "7faad7acc01a0e9085b430bdba4595d13f567550f0a616c2d25cbe8c1e5715c8"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-lib-libleptonica.6.dylib",
+      "fileName": "./MoltBrowser.app/Contents/Resources/ocr/lib/libleptonica.6.dylib",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "06c1fbe91da2babbf197a5ea687cedc14291f842"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "a53c2cc3d5624629b4704d1638754b0bc5a93a797653593ad274fa72e3e3daea"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-lib-libpng16.16.dylib",
+      "fileName": "./MoltBrowser.app/Contents/Resources/ocr/lib/libpng16.16.dylib",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "f90722d99de5842f2d7297d279dac9daf269ab67"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c09525f77a151575af095c5291f5a7bcbf15a314605770080ec1e9ad4e021ef2"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-tessdata-eng.traineddata",
+      "fileName": "./MoltBrowser.app/Contents/Resources/ocr/tessdata/eng.traineddata",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "e7f16f9947c7a5cd9d961d0543a12c41bc9780dd"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "51fcc257653cd31928f245f4fd768a73ee77df6372b08342deb4f85b8c4b5cc5"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-whisper-whisper-cli",
+      "fileName": "./MoltBrowser.app/Contents/Resources/whisper/whisper-cli",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "d9d09c9febf24b2a58938cc64629ba9d7f77ba5f"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "b39fdf387f6996596628d12be1e61dff7df007be02e6267b40e81106f837348a"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-whisper-lib-libomp.dylib",
+      "fileName": "./MoltBrowser.app/Contents/Resources/whisper/lib/libomp.dylib",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "dbcab0d0f3740d61fdf05e8fe6732942b7d61812"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "bfb75f746c4b190a57b4568ed10b03ebf86cc8e76eb6a7d075a420a17d0edb20"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-whisper-ggml-tiny.en.bin",
+      "fileName": "./MoltBrowser.app/Contents/Resources/whisper/ggml-tiny.en.bin",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "cfff032cd751d83eb4122a4aa8f3acb164f053a5"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "c139ead9d2bfac381db38e15adeaf4fd0cf6e56d1cd948c822ca3e11bfc2768d"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-models-tinyllama-1.1b.gguf",
+      "fileName": "./MoltBrowser.app/Contents/Resources/molt_models/tinyllama-1.1b.gguf",
+      "checksums": [
+        {
+          "algorithm": "SHA1",
+          "checksumValue": "a745868185114f9399da9e3659f579e0a1a8136c"
+        },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "f45760d86c0c5abf036f826be8431d323fefe074f64e36ce18859917e6a076ef"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": [
+        "NOASSERTION"
+      ],
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-MoltBrowser"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-chromium"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-rust-adblock-v0-13-adblock"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-rust-anydoc-v0-1-anydoc"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-boringssl-BoringSSL"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-libxml-libxml"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-libxml-libxml-test-data"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-llama-cpp-llama.cpp"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-tp-third-party-zlib-zlib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tor"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-geoip"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-geoip6"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-libevent-2.1.7.dylib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-tor"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-pluggable-transports-lyrebird"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-pluggable-transports-pt-config.json"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tor",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-tor-pluggable-transports-snowflake-client"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tesseract"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tesseract",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-tesseract"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tesseract",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-lib-libtesseract.5.dylib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tesseract-lib-leptonica"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tesseract-lib-leptonica",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-lib-libleptonica.6.dylib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tesseract-lib-libpng"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tesseract-lib-libpng",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-lib-libpng16.16.dylib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-tessdata-eng"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-tessdata-eng",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-ocr-tessdata-eng.traineddata"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-whisper"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-whisper",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-whisper-whisper-cli"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-whisper-cli-lib-libomp"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-whisper-cli-lib-libomp",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-whisper-lib-libomp.dylib"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-whisper-model"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-whisper-model",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-whisper-ggml-tiny.en.bin"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-MoltBrowser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-helper-model-tinyllama-1.1b"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-helper-model-tinyllama-1.1b",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-MoltBrowser.app-Contents-Resources-molt-models-tinyllama-1.1b.gguf"
+    }
+  ],
+  "hasExtractedLicensingInfos": [
+    {
+      "licenseId": "LicenseRef-BSD",
+      "name": "BSD",
+      "extractedText": "Declared as \"BSD\" in //third_party/libxml/README.chromium. This SBOM does not carry the licence text; see the component's licence files."
+    },
+    {
+      "licenseId": "LicenseRef-BSDish",
+      "name": "BSDish",
+      "extractedText": "Declared as \"BSDish\" in //third_party/boringssl/README.chromium. This SBOM does not carry the licence text; see the component's licence files."
+    }
+  ]
+}

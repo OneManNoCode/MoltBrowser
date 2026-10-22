@@ -688,13 +688,37 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # sha256sum-format sums for both assets (LF line endings), published
+      # One SPDX SBOM per installer (docs/SBOM.md): Chromium's third-party
+      # components from the checkout's licenses.py, and every file of the
+      # bundled tor / OCR / whisper with its pin, from the staged folder.
+      - name: SBOMs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $src = Join-Path $env:BUILD_ROOT "src"
+          $out = Join-Path $src "out\MoltBrowser"
+          $stage = Join-Path $out "MoltBrowser-Windows-x64"
+          $sbomArgs = @("tools\sbom\molt_sbom.py", "generate", "--platform", "windows",
+            "--arch", "x64", "--version", $env:RELEASE_TAG, "--chromium-src", $src,
+            "--gn-out-dir", $out, "--payload", $stage, "--release",
+            "--out-dir", $env:GITHUB_WORKSPACE,
+            "--artifact", "MoltBrowser-Windows-x64-Setup.exe",
+            "--artifact", "MoltBrowser-Windows-x64.zip")
+          & python3 @sbomArgs
+          if ($LASTEXITCODE -ne 0) { throw "SBOM generation failed ($LASTEXITCODE)" }
+          & python3 tools\sbom\molt_sbom.py validate `
+            --artifact MoltBrowser-Windows-x64-Setup.exe --artifact MoltBrowser-Windows-x64.zip `
+            MoltBrowser-Windows-x64-Setup-exe.spdx.json MoltBrowser-Windows-x64-zip.spdx.json
+          if ($LASTEXITCODE -ne 0) { throw "SBOM validation failed ($LASTEXITCODE)" }
+
+      # sha256sum-format sums for the assets (LF line endings), published
       # next to them, plus a signed build-provenance attestation.
       - name: Checksums
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          $names = @("MoltBrowser-Windows-x64-Setup.exe", "MoltBrowser-Windows-x64.zip")
+          $names = @("MoltBrowser-Windows-x64-Setup.exe", "MoltBrowser-Windows-x64.zip",
+            "MoltBrowser-Windows-x64-Setup-exe.spdx.json", "MoltBrowser-Windows-x64-zip.spdx.json")
           $lines = foreach ($n in $names) {
             $f = Join-Path $env:GITHUB_WORKSPACE $n
             if (-not (Test-Path $f)) { throw "missing release asset: $n" }
@@ -710,13 +734,18 @@ jobs:
           subject-path: |
             MoltBrowser-Windows-x64-Setup.exe
             MoltBrowser-Windows-x64.zip
+            MoltBrowser-Windows-x64-Setup-exe.spdx.json
+            MoltBrowser-Windows-x64-zip.spdx.json
 
-      - name: Upload checksums to the DRAFT release
+      - name: Upload SBOMs and checksums to the DRAFT release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           tag_name: ${{ inputs.tag }}
           draft: true
-          files: SHA256SUMS-windows-x64
+          files: |
+            MoltBrowser-Windows-x64-Setup-exe.spdx.json
+            MoltBrowser-Windows-x64-zip.spdx.json
+            SHA256SUMS-windows-x64
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

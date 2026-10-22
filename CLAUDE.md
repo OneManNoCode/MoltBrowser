@@ -136,6 +136,16 @@ autoninja -C chromium/src/out/MoltBrowser chrome
   `scripts/publish-release-signature.sh`. Never publish without the manifest
   + `.sig`. Runbook: `docs/SIGNED_UPDATES.md`. The private key never touches
   CI, a cloud machine or this repo.
+- Every installer ships an SPDX SBOM (`scripts/release-sbom.sh`,
+  `docs/SBOM.md`) named `<asset with "." -> "-">.spdx.json`. **No release
+  asset but an installer may have `.dmg`, `.deb`, `.rpm`, `.tar.gz` or
+  `Setup.exe` in its name**: the updater picks its installer by substring
+  (`UpdateManager::PlatformAssetMatcher`).
+- Linux: CI attaches the UNSIGNED apt/rpm repository
+  (`MoltBrowser-Linux-repository.tar`); the owner signs it offline with the
+  OpenPGP archive key (`tools/linux_repo/molt_linux_repo.py sign`) before
+  signing the manifest. GitHub Pages serves it only after `gpgv` verifies it
+  (`scripts/linux-repo-site.sh`). Users: `docs/LINUX_REPOSITORIES.md`.
 
 ### Checks that need no Chromium checkout
 - WebUI checks above; `molt_ai_unittests` targets can often be compiled

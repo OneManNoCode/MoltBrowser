@@ -20,6 +20,10 @@
 #   MoltBrowser.app/Contents/Resources/ocr/tesseract
 #   MoltBrowser.app/Contents/Resources/ocr/lib/*.dylib
 #   MoltBrowser.app/Contents/Resources/ocr/tessdata/eng.traineddata
+#   MoltBrowser.app/Contents/Resources/ocr/.version   (tesseract's version)
+#   MoltBrowser.app/Contents/Resources/ocr/.bundle-provenance.json
+#     (where the binary and each library were copied from; the release SBOM,
+#     tools/sbom/molt_sbom.py, reads both)
 #
 # Usage:
 #   ./scripts/bundle-tesseract.sh
@@ -103,7 +107,8 @@ install -m 644 "$TRAINEDDATA_CACHE" "$DEST/tessdata/eng.traineddata"
 # Never leave a half-bundled tesseract behind: the app would find it and
 # fail at launch (or load a library from outside the bundle).
 remove_bundled_binary() {
-  rm -rf "${DEST:?}/tesseract" "${DEST:?}/lib"
+  rm -rf "${DEST:?}/tesseract" "${DEST:?}/lib" "${DEST:?}/.version" \
+    "${DEST:?}/.bundle-provenance.json"
 }
 
 if [[ -z "$SYS_BIN" ]]; then
@@ -124,7 +129,8 @@ fi
 remove_bundled_binary
 install -m 755 "$SYS_BIN" "$DEST/tesseract"
 if ! python3 "$SCRIPT_DIR/macho_bundle_deps.py" "$DEST/tesseract" \
-        --lib-dir "$DEST/lib" --origin "$SYS_BIN"; then
+        --lib-dir "$DEST/lib" --origin "$SYS_BIN" \
+        --provenance "$DEST/.bundle-provenance.json"; then
   remove_bundled_binary
   echo "[bundle-tesseract] FATAL: could not make the bundled tesseract"
   echo "[bundle-tesseract] self-contained (see above); not bundling it."
@@ -138,7 +144,10 @@ if ! "$DEST/tesseract" --version >/dev/null 2>&1; then
   echo "[bundle-tesseract] FATAL: the bundled tesseract does not run; not bundling it."
   exit 1
 fi
-echo "[bundle-tesseract] Bundled tesseract: $("$DEST/tesseract" --version 2>&1 | head -1)"
+TESS_VERSION_LINE="$("$DEST/tesseract" --version 2>&1 | head -1)"
+# "tesseract 5.5.0" -> 5.5.0, recorded for the release SBOM.
+echo "${TESS_VERSION_LINE#tesseract }" > "$DEST/.version"
+echo "[bundle-tesseract] Bundled tesseract: $TESS_VERSION_LINE"
 
 echo "[bundle-tesseract] Bundled into $DEST"
 echo "[bundle-tesseract]   lib/: $(find "$DEST/lib" -type f 2>/dev/null | wc -l | tr -d ' ') dylibs, $(du -sh "$DEST/lib" 2>/dev/null | cut -f1)"

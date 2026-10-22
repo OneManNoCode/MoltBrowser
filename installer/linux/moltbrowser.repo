@@ -1,0 +1,10 @@
+# MoltBrowser dnf/yum repository. Install as /etc/yum.repos.d/moltbrowser.repo;
+# dnf asks you to confirm the key's fingerprint on first use. Check it
+# against docs/LINUX_REPOSITORIES.md before you say yes.
+[moltbrowser]
+name=MoltBrowser
+baseurl=https://onemannocode.github.io/MoltBrowser/linux/rpm
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://onemannocode.github.io/MoltBrowser/linux/moltbrowser-archive-keyring.asc

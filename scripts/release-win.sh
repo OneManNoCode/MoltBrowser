@@ -196,6 +196,14 @@ if [ "$DO_UPLOAD" = true ]; then
   fi
 
   TAG="v${VERSION}"
+  # One SBOM per installer (docs/SBOM.md); package-win.sh bundles no helpers.
+  mapfile -t SBOMS < <("$SCRIPT_DIR/release-sbom.sh" --platform windows --arch x64 \
+    --version "$VERSION" "${ARTIFACTS[@]}")
+  if [ ${#SBOMS[@]} -ne ${#ARTIFACTS[@]} ]; then
+    echo "ERROR: SBOM generation failed"
+    exit 1
+  fi
+  ARTIFACTS+=("${SBOMS[@]}")
   SUMS="$DIST_DIR/SHA256SUMS-windows-x64"
   "$SCRIPT_DIR/release-checksums.sh" "$SUMS" "${ARTIFACTS[@]}"
 

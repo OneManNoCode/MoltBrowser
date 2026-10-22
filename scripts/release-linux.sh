@@ -147,11 +147,31 @@ if [ "$DO_UPLOAD" = true ]; then
   fi
 
   TAG="v${VERSION}"
+  # The UNSIGNED apt/rpm repository, signed offline later
+  # (docs/SIGNED_UPDATES.md); not in the checksums, since signing replaces it.
+  REPO_PKGS=()
+  for f in "${ARTIFACTS[@]}"; do
+    case "$f" in *.deb|*.rpm) REPO_PKGS+=("$f") ;; esac
+  done
+  REPO_BUNDLE="$DIST_DIR/MoltBrowser-Linux-repository.tar"
+  rm -f "$REPO_BUNDLE"
+  if [ ${#REPO_PKGS[@]} -gt 0 ]; then
+    "$SCRIPT_DIR/linux-repo-build.sh" "$REPO_BUNDLE" "${REPO_PKGS[@]}"
+  fi
+  # One SBOM per package (docs/SBOM.md).
+  mapfile -t SBOMS < <("$SCRIPT_DIR/release-sbom.sh" --platform linux --arch x64 \
+    --version "$VERSION" "${ARTIFACTS[@]}")
+  if [ ${#SBOMS[@]} -ne ${#ARTIFACTS[@]} ]; then
+    echo "ERROR: SBOM generation failed"
+    exit 1
+  fi
+  ARTIFACTS+=("${SBOMS[@]}")
   SUMS="$DIST_DIR/SHA256SUMS-linux-x64"
   "$SCRIPT_DIR/release-checksums.sh" "$SUMS" "${ARTIFACTS[@]}"
 
   # DRAFT until the offline-signed manifest is attached (release-draft.sh).
   "$SCRIPT_DIR/release-draft.sh" "$TAG"
+  [ -f "$REPO_BUNDLE" ] && ARTIFACTS+=("$REPO_BUNDLE")
   gh release upload "$TAG" "${ARTIFACTS[@]}" "$SUMS" --clobber
   echo "  Uploaded ${#ARTIFACTS[@]} files + $(basename "$SUMS") to the draft release $TAG."
 else

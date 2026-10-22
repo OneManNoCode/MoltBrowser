@@ -14,6 +14,7 @@ missing, unless MOLT_REQUIRE_MACHO_TOOLS=1.
 
 import glob
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -256,6 +257,30 @@ class BundleTest(unittest.TestCase):
         self.assertIn("still loads code from outside", err.getvalue())
         self.assertIn("rewrote " + self.helper, out.getvalue())
 
+    def test_provenance(self):
+        prov = os.path.join(self.tmp, "provenance.json")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main(self.helper, "--lib-dir",
+                                           self.lib_dir, "--origin",
+                                           self.origin, "--provenance", prov),
+                             0)
+        with open(prov) as f:
+            doc = json.load(f)
+        cellar = os.path.realpath(self.tree.path("brew/Cellar"))
+        self.assertEqual(doc["binary"], {
+            "file": "tool",
+            "origin": os.path.join(cellar, "tool/1.0/bin/tool")})
+        self.assertEqual(doc["libraries"], [
+            {"file": "lib/libbar.2.dylib",
+             "origin": os.path.join(cellar, "bar/2.0/lib/libbar.2.dylib")},
+            {"file": "lib/libbaz.dylib",
+             "origin": os.path.join(cellar, "baz/1.0/lib/libbaz.dylib")},
+            {"file": "lib/libfoo.1.dylib",
+             "origin": os.path.join(cellar, "foo/1.0/lib/libfoo.1.dylib")},
+            {"file": "lib/libqux.dylib",
+             "origin": os.path.join(cellar, "foo/1.0/lib/libqux.dylib")},
+        ])
+
     def test_nothing_to_bundle_leaves_no_lib_dir(self):
         t = self.tree
         t.build("App/Resources/ocr/tool",
@@ -265,6 +290,20 @@ class BundleTest(unittest.TestCase):
             self.assertEqual(
                 self.run_main(self.helper, "--lib-dir", self.lib_dir), 0)
         self.assertFalse(os.path.exists(self.lib_dir))
+
+
+class ProvenanceTest(unittest.TestCase):
+    def test_home_is_not_recorded(self):
+        self.assertEqual(
+            mbd.public_origin("/Users/raj/src/whisper.cpp/build/bin/whisper-cli",
+                              "/Users/raj"),
+            "~/src/whisper.cpp/build/bin/whisper-cli")
+        self.assertEqual(
+            mbd.public_origin("/opt/homebrew/Cellar/libomp/20.1.8/lib/libomp.dylib",
+                              "/Users/raj"),
+            "/opt/homebrew/Cellar/libomp/20.1.8/lib/libomp.dylib")
+        self.assertEqual(mbd.public_origin("/Users/rajesh/x", "/Users/raj"),
+                         "/Users/rajesh/x")
 
 
 class ParseTest(unittest.TestCase):

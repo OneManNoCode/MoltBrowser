@@ -1,0 +1,11 @@
+Name: adblock
+URL: https://crates.io/crates/adblock
+Version: 0.13.3
+Revision: 5f1f8a1a9b0e7b3d6c2e4f5a6b7c8d9e0f1a2b3c
+Update Mechanism: Manual (https://crbug.com/449898466)
+License: MPL-2.0
+License File: //third_party/rust/chromium_crates_io/vendor/adblock-v0_13/LICENSE
+Shipped: yes
+Security Critical: yes
+
+Description: Fixture for tools/sbom/molt_sbom_test.py (written by gnrt on the build machine).

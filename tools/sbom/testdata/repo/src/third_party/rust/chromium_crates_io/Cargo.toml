@@ -1,0 +1,17 @@
+# Fixture for tools/sbom/molt_sbom_test.py.
+[package]
+edition = "2021"
+name = "chromium"
+version = "0.1.0"
+
+[dependencies]
+anydoc = "0.1.6"
+serde = "1.0.219"
+
+# MoltBrowser: a crate MoltBrowser adds, pinned exactly.
+[dependencies.adblock]
+version = "=0.13.3"
+default-features = false
+
+[dependencies.bytemuck]
+version = "1"
