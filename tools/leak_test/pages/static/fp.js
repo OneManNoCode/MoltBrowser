@@ -188,6 +188,46 @@ function textWidth(family) {
       .width * 100) / 100;
 }
 
+// Canvas text metrics (FINGERPRINTING.md "Text metrics (MoltNet)"):
+// MoltNet rounds them to whole pixels at these sizes (left-aligned,
+// alphabetic baseline), and on Linux lays every font out unhinted, so they
+// are the same on every machine with the same fonts. Element geometry
+// isn't rounded; it is recorded to compare runs.
+const TEXT_METRICS = ['width', 'actualBoundingBoxLeft',
+  'actualBoundingBoxRight', 'actualBoundingBoxAscent',
+  'actualBoundingBoxDescent', 'fontBoundingBoxAscent',
+  'fontBoundingBoxDescent', 'alphabeticBaseline', 'hangingBaseline',
+  'ideographicBaseline', 'emHeightAscent', 'emHeightDescent'];
+const TEXT_SAMPLE = 'MoltNet fjord Wave 0123 \u00e9\u00df';
+
+function textMetrics(v) {
+  const c = document.createElement('canvas').getContext('2d');
+  const metrics = {};
+  let whole = true;
+  for (const family of ['sans-serif', 'serif', 'monospace']) {
+    for (const size of [16, 48]) {
+      c.font = size + 'px ' + family;
+      const m = c.measureText(TEXT_SAMPLE);
+      // emHeight* only exist with ExtendedTextMetrics.
+      const row = TEXT_METRICS.filter((k) => typeof m[k] === 'number')
+          .map((k) => m[k]);
+      whole = whole && row.every((x) => Number.isInteger(x));
+      metrics[family + ' ' + size] = row;
+    }
+  }
+  v['text.metrics'] = metrics;
+  v['text.metrics_whole'] = whole;
+  c.font = '32px sans-serif';
+  v['text.emoji'] = ['\u{1F600}', '\u{1F9C5}', '\u{1FAE8}']
+      .map((e) => c.measureText(e).width);
+  const span = document.createElement('span');
+  span.style.cssText = 'position:absolute;white-space:pre;font:16px serif';
+  span.textContent = TEXT_SAMPLE;
+  document.body.appendChild(span);
+  v['text.dom_width'] = span.getBoundingClientRect().width;
+  span.remove();
+}
+
 function forms(v) {
   const box = document.createElement('div');
   box.innerHTML = '<input id="mlreq" required>' +
@@ -359,6 +399,7 @@ async function collect() {
     v['fonts.widths'][fam] = textWidth(fam);
   }
   v['fonts.system_ui_width'] = textWidth('system-ui');
+  textMetrics(v);
   forms(v);
   await step('doc.characterSet_undeclared', () => frameLoad(
       'charset.html'));

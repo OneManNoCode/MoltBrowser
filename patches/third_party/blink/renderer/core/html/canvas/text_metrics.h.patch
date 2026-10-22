@@ -1,0 +1,40 @@
+MoltBrowser patch for third_party/blink/renderer/core/html/canvas/text_metrics.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/html/canvas/text_metrics.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.h b/third_party/blink/renderer/core/html/canvas/text_metrics.h
+index 3d2c354897fad6b956b5598b4972eff6c32bd43b..d72fe78b39de03fc7587961a68a6b9d0395d23b2 100644
+--- a/third_party/blink/renderer/core/html/canvas/text_metrics.h
++++ b/third_party/blink/renderer/core/html/canvas/text_metrics.h
+@@ -44,6 +44,9 @@ class DOMRectReadOnly;
+ class ExceptionState;
+ class PlainTextPainter;
+ class TextClusterOptions;
++namespace molt_fingerprinting {
++struct TextMetricsAccess;  // MoltBrowser: molt_fingerprinting/moltnet_text.h
++}  // namespace molt_fingerprinting
+ 
+ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
+   DEFINE_WRAPPERTYPEINFO();
+@@ -111,6 +114,9 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
+   };
+ 
+  private:
++  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
++  friend struct molt_fingerprinting::TextMetricsAccess;
++
+   void Update(const Font*,
+               const TextDirection& direction,
+               V8CanvasTextBaseline::Enum baseline,
+@@ -157,6 +163,9 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
+       V8CanvasTextBaseline::Enum::kAlphabetic;
+ 
+   HeapVector<RunWithOffset> runs_with_offset_;
++
++  // MoltBrowser: the grid MoltNet rounded the metrics to (0: exact).
++  double molt_net_grid_ = 0.0;
+ };
+ 
+ template <>

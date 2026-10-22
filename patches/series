@@ -225,6 +225,8 @@ third_party/blink/renderer/core/frame/navigator_ua.cc.patch
 third_party/blink/renderer/core/frame/screen.cc.patch
 third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc.patch
 third_party/blink/renderer/core/html/canvas/html_canvas_element.cc.patch
+third_party/blink/renderer/core/html/canvas/text_metrics.cc.patch
+third_party/blink/renderer/core/html/canvas/text_metrics.h.patch
 third_party/blink/renderer/core/html/html_image_element.cc.patch
 third_party/blink/renderer/core/input/touch_event_manager.cc.patch
 third_party/blink/renderer/core/layout/forms/layout_text_control.cc.patch
@@ -255,8 +257,11 @@ third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc.patch
 third_party/blink/renderer/modules/webgpu/gpu.cc.patch
 third_party/blink/renderer/modules/webgpu/gpu_queue.cc.patch
 third_party/blink/renderer/platform/fonts/font_fallback_list.cc.patch
+third_party/blink/renderer/platform/fonts/font_platform_data.cc.patch
+third_party/blink/renderer/platform/fonts/font_platform_data.h.patch
 third_party/blink/renderer/platform/fonts/font_selector.cc.patch
 third_party/blink/renderer/platform/fonts/font_selector.h.patch
+third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc.patch
 third_party/blink/renderer/platform/language.cc.patch
 third_party/blink/renderer/platform/language.h.patch
 third_party/blink/renderer/platform/text/platform_locale.cc.patch

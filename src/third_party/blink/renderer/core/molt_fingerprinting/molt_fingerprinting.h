@@ -60,6 +60,10 @@
 //            the form-control Locale            -> moltnet_uniformity.h
 //   MoltNet  DefaultLanguage(), UserPreferredLanguages() (language.cc; the
 //              default text locale)                 -> moltnet_locale.h
+//   MoltNet  BaseRenderingContext2D::measureText, the ExtendedTextMetrics
+//              methods (text_metrics.cc), FontPlatformData's render style
+//              and Linux emoji fallback (font_platform_data.cc,
+//              font_cache_linux.cc)                 -> moltnet_text.h
 //   MoltNet  navigator.deviceMemory, subresource client hints
 //            (frame_fetch_context.cc), navigator.userAgentData's
 //            high-entropy values                -> moltnet_device.h

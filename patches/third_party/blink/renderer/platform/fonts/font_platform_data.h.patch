@@ -1,0 +1,41 @@
+MoltBrowser patch for third_party/blink/renderer/platform/fonts/font_platform_data.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/fonts/font_platform_data.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/fonts/font_platform_data.h b/third_party/blink/renderer/platform/fonts/font_platform_data.h
+index 07e92cc924311d73bb9e98fbaa8df9dd38e92803..2b24fe0248c4eab0b8a47d80713e7514974ccdaf 100644
+--- a/third_party/blink/renderer/platform/fonts/font_platform_data.h
++++ b/third_party/blink/renderer/platform/fonts/font_platform_data.h
+@@ -57,6 +57,7 @@ typedef const struct __CTFont* CTFontRef;
+ namespace blink {
+ 
+ class HarfBuzzFace;
++class SimpleFontData;  // MoltBrowser
+ 
+ class PLATFORM_EXPORT FontPlatformData
+     : public GarbageCollected<FontPlatformData> {
+@@ -141,6 +142,22 @@ class PLATFORM_EXPORT FontPlatformData
+   // Gets the postscript name from the typeface.
+   String GetPostScriptName() const;
+ 
++  // MoltBrowser: how MoltNet renderers render text (Linux and ChromeOS), set
++  // once on the main thread before any font is created
++  // (molt_fingerprinting/moltnet_text.h).
++  struct UniformTextRendering {
++    // Every font as for text-rendering: geometricPrecision.
++    bool geometric_precision = false;
++    // The family emoji fall back to first (a string literal), or null.
++    const char* emoji_family = nullptr;
++  };
++  static void SetUniformTextRendering(const UniformTextRendering& rendering);
++  static UniformTextRendering GetUniformTextRendering();
++  // The emoji family's font for `description`, or null when there is no
++  // such family or it isn't installed.
++  static const SimpleFontData* UniformEmojiFontData(
++      const FontDescription& description);
++
+  private:
+ #if !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC)
+   WebFontRenderStyle QuerySystemRenderStyle(const std::string& family,

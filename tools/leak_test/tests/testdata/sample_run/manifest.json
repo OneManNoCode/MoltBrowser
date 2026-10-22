@@ -92,6 +92,7 @@
     "sharedStorage.set": "rejected",
     "storage.persist": false,
     "storage.quota": 1717986918,
+    "text.metrics_whole": true,
     "touch.createEvent": "NotSupportedError",
     "touch.ontouchstart": false,
     "tz.date_string_utc": true,

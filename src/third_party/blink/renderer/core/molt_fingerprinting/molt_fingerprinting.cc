@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"
@@ -551,6 +552,9 @@ void Configure(Mode mode) {
     PinUniformFormLocale();
     // Nor does text without a lang attribute (moltnet_locale.h).
     PinUniformTextLocale();
+    // Text is measured the same way on every machine of an OS
+    // (moltnet_text.h).
+    PinUniformTextRendering();
   }
 }
 
