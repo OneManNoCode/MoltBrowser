@@ -869,7 +869,7 @@ Status: implemented (October 2026), pending a compile on the build machine. A vi
 ### 10.1 Decisions
 
 1. **No image decoding in the service.** The service receives raw 8-bit RGB pixels with their width and height, never an image file.
-   - The browser decodes with Chromium's own sandboxed decoders: the data decoder process for image files (`DecodeImageForModel()`, `runtime/model_image_prep.h`), Blink for a page's images (the Prompt API sends decoded `SkBitmap`s), the compositor for screenshots (a later consumer).
+   - The browser decodes with Chromium's own sandboxed decoders: the data decoder process for image files (`DecodeImageForModel()`, `runtime/model_image_prep.h`), Blink for a page's images (the Prompt API sends decoded `SkBitmap`s), the compositor for the web agent's screenshots (AGENT_ACTIONS.md §2.6).
    - It scales with Skia (`PrepareImageForModel()`), converts to RGB with transparent pixels over a neutral grey, and pads to the bounds below.
    - llama.cpp's helpers that decode files (`mtmd-helper`: stb_image, miniaudio, ffmpeg) are not vendored, so no compressed-image parser is linked into the service at all.
 2. **Bounds** (`engine/image_input.h`, checked in the browser before sending and again in the service, which treats a violation as a bad message):
@@ -938,7 +938,7 @@ The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its proj
 ### 10.5 Not done
 
 - **Audio** (mtmd has it; nothing sends it) and **video**.
-- **Images in the AI chat or for Agent mode's screenshots.** The runtime API takes them (`ChatPrompt::user_images`, `ChatMessage::images`); no caller other than the Prompt API sends any yet.
+- **Images in the AI chat or in Agent mode's recorded workflows.** The runtime API takes them (`ChatPrompt::user_images`, `ChatMessage::images`); the Prompt API and the web agent's screenshots (AGENT_ACTIONS.md §2.6) are the only callers that send any.
 - **Mapping the projector** instead of copying it: clip reads tensors into its own buffers.
 - **KV reuse across images** (§10.1, 5).
 
