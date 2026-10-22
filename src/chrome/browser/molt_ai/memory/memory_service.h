@@ -31,6 +31,7 @@
 #define CHROME_BROWSER_MOLT_AI_MEMORY_MEMORY_SERVICE_H_
 
 #include <cstdint>  // for int64_t — required on Linux under -fmodules
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -53,6 +54,7 @@ namespace molt_ai {
 namespace memory {
 
 class MemoryBackend;
+class MemoryOmniboxSearch;
 
 class MemoryService : public KeyedService,
                       public EmbeddingModelManager::Observer {
@@ -102,6 +104,20 @@ class MemoryService : public KeyedService,
   void GetSemanticStatus(
       base::OnceCallback<void(SemanticIndexStatus)> on_done);
 
+  // The @memory omnibox shortcut (MemoryOmniboxSearch,
+  // docs/design/SEMANTIC_SEARCH.md): MemoryBackend::OmniboxSearch() on the
+  // worker. |on_results| runs on this (UI) sequence, never synchronously:
+  // once with keyword-ranked pages and, when the index is the on-device
+  // model's, once more (final) ranked by meaning if the model was already
+  // loaded. Nothing is searched while memory is off or paused (one empty,
+  // final answer). |still_wanted| may be called on the worker; once false,
+  // the search is dropped.
+  void SearchForOmnibox(
+      const std::string& query,
+      int top_k,
+      std::function<bool()> still_wanted,
+      base::RepeatingCallback<void(OmniboxSearchResult)> on_results);
+
   // UI helpers used by molt://memory/.
   void GetStats(base::OnceCallback<void(Stats)> on_done);
   void ListRecent(
@@ -137,6 +153,9 @@ class MemoryService : public KeyedService,
   scoped_refptr<base::SequencedTaskRunner> worker_;
   // Owned here, used and destroyed only on |worker_| (see Shutdown()).
   std::unique_ptr<MemoryBackend> backend_;
+  // What the omnibox's @memory shortcut finds for this profile (registered
+  // under its PrefService until Shutdown()).
+  std::unique_ptr<MemoryOmniboxSearch> omnibox_search_;
 
   PrefChangeRegistrar pref_registrar_;
   base::RepeatingTimer retention_timer_;

@@ -52,6 +52,9 @@ class MemoryBackend {
       std::function<void(std::function<void()> task, int64_t delay_ms)>;
   using SearchCallback = std::function<void(SearchResult)>;
 
+  // Newest pages whose title and URL OmniboxSearch()'s keyword pass reads.
+  static constexpr int kKeywordScanDocs = 1000;
+
   explicit MemoryBackend(PostDelayedTask post_delayed);
   ~MemoryBackend();
   MemoryBackend(const MemoryBackend&) = delete;
@@ -81,6 +84,21 @@ class MemoryBackend {
              int top_k,
              bool one_per_page,
              SearchCallback done);
+
+  // The @memory omnibox shortcut (docs/design/SEMANTIC_SEARCH.md): up to
+  // |top_k| pages for |text|, one hit per page. |done| runs first, before
+  // returning, with the pages that contain every word of |text| in their
+  // title or URL (the newest kKeywordScanDocs pages) or, while the
+  // committed index is the keyword-hashing one, in their best passage. When
+  // the committed index is the on-device model's, |done| runs once more,
+  // with |final| set, when the model has answered: ranked by meaning, if the
+  // model's process was already loaded (EmbedQueryIfReady(): never started
+  // for this), else the same keyword hits. |still_wanted| (may be empty) is
+  // asked before each step; once it says no, nothing more is done or sent.
+  void OmniboxSearch(const std::string& text,
+                     int top_k,
+                     std::function<bool()> still_wanted,
+                     std::function<void(OmniboxSearchResult)> done);
 
   MemoryStats GetStats();
   SemanticIndexStatus GetSemanticStatus();
@@ -122,7 +140,14 @@ class MemoryBackend {
   std::vector<QueryHit> Search(const std::vector<float>& query_vector,
                                const std::string& query_text,
                                int top_k,
-                               bool one_per_page);
+                               bool one_per_page,
+                               bool with_snippets = true);
+  // OmniboxSearch()'s keyword pass. |keyword_index| is the committed
+  // (synchronous, keyword-hashing) embedder, or nullptr when the index
+  // holds another space's vectors.
+  std::vector<QueryHit> KeywordSearch(const std::string& text,
+                                      int top_k,
+                                      const MemoryEmbedder* keyword_index);
 
   PostDelayedTask post_delayed_;
   std::unique_ptr<MemoryEmbedder> hashing_;

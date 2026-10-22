@@ -280,6 +280,9 @@ static_library("browser") {
     "local_history_zero_suggest_provider.cc",
     "local_history_zero_suggest_provider.h",
     "match_compare.h",
+    # MoltBrowser: the @memory shortcut.
+    "molt_memory_provider.cc",
+    "molt_memory_provider.h",
     "most_visited_sites_provider.cc",
     "most_visited_sites_provider.h",
     "omnibox_client.cc",
@@ -386,6 +389,11 @@ static_library("browser") {
     ":buildflags",
     ":location_bar",
     ":mojo_bindings",
+    # MoltBrowser: local-only input and the @memory shortcut (public:
+    # chrome_omnibox_client.cc includes molt_local_input.h through this
+    # target).
+    ":molt_local_input",
+    ":molt_memory_search",
     ":partner_location_descriptor_proto",
     ":pref_names",
     "//base",
@@ -532,6 +540,37 @@ static_library("browser") {
 source_set("pref_names") {
   sources = [ "omnibox_pref_names.h" ]
   deps = [ "//base" ]
+}
+
+# MoltBrowser: the @memory omnibox shortcut's pure logic (std-only: the
+# fuzzer and molt://memory use it too) and the interface through which
+# MoltMemoryProvider reaches a profile's AI memory in //chrome.
+source_set("molt_memory_query") {
+  sources = [
+    "molt_memory_query.cc",
+    "molt_memory_query.h",
+  ]
+}
+
+# MoltBrowser: omnibox input that stays on the device (@memory, @ai): the
+# controller's gate and the omnibox client's checks. std-only.
+source_set("molt_local_input") {
+  sources = [
+    "molt_local_input.cc",
+    "molt_local_input.h",
+  ]
+  public_deps = [ ":molt_memory_query" ]
+}
+
+source_set("molt_memory_search") {
+  sources = [
+    "molt_memory_search.cc",
+    "molt_memory_search.h",
+  ]
+  public_deps = [
+    ":molt_memory_query",
+    "//base",
+  ]
 }
 
 source_set("aim_eligibility_service_features") {

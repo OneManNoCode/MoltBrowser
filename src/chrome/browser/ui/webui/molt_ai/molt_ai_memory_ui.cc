@@ -25,12 +25,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
+#include "components/omnibox/browser/molt_memory_query.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -197,6 +199,11 @@ class MoltAIMemoryHandler : public content::WebUIMessageHandler {
         "memModelRemove",
         base::BindRepeating(&MoltAIMemoryHandler::HandleModelRemove,
                             base::Unretained(this)));
+    // molt://memory/?q=, which the omnibox's @memory shortcut opens.
+    web_ui()->RegisterMessageCallback(
+        "memInitialQuery",
+        base::BindRepeating(&MoltAIMemoryHandler::HandleInitialQuery,
+                            base::Unretained(this)));
   }
 
  private:
@@ -256,6 +263,29 @@ class MoltAIMemoryHandler : public content::WebUIMessageHandler {
               self->Reply(cb_id, base::Value(std::move(r)));
             },
             weak_factory_.GetWeakPtr(), callback_id));
+  }
+
+  // Args: [callback_id]. Replies {query}: the q parameter of the page's URL
+  // (molt://memory/?q=..., which the omnibox's @memory shortcut opens),
+  // decoded and made safe by molt_memory::QueryFromUrlQuery() (no control
+  // or bidi characters, at most 500 characters), or "". Read from the
+  // committed URL here, never from the page; the page only puts it in its
+  // search box as a value.
+  void HandleInitialQuery(const base::ListValue& args) {
+    AllowJavascript();
+    if (!HasCallbackArgs(args, 1u, __func__)) return;
+    const std::string callback_id = args[0].GetString();
+    std::string query;
+    if (GetService()) {
+      const GURL& url = web_ui()->GetWebContents()->GetLastCommittedURL();
+      if (url.has_query()) {
+        query = molt_memory::QueryFromUrlQuery(url.query())
+                    .value_or(std::string());
+      }
+    }
+    base::DictValue r;
+    r.Set("query", query);
+    Reply(callback_id, base::Value(std::move(r)));
   }
 
   // Args: [callback_id, refresh?]. Replies {available, model, index}.
@@ -652,6 +682,8 @@ function refreshStats() {
 
 // ---- Opt-in / pause / retention (P17) ----
 function renderMemSettings(s) {
+  // The @memory tip only where the shortcut exists (a profile with memory).
+  document.getElementById('omnibox-tip').hidden = !(s && s.available);
   if (!s || !s.available) {
     document.getElementById('mem-settings').hidden = true;
     return;
@@ -901,10 +933,26 @@ function runSearch() {
 }
 
 function loadRecents() {
-  searchSeq++;
+  var seq = ++searchSeq;
   sendWithPromise('memListRecent', 30).then(function(r){
-    renderRecents(r.docs || []);
+    if (seq !== searchSeq) return;  // a search started meanwhile
+    renderRecents((r && r.docs) || []);
   });
+}
+
+// molt://memory/?q=...: the omnibox's @memory shortcut opens the page with
+// a search. The browser reads and cleans the query from the page's URL; it
+// only ever becomes the search box's value.
+function loadInitial() {
+  sendWithPromise('memInitialQuery').then(function(r){
+    var q = (r && typeof r.query === 'string') ? r.query : '';
+    if (q) {
+      document.getElementById('q').value = q;
+      runSearch();
+    } else {
+      loadRecents();
+    }
+  }, function() { loadRecents(); });
 }
 
 function delDoc(docId) {
@@ -962,7 +1010,7 @@ moltActions({
 
 loadMemSettings();
 refreshStats();
-loadRecents();
+loadInitial();
 loadSemantic(true);
 // Counts update as the user browses in background tabs (every 5 s); the
 // model card follows a download or the index build every second.
@@ -1149,6 +1197,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     search model that runs on this device; without it, results are ranked
     by matching words. Only the newest 50,000 passages are searched.
     Nothing is sent to the cloud, and MoltNet windows are never recorded.
+    <span id="omnibox-tip" hidden>From the address bar, type
+    <code>@memory</code> and what you remember.</span>
     <br><br>
     Try: <code>that recipe with miso</code>,
     <code>kubernetes operator bug</code>,

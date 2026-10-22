@@ -4,13 +4,14 @@
 
 #include "components/omnibox/browser/ai_prompt_provider.h"
 
+#include <optional>
 #include <string>
 
 #include "base/strings/escape.h"
-#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match.h"
+#include "components/omnibox/browser/molt_local_input.h"
 #include "third_party/metrics_proto/omnibox_focus_type.pb.h"
 #include "third_party/metrics_proto/omnibox_input_type.pb.h"
 #include "url/gurl.h"
@@ -48,27 +49,18 @@ void AiPromptProvider::Start(const AutocompleteInput& input,
 // static
 bool AiPromptProvider::ExtractPrompt(const std::u16string& input_text,
                                      std::u16string* prompt) {
-  // Check for the "@ai " prefix (case-insensitive).
-  const std::u16string lower_input = base::ToLowerASCII(input_text);
-  const std::u16string lower_at_ai_prefix = base::ToLowerASCII(
-      std::u16string(kAtAiPrefix));
-
-  if (base::StartsWith(lower_input, lower_at_ai_prefix,
-                        base::CompareCase::SENSITIVE)) {
-    // The prefix length is always the same regardless of case.
-    *prompt = input_text.substr(lower_at_ai_prefix.size());
+  // "@ai <prompt>" (case-insensitive): the same test as the autocomplete
+  // controller's gate, which gives this input to this provider alone so
+  // the prompt never reaches the search engine (molt_local_input.h).
+  if (std::optional<size_t> start = molt_omnibox::AiPromptStart(input_text)) {
+    *prompt = input_text.substr(*start);
     return true;
   }
 
-  // Check for the "?" prefix. Require at least one character after "?" so we
-  // do not trigger on a bare question mark (which the user may intend as a
-  // normal query).
-  if (base::StartsWith(input_text, kQuestionPrefix,
-                        base::CompareCase::SENSITIVE)) {
-    *prompt = input_text.substr(1);
-    return true;
-  }
-
+  // Not "?": typed first, it puts the omnibox in keyword mode for the
+  // default search engine (Chromium's forced web search), and pasted "?..."
+  // is a web search too, with suggestions, so offering the local AI for it
+  // would be offering it text the search engine already has.
   return false;
 }
 

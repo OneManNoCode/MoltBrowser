@@ -101,6 +101,7 @@ chrome/browser/ui/browser_commands.cc.patch
 chrome/browser/ui/browser_ui_prefs.cc.patch
 chrome/browser/ui/chrome_pages.cc.patch
 chrome/browser/ui/color/chrome_color_mixer.cc.patch
+chrome/browser/ui/omnibox/chrome_omnibox_client.cc.patch
 chrome/browser/ui/side_panel/side_panel_entry_id.h.patch
 chrome/browser/ui/startup/infobar_utils.cc.patch
 chrome/browser/ui/startup/startup_browser_creator_impl.cc.patch
@@ -156,6 +157,7 @@ components/new_or_sad_tab_strings.grdp.patch
 components/omnibox/browser/BUILD.gn.patch
 components/omnibox/browser/aim_eligibility_service_features.cc.patch
 components/omnibox/browser/autocomplete_controller.cc.patch
+components/omnibox/browser/autocomplete_controller.h.patch
 components/omnibox/browser/search_provider.cc.patch
 components/omnibox/common/omnibox_features.cc.patch
 components/omnibox_pedal_ui_strings.grdp.patch

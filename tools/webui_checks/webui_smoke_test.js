@@ -515,6 +515,10 @@ let memorySemanticStatus = {
           background_allowed: true, model_failed: false},
 };
 const memorySearches = [];
+// molt://memory/?q= (the omnibox's @memory shortcut): what memInitialQuery
+// answers (the browser parsed the URL) and the searches the page made.
+const MEMORY_URL_QUERY = '<img src=x onerror=alert(1)> miso "soup"';
+const memoryUrlSearches = [];
 
 const PAGES = [
   {name: 'molt://home', file: 'molt_home_ui.cc',
@@ -633,6 +637,46 @@ const PAGES = [
      window.loadSemantic(false);
      await tick();
      assert(doc.getElementById('search-model').hidden);
+     // No settings answer (no memory): no @memory tip either.
+     assert(doc.getElementById('omnibox-tip').hidden, '@memory tip hidden');
+   }},
+  // Opened from the omnibox's @memory shortcut: the browser hands over the
+  // query it read from ?q=; the page searches it at once and shows it only
+  // as the search box's value.
+  {name: 'molt://memory/?q', file: 'molt_ai_memory_ui.cc',
+   listeners: ['#search-btn:click', '#q:keydown'],
+   responses: {
+     memInitialQuery: {query: MEMORY_URL_QUERY},
+     memGetSettings: {available: true, enabled: true, paused: false,
+                      retention_days: 90, show_opt_in_notice: false},
+     memStats: {docs: 2, chunks: 9},
+     memListRecent: {docs: [
+       {doc_id: 1, url: 'https://example.com/recent', title: 'Recent',
+        visited_at: 1700000000, word_count: 5}]},
+     memSemanticStatus: {available: true, model: {state: 'not_offered'},
+                         index: {model_active: false}},
+     memSearch(args) {
+       memoryUrlSearches.push(Array.from(args).slice(1));
+       return {model: false, ok: true, hits: [
+         {url: 'https://example.com/miso', title: 'Miso soup',
+          snippet: 'miso soup', score: 0.5, visited_at: 1700000000}]};
+     },
+   },
+   async after(window) {
+     const doc = window.document;
+     await new Promise((r) => setTimeout(r, 30));
+     assert(window.__sent.includes('memInitialQuery'), 'asks the browser');
+     assert.deepStrictEqual(memoryUrlSearches[0], [MEMORY_URL_QUERY, 20],
+                            'searched at once');
+     assert.strictEqual(doc.getElementById('q').value, MEMORY_URL_QUERY);
+     assert.strictEqual(doc.querySelectorAll('img').length, 0,
+                        'the query is never markup');
+     assert.strictEqual(doc.getElementById('results-title').textContent,
+                        'Search results');
+     assert.strictEqual(doc.querySelectorAll('#results .hit').length, 1);
+     assert(!window.__sent.includes('memListRecent'),
+            'recent pages never replace the results');
+     assert(!doc.getElementById('omnibox-tip').hidden, '@memory tip shown');
    }},
   {name: 'molt://ai-update', file: 'molt_ai_update_ui.cc', listeners: []},
   {name: 'molt://import', file: 'molt_import_ui.cc',

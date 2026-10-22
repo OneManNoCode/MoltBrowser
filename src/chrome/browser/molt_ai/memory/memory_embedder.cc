@@ -332,6 +332,61 @@ void MemoryEmbedder::EmbedBatch(std::vector<std::string> texts,
   if (done) done(std::move(result));
 }
 
+void MemoryEmbedder::EmbedQueryIfReady(std::string text,
+                                       BatchCallback done) const {
+  std::vector<std::string> texts;
+  texts.push_back(std::move(text));
+  EmbedBatch(std::move(texts), EmbedPurpose::kQuery, std::move(done));
+}
+
+std::vector<std::string> FoldedWords(const std::string& text,
+                                     size_t max_words) {
+  std::vector<std::string> words;
+  std::string word;
+  bool full = false;
+  auto flush = [&]() {
+    if (!word.empty() && words.size() < max_words) {
+      words.push_back(std::move(word));
+    }
+    word.clear();
+    full = false;
+  };
+  // Appends one code point's (or malformed byte's) bytes, keeping the word a
+  // prefix of at most kMaxTokenBytes, as TokenBuilder does.
+  auto append = [&](const char* bytes, size_t n) {
+    if (full || word.size() + n > kMaxTokenBytes) {
+      full = true;
+      return;
+    }
+    word.append(bytes, n);
+  };
+  size_t i = 0;
+  while (i < text.size() && words.size() < max_words) {
+    size_t len = 1;
+    const char32_t cp = DecodeUtf8(text, i, &len);
+    if (cp == kMalformed) {
+      append(&text[i], 1);
+    } else {
+      switch (Classify(cp)) {
+        case CharClass::kSeparator:
+          flush();
+          break;
+        case CharClass::kWord: {
+          char utf8[4];
+          const size_t n = EncodeUtf8(FoldCase(cp), utf8);
+          append(utf8, n);
+          break;
+        }
+        case CharClass::kIgnorable:
+          break;
+      }
+    }
+    i += len;
+  }
+  flush();
+  return words;
+}
+
 EmbedderSpace HashingEmbedder::space() const {
   return HashingEmbedderSpace();
 }
