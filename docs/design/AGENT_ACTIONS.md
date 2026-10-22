@@ -325,10 +325,12 @@ short extra request, and that request reuses §2 rather than a new format.
 3. **The decision.** The page calls `proposeChatAction(token)` and shows
    "Choosing a page action..." (the composer stays busy; Stop ends it).
    The browser:
-   - takes the active tab of the chat's own window
-     (`BrowserForChatAction`, which refuses MoltNet's boundary, §4.5); it
-     must show an http(s) page, and an on-device model must be loaded
-     (never loaded for this, never a cloud model);
+   - takes the active tab of the chat's own window, never the chat itself
+     (`ActiveTabForChatAction` over `BrowserForChatAction`, which refuses
+     MoltNet's boundary, §4.5): the window holding the chat as a tab, or
+     the one hosting its side panel (§4.8); it must show an http(s) page,
+     and an on-device model must be loaded (never loaded for this, never a
+     cloud model);
    - lists its elements with the agent's snapshot script (§2.1), kept only
      if it ran in the origin observed, and pins the document
      (`content::WeakDocumentPtr`);
@@ -418,7 +420,10 @@ Before: a MoltNet chat's actions went to its own window only
 rule applies when the proposal is made and again when it runs, the
 decision is made only by the on-device model (no cloud request, and the
 page's element list never leaves the device), and the action is pinned to
-the document it was made for. Nothing was loosened.
+the document it was made for. Nothing was loosened. Since §4.8 the chat
+acts only in its own window: the fallback to the last active window, the
+one way a window across the boundary could be reached, is gone, and
+`MayChatActInWindow` is still checked on the chat's own window.
 
 ### 4.6 Replies and saved conversations
 
@@ -427,6 +432,40 @@ the dispatcher are gone from the page script. `[[ACTION ...]]` written by
 a model, echoed from a page, or stored in a conversation saved by an older
 version renders as text (through the same Markdown renderer as any reply)
 and runs nothing. The WebUI smoke test checks all three.
+
+### 4.8 The chat's window
+
+`HandleStartWebAgent`, `/fill ai` (`runFormFillAI`) and vault autofill
+found their window with `GlobalBrowserCollection::FindBrowserWithTab()`
+on the chat's WebContents. At 152 that finds a window only for a tab:
+`BrowserCollection::FindBrowserWithTab` goes through
+`tabs::TabInterface::MaybeGetFromContents`, which reads the
+`TabLookupFromWebContents` user data that only a `TabModel` attaches. The
+side panel's WebContents is created by `views::WebView`
+(`AiChatSidePanelWebView`, `WebView::CreateWebContents`) and never wrapped
+in a `TabModel`, so in the side panel, the chat's usual place, these
+answered "no owning browser". So did `/fill`, `/triage`, `/ask-tabs`,
+`/trackers`, `/reputation`, `/hops`, `/js` and `/vault find`, which used
+the same lookup. In a chat opened as a tab the active tab is the chat
+itself, and the agent started on `chrome://molt-ai-chat`.
+
+All of them now use the helpers the page actions use:
+
+- `BrowserForChatAction`: the window holding the chat as a tab
+  (`FindBrowserWithTab`), else the window whose native window hosts the
+  chat's WebContents (`FindBrowserWithWindow(GetTopLevelNativeWindow())`),
+  which is how the side panel is found; never another window. Its
+  fallback to the last active window is gone: that could be a window the
+  user isn't looking at. Then MoltNet's rule (§4.5). The choice is
+  `chat_handler_helpers::ChooseChatWindow`, unit-tested.
+- `ActiveTabForChatAction`: that window's active tab, never the chat
+  itself (`ChatActionTarget`). The page context, the proposals, the
+  agent, `/fill`, the vault and the privacy commands use it.
+- The side panel's close button closes the panel of the window hosting it
+  (it took the last active window too).
+
+`HandleOpenMoltSettings` keeps `FindBrowserWithTab` on purpose: it tells a
+chat in a tab from the side panel.
 
 ## 5. What this changes for prompt injection
 
@@ -529,6 +568,12 @@ trustworthy.
   observation; the scope; every `CheckProposal` row; `MayRun`; script
   results (page exception text never repeated); the page scripts quoting a
   hostile selector, text and origin.
+- `ui/webui/molt_ai/molt_ai_chat_handler_helpers_unittest.cc` (the chat's
+  window, §4.8): a chat in a tab acts in the window holding it, the side
+  panel in the window hosting it, the tab owner first, no window of its
+  own means none (no fallback), MoltNet's boundary both ways and between
+  MoltNet profiles, asked only about the window found; the chat is never
+  its own target.
 
 - `agents/agent_actions_unittest.cc`: the snapshot parser (refs, field
   classification, malformed and oversized entries, the 40 cap, labels that

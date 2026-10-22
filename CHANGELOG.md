@@ -434,6 +434,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   before tesseract sees it. The text comes back with `--- Page N ---`
   headers and says when pages were left out; one 3-minute limit covers the
   whole PDF.
+- **The AI chat's commands work in the side panel.** The web agent, `/fill`,
+  `/vault fill`, `/vault find`, `/triage`, `/ask-tabs`, `/trackers`,
+  `/reputation`, `/hops` and `/js` looked for the chat's window in a way
+  that only finds a chat opened as a tab, so in the side panel they
+  answered "no owning browser" or found nothing. They now act on the page
+  in the chat's own window (never another window, never the chat itself;
+  MoltNet windows stay apart), and the agent no longer starts on the chat
+  when it is opened as a tab.
 
 ### Engineering
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):

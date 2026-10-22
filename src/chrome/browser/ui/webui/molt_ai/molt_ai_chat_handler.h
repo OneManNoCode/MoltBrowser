@@ -467,17 +467,22 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
                               int nav_entry_id,
                               base::Value result);
 
-  // The page this chat is about: the active tab of the window the chat is
-  // in. Null when the chat itself is that tab, or the window can't be
-  // found. Works for the side panel too (its WebContents is not a tab).
+  // The page this chat is about: ActiveTabForChatAction(), for reading.
   content::WebContents* GetActiveTabForChat();
 
-  // The window a chat action (navigate, click, type, ...) or a link from a
-  // reply goes to: the chat's own (holding it as a tab, or hosting its side
-  // panel), else the last active window. Null when there is none, or when
-  // that window is across MoltNet's boundary from the chat
+  // The window everything the chat does goes to (page actions and slash
+  // commands, the web agent, /fill, vault autofill, links from replies, the
+  // tab and privacy commands): the chat's own only, the window holding it
+  // as a tab or hosting its side panel (chat_handler_helpers::
+  // ChooseChatWindow; the side panel's WebContents is not a tab, so
+  // FindBrowserWithTab alone misses it). Never another window. Null when
+  // there is none, or when it is across MoltNet's boundary from the chat
   // (molt_ai::tor::MayChatActInWindow); then `*crossed_moltnet` is true.
   BrowserWindowInterface* BrowserForChatAction(bool* crossed_moltnet);
+  // The active tab of that window, never the chat itself (a chat opened as
+  // a tab is its window's active tab). Null as above, or when the chat is
+  // the active tab.
+  content::WebContents* ActiveTabForChatAction(bool* crossed_moltnet);
 
   // What this chat may use outside on-device processing. False in MoltNet
   // windows (molt_ai/tor/molt_net_requests_policy.h): cloud AI providers,

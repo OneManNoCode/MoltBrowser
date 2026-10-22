@@ -92,6 +92,7 @@ source_set("unit_tests") {
   ]
   deps = [
     "//base",
+    "//chrome/browser/molt_ai/tor:requests_policy",
     "//testing/gtest",
   ]
 }
