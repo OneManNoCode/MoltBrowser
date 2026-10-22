@@ -37,6 +37,13 @@ namespace ai_steps {
 
 // The parts of a GenerationResult (browser_ai_runtime.h) the steps need.
 struct ModelReply {
+  ModelReply();
+  ~ModelReply();
+  ModelReply(const ModelReply&);
+  ModelReply& operator=(const ModelReply&);
+  ModelReply(ModelReply&&);
+  ModelReply& operator=(ModelReply&&);
+
   bool success = false;
   bool cancelled = false;
   bool constraint_unsupported = false;

@@ -332,6 +332,11 @@ TEST(AutomationAiStepsTest, ExtractCleansControlCharacters) {
   ASSERT_TRUE(o.value.has_value()) << o.note;
   EXPECT_EQ(*o.value->GetDict().FindString("name"), "a b c\td\ne");
 
+  // Windows line ends become plain ones.
+  o = InterpretExtract(Ok(R"({"name":"line 1\r\nline 2"})"), spec);
+  ASSERT_TRUE(o.value.has_value()) << o.note;
+  EXPECT_EQ(*o.value->GetDict().FindString("name"), "line 1\nline 2");
+
   o = InterpretExtract(Ok(R"({"answer":"\r\n  Acme Widget, $5 \u0007"})"),
                        ExtractSpec());
   ASSERT_TRUE(o.value.has_value()) << o.note;

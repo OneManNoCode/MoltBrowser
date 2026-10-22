@@ -328,7 +328,11 @@ trustworthy.
 
 **Run outside the repo** (standalone, against `//base` stand-ins):
 
-- Both test files above, with the real converter (47 tests).
+- Both test files above, with the real converter (47 tests), also under
+  ASan and UBSan.
+- Mutation checks: 30 single-point mutations of the parsers, validators,
+  caps and outcome rules; 29 caught, and a test was added for the one that
+  survived (`\r` in the middle of extracted text).
 - Grammar agreement: each schema through the real converter into a GBNF
   recognizer (the one in `json_schema_grammar_unittest.cc`); hand-picked
   replies accepted or refused by the grammar match the browser parsers,

@@ -220,6 +220,13 @@ ParsedAction ParseAction(std::string_view json, const Observation& observation);
 // The parts of a GenerationResult (browser_ai_runtime.h) the decision
 // needs.
 struct ModelReply {
+  ModelReply();
+  ~ModelReply();
+  ModelReply(const ModelReply&);
+  ModelReply& operator=(const ModelReply&);
+  ModelReply(ModelReply&&);
+  ModelReply& operator=(ModelReply&&);
+
   bool success = false;
   bool cancelled = false;
   bool constraint_unsupported = false;

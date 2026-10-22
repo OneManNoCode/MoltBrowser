@@ -304,6 +304,13 @@ std::optional<base::Value> ReadField(const base::Value& v,
 
 }  // namespace
 
+ModelReply::ModelReply() = default;
+ModelReply::~ModelReply() = default;
+ModelReply::ModelReply(const ModelReply&) = default;
+ModelReply& ModelReply::operator=(const ModelReply&) = default;
+ModelReply::ModelReply(ModelReply&&) = default;
+ModelReply& ModelReply::operator=(ModelReply&&) = default;
+
 // ---------------------------------------------------------------------------
 // AI_DECIDE
 // ---------------------------------------------------------------------------

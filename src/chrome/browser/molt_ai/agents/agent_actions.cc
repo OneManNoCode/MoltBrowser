@@ -590,6 +590,13 @@ ParsedAction::~ParsedAction() = default;
 ParsedAction::ParsedAction(ParsedAction&&) = default;
 ParsedAction& ParsedAction::operator=(ParsedAction&&) = default;
 
+ModelReply::ModelReply() = default;
+ModelReply::~ModelReply() = default;
+ModelReply::ModelReply(const ModelReply&) = default;
+ModelReply& ModelReply::operator=(const ModelReply&) = default;
+ModelReply::ModelReply(ModelReply&&) = default;
+ModelReply& ModelReply::operator=(ModelReply&&) = default;
+
 ReplyOutcome::ReplyOutcome() = default;
 ReplyOutcome::~ReplyOutcome() = default;
 ReplyOutcome::ReplyOutcome(ReplyOutcome&&) = default;
