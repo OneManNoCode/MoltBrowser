@@ -4,10 +4,23 @@ include_rules = [
   # llama.cpp (GN visibility enforces the latter too).
   "+chrome/services/molt_ai/inference/public",
   "+chrome/services/molt_ai/inference/engine/stream_filters.h",
+  # Image input: the bounds a model image must meet (std-only).
+  "+chrome/services/molt_ai/inference/engine/image_input.h",
+  # Making model images: the sandboxed image decoder, Skia scaling, and
+  # mojo's BigBuffer for the pixels.
+  "+mojo/public/cpp/base/big_buffer.h",
+  "+services/data_decoder/public/cpp/decode_image.h",
+  "+skia/ext/image_operations.h",
+  "+third_party/skia/include/core",
+  "+ui/gfx/geometry/size.h",
 ]
 
 specific_include_rules = {
   "inference_process_host_unittest\.cc": [
     "+mojo/core/embedder",
+  ],
+  "model_image_prep_unittest\.cc": [
+    "+services/data_decoder/public/cpp/test_support/in_process_data_decoder.h",
+    "+ui/gfx/codec/png_codec.h",
   ],
 }

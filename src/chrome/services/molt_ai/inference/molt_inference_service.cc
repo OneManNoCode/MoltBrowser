@@ -19,6 +19,7 @@
 #include "chrome/services/molt_ai/inference/molt_embedding_model_impl.h"
 #include "chrome/services/molt_ai/inference/molt_model_impl.h"
 #include "third_party/llama_cpp/include/llama.h"
+#include "third_party/llama_cpp/tools/mtmd/mtmd.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <fcntl.h>
@@ -36,9 +37,11 @@ namespace molt_ai {
 
 namespace {
 
-// llama.cpp's log, at --v=1 only and only warnings and errors. It logs model
-// metadata and failures, never prompt or response text (the pre-tokenizer
-// debug output that would is compiled out upstream). May run on any thread.
+// llama.cpp's log (and its multimodal library's), at --v=1 only and only
+// warnings and errors. It logs model metadata and failures, never prompt or
+// response text: the pre-tokenizer debug output that would is compiled out
+// upstream, and mtmd logs the text it tokenizes only at debug level, which
+// this drops. May run on any thread.
 void LlamaLogCallback(ggml_log_level level, const char* text, void*) {
   if (level != GGML_LOG_LEVEL_WARN && level != GGML_LOG_LEVEL_ERROR) return;
   VLOG(1) << "[MoltAI inference] llama.cpp: " << (text ? text : "");
@@ -127,6 +130,8 @@ mojom::LoadModelStatus ToMojo(EngineLoadStatus status) {
       return mojom::LoadModelStatus::kOutOfMemory;
     case EngineLoadStatus::kBackendUnavailable:
       return mojom::LoadModelStatus::kBackendUnavailable;
+    case EngineLoadStatus::kInvalidVisionProjector:
+      return mojom::LoadModelStatus::kInvalidVisionProjector;
   }
   return mojom::LoadModelStatus::kInvalidModelFile;
 }
@@ -136,8 +141,9 @@ mojom::LoadModelStatus ToMojo(EngineLoadStatus status) {
 MoltInferenceService::MoltInferenceService(
     mojo::PendingReceiver<mojom::MoltInferenceService> receiver)
     : receiver_(this, std::move(receiver)) {
-  // Before any other llama.cpp call; the default logger writes to stderr.
+  // Before any other llama.cpp call; the default loggers write to stderr.
   llama_log_set(&LlamaLogCallback, nullptr);
+  mtmd_log_set(&LlamaLogCallback, nullptr);
 }
 
 MoltInferenceService::~MoltInferenceService() {
@@ -164,9 +170,22 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
                             nullptr);
     return;
   }
+  // Image input: the vision projector, read completely during the load.
+  // (ReadOnlyFile? is a base::File; invalid means none.)
+  ScopedStdioFile projector;
+  if (params->vision_projector.IsValid()) {
+    projector = ToStdioFile(std::move(params->vision_projector));
+    if (!projector) {
+      std::move(callback).Run(mojom::LoadModelStatus::kInvalidVisionProjector,
+                              nullptr);
+      return;
+    }
+  }
 
   EngineLoadParams load;
   load.file_size = params->file_size;
+  load.vision_projector_size =
+      projector ? params->vision_projector_size : 0;
   load.total_ram_bytes = params->total_ram_bytes;
   load.cpu_threads = std::clamp<uint32_t>(params->cpu_threads, 1, 256);
   load.max_context_tokens = params->max_context_tokens;
@@ -181,7 +200,7 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
           {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
            base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}));
   engine_.AsyncCall(&LlamaEngine::Load)
-      .WithArgs(std::move(file), load)
+      .WithArgs(std::move(file), load, std::move(projector))
       .Then(base::BindOnce(&MoltInferenceService::OnLoaded,
                            weak_factory_.GetWeakPtr(), std::move(model),
                            std::move(callback)));
@@ -203,8 +222,9 @@ void MoltInferenceService::OnLoaded(mojo::PendingReceiver<mojom::Model> model,
   description->train_context_tokens = result.description.train_context_tokens;
   description->vocab_size = result.description.vocab_size;
   description->cpu_repack_used = result.description.cpu_repack_used;
+  description->vision = result.description.vision;
   model_ = std::make_unique<MoltModelImpl>(
-      std::move(engine_), std::move(model),
+      std::move(engine_), result.description.vision, std::move(model),
       base::BindOnce(&MoltInferenceService::OnModelDisconnected,
                      weak_factory_.GetWeakPtr()));
   std::move(callback).Run(mojom::LoadModelStatus::kOk,

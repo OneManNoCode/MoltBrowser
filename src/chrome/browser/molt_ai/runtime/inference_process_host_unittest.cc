@@ -3,7 +3,8 @@
 //
 // InferenceProcessHost against a fake, in-process MoltInferenceService that
 // misbehaves on request: crash mid-stream, hang, flood, bad UTF-8, a bad
-// ModelDescription, cancel while queued, browser-side stop sequences.
+// ModelDescription, vision claimed without a projector, cancel while queued,
+// browser-side stop sequences.
 
 #include "chrome/browser/molt_ai/runtime/inference_process_host.h"
 
@@ -12,6 +13,10 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
@@ -33,7 +38,7 @@ using Kind = InferenceOutcome::Kind;
 // the test.
 class FakeService : public mojom::MoltInferenceService, public mojom::Model {
  public:
-  enum class LoadBehavior { kOk, kFail, kHang, kBadDescription };
+  enum class LoadBehavior { kOk, kFail, kHang, kBadDescription, kVision };
 
   void Bind(mojo::PendingReceiver<mojom::MoltInferenceService> receiver) {
     service_receiver_.Bind(std::move(receiver));
@@ -46,13 +51,15 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
     load_params_ = std::move(params);
     model_receiver_.Bind(std::move(model));
     switch (load_behavior) {
-      case LoadBehavior::kOk: {
+      case LoadBehavior::kOk:
+      case LoadBehavior::kVision: {
         auto d = mojom::ModelDescription::New();
         d->architecture = "llama";
         d->backend = "cpu";
         d->context_tokens = 4096;
         d->train_context_tokens = 4096;
         d->vocab_size = 32000;
+        d->vision = load_behavior == LoadBehavior::kVision;
         std::move(callback).Run(mojom::LoadModelStatus::kOk, std::move(d));
         break;
       }
@@ -113,6 +120,7 @@ class FakeService : public mojom::MoltInferenceService, public mojom::Model {
   }
   size_t streamer_count() const { return streamers_.size(); }
   bool model_connected() const { return model_receiver_.is_bound(); }
+  const mojom::ModelLoadParamsPtr& load_params() const { return load_params_; }
 
   LoadBehavior load_behavior = LoadBehavior::kOk;
 
@@ -170,12 +178,22 @@ class InferenceProcessHostTest : public testing::Test {
     mojo::SetDefaultProcessErrorHandler(base::NullCallback());
   }
 
-  scoped_refptr<InferenceMailbox> Load() {
+  scoped_refptr<InferenceMailbox> Load(bool with_projector = false) {
     InferenceProcessHost::LoadRequest r;
     r.model_id = "m";
     r.crash_key = "m:1:2";
     r.file_size = 1;
     r.max_context_tokens = 32768;
+    if (with_projector) {
+      EXPECT_TRUE(temp_dir_.IsValid() || temp_dir_.CreateUniqueTempDir());
+      const base::FilePath path =
+          temp_dir_.GetPath().AppendASCII("mmproj.gguf");
+      EXPECT_TRUE(base::WriteFile(path, "GGUF-mmproj"));
+      r.vision_projector =
+          base::File(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+      EXPECT_TRUE(r.vision_projector.IsValid());
+      r.vision_projector_size = 11;
+    }
     auto mailbox = base::MakeRefCounted<InferenceMailbox>();
     host_->Load(std::move(r), mailbox);
     task_environment_.RunUntilIdle();
@@ -222,6 +240,7 @@ class InferenceProcessHostTest : public testing::Test {
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   RecordingDelegate delegate_;
+  base::ScopedTempDir temp_dir_;
   std::vector<std::string> bad_messages_;
   FakeService::LoadBehavior next_load_behavior_ = FakeService::LoadBehavior::kOk;
   std::vector<std::unique_ptr<FakeService>> services_;
@@ -465,6 +484,46 @@ TEST_F(InferenceProcessHostTest, BadDescriptionIsAViolation) {
   ASSERT_TRUE(Finished(load.get()));
   EXPECT_EQ(load->outcome().kind, Kind::kViolation);
   EXPECT_FALSE(host_->HasCurrentModelForTesting());
+}
+
+TEST_F(InferenceProcessHostTest, VisionNeedsTheProjectorTheBrowserSent) {
+  // Sent a projector and the service says it sees images: recorded.
+  next_load_behavior_ = FakeService::LoadBehavior::kVision;
+  scoped_refptr<InferenceMailbox> load = Load(/*with_projector=*/true);
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_TRUE(load->outcome().vision);
+  ASSERT_TRUE(service().load_params());
+  EXPECT_TRUE(service().load_params()->vision_projector.IsValid());
+  EXPECT_EQ(service().load_params()->vision_projector_size, 11u);
+  EXPECT_TRUE(bad_messages_.empty());
+}
+
+TEST_F(InferenceProcessHostTest, TextModelSentNoProjector) {
+  scoped_refptr<InferenceMailbox> load = Load();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_FALSE(load->outcome().vision);
+  ASSERT_TRUE(service().load_params());
+  EXPECT_FALSE(service().load_params()->vision_projector.IsValid());
+  EXPECT_EQ(service().load_params()->vision_projector_size, 0u);
+}
+
+TEST_F(InferenceProcessHostTest, ProjectorTheServiceDidNotUseIsNoVision) {
+  scoped_refptr<InferenceMailbox> load = Load(/*with_projector=*/true);
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kOk);
+  EXPECT_FALSE(load->outcome().vision);
+}
+
+TEST_F(InferenceProcessHostTest, VisionWithoutAProjectorIsAViolation) {
+  next_load_behavior_ = FakeService::LoadBehavior::kVision;
+  scoped_refptr<InferenceMailbox> load = Load();
+  ASSERT_TRUE(Finished(load.get()));
+  EXPECT_EQ(load->outcome().kind, Kind::kViolation);
+  EXPECT_FALSE(load->outcome().vision);
+  EXPECT_FALSE(host_->HasCurrentModelForTesting());
+  EXPECT_EQ(bad_messages_.size(), 1u);
 }
 
 TEST_F(InferenceProcessHostTest, GracefulUnloadWaitsForRunningRequests) {

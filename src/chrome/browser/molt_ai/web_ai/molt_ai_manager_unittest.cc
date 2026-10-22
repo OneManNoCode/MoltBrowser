@@ -2,11 +2,13 @@
 // Licensed under GPLv3. See LICENSE file.
 //
 // MoltAIManager and its sessions over real mojo pipes, with a fake document
-// environment and a fake on-device runtime: the AIManager APIs and the
-// Translator (TranslationManager).
+// environment and a fake on-device runtime: the AIManager APIs, the Prompt
+// API's image input and the Translator (TranslationManager).
 
 #include "chrome/browser/molt_ai/web_ai/molt_ai_manager.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -22,8 +24,10 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/runtime/model_image.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_backend.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_sessions.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_translation.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -39,6 +43,9 @@
 #include "third_party/blink/public/mojom/ai/model_streaming_responder.mojom.h"
 #include "third_party/blink/public/mojom/on_device_translation/translation_manager.mojom.h"
 #include "third_party/blink/public/mojom/on_device_translation/translator.mojom.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
 
 namespace molt_ai::web_ai {
 namespace {
@@ -139,15 +146,16 @@ class FakeBackend : public WebAIBackend {
       std::move(callback).Run(facts);
     }
   }
-  void PrepareModel(PrepareCallback callback) override {
+  void PrepareModel(bool wants_images, PrepareCallback callback) override {
     ++prepare_calls;
+    last_prepare_wants_images = wants_images;
     if (hold_prepare) {
       held_prepare.push_back(std::move(callback));
       return;
     }
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE,
-        base::BindOnce(std::move(callback), prepare_ok, context_tokens));
+        FROM_HERE, base::BindOnce(std::move(callback), prepare_ok,
+                                  context_tokens, sees_images));
   }
   uint64_t Generate(GenerationJob job,
                     ChunkCallback on_chunk,
@@ -180,6 +188,54 @@ class FakeBackend : public WebAIBackend {
   void RemoveSession(const std::string& site_key) override {
     --sessions[site_key];
   }
+  // A grey model image per bitmap, as big as the bitmap up to the web
+  // size; nothing if |fail_images|, one too few if |drop_an_image|, images
+  // outside the service's bounds if |bad_images| (a broken worker). Held
+  // back while |hold_images|.
+  void PrepareImages(std::vector<SkBitmap> bitmaps,
+                     ImagesCallback callback) override {
+    ++image_batches;
+    std::optional<std::vector<ModelImage>> images;
+    if (!fail_images) {
+      images.emplace();
+      for (const SkBitmap& bitmap : bitmaps) {
+        const uint32_t w = static_cast<uint32_t>(
+            std::clamp(bitmap.width(), 32, static_cast<int>(kWebImageMaxSide)));
+        const uint32_t h = static_cast<uint32_t>(std::clamp(
+            bitmap.height(), 32, static_cast<int>(kWebImageMaxSide)));
+        images->push_back(
+            bad_images
+                ? ModelImage(w, h, std::vector<uint8_t>(3, 128))
+                : ModelImage(w, h,
+                             std::vector<uint8_t>(size_t{w} * h * 3, 128)));
+      }
+      if (drop_an_image && !images->empty()) {
+        images->pop_back();
+      }
+    }
+    if (hold_images) {
+      held_images.push_back(
+          base::BindOnce(std::move(callback), std::move(images)));
+      return;
+    }
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback), std::move(images)));
+  }
+  void ReleaseHeldImages() {
+    hold_images = false;
+    std::vector<base::OnceClosure> held;
+    held.swap(held_images);
+    for (base::OnceClosure& closure : held) {
+      std::move(closure).Run();
+    }
+  }
+  // The real caps (GenerationScheduler).
+  bool TryHoldImages(const std::string& site_key, size_t count) override {
+    return image_holds.TryHoldImages(site_key, count);
+  }
+  void ReleaseImages(const std::string& site_key, size_t count) override {
+    image_holds.ReleaseImages(site_key, count);
+  }
 
   // The only generation waiting.
   uint64_t OnlyJob() {
@@ -201,6 +257,15 @@ class FakeBackend : public WebAIBackend {
   DeviceFacts facts;
   bool prepare_ok = true;
   uint32_t context_tokens = 8192;
+  // The loaded model has a vision projector.
+  bool sees_images = true;
+  bool fail_images = false;
+  bool drop_an_image = false;
+  bool bad_images = false;
+  bool hold_images = false;
+  std::vector<base::OnceClosure> held_images;
+  int image_batches = 0;
+  GenerationScheduler image_holds;
   bool throttle = false;
   bool hold_device_facts = false;
   std::vector<DeviceCallback> held_device_facts;
@@ -209,6 +274,7 @@ class FakeBackend : public WebAIBackend {
   size_t session_cap = kMaxSessionsPerSite;
   int device_calls = 0;
   int prepare_calls = 0;
+  bool last_prepare_wants_images = false;
   std::map<uint64_t, Pending> jobs;
   std::vector<uint64_t> cancelled;
   std::map<std::string, size_t> sessions;
@@ -391,6 +457,75 @@ std::vector<blink::mojom::AILanguageModelPromptPtr> User(
   return prompts;
 }
 
+SkBitmap Bitmap(int width, int height) {
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(width, height);
+  bitmap.eraseColor(SK_ColorWHITE);
+  return bitmap;
+}
+
+// A message with |text|, then one 48-pixel-high bitmap per entry of
+// |widths| (the fake backend's model images keep the width, which tells
+// them apart).
+blink::mojom::AILanguageModelPromptPtr ImageMessage(
+    AILanguageModelPromptRole role,
+    const std::string& text,
+    const std::vector<int>& widths) {
+  std::vector<blink::mojom::AILanguageModelPromptContentPtr> content;
+  content.push_back(blink::mojom::AILanguageModelPromptContent::NewText(text));
+  for (int width : widths) {
+    content.push_back(
+        blink::mojom::AILanguageModelPromptContent::NewBitmap(
+            Bitmap(width, 48)));
+  }
+  return blink::mojom::AILanguageModelPrompt::New(role, std::move(content),
+                                                  /*is_prefix=*/false);
+}
+
+std::vector<blink::mojom::AILanguageModelPromptPtr> UserWithImages(
+    const std::string& text,
+    const std::vector<int>& widths) {
+  std::vector<blink::mojom::AILanguageModelPromptPtr> prompts;
+  prompts.push_back(
+      ImageMessage(AILanguageModelPromptRole::kUser, text, widths));
+  return prompts;
+}
+
+// One user message holding |bitmap| (made by the test), after "x".
+std::vector<blink::mojom::AILanguageModelPromptPtr> UserWithBitmap(
+    SkBitmap bitmap) {
+  std::vector<blink::mojom::AILanguageModelPromptContentPtr> content;
+  content.push_back(blink::mojom::AILanguageModelPromptContent::NewText("x"));
+  content.push_back(blink::mojom::AILanguageModelPromptContent::NewBitmap(
+      std::move(bitmap)));
+  std::vector<blink::mojom::AILanguageModelPromptPtr> prompts;
+  prompts.push_back(blink::mojom::AILanguageModelPrompt::New(
+      AILanguageModelPromptRole::kUser, std::move(content),
+      /*is_prefix=*/false));
+  return prompts;
+}
+
+blink::mojom::AILanguageModelCreateOptionsPtr ExpectingInput(
+    blink::mojom::AILanguageModelPromptType type) {
+  auto options = blink::mojom::AILanguageModelCreateOptions::New();
+  options->expected_inputs.emplace();
+  options->expected_inputs->push_back(
+      blink::mojom::AILanguageModelExpected::New(type, std::nullopt));
+  return options;
+}
+
+blink::mojom::AILanguageModelCreateOptionsPtr ImageOptions() {
+  return ExpectingInput(blink::mojom::AILanguageModelPromptType::kImage);
+}
+
+std::vector<uint32_t> Widths(const std::vector<ModelImage>& images) {
+  std::vector<uint32_t> widths;
+  for (const ModelImage& image : images) {
+    widths.push_back(image.width);
+  }
+  return widths;
+}
+
 ContextFacts Eligible() {
   ContextFacts facts;
   facts.feature_enabled = true;
@@ -532,6 +667,23 @@ class MoltAIManagerTest : public testing::Test {
     RunUntilIdle();
   }
 
+  // A session that takes images, for a site the user already allowed.
+  std::unique_ptr<LanguageModelClient> ImageLanguageModel() {
+    env_.facts.image_input_enabled = true;
+    return AllowedLanguageModel(ImageOptions());
+  }
+
+  void PromptWithImages(LanguageModelClient& client,
+                        const std::string& text,
+                        const std::vector<int>& widths,
+                        TestResponder& responder) {
+    client.session->Prompt(UserWithImages(text, widths), nullptr,
+                           responder.Remote());
+    RunUntilIdle();
+  }
+
+  size_t HeldImages() { return backend_.image_holds.images_held_total(); }
+
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   EnvironmentState env_;
@@ -599,14 +751,23 @@ TEST_F(MoltAIManagerTest, PolicyAndDeviceReasons) {
             ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
 }
 
-TEST_F(MoltAIManagerTest, OnlyTextOptionsAreAvailable) {
+TEST_F(MoltAIManagerTest, OnlyTextAndImageOptionsAreAvailable) {
   env_.consent = SiteConsent::kAllowed;
-  auto image = blink::mojom::AILanguageModelCreateOptions::New();
-  image->expected_inputs.emplace();
-  image->expected_inputs->push_back(blink::mojom::AILanguageModelExpected::New(
-      blink::mojom::AILanguageModelPromptType::kImage, std::nullopt));
+  env_.facts.image_input_enabled = true;
   EXPECT_EQ(
-      LanguageModelAvailability(std::move(image)),
+      LanguageModelAvailability(
+          ExpectingInput(blink::mojom::AILanguageModelPromptType::kAudio)),
+      ModelAvailabilityCheckResult::kUnavailableModelAdaptationNotAvailable);
+  EXPECT_EQ(LanguageModelAvailability(ImageOptions()),
+            ModelAvailabilityCheckResult::kAvailable);
+  // The model writes text only.
+  auto image_out = blink::mojom::AILanguageModelCreateOptions::New();
+  image_out->expected_outputs.emplace();
+  image_out->expected_outputs->push_back(
+      blink::mojom::AILanguageModelExpected::New(
+          blink::mojom::AILanguageModelPromptType::kImage, std::nullopt));
+  EXPECT_EQ(
+      LanguageModelAvailability(std::move(image_out)),
       ModelAvailabilityCheckResult::kUnavailableModelAdaptationNotAvailable);
 
   auto language = blink::mojom::AILanguageModelCreateOptions::New();
@@ -662,6 +823,357 @@ TEST_F(MoltAIManagerTest, ParamsAreUniformAndOffInMoltNet) {
   base::test::TestFuture<blink::mojom::AILanguageModelParamsPtr> moltnet;
   remote_->GetLanguageModelParams(moltnet.GetCallback());
   EXPECT_FALSE(moltnet.Get());
+}
+
+// ---------------------------------------------------------------------------
+// Image input (expectedInputs "image", prompt() with images)
+// ---------------------------------------------------------------------------
+
+TEST_F(MoltAIManagerTest, ImageInputAvailabilityIsTheTextAnswer) {
+  env_.facts.image_input_enabled = true;
+  for (SiteConsent consent :
+       {SiteConsent::kAsk, SiteConsent::kAllowed, SiteConsent::kBlocked}) {
+    env_.consent = consent;
+    for (bool installed : {false, true}) {
+      backend_.facts.model_installed = installed;
+      const ModelAvailabilityCheckResult text = LanguageModelAvailability();
+      // Whether the user's model sees images never changes the answer.
+      for (bool sees : {false, true}) {
+        backend_.sees_images = sees;
+        EXPECT_EQ(LanguageModelAvailability(ImageOptions()), text);
+      }
+    }
+  }
+  // Answering it loaded nothing.
+  EXPECT_EQ(backend_.prepare_calls, 0);
+}
+
+TEST_F(MoltAIManagerTest, ImageInputFollowsTheMultimodalFeature) {
+  env_.consent = SiteConsent::kAllowed;
+  env_.facts.image_input_enabled = false;
+  EXPECT_EQ(
+      LanguageModelAvailability(ImageOptions()),
+      ModelAvailabilityCheckResult::kUnavailableModelAdaptationNotAvailable);
+  auto client = CreateLanguageModel(ImageOptions());
+  EXPECT_EQ(client->error, AIManagerCreateClientError::kUnableToCreateSession);
+  EXPECT_EQ(backend_.prepare_calls, 0);
+  // MoltNet stays off with images as without.
+  env_.facts.image_input_enabled = true;
+  env_.facts.moltnet = true;
+  const int device_calls = backend_.device_calls;
+  EXPECT_EQ(LanguageModelAvailability(ImageOptions()),
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  EXPECT_EQ(backend_.device_calls, device_calls);
+}
+
+TEST_F(MoltAIManagerTest, CreateWithImagesNeedsAModelThatSeesThem) {
+  env_.facts.image_input_enabled = true;
+  env_.consent = SiteConsent::kAsk;
+  env_.answer = SiteConsent::kAllowed;
+  backend_.sees_images = false;
+  auto blind = CreateLanguageModel(ImageOptions());
+  // Asked and loaded like any create() (preferring a model that sees
+  // images); then the generic failure.
+  EXPECT_EQ(env_.prompts, 1);
+  EXPECT_EQ(backend_.prepare_calls, 1);
+  EXPECT_TRUE(backend_.last_prepare_wants_images);
+  EXPECT_EQ(blind->error, AIManagerCreateClientError::kUnableToCreateSession);
+  EXPECT_FALSE(blind->session.is_bound());
+  EXPECT_EQ(manager_->session_count_for_testing(), 0u);
+  // Text on the same model is fine, and says it takes text only.
+  auto text = CreateLanguageModel();
+  ASSERT_TRUE(text->session.is_bound());
+  EXPECT_FALSE(backend_.last_prepare_wants_images);
+  EXPECT_EQ(*text->info->input_types,
+            (std::vector<blink::mojom::AILanguageModelPromptType>{
+                blink::mojom::AILanguageModelPromptType::kText}));
+  backend_.sees_images = true;
+  auto seeing = CreateLanguageModel(ImageOptions());
+  ASSERT_TRUE(seeing->session.is_bound());
+  EXPECT_EQ(*seeing->info->input_types,
+            (std::vector<blink::mojom::AILanguageModelPromptType>{
+                blink::mojom::AILanguageModelPromptType::kText,
+                blink::mojom::AILanguageModelPromptType::kImage}));
+}
+
+TEST_F(MoltAIManagerTest, PromptWithAnImage) {
+  auto client = ImageLanguageModel();
+  TestResponder responder;
+  PromptWithImages(*client, "What is this?", {64}, responder);
+  EXPECT_EQ(backend_.image_batches, 1);
+  const uint64_t id = backend_.OnlyJob();
+  {
+    const GenerationJob& job = backend_.Job(id);
+    EXPECT_EQ(job.user_message, "What is this?");
+    EXPECT_EQ(Widths(job.user_images), (std::vector<uint32_t>{64}));
+    EXPECT_TRUE(job.user_images[0].IsValid());
+    EXPECT_TRUE(job.history.empty());
+    EXPECT_TRUE(job.history_images.empty());
+  }
+  // Held while the request runs, then in the context.
+  EXPECT_EQ(HeldImages(), 1u);
+  backend_.Reply(id, {"A cat."});
+  RunUntilIdle();
+  ASSERT_TRUE(responder.completed);
+  EXPECT_EQ(*responder.usage, EstimateMessageTokens("What is this?") +
+                                  kImageInputTokens +
+                                  EstimateMessageTokens("A cat."));
+  EXPECT_EQ(HeldImages(), 1u);
+
+  // The next prompt shows it again, with its turn.
+  TestResponder second;
+  Prompt(*client, "And its colour?", second);
+  {
+    const GenerationJob& job = backend_.Job(backend_.OnlyJob());
+    ASSERT_EQ(job.history.size(), 2u);
+    ASSERT_EQ(job.history_images.size(), 2u);
+    EXPECT_EQ(Widths(job.history_images[0]), (std::vector<uint32_t>{64}));
+    EXPECT_TRUE(job.history_images[1].empty());
+    EXPECT_TRUE(job.user_images.empty());
+  }
+  // Destroying the session lets go of its images.
+  client->session->Destroy();
+  RunUntilIdle();
+  EXPECT_EQ(HeldImages(), 0u);
+}
+
+TEST_F(MoltAIManagerTest, ImagesNeedASessionThatTakesThem) {
+  env_.facts.image_input_enabled = true;
+  auto client = AllowedLanguageModel();
+  TestResponder responder;
+  PromptWithImages(*client, "hi", {64}, responder);
+  EXPECT_EQ(responder.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_TRUE(backend_.jobs.empty());
+  EXPECT_EQ(backend_.image_batches, 0);
+  base::test::TestFuture<std::optional<uint32_t>> usage;
+  client->session->MeasureInputUsage(UserWithImages("hi", {64}),
+                                     usage.GetCallback());
+  EXPECT_FALSE(usage.Get());
+}
+
+TEST_F(MoltAIManagerTest, ImagesGoWithUserTurnsOnly) {
+  auto client = ImageLanguageModel();
+  std::vector<blink::mojom::AILanguageModelPromptPtr> prompts;
+  prompts.push_back(
+      ImageMessage(AILanguageModelPromptRole::kAssistant, "look", {64}));
+  prompts.push_back(Message(AILanguageModelPromptRole::kUser, "well?"));
+  TestResponder responder;
+  client->session->Prompt(std::move(prompts), nullptr, responder.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(responder.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_EQ(backend_.image_batches, 0);
+  EXPECT_EQ(HeldImages(), 0u);
+}
+
+TEST_F(MoltAIManagerTest, BadImagesAreRefusedUnread) {
+  auto client = ImageLanguageModel();
+  // More than one request shows the model.
+  TestResponder five;
+  PromptWithImages(*client, "x", {40, 41, 42, 43, 44}, five);
+  EXPECT_EQ(five.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_EQ(backend_.image_batches, 0);
+  EXPECT_EQ(HeldImages(), 0u);
+  EXPECT_TRUE(backend_.jobs.empty());
+  // A small bitmap is fine.
+  TestResponder one;
+  client->session->Prompt(UserWithBitmap(Bitmap(64, 48)), nullptr,
+                          one.Remote());
+  RunUntilIdle();
+  EXPECT_FALSE(one.error);
+  EXPECT_EQ(backend_.image_batches, 1);
+}
+
+// What a compromised renderer could send instead (the bitmap traits refuse
+// some of it already); checked without allocating pixels.
+TEST(WebAIBitmapTest, OnlyBitmapsWithPixelsWithinTheCap) {
+  EXPECT_TRUE(IsUsableBitmapForModel(Bitmap(64, 48)));
+  EXPECT_TRUE(IsUsableBitmapForModel(Bitmap(1, 1)));
+  EXPECT_FALSE(IsUsableBitmapForModel(SkBitmap()));
+  SkBitmap no_pixels;
+  ASSERT_TRUE(no_pixels.setInfo(SkImageInfo::MakeN32Premul(64, 48)));
+  EXPECT_FALSE(IsUsableBitmapForModel(no_pixels));
+  // 9000 x 9000 is past the 64-megapixel cap: refused with or without
+  // pixels (installed but never read: the check looks at the size only).
+  SkBitmap too_big;
+  ASSERT_TRUE(too_big.setInfo(SkImageInfo::MakeN32Premul(9000, 9000)));
+  EXPECT_FALSE(IsUsableBitmapForModel(too_big));
+  uint32_t pixel = 0;
+  ASSERT_TRUE(too_big.installPixels(SkImageInfo::MakeN32Premul(9000, 9000),
+                                    &pixel, 9000 * 4));
+  EXPECT_FALSE(IsUsableBitmapForModel(too_big));
+  // 8192 x 8192 is exactly the cap.
+  SkBitmap at_cap;
+  ASSERT_TRUE(at_cap.installPixels(SkImageInfo::MakeN32Premul(8192, 8192),
+                                   &pixel, 8192 * 4));
+  EXPECT_TRUE(IsUsableBitmapForModel(at_cap));
+}
+
+TEST_F(MoltAIManagerTest, AnImageThatCantBeScaledFailsTheRequest) {
+  auto client = ImageLanguageModel();
+  backend_.fail_images = true;
+  TestResponder responder;
+  PromptWithImages(*client, "x", {40, 50}, responder);
+  EXPECT_EQ(responder.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_TRUE(backend_.jobs.empty());
+  EXPECT_EQ(HeldImages(), 0u);
+  // The session goes on.
+  backend_.fail_images = false;
+  TestResponder next;
+  Prompt(*client, "hello", next);
+  EXPECT_EQ(backend_.jobs.size(), 1u);
+}
+
+TEST_F(MoltAIManagerTest, ImagesFromTheWorkerAreCheckedAgain) {
+  auto client = ImageLanguageModel();
+  backend_.drop_an_image = true;
+  TestResponder fewer;
+  PromptWithImages(*client, "x", {40, 50}, fewer);
+  EXPECT_EQ(fewer.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  backend_.drop_an_image = false;
+  backend_.bad_images = true;
+  TestResponder bad;
+  PromptWithImages(*client, "x", {40}, bad);
+  EXPECT_EQ(bad.error, ModelStreamingResponseStatus::kErrorInvalidRequest);
+  EXPECT_TRUE(backend_.jobs.empty());
+  EXPECT_EQ(HeldImages(), 0u);
+}
+
+TEST_F(MoltAIManagerTest, RequestsStayInOrderWhileImagesAreMade) {
+  auto client = ImageLanguageModel();
+  backend_.hold_images = true;
+  TestResponder first;
+  TestResponder second;
+  client->session->Prompt(UserWithImages("first", {64}), nullptr,
+                          first.Remote());
+  client->session->Prompt(User("second"), nullptr, second.Remote());
+  RunUntilIdle();
+  // The text prompt waits behind the one whose image isn't ready.
+  EXPECT_TRUE(backend_.jobs.empty());
+  backend_.ReleaseHeldImages();
+  RunUntilIdle();
+  const uint64_t id = backend_.OnlyJob();
+  EXPECT_EQ(backend_.Job(id).user_message, "first");
+  backend_.Reply(id, {"one"});
+  RunUntilIdle();
+  EXPECT_TRUE(first.completed);
+  EXPECT_EQ(backend_.Job(backend_.OnlyJob()).user_message, "second");
+}
+
+TEST_F(MoltAIManagerTest, AbortingWhileImagesAreMadeLetsGoOfThem) {
+  auto client = ImageLanguageModel();
+  backend_.hold_images = true;
+  TestResponder first;
+  TestResponder second;
+  client->session->Prompt(UserWithImages("first", {40, 41, 42}), nullptr,
+                          first.Remote());
+  client->session->Prompt(User("second"), nullptr, second.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(HeldImages(), 3u);
+  first.Abort();
+  RunUntilIdle();
+  EXPECT_EQ(HeldImages(), 0u);
+  // The next request no longer waits.
+  EXPECT_EQ(backend_.Job(backend_.OnlyJob()).user_message, "second");
+  // The images arriving late change nothing.
+  backend_.ReleaseHeldImages();
+  RunUntilIdle();
+  EXPECT_EQ(backend_.jobs.size(), 1u);
+  EXPECT_EQ(HeldImages(), 0u);
+}
+
+TEST_F(MoltAIManagerTest, ImagesHeldForPagesAreCapped) {
+  auto client = ImageLanguageModel();
+  backend_.hold_images = true;
+  std::vector<std::unique_ptr<TestResponder>> responders;
+  for (size_t i = 0; i < kMaxHeldImagesPerSite / 4; ++i) {
+    responders.push_back(std::make_unique<TestResponder>());
+    PromptWithImages(*client, "x", {40, 41, 42, 43}, *responders.back());
+  }
+  EXPECT_EQ(backend_.image_holds.ImagesHeldForSite(env_.site_key),
+            kMaxHeldImagesPerSite);
+  TestResponder over;
+  PromptWithImages(*client, "x", {40}, over);
+  // A generic failure, never kErrorRequestThrottled.
+  EXPECT_EQ(over.error, ModelStreamingResponseStatus::kErrorGenericFailure);
+  // Text still goes.
+  TestResponder text;
+  Prompt(*client, "hello", text);
+  EXPECT_FALSE(text.error);
+  // Ending the session lets go of everything.
+  client.reset();
+  RunUntilIdle();
+  EXPECT_EQ(HeldImages(), 0u);
+}
+
+TEST_F(MoltAIManagerTest, TheModelSeesTheNewestFourImages) {
+  auto client = ImageLanguageModel();
+  TestResponder appended;
+  client->session->Append(UserWithImages("a", {40, 41, 42}),
+                          appended.Remote());
+  RunUntilIdle();
+  ASSERT_TRUE(appended.completed);
+  TestResponder responder;
+  PromptWithImages(*client, "b", {50, 51}, responder);
+  const uint64_t id = backend_.OnlyJob();
+  {
+    // The appended turn and the prompt are one user message.
+    const GenerationJob& job = backend_.Job(id);
+    EXPECT_TRUE(job.history.empty());
+    EXPECT_EQ(job.user_message, "a\n\nb");
+    EXPECT_EQ(Widths(job.user_images),
+              (std::vector<uint32_t>{41, 42, 50, 51}));
+  }
+  backend_.Reply(id, {"ok"});
+  RunUntilIdle();
+  ASSERT_TRUE(responder.completed);
+  // The context keeps four; the fifth still counts against the quota.
+  EXPECT_EQ(HeldImages(), 4u);
+  EXPECT_EQ(*responder.usage,
+            EstimateMessageTokens("a") + EstimateMessageTokens("b") +
+                5 * kImageInputTokens + EstimateMessageTokens("ok"));
+}
+
+TEST_F(MoltAIManagerTest, ImagesCountAgainstTheQuota) {
+  backend_.context_tokens = 2048;  // the small bucket
+  auto client = ImageLanguageModel();
+  EXPECT_EQ(client->info->input_quota, kSmallInputQuota);
+  base::test::TestFuture<std::optional<uint32_t>> usage;
+  client->session->MeasureInputUsage(UserWithImages("hi", {40, 50}),
+                                     usage.GetCallback());
+  EXPECT_EQ(usage.Get(), EstimateMessageTokens("hi") + 2 * kImageInputTokens);
+  TestResponder responder;
+  PromptWithImages(*client, "hi", {40, 50}, responder);
+  EXPECT_EQ(responder.error, ModelStreamingResponseStatus::kErrorInputTooLarge);
+  EXPECT_EQ(responder.quota_requested,
+            EstimateMessageTokens("hi") + 2 * kImageInputTokens);
+  EXPECT_EQ(HeldImages(), 0u);
+  EXPECT_TRUE(backend_.jobs.empty());
+}
+
+TEST_F(MoltAIManagerTest, AClonedSessionHoldsItsImagesToo) {
+  auto client = ImageLanguageModel();
+  TestResponder appended;
+  client->session->Append(UserWithImages("a", {40, 41, 42}),
+                          appended.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(HeldImages(), 3u);
+  std::vector<std::unique_ptr<LanguageModelClient>> clones;
+  // 3 + 4 x 3 = 15 fit the site's 16.
+  for (int i = 0; i < 4; ++i) {
+    clones.push_back(std::make_unique<LanguageModelClient>());
+    client->session->Fork(clones.back()->Remote());
+    RunUntilIdle();
+    ASSERT_TRUE(clones.back()->session.is_bound());
+    EXPECT_EQ(clones.back()->info->input_types->size(), 2u);
+  }
+  EXPECT_EQ(HeldImages(), 15u);
+  LanguageModelClient over;
+  client->session->Fork(over.Remote());
+  RunUntilIdle();
+  EXPECT_EQ(over.error, AIManagerCreateClientError::kUnableToCreateSession);
+  EXPECT_FALSE(over.session.is_bound());
+  EXPECT_EQ(HeldImages(), 15u);
+  EXPECT_EQ(manager_->session_count_for_testing(), 5u);
 }
 
 // ---------------------------------------------------------------------------
@@ -1032,7 +1544,7 @@ TEST_F(MoltAIManagerTest, TakenBackWhileTheModelLoadsFailsCreate) {
   auto client = CreateLanguageModel();
   ASSERT_EQ(backend_.held_prepare.size(), 1u);
   env_.consent = SiteConsent::kAsk;
-  std::move(backend_.held_prepare[0]).Run(true, 8192);
+  std::move(backend_.held_prepare[0]).Run(true, 8192, true);
   RunUntilIdle();
   EXPECT_EQ(client->error, AIManagerCreateClientError::kUnableToCreateSession);
   EXPECT_FALSE(client->session.is_bound());

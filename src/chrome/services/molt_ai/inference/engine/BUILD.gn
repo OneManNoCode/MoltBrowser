@@ -41,6 +41,17 @@ source_set("constrained_decoding") {
   deps = [ ":inference_utils" ]
 }
 
+# Image input (docs/design/SANDBOXED_INFERENCE.md section 10): the bounds a
+# model image must meet and how a decoded image is brought within them.
+# Also linked by the browser (//chrome/browser/molt_ai/runtime:model_image),
+# which prepares images; the service checks them again.
+source_set("image_input") {
+  sources = [
+    "image_input.cc",
+    "image_input.h",
+  ]
+}
+
 # Token fitting and vector normalization for the embedding engine
 # (llama_embedding_engine.cc; docs/design/SEMANTIC_SEARCH.md).
 source_set("embedding_utils") {
@@ -58,6 +69,7 @@ source_set("unit_tests") {
     "context_budget_unittest.cc",
     "embedding_utils_unittest.cc",
     "grammar_tokens_unittest.cc",
+    "image_input_unittest.cc",
     "json_schema_grammar_unittest.cc",
     "prompt_utils_unittest.cc",
     "stream_filters_unittest.cc",
@@ -65,6 +77,7 @@ source_set("unit_tests") {
   deps = [
     ":constrained_decoding",
     ":embedding_utils",
+    ":image_input",
     ":inference_utils",
     "//testing/gtest",
   ]

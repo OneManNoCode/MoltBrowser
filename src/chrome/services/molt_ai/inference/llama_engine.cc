@@ -30,6 +30,40 @@
 //    check, strict UTF-8 and the token bans are accepted, never an
 //    end-of-generation token), llama_sampler_apply on the chain, and
 //    llama_get_logits_ith (catches; nullptr on a bad index).
+//  - Image input (tools/mtmd, vendored at the same tag; section 10 of
+//    docs/design/SANDBOXED_INFERENCE.md):
+//    - mtmd_init_from_file_ptr (local patch): catches std::exception from
+//      the context and clip_init_from_file_ptr (whose loader throws and
+//      catches its own) and returns nullptr. A short read of the projector
+//      is an exception there, not uninitialized weights.
+//    - mtmd_tokenize_from_parts: catches std::exception and returns 2; its
+//      asserts need a mergeable or audio bitmap (never made here), a
+//      projector without a preprocessor (init throws first) or a tokenizer
+//      whose second call disagrees with its first (the first call's buffer
+//      is always large enough).
+//    - mtmd_encode_chunk: catches std::exception and returns 1.
+//    - mtmd_get_output_embd: the last encode's buffer, n_embd_inp floats per
+//      image token (the context checked the widths match).
+//    - mtmd_bitmap_init: copies width * height * 3 bytes; only called after
+//      CheckModelImage() matched the buffer to that size.
+//    - mtmd_image_tokens_get_decoder_pos: aborts on an index past the
+//      image's tokens; only called with indexes below
+//      mtmd_input_chunk_get_n_tokens().
+//    - mtmd_input_chunk_get_n_tokens / _get_n_pos: abort on an unknown chunk
+//      type; mtmd makes only text, image and audio chunks.
+//    - mtmd_context_params_default, mtmd_free, mtmd_support_vision,
+//      mtmd_decode_use_mrope, mtmd_decode_use_non_causal,
+//      mtmd_input_chunks_init / _size / _get (nullptr past the end) /
+//      _free, mtmd_input_chunk_get_type / _get_tokens_text /
+//      _get_tokens_image, mtmd_bitmap_free: no throw.
+//    - llama_batch_ext_init / _free / _clear / _add_token / _add_embd /
+//      _set_pos / _set_output_logits: return error codes (a full batch, a
+//      bad token id or embedding width), no throw.
+//    - llama_process(DECODE): llama_decode()'s path. Its asserts: at most
+//      n_batch tokens (a batch never holds more), and with non-causal
+//      attention the whole batch in one ubatch (checked before the call).
+//    - llama_set_causal_attn, llama_n_ubatch, llama_model_n_embd_inp:
+//      setters and getters.
 // Re-check these when updating the vendored llama.cpp.
 
 #include "chrome/services/molt_ai/inference/llama_engine.h"
@@ -42,10 +76,12 @@
 #include <utility>
 
 #include "chrome/services/molt_ai/inference/engine/context_budget.h"
+#include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 #include "chrome/services/molt_ai/inference/grammar_sampler.h"
 #include "third_party/llama_cpp/include/llama.h"
+#include "third_party/llama_cpp/tools/mtmd/mtmd.h"
 
 namespace molt_ai {
 
@@ -71,6 +107,19 @@ constexpr char kQwen3NoThinkPrefill[] = "<think>\n\n</think>\n\n";
 constexpr uint64_t kBudgetPercentOfLimit = 85;
 constexpr uint64_t kMinKvReserveBytes = 1 * kGiB;
 constexpr uint64_t kComputeReserveBytes = 1 * kGiB;
+// The vision encoder's compute buffers, on top of the projector's weights
+// (which clip copies into memory: it doesn't map the file).
+constexpr uint64_t kVisionComputeReserveBytes = 512ULL * 1024 * 1024;
+
+// Image input. An image takes at most this many tokens on a model whose
+// vision encoder has a dynamic resolution (llama.cpp's image_max_tokens; a
+// 1024 x 1024 image is 1024 tokens on Qwen-VL's 32-pixel token grid).
+constexpr int kMaxImageTokens = 1024;
+// Where an image goes in the chat template's output. Never produced by
+// untrusted text: it is neutralized like a special token in every untrusted
+// field of a request with images, and the markers must pair up with the
+// images one for one.
+constexpr char kMediaMarker[] = "<__media__>";
 
 using Clock = std::chrono::steady_clock;
 
@@ -245,6 +294,120 @@ uint32_t ToU32(int v) {
   return v < 0 ? 0u : static_cast<uint32_t>(v);
 }
 
+std::string MediaMarkers(size_t count) {
+  std::string out;
+  for (size_t i = 0; i < count; ++i) out += kMediaMarker;
+  return out;
+}
+
+size_t CountChunkTokens(const mtmd_input_chunks* chunks) {
+  size_t n = 0;
+  for (size_t i = 0; i < mtmd_input_chunks_size(chunks); ++i) {
+    n += mtmd_input_chunk_get_n_tokens(mtmd_input_chunks_get(chunks, i));
+  }
+  return n;
+}
+
+// Tokenizes the chat template's output |formatted|, in which each image is
+// kMediaMarker, with |bitmaps| (in order) in place of the markers. Text is
+// tokenized with parse_special=true, as without images (untrusted fields
+// were neutralized, the marker included), and BOS / EOS are added as the
+// vocab wants. nullptr if the markers and the images don't pair up one for
+// one, or llama.cpp refuses (an image its preprocessing can't take).
+mtmd::input_chunks_ptr TokenizeWithImages(
+    mtmd_context* ctx,
+    const std::string& formatted,
+    const std::vector<const mtmd_bitmap*>& bitmaps) {
+  std::vector<std::string> segments;
+  const size_t marker_len = sizeof(kMediaMarker) - 1;
+  size_t start = 0;
+  while (true) {
+    const size_t at = formatted.find(kMediaMarker, start);
+    if (at == std::string::npos) break;
+    segments.push_back(formatted.substr(start, at - start));
+    start = at + marker_len;
+  }
+  segments.push_back(formatted.substr(start));
+  if (segments.size() != bitmaps.size() + 1) return nullptr;
+
+  std::vector<mtmd_input_text> texts;
+  texts.reserve(segments.size());  // |parts| points into it
+  std::vector<mtmd_input_part> parts;
+  parts.reserve(segments.size() + bitmaps.size());
+  for (size_t i = 0; i < segments.size(); ++i) {
+    if (!segments[i].empty()) {
+      texts.push_back({segments[i].data(), segments[i].size(),
+                       /*add_special=*/false, /*parse_special=*/true});
+      parts.push_back({&texts.back(), nullptr});
+    }
+    if (i < bitmaps.size()) parts.push_back({nullptr, bitmaps[i]});
+  }
+  std::vector<const mtmd_input_part*> part_ptrs;
+  part_ptrs.reserve(parts.size());
+  for (const mtmd_input_part& part : parts) part_ptrs.push_back(&part);
+
+  mtmd::input_chunks_ptr chunks(mtmd_input_chunks_init());
+  if (!chunks ||
+      mtmd_tokenize_from_parts(ctx, chunks.get(), part_ptrs.data(),
+                               part_ptrs.size(), /*add_special=*/true) != 0) {
+    return nullptr;
+  }
+  return chunks;
+}
+
+// The prompt tokens (KV cells) an image takes, its begin / end markers
+// included, from a placeholder of its size (no pixels: nothing is
+// preprocessed). 0 if llama.cpp refuses it.
+size_t ImageTokens(mtmd_context* ctx, const mtmd_bitmap* placeholder) {
+  const mtmd_input_part part = {nullptr, placeholder};
+  const mtmd_input_part* parts[] = {&part};
+  mtmd::input_chunks_ptr chunks(mtmd_input_chunks_init());
+  if (!chunks || mtmd_tokenize_from_parts(ctx, chunks.get(), parts, 1,
+                                          /*add_special=*/false) != 0) {
+    return 0;
+  }
+  return CountChunkTokens(chunks.get());
+}
+
+// A request's images as llama.cpp bitmaps, in prompt order.
+struct RequestImages {
+  // Size only, for counting tokens while the prompt is fitted.
+  std::vector<mtmd::bitmap_ptr> placeholders;
+  // The pixels, for the prompt that is evaluated.
+  std::vector<mtmd::bitmap_ptr> bitmaps;
+  // Prompt tokens of each.
+  std::vector<size_t> tokens;
+
+  // False if |image| isn't a valid model image or llama.cpp can't take it.
+  bool Add(mtmd_context* ctx, const EngineImage& image) {
+    if (CheckModelImage(image.width, image.height, image.rgb.size()) !=
+        ImageCheck::kOk) {
+      return false;
+    }
+    mtmd::bitmap_ptr placeholder(
+        mtmd_bitmap_init(image.width, image.height, nullptr));
+    mtmd::bitmap_ptr bitmap(
+        mtmd_bitmap_init(image.width, image.height, image.rgb.data()));
+    if (!placeholder || !bitmap) return false;
+    const size_t n = ImageTokens(ctx, placeholder.get());
+    if (n == 0) return false;
+    placeholders.push_back(std::move(placeholder));
+    bitmaps.push_back(std::move(bitmap));
+    tokens.push_back(n);
+    return true;
+  }
+
+  // |which| (indexes) of |from|, as llama.cpp wants them.
+  static std::vector<const mtmd_bitmap*> Pick(
+      const std::vector<mtmd::bitmap_ptr>& from,
+      const std::vector<size_t>& which) {
+    std::vector<const mtmd_bitmap*> out;
+    out.reserve(which.size());
+    for (size_t i : which) out.push_back(from[i].get());
+    return out;
+  }
+};
+
 // Sends |text| (valid UTF-8) in pieces of at most kMaxChunkBytes, cut on
 // character boundaries.
 void EmitChunks(std::string text, const EngineCallbacks& callbacks) {
@@ -272,6 +435,32 @@ void StdioFileCloser::operator()(FILE* file) const {
   if (file) fclose(file);
 }
 
+EngineImage::EngineImage() = default;
+EngineImage::EngineImage(uint32_t w, uint32_t h, std::vector<uint8_t> pixels)
+    : width(w), height(h), rgb(std::move(pixels)) {}
+EngineImage::~EngineImage() = default;
+EngineImage::EngineImage(EngineImage&&) = default;
+EngineImage& EngineImage::operator=(EngineImage&&) = default;
+EngineImage::EngineImage(const EngineImage&) = default;
+EngineImage& EngineImage::operator=(const EngineImage&) = default;
+
+EngineChatTurn::EngineChatTurn() = default;
+EngineChatTurn::EngineChatTurn(bool user, std::string text)
+    : from_user(user), content(std::move(text)) {}
+EngineChatTurn::~EngineChatTurn() = default;
+EngineChatTurn::EngineChatTurn(EngineChatTurn&&) = default;
+EngineChatTurn& EngineChatTurn::operator=(EngineChatTurn&&) = default;
+EngineChatTurn::EngineChatTurn(const EngineChatTurn&) = default;
+EngineChatTurn& EngineChatTurn::operator=(const EngineChatTurn&) = default;
+
+EngineChatRequest::EngineChatRequest() = default;
+EngineChatRequest::~EngineChatRequest() = default;
+EngineChatRequest::EngineChatRequest(EngineChatRequest&&) = default;
+EngineChatRequest& EngineChatRequest::operator=(EngineChatRequest&&) = default;
+EngineChatRequest::EngineChatRequest(const EngineChatRequest&) = default;
+EngineChatRequest& EngineChatRequest::operator=(const EngineChatRequest&) =
+    default;
+
 EngineCallbacks::EngineCallbacks() = default;
 EngineCallbacks::~EngineCallbacks() = default;
 EngineCallbacks::EngineCallbacks(EngineCallbacks&&) = default;
@@ -279,6 +468,8 @@ EngineCallbacks& EngineCallbacks::operator=(EngineCallbacks&&) = default;
 
 struct LlamaEngine::Model {
   ~Model() {
+    // Before the model: it holds the model's vocab.
+    if (mtmd) mtmd_free(mtmd);
     if (ctx) llama_free(ctx);
     if (model) llama_model_free(model);
     // Only now: lazily read tensors go through this stream.
@@ -302,6 +493,16 @@ struct LlamaEngine::Model {
   // Built on the first constrained generation (GrammarVocab::Build reads
   // every token once). Doesn't use the vocab after Build().
   std::unique_ptr<GrammarVocab> grammar_vocab;
+  // The vision projector's context (image input); null without one.
+  mtmd_context* mtmd = nullptr;
+};
+
+// A prompt with images: llama.cpp's chunks (text and images, in order), then
+// |suffix| (a constrained answer's prefill), |n_tokens| KV cells in all.
+struct LlamaEngine::MediaPrompt {
+  const mtmd_input_chunks* chunks = nullptr;
+  std::vector<llama_token> suffix;
+  size_t n_tokens = 0;
 };
 
 struct LlamaEngine::DecodeParams {
@@ -316,6 +517,8 @@ struct LlamaEngine::DecodeParams {
   std::vector<std::string> stop_sequences;
   // GBNF; "" = unconstrained.
   std::string grammar;
+  // A prompt with images, evaluated instead of Generate()'s token prompt.
+  const MediaPrompt* media = nullptr;
 };
 
 // static
@@ -331,8 +534,13 @@ bool LlamaEngine::loaded() const {
   return model_ && model_->ctx;
 }
 
+bool LlamaEngine::vision() const {
+  return loaded() && model_->mtmd;
+}
+
 EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
-                                   const EngineLoadParams& params) {
+                                   const EngineLoadParams& params,
+                                   ScopedStdioFile vision_projector) {
   EngineLoadResult result;
   if (!scoped_file || model_) return result;  // closes |scoped_file|
   auto m = std::make_unique<Model>();
@@ -358,9 +566,15 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   // counts (the read-only file mapping doesn't).
   const uint64_t limit = params.memory_limit_bytes;
   const uint64_t budget = limit / 100 * kBudgetPercentOfLimit;
+  // The vision projector is copied into memory, wherever the model's
+  // weights live.
+  const uint64_t vision_bytes =
+      vision_projector
+          ? params.vision_projector_size + kVisionComputeReserveBytes
+          : 0;
   bool repack = params.allow_cpu_repack;
   if (limit > 0 && params.file_size + kMinKvReserveBytes +
-                           kComputeReserveBytes >
+                           kComputeReserveBytes + vision_bytes >
                        budget) {
     repack = false;
   }
@@ -372,6 +586,39 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   if (!m->model) return result;  // kInvalidModelFile
 
   const bool gpu = llama_supports_gpu_offload();
+  const int threads =
+      static_cast<int>(std::clamp<uint32_t>(params.cpu_threads, 1, 256));
+
+  // ---- Vision projector (image input) ----
+  // Before the context, so the KV cache is sized with the projector already
+  // in memory. clip copies the weights out of the file, which isn't needed
+  // afterwards.
+  if (vision_projector) {
+    FILE* const proj = vision_projector.get();
+    int64_t proj_size = -1;
+    if (SeekFile(proj, 0, SEEK_END)) proj_size = TellFile(proj);
+    if (proj_size < 0 ||
+        static_cast<uint64_t>(proj_size) != params.vision_projector_size ||
+        !SeekFile(proj, 0, SEEK_SET)) {
+      result.status = EngineLoadStatus::kInvalidVisionProjector;
+      return result;
+    }
+    mtmd_context_params mparams = mtmd_context_params_default();
+    mparams.use_gpu = gpu;
+    mparams.print_timings = false;
+    mparams.n_threads = threads;
+    // Size the encoder's buffers for the largest image now (warmup), so an
+    // image never fails for memory later.
+    mparams.warmup = true;
+    mparams.image_max_tokens = kMaxImageTokens;
+    m->mtmd = mtmd_init_from_file_ptr(proj, m->model, mparams);
+    vision_projector.reset();
+    if (!m->mtmd || !mtmd_support_vision(m->mtmd)) {
+      result.status = EngineLoadStatus::kInvalidVisionProjector;
+      return result;  // ~Model frees it
+    }
+  }
+
   // Size the context from the model's training window, RAM and a KV-cache
   // estimate, then cap it by the browser's limit and the sandbox budget.
   ContextSizingInput sizing_in;
@@ -391,8 +638,8 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
     // What the KV cache may use under the sandbox limit. Below the floor
     // the context is tried anyway; if it can't be allocated the load fails
     // with kOutOfMemory.
-    const uint64_t used =
-        (repack && !gpu ? params.file_size : 0) + kComputeReserveBytes;
+    const uint64_t used = (repack && !gpu ? params.file_size : 0) +
+                          kComputeReserveBytes + vision_bytes;
     const uint64_t kv_room = budget > used ? budget - used : 0;
     const uint64_t by_limit = kv_room / sizing_in.kv_bytes_per_token;
     if (by_limit < static_cast<uint64_t>(n_ctx)) {
@@ -410,8 +657,6 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   ctx_params.n_ctx = static_cast<uint32_t>(n_ctx);
   // Prompts longer than n_batch are decoded in n_batch-sized chunks.
   ctx_params.n_batch = static_cast<uint32_t>(std::min(n_ctx, sizing.n_batch));
-  const int threads =
-      static_cast<int>(std::clamp<uint32_t>(params.cpu_threads, 1, 256));
   ctx_params.n_threads = threads;
   ctx_params.n_threads_batch = threads;
 
@@ -449,6 +694,7 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   result.description.train_context_tokens = ToU32(sizing_in.n_ctx_train);
   result.description.vocab_size = ToU32(llama_vocab_n_tokens(m->vocab));
   result.description.cpu_repack_used = repack && !gpu;
+  result.description.vision = m->mtmd != nullptr;
   model_ = std::move(m);
   return result;
 }
@@ -598,16 +844,68 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
     hidden = AdaptiveReasoningTokens(n_ctx);
   }
 
+  // ---- Images (user turns only; untrusted, like page text) ----
+  size_t n_images = chat.user_images.size();
+  for (const EngineChatTurn& turn : chat.history) {
+    n_images += turn.images.size();
+    if (!turn.images.empty() && !turn.from_user) {
+      summary.status = EngineStatus::kTokenizeFailed;  // the service refuses
+      return summary;
+    }
+  }
+  const bool with_images = n_images > 0;
+  if (with_images && !m.mtmd) {
+    summary.status = EngineStatus::kImagesUnsupported;
+    return summary;
+  }
+  if (n_images > kMaxImagesPerRequest) {
+    summary.status = EngineStatus::kTokenizeFailed;  // the service refuses
+    return summary;
+  }
+  // In prompt order: the history's (oldest first), then the new message's.
+  RequestImages images;
+
   // ---- Untrusted text can't smuggle in control tokens ----
-  const std::vector<std::string>& specials = m.special_texts;
+  // With images, nor an image marker: the markers must pair up with the
+  // images one for one (TokenizeWithImages).
+  std::vector<std::string> specials_with_marker;
+  const std::vector<std::string>* specials_ptr = &m.special_texts;
+  if (with_images) {
+    specials_with_marker = m.special_texts;
+    specials_with_marker.push_back(kMediaMarker);
+    specials_ptr = &specials_with_marker;
+  }
+  const std::vector<std::string>& specials = *specials_ptr;
   const std::string context = NeutralizeSpecialTokens(chat.context, specials);
   const std::string user = NeutralizeSpecialTokens(chat.user_message, specials);
   std::vector<std::pair<std::string, std::string>> history;  // role, text
+  // Per history message: its images (indexes into |images|).
+  std::vector<std::vector<size_t>> history_images;
   history.reserve(chat.history.size());
+  history_images.reserve(chat.history.size());
   for (const EngineChatTurn& turn : chat.history) {
-    if (turn.content.empty()) continue;
+    if (turn.content.empty() && turn.images.empty()) continue;
+    std::vector<size_t> turn_images;
+    for (const EngineImage& image : turn.images) {
+      if (!images.Add(m.mtmd, image)) {
+        summary.status = EngineStatus::kTokenizeFailed;
+        return summary;
+      }
+      turn_images.push_back(images.bitmaps.size() - 1);
+    }
     history.emplace_back(turn.from_user ? "user" : "assistant",
                          NeutralizeSpecialTokens(turn.content, specials));
+    history_images.push_back(std::move(turn_images));
+  }
+  std::vector<size_t> user_images;
+  size_t user_image_tokens = 0;
+  for (const EngineImage& image : chat.user_images) {
+    if (!images.Add(m.mtmd, image)) {
+      summary.status = EngineStatus::kTokenizeFailed;
+      return summary;
+    }
+    user_images.push_back(images.bitmaps.size() - 1);
+    user_image_tokens += images.tokens.back();
   }
 
   // ---- Token budget: the system prompt is never trimmed ----
@@ -617,13 +915,20 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
   PromptBudgetInput in;
   in.n_ctx = n_ctx;
   in.reply_reserve = visible + hidden;
+  // The new message's images are never trimmed (only its text is); a
+  // history message's go with it when it is dropped.
   in.system_tokens =
-      count(system_text) + (context.empty() ? 0 : count(chat.context_preamble));
+      count(system_text) + (context.empty() ? 0 : count(chat.context_preamble)) +
+      static_cast<int>(std::min<size_t>(user_image_tokens, INT32_MAX / 4));
   in.context_tokens = context.empty() ? 0 : count(context);
   in.user_tokens = count(user);
-  for (const auto& [role, text] : history) {
-    in.history_tokens.push_back(count(text));
-    in.history_starts_turn.push_back(role == "user");
+  for (size_t i = 0; i < history.size(); ++i) {
+    size_t image_tokens = 0;
+    for (size_t image : history_images[i]) image_tokens += images.tokens[image];
+    in.history_tokens.push_back(
+        count(history[i].second) +
+        static_cast<int>(std::min<size_t>(image_tokens, INT32_MAX / 4)));
+    in.history_starts_turn.push_back(history[i].first == "user");
   }
 
   // Formats messages with the model's own chat template (the GGUF's
@@ -689,6 +994,10 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
   }
 
   std::vector<llama_token> tokens;
+  // With images: the formatted prompt and its images, in order.
+  std::string media_formatted;
+  std::vector<size_t> media_order;
+  size_t media_tokens = 0;
   int reply_tokens = 0;
   bool fitted = false;
   for (int attempt = 0; attempt < 4 && !fitted; ++attempt) {
@@ -704,31 +1013,55 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
       user_text = TruncateTextMiddle(vocab, user, plan.user_token_limit);
     }
 
+    // A message's images go before its text.
     std::vector<std::pair<std::string, std::string>> messages;
+    std::vector<size_t> order;
     messages.emplace_back(
         "system", ctx_text.empty()
                       ? system_text
                       : system_text + chat.context_preamble + ctx_text);
     for (size_t i = plan.history_keep_from; i < history.size(); ++i) {
-      messages.push_back(history[i]);
+      messages.emplace_back(
+          history[i].first,
+          MediaMarkers(history_images[i].size()) + history[i].second);
+      order.insert(order.end(), history_images[i].begin(),
+                   history_images[i].end());
     }
-    messages.emplace_back("user", user_text);
+    messages.emplace_back("user",
+                          MediaMarkers(user_images.size()) + user_text);
+    order.insert(order.end(), user_images.begin(), user_images.end());
 
     // parse_special=true: the template's control markers (<|im_end|>,
     // <|eot_id|>, </s>, ...) must become real special tokens, not plain
     // text. Message contents were neutralized above.
-    const std::optional<std::string> formatted = apply_template(messages);
+    std::optional<std::string> formatted = apply_template(messages);
     if (!formatted) break;  // kPromptTooLong
-    std::optional<std::vector<llama_token>> t =
-        TryTokenize(vocab, *formatted,
-                    /*add_special=*/true, /*parse_special=*/true);
-    if (!t) {
-      summary.status = EngineStatus::kTokenizeFailed;
-      return summary;
+    size_t n_prompt = 0;
+    if (with_images) {
+      // Counted with placeholders: the images are preprocessed once, below.
+      mtmd::input_chunks_ptr counted = TokenizeWithImages(
+          m.mtmd, *formatted, RequestImages::Pick(images.placeholders, order));
+      if (!counted) {
+        summary.status = EngineStatus::kTokenizeFailed;
+        return summary;
+      }
+      n_prompt = CountChunkTokens(counted.get());
+      media_formatted = std::move(*formatted);
+      media_order = std::move(order);
+      media_tokens = n_prompt;
+    } else {
+      std::optional<std::vector<llama_token>> t =
+          TryTokenize(vocab, *formatted,
+                      /*add_special=*/true, /*parse_special=*/true);
+      if (!t) {
+        summary.status = EngineStatus::kTokenizeFailed;
+        return summary;
+      }
+      tokens = std::move(*t);
+      n_prompt = tokens.size();
     }
-    tokens = std::move(*t);
-    const int over = static_cast<int>(tokens.size()) + plan.reply_tokens +
-                     kContextSlack - n_ctx;
+    const int over = static_cast<int>(std::min<size_t>(n_prompt, INT32_MAX / 2)) +
+                     plan.reply_tokens + kContextSlack - n_ctx;
     if (over <= 0) {
       fitted = true;
       reply_tokens = plan.reply_tokens;
@@ -741,11 +1074,46 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
       in.safety_margin += over + 16;
     }
   }
-  if (!fitted || tokens.empty()) {
+  if (!fitted || (tokens.empty() && media_tokens == 0)) {
     summary.status = EngineStatus::kPromptTooLong;
     return summary;
   }
-  summary.prompt_tokens = ToU32(tokens.size());
+
+  // With images: the prompt that is evaluated, with the pixels. The image
+  // preprocessing (llama.cpp's resize and normalize) runs here, once.
+  mtmd::input_chunks_ptr media_chunks;
+  MediaPrompt media;
+  if (with_images) {
+    media_chunks = TokenizeWithImages(
+        m.mtmd, media_formatted,
+        RequestImages::Pick(images.bitmaps, media_order));
+    if (!media_chunks ||
+        CountChunkTokens(media_chunks.get()) != media_tokens) {
+      summary.status = EngineStatus::kTokenizeFailed;
+      return summary;
+    }
+    // The answer's first token needs the logits of a text token: the
+    // template always ends with one (the assistant's header).
+    const size_t n_chunks = mtmd_input_chunks_size(media_chunks.get());
+    const mtmd_input_chunk* last =
+        n_chunks ? mtmd_input_chunks_get(media_chunks.get(), n_chunks - 1)
+                 : nullptr;
+    size_t n_last = 0;
+    const llama_token* last_tokens =
+        last && mtmd_input_chunk_get_type(last) == MTMD_INPUT_CHUNK_TYPE_TEXT
+            ? mtmd_input_chunk_get_tokens_text(last, &n_last)
+            : nullptr;
+    if (!last_tokens || n_last == 0) {
+      summary.status = EngineStatus::kTokenizeFailed;
+      return summary;
+    }
+    // Only the tail matters below (reasoning-block detection).
+    tokens.assign(last_tokens + (n_last - std::min<size_t>(n_last, 4)),
+                  last_tokens + n_last);
+    media.chunks = media_chunks.get();
+    media.n_tokens = media_tokens;
+  }
+  summary.prompt_tokens = ToU32(with_images ? media_tokens : tokens.size());
 
   // Some templates pre-open the reasoning block in the prompt.
   const std::string tail_text = Detokenize(
@@ -791,17 +1159,195 @@ EngineSummary LlamaEngine::Chat(const EngineChatRequest& chat,
       const std::vector<llama_token> t =
           TokenizeText(vocab, prefill, /*add_special=*/false,
                        /*parse_special=*/true);
-      tokens.insert(tokens.end(), t.begin(), t.end());
-      summary.prompt_tokens = ToU32(tokens.size());
+      if (with_images) {
+        media.suffix = t;
+        media.n_tokens += t.size();
+        summary.prompt_tokens = ToU32(media.n_tokens);
+      } else {
+        tokens.insert(tokens.end(), t.begin(), t.end());
+        summary.prompt_tokens = ToU32(tokens.size());
+      }
     }
     dp.grammar = params.grammar;
     dp.think_start_inside = false;
     dp.thought_start_inside = false;
   }
 
+  if (with_images) {
+    // Image embeddings have no token ids for KV-prefix reuse to compare:
+    // evaluated from an empty cache, leaving nothing to reuse.
+    dp.media = &media;
+    summary.status = Generate(std::vector<llama_token>(), std::string(), dp,
+                              callbacks, &summary);
+    return summary;
+  }
   summary.status =
       Generate(tokens, params.conversation_key, dp, callbacks, &summary);
   return summary;
+}
+
+std::optional<EngineStatus> LlamaEngine::EvalMediaPrompt(
+    const MediaPrompt& media,
+    const EngineCallbacks& callbacks) {
+  Model& m = *model_;
+  auto cancelled = [&]() {
+    return callbacks.is_cancelled && callbacks.is_cancelled();
+  };
+  // A failed decode leaves the cache in an unknown state: start clean next
+  // time (the prompt is never reused anyway).
+  auto fail = [&](EngineStatus status) -> std::optional<EngineStatus> {
+    llama_set_causal_attn(m.ctx, true);
+    if (llama_memory_t mem = llama_get_memory(m.ctx)) {
+      llama_memory_clear(mem, true);
+    }
+    m.kv_tokens.clear();
+    m.kv_key.clear();
+    return status;
+  };
+  struct BatchFree {
+    void operator()(llama_batch_ext* b) const { llama_batch_ext_free(b); }
+  };
+  std::unique_ptr<llama_batch_ext, BatchFree> batch(
+      llama_batch_ext_init(m.ctx));
+  const int n_embd = llama_model_n_embd_inp(m.model);
+  const size_t n_batch = static_cast<size_t>(std::max(1, m.n_batch));
+  if (!batch || n_embd <= 0) return fail(EngineStatus::kDecodeFailed);
+  const bool mrope = mtmd_decode_use_mrope(m.mtmd);
+
+  const auto interval = std::chrono::milliseconds(kProgressIntervalMs);
+  auto last_progress = Clock::now();
+  size_t done = 0;
+  auto progress = [&]() {
+    const auto now = Clock::now();
+    if (callbacks.on_progress && now - last_progress >= interval) {
+      last_progress = now;
+      callbacks.on_progress(ToU32(done), ToU32(media.n_tokens));
+    }
+  };
+
+  // Text with positions from |n_past| on (an image before it may have taken
+  // fewer positions than tokens: M-RoPE); logits for the last token when
+  // |logits_last|.
+  llama_pos n_past = 0;
+  enum class Step { kOk, kCancelled, kFailed };
+  auto decode_text = [&](const llama_token* toks, size_t n,
+                         bool logits_last) -> Step {
+    for (size_t j = 0; j < n;) {
+      if (cancelled()) return Step::kCancelled;
+      llama_batch_ext_clear(batch.get());
+      const size_t take = std::min(n_batch, n - j);
+      int32_t idx = -1;
+      for (size_t k = 0; k < take; ++k) {
+        idx = llama_batch_ext_add_token(batch.get(), 0, toks[j + k]);
+        const llama_pos pos = n_past++;
+        if (idx < 0 || !llama_batch_ext_set_pos(batch.get(), idx, &pos)) {
+          return Step::kFailed;
+        }
+      }
+      if (logits_last && j + take == n &&
+          !llama_batch_ext_set_output_logits(batch.get(), idx, true)) {
+        return Step::kFailed;
+      }
+      if (llama_process(m.ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+        return Step::kFailed;
+      }
+      m.kv_tokens.insert(m.kv_tokens.end(), toks + j, toks + j + take);
+      j += take;
+      done += take;
+      progress();
+    }
+    return Step::kOk;
+  };
+
+  const size_t n_chunks = mtmd_input_chunks_size(media.chunks);
+  for (size_t i = 0; i < n_chunks; ++i) {
+    if (cancelled()) return EngineStatus::kCancelled;
+    const mtmd_input_chunk* chunk = mtmd_input_chunks_get(media.chunks, i);
+    if (!chunk) return fail(EngineStatus::kDecodeFailed);
+    const bool last = i + 1 == n_chunks && media.suffix.empty();
+    const mtmd_input_chunk_type type = mtmd_input_chunk_get_type(chunk);
+    if (type == MTMD_INPUT_CHUNK_TYPE_TEXT) {
+      size_t n = 0;
+      const llama_token* toks = mtmd_input_chunk_get_tokens_text(chunk, &n);
+      if (!toks && n > 0) return fail(EngineStatus::kDecodeFailed);
+      const Step step = decode_text(toks, n, last);
+      if (step == Step::kCancelled) return EngineStatus::kCancelled;
+      if (step == Step::kFailed) return fail(EngineStatus::kDecodeFailed);
+      continue;
+    }
+    // Only images are made from a request (no audio bitmaps), and the
+    // prompt ends with text.
+    const mtmd_image_tokens* image = mtmd_input_chunk_get_tokens_image(chunk);
+    const size_t n_tok = mtmd_input_chunk_get_n_tokens(chunk);
+    if (type != MTMD_INPUT_CHUNK_TYPE_IMAGE || !image || n_tok == 0 || last) {
+      return fail(EngineStatus::kDecodeFailed);
+    }
+    // Some encoders (Gemma 3) attend to the whole image at once: it must
+    // fit one batch and one ubatch (llama_decode asserts the latter).
+    const bool non_causal = mtmd_decode_use_non_causal(m.mtmd, chunk);
+    if (non_causal &&
+        n_tok > std::min<size_t>(n_batch, llama_n_ubatch(m.ctx))) {
+      return fail(EngineStatus::kPromptTooLong);
+    }
+    // The vision encoder: seconds on a CPU for a large image; cancellation
+    // is checked before and after it.
+    if (mtmd_encode_chunk(m.mtmd, chunk) != 0) {
+      return fail(EngineStatus::kDecodeFailed);
+    }
+    if (cancelled()) return EngineStatus::kCancelled;
+    const float* embd = mtmd_get_output_embd(m.mtmd);
+    if (!embd) return fail(EngineStatus::kDecodeFailed);
+    if (non_causal) llama_set_causal_attn(m.ctx, false);
+    for (size_t j = 0; j < n_tok;) {
+      if (cancelled()) {
+        llama_set_causal_attn(m.ctx, true);
+        return EngineStatus::kCancelled;
+      }
+      llama_batch_ext_clear(batch.get());
+      const size_t take = std::min(n_batch, n_tok - j);
+      for (size_t k = 0; k < take; ++k) {
+        const size_t t = j + k;
+        const llama_embd row = {embd + t * static_cast<size_t>(n_embd), 1,
+                                static_cast<size_t>(n_embd)};
+        const int32_t idx = llama_batch_ext_add_embd(batch.get(), 0, row);
+        // [t, y, x, z] for M-RoPE (llama.cpp's mtmd-helper layout), else
+        // one position per token.
+        llama_pos pos[4];
+        if (mrope) {
+          const mtmd_decoder_pos d =
+              mtmd_image_tokens_get_decoder_pos(image, n_past, t);
+          pos[0] = static_cast<llama_pos>(d.t);
+          pos[1] = static_cast<llama_pos>(d.y);
+          pos[2] = static_cast<llama_pos>(d.x);
+          pos[3] = static_cast<llama_pos>(d.z);
+        } else {
+          std::fill(std::begin(pos), std::end(pos),
+                    n_past + static_cast<llama_pos>(t));
+        }
+        if (idx < 0 || !llama_batch_ext_set_pos(batch.get(), idx, pos)) {
+          return fail(EngineStatus::kDecodeFailed);
+        }
+      }
+      if (llama_process(m.ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+        return fail(EngineStatus::kDecodeFailed);
+      }
+      // No token ids for image cells; the count is what matters (the
+      // cache's fill level).
+      m.kv_tokens.insert(m.kv_tokens.end(), take, LLAMA_TOKEN_NULL);
+      j += take;
+      done += take;
+      progress();
+    }
+    if (non_causal) llama_set_causal_attn(m.ctx, true);
+    n_past += mtmd_input_chunk_get_n_pos(chunk);
+  }
+  if (!media.suffix.empty()) {
+    const Step step =
+        decode_text(media.suffix.data(), media.suffix.size(), true);
+    if (step == Step::kCancelled) return EngineStatus::kCancelled;
+    if (step == Step::kFailed) return fail(EngineStatus::kDecodeFailed);
+  }
+  return std::nullopt;
 }
 
 EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
@@ -813,7 +1359,9 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   const llama_vocab* vocab = m.vocab;
   const int n_ctx = m.n_ctx;
   llama_memory_t mem = llama_get_memory(m.ctx);
-  if (!vocab || !mem || prompt.empty()) return EngineStatus::kDecodeFailed;
+  if (!vocab || !mem || (prompt.empty() && !p.media)) {
+    return EngineStatus::kDecodeFailed;
+  }
   auto cancelled = [&]() {
     return callbacks.is_cancelled && callbacks.is_cancelled();
   };
@@ -833,7 +1381,7 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
 
   // ---- KV prefix reuse ----
   size_t n_keep = 0;
-  if (!reuse_key.empty() && reuse_key == m.kv_key) {
+  if (!p.media && !reuse_key.empty() && reuse_key == m.kv_key) {
     n_keep = CommonPrefixLength(m.kv_tokens, prompt);
     // At least one prompt token must be decoded to get fresh logits.
     if (n_keep >= prompt.size()) n_keep = prompt.size() - 1;
@@ -852,7 +1400,8 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   }
   m.kv_tokens.assign(prompt.begin(),
                      prompt.begin() + static_cast<std::ptrdiff_t>(n_keep));
-  m.kv_key = reuse_key;
+  // A prompt with images leaves nothing reusable (its key is "").
+  m.kv_key = p.media ? std::string() : reuse_key;
   summary->reused_tokens = ToU32(n_keep);
 
   auto fail_decode = [&]() {
@@ -872,7 +1421,15 @@ EngineStatus LlamaEngine::Generate(const std::vector<int32_t>& prompt,
   if (callbacks.on_progress) {
     // Tells the browser this request is running now (it may have waited
     // behind another one); its liveness clock starts here.
-    callbacks.on_progress(ToU32(n_keep), ToU32(work.size()));
+    callbacks.on_progress(ToU32(n_keep),
+                          ToU32(p.media ? p.media->n_tokens : work.size()));
+  }
+  if (p.media) {
+    if (std::optional<EngineStatus> failed =
+            EvalMediaPrompt(*p.media, callbacks)) {
+      return *failed;
+    }
+    last_progress = Clock::now();
   }
   for (size_t i = n_keep; i < work.size();) {
     if (cancelled()) {

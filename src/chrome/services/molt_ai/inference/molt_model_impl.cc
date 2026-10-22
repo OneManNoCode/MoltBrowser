@@ -14,6 +14,7 @@
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/sequenced_task_runner.h"
+#include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
 
@@ -24,6 +25,12 @@ namespace {
 // A runaway browser could otherwise queue without bound; it never has more
 // than a handful of requests in flight (one per blocked caller).
 constexpr size_t kMaxQueuedRequests = 64;
+
+// The mojom caps on images are the engine's (engine/image_input.h).
+static_assert(mojom::kMaxImageSide == kMaxImageSide);
+static_assert(mojom::kMinImageSide == kMinImageSide);
+static_assert(mojom::kMaxImageAspectRatio == kMaxImageAspectRatio);
+static_assert(mojom::kMaxImagesPerRequest == kMaxImagesPerRequest);
 
 bool TextFits(const std::string& text) {
   return text.size() <= mojom::kMaxRequestTextBytes;
@@ -66,14 +73,76 @@ std::optional<std::string> GrammarFor(
   return std::move(g.gbnf);
 }
 
-// Answers a request whose constraint was refused, without queueing it.
-void AnswerUnsupported(
-    mojo::PendingRemote<mojom::GenerationStreamer> pending_streamer) {
+// Answers a request that can't run (a refused constraint, images for a
+// model without vision, an image buffer the service couldn't map) without
+// queueing it.
+void AnswerAtOnce(
+    mojo::PendingRemote<mojom::GenerationStreamer> pending_streamer,
+    mojom::GenerationStatus status) {
   mojo::Remote<mojom::GenerationStreamer> streamer(
       std::move(pending_streamer));
   auto summary = mojom::GenerationSummary::New();
-  summary->status = mojom::GenerationStatus::kConstraintUnsupported;
+  summary->status = status;
   streamer->OnComplete(std::move(summary));
+}
+
+// The caps on a request's images (the bounds of each, how many, which
+// turns). Returns the reason for a bad message, or nullptr.
+const char* CheckImages(const mojom::ChatRequest& request, size_t* count) {
+  size_t n = request.user_images.size();
+  for (const mojom::ChatTurnPtr& turn : request.history) {
+    if (!turn->images.empty() && turn->role != mojom::ChatRole::kUser) {
+      return "image on an assistant turn";
+    }
+    n += turn->images.size();
+  }
+  if (n > mojom::kMaxImagesPerRequest) return "too many images";
+  auto check = [](const mojom::ImageInputPtr& image) {
+    // An unmappable buffer reads as empty; StreamChat answers it apart.
+    return image->rgb.storage_type() ==
+               mojo_base::BigBuffer::StorageType::kInvalidBuffer ||
+           CheckModelImage(image->width, image->height, image->rgb.size()) ==
+               ImageCheck::kOk;
+  };
+  for (const mojom::ImageInputPtr& image : request.user_images) {
+    if (!check(image)) return "image outside the bounds";
+  }
+  for (const mojom::ChatTurnPtr& turn : request.history) {
+    for (const mojom::ImageInputPtr& image : turn->images) {
+      if (!check(image)) return "image outside the bounds";
+    }
+  }
+  *count = n;
+  return nullptr;
+}
+
+bool AnyUnmappedImage(const mojom::ChatRequest& request) {
+  auto unmapped = [](const mojom::ImageInputPtr& image) {
+    return image->rgb.storage_type() ==
+           mojo_base::BigBuffer::StorageType::kInvalidBuffer;
+  };
+  for (const mojom::ImageInputPtr& image : request.user_images) {
+    if (unmapped(image)) return true;
+  }
+  for (const mojom::ChatTurnPtr& turn : request.history) {
+    for (const mojom::ImageInputPtr& image : turn->images) {
+      if (unmapped(image)) return true;
+    }
+  }
+  return false;
+}
+
+// The pixels, copied out of the message (checked by CheckImages()).
+std::vector<EngineImage> ToEngineImages(
+    const std::vector<mojom::ImageInputPtr>& images) {
+  std::vector<EngineImage> out;
+  out.reserve(images.size());
+  for (const mojom::ImageInputPtr& image : images) {
+    out.emplace_back(image->width, image->height,
+                     std::vector<uint8_t>(image->rgb.begin(),
+                                          image->rgb.end()));
+  }
+  return out;
 }
 
 EngineGenerationParams ToEngine(const mojom::GenerationParams& p) {
@@ -115,6 +184,8 @@ mojom::GenerationStatus ToMojo(EngineStatus status) {
       return mojom::GenerationStatus::kDecodeFailed;
     case EngineStatus::kConstraintFailed:
       return mojom::GenerationStatus::kConstraintFailed;
+    case EngineStatus::kImagesUnsupported:
+      return mojom::GenerationStatus::kImagesUnsupported;
   }
   return mojom::GenerationStatus::kDecodeFailed;
 }
@@ -151,9 +222,12 @@ struct MoltModelImpl::Request {
 };
 
 MoltModelImpl::MoltModelImpl(base::SequenceBound<LlamaEngine> engine,
+                             bool vision,
                              mojo::PendingReceiver<mojom::Model> receiver,
                              base::OnceClosure on_disconnect)
-    : engine_(std::move(engine)), receiver_(this, std::move(receiver)) {
+    : engine_(std::move(engine)),
+      vision_(vision),
+      receiver_(this, std::move(receiver)) {
   receiver_.set_disconnect_handler(std::move(on_disconnect));
 }
 
@@ -181,24 +255,43 @@ void MoltModelImpl::StreamChat(
     receiver_.ReportBadMessage("chat request over the caps");
     return;
   }
+  size_t n_images = 0;
+  if (const char* error = CheckImages(*request, &n_images)) {
+    receiver_.ReportBadMessage(error);
+    return;
+  }
+  if (n_images > 0 && !vision_) {
+    AnswerAtOnce(std::move(streamer),
+                 mojom::GenerationStatus::kImagesUnsupported);
+    return;
+  }
+  if (n_images > 0 && AnyUnmappedImage(*request)) {
+    // The shared memory couldn't be mapped here (out of address space).
+    AnswerAtOnce(std::move(streamer), mojom::GenerationStatus::kDecodeFailed);
+    return;
+  }
   auto r = std::make_unique<Request>();
   r->is_chat = true;
   r->chat.system_prompt = std::move(request->system_prompt);
   r->chat.context_preamble = std::move(request->context_preamble);
   r->chat.context = std::move(request->context);
   r->chat.user_message = std::move(request->user_message);
+  r->chat.user_images = ToEngineImages(request->user_images);
   r->chat.history.reserve(request->history.size());
   for (mojom::ChatTurnPtr& turn : request->history) {
     if (!TextFits(turn->content)) {
       receiver_.ReportBadMessage("chat turn over the caps");
       return;
     }
-    r->chat.history.push_back(
-        {turn->role == mojom::ChatRole::kUser, std::move(turn->content)});
+    EngineChatTurn engine_turn(turn->role == mojom::ChatRole::kUser,
+                               std::move(turn->content));
+    engine_turn.images = ToEngineImages(turn->images);
+    r->chat.history.push_back(std::move(engine_turn));
   }
   std::optional<std::string> grammar = GrammarFor(params->constraint);
   if (!grammar) {
-    AnswerUnsupported(std::move(streamer));
+    AnswerAtOnce(std::move(streamer),
+                 mojom::GenerationStatus::kConstraintUnsupported);
     return;
   }
   r->params = ToEngine(*params);
@@ -222,7 +315,8 @@ void MoltModelImpl::StreamPrompt(
   }
   std::optional<std::string> grammar = GrammarFor(params->constraint);
   if (!grammar) {
-    AnswerUnsupported(std::move(streamer));
+    AnswerAtOnce(std::move(streamer),
+                 mojom::GenerationStatus::kConstraintUnsupported);
     return;
   }
   auto r = std::make_unique<Request>();

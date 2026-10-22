@@ -18,6 +18,7 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
+#include "chrome/browser/molt_ai/runtime/model_image_prep.h"
 
 namespace molt_ai::web_ai {
 
@@ -36,6 +37,30 @@ struct WebAISettings {
   // "web_ai_apis": false turns the APIs off for every site.
   bool web_apis_enabled = true;
 };
+
+// Scaling a page's bitmaps: CPU only, no I/O.
+constexpr base::TaskTraits kImageTraits = {
+    base::TaskPriority::USER_VISIBLE,
+    base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN};
+
+// A page's bitmaps as model images (kWebImageMaxSide), or nullopt if any
+// can't be made. Worker thread.
+std::optional<std::vector<ModelImage>> PrepareImagesOnWorker(
+    std::vector<SkBitmap> bitmaps) {
+  std::vector<ModelImage> images;
+  images.reserve(bitmaps.size());
+  for (SkBitmap& bitmap : bitmaps) {
+    std::optional<ModelImage> image =
+        PrepareImageForModel(bitmap, kWebImageMaxSide);
+    if (!image) {
+      return std::nullopt;
+    }
+    images.push_back(std::move(*image));
+    // The page's pixels go as soon as they are scaled.
+    bitmap.reset();
+  }
+  return images;
+}
 
 // ~/.moltbrowser/settings.json, as the chat reads it. Worker thread.
 WebAISettings ReadWebAISettings() {
@@ -74,14 +99,18 @@ std::vector<ModelCandidate> Candidates(const BrowserAIRuntime& runtime) {
     c.model_id = info.model_id;
     c.downloaded = info.is_downloaded;
     c.ram_required_bytes = info.ram_required_bytes;
+    c.sees_images = info.has_vision();
     out.push_back(std::move(c));
   }
   return out;
 }
 
-// Loads the model pages use if none is loaded. Worker thread (blocks while
-// the model loads).
-bool EnsureModelLoaded(BrowserAIRuntime* runtime, uint32_t* context_tokens) {
+// Loads the model pages use if none is loaded (one that sees images, if
+// |wants_images| and one is downloaded). Worker thread (blocks while the
+// model loads).
+bool EnsureModelLoaded(BrowserAIRuntime* runtime,
+                       uint32_t* context_tokens,
+                       bool wants_images) {
   if (!runtime->GetLocalInferenceUnsupportedReason().empty()) {
     return false;
   }
@@ -89,7 +118,7 @@ bool EnsureModelLoaded(BrowserAIRuntime* runtime, uint32_t* context_tokens) {
     runtime->RefreshModelStatus();
     const std::string model_id = PickWebModel(
         /*loaded_model_id=*/"", ReadWebAISettings().default_model,
-        Candidates(*runtime));
+        Candidates(*runtime), wants_images);
     if (model_id.empty()) {
       return false;
     }
@@ -197,25 +226,31 @@ void RuntimeWebAIBackend::OnDeviceFacts(DeviceFacts facts) {
 
 // ---- Model ----
 
-void RuntimeWebAIBackend::PrepareModel(PrepareCallback callback) {
+void RuntimeWebAIBackend::PrepareModel(bool wants_images,
+                                       PrepareCallback callback) {
   prepare_waiters_.push_back(std::move(callback));
   if (prepare_pending_) {
+    // Joins the load in flight (a preference, not a requirement: create()
+    // checks what was loaded).
     return;
   }
   prepare_pending_ = true;
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, kWorkerTraits,
       base::BindOnce(&RuntimeWebAIBackend::PrepareBlocking,
-                     base::Unretained(&runtime())),
+                     base::Unretained(&runtime()), wants_images),
       base::BindOnce(&RuntimeWebAIBackend::OnModelPrepared,
                      weak_factory_.GetWeakPtr()));
 }
 
 // static
 RuntimeWebAIBackend::PrepareResult RuntimeWebAIBackend::PrepareBlocking(
-    BrowserAIRuntime* runtime) {
+    BrowserAIRuntime* runtime,
+    bool wants_images) {
   PrepareResult result;
-  result.ok = EnsureModelLoaded(runtime, &result.context_tokens);
+  result.ok =
+      EnsureModelLoaded(runtime, &result.context_tokens, wants_images);
+  result.sees_images = result.ok && runtime->LoadedModelSeesImages();
   return result;
 }
 
@@ -226,7 +261,8 @@ void RuntimeWebAIBackend::OnModelPrepared(PrepareResult result) {
   std::vector<PrepareCallback> waiters;
   waiters.swap(prepare_waiters_);
   for (PrepareCallback& callback : waiters) {
-    std::move(callback).Run(result.ok, result.context_tokens);
+    std::move(callback).Run(result.ok, result.context_tokens,
+                            result.sees_images);
   }
 }
 
@@ -314,8 +350,12 @@ GenerationStatus RuntimeWebAIBackend::RunJob(
   if (runtime->IsRequestCancelled(request_id)) {
     return GenerationStatus::kCancelled;
   }
+  bool wants_images = !job.user_images.empty();
+  for (const std::vector<ModelImage>& images : job.history_images) {
+    wants_images = wants_images || !images.empty();
+  }
   uint32_t context_tokens = 0;
-  if (!EnsureModelLoaded(runtime, &context_tokens)) {
+  if (!EnsureModelLoaded(runtime, &context_tokens, wants_images)) {
     return GenerationStatus::kFailed;
   }
   if (runtime->IsRequestCancelled(request_id)) {
@@ -329,11 +369,19 @@ GenerationStatus RuntimeWebAIBackend::RunJob(
   chat.system_prompt = std::move(job.system_prompt);
   chat.context_preamble = std::move(job.context_preamble);
   chat.context = std::move(job.context);
-  for (auto& [role, text] : job.history) {
-    chat.history.push_back(
-        {role == Role::kUser ? "user" : "assistant", std::move(text)});
+  for (size_t i = 0; i < job.history.size(); ++i) {
+    auto& [role, text] = job.history[i];
+    ChatMessage message;
+    message.role = role == Role::kUser ? "user" : "assistant";
+    message.content = std::move(text);
+    // Images go with user turns only (the runtime ignores others').
+    if (role == Role::kUser && i < job.history_images.size()) {
+      message.images = std::move(job.history_images[i]);
+    }
+    chat.history.push_back(std::move(message));
   }
   chat.user_message = std::move(job.user_message);
+  chat.user_images = std::move(job.user_images);
 
   PromptOptions options;
   options.max_tokens =
@@ -424,6 +472,26 @@ bool RuntimeWebAIBackend::TryAddSession(const std::string& site_key) {
 
 void RuntimeWebAIBackend::RemoveSession(const std::string& site_key) {
   scheduler_.RemoveSession(site_key);
+}
+
+// ---- Images ----
+
+void RuntimeWebAIBackend::PrepareImages(std::vector<SkBitmap> bitmaps,
+                                        ImagesCallback callback) {
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, kImageTraits,
+      base::BindOnce(&PrepareImagesOnWorker, std::move(bitmaps)),
+      std::move(callback));
+}
+
+bool RuntimeWebAIBackend::TryHoldImages(const std::string& site_key,
+                                        size_t count) {
+  return scheduler_.TryHoldImages(site_key, count);
+}
+
+void RuntimeWebAIBackend::ReleaseImages(const std::string& site_key,
+                                        size_t count) {
+  scheduler_.ReleaseImages(site_key, count);
 }
 
 }  // namespace molt_ai::web_ai

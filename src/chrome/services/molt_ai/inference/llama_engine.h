@@ -14,6 +14,10 @@
 // only the cancel flag behind EngineCallbacks::is_cancelled is read across
 // threads.
 //
+// Image input (section 10 of the design): with a vision projector loaded
+// (a second GGUF, through llama.cpp's multimodal library), user turns may
+// carry images as raw RGB pixels within engine/image_input.h's bounds.
+//
 // Never logs prompt or response text (it doesn't log at all; llama.cpp's own
 // log goes through the service's llama_log_set callback).
 
@@ -47,6 +51,9 @@ struct EngineLoadParams {
   // Upper bound on n_ctx; 0 = none.
   uint32_t max_context_tokens = 0;
   bool allow_cpu_repack = true;
+  // Size of the vision projector file passed to Load() (0 = none); a file of
+  // another size is refused.
+  uint64_t vision_projector_size = 0;
   // This process's limit on anonymous memory (RLIMIT_DATA on Linux, the job
   // memory limit on Windows); 0 = none known (macOS).
   uint64_t memory_limit_bytes = 0;
@@ -57,6 +64,9 @@ enum class EngineLoadStatus {
   kInvalidModelFile,
   kOutOfMemory,
   kBackendUnavailable,
+  // The vision projector isn't one llama.cpp's multimodal library can load
+  // for this model (wrong size, not a projector, made for another model).
+  kInvalidVisionProjector,
 };
 
 struct EngineModelDescription {
@@ -66,6 +76,8 @@ struct EngineModelDescription {
   uint32_t train_context_tokens = 0;
   uint32_t vocab_size = 0;
   bool cpu_repack_used = false;
+  // A vision projector is loaded: user turns may carry images.
+  bool vision = false;
 };
 
 struct EngineLoadResult {
@@ -73,19 +85,57 @@ struct EngineLoadResult {
   EngineModelDescription description;
 };
 
+// An image for the model: 8-bit RGB, row-major, no row padding, decoded and
+// bounded by the browser (engine/image_input.h); Chat() checks it again.
+// Untrusted content, like page text.
+struct EngineImage {
+  EngineImage();
+  EngineImage(uint32_t width, uint32_t height, std::vector<uint8_t> rgb);
+  ~EngineImage();
+  EngineImage(EngineImage&&);
+  EngineImage& operator=(EngineImage&&);
+  EngineImage(const EngineImage&);
+  EngineImage& operator=(const EngineImage&);
+
+  uint32_t width = 0;
+  uint32_t height = 0;
+  std::vector<uint8_t> rgb;
+};
+
 struct EngineChatTurn {
+  EngineChatTurn();
+  EngineChatTurn(bool from_user, std::string content);
+  ~EngineChatTurn();
+  EngineChatTurn(EngineChatTurn&&);
+  EngineChatTurn& operator=(EngineChatTurn&&);
+  EngineChatTurn(const EngineChatTurn&);
+  EngineChatTurn& operator=(const EngineChatTurn&);
+
   bool from_user = true;  // else the assistant
   std::string content;
+  // A user turn's images, shown to the model before its text. Never on an
+  // assistant turn.
+  std::vector<EngineImage> images;
 };
 
 // See ChatPrompt (browser_ai_runtime.h) / mojom ChatRequest: context, history
-// and user_message are untrusted.
+// and user_message (and the images) are untrusted.
 struct EngineChatRequest {
+  EngineChatRequest();
+  ~EngineChatRequest();
+  EngineChatRequest(EngineChatRequest&&);
+  EngineChatRequest& operator=(EngineChatRequest&&);
+  EngineChatRequest(const EngineChatRequest&);
+  EngineChatRequest& operator=(const EngineChatRequest&);
+
   std::string system_prompt;
   std::string context_preamble;
   std::string context;
   std::vector<EngineChatTurn> history;
   std::string user_message;
+  // The new message's images, shown before its text. At most
+  // kMaxImagesPerRequest images in the request, history included.
+  std::vector<EngineImage> user_images;
 };
 
 struct EngineRawRequest {
@@ -123,6 +173,9 @@ enum class EngineStatus {
   // llama.cpp refused the grammar, or no token of this vocabulary can
   // continue it.
   kConstraintFailed,
+  // The request has images and no vision projector is loaded. Nothing was
+  // generated.
+  kImagesUnsupported,
 };
 
 struct EngineSummary {
@@ -171,12 +224,21 @@ class LlamaEngine {
   // Loads the GGUF read through |file| (read-only, synchronous) and creates
   // the context. |file| stays open until the model is freed (lazily read
   // tensors go through it); it is closed by the destructor, or here on
-  // failure. Call at most once.
-  EngineLoadResult Load(ScopedStdioFile file, const EngineLoadParams& params);
+  // failure. With |vision_projector| (a second GGUF of
+  // params.vision_projector_size bytes), also loads llama.cpp's multimodal
+  // context for image input; that file is read completely here and closed.
+  // Call at most once.
+  EngineLoadResult Load(ScopedStdioFile file,
+                        const EngineLoadParams& params,
+                        ScopedStdioFile vision_projector = nullptr);
   bool loaded() const;
+  // A vision projector is loaded.
+  bool vision() const;
 
   // Chat with the model's own template (StreamChat). |callbacks| run on this
-  // thread before Chat() returns.
+  // thread before Chat() returns. A request with images needs vision()
+  // (kImagesUnsupported otherwise) and never reuses or leaves a reusable KV
+  // prefix.
   EngineSummary Chat(const EngineChatRequest& request,
                      const EngineGenerationParams& params,
                      const EngineCallbacks& callbacks);
@@ -196,12 +258,18 @@ class LlamaEngine {
  private:
   struct Model;
   struct DecodeParams;
+  struct MediaPrompt;
 
   EngineStatus Generate(const std::vector<int32_t>& prompt,
                         const std::string& reuse_key,
                         const DecodeParams& params,
                         const EngineCallbacks& callbacks,
                         EngineSummary* summary);
+  // Evaluates a prompt with images into an empty KV cache. nullopt on
+  // success, else why it stopped.
+  std::optional<EngineStatus> EvalMediaPrompt(
+      const MediaPrompt& media,
+      const EngineCallbacks& callbacks);
 
   std::unique_ptr<Model> model_;
 };
