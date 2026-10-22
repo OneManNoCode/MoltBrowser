@@ -52,6 +52,9 @@ source_set("molt_ai") {
 
     # The chat's page actions: one validated proposal per typed request.
     "//chrome/browser/molt_ai/agents:chat_actions",
+
+    # /fill ai and /paste: form fills proposed the same way.
+    ":chat_form_fill",
     "//chrome/browser/molt_ai/automation",
     "//chrome/browser/molt_ai/cloud",
     "//chrome/browser/molt_ai/common",
@@ -82,17 +85,46 @@ source_set("molt_ai") {
   ]
 }
 
+# The AI chat's /fill ai and /paste: the prompt, the schema, the checks on
+# the reply and the browser's description of a form fill
+# (docs/design/AGENT_ACTIONS.md §4.7). Pure logic (no content/), so
+# molt_ai_unittests links it.
+source_set("chat_form_fill") {
+  sources = [
+    "molt_ai_chat_form_fill.cc",
+    "molt_ai_chat_form_fill.h",
+  ]
+  public_deps = [
+    "//chrome/browser/molt_ai/agents:agent_actions",
+    "//chrome/browser/molt_ai/agents:chat_actions",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//url",
+  ]
+}
+
 # Pure-logic tests for the shared WebUI handler helpers (argument
-# validation). Linked into //chrome/browser/molt_ai/test:molt_ai_unittests.
+# validation, the chat's window) and the chat's form fills. Linked into
+# //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "molt_ai_chat_form_fill_unittest.cc",
     "molt_ai_chat_handler_helpers.h",
     "molt_ai_chat_handler_helpers_unittest.cc",
   ]
   deps = [
+    ":chat_form_fill",
     "//base",
+    "//chrome/browser/molt_ai/security:agent_safety",
     "//chrome/browser/molt_ai/tor:requests_policy",
+
+    # Every form-fill schema must be accepted by the inference service's
+    # converter; the tests run the real one (std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//testing/gtest",
+    "//url",
   ]
 }

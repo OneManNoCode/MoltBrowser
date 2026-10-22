@@ -13,6 +13,8 @@
 //            chrome.send('initChat', [callback_id])
 //            chrome.send('proposeChatAction', [callback_id, action_request])
 //            chrome.send('runChatProposal', [callback_id, id, confirmed])
+//            chrome.send('proposeFormFill',
+//                [callback_id, source, hint, pasted_text])
 //
 // C++ → JS:  FireWebUIListener('ai-token', {token, is_done, ...})
 //            ResolveJavascriptCallback(callback_id, result)
@@ -22,6 +24,7 @@
 
 #include <cstdint>  // for uint64_t — required on Linux under -fmodules
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -41,6 +44,7 @@
 #include "chrome/browser/molt_ai/models/model_download_plan.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_form_fill.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -139,6 +143,17 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // |confirmed| is true only after the user's Allow; it approves the
   // reason last shown for this proposal, nothing else.
   void HandleRunChatProposal(const base::ListValue& args);
+  // /fill ai and /paste (molt_ai_chat_form_fill.h, AGENT_ACTIONS.md §4.7):
+  // the same machinery for a form fill. The browser observes the page,
+  // asks the on-device model for one FILL_FORM of its text fields (never a
+  // password field) with the saved profile (read here, never sent by the
+  // page) or the pasted text as data, validates it, and proposes it with
+  // its own description of every value. It always asks first; Allow runs
+  // it through runChatProposal like any proposal.
+  // Args: [callback_id, source ('profile' | 'paste'), hint, pasted_text]
+  //   -> as proposeChatAction, and {status: 'none', message} when nothing
+  //      in the data fits a field.
+  void HandleProposeFormFill(const base::ListValue& args);
   // Runs one of HandleRunMoltAction's direct-JS actions (select / hover /
   // right-click / drag) in |target| and resolves |callback_id|.
   void RunDirectPageAction(const std::string& callback_id,
@@ -292,13 +307,6 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void ParseAttachmentDocxText(const std::string& callback_id,
                                std::unique_ptr<std::string> docx,
                                std::string anydoc_error);
-  // Tier 4: Form filler v2 — LLM fallback. Two-phase:
-  //   1. HandleRunFormFillAI: probe visible form fields, return a
-  //      ready-to-send prompt for the LLM.
-  //   2. HandleApplyFormFillMap: take the LLM's parsed mapping
-  //      (selector → value) and apply it to the active tab.
-  void HandleRunFormFillAI(const base::ListValue& args);
-  void HandleApplyFormFillMap(const base::ListValue& args);
   // Form Filler — load/save the encrypted local profile blob.
   // Args (load): [callback_id]
   // Args (save): [callback_id, dict]
@@ -353,7 +361,22 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
     // The confirmation reason last sent to the page for it ("" if none):
     // a confirmed run acts on a kAsk check only for this same reason.
     std::string shown_reason;
+    // A form fill (/fill ai, /paste): where its values came from, and the
+    // reason it always asks with (chat_form_fill::RequireConfirmation).
+    std::optional<molt_ai::chat_form_fill::Source> form_fill;
+    std::string form_fill_reason;
   };
+  // CheckProposal() for |proposal| on |probes|; a form fill always asks.
+  molt_ai::chat_actions::Check CheckChatProposal(
+      const ChatProposal& proposal,
+      const std::vector<molt_ai::agent_safety::ElementProbe>& probes);
+  // The main frame a proposal is made for: the active tab of the chat's
+  // own window (ActiveTabForChatAction), showing an http(s) page, with an
+  // on-device model loaded. Else null, and |*unavailable| says why.
+  content::RenderFrameHost* PageForChatAction(std::string* unavailable);
+  // Pins |frame|'s document to |decision| and lists its elements.
+  void StartChatActionDecision(std::unique_ptr<ChatActionDecision> decision,
+                               content::RenderFrameHost* frame);
   // Snapshot of the page's interactive elements arrived.
   void OnChatActionSnapshot(std::unique_ptr<ChatActionDecision> decision,
                             base::Value snapshot);
@@ -591,6 +614,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   int chat_action_epoch_ = 0;
   std::unique_ptr<ChatProposal> chat_proposal_;
   int next_chat_proposal_id_ = 0;
+  // The fields form fills wrote on one document (their selectors): the next
+  // /fill ai or /paste there leaves them out and continues with the others.
+  content::WeakDocumentPtr form_fill_document_;
+  std::vector<std::string> form_fill_done_selectors_;
 
   // Active cloud (frontier API) chat stream (null when no cloud send is
   // in flight). Kept alive for the stream's duration; destroying it or

@@ -67,6 +67,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   fields. Choosing dropdown options, drag, hover, right-click and waits
   are no longer model actions (the `/` commands still have them), and
   page actions need an on-device model.
+- **`/fill ai` and `/paste` show every value before filling.** They used
+  to send your profile or clipboard to whichever model the chat used (a
+  cloud model too), cut a field-to-value map out of its reply and write
+  it into the page. Now the on-device model picks values for the page's
+  text fields (never a password field, at most 8 at a time) in the same
+  checked format as page actions; MoltBrowser lists each field and value
+  and fills nothing until you allow it, in Auto mode too. `/fill ai` had
+  never run at all: plain `/fill` answered it.
 - **Safer secrets and cloud keys.** Vault autofill checks the site and
   requires https; keys and passwords aren't stored without a real system
   keychain; cloud endpoints must use https; the Gemini key is no longer put
