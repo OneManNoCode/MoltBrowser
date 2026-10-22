@@ -548,6 +548,8 @@ class AutocompleteController : public AutocompleteProviderListener,
   raw_ptr<TabGroupProvider> tab_group_provider_ = nullptr;
   raw_ptr<FeaturedSearchProvider> featured_search_provider_ = nullptr;
   raw_ptr<ContextualSearchProvider> contextual_search_provider_ = nullptr;
+  // MoltBrowser: the only provider "@memory ..." input reaches.
+  raw_ptr<AutocompleteProvider> molt_memory_provider_ = nullptr;
 
   // A vector of scoring signals annotators for URL suggestions.
   // Unlike the other existing annotators (e.g., pedals and keywords), these

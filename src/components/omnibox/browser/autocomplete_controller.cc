@@ -61,6 +61,9 @@
 #include "components/omnibox/browser/calculator_provider.h"
 // MoltBrowser: AI prompt provider
 #include "components/omnibox/browser/ai_prompt_provider.h"
+// MoltBrowser: the @memory shortcut
+#include "components/omnibox/browser/molt_memory_provider.h"
+#include "components/omnibox/browser/molt_memory_query.h"
 #include "components/omnibox/browser/clipboard_provider.h"
 #include "components/omnibox/browser/contextual_search_provider.h"
 #include "components/omnibox/browser/cross_device_tab_provider.h"
@@ -692,6 +695,11 @@ void AutocompleteController::Start(const AutocompleteInput& input) {
     // Starter Pack engines in keyword mode only run a subset of the providers,
     // so call `ShouldRunProvider()` to determine which ones should run.
     if (!ShouldRunProvider(provider.get())) {
+      // MoltBrowser: "@memory ..." also ends what the others still do for
+      // earlier text, so none of them updates later (molt_memory_query.h).
+      if (molt_memory::IsShortcutInput(input_.text())) {
+        provider->Stop(AutocompleteStopReason::kInteraction);
+      }
       continue;
     }
 
@@ -1120,6 +1128,13 @@ bool AutocompleteController::ShouldRunProvider(
     return false;
   }
 
+  // MoltBrowser: "@memory ..." input reaches the memory provider alone, in
+  // every profile and searchbox: no search engine, extension or other
+  // provider sees it (molt_memory_provider.h).
+  if (molt_memory::IsShortcutInput(input_.text())) {
+    return provider == molt_memory_provider_;
+  }
+
   // If zero prefix suggest is disabled for the Lens contextual searchbox, only
   // run the typed search provider. Else, will use the IsLensSearchbox check
   // below.
@@ -1389,6 +1404,13 @@ void AutocompleteController::InitializeSyncProviders(int provider_types) {
   // MoltBrowser: Add AI prompt provider for "@ai " and "?" prefix detection.
   if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {
     providers_.push_back(base::MakeRefCounted<AiPromptProvider>());
+  }
+  // MoltBrowser: the @memory shortcut (molt_memory_provider.h).
+  if (provider_types & AutocompleteProvider::TYPE_BUILTIN) {
+    auto molt_memory_provider =
+        base::MakeRefCounted<MoltMemoryProvider>(provider_client_.get(), this);
+    molt_memory_provider_ = molt_memory_provider.get();
+    providers_.push_back(std::move(molt_memory_provider));
   }
   if (provider_types & AutocompleteProvider::TYPE_HISTORY_QUICK) {
     auto history_quick_provider =
