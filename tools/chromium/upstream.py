@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,11 @@ WHOLE_FILES = PATCHES_DIR / "whole_files.txt"
 PATCH_SUFFIX = ".patch"
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
+
+# Waits before each retry of the trees fetch. The GitHub mirror sometimes
+# answers a large tree fetch with a 5xx after a long wait; a second try
+# usually works.
+FETCH_RETRY_DELAYS = (15, 60)
 
 
 def log(msg):
@@ -233,9 +239,18 @@ class Upstream:
                 die("%s is not in the cache and --offline was given" % rev)
             spec = rev if is_sha else "+refs/tags/%s:refs/tags/%s" % (rev, rev)
             log("Fetching trees of %s from %s ..." % (rev, self.remote))
-            self.git(["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q",
-                      "--no-tags", "--depth=1", "--filter=blob:none",
-                      "origin", spec])
+            fetch = ["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q",
+                     "--no-tags", "--depth=1", "--filter=blob:none",
+                     "origin", spec]
+            for delay in FETCH_RETRY_DELAYS + (None,):
+                try:
+                    self.git(fetch)
+                    break
+                except RuntimeError as e:
+                    if delay is None:
+                        raise
+                    log("%s\nRetrying in %d s ..." % (e, delay))
+                    time.sleep(delay)
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text("")
             self._local = None
