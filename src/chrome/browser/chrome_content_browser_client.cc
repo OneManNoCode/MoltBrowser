@@ -128,6 +128,7 @@
 #include "chrome/browser/molt_ai/tor/molt_net_webrtc.h"
 #include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
 #include "chrome/browser/molt_ai/tor/onion_request_blocker.h"
+#include "chrome/browser/molt_ai/web_ai/molt_ai_manager_binder.h"
 #include "chrome/common/molt_ai/shield/molt_shield_features.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
@@ -9393,15 +9394,12 @@ void ChromeContentBrowserClient::BindAIManager(
     base::SupportsUserData* context_user_data,
     content::RenderFrameHost* rfh,
     mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
-  if (!context_user_data->GetUserData(kAIManagerUserDataKey)) {
-    context_user_data->SetUserData(
-        kAIManagerUserDataKey,
-        std::make_unique<AIManager>(browser_context, rfh));
-  }
-
-  AIManager* ai_manager = static_cast<AIManager*>(
-      context_user_data->GetUserData(kAIManagerUserDataKey));
-  ai_manager->AddReceiver(std::move(receiver));
+  // MoltBrowser: the built-in AI APIs run on the user's own on-device model
+  // (BrowserAIRuntime), never on upstream's AIManager and the optimization
+  // guide's model (docs/design/WEB_AI_APIS.md).
+  molt_ai::web_ai::BindMoltAIManager(browser_context, context_user_data, rfh,
+                                     kAIManagerUserDataKey,
+                                     std::move(receiver));
 }
 
 #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)

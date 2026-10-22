@@ -2088,6 +2088,36 @@ measured width of unstyled, `serif` and `monospace` text, and CJK text
 without `lang` (glyph variants), all identical to an English-interface
 MoltNet window on the same OS.
 
+## Built-in AI APIs
+
+`LanguageModel`, `Summarizer`, `Writer` and `Rewriter` run on the user's
+on-device model ([design](design/WEB_AI_APIS.md), §8). What they expose:
+
+* **Presence:** all four interfaces exist on every http(s) page in every
+  window (MoltBrowser turns `Writer` and `Rewriter` on), so their presence
+  says nothing about the user.
+* **`availability()`:** `"downloadable"` to every site the user hasn't
+  allowed, on every capable machine, whether a model is installed or not;
+  `"available"` only to sites the user allowed this session;
+  `"unavailable"` with a policy, a switch, a block the user chose, or on a
+  machine that can't run any catalog model (about one bit). Never
+  `"downloading"`.
+* **Limits:** `inputQuota` is 1024 or 4096 tokens for `LanguageModel`
+  (about one bit, allowed sites only) and 9216 for the writing APIs; token
+  counts come from a model-independent estimator; the default and maximum
+  sampling parameters are the same for everyone. No model name, size or
+  exact context window.
+* **Not hidden, allowed sites only:** generation speed (hardware and model
+  class), the model's behaviour, and whether the first call had to load
+  the model.
+* **MoltNet:** every API reports `"unavailable"`, the same for every
+  MoltNet user. **Shields** are not consulted: the APIs are granted per
+  site, and with Shields off a site learns nothing more.
+* **Translator** is off (`"unavailable"`) in every window: its upstream
+  backend downloads Google's components. **LanguageDetector** is
+  upstream's: `"downloadable"` in a keyless build, `"available"` once the
+  model has arrived with the user's own Google API key (about one bit).
+
 ## Kill switch
 
 `chrome://flags/#molt-fingerprinting-protection` (feature

@@ -34,18 +34,40 @@ std::unique_ptr<base::FeatureList> BuildFeatureList(
   return feature_list;
 }
 
-// Everything is forced off except Global Privacy Control, which is forced on.
-TEST(MoltFeatureOverridesTest, OnlyGlobalPrivacyControlIsEnabled) {
+// Everything is forced off except Global Privacy Control and the Writer and
+// Rewriter web APIs, which are forced on.
+TEST(MoltFeatureOverridesTest, OnlyTheListedFeaturesAreEnabled) {
   std::vector<base::FeatureList::FeatureOverrideInfo> overrides;
   AppendDefaultFeatureOverrides(overrides);
   ASSERT_FALSE(overrides.empty());
   for (const auto& [feature, state] : overrides) {
-    const bool is_gpc =
-        &feature.get() == &blink::features::kGlobalPrivacyControlForce;
-    EXPECT_EQ(state, is_gpc ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
-                            : base::FeatureList::OVERRIDE_DISABLE_FEATURE)
+    const bool enabled =
+        &feature.get() == &blink::features::kGlobalPrivacyControlForce ||
+        &feature.get() == &blink::features::kAIWriterAPI ||
+        &feature.get() == &blink::features::kAIRewriterAPI;
+    EXPECT_EQ(state, enabled ? base::FeatureList::OVERRIDE_ENABLE_FEATURE
+                             : base::FeatureList::OVERRIDE_DISABLE_FEATURE)
         << feature.get().name;
   }
+}
+
+// Writer and Rewriter are on, so Blink exposes them to every page (they
+// are origin-trial features at 152); MoltBrowser's own model serves them.
+TEST(MoltFeatureOverridesTest, ExposesWriterAndRewriter) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(BuildFeatureList("", ""));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(blink::features::kAIWriterAPI));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(blink::features::kAIRewriterAPI));
+  // Counting as overridden is what turns the Blink features on.
+  EXPECT_TRUE(base::FeatureList::GetInstance()->IsFeatureOverridden(
+      blink::features::kAIWriterAPI.name));
+}
+
+TEST(MoltFeatureOverridesTest, WriterCanBeTurnedOff) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatureList(
+      BuildFeatureList("", blink::features::kAIWriterAPI.name));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(blink::features::kAIWriterAPI));
 }
 
 TEST(MoltFeatureOverridesTest, SendsGlobalPrivacyControl) {

@@ -230,6 +230,11 @@ group("molt_ai") {
     # S19: keeps web pages from opening chrome:// / molt:// pages; used by
     # chrome_content_browser_client.cc.
     "security:webui_navigation_throttle",
+
+    # The web's built-in AI APIs (LanguageModel, Summarizer, Writer,
+    # Rewriter) on the on-device model; chrome_content_browser_client.cc
+    # binds blink.mojom.AIManager to it.
+    "web_ai",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)

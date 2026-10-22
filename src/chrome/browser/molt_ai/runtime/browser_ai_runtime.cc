@@ -552,6 +552,8 @@ struct BrowserAIRuntime::Impl {
   std::string loaded_model_id;
   std::string loaded_arch;
   std::string loaded_crash_key;
+  // The loaded model's context window (InferenceOutcome::context_tokens).
+  uint32_t loaded_context_tokens = 0;
   int active_generations = 0;
   bool is_loading = false;
 
@@ -687,6 +689,7 @@ struct BrowserAIRuntime::Impl {
     loaded_model_id = model_id;
     loaded_arch = arch;
     loaded_crash_key = crash_key;
+    loaded_context_tokens = 0;
   }
 
   // Posts |task| to the host on the UI thread. False if there is no host or
@@ -1245,6 +1248,12 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
   }
 
   impl_->SetLoaded(model_id, outcome.architecture, crash_key);
+  {
+    std::lock_guard<std::mutex> lock(impl_->state_mutex);
+    if (impl_->loaded_model_id == model_id) {
+      impl_->loaded_context_tokens = outcome.context_tokens;
+    }
+  }
   LOG(INFO) << "[MoltAI] model loaded in the inference process: " << model_id
             << " (arch=" << outcome.architecture
             << " backend=" << outcome.backend
@@ -1293,6 +1302,11 @@ std::vector<ModelInfo> BrowserAIRuntime::GetAvailableModels() const {
 std::string BrowserAIRuntime::GetLoadedModelId() const {
   std::lock_guard<std::mutex> lock(impl_->state_mutex);
   return impl_->loaded_model_id;
+}
+
+uint32_t BrowserAIRuntime::GetLoadedContextTokens() const {
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
+  return impl_->loaded_context_tokens;
 }
 
 ModelInfo BrowserAIRuntime::GetModelInfo(const std::string& model_id) const {
