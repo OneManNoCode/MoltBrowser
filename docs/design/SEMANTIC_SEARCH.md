@@ -329,13 +329,13 @@ owns):
 
 | File | Hook | In 152's |
 |---|---|---|
-| `components/omnibox/browser/autocomplete_controller.cc` | include; register `MoltMemoryProvider` | `InitializeSyncProviders()`, after the `AiPromptProvider` hook |
-| same | the gate | top of `ShouldRunProvider()` |
-| same | stop the other providers for `@memory` input | the provider loop of `Start()` |
-| `components/omnibox/browser/autocomplete_controller.h` | `molt_memory_provider_` member | the providers' `raw_ptr`s |
-| `chrome/browser/ui/omnibox/chrome_omnibox_client.cc` | no action prediction for `@memory` text | `OnTextChanged()` |
-| same | no shortcut saved for `@memory` text | `OnSuccessfulNavigation()` |
-| `components/omnibox/browser/BUILD.gn` | sources, the two small targets | |
+| `components/omnibox/browser/autocomplete_controller.cc` | include; register `MoltMemoryProvider`; remember the `AiPromptProvider` (the existing MoltBrowser hook) | `InitializeSyncProviders()` |
+| same | the gate, for `@memory` and `@ai` input (7.7) | top of `ShouldRunProvider()` |
+| same | stop the other providers for that input | the provider loop of `Start()` |
+| `components/omnibox/browser/autocomplete_controller.h` | `molt_memory_provider_` and `ai_prompt_provider_` members | the providers' `raw_ptr`s |
+| `chrome/browser/ui/omnibox/chrome_omnibox_client.cc` | no action prediction for that text | `OnTextChanged()` |
+| same | no shortcut saved for that text | `OnSuccessfulNavigation()` |
+| `components/omnibox/browser/BUILD.gn` | sources, three small targets | |
 
 ### 7.3 Privacy, from the code path
 
@@ -446,6 +446,48 @@ markup is ever parsed and nothing in a title can run.
 - "@memory" is not in Chromium's "@" list (it isn't a starter pack); the
   hint row does that job where the shortcut works.
 
+### 7.7 The same gate for `@ai` prompts
+
+`AiPromptProvider` (`components/omnibox/browser/ai_prompt_provider.*`, older
+than this work) turns `@ai <prompt>` into a row that opens
+`chrome://molt-ai/?q=<prompt>`. Until this change the prompt was ordinary
+omnibox text for everything else: as the user typed, the Search provider
+sent `@ai <prompt>` to the default engine's suggest service (and offered a
+web search for it), the unscoped extension provider passed it to
+extensions that watch the address bar, the action predictor learned
+(text, URL) pairs from it, and the shortcuts database kept it with the
+row opened.
+
+The gate now covers it. `molt_omnibox::ClassifyLocalInput()`
+(`molt_local_input.*`, std-only) names the input that stays on the device:
+
+| Input | Who claims it | Reaches |
+|---|---|---|
+| `@memory`, `@memory <words>` | `MoltMemoryProvider` | that provider only |
+| `@ai` + whitespace + prompt (ASCII any case; Unicode spaces count) | `AiPromptProvider`, which now uses the same test (`AiPromptStart()`) so they can't drift apart | that provider only |
+| anything else, `?...` included | | every provider, as before |
+
+`ShouldRunProvider()` gives local input to its own provider (the controller
+remembers both), `Start()` stops the others' leftover work, and the two
+`ChromeOmniboxClient` checks (action prediction, shortcuts) use
+`IsLocalOnlyInput()`. This holds in every profile; an `@ai` prompt in
+Incognito or MoltNet still opens the local AI page.
+
+`@ai` followed by whitespace with no prompt yet is local too (no row, no
+request); `@ai` alone and `@aim ...` are ordinary text.
+
+**Not `?`.** `AiPromptProvider` also claims a leading `?`, but in 152 a
+typed `?` never gets there: `OmniboxEditModel` sees it as the first
+character and calls `EnterKeywordModeForDefaultSearchProvider()`, which
+removes it and puts the omnibox in keyword mode for the default search
+engine, Chromium's "force a web search" (MoltBrowser doesn't change
+`omnibox_edit_model.cc`). The text that follows is a web search, with
+suggestions, by the user's choice. Only text that keeps its `?` (pasted,
+dropped, or with no default search engine) reaches `AiPromptProvider`'s
+`?` branch; it then gets the AI row as its default, and the rest of the
+omnibox treats it as a search for `?...`, as Chromium does. `?` is not
+gated.
+
 ## 8. Not done, and why
 
 - **GPU.** The service already runs llama.cpp with Metal on macOS; the
@@ -475,9 +517,10 @@ Done without a Chromium checkout:
 The @memory shortcut (§7), without a Chromium checkout:
 
 - `memory_omnibox_unittest.cc` (shortcut text, query, `?q=` parsing and
-  building, the gate for each kind of profile and Memory state, rows) and
-  `memory_keyword_match_unittest.cc` with system gtest under ASan and
-  UBSan; the memory core's existing tests still pass.
+  building, the gate for each kind of profile and Memory state, rows),
+  `omnibox_local_input_unittest.cc` (which input is local: `@memory`,
+  `@ai`, never `?`) and `memory_keyword_match_unittest.cc` with system
+  gtest under ASan and UBSan; the memory core's existing tests still pass.
 - `MemoryBackend::OmniboxSearch()`: the real backend with an in-RAM
   stand-in for `MemoryStorage`, running the new tests of
   `memory_backend_unittest.cc` (keyword pass, upgrade by meaning, model
@@ -495,4 +538,4 @@ real `//base` task environments; `memory_omnibox_provider_unittest.cc`
 uses the omnibox's test support for the provider and the controller's
 gate), the model's speed and memory on real hardware, the sandbox with a
 real model on each platform, and the shortcut in a real omnibox (each kind
-of window; no request in a network log while typing `@memory`).
+of window; no request in a network log while typing `@memory` or `@ai`).

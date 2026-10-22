@@ -39,7 +39,7 @@ No row has been confirmed by a traffic capture yet.
 | `8.8.8.8`, `8.8.4.4` (Google Public DNS) | DNS check after a "site can't be reached" error | **Off** (changed in this audit) |
 | `connectivitycheck.gstatic.com` | Wi-Fi login-page (captive portal) check after certificate errors and timeouts | **Off** (changed in this audit) |
 | `passwordsleakcheck-pa.googleapis.com` | Checks whether a password you submit has leaked | **Off** (changed in this audit) |
-| `duckduckgo.com` | Default search engine; suggestions while you type in the address bar (never for `@memory` or `@memory <words>`, which stay on the device: `docs/design/SEMANTIC_SEARCH.md` §7) | **On** (only while you type) |
+| `duckduckgo.com` | Default search engine; suggestions while you type in the address bar (never for `@memory`, `@memory <words>` or `@ai <prompt>`, which stay on the device: `docs/design/SEMANTIC_SEARCH.md` §7; text starting with `?` is a web search and is sent) | **On** (only while you type) |
 | `api.github.com`, `github.com` | MoltBrowser update check | **On** |
 | `easylist.to`, `ublockorigin.github.io`, `raw.githubusercontent.com` | MoltShield ad- and tracker-blocking lists | **On** |
 

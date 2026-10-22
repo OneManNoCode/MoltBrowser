@@ -148,6 +148,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pause switch and retention setting, encrypted at rest, and never recording
   MoltNet browsing. Chat history is per profile, encrypted, and never saved
   from incognito.
+- **`@ai` prompts stay on your device.** What you type after `@ai` in the
+  address bar used to be sent to your search engine for suggestions as you
+  typed, passed to extensions that watch the address bar, and kept in the
+  address bar's prediction and shortcut data. Now it reaches only the local AI prompt row, in every
+  window. A leading `?` still means "search the web" (Chromium's
+  forced-search shortcut) and goes to your search engine as before.
 - Cloud AI replies are labeled with the provider, and each provider asks for
   consent once, listing what context is sent.
 - **Fingerprinting protection in the engine.** In normal and incognito
