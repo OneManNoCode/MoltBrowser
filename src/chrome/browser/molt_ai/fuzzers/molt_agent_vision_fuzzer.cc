@@ -115,6 +115,11 @@ base::Value GeometryValue(FuzzedDataProvider& p, size_t elements) {
     masks.Append(BoxValue(p, view_w, view_h));
   }
   d.Set("masks", std::move(masks));
+  // The frame elements found: usually a count (also when the input has run
+  // out, so older seeds still parse), sometimes missing or off.
+  if (p.ConsumeIntegralInRange<int>(0, 15) != 15) {
+    d.Set("frames", Number(p, 0, 64));
+  }
   return base::Value(std::move(d));
 }
 
@@ -218,6 +223,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   for (const av::Box& b : g.masks) {
     CHECK(b.width >= 1 && b.height >= 1);
   }
+  CHECK(g.frame_elements <= static_cast<size_t>(av::kMaxGeometryWalk));
+  // A document with a frame more than the script found gets no screenshot.
+  CHECK(av::FoundEveryFrame(g, g.frame_elements));
+  CHECK(!av::FoundEveryFrame(g, g.frame_elements + 1));
   CHECK(av::SameGeometry(g, g));
   const std::optional<av::ScreenshotGeometry> again =
       av::ParseGeometry(result, elements);
