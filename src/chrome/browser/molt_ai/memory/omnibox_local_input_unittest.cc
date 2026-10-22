@@ -34,7 +34,20 @@ TEST(MoltLocalInputTest, AiPromptIsTheKeywordAndWhitespace) {
   EXPECT_EQ(AiPromptStart(u"ai what"), std::nullopt);
   EXPECT_EQ(AiPromptStart(u"x @ai what"), std::nullopt);
   EXPECT_EQ(AiPromptStart(u"duckduckgo.com @ai what"), std::nullopt);
-  EXPECT_EQ(AiPromptStart(u"\uFF20ai what"), std::nullopt);  // fullwidth @
+}
+
+// An East Asian IME in full-width mode types the keyword as full-width
+// forms; it is the same keyword, so the prompt still stays on the device.
+TEST(MoltLocalInputTest, FullWidthKeywordIsTheKeyword) {
+  EXPECT_EQ(AiPromptStart(u"\uFF20ai what"), 4u);
+  EXPECT_EQ(AiPromptStart(u"\uFF20\uFF41\uFF49\u3000\u91CD\u529B"), 4u);
+  EXPECT_EQ(AiPromptStart(u"\uFF20\uFF21\uFF29 what"), 4u);  // full-width AI
+  EXPECT_EQ(AiPromptStart(u"\uFF20\uFF41\uFF49\uFF4D x"), std::nullopt);
+  EXPECT_EQ(ClassifyLocalInput(u"\uFF20\uFF41\uFF49 x"), LocalInput::kAiPrompt);
+  EXPECT_EQ(ClassifyLocalInput(u"\uFF20\uFF4D\uFF45\uFF4D\uFF4F\uFF52\uFF59"),
+            LocalInput::kMemoryShortcut);
+  // Other look-alikes are not folded: only the full-width forms block.
+  EXPECT_EQ(AiPromptStart(u"@\u0430i what"), std::nullopt);  // Cyrillic a
 }
 
 TEST(MoltLocalInputTest, ClassifiesMemoryAndAiPromptsOnly) {

@@ -26,11 +26,12 @@ using agent_safety::FieldKind;
 // reader itself.
 constexpr size_t kMaxReplyJsonDepth = 4;
 
+// In schema order: REPLAN (only with a plan) before the CALL_TOOL group.
 constexpr ActionType kAllActions[] = {
     ActionType::kNavigate, ActionType::kSearch,   ActionType::kClick,
     ActionType::kType,     ActionType::kFillForm, ActionType::kScroll,
     ActionType::kObserve,  ActionType::kDone,     ActionType::kError,
-    ActionType::kCallTool,
+    ActionType::kReplan,   ActionType::kCallTool,
 };
 
 // ---- Text checks ------------------------------------------------------------
@@ -131,6 +132,17 @@ std::string EnumSchema(const std::vector<std::string>& values) {
   return s + "]}";
 }
 
+// {"enum":[2,3]}: whole numbers only.
+std::string IntEnumSchema(const std::vector<int>& values) {
+  std::string s = "{\"enum\":[";
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i)
+      s += ',';
+    s += base::NumberToString(values[i]);
+  }
+  return s + "]}";
+}
+
 using Properties = std::vector<std::pair<std::string_view, std::string>>;
 
 // Every property required, in this order, and no others.
@@ -166,6 +178,7 @@ std::vector<std::string_view> KeysFor(ActionType type) {
     case ActionType::kScroll:
       return {"reason", "action", "direction"};
     case ActionType::kObserve:
+    case ActionType::kReplan:
       return {"reason", "action"};
     case ActionType::kDone:
     case ActionType::kError:
@@ -374,6 +387,8 @@ std::string_view ActionName(ActionType type) {
       return "ERROR";
     case ActionType::kCallTool:
       return "CALL_TOOL";
+    case ActionType::kReplan:
+      return "REPLAN";
   }
   return "";
 }
@@ -605,7 +620,10 @@ std::string DescribeElements(const Observation& observation) {
 }
 
 void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
-                  Observation* observation) {
+                  Observation* observation,
+                  bool with_plan) {
+  const ActionSet actions = with_plan ? kPlannedAgentActions : kAgentActions;
+  const PlanSteps* plan = with_plan ? &kWidestPlanSteps : nullptr;
   for (agent_tools::SiteTool& tool : tools) {
     if (observation->tools.size() >= agent_tools::kMaxSiteTools)
       break;
@@ -623,7 +641,7 @@ void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
     const bool fits =
         CountChars(agent_tools::DescribeTools(observation->tools)) <=
             agent_tools::kMaxToolsTextChars &&
-        JsonSchemaToGrammar(BuildActionSchema(*observation, kAgentActions))
+        JsonSchemaToGrammar(BuildActionSchema(*observation, actions, plan))
                 .status == SchemaGrammarStatus::kOk;
     if (!fits)
       observation->tools.pop_back();
@@ -658,8 +676,17 @@ ReplyOutcome::~ReplyOutcome() = default;
 ReplyOutcome::ReplyOutcome(ReplyOutcome&&) = default;
 ReplyOutcome& ReplyOutcome::operator=(ReplyOutcome&&) = default;
 
+std::vector<int> AllowedPlanSteps(const PlanSteps& plan) {
+  const int count = std::max(plan.count, 1);
+  const int current = std::clamp(plan.current, 1, count);
+  if (current < count)
+    return {current, current + 1};
+  return {current};
+}
+
 std::string BuildActionSchema(const Observation& observation,
-                              ActionSet allowed) {
+                              ActionSet allowed,
+                              const PlanSteps* plan) {
   std::vector<std::string> all_refs;
   std::vector<std::string> text_refs;
   for (const ObservedElement& e : observation.elements) {
@@ -672,10 +699,11 @@ std::string BuildActionSchema(const Observation& observation,
   for (ActionType type : kAllActions) {
     if (!HasAction(allowed, type))
       continue;
-    Properties props = {
-        {"reason", reason},
-        {"action", "{\"const\":" + Quote(ActionName(type)) + "}"},
-    };
+    Properties props = {{"reason", reason}};
+    if (plan)
+      props.emplace_back("step", IntEnumSchema(AllowedPlanSteps(*plan)));
+    props.emplace_back("action",
+                       "{\"const\":" + Quote(ActionName(type)) + "}");
     switch (type) {
       case ActionType::kNavigate:
         props.emplace_back("url", StringSchema(1, kMaxUrlChars));
@@ -711,6 +739,7 @@ std::string BuildActionSchema(const Observation& observation,
         props.emplace_back("direction", EnumSchema({"down", "up"}));
         break;
       case ActionType::kObserve:
+      case ActionType::kReplan:
         break;
       case ActionType::kDone:
       case ActionType::kError:
@@ -778,13 +807,17 @@ std::string_view ActionErrorText(ActionError error) {
       return "it named a tool that is not in TOOLS";
     case ActionError::kBadArguments:
       return "its arguments did not match that tool's";
+    case ActionError::kBadPlanStep:
+      return "\"step\" was neither the CURRENT STEP of the PLAN nor the "
+             "next one";
   }
   return "";
 }
 
 ParsedAction ParseAction(std::string_view json,
                          const Observation& observation,
-                         ActionSet allowed) {
+                         ActionSet allowed,
+                         const PlanSteps* plan) {
   std::optional<base::DictValue> dict = base::JSONReader::ReadDict(
       json, base::JSON_PARSE_RFC, kMaxReplyJsonDepth);
   if (!dict)
@@ -793,11 +826,25 @@ ParsedAction ParseAction(std::string_view json,
   std::optional<ActionType> type = name ? ActionFromName(*name) : std::nullopt;
   if (!type || !HasAction(allowed, *type))
     return Fail(ActionError::kUnknownAction);
-  if (!HasExactKeys(*dict, KeysFor(*type)))
+  std::vector<std::string_view> keys = KeysFor(*type);
+  if (plan)
+    keys.push_back("step");
+  if (!HasExactKeys(*dict, keys))
     return Fail(ActionError::kWrongKeys);
 
   AgentAction a;
   a.type = *type;
+  if (plan) {
+    // A whole number (the reader gives 2.0 as a double: refused) that the
+    // plan allows: the current step or the next.
+    const base::Value* step = dict->Find("step");
+    if (!step->is_int())
+      return Fail(ActionError::kWrongKeys);
+    const std::vector<int> steps = AllowedPlanSteps(*plan);
+    if (std::find(steps.begin(), steps.end(), step->GetInt()) == steps.end())
+      return Fail(ActionError::kBadPlanStep);
+    a.plan_step = step->GetInt();
+  }
   ActionError e = ReadText(*dict, "reason", kMaxReasonChars,
                            /*required=*/false, /*multiline=*/false, &a.reason);
   if (e == ActionError::kNone) {
@@ -834,6 +881,7 @@ ParsedAction ParseAction(std::string_view json,
         break;
       }
       case ActionType::kObserve:
+      case ActionType::kReplan:
         break;
       case ActionType::kDone:
       case ActionType::kError:
@@ -886,7 +934,8 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
                             const Observation& observation,
                             int bad_in_a_row,
                             int bad_total,
-                            ActionSet allowed) {
+                            ActionSet allowed,
+                            const PlanSteps* plan) {
   ReplyOutcome out;
   if (reply.cancelled) {
     out.message = "Stopped.";
@@ -907,7 +956,8 @@ ReplyOutcome InterpretReply(const ModelReply& reply,
                       : "The on-device model failed: " + reply.error_message;
     return out;
   } else {
-    ParsedAction parsed = ParseAction(reply.text, observation, allowed);
+    ParsedAction parsed =
+        ParseAction(reply.text, observation, allowed, plan);
     if (parsed.action) {
       out.decision = ReplyDecision::kAct;
       out.action = std::move(*parsed.action);

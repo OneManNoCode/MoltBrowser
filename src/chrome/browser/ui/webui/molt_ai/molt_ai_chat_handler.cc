@@ -5837,6 +5837,9 @@ void MoltAIChatHandler::ParseAttachmentDocxText(
 //   - A sensitive action (new origin, form submit, payment / one-time-code
 //     field) pauses the run and fires FireWebUIListener('agent-confirm',
 //     {id, action, message}); the UI answers via 'webAgentConfirm'.
+//   - The plan (#molt-agent-planner), when it is written, rewritten or
+//     moves on: FireWebUIListener('agent-plan', {event, steps: [{goal,
+//     done_when}], current, replans, note}). Model text: shown as text.
 //   - Final result resolves: ResolveJavascriptCallback(callback_id, {...})
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
@@ -5898,6 +5901,7 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
                                     static_cast<int>(step.observation.size()))));
         d.Set("success",     step.success);
         d.Set("note",        step.note);
+        d.Set("plan_step",   step.plan_step);
         self->FireWebUIListener("agent-step", base::Value(std::move(d)));
       },
       weak_this);
@@ -5917,6 +5921,44 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
       },
       weak_this);
 
+  // Plan callback: the agent's plan and its current step (WebAgent::
+  // PlanUpdate). The steps are model text; the page renders them as text.
+  auto on_plan = base::BindRepeating(
+      [](base::WeakPtr<MoltAIChatHandler> self,
+         const molt_ai::WebAgent::PlanUpdate& update) {
+        if (!self || !self->IsJavascriptAllowed()) return;
+        std::string_view event = "planned";
+        switch (update.event) {
+          case molt_ai::WebAgent::PlanEvent::kPlanned:
+            event = "planned";
+            break;
+          case molt_ai::WebAgent::PlanEvent::kReplanned:
+            event = "replanned";
+            break;
+          case molt_ai::WebAgent::PlanEvent::kAdvanced:
+            event = "advanced";
+            break;
+          case molt_ai::WebAgent::PlanEvent::kWithoutPlan:
+            event = "none";
+            break;
+        }
+        base::ListValue steps;
+        for (const molt_ai::agent_plan::PlanStep& s : update.steps) {
+          base::DictValue step;
+          step.Set("goal", s.goal);
+          step.Set("done_when", s.done_when);
+          steps.Append(std::move(step));
+        }
+        base::DictValue d;
+        d.Set("event", event);
+        d.Set("steps", std::move(steps));
+        d.Set("current", update.current);
+        d.Set("replans", update.replans);
+        d.Set("note", update.note);
+        self->FireWebUIListener("agent-plan", base::Value(std::move(d)));
+      },
+      weak_this);
+
   // Done callback: resolve the JS promise with the final result.
   auto on_done = base::BindOnce(
       [](base::WeakPtr<MoltAIChatHandler> self, std::string cb_id,
@@ -5932,7 +5974,7 @@ void MoltAIChatHandler::HandleStartWebAgent(const base::ListValue& args) {
       weak_this, callback_id);
 
   web_agent_->Start(goal, std::move(on_step), std::move(on_done),
-                    std::move(on_confirm));
+                    std::move(on_confirm), std::move(on_plan));
 
   // The goal can contain personal data; keep it out of release logs.
   DVLOG(1) << "[MoltAI] Web agent started";

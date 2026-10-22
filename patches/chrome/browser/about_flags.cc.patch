@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/about_flags.cc b/chrome/browser/about_flags.cc
-index f50171e75b72d729c0851a24c8839ce838a830e9..0848036abc728c8a7f31c21a955a441302ab75c6 100644
+index f50171e75b72d729c0851a24c8839ce838a830e9..35731811ca9d29dabf73fafa5540fd95e21199b6 100644
 --- a/chrome/browser/about_flags.cc
 +++ b/chrome/browser/about_flags.cc
 @@ -51,6 +51,9 @@
@@ -29,8 +29,8 @@ index f50171e75b72d729c0851a24c8839ce838a830e9..0848036abc728c8a7f31c21a955a4413
 +    // (#molt-fingerprinting-protection).
 +    MOLT_FINGERPRINTING_FEATURE_ENTRIES,
 +
-+    // MoltBrowser: the web agent's screenshots and site tools
-+    // (#molt-agent-screenshots, #molt-agent-site-tools).
++    // MoltBrowser: the web agent's screenshots, site tools and planner
++    // (#molt-agent-screenshots, #molt-agent-site-tools, #molt-agent-planner).
 +    MOLT_AGENT_FEATURE_ENTRIES,
 +
      // Add new entries above this line.

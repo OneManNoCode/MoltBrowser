@@ -8,6 +8,11 @@
 //   → (DOM/nav callback) → ObservePage → OnPageObserved
 //   → OnElementsObserved → OnActionDone → IterateOnce  [loop]
 //
+// With the planner (#molt-agent-planner, agent_plan.h), IterateOnce first
+// asks for a plan (AskPlanner → OnPlanReply) after the first observation
+// and whenever the plan is to be rewritten; each action then says which
+// plan step it works on.
+//
 // The model picks each step as one JSON object, under grammar-constrained
 // decoding (agent_actions.h, docs/design/AGENT_ACTIONS.md): one of the
 // actions below, acting on an element id (e1, e2, ...) from the last
@@ -54,6 +59,11 @@
 //     checked against the tool's (converted) schema; a call runs only if
 //     the page still lists the same tool, and one the page doesn't
 //     annotate read-only asks the user first.
+//   - A plan (agent_plan.h) is model output written from the goal and
+//     page text: it reaches the model fenced, never as the GOAL, and the
+//     user as text. It grants nothing: the browser never reads it for
+//     URLs, origins, elements or tools, and every action goes through the
+//     checks above exactly as without a plan.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
 #define CHROME_BROWSER_MOLT_AI_AGENTS_WEB_AGENT_H_
@@ -70,6 +80,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
+#include "chrome/browser/molt_ai/agents/agent_plan.h"
 #include "chrome/browser/molt_ai/agents/agent_prompt.h"
 #include "chrome/browser/molt_ai/agents/agent_screenshot.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
@@ -99,7 +110,8 @@ class WebAgent : public content::WebContentsObserver {
   struct Step {
     int number = 0;
     std::string action;      // NAVIGATE, SEARCH, CLICK, TYPE, FILL_FORM,
-                             // SCROLL, OBSERVE, DONE, ERROR, CALL_TOOL
+                             // SCROLL, OBSERVE, DONE, ERROR, CALL_TOOL,
+                             // REPLAN
     std::string target;      // URL, search query, the element acted on
                              // (`button "Search"`), the tool
                              // (`tool "search"`), or the DONE / ERROR
@@ -110,6 +122,8 @@ class WebAgent : public content::WebContentsObserver {
     std::string observation; // Page snapshot taken after the action
     bool success = false;
     std::string note;        // Short result note (e.g., "Navigated to …")
+    int plan_step = 0;       // The plan step it worked on (1-based); 0
+                             // without a plan
   };
 
   // Called on the UI thread once per completed step.
@@ -131,15 +145,41 @@ class WebAgent : public content::WebContentsObserver {
   // ResolveConfirmation(request.id, allowed).
   using ConfirmCallback = base::RepeatingCallback<void(const ConfirmRequest&)>;
 
+  // The run's plan (agent_plan.h), for the UI. Its steps are model text:
+  // show them as text only.
+  enum class PlanEvent {
+    kPlanned,      // the first plan
+    kReplanned,    // a new plan replaced the old one
+    kAdvanced,     // the current step changed
+    kWithoutPlan,  // no usable plan: the run goes on one action at a time
+  };
+  struct PlanUpdate {
+    PlanUpdate();
+    ~PlanUpdate();
+    PlanUpdate(const PlanUpdate&);
+    PlanUpdate& operator=(const PlanUpdate&);
+
+    PlanEvent event = PlanEvent::kPlanned;
+    std::vector<agent_plan::PlanStep> steps;  // empty without a plan
+    int current = 0;                          // 1-based; 0 without a plan
+    int replans = 0;                          // rewrites so far
+    std::string note;                         // the browser's words
+  };
+  // Called on the UI thread when the plan is written or rewritten, its
+  // current step changes, or the run goes on without one.
+  using PlanCallback = base::RepeatingCallback<void(const PlanUpdate&)>;
+
   WebAgent(content::WebContents* web_contents, BrowserAIRuntime* runtime);
   ~WebAgent() override;
 
   // Start the agent. Idempotent — calling twice cancels the first run.
-  // A null |on_confirm| makes every sensitive action stop the run.
+  // A null |on_confirm| makes every sensitive action stop the run. |on_plan|
+  // may be null (the plan is then not shown).
   void Start(const std::string& goal,
              StepCallback on_step,
              DoneCallback on_done,
-             ConfirmCallback on_confirm);
+             ConfirmCallback on_confirm,
+             PlanCallback on_plan);
 
   // Cancel in-progress execution. Safe to call at any time.
   void Cancel();
@@ -172,6 +212,7 @@ class WebAgent : public content::WebContentsObserver {
   void DoScroll();            // window.scrollBy, then observe
   void DoObserve();           // Just ObservePage (explicit OBSERVE action)
   void DoCallTool();          // a site tool: ask if needed, then call it
+  void DoReplan();            // REPLAN: the next request rewrites the plan
 
   // Second halves of the executors, run once the element probe (and any
   // user confirmation) is done.
@@ -257,6 +298,21 @@ class WebAgent : public content::WebContentsObserver {
   // Completes the step the observation was for (or starts the run).
   void FinishObservation(const StructuredPage& page);
 
+  // -- Planner (agent_plan.h) ----------------------------------------
+  // Asks for a plan (the first, or a new one) before the next action.
+  void AskPlanner();
+  // Validates the plan (agent_plan::InterpretPlanReply), then asks for the
+  // next action; or asks again, goes on without a plan, or stops the run.
+  void OnPlanReply(GenerationResult result);
+  // The plan is to be rewritten for |reason| before the next action. False
+  // when it has been rewritten agent_plan::kMaxReplans times already: the
+  // run has stopped.
+  bool ScheduleReplan(agent_plan::ReplanReason reason);
+  void ReportPlan(PlanEvent event, const std::string& note);
+  // What the next action may be and say, with or without a plan.
+  agent_actions::ActionSet ActionsForNextStep() const;
+  std::optional<agent_actions::PlanSteps> PlanStepsForNextStep() const;
+
   // -- Origin scope / user confirmation ------------------------------
   bool IsOriginAllowed(const url::Origin& origin) const;
   void AllowOrigin(const url::Origin& origin);  // no-op for non-http(s)
@@ -280,8 +336,9 @@ class WebAgent : public content::WebContentsObserver {
               base::OnceCallback<void(base::Value)> cb);
 
   // -- LLM context ------------------------------------------------
-  // The goal, history and current page for agent_prompt.
+  // The goal, history, plan and current page for agent_prompt.
   agent_prompt::PromptInput BuildPromptInput() const;
+  std::vector<agent_prompt::HistoryStep> HistoryForPrompt() const;
   // pending_step_ for the trace and the UI: the action's name, and the
   // elements it acts on described rather than as ids or selectors.
   Step DescribeAction(const agent_actions::AgentAction& action) const;
@@ -296,6 +353,7 @@ class WebAgent : public content::WebContentsObserver {
   StepCallback step_cb_;
   DoneCallback done_cb_;
   ConfirmCallback confirm_cb_;
+  PlanCallback plan_cb_;
 
   // Origins this run may act on without asking (see the safety model).
   std::vector<url::Origin> allowed_origins_;
@@ -347,6 +405,19 @@ class WebAgent : public content::WebContentsObserver {
   // into the next observation; and the step's note.
   std::string tool_result_;
   std::string tool_call_note_;
+
+  // The planner (#molt-agent-planner, read at Start()), the run's plan and
+  // how far it got. |plan_needed_|: a plan is to be written before the next
+  // action, the first or a new one (then |earlier_plan_| is the old one and
+  // |replan_reason_| the browser's words for why). Unusable plan replies
+  // for the plan being written, and the note the next request carries.
+  bool planner_on_ = false;
+  agent_plan::PlanTracker plan_;
+  bool plan_needed_ = false;
+  std::string earlier_plan_;
+  std::string replan_reason_;
+  int bad_plan_replies_ = 0;
+  std::string plan_retry_note_;
 
   int iteration_ = 0;
   static constexpr int kMaxIterations = 20;

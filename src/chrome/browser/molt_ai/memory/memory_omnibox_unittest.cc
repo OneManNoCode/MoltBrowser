@@ -41,6 +41,10 @@ TEST(MoltMemoryQueryTest, ShortcutInputIsTheKeywordAloneOrWithWords) {
   EXPECT_TRUE(IsShortcutInput(u"  @memory miso"));
   EXPECT_TRUE(IsShortcutInput(u"@memory\u3000\u5473\u564c"));  // ideographic
   EXPECT_TRUE(IsShortcutInput(u"@memory\u00A0miso"));         // NBSP
+  // Full-width forms, as an East Asian IME types them.
+  EXPECT_TRUE(IsShortcutInput(
+      u"\uFF20\uFF4D\uFF45\uFF4D\uFF4F\uFF52\uFF59\u3000\u5473\u564c"));
+  EXPECT_TRUE(IsShortcutInput(u"\uFF20memory miso"));
 
   EXPECT_FALSE(IsShortcutInput(u""));
   EXPECT_FALSE(IsShortcutInput(u"@"));
@@ -51,7 +55,6 @@ TEST(MoltMemoryQueryTest, ShortcutInputIsTheKeywordAloneOrWithWords) {
   EXPECT_FALSE(IsShortcutInput(u"@ memory foo"));
   EXPECT_FALSE(IsShortcutInput(u"x @memory foo"));
   EXPECT_FALSE(IsShortcutInput(u"youtube.com @memory foo"));  // keyword mode
-  EXPECT_FALSE(IsShortcutInput(u"\uFF20memory foo"));  // fullwidth @
   EXPECT_FALSE(IsShortcutInput(u"@ai what is this"));
 }
 
@@ -70,6 +73,8 @@ TEST(MoltMemoryQueryTest, ShortcutQueryIsTheNormalizedWords) {
   EXPECT_EQ(ShortcutQuery(u"@memory miso soup"), "miso soup");
   EXPECT_EQ(ShortcutQuery(u"  @MEMORY   miso \t  soup  "), "miso soup");
   EXPECT_EQ(ShortcutQuery(u"@memory"), "");
+  EXPECT_EQ(ShortcutQuery(u"\uFF20\uFF2D\uFF25\uFF2D\uFF2F\uFF32\uFF39 miso"),
+            "miso");
   EXPECT_EQ(ShortcutQuery(u"@memory    "), "");
   EXPECT_EQ(ShortcutQuery(u"@memoryfoo"), "");
   EXPECT_EQ(ShortcutQuery(u"miso soup"), "");

@@ -17,7 +17,13 @@ bool IsSpace(char16_t c) {
          c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
 }
 
-char16_t AsciiLower(char16_t c) {
+// As molt_memory's keyword match: full-width forms (an East Asian IME in
+// full-width mode types "\uFF20\uFF41\uFF49") folded to ASCII, then ASCII
+// lower case. One UTF-16 unit either way, so the prompt's start is right.
+char16_t FoldKeywordChar(char16_t c) {
+  if (c >= 0xFF01 && c <= 0xFF5E) {
+    c = static_cast<char16_t>(c - 0xFEE0);
+  }
   return (c >= 'A' && c <= 'Z') ? static_cast<char16_t>(c + ('a' - 'A')) : c;
 }
 
@@ -33,7 +39,7 @@ std::optional<size_t> AiPromptStart(std::u16string_view text) {
     return std::nullopt;  // also "@ai" alone
   }
   for (size_t k = 0; k < kKeyword.size(); ++k) {
-    if (AsciiLower(text[i + k]) != kKeyword[k]) {
+    if (FoldKeywordChar(text[i + k]) != kKeyword[k]) {
       return std::nullopt;
     }
   }

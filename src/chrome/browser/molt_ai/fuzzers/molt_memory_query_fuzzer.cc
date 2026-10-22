@@ -141,7 +141,12 @@ std::string CheckSearchUrl(const std::string& url) {
   return url.substr(page.size() + 1);
 }
 
+// As the gate compares keyword characters: full-width forms folded to
+// ASCII, then ASCII lower case.
 char16_t Lower(char16_t c) {
+  if (c >= 0xFF01 && c <= 0xFF5E) {
+    c = static_cast<char16_t>(c - 0xFEE0);
+  }
   return (c >= 'A' && c <= 'Z') ? static_cast<char16_t>(c + 32) : c;
 }
 
@@ -160,7 +165,7 @@ void CheckLocalInput(const std::u16string& text) {
     CHECK(kind == molt_omnibox::LocalInput::kAiPrompt);
     CHECK(*ai >= 4 && *ai <= text.size());
     const size_t at = *ai - 4;
-    CHECK(text[at] == '@' && Lower(text[at + 1]) == 'a' &&
+    CHECK(Lower(text[at]) == '@' && Lower(text[at + 1]) == 'a' &&
           Lower(text[at + 2]) == 'i');
   } else {
     CHECK(kind == molt_omnibox::LocalInput::kNone);

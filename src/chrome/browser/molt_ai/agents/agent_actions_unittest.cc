@@ -583,7 +583,8 @@ TEST(AgentActionsTest, ErrorTextsAreFixed) {
         ActionError::kBadCharacters, ActionError::kUnknownElement,
         ActionError::kNotTypeable, ActionError::kDuplicateField,
         ActionError::kTooManyFields, ActionError::kBadDirection,
-        ActionError::kUnknownTool, ActionError::kBadArguments}) {
+        ActionError::kUnknownTool, ActionError::kBadArguments,
+        ActionError::kBadPlanStep}) {
     EXPECT_FALSE(ActionErrorText(e).empty());
   }
 }
@@ -959,7 +960,268 @@ TEST(AgentActionsTest, BadToolCallsAreRetriedWithAFixedNote) {
   EXPECT_EQ(o.action.tool, "t2");
 }
 
+// ---------------------------------------------------------------------------
+// With a plan ("step" and REPLAN; agent_plan.h)
+// ---------------------------------------------------------------------------
+
+constexpr PlanSteps kStep2Of3 = {2, 3};
+constexpr PlanSteps kStep3Of3 = {3, 3};
+
+ParsedAction ParsePlanned(const std::string& json,
+                          const PlanSteps& plan = kStep2Of3) {
+  return ParseAction(json, SampleObservation(), kPlannedAgentActions, &plan);
+}
+
+TEST(AgentActionsTest, AllowedPlanStepsAreTheCurrentAndTheNext) {
+  EXPECT_EQ(AllowedPlanSteps({1, 3}), (std::vector<int>{1, 2}));
+  EXPECT_EQ(AllowedPlanSteps({2, 3}), (std::vector<int>{2, 3}));
+  EXPECT_EQ(AllowedPlanSteps({3, 3}), (std::vector<int>{3}));
+  EXPECT_EQ(AllowedPlanSteps({1, 1}), (std::vector<int>{1}));
+  // Out of range (never from PlanTracker): clamped, never empty.
+  EXPECT_EQ(AllowedPlanSteps({0, 3}), (std::vector<int>{1, 2}));
+  EXPECT_EQ(AllowedPlanSteps({9, 3}), (std::vector<int>{3}));
+  EXPECT_EQ(AllowedPlanSteps({1, 0}), (std::vector<int>{1}));
+  EXPECT_EQ(AllowedPlanSteps({-5, -5}), (std::vector<int>{1}));
+}
+
+TEST(AgentActionsTest, SchemaWithoutAPlanIsUnchanged) {
+  // No "step", no REPLAN: exactly the schema of the default arguments.
+  const Observation o = WithTools();
+  const std::string schema = BuildActionSchema(o);
+  EXPECT_EQ(schema, BuildActionSchema(o, kAgentActions, nullptr));
+  EXPECT_EQ(schema.find("\"step\""), std::string::npos);
+  EXPECT_EQ(schema.find("REPLAN"), std::string::npos);
+  // REPLAN in the set but no plan: the branch is there, without "step".
+  const std::string replan_only =
+      BuildActionSchema(o, kPlannedAgentActions, nullptr);
+  EXPECT_NE(replan_only.find("REPLAN"), std::string::npos);
+  EXPECT_EQ(replan_only.find("\"step\""), std::string::npos);
+}
+
+TEST(AgentActionsTest, SchemaWithAPlanNamesTheStepInEveryAction) {
+  const std::string schema =
+      BuildActionSchema(WithTools(), kPlannedAgentActions, &kStep2Of3);
+  ExpectServiceAccepts(schema);
+  // Every object: "reason", then "step", then "action".
+  const std::string head =
+      "{\"type\":\"object\",\"properties\":{\"reason\":{\"type\":\"string\","
+      "\"maxLength\":160},\"step\":{\"enum\":[2,3]},\"action\":{\"const\":\"";
+  for (const char* name :
+       {"NAVIGATE", "SEARCH", "CLICK", "TYPE", "FILL_FORM", "SCROLL",
+        "OBSERVE", "DONE", "ERROR", "REPLAN", "CALL_TOOL"}) {
+    EXPECT_NE(schema.find(head + name + "\"}"), std::string::npos) << name;
+  }
+  EXPECT_NE(schema.find("\"required\":[\"reason\",\"step\",\"action\"]"),
+            std::string::npos);
+  EXPECT_NE(schema.find("\"required\":[\"reason\",\"step\",\"action\","
+                        "\"tool\",\"arguments\"]"),
+            std::string::npos);
+  // The element and tool enums are the observation's, whatever the plan:
+  // a plan adds no target.
+  EXPECT_EQ(BuildActionSchema(WithTools(), kPlannedAgentActions, &kStep2Of3)
+                .find("\"e7\""),
+            std::string::npos);
+
+  // At the last step only that step.
+  const std::string last =
+      BuildActionSchema(SampleObservation(), kPlannedAgentActions, &kStep3Of3);
+  ExpectServiceAccepts(last);
+  EXPECT_NE(last.find("\"step\":{\"enum\":[3]}"), std::string::npos);
+  EXPECT_EQ(last.find("[3,4]"), std::string::npos);
+}
+
+TEST(AgentActionsTest, SchemaWithAPlanAtTheCapsIsAccepted) {
+  // 40 text fields, 8 tools kept by AddSiteTools() with a plan, six steps.
+  base::ListValue l;
+  for (size_t i = 0; i < kMaxObservedElements; ++i)
+    l.Append(Entry("#t" + base::NumberToString(i), "input", "text", "T"));
+  std::string origin;
+  Observation o = ParseElementSnapshot(Snapshot(std::move(l)), &origin);
+  std::vector<agent_tools::SiteTool> tools;
+  for (int i = 0; i < 8; ++i) {
+    tools.push_back(Tool("tool" + base::NumberToString(i),
+                         i % 2 ? kCartSchema : kSearchSchema));
+  }
+  AddSiteTools(std::move(tools), &o, /*with_plan=*/true);
+  EXPECT_EQ(o.tools.size(), 8u);
+  for (const PlanSteps& p : {PlanSteps{1, 6}, PlanSteps{5, 6},
+                             PlanSteps{6, 6}, kWidestPlanSteps}) {
+    ExpectServiceAccepts(BuildActionSchema(o, kPlannedAgentActions, &p));
+  }
+  ExpectServiceAccepts(BuildActionSchema(Observation(), kPlannedAgentActions,
+                                         &kWidestPlanSteps));
+}
+
+TEST(AgentActionsTest, AddSiteToolsWithAPlanKeepsOnlyWhatFitsWithIt) {
+  // Tools of 6 arguments, each an enum of 15 long values: the grammar grows
+  // fast, and "step" and REPLAN make the schema with a plan a little
+  // larger (here "step" alone tips the fifth tool over the service's
+  // caps). A run with the planner on keeps only tools that fit that one.
+  std::vector<agent_tools::SiteTool> tools;
+  for (int t = 0; t < 8; ++t) {
+    std::string props;
+    for (int a = 0; a < 6; ++a) {
+      if (a)
+        props += ',';
+      std::string values;
+      for (int v = 0; v < 15; ++v) {
+        if (v)
+          values += ',';
+        values += "\"" +
+                  std::string(60, static_cast<char>('a' + (v + a + t) % 26)) +
+                  base::NumberToString(v) + "\"";
+      }
+      props += "\"a" + base::NumberToString(a) + "\":{\"enum\":[" + values +
+               "]}";
+    }
+    tools.push_back(Tool("tool" + base::NumberToString(t),
+                         "{\"properties\":{" + props + "}}"));
+  }
+  Observation without_plan;
+  AddSiteTools(tools, &without_plan);
+  Observation with_plan;
+  AddSiteTools(tools, &with_plan, /*with_plan=*/true);
+  ASSERT_GE(with_plan.tools.size(), 1u);
+  EXPECT_LT(with_plan.tools.size(), without_plan.tools.size());
+  // What fits without a plan would make the service refuse the schema with
+  // one; what the run keeps fits both.
+  EXPECT_NE(JsonSchemaToGrammar(BuildActionSchema(without_plan,
+                                                  kPlannedAgentActions,
+                                                  &kWidestPlanSteps))
+                .status,
+            SchemaGrammarStatus::kOk);
+  ExpectServiceAccepts(BuildActionSchema(without_plan));
+  for (const PlanSteps& p : {PlanSteps{1, 6}, PlanSteps{6, 6}}) {
+    ExpectServiceAccepts(
+        BuildActionSchema(with_plan, kPlannedAgentActions, &p));
+  }
+  ExpectServiceAccepts(BuildActionSchema(with_plan));
+}
+
+TEST(AgentActionsTest, ParsesActionsWithAPlanStep) {
+  ParsedAction p = ParsePlanned(
+      R"({"reason":"r","step":2,"action":"CLICK","target":"e3"})");
+  ASSERT_TRUE(p.action) << ActionErrorText(p.error);
+  EXPECT_EQ(p.action->type, ActionType::kClick);
+  EXPECT_EQ(p.action->plan_step, 2);
+  p = ParsePlanned(
+      R"({"reason":"step 2 is done","step":3,"action":"TYPE",)"
+      R"("target":"e2","text":"shoes"})");
+  ASSERT_TRUE(p.action) << ActionErrorText(p.error);
+  EXPECT_EQ(p.action->plan_step, 3);
+  EXPECT_EQ(p.action->text, "shoes");
+  p = ParsePlanned(R"({"reason":"r","step":2,"action":"REPLAN"})");
+  ASSERT_TRUE(p.action) << ActionErrorText(p.error);
+  EXPECT_EQ(p.action->type, ActionType::kReplan);
+  EXPECT_EQ(p.action->plan_step, 2);
+  p = ParsePlanned(R"({"reason":"r","step":3,"action":"DONE","result":"ok"})",
+                   kStep3Of3);
+  ASSERT_TRUE(p.action) << ActionErrorText(p.error);
+  EXPECT_EQ(p.action->result, "ok");
+  // DONE ends the task at any step.
+  EXPECT_TRUE(
+      ParsePlanned(R"({"reason":"r","step":2,"action":"DONE","result":"x"})")
+          .action);
+  // Key order doesn't matter to the browser.
+  EXPECT_TRUE(ParsePlanned(R"({"action":"OBSERVE","step":2,"reason":"r"})")
+                  .action);
+  // Without a plan the action carries no step.
+  EXPECT_EQ(Parse(R"({"reason":"r","action":"OBSERVE"})").action->plan_step,
+            0);
+}
+
+TEST(AgentActionsTest, RefusesBadPlanSteps) {
+  struct Case {
+    const char* json;
+    ActionError error;
+  };
+  const Case cases[] = {
+      // Missing, or not a whole number.
+      {R"({"reason":"r","action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":"2","action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":2.0,"action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":2.5,"action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":1e300,"action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":null,"action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":[2],"action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":true,"action":"CLICK","target":"e3"})",
+       ActionError::kWrongKeys},
+      // Back, skipping ahead, past the end, nonsense.
+      {R"({"reason":"r","step":1,"action":"CLICK","target":"e3"})",
+       ActionError::kBadPlanStep},
+      {R"({"reason":"r","step":4,"action":"CLICK","target":"e3"})",
+       ActionError::kBadPlanStep},
+      {R"({"reason":"r","step":0,"action":"OBSERVE"})",
+       ActionError::kBadPlanStep},
+      {R"({"reason":"r","step":-2,"action":"OBSERVE"})",
+       ActionError::kBadPlanStep},
+      {R"({"reason":"r","step":2147483647,"action":"OBSERVE"})",
+       ActionError::kBadPlanStep},
+      {R"({"reason":"r","step":3,"action":"REPLAN"})", ActionError::kNone},
+      // REPLAN has no other keys.
+      {R"({"reason":"r","step":2,"action":"REPLAN","url":"https://x.test"})",
+       ActionError::kWrongKeys},
+      {R"({"reason":"r","step":2,"action":"REPLAN","plan":[]})",
+       ActionError::kWrongKeys},
+      // A plan's step text or an element id is not a step.
+      {R"({"reason":"r","step":"e3","action":"OBSERVE"})",
+       ActionError::kWrongKeys},
+      // The other checks still apply with a plan.
+      {R"({"reason":"r","step":2,"action":"CLICK","target":"e99"})",
+       ActionError::kUnknownElement},
+      {R"({"reason":"r","step":2,"action":"TYPE","target":"e4","text":"x"})",
+       ActionError::kNotTypeable},
+      {R"({"reason":"r","step":2,"action":"replan"})",
+       ActionError::kUnknownAction},
+  };
+  for (const Case& c : cases) {
+    const ParsedAction p = ParsePlanned(c.json);
+    EXPECT_EQ(p.error, c.error) << c.json;
+    EXPECT_EQ(p.action.has_value(), c.error == ActionError::kNone) << c.json;
+  }
+  // At the last step, the next one doesn't exist.
+  EXPECT_EQ(
+      ParsePlanned(R"({"reason":"r","step":4,"action":"OBSERVE"})", kStep3Of3)
+          .error,
+      ActionError::kBadPlanStep);
+  // Without a plan, "step" is an extra key and REPLAN not an action.
+  EXPECT_EQ(Parse(R"({"reason":"r","step":2,"action":"OBSERVE"})").error,
+            ActionError::kWrongKeys);
+  EXPECT_EQ(Parse(R"({"reason":"r","action":"REPLAN"})").error,
+            ActionError::kUnknownAction);
+  const PlanSteps plan = kStep2Of3;
+  EXPECT_EQ(ParseAction(R"({"reason":"r","step":2,"action":"REPLAN"})",
+                        SampleObservation(), kAgentActions, &plan)
+                .error,
+            ActionError::kUnknownAction);
+}
+
+TEST(AgentActionsTest, BadPlanStepsAreRetriedWithAFixedNote) {
+  const PlanSteps plan = kStep2Of3;
+  ReplyOutcome o = InterpretReply(
+      Ok(R"({"reason":"skip ahead","step":5,"action":"OBSERVE"})"),
+      SampleObservation(), 0, 0, kPlannedAgentActions, &plan);
+  EXPECT_EQ(o.decision, ReplyDecision::kRetry);
+  EXPECT_NE(o.message.find("\"step\" was neither the CURRENT STEP of the "
+                           "PLAN nor the next one"),
+            std::string::npos)
+      << o.message;
+  EXPECT_EQ(o.message.find("skip ahead"), std::string::npos);
+  o = InterpretReply(Ok(R"({"reason":"r","step":3,"action":"REPLAN"})"),
+                     SampleObservation(), 0, 0, kPlannedAgentActions, &plan);
+  EXPECT_EQ(o.decision, ReplyDecision::kAct);
+  EXPECT_EQ(o.action.type, ActionType::kReplan);
+  EXPECT_EQ(o.action.plan_step, 3);
+  EXPECT_FALSE(ActionErrorText(ActionError::kBadPlanStep).empty());
+}
+
 }  // namespace
 }  // namespace agent_actions
 }  // namespace molt_ai
-

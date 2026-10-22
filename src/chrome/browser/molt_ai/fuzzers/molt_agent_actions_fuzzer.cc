@@ -156,6 +156,10 @@ void CheckAction(const AgentAction& a,
       // observation has none, so no call can be accepted.
       CHECK(observation.FindTool(a.tool)) << "a call to a tool not offered";
       break;
+    case ActionType::kReplan:
+      // Only with a plan (molt_agent_plan_fuzzer); never in these sets, which
+      // the first CHECK above enforces.
+      break;
   }
 }
 

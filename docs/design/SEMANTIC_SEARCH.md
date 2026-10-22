@@ -474,7 +474,11 @@ remembers both), `Start()` stops the others' leftover work, and the two
 Incognito or MoltNet still opens the local AI page.
 
 `@ai` followed by whitespace with no prompt yet is local too (no row, no
-request); `@ai` alone and `@aim ...` are ordinary text.
+request); `@ai` alone and `@aim ...` are ordinary text. Both keywords also
+match in full-width forms (`＠ａｉ`, `＠ｍｅｍｏｒｙ`), which an East Asian
+IME types in full-width mode: each full-width form (U+FF01-U+FF5E) is
+compared as its ASCII character, one UTF-16 unit either way. Other
+look-alikes (Cyrillic `а`, ...) are not folded.
 
 **Not `?`.** In 152 a typed `?` as the first character makes
 `OmniboxEditModel` call `EnterKeywordModeForDefaultSearchProvider()`, which

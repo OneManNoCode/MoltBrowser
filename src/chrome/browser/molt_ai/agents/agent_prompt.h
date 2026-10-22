@@ -11,6 +11,12 @@
 // message, and the screenshot with the user message only (an image is
 // page content: untrusted, like page text, never in the system prompt).
 //
+// The planner (agent_plan.h, docs/design/AGENT_ACTIONS.md §2.8): with a
+// plan, the turn also shows it after the GOAL line, fenced like page text
+// (the model wrote it from the goal and from pages), and the rules describe
+// "step" and REPLAN; without one the prompt is what it was. The plan itself
+// is written from BuildPlanPrompt().
+//
 // Pure logic (no content/), unit-tested in molt_ai_unittests.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_AGENT_PROMPT_H_
@@ -60,6 +66,13 @@ struct PromptInput {
   // The current page offers tools (a TOOLS list in |page_state|): the
   // rules describe CALL_TOOL. Without, the prompt doesn't mention it.
   bool with_tools = false;
+  // The run's plan (agent_plan::DescribePlan(): model output, written from
+  // the goal and page text), fenced here; empty without a plan, and then
+  // the prompt doesn't mention plans.
+  std::string plan;
+  // The browser's line about the current step
+  // (agent_plan::PlanTracker::DescribeProgress()), after the fence.
+  std::string plan_progress;
 };
 
 struct AgentPrompt {
@@ -78,6 +91,36 @@ struct AgentPrompt {
 };
 
 AgentPrompt BuildAgentPrompt(const PromptInput& input);
+
+// The request for a plan (agent_plan.h): before the first action, and when
+// the plan is rewritten.
+struct PlanPromptInput {
+  PlanPromptInput();
+  ~PlanPromptInput();
+  PlanPromptInput(const PlanPromptInput&);
+  PlanPromptInput& operator=(const PlanPromptInput&);
+
+  // The user's goal (trusted).
+  std::string goal;
+  std::vector<HistoryStep> history;
+  // The current observation, as PromptInput::page_state. Fenced here.
+  std::string page_state;
+  // When the plan is rewritten: the plan that stopped working
+  // (agent_plan::DescribePlan(), model output, fenced here) and the
+  // browser's words for why (agent_plan::ReplanReasonText()). Both empty
+  // for the first plan.
+  std::string earlier_plan;
+  std::string replan_reason;
+  // Why the last reply couldn't be used (agent_plan::InterpretPlanReply),
+  // or empty.
+  std::string retry_note;
+  // agent_plan::kMaxPlanSteps.
+  int max_plan_steps = 0;
+};
+
+// The rules (system) and the goal, history, earlier plan and page (user),
+// as for an action. Always text-only (ToRawPrompt()).
+AgentPrompt BuildPlanPrompt(const PlanPromptInput& input);
 
 // The text-only request: one raw prompt, rules and turn split by "---".
 std::string ToRawPrompt(const AgentPrompt& prompt);

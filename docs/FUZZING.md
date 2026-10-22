@@ -110,6 +110,7 @@ Ordered by exposure: input a page or a model controls comes first.
 | `molt_agent_safety_fuzzer` | page text, script results, selectors (page, workflow file) | stand_ins | sanitized text can't forge the untrusted-content fence or a chat-template token; only http(s) URLs pass; probes keep their count |
 | `molt_agent_actions_fuzzer` | element snapshot (page), model reply (model) | stand_ins | observations capped and clean; every action schema is in the service's subset; accepted actions name listed elements and respect every cap; the chat never types model text into a password field |
 | `molt_agent_tools_fuzzer` | the page's WebMCP tool list and input schemas, its answers to a call (page), the model's CALL_TOOL (model) | stand_ins | an offered tool has a valid name, a one-line capped description and capped arguments, never a password or file field; its arguments' schema, and the action schema with every tool kept, convert in the service; a call that may change something asks; accepted arguments read back to the same JSON; an answer is capped and clean |
+| `molt_agent_plan_fuzzer` | the model's plan and its actions with a plan step (model), element snapshots, page text (page), any order of the run's events | stand_ins | an accepted plan has 1 to 6 one-line steps within their caps, no control, bidi or zero-width character; a plan is used only from a complete, constrained, valid reply, and an unusable one is asked for again once; the run's progress matches a reference model (only the next step, rewrites capped, triggers exact); the action schema with any plan converts in the service, and an accepted action names a step the plan allows (REPLAN and a step only with a plan); the plan and the page stay inside their own fences in both prompts, and the rules never depend on plan, page or goal text |
 | `molt_agent_vision_fuzzer` | geometry script result, selectors and labels (page) | stand_ins | only in-range geometry is accepted, deterministically; tags never overlap and stay inside the image (at most the cap); annotation never touches the padding and leaves no original pixel inside any mask, so a password field's pixels never reach the model |
 | `molt_automation_ai_steps_fuzzer` | model answers to AI steps (model), field lists (workflow file) | stand_ins | decisions only from exact `SUCCESS`/`FAIL`; extracted values typed and capped |
 | `molt_stream_filters_fuzzer` | model output, split anywhere (model) | std | every chunk sent is valid UTF-8 without NUL; no stop string shown; the result doesn't depend on how the output is split |
@@ -200,8 +201,9 @@ campaign: longer runs happen locally or on ClusterFuzz-style infrastructure.
   yet walk each action grammar in llama.cpp and check that `ParseAction()`
   accepts every reply the grammar allows.
 - **Code that landed alongside this work.** These files have no targets
-  yet: the web agent's prompt (`agents/agent_prompt.*`), the model
-  download plan (`models/model_download_plan.*`) and the chat's form-fill
+  yet: the web agent's prompt (`agents/agent_prompt.*`; only its fences and
+  rules, with and without a plan, through `molt_agent_plan_fuzzer`), the
+  model download plan (`models/model_download_plan.*`) and the chat's form-fill
   proposals (`ui/webui/molt_ai/molt_ai_chat_form_fill.*`). The screenshot
   logic (`agents/agent_vision.*`) has `molt_agent_vision_fuzzer`. The form fill reads model
   replies with `ParseAction()` and fences page text with the chat's
