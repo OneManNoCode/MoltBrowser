@@ -41,16 +41,6 @@ bool HasShieldsDownException(content::BrowserContext* context,
   return map && HasShieldsDownException(*map, url);
 }
 
-std::vector<std::string> GetShieldsDownTopLevelSites(
-    content::BrowserContext* context) {
-  HostContentSettingsMap* map =
-      context ? HostContentSettingsMapFactory::GetForProfile(context) : nullptr;
-  if (!map) {
-    return {};
-  }
-  return ShieldsDownTopLevelSites(*map);
-}
-
 bool IsRemoveParamEnabledForContext(content::BrowserContext* context) {
   if (!molt_shield::IsRemoveParamEnabled()) {
     return false;  // chrome://flags kill switch or --disable-molt-shield

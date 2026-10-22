@@ -16,9 +16,6 @@
 #ifndef CHROME_BROWSER_MOLT_AI_SHIELD_MOLT_SHIELD_SITE_EXCEPTIONS_H_
 #define CHROME_BROWSER_MOLT_AI_SHIELD_MOLT_SHIELD_SITE_EXCEPTIONS_H_
 
-#include <string>
-#include <vector>
-
 #include "components/content_settings/core/common/content_settings_types.h"
 
 class GURL;
@@ -30,17 +27,13 @@ inline constexpr ContentSettingsType kShieldsDownSetting =
     ContentSettingsType::ADS;
 
 // True if an explicit per-site ALLOW exception matches `url` (http(s) only).
+// Fingerprinting protection asks it about a site's own URL
+// ("https://example.com/", chrome/browser/molt_ai/fingerprinting/
+// molt_shields_decision.h), so the site-scoped "https://[*.]example.com"
+// exception the MoltShield UI writes turns farbling off on the whole site,
+// while one for "sub.example.com" alone doesn't.
 bool HasShieldsDownException(const HostContentSettingsMap& map,
                              const GURL& url);
-
-// Top-level sites ("https://example.com", as net::SchemefulSite serializes
-// them) whose own URL has a Shields-down exception, sorted and unique.
-// Every exception's host is turned into its site, which is kept only if the
-// site's own URL is matched (so "sub.example.com" alone doesn't turn off the
-// whole of example.com, while the site-scoped "https://[*.]example.com" the
-// MoltShield UI writes does).
-std::vector<std::string> ShieldsDownTopLevelSites(
-    const HostContentSettingsMap& map);
 
 }  // namespace molt_ai::shield
 
