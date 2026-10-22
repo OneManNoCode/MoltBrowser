@@ -64,6 +64,11 @@ class RuntimeWebAIBackend : public WebAIBackend {
   bool TryAddSession(const std::string& site_key) override;
   void RemoveSession(const std::string& site_key) override;
 
+  // settings.json changed (molt://ai-settings turned the APIs on or off):
+  // the next request reads the device facts again instead of using the
+  // cached ones.
+  void InvalidateDeviceFacts();
+
  private:
   friend class base::NoDestructor<RuntimeWebAIBackend>;
   struct Job;
@@ -105,6 +110,9 @@ class RuntimeWebAIBackend : public WebAIBackend {
   std::optional<DeviceFacts> device_facts_;
   base::TimeTicks device_facts_time_;
   bool device_facts_pending_ = false;
+  // The read in flight started before InvalidateDeviceFacts(): answer its
+  // waiters but don't cache it.
+  bool discard_pending_facts_ = false;
   std::vector<DeviceCallback> device_waiters_;
 
   bool prepare_pending_ = false;

@@ -44,9 +44,11 @@
 #include "chrome/browser/molt_ai/tor/molt_net_window.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
 #include "chrome/browser/molt_ai/tor/tor_service.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_settings_switch.h"
 #include "chrome/browser/password_manager/factories/profile_password_store_factory.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler_helpers.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_vault_handler.h"
+#include "chrome/browser/ui/webui/molt_ai/molt_web_ai_sites_handler.h"
 #include "chrome/browser/ui/webui/molt_ai/molt_webui_csp.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -64,6 +66,12 @@ namespace {
 using molt_ai::chat_handler_helpers::HasCallbackArgs;
 
 const char kSettingsFileName[] = "settings.json";
+
+// Keys the form below doesn't manage, which Save and Reset keep: the switch
+// for the built-in AI APIs has its own section ("Sites using on-device AI")
+// and applies at once.
+const char* const kKeysKeptOnSaveAndReset[] = {
+    molt_ai::web_ai::kWebAIApisSettingsKey};
 
 base::FilePath GetSettingsFilePath() {
   base::FilePath home_dir;
@@ -282,8 +290,9 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       return;
     }
 
-    // Copy provided settings into a DictValue
-    base::DictValue current;
+    // The form's keys over what the file holds, so keys the form doesn't
+    // show (e.g. "web_ai_apis") survive a save.
+    base::DictValue current = LoadSettings();
     for (const auto [key, value] : args[1].GetDict()) {
       current.Set(key, value.Clone());
     }
@@ -303,6 +312,13 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
     const std::string callback_id = args[0].GetString();
 
     base::DictValue defaults = GetDefaultSettings();
+    // Switches with their own section keep their value.
+    const base::DictValue current = LoadSettings();
+    for (const char* key : kKeysKeptOnSaveAndReset) {
+      if (const base::Value* kept = current.Find(key)) {
+        defaults.Set(key, kept->Clone());
+      }
+    }
     SaveSettings(defaults);
 
     ResolveJavascriptCallback(base::Value(callback_id),
@@ -2259,6 +2275,7 @@ loadVault();
   var targetId = section === 'import' ? 'importSection'
                : section === 'providers' ? 'providersSection'
                : section === 'passwords' ? 'passwordsSection'
+               : section === 'webai' ? 'webAiSection'
                : null;
   if (targetId) {
     var el = document.getElementById(targetId);
@@ -2310,8 +2327,9 @@ class MoltAISettingsDataSource : public content::URLDataSource {
       content::URLDataSource::GotDataCallback callback) override {
     if (molt_webui::IsAppJsRequest(url)) {
       std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(
-          std::string(molt_webui::kMoltTrustedHtmlJs) + kSettingsPageJs +
-          molt_ai::shield::kMoltShieldSettingsJs));
+          std::string(molt_webui::kMoltTrustedHtmlJs) +
+          molt_webui::kMoltActionsJs + kSettingsPageJs +
+          molt_ai::shield::kMoltShieldSettingsJs + kWebAISitesSettingsJs));
       return;
     }
     const std::string html = R"HTML(<!DOCTYPE html>
@@ -2509,6 +2527,39 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
   </div>
 
+  <div class="section" id="webAiSection">
+    <h2><span class="icon">&#127760;</span> Sites using on-device AI</h2>
+    <div class="field">
+      <label class="toggle">
+        <input type="checkbox" id="webAiEnabled" checked data-on-change="webAiSetEnabled">
+        <span class="track"></span>
+        <span class="label">Let sites ask to use on-device AI</span>
+      </label>
+      <div class="desc">Sites can ask to use your on-device model through the browser's built-in AI APIs (Prompt API, Summarizer, Writer, Rewriter). The model runs on this device, but a site you allow gets its replies. When this is off, every site is told the APIs are unavailable, in every profile. MoltNet windows never offer them.</div>
+    </div>
+    <div class="field">
+      <label>Allowed</label>
+      <div id="webAiAllowed"></div>
+    </div>
+    <div class="field">
+      <label>Blocked</label>
+      <div id="webAiBlocked"></div>
+    </div>
+    <div class="field">
+      <label>Not asking for now</label>
+      <div class="desc">You closed the prompt on these sites three times, so they can't ask again for a week. Remove one to let it ask now.</div>
+      <div id="webAiPaused"></div>
+    </div>
+    <div class="field">
+      <div class="desc" id="webAiMemoryNote" style="display:none">This window keeps these answers only until it closes.</div>
+      <div class="desc">Incognito windows keep their own answers until they close. Clearing "Site settings" in Clear browsing data removes these answers too; clearing history removes the pauses.</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+        <button class="btn secondary" id="webAiClearBtn" type="button" data-on-click="webAiClearSites" style="font-size:12px;padding:6px 16px">Remove all</button>
+        <span class="desc" id="webAiStatus" role="status"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="section" id="providersSection">
     <h2><span class="icon">&#9729;</span> Connect AI Providers</h2>
     <div class="field">
@@ -2672,6 +2723,8 @@ MoltAISettingsUI::MoltAISettingsUI(content::WebUI* web_ui)
   // MoltShield section (id="shieldSection").
   web_ui->AddMessageHandler(
       std::make_unique<molt_ai::shield::MoltShieldSettingsHandler>());
+  // "Sites using on-device AI" (id="webAiSection").
+  web_ui->AddMessageHandler(std::make_unique<MoltWebAISitesHandler>());
 }
 
 MoltAISettingsUI::~MoltAISettingsUI() = default;

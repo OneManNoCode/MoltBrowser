@@ -132,6 +132,7 @@
 #include "chrome/browser/molt_ai/automation/automation_scheduler_factory.h"
 #include "chrome/browser/molt_ai/keys/molt_os_crypt_startup.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
+#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h"
 #include "chrome/browser/navigation_predictor/navigation_predictor_keyed_service_factory.h"
 #include "chrome/browser/navigation_predictor/preloading_model_keyed_service_factory.h"
 #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
@@ -1202,6 +1203,9 @@ void ChromeBrowserMainExtraPartsProfiles::
   // MoltBrowser personal vector memory — local semantic index of read
   // pages, encrypted at rest (molt_ai/keys/molt_os_crypt).
   molt_ai::memory::MemoryServiceFactory::GetInstance();
+  // MoltBrowser: which sites may use the on-device model through the
+  // built-in AI APIs (registers its profile pref).
+  molt_ai::web_ai::WebAISitePermissionsFactory::GetInstance();
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
   metrics::DesktopProfileSessionDurationsServiceFactory::GetInstance();
 #endif

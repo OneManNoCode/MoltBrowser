@@ -98,6 +98,74 @@ function shieldSetGlobal(args) {
   });
 }
 
+// molt://ai-settings "Sites using on-device AI": hostile site strings stay
+// text, Remove sends exactly the key it was given, the switch and "Remove
+// all" send their messages, and a change elsewhere refreshes the list.
+async function checkWebAISites(window) {
+  const doc = window.document;
+  const tick = () => new Promise((r) => setTimeout(r, 15));
+  const section = doc.getElementById('webAiSection');
+  assert(section, 'section present');
+  assert.strictEqual(section.querySelectorAll('img, b').length, 0, 'site names stay text');
+  const rows = (id) => Array.from(doc.querySelectorAll('#' + id + ' .web-ai-site'));
+  assert.strictEqual(rows('webAiAllowed').length, 1);
+  assert.strictEqual(rows('webAiBlocked').length, 1);
+  assert.strictEqual(rows('webAiPaused').length, 1);
+  assert.strictEqual(section.querySelectorAll('button[data-site]').length, 3,
+                     'rows without a string key or with an unknown kind are not shown');
+  assert(rows('webAiBlocked')[0].textContent.includes('<img src=x onerror=alert(1)>'));
+  assert(rows('webAiPaused')[0].textContent.includes('http://<b>paused</b>.example'));
+  assert(/can ask again/.test(rows('webAiPaused')[0].textContent), 'pause end shown');
+  assert(doc.getElementById('webAiEnabled').checked, 'switch shows on');
+  assert.strictEqual(doc.getElementById('webAiMemoryNote').style.display, 'none');
+
+  // Remove: the exact key goes back to the browser.
+  webAiCalls.length = 0;
+  rows('webAiBlocked')[0].querySelector('button').click();
+  await tick();
+  assert.deepStrictEqual(webAiCalls.pop(), ['webAiSitesRemove', WEB_AI_HOSTILE_SITE]);
+
+  // The switch, with an error from the browser shown as text.
+  webAiState = Object.assign({}, webAiState, {enabled: false, error: '<b>disk full</b>'});
+  const toggle = doc.getElementById('webAiEnabled');
+  toggle.click();
+  await tick();
+  assert.deepStrictEqual(webAiCalls.pop(), ['webAiSitesSetEnabled', false]);
+  assert(!toggle.checked, 'switch shows the saved value');
+  assert.strictEqual(doc.getElementById('webAiStatus').textContent, '<b>disk full</b>');
+  assert.strictEqual(section.querySelectorAll('b').length, 0);
+
+  // A change elsewhere (another tab's prompt): the list is fetched again.
+  webAiState = {enabled: false, available: true, persistent: false, sites: []};
+  window.cr.webUIListenerCallback('web-ai-sites-changed');
+  await tick();
+  assert.deepStrictEqual(webAiCalls.pop(), ['webAiSitesGetState']);
+  assert.strictEqual(section.querySelectorAll('button[data-site]').length, 0);
+  assert.strictEqual(doc.getElementById('webAiMemoryNote').style.display, '',
+                     'in-memory note shown for a Guest session');
+  assert.strictEqual(doc.getElementById('webAiClearBtn').disabled, true);
+  assert(/No sites allowed/.test(doc.getElementById('webAiAllowed').textContent));
+
+  // Remove all.
+  webAiState = {enabled: true, available: true, persistent: true, sites: WEB_AI_SITES};
+  window.cr.webUIListenerCallback('web-ai-sites-changed');
+  await tick();
+  assert.strictEqual(doc.getElementById('webAiClearBtn').disabled, false);
+  webAiState = {enabled: true, available: true, persistent: true, sites: []};
+  doc.getElementById('webAiClearBtn').click();
+  await tick();
+  assert.deepStrictEqual(webAiCalls.pop(), ['webAiSitesClear']);
+  assert.strictEqual(section.querySelectorAll('button[data-site]').length, 0);
+
+  // Garbage answers don't break the section.
+  for (const junk of [null, 'x', 7, {sites: 'nope'}, {sites: [{}]}]) {
+    webAiState = junk;
+    window.cr.webUIListenerCallback('web-ai-sites-changed');
+    await tick();
+  }
+  webAiState = {enabled: true, available: true, persistent: true, sites: WEB_AI_SITES};
+}
+
 // Model licence display (A13), shared by molt://ai and molt://ai-chat: the
 // licence name is text, only an http(s) licence URL becomes a link, the
 // link opens through openUrlInTab, and in the model menu it doesn't also
@@ -154,6 +222,28 @@ const SHIELD_STATE = {
   // Kill switches: one hook turned off in chrome://flags.
   disabledByCommandLine: false, hooksOff: ['molt-shield-websocket'],
 };
+
+// molt://ai-settings "Sites using on-device AI". Keys are canonical origins
+// in the browser, but the page must not rely on that: hostile keys and
+// display names, rows of the wrong shape, a kind it doesn't know.
+const WEB_AI_HOSTILE_SITE = 'https://x.example"><img src=x onerror=alert(1)>';
+const WEB_AI_SITES = [
+  {site: 'https://allowed.example', display: 'allowed.example', kind: 'allowed',
+   since: 1760000000000, until: 0},
+  {site: WEB_AI_HOSTILE_SITE, display: '<img src=x onerror=alert(1)>', kind: 'blocked',
+   since: 1760000000000, until: 0},
+  {site: 'http://paused.example', display: 'http://<b>paused</b>.example', kind: 'paused',
+   since: 1760000000000, until: 1760604800000},
+  {site: 42, display: 'not a string key', kind: 'allowed'},
+  {site: 'https://odd.example', display: 'odd kind', kind: '<b>other</b>'},
+  null,
+];
+const webAiCalls = [];
+let webAiState = {enabled: true, available: true, persistent: true, sites: WEB_AI_SITES};
+function webAiSites(args) {
+  webAiCalls.push([args[0].replace(/_\d+$/, '')].concat(args.slice(1)));
+  return webAiState;
+}
 
 // molt://memory: what memSemanticStatus answers (the test changes it), and
 // the [query, top_k] of each memSearch.
@@ -382,14 +472,22 @@ const PAGES = [
      shieldSetTabShields: SHIELD_STATE,
      shieldRemoveException: SHIELD_STATE,
      shieldReportBreakage: {report: 'MoltShield breakage report\nSite: <b>x</b>\n'},
+     // "Sites using on-device AI" (script: kWebAISitesSettingsJs).
+     webAiSitesGetState: webAiSites,
+     webAiSitesRemove: webAiSites,
+     webAiSitesClear: webAiSites,
+     webAiSitesSetEnabled: webAiSites,
    },
    extraFiles: ['molt_webui_csp.h',
-                '../../../molt_ai/shield/molt_shield_settings_handler.cc'],
+                '../../../molt_ai/shield/molt_shield_settings_handler.cc',
+                'molt_web_ai_sites_handler.cc'],
    listenersExtra: ['#vaultAddBtn:click', '#vaultGenBtn:click',
-                    '#shieldUpdateBtn:click'],
+                    '#shieldUpdateBtn:click', '#webAiClearBtn:click',
+                    '#webAiEnabled:change'],
    async after(window) {
      const doc = window.document;
      const tick = () => new Promise((r) => setTimeout(r, 10));
+     await checkWebAISites(window);
      // MoltShield: hostile list/tab metadata renders as text, never markup.
      assert.strictEqual(doc.querySelectorAll('#shieldSection img, #shieldSection b').length, 0);
      assert(doc.getElementById('shieldTabs').textContent.includes('<img src=x onerror=alert(1)>'));

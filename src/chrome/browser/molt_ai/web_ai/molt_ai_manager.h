@@ -79,6 +79,10 @@ class WebAIEnvironment {
   virtual std::string GetSiteKey() = 0;
   // The page is visible (its requests go first).
   virtual bool IsForeground() = 0;
+  // Calls |on_change| after the user's answers may have changed, for any
+  // site (the settings page, Clear browsing data, a prompt in another tab).
+  // The default never calls it.
+  virtual void ObserveConsent(base::RepeatingClosure on_change) {}
 };
 
 class MoltAIManager : public base::SupportsUserData::Data,
@@ -186,6 +190,11 @@ class MoltAIManager : public base::SupportsUserData::Data,
                                  bool languages_supported,
                                  AvailabilityCallback callback,
                                  DeviceFacts device);
+
+  // The user's answers changed: if this site's is no longer Allow (removed
+  // or blocked in molt://ai-settings, cleared), its sessions end.
+  void OnConsentChanged();
+  void CloseSessionsIfNotAllowed();
 
   // create(): availability, the user's consent, then the model.
   void StartCreate(std::unique_ptr<CreateRequest> request);

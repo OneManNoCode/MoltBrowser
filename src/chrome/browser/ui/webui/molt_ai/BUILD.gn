@@ -35,6 +35,8 @@ source_set("molt_ai") {
     "molt_net_ui.h",
     "molt_vault_handler.cc",
     "molt_vault_handler.h",
+    "molt_web_ai_sites_handler.cc",
+    "molt_web_ai_sites_handler.h",
     "molt_webui_csp.h",
   ]
 
@@ -59,11 +61,15 @@ source_set("molt_ai") {
     "//chrome/browser/molt_ai/profile",
     "//chrome/browser/molt_ai/shield:settings_handler",
     "//chrome/browser/molt_ai/vault",
+
+    # "Sites using on-device AI" on molt://ai-settings.
+    "//chrome/browser/molt_ai/web_ai",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//components/bookmarks/browser",
     "//components/device_reauth",
     "//components/password_manager/core/browser",
+    "//components/url_formatter",
     "//content/public/browser",
     "//net",
     "//services/network/public/cpp",

@@ -43,8 +43,8 @@ enum class Availability {
   kAvailable,
 };
 
-// The user's answer for a site (the top-level origin), kept in memory per
-// profile for the browser session. kAsk: not asked yet, or the prompt was
+// The user's answer for a site (the top-level origin), kept per profile
+// (web_ai_site_permissions.h). kAsk: not asked yet, or the prompt was
 // closed without an answer.
 enum class SiteConsent {
   kAsk,
@@ -340,31 +340,6 @@ class GenerationScheduler {
   std::map<std::string, uint64_t> last_start_by_site_;
   uint64_t starts_ = 0;
   std::map<std::string, size_t> sessions_by_site_;
-};
-
-// ---------------------------------------------------------------------------
-// Consent
-// ---------------------------------------------------------------------------
-
-// The answers for one profile, by top-level origin, in memory only. Bounded:
-// past kMaxEntries the oldest answer is forgotten (the site is asked again).
-class ConsentMap {
- public:
-  static constexpr size_t kMaxEntries = 512;
-
-  ConsentMap();
-  ~ConsentMap();
-  ConsentMap(const ConsentMap&) = delete;
-  ConsentMap& operator=(const ConsentMap&) = delete;
-
-  SiteConsent Get(const std::string& origin) const;
-  // kAsk forgets the answer.
-  void Set(const std::string& origin, SiteConsent consent);
-  size_t size() const { return answers_.size(); }
-
- private:
-  std::map<std::string, SiteConsent> answers_;
-  std::deque<std::string> order_;
 };
 
 }  // namespace molt_ai::web_ai

@@ -2348,10 +2348,14 @@ on-device model ([design](design/WEB_AI_APIS.md), §8). What they expose:
   says nothing about the user.
 * **`availability()`:** `"downloadable"` to every site the user hasn't
   allowed, on every capable machine, whether a model is installed or not;
-  `"available"` only to sites the user allowed this session;
-  `"unavailable"` with a policy, a switch, a block the user chose, or on a
-  machine that can't run any catalog model (about one bit). Never
-  `"downloading"`.
+  `"available"` only to sites the user allowed (remembered per profile and
+  top-level origin until removed in `molt://ai-settings` or cleared with
+  "Site settings"; Incognito starts empty and keeps its own in memory);
+  `"unavailable"` with a policy, a switch, a block the user chose, a
+  prompt paused after three closes (for a week; it looks exactly like a
+  block), or on a machine that can't run any catalog model (about one
+  bit). Never `"downloading"`. What each state tells a site:
+  [design §4.3](design/WEB_AI_APIS.md).
 * **Limits:** `inputQuota` is 1024 or 4096 tokens for `LanguageModel`
   (about one bit, allowed sites only) and 9216 for the writing APIs; token
   counts come from a model-independent estimator; the default and maximum
@@ -2365,8 +2369,9 @@ on-device model ([design](design/WEB_AI_APIS.md), §8). What they expose:
   site, and with Shields off a site learns nothing more.
 * **Translator** is off (`"unavailable"`) in every window: its upstream
   backend downloads Google's components. **LanguageDetector** is
-  upstream's: `"downloadable"` in a keyless build, `"available"` once the
-  model has arrived with the user's own Google API key (about one bit).
+  `"unavailable"` in every window for every user (its upstream model needs
+  a Google API key, so it used to say `"downloadable"` in a keyless build
+  and `"available"` with the user's own key: about one bit).
 
 ## Kill switch
 

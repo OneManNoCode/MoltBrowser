@@ -39,6 +39,7 @@ chrome/app/theme/chromium/product_logo_64.png.patch
 chrome/browser/BUILD.gn.patch
 chrome/browser/about_flags.cc.patch
 chrome/browser/app_controller_mac.mm.patch
+chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc.patch
 chrome/browser/chrome_browser_main_mac.mm.patch
 chrome/browser/chrome_content_browser_client.cc.patch
 chrome/browser/chrome_content_browser_client.h.patch
@@ -69,6 +70,7 @@ chrome/browser/net/profile_network_context_service.cc.patch
 chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc.patch
 chrome/browser/prefs/session_startup_pref.cc.patch
 chrome/browser/privacy_sandbox/privacy_sandbox_settings_delegate.cc.patch
+chrome/browser/profile_resetter/profile_resetter.cc.patch
 chrome/browser/profiles/BUILD.gn.patch
 chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc.patch
 chrome/browser/profiles/off_the_record_profile_impl.cc.patch
@@ -226,6 +228,7 @@ third_party/blink/renderer/core/input/touch_event_manager.cc.patch
 third_party/blink/renderer/core/loader/frame_fetch_context.cc.patch
 third_party/blink/renderer/core/workers/dedicated_worker.cc.patch
 third_party/blink/renderer/core/workers/threaded_worklet_messaging_proxy.cc.patch
+third_party/blink/renderer/modules/ai/ai_interface_proxy.cc.patch
 third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc.patch
 third_party/blink/renderer/modules/font_access/font_access.cc.patch
 third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc.patch
