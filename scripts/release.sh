@@ -84,6 +84,23 @@ else
 fi
 DMG_PATH="$REPO_DIR/dist/${DMG_NAME}.dmg"
 APP_PATH="$BUILD_DIR/MoltBrowser.app"
+if [ "$UNIVERSAL" = true ]; then
+  MAC_ARCH="universal"
+  # The universal app is lipo'd from these two (scripts/build-universal.sh).
+  GN_OUT_ARGS=(--gn-out-dir "$REPO_DIR/chromium/src/out/MoltBrowser-arm64"
+               --gn-out-dir "$REPO_DIR/chromium/src/out/MoltBrowser-x64")
+else
+  MAC_ARCH="arm64"
+  GN_OUT_ARGS=(--gn-out-dir "$BUILD_DIR")
+fi
+
+# A release records its build provenance (scripts/release-provenance.sh).
+# Check now, not after hours of building, that this Mac has a builder label
+# (MOLT_BUILDER_ID) and the checkout is the clean, tagged source.
+if [ "$DO_UPLOAD" = true ]; then
+  MOLT_BUILD_STARTED_ON="$(bash "$SCRIPT_DIR/release-provenance.sh" --start --version "$VERSION")"
+  export MOLT_BUILD_STARTED_ON
+fi
 
 echo "╔══════════════════════════════════════════╗"
 echo "║    MoltBrowser Release Pipeline          ║"
@@ -334,10 +351,15 @@ if [ "$DO_UPLOAD" = true ]; then
     # checksums for what we publish (one file per platform; see
     # scripts/release-sbom.sh, scripts/release-checksums.sh).
     SBOM_PATH="$(bash "$SCRIPT_DIR/release-sbom.sh" --platform macos \
-      --arch "$([ "$UNIVERSAL" = true ] && echo universal || echo arm64)" \
-      --version "$VERSION" --payload "$APP_PATH" "$DMG_PATH")"
-    SUMS_PATH="$REPO_DIR/dist/SHA256SUMS-macos-$([ "$UNIVERSAL" = true ] && echo universal || echo arm64)"
+      --arch "$MAC_ARCH" --version "$VERSION" --payload "$APP_PATH" "$DMG_PATH")"
+    SUMS_PATH="$REPO_DIR/dist/SHA256SUMS-macos-$MAC_ARCH"
     bash "$SCRIPT_DIR/release-checksums.sh" "$SUMS_PATH" "$DMG_PATH" "$SBOM_PATH"
+    # What this build produced, from what, on which machine; signed offline
+    # with the manifest (docs/SIGNED_UPDATES.md, "Build provenance").
+    PROV_PATH="$(bash "$SCRIPT_DIR/release-provenance.sh" --platform macos \
+      --arch "$MAC_ARCH" --version "$VERSION" --payload "$APP_PATH" \
+      "${GN_OUT_ARGS[@]}" --out-dir "$REPO_DIR/dist" \
+      "$DMG_PATH" "$SBOM_PATH" "$SUMS_PATH")"
 
     # The release is created as a DRAFT (scripts/release-draft.sh) from the
     # already-pushed tag v${VERSION} and stays a draft until the signed
@@ -372,14 +394,16 @@ AI-native privacy browser with on-device LLM inference.
 - **macOS**: \`${DMG_NAME}.dmg\` ($(du -sh "$DMG_PATH" 2>/dev/null | cut -f1 || echo "N/A"))
 - Checksums: \`$(basename "$SUMS_PATH")\`
 - SBOM (SPDX 2.3): \`$(basename "$SBOM_PATH")\`
+- Build provenance (signed): \`molt-build-provenance.intoto.jsonl\`
 RELEASE_EOF
     bash "$SCRIPT_DIR/release-draft.sh" "v${VERSION}" --notes-file "$NOTES_FILE"
     rm -f "$NOTES_FILE"
-    gh release upload "v${VERSION}" "$DMG_PATH" "$SBOM_PATH" "$SUMS_PATH" --clobber
+    gh release upload "v${VERSION}" "$DMG_PATH" "$SBOM_PATH" "$SUMS_PATH" "$PROV_PATH" --clobber
 
     echo "  DRAFT release: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
-    echo "  It stays a draft until molt-release-manifest.json + .sig, signed OFFLINE"
-    echo "  with tools/release_signing/molt_release_sign.py over ALL platform assets,"
+    echo "  It stays a draft until molt-release-manifest.json + .sig and"
+    echo "  molt-build-provenance.intoto.jsonl, signed OFFLINE with"
+    echo "  tools/release_signing/molt_release_sign.py over ALL platform assets,"
     echo "  are attached. Then: gh release edit v${VERSION} --draft=false"
   else
     echo "  ERROR: gh CLI not found. Install with: brew install gh"

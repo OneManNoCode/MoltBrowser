@@ -21,7 +21,14 @@ name: Release Windows build (self-hosted)
 # locate git ourselves (see "Locate git").
 #
 # Prereqs on the PC: Visual Studio 2022 (Desktop C++ workload) + Windows
-# SDK, ~100GB disk, Git for Windows. Runner registered as self-hosted.
+# SDK, ~100GB disk, Git for Windows. Runner registered as self-hosted, with
+# a builder label for the build provenance in the runner's .env file:
+# MOLT_BUILDER_ID=<name> (never the PC's hostname; docs/SIGNED_UPDATES.md,
+# "Label your build machines").
+#
+# Run it from the tag (gh workflow run ... --ref vX.Y.Z -f tag=vX.Y.Z): the
+# build provenance records the commit that was built, and publishing
+# refuses a build whose commit isn't the tag's.
 
 on:
   workflow_dispatch:
@@ -62,33 +69,11 @@ jobs:
         shell: cmd
         run: powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force"
 
-      - name: Check out repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-          clean: false   # keep depot_tools/ between runs (C:\cr persists on its own)
-
-      # Same values tools/chromium/pin.sh prints, parsed natively (no bash here).
-      - name: Read Chromium pin (chromium_version.txt)
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $pin = @{}
-          Get-Content chromium_version.txt | Where-Object { $_ -match '^(CHROMIUM_(VERSION|REVISION))=(.+)$' } | ForEach-Object {
-            $kv = $_ -split '=', 2
-            $pin[$kv[0]] = $kv[1].Trim()
-          }
-          if ($pin['CHROMIUM_REVISION'] -notmatch '^[0-9a-f]{40}$') { throw "bad CHROMIUM_REVISION in chromium_version.txt" }
-          if ($pin['CHROMIUM_VERSION'] -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "bad CHROMIUM_VERSION in chromium_version.txt" }
-          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "'$($env:RELEASE_TAG)' is not a release tag (vX.Y.Z[-suffix])" }
-          "CHROMIUM_REVISION=$($pin['CHROMIUM_REVISION'])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
-          "CHROMIUM_VERSION=$($pin['CHROMIUM_VERSION'])"   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
-          Write-Host "Chromium pin: $($pin['CHROMIUM_VERSION']) ($($pin['CHROMIUM_REVISION']))"
-
       # The runner (run.cmd) was started before Git for Windows was
       # installed, so its PATH is stale and `git` isn't visible to the
-      # steps it spawns. (That's also why actions/checkout silently falls
-      # back to an API tarball.) Find git ourselves and put it on PATH.
+      # steps it spawns. Find git ourselves and put it on PATH, BEFORE the
+      # checkout: without git, actions/checkout silently falls back to an
+      # API tarball, which has no commit for the build provenance.
       - name: Locate git + put it on PATH
         shell: powershell
         run: |
@@ -124,6 +109,41 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $dir
           Write-Host "git dir added to PATH: $dir"
 
+      - name: Check out repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          clean: false   # keep depot_tools/ between runs (C:\cr persists on its own)
+
+      # clean: false also keeps the last run's release files in the
+      # workspace. Remove them: none can be uploaded again by mistake, and
+      # the checkout is clean for the build provenance.
+      - name: Remove the last run's release files
+        shell: powershell
+        run: |
+          Remove-Item -Force -ErrorAction SilentlyContinue `
+            MoltBrowser-Windows-x64-Setup.exe, MoltBrowser-Windows-x64.zip, `
+            MoltBrowser-Windows-x64-Setup-exe.spdx.json, MoltBrowser-Windows-x64-zip.spdx.json, `
+            SHA256SUMS-windows-x64, molt-provenance-windows-x64.json
+          exit 0
+
+      # Same values tools/chromium/pin.sh prints, parsed natively (no bash here).
+      - name: Read Chromium pin (chromium_version.txt)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pin = @{}
+          Get-Content chromium_version.txt | Where-Object { $_ -match '^(CHROMIUM_(VERSION|REVISION))=(.+)$' } | ForEach-Object {
+            $kv = $_ -split '=', 2
+            $pin[$kv[0]] = $kv[1].Trim()
+          }
+          if ($pin['CHROMIUM_REVISION'] -notmatch '^[0-9a-f]{40}$') { throw "bad CHROMIUM_REVISION in chromium_version.txt" }
+          if ($pin['CHROMIUM_VERSION'] -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "bad CHROMIUM_VERSION in chromium_version.txt" }
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "'$($env:RELEASE_TAG)' is not a release tag (vX.Y.Z[-suffix])" }
+          "CHROMIUM_REVISION=$($pin['CHROMIUM_REVISION'])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          "CHROMIUM_VERSION=$($pin['CHROMIUM_VERSION'])"   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          Write-Host "Chromium pin: $($pin['CHROMIUM_VERSION']) ($($pin['CHROMIUM_REVISION']))"
+
       - name: Install depot_tools (PowerShell - native Windows paths)
         shell: powershell
         run: |
@@ -154,6 +174,17 @@ jobs:
             throw "depot_tools bootstrap failed: python3_bin_reldir.txt missing"
           }
           Write-Host "depot_tools bootstrapped (python3_bin_reldir.txt present)."
+
+      # Build provenance (docs/SIGNED_UPDATES.md): fails now, not after a
+      # day of building, if this runner has no builder label (MOLT_BUILDER_ID)
+      # or the checkout is not the clean, tagged source.
+      - name: Start build provenance
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $started = & python3 tools\release_signing\molt_provenance.py start --version $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw "build provenance: start failed ($LASTEXITCODE)" }
+          "MOLT_BUILD_STARTED_ON=$started" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
 
       # Chromium compiles with MSVC. If no Visual Studio C++ toolchain is
       # present, install VS 2022 Build Tools (C++ workload + Win SDK + ATL)
@@ -728,6 +759,31 @@ jobs:
           [IO.File]::WriteAllText($out, (($lines | Sort-Object) -join "`n") + "`n")
           Get-Content $out
 
+      # What this build produced, from what, on which machine
+      # (molt-provenance-windows-x64.json); the owner signs it offline with
+      # the release manifest.
+      - name: Build provenance statement
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $src = Join-Path $env:BUILD_ROOT "src"
+          $out = Join-Path $src "out\MoltBrowser"
+          $finished = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH':'mm':'ss'Z'",
+            [Globalization.CultureInfo]::InvariantCulture)
+          $provArgs = @("tools\release_signing\molt_provenance.py", "generate",
+            "--platform", "windows", "--arch", "x64", "--version", $env:RELEASE_TAG,
+            "--release", "--started-on", $env:MOLT_BUILD_STARTED_ON, "--finished-on", $finished,
+            "--chromium-src", $src, "--gn-out-dir", $out,
+            "--payload", (Join-Path $out "MoltBrowser-Windows-x64"),
+            "--invocation-id", "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/attempts/$env:GITHUB_RUN_ATTEMPT",
+            "--out-dir", $env:GITHUB_WORKSPACE,
+            "MoltBrowser-Windows-x64-Setup.exe", "MoltBrowser-Windows-x64.zip",
+            "MoltBrowser-Windows-x64-Setup-exe.spdx.json", "MoltBrowser-Windows-x64-zip.spdx.json",
+            "SHA256SUMS-windows-x64")
+          $ErrorActionPreference = "Continue"
+          & python3 @provArgs
+          if ($LASTEXITCODE -ne 0) { throw "build provenance statement failed ($LASTEXITCODE)" }
+
       - name: Build provenance attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
@@ -746,6 +802,7 @@ jobs:
             MoltBrowser-Windows-x64-Setup-exe.spdx.json
             MoltBrowser-Windows-x64-zip.spdx.json
             SHA256SUMS-windows-x64
+            molt-provenance-windows-x64.json
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

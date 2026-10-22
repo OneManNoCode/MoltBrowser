@@ -132,6 +132,17 @@ jobs:
           # Bootstrap depot_tools' python3 etc.
           ( cd "$HOME/depot_tools" && ./update_depot_tools && ./gclient --version >/dev/null 2>&1 ) || true
 
+      # Build provenance (docs/SIGNED_UPDATES.md): fails now, not after the
+      # build, if this runner has no builder label (MOLT_BUILDER_ID in the
+      # runner's .env, never its hostname) or the checkout is not the clean,
+      # tagged source.
+      - name: Start build provenance
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          started="$(./scripts/release-provenance.sh --start --version "$TAG")"
+          echo "MOLT_BUILD_STARTED_ON=$started" >> "$GITHUB_ENV"
+
       - name: Sync Chromium source (~30-60 min on first run, cached on self-hosted)
         if: ${{ inputs.skip_build != 'true' }}
         env:
@@ -221,7 +232,8 @@ jobs:
           # stale one can never be renamed and published as this release.
           rm -f dist/MoltBrowser-Linux-x64.* dist/moltbrowser*.deb \
             dist/moltbrowser*.rpm dist/MoltBrowser-*-linux-x64.tar.gz \
-            dist/MoltBrowser-Linux-x64-*.spdx.json dist/MoltBrowser-Linux-repository.tar
+            dist/MoltBrowser-Linux-x64-*.spdx.json dist/MoltBrowser-Linux-repository.tar \
+            dist/molt-provenance-linux-x64.json
           ./scripts/package-linux.sh --version "$TAG"
 
       - name: Rename to stable asset names
@@ -268,6 +280,21 @@ jobs:
             dist/MoltBrowser-Linux-x64-rpm.spdx.json \
             dist/MoltBrowser-Linux-x64-tar-gz.spdx.json
 
+      # What this build produced, from what, on which machine; the owner
+      # signs it offline with the release manifest.
+      - name: Build provenance statement
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          ./scripts/release-provenance.sh --platform linux --arch x64 \
+            --version "$TAG" --out-dir dist \
+            dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm \
+            dist/MoltBrowser-Linux-x64.tar.gz \
+            dist/MoltBrowser-Linux-x64-deb.spdx.json \
+            dist/MoltBrowser-Linux-x64-rpm.spdx.json \
+            dist/MoltBrowser-Linux-x64-tar-gz.spdx.json \
+            dist/SHA256SUMS-linux-x64
+
       - name: Build provenance attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
@@ -297,4 +324,5 @@ jobs:
             dist/MoltBrowser-Linux-x64-tar-gz.spdx.json
             dist/MoltBrowser-Linux-repository.tar
             dist/SHA256SUMS-linux-x64
+            dist/molt-provenance-linux-x64.json
           fail_on_unmatched_files: true

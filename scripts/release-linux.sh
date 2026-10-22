@@ -60,6 +60,14 @@ if [ -z "$VERSION" ] || [ -z "$BUILD_NUM" ]; then
   exit 1
 fi
 
+# A release records its build provenance (scripts/release-provenance.sh).
+# Check now, not after the build, that this machine has a builder label
+# (MOLT_BUILDER_ID) and the checkout is the clean, tagged source.
+if [ "$DO_UPLOAD" = true ]; then
+  MOLT_BUILD_STARTED_ON="$("$SCRIPT_DIR/release-provenance.sh" --start --version "$VERSION")"
+  export MOLT_BUILD_STARTED_ON
+fi
+
 echo "╔══════════════════════════════════════════╗"
 echo "║    MoltBrowser Linux Release             ║"
 echo "╠══════════════════════════════════════════╣"
@@ -169,11 +177,25 @@ if [ "$DO_UPLOAD" = true ]; then
   SUMS="$DIST_DIR/SHA256SUMS-linux-x64"
   "$SCRIPT_DIR/release-checksums.sh" "$SUMS" "${ARTIFACTS[@]}"
 
+  # Build provenance (docs/SIGNED_UPDATES.md). A Docker build's toolchain
+  # is the container's: probe it there, and record the image.
+  PROV_ARGS=(--platform linux --arch x64 --version "$VERSION" --out-dir "$DIST_DIR")
+  if [ "$USE_DOCKER" = true ]; then
+    FACTS="$(mktemp)"
+    docker run "${DOCKER_ARGS[@]}" "$DOCKER_IMG" python3 \
+      tools/release_signing/molt_provenance.py probe --platform linux \
+      --chromium-src chromium/src > "$FACTS"
+    PROV_ARGS+=(--builder-facts "$FACTS" --container-image \
+      "$DOCKER_IMG@$(docker image inspect --format '{{.Id}}' "$DOCKER_IMG")")
+  fi
+  PROV="$("$SCRIPT_DIR/release-provenance.sh" "${PROV_ARGS[@]}" "${ARTIFACTS[@]}" "$SUMS")"
+  [ -n "${FACTS:-}" ] && rm -f "$FACTS"
+
   # DRAFT until the offline-signed manifest is attached (release-draft.sh).
   "$SCRIPT_DIR/release-draft.sh" "$TAG"
   [ -f "$REPO_BUNDLE" ] && ARTIFACTS+=("$REPO_BUNDLE")
-  gh release upload "$TAG" "${ARTIFACTS[@]}" "$SUMS" --clobber
-  echo "  Uploaded ${#ARTIFACTS[@]} files + $(basename "$SUMS") to the draft release $TAG."
+  gh release upload "$TAG" "${ARTIFACTS[@]}" "$SUMS" "$PROV" --clobber
+  echo "  Uploaded ${#ARTIFACTS[@]} files + $(basename "$SUMS") + $(basename "$PROV") to the draft release $TAG."
 else
   echo "[4/4] Skipping upload"
 fi

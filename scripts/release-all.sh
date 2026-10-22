@@ -63,6 +63,15 @@ if [ -z "$VERSION" ] || [ -z "$BUILD_NUM" ]; then
   exit 1
 fi
 
+# Every platform's build provenance (scripts/release-provenance.sh) starts
+# here; fail now if this machine has no builder label (MOLT_BUILDER_ID) or
+# the checkout is not the clean, tagged source. If you built earlier with
+# --skip-build in mind, export MOLT_BUILD_STARTED_ON from before that build.
+if [ "$DO_UPLOAD" = true ]; then
+  MOLT_BUILD_STARTED_ON="$("$SCRIPT_DIR/release-provenance.sh" --start --version "$VERSION")"
+  export MOLT_BUILD_STARTED_ON
+fi
+
 echo "╔══════════════════════════════════════════════════╗"
 echo "║    MoltBrowser Multi-Platform Release            ║"
 echo "╠══════════════════════════════════════════════════╣"
