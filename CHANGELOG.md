@@ -323,6 +323,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - Reader commands (`/summarize`, `/tldr`, `/simplify`, `/eli5`, `/receipt`,
   `/chapters`, `/translate`) always read the page you're on, not the one you
   just left.
+- **Search memory by meaning.** molt://memory finds a page from what it was
+  about, in your own words and language, with an optional on-device search
+  model (Qwen3-Embedding 0.6B, Apache 2.0, about 640 MB, downloaded when you
+  ask) running in the AI sandbox. Memory is re-indexed in the background,
+  only while Memory is on; keyword matching stays the fallback. The model is
+  offered once its download is pinned.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
