@@ -43,7 +43,7 @@ if gh release view "$TAG" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} >/dev/null 2>&1; the
   exit 0
 fi
 
-NOTES="DRAFT - do not publish until molt-release-manifest.json and molt-release-manifest.json.sig (signed offline with tools/release_signing/molt_release_sign.py) are attached. Each platform also ships SHA256SUMS-<platform> and a build-provenance attestation (gh attestation verify <file> --repo OneManNoCode/MoltBrowser)."
+NOTES="DRAFT - do not publish until molt-release-manifest.json and molt-release-manifest.json.sig (signed offline with tools/release_signing/molt_release_sign.py) are attached, and the Linux repository bundle (MoltBrowser-Linux-repository.tar) has been signed offline. Each platform also ships SHA256SUMS-<platform>, an SPDX SBOM per installer (*.spdx.json) and a build-provenance attestation (gh attestation verify <file> --repo OneManNoCode/MoltBrowser)."
 NOTES_ARGS=(--notes "$NOTES")
 [ -n "$NOTES_FILE" ] && NOTES_ARGS=(--notes-file "$NOTES_FILE")
 PRE_ARGS=()

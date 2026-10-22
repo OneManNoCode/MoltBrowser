@@ -330,10 +330,14 @@ if [ "$DO_UPLOAD" = true ]; then
   if command -v gh &> /dev/null; then
     cd "$REPO_DIR"
 
-    # Checksums for what we publish (one file per platform; see
-    # scripts/release-checksums.sh).
+    # The SBOM (after signing and stapling: it hashes what ships) and the
+    # checksums for what we publish (one file per platform; see
+    # scripts/release-sbom.sh, scripts/release-checksums.sh).
+    SBOM_PATH="$(bash "$SCRIPT_DIR/release-sbom.sh" --platform macos \
+      --arch "$([ "$UNIVERSAL" = true ] && echo universal || echo arm64)" \
+      --version "$VERSION" --payload "$APP_PATH" "$DMG_PATH")"
     SUMS_PATH="$REPO_DIR/dist/SHA256SUMS-macos-$([ "$UNIVERSAL" = true ] && echo universal || echo arm64)"
-    bash "$SCRIPT_DIR/release-checksums.sh" "$SUMS_PATH" "$DMG_PATH"
+    bash "$SCRIPT_DIR/release-checksums.sh" "$SUMS_PATH" "$DMG_PATH" "$SBOM_PATH"
 
     # The release is created as a DRAFT (scripts/release-draft.sh) from the
     # already-pushed tag v${VERSION} and stays a draft until the signed
@@ -367,10 +371,11 @@ AI-native privacy browser with on-device LLM inference.
 ## Downloads
 - **macOS**: \`${DMG_NAME}.dmg\` ($(du -sh "$DMG_PATH" 2>/dev/null | cut -f1 || echo "N/A"))
 - Checksums: \`$(basename "$SUMS_PATH")\`
+- SBOM (SPDX 2.3): \`$(basename "$SBOM_PATH")\`
 RELEASE_EOF
     bash "$SCRIPT_DIR/release-draft.sh" "v${VERSION}" --notes-file "$NOTES_FILE"
     rm -f "$NOTES_FILE"
-    gh release upload "v${VERSION}" "$DMG_PATH" "$SUMS_PATH" --clobber
+    gh release upload "v${VERSION}" "$DMG_PATH" "$SBOM_PATH" "$SUMS_PATH" --clobber
 
     echo "  DRAFT release: https://github.com/OneManNoCode/MoltBrowser/releases/tag/v${VERSION}"
     echo "  It stays a draft until molt-release-manifest.json + .sig, signed OFFLINE"

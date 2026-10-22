@@ -7,13 +7,25 @@ name: Deploy website to GitHub Pages
 #   Source: GitHub Actions
 # No custom domain: GenEye does not own moltbrowser.com. Only add a CNAME
 # file here for a domain GenEye controls, or the site would redirect there.
+#
+# The site also serves the signed Linux package repository under /linux/
+# (docs/LINUX_REPOSITORIES.md): scripts/linux-repo-site.sh takes it from the
+# newest published release and adds it only if every signature verifies
+# against the archive key committed in installer/linux/. Nothing is signed
+# here; the owner signs the repository offline. A published release
+# redeploys the site so the repository follows releases.
 
 on:
   push:
     branches: [main]
     paths:
       - 'website/**'
+      - 'installer/linux/**'
+      - 'scripts/linux-repo-site.sh'
+      - 'tools/linux_repo/**'
       - '.github/workflows/deploy-website.yml'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -37,6 +49,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          # The site comes from the default branch even when a release
+          # triggers the deploy.
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Add the signed Linux package repository (verified, if any)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/linux-repo-site.sh website/linux
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         with:

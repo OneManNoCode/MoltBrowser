@@ -3,7 +3,10 @@ name: Release Linux build
 # Automated Linux x64 build pipeline. Triggers on every git tag push
 # (v*) and on manual workflow_dispatch. Builds in a native Linux runner
 # (no Rosetta overhead, no Mac sleep risk, no Docker quirks) and uploads
-# .deb / .rpm / .tar.gz directly to the GitHub Release matching the tag.
+# .deb / .rpm / .tar.gz directly to the GitHub Release matching the tag,
+# with an SPDX SBOM for each (docs/SBOM.md) and the UNSIGNED apt/rpm
+# repository (MoltBrowser-Linux-repository.tar), which the owner signs
+# offline (docs/SIGNED_UPDATES.md, docs/LINUX_REPOSITORIES.md).
 #
 # Why this exists:
 # Building MoltBrowser for Linux locally on a Mac via Docker+Rosetta
@@ -217,7 +220,8 @@ jobs:
           # dist/ survives on the warm runner: drop earlier packages so a
           # stale one can never be renamed and published as this release.
           rm -f dist/MoltBrowser-Linux-x64.* dist/moltbrowser*.deb \
-            dist/moltbrowser*.rpm dist/MoltBrowser-*-linux-x64.tar.gz
+            dist/moltbrowser*.rpm dist/MoltBrowser-*-linux-x64.tar.gz \
+            dist/MoltBrowser-Linux-x64-*.spdx.json dist/MoltBrowser-Linux-repository.tar
           ./scripts/package-linux.sh --version "$TAG"
 
       - name: Rename to stable asset names
@@ -239,11 +243,30 @@ jobs:
           rename_one 'MoltBrowser-*-linux-x64.tar.gz' MoltBrowser-Linux-x64.tar.gz
           ls -lh MoltBrowser-Linux-x64.*
 
+      # One SBOM per package (Linux packages bundle no helpers), and the
+      # UNSIGNED apt/rpm repository built from these exact packages. Nothing
+      # is signed here: the owner signs the repository offline and replaces
+      # the bundle before signing the release manifest. The bundle is not in
+      # the checksums or the attestation, since signing replaces it.
+      - name: SBOMs + unsigned Linux package repository
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          ./scripts/release-sbom.sh --platform linux --arch x64 --version "$TAG" \
+            dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm \
+            dist/MoltBrowser-Linux-x64.tar.gz
+          rm -f dist/MoltBrowser-Linux-repository.tar
+          ./scripts/linux-repo-build.sh dist/MoltBrowser-Linux-repository.tar \
+            dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm
+
       - name: Checksums
         run: |
           ./scripts/release-checksums.sh dist/SHA256SUMS-linux-x64 \
             dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm \
-            dist/MoltBrowser-Linux-x64.tar.gz
+            dist/MoltBrowser-Linux-x64.tar.gz \
+            dist/MoltBrowser-Linux-x64-deb.spdx.json \
+            dist/MoltBrowser-Linux-x64-rpm.spdx.json \
+            dist/MoltBrowser-Linux-x64-tar-gz.spdx.json
 
       - name: Build provenance attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
@@ -252,6 +275,9 @@ jobs:
             dist/MoltBrowser-Linux-x64.deb
             dist/MoltBrowser-Linux-x64.rpm
             dist/MoltBrowser-Linux-x64.tar.gz
+            dist/MoltBrowser-Linux-x64-deb.spdx.json
+            dist/MoltBrowser-Linux-x64-rpm.spdx.json
+            dist/MoltBrowser-Linux-x64-tar-gz.spdx.json
 
       - name: Upload Linux artifacts to the release (DRAFT until signed)
         # Uses the built-in GITHUB_TOKEN (permissions: contents: write above).
@@ -266,5 +292,9 @@ jobs:
             dist/MoltBrowser-Linux-x64.deb
             dist/MoltBrowser-Linux-x64.rpm
             dist/MoltBrowser-Linux-x64.tar.gz
+            dist/MoltBrowser-Linux-x64-deb.spdx.json
+            dist/MoltBrowser-Linux-x64-rpm.spdx.json
+            dist/MoltBrowser-Linux-x64-tar-gz.spdx.json
+            dist/MoltBrowser-Linux-repository.tar
             dist/SHA256SUMS-linux-x64
           fail_on_unmatched_files: true
