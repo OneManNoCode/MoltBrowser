@@ -250,6 +250,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   off in MoltNet windows, and "Open all" bookmarks there no longer spill
   into a regular window. What is still outside Tor is listed in
   `docs/MOLTNET_COMPLIANCE.md` §5.7.
+- **Your Shields-off sites stay in the browser.** Page processes used to
+  get your whole list of sites with Shields off, to know where to switch
+  the fingerprinting noise off. Now the browser decides for each page and
+  each worker as it loads and tells only that page's process, before any
+  of its scripts run, so a compromised page process can't read the list.
+  Anything that isn't told is protected. Turning Shields off or on applies
+  from the next page load (the Shields toggle reloads the page); a page
+  that Back restores from memory keeps what it had. Sandboxed pages now
+  follow their site's Shields setting too.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
