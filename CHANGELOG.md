@@ -323,6 +323,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - Reader commands (`/summarize`, `/tldr`, `/simplify`, `/eli5`, `/receipt`,
   `/chapters`, `/translate`) always read the page you're on, not the one you
   just left.
+- **Web AI APIs on your own model.** Sites can use the Prompt API
+  (`LanguageModel`), `Summarizer`, `Writer` and `Rewriter` on your
+  on-device model, never Google's, after you allow them in a bar at the top
+  of the tab (for the session); a site never starts a model download. They
+  report only coarse limits, run one page request at a time beside your
+  chat, and are off in MoltNet.
+  The upstream `Translator` API, which downloads Google's translation
+  components, is off.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

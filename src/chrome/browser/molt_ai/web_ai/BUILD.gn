@@ -1,0 +1,108 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# The web's built-in AI APIs (LanguageModel, Summarizer, Writer, Rewriter)
+# served by the user's own on-device model instead of upstream's AIManager.
+# Hooked from ChromeContentBrowserClient::BindAIManager.
+# Design: docs/design/WEB_AI_APIS.md.
+
+# The decisions (availability, consent, buckets, counting, limits, which
+# model) and the option -> prompt mapping. Standard library only, so the
+# standalone test build links it too.
+source_set("logic") {
+  sources = [
+    "web_ai_conversation.cc",
+    "web_ai_conversation.h",
+    "web_ai_policy.cc",
+    "web_ai_policy.h",
+    "web_ai_prompts.cc",
+    "web_ai_prompts.h",
+  ]
+}
+
+# blink.mojom.AIManager and the session interfaces, over an abstract
+# environment (the document) and backend (the runtime). No //content, so
+# molt_ai_unittests drives it over real mojo pipes with fakes.
+source_set("manager") {
+  sources = [
+    "molt_ai_manager.cc",
+    "molt_ai_manager.h",
+    "web_ai_backend.cc",
+    "web_ai_backend.h",
+    "web_ai_sessions.cc",
+    "web_ai_sessions.h",
+  ]
+  public_deps = [
+    ":logic",
+    "//base",
+    "//mojo/public/cpp/bindings",
+    "//services/on_device_model/public/mojom",
+    "//third_party/blink/public/mojom:mojom_platform",
+  ]
+  deps = [ "//chrome/services/molt_ai/inference/engine:stream_filters" ]
+}
+
+# The browser side: the binder ChromeContentBrowserClient calls, the
+# document environment (MoltNet, policies, permissions policy, the
+# top-level site), the consent infobar and the BrowserAIRuntime backend.
+source_set("web_ai") {
+  sources = [
+    "molt_ai_manager_binder.cc",
+    "molt_ai_manager_binder.h",
+    "runtime_web_ai_backend.cc",
+    "runtime_web_ai_backend.h",
+    "web_ai_consent.cc",
+    "web_ai_consent.h",
+  ]
+  public_deps = [ ":manager" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai:molt_ai_runtime",
+
+    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
+    "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common",
+    "//components/infobars/content",
+    "//components/infobars/core",
+    "//components/optimization_guide/core:features",
+    "//components/policy/core/common:common_constants",
+    "//components/prefs",
+    "//components/url_formatter",
+    "//content/public/browser",
+    "//content/public/common",
+    "//net",
+    "//services/network/public/mojom",
+    "//third_party/blink/public/common",
+    "//ui/base",
+    "//url",
+  ]
+
+  # g_browser_process (browser_process.h) and CreateConfirmInfoBar
+  # (//chrome/browser/infobars) live in targets that depend on this one
+  # through //chrome/browser/molt_ai, so they can't be declared here without
+  # a cycle; the symbols resolve when chrome links (as in tor:onion; this
+  # tree doesn't run `gn check`).
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "molt_ai_manager_unittest.cc",
+    "web_ai_conversation_unittest.cc",
+    "web_ai_policy_unittest.cc",
+    "web_ai_prompts_unittest.cc",
+  ]
+  deps = [
+    ":logic",
+    ":manager",
+    "//base",
+    "//base/test:test_support",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
+    "//services/on_device_model/public/mojom",
+    "//testing/gtest",
+    "//third_party/blink/public/mojom:mojom_platform",
+  ]
+}

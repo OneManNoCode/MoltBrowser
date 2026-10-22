@@ -132,8 +132,12 @@ claims below as the design intent, not as measured results.
     does for a MoltNet window goes through Tor too, or doesn't happen.
     The AI chat in a MoltNet window uses on-device models only: a cloud AI
     provider would get your API key, which says who you are, with every
-    page you ask about. The chat's sandbox tab opens in a MoltNet window,
-    its actions and links stay in its own window, and it can't set up page
+    page you ask about. Pages can't use the built-in AI APIs
+    (`LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator`):
+    they report "unavailable" in MoltNet windows
+    ([design](design/WEB_AI_APIS.md)). The chat's sandbox tab opens in a
+    MoltNet window, its actions and links stay in its own window, and it
+    can't set up page
     watchers or saved plans (they would run later outside Tor). Safe
     Browsing, Google's image descriptions, location, Cast, signing in with
     a passkey on your phone and shopping features (price insights,

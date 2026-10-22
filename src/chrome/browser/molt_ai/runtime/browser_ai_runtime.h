@@ -290,6 +290,11 @@ class BrowserAIRuntime {
   // none). Doesn't block behind a generation.
   std::string GetLoadedModelId() const;
 
+  // The loaded model's context window in tokens, as the inference process
+  // reported it at load (validated there); 0 if none is loaded. The web AI
+  // APIs bucket it (web_ai/web_ai_policy.h) and never expose it.
+  uint32_t GetLoadedContextTokens() const;
+
   // ---- Hardware ----
 
   // Get current hardware capabilities
