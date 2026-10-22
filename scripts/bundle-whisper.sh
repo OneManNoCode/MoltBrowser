@@ -174,7 +174,7 @@ fi
 
 # Install. Strip extended attrs so the bundled binary launches
 # without the macOS "downloaded from internet" prompt the first time.
-rm -rf "${DEST:?}/lib"
+rm -rf "${DEST:?}/lib" "${DEST:?}/.bundle-provenance.json"
 install -m 755 "$BIN" "$DEST/whisper-cli"
 # whisper-cli is linked statically against the OS's Metal and Accelerate,
 # so it should load only OS libraries. Make sure: the helper sandbox maps
@@ -184,8 +184,9 @@ install -m 755 "$BIN" "$DEST/whisper-cli"
 # loads from outside the bundle.
 if [[ "$(uname)" == "Darwin" ]] &&
    ! python3 "$SCRIPT_DIR/macho_bundle_deps.py" "$DEST/whisper-cli" \
-        --lib-dir "$DEST/lib" --origin "$BIN"; then
-  rm -rf "${DEST:?}/whisper-cli" "${DEST:?}/lib"
+        --lib-dir "$DEST/lib" --origin "$BIN" \
+        --provenance "$DEST/.bundle-provenance.json"; then
+  rm -rf "${DEST:?}/whisper-cli" "${DEST:?}/lib" "${DEST:?}/.bundle-provenance.json"
   echo "[bundle-whisper] FATAL: could not make the bundled whisper-cli"
   echo "[bundle-whisper] self-contained (see above); not bundling it."
   exit 1

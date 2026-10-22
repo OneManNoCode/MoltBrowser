@@ -32,12 +32,24 @@ It then runs the --check below and fails if anything is left.
 LIB_DIR load is an OS library or a file inside BINARY's directory, and none of
 them has an LC_RPATH.
 
+--provenance FILE also writes where BINARY and each library came from (real
+paths, e.g. /opt/homebrew/Cellar/leptonica/1.85.0/lib/...), as JSON, for the
+release SBOM (tools/sbom/molt_sbom.py):
+
+  {"format": 1,
+   "binary": {"file": "tesseract", "origin": "<real path>"},
+   "libraries": [{"file": "lib/libleptonica.6.dylib", "origin": "<real path>"}]}
+
+File names are relative to BINARY's directory; a path in the build user's
+home is written as ~/... (the file ships inside the app).
+
 Needs otool, install_name_tool and codesign (Xcode command line tools); the
 --otool, --install-name-tool and --codesign flags pick others (the test uses
 LLVM's and no codesign).
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -178,9 +190,10 @@ def resolve(name, loader_dirs, exe_dirs, rpath_dirs):
     return None
 
 
-def bundle(tools, binary, lib_dir, origin):
+def bundle(tools, binary, lib_dir, origin, sources=None):
     """Copies BINARY's non-OS libraries into LIB_DIR and rewrites the load
-    commands. Returns the files it changed."""
+    commands. Returns the files it changed. If SOURCES is a dict, it gets
+    {name in LIB_DIR: real path it was copied from}."""
     binary = os.path.abspath(binary)
     lib_dir = os.path.abspath(lib_dir)
     helper_dir = os.path.dirname(binary)
@@ -255,7 +268,36 @@ def bundle(tools, binary, lib_dir, origin):
     if tools.codesign:
         for dest in edits:
             tools.run([tools.codesign, "--force", "--sign", "-", dest])
+    if sources is not None:
+        sources.update(real_for_name)
     return sorted(edits)
+
+
+def public_origin(path, home=None):
+    """PATH with the build user's home shortened to ~: the provenance file
+    ships inside the app, and a build tree path would name the user."""
+    home = (home or os.path.expanduser("~")).rstrip(os.sep)
+    if home and (path == home or path.startswith(home + os.sep)):
+        return "~" + path[len(home):]
+    return path
+
+
+def write_provenance(path, binary, lib_dir, origin, sources):
+    """Records where BINARY and its bundled libraries came from."""
+    helper_dir = os.path.dirname(os.path.abspath(binary))
+    libs = []
+    for name in sorted(sources):
+        rel = os.path.relpath(os.path.join(os.path.abspath(lib_dir), name),
+                              helper_dir)
+        libs.append({"file": rel.replace(os.sep, "/"),
+                     "origin": public_origin(sources[name])})
+    doc = {"format": 1,
+           "binary": {"file": os.path.basename(binary),
+                      "origin": public_origin(os.path.realpath(origin))},
+           "libraries": libs}
+    with open(path, "w") as f:
+        json.dump(doc, f, indent=2, sort_keys=True)
+        f.write("\n")
 
 
 def check(tools, binary, lib_dir):
@@ -296,6 +338,8 @@ def main():
                     help="where BINARY was copied from (default: BINARY)")
     ap.add_argument("--check", action="store_true",
                     help="change nothing; fail on any non-OS load")
+    ap.add_argument("--provenance",
+                    help="also write where each file came from (JSON)")
     ap.add_argument("--otool", default="otool")
     ap.add_argument("--install-name-tool", default="install_name_tool")
     ap.add_argument("--codesign",
@@ -309,10 +353,14 @@ def main():
         if not args.check:
             if not args.lib_dir:
                 ap.error("--lib-dir is required unless --check")
+            sources = {}
             changed = bundle(tools, args.binary, args.lib_dir,
-                             args.origin or args.binary)
+                             args.origin or args.binary, sources)
             for path in changed:
                 print("%s: rewrote %s" % (prog, path))
+            if args.provenance:
+                write_provenance(args.provenance, args.binary, args.lib_dir,
+                                 args.origin or args.binary, sources)
             if os.path.isdir(args.lib_dir) and not os.listdir(args.lib_dir):
                 os.rmdir(args.lib_dir)
         problems = check(tools, args.binary, args.lib_dir)

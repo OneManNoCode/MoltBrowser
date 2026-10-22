@@ -1,0 +1,13 @@
+Name: zlib
+Short Name: zlib
+URL: http://zlib.net/
+Version: 1.3.1
+Revision: 82b0e4ef9e6ed21b0bf7ae2bc5ef3d1bde4ab0d1
+CPEPrefix: cpe:/a:zlib:zlib:1.3.1
+Security Critical: yes
+Shipped: yes
+License: Zlib
+License File: LICENSE
+
+Description:
+Fixture for tools/sbom/molt_sbom_test.py.

@@ -1,0 +1,21 @@
+Name: libxml
+URL: http://xmlsoft.org
+Version: 2.14.0
+CPEPrefix: cpe:2.3:a:xmlsoft:libxml2:2.14.0:*:*:*:*:*:*:*
+License: MIT
+License File: src/Copyright
+Security Critical: yes
+Shipped: yes
+
+Description:
+Fixture for tools/sbom/molt_sbom_test.py (two dependencies in one file).
+
+-------------------- DEPENDENCY DIVIDER --------------------
+
+Name: libxml test data
+URL: http://xmlsoft.org
+Version: N/A
+Revision: 0123456789abcdef0123456789abcdef01234567
+License: Apache 2.0, BSD
+License File: LICENSE.test
+Shipped: yes
