@@ -216,6 +216,8 @@ class InfoBarDelegate {
     // MoltBrowser identifiers start at 1000, well clear of upstream's, so
     // rebases never collide.
     MOLT_ONION_LOCATION_INFOBAR_DELEGATE = 1000,
+    // Asks before a site may use the on-device model (web AI APIs).
+    MOLT_WEB_AI_CONSENT_INFOBAR_DELEGATE = 1001,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/enums.xml:InfoBarIdentifier)
 
