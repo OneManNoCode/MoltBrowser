@@ -53,20 +53,48 @@ source_set("agent_prompt") {
   ]
 }
 
+# The web agent's screenshots, the pure part: whether to capture, the
+# geometry script and its parser, masks and element tags drawn on the model
+# image (docs/design/AGENT_ACTIONS.md §2.6). No content/ and no Skia, so
+# molt_ai_unittests links it.
+source_set("agent_vision") {
+  sources = [
+    "agent_vision.cc",
+    "agent_vision.h",
+  ]
+
+  public_deps = [
+    ":agent_actions",
+    "//chrome/browser/molt_ai/runtime:model_image",
+  ]
+
+  deps = [
+    "//base",
+
+    # MoltNet: cloud AI is off there (header-only, std-only).
+    "//chrome/browser/molt_ai/tor:requests_policy",
+    "//chrome/services/molt_ai/inference/engine:image_input",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
   sources = [
     "agent_actions_unittest.cc",
     "agent_prompt_unittest.cc",
+    "agent_vision_unittest.cc",
     "chat_actions_unittest.cc",
   ]
   deps = [
     ":agent_actions",
     ":agent_prompt",
+    ":agent_vision",
     ":chat_actions",
     "//base",
+    "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/security:agent_safety",
+    "//chrome/services/molt_ai/inference/engine:image_input",
 
     # Every schema the agent and the chat build must be accepted by the
     # inference service's converter; the tests run the real one (std-only).
