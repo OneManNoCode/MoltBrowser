@@ -337,6 +337,17 @@ repo/
 - UI is the studio at `molt://ai-agent`, hosted in the side panel
   (`molt_ai/side_panel/agent_side_panel_web_view`), sharing one `kContent` panel
   with AI chat (opening one swaps the other).
+- **Model decisions are structured.** The web agent (`agents/web_agent.cc`)
+  and the runner's `ai_decide` / `ai_extract` / selector recovery ask the
+  on-device model for one JSON object under grammar-constrained decoding and
+  re-validate it in the browser: the agent acts only on element ids from its
+  own page snapshot (`agents/agent_actions.*`), decisions are read exactly,
+  and extracted objects are checked and capped (typed fields when a step's
+  `schema` from a `.molt` file, untrusted and converted with caps, lists
+  them; size, depth and key names otherwise; `automation/automation_ai_steps.*`).
+  An unusable answer is never acted on or stored. The page-facing checks
+  (`agent_safety`, `automation_security`) are unchanged. Design and
+  prompt-injection posture: `docs/design/AGENT_ACTIONS.md`.
 
 ### Fingerprinting protection
 - Engine side in Blink: `third_party/blink/renderer/core/molt_fingerprinting/`

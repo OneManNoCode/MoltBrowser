@@ -1,0 +1,34 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# The web agent itself (web_agent.*) is //chrome/browser/molt_ai:molt_ai_agents.
+
+# The agent's action format: the element snapshot, the JSON Schema the
+# model decodes under, and the strict parser of its replies
+# (docs/design/AGENT_ACTIONS.md). Pure logic (no content/), so
+# molt_ai_unittests links it.
+source_set("agent_actions") {
+  sources = [
+    "agent_actions.cc",
+    "agent_actions.h",
+  ]
+
+  public_deps = [ "//chrome/browser/molt_ai/security:agent_safety" ]
+
+  deps = [ "//base" ]
+}
+
+# Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "agent_actions_unittest.cc" ]
+  deps = [
+    ":agent_actions",
+    "//base",
+
+    # Every schema the agent builds must be accepted by the inference
+    # service's converter; the tests run the real one (std-only).
+    "//chrome/services/molt_ai/inference/engine:constrained_decoding",
+    "//testing/gtest",
+  ]
+}

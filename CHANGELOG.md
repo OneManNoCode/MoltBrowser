@@ -42,6 +42,19 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   data, and ask before submitting forms or touching password/card fields.
   Recorded workflows store vault references instead of what you typed, and
   per-workflow trust is shown and changed in the Agent studio.
+- **Agent decisions in a fixed format.** The web agent and Agent mode's AI
+  steps now get their answers from the on-device model as JSON it can only
+  write in the expected shape, and the browser checks each answer again.
+  The agent takes one action at a time on an element it listed from the
+  page (never typing into a password field), and stops after a few
+  unusable answers instead of guessing. "AI decision" reads SUCCESS or
+  FAIL exactly ("unsuccessful" used to count as success). "AI extract"
+  still saves a JSON object your later steps can read, but only one that
+  passes checks on its size, depth and field names (typed fields when the
+  workflow lists them), never the model's raw text; field lists in
+  imported workflows are capped and checked. Page text can still
+  influence what the model chooses, so the site, form and password rules
+  above still apply to every action.
 - **Safer secrets and cloud keys.** Vault autofill checks the site and
   requires https; keys and passwords aren't stored without a real system
   keychain; cloud endpoints must use https; the Gemini key is no longer put
