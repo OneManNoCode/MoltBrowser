@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <bit>
+#include <limits>
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/numerics/safe_conversions.h"
 #include "build/build_config.h"
 #include "crypto/hmac.h"
 
@@ -474,6 +476,40 @@ LetterboxSize LetterboxBucket(int viewport_width, int viewport_height) {
   };
   return {bucket(viewport_width, kLetterboxStepWidth, kLetterboxMaxWidth),
           bucket(viewport_height, kLetterboxStepHeight, kLetterboxMaxHeight)};
+}
+
+int PageDevicePixels(int dips, float device_scale_factor) {
+  // gfx::ScaleToCeiledSize(): SizeF(size), Scale(), ToCeiledSize().
+  if (device_scale_factor == 1.f) {
+    return dips;
+  }
+  return base::ClampCeil(static_cast<float>(dips) * device_scale_factor);
+}
+
+int PageCssPixels(int device_pixels, float layout_zoom) {
+  // AdjustForAbsoluteZoom::AdjustInt() and RoundForImpreciseConversion<int>.
+  if (layout_zoom == 1) {
+    return device_pixels;
+  }
+  float value = static_cast<float>(device_pixels);
+  if (layout_zoom > 1) {
+    if (device_pixels < 0) {
+      value -= 0.5f;
+    } else {
+      value += 0.5f;
+    }
+  }
+  double css = value / layout_zoom;
+  css += (css < 0) ? -0.01 : +0.01;
+  return ((css > std::numeric_limits<int>::max()) ||
+          (css < std::numeric_limits<int>::min()))
+             ? 0
+             : static_cast<int>(css);
+}
+
+float PageMediaQueryPixels(int device_pixels, float layout_zoom) {
+  // gfx::SizeF(layout_size_).Scale(1 / LayoutZoomFactor()).
+  return static_cast<float>(device_pixels) * (1 / layout_zoom);
 }
 
 float HalfToFloat(uint16_t half) {

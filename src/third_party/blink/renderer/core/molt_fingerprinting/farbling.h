@@ -190,9 +190,25 @@ struct LetterboxSize {
   int height;
 };
 
-// Viewport size (DIPs) rounded down to the letterbox steps, capped at
+// Viewport size (CSS pixels) rounded down to the letterbox steps, capped at
 // 1400x900 and never below one step.
 LetterboxSize LetterboxBucket(int viewport_width, int viewport_height);
+
+// How the renderer rounds a page's size, which the browser predicts to
+// letterbox the page at every zoom level and scale factor. The browser has
+// its own copy (chrome/browser/molt_ai/fingerprinting/molt_letterbox.h,
+// checked against these); letterbox_test.cc checks these against Blink and
+// gfx themselves:
+//   PageDevicePixels()     gfx::ScaleToCeiledSize(), one dimension: the
+//                          page's size in device pixels for `dips` DIPs;
+//   PageCssPixels()        AdjustForAbsoluteZoom::AdjustInt(): innerWidth /
+//                          innerHeight for `device_pixels` at a layout zoom
+//                          (device scale factor x page zoom);
+//   PageMediaQueryPixels() LocalFrameView::ViewportSizeForMediaQueries():
+//                          the width/height media queries and vw/vh.
+int PageDevicePixels(int dips, float device_scale_factor);
+int PageCssPixels(int device_pixels, float layout_zoom);
+float PageMediaQueryPixels(int device_pixels, float layout_zoom);
 
 // Every MoltNet window reports these.
 inline constexpr unsigned kUniformHardwareConcurrency = 4;
