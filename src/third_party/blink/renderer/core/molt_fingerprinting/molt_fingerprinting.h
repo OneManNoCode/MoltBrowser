@@ -47,6 +47,13 @@
 //            LocalDOMWindow::devicePixelRatio, HTMLImageElement (srcset),
 //            StyleResolverState (image-set())     -> DevicePixelRatioFor
 //            (letterbox.h; the browser letterboxes the page itself)
+//   MoltNet  Scrollbar::ScrollbarThickness, ScrollableArea::ScaleFromDIP,
+//            PaintLayerScrollableArea (scrollbar-gutter, viewport units),
+//            layout_text_control.cc (textarea width)
+//                                    -> ScrollbarThicknessFor & co.;
+//            LocalFrameView (media queries, vw/vh),
+//            DOMVisualViewport::width/height -> UniformViewportSize/Length
+//            (letterbox.h)
 //   MoltNet  Touch / PointerEvent (touch) coordinates and contact,
 //            getScreenDetails(), the window-management permission,
 //            screen and orientation "change" events, screen.orientation,
