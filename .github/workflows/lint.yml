@@ -79,13 +79,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      # The pinned Chromium trees (and the few upstream files patches/ needs),
-      # so the slow fetch from the mirror only happens when the pin changes.
+      # The pinned Chromium trees and the upstream files patches/ needs, so
+      # the slow tree fetch from the mirror only happens when the pin
+      # changes. A new patch series saves a new entry (restored from the
+      # closest one), so newly imported files are fetched once, not per run.
       - name: Cache the pinned Chromium trees
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: .molt-chromium-cache
-          key: chromium-upstream-${{ hashFiles('chromium_version.txt') }}
+          key: chromium-upstream-${{ hashFiles('chromium_version.txt') }}-${{ hashFiles('patches/series') }}
+          restore-keys: |
+            chromium-upstream-${{ hashFiles('chromium_version.txt') }}
       - name: patches/ reproduces src/ (fetches upstream@pin from the GitHub mirror)
         run: python3 tools/chromium/verify_patches.py
 

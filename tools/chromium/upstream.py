@@ -40,9 +40,9 @@ PATCH_SUFFIX = ".patch"
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 
-# Waits before each retry of the trees fetch. The GitHub mirror sometimes
-# answers a large tree fetch with a 5xx after a long wait; a second try
-# usually works.
+# Waits before each retry of a fetch from the mirror (trees or blobs). The
+# GitHub mirror sometimes answers with a 5xx, after a long wait for a large
+# tree fetch; a second try usually works.
 FETCH_RETRY_DELAYS = (15, 60)
 
 
@@ -225,6 +225,17 @@ class Upstream:
                      ("gc.auto", "0")):
             self.git(["config", k, v])
 
+    def _fetch(self, args, input=None):
+        """Runs a fetch from the mirror, retrying after FETCH_RETRY_DELAYS."""
+        for delay in FETCH_RETRY_DELAYS + (None,):
+            try:
+                return self.git(args, input=input)
+            except RuntimeError as e:
+                if delay is None:
+                    raise
+                log("%s\nRetrying in %d s ..." % (e, delay))
+                time.sleep(delay)
+
     def _fetched_marker(self, rev):
         return self.cache_dir / "fetched" / rev.replace("/", "_")
 
@@ -239,18 +250,9 @@ class Upstream:
                 die("%s is not in the cache and --offline was given" % rev)
             spec = rev if is_sha else "+refs/tags/%s:refs/tags/%s" % (rev, rev)
             log("Fetching trees of %s from %s ..." % (rev, self.remote))
-            fetch = ["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q",
-                     "--no-tags", "--depth=1", "--filter=blob:none",
-                     "origin", spec]
-            for delay in FETCH_RETRY_DELAYS + (None,):
-                try:
-                    self.git(fetch)
-                    break
-                except RuntimeError as e:
-                    if delay is None:
-                        raise
-                    log("%s\nRetrying in %d s ..." % (e, delay))
-                    time.sleep(delay)
+            self._fetch(["-c", "fetch.negotiationAlgorithm=noop", "fetch",
+                         "-q", "--no-tags", "--depth=1", "--filter=blob:none",
+                         "origin", spec])
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text("")
             self._local = None
@@ -290,11 +292,11 @@ class Upstream:
                 die("%d upstream files are not cached and --offline was given"
                     % len(missing))
             log("Fetching %d upstream file(s) ..." % len(missing))
-            self.git(["-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q",
-                      "origin", "--no-tags", "--no-write-fetch-head",
-                      "--recurse-submodules=no", "--filter=blob:none",
-                      "--stdin"],
-                     input=("\n".join(missing) + "\n").encode())
+            self._fetch(["-c", "fetch.negotiationAlgorithm=noop", "fetch",
+                         "-q", "origin", "--no-tags", "--no-write-fetch-head",
+                         "--recurse-submodules=no", "--filter=blob:none",
+                         "--stdin"],
+                        input=("\n".join(missing) + "\n").encode())
             self._local.update(missing)
         out = self.git(["cat-file", "--batch"],
                        input=("\n".join(oids) + "\n").encode())
