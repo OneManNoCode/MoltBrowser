@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/core/html/canvas/unique_font_selector.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"  // MoltBrowser
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h"
@@ -1204,9 +1205,12 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
   TextDirection direction =
       ToTextDirection(state.GetDirection(), host, computed_style);
 
-  return MakeGarbageCollected<TextMetrics>(
+  TextMetrics* metrics = MakeGarbageCollected<TextMetrics>(
       font, direction, state.GetTextBaseline(), state.GetTextAlign(), text,
       host->GetPlainTextPainter());
+  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
+  molt_fingerprinting::UniformTextMetrics(GetTopExecutionContext(), *metrics);
+  return metrics;
 }
 
 String BaseRenderingContext2D::lang() const {

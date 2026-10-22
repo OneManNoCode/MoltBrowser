@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_text_cluster_options.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect_read_only.h"
 #include "third_party/blink/renderer/core/html/canvas/text_cluster.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/fonts/character_range.h"
@@ -340,6 +341,9 @@ const HeapVector<Member<DOMRectReadOnly>> TextMetrics::getSelectionRects(
       }
     }
   }
+  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
+  molt_fingerprinting::UniformSelectionRects(molt_net_grid_, text_align_dx_,
+                                             selection_rects);
   return selection_rects;
 }
 
@@ -405,6 +409,9 @@ DOMRectReadOnly* TextMetrics::getActualBoundingBox(
         },
         static_cast<void*>(&bounding_box));
   }
+  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
+  bounding_box =
+      molt_fingerprinting::UniformInkBounds(molt_net_grid_, bounding_box);
   bounding_box.Offset(-text_align_dx_, baseline_y);
   return DOMRectReadOnly::FromRectF(bounding_box);
 }
@@ -517,6 +524,10 @@ HeapVector<Member<TextCluster>> TextMetrics::getTextClustersImpl(
               });
 
     for (wtf_size_t i = 0; i < clusters_for_run.size(); i++) {
+      // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
+      molt_fingerprinting::UniformClusterSpan(molt_net_grid_,
+                                              clusters_for_run[i].x_position_,
+                                              clusters_for_run[i].width_);
       TextCluster* text_cluster;
       if (i + 1 < clusters_for_run.size()) {
         text_cluster = TextCluster::Create(
@@ -537,6 +548,9 @@ HeapVector<Member<TextCluster>> TextMetrics::getTextClustersImpl(
           getTextBaselineDelta(baseline_y, cluster_text_baseline,
                                *font_->PrimaryFont()));
       text_cluster->OffsetPosition(-text_align_dx_, 0);
+      // MoltBrowser: the cluster's baseline offset too (moltnet_text.h).
+      molt_fingerprinting::UniformClusterBaseline(molt_net_grid_,
+                                                  *text_cluster);
       minimal_clusters.push_back(text_cluster);
     }
   }
@@ -567,6 +581,9 @@ unsigned TextMetrics::getIndexFromOffset(double x) {
   if (target_x >= width_) {
     target_x = width_;
   }
+  // MoltBrowser: MoltNet rounds what scripts read (moltnet_text.h).
+  target_x =
+      molt_fingerprinting::UniformCaretPosition(molt_net_grid_, target_x);
 
   for (HeapVector<RunWithOffset>::reverse_iterator riter =
            runs_with_offset_.rbegin();
