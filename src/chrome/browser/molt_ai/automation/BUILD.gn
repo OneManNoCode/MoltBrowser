@@ -105,6 +105,7 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "automation_ai_steps_unittest.cc",
+    "automation_script_unittest.cc",
     "automation_security_unittest.cc",
   ]
   deps = [
