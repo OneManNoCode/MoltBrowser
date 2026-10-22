@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/runtime/model_image.h"
 
 namespace molt_ai {
 
@@ -58,7 +59,17 @@ struct ModelInfo {
                               // "Alibaba", "Google", "Mistral AI", "Microsoft",
                               // "OpenAI". Drives the brand icon in the picker.
 
+  // Image input: the model's vision projector, a second GGUF from the same
+  // repo and revision; empty for a text-only model. A model with one is
+  // offered only once both files are pinned (fail closed), counts as
+  // downloaded only when both are on disk, and is loaded with both.
+  std::string vision_projector_filename;
+  std::string vision_projector_path;
+  std::string vision_projector_sha256;
+  size_t vision_projector_size_bytes = 0;
+
   bool is_verified() const { return !sha256.empty(); }
+  bool has_vision() const { return !vision_projector_filename.empty(); }
 };
 
 // Whether a reasoning-capable model should think before answering.
@@ -81,6 +92,9 @@ using TokenCallback = std::function<void(const std::string& token, bool is_done)
 struct ChatMessage {
   std::string role;
   std::string content;
+  // A user turn's images (model_image.h), shown to the model before its
+  // text; ignored on other roles. Untrusted, like page text.
+  std::vector<ModelImage> images;
 };
 
 // Structured chat request. The runtime owns the token budget, so it needs
@@ -95,12 +109,21 @@ struct ChatMessage {
 //   system_prompt + context_preamble + context   (preamble only if context).
 // context, history and user_message are treated as untrusted: text that
 // spells a special token of the loaded model is neutralized.
+//
+// Images (model_image.h) go with user turns: |user_images| for the new
+// message, ChatMessage::images for the history. They need a model with a
+// vision projector (GenerationResult::images_unsupported otherwise), and at
+// most kMaxImagesPerRequest (engine/image_input.h, 4) are sent: the new
+// message's (more is an error), then the newest history turns' (older ones
+// are left out, their text kept). The new message's images are never
+// trimmed; a history turn's are dropped with it.
 struct ChatPrompt {
   std::string system_prompt;
   std::string context_preamble;
   std::string context;
   std::vector<ChatMessage> history;  // oldest first; "user" / "assistant"
   std::string user_message;
+  std::vector<ModelImage> user_images;
 };
 
 // Prompt options
@@ -163,6 +186,9 @@ struct GenerationResult {
   // A constrained answer that isn't complete JSON (cut off: also
   // |truncated|), or one the model couldn't continue in the format.
   bool invalid_output = false;
+  // The prompt had images and the loaded model can't take them (no vision
+  // projector); nothing was generated.
+  bool images_unsupported = false;
 };
 
 // Result of the "can this model load right now?" RAM check.
@@ -314,6 +340,10 @@ class BrowserAIRuntime {
   // reported it at load (validated there); 0 if none is loaded. The web AI
   // APIs bucket it (web_ai/web_ai_policy.h) and never expose it.
   uint32_t GetLoadedContextTokens() const;
+
+  // The loaded model takes images (its vision projector loaded); false if
+  // none is loaded.
+  bool LoadedModelSeesImages() const;
 
   // ---- Hardware ----
 

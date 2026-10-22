@@ -60,25 +60,44 @@ bool IsCompleteJson(const std::string& reply) {
   return base::JSONReader::Read(reply, base::JSON_PARSE_RFC).has_value();
 }
 
-// The text of one prompt, or nullopt if it holds something a text model
-// can't take (an image, audio, a tool call or result) or is an assistant
-// prefix. Not sanitized yet.
-std::optional<std::string> PromptText(
-    const blink::mojom::AILanguageModelPromptPtr& prompt) {
+// One prompt's text (not sanitized yet) and images.
+struct PromptParts {
+  std::string text;
+  std::vector<const SkBitmap*> bitmaps;
+};
+
+// nullopt if |prompt| holds something the session can't take: audio, a
+// tool call or result, an assistant prefix, or an image unless
+// |images_allowed| and the turn is the user's (images reach the model with
+// user turns only).
+std::optional<PromptParts> SplitPrompt(
+    const blink::mojom::AILanguageModelPromptPtr& prompt,
+    bool images_allowed) {
   if (!prompt || prompt->is_prefix) {
     return std::nullopt;
   }
-  std::string text;
+  PromptParts parts;
   for (const auto& content : prompt->content) {
-    if (!content || !content->is_text()) {
+    if (!content) {
       return std::nullopt;
     }
-    if (!text.empty()) {
-      text += "\n";
+    if (content->is_bitmap()) {
+      if (!images_allowed ||
+          prompt->role != blink::mojom::AILanguageModelPromptRole::kUser) {
+        return std::nullopt;
+      }
+      parts.bitmaps.push_back(&content->get_bitmap());
+      continue;
     }
-    text += content->get_text();
+    if (!content->is_text()) {
+      return std::nullopt;
+    }
+    if (!parts.text.empty()) {
+      parts.text += "\n";
+    }
+    parts.text += content->get_text();
   }
-  return text;
+  return parts;
 }
 
 size_t PromptBytes(
@@ -106,6 +125,11 @@ std::string NewConversationKey() {
 
 }  // namespace
 
+bool IsUsableBitmapForModel(const SkBitmap& bitmap) {
+  return IsUsableImageSource(bitmap.width(), bitmap.height()) &&
+         !bitmap.drawsNothing();
+}
+
 // ---------------------------------------------------------------------------
 // WebAISession
 // ---------------------------------------------------------------------------
@@ -123,6 +147,10 @@ WebAISession::WebAISession(MoltAIManager& manager, uint64_t id)
 
 WebAISession::~WebAISession() {
   closed_ = true;
+  if (held_images_ > 0) {
+    manager_->backend()->ReleaseImages(site_key_, held_images_);
+    held_images_ = 0;
+  }
   if (job_id_ != 0) {
     manager_->backend()->Cancel(job_id_);
     job_id_ = 0;
@@ -140,7 +168,7 @@ WebAISession::~WebAISession() {
   manager_->backend()->RemoveSession(site_key_);
 }
 
-void WebAISession::Enqueue(Request request) {
+void WebAISession::Enqueue(Request request, std::vector<SkBitmap> bitmaps) {
   if (closed_ || !request.responder) {
     return;
   }
@@ -149,12 +177,105 @@ void WebAISession::Enqueue(Request request) {
         ModelStreamingResponseStatus::kErrorGenericFailure, nullptr);
     return;
   }
+  if (bitmaps.size() != request.image_turns.size()) {
+    request.responder->OnError(
+        ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
+    return;
+  }
+  if (!bitmaps.empty()) {
+    // Over the per-site or total image caps: a generic failure (never
+    // kErrorRequestThrottled, which crash-reports in the renderer).
+    if (!HoldImages(bitmaps.size())) {
+      request.responder->OnError(
+          ModelStreamingResponseStatus::kErrorGenericFailure, nullptr);
+      return;
+    }
+    request.held_images = bitmaps.size();
+    request.images_pending = true;
+  }
   request.id = next_request_id_++;
+  const uint64_t request_id = request.id;
   // The page aborting the request (AbortSignal) closes this pipe.
   request.responder.set_disconnect_handler(
       base::BindOnce(&WebAISession::OnResponderDisconnected,
-                     weak_factory_.GetWeakPtr(), request.id));
+                     weak_factory_.GetWeakPtr(), request_id));
   queue_.push_back(std::move(request));
+  if (!bitmaps.empty()) {
+    // Scaled on a worker while earlier requests run; the page's bitmaps
+    // aren't kept once that is done.
+    manager_->backend()->PrepareImages(
+        std::move(bitmaps),
+        base::BindOnce(&WebAISession::OnImagesReady,
+                       weak_factory_.GetWeakPtr(), request_id));
+  }
+  MaybeStartNext();
+}
+
+size_t WebAISession::ContextImages() const {
+  return 0;
+}
+
+bool WebAISession::HoldImages(size_t count) {
+  if (count == 0) {
+    return true;
+  }
+  if (!manager_->backend()->TryHoldImages(site_key_, count)) {
+    return false;
+  }
+  held_images_ += count;
+  return true;
+}
+
+void WebAISession::SyncHeldImages() {
+  size_t wanted = ContextImages();
+  if (running_) {
+    wanted += running_->held_images;
+  }
+  for (const Request& request : queue_) {
+    wanted += request.held_images;
+  }
+  if (held_images_ > wanted) {
+    manager_->backend()->ReleaseImages(site_key_, held_images_ - wanted);
+    held_images_ = wanted;
+  }
+}
+
+void WebAISession::OnImagesReady(
+    uint64_t request_id,
+    std::optional<std::vector<ModelImage>> images) {
+  if (closed_) {
+    return;
+  }
+  auto it = queue_.begin();
+  while (it != queue_.end() && it->id != request_id) {
+    ++it;
+  }
+  if (it == queue_.end() || !it->images_pending) {
+    // Aborted while the images were being made.
+    return;
+  }
+  bool ok = images.has_value() && images->size() == it->image_turns.size();
+  for (size_t i = 0; ok && i < images->size(); ++i) {
+    ok = it->image_turns[i] < it->turns.size() &&
+         it->turns[it->image_turns[i]].role == Role::kUser &&
+         (*images)[i].IsValid();
+  }
+  if (!ok) {
+    // An image that can't be shown to the model ("the input could not be
+    // processed", as for content a session can't take).
+    if (it->responder) {
+      it->responder->OnError(
+          ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
+    }
+    queue_.erase(it);
+    SyncHeldImages();
+    MaybeStartNext();
+    return;
+  }
+  for (size_t i = 0; i < images->size(); ++i) {
+    it->turns[it->image_turns[i]].images.push_back(std::move((*images)[i]));
+  }
+  it->images_pending = false;
   MaybeStartNext();
 }
 
@@ -174,7 +295,10 @@ void WebAISession::Close() {
 }
 
 void WebAISession::MaybeStartNext() {
-  while (!closed_ && !running_ && !queue_.empty()) {
+  // A request whose images aren't ready yet waits at the head of the queue
+  // (so the requests behind it wait too: they run in order).
+  while (!closed_ && !running_ && !queue_.empty() &&
+         !queue_.front().images_pending) {
     running_.emplace(std::move(queue_.front()));
     queue_.pop_front();
     std::optional<GenerationJob> job = Begin(*running_);
@@ -184,6 +308,9 @@ void WebAISession::MaybeStartNext() {
       continue;
     }
     StartJob(std::move(*job));
+  }
+  if (!closed_) {
+    SyncHeldImages();
   }
 }
 
@@ -296,6 +423,9 @@ void WebAISession::OnResponderDisconnected(uint64_t request_id) {
   for (auto it = queue_.begin(); it != queue_.end(); ++it) {
     if (it->id == request_id) {
       queue_.erase(it);
+      // It may have been the one holding up the queue (its images not
+      // ready yet).
+      MaybeStartNext();
       return;
     }
   }
@@ -337,6 +467,10 @@ blink::mojom::AILanguageModelInstanceInfoPtr LanguageModelSession::GetInfo()
       config_.sampling.top_k, config_.sampling.temperature);
   info->input_types = std::vector<blink::mojom::AILanguageModelPromptType>{
       blink::mojom::AILanguageModelPromptType::kText};
+  if (config_.image_input) {
+    info->input_types->push_back(
+        blink::mojom::AILanguageModelPromptType::kImage);
+  }
   info->sampling_mode = config_.sampling_mode;
   return info;
 }
@@ -398,21 +532,35 @@ void LanguageModelSession::Queue(
         blink::mojom::QuotaErrorInfo::New(TokensForSize(bytes), quota));
     return;
   }
+  std::vector<SkBitmap> bitmaps;
   for (const auto& prompt : prompts) {
-    std::optional<std::string> text = PromptText(prompt);
+    std::optional<PromptParts> parts =
+        SplitPrompt(prompt, config_.image_input);
     // Only the first message of a session may be a system message, and only
     // when the session is created (Blink enforces both).
-    if (!text ||
+    if (!parts ||
         prompt->role == blink::mojom::AILanguageModelPromptRole::kSystem) {
       request.responder->OnError(
           ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
       return;
     }
+    // At most what one request shows the model, each one a size that can
+    // be scaled; checked before any work is done on them.
+    for (const SkBitmap* bitmap : parts->bitmaps) {
+      if (bitmaps.size() >= kMaxContextImages ||
+          !IsUsableBitmapForModel(*bitmap)) {
+        request.responder->OnError(
+            ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
+        return;
+      }
+      request.image_turns.push_back(request.turns.size());
+      bitmaps.push_back(*bitmap);
+    }
     request.turns.push_back(MakeTurn(
         prompt->role == blink::mojom::AILanguageModelPromptRole::kAssistant
             ? Role::kAssistant
             : Role::kUser,
-        molt_ai::ToDisplayText(*text)));
+        molt_ai::ToDisplayText(parts->text), parts->bitmaps.size()));
   }
   // A prompt must end with the user's turn for the model to answer.
   if (!append_only &&
@@ -421,7 +569,7 @@ void LanguageModelSession::Queue(
         ModelStreamingResponseStatus::kErrorInvalidRequest, nullptr);
     return;
   }
-  Enqueue(std::move(request));
+  Enqueue(std::move(request), std::move(bitmaps));
 }
 
 std::optional<GenerationJob> LanguageModelSession::Begin(Request& request) {
@@ -452,7 +600,9 @@ std::optional<GenerationJob> LanguageModelSession::Begin(Request& request) {
     job.context = conversation_.system_prompt();
   }
   job.history = std::move(shape.history);
+  job.history_images = std::move(shape.history_images);
   job.user_message = std::move(shape.user_message);
+  job.user_images = std::move(shape.user_images);
   job.max_output_tokens = config_.max_reply_tokens;
   job.sampling = config_.sampling;
   job.conversation_key = conversation_key_;
@@ -470,6 +620,14 @@ blink::mojom::ModelExecutionContextInfoPtr LanguageModelSession::Commit(
     request.responder->OnContextOverflow();
   }
   return ContextInfo(conversation_.input_usage());
+}
+
+size_t LanguageModelSession::ContextImages() const {
+  return conversation_.image_count();
+}
+
+bool LanguageModelSession::HoldContextImages() {
+  return HoldImages(conversation_.image_count());
 }
 
 void LanguageModelSession::Fork(
@@ -495,12 +653,16 @@ void LanguageModelSession::MeasureInputUsage(
   }
   uint32_t tokens = 0;
   for (const auto& prompt : prompts) {
-    std::optional<std::string> text = PromptText(prompt);
-    if (!text) {
+    std::optional<PromptParts> parts =
+        SplitPrompt(prompt, config_.image_input);
+    if (!parts) {
       std::move(callback).Run(std::nullopt);
       return;
     }
-    tokens = AddTokens(tokens, EstimateMessageTokens(*text));
+    tokens = AddTokens(tokens, EstimateMessageTokens(parts->text));
+    for (size_t i = 0; i < parts->bitmaps.size(); ++i) {
+      tokens = AddTokens(tokens, kImageInputTokens);
+    }
   }
   std::move(callback).Run(tokens);
 }

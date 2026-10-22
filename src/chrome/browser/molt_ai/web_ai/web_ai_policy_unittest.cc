@@ -4,6 +4,7 @@
 #include "chrome/browser/molt_ai/web_ai/web_ai_policy.h"
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <set>
 #include <string>
@@ -333,6 +334,25 @@ TEST(WebAIPolicyTest, PickWebModel) {
   EXPECT_EQ(PickWebModel("", "", {{"absent", false, 1}}), "");
   EXPECT_EQ(PickWebModel("", "", {}), "");
 
+  // For images: a model that sees them, if one is downloaded; never by
+  // swapping out the loaded one.
+  const std::vector<ModelCandidate> vision = {
+      {"big", true, 8ull << 30, false},
+      {"tiny", true, 1ull << 30, false},
+      {"vl", true, 4ull << 30, true},
+      {"vl-small", true, 3ull << 30, true},
+      {"vl-absent", false, 1ull << 20, true},
+  };
+  EXPECT_EQ(PickWebModel("chat-model", "vl", vision, true), "chat-model");
+  EXPECT_EQ(PickWebModel("", "vl", vision, true), "vl");
+  EXPECT_EQ(PickWebModel("", "big", vision, true), "vl-small");
+  EXPECT_EQ(PickWebModel("", "", vision, true), "vl-small");
+  EXPECT_EQ(PickWebModel("", "big", vision, false), "big");
+  EXPECT_EQ(PickWebModel("", "", vision, false), "tiny");
+  // None sees images: the usual pick.
+  EXPECT_EQ(PickWebModel("", "big", models, true), "big");
+  EXPECT_EQ(PickWebModel("", "", models, true), "tiny");
+
   EXPECT_TRUE(AnyModelInstalled(models));
   EXPECT_FALSE(AnyModelInstalled({{"absent", false, 1}}));
   EXPECT_TRUE(AnyModelFits(models, 600ull << 20));
@@ -424,6 +444,51 @@ TEST(WebAIPolicyTest, SchedulerCancelsQueued) {
   s.Finish(42);  // unknown: ignored
   EXPECT_EQ(s.StartNext(), 1u);
   EXPECT_EQ(s.StartNext(), 0u);
+}
+
+TEST(WebAIPolicyTest, ImageSources) {
+  EXPECT_TRUE(IsUsableImageSource(1, 1));
+  EXPECT_TRUE(IsUsableImageSource(8192, 8192));
+  EXPECT_TRUE(IsUsableImageSource(1, kMaxImageSourcePixels));
+  EXPECT_FALSE(IsUsableImageSource(8192, 8193));
+  EXPECT_FALSE(IsUsableImageSource(2, kMaxImageSourcePixels));
+  EXPECT_FALSE(IsUsableImageSource(0, 10));
+  EXPECT_FALSE(IsUsableImageSource(10, -1));
+  EXPECT_FALSE(IsUsableImageSource(INT64_MAX, INT64_MAX));
+  EXPECT_FALSE(IsUsableImageSource(int64_t{1} << 32, int64_t{1} << 32));
+  EXPECT_FALSE(IsUsableImageSource(INT64_MIN, INT64_MIN));
+}
+
+TEST(WebAIPolicyTest, SchedulerImageHolds) {
+  GenerationScheduler s;
+  EXPECT_TRUE(s.TryHoldImages("a", 0));
+  EXPECT_TRUE(s.TryHoldImages("a", kMaxHeldImagesPerSite));
+  EXPECT_FALSE(s.TryHoldImages("a", 1));
+  EXPECT_EQ(s.ImagesHeldForSite("a"), kMaxHeldImagesPerSite);
+  // A failed hold holds nothing.
+  EXPECT_FALSE(s.TryHoldImages("b", kMaxHeldImagesPerSite + 1));
+  EXPECT_EQ(s.ImagesHeldForSite("b"), 0u);
+  EXPECT_FALSE(s.TryHoldImages("b", SIZE_MAX));
+  EXPECT_TRUE(s.TryHoldImages("b", kMaxHeldImagesPerSite));
+  EXPECT_TRUE(s.TryHoldImages("c", kMaxHeldImagesTotal -
+                                       2 * kMaxHeldImagesPerSite));
+  // The total cap.
+  EXPECT_EQ(s.images_held_total(), kMaxHeldImagesTotal);
+  EXPECT_FALSE(s.TryHoldImages("d", 1));
+  s.ReleaseImages("a", 3);
+  EXPECT_EQ(s.ImagesHeldForSite("a"), kMaxHeldImagesPerSite - 3);
+  EXPECT_TRUE(s.TryHoldImages("d", 3));
+  // Releasing more than a site holds releases what it holds; unknown sites
+  // and zero are ignored.
+  s.ReleaseImages("d", 100);
+  s.ReleaseImages("zzz", 5);
+  s.ReleaseImages("a", 0);
+  EXPECT_EQ(s.ImagesHeldForSite("d"), 0u);
+  EXPECT_EQ(s.images_held_total(), kMaxHeldImagesTotal - 3);
+  s.ReleaseImages("a", SIZE_MAX);
+  s.ReleaseImages("b", SIZE_MAX);
+  s.ReleaseImages("c", SIZE_MAX);
+  EXPECT_EQ(s.images_held_total(), 0u);
 }
 
 TEST(WebAIPolicyTest, SchedulerSessionSlots) {

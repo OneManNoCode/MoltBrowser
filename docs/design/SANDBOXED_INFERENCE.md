@@ -25,6 +25,7 @@ Pin: Chromium 152.0.7977.169 (`92a6f151`). Upstream files below were read at tha
 6. **Lifetime.** There is one process per loaded model. Dropping the remote kills the process, so idle unload, memory-pressure unload and model swap all become "kill the process".
 7. **No caller changes in this phase** (none were needed; `PromptOptions` gained an optional `stop_sequences` field, §8). `BrowserAIRuntime` keeps its public API, including the blocking calls made from ThreadPool workers. So `MoltAIChatHandler`, `WebAgent`, `AutomationRunner` and `automation_background_browser` are untouched. Async variants and migrating callers to them is a later, optional step.
 8. **Upstream files patched:** `chrome/utility/services.cc` and `chrome/utility/BUILD.gn`, imported unchanged first and then patched. No sandbox policy files are expected to change.
+9. **Images (§10).** A vision-language model's projector is a second read-only handle, and the service receives raw RGB pixels within fixed bounds, never an image file: decoding stays in Chromium's own sandboxed decoders.
 
 ```
 browser process (unsandboxed)                     utility process (kOnDeviceModelExecution)
@@ -860,3 +861,106 @@ No local patch to llama.cpp is needed. The lazy and trigger-pattern grammars, wh
 
   The three survivors are equivalent (a redundant cap, pieces stored for banned tokens too, a filter flag that is already false under a grammar).
 - **Syntax** of the service and browser code against stand-ins; **the mojom** with upstream's generator.
+
+## 10. Image input (vision-language models)
+
+Status: implemented (October 2026), pending a compile on the build machine. A vision-language model reads images through its vision projector (llama.cpp's "mmproj" GGUF), with llama.cpp's multimodal library (`tools/mtmd`) vendored at the same tag and built only into the sandboxed service. The registry's vision model is not offered until it and its projector are pinned (§10.4), so no user sees the feature yet. The first consumer is the Prompt API's image input (WEB_AI_APIS.md §5.1).
+
+### 10.1 Decisions
+
+1. **No image decoding in the service.** The service receives raw 8-bit RGB pixels with their width and height, never an image file.
+   - The browser decodes with Chromium's own sandboxed decoders: the data decoder process for image files (`DecodeImageForModel()`, `runtime/model_image_prep.h`), Blink for a page's images (the Prompt API sends decoded `SkBitmap`s), the compositor for screenshots (a later consumer).
+   - It scales with Skia (`PrepareImageForModel()`), converts to RGB with transparent pixels over a neutral grey, and pads to the bounds below.
+   - llama.cpp's helpers that decode files (`mtmd-helper`: stb_image, miniaudio, ffmpeg) are not vendored, so no compressed-image parser is linked into the service at all.
+2. **Bounds** (`engine/image_input.h`, checked in the browser before sending and again in the service, which treats a violation as a bad message):
+
+   | What | Bound |
+   |---|---|
+   | Side | 32 to 1024 pixels (web pages: scaled to at most 768) |
+   | Aspect ratio | at most 8:1 |
+   | Bytes | exactly width × height × 3 |
+   | Images per request | 4, history included |
+   | Where | user turns only (an image on an assistant turn is a bad message) |
+   | Tokens per image | at most 1024 (`image_max_tokens`) |
+
+   Images smaller or more extreme than the bounds are padded with grey, not refused; larger ones are scaled down, never up. The arithmetic is overflow-checked and tested with hostile sizes (zero, `UINT32_MAX`, 1×N, a buffer one byte short, row strides that wrap).
+3. **The projector is a second read-only handle.** `ModelLoadParams.vision_projector` (`ReadOnlyFile?`) with its exact size; the browser sends one only for a registry model with a pinned projector. The service loads it from the `FILE*` (local patch `mtmd_init_from_file_ptr()` / `clip_init_from_file_ptr()`, README.chromium). clip copies the weights into memory; the RAM checks, the sandbox budget and the browser's footprint limit count the projector plus 512 MiB for the encoder. A projector the library refuses, or one made for another model (a different embedding width), is `kInvalidVisionProjector`. A service that reports `vision` without having been sent a projector is a protocol violation and is killed.
+4. **The service places the images, not the text.** The message text gets one marker (`<__media__>`) per image in front of it, and `mtmd_tokenize_from_parts()` replaces the markers with the images in order; llama.cpp's own marker parsing isn't used. In a request with images the marker is neutralized like a special token in every untrusted field (context, history, the user's message), and the markers must pair up with the images one for one, or the request fails. So page text can't move, duplicate or add an image.
+5. **No KV reuse across images.** A request with images neither reuses the cache of a previous turn nor leaves one to reuse (the cells hold image embeddings that the next request's tokens can't be compared with).
+6. **Budget.** The new message's images count with the system prompt (never trimmed); a history turn's images count with that turn and are dropped with it. A request whose images don't fit the context fails instead of being cut.
+7. **Status values.** `GenerationStatus.kImagesUnsupported` for images sent to a model loaded without a projector (answered at once, nothing queued); `ModelDescription.vision` says whether one is loaded; `LoadModelStatus.kInvalidVisionProjector`. The browser maps the first to `GenerationResult::images_unsupported` and fails such a request before it is sent when it already knows.
+8. **Trust labels unchanged.** Images are untrusted content, like the page text they come with: they go with user turns, never with the system prompt or the preamble.
+
+### 10.2 The flow
+
+```
+browser                                              inference service
+-------                                              -----------------
+page bitmap (Blink) / image file (data decoder)
+  -> PrepareImageForModel (worker): Skia scale,
+     RGB over grey, pad (image_input.h)
+  -> ModelImage (checked: CheckModelImage)
+ChatPrompt.user_images / ChatMessage.images
+  -> ToServiceChat: <= 4 (new message's first,
+     then the newest history turns'), each checked
+  -> mojom.ImageInput {width, height, BigBuffer rgb} ->  MoltModelImpl: CheckImages (bad message
+                                                         on any violation), kImagesUnsupported
+                                                         without a projector, copies pixels out
+                                                       LlamaEngine::Chat: count + budget with
+                                                         placeholders, neutralize markers,
+                                                         tokenize_from_parts, encode each image
+                                                         chunk, decode embeddings (M-RoPE
+                                                         positions where the model uses them)
+```
+
+### 10.3 Threat model
+
+**Attackers:** a web page (it chooses the pixels, their size and the text around them, and through them steers the model); a malicious or odd projector GGUF (only from a pinned download, but still parsed in the sandbox).
+
+**Goals:** run code in the browser through an image parser; crash, hang or exhaust the inference process; make the model see an image where the page shouldn't be able to put one; exhaust browser memory with images.
+
+- **Parsers stay where they were.** Compressed images are parsed by Blink (the renderer, already the page's) or by the data decoder (its own sandboxed process); the browser handles only decoded bitmaps, with Skia's scaler, which Chromium runs on page images everywhere. Nothing new parses image files in the browser or the service.
+- **The service trusts no pixel buffer.** `CheckImages()` checks count, role and every image's bounds and byte length before anything is queued; a buffer that can't be mapped fails the request. `EngineImage`s are copies; `mtmd_bitmap_init()` copies exactly width × height × 3 bytes after `CheckModelImage()` matched them.
+- **Preprocessing is bounded.** At most 4 images of at most 1024 × 1024, at most 1024 tokens each; the encoder's buffers are sized at load (`warmup`), so an image can't fail for memory later. The per-request deadlines and liveness checks cover image encoding.
+- **Exceptions.** mtmd is built with exceptions like the rest of llama.cpp. Every `mtmd_*` and `llama_batch_ext_*` call was audited at b11641; the list, with each call's throws and aborts, is at the top of `llama_engine.cc`. The entry points that can throw catch everything (`mtmd_init_from_file_ptr`, `mtmd_tokenize_from_parts`, `mtmd_encode_chunk`); the aborts need inputs the engine never makes (an index past an image's tokens, an unknown chunk type, a batch over `n_batch`, a non-causal image larger than one ubatch, which is checked before the call). Two upstream bugs found on the way are patched (README.chromium): a short read of the projector left weights uninitialized instead of failing, and a projector refused after loading leaked its clip contexts.
+- **Environment.** With `LLAMA_MOLTBROWSER_SANDBOXED`, `MTMD_DEBUG_EMBEDDINGS` is ignored (no dump of image embeddings to the log or a file).
+- **Logging.** mtmd's log goes through the service's filter (warnings and errors only).
+- **Browser memory** (Prompt API, WEB_AI_APIS.md §5.1): bitmaps over 64 megapixels are refused unread; images are held per site (16) and in total (48), at most 1.7 MB each once scaled; a session's context keeps the pixels of its newest 4 images only.
+
+### 10.4 The model and its pins
+
+The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its projector in Q8_0 (`kVisionProjectors` in `browser_ai_runtime.cc`).
+
+- **Why this one.** A permissive licence, a size that runs next to the browser on 8 GB machines, strong text reading in screenshots and documents for its size (the main use: pages and agent screenshots), and a projector type the vendored llama.cpp supports (Qwen3-VL, with M-RoPE). Rejected: Qwen2.5-VL 3B (research-only licence), Gemma 3 (Gemma terms need acceptance), LFM2-VL (its own licence), SmolVLM2 (weaker at reading text), Qwen2.5-VL 7B (too big to sit next to the chat's model on most machines).
+- **Fail closed.** Its revision, both SHA-256s and both sizes are empty: until `tools/models/pin_models.py` fills all five from the same Hugging Face revision (it pins the projector from the model's own reply, and pins neither if the projector is missing), the model is not in the catalogue at all (`IsPinnedForVision()`). The repo and file names are marked to be confirmed when pinning.
+- **Download.** A model with a projector counts as downloaded only when both files are on disk, is loaded with both, and `DeleteModel` removes both. Downloading the projector after the model is not wired yet (the chat's download flow is in `molt_ai_chat_handler.cc`): it must be before the pins are filled. Until then a pinned vision model would download its weights, show as not downloaded and never load: safe, not useful.
+
+### 10.5 Not done
+
+- **Audio** (mtmd has it; nothing sends it) and **video**.
+- **Images in the AI chat or for Agent mode's screenshots.** The runtime API takes them (`ChatPrompt::user_images`, `ChatMessage::images`); no caller other than the Prompt API sends any yet.
+- **Mapping the projector** instead of copying it: clip reads tensors into its own buffers.
+- **KV reuse across images** (§10.1, 5).
+
+### 10.6 Tests
+
+**In `molt_ai_unittests`:**
+
+- `engine/image_input_unittest.cc` (std-only): the bounds, hostile sizes and byte lengths, the scaling plan (including a 20,000-case random sweep of its invariants), padding and alpha.
+- `runtime/model_image_unittest.cc`: which images a request sends (up to 4 new images and every split of up to 15 over three history turns).
+- `runtime/model_image_prep_unittest.cc` (Skia, the data decoder in-process): scaling, padding, transparency, other colour types, a PNG decoded and scaled, junk refused.
+- `runtime/inference_process_host_unittest.cc`: the projector handle is forwarded; `vision` without a projector is a violation.
+- The web AI tests for the Prompt API (WEB_AI_APIS.md §12).
+
+**Run outside the repo** (vendored llama.cpp and mtmd built with the GN flags, normally and with ASan, UBSan and LSan; tiny random-weight models made for the test: a llama text model with an MLP projector, and a Qwen2-VL model with its M-RoPE projector):
+
+- 18 end-to-end engine tests. **An oracle:** for one image (two shapes), two images, and an image in the history before the new one, on both models, the engine's greedy answer is token for token what llama.cpp's own evaluation gives (`mtmd_tokenize()` and `mtmd_helper_eval_chunks()`, copied into the test from b11641, then the same sampling): same prompt, same positions, M-RoPE's 2-D image grid included. The rest: loading the projector; answers with images at and inside the bounds; refusal of images outside them, of a fifth image, of images on assistant turns; history images; page text that spells the marker can't place an image; no KV reuse across an image; cancellation during image encoding; a JSON-constrained answer with an image; images that don't fit the context; a text-only model refusing images; projectors for another model, of another size, and files that aren't projectors.
+- Regression: the engine's earlier end-to-end suites (text, constrained decoding, embeddings) unchanged.
+- **Mutation checks:**
+  - the bounds, the scaling plan, the composition and the request plan (`image_input`, `model_image`): 15 of 15 caught;
+  - the engine's image path against the end-to-end tests: 7 of 10 caught (a fifth image, an image on an assistant turn, the marker not neutralized, images on a text-only model, an image outside the bounds, M-RoPE rows and columns swapped, positions counted per token). The three survivors are equivalent: the KV key cleared after images (image cells hold placeholder tokens that never match, so nothing past them is reused anyway), markers that must pair with images (neutralization already guarantees it), and the new message's images budgeted up front (the re-plan loop reaches the same result);
+  - the pinning of projectors: 4 of 4;
+  - the Prompt API's checks: WEB_AI_APIS.md §12.
+- **Syntax** of the service and browser code against stand-ins; **the mojom** with upstream's generator.
+
+**Needs the build machine:** a compile; Metal and the GPU path for the encoder; a real pinned model (quality, speed, memory) on 8 and 16 GB machines; the Prompt API with real images in a page.

@@ -78,6 +78,9 @@ struct InferenceOutcome {
   uint32_t context_tokens = 0;
   uint32_t vocab_size = 0;
   bool cpu_repack_used = false;
+  // A vision projector is loaded (image input). Only ever true when one was
+  // sent.
+  bool vision = false;
   // Generation: set when OnComplete arrived (counts clamped).
   bool has_summary = false;
   StreamSummary summary;
@@ -142,6 +145,10 @@ class InferenceProcessHost {
     // Opened read-only (not async) by the caller.
     base::File file;
     uint64_t file_size = 0;
+    // The model's vision projector (image input), opened like |file|;
+    // invalid for a text-only model.
+    base::File vision_projector;
+    uint64_t vision_projector_size = 0;
     uint64_t total_ram_bytes = 0;
     uint32_t cpu_threads = 1;
     uint32_t max_context_tokens = 0;

@@ -17,14 +17,23 @@ sandboxed utility process: the inference service in
 //chrome/services/molt_ai/inference (kOnDeviceModelExecution sandbox,
 docs/design/SANDBOXED_INFERENCE.md), the only code BUILD.gn lets link it.
 Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
-macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev).
+macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev). Image input uses the
+multimodal library (tools/mtmd: the vision projector, image preprocessing
+and the projectors' graphs), built as :mtmd; the browser decodes images
+with Chromium's sandboxed decoders and the service receives raw RGB pixels
+(docs/design/SANDBOXED_INFERENCE.md section 10).
 
 Only the directories the build uses were vendored: common/, ggml/,
-include/ and src/ from the tag above (no tools/, examples/, tests/ or
-vendor/).
+include/ and src/ from the tag above, and from tools/mtmd only the
+library's own sources (clip*, mtmd.*, mtmd-internal.h, mtmd-image.*,
+mtmd-audio.*, debug/mtmd-debug.h and models/), as listed in its
+CMakeLists.txt's add_library(mtmd ...) minus mtmd-helper*.cpp. Not
+vendored: mtmd-helper (it decodes compressed images with stb_image and
+audio with miniaudio, and runs ffmpeg for video), the CLI, tests, test
+media, conversion scripts, examples/ and vendor/.
 
-Exceptions: BUILD.gn builds ggml_cpp, llama_models, llama_cpp and
-llama_common with exceptions; everything else, including the ggml-cpu
+Exceptions: BUILD.gn builds ggml_cpp, llama_models, llama_cpp,
+llama_common and mtmd with exceptions; everything else, including the ggml-cpu
 and ggml-metal sources and all MoltBrowser callers, is built with
 Chromium's -fno-exceptions. So a `throw` or `.at(` miss in ggml-cpu or
 ggml-metal aborts (none in the files BUILD.gn builds at b11641; only
@@ -43,12 +52,16 @@ tokens accepted). Re-check that file when updating. The lazy /
 trigger-pattern grammars (std::regex on model output) are not used, and
 common/json-schema-to-grammar.cpp is replaced by MoltBrowser's own
 converter (chrome/services/molt_ai/inference/engine/
-json_schema_grammar.cc).
+json_schema_grammar.cc). The mtmd_* entry points the service calls catch
+their own exceptions (mtmd_init_from_file_ptr, mtmd_tokenize_from_parts,
+mtmd_encode_chunk) or don't throw; their aborts are listed with each call
+at the top of llama_engine.cc. Re-check them when updating.
 
 Local Modifications:
 - BUILD.gn: GN build for Chromium (not upstream). Every target that
   compiles llama.cpp or ggml code is visible only to
-  //chrome/services/molt_ai/inference (the sandboxed inference service).
+  //chrome/services/molt_ai/inference (the sandboxed inference service),
+  :mtmd included.
 - chromium/ggml-version.h, chromium/llama-version.h: stand-ins for the
   headers upstream CMake generates from ggml/src/ggml-version.h.in and
   src/llama-version.h.in. Update their values with every update.
@@ -100,6 +113,23 @@ Local Modifications:
     src/llama-memory-hybrid-idx.cpp: struct kpool_layout defined before
       the constructor (as C++23, which Chromium uses, libc++ rejects the
       constexpr ~unique_ptr of an incomplete type there).
+    tools/mtmd/clip.cpp, tools/mtmd/clip.h: clip_init_from_file_ptr()
+      loads the projector from a FILE* the caller opened (the sandboxed
+      service can't open paths): gguf_init_from_file_ptr() for the
+      metadata, then every tensor read (read_tensor_data(), also used by
+      get_vector()) seeks and reads that stream, and a short read throws
+      (upstream ignores a short ifstream read). The path-based clip_init()
+      reads as before.
+    tools/mtmd/clip.cpp: with LLAMA_MOLTBROWSER_SANDBOXED (:llama_sandboxed
+      on :mtmd), the MTMD_DEBUG_EMBEDDINGS environment variable is ignored:
+      no dump of image embeddings to the log or to a file it names.
+    tools/mtmd/mtmd.cpp, tools/mtmd/mtmd.h: mtmd_init_from_file_ptr(), the
+      FILE* counterpart of mtmd_init_from_file() (catches everything and
+      returns nullptr, like it).
+    tools/mtmd/mtmd.cpp: mtmd_context's constructor frees the clip
+      contexts when it throws after loading them (a projector made for
+      another model's embedding width); upstream leaks them, as the
+      destructor doesn't run.
 - Patches dropped at b11641 because upstream now has them:
   src/llama-graph.h (#include <cstdlib>), src/llama-quant.cpp
   (#include <algorithm>).

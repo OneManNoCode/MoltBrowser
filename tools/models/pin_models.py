@@ -16,6 +16,13 @@ from /resolve/<revision>/<file> and rejects any file whose size or SHA-256
 differs. Chat models without a hash are downloaded as "unverified"; the
 memory search model is not offered at all until it is pinned (fail closed).
 
+A model that sees images also has a vision projector entry
+(kVisionProjectors in browser_ai_runtime.cc): its /*mmproj_sha256=*/ and
+/*mmproj_size=*/ are pinned from the same API reply, so from the same
+revision as the model. Both are pinned or neither: if the projector isn't
+in the reply, the model isn't pinned either. Such a model is offered only
+once both are pinned (fail closed).
+
 Usage:
   tools/models/pin_models.py                  # dry run: show what changes
   tools/models/pin_models.py --write          # rewrite the registries
@@ -58,6 +65,14 @@ ENTRY_RE = re.compile(
     r'/\*sha256=\*/"(?P<sha256>[^"]*)",\s*'
     r'/\*size=\*/(?P<size>\d+)ULL', re.S)
 
+# One vision projector entry: {"<model id>", "<file>",
+#   /*mmproj_sha256=*/"...", /*mmproj_size=*/NULL},
+PROJECTOR_RE = re.compile(
+    r'\{"(?P<id>[^"]+)",\s*'
+    r'"(?P<file>[^"]+)",(?P<file_tail>[^\n]*)\n\s*'
+    r'/\*mmproj_sha256=\*/"(?P<sha256>[^"]*)",\s*'
+    r'/\*mmproj_size=\*/(?P<size>\d+)ULL', re.S)
+
 SHA1_RE = re.compile(r'^[0-9a-f]{40}$')
 SHA256_RE = re.compile(r'^[0-9a-f]{64}$')
 
@@ -97,11 +112,22 @@ def pin_entry(entry, info):
                                               revision))
 
 
+def pin_projector_text(text, sha256, size):
+  text = re.sub(r'/\*mmproj_sha256=\*/"[^"]*"',
+                '/*mmproj_sha256=*/"%s"' % sha256, text)
+  return re.sub(r'/\*mmproj_size=\*/\d+ULL', '/*mmproj_size=*/%dULL' % size,
+                text)
+
+
 def pin_registry(path, args):
   """Pins the entries of one registry file. Returns (changed, failures)."""
   with open(path) as f:
     src = f.read()
   entries = list(ENTRY_RE.finditer(src))
+  projectors = {m.group('id'): m.groupdict()
+                for m in PROJECTOR_RE.finditer(src)}
+  # Model id -> (sha256, size) of its projector, from the model's reply.
+  projector_pins = {}
   out = []
   last = 0
   changed = 0
@@ -117,6 +143,12 @@ def pin_registry(path, args):
     try:
       info = fetch_info(e['repo'], args.revision, args.from_json)
       revision, sha256, size = pin_entry(e, info)
+      projector = projectors.get(e['id'])
+      if projector:
+        # The same reply, so the same revision as the model.
+        _, p_sha256, p_size = pin_entry(
+            {'file': projector['file'], 'repo': e['repo']}, info)
+        projector_pins[e['id']] = (p_sha256, p_size)
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError) as err:
       print('FAIL %-20s %s: %s' % (e['id'], e['repo'], err), file=sys.stderr)
       failures += 1
@@ -136,6 +168,25 @@ def pin_registry(path, args):
       print('ok   %-20s already pinned' % e['id'])
     out.append(new_text)
   out.append(src[last:])
+
+  if projector_pins:
+    joined = ''.join(out)
+    out = []
+    last = 0
+    for m in PROJECTOR_RE.finditer(joined):
+      out.append(joined[last:m.start()])
+      last = m.end()
+      text = m.group(0)
+      pin = projector_pins.get(m.group('id'))
+      if pin:
+        new_text = pin_projector_text(text, *pin)
+        if new_text != text:
+          changed += 1
+          print('pin  %-20s projector %s sha256=%s size=%d' %
+                (m.group('id'), m.group('file'), pin[0][:16] + '...', pin[1]))
+        text = new_text
+      out.append(text)
+    out.append(joined[last:])
 
   if args.write and changed:
     with open(path, 'w') as f:

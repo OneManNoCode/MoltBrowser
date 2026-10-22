@@ -31,6 +31,10 @@ source_set("logic") {
     "web_ai_translation.cc",
     "web_ai_translation.h",
   ]
+
+  # Images in a session's context (std-only).
+  public_deps = [ "//chrome/browser/molt_ai/runtime:model_image" ]
+  deps = [ "//chrome/services/molt_ai/inference/engine:image_input" ]
 }
 
 # blink.mojom.AIManager, blink.mojom.TranslationManager and the session
@@ -53,6 +57,7 @@ source_set("manager") {
     "//base",
     "//mojo/public/cpp/bindings",
     "//services/on_device_model/public/mojom",
+    "//skia",
     "//third_party/blink/public/mojom:mojom_platform",
   ]
   deps = [ "//chrome/services/molt_ai/inference/engine:stream_filters" ]
@@ -104,6 +109,9 @@ source_set("web_ai") {
     "//base",
     "//chrome/browser/molt_ai:molt_ai_runtime",
 
+    # A page's images, scaled for the model on a worker.
+    "//chrome/browser/molt_ai/runtime:model_image_prep",
+
     # molt_net_profile_id.h (header-only IsMoltNetProfile()).
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/profiles:profile",
@@ -123,6 +131,7 @@ source_set("web_ai") {
     "//content/public/common",
     "//net",
     "//services/network/public/mojom",
+    "//skia",
     "//third_party/blink/public/common",
     "//ui/base",
     "//url",
@@ -165,6 +174,7 @@ source_set("unit_tests") {
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
     "//services/on_device_model/public/mojom",
+    "//skia",
     "//testing/gtest",
     "//third_party/blink/public/mojom:mojom_platform",
     "//url",

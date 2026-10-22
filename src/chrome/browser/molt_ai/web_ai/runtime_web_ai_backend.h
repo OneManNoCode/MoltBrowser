@@ -12,6 +12,9 @@
 //    page request; visible pages first; per-site and global caps.
 //  * Each page generation has a deadline (kGenerationDeadline, model load
 //    included), a reply budget and a small hidden-reasoning budget.
+//  * A page's images (Prompt API image input) are scaled to
+//    kWebImageMaxSide on a worker; the images pages hold are capped per
+//    site and in total (GenerationScheduler).
 //
 // UI thread only; the runtime's blocking calls run on ThreadPool workers.
 
@@ -56,13 +59,17 @@ class RuntimeWebAIBackend : public WebAIBackend {
 
   // WebAIBackend:
   void GetDeviceFacts(DeviceCallback callback) override;
-  void PrepareModel(PrepareCallback callback) override;
+  void PrepareModel(bool wants_images, PrepareCallback callback) override;
   uint64_t Generate(GenerationJob job,
                     ChunkCallback on_chunk,
                     DoneCallback on_done) override;
   void Cancel(uint64_t id) override;
   bool TryAddSession(const std::string& site_key) override;
   void RemoveSession(const std::string& site_key) override;
+  void PrepareImages(std::vector<SkBitmap> bitmaps,
+                     ImagesCallback callback) override;
+  bool TryHoldImages(const std::string& site_key, size_t count) override;
+  void ReleaseImages(const std::string& site_key, size_t count) override;
 
   // settings.json changed (molt://ai-settings turned the APIs on or off):
   // the next request reads the device facts again instead of using the
@@ -75,6 +82,7 @@ class RuntimeWebAIBackend : public WebAIBackend {
   struct PrepareResult {
     bool ok = false;
     uint32_t context_tokens = 0;
+    bool sees_images = false;
   };
 
   RuntimeWebAIBackend();
@@ -92,7 +100,8 @@ class RuntimeWebAIBackend : public WebAIBackend {
 
   // Runs on a worker.
   static DeviceFacts ReadDeviceFacts(BrowserAIRuntime* runtime);
-  static PrepareResult PrepareBlocking(BrowserAIRuntime* runtime);
+  static PrepareResult PrepareBlocking(BrowserAIRuntime* runtime,
+                                       bool wants_images);
   static GenerationStatus RunJob(
       BrowserAIRuntime* runtime,
       GenerationJob job,

@@ -707,6 +707,105 @@ source_set("llama_cpp") {
   ]
 }
 
+# MoltBrowser: image input (docs/design/SANDBOXED_INFERENCE.md section 10).
+# llama.cpp's multimodal library, tools/mtmd at the same tag: the vision
+# projector loader (clip), image preprocessing (resize, normalize, tiling)
+# and the projectors' graph builders. Only the library's own sources:
+# mtmd-helper.cpp is NOT vendored (it decodes compressed images with
+# stb_image and audio with miniaudio, and runs ffmpeg for video), so nothing
+# here decodes a PNG or JPEG. Images reach the inference service as raw RGB
+# pixels that the browser decoded (Chromium's sandboxed decoders) and
+# checked; the service checks them again. Visible only to the inference
+# service, like the rest of llama.cpp. Every mtmd_* call the service makes
+# is listed, with how it handles exceptions, at the top of
+# //chrome/services/molt_ai/inference/llama_engine.cc.
+source_set("mtmd") {
+  visibility = _llama_cpp_visibility
+
+  sources = [
+    "tools/mtmd/clip-graph.h",
+    "tools/mtmd/clip-impl.h",
+    "tools/mtmd/clip-model.h",
+    "tools/mtmd/clip.cpp",
+    "tools/mtmd/clip.h",
+    "tools/mtmd/debug/mtmd-debug.h",
+    "tools/mtmd/models/models.h",
+    "tools/mtmd/models/cogvlm.cpp",
+    "tools/mtmd/models/conformer.cpp",
+    "tools/mtmd/models/deepseek4v.cpp",
+    "tools/mtmd/models/deepseekocr.cpp",
+    "tools/mtmd/models/deepseekocr2.cpp",
+    "tools/mtmd/models/dots3note.cpp",
+    "tools/mtmd/models/dotsocr.cpp",
+    "tools/mtmd/models/exaone4_5.cpp",
+    "tools/mtmd/models/gemma4a.cpp",
+    "tools/mtmd/models/gemma4ua.cpp",
+    "tools/mtmd/models/gemma4uv.cpp",
+    "tools/mtmd/models/gemma4v.cpp",
+    "tools/mtmd/models/glm4v.cpp",
+    "tools/mtmd/models/granite-speech.cpp",
+    "tools/mtmd/models/granite4-vision.cpp",
+    "tools/mtmd/models/hunyuanvl.cpp",
+    "tools/mtmd/models/internvl.cpp",
+    "tools/mtmd/models/kimik25.cpp",
+    "tools/mtmd/models/kimivl.cpp",
+    "tools/mtmd/models/ling3vl.cpp",
+    "tools/mtmd/models/llama4.cpp",
+    "tools/mtmd/models/llava.cpp",
+    "tools/mtmd/models/mimo-audio.cpp",
+    "tools/mtmd/models/mimovl.cpp",
+    "tools/mtmd/models/minicpmv.cpp",
+    "tools/mtmd/models/minimax-m3.cpp",
+    "tools/mtmd/models/mobilenetv5.cpp",
+    "tools/mtmd/models/muse-glimmer.cpp",
+    "tools/mtmd/models/nemotron-v2-vl.cpp",
+    "tools/mtmd/models/paddleocr.cpp",
+    "tools/mtmd/models/parakeet.cpp",
+    "tools/mtmd/models/pixtral.cpp",
+    "tools/mtmd/models/pockettts-gen.cpp",
+    "tools/mtmd/models/pockettts-seanet.cpp",
+    "tools/mtmd/models/pockettts-spkenc.cpp",
+    "tools/mtmd/models/qwen2vl.cpp",
+    "tools/mtmd/models/qwen3a.cpp",
+    "tools/mtmd/models/qwen3tts-gen.cpp",
+    "tools/mtmd/models/qwen3tts-spkenc.cpp",
+    "tools/mtmd/models/qwen3vl.cpp",
+    "tools/mtmd/models/siglip.cpp",
+    "tools/mtmd/models/step3vl.cpp",
+    "tools/mtmd/models/whisper-enc.cpp",
+    "tools/mtmd/models/yasa2.cpp",
+    "tools/mtmd/models/youtuvl.cpp",
+    "tools/mtmd/mtmd-audio.cpp",
+    "tools/mtmd/mtmd-audio.h",
+    "tools/mtmd/mtmd-image.cpp",
+    "tools/mtmd/mtmd-image.h",
+    "tools/mtmd/mtmd-internal.h",
+    "tools/mtmd/mtmd.cpp",
+    "tools/mtmd/mtmd.h",
+  ]
+
+  # debug/mtmd-debug.h includes "mtmd.h" (upstream CMake adds tools/mtmd to
+  # the include path). Private: dependents include
+  # "third_party/llama_cpp/tools/mtmd/mtmd.h".
+  include_dirs = [ "tools/mtmd" ]
+
+  public_deps = [ ":llama_cpp" ]
+  public_configs = [ ":llama_cpp_config" ]
+  configs += _llama_cpp_cfi_configs
+
+  # No environment-controlled embedding dumps (clip.cpp; README.chromium).
+  configs += [ ":llama_sandboxed" ]
+
+  # clip and mtmd throw (and catch) C++ exceptions, like llama.cpp.
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ ":llama_exceptions" ]
+
+  cflags_cc = [
+    "-std=c++17",
+    "-w",
+  ]
+}
+
 # Common utilities (sampling, CLI helpers, etc.)
 # NOTE: nothing depends on this target (the service only uses llama.h) and it
 # is not buildable as is: common/jinja/value.h uses typeid, which Chromium's

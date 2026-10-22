@@ -168,12 +168,14 @@ class InferenceProcessHost::ModelProcess
                std::string model_id,
                std::string crash_key,
                uint32_t max_context_tokens,
-               uint64_t footprint_limit_bytes)
+               uint64_t footprint_limit_bytes,
+               bool vision_projector_sent)
       : host_(host),
         model_id_(std::move(model_id)),
         crash_key_(std::move(crash_key)),
         max_context_tokens_(max_context_tokens),
-        footprint_limit_bytes_(footprint_limit_bytes) {}
+        footprint_limit_bytes_(footprint_limit_bytes),
+        vision_projector_sent_(vision_projector_sent) {}
   ~ModelProcess() override = default;
 
   // content::ServiceProcessHost::Observer (UI thread):
@@ -195,6 +197,8 @@ class InferenceProcessHost::ModelProcess
   // The cap the browser sent; a described context above it is a lie.
   uint32_t max_context_tokens() const { return max_context_tokens_; }
   uint64_t footprint_limit_bytes() const { return footprint_limit_bytes_; }
+  // A process given no projector that claims vision is lying.
+  bool vision_projector_sent() const { return vision_projector_sent_; }
 
   State state = State::kLoading;
   mojo::Remote<mojom::MoltInferenceService> service;
@@ -220,6 +224,7 @@ class InferenceProcessHost::ModelProcess
   const std::string crash_key_;
   const uint32_t max_context_tokens_;
   const uint64_t footprint_limit_bytes_;
+  const bool vision_projector_sent_;
   base::WeakPtrFactory<ModelProcess> weak_factory_{this};
 };
 
@@ -395,7 +400,7 @@ void InferenceProcessHost::Load(LoadRequest request,
 
   auto process = std::make_unique<ModelProcess>(
       this, request.model_id, request.crash_key, request.max_context_tokens,
-      request.footprint_limit_bytes);
+      request.footprint_limit_bytes, request.vision_projector.IsValid());
   ModelProcess* p = process.get();
   p->load_mailbox = std::move(mailbox);
   launcher_.Run(p->service.BindNewPipeAndPassReceiver(), p->GetWeakPtr(),
@@ -412,6 +417,10 @@ void InferenceProcessHost::Load(LoadRequest request,
   params->cpu_threads = request.cpu_threads;
   params->max_context_tokens = request.max_context_tokens;
   params->allow_cpu_repack = request.allow_cpu_repack;
+  if (request.vision_projector.IsValid()) {
+    params->vision_projector = std::move(request.vision_projector);
+    params->vision_projector_size = request.vision_projector_size;
+  }
   p->service->LoadModel(
       std::move(params), p->model.BindNewPipeAndPassReceiver(),
       base::BindOnce(&InferenceProcessHost::OnLoadReply,
@@ -468,7 +477,8 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
                                description->context_tokens,
                                description->vocab_size,
                                mojom::kMinDescribedContextTokens,
-                               p->max_context_tokens())) {
+                               p->max_context_tokens()) ||
+      (description->vision && !p->vision_projector_sent())) {
     mojo::ReportBadMessage("invalid ModelDescription");
     p->load_mailbox = std::move(mailbox);  // failed by KillProcess
     KillProcess(p, InferenceOutcome::Kind::kViolation,
@@ -485,6 +495,7 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   outcome.context_tokens = description->context_tokens;
   outcome.vocab_size = description->vocab_size;
   outcome.cpu_repack_used = description->cpu_repack_used;
+  outcome.vision = description->vision;
 
   // Swap: the previous model finishes what it is running, then ends.
   if (current_) {

@@ -122,15 +122,22 @@ bool WritingLanguagesValid(const OptionsPtr& options) {
 
 // What a LanguageModel's create options ask for.
 struct LanguageModelOptionCheck {
-  // Text in, text out, no tools.
+  // Text (and, with the multimodal-input feature, images) in, text out, no
+  // tools.
   bool supported = true;
   bool languages_valid = true;
+  // expectedInputs has "image": the session takes images, and create()
+  // needs a model that sees them. availability() doesn't look at this: its
+  // answer is the same with or without image input (WEB_AI_APIS.md §5.1).
+  bool images = false;
   // The one output language asked for, if exactly one (by base language).
   std::string output_language;
 };
 
+// |image_input_enabled|: ContextFacts::image_input_enabled.
 LanguageModelOptionCheck CheckLanguageModelOptions(
-    const blink::mojom::AILanguageModelCreateOptionsPtr& options) {
+    const blink::mojom::AILanguageModelCreateOptionsPtr& options,
+    bool image_input_enabled) {
   LanguageModelOptionCheck check;
   if (!options) {
     return check;
@@ -139,15 +146,25 @@ LanguageModelOptionCheck CheckLanguageModelOptions(
     check.supported = false;
   }
   auto check_expected =
-      [&check](const std::optional<
-               std::vector<blink::mojom::AILanguageModelExpectedPtr>>& list,
-               std::vector<std::string>* languages) {
+      [&check, image_input_enabled](
+          const std::optional<
+              std::vector<blink::mojom::AILanguageModelExpectedPtr>>& list,
+          bool inputs, std::vector<std::string>* languages) {
         if (!list.has_value()) {
           return;
         }
         for (const auto& expected : *list) {
-          if (!expected ||
-              expected->type != blink::mojom::AILanguageModelPromptType::kText) {
+          if (!expected) {
+            check.supported = false;
+            continue;
+          }
+          if (inputs && image_input_enabled &&
+              expected->type ==
+                  blink::mojom::AILanguageModelPromptType::kImage) {
+            check.images = true;
+          } else if (expected->type !=
+                     blink::mojom::AILanguageModelPromptType::kText) {
+            // Audio, tool calls and results; any output but text.
             check.supported = false;
             continue;
           }
@@ -164,8 +181,8 @@ LanguageModelOptionCheck CheckLanguageModelOptions(
         }
       };
   std::vector<std::string> outputs;
-  check_expected(options->expected_inputs, nullptr);
-  check_expected(options->expected_outputs, &outputs);
+  check_expected(options->expected_inputs, /*inputs=*/true, nullptr);
+  check_expected(options->expected_outputs, /*inputs=*/false, &outputs);
   if (!outputs.empty()) {
     const std::string base = BaseLanguage(outputs.front());
     bool one = true;
@@ -413,7 +430,14 @@ class MoltAIManager::CreateRequest {
          nullptr);
   }
   // The user allowed the site and the model is loaded: make the session.
-  virtual void Finish(MoltAIManager& manager, uint32_t context_tokens) = 0;
+  // |sees_images|: the loaded model takes images.
+  virtual void Finish(MoltAIManager& manager,
+                      uint32_t context_tokens,
+                      bool sees_images) = 0;
+
+  // The session will take images: a model that sees them is preferred
+  // when one has to be loaded.
+  virtual bool wants_images() const { return false; }
 
   WebAIApi api() const { return api_; }
   bool options_supported() const { return options_supported_; }
@@ -440,16 +464,27 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
                       check.languages_valid),
         client_(std::move(client)),
         options_(std::move(options)),
-        output_language_(check.output_language) {}
+        output_language_(check.output_language),
+        images_(check.images) {}
 
   bool IsWanted() const override { return client_.is_connected(); }
+  bool wants_images() const override { return images_; }
 
   void Fail(AIManagerCreateClientError error,
             blink::mojom::QuotaErrorInfoPtr quota) override {
     client_->OnError(error, std::move(quota));
   }
 
-  void Finish(MoltAIManager& manager, uint32_t context_tokens) override {
+  void Finish(MoltAIManager& manager,
+              uint32_t context_tokens,
+              bool sees_images) override {
+    // Image input on a model that can't see images. Only a site the user
+    // allowed gets this far, and it learns no more than its first prompt
+    // with an image would tell it; availability() said the same either way.
+    if (images_ && !sees_images) {
+      Fail(AIManagerCreateClientError::kUnableToCreateSession, nullptr);
+      return;
+    }
     const LanguageModelLimits limits = LanguageModelLimitsFor(context_tokens);
     const uint32_t quota = limits.input_quota;
     const size_t bytes = InitialPromptBytes(options_->initial_prompts);
@@ -487,6 +522,7 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
     config.sampling_mode = options_->sampling_mode;
     config.max_reply_tokens = limits.max_reply_tokens;
     config.system_prompt = BuildLanguageModelSystemPrompt(output_language_);
+    config.image_input = images_;
 
     const uint64_t id = manager.ReserveSession();
     if (id == 0) {
@@ -506,6 +542,7 @@ class MoltAIManager::LanguageModelCreate : public CreateRequest {
   mojo::Remote<Client> client_;
   blink::mojom::AILanguageModelCreateOptionsPtr options_;
   const std::string output_language_;
+  const bool images_;
 };
 
 // Summarizer, Writer and Rewriter.
@@ -532,7 +569,9 @@ class MoltAIManager::WritingCreate : public CreateRequest {
     client_->OnError(error, std::move(quota));
   }
 
-  void Finish(MoltAIManager& manager, uint32_t context_tokens) override {
+  void Finish(MoltAIManager& manager,
+              uint32_t context_tokens,
+              bool sees_images) override {
     const uint64_t id = manager.ReserveSession();
     if (id == 0) {
       Fail(AIManagerCreateClientError::kUnableToCreateSession, nullptr);
@@ -591,7 +630,9 @@ class MoltAIManager::TranslatorCreate : public CreateRequest {
     FailWith(CreateTranslatorError::kFailedToCreateTranslator);
   }
 
-  void Finish(MoltAIManager& manager, uint32_t context_tokens) override {
+  void Finish(MoltAIManager& manager,
+              uint32_t context_tokens,
+              bool sees_images) override {
     const uint64_t id = manager.ReserveSession();
     if (id == 0) {
       FailWith(CreateTranslatorError::kExceedsServiceCountLimitation);
@@ -720,7 +761,9 @@ void MoltAIManager::CanCreateLanguageModel(
     receivers_.ReportBadMessage("Permissions policy disabled");
     return;
   }
-  const LanguageModelOptionCheck check = CheckLanguageModelOptions(options);
+  const LanguageModelOptionCheck check = CheckLanguageModelOptions(
+      options, environment_->GetContextFacts(WebAIApi::kLanguageModel)
+                   .image_input_enabled);
   CheckAvailability(
       WebAIApi::kLanguageModel, check.supported, check.languages_valid,
       base::BindOnce(&AnswerModelAvailability, std::move(callback)));
@@ -813,7 +856,9 @@ void MoltAIManager::CreateLanguageModel(
   if (!options) {
     options = blink::mojom::AILanguageModelCreateOptions::New();
   }
-  const LanguageModelOptionCheck check = CheckLanguageModelOptions(options);
+  const LanguageModelOptionCheck check = CheckLanguageModelOptions(
+      options, environment_->GetContextFacts(WebAIApi::kLanguageModel)
+                   .image_input_enabled);
   // Requests that can never succeed fail before anyone is asked anything.
   std::string system_prompt;
   std::vector<Turn> turns;
@@ -1075,8 +1120,10 @@ void MoltAIManager::OnCreateDeviceFacts(uint64_t id, DeviceFacts device) {
                          weak_factory_.GetWeakPtr(), id));
       return;
     case CreateAction::kCreate:
-      backend_->PrepareModel(base::BindOnce(
-          &MoltAIManager::OnCreateModelReady, weak_factory_.GetWeakPtr(), id));
+      backend_->PrepareModel(
+          request->wants_images(),
+          base::BindOnce(&MoltAIManager::OnCreateModelReady,
+                         weak_factory_.GetWeakPtr(), id));
       return;
   }
 }
@@ -1099,13 +1146,16 @@ void MoltAIManager::OnCreateConsent(uint64_t id, SiteConsent consent) {
                          nullptr);
     return;
   }
-  backend_->PrepareModel(base::BindOnce(&MoltAIManager::OnCreateModelReady,
-                                        weak_factory_.GetWeakPtr(), id));
+  backend_->PrepareModel(
+      request->wants_images(),
+      base::BindOnce(&MoltAIManager::OnCreateModelReady,
+                     weak_factory_.GetWeakPtr(), id));
 }
 
 void MoltAIManager::OnCreateModelReady(uint64_t id,
                                        bool ok,
-                                       uint32_t context_tokens) {
+                                       uint32_t context_tokens,
+                                       bool sees_images) {
   if (!FindCreate(id)) {
     return;
   }
@@ -1121,7 +1171,7 @@ void MoltAIManager::OnCreateModelReady(uint64_t id,
                   nullptr);
     return;
   }
-  request->Finish(*this, context_tokens);
+  request->Finish(*this, context_tokens, sees_images);
 }
 
 // ---- Sessions ----
@@ -1168,6 +1218,12 @@ void MoltAIManager::ForkLanguageModel(
   auto session = std::make_unique<LanguageModelSession>(
       *this, id, source.config(), source.conversation(),
       pending.InitWithNewPipeAndPassReceiver());
+  // Its copy of the context's images counts against the image caps.
+  if (!session->HoldContextImages()) {
+    remote->OnError(AIManagerCreateClientError::kUnableToCreateSession,
+                    nullptr);
+    return;
+  }
   blink::mojom::AILanguageModelInstanceInfoPtr info = session->GetInfo();
   AdoptSession(std::move(session));
   remote->OnResult(std::move(pending), std::move(info));

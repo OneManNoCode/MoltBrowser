@@ -35,7 +35,12 @@ source_set("inference") {
   deps = [
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//chrome/services/molt_ai/inference/engine:embedding_utils",
+    "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:inference_utils",
+    "//mojo/public/cpp/base",
     "//third_party/llama_cpp",
+
+    # Image input (docs/design/SANDBOXED_INFERENCE.md section 10).
+    "//third_party/llama_cpp:mtmd",
   ]
 }
