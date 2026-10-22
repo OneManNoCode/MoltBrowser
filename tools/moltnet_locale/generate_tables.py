@@ -28,8 +28,10 @@ build machine compare both tables with the en-US .pak files grit builds
 
 Usage (no Chromium checkout needed: the .grd files at the pin come from the
 cache of tools/chromium/upstream.py):
-  python3 tools/moltnet_locale/generate_tables.py          # check (1: drift)
+  python3 tools/moltnet_locale/generate_tables.py          # check only
   python3 tools/moltnet_locale/generate_tables.py --write  # regenerate
+The check exits with 1 when a generated file is out of date, and with 2 when
+the .grd files need a decision (a new message) or can't be read.
 Options:
   --grd-root DIR  read the .grd files from DIR (a Chromium checkout at the pin)
   --cache DIR     the upstream cache (default: .molt-chromium-cache)
