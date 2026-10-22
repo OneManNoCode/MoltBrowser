@@ -305,7 +305,10 @@ std::string BuildGeometryScript(const agent_actions::Observation& observation) {
   // walking at most WALK elements; past that, or past MAX_MASKS regions in
   // view, |over| is set and the browser takes no screenshot. The two
   // limits are kept equal to the C++ ones by the static_asserts below.
+  // |frames| counts the frame elements found, in view or not, for the
+  // browser to compare with the frames the document has (FoundEveryFrame()).
   static_assert(kMaxMasks == 32, "update MAX_MASKS in the geometry script");
+  static_assert(kMaxGeometryWalk == 50000, "update WALK in the script");
   return base::StringPrintf(
       R"JS((() => {
   try {
@@ -349,13 +352,14 @@ std::string BuildGeometryScript(const agent_actions::Observation& observation) {
       return autofilled(el);
     };
     const masks = [];
-    let over = false, walked = 0;
+    let over = false, walked = 0, frames = 0;
     const roots = [document];
     for (let i = 0; i < roots.length && !over; i++) {
       const w = document.createTreeWalker(roots[i], NodeFilter.SHOW_ELEMENT);
       for (let el = w.nextNode(); el; el = w.nextNode()) {
         if (++walked > WALK) { over = true; break; }
         if (el.shadowRoot) roots.push(el.shadowRoot);
+        if (FRAMES.includes(el.localName)) frames++;
         if (!secret(el)) continue;
         const b = box(el);
         if (!inView(b)) continue;
@@ -366,7 +370,7 @@ std::string BuildGeometryScript(const agent_actions::Observation& observation) {
     return {origin: String(location.origin),
             view: {w: vw, h: vh, sx: Math.round(window.scrollX || 0),
                    sy: Math.round(window.scrollY || 0), zoomed: zoomed},
-            boxes: boxes, masks: masks, over: over};
+            boxes: boxes, masks: masks, frames: frames, over: over};
   } catch (e) {
     return {origin: '', over: true};
   }
@@ -437,7 +441,17 @@ std::optional<ScreenshotGeometry> ParseGeometry(const base::Value& result,
       return std::nullopt;
     g.masks.push_back(*b);
   }
+
+  // Without the count, frames the walk didn't see can't be ruled out.
+  std::optional<int> frames = ReadInt(d.Find("frames"), 0, kMaxGeometryWalk);
+  if (!frames)
+    return std::nullopt;
+  g.frame_elements = static_cast<size_t>(*frames);
   return g;
+}
+
+bool FoundEveryFrame(const ScreenshotGeometry& geometry, size_t child_frames) {
+  return child_frames <= geometry.frame_elements;
 }
 
 bool SameGeometry(const ScreenshotGeometry& before,
@@ -447,7 +461,8 @@ bool SameGeometry(const ScreenshotGeometry& before,
       before.viewport_height != after.viewport_height ||
       before.scroll_x != after.scroll_x || before.scroll_y != after.scroll_y ||
       before.boxes.size() != after.boxes.size() ||
-      before.masks.size() != after.masks.size()) {
+      before.masks.size() != after.masks.size() ||
+      before.frame_elements != after.frame_elements) {
     return false;
   }
   for (size_t i = 0; i < before.boxes.size(); ++i) {

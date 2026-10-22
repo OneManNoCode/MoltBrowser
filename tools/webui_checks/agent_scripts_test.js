@@ -96,4 +96,40 @@ const hostile = '"); alert(1); ("</script> ';
 assert.strictEqual(p.run(fillScript(ORIGIN, [['#addr', hostile]])), 1);
 assert.strictEqual(p.value('addr'), hostile);
 
-console.log('agent page scripts: type and fill (input, textarea, password, origin) ok');
+// The element probe (agent_safety::BuildElementProbeScript in
+// src/chrome/browser/molt_ai/security/agent_safety.cc), which the agent,
+// the chat's proposals and automation run before a click: where a submit
+// button's form goes.
+const SAFETY_SRC = fs.readFileSync(path.join(
+    __dirname, '../../src/chrome/browser/molt_ai/security/agent_safety.cc'),
+    'utf8');
+const PROBE_FN = (() => {
+  const m = /kElementProbeFn\[\] = R"JS\(([\s\S]*?)\)JS"/.exec(SAFETY_SRC);
+  assert(m, 'kElementProbeFn not found');
+  return m[1];
+})();
+function probe(html, sels, setup) {
+  const dom = new JSDOM(html, {url: ORIGIN + '/login',
+                               runScripts: 'outside-only'});
+  if (setup) setup(dom.window);
+  return JSON.parse(JSON.stringify(dom.window.eval(
+      '(' + PROBE_FN + ')(' + JSON.stringify(sels) + ')')));
+}
+const LOGIN = '<form action="https://sso.example/post" method="post">' +
+              '<input type="hidden" name="action" value="login">' +
+              '<button id="go" type="submit">Sign in</button></form>';
+let r = probe(LOGIN, ['#go']);
+assert.strictEqual(r[0].submit, true);
+assert.strictEqual(r[0].nav, 'https://sso.example/post');
+// In Chromium the control named "action" overrides the form's own action
+// member ([LegacyOverrideBuiltIns]; jsdom doesn't, so the test defines it):
+// the probe still reports where the form goes.
+r = probe(LOGIN, ['#go'], (w) => {
+  const form = w.document.querySelector('form');
+  Object.defineProperty(form, 'action',
+                        {value: form.querySelector('[name=action]')});
+});
+assert.strictEqual(r[0].nav, 'https://sso.example/post');
+
+console.log('agent page scripts: type and fill (input, textarea, password, ' +
+            'origin), click probe (form action) ok');

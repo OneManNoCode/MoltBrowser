@@ -170,12 +170,14 @@ std::optional<ScreenshotGeometry> Parse(std::string_view json,
   return ParseGeometry(*v, elements);
 }
 
-// A result with two boxes (the second element out of view) and one mask.
+// A result with two boxes (the second element out of view), one mask and
+// two frame elements (one of them out of view).
 constexpr char kGeometry[] =
     R"({"origin":"https://shop.example",
         "view":{"w":1280,"h":720,"sx":0,"sy":1500,"zoomed":false},
         "boxes":[[100,50,200,40],null],
         "masks":[[10,600,300,100]],
+        "frames":2,
         "over":false})";
 
 TEST(AgentVisionGeometryTest, ScriptCarriesSelectorsAsJson) {
@@ -209,15 +211,18 @@ TEST(AgentVisionGeometryTest, ParsesAResult) {
   EXPECT_FALSE(g->boxes[1]);
   ASSERT_EQ(g->masks.size(), 1u);
   EXPECT_EQ(g->masks[0], (Box{10, 600, 300, 100}));
+  EXPECT_EQ(g->frame_elements, 2u);
   // Whole numbers written as doubles are fine; negative positions too
   // (partly above or left of the viewport).
   g = Parse(R"({"origin":"https://a.example",
                 "view":{"w":1280.0,"h":720,"sx":-3,"sy":0,"zoomed":false},
-                "boxes":[[-20.0,-5,40,10]],"masks":[],"over":false})",
+                "boxes":[[-20.0,-5,40,10]],"masks":[],"frames":0.0,
+                "over":false})",
             1);
   ASSERT_TRUE(g);
   EXPECT_EQ(g->viewport_width, 1280);
   EXPECT_EQ(g->boxes[0], (Box{-20, -5, 40, 10}));
+  EXPECT_EQ(g->frame_elements, 0u);
   // The cap and the coordinate range, at the limit.
   std::string masks;
   for (size_t i = 0; i < kMaxMasks; ++i)
@@ -226,10 +231,33 @@ TEST(AgentVisionGeometryTest, ParsesAResult) {
                 "view":{"w":16384,"h":1,"sx":1000000,"sy":-1000000,
                         "zoomed":false},
                 "boxes":[],"masks":[)" +
-                masks + R"(],"over":false})",
+                masks + R"(],"frames":50000,"over":false})",
             0);
   ASSERT_TRUE(g);
   EXPECT_EQ(g->masks.size(), kMaxMasks);
+  EXPECT_EQ(g->frame_elements, static_cast<size_t>(kMaxGeometryWalk));
+}
+
+// The browser compares the frames the document owns with the frame
+// elements the script found: one it didn't find (inside a closed shadow
+// root) would be drawn unmasked.
+TEST(AgentVisionGeometryTest, EveryFrameMustBeFound) {
+  const ScreenshotGeometry g = *Parse(kGeometry, 2);
+  EXPECT_TRUE(FoundEveryFrame(g, 0));
+  EXPECT_TRUE(FoundEveryFrame(g, 1));  // an <object> showing an image
+  EXPECT_TRUE(FoundEveryFrame(g, 2));
+  EXPECT_FALSE(FoundEveryFrame(g, 3));
+  ScreenshotGeometry none = g;
+  none.frame_elements = 0;
+  EXPECT_TRUE(FoundEveryFrame(none, 0));
+  EXPECT_FALSE(FoundEveryFrame(none, 1));
+
+  // The script counts frames wherever it walks, open shadow roots
+  // included, in view or not.
+  const std::string script = BuildGeometryScript(Observation());
+  EXPECT_NE(script.find("if (FRAMES.includes(el.localName)) frames++;"),
+            std::string::npos);
+  EXPECT_NE(script.find("frames: frames"), std::string::npos);
 }
 
 TEST(AgentVisionGeometryTest, RefusesAnythingOff) {
@@ -282,6 +310,13 @@ TEST(AgentVisionGeometryTest, RefusesAnythingOff) {
       with(R"([[10,600,300,100]])", R"([[10,600,300]])"),
       with(R"([[10,600,300,100]])", R"([[10,600,300,0]])"),
       with(R"("masks":[[10,600,300,100]],)", ""),
+      // The frame count: required, a whole number within the walk.
+      with(R"("frames":2,)", ""),
+      with(R"("frames":2)", R"("frames":-1)"),
+      with(R"("frames":2)", R"("frames":2.5)"),
+      with(R"("frames":2)", R"("frames":"2")"),
+      with(R"("frames":2)", R"("frames":null)"),
+      with(R"("frames":2)", R"("frames":50001)"),
   };
   for (const std::string& json : bad)
     EXPECT_FALSE(Parse(json, 2)) << json;
@@ -326,6 +361,7 @@ TEST(AgentVisionGeometryTest, SameGeometryAllowsOnePixelOfRounding) {
   expect_differs([](ScreenshotGeometry& g) { g.scroll_x -= 1; });
   expect_differs([](ScreenshotGeometry& g) { g.viewport_width += 1; });
   expect_differs([](ScreenshotGeometry& g) { g.viewport_height -= 1; });
+  expect_differs([](ScreenshotGeometry& g) { g.frame_elements += 1; });
   expect_differs(
       [](ScreenshotGeometry& g) { g.origin = "https://evil.example"; });
 }

@@ -320,6 +320,10 @@ inline constexpr size_t kMaxPendingTotal = 64;
 // Requests waiting behind the running one, per session (e.g. a page
 // summarizing a list with Promise.all).
 inline constexpr size_t kMaxQueuedPerSession = 32;
+// create() calls of one document (or worker) not answered yet: waiting for
+// device facts, the user's answer or the model. More than a site could
+// have sessions can't all succeed; the rest fail at once.
+inline constexpr size_t kMaxPendingCreates = kMaxSessionsPerSite;
 // Hidden reasoning a page's request may use (reasoning is asked off).
 inline constexpr uint32_t kMaxReasoningTokens = 256;
 // Streamed text reaches the page at most this often (milliseconds): fewer,

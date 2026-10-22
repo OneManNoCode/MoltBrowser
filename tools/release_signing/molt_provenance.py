@@ -1404,16 +1404,32 @@ def verify_release_files(bundle_path, keys_b64, files, tag=None,
         if name in assets:
             raise Error('%s given twice' % name)
         assets[name] = sha256_file(path)
+    # A statement file is checked against its signed copy (with
+    # REQUIRE_ALL, check_release() reports one that isn't signed).
+    for path in files:
+        name = os.path.basename(path)
+        if not STATEMENT_NAME.match(name):
+            continue
+        if name not in by_name:
+            if require_all:
+                continue
+            raise Error('%s is not in the signed provenance' % name)
+        with open(path, 'rb') as f:
+            if f.read(MAX_STATEMENT_BYTES + 1) != by_name[name][0]:
+                raise Error('%s differs from its signed copy' % name)
     if require_all:
-        for path in files:
-            name = os.path.basename(path)
-            if STATEMENT_NAME.match(name) and name in by_name:
-                with open(path, 'rb') as f:
-                    if f.read(MAX_STATEMENT_BYTES + 1) != by_name[name][0]:
-                        raise Error('%s differs from its signed copy' % name)
         facts = check_release(statements, assets, tag, expect_commit, True)
     else:
-        # Only the given files: each must be a subject, and match.
+        # Only the given files: each must be a subject, and match. Files no
+        # build produces (the manifest, its signature, the Linux repository,
+        # the bundle) aren't covered; given nothing else, that is an error,
+        # so verify never reports success for files it didn't check.
+        not_covered = sorted(n for n in assets if n in NOT_BUILD_OUTPUTS)
+        if assets and len(not_covered) == len(assets):
+            raise Error('%s %s not a build output: the build provenance does '
+                        'not cover it (check it with molt_release_sign.py '
+                        'verify)' % (', '.join(not_covered),
+                                     'is' if len(not_covered) == 1 else 'are'))
         subject_of = {}
         for st in statements:
             for name, digest in statement_facts(st)['subjects'].items():
@@ -1444,6 +1460,10 @@ def cmd_verify(args):
         for name in sorted(facts['subjects']):
             if name in given:
                 print('    %s  %s' % (facts['subjects'][name], name))
+    # Given, but no build produces them: not checked here.
+    for name in sorted(given & (NOT_BUILD_OUTPUTS - {BUNDLE_NAME})):
+        print('  not covered by the build provenance (check it with '
+              'molt_release_sign.py verify): %s' % name)
 
 
 def main(argv=None):

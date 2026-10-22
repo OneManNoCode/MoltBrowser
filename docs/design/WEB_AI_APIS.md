@@ -162,8 +162,13 @@ workers their host (§10.3).
 **Blink behaviour MoltBrowser relies on** (`modules/ai/`):
 
 - `availability()` maps the 23 `ModelAvailabilityCheckResult` values to
-  four strings; every `kUnavailable*` reason becomes `"unavailable"` and
-  only shows in the console.
+  four strings; every `kUnavailable*` reason becomes `"unavailable"`. But
+  `create()` rejects an unavailable answer with a `NotSupportedError`
+  whose message is that value's own text
+  (`ConvertModelAvailabilityCheckResultToDebugString`), which page script
+  can read. So MoltBrowser gives its own value only to reasons that follow
+  from the request alone (unsupported options, an invalid language tag);
+  every other reason is `kUnavailableFeatureNotEnabled` (§4.3).
 - `create()` calls the matching `CanCreate*` first. When the answer is
   `"downloadable"` it requires user activation (`RequiresUserActivation`);
   with `AIRelaxUserActivationReqs`, enabled by default at 152, sticky
@@ -291,7 +296,10 @@ answer is needed and no model is loaded.
 iframe asks on behalf of the page the user sees. Only the tab's current
 page can raise it (not a prerendered page or one in the back/forward
 cache). Requests from the same tab and origin share one infobar. *Allow*
-and *Block* are remembered (§4.1). Closing the infobar with its close
+and *Block* are remembered (§4.1). A click on either within half a second
+of the bar appearing does nothing and leaves the bar up
+(`kPromptInputProtectionMs`), as Chromium's permission prompts ignore
+early clicks, so a click meant for the page can't answer the bar. Closing the infobar with its close
 button answers nothing and counts towards a pause (§4.2); an infobar that
 goes away by itself (the page navigates, the tab closes, a newer infobar
 replaces it) answers nothing and doesn't count. With no model downloaded,
@@ -395,8 +403,10 @@ stored time, or as soon as the clock reads more than seven days before it.
 - **Blocked and paused look the same** on purpose: the user's explicit
   "no" can't be told from a few closes, and both look like every other
   `"unavailable"` (a device that can't run a model, the switch off, a
-  policy). The reason goes only to the DevTools console, the same one for
-  blocked and paused.
+  policy). `create()` fails with the same message for all of them ("The
+  feature flag gating model execution was disabled."); only an invalid
+  language tag or unsupported options, which depend on the request alone,
+  get their own.
 - **Closed and blocked differ**, as before: after a close the site still
   sees `"downloadable"`, after *Block* `"unavailable"`. This only tells the
   site what the user did on it.
@@ -664,7 +674,8 @@ writing APIs.
 - **Fairness.** Requests from visible pages go before hidden ones; within
   each, sites take turns (round-robin by when each site last ran).
 - **Limits.** 16 live sessions per site (top-level site, per profile), 16
-  queued generations per site, 64 in total, 32 per session. Over a limit
+  queued generations per site, 64 in total, 32 per session; 16 `create()`
+  calls of one document waiting for an answer (`kMaxPendingCreates`). Over a limit
   `create()` fails or the request gets a generic failure (never
   `kErrorRequestThrottled`, which crash-reports in the renderer).
 - **Deadline.** A page generation, model load included, is cancelled after

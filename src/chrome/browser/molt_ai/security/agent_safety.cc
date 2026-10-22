@@ -103,9 +103,11 @@ constexpr std::pair<std::string_view, char> kAngleLookalikes[] = {
 
 // The probe runs as `(<this>)(<JSON list of selectors>)` in an isolated
 // world. Isolated-world prototypes are pristine, so el.type / el.form /
-// closest() cannot be spoofed by page script. `value` is only read for
-// button-like inputs: reading it on a text / password field would copy what
-// the user typed into the probe result.
+// closest() cannot be spoofed by page script. A form's named controls do
+// take precedence over its own members ([LegacyOverrideBuiltIns]), so its
+// action is read through HTMLFormElement.prototype's getter. `value` is
+// only read for button-like inputs: reading it on a text / password field
+// would copy what the user typed into the probe result.
 constexpr char kElementProbeFn[] = R"JS((sels) => sels.map((sel) => {
   try {
     const el = document.querySelector(sel);
@@ -116,8 +118,10 @@ constexpr char kElementProbeFn[] = R"JS((sels) => sels.map((sel) => {
     const sub = el.closest('button,input');
     if (sub && sub.form && (sub.type === 'submit' || sub.type === 'image')) {
       out.submit = true;
+      const formAction = Object.getOwnPropertyDescriptor(
+          HTMLFormElement.prototype, 'action').get;
       out.nav = String(sub.hasAttribute('formaction') ? sub.formAction
-                                                      : sub.form.action);
+                                                      : formAction.call(sub.form));
     }
     const a = el.closest('a[href],area[href]');
     if (!out.nav && a) out.nav = String(a.href || '');
