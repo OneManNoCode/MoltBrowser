@@ -5,10 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/infobars/core/infobar_delegate.h b/components/infobars/core/infobar_delegate.h
-index cd5071fba3f6621236f2c0414e5178029a644bd4..9ed543d78b6fdb272b0c4cdf1979d9af2ece0434 100644
+index cd5071fba3f6621236f2c0414e5178029a644bd4..e4da4034c69856ed6f09eb7aeaed10397a95064a 100644
 --- a/components/infobars/core/infobar_delegate.h
 +++ b/components/infobars/core/infobar_delegate.h
-@@ -212,6 +212,10 @@ class InfoBarDelegate {
+@@ -212,6 +212,12 @@ class InfoBarDelegate {
      SIGNIN_QRCODE_INFOBAR_DELEGATE = 137,
      FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS = 138,
      PASSWORD_SAVED_INFOBAR_DELEGATE_IOS = 139,
@@ -16,6 +16,8 @@ index cd5071fba3f6621236f2c0414e5178029a644bd4..9ed543d78b6fdb272b0c4cdf1979d9af
 +    // MoltBrowser identifiers start at 1000, well clear of upstream's, so
 +    // rebases never collide.
 +    MOLT_ONION_LOCATION_INFOBAR_DELEGATE = 1000,
++    // Asks before a site may use the on-device model (web AI APIs).
++    MOLT_WEB_AI_CONSENT_INFOBAR_DELEGATE = 1001,
    };
    // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/enums.xml:InfoBarIdentifier)
  
