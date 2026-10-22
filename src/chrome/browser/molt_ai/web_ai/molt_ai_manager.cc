@@ -41,22 +41,24 @@ ModelAvailabilityCheckResult ToMojo(const AvailabilityDecision& decision) {
     case Availability::kUnavailable:
       break;
   }
-  // Blink shows the reason in the console only; page script sees
-  // "unavailable" in every case.
+  // availability() turns every kUnavailable* value into "unavailable", but
+  // create() rejects with the value's own message, which page script reads
+  // (ConvertModelAvailabilityCheckResultToDebugString at 152). So only the
+  // reasons that follow from the request alone, the same for every user of
+  // this build, get their own value. A policy, a device that can't run a
+  // model, the switches, MoltNet and the user's block or a paused prompt
+  // all answer alike (WEB_AI_APIS.md §4.3).
   switch (decision.reason) {
-    case UnavailableReason::kEnterprisePolicy:
-      return ModelAvailabilityCheckResult::
-          kUnavailableEnterprisePolicyDisabled;
     case UnavailableReason::kUnsupportedOptions:
       return ModelAvailabilityCheckResult::
           kUnavailableModelAdaptationNotAvailable;
     case UnavailableReason::kUnsupportedLanguage:
       return ModelAvailabilityCheckResult::kUnavailableUnsupportedLanguage;
-    case UnavailableReason::kDeviceNotEligible:
-      return ModelAvailabilityCheckResult::kUnavailableModelNotEligible;
     case UnavailableReason::kNone:
     case UnavailableReason::kDisabled:
+    case UnavailableReason::kEnterprisePolicy:
     case UnavailableReason::kBlockedByUser:
+    case UnavailableReason::kDeviceNotEligible:
       break;
   }
   return ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled;

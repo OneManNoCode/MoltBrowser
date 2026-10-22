@@ -736,19 +736,53 @@ TEST_F(MoltAIManagerTest, MoltNetWorkersAndOtherSchemesAreUnavailable) {
   EXPECT_EQ(backend_.device_calls, 0);
 }
 
-TEST_F(MoltAIManagerTest, PolicyAndDeviceReasons) {
+// create() rejects with the message of the CanCreate*() value (Blink's
+// ConvertModelAvailabilityCheckResultToDebugString), which page script
+// reads: a policy, a device that can't run a model, the switch and the
+// user's block must all give the same value.
+TEST_F(MoltAIManagerTest, PolicyDeviceSwitchAndBlockLookTheSame) {
+  const auto writing_answers = [this]() {
+    std::vector<ModelAvailabilityCheckResult> out;
+    base::test::TestFuture<ModelAvailabilityCheckResult> summarizer;
+    remote_->CanCreateSummarizer(MakeSummarizerOptions(),
+                                 summarizer.GetCallback());
+    out.push_back(summarizer.Get());
+    base::test::TestFuture<ModelAvailabilityCheckResult> writer;
+    remote_->CanCreateWriter(MakeWriterOptions(), writer.GetCallback());
+    out.push_back(writer.Get());
+    base::test::TestFuture<ModelAvailabilityCheckResult> rewriter;
+    remote_->CanCreateRewriter(MakeRewriterOptions(), rewriter.GetCallback());
+    out.push_back(rewriter.Get());
+    return out;
+  };
+  const std::vector<ModelAvailabilityCheckResult> unavailable(
+      3, ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+
   env_.consent = SiteConsent::kAllowed;
   env_.facts.enterprise_allowed = false;
   EXPECT_EQ(LanguageModelAvailability(),
-            ModelAvailabilityCheckResult::kUnavailableEnterprisePolicyDisabled);
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  EXPECT_EQ(writing_answers(), unavailable);
   env_.facts = Eligible();
   backend_.facts.inference_supported = false;
   EXPECT_EQ(LanguageModelAvailability(),
-            ModelAvailabilityCheckResult::kUnavailableModelNotEligible);
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  EXPECT_EQ(writing_answers(), unavailable);
   backend_.facts.inference_supported = true;
+  backend_.facts.model_installed = false;
+  backend_.facts.some_model_fits = false;
+  EXPECT_EQ(LanguageModelAvailability(),
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  backend_.facts = FakeBackend().facts;
   backend_.facts.web_apis_enabled = false;
   EXPECT_EQ(LanguageModelAvailability(),
             ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  EXPECT_EQ(writing_answers(), unavailable);
+  backend_.facts = FakeBackend().facts;
+  env_.consent = SiteConsent::kBlocked;
+  EXPECT_EQ(LanguageModelAvailability(),
+            ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
+  EXPECT_EQ(writing_answers(), unavailable);
 }
 
 TEST_F(MoltAIManagerTest, OnlyTextAndImageOptionsAreAvailable) {

@@ -162,8 +162,13 @@ workers their host (§10.3).
 **Blink behaviour MoltBrowser relies on** (`modules/ai/`):
 
 - `availability()` maps the 23 `ModelAvailabilityCheckResult` values to
-  four strings; every `kUnavailable*` reason becomes `"unavailable"` and
-  only shows in the console.
+  four strings; every `kUnavailable*` reason becomes `"unavailable"`. But
+  `create()` rejects an unavailable answer with a `NotSupportedError`
+  whose message is that value's own text
+  (`ConvertModelAvailabilityCheckResultToDebugString`), which page script
+  can read. So MoltBrowser gives its own value only to reasons that follow
+  from the request alone (unsupported options, an invalid language tag);
+  every other reason is `kUnavailableFeatureNotEnabled` (§4.3).
 - `create()` calls the matching `CanCreate*` first. When the answer is
   `"downloadable"` it requires user activation (`RequiresUserActivation`);
   with `AIRelaxUserActivationReqs`, enabled by default at 152, sticky
@@ -395,8 +400,10 @@ stored time, or as soon as the clock reads more than seven days before it.
 - **Blocked and paused look the same** on purpose: the user's explicit
   "no" can't be told from a few closes, and both look like every other
   `"unavailable"` (a device that can't run a model, the switch off, a
-  policy). The reason goes only to the DevTools console, the same one for
-  blocked and paused.
+  policy). `create()` fails with the same message for all of them ("The
+  feature flag gating model execution was disabled."); only an invalid
+  language tag or unsupported options, which depend on the request alone,
+  get their own.
 - **Closed and blocked differ**, as before: after a close the site still
   sees `"downloadable"`, after *Block* `"unavailable"`. This only tells the
   site what the user did on it.
