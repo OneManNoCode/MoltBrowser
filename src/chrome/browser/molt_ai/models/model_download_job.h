@@ -26,6 +26,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
@@ -89,9 +90,13 @@ class ModelDownloadJob : public network::SimpleURLLoaderStreamConsumer {
   static base::FilePath PartialPathFor(const base::FilePath& final_path);
 
   // Stops the transfer and deletes the .partial file (user pressed Cancel,
-  // as opposed to destroying the job, which keeps it for a later resume).
-  // |done| is not run. The job can be destroyed right after.
-  void CancelAndDiscard();
+  // as opposed to destroying the job, which keeps it for a later resume),
+  // then |also_delete|: the other files of the model, which is downloaded
+  // whole or not at all (model_download_plan.h). Both happen on the job's
+  // file sequence, after any write or rename still queued there, so a
+  // file this job was just moving into place is deleted too. |done| is
+  // not run. The job can be destroyed right after.
+  void CancelAndDiscard(std::vector<base::FilePath> also_delete = {});
 
  private:
   class Writer;

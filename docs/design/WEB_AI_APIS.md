@@ -1302,8 +1302,8 @@ in every window, with Translate still detecting page languages.
 - Regex `responseConstraint`, `prefix`, audio and tools are
   unsupported; so are images in `initialPrompts`. Image input needs a
   model with a vision projector: the registry's (§5.1) is offered only
-  once pinned, and downloading its projector isn't wired into the
-  model picker yet (SANDBOXED_INFERENCE.md §10.4). A session created for
+  once pinned (the model picker then downloads it with its projector, as
+  one unit: SANDBOXED_INFERENCE.md §10.4). A session created for
   images fails its prompts if the model in use changes to one that can't
   see them (the chat swaps it; an idle unload and a text default). The
   model sees four images per request, so older ones in a long

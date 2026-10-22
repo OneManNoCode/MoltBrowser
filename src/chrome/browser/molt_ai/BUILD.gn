@@ -26,6 +26,9 @@ source_set("molt_ai_runtime") {
 
   deps = [
     "//chrome/browser/lifetime:termination_notification",
+
+    # When a model's files count as downloaded (std-only).
+    "//chrome/browser/molt_ai/models:download_policy",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:stream_filters",
     "//mojo/public/cpp/base",

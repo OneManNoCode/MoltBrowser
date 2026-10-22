@@ -22,6 +22,7 @@
 #include "base/base64.h"
 #include "base/command_line.h"
 #include "base/containers/span.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -80,6 +81,7 @@
 #include "chrome/browser/molt_ai/memory/conversation_store.h"
 #include "chrome/browser/molt_ai/models/download_policy.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
+#include "chrome/browser/molt_ai/models/model_download_plan.h"
 #include "chrome/browser/molt_ai/memory/memory_service.h"
 #include "chrome/browser/molt_ai/memory/memory_service_factory.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
@@ -966,8 +968,7 @@ void MoltAIChatHandler::FinishInitChat(std::string callback_id,
     model_dict.Set("param_billions", m.parameter_count_billions);
     model_dict.Set("is_downloaded", m.is_downloaded);
     model_dict.Set("is_loaded", m.is_loaded);
-    model_dict.Set("file_size_mb",
-                   static_cast<int>(m.file_size_bytes / (1024 * 1024)));
+    model_dict.Set("file_size_mb", DownloadSizeMb(m));
     // S13: false until the registry entry is pinned (revision + SHA-256);
     // the picker labels such downloads "unverified".
     model_dict.Set("verified", m.is_verified());
@@ -1813,8 +1814,7 @@ void MoltAIChatHandler::HandleGetModelStatus(
     d.Set("is_loaded", m.is_loaded);
     // Explicit so the JS picker's is_cloud checks are unambiguous.
     d.Set("is_cloud", false);
-    d.Set("file_size_mb",
-          static_cast<int>(m.file_size_bytes / (1024 * 1024)));
+    d.Set("file_size_mb", DownloadSizeMb(m));
     d.Set("verified", m.is_verified());
     d.Set("license_name", m.license_name);
     d.Set("license_url", m.license_url);
@@ -1997,12 +1997,91 @@ bool RecordLicenseAcceptance(const base::FilePath& path,
   return true;
 }
 
+// The files of |info|'s download unit: the weights, then the vision
+// projector of a model that sees images, from the same repo and revision
+// (molt_ai/models/model_download_plan.h).
+std::vector<molt_ai::models::ModelFileSpec> DownloadUnitFor(
+    const molt_ai::ModelInfo& info) {
+  std::vector<molt_ai::models::ModelFileSpec> files;
+  molt_ai::models::ModelFileSpec weights;
+  weights.role = molt_ai::models::ModelFileRole::kWeights;
+  weights.repo = info.huggingface_id;
+  weights.revision = info.revision;
+  weights.filename = info.filename;
+  weights.final_path = info.file_path;
+  weights.sha256 = info.sha256;
+  weights.size = static_cast<int64_t>(info.file_size_bytes);
+  files.push_back(weights);
+  if (info.has_vision()) {
+    molt_ai::models::ModelFileSpec projector = weights;
+    projector.role = molt_ai::models::ModelFileRole::kVisionProjector;
+    projector.filename = info.vision_projector_filename;
+    projector.final_path = info.vision_projector_path;
+    projector.sha256 = info.vision_projector_sha256;
+    projector.size = static_cast<int64_t>(info.vision_projector_size_bytes);
+    files.push_back(std::move(projector));
+  }
+  return files;
+}
+
+// What is on disk for each file of a unit. Blocking.
+std::vector<molt_ai::models::ModelFileOnDisk> StatDownloadUnit(
+    const std::vector<molt_ai::models::ModelFileSpec>& files) {
+  std::vector<molt_ai::models::ModelFileOnDisk> out;
+  for (const molt_ai::models::ModelFileSpec& file : files) {
+    const base::FilePath path =
+        base::FilePath::FromUTF8Unsafe(file.final_path);
+    molt_ai::models::ModelFileOnDisk on_disk;
+    base::File::Info info;
+    if (base::GetFileInfo(path, &info) && !info.is_directory) {
+      on_disk.final_exists = true;
+      on_disk.final_size = info.size;
+    }
+    on_disk.partial_size =
+        base::GetFileSize(
+            molt_ai::models::ModelDownloadJob::PartialPathFor(path))
+            .value_or(0);
+    out.push_back(on_disk);
+  }
+  return out;
+}
+
+// Everything a unit can leave on disk: each file and its .partial.
+std::vector<base::FilePath> DownloadUnitPaths(
+    const std::vector<molt_ai::models::ModelFileSpec>& files) {
+  std::vector<base::FilePath> paths;
+  for (const molt_ai::models::ModelFileSpec& file : files) {
+    const base::FilePath path =
+        base::FilePath::FromUTF8Unsafe(file.final_path);
+    paths.push_back(path);
+    paths.push_back(molt_ai::models::ModelDownloadJob::PartialPathFor(path));
+  }
+  return paths;
+}
+
 }  // namespace
+
+// The model pickers' size: the whole unit (weights and projector).
+// static
+int MoltAIChatHandler::DownloadSizeMb(const molt_ai::ModelInfo& info) {
+  return static_cast<int>(
+      (static_cast<uint64_t>(info.file_size_bytes) +
+       static_cast<uint64_t>(info.vision_projector_size_bytes)) /
+      (1024 * 1024));
+}
+
+MoltAIChatHandler::DownloadPrecheck::DownloadPrecheck() = default;
+MoltAIChatHandler::DownloadPrecheck::~DownloadPrecheck() = default;
+MoltAIChatHandler::DownloadPrecheck::DownloadPrecheck(DownloadPrecheck&&) =
+    default;
+MoltAIChatHandler::DownloadPrecheck&
+MoltAIChatHandler::DownloadPrecheck::operator=(DownloadPrecheck&&) = default;
 
 // ------------------------------------------------------------------
 // HandleDownloadModel: Download a model from HuggingFace
 // JS: chrome.send('downloadModel', [callback_id, model_id])
-// Streams progress via FireWebUIListener('download-progress', ...).
+// Streams progress via FireWebUIListener('download-progress', ...), over
+// the whole unit (a vision model's projector included).
 // Resolves {success, verified?, error?} or, when the model's terms haven't
 // been accepted yet, {success:false, license_required:true, license_id,
 // license_name, license_url, error}.
@@ -2017,12 +2096,16 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
   auto* runtime = GetOrCreateRuntime();
   auto info = runtime->GetModelInfo(model_id);
 
-  if (info.model_id.empty()) {
+  auto resolve_error = [&](const std::string& error) {
     base::DictValue result;
     result.Set("success", false);
-    result.Set("error", "Unknown model: " + model_id);
+    result.Set("error", error);
     ResolveJavascriptCallback(base::Value(callback_id),
                               base::Value(std::move(result)));
+  };
+
+  if (info.model_id.empty()) {
+    resolve_error("Unknown model: " + model_id);
     return;
   }
 
@@ -2035,77 +2118,99 @@ void MoltAIChatHandler::HandleDownloadModel(const base::ListValue& args) {
     return;
   }
 
-  if (download_job_) {
-    base::DictValue result;
-    result.Set("success", false);
-    result.Set("error", "Another download is already in progress");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+  // One download at a time, from its precheck on.
+  if (!downloading_model_id_.empty()) {
+    resolve_error("Another download is already in progress");
     return;
   }
 
-  // All filesystem checks (license record, CreateDirectory,
-  // AmountOfFreeDiskSpace, partial size) run on a ThreadPool worker. The
-  // network wiring continues on the UI thread once the precheck returns.
+  // Fail closed before any IO: a model with a vision projector is fetched
+  // only fully pinned (both files' revision, SHA-256 and size).
+  std::vector<molt_ai::models::ModelFileSpec> files = DownloadUnitFor(info);
+  const molt_ai::models::PlanError unit_error =
+      molt_ai::models::CheckUnit(files);
+  if (unit_error != molt_ai::models::PlanError::kNone) {
+    LOG(WARNING) << "[MoltAI] refusing to download " << model_id
+                 << ": its files aren't pinned";
+    resolve_error(
+        std::string(molt_ai::models::PlanErrorText(unit_error)));
+    return;
+  }
+
+  downloading_model_id_ = model_id;
+  download_callback_id_ = callback_id;
+
+  // All filesystem checks (license record, CreateDirectory, the files and
+  // their .partial leftovers, free disk space) run on a ThreadPool worker.
+  // The network wiring continues on the UI thread once the precheck
+  // returns.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
       base::BindOnce(
-          [](molt_ai::ModelInfo info) -> base::DictValue {
-            base::DictValue r;
+          [](molt_ai::ModelInfo info,
+             std::vector<molt_ai::models::ModelFileSpec> files)
+              -> DownloadPrecheck {
+            DownloadPrecheck r;
             if (!info.license_id.empty() &&
                 !IsLicenseAccepted(AcceptedLicensesPath(info.file_path),
                                    info.model_id, info.license_id)) {
-              r.Set("ok", false);
-              r.Set("license_required", true);
+              r.license_required = true;
               return r;
             }
-            base::FilePath final_path =
-                base::FilePath::FromUTF8Unsafe(info.file_path);
-            base::FilePath parent_dir = final_path.DirName();
+            const base::FilePath parent_dir =
+                base::FilePath::FromUTF8Unsafe(info.file_path).DirName();
             if (!base::DirectoryExists(parent_dir)) {
               base::CreateDirectory(parent_dir);
             }
-            const int64_t existing_bytes =
-                base::GetFileSize(
-                    molt_ai::models::ModelDownloadJob::PartialPathFor(
-                        final_path))
-                    .value_or(0);
+            r.plan = molt_ai::models::PlanModelDownload(
+                files, StatDownloadUnit(files));
+            if (r.plan.error != molt_ai::models::PlanError::kNone) {
+              r.error = molt_ai::models::PlanErrorText(r.plan.error);
+              return r;
+            }
+            // Room for every file still to fetch, less what their
+            // .partial files already hold.
             const int64_t disk_space =
                 base::SysInfo::AmountOfFreeDiskSpace(parent_dir)
                     .value_or(-1);
-            const int64_t required_bytes =
-                std::max<int64_t>(0, static_cast<int64_t>(
-                                         info.file_size_bytes) -
-                                         existing_bytes);
+            const int64_t required_bytes = r.plan.bytes_to_write;
             if (disk_space >= 0 && disk_space < required_bytes) {
-              r.Set("ok", false);
-              r.Set("error",
-                    "Not enough disk space. Need " +
+              r.error = "Not enough disk space. Need " +
                         std::to_string(required_bytes / (1024 * 1024)) +
                         " MB but only " +
                         std::to_string(disk_space / (1024 * 1024)) +
-                        " MB available.");
-              return r;
+                        " MB available.";
             }
-            r.Set("ok", true);
             return r;
           },
-          info),
+          info, files),
+      // A copy: the order in which the two callbacks are bound is
+      // unspecified.
       base::BindOnce(&MoltAIChatHandler::OnDownloadPrecheckComplete,
                      weak_ptr_factory_.GetWeakPtr(), callback_id, model_id,
-                     info));
+                     info, files));
 }
 
 void MoltAIChatHandler::OnDownloadPrecheckComplete(
     std::string callback_id,
     std::string model_id,
     molt_ai::ModelInfo info,
-    base::DictValue precheck) {
+    std::vector<molt_ai::models::ModelFileSpec> files,
+    DownloadPrecheck precheck) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!IsJavascriptAllowed()) return;
+  if (!IsJavascriptAllowed()) {
+    ResetDownloadState();
+    return;
+  }
 
-  if (precheck.FindBool("license_required").value_or(false)) {
+  auto resolve = [&](base::DictValue result) {
+    ResetDownloadState();
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+  };
+
+  if (precheck.license_required) {
     base::DictValue result;
     result.Set("success", false);
     result.Set("license_required", true);
@@ -2118,58 +2223,85 @@ void MoltAIChatHandler::OnDownloadPrecheckComplete(
                             info.license_name +
                             ". Accept it in the AI chat's model menu to "
                             "download.");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    resolve(std::move(result));
     return;
   }
 
-  if (!precheck.FindBool("ok").value_or(false)) {
+  if (!precheck.error.empty()) {
     base::DictValue result;
     result.Set("success", false);
-    if (auto* err = precheck.FindString("error")) {
-      result.Set("error", *err);
-    } else {
-      result.Set("error", "Download precheck failed");
-    }
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    result.Set("error", precheck.error);
+    resolve(std::move(result));
     return;
   }
 
-  scoped_refptr<network::SharedURLLoaderFactory> factory =
-      GetUrlLoaderFactory();
-  if (!factory) {
+  if (precheck.plan.to_fetch.empty()) {
+    // Every file is already in place (the registry's view was stale).
+    ResetDownloadState();
+    auto* runtime = GetOrCreateRuntime();
+    base::ThreadPool::PostTaskAndReply(
+        FROM_HERE, {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
+        base::BindOnce(&molt_ai::BrowserAIRuntime::RefreshModelStatus,
+                       base::Unretained(runtime)),
+        base::BindOnce(
+            [](base::WeakPtr<MoltAIChatHandler> self, std::string cb) {
+              if (!self || !self->IsJavascriptAllowed()) return;
+              base::DictValue result;
+              result.Set("success", true);
+              result.Set("already_downloaded", true);
+              self->ResolveJavascriptCallback(base::Value(cb),
+                                              base::Value(std::move(result)));
+            },
+            weak_ptr_factory_.GetWeakPtr(), callback_id));
+    return;
+  }
+
+  if (!GetUrlLoaderFactory()) {
     base::DictValue result;
     result.Set("success", false);
     result.Set("error", "No network context available");
-    ResolveJavascriptCallback(base::Value(callback_id),
-                              base::Value(std::move(result)));
+    resolve(std::move(result));
     return;
   }
 
-  molt_ai::models::ModelDownloadJob::Params params;
-  params.url = GURL(molt_ai::models::ModelDownloadUrl(
-      info.huggingface_id, info.revision, info.filename));
-  params.final_path = base::FilePath::FromUTF8Unsafe(info.file_path);
-  params.expected_sha256 = info.sha256;
-  // Sizes are only exact once an entry is pinned.
-  params.expected_size =
-      info.is_verified() ? static_cast<int64_t>(info.file_size_bytes) : 0;
   if (!info.is_verified()) {
     LOG(WARNING) << "[MoltAI] downloading " << model_id
                  << " UNVERIFIED: registry entry has no pinned revision/"
                     "SHA-256 (run tools/models/pin_models.py)";
   }
-  LOG(INFO) << "[MoltAI] Starting download: " << params.url.spec() << " -> "
-            << info.file_path;
 
-  // Store state for callbacks
-  download_callback_id_ = callback_id;
-  downloading_model_id_ = model_id;
-  download_total_bytes_ = info.file_size_bytes;
+  // State for the callbacks; downloading_model_id_ and the callback id
+  // were set when the precheck started.
+  download_files_ = std::move(files);
+  download_queue_ = std::move(precheck.plan.to_fetch);
+  download_done_bytes_ = static_cast<uint64_t>(precheck.plan.done_bytes);
+  download_total_bytes_ = static_cast<uint64_t>(precheck.plan.total_bytes);
+  download_verified_ = true;
   download_start_time_ = base::TimeTicks::Now();
   download_last_time_ = download_start_time_;
   download_last_bytes_ = 0;
+  StartNextModelFile();
+}
+
+void MoltAIChatHandler::StartNextModelFile() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      GetUrlLoaderFactory();
+  if (download_queue_.empty() || !factory) {
+    FinishDownload(false, false, "No network context available");
+    return;
+  }
+  const molt_ai::models::ModelFileSpec& file =
+      download_files_[download_queue_.front()];
+  molt_ai::models::ModelDownloadJob::Params params;
+  params.url = GURL(molt_ai::models::ModelFileUrl(file));
+  params.final_path = base::FilePath::FromUTF8Unsafe(file.final_path);
+  // The file's own pin: its SHA-256 and exact size (0 when not pinned,
+  // which only a text-only model can be).
+  params.expected_sha256 = file.sha256;
+  params.expected_size = molt_ai::models::ExpectedSizeForJob(file);
+  LOG(INFO) << "[MoltAI] Starting download: " << params.url.spec() << " -> "
+            << file.final_path;
 
   download_job_ = molt_ai::models::ModelDownloadJob::Start(
       std::move(params), std::move(factory),
@@ -2183,8 +2315,11 @@ void MoltAIChatHandler::OnDownloadProgress(int64_t received, int64_t total) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!IsJavascriptAllowed()) return;
 
-  const uint64_t current = static_cast<uint64_t>(std::max<int64_t>(0, received));
-  if (total > 0) download_total_bytes_ = static_cast<uint64_t>(total);
+  // Progress over the whole unit: the complete files plus this one.
+  const uint64_t current =
+      download_done_bytes_ +
+      static_cast<uint64_t>(std::max<int64_t>(0, received));
+  if (current > download_total_bytes_) download_total_bytes_ = current;
 
   // The job reports after every written chunk; forward at most two updates
   // a second (plus the first one) and compute speed/ETA over that window.
@@ -2222,19 +2357,34 @@ void MoltAIChatHandler::OnDownloadFinished(
   LOG(INFO) << "[MoltAI] Download finished: success=" << result.success
             << " verified=" << result.verified << " sha256=" << result.sha256
             << " error=" << result.error;
-  if (!result.success) {
-    FinishDownload(false, result.verified, result.error);
+  if (!result.success || download_queue_.empty()) {
+    // A file failed (network, size or hash): the model is not downloaded.
+    // Files already in place stay for the next attempt, which fetches only
+    // what is missing; Cancel removes them.
+    FinishDownload(false, false, result.error);
     return;
   }
-  // The job already verified and renamed the file; refresh the registry's
-  // on-disk view on a worker.
+  // The job verified the file and moved it into place.
+  const molt_ai::models::ModelFileSpec& file =
+      download_files_[download_queue_.front()];
+  download_done_bytes_ += static_cast<uint64_t>(std::max<int64_t>(
+      0, molt_ai::models::ExpectedSizeForJob(file)));
+  download_verified_ = download_verified_ && result.verified;
+  download_queue_.erase(download_queue_.begin());
+  if (!download_queue_.empty()) {
+    StartNextModelFile();
+    return;
+  }
+  // Every file is in place. No job runs while the registry is refreshed,
+  // so a Cancel now does nothing.
+  download_job_.reset();
   auto* runtime = GetOrCreateRuntime();
   base::ThreadPool::PostTaskAndReply(
       FROM_HERE, {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
       base::BindOnce(&molt_ai::BrowserAIRuntime::RefreshModelStatus,
                      base::Unretained(runtime)),
       base::BindOnce(&MoltAIChatHandler::FinishDownload,
-                     weak_ptr_factory_.GetWeakPtr(), true, result.verified,
+                     weak_ptr_factory_.GetWeakPtr(), true, download_verified_,
                      std::string()));
 }
 
@@ -2260,9 +2410,17 @@ void MoltAIChatHandler::FinishDownload(bool success,
                               base::Value(std::move(result)));
   }
 
+  ResetDownloadState();
+}
+
+void MoltAIChatHandler::ResetDownloadState() {
   download_job_.reset();
   download_callback_id_.clear();
   downloading_model_id_.clear();
+  download_files_.clear();
+  download_queue_.clear();
+  download_done_bytes_ = 0;
+  download_verified_ = true;
   download_total_bytes_ = 0;
   download_last_bytes_ = 0;
 }
@@ -2306,7 +2464,8 @@ void MoltAIChatHandler::HandleAcceptModelLicense(const base::ListValue& args) {
 }
 
 // ------------------------------------------------------------------
-// HandleDeleteModel: Delete a downloaded model file
+// HandleDeleteModel: Delete a downloaded model (its weights, and the vision
+// projector of a model that sees images)
 // JS: chrome.send('deleteModel', [callback_id, model_id])
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
@@ -2319,16 +2478,44 @@ void MoltAIChatHandler::HandleDeleteModel(const base::ListValue& args) {
 
   auto* runtime = GetOrCreateRuntime();
 
+  if (!model_id.empty() && model_id == downloading_model_id_) {
+    base::DictValue result;
+    result.Set("success", false);
+    result.Set("model_id", model_id);
+    result.Set("error", "Cancel the download first.");
+    ResolveJavascriptCallback(base::Value(callback_id),
+                              base::Value(std::move(result)));
+    return;
+  }
+  // The whole unit goes: DeleteModel removes the weights and a vision
+  // model's projector; their .partial leftovers (an interrupted download)
+  // go with them.
+  std::vector<base::FilePath> partials;
+  for (const molt_ai::models::ModelFileSpec& file :
+       DownloadUnitFor(runtime->GetModelInfo(model_id))) {
+    if (!file.final_path.empty()) {
+      partials.push_back(molt_ai::models::ModelDownloadJob::PartialPathFor(
+          base::FilePath::FromUTF8Unsafe(file.final_path)));
+    }
+  }
+
   // DeleteModel touches the filesystem (std::filesystem::remove + GGUF unload).
   // Run on a worker, reply on UI thread.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE,
       {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
       base::BindOnce(
-          [](molt_ai::BrowserAIRuntime* rt, std::string mid) {
-            return rt->DeleteModel(mid);
+          [](molt_ai::BrowserAIRuntime* rt, std::string mid,
+             std::vector<base::FilePath> partials) {
+            const bool deleted = rt->DeleteModel(mid);
+            if (deleted) {
+              for (const base::FilePath& partial : partials) {
+                base::DeleteFile(partial);
+              }
+            }
+            return deleted;
           },
-          base::Unretained(runtime), model_id),
+          base::Unretained(runtime), model_id, std::move(partials)),
       base::BindOnce(&MoltAIChatHandler::OnModelDeleted,
                      weak_ptr_factory_.GetWeakPtr(), callback_id, model_id));
 }
@@ -2444,12 +2631,16 @@ void MoltAIChatHandler::OnPageContentExtracted(std::string callback_id,
 // ------------------------------------------------------------------
 void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
   AllowJavascript();
+  // Nothing runs before the first file starts or once every file is in
+  // place.
   if (!download_job_) return;
   LOG(INFO) << "[MoltAI] Cancelling download of " << downloading_model_id_;
   const std::string cancelled_model = downloading_model_id_;
-  // Stops the transfer and deletes the .partial file on the job's file
-  // sequence (after any write still in flight).
-  download_job_->CancelAndDiscard();
+  // A model is downloaded whole or not at all: stop the transfer and
+  // delete its .partial file and every file of the unit already in place
+  // (the weights of a vision model whose projector was downloading), on
+  // the job's file sequence after any write or rename still queued there.
+  download_job_->CancelAndDiscard(DownloadUnitPaths(download_files_));
   download_job_.reset();
 
   FireWebUIListener("download-complete", base::Value(cancelled_model),
@@ -2464,10 +2655,7 @@ void MoltAIChatHandler::HandleCancelDownload(const base::ListValue& args) {
                               base::Value(std::move(result)));
   }
 
-  download_callback_id_.clear();
-  downloading_model_id_.clear();
-  download_total_bytes_ = 0;
-  download_last_bytes_ = 0;
+  ResetDownloadState();
 }
 
 // ------------------------------------------------------------------

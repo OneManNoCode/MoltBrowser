@@ -38,6 +38,7 @@
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
 #include "chrome/browser/molt_ai/document_parser/document_parser_client.h"
 #include "chrome/browser/molt_ai/models/model_download_job.h"
+#include "chrome/browser/molt_ai/models/model_download_plan.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "content/public/browser/global_routing_id.h"
@@ -397,13 +398,40 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   void OnPromptComplete(std::string callback_id, bool success,
                         const std::string& full_text,
                         const std::string& error);
+  // What the download's worker found before anything is fetched.
+  struct DownloadPrecheck {
+    DownloadPrecheck();
+    ~DownloadPrecheck();
+    DownloadPrecheck(DownloadPrecheck&&);
+    DownloadPrecheck& operator=(DownloadPrecheck&&);
+
+    // The model's terms must be accepted first.
+    bool license_required = false;
+    // User-facing reason the download can't start ("" if it can).
+    std::string error;
+    // The files still to fetch, and the bytes.
+    molt_ai::models::DownloadPlan plan;
+  };
+  // A model download is one unit (molt_ai/models/model_download_plan.h):
+  // the weights and, for a model that sees images, its vision projector,
+  // each fetched and verified by its own ModelDownloadJob, in order. The
+  // model counts as downloaded only once every file is in place.
+  void OnDownloadPrecheckComplete(
+      std::string callback_id,
+      std::string model_id,
+      molt_ai::ModelInfo info,
+      std::vector<molt_ai::models::ModelFileSpec> files,
+      DownloadPrecheck precheck);
+  // Starts the job for download_queue_'s first file.
+  void StartNextModelFile();
   void OnDownloadProgress(int64_t received, int64_t total);
   void OnDownloadFinished(molt_ai::models::ModelDownloadJob::Result result);
-  void OnDownloadPrecheckComplete(std::string callback_id,
-                                  std::string model_id,
-                                  molt_ai::ModelInfo info,
-                                  base::DictValue precheck);
   void FinishDownload(bool success, bool verified, std::string error);
+  // Clears the download state (after FinishDownload, a cancel, or a
+  // precheck that didn't start one).
+  void ResetDownloadState();
+  // The size the model pickers show: the whole unit, in MB.
+  static int DownloadSizeMb(const molt_ai::ModelInfo& info);
   void OnModelDeleted(std::string callback_id, std::string model_id,
                       bool success);
   void OnHistoryExported(std::string callback_id,
@@ -525,8 +553,18 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // this: in a sandboxed utility process per call, never in the browser
   // process. Destroying it ends pending parses (and their processes).
   molt_ai::DocumentParserClient document_parser_;
+  // The download in progress, from its precheck to FinishDownload (one at a
+  // time; downloading_model_id_ is "" when there is none).
   std::string download_callback_id_;
   std::string downloading_model_id_;
+  // Its files (the weights, then a vision projector), the indices of
+  // those still to fetch (the first one is downloading), the complete
+  // files' bytes, and whether every file fetched matched its pin.
+  std::vector<molt_ai::models::ModelFileSpec> download_files_;
+  std::vector<size_t> download_queue_;
+  uint64_t download_done_bytes_ = 0;
+  bool download_verified_ = true;
+  // The whole unit's size, for progress.
   uint64_t download_total_bytes_ = 0;
   base::TimeTicks download_start_time_;
   uint64_t download_last_bytes_ = 0;

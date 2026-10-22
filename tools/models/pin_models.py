@@ -21,7 +21,9 @@ A model that sees images also has a vision projector entry
 /*mmproj_size=*/ are pinned from the same API reply, so from the same
 revision as the model. Both are pinned or neither: if the projector isn't
 in the reply, the model isn't pinned either. Such a model is offered only
-once both are pinned (fail closed).
+once both are pinned (fail closed), and the browser downloads, verifies,
+counts and deletes the two files as one unit
+(src/chrome/browser/molt_ai/models/model_download_plan.h).
 
 Usage:
   tools/models/pin_models.py                  # dry run: show what changes

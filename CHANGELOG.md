@@ -419,6 +419,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   Chromium's own decoders and scaled in the browser; the AI sandbox gets
   only raw pixels within fixed limits, never an image file. Whether your
   model sees images doesn't change what `availability()` tells a site.
+  The model downloads together with its image component, each file
+  checked against its pinned hash, and counts as downloaded only when
+  both are complete.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF
