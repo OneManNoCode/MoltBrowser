@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/frame/contents_web_view.cc b/chrome/browser/ui/views/frame/contents_web_view.cc
-index c49d4c8b7e7211ca456572510cf958b04b0020d3..39f16bdbc0baf4dec5dfc563fc63a9339e94ba3b 100644
+index c49d4c8b7e7211ca456572510cf958b04b0020d3..0993c1f124e0d1f241e598092229ee89bd49f318 100644
 --- a/chrome/browser/ui/views/frame/contents_web_view.cc
 +++ b/chrome/browser/ui/views/frame/contents_web_view.cc
 @@ -6,6 +6,7 @@
@@ -16,7 +16,7 @@ index c49d4c8b7e7211ca456572510cf958b04b0020d3..39f16bdbc0baf4dec5dfc563fc63a933
  #include "chrome/browser/ui/color/chrome_color_id.h"
  #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
  #include "chrome/browser/ui/views/status_bubble_views.h"
-@@ -142,6 +143,23 @@ void ContentsWebView::OnLetterboxingChanged() {
+@@ -142,6 +143,42 @@ void ContentsWebView::OnLetterboxingChanged() {
    }
  }
  
@@ -37,10 +37,29 @@ index c49d4c8b7e7211ca456572510cf958b04b0020d3..39f16bdbc0baf4dec5dfc563fc63a933
 +  }
 +}
 +
++// MoltBrowser: the page's renderer has just been sent its zoom, scale and
++// size, or a new page (which may have another zoom) has committed.
++void ContentsWebView::PrimaryMainFrameWasResized(bool width_changed) {
++  UpdateLetterbox();
++}
++
++void ContentsWebView::PrimaryPageChanged(content::Page& page) {
++  UpdateLetterbox();
++}
++
++// MoltBrowser: a new zoom or scale needs other letterbox margins, laid out
++// at once so the page's new size follows in the same task.
++void ContentsWebView::UpdateLetterbox() {
++  if (molt_ai::fingerprinting::LetterboxNeedsLayout(*this,
++                                                    holder()->bounds())) {
++    OnBoundsChanged(bounds());
++  }
++}
++
  void ContentsWebView::SetWebContents(content::WebContents* web_contents) {
    views::WebView::SetWebContents(web_contents);
    if (web_contents == nullptr) {
-@@ -200,8 +218,11 @@ void ContentsWebView::UpdateBackgroundColor() {
+@@ -200,8 +237,11 @@ void ContentsWebView::UpdateBackgroundColor() {
    }
  
    auto* background_layer = layer()->AsSolidColor();
