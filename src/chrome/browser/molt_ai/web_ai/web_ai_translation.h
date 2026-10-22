@@ -176,6 +176,43 @@ TaskPrompt BuildTranslatorPrompt(const TranslatorPair& pair,
 std::optional<std::string> CleanTranslation(std::string_view source,
                                             std::string_view translation);
 
+// ---------------------------------------------------------------------------
+// Several texts in one generation (page translation)
+// ---------------------------------------------------------------------------
+//
+// Translating a whole page (chrome/browser/molt_ai/translate/,
+// docs/design/PAGE_TRANSLATION.md) sends many short texts: one generation
+// each would repeat the instruction for every link and heading. A batch
+// puts several texts, as a JSON array, in one user turn under a fixed
+// instruction like BuildTranslatorPrompt()'s, decoded under
+// TranslatorBatchResponseSchema(n): exactly n strings, so the model can
+// only answer with one translation per text, in order. Each text is a
+// translatable piece from SplitForTranslation(), and each translation is
+// checked with CleanTranslation(), as for the Translator API.
+
+// Texts per batch. With kTranslatorPieceTokens as the batch's budget
+// (counted with TranslatorBatchTextTokens()) a batch fits the same window
+// as one piece.
+inline constexpr size_t kTranslatorMaxBatchTexts = 16;
+
+// What |text| adds to a batch's user turn, in EstimateTokens() tokens: the
+// text JSON-quoted (escapes included) and its line.
+uint32_t TranslatorBatchTextTokens(std::string_view text);
+
+// The JSON Schema a batch of |count| texts (1..kTranslatorMaxBatchTexts)
+// is decoded under: {"translations": [string x count]}. Within the subset
+// json_schema_grammar.h supports.
+std::string TranslatorBatchResponseSchema(size_t count);
+// The member of a batch reply that holds the translations.
+inline constexpr char kTranslatorBatchResponseKey[] = "translations";
+
+// The generation for |texts| (page text, 1..kTranslatorMaxBatchTexts of
+// them): MoltBrowser's fixed instruction naming the two languages, and the
+// texts as a JSON array, one per line, as the user turn. The reply budget
+// is TranslatorMaxOutputTokens() of their TranslatorBatchTextTokens().
+TaskPrompt BuildTranslatorBatchPrompt(const TranslatorPair& pair,
+                                      const std::vector<std::string>& texts);
+
 }  // namespace molt_ai::web_ai
 
 #endif  // CHROME_BROWSER_MOLT_AI_WEB_AI_WEB_AI_TRANSLATION_H_
