@@ -1,0 +1,29 @@
+MoltBrowser patch for chrome/browser/profile_resetter/profile_resetter.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/profile_resetter/profile_resetter.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/profile_resetter/profile_resetter.cc b/chrome/browser/profile_resetter/profile_resetter.cc
+index 37b80b392f96997e5b4cdf86bebd8b1c79ab7c33..048368052b0081b2d7b4d398f26f69d23f2fc5db 100644
+--- a/chrome/browser/profile_resetter/profile_resetter.cc
++++ b/chrome/browser/profile_resetter/profile_resetter.cc
+@@ -24,6 +24,7 @@
+ #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
+ #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
+ #include "chrome/browser/google/google_brand.h"
++#include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions_factory.h"
+ #include "chrome/browser/net/system_network_context_manager.h"
+ #include "chrome/browser/profile_resetter/brandcode_config_fetcher.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -324,6 +325,10 @@ void ProfileResetter::ResetContentSettings() {
+     permission_context->RevokeAllActiveGrants();
+   }
+ 
++  // MoltBrowser: the built-in AI APIs' per-site answers and prompt pauses
++  // are kept in a MoltBrowser pref, not in HostContentSettingsMap.
++  molt_ai::web_ai::ResetWebAISitePermissions(profile_);
++
+   MarkAsDone(CONTENT_SETTINGS);
+ }
+ 
