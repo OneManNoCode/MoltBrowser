@@ -296,10 +296,11 @@ In step 6 the owner signs every statement with the release key, into
 
 Two release assets are not subjects:
 
-- **The manifest**, because no build produces it: it is written in the
-  signing session, from the assets, statements included. The manifest
-  covers the statements and the statements cover the builds' outputs, so
-  each binds the other.
+- **The manifest**, because no build produces it: it is written later, in
+  the signing session, from the assets. It lists every statement file with
+  its hash, and `sign` checks that the statements give every build output
+  the hash the manifest gives it. So the signed manifest and the signed
+  provenance always describe the same release.
 - **The Linux repository bundle**, because it is re-signed offline. Its
   packages are subjects.
 

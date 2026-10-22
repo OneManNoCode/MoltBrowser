@@ -15,7 +15,7 @@
 set -euo pipefail
 
 if [ $# -ne 4 ]; then
-  sed -n '6,15p' "$0" >&2
+  sed -n '5,14p' "$0" >&2
   exit 2
 fi
 tag="$1"
