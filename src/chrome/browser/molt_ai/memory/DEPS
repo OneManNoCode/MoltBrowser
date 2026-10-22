@@ -1,0 +1,5 @@
+include_rules = [
+  # The embedding model's pooling type (llama_embedder.cc): the mojo
+  # interface of the sandboxed inference service only.
+  "+chrome/services/molt_ai/inference/public",
+]

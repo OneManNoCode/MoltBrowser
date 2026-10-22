@@ -76,6 +76,9 @@ MoltBrowser
  |
  +-- MemoryService (molt_ai/memory) — opt-in, encrypted SQLite store +
  |    in-memory index, HashingEmbedder v3 (Unicode-aware keyword hashing)
+ |    +-- search by meaning: LlamaEmbedder -> EmbeddingProcessHost ->
+ |        MoltInferenceService.LoadEmbeddingModel (sandboxed), versioned
+ |        vector spaces, background re-embedding (MemoryBackend)
  |
  +-- Security (molt_ai/security, molt_ai/common)
  |    +-- agent_safety (http(s)-only, origin scope, credential fields, fenced
@@ -356,6 +359,14 @@ repo/
 - Opt-in; encrypted SQLite store per profile, in-memory index, and
   `HashingEmbedder` v3 (Unicode-aware keyword hashing, not a neural
   embedding). Never records MoltNet browsing.
+- Search by meaning: once the user downloads the on-device embedding model
+  (`EmbeddingModelManager`; offered only when its download is pinned), the
+  sandboxed inference service embeds memory with it
+  (`EmbeddingProcessHost`, replies validated as hostile). Each vector
+  belongs to a space (model + pin + dimensions); a new space is built in
+  the background from the encrypted chunk text and committed only when
+  complete, so spaces never mix, and hashing stays the fallback. Design:
+  `docs/design/SEMANTIC_SEARCH.md`.
 
 ### Encrypted stores
 - keys.enc (cloud API keys), vault.enc (passwords), profile.enc (form-filler

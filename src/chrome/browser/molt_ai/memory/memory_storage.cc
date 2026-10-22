@@ -10,6 +10,7 @@
 #include "base/base64.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"  // for BUILDFLAG(IS_WIN) — explicit not transitive
 #include "chrome/browser/molt_ai/keys/molt_os_crypt.h"
@@ -33,6 +34,10 @@ constexpr int kCompatibleVersionNumber = 2;
 
 constexpr char kUrlKeyMetaKey[] = "url_hmac_key";
 constexpr char kEmbedderVersionMetaKey[] = "embedder_version";
+// The space of chunks.embedding, and the one being built in
+// chunk_vectors_next (absent = none). See the header.
+constexpr char kEmbedderSpaceMetaKey[] = "embedder_space";
+constexpr char kEmbedderSpaceNextMetaKey[] = "embedder_space_next";
 constexpr size_t kUrlKeyBytes = 32;
 
 // Re-embedding works through the chunks table in pages so a large DB
@@ -155,7 +160,8 @@ bool MemoryStorage::EnsureSchema(const MemoryEmbedder& embedder,
            EnsureSchema(embedder, /*allow_wipe=*/false);
   };
 
-  sql::MetaTable meta;
+  meta_ = std::make_unique<sql::MetaTable>();
+  sql::MetaTable& meta = *meta_;
   if (!meta.Init(db_.get(), kCurrentSchemaVersion,
                  kCompatibleVersionNumber)) {
     return wipe_and_recreate();
@@ -167,11 +173,13 @@ bool MemoryStorage::EnsureSchema(const MemoryEmbedder& embedder,
   }
 
   if (fresh) {
-    if (!CreateTablesV2() || !LoadOrCreateUrlKey(&meta) ||
-        !meta.SetValue(kEmbedderVersionMetaKey,
-                       static_cast<int64_t>(kHashingEmbedderVersion))) {
+    if (!CreateTablesV2() || !CreateSpaceTables() ||
+        !LoadOrCreateUrlKey(&meta) ||
+        !SetCommittedSpace(&meta, embedder.space().Key())) {
       return wipe_and_recreate();
     }
+    committed_space_ = embedder.space().Key();
+    next_space_.clear();
     return true;
   }
 
@@ -183,29 +191,86 @@ bool MemoryStorage::EnsureSchema(const MemoryEmbedder& embedder,
                     "this session, data left untouched";
       return false;
     }
-    return true;
+  } else if (!LoadOrCreateUrlKey(&meta)) {
+    return false;
   }
 
-  if (!LoadOrCreateUrlKey(&meta)) return false;
+  return CreateSpaceTables() && LoadSpaces(&meta, embedder);
+}
 
-  int64_t embedder_version = 0;
-  meta.GetValue(kEmbedderVersionMetaKey, &embedder_version);
-  if (embedder_version < kHashingEmbedderVersion) {
+bool MemoryStorage::CreateSpaceTables() {
+  return db_->Execute(
+             "CREATE TABLE IF NOT EXISTS chunk_vectors_next ("
+             " chunk_id INTEGER PRIMARY KEY,"
+             " doc_id INTEGER NOT NULL,"
+             " embedding BLOB NOT NULL"  // Encrypt(packed floats)
+             ")") &&
+         db_->Execute(
+             "CREATE INDEX IF NOT EXISTS idx_chunk_vectors_next_doc "
+             "ON chunk_vectors_next(doc_id)") &&
+         db_->Execute(
+             "CREATE INDEX IF NOT EXISTS idx_chunks_pending "
+             "ON chunks(chunk_id) WHERE embedding IS NULL");
+}
+
+bool MemoryStorage::SetCommittedSpace(sql::MetaTable* meta,
+                                      const std::string& space_key) {
+  // The pre-space key tells a MoltBrowser that predates spaces whether the
+  // vectors are its own (see the header).
+  const int64_t version =
+      space_key == HashingEmbedderSpace().Key() ? kHashingEmbedderVersion : 0;
+  return meta->SetValue(kEmbedderSpaceMetaKey, space_key) &&
+         meta->SetValue(kEmbedderVersionMetaKey, version);
+}
+
+bool MemoryStorage::LoadSpaces(sql::MetaTable* meta,
+                               const MemoryEmbedder& embedder) {
+  std::string committed;
+  meta->GetValue(kEmbedderSpaceMetaKey, &committed);
+  int64_t version = 0;
+  meta->GetValue(kEmbedderVersionMetaKey, &version);
+  if (committed.empty() ||
+      (HashingVersionOfSpaceKey(committed) == 0 && version > 0)) {
+    // Written before spaces existed, or by such a version after a newer one
+    // had committed a model's space: that version re-embedded everything
+    // with HashingEmbedder v<version> when it opened the DB.
+    committed = "hashing-v" + base::NumberToString(version) + "/" +
+                base::NumberToString(kEmbeddingDim);
+  }
+
+  const std::string sync_key = embedder.space().Key();
+  if (committed != sync_key && HashingVersionOfSpaceKey(committed) > 0 &&
+      HashingVersionOfSpaceKey(sync_key) > 0) {
+    // Another HashingEmbedder version: re-embed now, as before spaces.
     sql::Transaction tx(db_.get());
     if (!tx.Begin() || !ReembedAllChunks(embedder) ||
-        !meta.SetValue(kEmbedderVersionMetaKey,
-                       static_cast<int64_t>(kHashingEmbedderVersion)) ||
-        !tx.Commit()) {
+        !SetCommittedSpace(meta, sync_key) || !tx.Commit()) {
       // Don't run with old vectors: queries and new chunks would use the
       // new embedder, so old and new vectors would silently mix. The
       // transaction rolled back; memory is off this session and the
       // re-embed is retried on the next launch.
-      LOG(ERROR) << "[MoltMemory] re-embedding for embedder v"
-                 << kHashingEmbedderVersion
+      LOG(ERROR) << "[MoltMemory] re-embedding for " << sync_key
                  << " failed; memory disabled this session";
       return false;
     }
+    committed = sync_key;
+  } else {
+    std::string stored;
+    meta->GetValue(kEmbedderSpaceMetaKey, &stored);
+    if (stored != committed && !SetCommittedSpace(meta, committed)) {
+      return false;
+    }
   }
+
+  std::string next;
+  meta->GetValue(kEmbedderSpaceNextMetaKey, &next);
+  // Rows of pages a version that doesn't know this table deleted.
+  if (!db_->Execute("DELETE FROM chunk_vectors_next WHERE chunk_id NOT IN "
+                    "(SELECT chunk_id FROM chunks)")) {
+    return false;
+  }
+  committed_space_ = committed;
+  next_space_ = next;
   return true;
 }
 
@@ -306,8 +371,7 @@ bool MemoryStorage::MigrateV1ToV2(sql::MetaTable* meta,
 
   if (!meta->SetVersionNumber(kCurrentSchemaVersion) ||
       !meta->SetCompatibleVersionNumber(kCompatibleVersionNumber) ||
-      !meta->SetValue(kEmbedderVersionMetaKey,
-                      static_cast<int64_t>(kHashingEmbedderVersion))) {
+      !SetCommittedSpace(meta, embedder.space().Key())) {
     return false;
   }
   if (!tx.Commit()) return false;
@@ -418,7 +482,8 @@ bool MemoryStorage::InsertDocumentWithChunks(Document* doc,
     std::string text_enc;
     std::string emb_enc;
     if (!Encrypt(c.text, &text_enc) ||
-        !Encrypt(PackEmbedding(c.embedding), &emb_enc)) {
+        (!c.embedding.empty() &&
+         !Encrypt(PackEmbedding(c.embedding), &emb_enc))) {
       return false;
     }
     sql::Statement cins(db_->GetCachedStatement(
@@ -428,7 +493,11 @@ bool MemoryStorage::InsertDocumentWithChunks(Document* doc,
     cins.BindInt64(0, c.doc_id);
     cins.BindInt(1, c.chunk_idx);
     cins.BindBlob(2, base::as_byte_span(text_enc));
-    cins.BindBlob(3, base::as_byte_span(emb_enc));
+    if (c.embedding.empty()) {
+      cins.BindNull(3);  // pending: the model embeds it later
+    } else {
+      cins.BindBlob(3, base::as_byte_span(emb_enc));
+    }
     if (!cins.Run()) return false;
     c.chunk_id = db_->GetLastInsertRowId();
   }
@@ -496,6 +565,10 @@ bool MemoryStorage::DeleteDocument(int64_t doc_id) {
       SQL_FROM_HERE, "DELETE FROM chunks WHERE doc_id=?"));
   dc.BindInt64(0, doc_id);
   if (!dc.Run()) return false;
+  sql::Statement dn(db_->GetCachedStatement(
+      SQL_FROM_HERE, "DELETE FROM chunk_vectors_next WHERE doc_id=?"));
+  dn.BindInt64(0, doc_id);
+  if (!dn.Run()) return false;
   sql::Statement dd(db_->GetCachedStatement(
       SQL_FROM_HERE, "DELETE FROM documents WHERE doc_id=?"));
   dd.BindInt64(0, doc_id);
@@ -549,10 +622,15 @@ std::vector<int64_t> MemoryStorage::DeleteDocumentsVisitedBefore(
       "DELETE FROM chunks WHERE doc_id IN "
       "(SELECT doc_id FROM documents WHERE visited_at < ?)"));
   dc.BindInt64(0, cutoff_unix);
+  sql::Statement dn(db_->GetCachedStatement(
+      SQL_FROM_HERE,
+      "DELETE FROM chunk_vectors_next WHERE doc_id IN "
+      "(SELECT doc_id FROM documents WHERE visited_at < ?)"));
+  dn.BindInt64(0, cutoff_unix);
   sql::Statement dd(db_->GetCachedStatement(
       SQL_FROM_HERE, "DELETE FROM documents WHERE visited_at < ?"));
   dd.BindInt64(0, cutoff_unix);
-  if (!dc.Run() || !dd.Run() || !tx.Commit()) return {};
+  if (!dc.Run() || !dn.Run() || !dd.Run() || !tx.Commit()) return {};
   return ids;
 }
 
@@ -561,6 +639,7 @@ bool MemoryStorage::Clear() {
   sql::Transaction tx(db_.get());
   if (!tx.Begin()) return false;
   if (!db_->Execute("DELETE FROM chunks")) return false;
+  if (!db_->Execute("DELETE FROM chunk_vectors_next")) return false;
   if (!db_->Execute("DELETE FROM documents")) return false;
   if (!tx.Commit()) return false;
   // Shrink the file; everything sensitive was encrypted anyway.
@@ -599,6 +678,166 @@ int MemoryStorage::CountChunks() {
   sql::Statement s(db_->GetCachedStatement(
       SQL_FROM_HERE, "SELECT COUNT(*) FROM chunks"));
   return s.Step() ? s.ColumnInt(0) : 0;
+}
+
+// ---- Vector spaces ------------------------------------------------------------
+
+bool MemoryStorage::ReembedAllAndCommit(const MemoryEmbedder& embedder) {
+  if (!open_ || !meta_) return false;
+  const std::string key = embedder.space().Key();
+  sql::Transaction tx(db_.get());
+  if (!tx.Begin() || !ReembedAllChunks(embedder) ||
+      !SetCommittedSpace(meta_.get(), key) ||
+      !meta_->DeleteKey(kEmbedderSpaceNextMetaKey) ||
+      !db_->Execute("DELETE FROM chunk_vectors_next") || !tx.Commit()) {
+    return false;
+  }
+  committed_space_ = key;
+  next_space_.clear();
+  return true;
+}
+
+bool MemoryStorage::BeginMigration(const std::string& space_key) {
+  if (!open_ || !meta_ || space_key.empty()) return false;
+  if (next_space_ == space_key) return true;
+  sql::Transaction tx(db_.get());
+  if (!tx.Begin() || !db_->Execute("DELETE FROM chunk_vectors_next") ||
+      !meta_->SetValue(kEmbedderSpaceNextMetaKey, space_key) ||
+      !tx.Commit()) {
+    return false;
+  }
+  next_space_ = space_key;
+  return true;
+}
+
+bool MemoryStorage::AbortMigration() {
+  if (!open_ || !meta_) return false;
+  sql::Transaction tx(db_.get());
+  if (!tx.Begin() || !db_->Execute("DELETE FROM chunk_vectors_next") ||
+      !meta_->DeleteKey(kEmbedderSpaceNextMetaKey) || !tx.Commit()) {
+    return false;
+  }
+  next_space_.clear();
+  return true;
+}
+
+bool MemoryStorage::ReadChunkTexts(const char* sql,
+                                   int64_t after_chunk_id,
+                                   size_t limit,
+                                   std::vector<ChunkText>* out) {
+  if (!open_ || !out) return false;
+  sql::Statement s(db_->GetUniqueStatement(sql));
+  s.BindInt64(0, after_chunk_id);
+  s.BindInt64(1, static_cast<int64_t>(limit));
+  while (s.Step()) {
+    ChunkText c;
+    c.chunk_id = s.ColumnInt64(0);
+    c.doc_id = s.ColumnInt64(1);
+    // An undecryptable chunk embeds as "": a zero vector, never a match.
+    c.text = Decrypt(s.ColumnBlobAsString(2));
+    out->push_back(std::move(c));
+  }
+  return s.Succeeded();
+}
+
+bool MemoryStorage::ChunksMissingNextVector(int64_t after_chunk_id,
+                                            size_t limit,
+                                            std::vector<ChunkText>* out) {
+  if (next_space_.empty()) return false;
+  return ReadChunkTexts(
+      "SELECT c.chunk_id, c.doc_id, c.text_enc FROM chunks c "
+      "LEFT JOIN chunk_vectors_next n ON n.chunk_id = c.chunk_id "
+      "WHERE n.chunk_id IS NULL AND c.chunk_id > ? "
+      "ORDER BY c.chunk_id ASC LIMIT ?",
+      after_chunk_id, limit, out);
+}
+
+int MemoryStorage::CountChunksMissingNextVector() {
+  if (!open_) return -1;
+  sql::Statement s(db_->GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT COUNT(*) FROM chunks c "
+      "LEFT JOIN chunk_vectors_next n ON n.chunk_id = c.chunk_id "
+      "WHERE n.chunk_id IS NULL"));
+  return s.Step() ? s.ColumnInt(0) : -1;
+}
+
+bool MemoryStorage::StoreNextVectors(const std::vector<EmbeddingRow>& rows) {
+  if (!open_ || next_space_.empty()) return false;
+  sql::Transaction tx(db_.get());
+  if (!tx.Begin()) return false;
+  for (const auto& [chunk_id, doc_id, vector] : rows) {
+    if (vector.size() != kEmbeddingDim) return false;
+    std::string emb_enc;
+    if (!Encrypt(PackEmbedding(vector), &emb_enc)) return false;
+    // Only for chunks that still exist (a page may have been deleted while
+    // its text was being embedded).
+    sql::Statement s(db_->GetCachedStatement(
+        SQL_FROM_HERE,
+        "INSERT OR REPLACE INTO chunk_vectors_next(chunk_id, doc_id, "
+        "embedding) SELECT chunk_id, doc_id, ? FROM chunks WHERE chunk_id=?"));
+    s.BindBlob(0, base::as_byte_span(emb_enc));
+    s.BindInt64(1, chunk_id);
+    if (!s.Run()) return false;
+  }
+  return tx.Commit();
+}
+
+bool MemoryStorage::CommitMigration() {
+  if (!open_ || !meta_ || next_space_.empty()) return false;
+  sql::Transaction tx(db_.get());
+  if (!tx.Begin() || CountChunksMissingNextVector() != 0) return false;
+  if (!db_->Execute("UPDATE chunks SET embedding = (SELECT n.embedding FROM "
+                    "chunk_vectors_next n WHERE n.chunk_id = chunks.chunk_id)") ||
+      !db_->Execute("DELETE FROM chunk_vectors_next") ||
+      !SetCommittedSpace(meta_.get(), next_space_) ||
+      !meta_->DeleteKey(kEmbedderSpaceNextMetaKey) || !tx.Commit()) {
+    return false;
+  }
+  committed_space_ = next_space_;
+  next_space_.clear();
+  return true;
+}
+
+bool MemoryStorage::PendingChunks(int64_t after_chunk_id,
+                                  size_t limit,
+                                  std::vector<ChunkText>* out) {
+  return ReadChunkTexts(
+      "SELECT chunk_id, doc_id, text_enc FROM chunks "
+      "WHERE embedding IS NULL AND chunk_id > ? "
+      "ORDER BY chunk_id ASC LIMIT ?",
+      after_chunk_id, limit, out);
+}
+
+int MemoryStorage::CountPendingChunks() {
+  if (!open_) return -1;
+  sql::Statement s(db_->GetCachedStatement(
+      SQL_FROM_HERE, "SELECT COUNT(*) FROM chunks WHERE embedding IS NULL"));
+  return s.Step() ? s.ColumnInt(0) : -1;
+}
+
+std::vector<MemoryStorage::EmbeddingRow> MemoryStorage::StorePendingVectors(
+    const std::vector<EmbeddingRow>& rows) {
+  std::vector<EmbeddingRow> stored;
+  if (!open_) return stored;
+  sql::Transaction tx(db_.get());
+  if (!tx.Begin()) return stored;
+  for (const EmbeddingRow& row : rows) {
+    const auto& [chunk_id, doc_id, vector] = row;
+    if (vector.size() != kEmbeddingDim) return {};
+    std::string emb_enc;
+    if (!Encrypt(PackEmbedding(vector), &emb_enc)) return {};
+    sql::Statement s(db_->GetCachedStatement(
+        SQL_FROM_HERE,
+        "UPDATE chunks SET embedding=? WHERE chunk_id=? AND embedding IS "
+        "NULL"));
+    s.BindBlob(0, base::as_byte_span(emb_enc));
+    s.BindInt64(1, chunk_id);
+    if (!s.Run()) return {};
+    if (db_->GetLastChangeCount() == 1) stored.push_back(row);
+  }
+  if (!tx.Commit()) return {};
+  return stored;
 }
 
 }  // namespace memory

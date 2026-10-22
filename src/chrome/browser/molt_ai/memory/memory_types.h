@@ -69,6 +69,43 @@ struct QueryHit {
   int64_t visited_at_unix = 0;
 };
 
+// Counters for the molt://memory overview.
+struct MemoryStats {
+  int doc_count = 0;
+  int chunk_count = 0;
+  // Chunks currently in the hot (semantically searchable) index. Older
+  // chunks beyond kHotIndexCap stay on disk but are not searched.
+  int searchable_chunk_count = 0;
+};
+
+// A search, and which embedder answered it.
+struct SearchResult {
+  std::vector<QueryHit> hits;
+  // The on-device embedding model ranked them (else keyword hashing).
+  bool model = false;
+  // False when the model couldn't embed the query right now (hits empty).
+  bool ok = true;
+};
+
+// State of the vector index for the memory page
+// (docs/design/SEMANTIC_SEARCH.md).
+struct SemanticIndexStatus {
+  // The space searches use, e.g. "hashing-v3/256".
+  std::string space;
+  // Searches use the on-device model's vectors.
+  bool model_active = false;
+  // The model's vectors are being built in the background.
+  bool migrating = false;
+  int migration_done = 0;
+  int migration_total = 0;
+  // Pages saved while the model was busy, waiting for their vectors.
+  int pending = 0;
+  // Background embedding may run (memory on and not paused).
+  bool background_allowed = false;
+  // The model couldn't run this session; searches use keyword hashing.
+  bool model_failed = false;
+};
+
 }  // namespace memory
 }  // namespace molt_ai
 
