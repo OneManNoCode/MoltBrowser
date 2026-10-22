@@ -16,6 +16,9 @@ source_set("client_hints") {
   deps = [
     "//chrome/browser:browser_process",
     "//chrome/browser/content_settings:content_settings_factory",
+
+    # MoltBrowser: MoltNet's ClientHintsControllerDelegate.
+    "//chrome/browser/molt_ai/fingerprinting:client_hints",
     "//components/client_hints/browser",
     "//components/embedder_support:user_agent",
   ]

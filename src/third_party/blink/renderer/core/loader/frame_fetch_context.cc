@@ -102,6 +102,7 @@ BASE_FEATURE(kFastMemoryCacheWithDevTools, base::FEATURE_ENABLED_BY_DEFAULT);
 #include "third_party/blink/renderer/core/loader/resource_initiator_helper.h"
 #include "third_party/blink/renderer/core/loader/resource_load_observer_for_frame.h"
 #include "third_party/blink/renderer/core/loader/subresource_filter.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_device.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/timing/first_meaningful_paint_detector.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -237,6 +238,10 @@ bool ShouldSendClientHint(const network::PermissionsPolicy& policy,
                           const url::Origin& resource_origin,
                           network::mojom::blink::WebClientHintsType type,
                           const ClientHintsPreferences& hints_preferences) {
+  // MoltBrowser: MoltNet sends no device, network or high-entropy UA hints.
+  if (molt_fingerprinting::WithholdsClientHint(type)) {
+    return false;
+  }
   // For subresource requests, sending the hint in the fetch request based on
   // the permissions policy.
   if (!policy.IsFeatureEnabledForOrigin(

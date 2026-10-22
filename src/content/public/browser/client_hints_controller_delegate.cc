@@ -10,4 +10,10 @@ bool ClientHintsControllerDelegate::ShouldForceEmptyViewportSize() {
   return false;
 }
 
+// MoltBrowser: none by default.
+bool ClientHintsControllerDelegate::IsClientHintWithheld(
+    network::mojom::WebClientHintsType type) {
+  return false;
+}
+
 }  // namespace content

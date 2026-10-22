@@ -8,11 +8,14 @@
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_device.h"  // MoltBrowser
 
 namespace blink {
 
 float NavigatorDeviceMemory::deviceMemory() const {
-  return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
+  // MoltBrowser: the same for every MoltNet user.
+  return molt_fingerprinting::DeviceMemory(
+      ApproximatedDeviceMemory::GetApproximatedDeviceMemory());
 }
 
 }  // namespace blink

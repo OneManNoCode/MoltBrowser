@@ -51,6 +51,9 @@
 //            getScreenDetails(), the window-management permission,
 //            screen and orientation "change" events, screen.orientation,
 //            the form-control Locale            -> moltnet_uniformity.h
+//   MoltNet  navigator.deviceMemory, subresource client hints
+//            (frame_fetch_context.cc), navigator.userAgentData's
+//            high-entropy values                -> moltnet_device.h
 //
 // The pure noise functions are in farbling.h. This file decides, per
 // execution context, whether to farble and with which per-site key:

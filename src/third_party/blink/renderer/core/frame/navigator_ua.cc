@@ -7,6 +7,7 @@
 #include "base/compiler_specific.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/renderer/core/frame/navigator_ua_data.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_device.h"  // MoltBrowser
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -16,6 +17,8 @@ NavigatorUAData* NavigatorUA::userAgentData() {
       MakeGarbageCollected<NavigatorUAData>(GetUAExecutionContext());
 
   UserAgentMetadata metadata = GetUserAgentMetadata();
+  // MoltBrowser: MoltNet blanks the high-entropy values.
+  molt_fingerprinting::UniformUserAgentMetadata(metadata);
   ua_data->SetBrandVersionList(metadata.brand_version_list);
   ua_data->SetMobile(metadata.mobile);
   ua_data->SetPlatform(String::FromUtf8(metadata.platform),

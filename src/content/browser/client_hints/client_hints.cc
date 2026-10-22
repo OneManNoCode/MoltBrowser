@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
+#include "base/memory/raw_ptr.h"  // MoltBrowser
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/safe_conversions.h"
@@ -524,6 +525,7 @@ struct ClientHintsExtendedData {
                           FrameTreeNode* frame_tree_node,
                           ClientHintsControllerDelegate* delegate)
       : resource_origin(origin) {
+    withholding_delegate = delegate;  // MoltBrowser
     // If the current frame is the outermost main frame, the URL wasn't
     // committed yet, so in order to get the main frame URL, we should use the
     // provided URL instead. Otherwise, the current frame is a subframe and the
@@ -592,10 +594,16 @@ struct ClientHintsExtendedData {
   bool is_outermost_main_frame = false;
   url::Origin main_frame_origin;
   std::unique_ptr<network::PermissionsPolicy> permissions_policy;
+  // MoltBrowser: asked which hints its browser context withholds.
+  raw_ptr<ClientHintsControllerDelegate> withholding_delegate;
 };
 
 bool IsClientHintEnabled(const ClientHintsExtendedData& data,
                          WebClientHintsType type) {
+  // MoltBrowser: a withheld hint is never enabled, whatever enabled it.
+  if (data.withholding_delegate->IsClientHintWithheld(type)) {
+    return false;
+  }
   return blink::IsClientHintSentByDefault(type) || data.hints.IsEnabled(type);
 }
 

@@ -82,6 +82,10 @@ class CONTENT_EXPORT ClientHintsControllerDelegate {
   virtual void ForceEmptyViewportSizeForTesting(
       bool should_force_empty_viewport_size) {}
   virtual bool ShouldForceEmptyViewportSize();
+
+  // MoltBrowser: hints this browser context never sends, whatever enabled
+  // them (MoltNet's, chrome/browser/molt_ai/fingerprinting/).
+  virtual bool IsClientHintWithheld(network::mojom::WebClientHintsType type);
 };
 
 }  // namespace content

@@ -7,6 +7,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/molt_ai/fingerprinting/molt_net_client_hints.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "components/client_hints/browser/client_hints.h"
 #include "components/embedder_support/user_agent_utils.h"
@@ -55,7 +56,8 @@ ClientHintsFactory::BuildServiceInstanceForBrowserContext(
     content::BrowserContext* context) const {
   // CookieSettingsFactory::GetForProfile can only be called on the UI thread.
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  return std::make_unique<client_hints::ClientHints>(
+  // MoltBrowser: MoltNet's withholds most hints (molt_net_client_hints.h).
+  return molt_ai::fingerprinting::CreateClientHints(
       context, g_browser_process->network_quality_tracker(),
       HostContentSettingsMapFactory::GetForProfile(context),
       CookieSettingsFactory::GetForProfile(
