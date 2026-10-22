@@ -5,18 +5,27 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/universal_web_contents_observers.cc b/chrome/browser/universal_web_contents_observers.cc
-index 70c84066d5da97b6c2806495e3f4c85849b9102d..e46b7550f0160cf1b53818eede6e7b2b3107c3d1 100644
+index 70c84066d5da97b6c2806495e3f4c85849b9102d..f74361591e1fd53979949f0957e2e2ba1385ca36 100644
 --- a/chrome/browser/universal_web_contents_observers.cc
 +++ b/chrome/browser/universal_web_contents_observers.cc
-@@ -4,6 +4,7 @@
+@@ -4,10 +4,16 @@
  
  #include "chrome/browser/universal_web_contents_observers.h"
  
++#include "build/build_config.h"  // MoltBrowser
 +#include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"  // MoltBrowser
  #include "components/performance_manager/embedder/performance_manager_registry.h"
  #include "content/public/browser/web_contents.h"
  #include "extensions/buildflags/buildflags.h"
-@@ -36,4 +37,9 @@ void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {
+ 
++#if !BUILDFLAG(IS_ANDROID)  // MoltBrowser
++#include "chrome/browser/molt_ai/fingerprinting/molt_letterbox_view.h"
++#endif
++
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+ #include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
+ #include "extensions/browser/extensions_browser_client.h"
+@@ -36,4 +42,14 @@ void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {
            performance_manager::PerformanceManagerRegistry::GetInstance()) {
      pm_registry->MaybeCreatePageNodeForWebContents(web_contents);
    }
@@ -25,4 +34,9 @@ index 70c84066d5da97b6c2806495e3f4c85849b9102d..e46b7550f0160cf1b53818eede6e7b2b
 +  // committing document (tabs or not).
 +  molt_ai::fingerprinting::ShieldsDecisionObserver::MaybeCreateForWebContents(
 +      web_contents);
++#if !BUILDFLAG(IS_ANDROID)
++  // MoltBrowser: MoltNet background tabs stay letterboxed at their zoom.
++  molt_ai::fingerprinting::BackgroundTabLetterbox::MaybeCreateForWebContents(
++      web_contents);
++#endif
  }

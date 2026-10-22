@@ -289,13 +289,14 @@ CORE_EXPORT std::optional<Farbler> SiteFarblerFor(ExecutionContext* context,
 // --- MoltNet uniformity -----------------------------------------------------
 
 // In kUniform mode: the screen rect every Screen getter reports -- origin
-// (0, 0), size = the outermost main frame's size in DIPs (scrollbars
-// included, as innerWidth/innerHeight) rounded down to the letterbox steps
-// (UniformScreenSizeOf in letterbox.h). nullopt otherwise.
+// (0, 0), size = the outermost main frame's size in its CSS pixels
+// (scrollbars included, as innerWidth/innerHeight) rounded down to the
+// letterbox steps (UniformScreenSizeOf in letterbox.h). nullopt otherwise.
 CORE_EXPORT std::optional<gfx::Rect> UniformScreenRect(LocalFrame* frame);
 // In kUniform mode: MouseEvent.screenX/Y for a pointer at
-// `position_in_widget` (physical pixels): the same point in DIPs relative to
-// the widget, i.e. as if the window sat at (0, 0) without browser chrome.
+// `position_in_widget` (physical pixels): the same point in the page's CSS
+// pixels relative to the widget (UniformScreenScale in letterbox.h), i.e. as
+// if the window sat at (0, 0) without browser chrome.
 CORE_EXPORT std::optional<gfx::PointF> UniformScreenPoint(
     const LocalDOMWindow* window,
     const gfx::PointF& position_in_widget);

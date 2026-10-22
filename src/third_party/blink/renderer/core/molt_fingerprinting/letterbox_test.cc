@@ -4,9 +4,11 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/renderer/core/css/media_values.h"
 #include "third_party/blink/renderer/core/css/media_values_cached.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -15,7 +17,9 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/farbling.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -24,6 +28,7 @@
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "ui/display/screen_info.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/size_f.h"
 
 namespace blink::molt_fingerprinting {
 namespace {
@@ -68,16 +73,18 @@ class MoltLetterboxTest : public testing::Test {
   }
 
   // The main frame of a page at `url` whose frame is `size` device pixels
-  // on a screen of `device_scale_factor`, zoomed to 100% (Blink's layout
-  // zoom is then the device scale factor).
+  // on a screen of `device_scale_factor`, zoomed to `zoom` (Blink's layout
+  // zoom is then the device scale factor times the zoom, as
+  // WebFrameWidgetImpl::SetZoomInternal() computes it).
   LocalFrame& MainFrame(const char* url,
                         const gfx::Size& size = gfx::Size(800, 600),
-                        float device_scale_factor = 1.0f) {
+                        float device_scale_factor = 1.0f,
+                        float zoom = 1.0f) {
     holders_.push_back(DummyPageHolder::CreateAndCommitNavigation(
         KURL(url), size,
         MakeGarbageCollected<ScaledChromeClient>(device_scale_factor)));
     LocalFrame& frame = holders_.back()->GetFrame();
-    frame.SetLayoutZoomFactor(device_scale_factor);
+    frame.SetLayoutZoomFactor(device_scale_factor * zoom);
     return frame;
   }
 
@@ -121,6 +128,98 @@ TEST_F(MoltLetterboxTest, OtherSizesAreBucketed) {
   EXPECT_EQ(
       UniformScreenSizeOf(MainFrame("https://a.example/", gfx::Size(150, 80))),
       gfx::Size(200, 100));
+}
+
+// A preset zoom factor as the renderer gets it: made a zoom level by the
+// browser, a factor again and a float here (SetZoomInternal()).
+float PresetZoom(double preset) {
+  return static_cast<float>(
+      ZoomLevelToZoomFactor(ZoomFactorToZoomLevel(preset)));
+}
+
+// The browser letterboxes a zoomed page in CSS pixels, and the screen is
+// that size too: neither shows the zoom.
+TEST_F(MoltLetterboxTest, ZoomedPagesReportTheirCssSizeAsTheScreen) {
+  struct Case {
+    gfx::Size device_pixels;
+    float device_scale_factor;
+    double zoom;
+    gfx::Size css;
+  };
+  const Case cases[] = {
+      {gfx::Size(1500, 1000), 1.0f, 1.25, gfx::Size(1200, 800)},
+      {gfx::Size(1260, 810), 1.0f, 0.9, gfx::Size(1400, 900)},
+      {gfx::Size(1400, 900), 2.0f, 0.5, gfx::Size(1400, 900)},
+      {gfx::Size(2400, 1600), 2.0f, 2.0, gfx::Size(600, 400)},
+      {gfx::Size(400, 300), 1.0f, 1 / 3.0, gfx::Size(1200, 900)},
+      {gfx::Size(1440, 1080), 1.2f, 1.0, gfx::Size(1200, 900)},
+  };
+  for (const Case& c : cases) {
+    SCOPED_TRACE(testing::Message() << c.device_scale_factor << " " << c.zoom);
+    LocalFrame& frame = MainFrame("https://page.example/", c.device_pixels,
+                                  c.device_scale_factor, PresetZoom(c.zoom));
+    EXPECT_EQ(UniformScreenScale(frame),
+              c.device_scale_factor * PresetZoom(c.zoom));
+    EXPECT_EQ(UniformScreenSizeOf(frame), c.css);
+    EXPECT_EQ(frame.DomWindow()->innerWidth(), c.css.width());
+    EXPECT_EQ(frame.DomWindow()->innerHeight(), c.css.height());
+  }
+}
+
+// The screen used to be the page's DIP size, so next to a zoomed page's
+// innerWidth/innerHeight it gave the zoom away; now it follows the zoom,
+// even before the browser has letterboxed the page again.
+TEST_F(MoltLetterboxTest, TheScreenFollowsThePageZoom) {
+  LocalFrame& frame =
+      MainFrame("https://page.example/", gfx::Size(2800, 1800), 2.0f);
+  EXPECT_EQ(UniformScreenSizeOf(frame), gfx::Size(1400, 900));
+  // The user zooms to 175%; the browser hasn't letterboxed the page again
+  // yet. The screen is the page's CSS size, bucketed, like innerWidth.
+  frame.SetLayoutZoomFactor(2.0f * PresetZoom(1.75));
+  EXPECT_EQ(frame.DomWindow()->innerWidth(), 800);
+  EXPECT_EQ(UniformScreenSizeOf(frame), gfx::Size(800, 500));
+  EXPECT_EQ(UniformScreenScale(frame), 3.5f);
+}
+
+// The browser predicts the page's CSS size with its own copy of this
+// arithmetic, which molt_letterbox_unittest.cc checks against farbling.h's;
+// farbling.h's must be gfx's and Blink's.
+TEST_F(MoltLetterboxTest, PredictedArithmeticIsBlinks) {
+  const float scale_factors[] = {1.0f, 1.1f,  1.15f, 1.2f,  1.25f, 1.3f, 1.4f,
+                                 1.5f, 1.75f, 2.0f,  2.25f, 2.5f,  3.0f};
+  for (float scale : scale_factors) {
+    for (int dips = 0; dips <= 4000; ++dips) {
+      ASSERT_EQ(PageDevicePixels(dips, scale),
+                gfx::ScaleToCeiledSize(gfx::Size(dips, dips), scale).width())
+          << scale << " " << dips;
+    }
+    for (double preset : kPresetBrowserZoomFactors) {
+      const float zoom = scale * PresetZoom(preset);
+      for (int pixels = 0; pixels <= 12000; ++pixels) {
+        ASSERT_EQ(PageCssPixels(pixels, zoom),
+                  AdjustForAbsoluteZoom::AdjustInt(pixels, zoom))
+            << zoom << " " << pixels;
+        // LocalFrameView::ViewportSizeForMediaQueries().
+        gfx::SizeF media{gfx::Size(pixels, pixels)};
+        media.Scale(1 / zoom);
+        ASSERT_EQ(PageMediaQueryPixels(pixels, zoom), media.width())
+            << zoom << " " << pixels;
+      }
+    }
+  }
+  // And through a page: innerWidth and the width media queries compare.
+  const std::pair<int, float> pages[] = {{1260, PresetZoom(0.9)},
+                                         {1681, 1.2f},
+                                         {1313, 1.5f * PresetZoom(1.75)},
+                                         {1750, PresetZoom(1.25)},
+                                         {467, PresetZoom(1 / 3.0)}};
+  for (const auto& [pixels, zoom] : pages) {
+    LocalFrame& frame = MainFrame("https://page.example/",
+                                  gfx::Size(pixels, pixels), 1.0f, zoom);
+    EXPECT_EQ(frame.DomWindow()->innerWidth(), PageCssPixels(pixels, zoom));
+    EXPECT_EQ(*MediaValues::CreateDynamicIfFrameExists(&frame)->Width(),
+              PageMediaQueryPixels(pixels, zoom));
+  }
 }
 
 TEST_F(MoltLetterboxTest, RealDensityOutsideMoltNet) {

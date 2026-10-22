@@ -160,6 +160,25 @@ void ContentsWebView::DidToggleFullscreenModeForTab(bool entered_fullscreen,
   }
 }
 
+// MoltBrowser: the page's renderer has just been sent its zoom, scale and
+// size, or a new page (which may have another zoom) has committed.
+void ContentsWebView::PrimaryMainFrameWasResized(bool width_changed) {
+  UpdateLetterbox();
+}
+
+void ContentsWebView::PrimaryPageChanged(content::Page& page) {
+  UpdateLetterbox();
+}
+
+// MoltBrowser: a new zoom or scale needs other letterbox margins, laid out
+// at once so the page's new size follows in the same task.
+void ContentsWebView::UpdateLetterbox() {
+  if (molt_ai::fingerprinting::LetterboxNeedsLayout(*this,
+                                                    holder()->bounds())) {
+    OnBoundsChanged(bounds());
+  }
+}
+
 void ContentsWebView::SetWebContents(content::WebContents* web_contents) {
   views::WebView::SetWebContents(web_contents);
   if (web_contents == nullptr) {

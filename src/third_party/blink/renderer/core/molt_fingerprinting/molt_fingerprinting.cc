@@ -31,7 +31,6 @@
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"
-#include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/timezone/timezone_controller.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
@@ -49,7 +48,6 @@
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkPixmap.h"
-#include "ui/display/screen_info.h"
 #include "ui/gfx/skia_span_util.h"
 #include "v8/include/v8-isolate.h"
 
@@ -944,16 +942,12 @@ std::optional<gfx::PointF> UniformScreenPoint(
   if (!IsUniform()) {
     return std::nullopt;
   }
-  float dsf = 1.0f;
-  if (window && window->GetFrame()) {
-    LocalFrame& frame = *window->GetFrame();
-    const float scale =
-        frame.GetChromeClient().GetScreenInfo(frame).device_scale_factor;
-    if (scale > 0) {
-      dsf = scale;
-    }
-  }
-  return gfx::ScalePoint(position_in_widget, 1.0f / dsf);
+  // In the page's CSS pixels, like the uniform screen, so page zoom shows in
+  // neither (letterbox.h).
+  const float scale = window && window->GetFrame()
+                          ? UniformScreenScale(*window->GetFrame())
+                          : 1.0f;
+  return gfx::ScalePoint(position_in_widget, 1.0f / scale);
 }
 
 }  // namespace molt_fingerprinting

@@ -57,20 +57,24 @@ source_set("shields_decision") {
   ]
 }
 
-# MoltNet letterboxing: the geometry (std-only, constexpr).
+# MoltNet letterboxing: the geometry, in CSS pixels at any zoom and scale
+# factor (std-only, constexpr).
 source_set("letterbox") {
   sources = [ "molt_letterbox.h" ]
 }
 
 # ... and where it meets the window: the hooks in ContentsWebView
-# (chrome/browser/ui/views/frame/contents_web_view.cc) call these. Views
-# only, so desktop only (see the molt_ai group).
+# (chrome/browser/ui/views/frame/contents_web_view.cc) call these, and
+# chrome/browser/universal_web_contents_observers.cc attaches
+# BackgroundTabLetterbox. Views only, so desktop only (see the molt_ai
+# group).
 source_set("letterbox_view") {
   sources = [
     "molt_letterbox_view.cc",
     "molt_letterbox_view.h",
   ]
   public_deps = [
+    "//content/public/browser",
     "//skia",
     "//ui/gfx/geometry",
   ]
@@ -78,10 +82,14 @@ source_set("letterbox_view") {
     ":fingerprinting",
     ":letterbox",
     "//chrome/browser/ui/color:color_headers",
-    "//content/public/browser",
+    "//components/tabs:public",
+    "//net",
+    "//third_party/blink/public/common",
     "//ui/color",
+    "//ui/compositor",
     "//ui/views",
     "//ui/views/controls/webview",
+    "//url",
   ]
 }
 
