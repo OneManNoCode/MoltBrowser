@@ -850,5 +850,175 @@ TEST(MoltFarblingTest, LetterboxBucketRoundsDownAndCaps) {
   EXPECT_EQ(bucket(601, 401), std::make_pair(600, 400));
 }
 
+// --- MoltNet scrollbars and viewport lengths
+// ----------------------------------
+
+// The layout zooms a page gets: the screens of 1x, 2x and the fractional
+// scales of Windows, GNOME, KDE and Wayland, times each zoom menu preset as
+// its renderer has it (a zoom level made a factor again, cast to float, as
+// blink::ZoomLevelToZoomFactor(ZoomFactorToZoomLevel()) and
+// WebFrameWidgetImpl::SetZoomInternal() do).
+std::vector<float> LayoutZooms() {
+  const float scale_factors[] = {
+      1.0f, 1.1f, 1.15f, 1.2f, 1.25f, 1.3f, static_cast<float>(160 / 120.0),
+      1.4f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f};
+  const double presets[] = {0.25, 1 / 3.0, 0.5, 2 / 3.0, 0.75, 0.8,
+                            0.9,  1.0,     1.1, 1.25,    1.5,  1.75,
+                            2.0,  2.5,     3.0, 4.0,     5.0};
+  std::vector<float> zooms;
+  for (float scale : scale_factors) {
+    for (double preset : presets) {
+      const float zoom =
+          static_cast<float>(std::pow(1.2, std::log(preset) / std::log(1.2)));
+      zooms.push_back(scale * zoom);
+    }
+  }
+  return zooms;
+}
+
+// Oracle: the whole number of device pixels whose length in CSS pixels is
+// closest to `css` at `zoom`, by trying them all (the larger of two equally
+// close ones).
+int ClosestDevicePixels(int css, float zoom) {
+  int best = 1;
+  for (int pixels = 1; pixels <= 2000; ++pixels) {
+    const double error = std::fabs(pixels / static_cast<double>(zoom) - css);
+    const double best_error = std::fabs(best / static_cast<double>(zoom) - css);
+    if (error <= best_error) {
+      best = pixels;
+    }
+  }
+  return best;
+}
+
+TEST(MoltFarblingTest, UniformScrollbarsAreTheClosestDevicePixels) {
+  for (float zoom : LayoutZooms()) {
+    for (int css : {kUniformScrollbarThickness, kUniformThinScrollbarThickness,
+                    1, 15, 17}) {
+      ASSERT_EQ(UniformScrollbarDevicePixels(css, zoom),
+                ClosestDevicePixels(css, zoom))
+          << css << " at " << zoom;
+    }
+  }
+  // Any zoom, not only the presets: never thinner at a larger zoom, and
+  // within half a device pixel of the CSS thickness.
+  int previous = 1;
+  for (float zoom = 0.05f; zoom < 20.0f; zoom += 0.001f) {
+    const int pixels = UniformScrollbarDevicePixels(16, zoom);
+    ASSERT_GE(pixels, previous) << zoom;
+    ASSERT_LE(std::fabs(pixels - 16.0 * zoom), 0.5) << zoom;
+    previous = pixels;
+  }
+}
+
+// On the usual screens at 100%, and at most preset zooms on them, the
+// thickness is exactly 16 CSS pixels: 16 device pixels per 16 CSS pixels at
+// 1x, 20 at 1.25x, 24 at 1.5x, ...
+TEST(MoltFarblingTest, UniformScrollbarsAreWholeDevicePixelsOnUsualScreens) {
+  for (float scale : {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f}) {
+    const int pixels = UniformScrollbarDevicePixels(16, scale);
+    EXPECT_EQ(pixels / static_cast<double>(scale), 16.0) << scale;
+    EXPECT_EQ(
+        UniformScrollbarDevicePixels(12, scale) / static_cast<double>(scale),
+        12.0)
+        << scale;
+  }
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 1.0f), 16);
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 2.0f), 32);
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 0.25f), 4);
+  EXPECT_EQ(UniformScrollbarDevicePixels(12, 1.0f / 3), 4);
+  // 16 CSS pixels at 90% on a 1x screen are 14.4 device pixels: 14.
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 0.9f), 14);
+  // 110% on a 1x screen: 17.6, so 18.
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 1.1f), 18);
+  // How often 16 CSS pixels are whole device pixels over every preset zoom
+  // on every screen above: more often than upstream's 15 or Windows' 17.
+  auto whole = [](int css) {
+    int count = 0;
+    for (float zoom : LayoutZooms()) {
+      const double exact = css * static_cast<double>(zoom);
+      count += std::fabs(exact - std::nearbyint(exact)) < 1e-3;
+    }
+    return count;
+  };
+  EXPECT_GT(whole(kUniformScrollbarThickness), whole(15));
+  EXPECT_GT(whole(kUniformScrollbarThickness), whole(17));
+  EXPECT_GE(whole(kUniformScrollbarThickness),
+            static_cast<int>(LayoutZooms().size()) / 2);
+}
+
+TEST(MoltFarblingTest, UniformScrollbarEdgeCases) {
+  EXPECT_EQ(UniformScrollbarDevicePixels(0, 2.0f), 0);
+  EXPECT_EQ(UniformScrollbarDevicePixels(-16, 2.0f), 0);
+  // Never thinner than a device pixel.
+  EXPECT_EQ(UniformScrollbarDevicePixels(1, 0.25f), 1);
+  // Zooms the renderer can't have count as 1.
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 0.0f), 16);
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, -2.0f), 16);
+  EXPECT_EQ(UniformScrollbarDevicePixels(16, 5000.0f), 16);
+  EXPECT_EQ(
+      UniformScrollbarDevicePixels(16, std::numeric_limits<float>::quiet_NaN()),
+      16);
+  EXPECT_EQ(
+      UniformScrollbarDevicePixels(16, std::numeric_limits<float>::infinity()),
+      16);
+  EXPECT_EQ(
+      UniformScrollbarDevicePixels(std::numeric_limits<int>::max(), 999.0f),
+      std::numeric_limits<int>::max());
+}
+
+TEST(MoltFarblingTest, ViewportLengthsSnapOnlyWithinTheTolerance) {
+  EXPECT_EQ(SnapViewportLength(1400.0001220703125), 1400.0);
+  EXPECT_EQ(SnapViewportLength(1399.9998779296875), 1400.0);
+  EXPECT_EQ(SnapViewportLength(1400.0), 1400.0);
+  EXPECT_EQ(SnapViewportLength(500 + 1.0 / 64), 500.0);
+  EXPECT_EQ(SnapViewportLength(500 - 1.0 / 64), 500.0);
+  // Further off: left alone (500.19 is a page the browser couldn't
+  // letterbox exactly; 0.5 isn't near anything).
+  EXPECT_EQ(SnapViewportLength(500.1875), 500.1875);
+  EXPECT_EQ(SnapViewportLength(500 + 1.0 / 32), 500 + 1.0 / 32);
+  EXPECT_EQ(SnapViewportLength(0.5), 0.5);
+  EXPECT_EQ(SnapViewportLength(1384.4444580078125), 1384.4444580078125);
+  EXPECT_EQ(SnapViewportLength(0.001), 0.0);
+  EXPECT_EQ(SnapViewportLength(-3.001), -3.0);
+  EXPECT_TRUE(
+      std::isnan(SnapViewportLength(std::numeric_limits<double>::quiet_NaN())));
+  EXPECT_EQ(SnapViewportLength(std::numeric_limits<double>::infinity()),
+            std::numeric_limits<double>::infinity());
+  // Idempotent.
+  for (double length = 0; length < 3000; length += 0.0078125) {
+    ASSERT_EQ(SnapViewportLength(SnapViewportLength(length)),
+              SnapViewportLength(length))
+        << length;
+  }
+}
+
+// Where the media queries' 1400.0001 comes from: they multiply by the float
+// reciprocal of the zoom (two roundings), the viewport units and
+// visualViewport divide (one). Both are within the tolerance of the whole
+// length, and snap to it.
+TEST(MoltFarblingTest, MediaQueriesAndViewportUnitsSnapAlike) {
+  const float zoom =
+      static_cast<float>(std::pow(1.2, std::log(0.9) / std::log(1.2)));
+  EXPECT_EQ(PageMediaQueryPixels(1260, zoom), 1400.0001f);
+  EXPECT_EQ(PageViewportPixels(1260, zoom), 1400.0f);
+  EXPECT_EQ(SnapViewportLength(PageMediaQueryPixels(1260, zoom)), 1400.0);
+  for (float layout_zoom : LayoutZooms()) {
+    for (int pixels = 0; pixels <= 8000; ++pixels) {
+      const float media = PageMediaQueryPixels(pixels, layout_zoom);
+      const float units = PageViewportPixels(pixels, layout_zoom);
+      ASSERT_EQ(units, pixels / layout_zoom);
+      // At most a rounding or two apart, so they snap alike.
+      ASSERT_LE(std::fabs(media - units),
+                2 * std::fabs(units) * std::numeric_limits<float>::epsilon())
+          << pixels << " " << layout_zoom;
+      if (std::fabs(units - std::nearbyint(units)) < 1.0 / 128) {
+        ASSERT_EQ(SnapViewportLength(media), SnapViewportLength(units))
+            << pixels << " " << layout_zoom;
+      }
+    }
+  }
+}
+
 }  // namespace
 }  // namespace blink::molt_fingerprinting

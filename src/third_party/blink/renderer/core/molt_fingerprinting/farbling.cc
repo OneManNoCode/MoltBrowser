@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <limits>
 #include <string>
 
@@ -510,6 +511,33 @@ int PageCssPixels(int device_pixels, float layout_zoom) {
 float PageMediaQueryPixels(int device_pixels, float layout_zoom) {
   // gfx::SizeF(layout_size_).Scale(1 / LayoutZoomFactor()).
   return static_cast<float>(device_pixels) * (1 / layout_zoom);
+}
+
+float PageViewportPixels(int device_pixels, float layout_zoom) {
+  // gfx::SizeF(layout_size).InvScale(zoom), VisibleRect().width() / zoom.
+  return static_cast<float>(device_pixels) / layout_zoom;
+}
+
+double SnapViewportLength(double css_length) {
+  // A NaN fails the comparison, and so does an infinity (inf - inf is NaN).
+  const double whole = std::floor(css_length + 0.5);
+  return std::fabs(css_length - whole) <= kViewportSnapTolerance ? whole
+                                                                 : css_length;
+}
+
+int UniformScrollbarDevicePixels(int css_thickness, float layout_zoom) {
+  if (css_thickness <= 0) {
+    return 0;
+  }
+  // Like UniformScreenScale() (letterbox.cc): a NaN fails both comparisons.
+  if (!(layout_zoom > 0.0f && layout_zoom < 1000.0f)) {
+    layout_zoom = 1.0f;
+  }
+  // Below 2^31 here: css_thickness is one of the small constants above in
+  // practice, and the zoom is under 1000.
+  const double device_pixels =
+      std::floor(static_cast<double>(css_thickness) * layout_zoom + 0.5);
+  return std::max(1, base::saturated_cast<int>(device_pixels));
 }
 
 float HalfToFloat(uint16_t half) {

@@ -1,0 +1,32 @@
+MoltBrowser patch for third_party/blink/renderer/core/layout/forms/layout_text_control.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/layout/forms/layout_text_control.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/layout/forms/layout_text_control.cc b/third_party/blink/renderer/core/layout/forms/layout_text_control.cc
+index c636fd88ea051b79cafeedcfb7d8f31f237ee629..ec417d9e0b3e16347b16591c8b07b483f9ba8383 100644
+--- a/third_party/blink/renderer/core/layout/forms/layout_text_control.cc
++++ b/third_party/blink/renderer/core/layout/forms/layout_text_control.cc
+@@ -29,6 +29,7 @@
+ #include "third_party/blink/renderer/core/layout/hit_test_result.h"
+ #include "third_party/blink/renderer/core/layout/layout_block.h"
+ #include "third_party/blink/renderer/core/layout/text_utils.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
+@@ -71,9 +72,11 @@ void StyleDidChange(HTMLElement* inner_editor,
+ 
+ int ScrollbarThickness(const LayoutBox& box) {
+   const Page& page = *box.GetDocument().GetPage();
+-  return page.GetScrollbarTheme().ScrollbarThickness(
++  // MoltBrowser: MoltNet's classic scrollbars (molt_fingerprinting/letterbox.h).
++  return molt_fingerprinting::ScrollbarThicknessFor(
++      page.GetScrollbarTheme(),
+       page.GetChromeClient().WindowToViewportScalar(box.GetFrame(), 1.0f),
+-      box.StyleRef().UsedScrollbarWidth());
++      box.StyleRef().UsedScrollbarWidth(), &box.GetDocument());
+ }
+ 
+ void HitInnerEditorElement(const LayoutBox& box,

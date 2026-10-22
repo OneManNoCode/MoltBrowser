@@ -104,6 +104,7 @@ def geometry(w, h):
             'screen.availTop': 0, 'win.outerWidth': w, 'win.outerHeight': h,
             'win.screenX': 0, 'win.screenY': 0, 'win.devicePixelRatio': 1,
             'mq.resolution_1dppx': True, 'mq.device_size_matches': True,
+            'mq.viewport_exact': True, 'scrollbar.box': 16,
             'screen.colorDepth': 24, 'screen.pixelDepth': 24,
             'screen.isExtended': False,
             'screen.orientation.type': 'landscape-primary' if w > h else

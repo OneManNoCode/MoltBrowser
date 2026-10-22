@@ -1,0 +1,48 @@
+MoltBrowser patch for third_party/blink/renderer/core/frame/dom_visual_viewport.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/core/frame/dom_visual_viewport.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/core/frame/dom_visual_viewport.cc b/third_party/blink/renderer/core/frame/dom_visual_viewport.cc
+index 288b859abab18990e6545cb04e6161f641b7cf1a..ea62df291c509d1b6c0874b64a87c021f4f10e7e 100644
+--- a/third_party/blink/renderer/core/frame/dom_visual_viewport.cc
++++ b/third_party/blink/renderer/core/frame/dom_visual_viewport.cc
+@@ -34,6 +34,7 @@
+ #include "third_party/blink/renderer/core/frame/visual_viewport.h"
+ #include "third_party/blink/renderer/core/geometry/dom_rect.h"
+ #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
++#include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"  // MoltBrowser
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/page/scrolling/sync_scroll_attempt_heuristic.h"
+ #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+@@ -152,8 +153,12 @@ double DOMVisualViewport::width() const {
+                                             frame->LayoutZoomFactor());
+   }
+ 
+-  if (Page* page = frame->GetPage())
+-    return page->GetVisualViewport().Width();
++  if (Page* page = frame->GetPage()) {
++    // MoltBrowser: whole CSS pixels in MoltNet, like the media queries
++    // (molt_fingerprinting/letterbox.h).
++    return molt_fingerprinting::UniformViewportLength(
++        *frame, page->GetVisualViewport().Width());
++  }
+ 
+   return 0;
+ }
+@@ -174,8 +179,12 @@ double DOMVisualViewport::height() const {
+                                             frame->LayoutZoomFactor());
+   }
+ 
+-  if (Page* page = frame->GetPage())
+-    return page->GetVisualViewport().Height();
++  if (Page* page = frame->GetPage()) {
++    // MoltBrowser: whole CSS pixels in MoltNet, like the media queries
++    // (molt_fingerprinting/letterbox.h).
++    return molt_fingerprinting::UniformViewportLength(
++        *frame, page->GetVisualViewport().Height());
++  }
+ 
+   return 0;
+ }

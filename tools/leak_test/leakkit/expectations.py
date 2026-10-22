@@ -149,6 +149,12 @@ GEOMETRY_RULES = (
     ('win.devicePixelRatio', 'eq', 1, FP + ' "Device pixel ratio"'),
     ('mq.resolution_1dppx', 'eq', True, FP + ' "Device pixel ratio"'),
     ('mq.device_size_matches', 'eq', True, S_LETTER),
+    ('mq.viewport_exact', 'eq', True, S_LETTER),
+    # A classic scrollbar is 16 CSS pixels (0: overlay scrollbars). At 33%
+    # and 67% zoom on a 1x screen, not in the kit's default zoom list, 16
+    # CSS pixels aren't whole device pixels and this reads 15 or 17
+    # (FINGERPRINTING.md "Zoom").
+    ('scrollbar.box', 'in', [0, 16], S_LETTER),
     ('screen.colorDepth', 'eq', 24, S_SURFACE),
     ('screen.pixelDepth', 'eq', 24, S_SURFACE),
     ('screen.isExtended', 'eq', False, S_SURFACE),
@@ -256,7 +262,8 @@ INFO_KEYS = {
     'nav.connection': 'navigator.connection (documented gap)',
     'webrtc.codecs': 'RTCRtpSender.getCapabilities() (documented gap)',
     'fonts.system_ui_width': 'system-ui text width (documented gap on Linux)',
-    'scrollbar.width': 'classic scrollbar width (shows the zoom; documented)',
+    'scrollbar.width': 'the page\'s own scrollbar width (0 when the page '
+                       'doesn\'t scroll; scrollbar.box is the checked one)',
     'nav.webdriver': 'navigator.webdriver under the kit\'s DevTools pipe',
     'mq.prefers_color_scheme_dark': 'dark while the dark toolbar is on '
                                     '(documented)',
