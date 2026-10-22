@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/ai/ai_interface_proxy.h"
 
+#include "base/location.h"
 #include "base/task/single_thread_task_runner.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -50,17 +51,40 @@ AIInterfaceProxy::GetTranslationManagerRemote(
 void AIInterfaceProxy::GetLanguageDetectionModelStatus(
     ExecutionContext* execution_context,
     GetLanguageDetectionModelStatusCallback callback) {
+  // MoltBrowser: LanguageDetector isn't served (docs/design/WEB_AI_APIS.md
+  // §10). Its upstream model comes from the optimization guide, which needs
+  // a Google API key: without one availability() said "downloadable" and
+  // create() never finished; with the user's own key it said "available".
+  // Every page in every window, MoltNet included, now gets "unavailable",
+  // answered here without asking the browser.
   From(execution_context)
-      ->GetLanguageDetectionDriverRemote(execution_context)
-      ->GetLanguageDetectionModelStatus(std::move(callback));
+      ->task_runner_->PostTask(
+          FROM_HERE,
+          blink::BindOnce(
+              [](GetLanguageDetectionModelStatusCallback callback) {
+                std::move(callback).Run(
+                    language_detection::mojom::blink::
+                        LanguageDetectionModelStatus::kNotAvailable);
+              },
+              std::move(callback)));
 }
 
 // static
 void AIInterfaceProxy::GetLanguageDetectionModel(
     ExecutionContext* execution_context,
     GetLanguageDetectionModelCallback callback) {
+  // MoltBrowser: no model (see above), so create() fails ("Model not
+  // available") for every page, and Google's model file is never loaded
+  // for one. Translate's page-language detection doesn't come through here.
   From(execution_context)
-      ->GetLanguageDetectionModelImpl(execution_context, std::move(callback));
+      ->task_runner_->PostTask(
+          FROM_HERE,
+          blink::BindOnce(
+              [](GetLanguageDetectionModelCallback callback) {
+                std::move(callback).Run(
+                    base::unexpected(DetectLanguageError::kUnavailable));
+              },
+              std::move(callback)));
 }
 
 // static
