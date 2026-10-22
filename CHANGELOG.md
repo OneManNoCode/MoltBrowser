@@ -442,6 +442,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   in the chat's own window (never another window, never the chat itself;
   MoltNet windows stay apart), and the agent no longer starts on the chat
   when it is opened as a tab.
+- **Typing into multi-line text boxes works.** The agent's and the chat's
+  page actions failed on a `<textarea>` (a message or address box) and
+  only filled single-line fields.
 
 ### Engineering
 - **MoltNet leak test kit** (`tools/leak_test/`, `docs/LEAK_TESTING.md`):
