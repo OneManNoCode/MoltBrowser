@@ -87,6 +87,17 @@ struct SearchResult {
   bool ok = true;
 };
 
+// An answer for the @memory omnibox shortcut
+// (MemoryBackend::OmniboxSearch()): one hit per page (url, title, date and
+// doc id; no snippet).
+struct OmniboxSearchResult {
+  std::vector<QueryHit> hits;
+  // Ranked by the on-device embedding model (else by matching words).
+  bool semantic = false;
+  // No further answer follows for this search.
+  bool final = true;
+};
+
 // State of the vector index for the memory page
 // (docs/design/SEMANTIC_SEARCH.md).
 struct SemanticIndexStatus {

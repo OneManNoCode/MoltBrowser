@@ -110,6 +110,20 @@ fuzzer_test("molt_memory_snippet_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# molt://memory/?q=, omnibox text and memory's pages for the @memory
+# shortcut (whoever made the URL; sites, for titles and URLs).
+fuzzer_test("molt_memory_query_fuzzer") {
+  sources = [ "molt_memory_query_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//components/omnibox/browser:molt_local_input",
+    "//components/omnibox/browser:molt_memory_query",
+  ]
+  dict = "dicts/memory_query.dict"
+  seed_corpus = "corpus/molt_memory_query_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
 # --- Agents and workflows ------------------------------------------------------
 
 fuzzer_test("molt_agent_actions_fuzzer") {
@@ -237,6 +251,7 @@ group("fuzzers") {
     ":molt_automation_script_fuzzer",
     ":molt_dom_interpreter_fuzzer",
     ":molt_embedding_validator_fuzzer",
+    ":molt_memory_query_fuzzer",
     ":molt_memory_snippet_fuzzer",
     ":molt_onion_location_fuzzer",
     ":molt_release_manifest_fuzzer",

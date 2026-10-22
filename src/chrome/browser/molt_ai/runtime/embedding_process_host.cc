@@ -153,6 +153,8 @@ const char* EmbeddingStatusName(EmbeddingStatus status) {
       return "failed";
     case EmbeddingStatus::kShuttingDown:
       return "shutting down";
+    case EmbeddingStatus::kNotLoaded:
+      return "not loaded";
   }
   return "unknown";
 }
@@ -341,6 +343,20 @@ void EmbeddingProcessHost::Embed(const EmbeddingModelConfig& config,
   } else if (state_ == State::kReady && !in_flight_) {
     SendNext();
   }
+}
+
+void EmbeddingProcessHost::EmbedIfLoaded(const EmbeddingModelConfig& config,
+                                         std::vector<std::string> texts,
+                                         EmbedCallback done) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Only a process that is ready with this very model: Embed() would
+  // otherwise start, load or replace one.
+  if (shutting_down_ || state_ != State::kReady || !config_ ||
+      !config_->SameModelAs(config)) {
+    ReplySoon(std::move(done), EmbeddingStatus::kNotLoaded);
+    return;
+  }
+  Embed(config, std::move(texts), std::move(done), /*urgent=*/true);
 }
 
 void EmbeddingProcessHost::StartLoad() {

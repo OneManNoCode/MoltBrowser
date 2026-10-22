@@ -17,6 +17,7 @@
 #include "chrome/browser/molt_ai/memory/llama_embedder.h"
 #include "chrome/browser/molt_ai/memory/memory_backend.h"
 #include "chrome/browser/molt_ai/memory/memory_embedder.h"
+#include "chrome/browser/molt_ai/memory/memory_omnibox_search.h"
 #include "chrome/browser/molt_ai/memory/memory_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
@@ -86,6 +87,11 @@ MemoryService::MemoryService(Profile* profile)
   EmbeddingModelManager* models = EmbeddingModelManager::GetInstance();
   models->AddObserver(this);
   if (!models->IsKnown()) models->Refresh();
+
+  // The omnibox's @memory shortcut finds this memory through the profile's
+  // PrefService (only regular profiles have a MemoryService).
+  omnibox_search_ =
+      std::make_unique<MemoryOmniboxSearch>(this, profile_->GetPrefs());
 }
 
 MemoryService::~MemoryService() = default;
@@ -107,6 +113,8 @@ void MemoryService::StartBackend() {
 }
 
 void MemoryService::Shutdown() {
+  // Unregisters it: the omnibox finds no memory for this profile any more.
+  omnibox_search_.reset();
   retention_timer_.Stop();
   pref_registrar_.RemoveAll();
   EmbeddingModelManager::GetInstance()->RemoveObserver(this);
@@ -266,6 +274,38 @@ void MemoryService::SearchByMeaning(
     int top_k,
     base::OnceCallback<void(SearchResult)> on_results) {
   RunQuery(query_text, top_k, /*one_per_page=*/true, std::move(on_results));
+}
+
+void MemoryService::SearchForOmnibox(
+    const std::string& query,
+    int top_k,
+    std::function<bool()> still_wanted,
+    base::RepeatingCallback<void(OmniboxSearchResult)> on_results) {
+  scoped_refptr<base::SequencedTaskRunner> runner =
+      base::SequencedTaskRunner::GetCurrentDefault();
+  // Never while memory is off or paused (the shortcut shows a row saying
+  // so instead; this is the second check).
+  if (!backend_ || !IsEnabled() || IsPaused() || query.empty() || top_k <= 0) {
+    runner->PostTask(FROM_HERE,
+                     base::BindOnce(on_results, OmniboxSearchResult()));
+    return;
+  }
+  std::function<void(OmniboxSearchResult)> reply =
+      [runner, on_results](OmniboxSearchResult result) {
+        runner->PostTask(FROM_HERE,
+                         base::BindOnce(on_results, std::move(result)));
+      };
+  worker_->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](MemoryBackend* backend, std::string text, int top_k,
+             std::function<bool()> wanted,
+             std::function<void(OmniboxSearchResult)> done) {
+            backend->OmniboxSearch(text, top_k, std::move(wanted),
+                                   std::move(done));
+          },
+          base::Unretained(backend_.get()), query, top_k,
+          std::move(still_wanted), std::move(reply)));
 }
 
 void MemoryService::GetSemanticStatus(

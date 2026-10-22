@@ -75,6 +75,9 @@ source_set("molt_ai") {
     "//chrome/common",
     "//components/bookmarks/browser",
     "//components/device_reauth",
+
+    # molt://memory/?q= (the @memory shortcut's query parser).
+    "//components/omnibox/browser:molt_memory_query",
     "//components/password_manager/core/browser",
     "//components/url_formatter",
     "//content/public/browser",

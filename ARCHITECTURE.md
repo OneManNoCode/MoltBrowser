@@ -89,7 +89,7 @@ MoltBrowser
  |    +-- helper_sandbox: tesseract/whisper confined (Landlock + seccomp,
  |        Seatbelt, job object) with a deadline
  |
- +-- OmniboxAI (@ai prefix, ? prefix)
+ +-- OmniboxAI (@ai prefix; never sent to the search engine)
  |    +-- AiPromptProvider -> chrome://molt-ai/?q=...
  |
  +-- UpdateManager (cross-platform, molt_ai/update)

@@ -23,6 +23,8 @@ source_set("memory_core") {
     "memory_extractor.h",
     "memory_index.cc",
     "memory_index.h",
+    "memory_keyword_match.cc",
+    "memory_keyword_match.h",
     "memory_snippet.cc",
     "memory_snippet.h",
     "memory_types.h",
@@ -73,6 +75,8 @@ source_set("memory") {
     "embedding_model_manager.h",
     "llama_embedder.cc",
     "llama_embedder.h",
+    "memory_omnibox_search.cc",
+    "memory_omnibox_search.h",
     "memory_prefs.cc",
     "memory_prefs.h",
     "memory_privacy.cc",
@@ -104,6 +108,8 @@ source_set("memory") {
     "//chrome/services/molt_ai/inference/public/mojom",
     "//components/keyed_service/content",
     "//components/keyed_service/core",
+    # The @memory omnibox shortcut's interface (memory_omnibox_search.h).
+    "//components/omnibox/browser:molt_memory_search",
     "//components/pref_registry",
     "//components/prefs",
     "//content/public/browser",
@@ -123,15 +129,34 @@ source_set("unit_tests") {
     "memory_backend_unittest.cc",
     "memory_embedder_unittest.cc",
     "memory_index_unittest.cc",
+    "memory_keyword_match_unittest.cc",
+    "memory_omnibox_provider_unittest.cc",
+    "memory_omnibox_unittest.cc",
     "memory_snippet_unittest.cc",
+    "omnibox_local_input_unittest.cc",
   ]
   deps = [
     ":backend",
     ":conversation_store",
     ":memory_core",
     "//base",
+    "//base/test:test_support",
     "//chrome/browser/molt_ai/keys:os_crypt",
     "//chrome/browser/molt_ai/keys:test_support",
+
+    # The @memory omnibox shortcut: its provider, the controller's gate and
+    # the pure query logic (components only, plus the WebUI URL constant).
+    "//chrome/common:url_constants",
+    "//components/omnibox/browser",
+    "//components/omnibox/browser:molt_local_input",
+    "//components/omnibox/browser:molt_memory_query",
+    "//components/omnibox/browser:molt_memory_search",
+    "//components/omnibox/browser:test_support",
+    "//components/prefs",
+    "//components/prefs:test_support",
+    "//testing/gmock",
     "//testing/gtest",
+    "//third_party/metrics_proto",
+    "//url",
   ]
 }

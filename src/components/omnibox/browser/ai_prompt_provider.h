@@ -13,11 +13,13 @@ class AutocompleteInput;
 
 // An AutocompleteProvider that detects AI prompts in the omnibox and offers
 // to route them to the local MoltBrowser AI engine. The provider recognizes
-// two trigger prefixes:
-//   - "@ai " followed by a prompt (e.g. "@ai summarize this page")
-//   - "?"   followed by a prompt (e.g. "?what is the speed of light")
+// one trigger: "@ai " followed by a prompt (e.g. "@ai summarize this page");
+// any whitespace after "@ai" (molt_omnibox::AiPromptStart()). The
+// autocomplete controller gives this input to this provider alone, so the
+// prompt never reaches the search engine (molt_local_input.h). A leading "?"
+// is not a trigger: it keeps Chromium's meaning, a forced web search.
 //
-// When a trigger prefix is detected, the provider produces a single
+// When the trigger is detected, the provider produces a single
 // AutocompleteMatch with high relevance (1500) that navigates to the
 // chrome://molt-ai/ WebUI with the prompt text as a query parameter.
 class AiPromptProvider : public AutocompleteProvider {
@@ -37,15 +39,9 @@ class AiPromptProvider : public AutocompleteProvider {
   // suggestion appears at the top of the omnibox dropdown.
   static constexpr int kRelevance = 1500;
 
-  // The "@ai " prefix that triggers the provider (case-insensitive).
-  static constexpr char16_t kAtAiPrefix[] = u"@ai ";
-
-  // The "?" prefix that triggers the provider.
-  static constexpr char16_t kQuestionPrefix[] = u"?";
-
-  // Extracts the prompt text from |input_text| if it starts with a recognized
-  // trigger prefix. Returns true and sets |prompt| to the extracted text if a
-  // prefix was found; returns false otherwise.
+  // Extracts the prompt text from |input_text| if it starts with the "@ai"
+  // trigger. Returns true and sets |prompt| to the extracted text if it
+  // does; returns false otherwise.
   static bool ExtractPrompt(const std::u16string& input_text,
                             std::u16string* prompt);
 

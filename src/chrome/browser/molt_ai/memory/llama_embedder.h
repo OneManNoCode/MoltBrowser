@@ -37,6 +37,9 @@ class LlamaEmbedder : public MemoryEmbedder {
   void EmbedBatch(std::vector<std::string> texts,
                   EmbedPurpose purpose,
                   BatchCallback done) const override;
+  // Only through a model process that is already loaded
+  // (EmbeddingProcessHost::EmbedIfLoaded()); kRetryLater otherwise.
+  void EmbedQueryIfReady(std::string text, BatchCallback done) const override;
   size_t max_batch_size() const override;
 
   const EmbeddingModelConfig& config_for_testing() const { return config_; }

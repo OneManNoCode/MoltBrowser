@@ -84,6 +84,8 @@ enum class EmbeddingStatus {
   kFailed,
   // MoltBrowser is closing.
   kShuttingDown,
+  // EmbedIfLoaded(): no process has this model loaded, and none was started.
+  kNotLoaded,
 };
 
 const char* EmbeddingStatusName(EmbeddingStatus status);
@@ -143,6 +145,14 @@ class EmbeddingProcessHost {
              std::vector<std::string> texts,
              EmbedCallback done,
              bool urgent = false);
+
+  // Like Embed() with |urgent|, but only if a process has |config|'s model
+  // loaded and ready; otherwise |done| gets kNotLoaded (never synchronously)
+  // and nothing is started, loaded or dropped. For the omnibox's @memory
+  // shortcut: typing never launches the model (docs/design/SEMANTIC_SEARCH.md).
+  void EmbedIfLoaded(const EmbeddingModelConfig& config,
+                     std::vector<std::string> texts,
+                     EmbedCallback done);
 
   // Ends the process (queued and running calls fail with kUnavailable) and
   // runs |done| once it has exited, e.g. before the model file is deleted.

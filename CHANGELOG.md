@@ -148,6 +148,13 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   pause switch and retention setting, encrypted at rest, and never recording
   MoltNet browsing. Chat history is per profile, encrypted, and never saved
   from incognito.
+- **`@ai` prompts stay on your device.** What you type after `@ai` in the
+  address bar used to be sent to your search engine for suggestions as you
+  typed, passed to extensions that watch the address bar, and kept in the
+  address bar's prediction and shortcut data. Now it reaches only the local AI prompt row, in every
+  window. A leading `?` means "search the web" (Chromium's forced-search
+  shortcut) and goes to your search engine; pasted `?...` text no longer
+  offers "Ask MoltBrowser AI" for text the search engine already has.
 - Cloud AI replies are labeled with the provider, and each provider asks for
   consent once, listing what context is sent.
 - **Fingerprinting protection in the engine.** In normal and incognito
@@ -406,6 +413,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   ask) running in the AI sandbox. Memory is re-indexed in the background,
   only while Memory is on; keyword matching stays the fallback. The model is
   offered once its download is pinned.
+- **`@memory` in the address bar.** Type `@memory` and what you remember to
+  see the best few pages from your AI memory (title and URL); Enter opens
+  `molt://memory/?q=…` with that search. Results by matching words come at
+  once and are re-ranked by meaning when the search model is already
+  loaded (typing never loads it). The text you type after `@memory` goes
+  to no search engine, extension or server, and is never preconnected,
+  prefetched or kept in the address bar's shortcut and prediction data.
+  Not in Incognito, Guest or MoltNet windows; nothing is searched while
+  Memory is off or paused.
 - **Structured answers for sites.** A page's
   `LanguageModel.prompt(..., {responseConstraint})` JSON Schema is now
   enforced: the on-device model can only write JSON that matches it, and the

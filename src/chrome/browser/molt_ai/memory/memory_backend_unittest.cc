@@ -54,7 +54,11 @@ class FakeModelEmbedder : public MemoryEmbedder {
     BatchCallback done;
   };
 
-  explicit FakeModelEmbedder(std::deque<Call>* calls) : calls_(calls) {}
+  // |loaded| (may be null: loaded) says whether the model's process is
+  // already loaded, for EmbedQueryIfReady().
+  explicit FakeModelEmbedder(std::deque<Call>* calls,
+                             const bool* loaded = nullptr)
+      : calls_(calls), loaded_(loaded) {}
 
   EmbedderSpace space() const override {
     return EmbedderSpace{"fake-model@0123456789ab", kEmbeddingDim};
@@ -67,6 +71,15 @@ class FakeModelEmbedder : public MemoryEmbedder {
     calls_->push_back({std::move(texts), purpose, std::move(done)});
   }
   size_t max_batch_size() const override { return 2; }
+  void EmbedQueryIfReady(std::string text, BatchCallback done) const override {
+    if (loaded_ && !*loaded_) {
+      EmbedBatchResult r;
+      r.outcome = EmbedOutcome::kRetryLater;
+      done(std::move(r));
+      return;
+    }
+    MemoryEmbedder::EmbedQueryIfReady(std::move(text), std::move(done));
+  }
 
   static std::vector<float> VectorFor(const std::string& text) {
     std::vector<float> v(kEmbeddingDim, 0.0f);
@@ -83,6 +96,7 @@ class FakeModelEmbedder : public MemoryEmbedder {
 
  private:
   raw_ptr<std::deque<Call>> calls_;
+  raw_ptr<const bool> loaded_;
 };
 
 class MemoryBackendTest : public testing::Test {
@@ -135,7 +149,8 @@ class MemoryBackendTest : public testing::Test {
   }
 
   void UseModel() {
-    backend_->SetModelEmbedder(std::make_unique<FakeModelEmbedder>(&calls_));
+    backend_->SetModelEmbedder(
+        std::make_unique<FakeModelEmbedder>(&calls_, &model_loaded_));
     RunTasks();
   }
 
@@ -190,6 +205,24 @@ class MemoryBackendTest : public testing::Test {
     NewBackend();
   }
 
+  // The @memory omnibox shortcut's answers so far, in order (later ones
+  // land in omnibox_answers()).
+  std::vector<OmniboxSearchResult> OmniboxSearch(
+      const std::string& text,
+      std::function<bool()> still_wanted = {}) {
+    auto answers = std::make_shared<std::vector<OmniboxSearchResult>>();
+    omnibox_answers_ = answers;
+    backend_->OmniboxSearch(
+        text, 5, std::move(still_wanted),
+        [answers](OmniboxSearchResult r) { answers->push_back(std::move(r)); });
+    return *answers;
+  }
+  const std::vector<OmniboxSearchResult>& omnibox_answers() const {
+    return *omnibox_answers_;
+  }
+
+  bool model_loaded_ = true;
+  std::shared_ptr<std::vector<OmniboxSearchResult>> omnibox_answers_;
   molt_os_crypt::ScopedEncryptorForTesting encryptor_{
       test::MakeOsKeyEncryptor()};
   base::ScopedTempDir temp_dir_;
@@ -553,6 +586,147 @@ TEST_F(MemoryBackendTest, RemovingTheModelMidMigration) {
   Answer();  // the batch in flight comes back: dropped
   EXPECT_EQ(storage().committed_space(), "hashing-v3/256");
   EXPECT_FALSE(Search("miso").model);
+}
+
+// ---- The @memory omnibox shortcut (OmniboxSearch()) -----------------------
+
+// With the keyword-hashing index: one final answer, at once, with the pages
+// that have every word in their title, URL or text; no model is asked.
+TEST_F(MemoryBackendTest, OmniboxSearchByKeywordsWithHashing) {
+  NoModel();
+  Ingest("https://a.example/miso", "miso");
+  Ingest("https://b.example/k8s", "kubernetes");
+  backend_->Ingest("https://c.example/trip", "Cheap flights to Bali",
+                   Page("travel"), 1700000500);
+  RunTasks();
+
+  std::vector<OmniboxSearchResult> r = OmniboxSearch("miso");
+  ASSERT_EQ(r.size(), 1u);
+  EXPECT_TRUE(r[0].final);
+  EXPECT_FALSE(r[0].semantic);
+  ASSERT_EQ(r[0].hits.size(), 1u);
+  EXPECT_EQ(r[0].hits[0].url, "https://a.example/miso");
+  EXPECT_EQ(r[0].hits[0].title, "miso");
+  EXPECT_TRUE(r[0].hits[0].snippet.empty());
+
+  // Title words, by prefix, in any case.
+  r = OmniboxSearch("BALI fli");
+  ASSERT_EQ(r.size(), 1u);
+  ASSERT_EQ(r[0].hits.size(), 1u);
+  EXPECT_EQ(r[0].hits[0].url, "https://c.example/trip");
+
+  // Words only in the page text are found through the keyword index.
+  r = OmniboxSearch("nothing else");
+  ASSERT_EQ(r.size(), 1u);
+  EXPECT_EQ(r[0].hits.size(), 3u);
+
+  // Every word must be there.
+  EXPECT_TRUE(OmniboxSearch("miso kubernetes")[0].hits.empty());
+  EXPECT_TRUE(OmniboxSearch("zanzibar")[0].hits.empty());
+  EXPECT_TRUE(calls_.empty()) << "no model";
+}
+
+// With the model's index: keyword hits from titles and URLs first (not
+// final), then hits by meaning once the (already loaded) model answers.
+TEST_F(MemoryBackendTest, OmniboxSearchUpgradesToMeaning) {
+  NoModel();
+  backend_->SetBackgroundAllowed(true);
+  Ingest("https://a.example/miso", "miso");
+  Ingest("https://b.example/k8s", "kubernetes");
+  UseModel();
+  AnswerAll();
+  ASSERT_EQ(storage().committed_space(), kModelSpace);
+
+  std::vector<OmniboxSearchResult> r = OmniboxSearch("miso");
+  ASSERT_EQ(r.size(), 1u);
+  EXPECT_FALSE(r[0].final);
+  EXPECT_FALSE(r[0].semantic);
+  ASSERT_EQ(r[0].hits.size(), 1u);
+  EXPECT_EQ(r[0].hits[0].url, "https://a.example/miso");
+  ASSERT_EQ(calls_.size(), 1u);
+  EXPECT_EQ(calls_.front().purpose, EmbedPurpose::kQuery);
+  EXPECT_EQ(calls_.front().texts, std::vector<std::string>{"miso"});
+
+  Answer();
+  ASSERT_EQ(omnibox_answers().size(), 2u);
+  const OmniboxSearchResult& meaning = omnibox_answers()[1];
+  EXPECT_TRUE(meaning.final);
+  EXPECT_TRUE(meaning.semantic);
+  ASSERT_FALSE(meaning.hits.empty());
+  EXPECT_EQ(meaning.hits[0].url, "https://a.example/miso");
+  EXPECT_TRUE(meaning.hits[0].snippet.empty());
+
+  // Page-text words aren't in the keyword pass with the model's index; the
+  // model still ranks pages by meaning.
+  r = OmniboxSearch("this page");
+  ASSERT_EQ(r.size(), 1u);
+  EXPECT_TRUE(r[0].hits.empty());
+  Answer();
+  ASSERT_EQ(omnibox_answers().size(), 2u);
+  EXPECT_TRUE(omnibox_answers()[1].final);
+}
+
+// Typing never loads the model: when its process isn't loaded, the keyword
+// hits are the final answer and nothing is sent to it.
+TEST_F(MemoryBackendTest, OmniboxSearchNeverLoadsTheModel) {
+  NoModel();
+  backend_->SetBackgroundAllowed(true);
+  Ingest("https://a.example/miso", "miso");
+  UseModel();
+  AnswerAll();
+  ASSERT_EQ(storage().committed_space(), kModelSpace);
+
+  model_loaded_ = false;
+  OmniboxSearch("miso");
+  RunTasks();
+  ASSERT_EQ(omnibox_answers().size(), 2u);
+  EXPECT_FALSE(omnibox_answers()[0].final);
+  EXPECT_TRUE(omnibox_answers()[1].final);
+  EXPECT_FALSE(omnibox_answers()[1].semantic);
+  ASSERT_EQ(omnibox_answers()[1].hits.size(), 1u);
+  EXPECT_EQ(omnibox_answers()[1].hits[0].url, "https://a.example/miso");
+  EXPECT_TRUE(calls_.empty());
+}
+
+// A search nobody wants any more does nothing, at either step.
+TEST_F(MemoryBackendTest, OmniboxSearchStopsWhenUnwanted) {
+  NoModel();
+  backend_->SetBackgroundAllowed(true);
+  Ingest("https://a.example/miso", "miso");
+  EXPECT_TRUE(OmniboxSearch("miso", [] { return false; }).empty());
+
+  UseModel();
+  AnswerAll();
+  bool wanted = true;
+  std::vector<OmniboxSearchResult> r =
+      OmniboxSearch("miso", [&wanted] { return wanted; });
+  ASSERT_EQ(r.size(), 1u);
+  wanted = false;  // e.g. the user typed on
+  Answer();
+  EXPECT_EQ(omnibox_answers().size(), 1u);
+}
+
+// A query vector for a space no longer committed is never compared with the
+// index: the keyword hits stay the answer.
+TEST_F(MemoryBackendTest, OmniboxSearchDropsAStaleSpace) {
+  NoModel();
+  backend_->SetBackgroundAllowed(true);
+  Ingest("https://a.example/miso", "miso");
+  UseModel();
+  AnswerAll();
+  OmniboxSearch("miso");
+  ASSERT_EQ(calls_.size(), 1u);
+  FakeModelEmbedder::Call call = std::move(calls_.front());
+  calls_.clear();
+  NoModel();  // back to hashing at once
+  ASSERT_EQ(storage().committed_space(), "hashing-v3/256");
+  EmbedBatchResult result;
+  result.outcome = EmbedOutcome::kOk;
+  result.vectors.push_back(FakeModelEmbedder::VectorFor("miso"));
+  call.done(std::move(result));
+  ASSERT_EQ(omnibox_answers().size(), 2u);
+  EXPECT_TRUE(omnibox_answers()[1].final);
+  EXPECT_FALSE(omnibox_answers()[1].semantic);
 }
 
 }  // namespace
