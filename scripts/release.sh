@@ -202,6 +202,18 @@ else
   fi
 fi
 
+# The Mach-O files of the helpers bundled in Resources/ (tor, tesseract,
+# whisper), NUL-separated.
+resource_helpers() {
+  local d f
+  for d in tor ocr whisper; do
+    [ -d "$APP_PATH/Contents/Resources/$d" ] || continue
+    while IFS= read -r -d '' f; do
+      if file -b "$f" | grep -q "Mach-O"; then printf '%s\0' "$f"; fi
+    done < <(find "$APP_PATH/Contents/Resources/$d" -type f -print0)
+  done
+}
+
 # ---- Step 4: Code Sign ----
 STEP=$((STEP + 1))
 echo ""
@@ -234,16 +246,12 @@ if [ -n "$SIGN_IDENTITY" ]; then
 
   # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper).
   # codesign --deep treats Resources/ as DATA and skips them; sign each Mach-O
-  # explicitly (before the app seal), same Developer ID/team.
-  for d in tor ocr whisper; do
-    if [ -d "$APP_PATH/Contents/Resources/$d" ]; then
-      find "$APP_PATH/Contents/Resources/$d" -type f | while read -r f; do
-        if file "$f" | grep -q "Mach-O"; then
-          codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f" 2>/dev/null || true
-        fi
-      done
-    fi
-  done
+  # explicitly (before the app seal), same Developer ID/team, hardened
+  # runtime. Any failure stops the release: an unsigned helper fails
+  # notarization, or ships and can't run (CLAUDE.md "Packaging gotchas").
+  while IFS= read -r -d '' f; do
+    codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f"
+  done < <(resource_helpers)
 
   # 2b. GPU/GL dylibs inside the framework's Libraries/ (libEGL.dylib,
   # libGLESv2.dylib, libvk_swiftshader.dylib). The linker emits these ad-hoc
@@ -287,6 +295,14 @@ if [ -n "$SIGN_IDENTITY" ]; then
   codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp \
     --entitlements "$ENT_DIR/app-entitlements.plist" "$APP_PATH"
   codesign --verify --deep --strict "$APP_PATH"
+  # --deep doesn't look into Resources/: check each helper there itself.
+  while IFS= read -r -d '' f; do
+    codesign --verify --strict "$f"
+    if ! codesign -dv "$f" 2>&1 | grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime'; then
+      echo "  ❌ FATAL: $f is not signed with the hardened runtime"
+      exit 1
+    fi
+  done < <(resource_helpers)
   echo "  Code signing complete and verified"
 else
   echo "[$STEP/$STEPS_TOTAL] Skipping code signing (no --identity)"
