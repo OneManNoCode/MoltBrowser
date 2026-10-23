@@ -1,0 +1,22 @@
+MoltBrowser patch for services/network/pervasive_resources/shared_resource_checker.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/services/network/pervasive_resources/shared_resource_checker.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/pervasive_resources/shared_resource_checker.h b/services/network/pervasive_resources/shared_resource_checker.h
+index 8cd6bf49a9896f57e45572fd52c6bea3942c4d9a..b5a5ab619edeef2bcdd2d35d674536d06953efd9 100644
+--- a/services/network/pervasive_resources/shared_resource_checker.h
++++ b/services/network/pervasive_resources/shared_resource_checker.h
+@@ -52,6 +52,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) SharedResourceChecker {
+       const std::optional<url::Origin>& top_frame_origin,
+       base::optional_ref<const net::CookiePartitionKey> cookie_partition_key);
+ 
++  // MoltBrowser: no request of this network context is a shared resource,
++  // whatever the feature says (MoltNet: every HTTP cache entry stays keyed
++  // by top-level site). See services/network/network_context.cc.
++  void MoltDisableSharing() { enabled_ = false; }
++
+  private:
+   friend class SharedResourceCheckerTest;
+ 

@@ -214,6 +214,8 @@ net/base/features.cc.patch
 net/dns/host_resolver_manager.cc.patch
 net/http/http_network_session.cc.patch
 net/http/http_network_session.h.patch
+net/http/transport_security_state.cc.patch
+net/http/transport_security_state.h.patch
 net/socket/connect_job.h.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
@@ -223,6 +225,7 @@ services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h.patch
 services/cert_verifier/cert_verifier_service_factory.cc.patch
 services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.patch
 services/network/network_context.cc.patch
+services/network/pervasive_resources/shared_resource_checker.h.patch
 services/network/public/mojom/network_context.mojom.patch
 third_party/blink/public/BUILD.gn.patch
 third_party/blink/public/mojom/service_worker/service_worker.mojom.patch
