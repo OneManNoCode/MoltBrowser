@@ -502,7 +502,8 @@ observation (`t1`, `t2`, ...) and arguments under a grammar.
 | `agents/agent_tools.{h,cc}` | pure: when to list, the list and call scripts and their parsers, which tools are offered, input schema conversion, the arguments' schema and their check, when a call asks, the TOOLS and TOOL RESULT text |
 | `agents/agent_actions.{h,cc}` | CALL_TOOL: `Observation::tools`, `AddSiteTools()`, the schema branch, `ParseAction()` |
 | `agents/agent_prompt.{h,cc}` | CALL_TOOL's rules, only when the page has tools |
-| `agents/web_agent.{h,cc}` | listing at each observation, the call, the polling |
+| `agents/site_tool_host.{h,cc}` | finding the frames whose tools count (§2.7.12), listing each document, calling a tool in the document that listed it, the polling; shared by the web agent and the chat (§4.9) |
+| `agents/web_agent.{h,cc}` | listing at each observation, the call |
 | `agents/agent_features.{h,cc}`, `agent_about_flags.h` | `chrome://flags/#molt-agent-site-tools` |
 
 **Through the web API, from the agent's isolated world.** The agent calls
@@ -534,20 +535,28 @@ the agent ever runs.
 each observation, after the element snapshot (OnElementsObserved):
   ShouldListTools: #molt-agent-site-tools on, the page in the run's
     scope, the snapshot from the tab's current document
-  BuildToolListScript(id)       'unavailable' (no WebMCP): done, no poll
-    getTools() in the isolated world; the document's own tools only
-  BuildToolListPollScript(id)   every 150 ms, at most 3 s, same document
-  ParseToolList -> MakeSiteTool (each) -> AddSiteTools -> observation_.tools
+  SiteToolHost::List: the main document, then its same-origin frames
+    (ToolFrames, §2.7.12), one after the other, 3 s for all of them; each:
+    BuildToolListScript(id, mark)  'unavailable' (no WebMCP): next, no poll
+      getTools() in its isolated world; its own tools only; marks the
+      document (once)
+    BuildToolListPollScript(id)    every 150 ms, same document
+    ParseToolList -> MakeSiteTools(list, frame number, frame text)
+  AddSiteTools (main document's first, 8 in all) -> observation_.tools
   page state: ... ELEMENTS ... TOOLS (fenced with the page)
 the model: {"reason":"...","action":"CALL_TOOL","tool":"t2",
             "arguments":{"id":"A1","qty":2,"gift":null}}
 ParseAction -> ReadArguments: the arguments' JSON (browser-written)
 DispatchAction: the page's origin in the run's set (else CONTINUE asks)
 DoCallTool: CheckToolCall -> ask ("CALL_TOOL" chip) unless read-only
+SiteToolHost::Call: the document that listed it, still current and
+  still counting (else "Not run: ... changed or gone")
 BuildToolCallScript(id, origin, tool as listed, arguments)   'started'
+  (in another document: 'document_changed', not run)
 BuildToolCallPollScript(id)     every 150 ms, at most 20 s, same document
   done          -> TOOL RESULT in the next observation; observe again
-  other document-> "The tool loaded another page"; observe when loaded
+  other document-> "The tool loaded another page" (in its frame);
+                   observe when loaded
   anything else -> a failed step with a fixed note
 ```
 
@@ -558,12 +567,12 @@ at all:
 
 | Rule | Why |
 |---|---|
-| only tools whose `window` is the main document's and `origin` its own; no `fromOrigins` | the agent acts on the main document (§6); a frame's or another origin's tool is another site |
+| only a document's own tools (`window` its own, `origin` its own; no `fromOrigins`), from the main document and from frames of exactly its origin (§2.7.12) | the agent acts on the page it is on; a cross-origin frame's tool, or another origin's, is another site |
 | the name follows Blink's rule (`[A-Za-z0-9_.-]{1,128}`) | a renderer that sends anything else is not Blink |
 | a description of 1-4096 characters, not blank; an input schema of at most 8 KiB in the subset (§2.7.7) | |
 | a tool named like a password, with an argument named like one (`agent_safety::ClassifySelector`: `password`, `pwd`, `passwd`, ...), or a `<form toolname>` with a password field (by type or `autocomplete`), a file field or more than 64 controls: **never offered** | the agent never types a password (§2.1), and a declarative tool fills password fields (§2.7.1) |
 | a payment-card or one-time-code name or form field: offered, every call asks | as TYPE into such a field asks |
-| at most 8 per observation, names distinct, TOOLS at most 4000 characters | the prompt of a small model |
+| at most 8 per observation, all frames together (the main document's first), a name once per frame, TOOLS at most 4000 characters | the prompt of a small model |
 | the action schema with the tool is one the inference service converts | below |
 
 `AddSiteTools()` adds the tools one by one, each kept only if the web
@@ -665,7 +674,11 @@ prompt is byte for byte what it was.
 - **Scope.** `DispatchAction` checks the page's origin as for CLICK: in the
   run's set, or the run asks (CONTINUE). The call script runs only if
   `location.origin` is that origin, before and after `getTools()`, and the
-  tool's `origin` and `window` are the page's own.
+  tool's `origin` and `window` are its document's own.
+- **The same document.** A call runs only in the document that listed the
+  tool (§2.7.12): the browser checks it is the same document
+  (`WeakDocumentPtr`), still the main document of the tab or still one of
+  its frames that count, and the script checks the document's mark.
 - **The same tool.** The script calls the tool only if `getTools()` still
   lists it exactly as observed: the same description, input schema,
   read-only hint and, for a `<form toolname>`, the same controls (type and
@@ -679,8 +692,10 @@ prompt is byte for byte what it was.
   (`agent-confirm`), with the browser's text and every argument whole
   (characters that hide or reorder text shown as U+FFFD, quotes escaped):
   `Run the site's tool "add_to_cart" on https://shop.example — it may
-  change something there, with id = "A1"; qty = 2`. Deny stops the run, as
-  for any confirmation.
+  change something there, with id = "A1"; qty = 2`; a frame's tool names
+  its frame: `Run the site's tool "add_to_cart" in the frame
+  https://shop.example/widgets/cart on https://shop.example — ...`
+  (§2.7.12). Deny stops the run, as for any confirmation.
 - **The answer.** At most 8192 UTF-16 units read, cleaned (`\r` dropped,
   other control characters but `\n` and `\t` made spaces, ends trimmed), at
   most 1500 characters, put first in the next observation (`TOOL RESULT
@@ -723,7 +738,11 @@ in the agent's isolated world and make no request of their own; tool
 names, descriptions, arguments and answers go only to the on-device model,
 like page text. No new request path, nothing new leaves the device, and
 WebMCP is in MoltNet windows exactly where Chromium puts it (§2.7.4),
-whatever the agent does.
+whatever the agent does. The same holds for a same-origin frame's tools
+(§2.7.12) and for the chat's tool proposals (§4.9): the frame is the
+page's own document, loaded through the same context, listed and called
+in its own isolated world with the same scripts, and the chat decides
+with the on-device model only, in its own window.
 
 #### 2.7.11 The switch
 
@@ -734,6 +753,119 @@ where TYPE text already goes and the answers where page text goes, and
 every call that may change something asks. Off, the agent never reads or
 calls a page's tools. A page without tools sees no change either way: the
 list script answers 'unavailable' at once.
+
+#### 2.7.12 Frames
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run against pages in the WebMCP trial. Before, the agent listed the
+main document's tools only. Now it lists the main document's and those of
+its frames of exactly the same origin, so a site whose tool UI sits in a
+same-origin iframe works.
+
+**What 152 does with frames** (`content/browser/renderer_host/model_context_user_data.cc`,
+`third_party/blink/renderer/core/script_tools/model_context.cc`):
+
+- `getTools()` walks every frame of the caller's page (the same main
+  frame; fenced frames and other inner pages skipped). It lists a frame's
+  tool if that frame has the `tools` policy and its origin is the
+  caller's, or the caller named the owner's origin in `fromOrigins` and
+  the owner listed the caller's origin in `exposedTo`. The result is
+  sorted by name; each tool carries a token for its owner's window. The
+  frames between the owner and the caller don't matter: a top document
+  sees a same-origin frame's tools even inside a cross-origin frame (which
+  must have delegated `allow="tools"` to it).
+- `executeTool()` resolves that token to a frame of the same page, checks
+  the origin the caller expects, and looks the tool up **by name** in the
+  frame's *current* document. A `LocalFrameToken` names a frame host, not
+  a document, so a call can land in a later document of the same host;
+  the renderer, too, looks the name up only when the call arrives.
+- `toolchange` fires, asynchronously, in every document that can see a
+  tool that was registered or unregistered (not when its document goes
+  away, crbug.com/508285989).
+
+**Which frames.** `agent_tools::ToolFrames()` (pure) decides from the
+browser's own view of the page, which `SiteToolHost` collects with
+`ForEachRenderFrameHost` on the main document:
+
+| Rule | Why |
+|---|---|
+| origin exactly the main document's (scheme, host and port: same origin, not same site); never opaque | a frame of another origin is another site, whatever it exposes (below) |
+| every frame between it and the main document counts too | below |
+| in the page: active (not unloading, cached or prerendering), its renderer live, and its main frame the observed main document | a fenced frame, a guest view and anything inside one is a page of its own; a prerendered page is another page, never under the tab's primary main frame; portals are gone from 152 |
+| the main document first, then the frames in tree order (depth first, siblings in the browser's order); at most 8 frames, 64 looked at | deterministic, bounded |
+| listed one after the other, 3 s for all of them | one budget, whatever the page does |
+
+A frame that doesn't count hides its subtree. At most 8 tools are offered,
+all documents together (§2.7.6): the main document's first.
+
+**Same-origin frames inside a cross-origin frame: not listed.** 152 lists
+them to the top; the agent doesn't. Such a frame is there because the
+other site put it there: it chose the frame's URL (which page of the site,
+with which parameters, so which tools and in what state), its size and
+place, when it navigates, and whether it gets the `tools` policy at all.
+The user sees that region as the other site's (an ad, a widget), but an
+approval would present the tool as the main site's. The main document's
+own frames are the site's choice; these are a third party's.
+
+**Cross-origin frames: never**, even when they expose tools to the top
+origin. `exposedTo` is the frame's consent to the top page, not the
+user's to the frame: the user started the agent on the main site, and the
+run's scope is origins (§2). A third-party widget (an ad, a chat, a
+payment or social embed) would get to offer actions to the agent, and its
+descriptions and answers would reach the model as the page's. Turning it
+on would take: listing with `getTools({fromOrigins: [the frame's
+origin]})` (only what the frame exposed to the top) or in the frame's own
+world; the frame's origin joining the run's sites only when the user
+allows it (CONTINUE, as for a navigation there), and shown as its own site
+in TOOLS, the trace and every approval, never as the main site's; every
+call asking, read-only or not (the hint is a third party's word to a run
+the user didn't start there); in the chat, only an origin the user wrote;
+and a run on the build machine with out-of-process frames (a cross-origin
+frame has its own renderer and isolated world).
+
+**Identity.** A tool is its frame and its name: names are unique per
+document only, so two frames may each have `search`. The browser numbers
+the frames it lists (1, 2, ... in `ToolFrames()` order) and calls a
+frame's tool `search in frame 2` in TOOLS, the step trace and TOOL RESULT
+(`ToolLabel()`), never by the frame's `name` or `title` or other page text;
+a tool name can't contain a space, so it can't fake the suffix.
+`AddSiteTools()` keeps a name once per frame.
+
+**The same document.** The list script marks its document: when the
+isolated world's global has no mark, it gets a fresh unguessable one from
+the browser (`base::UnguessableToken`), and the poll reports it with the
+tools. An isolated world's global belongs to one document: the document a
+frame navigates to has a new one, without the mark, and the page can't
+read or set it. A call then runs only:
+
+1. if the browser finds the main document still the tab's primary main
+   document at the observed origin, the tool's document still the same
+   (`WeakDocumentPtr`), active, at that origin, and every frame from the
+   main document down to it still counting (`IsToolFrameChain()`);
+2. if, in that frame, the script finds the tool's mark (else
+   `document_changed`), then the origin and the tool as listed (§2.7.9).
+
+Either refusal is "Not run: the page or frame that offered the tool has
+changed or gone." The mark closes what the browser's check alone can't:
+between that check and the script, the renderer may have committed another
+document in the same frame host. This applies to the main document too:
+a call never runs in a later document of the tab, even one listing the
+same tool. Polling stops when the document is no longer current; a frame's
+tool that navigates its frame ends the step with "The tool loaded another
+page in its frame", and the page is observed again.
+
+**Approvals.** Every approval of a frame's tool shows the frame's URL
+(`FrameText()`): its origin and path (no query or fragment), the path cut
+at 120 characters, characters that hide or reorder text shown as U+FFFD,
+quotes escaped. A frame without an http(s) URL of its own (`about:srcdoc`,
+`about:blank`, `blob:`) reads "https://shop.example (a frame without an
+address of its own)". The model sees only the frame's number.
+
+**A read-only frame tool runs unasked**, as the main document's does: the
+frame has the same origin, so it is the same site's own script, and
+§2.7.9's judgement holds.
+
+**MoltNet:** §2.7.10.
 
 ### 2.8 Planner
 
@@ -1872,14 +2004,16 @@ anything); a compromised inference service (any valid-looking reply).
 
 **What the format and the checks still guarantee:** one action from the
 agent's set; a CALL_TOOL names a tool the browser listed from the page's
-own document and offered, never a frame's or another origin's; the
-arguments are exactly that tool's, checked against its converted schema,
-and written by the browser; a tool whose name, arguments or form look like
-a password, or that takes a file, is never offered; the call runs only on
-the run's sites, and only if the page still lists the same tool; every
-call the site doesn't declare read-only, every form tool and every tool
-that takes a payment card or one-time code waits for the user, who sees
-every argument. Names, descriptions and answers reach the model inside the
+main document or one of its frames of exactly the same origin, and
+offered, never a cross-origin frame's or another origin's; the arguments
+are exactly that tool's, checked against its converted schema, and
+written by the browser; a tool whose name, arguments or form look like a
+password, or that takes a file, is never offered; the call runs only on
+the run's sites, only in the very document that listed the tool, and only
+if it still lists the same tool; every call the site doesn't declare
+read-only, every form tool and every tool that takes a payment card or
+one-time code waits for the user, who sees every argument and, for a
+frame's tool, the frame's address. Names, descriptions and answers reach the model inside the
 page fence, on single lines where they are labels, capped, and a failure's
 text never does. A compromised renderer gets what any page script gets:
 the listing is parsed with caps, and nothing in it is code.
@@ -1902,6 +2036,31 @@ the listing is parsed with caps, and nothing in it is code.
 - *Answers can carry injected text.* They are fenced and the rules say
   they are data; a small model may still follow them, within the actions
   above.
+
+**Frames (§2.7.12).** More attackers: a cross-origin frame on the page (an
+ad, a widget) that registers tools and exposes them to the top origin; a
+same-origin page that a cross-origin frame embeds, at a URL of its
+choosing; a frame (or the main document) that navigates, or a frame host
+that gets a new document, between the listing and the call; a frame whose
+`name`, `title` or tool names try to pass for another's.
+
+- *Another site's tools never reach the model.* Only frames of exactly
+  the main document's origin count, and only if every frame above them
+  does; inner pages (fenced frames, guest views) and other pages
+  (prerendering) never do. `exposedTo` changes nothing.
+- *A tool runs where it was listed.* The browser pins the document and
+  re-checks the frame chain at call time; the script checks the
+  document's unguessable mark, which a new document can't have and the
+  page can't read. A tool of the same name and description in a document
+  the frame navigated to doesn't run.
+- *Frames can't impersonate each other.* The browser numbers them and
+  shows the frame's address, escaped, in every approval; nothing a page
+  writes names a frame.
+- *What remains:* a same-origin frame is the site itself, so its tools
+  are trusted as the main document's are (§2.7.9), including its
+  `readOnlyHint`. A page of the site that embeds user content without
+  script in a same-origin frame adds nothing: the tools are registered by
+  script, and script on the origin can already do anything there.
 
 **MoltNet:** §2.7.10.
 
@@ -1977,8 +2136,12 @@ the draft is built to be harmless until a person has looked at it:
     page belongs to the chat's workstream this round.
   - *Other sites' images, videos and canvases* aren't masked (§5.1).
 - **Site tools (§2.7):**
-  - *Tools of frames and other origins* (`exposedTo` / `fromOrigins`): the
-    agent acts on the main document only.
+  - *Tools of cross-origin frames* (`exposedTo` / `fromOrigins`), and of
+    same-origin frames inside them: never listed. What turning it on would
+    take is in §2.7.12. Frames of exactly the main document's origin are
+    listed (§2.7.12); their elements are not (the snapshot is still the
+    main document's, so a frame's tools can be called, its buttons not
+    clicked).
   - *A form tool's answer on the next page* (`application/ld+json`): the
     page is observed instead.
   - *`toolchange`*: the list is read at each observation, so a tool
