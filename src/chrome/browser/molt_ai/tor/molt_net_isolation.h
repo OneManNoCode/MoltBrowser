@@ -43,12 +43,13 @@
 //     engagement (media_engagement_service.cc), no engaged sites for
 //     lookalike warnings (lookalike_url_navigation_throttle.cc), no
 //     navigator.storage.persist() grant (persistent_storage_permission_
-//     context.cc), Incognito's third-party-cookie blocking and Privacy
-//     Sandbox off (cookie_settings_factory.cc, privacy_sandbox_settings_
-//     delegate.cc), no ambient authentication (profile_network_context_
-//     service.cc) and no "unfamiliar site" heuristic
-//     (site_familiarity_utils.cc). docs/MOLTNET_COMPLIANCE.md §2 explains
-//     what each one stops a page from seeing.
+//     context.cc), Incognito's third-party-cookie blocking
+//     (cookie_settings_factory.cc), no ambient authentication
+//     (profile_network_context_service.cc) and no "unfamiliar site"
+//     heuristic (site_familiarity_utils.cc). Shared Storage: removed
+//     upstream at 156; it was the last Privacy Sandbox API MoltNet had to
+//     switch off. docs/MOLTNET_COMPLIANCE.md §2 explains what each one
+//     stops a page from seeing.
 
 #ifndef CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_ISOLATION_H_
 #define CHROME_BROWSER_MOLT_AI_TOR_MOLT_NET_ISOLATION_H_

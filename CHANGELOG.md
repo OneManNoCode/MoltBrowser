@@ -359,6 +359,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (macOS) go to a regular window, never into MoltNet; automatic
   picture-in-picture needs a site you allowed; and Windows Network
   Diagnostics isn't offered on MoltNet error pages (it logs the address).
+- **MoltNet's Incognito protections, reviewed again for Chromium 156.**
+  Every private-window check in Chromium 156 was checked for MoltNet
+  windows. MoltNet now also keeps no WebRTC logs (they would be saved in
+  your profile folder and uploaded), picks the language it asks a site
+  for from the same short list as Incognito, and doesn't take three
+  settings new in 156 from your regular windows: "Never show again" on
+  the XSLT warning, the Global Privacy Control setting and the AtMemory
+  keyboard shortcut.
 - **Nothing a MoltNet window does goes around Tor.** Some browser features
   sent what a MoltNet window gave them outside Tor, or to someone who knows
   who you are. Now the AI chat in a MoltNet window uses on-device models

@@ -107,6 +107,21 @@ TEST(MoltNetIncognitoParityPolicyTest, NonMoltNetProfilesKeepChromiumsAnswer) {
       /*has_moltnet_otr_id=*/true)));
 }
 
+// From Chromium 156 a policy can make the primary off-the-record profile an
+// Enterprise Isolated Mode session instead of Incognito. It is off the
+// record, IsIncognitoProfile() is false for it and its id is Chromium's
+// primary one, so the helper gives it what IsIncognitoProfile() gives it:
+// nothing. (Hooks on IsPrimaryOTRProfileWithRegularParent() checks keep
+// that check, so Isolated Mode keeps upstream's behaviour there too.)
+TEST(MoltNetIncognitoParityPolicyTest, IsolatedModeKeepsChromiumsAnswer) {
+  EXPECT_FALSE(IsMoltNetOtrProfileIdString("profile::primary_otr"));
+  const PrivateModeProfile isolated_mode = ClassifyPrivateModeProfile(
+      /*is_off_the_record=*/true, /*is_incognito_profile=*/false,
+      /*has_moltnet_otr_id=*/false);
+  EXPECT_EQ(PrivateModeProfile::kOtherOffTheRecord, isolated_mode);
+  EXPECT_FALSE(GetsIncognitoProtections(isolated_mode));
+}
+
 }  // namespace
 }  // namespace tor
 }  // namespace molt_ai
