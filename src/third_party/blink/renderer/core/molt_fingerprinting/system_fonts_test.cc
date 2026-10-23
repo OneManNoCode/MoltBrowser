@@ -191,7 +191,6 @@ TEST_F(MoltSystemFontsTest, GenericFamiliesAreNotRestricted) {
 TEST_F(MoltSystemFontsTest, FoundFontsMustBeVisible) {
   Farble();
   LocalDOMWindow& a = Window("https://a.example/");
-  const FontVisibility visibility = SystemFontVisibility(&a);
   const FontDescription description;
   // Whatever the test machine has installed: a listed family that resolves
   // is returned, and anything returned has a visible family.

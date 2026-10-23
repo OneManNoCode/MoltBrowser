@@ -1657,7 +1657,7 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
   // while the old one keeps serving, and replaces it on success.
   if (previous_loaded &&
       base::SysInfo::AmountOfAvailablePhysicalMemory().InBytes() <
-          static_cast<int64_t>(rc.needed_bytes)) {
+          rc.needed_bytes) {
     LOG(INFO) << "[MoltAI] ending the current model's process before loading "
               << model_id << " (low memory)";
     impl_->SetLoaded(std::string(), std::string(), std::string());

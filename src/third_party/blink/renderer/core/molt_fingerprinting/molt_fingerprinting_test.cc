@@ -248,9 +248,10 @@ TEST_F(MoltFingerprintingTest, ExportCopiesStayPremultiplied) {
   ASSERT_TRUE(
       paint_image.readPixels(info, farbled.data(), info.minRowBytes(), 0, 0));
   std::vector<uint8_t> expected = original;
-  farbler.FarbleRGBA8Premul(expected, kN32_SkColorType == kRGBA_8888_SkColorType
-                                          ? ChannelOrder::kRGBA
-                                          : ChannelOrder::kBGRA);
+  farbler.FarbleRGBA8Premul(expected,
+                            info.colorType() == kRGBA_8888_SkColorType
+                                ? ChannelOrder::kRGBA
+                                : ChannelOrder::kBGRA);
   EXPECT_EQ(farbled, expected);
   EXPECT_NE(farbled, original);
   for (size_t p = 0; p < farbled.size(); p += 4) {
