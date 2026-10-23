@@ -537,6 +537,8 @@ extension enablement and `MediaRouterEnabled()`).
   | `GpuOffloadTest`, `GpuFallbackGuardTest`, `StreamValidatorTest`, `MoltGpuInferenceSandboxPolicyTest` (Linux) | #52, #53, #55 |
   | `AgentRunDraftTest`, `AutomationSecurityTest` | #54 |
   | `MoltOSCryptTest`, `MoltKeysStoreTest`, `VaultStoreTest` (the os_crypt_async move) | #11 |
+  | `PromptUtilsTest`, `GemmaThoughtFilterTest`, `ThinkTagFilterTest` | #7, #8 |
+  | `SanitizeHelperTextTest`, `Utf8Test` (OCR and voice output) | #14 |
 
 - [ ] Blink's MoltBrowser tests (from #10, #19, #20, #22, #24, #27, #33, #37):
   ```bash
@@ -810,6 +812,9 @@ WEB_AI_APIS.md §12):
   typing into a `<textarea>` works (from #40).
 - [ ] Once the vision model is pinned: its download shows one progress for
   both files; cancel, resume and delete work as one unit (from #38, #40).
+- [ ] "This page" commands (`/tldr`, `/translate`) use the tab shown now,
+  after switching tabs; a command that finishes at once leaves the chat
+  ready for the next message (from #9, #12).
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
@@ -871,7 +876,9 @@ macOS, and for the manual steps everywhere:
 - [ ] External applications always ask first; MoltNet zoom starts at 100 %
   (from #49).
 - [ ] Regular windows: the onion request blocker (one extra in-process hop
-  per request) costs no measurable page-load time (from #6).
+  per request) costs no measurable page-load time (from #6); `.onion`
+  requests from a regular page, including a worker's WebSocket, are refused
+  (§4 step 13, which the kit automates on Linux) (from #6, #12).
 - [ ] Captive portals and authentication (from #51; §4 step 20): no
   `generate_204` request and no sign-in tab after a certificate error; a
   `401` offering only `Negotiate` and `NTLM` shows its page, one also
