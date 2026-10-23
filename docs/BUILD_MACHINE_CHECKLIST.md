@@ -5,13 +5,15 @@ v0.3.0 ships: the compile, the unit tests, the fuzzers, the device and
 manual checks, the MoltNet leak kit, packaging and the offline signing.
 
 **Why it exists.** The last release is v0.2.5 (macOS arm64 and Linux x64;
-Windows is still at v0.2.1). Since then, pull requests #6 to #55 were
-merged, including the rebase onto Chromium 152 (#11). **None of it has been
-compiled in a Chromium tree.** Each PR body and design doc lists what it
-still needs; this page collects those lists in the order you do them.
+Windows is still at v0.2.1). Since then the October v0.3 work landed: the
+workstream merges and pull requests #2 to #55, including the rebase onto
+Chromium 152 (#11). **None of it has been compiled against Chromium 152.**
+Each PR body and design doc lists what it still needs; this page collects
+those lists in the order you do them. (#31 changed only CI, and #42 is an
+open Dependabot PR, §11.)
 
-**Written** 2026-10-23 at `main` = PR #55 (`4a08afd`). New PRs add their
-items here.
+**Written** 2026-10-23 at `main` = PR #55 (`4a08afd`). A new PR that needs
+the build machine adds its items under the right phase, with its tag.
 
 ## How to use it
 
@@ -481,7 +483,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 ## 5. Unit tests
 
 `molt_ai_unittests` builds in the release out dir (REBASING.md). The
-upstream suites are big and link slowly in an official (ThinLTO) build;
+upstream suites are big and link slowly with `is_official_build = true`;
 build them in a second, non-official out dir with DCHECKs on, which also
 serves as the "debug build" #21 and #23 asked for (DCHECKs around Incognito
 extension enablement and `MediaRouterEnabled()`).
