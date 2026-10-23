@@ -204,6 +204,15 @@ TEST(GpuDriverRecordTest, RetryAfterAnUpdate) {
   // An unusable version string never counts as an update.
   EXPECT_FALSE(Allowed(records, Radv(), kT0 + 2 * kDay, "nightly"));
   EXPECT_FALSE(Allowed(records, Radv(), kT0 + 2 * kDay, ""));
+  // Nor does any version against one that wasn't recorded (turned off by a
+  // build whose version was unusable): that one waits the 30 days.
+  GpuDriverRecords unversioned;
+  for (int i = 0; i < 3; ++i) {
+    unversioned.RecordFailure(Radv(), "", kT0, "nightly");
+  }
+  EXPECT_EQ("", unversioned.entries()[0].turned_off_version);
+  EXPECT_FALSE(Allowed(unversioned, Radv(), kT0 + kDay, "0.2.6"));
+  EXPECT_TRUE(Allowed(unversioned, Radv(), kT0 + 30 * kDay, "0.2.6"));
 }
 
 TEST(GpuDriverRecordTest, UserRetry) {
