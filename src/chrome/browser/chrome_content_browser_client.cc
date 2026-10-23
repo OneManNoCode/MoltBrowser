@@ -135,6 +135,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_webrtc.h"
@@ -7147,6 +7148,17 @@ bool ChromeContentBrowserClient::AreMoltShieldsDownForWorker(
   // or shared worker, made when it starts.
   return molt_ai::fingerprinting::AreShieldsDownForWorker(browser_context,
                                                           storage_key);
+}
+
+bool ChromeContentBrowserClient::ShouldSendUniformNetworkState(
+    content::BrowserContext* browser_context) {
+  // MoltBrowser: MoltNet's renderers get fixed values, not the browser's
+  // network-quality estimate and connection type (decided by the profile
+  // alone, as for WebRTC; molt_ai/tor/molt_net_network_context_policy.h).
+  return browser_context &&
+         molt_ai::tor::SendUniformNetworkStateToRenderers(
+             molt_ai::tor::IsMoltNetProfile(
+                 Profile::FromBrowserContext(browser_context)));
 }
 
 bool ChromeContentBrowserClient::WillInterceptWebSocket(

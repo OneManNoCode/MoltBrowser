@@ -5,6 +5,7 @@
 #include "content/browser/network/network_quality_observer_impl.h"
 
 #include "base/metrics/histogram_macros.h"
+#include "content/browser/network/molt_uniform_network_state.h"  // MoltBrowser
 #include "content/common/renderer.mojom.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/network_quality_observer_factory.h"
@@ -81,8 +82,11 @@ void NetworkQualityObserverImpl::OnEffectiveConnectionTypeChanged(
   for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
        !it.IsAtEnd(); it.Advance()) {
     if (it.GetCurrentValue()->IsInitializedAndNotDead()) {
-      it.GetCurrentValue()->GetRendererInterface()->OnNetworkQualityChanged(
-          last_notified_type_, last_notified_network_quality_.http_rtt(),
+      // MoltBrowser: uniform values for MoltNet's renderers.
+      MoltNotifyNetworkQualityChanged(
+          it.GetCurrentValue(), MoltNetworkQualityMessage::kUpdate,
+          last_notified_type_,
+          last_notified_network_quality_.http_rtt(),
           last_notified_network_quality_.transport_rtt(),
           last_notified_network_quality_.downstream_throughput_kbps());
     }
@@ -94,8 +98,10 @@ void NetworkQualityObserverImpl::OnRenderProcessHostCreated(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   // Notify the newly created renderer of the current network quality.
-  rph->GetRendererInterface()->OnNetworkQualityChanged(
-      last_notified_type_, last_notified_network_quality_.http_rtt(),
+  // MoltBrowser: uniform values for MoltNet's renderers.
+  MoltNotifyNetworkQualityChanged(
+      rph, MoltNetworkQualityMessage::kInitial, last_notified_type_,
+      last_notified_network_quality_.http_rtt(),
       last_notified_network_quality_.transport_rtt(),
       last_notified_network_quality_.downstream_throughput_kbps());
 }
@@ -138,8 +144,11 @@ void NetworkQualityObserverImpl::OnRTTOrThroughputEstimatesComputed(
   for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
        !it.IsAtEnd(); it.Advance()) {
     if (it.GetCurrentValue()->IsInitializedAndNotDead()) {
-      it.GetCurrentValue()->GetRendererInterface()->OnNetworkQualityChanged(
-          last_notified_type_, last_notified_network_quality_.http_rtt(),
+      // MoltBrowser: uniform values for MoltNet's renderers.
+      MoltNotifyNetworkQualityChanged(
+          it.GetCurrentValue(), MoltNetworkQualityMessage::kUpdate,
+          last_notified_type_,
+          last_notified_network_quality_.http_rtt(),
           last_notified_network_quality_.transport_rtt(),
           last_notified_network_quality_.downstream_throughput_kbps());
     }

@@ -178,6 +178,19 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   return settings;
 }
 
+// Whether the browser tells a profile's renderer processes fixed values
+// instead of its network-quality estimate and the operating system's
+// connection type (ChromeContentBrowserClient::
+// ShouldSendUniformNetworkState(), content/browser/network/
+// molt_uniform_network_state.h). The browser keeps one estimate for all
+// profiles and sends it to every renderer; MoltNet's renderers report fixed
+// values to pages anyway, so this only keeps the real ones from a
+// compromised MoltNet renderer. Decided by the profile alone (as WebRTC is,
+// molt_net_webrtc.h), not by the fingerprinting switch.
+constexpr bool SendUniformNetworkStateToRenderers(bool is_moltnet_profile) {
+  return is_moltnet_profile;
+}
+
 // ProfileNetworkContextService's block_trust_tokens, when a network context
 // is created and when the anti-abuse content setting changes:
 // `chromium_value` is Chromium's (the setting blocks them).

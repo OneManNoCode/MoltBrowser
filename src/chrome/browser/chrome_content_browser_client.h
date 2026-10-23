@@ -728,6 +728,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   bool AreMoltShieldsDownForWorker(
       content::BrowserContext* browser_context,
       const blink::StorageKey& storage_key) override;  // MoltBrowser
+  bool ShouldSendUniformNetworkState(
+      content::BrowserContext* browser_context) override;  // MoltBrowser
   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
       content::RenderFrameHost* frame) override;
   void CreateWebSocket(

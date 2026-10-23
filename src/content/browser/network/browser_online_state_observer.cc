@@ -4,6 +4,7 @@
 
 #include "content/browser/network/browser_online_state_observer.h"
 
+#include "content/browser/network/molt_uniform_network_state.h"  // MoltBrowser
 #include "content/common/renderer.mojom.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -25,8 +26,9 @@ void BrowserOnlineStateObserver::OnMaxBandwidthChanged(
     // TODO(crbug.com/40563310): Remove this check once we have a better
     // way of iterating the hosts.
     if (it.GetCurrentValue()->IsInitializedAndNotDead()) {
-      it.GetCurrentValue()->GetRendererInterface()->OnNetworkConnectionChanged(
-          type, max_bandwidth_mbps);
+      // MoltBrowser: uniform values for MoltNet's renderers.
+      MoltNotifyNetworkConnectionChanged(it.GetCurrentValue(), type,
+                                         max_bandwidth_mbps);
     }
   }
 }
@@ -37,8 +39,8 @@ void BrowserOnlineStateObserver::OnRenderProcessHostCreated(
   net::NetworkChangeNotifier::ConnectionType connection_type;
   net::NetworkChangeNotifier::GetMaxBandwidthAndConnectionType(
       &max_bandwidth_mbps, &connection_type);
-  rph->GetRendererInterface()->OnNetworkConnectionChanged(connection_type,
-                                                          max_bandwidth_mbps);
+  // MoltBrowser: uniform values for MoltNet's renderers.
+  MoltNotifyNetworkConnectionChanged(rph, connection_type, max_bandwidth_mbps);
 }
 
 }  // namespace content

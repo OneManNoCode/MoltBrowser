@@ -62,6 +62,16 @@ TEST(MoltNetNetworkContextPolicyTest, PrivateStateTokensBlockedInMoltNet) {
                                          /*chromium_value=*/true));
 }
 
+// The browser's network-quality estimate and the OS connection type: fixed
+// values for MoltNet's renderers, the real ones for every other profile's.
+TEST(MoltNetNetworkContextPolicyTest, UniformNetworkStateForMoltNetOnly) {
+  EXPECT_TRUE(SendUniformNetworkStateToRenderers(/*is_moltnet_profile=*/true));
+  EXPECT_FALSE(
+      SendUniformNetworkStateToRenderers(/*is_moltnet_profile=*/false));
+  static_assert(SendUniformNetworkStateToRenderers(true));
+  static_assert(!SendUniformNetworkStateToRenderers(false));
+}
+
 bool IsUpperHex(const std::string& s) {
   for (char c : s) {
     if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))) {

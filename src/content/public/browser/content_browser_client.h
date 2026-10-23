@@ -2005,6 +2005,12 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const blink::StorageKey& storage_key);
 
+  // MoltBrowser: true if the renderers of `browser_context` are told fixed
+  // values instead of the browser's network-quality estimate and the
+  // operating system's connection type
+  // (content/browser/network/molt_uniform_network_state.h).
+  virtual bool ShouldSendUniformNetworkState(BrowserContext* browser_context);
+
   struct CONTENT_EXPORT WebSocketOptions {
     WebSocketOptions();
     ~WebSocketOptions();
