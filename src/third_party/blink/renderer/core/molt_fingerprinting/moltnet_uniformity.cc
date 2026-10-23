@@ -88,7 +88,7 @@ class UniformFormLocale final : public Locale {
   const Vector<String>& WeekDayShortLabels() override {
     return Labels(week_day_short_labels_, moltnet::kWeekDayShortLabels);
   }
-  unsigned FirstDayOfWeek() override { return moltnet::kFirstDayOfWeek; }
+  wtf_size_t FirstDayOfWeek() override { return moltnet::kFirstDayOfWeek; }
   bool IsRtl() override { return false; }
 
  private:
