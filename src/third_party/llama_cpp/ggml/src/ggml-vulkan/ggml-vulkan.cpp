@@ -4470,7 +4470,8 @@ vk_device ggml_vk_get_device(size_t idx) {
             device_extensions.push_back("VK_EXT_device_fault");
         }
 
-        vkGetPhysicalDeviceFeatures2(device->physical_device, &device_features2);
+        // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
+        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceFeatures2(device->physical_device, &device_features2);
 
         device->device_fault = device->device_fault && fault_features.deviceFault;
 
@@ -4657,8 +4658,9 @@ vk_device ggml_vk_get_device(size_t idx) {
             // Query supported shapes
             std::vector<VkCooperativeMatrixPropertiesKHR> cm_props;
 
+            // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
             PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR pfn_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR =
-                (PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)vkGetInstanceProcAddr(vk_instance.instance, "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR");
+                (PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr(vk_instance.instance, "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR");
 
             uint32_t cm_props_num;
 
@@ -4767,8 +4769,9 @@ vk_device ggml_vk_get_device(size_t idx) {
         device->device = device->physical_device.createDevice(device_create_info);
 
         if (device->device_fault) {
+            // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
             device->pfn_vkGetDeviceFaultInfoEXT = (PFN_vkGetDeviceFaultInfoEXT)
-                vkGetDeviceProcAddr(device->device, "vkGetDeviceFaultInfoEXT");
+                VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceProcAddr(device->device, "vkGetDeviceFaultInfoEXT");
         }
 
         // Queues
@@ -5104,7 +5107,8 @@ static void ggml_vk_print_gpu_info(size_t idx) {
     }
 #endif
 
-    vkGetPhysicalDeviceFeatures2(physical_device, &device_features2);
+    // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
+    VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceFeatures2(physical_device, &device_features2);
 
     fp16 = fp16 && vk12_features.shaderFloat16;
 
@@ -5178,6 +5182,13 @@ DispatchLoaderDynamic & ggml_vk_default_dispatcher() {
     return ggml_vk_default_dispatcher_instance;
 }
 
+#if defined(GGML_VULKAN_MOLTBROWSER)
+// MoltBrowser: built with VK_NO_PROTOTYPES, so nothing here links against the
+// Vulkan loader; it is opened at run time (chromium/ggml-vulkan-moltbrowser.cpp).
+// Throws vk::SystemError if there is none (ggml_backend_vk_reg() catches it).
+PFN_vkGetInstanceProcAddr ggml_vk_moltbrowser_get_instance_proc_addr();
+#endif
+
 void ggml_vk_instance_init() {
     if (vk_instance_initialized) {
         return;
@@ -5185,7 +5196,11 @@ void ggml_vk_instance_init() {
     VK_LOG_DEBUG("ggml_vk_instance_init()");
 
     // See https://github.com/KhronosGroup/Vulkan-Hpp?tab=readme-ov-file#extensions--per-device-function-pointers-
+#if defined(GGML_VULKAN_MOLTBROWSER)
+    ggml_vk_default_dispatcher_instance.init(ggml_vk_moltbrowser_get_instance_proc_addr());
+#else
     ggml_vk_default_dispatcher_instance.init(vkGetInstanceProcAddr);
+#endif
 
     // vkEnumerateInstanceVersion is Vulkan 1.1. A null value indicated Vulkan 1.0.
     if (ggml_vk_default_dispatcher_instance.vkEnumerateInstanceVersion == nullptr) {
@@ -5248,6 +5263,8 @@ void ggml_vk_instance_init() {
 
     if (debug_utils_ext) {
         vk_instance.debug_utils_support              = true;
+        // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
+        PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetInstanceProcAddr;
         vk_instance.pfn_vkSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkSetDebugUtilsObjectNameEXT");
         vk_instance.pfn_vkQueueBeginDebugUtilsLabelEXT = (PFN_vkQueueBeginDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkQueueBeginDebugUtilsLabelEXT");
         vk_instance.pfn_vkQueueEndDebugUtilsLabelEXT = (PFN_vkQueueEndDebugUtilsLabelEXT) vkGetInstanceProcAddr(vk_instance.instance, "vkQueueEndDebugUtilsLabelEXT");
@@ -16308,7 +16325,8 @@ bool ggml_vk_device_is_supported(const vk::PhysicalDevice & vkdev) {
     vk11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     device_features2.pNext = &vk11_features;
 
-    vkGetPhysicalDeviceFeatures2(vkdev, &device_features2);
+    // MoltBrowser: through the dispatcher (VK_NO_PROTOTYPES).
+    VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceFeatures2(vkdev, &device_features2);
 
     return vk11_features.storageBuffer16BitAccess;
 }
