@@ -78,7 +78,8 @@ struct MoltNetRequestAccess {
   // ShoppingService, which looks the page's URL up with the regular
   // profile's optimization guide and commerce servers, through the regular
   // profile's network context. Chromium keeps the tab's own UI for them
-  // out of Incognito only (IsIncognitoProfile()), not out of MoltNet.
+  // out of Incognito (and, from 156, Isolated Mode) only
+  // (IsPrimaryOTRProfileWithRegularParent()), not out of MoltNet.
   bool commerce = true;
 
   friend constexpr bool operator==(const MoltNetRequestAccess&,

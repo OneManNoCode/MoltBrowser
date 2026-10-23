@@ -62,10 +62,12 @@ inline constexpr auto kMoltNetPinnedPrefNames =
     std::to_array<std::string_view>({
         // Permission prompt history (adaptive quiet prompts).
         "profile.content_settings.permission_actions",
-        // Third-party cookie blocking. CookieSettings only treats the
-        // primary Incognito profile as Incognito, so in MoltNet this pref
-        // alone decides. (Incognito writes it through to the regular
-        // profile; MoltNet's pref service writes nothing through.)
+        // Third-party cookie blocking: the mode (block, allow, or block in
+        // Incognito only, which CookieSettings answers with the profile's
+        // Incognito flag; cookie_settings_factory.cc gives MoltNet
+        // Incognito's). Pinned, so the regular profile's mode never
+        // decides. (Incognito writes it through to the regular profile;
+        // MoltNet's pref service writes nothing through.)
         "profile.cookie_controls_mode",
         // Accept-Language and navigator.languages. MoltNet then sets en-US
         // itself while fingerprinting protection is on.
