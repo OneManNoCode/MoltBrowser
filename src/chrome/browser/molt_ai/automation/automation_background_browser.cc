@@ -140,7 +140,11 @@ void RunScriptInBackgroundBrowser(
   // load happens before the runner's policy checks, so it gets the same
   // http(s)-only rule (a .molt file must not open javascript:/file: URLs).
   GURL start_url("about:blank");
+  // An unconfirmed draft (a web agent run, agent_run_draft.h) opens nothing:
+  // the runner refuses it on about:blank, and the studio hears why.
   for (const auto& step : script.steps) {
+    if (script.security.sites_unconfirmed)
+      break;
     if (step.type == StepType::NAVIGATE && !step.target.empty()) {
       GURL g(step.target);
       if (agent_safety::IsAllowedNavigationURL(g)) {

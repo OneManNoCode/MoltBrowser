@@ -13,6 +13,9 @@ decision format doesn't change. On a page that offers WebMCP tools, the web
 agent can also call them, as one more action on an id (§2.7; threat model
 §5.2). Before its first action the web agent has the model write a short
 plan, which every action then names a step of (§2.8; threat model §2.8.6).
+A run that ended with DONE can be saved as a draft Agent-mode workflow,
+which can't run until the user has reviewed it and confirmed its sites
+(§2.9; threat model §5.4).
 
 | Decision | Code | Format |
 |---|---|---|
@@ -1050,18 +1053,7 @@ what it was. Expiry: never (`flag-metadata.json`,
 
 #### 2.8.9 Not done
 
-- **Saving a run as a draft workflow** (Agent mode). Not small: a web agent
-  step acts on an element id, resolved through a one-off snapshot selector
-  (an `nth-of-type` path), which a recorded workflow can't replay reliably;
-  TYPE text is the model's; CALL_TOOL and REPLAN have no workflow step; and
-  saved workflows are refused in MoltNet (`SavedWorkflowsAllowed`). A
-  follow-up would map NAVIGATE / SEARCH / CLICK / TYPE / FILL_FORM / SCROLL
-  steps to `automation_script` steps with the selectors the probe confirmed
-  at the time (re-probed and labelled), save the workflow as **Casual**
-  with an empty domain whitelist the user must confirm (a draft never
-  starts Approved, unlike a recording: `automation_security`), never
-  schedule it, and offer it only after DONE, on a user click in the agent
-  bar.
+- **Saving a run as a draft workflow** (Agent mode): done since, §2.9.
 - **A screenshot for the planner.** The plan request is text-only; the
   first action's request carries the screenshot as before.
 - **The plan in the studio or the history.** The plan isn't stored; the
@@ -1073,6 +1065,288 @@ what it was. Expiry: never (`flag-metadata.json`,
 - **Measured benefit.** Whether a plan helps the pinned small models, and
   whether 6 steps, 100-character lines and the 2 / 8 triggers are the right
   sizes, needs runs on the build machine.
+
+### 2.9 Saving a run as a draft workflow
+
+Status: implemented (October 2026), pending a compile on the build machine
+and an end-to-end run. "Teach once, run again": after a web agent run that
+ended with DONE, the chat's agent bar offers **Save as automation**. The
+browser turns what the run did into a **draft** Agent-mode workflow
+(`automation_script.h`), which the user reviews in the agent studio
+(`molt://ai-agent`) and, once they have confirmed the sites it may use,
+runs with `AutomationRunner` like a recording. Before, workflows came only
+from the recorder and from imports.
+
+The run is model-made: the model chose every action from page text a site
+controls, so a prompt-injected run can also be a successful one (§5). The
+draft therefore keeps only what replay needs, withholds anything that looks
+secret, and can do nothing until the user has looked at it.
+
+| File | What |
+|---|---|
+| `automation/agent_run_draft.{h,cc}` | pure: which steps a draft keeps and how, what is withheld, when a run is refused, the draft's policy; fuzzed by `molt_agent_run_draft_fuzzer` |
+| `automation/automation_script.*`, `automation_security.*` | `SecurityPolicy::sites_unconfirmed`; `EffectivePolicy`, `ClampTrustForSave`, `ConfirmDraftSites` |
+| `automation/automation_runner.cc`, `automation_scheduler.cc`, `automation_background_browser.cc` | an unconfirmed draft doesn't run, isn't fired and opens nothing; a run writes back only its stats; SCROLL `"up"` / `"down"` |
+| `agents/web_agent.{h,cc}` | `WebAgent::Step` records what a step acted on (`url`, `origin`, `elements`) |
+| `ui/webui/molt_ai/molt_ai_chat_handler_agent_run.cc` (new), `molt_ai_chat_handler.{h,cc}`, `molt_ai_chat_ui_js.h` | recording the run, `save_run` / `save_note`, `saveAgentRun`, `openAgentStudio`, the agent bar |
+| `ui/webui/molt_ai/molt_ai_agent_ui.cc` | the draft's badge and review panel, `confirmDraftSites`, refusing to run, schedule or trust a draft |
+
+#### 2.9.1 The flow
+
+```
+startWebAgent -> BeginAgentRunRecord: goal, the tab's URL, MoltNet or not
+  agent-step  -> RecordAgentRunStep: WebAgent::Step -> RunStep (only the
+                 action, success, URL, query, direction, origin, elements)
+  DONE        -> FinishAgentRunRecord -> BuildDraft
+                   kept     -> result.save_run = the run's id
+                   refused  -> result.save_note = why (fixed text); dropped
+"Save as automation" (click) -> saveAgentRun [run_id]
+  user activation? the last run, once? MoltNet? -> BuildDraft again
+  -> AutomationStorage::Save (id agent_<time>, CASUAL, sites unconfirmed)
+  -> {id, name, message}; the run's record is dropped
+"Review in Agent mode" -> openAgentStudio: the kMoltAgent side panel of the
+  chat's own window
+studio: "draft · review it" -> Review -> the editor's review panel
+  "Confirm these sites" (click) -> confirmDraftSites [id, sites]
+  -> AutomationSecurity::ConfirmDraftSites -> an ordinary CASUAL workflow
+```
+
+#### 2.9.2 From agent steps to workflow steps
+
+Only steps that ran and succeeded are kept, in order:
+
+| Agent step | Workflow step |
+|---|---|
+| NAVIGATE | `navigate` to the URL it loaded |
+| SEARCH | `navigate` to the search URL the browser built (`BuildSearchURL`); only the query was the model's |
+| CLICK | `click`: `target` = the observation's selector, `extra.text` = the element's label, `extra.host` = the page's host |
+| TYPE | `type`: the same, `value` = the text typed, unless withheld (§2.9.3) |
+| FILL_FORM | one `type` step per field it filled, in order (a partial fill, where the browser can't tell which fields were missed, makes the run unsaveable) |
+| SCROLL | `scroll`, `value` `"down"` or `"up"` (one screenful; the runner reads both now) |
+| OBSERVE, REPLAN, DONE, ERROR | nothing: no page changed |
+| CALL_TOOL | the run isn't saved (§2.9.4) |
+
+When the first step kept isn't a navigation, the draft opens the page the
+run started on first, as the recorder does.
+
+**Selectors.** An element id (`e3`) means nothing after the run. The draft
+stores what a recording stores and what the runner's label-aware matching
+reads (§3.3, `AutomationRunner::ResolveSelector`): the selector the
+observation built (an `#id` when unique, else an `nth-of-type` path from
+`<html>`), which the probe confirmed right before the action, as `target`,
+and the element's visible name as the text anchor. At replay the runner
+takes the selector only if it matches one visible element whose text agrees
+with the label; otherwise it finds the element by its label, and only then
+asks the model. So a path that has drifted onto another element isn't
+clicked blindly. No fallback selectors are made up: the browser saw only
+that one. Descriptions quote with “ ”, never `"`, because for steps without
+a text anchor the runner reads the description's first `"..."` as one (old
+recordings). Labels are page text: they become one line (control, bidi and
+zero-width characters shown as U+FFFD or a space, at most 60 characters),
+and a label with `{{` is dropped.
+
+**What isn't kept.** No page text, screenshot, plan, the model's reasons or
+the steps' notes. The chat keeps the run's record (only the fields above)
+in memory until it is saved, refused, cancelled or replaced by the next
+run. The goal becomes the draft's name only if it holds nothing
+secret-looking (else "Agent run on <site>").
+
+#### 2.9.3 Typed text and secrets
+
+Workflows store vault references only (CLAUDE.md), and text the model typed
+may hold what the user gave in the goal. For each value typed:
+
+- **A password field:** never. The agent never types into one; a step that
+  claims to have makes the run unsaveable, and a draft never gets a
+  saved-password step (that would be a capability the run never had).
+- **A payment-card or one-time-code field** (the probe's field kind):
+  a secret step (`MarkStepSecret`): no value, `secret_kind` set, and replay
+  stops there as it does for recordings ("which MoltBrowser never saves").
+- **Withheld**, i.e. stored as `{{name}}` (named from the label, empty
+  default), which the studio's run sheet asks for at each run, with
+  `extra.review = "value_withheld"` and a description that doesn't quote
+  it, when any of these holds:
+  - the field's label names a secret (password, PIN, CVV, security,
+    verification or one-time code, SSN, API key, card / account / routing
+    number, IBAN, in a few languages), read with hidden characters
+    removed and as one line, so `pass` U+200B `word` and `card\nnumber`
+    still count;
+  - the text, as typed or with hidden characters removed, looks secret:
+    a card number (Luhn), an SSN, an IBAN, a 6-8
+    digit code, a password-like token (letters, digits and a symbol; both
+    cases, digits and a symbol; 12+ characters of both cases and digits),
+    a key or token (24+ key characters with letters and digits, `sk-`,
+    `ghp_`, `AKIA` and other prefixes, a JWT), or words like "password";
+  - the text contains a token the goal gave as a secret ("password is
+    hunter2", "PIN 1234", "code SAVE20": after password / passcode /
+    secret / token, the next word; after PIN / code / card / key, the next
+    word if it has a digit);
+  - the goal is too long to scan (4 KB) or holds more than 64 such tokens:
+    then every value.
+- **Searches and page addresses** that look like they hold a secret (user
+  info; a parameter named like password, token, code, key, session or sig;
+  a card number, SSN, JWT or key anywhere; a long token in a sign-in,
+  reset or verify path) make the run **unsaveable** rather than withheld:
+  a variable inside a URL is substituted unescaped, and secrets in an agent
+  run's addresses are rare.
+- **`{{` or `}}`** in typed text, a query, an address or a selector makes
+  the run unsaveable. The runner substitutes `{{name}}` in every value and
+  selector, so a page could make the model type `{{pin}}` on another site
+  and have the PIN the user enters at run time typed there.
+
+These are heuristics. A false positive costs the user one value per run; a
+false negative stores text the agent typed, which the user's own recording
+would have stored too. They are the floor, not the guarantee: the review
+panel shows every value before the draft can run.
+
+**Run-time values stay off disk.** The runner used to save its whole working
+copy of the workflow at the end of a run, including the variable values
+typed into the run sheet, which then became the workflow's saved defaults
+(and RUN_SCRIPT's inlined steps became its own). Withheld secrets arrive
+exactly that way, so a run now writes only its stats back, onto the
+workflow as stored; a workflow deleted meanwhile stays deleted.
+
+#### 2.9.4 Site tools (CALL_TOOL)
+
+A run in which a site's tool (WebMCP, §2.7) ran isn't saved; the agent bar
+says so. Adding a workflow step for it was the alternative, and the less
+safe one:
+
+- A tool is the page's code with the page's effects, defined by the page
+  when it is called; its name, description and schema can change between
+  runs, so "the same call" may not be the same action.
+- The agent asks the user before any tool that the page doesn't mark
+  read-only (`CheckToolCall`). The runner has no approval in the middle of
+  a run: such a step would always stop, or would need trust to run
+  silently, a new capability for a call the model chose.
+- Replay would need the listing, calling and polling of §2.7 inside the
+  runner, and a step type that every workflow tool (the studio's editor,
+  `molt://ai-automation`, the scheduler, imports) would have to understand.
+- Its arguments are the model's and may carry what the user typed in the
+  goal, so they would need their own scrubbing.
+
+A tool call that failed changed nothing the draft relies on and doesn't
+block the save.
+
+#### 2.9.5 Trust
+
+A recording starts **Approved** on its recorded sites: the user did those
+steps. An import starts **Casual**. A draft from a run starts **Casual**,
+with an **empty whitelist** and `sites_unconfirmed`, and that is the most
+it gets without the user:
+
+- Every step was the model's choice, made from page text. A successful run
+  may still be a steered one, and saving it must not turn those choices
+  into standing permission.
+- During the run the user may have allowed a form submit, another site or
+  a card field. They allowed it once, for that run, with the page in front
+  of them; a workflow repeats it unattended, so that approval doesn't carry
+  over.
+- Until the user confirms its sites, a draft runs nowhere:
+  `EffectivePolicy` gives it its stored (empty) whitelist at CASUAL,
+  whatever trust says; the runner refuses it with a message the studio
+  shows; the scheduler never fires it; the run window opens nothing for it;
+  the studio's `runWorkflow`, `saveSchedule` and `promoteTrust` refuse it.
+- Confirming is a real click (transient user activation, like the studio's
+  Trust button) on exactly the sites the browser listed:
+  `HostsReferencedBy` of the stored steps. If the steps changed in
+  between, nothing is confirmed. Saving never confirms
+  (`ClampTrustForSave` keeps the mark, whichever UI saves).
+- Then it is an ordinary Casual workflow: its own sites only, no form
+  submits, no password or card fields. Trusting it (Approved) is the
+  studio's existing, separate click. Confirming sites says where the
+  workflow may go, not that submitting a form there is wanted every time.
+
+#### 2.9.6 MoltNet
+
+Saved workflows are refused in MoltNet (`MoltNetRequestAccess::
+saved_workflows`): the studio's storage and scheduler are the regular
+profile's, which would run the workflow later outside Tor, with its own
+cookies. A run whose chat or tab is MoltNet's is never offered: its
+result carries the refusal as `save_note`, `saveAgentRun` re-checks
+`SavedWorkflowsAllowed()` and `BuildDraft` refuses it too, and
+`openAgentStudio` does nothing there. What changes for a MoltNet user: after
+a successful run the agent bar shows "Saving agent runs as workflows isn't
+available in MoltNet windows…" instead of a button.
+
+#### 2.9.7 The UI
+
+- **The agent bar** (side panel and `molt://ai-chat`): after DONE with
+  `save_run`, "Save as automation" and "Not now"; with `save_note`, the
+  note. The click sends `saveAgentRun` (the browser checks the gesture);
+  the answer, the browser's words, is shown as text, with "Review in Agent
+  mode" after a save. DOM nodes and `textContent` only; junk ids offer
+  nothing. The bar no longer collapses while it offers a save (nor a newer
+  run's bar, which the old 10-second timer could).
+- **The studio:** the draft is first in the library with "draft · review
+  it" and a Review button instead of Run, Edit, Schedule and the trust
+  item. Its editor shows the review panel (what to check, how many values
+  are asked at each run, how many card or code fields the user enters,
+  the sites as text chips) and a ⚠ note on each such step; "Confirm these
+  sites" sends exactly the sites shown. A draft can be edited and saved;
+  the panel then shows the sites of the saved steps.
+
+#### 2.9.8 Tests
+
+- **In `molt_ai_unittests`:** `automation/agent_run_draft_unittest.cc`
+  (16 tests): the conversion in order with failed and non-page steps
+  dropped, the start page, selectors, anchors, hosts, quotes, the draft's
+  policy and a save/load round trip; search and navigation; refusals
+  (unfinished, MoltNet both ways, a site tool that ran but not one that
+  failed, nothing to save, 24 unusable steps: wrong element counts, bad
+  selectors, origins and hosts, text over 500 characters, control
+  characters, invalid UTF-8, password fields, unknown actions, bad
+  scrolls, bad start pages, too many steps; `{{` in text, selectors, URLs
+  and queries, while a label with `{{` is only dropped); 26 secret-looking
+  values withheld as variables (and absent from the file) and 13 ordinary
+  ones kept; secrets the goal gave; unique variable names; card and code
+  fields as secret steps that saving doesn't change; 12 secret addresses
+  refused and 8 ordinary ones kept, the start page, secret searches;
+  hostile labels (bidi, zero-width, line separators, BOM, C1, DEL, invalid
+  UTF-8, 400 characters) as one clean capped line; names; the pieces
+  (label and goal detection, display text, variable names).
+  `automation/automation_security_unittest.cc` (4 more): an unconfirmed
+  draft may do nothing whatever its trust; saving never confirms one;
+  confirming needs exactly the sites, in any order, once; the mark is
+  stored only when set.
+- **In `tools/webui_checks` (`npm test`, CI):** the chat's agent bar (the
+  offer, the save sent from the click, the answer and errors as text,
+  "Review in Agent mode", the note, failed or stopped runs and five kinds
+  of junk offering nothing, "Not now", a new run clearing the offer) and
+  the studio (the badge, Review only, no trust item, the panel and its
+  counts, hostile sites as text and junk dropped, the step notes, a draft
+  never run, Confirm sending exactly the sites from the click, an
+  untrusted workflow afterwards).
+- **Run outside the repo:** the automation unit tests (33, the ones above
+  and the existing script and security ones) with clang, under
+  ASan and UBSan, and with g++, against the `//base` and `//url`
+  stand-ins; `molt_agent_run_draft_fuzzer` (`docs/FUZZING.md`): 790,468
+  runs in 10 minutes and 226,643 more after the last change to the
+  converter, nothing found (one invariant it broke before landing, a goal
+  with `{{` as the name, is fixed); its 65 seeds (7 KB) reach 93% of the
+  edges those runs found; syntax of
+  `web_agent.cc`, `molt_ai_chat_handler_agent_run.cc`, the changed chat
+  handler functions and the studio's handler (verbatim) with
+  `-fno-exceptions -Werror` against stand-ins with the 152 signatures; the
+  WebUI checks.
+- **Needs the build machine:** a compile; a real run saved, reviewed,
+  confirmed and replayed on real sites; how often the snapshot's paths
+  drift and the label anchor recovers them.
+
+#### 2.9.9 Not done
+
+- **Fallback selectors.** The recorder stores several (`data-testid`,
+  `name`, `aria-label`, an id-anchored path); the agent's snapshot builds
+  one. Capturing more would take another page script per action.
+- **Opening the draft in the editor directly.** The studio opens on its
+  library, where the new draft is first and badged.
+- **Checking the result at replay.** The agent's DONE text isn't stored, so
+  a replay can't assert it got the same answer.
+- **Site-tool steps** (§2.9.4), and withheld values inside searches and
+  addresses (the run is refused instead).
+- **Withholding by other autocomplete hints** (`username`, `email`,
+  `tel`): those values are personal but not secret, and a recording keeps
+  them too.
 
 ## 3. Agent mode (`AutomationRunner`)
 
@@ -1632,6 +1906,33 @@ it is model output written from page text, fenced and never on the GOAL
 line; and a poisoned plan can steer the model no further than the page
 text it was written from already could.
 
+### 5.4 Saved runs (§2.9)
+
+A page that steers a run can also steer what a saved draft would do, so
+the draft is built to be harmless until a person has looked at it:
+
+- **It does nothing on its own.** It starts Casual with no site and
+  `sites_unconfirmed`; nothing runs, schedules or trusts it until the
+  user confirms exactly its sites with a real click (§2.9.5). Saving is a
+  click too, after a run the user watched end.
+- **It replays only what happened.** Only steps that ran and succeeded,
+  with the selectors the browser itself built and confirmed; no plan, no
+  page text, no model reasoning, no site tool. At replay every step goes
+  through `automation_security` and the element probe as a recording's
+  does, and the runner's label check keeps a drifted selector from
+  clicking another element.
+- **It can't carry the user's secrets.** Values that look secret, and
+  what the goal gave as one, are asked at each run instead of stored;
+  card and code fields are never filled; passwords never appear (§2.9.3).
+- **It can't smuggle a variable.** `{{` in anything the model or the page
+  chose makes the run unsaveable, so injected text can't make a replay
+  type a run-time secret somewhere else.
+- **What remains:** a page can still steer a run into doing something
+  the user didn't intend and then let it succeed. The draft shows every
+  step as text, and the review asks the user to check them; a steered
+  step the user doesn't notice is replayed on the sites they confirmed,
+  within Casual (no form submits) unless they also trust it.
+
 ## 6. Not done
 
 - **More than 8 fields in one form fill.** `/fill ai` and `/paste` keep
@@ -1690,12 +1991,12 @@ text it was written from already could.
   - *Turning WebMCP on for every page*, and a per-tool "always allow".
   - *A run against a real page in the trial*, and whether small models pick
     tools well, need the build machine.
-- **The planner:** §2.8.9 (saving a run as a draft workflow is a
-  follow-up there).
+- **The planner:** §2.8.9.
+- **Saved runs:** §2.9.9.
 
 ## 7. Tests
 
-For the planner, see §2.8.7.
+For the planner, see §2.8.7; for saved runs, §2.9.8.
 
 **In `molt_ai_unittests`:**
 

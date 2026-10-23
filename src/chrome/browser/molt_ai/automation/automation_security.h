@@ -54,6 +54,12 @@ inline constexpr char kSecretKindKey[] = "secret_kind";
 inline constexpr char kSecretHostKey[] = "secret_host";
 inline constexpr char kStepHostKey[] = "host";
 
+// Why a draft from a web agent run (SecurityPolicy::sites_unconfirmed)
+// doesn't run: the runner stops on it, the studio shows it.
+inline constexpr char kDraftNeedsReviewMessage[] =
+    "This draft was made by the AI agent from your run. Review its steps "
+    "and confirm its sites in Agent mode before it can run.";
+
 class AutomationSecurity {
  public:
   AutomationSecurity();
@@ -102,7 +108,10 @@ class AutomationSecurity {
   // with the domain whitelist widened by HostsReferencedBy(script.steps)
   // (older / studio-saved scripts were stored with an empty whitelist) and
   // require_approval_for defaulted to {form_submit, payment, login} when
-  // empty.
+  // empty. An unconfirmed draft (sites_unconfirmed) gets neither the
+  // widening nor its stored trust: its own whitelist (empty) at CASUAL. The
+  // runner refuses to run one at all; this keeps any other caller from
+  // reading it as allowed.
   static SecurityPolicy EffectivePolicy(const Script& script);
 
   // Hosts a script's steps visibly target: static http(s) NAVIGATE URLs
@@ -114,7 +123,18 @@ class AutomationSecurity {
   // Saving must never raise trust: |incoming| (a script about to be saved
   // from UI-supplied JSON) keeps |existing|'s trust if the script is
   // already on disk, else starts CASUAL. Only promoteTrust changes trust.
+  // Nor does saving confirm a draft's sites: if |existing| is an
+  // unconfirmed draft, so is |incoming| (only ConfirmDraftSites clears it).
   static void ClampTrustForSave(Script& incoming, const Script* existing);
+
+  // The user confirms the sites of an unconfirmed draft (a real click in
+  // the Agent studio). |shown|, the sites the studio showed them, must be
+  // exactly HostsReferencedBy(script.steps) (in any order) and not empty,
+  // so steps changed in between aren't confirmed blindly. The whitelist
+  // becomes those sites and the draft mark is cleared; trust is unchanged.
+  // Returns false, changing nothing, otherwise. The caller saves.
+  static bool ConfirmDraftSites(Script& script,
+                                const std::vector<std::string>& shown);
 
   // ---- Secret TYPE steps (see kSecretKey) ----
 

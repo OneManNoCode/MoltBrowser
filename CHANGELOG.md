@@ -526,6 +526,16 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   checked and asks you exactly as before. If the model can't write a usable
   plan, the agent works as it did without one. Turn it off at
   `chrome://flags/#molt-agent-planner`.
+- **Teach once, run again: save an agent run as a workflow.** After the web
+  agent finishes a task, "Save as automation" in the chat's agent bar keeps
+  the steps that worked as a draft Agent-mode workflow. Anything the agent
+  typed that looks like a password, code, key or card number isn't saved:
+  the workflow asks you for it each time it runs (card and one-time-code
+  fields you enter yourself). A draft can't run until you have reviewed it
+  in Agent mode and confirmed the sites it may use; it then starts
+  untrusted, so it won't submit forms until you trust it. Runs that used a
+  site's own tool, and runs in MoltNet windows, can't be saved. Workflow
+  runs also no longer save the values you type when you start them.
 
 ### Fixed
 - **OCR of scanned PDFs works.** A PDF with no text layer (`/pdf`, or a PDF

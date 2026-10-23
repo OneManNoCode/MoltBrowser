@@ -10,6 +10,7 @@ source_set("molt_ai") {
     "molt_ai_chat_handler.cc",
     "molt_ai_chat_handler.h",
     "molt_ai_chat_handler_actions.cc",
+    "molt_ai_chat_handler_agent_run.cc",
     "molt_ai_chat_handler_helpers.h",
     "molt_ai_chat_handler_tor.cc",
     "molt_ai_chat_handler_vault.cc",

@@ -155,6 +155,13 @@ struct SecurityPolicy {
   int64_t max_network_bytes = 200LL * 1024 * 1024;  // 200 MB
 
   TrustLevel trust = TrustLevel::CASUAL;
+
+  // A draft saved from a web agent run (agent_run_draft.h): the model chose
+  // its steps, and the user hasn't confirmed the sites it may use yet. Until
+  // AutomationSecurity::ConfirmDraftSites() clears it (a real click in the
+  // Agent studio) the workflow doesn't run at all, whatever |trust| says.
+  // Saving never clears it (ClampTrustForSave). Stored only when true.
+  bool sites_unconfirmed = false;
 };
 
 // One executed step's outcome within a run. Drives the "Runs" review

@@ -66,6 +66,19 @@ agent_actions::ModelReply ToModelReply(GenerationResult& result) {
   return reply;
 }
 
+// What a step acted on, for saving the run as a draft workflow.
+WebAgent::Step::Element StepElement(const ObservedElement& element,
+                                    std::string text) {
+  WebAgent::Step::Element out;
+  out.selector = element.selector;
+  out.kind = element.kind;
+  out.input_type = element.input_type;
+  out.label = element.label;
+  out.field_kind = element.field_kind;
+  out.text = std::move(text);
+  return out;
+}
+
 }  // namespace
 
 WebAgent::PlanUpdate::PlanUpdate() = default;
@@ -351,6 +364,13 @@ void WebAgent::RunAction() {
   DVLOG(1) << "[WebAgent] step=" << (iteration_ + 1)
            << " action=" << pending_step_.action;
 
+  // The page an element action acts on (DispatchAction checked it).
+  const ActionType a = pending_action_.type;
+  if (a == ActionType::kClick || a == ActionType::kType ||
+      a == ActionType::kFillForm) {
+    pending_step_.origin = action_origin_.Serialize();
+  }
+
   switch (pending_action_.type) {
     case ActionType::kNavigate: DoNavigate(pending_action_.url); break;
     case ActionType::kSearch:   DoSearch(); break;
@@ -439,6 +459,7 @@ void WebAgent::DoClick() {
     return;
   }
   action_selector_ = element->selector;
+  pending_step_.elements = {StepElement(*element, std::string())};
   ProbeElements({action_selector_},
                 base::BindOnce(&WebAgent::OnClickProbed,
                                weak_factory_.GetWeakPtr()));
@@ -510,6 +531,7 @@ void WebAgent::DoType() {
     return;
   }
   action_selector_ = element->selector;
+  pending_step_.elements = {StepElement(*element, pending_action_.text)};
   ProbeElements({action_selector_},
                 base::BindOnce(&WebAgent::OnTypeProbed,
                                weak_factory_.GetWeakPtr()));
@@ -522,6 +544,8 @@ void WebAgent::OnTypeProbed(std::vector<ElementProbe> probes) {
     OnActionDone(false, "not_found");
     return;
   }
+  if (!pending_step_.elements.empty())
+    pending_step_.elements[0].field_kind = p.field_kind;
   // Model output never fills a password field, confirmed or not.
   if (p.field_kind == FieldKind::kPassword) {
     OnActionDone(false, kRefusePasswordNote);
@@ -561,11 +585,13 @@ void WebAgent::DoFillForm() {
   // Each field is an observed text field (ParseAction checked that).
   FieldList fields;
   std::vector<std::string> selectors;
+  pending_step_.elements.clear();
   for (const agent_actions::FormFieldValue& f : pending_action_.fields) {
     const ObservedElement* element = observation_.Find(f.ref);
     if (!element || !element->typeable) continue;
     selectors.push_back(element->selector);
     fields.emplace_back(element->selector, f.text);
+    pending_step_.elements.push_back(StepElement(*element, f.text));
   }
   if (fields.empty()) {
     OnActionDone(false, "Filled 0 fields");
@@ -580,6 +606,7 @@ void WebAgent::OnFillFormProbed(FieldList fields,
                                 std::vector<ElementProbe> probes) {
   if (cancelled_) return;
   FieldList keep;
+  std::vector<Step::Element> kept_elements;  // in step with |keep|
   int skipped_passwords = 0;
   FieldKind sensitive = FieldKind::kOrdinary;
   for (size_t i = 0; i < fields.size(); ++i) {
@@ -591,7 +618,12 @@ void WebAgent::OnFillFormProbed(FieldList fields,
     if (agent_safety::IsSensitive(kind))
       sensitive = kind;
     keep.push_back(std::move(fields[i]));
+    if (i < pending_step_.elements.size()) {
+      kept_elements.push_back(pending_step_.elements[i]);
+      kept_elements.back().field_kind = kind;
+    }
   }
+  pending_step_.elements = std::move(kept_elements);
   std::string note;
   if (skipped_passwords > 0) {
     note = " (skipped " + base::NumberToString(skipped_passwords) +
@@ -619,17 +651,22 @@ void WebAgent::FillNow(FieldList fields, std::string note) {
       agent_actions::BuildFillFormScript(action_origin_.Serialize(), fields);
 
   EvalJS(js, base::BindOnce(
-      [](base::WeakPtr<WebAgent> self, std::string note, base::Value v) {
+      [](base::WeakPtr<WebAgent> self, std::string note, size_t expected,
+         base::Value v) {
         if (!self) return;
         if (v.is_string() && v.GetString() == "origin_changed") {
           self->OnActionDone(false, "Not filled: the page changed site");
           return;
         }
         int n = v.is_int() ? v.GetInt() : 0;
+        // Which fields a partial fill missed isn't known: nothing of this
+        // step can be saved in a draft workflow.
+        if (n < 0 || static_cast<size_t>(n) != expected)
+          self->pending_step_.elements.clear();
         self->OnActionDone(n > 0, "Filled " + base::NumberToString(n) +
                                       " fields" + note);
       },
-      weak_factory_.GetWeakPtr(), std::move(note)));
+      weak_factory_.GetWeakPtr(), std::move(note), fields.size()));
 }
 
 void WebAgent::DoScroll() {
@@ -1372,9 +1409,11 @@ WebAgent::Step WebAgent::DescribeAction(
   switch (action.type) {
     case ActionType::kNavigate:
       step.target = action.url;
+      step.url = action.url;
       break;
     case ActionType::kSearch:
       step.target = action.query;
+      step.url = agent_actions::BuildSearchURL(action.query);
       break;
     case ActionType::kClick:
       step.target = describe(action.ref);

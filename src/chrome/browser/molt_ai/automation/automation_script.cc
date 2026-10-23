@@ -264,6 +264,8 @@ base::DictValue SecurityToDict(const SecurityPolicy& p) {
   d.Set("max_navigations", p.max_navigations);
   d.Set("max_network_bytes", static_cast<double>(p.max_network_bytes));
   d.Set("trust", TrustLevelToString(p.trust));
+  if (p.sites_unconfirmed)
+    d.Set("sites_unconfirmed", true);
   return d;
 }
 
@@ -276,6 +278,7 @@ SecurityPolicy SecurityFromDict(const base::DictValue& d) {
   p.max_network_bytes = GetInt64(d, "max_network_bytes",
                                   200LL * 1024 * 1024);
   p.trust = TrustLevelFromString(GetString(d, "trust", "casual"));
+  p.sites_unconfirmed = GetBool(d, "sites_unconfirmed", false);
   return p;
 }
 

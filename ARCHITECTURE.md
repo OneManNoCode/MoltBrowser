@@ -341,6 +341,15 @@ repo/
 - UI is the studio at `molt://ai-agent`, hosted in the side panel
   (`molt_ai/side_panel/agent_side_panel_web_view`), sharing one `kContent` panel
   with AI chat (opening one swaps the other).
+- **Workflows from agent runs.** A web agent run that ended with DONE can be
+  saved from the chat's agent bar as a *draft* workflow
+  (`automation/agent_run_draft.*`, `ui/webui/molt_ai/molt_ai_chat_handler_agent_run.cc`):
+  only the steps that succeeded, as recorder-shaped steps (the agent's own
+  selector plus the label as the text anchor); secret-looking values become
+  `{{variables}}` asked at each run; runs that used a site tool or MoltNet
+  aren't saved. A draft is Casual with `SecurityPolicy::sites_unconfirmed`:
+  it doesn't run, schedule or take trust until the user confirms its sites
+  in the studio with a real click. Design: `docs/design/AGENT_ACTIONS.md` §2.9.
 - **Model decisions are structured.** The web agent (`agents/web_agent.cc`)
   and the runner's `ai_decide` / `ai_extract` / selector recovery ask the
   on-device model for one JSON object under grammar-constrained decoding and
