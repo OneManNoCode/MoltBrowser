@@ -171,7 +171,8 @@ void CheckTracker(const PlanTracker& t, const Reference& r) {
 }
 
 base::Value PageValue(const std::string& json) {
-  std::optional<base::Value> v = base::JSONReader::Read(json);
+  std::optional<base::Value> v =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
   return v ? std::move(*v) : base::Value(json);
 }
 

@@ -119,7 +119,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const FieldKind by_selector = ClassifySelector(selector);
   CHECK(SelectorLooksSensitive(selector) == IsSensitive(by_selector));
 
-  std::optional<base::Value> result = base::JSONReader::Read(probe_json);
+  std::optional<base::Value> result =
+      base::JSONReader::Read(probe_json, base::JSON_PARSE_RFC);
   const std::vector<ElementProbe> probes = ParseElementProbes(
       result ? std::move(*result) : base::Value(), expected);
   CHECK(probes.size() == expected);
