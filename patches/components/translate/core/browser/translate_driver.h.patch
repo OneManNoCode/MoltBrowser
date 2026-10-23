@@ -1,0 +1,29 @@
+MoltBrowser patch for components/translate/core/browser/translate_driver.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/components/translate/core/browser/translate_driver.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/translate/core/browser/translate_driver.h b/components/translate/core/browser/translate_driver.h
+index 02086ee4d49cd1bc225b4e5263582ace939adc80..305a0cea27e6c0d45d56f5d6151b6289604cf0f8 100644
+--- a/components/translate/core/browser/translate_driver.h
++++ b/components/translate/core/browser/translate_driver.h
+@@ -89,6 +89,18 @@ class TranslateDriver {
+   // Returns whether the driver has access to the current page.
+   virtual bool HasCurrentPage() const = 0;
+ 
++  // MoltBrowser: true when this driver translates the page on the device
++  // (molt_ai::page_translate::MoltTranslateDriver) instead of with Google's
++  // translate script. TranslateManager then fetches no script, needs no
++  // API key or network, offers no partial translate, and translates by
++  // itself only for "always translate" (docs/design/PAGE_TRANSLATION.md).
++  virtual bool TranslatesOnDevice() const { return false; }
++
++  // MoltBrowser: true when page translation is off for this tab (MoltNet
++  // windows). TranslateManager then triggers nothing by itself: no bubble,
++  // no address bar icon, no automatic translation.
++  virtual bool TranslationOff() const { return false; }
++
+  protected:
+   const base::ObserverList<LanguageDetectionObserver, true>&
+   language_detection_observers() const {

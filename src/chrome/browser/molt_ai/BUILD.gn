@@ -274,12 +274,19 @@ group("molt_ai") {
     # Rewriter) on the on-device model; chrome_content_browser_client.cc
     # binds blink.mojom.AIManager to it.
     "web_ai",
+
+    # Page translation on the on-device model: chrome_translate_client.cc
+    # creates its driver, translate_service.cc installs its languages.
+    "translate",
   ]
 
   # Desktop-only UI targets (side panel requires views framework)
   if (!is_android && !is_ios) {
     deps += [
       ":molt_ai_side_panel",
+
+      # The Translate bubble's on-device footnote (translate_bubble_view.cc).
+      "translate:footnote_view",
 
       # MoltNet letterboxing in the window (ContentsWebView's hooks).
       "fingerprinting:letterbox_view",

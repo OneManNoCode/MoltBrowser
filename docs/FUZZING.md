@@ -106,6 +106,7 @@ Ordered by exposure: input a page or a model controls comes first.
 
 | Fuzzer | Input (who controls it) | Tier | What it checks beyond "no crash" |
 | --- | --- | --- | --- |
+| `molt_page_translate_fuzzer` | the extract script's result (page renderer), batch replies (model), the write script's answer | stand_ins | the page read back is within every cap, valid UTF-8 without NUL, for this job only; the plan ends (at most 3 generations per piece) with every piece settled and batches within their caps; the batch instruction never holds page text and the user turn reads back exactly; a slot is written at most once, keeps its surrounding whitespace, within the growth cap; the write script carries the writes exactly |
 | `molt_dom_interpreter_fuzzer` | page HTML (page) | std | linear scanners: no timeout on 64 KB; no tag left in the main text; links/buttons/forms are the ones `ParseHTML()` reports |
 | `molt_agent_safety_fuzzer` | page text, script results, selectors (page, workflow file) | stand_ins | sanitized text can't forge the untrusted-content fence or a chat-template token; only http(s) URLs pass; probes keep their count |
 | `molt_agent_actions_fuzzer` | element snapshot (page), model reply (model) | stand_ins | observations capped and clean; every action schema is in the service's subset; accepted actions name listed elements and respect every cap; the chat never types model text into a password field |

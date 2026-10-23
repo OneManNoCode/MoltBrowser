@@ -1,0 +1,34 @@
+MoltBrowser patch for chrome/browser/translate/translate_service.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/chrome/browser/translate/translate_service.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/translate/translate_service.cc b/chrome/browser/translate/translate_service.cc
+index f1706d05c89ad874b582ad5e4fea86d4377656a1..51dd8db46914a1b0e2026cbaef47314a7c55ef98 100644
+--- a/chrome/browser/translate/translate_service.cc
++++ b/chrome/browser/translate/translate_service.cc
+@@ -13,6 +13,7 @@
+ #include "base/strings/string_util.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
++#include "chrome/browser/molt_ai/translate/page_translate_plan.h"  // MoltBrowser
+ #include "chrome/browser/net/system_network_context_manager.h"
+ #include "chrome/browser/translate/chrome_translate_client.h"
+ #include "chrome/common/chrome_switches.h"
+@@ -60,6 +61,15 @@ void TranslateService::Initialize() {
+   if (g_translate_service)
+     return;
+ 
++  // MoltBrowser: Translate offers the on-device translator's languages, and
++  // its list is never fetched from Google. Before requests are allowed
++  // below, so none is ever made (docs/design/PAGE_TRANSLATION.md).
++  if (translate::TranslateLanguageList* language_list =
++          translate::TranslateDownloadManager::GetInstance()->language_list()) {
++    language_list->SetLocalLanguages(
++        molt_ai::page_translate::PageTranslateLanguageCodes());
++  }
++
+   g_translate_service = new TranslateService;
+   // Initialize the allowed state for resource requests.
+   g_translate_service->OnResourceRequestsAllowed();

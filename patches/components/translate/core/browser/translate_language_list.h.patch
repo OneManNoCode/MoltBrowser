@@ -1,0 +1,23 @@
+MoltBrowser patch for components/translate/core/browser/translate_language_list.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/components/translate/core/browser/translate_language_list.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/translate/core/browser/translate_language_list.h b/components/translate/core/browser/translate_language_list.h
+index ebd8c4b500b5b3dfe92c6739b7f7da09a9aab563..aafbf84cf2c286bb63f18a64e60ef0c05a9a6fbb 100644
+--- a/components/translate/core/browser/translate_language_list.h
++++ b/components/translate/core/browser/translate_language_list.h
+@@ -70,6 +70,12 @@ class TranslateLanguageList {
+   // pending request.
+   void SetResourceRequestsAllowed(bool allowed);
+ 
++  // MoltBrowser: makes |languages| (Translate's codes) the whole list, for
++  // good: the list is never fetched from the translate server afterwards.
++  // TranslateService::Initialize() calls it with the on-device translator's
++  // languages (docs/design/PAGE_TRANSLATION.md).
++  void SetLocalLanguages(const std::vector<std::string>& languages);
++
+   using EventCallbackList =
+       base::RepeatingCallbackList<void(const TranslateEventDetails&)>;
+   using EventCallback = EventCallbackList::CallbackType;

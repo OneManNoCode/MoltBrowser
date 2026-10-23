@@ -87,6 +87,22 @@ fuzzer_test("molt_web_ai_site_permissions_fuzzer") {
 
 # --- Page text ---------------------------------------------------------------
 
+# Page translation: the isolated world's result (the page's renderer), the
+# model's batch replies, the write script's answer.
+fuzzer_test("molt_page_translate_fuzzer") {
+  sources = [ "molt_page_translate_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/translate:io",
+    "//chrome/browser/molt_ai/translate:logic",
+    "//chrome/browser/molt_ai/web_ai:logic",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+  dict = "dicts/page_translate.dict"
+  seed_corpus = "corpus/molt_page_translate_fuzzer"
+  libfuzzer_options = [ "max_len=65536" ]
+}
+
 fuzzer_test("molt_dom_interpreter_fuzzer") {
   sources = [ "molt_dom_interpreter_fuzzer.cc" ]
   deps = [
@@ -285,6 +301,7 @@ group("fuzzers") {
     ":molt_memory_query_fuzzer",
     ":molt_memory_snippet_fuzzer",
     ":molt_onion_location_fuzzer",
+    ":molt_page_translate_fuzzer",
     ":molt_release_manifest_fuzzer",
     ":molt_stream_validator_fuzzer",
     ":molt_tor_control_protocol_fuzzer",

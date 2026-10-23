@@ -90,6 +90,8 @@ chrome/browser/site_protection/site_familiarity_utils.cc.patch
 chrome/browser/ssl/https_upgrades_interceptor.cc.patch
 chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc.patch
 chrome/browser/storage/persistent_storage_permission_context.cc.patch
+chrome/browser/translate/chrome_translate_client.cc.patch
+chrome/browser/translate/translate_service.cc.patch
 chrome/browser/ui/BUILD.gn.patch
 chrome/browser/ui/actions/chrome_action_id.h.patch
 chrome/browser/ui/bookmarks/bookmark_stats.cc.patch
@@ -125,6 +127,7 @@ chrome/browser/ui/views/toolbar/BUILD.gn.patch
 chrome/browser/ui/views/toolbar/toolbar_button.cc.patch
 chrome/browser/ui/views/toolbar/toolbar_view.cc.patch
 chrome/browser/ui/views/toolbar/toolbar_view.h.patch
+chrome/browser/ui/views/translate/translate_bubble_view.cc.patch
 chrome/browser/ui/webui/BUILD.gn.patch
 chrome/browser/ui/webui/chrome_web_ui_configs.cc.patch
 chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc.patch
@@ -180,6 +183,10 @@ components/ssl_errors_strings.grdp.patch
 components/supervised_user_strings.grdp.patch
 components/sync/service/sync_prefs.cc.patch
 components/sync_ui_strings.grdp.patch
+components/translate/core/browser/translate_driver.h.patch
+components/translate/core/browser/translate_language_list.cc.patch
+components/translate/core/browser/translate_language_list.h.patch
+components/translate/core/browser/translate_manager.cc.patch
 content/browser/client_hints/client_hints.cc.patch
 content/browser/service_worker/fake_service_worker.cc.patch
 content/browser/service_worker/fake_service_worker.h.patch

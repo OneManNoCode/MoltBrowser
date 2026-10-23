@@ -1,0 +1,135 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+#
+# Translating a whole page with the user's on-device model instead of
+# Google Translate. Hooked from ChromeTranslateClient (the driver),
+# TranslateManager (TranslateDriver::TranslatesOnDevice()), TranslateService
+# (the language list) and TranslateBubbleView (the footnote).
+# Design: docs/design/PAGE_TRANSLATION.md.
+#
+# Nothing here fetches anything: the model runs in the sandboxed inference
+# service through the web AI backend, and the language list is the
+# Translator API's table.
+
+# The plan (pieces, batches, retries), the languages, the reports and the
+# footnote's text. Standard library only, so the standalone test build
+# links it too.
+source_set("logic") {
+  sources = [
+    "page_translate_messages.cc",
+    "page_translate_messages.h",
+    "page_translate_plan.cc",
+    "page_translate_plan.h",
+  ]
+  public_deps = [ "//chrome/browser/molt_ai/web_ai:logic" ]
+}
+
+# The isolated-world script, the checks on what it returns and the reading
+# of the model's batch replies. base::Value only (no content/), so
+# molt_ai_unittests tests it and molt_page_translate_fuzzer fuzzes it.
+source_set("io") {
+  sources = [
+    "page_translate_io.cc",
+    "page_translate_io.h",
+    "page_translate_script.cc",
+    "page_translate_script.h",
+  ]
+  public_deps = [ ":logic" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:stream_filters",
+  ]
+}
+
+# One page translation: reads the page through a PageScriptRunner,
+# translates on the web AI backend, writes back. No content/, so
+# molt_ai_unittests drives it with a fake page and backend.
+source_set("job") {
+  sources = [
+    "page_translation_job.cc",
+    "page_translation_job.h",
+  ]
+  public_deps = [
+    ":io",
+    ":logic",
+    "//base",
+
+    # WebAIBackend (web_ai_backend.h).
+    "//chrome/browser/molt_ai/web_ai:manager",
+  ]
+}
+
+# The browser side: the driver ChromeTranslateClient creates (with the
+# content/ PageScriptRunner) and the per-tab status.
+source_set("translate") {
+  sources = [
+    "molt_translate_driver.cc",
+    "molt_translate_driver.h",
+    "page_translate_status.cc",
+    "page_translate_status.h",
+  ]
+  public_deps = [
+    ":job",
+    "//components/translate/content/browser",
+  ]
+  deps = [
+    "//base",
+
+    # The web AI backend (BrowserAIRuntime, its scheduler).
+    "//chrome/browser/molt_ai/web_ai",
+
+    # molt_net_profile_id.h (header-only IsMoltNetProfile()).
+    "//chrome/browser/molt_ai/tor",
+    "//chrome/browser/profiles:profile",
+
+    # chrome_isolated_world_ids.h.
+    "//chrome/common",
+    "//components/translate/core/browser",
+    "//components/translate/core/common",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
+# The Translate bubble's footnote (desktop: views).
+source_set("footnote_view") {
+  sources = [
+    "page_translate_footnote_view.cc",
+    "page_translate_footnote_view.h",
+  ]
+  public_deps = [ ":translate" ]
+  deps = [
+    "//base",
+
+    # kChromeUIMoltAIURL (webui_url_constants.h).
+    "//chrome/common",
+    "//content/public/browser",
+    "//content/public/common",
+    "//ui/base",
+    "//ui/gfx",
+    "//ui/views",
+    "//url",
+  ]
+}
+
+# Run via //chrome/browser/molt_ai/test:molt_ai_unittests.
+source_set("unit_tests") {
+  testonly = true
+  sources = [
+    "page_translate_io_unittest.cc",
+    "page_translate_messages_unittest.cc",
+    "page_translate_plan_unittest.cc",
+    "page_translation_job_unittest.cc",
+  ]
+  deps = [
+    ":io",
+    ":job",
+    ":logic",
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/molt_ai/web_ai:logic",
+    "//chrome/browser/molt_ai/web_ai:manager",
+    "//skia",
+    "//testing/gtest",
+  ]
+}
