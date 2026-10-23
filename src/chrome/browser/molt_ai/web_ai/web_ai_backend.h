@@ -94,6 +94,12 @@ class WebAIBackend {
   // Answers asynchronously, never re-entrantly.
   virtual void GetDeviceFacts(DeviceCallback callback) = 0;
 
+  // The user's switch for these APIs ("web_ai_apis" in settings.json, which
+  // molt://ai-settings sets), as last read or set: what every call of an
+  // existing session is checked against (MaySessionServe()). Backends
+  // without the switch (test fakes) report it on.
+  virtual bool WebApisSwitchOn();
+
   // Loads the model pages use (PickWebModel(), preferring one that sees
   // images if |wants_images|) if none is loaded. Only called once the user
   // allowed the site.

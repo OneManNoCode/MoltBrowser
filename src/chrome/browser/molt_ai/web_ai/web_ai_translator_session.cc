@@ -42,7 +42,7 @@ TranslatorSession::TranslatorSession(
     uint64_t id,
     TranslatorPair pair,
     mojo::PendingReceiver<blink::mojom::Translator> receiver)
-    : WebAISession(manager, id),
+    : WebAISession(manager, id, WebAIApi::kTranslator),
       pair_(pair),
       receiver_(this, std::move(receiver)) {
   // Translator.destroy() and garbage collection drop the pipe.
@@ -74,14 +74,9 @@ void TranslatorSession::Execute(
         pending_responder) {
   Request request;
   request.responder.Bind(std::move(pending_responder));
-  // As upstream's Translator checks TranslatorAPIAllowed on every call: a
-  // policy (or the On-device AI switch) turned off since create() stops
-  // new translations.
-  if (!manager().IsContextStillEligible(WebAIApi::kTranslator)) {
-    request.responder->OnError(
-        ModelStreamingResponseStatus::kErrorGenericFailure, nullptr);
-    return;
-  }
+  // As upstream's Translator checks TranslatorAPIAllowed on every call, a
+  // policy, a switch or the site's answer turned off since create() stops
+  // new translations (Enqueue(), and between the pieces of one).
   // Sized before anything is copied. Blink requires the quota info with
   // kErrorInputTooLarge (QuotaExceededError's requested and quota).
   const uint32_t quota = kTranslatorInputQuota;

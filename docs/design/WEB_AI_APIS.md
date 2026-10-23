@@ -1022,9 +1022,9 @@ and only that page.
 - **Limits:** a call holds at most 9216 estimated tokens (the writing APIs'
   number), else `kErrorInputTooLarge` with the requested and allowed
   counts (Blink's `QuotaExceededError`). Calls queue
-  per Translator (32), generations per site and in total (§6). Each call
-  re-reads the policies and the On-device AI switch, as upstream's
-  Translator re-reads `TranslatorAPIAllowed`.
+  per Translator (32), generations per site and in total (§6). Each call,
+  and each piece, re-reads the policies, the switches and the site's
+  answer, as upstream's Translator re-reads `TranslatorAPIAllowed` (§11).
 
 ### 10.8 No component-updater request from a page
 
@@ -1065,7 +1065,7 @@ Google. It now keeps upstream's default, on:
   still needs the user's yes;
 - it stays the enterprise kill switch: `TranslatorAPIAllowed` = false
   makes the Translator `"unavailable"`, `create()` fail with "disallowed by
-  policy" and running Translators refuse new calls. Because the Translator
+  policy" and running Translators end (§11). Because the Translator
   now runs on the same local model, `BuiltInAIAPIsEnabled` = false and
   `GenAILocalFoundationalModelSettings` = 1 turn it off too.
 
@@ -1124,21 +1124,38 @@ Google. It now keeps upstream's default, on:
 | Policies `BuiltInAIAPIsEnabled` = false, `GenAILocalFoundationalModelSettings` = 1 | same |
 | `chrome://flags` `#prompt-api` (with `#prompt-api-multimodal-input`, which also enables it), `#summarizer-api`, `#writer-api`, `#rewriter-api` set to Disabled; `--disable-features=TranslationAPI` | the interface disappears |
 | Permissions policy (`allow="language-model"`, `allow="translator"` etc.) | as upstream: cross-origin iframes need it |
-| Policy `TranslatorAPIAllowed` = false | the Translator alone is `"unavailable"`; running Translators refuse new calls |
+| Policy `TranslatorAPIAllowed` = false | the Translator alone is `"unavailable"`; running Translators end |
+
+**Sessions a page already has.** Every switch above that turns the APIs
+off for a site (its answer, `"web_ai_apis"`, the On-device AI switch, the
+policies) also applies to the sessions it already has, as it does to a
+new `create()`:
+
+- **Every call is checked again** (`MaySessionServe()`), when it arrives,
+  when it starts after waiting behind another, and between the pieces of
+  a long translation. Off, it fails with Blink's generic `UnknownError`,
+  the same whatever turned it off, as `create()` answers them alike, and
+  no generation starts. A `create()` whose model was loading fails too.
+- **The change ends the sessions** it turns off, cancelling a running
+  generation (the page keeps the text it already received). The manager
+  hears of the site's answer, of the prefs behind the policies and the
+  On-device AI switch, and of `"web_ai_apis"` set from `molt://ai-settings`
+  (a hand edit of `settings.json` is noticed at the next device-facts
+  read).
 
 ## 12. Tests and verification
 
 In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
 
-- `web_ai_policy_unittest.cc` (22): the availability table, including an
+- `web_ai_policy_unittest.cc` (23): the availability table, including an
   exhaustive check of invariants over every input combination (an
   unallowed site never sees "available", MoltNet and workers always see
-  "unavailable", ...), create actions, buckets, the estimator and its
-  size shortcut, saturation, sampling clamps, language tags, model pick
-  (with the preference for a model that sees images), image sources (the
-  64-megapixel cap at its edges, hostile sizes), and the scheduler (one at
-  a time, foreground first, sites in turn, caps, cancel, image holds per
-  site and in total).
+  "unavailable", ...), create actions, what keeps a session serving,
+  buckets, the estimator and its size shortcut, saturation, sampling
+  clamps, language tags, model pick (with the preference for a model that
+  sees images), image sources (the 64-megapixel cap at its edges, hostile
+  sizes), and the scheduler (one at a time, foreground first, sites in
+  turn, caps, cancel, image holds per site and in total).
 - `web_ai_site_permissions_unittest.cc` (19): key shapes, answers, the
   pause (third close, its end to the millisecond, the count kept, an
   answer clearing it, clock changes either way), the settings list, exact
@@ -1168,11 +1185,15 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   instruction (names the languages, never holds page text), the response
   schema accepted by the inference service's converter, and the cleanup
   (whitespace, quotation marks added or kept, empty replies).
-- `molt_ai_manager_unittest.cc` (84): the mojo surface over real pipes with
+- `molt_ai_manager_unittest.cc` (89): the mojo surface over real pipes with
   a fake runtime and a fake environment: availability per state, MoltNet
   never calling the runtime, policies, permissions policy as a bad message,
   consent (allow, block, dismiss, needs-model), an answer taken back
-  (sessions end; a `create()` whose model is loading fails), aborted
+  (sessions end; a `create()` whose model is loading fails), the APIs
+  turned off after `create()` in each of five ways (every call of all five
+  APIs refused alike, a waiting request and the next translation piece
+  never started, the sessions ended, the Translator's policy ending only
+  Translators), aborted
   `create()`, quotas, overflow, append, abort and destroy cancelling the
   generation, the document going away, clone, measure, unsupported
   prompts, throttling and failures, queue limits, and all three writing
@@ -1313,9 +1334,10 @@ in every window, with Translate still detecting page languages.
 - Incognito's answers aren't listed on the settings page (they go when the
   window closes).
 - The switch is browser-wide (`settings.json`), the answers per profile.
-- Removing an allowed site ends its sessions; an answer changed while a
-  generation is running cancels it, but the page still holds the text it
-  already received.
+- Turning the APIs off for a site (its answer, a switch, a policy) ends
+  its sessions and cancels a running generation, but the page still holds
+  the text it already received. A hand edit of `settings.json` reaches
+  sessions only at the next device-facts read.
 - Regex `responseConstraint`, `prefix`, audio and tools are
   unsupported; so are images in `initialPrompts`. Image input needs a
   model with a vision projector: the registry's (§5.1) is offered only

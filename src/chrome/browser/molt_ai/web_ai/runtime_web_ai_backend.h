@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
@@ -59,6 +60,7 @@ class RuntimeWebAIBackend : public WebAIBackend {
 
   // WebAIBackend:
   void GetDeviceFacts(DeviceCallback callback) override;
+  bool WebApisSwitchOn() override;
   void PrepareModel(bool wants_images, PrepareCallback callback) override;
   uint64_t Generate(GenerationJob job,
                     ChunkCallback on_chunk,
@@ -71,10 +73,20 @@ class RuntimeWebAIBackend : public WebAIBackend {
   bool TryHoldImages(const std::string& site_key, size_t count) override;
   void ReleaseImages(const std::string& site_key, size_t count) override;
 
-  // settings.json changed (molt://ai-settings turned the APIs on or off):
+  // molt://ai-settings wrote |enabled| to settings.json's "web_ai_apis":
+  // sessions are checked against it at once (WebApisSwitchOn()), the
+  // device facts are read again, and the observers hear of it.
+  void SetWebApisSwitch(bool enabled);
+
+  // settings.json may have changed (molt://ai-settings couldn't write it):
   // the next request reads the device facts again instead of using the
   // cached ones.
   void InvalidateDeviceFacts();
+
+  // Runs |on_change| when the "web_ai_apis" switch changes (set from
+  // molt://ai-settings, or read changed from a hand edit).
+  base::CallbackListSubscription ObserveWebApisSwitch(
+      base::RepeatingClosure on_change);
 
  private:
   friend class base::NoDestructor<RuntimeWebAIBackend>;
@@ -92,6 +104,8 @@ class RuntimeWebAIBackend : public WebAIBackend {
   BrowserAIRuntime& runtime();
 
   void OnDeviceFacts(DeviceFacts facts);
+  // Sets the switch's value; tells the observers if it changed.
+  void UpdateWebApisSwitch(bool enabled);
   void OnModelPrepared(PrepareResult result);
   void MaybeStartNext();
   void OnJobChunk(uint64_t id, std::string text);
@@ -123,6 +137,10 @@ class RuntimeWebAIBackend : public WebAIBackend {
   // waiters but don't cache it.
   bool discard_pending_facts_ = false;
   std::vector<DeviceCallback> device_waiters_;
+
+  // The "web_ai_apis" switch, as last read or set (on until read).
+  bool web_apis_switch_ = true;
+  base::RepeatingClosureList web_apis_switch_observers_;
 
   bool prepare_pending_ = false;
   std::vector<PrepareCallback> prepare_waiters_;

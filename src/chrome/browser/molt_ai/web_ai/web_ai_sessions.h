@@ -34,6 +34,7 @@
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "chrome/browser/molt_ai/web_ai/molt_ai_manager.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_backend.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_conversation.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_prompts.h"
@@ -50,8 +51,6 @@
 
 namespace molt_ai::web_ai {
 
-class MoltAIManager;
-
 // A page's bitmap (decoded by Blink) the model may be shown, scaled down:
 // it has pixels, and IsUsableImageSource() holds for its size. Checked
 // before any work is done on it; mojo's bitmap traits already refuse a
@@ -60,7 +59,7 @@ bool IsUsableBitmapForModel(const SkBitmap& bitmap);
 
 class WebAISession {
  public:
-  WebAISession(MoltAIManager& manager, uint64_t id);
+  WebAISession(MoltAIManager& manager, uint64_t id, WebAIApi api);
   WebAISession(const WebAISession&) = delete;
   WebAISession& operator=(const WebAISession&) = delete;
   // Cancels the running generation and fails every waiting request with
@@ -68,6 +67,7 @@ class WebAISession {
   virtual ~WebAISession();
 
   uint64_t id() const { return id_; }
+  WebAIApi api() const { return api_; }
 
  protected:
   // A request waiting in, or at the head of, the session's queue.
@@ -103,7 +103,8 @@ class WebAISession {
     size_t next_piece = 0;
   };
 
-  // Queues |request| (failing it if kMaxQueuedPerSession wait already).
+  // Queues |request| (failing it if the API was turned off since create(),
+  // MoltAIManager::MayServe(), or if kMaxQueuedPerSession wait already).
   // |bitmaps|, one per entry of |request.image_turns|, are held and turned
   // into model images first (failing the request with a generic error over
   // the image caps, and as an invalid request if they can't be used).
@@ -157,8 +158,15 @@ class WebAISession {
   // requests' and its context's (never takes more).
   void SyncHeldImages();
 
+  // MoltAIManager::MayServe() for the session's API, read now: checked when
+  // a request arrives, when it starts and between the generations of one
+  // request, so a request fails once the APIs are turned off for the page
+  // (a switch, a policy, the site's answer taken back), as create() would.
+  bool MayServe();
+
   const raw_ref<MoltAIManager> manager_;
   const uint64_t id_;
+  const WebAIApi api_;
   const std::string site_key_;
   std::deque<Request> queue_;
   std::optional<Request> running_;
@@ -250,6 +258,7 @@ class WritingSession : public WebAISession {
  public:
   WritingSession(MoltAIManager& manager,
                  uint64_t id,
+                 WebAIApi api,
                  std::string shared_context);
   ~WritingSession() override;
 

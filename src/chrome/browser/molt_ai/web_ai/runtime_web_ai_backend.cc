@@ -204,18 +204,43 @@ DeviceFacts RuntimeWebAIBackend::ReadDeviceFacts(BrowserAIRuntime* runtime) {
   return facts;
 }
 
+bool RuntimeWebAIBackend::WebApisSwitchOn() {
+  return web_apis_switch_;
+}
+
+void RuntimeWebAIBackend::SetWebApisSwitch(bool enabled) {
+  InvalidateDeviceFacts();
+  UpdateWebApisSwitch(enabled);
+}
+
 void RuntimeWebAIBackend::InvalidateDeviceFacts() {
   device_facts_.reset();
   discard_pending_facts_ = device_facts_pending_;
 }
 
+base::CallbackListSubscription RuntimeWebAIBackend::ObserveWebApisSwitch(
+    base::RepeatingClosure on_change) {
+  return web_apis_switch_observers_.Add(std::move(on_change));
+}
+
+void RuntimeWebAIBackend::UpdateWebApisSwitch(bool enabled) {
+  if (web_apis_switch_ == enabled) {
+    return;
+  }
+  web_apis_switch_ = enabled;
+  web_apis_switch_observers_.Notify();
+}
+
 void RuntimeWebAIBackend::OnDeviceFacts(DeviceFacts facts) {
   device_facts_pending_ = false;
   if (discard_pending_facts_) {
+    // Read before the switch was set: neither cached nor taken as the
+    // switch's value.
     discard_pending_facts_ = false;
   } else {
     device_facts_ = facts;
     device_facts_time_ = base::TimeTicks::Now();
+    UpdateWebApisSwitch(facts.web_apis_enabled);
   }
   std::vector<DeviceCallback> waiters;
   waiters.swap(device_waiters_);

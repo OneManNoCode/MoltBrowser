@@ -85,10 +85,12 @@ class WebAIEnvironment {
   virtual std::string GetSiteKey() = 0;
   // The page is visible (its requests go first).
   virtual bool IsForeground() = 0;
-  // Calls |on_change| after the user's answers may have changed, for any
-  // site (the settings page, Clear browsing data, a prompt in another tab).
-  // The default never calls it.
-  virtual void ObserveConsent(base::RepeatingClosure on_change) {}
+  // Calls |on_change| after anything MaySessionServe() reads may have
+  // changed: the user's answers, for any site (the settings page, Clear
+  // browsing data, a prompt in another tab), the policies, Chromium's
+  // On-device AI switch and the "web_ai_apis" switch. The default never
+  // calls it.
+  virtual void ObserveChanges(base::RepeatingClosure on_change) {}
 };
 
 class MoltAIManager : public base::SupportsUserData::Data,
@@ -168,9 +170,9 @@ class MoltAIManager : public base::SupportsUserData::Data,
   WebAIBackend* backend() { return backend_; }
   const std::string& site_key();
   bool IsForeground();
-  // The context may still use |api| (IsContextEligible(): the feature,
-  // policies, the On-device AI switch), read now.
-  bool IsContextStillEligible(WebAIApi api);
+  // A session for |api| may still serve a request (MaySessionServe(): the
+  // feature, the policies, the switches and the site's answer), read now.
+  bool MayServe(WebAIApi api);
   // Ends session |session_id| (destroy() or its pipe closed). It is
   // deleted asynchronously, never while it is still on the stack.
   void CloseSession(uint64_t session_id);
@@ -214,10 +216,10 @@ class MoltAIManager : public base::SupportsUserData::Data,
                                  AvailabilityCallback callback,
                                  DeviceFacts device);
 
-  // The user's answers changed: if this site's is no longer Allow (removed
-  // or blocked in molt://ai-settings, cleared), its sessions end.
-  void OnConsentChanged();
-  void CloseSessionsIfNotAllowed();
+  // The user's answers, a switch or a policy changed: the sessions that
+  // may no longer serve (MayServe()) end, cancelling their generations.
+  void OnAccessChanged();
+  void CloseSessionsNoLongerServing();
 
   // create(): availability, the user's consent, then the model.
   void StartCreate(std::unique_ptr<CreateRequest> request);

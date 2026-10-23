@@ -78,6 +78,13 @@ bool IsContextEligible(const ContextFacts& c) {
          !c.moltnet && c.is_document && c.http_top_level;
 }
 
+bool MaySessionServe(const ContextFacts& context,
+                     bool web_apis_enabled,
+                     SiteConsent consent) {
+  return IsContextEligible(context) && web_apis_enabled &&
+         consent == SiteConsent::kAllowed;
+}
+
 AvailabilityDecision DecideAvailability(const AvailabilityInput& input) {
   const ContextFacts& c = input.context;
   const DeviceFacts& d = input.device;

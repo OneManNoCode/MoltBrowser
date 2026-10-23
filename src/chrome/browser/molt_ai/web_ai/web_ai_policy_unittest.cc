@@ -124,6 +124,41 @@ TEST(WebAIPolicyTest, AllowedWithoutAModelIsDownloadable) {
   EXPECT_EQ(DecideCreateAction(in), CreateAction::kNeedsModel);
 }
 
+// A session serves only while everything create() required that can be
+// turned off afterwards is still on.
+TEST(WebAIPolicyTest, ASessionServesOnlyWhileTheAPIsStayOn) {
+  const ContextFacts on = Ready().context;
+  EXPECT_TRUE(MaySessionServe(on, true, SiteConsent::kAllowed));
+  EXPECT_FALSE(
+      MaySessionServe(on, /*web_apis_enabled=*/false, SiteConsent::kAllowed));
+  EXPECT_FALSE(MaySessionServe(on, true, SiteConsent::kAsk));
+  EXPECT_FALSE(MaySessionServe(on, true, SiteConsent::kBlocked));
+  for (int field = 0; field < 6; ++field) {
+    ContextFacts off = on;
+    switch (field) {
+      case 0:
+        off.feature_enabled = false;
+        break;
+      case 1:
+        off.enterprise_allowed = false;
+        break;
+      case 2:
+        off.user_enabled = false;
+        break;
+      case 3:
+        off.moltnet = true;
+        break;
+      case 4:
+        off.is_document = false;
+        break;
+      case 5:
+        off.http_top_level = false;
+        break;
+    }
+    EXPECT_FALSE(MaySessionServe(off, true, SiteConsent::kAllowed)) << field;
+  }
+}
+
 TEST(WebAIPolicyTest, AnInstalledModelCountsEvenIfNoCatalogueModelFits) {
   AvailabilityInput in = Ready();
   in.device.some_model_fits = false;

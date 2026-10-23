@@ -10,4 +10,8 @@ GenerationJob::GenerationJob(GenerationJob&&) = default;
 GenerationJob& GenerationJob::operator=(GenerationJob&&) = default;
 GenerationJob::~GenerationJob() = default;
 
+bool WebAIBackend::WebApisSwitchOn() {
+  return true;
+}
+
 }  // namespace molt_ai::web_ai

@@ -116,6 +116,17 @@ struct DeviceFacts {
 // LanguageModel.params() answers only then.
 bool IsContextEligible(const ContextFacts& context);
 
+// Whether a session made by create() may still serve a request (every
+// prompt(), append(), summarize(), write(), rewrite() and translate(),
+// read when it arrives and when it starts): what create() required that
+// can be turned off afterwards, read now. That is the context's checks
+// (the feature, the policies, Chromium's On-device AI switch), the user's
+// "web_ai_apis" switch (|web_apis_enabled|) and the site's answer, which
+// must still be Allow. The device's own facts can't change for a session.
+bool MaySessionServe(const ContextFacts& context,
+                     bool web_apis_enabled,
+                     SiteConsent consent);
+
 struct AvailabilityInput {
   ContextFacts context;
   DeviceFacts device;
