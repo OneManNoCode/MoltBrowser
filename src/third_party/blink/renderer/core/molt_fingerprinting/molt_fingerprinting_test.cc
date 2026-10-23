@@ -313,43 +313,49 @@ TEST_F(MoltFingerprintingTest, ReadPixelsFarblesNarrowAndFloatFormats) {
   EXPECT_EQ(integer, std::vector<uint8_t>(4096, 77));
 }
 
-// A PIXEL_PACK buffer mapped the way the command-buffer client maps it.
+// A PIXEL_PACK buffer read back and written the way the command-buffer
+// client does it. set_fail_reads(): reads as the client does when it gets no
+// shared memory, leaving `data` untouched.
 class PackBufferGLES2 : public FakeGLES2Interface {
  public:
   explicit PackBufferGLES2(std::vector<uint8_t> contents)
       : buffer_(std::move(contents)) {}
 
-  void* MapBufferRange(GLenum target,
-                       GLintptr offset,
-                       GLsizeiptr size,
-                       GLbitfield access) override {
+  void GetBufferSubDataCHROMIUM(GLenum target,
+                                GLintptr offset,
+                                GLsizeiptr size,
+                                void* data) override {
     EXPECT_EQ(target, static_cast<GLenum>(GL_PIXEL_PACK_BUFFER));
-    EXPECT_EQ(access,
-              static_cast<GLbitfield>(GL_MAP_READ_BIT | GL_MAP_WRITE_BIT));
-    if (offset < 0 || size <= 0 ||
+    ++reads_;
+    if (fail_reads_ || offset < 0 || size <= 0 ||
         static_cast<size_t>(offset + size) > buffer_.size()) {
-      return nullptr;
+      return;
     }
-    ++maps_;
-    map_offset_ = static_cast<size_t>(offset);
-    shm_.assign(buffer_.begin() + offset, buffer_.begin() + offset + size);
-    return shm_.data();
+    std::copy_n(buffer_.begin() + offset, size, static_cast<uint8_t*>(data));
   }
 
-  GLboolean UnmapBuffer(GLenum target) override {
-    std::copy(shm_.begin(), shm_.end(),
-              buffer_.begin() + static_cast<ptrdiff_t>(map_offset_));
-    return GL_TRUE;
+  void BufferSubData(GLenum target,
+                     GLintptr offset,
+                     GLsizeiptr size,
+                     const void* data) override {
+    EXPECT_EQ(target, static_cast<GLenum>(GL_PIXEL_PACK_BUFFER));
+    ++writes_;
+    ASSERT_GE(offset, 0);
+    ASSERT_LE(static_cast<size_t>(offset + size), buffer_.size());
+    std::copy_n(static_cast<const uint8_t*>(data), size,
+                buffer_.begin() + offset);
   }
 
+  void set_fail_reads() { fail_reads_ = true; }
   const std::vector<uint8_t>& buffer() const { return buffer_; }
-  int maps() const { return maps_; }
+  int reads() const { return reads_; }
+  int writes() const { return writes_; }
 
  private:
   std::vector<uint8_t> buffer_;
-  std::vector<uint8_t> shm_;
-  size_t map_offset_ = 0;
-  int maps_ = 0;
+  bool fail_reads_ = false;
+  int reads_ = 0;
+  int writes_ = 0;
 };
 
 TEST_F(MoltFingerprintingTest, PixelPackBufferMatchesClientMemoryReads) {
@@ -366,20 +372,41 @@ TEST_F(MoltFingerprintingTest, PixelPackBufferMatchesClientMemoryReads) {
     contents[i] = static_cast<uint8_t>((i * 131) ^ (i >> 3));
   }
   std::vector<uint8_t> expected = contents;
-  FarbleReadPixelsWith(farbler, GL_RGBA, GL_UNSIGNED_BYTE, kWidth, kHeight,
-                       pack, base::span(expected).subspan(kOffset));
+  FarbleReadPixelsWith(
+      farbler, GL_RGBA, GL_UNSIGNED_BYTE, kWidth, kHeight, pack,
+      base::span(expected).subspan(static_cast<size_t>(kOffset)));
   ASSERT_NE(expected, contents);
   PackBufferGLES2 gl(contents);
   FarblePixelPackBufferWith(farbler, &gl, GL_RGBA, GL_UNSIGNED_BYTE, kWidth,
                             kHeight, pack, kOffset);
   EXPECT_EQ(gl.buffer(), expected);
-  EXPECT_EQ(gl.maps(), 1);
-  // Formats that aren't farbled never map.
+  EXPECT_EQ(gl.reads(), 1);
+  EXPECT_EQ(gl.writes(), 1);
+  // Formats that aren't farbled are never read back.
   PackBufferGLES2 untouched(contents);
   FarblePixelPackBufferWith(farbler, &untouched, GL_RGBA_INTEGER,
                             GL_UNSIGNED_INT, kWidth, kHeight, pack, kOffset);
-  EXPECT_EQ(untouched.maps(), 0);
+  EXPECT_EQ(untouched.reads(), 0);
   EXPECT_EQ(untouched.buffer(), contents);
+  // A read back that didn't happen writes nothing.
+  PackBufferGLES2 failing(contents);
+  failing.set_fail_reads();
+  FarblePixelPackBufferWith(farbler, &failing, GL_RGBA, GL_UNSIGNED_BYTE,
+                            kWidth, kHeight, pack, kOffset);
+  EXPECT_EQ(failing.reads(), 2);
+  EXPECT_EQ(failing.writes(), 0);
+  EXPECT_EQ(failing.buffer(), contents);
+  // Rows that really are all zeros are farbled like any others.
+  const std::vector<uint8_t> zeros(contents.size(), 0);
+  std::vector<uint8_t> expected_zeros = zeros;
+  FarbleReadPixelsWith(
+      farbler, GL_RGBA, GL_UNSIGNED_BYTE, kWidth, kHeight, pack,
+      base::span(expected_zeros).subspan(static_cast<size_t>(kOffset)));
+  PackBufferGLES2 black(zeros);
+  FarblePixelPackBufferWith(farbler, &black, GL_RGBA, GL_UNSIGNED_BYTE, kWidth,
+                            kHeight, pack, kOffset);
+  EXPECT_EQ(black.reads(), 2);
+  EXPECT_EQ(black.buffer(), expected_zeros);
 }
 
 }  // namespace

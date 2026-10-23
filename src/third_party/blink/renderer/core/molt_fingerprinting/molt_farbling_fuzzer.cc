@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
