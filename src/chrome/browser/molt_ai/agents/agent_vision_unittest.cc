@@ -193,7 +193,8 @@ ObservedElement Element(std::string ref,
 
 std::optional<ScreenshotGeometry> Parse(std::string_view json,
                                         size_t elements) {
-  std::optional<base::Value> v = base::JSONReader::Read(json);
+  std::optional<base::Value> v =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
   EXPECT_TRUE(v.has_value()) << json;
   if (!v)
     return std::nullopt;

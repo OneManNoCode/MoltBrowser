@@ -760,10 +760,12 @@ int Scrollbar::ScrollbarThickness() const {
   if (!thickness || IsCustomScrollbar())
     return thickness;
   // MoltBrowser: MoltNet's classic scrollbars are as thick in CSS pixels at
-  // every zoom and on every OS (molt_fingerprinting/letterbox.h).
+  // every zoom and on every OS (molt_fingerprinting/letterbox.h). The
+  // document is the box's (ScrollableArea::GetDocument() is protected).
+  const LayoutBox* box = GetLayoutBox();
   return molt_fingerprinting::ScrollbarThicknessFor(
       theme_, ScaleFromDIP(), CSSScrollbarWidth(),
-      scrollable_area_ ? scrollable_area_->GetDocument() : nullptr);
+      box ? &box->GetDocument() : nullptr);
 }
 
 bool Scrollbar::IsSolidColor() const {

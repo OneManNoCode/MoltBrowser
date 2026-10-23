@@ -17,9 +17,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "crypto/random.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "net/cookies/site_for_cookies.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
-#include "third_party/blink/public/platform/web_worker_fetch_context.h"
 #include "third_party/blink/public/web/web_molt_fingerprinting.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -45,6 +43,7 @@
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -166,7 +165,8 @@ ResolvedSite FromSchemefulSite(const BlinkSchemefulSite& site,
     return resolved;
   }
   const String serialized = site.Serialize();
-  if (!serialized.StartsWith("https://") && !serialized.StartsWith("http://")) {
+  if (!serialized.starts_with("https://") &&
+      !serialized.starts_with("http://")) {
     // chrome://, chrome-extension://, file://, ...: internal or local pages.
     return resolved;
   }
@@ -233,23 +233,13 @@ ResolvedSite ResolveSite(ExecutionContext& context) {
           std::string());
     }
     // Workers without a handed-over storage key (not expected: shared and
-    // service workers get theirs before any script runs): their site for
-    // cookies is their storage key's top-level site when the key is
-    // first-party (the top-level site is then the worker's own site), and
-    // null when it is third-party (partitioned under a top-level site Blink
-    // isn't told).
-    if (const WebWorkerFetchContext* fetch_context =
-            worker->web_worker_fetch_context()) {
-      const net::SiteForCookies site_for_cookies =
-          fetch_context->SiteForCookies();
-      if (!site_for_cookies.IsNull()) {
-        return FromSchemefulSite(BlinkSchemefulSite(site_for_cookies.site()),
-                                 std::string());
-      }
-    }
-    ResolvedSite third_party;
-    third_party.kind = SiteKind::kOpaque;
-    return third_party;
+    // service workers get theirs before any script runs) farble with a
+    // random per-context key, as an opaque site does. (Their fetch
+    // context's site for cookies is out of reach at 152:
+    // web_worker_fetch_context() is protected.)
+    ResolvedSite unknown;
+    unknown.kind = SiteKind::kOpaque;
+    return unknown;
   }
   if (auto* worklet = DynamicTo<WorkletGlobalScope>(context)) {
     WorkerClients* clients = worklet->Clients();
@@ -521,6 +511,28 @@ std::optional<PackedRows> PackedRowsFor(
 // Largest PIXEL_PACK buffer range mapped at once (whole rows; one row can be
 // larger).
 constexpr size_t kMaxPackBufferMapBytes = 4 * 1024 * 1024;
+
+// Reads `chunk.size()` bytes of the bound PIXEL_PACK buffer at `offset`.
+// GetBufferSubDataCHROMIUM() leaves `chunk` untouched when the client gets
+// no shared memory for the read (GL_OUT_OF_MEMORY) or the context is lost,
+// which a buffer holding exactly the fill pattern looks like; so a chunk
+// that reads back as all zeros is read again over 0xff, and the read failed
+// only if neither read wrote it. False: write nothing back.
+bool ReadPackBufferChunk(gpu::gles2::GLES2Interface* gl,
+                         GLintptr offset,
+                         GLsizeiptr size,
+                         base::span<uint8_t> chunk) {
+  std::ranges::fill(chunk, 0);
+  gl->GetBufferSubDataCHROMIUM(GL_PIXEL_PACK_BUFFER, offset, size,
+                               chunk.data());
+  if (!std::ranges::all_of(chunk, [](uint8_t b) { return b == 0; })) {
+    return true;
+  }
+  std::ranges::fill(chunk, 0xff);
+  gl->GetBufferSubDataCHROMIUM(GL_PIXEL_PACK_BUFFER, offset, size,
+                               chunk.data());
+  return !std::ranges::all_of(chunk, [](uint8_t b) { return b == 0xff; });
+}
 
 }  // namespace
 
@@ -861,19 +873,18 @@ void FarblePixelPackBufferWith(
         !base::CheckedNumeric<GLsizeiptr>(size).AssignIfValid(&gl_size)) {
       return;
     }
-    void* mapped = gl->MapBufferRange(GL_PIXEL_PACK_BUFFER, gl_offset, gl_size,
-                                      GL_MAP_READ_BIT | GL_MAP_WRITE_BIT);
-    if (!mapped) {
+    // The GLES2 client has no MapBufferRange() at 152: read the rows back,
+    // farble them and write them over the originals.
+    Vector<uint8_t> chunk(base::checked_cast<wtf_size_t>(size));
+    if (!ReadPackBufferChunk(gl, gl_offset, gl_size, base::span(chunk))) {
       return;
     }
-    // SAFETY: MapBufferRange() returned a mapping of exactly `size` bytes.
-    const base::span<uint8_t> chunk = UNSAFE_BUFFERS(
-        base::span<uint8_t>(static_cast<uint8_t*>(mapped), size));
     for (size_t r = 0; r < count; ++r) {
       FarbleReadRow(farbler, *layout,
-                    chunk.subspan(r * rows->stride, rows->row_size));
+                    base::span(chunk).subspan(r * rows->stride,
+                                              rows->row_size));
     }
-    gl->UnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    gl->BufferSubData(GL_PIXEL_PACK_BUFFER, gl_offset, gl_size, chunk.data());
   }
 }
 

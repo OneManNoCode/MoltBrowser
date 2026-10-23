@@ -12,6 +12,7 @@
 #include "base/functional/callback.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/web_ai/web_ai_site_permissions.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"

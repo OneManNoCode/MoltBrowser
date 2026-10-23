@@ -116,7 +116,8 @@ class MoltMemoryProviderTest : public testing::Test {
   base::test::TaskEnvironment task_environment_;
   TestingPrefServiceSimple prefs_;
   TestSchemeClassifier classifier_;
-  testing::NiceMock<MockAutocompleteProviderClient> client_;
+  // Already a NiceMock (mock_autocomplete_provider_client.h).
+  MockAutocompleteProviderClient client_;
   CountingListener listener_;
   FakeMemorySearch search_;
   scoped_refptr<MoltMemoryProvider> provider_;

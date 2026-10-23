@@ -406,9 +406,15 @@ void WaitForRetiredProfiles(base::FilePath path,
                       "The profile went away.");
     return;
   }
-  std::erase_if(retiring, [original](const Profile::OTRProfileID& id) {
-    return !original->HasOffTheRecordProfile(id);
-  });
+  // OTRProfileID can't be assigned (its id is const), so keep the ones still
+  // open in a new vector instead of erasing in place.
+  std::vector<Profile::OTRProfileID> still_open;
+  for (const Profile::OTRProfileID& id : retiring) {
+    if (original->HasOffTheRecordProfile(id)) {
+      still_open.push_back(id);
+    }
+  }
+  retiring = std::move(still_open);
   if (!retiring.empty()) {
     if (base::TimeTicks::Now() < deadline) {
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(

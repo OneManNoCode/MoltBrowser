@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <ostream>
 #include <vector>
 
 #include <fuzzer/FuzzedDataProvider.h>

@@ -79,7 +79,8 @@ size_t Count(std::string_view haystack, std::string_view needle) {
 
 // Any JavaScript value a page script can evaluate to, as JSON.
 base::Value PageValue(const std::string& json) {
-  std::optional<base::Value> v = base::JSONReader::Read(json);
+  std::optional<base::Value> v =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
   return v ? std::move(*v) : base::Value(json);
 }
 

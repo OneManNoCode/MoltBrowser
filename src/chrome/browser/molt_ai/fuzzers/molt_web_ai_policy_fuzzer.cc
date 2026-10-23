@@ -25,6 +25,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <ostream>
 #include <set>
 #include <string>
 #include <vector>

@@ -649,6 +649,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   both fixed: a control character inside an angle-bracket look-alike got
   it past the agents' untrusted-text sanitizer, and an imported workflow
   with an out-of-range timestamp hit undefined behaviour.
+- **Compile check without a checkout** (`tools/compile_check/`): one
+  command type-checks MoltBrowser's own C++ and the upstream files it
+  changes (537 files, Blink included) against Chromium 152's real headers
+  with Chromium's own clang and plugins, generating the mojom, protobuf,
+  buildflag and other headers a build makes. Its first runs found compile
+  errors in about 40 files that earlier checks against hand-written
+  stand-ins had missed, all fixed; among them, WebGL2 `readPixels` into a
+  buffer now farbles the pixels by reading them back, as 152 has no buffer
+  mapping.
 
 ---
 

@@ -15,7 +15,6 @@
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/render_frame_host.h"
 #include "net/http/http_request_headers.h"
-#include "services/network/public/mojom/http_header.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/websocket.mojom.h"
 #include "url/origin.h"

@@ -131,6 +131,7 @@ EmbeddingStatus StatusForLoadFailure(mojom::LoadModelStatus status) {
     case mojom::LoadModelStatus::kOk:
     case mojom::LoadModelStatus::kUnsupportedCpu:
     case mojom::LoadModelStatus::kInvalidModelFile:
+    case mojom::LoadModelStatus::kInvalidVisionProjector:
     case mojom::LoadModelStatus::kBackendUnavailable:
       return EmbeddingStatus::kUnavailable;
   }

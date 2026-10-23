@@ -107,7 +107,8 @@ std::string JsString(std::string_view s) {
 
 // Any JavaScript value a page script can evaluate to, as JSON.
 base::Value PageValue(const std::string& json) {
-  std::optional<base::Value> v = base::JSONReader::Read(json);
+  std::optional<base::Value> v =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
   return v ? std::move(*v) : base::Value(json);
 }
 
@@ -237,7 +238,8 @@ void CheckCall(const agent_actions::AgentAction& action,
                const agent_actions::Observation& o) {
   const SiteTool* tool = o.FindTool(action.tool);
   CHECK(tool) << "a call to a tool that wasn't offered";
-  std::optional<base::Value> args = base::JSONReader::Read(action.tool_arguments);
+  std::optional<base::Value> args =
+      base::JSONReader::Read(action.tool_arguments, base::JSON_PARSE_RFC);
   CHECK(args && args->is_dict());
   std::set<std::string> given;
   for (const auto& [key, value] : args->GetDict()) {

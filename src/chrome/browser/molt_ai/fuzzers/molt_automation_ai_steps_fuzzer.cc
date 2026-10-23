@@ -152,8 +152,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   FuzzedDataProvider p(data, size);
 
   // The step's "extra" from the workflow file.
-  std::optional<base::Value> extra =
-      base::JSONReader::Read(p.ConsumeRandomLengthString(4096));
+  std::optional<base::Value> extra = base::JSONReader::Read(
+      p.ConsumeRandomLengthString(4096), base::JSON_ALLOW_TRAILING_COMMAS);
   const ExtractSpecResult spec =
       ExtractSpecFromStep(extra ? std::move(*extra) : base::Value());
   CHECK(spec.spec.has_value() != !spec.error.empty());
@@ -178,7 +178,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     CHECK(!outcome.note.empty());
   }
   if (decision) {
-    std::optional<base::DictValue> dict = base::JSONReader::ReadDict(decide.text);
+    std::optional<base::DictValue> dict =
+        base::JSONReader::ReadDict(decide.text, base::JSON_PARSE_RFC);
     CHECK(dict && dict->size() == 1);
   }
 

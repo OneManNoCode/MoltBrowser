@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/farbling.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/molt_fingerprinting.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
@@ -403,17 +404,17 @@ TEST_F(MoltLetterboxTest, ScrollbarsOutsideMoltNetAreTheThemes) {
   Document& document = *frame.GetDocument();
   AddScrollingBoxes(document);
   // DummyPageHolder's chrome client scales DIPs by 1.
-  const int native = ScrollbarTheme::GetTheme().ScrollbarThickness(
-      1.0f, EScrollbarWidth::kAuto);
+  const ScrollbarTheme& theme = document.GetPage()->GetScrollbarTheme();
+  const int native = theme.ScrollbarThickness(1.0f, EScrollbarWidth::kAuto);
   EXPECT_EQ(ScrollbarWidth(document, "auto"), native);
   auto* area =
       To<LayoutBox>(
           document.getElementById(AtomicString("auto"))->GetLayoutObject())
           ->GetScrollableArea();
   EXPECT_EQ(area->ScaleFromDIP(), 1.0f);
-  EXPECT_EQ(ScrollbarThicknessFor(ScrollbarTheme::GetTheme(), 1.0f,
-                                  EScrollbarWidth::kAuto, &document),
-            native);
+  EXPECT_EQ(
+      ScrollbarThicknessFor(theme, 1.0f, EScrollbarWidth::kAuto, &document),
+      native);
 
   // Zoomed, a regular window's scrollbar keeps its DIPs, so its CSS width
   // shows the zoom.
@@ -435,9 +436,10 @@ TEST_F(MoltLetterboxTest, ScrollbarsAreDrawnAtThePageZoomInMoltNet) {
       To<LayoutBox>(
           document.getElementById(AtomicString("auto"))->GetLayoutObject())
           ->GetScrollableArea();
-  EXPECT_EQ(ScrollbarScaleFromDIP(*area, 2.0f), 2.0f);
+  EXPECT_EQ(ScrollbarScaleFromDIP(*area, document, 2.0f), 2.0f);
   SetUniformForTesting(true);
-  EXPECT_EQ(ScrollbarScaleFromDIP(*area, 2.0f), frame.LayoutZoomFactor());
+  EXPECT_EQ(ScrollbarScaleFromDIP(*area, document, 2.0f),
+            frame.LayoutZoomFactor());
   EXPECT_EQ(area->ScaleFromDIP(), frame.LayoutZoomFactor());
 }
 
@@ -450,7 +452,7 @@ TEST_F(MoltLetterboxTest, OverlayScrollbarsAndInternalPagesAreTheThemes) {
   Document& document = *frame.GetDocument();
   {
     ScopedMockOverlayScrollbars mock_overlay_scrollbars;
-    const ScrollbarTheme& overlay = ScrollbarTheme::GetTheme();
+    const ScrollbarTheme& overlay = document.GetPage()->GetScrollbarTheme();
     ASSERT_TRUE(overlay.UsesOverlayScrollbars());
     EXPECT_EQ(
         ScrollbarThicknessFor(overlay, 1.0f, EScrollbarWidth::kAuto, &document),
@@ -462,7 +464,7 @@ TEST_F(MoltLetterboxTest, OverlayScrollbarsAndInternalPagesAreTheThemes) {
     EXPECT_EQ(ScrollbarWidth(document, "auto"), 0);
   }
   USE_NON_OVERLAY_SCROLLBARS_OR_QUIT();
-  const ScrollbarTheme& classic = ScrollbarTheme::GetTheme();
+  const ScrollbarTheme& classic = document.GetPage()->GetScrollbarTheme();
   EXPECT_EQ(
       ScrollbarThicknessFor(classic, 1.0f, EScrollbarWidth::kAuto, &document),
       2 * kUniformScrollbarThickness);

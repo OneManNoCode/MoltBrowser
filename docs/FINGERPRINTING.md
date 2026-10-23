@@ -570,8 +570,9 @@ unpredictable as the one removed), and keeping the key in local registers
 On top of the CPU work: exported frames from accelerated canvases need a
 synchronous GPU readback and become CPU-backed (`captureStream` loses its
 one-copy GPU path while farbling), and every farbled `readPixels` into a
-`PIXEL_PACK_BUFFER` costs one synchronous GPU-process round trip (the
-mapping), so the async-readback idiom loses its asynchrony. Pages that
+`PIXEL_PACK_BUFFER` costs a synchronous GPU-process round trip per few
+MiB (reading the rows back), so the async-readback idiom loses its
+asynchrony. Pages that
 stream a canvas as video (canvas recording, effects pipelines in video
 calls that build frames with `new VideoFrame(canvas)` or `captureStream()`)
 would pay the export cost on every frame: at 720p on this VM, camera-like
@@ -3066,7 +3067,14 @@ Verified without a Chromium checkout (scratch harnesses, not in the repo):
   (in-place result equal to a client-memory read; chunked mapping of a
   27 MiB read; no mapping when not farbled; failed maps), the snapshot and
   export pipelines (premultiplied alpha preserved, never above alpha) and
-  the uniform screen math and UTC/en-US side effects.
+  the uniform screen math and UTC/en-US side effects. (Against Chromium
+  152's real headers, `tools/compile_check` later found three of those
+  stand-ins wrong: the GLES2 client has no `MapBufferRange`/`UnmapBuffer`,
+  so the PIXEL_PACK buffer is now read back with `GetBufferSubDataCHROMIUM`
+  and written with `BufferSubData`; `String::StartsWith` is `starts_with`;
+  and a worker's `web_worker_fetch_context()` is protected, so a worker
+  without a handed-over key now gets a random per-context key, as an
+  opaque site does.)
 * The chrome/{common,browser,renderer} glue (mode switch, mojo seed,
   `ConfigurationReceiver`, the per-commit Shields decision and its renderer
   agent) and
@@ -3085,7 +3093,7 @@ Blink/Chrome targets (including the mojom), `blink_unittests`
 tests through `DummyPageHolder` and a `FakeGLES2Interface` PBO test),
 `molt_ai_unittests` (`MoltShieldSiteExceptionsTest.*` against a real
 `HostContentSettingsMap`), checkdeps / `gn check` for the new DEPS entries
-(`gles2_interface.h` and `site_for_cookies.h` in core), and the behaviour
+(`gles2_interface.h` in core), and the behaviour
 in a running browser: test pages for every row of the table above (incl.
 `getBufferSubData` after a PBO read, `VideoFrame.copyTo`, `captureStream` +
 `MediaStreamTrackProcessor`, `copyExternalImageToTexture` + `mapAsync`,
