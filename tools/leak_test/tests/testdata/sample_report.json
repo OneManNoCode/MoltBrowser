@@ -856,6 +856,28 @@
   },
   {
    "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: connection and network quality\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"downlink\": 1.6, \"effectiveType\": \"4g\", \"rtt\": 200, \"saveData\": false}, expected {\"downlink\": 1.6, \"effectiveType\": \"4g\", \"rtt\": 200, \"saveData\": false}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.connection",
+   "status": "PASS",
+   "title": "nav.connection is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: connection and network quality\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected 0"
+   ],
+   "group": "uniformity",
+   "id": "uniform.nav.connection_changes",
+   "status": "PASS",
+   "title": "nav.connection_changes is uniform"
+  },
+  {
+   "details": null,
    "doc": "FINGERPRINTING.md \"MoltNet: no touchscreen, client hints, memory and CPU\"",
    "evidence": [
     "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual 0, expected [0, null]"
@@ -1435,6 +1457,17 @@
    "id": "uniform.win.screenY",
    "status": "PASS",
    "title": "win.screenY is uniform"
+  },
+  {
+   "details": null,
+   "doc": "FINGERPRINTING.md \"MoltNet: connection and network quality\"",
+   "evidence": [
+    "initial|dsf=1.0|window=initial|zoom=100|moltnet: actual {\"downlink\": 1.6, \"effectiveType\": \"4g\", \"rtt\": 200, \"saveData\": false}, expected {\"downlink\": 1.6, \"effectiveType\": \"4g\", \"rtt\": 200, \"saveData\": false}"
+   ],
+   "group": "uniformity",
+   "id": "uniform.worker.connection",
+   "status": "PASS",
+   "title": "worker.connection is uniform"
   },
   {
    "details": null,
@@ -2387,7 +2420,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 110,
+  "PASS": 113,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2439,6 +2472,13 @@
     "mq.pointer_fine": true,
     "mq.resolution_1dppx": true,
     "mq.viewport_exact": true,
+    "nav.connection": {
+     "downlink": 1.6,
+     "effectiveType": "4g",
+     "rtt": 200,
+     "saveData": false
+    },
+    "nav.connection_changes": 0,
     "nav.cpuPerformance": 0,
     "nav.deviceMemory": 8,
     "nav.doNotTrack": null,
@@ -2517,7 +2557,13 @@
     "win.outerHeight": 900,
     "win.outerWidth": 1400,
     "win.screenX": 0,
-    "win.screenY": 0
+    "win.screenY": 0,
+    "worker.connection": {
+     "downlink": 1.6,
+     "effectiveType": "4g",
+     "rtt": 200,
+     "saveData": false
+    }
    },
    "window": null,
    "zoom_actual": 1.0,
