@@ -100,6 +100,8 @@ def cmd_setup(args, tree=None):
 
 
 def do_fetch(args, tree):
+    # A subproject whose source changed drops its old files first.
+    tree.validate_mounts()
     tgts = targets.expand(args.targets, tree)
     sc = scan.Scanner(tree, config.INCLUDE_DIRS, tree.gen_dir)
     seen = sc.run(tgts)
@@ -276,10 +278,13 @@ def cmd_gen(args):
 
 def do_check(args, tree):
     tgts = targets.expand(args.targets, tree)
+    # A subproject whose source changed (sources.json) drops its old files:
+    # fetch and generate again before compiling.
+    if tree.validate_mounts():
+        for _ in range(getattr(args, "rounds", 6)):
+            if do_gen(args, tree, do_fetch(args, tree)["missing"]) == 0:
+                break
     interp = make_interp(tree)
-    # A subproject whose source changed (sources.json) drops its old files;
-    # `fetch` (or `all`) brings the new ones.
-    tree.validate_mounts()
     # Never compile against bindings of a .mojom edited since (or of one
     # whose imports or typemaps changed).
     refresh_mojom(args, tree, interp,

@@ -194,6 +194,7 @@ class SourceTree:
                              pin.revision)
         self.clang_llvm_commit = clang_llvm_commit
         self._subs = {}
+        self.purged = []
         self._tarball_info = None
         self.unavailable = {}
         self.substituted = {}
@@ -406,8 +407,19 @@ class SourceTree:
         if (old is not None and old != key) or legacy:
             log("subproject %s: source changed (%s -> %s); dropping its "
                 "files" % (mount, old or "earlier stand-in", key))
+            self.purged.append(mount)
             for x in (d, self.gen_dir / mount):
                 shutil.rmtree(x, ignore_errors=True)
+            # And what actions made from its files elsewhere in gen/
+            # (gen_actions.GEN_INPUTS).
+            try:
+                made = json.loads((self.work / "gen_inputs.json")
+                                  .read_text())
+            except (OSError, ValueError):
+                made = {}
+            for rel, mounts in made.items():
+                if mount in mounts and (self.gen_dir / rel).exists():
+                    (self.gen_dir / rel).unlink()
             for p in self.overlay_set():
                 if p.startswith(mount + "/"):
                     (self.tree_dir / p).parent.mkdir(parents=True,
@@ -420,12 +432,15 @@ class SourceTree:
 
     def validate_mounts(self):
         """Resolves every mount used before (recorded, or with files here),
-        so a changed source is noticed (and its old files dropped) even by
-        a run that fetches nothing."""
+        so a changed source is noticed and its old files dropped before
+        anything reads them. Returns the mounts whose files were dropped
+        (fetch and gen bring the new ones)."""
+        before = len(self.purged)
         state = load_sources_state(self.work)
         for m in SUBPROJECTS:
             if m in state or (self.tree_dir / m).exists():
                 self.sub(m)
+        return self.purged[before:]
 
     def _head_fallback(self, mount, name, remote):
         """The mirror's current HEAD, for a subproject whose pinned commit

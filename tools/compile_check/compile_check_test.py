@@ -439,6 +439,20 @@ class SourcesStateTest(unittest.TestCase):
         self.assertFalse(self.gen.exists())
         self.assertEqual(sources.stand_in_mounts(self.tree.work), {})
 
+    def test_changed_source_drops_what_was_made_from_it(self):
+        self.tree._record(self.mount, "head r c0", False, "webrtc (HEAD)")
+        made = self.tree.gen_dir / "elsewhere" / "x.pb.h"
+        kept = self.tree.gen_dir / "elsewhere" / "y.pb.h"
+        for f in (made, kept):
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x")
+        (self.tree.work / gen_actions.GEN_INPUTS).write_text(json.dumps({
+            "elsewhere/x.pb.h": [self.mount],
+            "elsewhere/y.pb.h": ["third_party/icu"]}))
+        self.tree._record(self.mount, "tarball 1.2.3.4 c1", True, None)
+        self.assertFalse(made.exists())
+        self.assertTrue(kept.exists())
+
     def test_legacy_work_dir(self):
         # Files from before sources.json: kept for a mirror at the pin,
         # dropped for anything else.
