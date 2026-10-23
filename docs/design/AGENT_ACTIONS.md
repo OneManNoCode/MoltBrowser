@@ -1320,7 +1320,11 @@ available in MoltNet windows…" instead of a button.
 - **Run outside the repo:** the automation unit tests (33, the ones above
   and the existing script and security ones) with clang, under
   ASan and UBSan, and with g++, against the `//base` and `//url`
-  stand-ins; `molt_agent_run_draft_fuzzer` (§FUZZING.md); syntax of
+  stand-ins; `molt_agent_run_draft_fuzzer` (`docs/FUZZING.md`): 790,468
+  runs in 10 minutes and 226,643 more after the last change to the
+  converter, nothing found (one invariant it broke before landing, a goal
+  with `{{` as the name, is fixed); its 65 seeds (7 KB) reach 93% of the
+  edges those runs found; syntax of
   `web_agent.cc`, `molt_ai_chat_handler_agent_run.cc`, the changed chat
   handler functions and the studio's handler (verbatim) with
   `-fno-exceptions -Werror` against stand-ins with the 152 signatures; the
