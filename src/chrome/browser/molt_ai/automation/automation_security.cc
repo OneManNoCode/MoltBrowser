@@ -171,8 +171,14 @@ bool AutomationSecurity::AllowSensitiveField(
 // static
 SecurityPolicy AutomationSecurity::EffectivePolicy(const Script& script) {
   SecurityPolicy p = script.security;
-  for (std::string& host : HostsReferencedBy(script.steps))
-    AddUnique(p.domain_whitelist, std::move(host));
+  if (p.sites_unconfirmed) {
+    // A model-made draft nobody has reviewed: nothing widens what it may
+    // do, whatever trust was set on it meanwhile.
+    p.trust = TrustLevel::CASUAL;
+  } else {
+    for (std::string& host : HostsReferencedBy(script.steps))
+      AddUnique(p.domain_whitelist, std::move(host));
+  }
   if (p.require_approval_for.empty()) {
     p.require_approval_for.assign(std::begin(kDefaultApprovals),
                                   std::end(kDefaultApprovals));
@@ -205,6 +211,28 @@ void AutomationSecurity::ClampTrustForSave(Script& incoming,
                                            const Script* existing) {
   incoming.security.trust =
       existing ? existing->security.trust : TrustLevel::CASUAL;
+  if (existing && existing->security.sites_unconfirmed)
+    incoming.security.sites_unconfirmed = true;
+}
+
+// static
+bool AutomationSecurity::ConfirmDraftSites(
+    Script& script,
+    const std::vector<std::string>& shown) {
+  if (!script.security.sites_unconfirmed)
+    return false;
+  std::vector<std::string> sites = HostsReferencedBy(script.steps);
+  if (sites.empty())
+    return false;
+  std::vector<std::string> sorted_sites = sites;
+  std::vector<std::string> sorted_shown = shown;
+  std::sort(sorted_sites.begin(), sorted_sites.end());
+  std::sort(sorted_shown.begin(), sorted_shown.end());
+  if (sorted_sites != sorted_shown)
+    return false;
+  script.security.domain_whitelist = std::move(sites);
+  script.security.sites_unconfirmed = false;
+  return true;
 }
 
 // static

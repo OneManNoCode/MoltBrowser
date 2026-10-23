@@ -62,8 +62,28 @@ source_set("automation") {
   # Script model + security policy are part of this target's API (its
   # headers include them), so dependents see them too.
   public_deps = [
+    ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
+    "//chrome/browser/molt_ai/security:agent_safety",
+  ]
+}
+
+# A successful web agent run saved as a draft workflow: which steps it keeps
+# and how, what is withheld as secret, the draft's (unconfirmed) policy
+# (docs/design/AGENT_ACTIONS.md §2.9). Pure logic (base + url), so
+# molt_ai_unittests links it; fuzzed by molt_agent_run_draft_fuzzer.
+source_set("agent_run_draft") {
+  sources = [
+    "agent_run_draft.cc",
+    "agent_run_draft.h",
+  ]
+
+  deps = [ "//url" ]
+
+  public_deps = [
+    ":automation_policy",
+    "//base",
     "//chrome/browser/molt_ai/security:agent_safety",
   ]
 }
@@ -104,11 +124,13 @@ source_set("automation_policy") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "agent_run_draft_unittest.cc",
     "automation_ai_steps_unittest.cc",
     "automation_script_unittest.cc",
     "automation_security_unittest.cc",
   ]
   deps = [
+    ":agent_run_draft",
     ":ai_steps",
     ":automation_policy",
     "//base",
