@@ -1,0 +1,68 @@
+MoltBrowser patch for services/network/network_context.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/services/network/network_context.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+index 789de76a8dc025b933ac18c24243e24742df1393..fa547c72d518f24b0c334c2f8bfaf1dafa2e4f13 100644
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -667,6 +667,34 @@ void RemoveInvalidationFilterCallback(
+   context->OnLogicalFilterRemoved(filter);
+ }
+ 
++// MoltBrowser: HttpAuthStaticNetworkContextParams.
++// molt_basic_and_digest_auth_only, set for MoltNet's network contexts.
++bool MoltBasicAndDigestAuthOnly(const mojom::NetworkContextParams* params) {
++  return params && params->http_auth_static_network_context_params &&
++         params->http_auth_static_network_context_params
++             ->molt_basic_and_digest_auth_only;
++}
++
++// MoltBrowser: offer Basic and Digest only (fewer if a policy already took
++// one away), never NTLM or Negotiate. Applied on top of the network
++// service's browser-wide values each time they are (re)applied.
++void MoltRestrictToBasicAndDigestAuth(net::HttpAuthPreferences& prefs) {
++  base::flat_set<std::string> schemes;
++  for (const char* scheme : {net::kBasicAuthScheme, net::kDigestAuthScheme}) {
++    if (!prefs.allowed_schemes() || prefs.allowed_schemes()->contains(scheme)) {
++      schemes.insert(scheme);
++    }
++  }
++  prefs.SetAllowedSchemes(std::move(schemes));
++  // No origin may use every scheme (the AllHttpAuthSchemesAllowedForOrigins
++  // policy). A null filter would let every origin.
++  prefs.set_http_auth_scheme_filter(
++      base::BindRepeating([](const url::SchemeHostPort&) { return false; }));
++  // Negotiate is never offered; it wouldn't resolve the server's canonical
++  // name either.
++  prefs.set_negotiate_disable_cname_lookup(true);
++}
++
+ }  // namespace
+ 
+ constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
+@@ -860,6 +888,11 @@ NetworkContext::NetworkContext(
+         params_->http_auth_static_network_context_params
+             ->allow_default_credentials);
+   }
++  // MoltBrowser: MoltNet offers Basic and Digest only, also if the network
++  // service has no browser-wide values yet.
++  if (MoltBasicAndDigestAuthOnly(params_.get())) {
++    MoltRestrictToBasicAndDigestAuth(http_auth_merged_preferences_);
++  }
+ 
+   InitializeCorsParams();
+ 
+@@ -2849,6 +2882,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+   http_auth_merged_preferences_.set_http_auth_scheme_filter(
+       base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
+                           base::Unretained(this)));
++  // MoltBrowser: MoltNet's restriction outranks the browser-wide values.
++  if (MoltBasicAndDigestAuthOnly(params_.get())) {
++    MoltRestrictToBasicAndDigestAuth(http_auth_merged_preferences_);
++  }
+ }
+ 
+ URLRequestContextOwner NetworkContext::MakeURLRequestContext(

@@ -5,18 +5,19 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
-index c9ae7f58abdc9e650501363db9da48231ffecc15..c9835c427c54e92835bc87ffdfa4167313026a27 100644
+index c9ae7f58abdc9e650501363db9da48231ffecc15..dcbb75104118f6f186966c9c4f9205bab01bc4f9 100644
 --- a/chrome/browser/net/profile_network_context_service.cc
 +++ b/chrome/browser/net/profile_network_context_service.cc
-@@ -38,6 +38,7 @@
+@@ -38,6 +38,8 @@
  #include "chrome/browser/domain_reliability/service_factory.h"
  #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
  #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"  // MoltBrowser
 +#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/net/system_network_context_manager.h"
  #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -224,6 +225,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
+@@ -224,6 +226,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
      return true;
    }
  
@@ -31,3 +32,18 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..c9835c427c54e92835bc87ffdfa41673
    // Non-primary OTR profiles are not used to create browser windows and are
    // only technical means for a task that does not need to leave state after
    // it's completed.
+@@ -1378,6 +1388,14 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+         net::HttpAuthPreferences::DISALLOW_DEFAULT_CREDENTIALS;
+   }
+ 
++  // MoltBrowser: MoltNet's per-context network settings
++  // (molt_net_network_context_policy.h): a one-off network key for each
++  // certificate fetch, and Basic and Digest authentication only. Other
++  // profiles get Chromium's (the fields' defaults).
++  molt_ai::tor::ApplyMoltNetNetworkContextSettings(
++      molt_ai::tor::IsMoltNetProfile(profile_), *network_context_params,
++      *cert_verifier_creation_params);
++
+   network_context_params->cookie_manager_params =
+       CreateCookieManagerParams(profile_, *cookie_settings_);
+ 
