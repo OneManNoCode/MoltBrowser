@@ -709,6 +709,9 @@ struct NetworkContextParams {
   // MoltSendNoClientCertificates()): no choice is remembered per host and
   // port across top-level sites, and nothing is asked of the browser.
   [MinVersion=1] bool molt_send_no_client_certificates = false;
+  // If true, ActivateDohProbes() starts no DNS-over-HTTPS probes for this
+  // context (they bypass its proxy).
+  [MinVersion=1] bool molt_no_doh_probes = false;
 };
 
 struct NetworkConditions {

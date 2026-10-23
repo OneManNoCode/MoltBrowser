@@ -143,6 +143,19 @@ struct MoltNetNetworkContextSettings {
   // it has no personal certificates to offer either.
   bool send_no_client_certificates = false;
 
+  // DNS-over-HTTPS probes: when secure DNS has servers (the user's or an
+  // administrator's choice, or the automatic upgrade of a system resolver
+  // that offers DoH), the network service probes them for every network
+  // context it registers and again after each network change. The probes
+  // are DoH requests made through the context itself but, like every DoH
+  // request, with the proxy bypassed (net::LOAD_BYPASS_PROXY) and the DoH
+  // server's name looked up with the system resolver: from a MoltNet
+  // context, a connection from the user's own address, outside Tor, each
+  // time a MoltNet identity starts. When true, the context starts none.
+  // MoltNet's pages' names are resolved by Tor inside SOCKS5, so it never
+  // needs DoH.
+  bool no_doh_probes = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -161,6 +174,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.no_network_quality_estimator = is_moltnet_profile;
   settings.block_private_state_tokens = is_moltnet_profile;
   settings.send_no_client_certificates = is_moltnet_profile;
+  settings.no_doh_probes = is_moltnet_profile;
   return settings;
 }
 
@@ -216,6 +230,7 @@ void ApplyMoltNetNetworkContextSettings(
       settings.no_network_quality_estimator;
   network_context_params.molt_send_no_client_certificates =
       settings.send_no_client_certificates;
+  network_context_params.molt_no_doh_probes = settings.no_doh_probes;
 }
 
 }  // namespace molt_ai::tor

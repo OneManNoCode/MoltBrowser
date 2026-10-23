@@ -28,6 +28,7 @@ TEST(MoltNetNetworkContextPolicyTest, OtherProfilesKeepChromiumsBehaviour) {
   EXPECT_FALSE(settings.no_network_quality_estimator);
   EXPECT_FALSE(settings.block_private_state_tokens);
   EXPECT_FALSE(settings.send_no_client_certificates);
+  EXPECT_FALSE(settings.no_doh_probes);
 }
 
 TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
@@ -43,6 +44,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
   EXPECT_TRUE(settings.no_network_quality_estimator);
   EXPECT_TRUE(settings.block_private_state_tokens);
   EXPECT_TRUE(settings.send_no_client_certificates);
+  EXPECT_TRUE(settings.no_doh_probes);
 }
 
 // Private State Tokens: ProfileNetworkContextService asks this when it
@@ -97,6 +99,8 @@ TEST(MoltNetNetworkContextPolicyTest, IsAConstantExpression) {
       MoltNetNetworkContextSettingsFor(true).send_no_client_certificates);
   static_assert(
       !MoltNetNetworkContextSettingsFor(false).send_no_client_certificates);
+  static_assert(MoltNetNetworkContextSettingsFor(true).no_doh_probes);
+  static_assert(!MoltNetNetworkContextSettingsFor(false).no_doh_probes);
 }
 
 // What ProfileNetworkContextService hands the network service and the
@@ -129,6 +133,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetParamsSetTheFlags) {
   EXPECT_TRUE(params.network_context->molt_hsts_top_level_navigations_only);
   EXPECT_TRUE(params.network_context->molt_no_network_quality_estimator);
   EXPECT_TRUE(params.network_context->molt_send_no_client_certificates);
+  EXPECT_TRUE(params.network_context->molt_no_doh_probes);
 }
 
 // One password per network context: the hook runs once for each context
@@ -167,6 +172,7 @@ TEST(MoltNetNetworkContextPolicyTest, EachMoltNetContextGetsItsOwnPassword) {
       second_identity.network_context->molt_no_network_quality_estimator);
   EXPECT_TRUE(
       second_identity.network_context->molt_send_no_client_certificates);
+  EXPECT_TRUE(second_identity.network_context->molt_no_doh_probes);
   EXPECT_TRUE(second_identity.cert_verifier->molt_isolate_each_cert_fetch);
 }
 
@@ -182,6 +188,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_hsts_top_level_navigations_only);
   EXPECT_FALSE(params.network_context->molt_no_network_quality_estimator);
   EXPECT_FALSE(params.network_context->molt_send_no_client_certificates);
+  EXPECT_FALSE(params.network_context->molt_no_doh_probes);
 
   // And the hook writes them off for any other profile, even over a stale
   // value.
@@ -194,6 +201,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   params.network_context->molt_hsts_top_level_navigations_only = true;
   params.network_context->molt_no_network_quality_estimator = true;
   params.network_context->molt_send_no_client_certificates = true;
+  params.network_context->molt_no_doh_probes = true;
   ApplyMoltNetNetworkContextSettings(/*is_moltnet_profile=*/false,
                                      *params.network_context,
                                      *params.cert_verifier);
@@ -207,6 +215,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_hsts_top_level_navigations_only);
   EXPECT_FALSE(params.network_context->molt_no_network_quality_estimator);
   EXPECT_FALSE(params.network_context->molt_send_no_client_certificates);
+  EXPECT_FALSE(params.network_context->molt_no_doh_probes);
 }
 
 }  // namespace

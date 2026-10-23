@@ -1151,6 +1151,12 @@ void NetworkContext::CreateURLLoaderFactoryForCertNetFetcher(
 void NetworkContext::ActivateDohProbes() {
   DCHECK(url_request_context_->host_resolver());
 
+  // MoltBrowser: none for MoltNet's context. A DoH probe bypasses the
+  // context's proxy (Tor), and Tor resolves MoltNet's names.
+  if (params_ && params_->molt_no_doh_probes) {
+    return;
+  }
+
   doh_probes_request_.reset();
   doh_probes_request_ =
       url_request_context_->host_resolver()->CreateDohProbeRequest();
