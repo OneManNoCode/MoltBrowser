@@ -19,6 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 # Release builds: bundle downloads must match their pins (no dev override).
 export MOLT_RELEASE_BUILD=1
 
@@ -206,8 +208,8 @@ cat > "$DOWNLOADS_JSON" << DLJSON
     "macos": {
       "status": "available",
       "dmg": {
-        "filename": "MoltBrowser-${VERSION}-macOS-universal.dmg",
-        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/MoltBrowser-${VERSION}-macOS-universal.dmg"
+        "filename": "${MOLT_ASSET_MACOS_UNIVERSAL_DMG}",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/${MOLT_ASSET_MACOS_UNIVERSAL_DMG}"
       },
       "min_os": "12.0",
       "architectures": ["arm64", "x86_64"]
@@ -215,16 +217,16 @@ cat > "$DOWNLOADS_JSON" << DLJSON
     "linux": {
       "status": "available",
       "tar": {
-        "filename": "MoltBrowser-${VERSION}-linux-x64.tar.gz",
-        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/MoltBrowser-${VERSION}-linux-x64.tar.gz"
+        "filename": "${MOLT_ASSET_LINUX_TAR}",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/${MOLT_ASSET_LINUX_TAR}"
       },
       "deb": {
-        "filename": "moltbrowser_${VERSION}_amd64.deb",
-        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/moltbrowser_${VERSION}_amd64.deb"
+        "filename": "${MOLT_ASSET_LINUX_DEB}",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/${MOLT_ASSET_LINUX_DEB}"
       },
       "appimage": {
-        "filename": "MoltBrowser-${VERSION}-linux-x64.AppImage",
-        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/MoltBrowser-${VERSION}-linux-x64.AppImage"
+        "filename": "${MOLT_ASSET_LINUX_APPIMAGE}",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/${MOLT_ASSET_LINUX_APPIMAGE}"
       },
       "min_os": "Ubuntu 22.04 / Fedora 37+",
       "architectures": ["x86_64"]
@@ -232,12 +234,12 @@ cat > "$DOWNLOADS_JSON" << DLJSON
     "windows": {
       "status": "available",
       "installer": {
-        "filename": "MoltBrowser-${VERSION}-win-x64-setup.exe",
-        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/MoltBrowser-${VERSION}-win-x64-setup.exe"
+        "filename": "${MOLT_ASSET_WINDOWS_SETUP}",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/${MOLT_ASSET_WINDOWS_SETUP}"
       },
       "portable": {
-        "filename": "MoltBrowser-${VERSION}-win-x64-portable.zip",
-        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/MoltBrowser-${VERSION}-win-x64-portable.zip"
+        "filename": "${MOLT_ASSET_WINDOWS_ZIP}",
+        "url": "https://github.com/OneManNoCode/MoltBrowser/releases/download/$TAG/${MOLT_ASSET_WINDOWS_ZIP}"
       },
       "min_os": "Windows 10",
       "architectures": ["x86_64"]
@@ -256,7 +258,11 @@ for r in "${RESULTS[@]}"; do
 done
 echo "╠══════════════════════════════════════════════════╣"
 echo "║  Artifacts:"
-ls -1 "$DIST_DIR/"MoltBrowser-${VERSION}* "$DIST_DIR/"moltbrowser_${VERSION}* 2>/dev/null | while read f; do
+for f in "$DIST_DIR/$MOLT_ASSET_MACOS_UNIVERSAL_DMG" \
+         "$DIST_DIR/$MOLT_ASSET_LINUX_DEB" "$DIST_DIR/$MOLT_ASSET_LINUX_RPM" \
+         "$DIST_DIR/$MOLT_ASSET_LINUX_TAR" "$DIST_DIR/$MOLT_ASSET_LINUX_APPIMAGE" \
+         "$DIST_DIR/$MOLT_ASSET_WINDOWS_SETUP" "$DIST_DIR/$MOLT_ASSET_WINDOWS_ZIP"; do
+  [ -f "$f" ] || continue
   SIZE=$(du -sh "$f" | cut -f1)
   echo "║    $(basename "$f") ($SIZE)"
 done

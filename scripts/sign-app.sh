@@ -82,7 +82,12 @@ echo ""
 
 # Step 1: Sign all standalone Mach-O binaries that are NOT inside a helper
 # .app or .xpc (those get signed via their bundle in step 2). This catches
-# bare helpers like chrome_crashpad_handler.
+# the bare helpers in the framework's Helpers/ (chrome_crashpad_handler,
+# app_mode_loader, ...), the GPU/GL dylibs in its Libraries/ (libEGL,
+# libGLESv2, libvk_swiftshader; the linker signs them ad hoc, and notarization
+# rejects that) and the tor/ocr/whisper binaries in Contents/Resources/, all
+# before the bundles around them are sealed (the inside-out order of
+# scripts/release.sh).
 echo "→ Step 1: standalone Mach-O binaries..."
 count=0
 while IFS= read -r -d '' f; do
@@ -91,6 +96,9 @@ while IFS= read -r -d '' f; do
     case "$f" in
       *".app/Contents/MacOS/"*) continue ;;
       *".xpc/Contents/MacOS/"*) continue ;;
+      *".framework/Versions/"*"/Libraries/"*) ;;
+      *".framework/Versions/"*"/Helpers/"*) ;;
+      # The framework's own binary: signed with the framework in step 3.
       *".framework/Versions/"*"/"*) continue ;;
     esac
     codesign "${BASE_FLAGS[@]}" "$f"

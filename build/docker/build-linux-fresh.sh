@@ -19,6 +19,10 @@
 #   ./build/docker/build-linux-fresh.sh --package  # build + .deb/.rpm/.tar.gz
 #   ./build/docker/build-linux-fresh.sh --package --jobs 8   # more parallelism
 #
+# The packages get the browser's own version, kMoltBrowserVersion in
+# src/chrome/common/webui_url_constants.h (what About and the updater
+# report); --version X.Y.Z overrides it.
+#
 # Requirements:
 #   - x86_64 Linux with Docker (Docker Engine or Docker Desktop)
 #   - ~120 GB free disk  (Chromium checkout ~30 GB + build output)
@@ -29,6 +33,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$ROOT_DIR/scripts/lib-release-names.sh"
 
 # ---------------------------------------------------------------------------
 # The EXACT Chromium base revision the MoltBrowser overlay is written against,
@@ -39,7 +45,7 @@ CHROMIUM_PIN="$("$ROOT_DIR/tools/chromium/pin.sh" revision)"
 CHROMIUM_VERSION="$("$ROOT_DIR/tools/chromium/pin.sh" version)"
 IMAGE_NAME="moltbrowser-linux"
 DO_PACKAGE=false
-VERSION="0.2.5"
+VERSION=""
 JOBS=4
 REBUILD=false
 
@@ -55,6 +61,17 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+if [ "$DO_PACKAGE" = true ] && [ -z "$VERSION" ]; then
+  VERSION="$(sed -n 's/^inline constexpr char kMoltBrowserVersion\[\] = "\([^"]*\)";.*/\1/p' \
+    "$ROOT_DIR/src/chrome/common/webui_url_constants.h")"
+fi
+if [ "$DO_PACKAGE" = true ] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "ERROR: no package version (got '$VERSION'): pass --version X.Y.Z, or check"
+  echo "       kMoltBrowserVersion in src/chrome/common/webui_url_constants.h."
+  exit 1
+fi
+[ "$DO_PACKAGE" = true ] && echo "Package version: $VERSION"
 
 command -v docker >/dev/null 2>&1 || {
   echo "ERROR: Docker is required. Install Docker Engine, then re-run."
@@ -152,7 +169,7 @@ echo "  OK: overlay present (chrome/browser/molt_ai and friends)"
 
 # --- [6] Configure + build (+ package) ---
 echo "=== [5/6] Configure (GN) + build (autoninja, -j $JOBS) — SEVERAL HOURS on first run ==="
-run_in_docker "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --jobs $JOBS"
+run_in_docker "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux --jobs $JOBS"
 
 if [ "$DO_PACKAGE" = true ]; then
   echo "=== [6/6] Packaging (.deb / .rpm / .tar.gz) ==="
@@ -161,15 +178,15 @@ fi
 
 echo ""
 echo "=== Linux build complete ==="
-BIN="$ROOT_DIR/chromium/src/out/MoltBrowser/chrome"
+BIN="$ROOT_DIR/chromium/src/out/MoltBrowser-linux/chrome"
 [ -f "$BIN" ] && echo "  Binary:   $BIN"
 if [ "$DO_PACKAGE" = true ]; then
   echo "  Packages: $ROOT_DIR/dist/"
-  ls -la "$ROOT_DIR/dist/"*linux* "$ROOT_DIR/dist/"*.deb "$ROOT_DIR/dist/"*.rpm 2>/dev/null || true
+  ls -la "$ROOT_DIR/dist/"MoltBrowser-Linux-x64.* 2>/dev/null || true
   echo ""
-  echo "  Install (Debian/Ubuntu): sudo dpkg -i dist/moltbrowser_${VERSION}_amd64.deb || sudo apt-get -f install -y"
-  echo "  Install (Fedora/RHEL):   sudo rpm -i dist/moltbrowser-${VERSION}*.rpm"
-  echo "  Portable:                tar xzf dist/MoltBrowser-${VERSION}-linux-x64.tar.gz && ./MoltBrowser*/chrome"
+  echo "  Install (Debian/Ubuntu): sudo apt install ./dist/$MOLT_ASSET_LINUX_DEB"
+  echo "  Install (Fedora/RHEL):   sudo dnf install ./dist/$MOLT_ASSET_LINUX_RPM"
+  echo "  Portable:                mkdir -p /tmp/molt && tar xzf dist/$MOLT_ASSET_LINUX_TAR -C /tmp/molt && /tmp/molt/opt/moltbrowser/moltbrowser"
 else
   echo "  Run: $BIN"
 fi

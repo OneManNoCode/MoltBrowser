@@ -21,6 +21,11 @@ name: Lint
 #   * the signed apt/rpm repository tooling (tools/linux_repo/): a .deb and
 #     an .rpm built in the test, a throwaway GnuPG key, gpgv, rpmkeys,
 #     createrepo_c and `apt-get update` against the result (blocking)
+#   * release asset names (scripts/release_asset_names_test.py): the names
+#     the release scripts and workflows give the installers are the ones
+#     the in-app updater downloads and the release tooling accepts, and
+#     package-linux.sh, run on a fake build, writes them (blocking; in the
+#     linux-repo job, which has dpkg-deb and rpmbuild)
 #   * the model pinning tool (tools/models/pin_models.py) parses both model
 #     registries and pins a copy offline; a half-filled pin fails (blocking)
 #   * the MoltNet leak test kit (tools/leak_test/): capture reader,
@@ -158,6 +163,8 @@ jobs:
             dpkg-dev rpm createrepo-c apt-utils gnupg gpgv
       - name: tools/linux_repo/molt_linux_repo_test.py (throwaway keys)
         run: MOLT_REQUIRE_REPO_TOOLS=1 python3 tools/linux_repo/molt_linux_repo_test.py -v
+      - name: scripts/release_asset_names_test.py (installer names vs the updater)
+        run: MOLT_REQUIRE_PACKAGE_TOOLS=1 python3 scripts/release_asset_names_test.py -v
 
   model-pins:
     runs-on: ubuntu-latest

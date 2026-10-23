@@ -26,7 +26,8 @@
 # Options of step 2:
 #   --payload DIR          the shipped app / staging folder (bundled models)
 #   --gn-out-dir DIR       out dir the build used (repeatable; default
-#                          $GN_OUT_DIR or $CHROMIUM_SRC/out/MoltBrowser)
+#                          $GN_OUT_DIR or $CHROMIUM_SRC/out/MoltBrowser, or
+#                          out/MoltBrowser-linux for --platform linux)
 #   --builder-facts FILE   toolchain JSON from `molt_provenance.py probe`, run
 #                          inside the build container
 #   --container-image REF  NAME@sha256:<image id> of that container
@@ -64,7 +65,7 @@ while [[ $# -gt 0 ]]; do
     --out-dir) OUT_DIR="$2"; shift 2 ;;
     --gn-out-dir) GN_OUT_DIRS+=(--gn-out-dir "$2"); shift 2 ;;
     --payload|--builder-facts|--container-image) EXTRA+=("$1" "$2"); shift 2 ;;
-    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,39p' "$0"; exit 0 ;;
     -*) echo "release-provenance: unknown option $1" >&2; exit 2 ;;
     *) ASSETS+=("$1"); shift ;;
   esac
@@ -86,6 +87,10 @@ ARGS=(generate --platform "$PLATFORM" --arch "$ARCH" --version "$VERSION"
       --started-on "$MOLT_BUILD_STARTED_ON"
       --finished-on "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       --chromium-src "$CHROMIUM_SRC" --out-dir "$OUT_DIR")
+# Linux builds have their own out dir (scripts/configure.sh).
+if [ ${#GN_OUT_DIRS[@]} -eq 0 ] && [ -z "${GN_OUT_DIR:-}" ] && [ "$PLATFORM" = "linux" ]; then
+  GN_OUT_DIRS=(--gn-out-dir "$CHROMIUM_SRC/out/MoltBrowser-linux")
+fi
 if [ ${#GN_OUT_DIRS[@]} -gt 0 ]; then
   ARGS+=("${GN_OUT_DIRS[@]}")
 fi

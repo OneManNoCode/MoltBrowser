@@ -70,7 +70,14 @@ env:
 jobs:
   # -------------------------------------------------------------------
   # macOS arm64 — signed + notarized DMG
-  # Runs on your Mac via self-hosted runner. Uses existing scripts.
+  # Runs on your Mac via self-hosted runner, with the same scripts as a
+  # local release (docs/BUILD_MACHINE_CHECKLIST.md §10.2): build.sh
+  # compiles and bundles Tor, whisper and tesseract; release.sh sets the
+  # Info.plist version, adds default.metallib, signs inside-out, and makes,
+  # notarizes and staples MoltBrowser-macOS-arm64.dmg.
+  # The runner's workspace needs depot_tools/ and a chromium/ checkout at
+  # the pin (scripts/setup.sh, once), and the Mac the tools the bundle
+  # scripts and release.sh use (Metal toolchain, cmake, Homebrew tesseract).
   # -------------------------------------------------------------------
   macos:
     if: ${{ github.event_name == 'push' || contains(github.event.inputs.platforms, 'macos') }}
@@ -84,12 +91,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 0    # all history: the build number counts commits
+          # Keep the runner's warm, gitignored chromium/ (with its out dir)
+          # and depot_tools/: the default clean: true runs `git clean -ffdx`,
+          # which deletes them.
+          clean: false
 
       - name: Configure environment
         run: |
-          echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"
-          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          {
+            echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH"
+            echo "VERSION=${GITHUB_REF_NAME#v}"
+            # CFBundleVersion: the number of commits up to the tag, so it
+            # grows with every release (scripts/patch-info-plist.sh).
+            echo "BUILD_NUM=$(git rev-list --count HEAD)"
+          } >> "$GITHUB_ENV"
 
       # Build provenance (docs/SIGNED_UPDATES.md): fails now, not after the
       # build, if this runner has no builder label (MOLT_BUILDER_ID in the
@@ -116,10 +132,29 @@ jobs:
       - name: Sync MoltBrowser src/ → chromium/src/
         run: rsync -a --exclude='.git' src/ chromium/src/
 
-      - name: Build chrome target
-        run: autoninja -C chromium/src/out/MoltBrowser chrome
+      # The args of configs/macos-arm64.gn, whatever the out dir held before
+      # (gn gen with unchanged args rebuilds nothing).
+      - name: Configure (configs/macos-arm64.gn)
+        run: ./scripts/configure.sh --platform macos --arch arm64
 
-      - name: Sign + notarize + DMG
+      # Compiles chrome, then bundles Tor, whisper and tesseract into the app;
+      # with MOLT_RELEASE_BUILD=1 a bundling failure fails the job. autoninja
+      # can exit 0 on a failed compile (CLAUDE.md), so the log is checked too.
+      - name: Build chrome and bundle the helpers
+        shell: bash   # -eo pipefail: a failure before the tee fails the step
+        run: |
+          ./scripts/build.sh --platform macos 2>&1 | tee "$RUNNER_TEMP/build-macos.log"
+          if grep -nE '^FAILED: |build finished with an error|ninja: build stopped' "$RUNNER_TEMP/build-macos.log"; then
+            echo "::error::the compile failed (lines above); not packaging this build"
+            exit 1
+          fi
+
+      # scripts/release.sh, as in a local release: Info.plist version,
+      # default.metallib (no model loads without it), inside-out signing
+      # (per-helper entitlements, the framework's Libraries/, the Resources/
+      # helpers), then dist/MoltBrowser-macOS-arm64.dmg, signed, notarized
+      # and stapled. It refuses an app without its bundled helpers.
+      - name: Info.plist, default.metallib, sign, DMG, notarize
         env:
           MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
           APPLE_ID:             ${{ secrets.APPLE_ID }}
@@ -132,15 +167,10 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD"
 
-          ./scripts/sign-app.sh \
-            --identity "$MAC_SIGNING_IDENTITY" \
-            --notarize
-
-          mkdir -p dist
-          rm -f dist/MoltBrowser-macOS-arm64.dmg
-          hdiutil create -volname MoltBrowser \
-            -srcfolder chromium/src/out/MoltBrowser/MoltBrowser.app \
-            -ov -format UDZO dist/MoltBrowser-macOS-arm64.dmg
+          ./scripts/release.sh --version "$VERSION" --build "$BUILD_NUM" \
+            --identity "$MAC_SIGNING_IDENTITY" --team-id "$APPLE_TEAM_ID" \
+            --notarize --skip-build
+          test -f dist/MoltBrowser-macOS-arm64.dmg
 
       # After signing: the SBOM hashes the shipped (signed) helper binaries.
       - name: SBOM
@@ -197,6 +227,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          clean: false    # keep the warm, gitignored chromium/ (see the macOS job)
       - name: Configure environment
         run: |
           echo "PATH=$PWD/depot_tools:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:$PATH" >> "$GITHUB_ENV"
@@ -232,9 +263,9 @@ jobs:
       - name: Collect assets + checksums
         id: assets
         run: |
-          shopt -s nullglob
-          # This version only: a warm runner keeps older packages in dist/.
-          files=("dist/MoltBrowser-${VERSION}-linux-x64.tar.gz" "dist/MoltBrowser-${VERSION}-linux-x64.AppImage" "dist/moltbrowser_${VERSION}_amd64.deb" dist/moltbrowser*"-${VERSION}"-*.rpm)
+          # The fixed names the updater downloads (scripts/lib-release-names.sh);
+          # package-linux.sh removed any older packages before writing them.
+          files=(dist/MoltBrowser-Linux-x64.tar.gz dist/MoltBrowser-Linux-x64.AppImage dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm)
           for i in "${!files[@]}"; do [ -f "${files[$i]}" ] || unset "files[$i]"; done
           files=("${files[@]}")
           if [ ${#files[@]} -eq 0 ]; then
@@ -297,6 +328,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          clean: false    # keep the warm, gitignored chromium/ (see the macOS job)
       - name: Configure environment
         shell: bash
         run: |
@@ -336,9 +368,9 @@ jobs:
         id: assets
         shell: bash
         run: |
-          shopt -s nullglob
-          # This version only: a warm runner keeps older packages in dist/.
-          files=("dist/MoltBrowser-${VERSION}-win-x64-setup.exe" "dist/MoltBrowser-${VERSION}-win-x64-portable.zip")
+          # The fixed names (scripts/lib-release-names.sh); release-win.sh
+          # renamed this run's packages to them and removed older ones.
+          files=(dist/MoltBrowser-Windows-x64-Setup.exe dist/MoltBrowser-Windows-x64.zip)
           for i in "${!files[@]}"; do [ -f "${files[$i]}" ] || unset "files[$i]"; done
           files=("${files[@]}")
           if [ ${#files[@]} -eq 0 ]; then

@@ -1,8 +1,8 @@
 # MoltBrowser Build Configuration — Windows x64
 # Copyright 2025 GenEye AI Labs Inc.
 #
-# Usage: gn gen out/MoltBrowser --args="import(\"//configs/windows-x64.gn\")"
-# Or:    ./scripts/configure.sh --platform windows --arch x64
+# Usage (repository root): ./scripts/configure.sh --platform windows --arch x64
+# Or, in chromium/src:    gn gen out/MoltBrowser --args="$(cat ../../configs/windows-x64.gn)"
 
 # Target platform
 target_os = "win"

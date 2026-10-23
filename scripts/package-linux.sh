@@ -10,7 +10,8 @@
 #   5. Flatpak (sandboxed)
 #
 # Prerequisites:
-#   - Built MoltBrowser in out/MoltBrowser
+#   - Built MoltBrowser in out/MoltBrowser-linux (Linux's own out dir:
+#     scripts/configure.sh --platform linux, scripts/build.sh --platform linux)
 #   - dpkg-deb for .deb (apt install dpkg)
 #   - rpmbuild for .rpm (dnf install rpm-build)
 #   - appimagetool for AppImage
@@ -19,6 +20,10 @@
 # Usage:
 #   ./scripts/package-linux.sh [--version VERSION] [--format FORMAT]
 #   FORMAT: all, tar, deb, rpm, appimage, flatpak
+#
+# Output (dist/): the fixed, versionless names the in-app updater downloads
+# (scripts/lib-release-names.sh): MoltBrowser-Linux-x64.tar.gz, .deb, .rpm
+# and .AppImage. The version is inside each package.
 #
 # Tor: Linux packages don't bundle tor. The .deb and .rpm declare a weak
 # dependency ("Recommends: tor", installed by default by apt and dnf) and
@@ -34,8 +39,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CHROMIUM_SRC="$ROOT_DIR/chromium/src"
-BUILD_DIR="$CHROMIUM_SRC/out/MoltBrowser"
+BUILD_DIR="$CHROMIUM_SRC/out/MoltBrowser-linux"
 DIST_DIR="$ROOT_DIR/dist"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 VERSION="0.1.0-alpha"
 FORMAT="all"
 
@@ -65,7 +72,7 @@ echo "Format: $FORMAT"
 CHROME_BIN="$BUILD_DIR/chrome"
 if [ ! -f "$CHROME_BIN" ]; then
   echo "ERROR: Build not found at $CHROME_BIN"
-  echo "Run ./scripts/build.sh first."
+  echo "Run ./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux first."
   exit 1
 fi
 
@@ -125,7 +132,7 @@ ln -sf /opt/moltbrowser/moltbrowser "$STAGE_DIR/usr/bin/moltbrowser"
 build_tar() {
   echo ""
   echo "--- Creating tar.gz ---"
-  TAR_NAME="MoltBrowser-$VERSION-linux-x64.tar.gz"
+  TAR_NAME="$MOLT_ASSET_LINUX_TAR"
   cd "$STAGE_DIR"
   # Owned by root, not by the build user's uid (extracting as root would
   # otherwise hand /opt/moltbrowser to whoever has that uid).
@@ -179,7 +186,7 @@ gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
 EOF
   chmod 755 "$DEB_DIR/DEBIAN/postinst"
 
-  DEB_NAME="moltbrowser_${VERSION}_amd64.deb"
+  DEB_NAME="$MOLT_ASSET_LINUX_DEB"
   # Files owned by root:root (without --root-owner-group dpkg installs them
   # owned by the build user's uid). xz, not Ubuntu's zstd default: dpkg
   # before 1.21.18 (Debian 11) cannot unpack zstd, and the repository tooling
@@ -241,8 +248,13 @@ tar xzf moltbrowser-$VERSION.tar.gz -C %{buildroot}
 EOF
 
   rpmbuild --define "_topdir $RPM_ROOT" -bb "$RPM_ROOT/SPECS/moltbrowser.spec"
-  cp "$RPM_ROOT/RPMS/"*/*.rpm "$DIST_DIR/" 2>/dev/null || true
-  echo "RPM built!"
+  local rpms=("$RPM_ROOT/RPMS/"*/*.rpm)
+  if [ ${#rpms[@]} -ne 1 ] || [ ! -f "${rpms[0]}" ]; then
+    echo "ERROR: expected one .rpm from rpmbuild, found: ${rpms[*]}"
+    exit 1
+  fi
+  cp "${rpms[0]}" "$DIST_DIR/$MOLT_ASSET_LINUX_RPM"
+  echo "RPM: $DIST_DIR/$MOLT_ASSET_LINUX_RPM ($(du -sh "$DIST_DIR/$MOLT_ASSET_LINUX_RPM" | cut -f1))"
   rm -rf "$RPM_ROOT"
 }
 
@@ -276,7 +288,7 @@ exec "$HERE/usr/bin/moltbrowser" "$@"
 EOF
   chmod +x "$APPDIR/AppRun"
 
-  APPIMAGE_NAME="MoltBrowser-$VERSION-linux-x64.AppImage"
+  APPIMAGE_NAME="$MOLT_ASSET_LINUX_APPIMAGE"
   appimagetool "$APPDIR" "$DIST_DIR/$APPIMAGE_NAME"
   echo "AppImage: $DIST_DIR/$APPIMAGE_NAME"
   rm -rf "$APPDIR"
@@ -287,16 +299,20 @@ build_flatpak() {
   echo ""
   echo "--- Creating Flatpak manifest ---"
 
-  FLATPAK_DIR="$ROOT_DIR/installer/linux/flatpak"
+  # In dist/, not in the source tree: a release build must leave the tree
+  # clean (its build provenance refuses uncommitted changes), and this file
+  # changes with every tarball. installer/linux/flatpak/ keeps the last one
+  # committed.
+  FLATPAK_DIR="$DIST_DIR/flatpak"
   mkdir -p "$FLATPAK_DIR"
 
   # The manifest pins the release tarball by SHA-256 (flatpak-builder
   # refuses a mismatch). It exists when the tar format ran first ("all").
   TAR_SHA256="FIXME_BUILD_THE_TAR_FORMAT_FIRST"
-  if [ -f "$DIST_DIR/MoltBrowser-$VERSION-linux-x64.tar.gz" ]; then
-    TAR_SHA256="$(sha256sum "$DIST_DIR/MoltBrowser-$VERSION-linux-x64.tar.gz" | cut -d' ' -f1)"
+  if [ -f "$DIST_DIR/$MOLT_ASSET_LINUX_TAR" ]; then
+    TAR_SHA256="$(sha256sum "$DIST_DIR/$MOLT_ASSET_LINUX_TAR" | cut -d' ' -f1)"
   else
-    echo "WARNING: no tarball for $VERSION in dist/; the Flatpak manifest's sha256 is a placeholder."
+    echo "WARNING: no $MOLT_ASSET_LINUX_TAR in dist/; the Flatpak manifest's sha256 is a placeholder."
   fi
 
   cat > "$FLATPAK_DIR/com.geneye.MoltBrowser.yml" << EOF
@@ -325,7 +341,7 @@ modules:
       - install -Dm644 moltbrowser.png /app/share/icons/hicolor/256x256/apps/com.geneye.MoltBrowser.png
     sources:
       - type: archive
-        url: https://github.com/OneManNoCode/MoltBrowser/releases/download/v${VERSION}/MoltBrowser-${VERSION}-linux-x64.tar.gz
+        url: https://github.com/OneManNoCode/MoltBrowser/releases/download/v${VERSION}/${MOLT_ASSET_LINUX_TAR}
         sha256: ${TAR_SHA256}
 EOF
 
@@ -359,4 +375,4 @@ rm -rf "$STAGE_DIR"
 echo ""
 echo "=== Linux Packaging Complete ==="
 echo "Artifacts in: $DIST_DIR/"
-ls -la "$DIST_DIR/"*linux* "$DIST_DIR/"moltbrowser_* 2>/dev/null || true
+ls -la "$DIST_DIR/"MoltBrowser-Linux-x64.* 2>/dev/null || true

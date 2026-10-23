@@ -612,6 +612,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   with the release key, and publishing and CI refuse a release without
   them. Anyone can check one with `molt_provenance.py verify`
   (`docs/SIGNED_UPDATES.md`, "Build provenance").
+- Releases: every release script and workflow uploads the installers
+  under the names the in-app updater downloads
+  (`MoltBrowser-macOS-arm64.dmg`, `MoltBrowser-Linux-x64.{deb,rpm,tar.gz}`),
+  from one list CI checks against the updater; `release.sh` and
+  `release-linux.sh` used versioned names it never finds. The macOS release
+  workflow now builds like a local release: it bundles Tor, whisper and
+  tesseract, adds the Metal library that on-device models need and signs
+  the framework's GPU libraries. A helper that can't be bundled or signed
+  stops the release instead of shipping without it. Linux builds in its
+  own out dir, `out/MoltBrowser-linux`, so it no longer replaces the macOS
+  build in a shared checkout.
 - Full GPLv3 licence text, llama.cpp licence notice, Code of Conduct,
   issue/PR templates; unused code and Sparkle leftovers removed, including
   the never-wired `browser.ai.*` stub (whose permission check allowed every

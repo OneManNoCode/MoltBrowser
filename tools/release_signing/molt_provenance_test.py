@@ -916,6 +916,10 @@ class ProvenanceTest(unittest.TestCase):
         script = os.path.join(self.w.repo, 'scripts', 'release-provenance.sh')
         env = self.w.env(CHROMIUM_SRC=self.w.chromium)
         env.pop('MOLT_BUILD_STARTED_ON', None)
+        # A Linux build has its own out dir (scripts/configure.sh), which
+        # the wrapper reads by default, not the macOS build's out/MoltBrowser.
+        os.rename(os.path.join(self.w.chromium, 'out', 'MoltBrowser'),
+                  os.path.join(self.w.chromium, 'out', 'MoltBrowser-linux'))
         r = self.w.run(['bash', script, '--start', '--version', '0.3.0'], env=env)
         started = r.stdout.decode().strip()
         self.assertTrue(prov.TIME.fullmatch(started))
@@ -937,6 +941,9 @@ class ProvenanceTest(unittest.TestCase):
         self.assertEqual(md['startedOn'], started)
         self.assertEqual(md['invocationId'], 'https://github.com/OneManNoCode/'
                          'MoltBrowser/actions/runs/42/attempts/2')
+        gn = self.statement()['predicate']['buildDefinition'][
+            'internalParameters']['gnArgs']
+        self.assertEqual([g['outDir'] for g in gn], ['out/MoltBrowser-linux'])
         # The repository's own depot_tools was found and used.
         deps = self.statement()['predicate']['runDetails']['builder'][
             'builderDependencies']

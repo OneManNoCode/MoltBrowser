@@ -1,8 +1,8 @@
 # MoltBrowser Build Configuration — Android arm64
 # Copyright 2025 GenEye AI Labs Inc.
 #
-# Usage: gn gen out/MoltBrowser --args="import(\"//configs/android-arm64.gn\")"
-# Or:    ./scripts/configure.sh --platform android --arch arm64
+# Usage (repository root): ./scripts/configure.sh --platform android --arch arm64
+# Or, in chromium/src:    gn gen out/MoltBrowser --args="$(cat ../../configs/android-arm64.gn)"
 #
 # Prerequisites:
 #   - Android NDK (r26+) installed via sdkmanager
