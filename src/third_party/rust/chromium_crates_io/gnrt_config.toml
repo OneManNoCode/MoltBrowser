@@ -982,8 +982,8 @@ extra_kv = { allow_unsafe = false }
 
 # MoltBrowser: shipped (anydoc's pdf-inspector and env_filter, and
 # adblock's `full-regex-handling`), so not `group = 'test'` as upstream
-# has it. regex-automata and version_check (test-only upstream too) have no
-# explicit group, so they become shipped through their dependents.
+# has it. version_check (test-only upstream too) has no explicit group, so
+# it becomes shipped through its dependents.
 [crate.regex]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
