@@ -25,6 +25,9 @@
 #                              descriptions, location, Cast, phone passkeys)
 #   molt_net_request_binders — no image-description or location service for
 #                              MoltNet frames
+#   molt_net_network_context_policy — MoltNet's per-context network
+#                              settings: one-off keys for certificate
+#                              fetches, no NTLM or Negotiate
 
 import("//extensions/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
@@ -104,6 +107,15 @@ source_set("requests_policy") {
   sources = [ "molt_net_requests_policy.h" ]
 }
 
+# How MoltNet's network context differs in the settings Chromium keeps per
+# network context (molt_net_network_context_policy.h): one-off keys for
+# certificate fetches, no NTLM or Negotiate. Header-only and std-only, so
+# the hook in ProfileNetworkContextService needs no link dependency and
+# molt_ai_unittests tests it.
+source_set("network_context_policy") {
+  sources = [ "molt_net_network_context_policy.h" ]
+}
+
 source_set("tor") {
   sources = [
     "exit_country_names.h",
@@ -126,6 +138,7 @@ source_set("tor") {
 
   public_deps = [
     ":incognito_parity_policy",
+    ":network_context_policy",
     ":pref_isolation",
     ":protocol",
     ":requests_policy",
@@ -369,6 +382,7 @@ source_set("unit_tests") {
     "molt_net_isolation_policy_unittest.cc",
     "molt_net_locale_prefs_resource_ids.h",
     "molt_net_locale_prefs_unittest.cc",
+    "molt_net_network_context_policy_unittest.cc",
     "molt_net_pref_isolation_policy_unittest.cc",
     "molt_net_pref_isolation_unittest.cc",
     "molt_net_request_binders_unittest.cc",
@@ -384,6 +398,7 @@ source_set("unit_tests") {
     ":incognito_parity_policy",
     ":isolation_policy",
     ":locale_prefs",
+    ":network_context_policy",
     ":onion_location",
     ":pref_isolation",
     ":pref_isolation_policy",
@@ -410,6 +425,9 @@ source_set("unit_tests") {
     "//mojo/public/cpp/system",
     "//net",
     "//net:test_support",
+
+    # The parameters MoltNet's network-context settings are written into.
+    "//services/cert_verifier/public/mojom",
     "//services/device/public/mojom",
     "//services/image_annotation/public/mojom",
     "//services/network/public/cpp:buildflags",
