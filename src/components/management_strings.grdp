@@ -462,26 +462,13 @@
     </message>
   </if>
 
-<<<<<<< src/components/management_strings.grdp (MoltBrowser)
   <!-- Strings related to MoltBrowser Enterprise Device Signals Sharing -->
-  <if expr="is_win or is_linux or is_macosx or is_android">
-||||||| upstream@pin
-  <!-- Strings related to Chrome Enterprise Device Signals Sharing -->
-  <if expr="is_win or is_linux or is_macosx or is_android">
-=======
-  <!-- Strings related to Chrome Enterprise Device Signals Sharing -->
   <if expr="not is_chromeos">
->>>>>>> upstream@new
     <message name="IDS_MANAGEMENT_DEVICE_SIGNALS_DISCLOSURE" desc="Disclosure message explaining that device signals can be shared.">
       Information about your browser, OS, device, installed software, files, and IP addresses
     </message>
   </if>
 
-<<<<<<< src/components/management_strings.grdp (MoltBrowser)
-  <!-- Strings related to MoltBrowser Enterprise Connectors -->
-||||||| upstream@pin
-  <!-- Strings related to Chrome Enterprise Connectors -->
-=======
   <!-- Strings related to Secure Gateway -->
   <message name="IDS_MANAGEMENT_SECURE_GATEWAY_TITLE" desc="Title of the Secure Gateway disclosure section">
     Secure gateway
@@ -490,8 +477,7 @@
     Your administrator configured the secure gateway connector to protect access to your organization’s private web applications. It may use data from your work profile to verify access.
   </message>
 
-  <!-- Strings related to Chrome Enterprise Connectors -->
->>>>>>> upstream@new
+  <!-- Strings related to MoltBrowser Enterprise Connectors -->
   <message name="IDS_MANAGEMENT_THREAT_PROTECTION" desc="Title of the Chrome Enterprise Connectors section of the page" formatter_data="android_java">
     MoltBrowser Enterprise Connectors
   </message>
@@ -535,13 +521,7 @@
     URLs and titles of pages you visit are sent to Google Cloud or third parties for analysis, and may be visible to your administrator. For example, they might be scanned to detect unsafe websites or filter websites based on rules set by the administrator.
   </message>
   <message name="IDS_MANAGEMENT_ENTERPRISE_REPORTING_VISIBLE_DATA" desc="Description of the visible data for the Connectors reporting feature" formatter_data="android_java">
-<<<<<<< src/components/management_strings.grdp (MoltBrowser)
-    When security events are flagged by MoltBrowser, relevant data about the events is sent to your administrator. This can include URLs of pages you visit in MoltBrowser, URLs of pages you copied data from, file names or metadata, IP addresses, browser or tab crashes, and the username that you use to sign in to web based applications, your device and MoltBrowser.
-||||||| upstream@pin
-    When security events are flagged by Chrome, relevant data about the events is sent to your administrator. This can include URLs of pages you visit in Chrome, URLs of pages you copied data from, file names or metadata, IP addresses, browser or tab crashes, and the username that you use to sign in to web based applications, your device and Chrome.
-=======
-    When security events are flagged by Chrome, relevant data about the events is sent to your administrator. This can include URLs and titles of pages you visit in Chrome, URLs of pages you copied data from, file names or metadata, IP addresses, browser or tab crashes, and the username that you use to sign in to web based applications, your device and Chrome.
->>>>>>> upstream@new
+    When security events are flagged by MoltBrowser, relevant data about the events is sent to your administrator. This can include URLs and titles of pages you visit in MoltBrowser, URLs of pages you copied data from, file names or metadata, IP addresses, browser or tab crashes, and the username that you use to sign in to web based applications, your device and MoltBrowser.
   </message>
 
   <!-- Management toolbar button dialog view -->

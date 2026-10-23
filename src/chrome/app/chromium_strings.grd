@@ -302,7 +302,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
         </else>
       </if>
       <message name="IDS_APP_MENU_YOUR_CHROME_HEADER" desc="Header title for the Your Chromium section in the main App Menu">
-        Your Chromium
+        Your MoltBrowser
       </message>
       <if expr="is_win">
         <message name="IDS_SXS_SHORTCUT_NAME" desc="Unused in MoltBrowser builds" translateable="false">
@@ -802,57 +802,57 @@ MoltBrowser is unable to recover your settings.
             <!-- Pin InfoBar Experimental strings -->
       <if expr="is_win">
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_1" translateable="false" desc="Message text for the experimental pin infobar version 1 on Windows">
-          Open Chromium with one click. Pin it for faster access.
+          Open MoltBrowser with one click. Pin it for faster access.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_2" translateable="false" desc="Message text for the experimental pin infobar version 2 on Windows">
-          Launch the web faster. Pin Chromium to your taskbar.
+          Launch the web faster. Pin MoltBrowser to your taskbar.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_3" translateable="false" desc="Message text for the experimental pin infobar version 3 on Windows">
-          Keep Chromium within reach anytime you browse.
+          Keep MoltBrowser within reach anytime you browse.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_BUTTON_3" translateable="false" desc="Button text for the experimental pin infobar version 3 on Windows">
-          Pin Chromium Now
+          Pin MoltBrowser Now
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_4" translateable="false" desc="Message text for the experimental pin infobar version 4 on Windows">
-          Optimize your workflow. Add Chromium to your taskbar.
+          Optimize your workflow. Add MoltBrowser to your taskbar.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_6" translateable="false" desc="Message text for the experimental pin infobar version 6 on Windows">
-          Simplify your startup. Pin Chromium to your taskbar.
+          Simplify your startup. Pin MoltBrowser to your taskbar.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_BUTTON_8" translateable="false" desc="Button text for the experimental pin infobar version 8 on Windows">
-          Pin Chromium
+          Pin MoltBrowser
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_9" translateable="false" desc="Message text for the experimental pin infobar version 9 on Windows">
-          For a better desktop experience, pin Chromium to your taskbar.
+          For a better desktop experience, pin MoltBrowser to your taskbar.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_MESSAGE_10" translateable="false" desc="Message text for the experimental pin infobar version 10 on Windows">
-          Start browsing instantly. Pin Chromium to your taskbar.
+          Start browsing instantly. Pin MoltBrowser to your taskbar.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_BUTTON_10" translateable="false" desc="Button text for the experimental pin infobar version 10 on Windows">
-          Pin Chromium
+          Pin MoltBrowser
         </message>
       </if>
       <if expr="is_macosx">
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_1" translateable="false" desc="Message text for the experimental pin infobar version 1 on Mac">
-          Open Chromium with one click. Keep it in your Dock for faster access.
+          Open MoltBrowser with one click. Keep it in your Dock for faster access.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_2" translateable="false" desc="Message text for the experimental pin infobar version 2 on Mac">
-          Launch the web faster. Keep Chromium in your Dock.
+          Launch the web faster. Keep MoltBrowser in your Dock.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_3" translateable="false" desc="Message text for the experimental pin infobar version 3 on Mac">
-          Keep Chromium within reach anytime you browse.
+          Keep MoltBrowser within reach anytime you browse.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_4" translateable="false" desc="Message text for the experimental pin infobar version 4 on Mac">
-          Optimize your workflow. Add Chromium to your Dock.
+          Optimize your workflow. Add MoltBrowser to your Dock.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_6" translateable="false" desc="Message text for the experimental pin infobar version 6 on Mac">
-          Simplify your startup. Keep Chromium in your Dock.
+          Simplify your startup. Keep MoltBrowser in your Dock.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_9" translateable="false" desc="Message text for the experimental pin infobar version 9 on Mac">
-          For a better desktop experience, keep Chromium in your Dock.
+          For a better desktop experience, keep MoltBrowser in your Dock.
         </message>
         <message name="IDS_PIN_INFOBAR_EXPERIMENTAL_DOCK_MESSAGE_10" translateable="false" desc="Message text for the experimental pin infobar version 10 on Mac">
-          Start browsing instantly. Keep Chromium in your Dock.
+          Start browsing instantly. Keep MoltBrowser in your Dock.
         </message>
       </if>
 
@@ -876,22 +876,10 @@ MoltBrowser is unable to recover your settings.
           Set MoltBrowser as your default browser
         </message>
         <message name="IDS_DEFAULT_BROWSER_MODAL_BODY_WITHOUT_SETTINGS_ILLUSTRATION" desc="Body text of the default browser modal without settings illustration.">
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-          Get easy access to the features you know, love, and trust by setting MoltBrowser as your default browser.
-||||||| upstream@pin
-          Get easy access to the features you know, love, and trust by setting Chromium as your default browser.
-=======
-          Keep your passwords, bookmarks, and history perfectly synced across devices. Easily access the features you know and love by updating your default browser to Chromium.
->>>>>>> upstream@new
+          Keep your passwords, bookmarks, and history perfectly synced across devices. Easily access the features you know and love by updating your default browser to MoltBrowser.
         </message>
         <message name="IDS_DEFAULT_BROWSER_MODAL_BODY_WITHOUT_SETTINGS_ILLUSTRATION_UNPINNED" desc="Body text of the default browser modal without settings illustration when Chromium is not pinned to the taskbar.">
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-          Get easy access to the features you know, love, and trust by setting MoltBrowser as your default browser. MoltBrowser will be pinned to your taskbar for quick access.
-||||||| upstream@pin
-          Get easy access to the features you know, love, and trust by setting Chromium as your default browser. Chromium will be pinned to your taskbar for quick access.
-=======
-          Keep your passwords, bookmarks, and history perfectly synced across devices. Easily access the features you know and love by updating your default browser to Chromium. Chromium will be pinned to your taskbar for quick access.
->>>>>>> upstream@new
+          Keep your passwords, bookmarks, and history perfectly synced across devices. Easily access the features you know and love by updating your default browser to MoltBrowser. MoltBrowser will be pinned to your taskbar for quick access.
         </message>
         <message name="IDS_DEFAULT_BROWSER_BUBBLE_DIALOG_TITLE" desc="Title of the dialog prompting the user to set Chromium as the default browser.">
           Set MoltBrowser as your default browser
@@ -1207,67 +1195,15 @@ MoltBrowser is unable to recover your settings.
 
       <!-- Page menu. Android has separate strings for its menu -->
       <if expr="not is_android">
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-        <if expr="use_titlecase">
-          <then>
-            <message name="IDS_CUSTOMIZE_CHROME" desc="In Title Case: The text label of the Customize Chrome menu item">
-              C&amp;ustomize Your MoltBrowser
-            </message>
-            <message name="IDS_OTHER_CHROME_PROFILES_TITLE" desc="In Title Case: The title of the Other Chrome profiles section">
-              Other MoltBrowser Profiles
-            </message>
-            <message name="IDS_MANAGE_CHROME_PROFILES" desc="In Title Case: The text label of the manage chrome profile item">
-              &amp;Manage MoltBrowser Profiles
-            </message>
-          </then>
-          <else>
-            <message name="IDS_CUSTOMIZE_CHROME" desc="The text label of the Customize Chrome menu item">
-              C&amp;ustomize your MoltBrowser
-            </message>
-            <message name="IDS_OTHER_CHROME_PROFILES_TITLE" desc="The title of the Other Chrome profiles section">
-              Other MoltBrowser profiles
-            </message>
-            <message name="IDS_MANAGE_CHROME_PROFILES" desc="The text label of the manage chrome profile item">
-              &amp;Manage MoltBrowser profiles
-            </message>
-          </else>
-        </if>
-||||||| upstream@pin
-        <if expr="use_titlecase">
-          <then>
-            <message name="IDS_CUSTOMIZE_CHROME" desc="In Title Case: The text label of the Customize Chrome menu item">
-              C&amp;ustomize Your Chromium
-            </message>
-            <message name="IDS_OTHER_CHROME_PROFILES_TITLE" desc="In Title Case: The title of the Other Chrome profiles section">
-              Other Chromium Profiles
-            </message>
-            <message name="IDS_MANAGE_CHROME_PROFILES" desc="In Title Case: The text label of the manage chrome profile item">
-              &amp;Manage Chromium Profiles
-            </message>
-          </then>
-          <else>
-            <message name="IDS_CUSTOMIZE_CHROME" desc="The text label of the Customize Chrome menu item">
-              C&amp;ustomize your Chromium
-            </message>
-            <message name="IDS_OTHER_CHROME_PROFILES_TITLE" desc="The title of the Other Chrome profiles section">
-              Other Chromium profiles
-            </message>
-            <message name="IDS_MANAGE_CHROME_PROFILES" desc="The text label of the manage chrome profile item">
-              &amp;Manage Chromium profiles
-            </message>
-          </else>
-        </if>
-=======
         <message name="IDS_CUSTOMIZE_CHROME" desc="The text label of the Customize Chrome menu item">
-          C&amp;ustomize your Chromium
+          C&amp;ustomize your MoltBrowser
         </message>
         <message name="IDS_OTHER_CHROME_PROFILES_TITLE" desc="The title of the Other Chrome profiles section">
-          Other Chromium profiles
+          Other MoltBrowser profiles
         </message>
         <message name="IDS_MANAGE_CHROME_PROFILES" desc="The text label of the manage chrome profile item">
-          &amp;Manage Chromium profiles
+          &amp;Manage MoltBrowser profiles
         </message>
->>>>>>> upstream@new
       </if>
 
       <message name="IDS_VIEW_PASSWORDS" desc="Item in the app menu which shows Password Manager page">
@@ -1486,78 +1422,70 @@ MoltBrowser is unable to recover your settings.
         <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_CREATE_BUBBLE_DESC" desc="Body of the web signin interception bubble. It is shown when the user signs in on the web while they already have another account present in the current profile.">
           <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in.  To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>foo@gmail.com</ex></ph>.
         </message>
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-        <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE" desc="Subtitle of the MoltBrowser Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
-          To get your passwords and more on all your devices, sign in to MoltBrowser
-||||||| upstream@pin
-        <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE" desc="Subtitle of the Chromium Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
-          To get your passwords and more on all your devices, sign in to Chromium
-=======
         <!-- Account Preview Multi-User / Profile Separation Intercept Promo Subtitles -->
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_PASSWORDS_WITH_DEVICE" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access passwords from their other device.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your passwords and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your passwords and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_BOOKMARKS_WITH_DEVICE" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access bookmarks from their other device.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your bookmarks and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your bookmarks and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_SAVED_INFO_WITH_DEVICE" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access saved info (such as autofill data, addresses, and payment methods) from their other device.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your saved info and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your saved info and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_READING_LIST_WITH_DEVICE" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access reading list from their other device.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your reading list and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your reading list and more from <ph name="DEVICE">$3<ex>your phone</ex></ph>.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_EXTENSIONS_WITH_DEVICE" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access extensions from their computer. Only desktop/computer DEVICE are supported for extensions.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your extensions and more from <ph name="DEVICE">$3<ex>your computer</ex></ph>.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your extensions and more from <ph name="DEVICE">$3<ex>your computer</ex></ph>.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_PASSWORDS" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access passwords on all their devices.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your passwords and more on all your devices.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your passwords and more on all your devices.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_BOOKMARKS" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access bookmarks on all their devices.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your bookmarks and more on all your devices.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your bookmarks and more on all your devices.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_SAVED_INFO" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access saved info (such as autofill data, addresses, and payment methods) on all their devices.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your saved info and more on all your devices.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your saved info and more on all your devices.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_READING_LIST" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access reading list on all their devices.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your reading list and more on all your devices.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your reading list and more on all your devices.
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_PROFILE_SEPARATION_SUBTITLE_EXTENSIONS" desc="Body of the web signin interception bubble with account preview, informing the user they can keep accounts separate and access extensions on all their devices.">
-          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to Chromium in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your extensions and more on all your devices.
+          <ph name="EXISTING_USER">$1<ex>Elisa</ex></ph> is already signed in. To keep your browsing separate, sign in to MoltBrowser in your own profile as <ph name="USER_EMAIL_ADDRESS">$2<ex>bob.beckett@gmail.com</ex></ph>. You’ll also get your extensions and more on all your devices.
         </message>
         <!-- Account Preview Settings Signin Promo Subtitles -->
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_PASSWORDS_WITH_DEVICE" desc="Subtitle of a sign-in promo in Settings informing the user they can access their passwords from their other device.">
-          To get your passwords and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to Chromium
+          To get your passwords and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_BOOKMARKS_WITH_DEVICE" desc="Subtitle of a sign-in promo in Settings informing the user they can access their bookmarks from their other device.">
-          To get your bookmarks and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to Chromium
+          To get your bookmarks and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_SAVED_INFO_WITH_DEVICE" desc="Subtitle of a sign-in promo in Settings informing the user they can access their saved info (such as autofill data, addresses, and payment methods) from their other device.">
-          To get your saved info and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to Chromium
+          To get your saved info and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_READING_LIST_WITH_DEVICE" desc="Subtitle of a sign-in promo in Settings informing the user they can access their reading list from their other device.">
-          To get your reading list and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to Chromium
+          To get your reading list and more from <ph name="DEVICE">$1<ex>your phone</ex></ph>, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_EXTENSIONS_WITH_DEVICE" desc="Subtitle of a sign-in promo in Settings informing the user they can access their extensions from their computer. Only desktop/computer DEVICE are supported for extensions.">
-          To get your extensions and more from <ph name="DEVICE">$1<ex>your computer</ex></ph>, sign in to Chromium
+          To get your extensions and more from <ph name="DEVICE">$1<ex>your computer</ex></ph>, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_PASSWORDS" desc="Subtitle of a sign-in promo in Settings informing the user they can access their passwords on all their devices.">
-          To get your passwords and more on all your devices, sign in to Chromium
+          To get your passwords and more on all your devices, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_BOOKMARKS" desc="Subtitle of a sign-in promo in Settings informing the user they can access their bookmarks on all their devices.">
-          To get your bookmarks and more on all your devices, sign in to Chromium
+          To get your bookmarks and more on all your devices, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_SAVED_INFO" desc="Subtitle of a sign-in promo in Settings informing the user they can access their saved info (such as autofill data, addresses, and payment methods) on all their devices.">
-          To get your saved info and more on all your devices, sign in to Chromium
+          To get your saved info and more on all your devices, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_READING_LIST" desc="Subtitle of a sign-in promo in Settings informing the user they can access their reading list on all their devices.">
-          To get your reading list and more on all your devices, sign in to Chromium
+          To get your reading list and more on all your devices, sign in to MoltBrowser
         </message>
         <message name="IDS_ACCOUNT_PREVIEW_SETTINGS_PROMO_SUBTITLE_EXTENSIONS" desc="Subtitle of a sign-in promo in Settings informing the user they can access their extensions on all their devices.">
-          To get your extensions and more on all your devices, sign in to Chromium
+          To get your extensions and more on all your devices, sign in to MoltBrowser
         </message>
-        <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE" desc="Subtitle of the Chromium Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
-          To get your passwords and more on all your devices, sign in to Chromium
->>>>>>> upstream@new
+        <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE" desc="Subtitle of the MoltBrowser Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
+          To get your passwords and more on all your devices, sign in to MoltBrowser
         </message>
         <message name="IDS_SIGNIN_DICE_WEB_INTERCEPT_BUBBLE_CHROME_SIGNIN_SUBTITLE_WITH_BOOKMARKS" desc="Subtitle of the MoltBrowser Signin Bubble intercept that is shown when a signed out user signs in on the web with it's first account.">
           To get your passwords, bookmarks, and more on all your devices, sign in to MoltBrowser
@@ -1717,7 +1645,7 @@ MoltBrowser is unable to recover your settings.
         Sign in to MoltBrowser on your phone
       </message>
       <message name="IDS_QR_CODE_BUBBLE_SIGNIN_ON_PHONE_QR_CODE_ALT_TEXT" desc="Accessibility label for the QR code image in the cross-device sign-in promo bubble.">
-        QR code to sign in to Chromium as <ph name="USER_NAME">$1<ex>Elisa Beckett</ex></ph>
+        QR code to sign in to MoltBrowser as <ph name="USER_NAME">$1<ex>Elisa Beckett</ex></ph>
       </message>
 
       <!-- App list -->
@@ -2045,7 +1973,7 @@ MoltBrowser is unable to recover your settings.
 
       <!-- Desktop Capture -->
       <message name="IDS_SEARCHBOX_PICKER_HEADLINE" desc="Title of the searchbox screen or window picker dialog.">
-        Choose what to share with Chromium
+        Choose what to share with MoltBrowser
       </message>
       <message name="IDS_DESKTOP_MEDIA_PICKER_SOURCE_TYPE_TAB" desc="Text for the button on the window picker dialog, clicking which takes one to tab sharing">
         MoltBrowser Tab
@@ -2095,13 +2023,7 @@ MoltBrowser is unable to recover your settings.
           MoltBrowser needs location permission for this site
         </message>
         <message name="IDS_MESSAGE_MISSING_LOCAL_NETWORK_PERMISSION_TEXT" desc="Text shown in a prompt ui when a website has requested access to the local network capabilities, but Chrome is missing the Android local network permission.">
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-          MoltBrowser needs local network permission for this site
-||||||| upstream@pin
-          Chromium needs local network permission for this site
-=======
-          Chromium needs access to your local network to discover and use nearby devices
->>>>>>> upstream@new
+          MoltBrowser needs access to your local network to discover and use nearby devices
         </message>
         <message name="IDS_MESSAGE_STORAGE_ACCESS_PERMISSION_TEXT" desc="Text shown educating the user that Chrome is missing the Android storage permission, which is required to download files.">
           MoltBrowser needs storage access permission to download files
@@ -2609,7 +2531,7 @@ MoltBrowser is unable to recover your settings.
               other {Your administrator asks that you relaunch MoltBrowser to apply this update. Your # Incognito windows won't reopen.}}
           </message>
           <message name="IDS_RELAUNCH_RECOMMENDED_SCHEDULED_IDLE_TOAST" desc="Toast notification message shown after scheduling an idle restart." translateable="false">
-            Chromium will restart when you're next idle
+            MoltBrowser will restart when you're next idle
           </message>
           <message name="IDS_RELAUNCH_REQUIRED_TITLE_DAYS" desc="The title of a dialog that tells users the browser must be relaunched within two or more days.">
             {0, plural,
@@ -2763,23 +2685,13 @@ MoltBrowser is unable to recover your settings.
 
         <!-- First Run Experience -->
         <message name="IDS_FRE_WELCOME_START_BUTTON_LABEL" desc="This string is found on a primary button that takes the user into the main browser experience. It is a verb-based call to action. (CHAR LIMIT = 20)">
-          Start Chromium
+          Start MoltBrowser
         </message>
 
         <message name="IDS_FRE_SIGN_IN_TITLE_0" meaning="Title"
           desc="This string appears as a heading on a full-page screen that asks the user to sign in to MoltBrowser with their Google Account. It appears when the user launches Chromium for the first time. When they sign in, they can personalize and customize Chromium and remember their settings in their Google Account. The tone should be inviting and alluring.">
           Sign in to MoltBrowser
         </message>
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-        <message name="IDS_FRE_GET_YOUR_BROWSER_READY_TITLE" meaning="Title" desc="It appears when the user launches Chromium for the first time on the page that is displayed before the sign in page. When they sign in, they can personalize and customize Chromium and remember their settings in their Google Account. The tone should be inviting and alluring.">
-          Let's get your MoltBrowser ready
-        </message>
-||||||| upstream@pin
-        <message name="IDS_FRE_GET_YOUR_BROWSER_READY_TITLE" meaning="Title" desc="It appears when the user launches Chromium for the first time on the page that is displayed before the sign in page. When they sign in, they can personalize and customize Chromium and remember their settings in their Google Account. The tone should be inviting and alluring.">
-          Let's get your Chromium ready
-        </message>
-=======
->>>>>>> upstream@new
 
         <!-- Default Browser Promo -->
         <message name="IDS_FRE_DEFAULT_BROWSER_TITLE" desc="Title for the page that prompts user to set Chromium as their default browser in the first run experience.">
@@ -3346,37 +3258,37 @@ MoltBrowser is unable to recover your settings.
 
       <!-- GEiC (Gemini Enterprise in Chrome) settings -->
       <message name="IDS_SETTINGS_GEIC_SECTION_TITLE" desc="Text of the Gemini Enterprise section header on the AI settings page. Also used as the label of the row button leading to the Gemini Enterprise subpage, and as the title of that subpage.">
-        Gemini Enterprise in Chromium
+        Gemini Enterprise in MoltBrowser
       </message>
 
       <if expr="is_macosx">
         <message name="IDS_OMNIBOX_EVERYWHERE_STATUS_ICON_MENU_TOGGLE" desc="In Title Case: Label for the toggle item in the Search in Chromium status tray context menu.">
-          Open Search with Chromium
+          Open Search with MoltBrowser
         </message>
       </if>
       <if expr="not is_macosx">
         <message name="IDS_OMNIBOX_EVERYWHERE_STATUS_ICON_MENU_TOGGLE" desc="Label for the toggle item in the Search in Chromium status tray context menu.">
-          Open search with Chromium
+          Open search with MoltBrowser
         </message>
       </if>
       <message name="IDS_OMNIBOX_EVERYWHERE_STATUS_ICON_TOOLTIP" desc="Tooltip text for the Search with Chromium status tray icon.">
-        Search with Chromium
+        Search with MoltBrowser
       </message>
       <message name="IDS_OMNIBOX_EVERYWHERE_PROFILE_TOOLTIP" desc="Tooltip header for the profile icon in Omnibox Everywhere.">
-        Chromium profile
+        MoltBrowser profile
       </message>
       <message name="IDS_OMNIBOX_EVERYWHERE_NAME" desc="Name of the desktop search feature (Omnibox Everywhere) used for window titles and shortcuts.">
-        Search with Chromium
+        Search with MoltBrowser
       </message>
       <if expr="is_win">
         <message name="IDS_OMNIBOX_EVERYWHERE_NAME_BETA" desc="Unused; Chromium has no side-by-side channels." translateable="false">
-          Search with Chromium Beta
+          Search with MoltBrowser Beta
         </message>
         <message name="IDS_OMNIBOX_EVERYWHERE_NAME_DEV" desc="Unused; Chromium has no side-by-side channels." translateable="false">
-          Search with Chromium Dev
+          Search with MoltBrowser Dev
         </message>
         <message name="IDS_OMNIBOX_EVERYWHERE_NAME_CANARY" desc="Unused; Chromium has no side-by-side channels." translateable="false">
-          Search with Chromium Canary
+          Search with MoltBrowser Canary
         </message>
       </if>
       <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_TITLE" desc="Title of the Omnibox Everywhere section on the search settings page.">
@@ -3384,37 +3296,37 @@ MoltBrowser is unable to recover your settings.
       </message>
       <if expr="is_macosx">
         <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_TOGGLE" desc="Name of the toggle that controls whether Search with Chromium is shown in the Mac menu bar (on Mac only).">
-          Show search with Chromium in Mac menu bar and turn on keyboard shortcut
+          Show search with MoltBrowser in Mac menu bar and turn on keyboard shortcut
         </message>
       </if>
       <if expr="is_win or is_linux or is_chromeos">
         <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_TOGGLE" desc="Name of the toggle that controls whether Search with Chromium is shown in the system tray (on ChromeOS, Windows and Linux).">
-          Show search with Chromium in system tray and turn on keyboard shortcut
+          Show search with MoltBrowser in system tray and turn on keyboard shortcut
         </message>
       </if>
       <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_TOGGLE_SUBLABEL" desc="Sublabel of the toggle that controls whether Omnibox Everywhere is shown across the device even if Chromium is minimized.">
-        Search and ask questions from anywhere, even if Chromium is minimized. Allows Chromium to run in the background.
+        Search and ask questions from anywhere, even if MoltBrowser is minimized. Allows MoltBrowser to run in the background.
       </message>
       <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_SHORTCUT_SUBLABEL" desc="Description for the global keyboard shortcut setting to invoke Omnibox Everywhere.">
         Search with a keyboard shortcut.
       </message>
       <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_SHOW_SHORTCUTS_TITLE" desc="Label for the toggle to show shortcuts in Omnibox Everywhere.">
-        Show Chromium site shortcuts
+        Show MoltBrowser site shortcuts
       </message>
       <message name="IDS_SETTINGS_OMNIBOX_EVERYWHERE_SHOW_SHORTCUTS_SUBLABEL" desc="Description for the toggle to show shortcuts in Omnibox Everywhere.">
         Easy access to websites below the address bar
       </message>
       <message name="IDS_LOOMNIBOX_FRE_TITLE" desc="Title of the First Run Experience (FRE) modal for Loomnibox.">
-        Search with Chromium from anywhere
+        Search with MoltBrowser from anywhere
       </message>
       <message name="IDS_LOOMNIBOX_FRE_LENS_SECONDARY" desc="Secondary description detailing Google Lens functionality in Loomnibox.">
-        Ask about content outside of Chromium, like other apps or files
+        Ask about content outside of MoltBrowser, like other apps or files
       </message>
       <message name="IDS_LOOMNIBOX_FRE_TO_SEARCH_OR_CUSTOMIZE" desc="Text in the Stage 2 FRE chin following the shortcut dropdown indicating it searches with Chromium or customizes in settings.">
-        to search with Chromium or customize in <ph name="BEGIN_LINK">&lt;a href="#" class="settings-link"&gt;</ph>Settings<ph name="END_LINK">&lt;/a&gt;</ph>
+        to search with MoltBrowser or customize in <ph name="BEGIN_LINK">&lt;a href="#" class="settings-link"&gt;</ph>Settings<ph name="END_LINK">&lt;/a&gt;</ph>
       </message>
       <message name="IDS_LOOMNIBOX_FRE_REMINDER_TO_SEARCH" desc="Label in the Stage 3 reminder FRE chin showing the active shortcut to search with Chromium.">
-        to search with Chromium.
+        to search with MoltBrowser.
       </message>
       <message name="IDS_SETTINGS_GLIC_OS_WIDGET_TOGGLE_SUBLABEL" desc="Sublabel of the toggle that controls whether the Gemini icon is shown in the menu bar (on Mac) / system tray (on Windows and Linux)." formatter_data="android_java">
         Easy access to use Gemini in MoltBrowser across your device, even if MoltBrowser is minimized.
@@ -3423,13 +3335,7 @@ MoltBrowser is unable to recover your settings.
         Open Gemini in MoltBrowser with a keyboard shortcut.
       </message>
       <message name="IDS_SETTINGS_GLIC_NAVIGATION_SHORTCUT_SUBLABEL" desc="Sublabel describing the keyboard shortcut navigate between Chrome and Gemini." formatter_data="android_java">
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-        To leave or return to Gemini in MoltBrowser, use keyboard shortcut.
-||||||| upstream@pin
-        To leave or return to Gemini in Chromium, use keyboard shortcut.
-=======
-        Use your keyboard to navigate between Gemini in Chromium and your open tab.
->>>>>>> upstream@new
+        Use your keyboard to navigate between Gemini in MoltBrowser and your open tab.
       </message>
       <message name="IDS_SETTINGS_GLIC_KEEP_SIDEPANEL_OPEN_ON_NEW_TABS_SUBLABEL" desc="Sublabel describing the setting to keep side panel open when new tabs are opened.">
         If Gemini in MoltBrowser is open, the side panel stays open when creating new tabs
@@ -3437,16 +3343,6 @@ MoltBrowser is unable to recover your settings.
       <message name="IDS_SETTINGS_GLIC_SELECTION_SHORTCUT_SUBLABEL" desc="Sublabel describing the selection shortcut triggering in Gemini.">
         To select part of the screen in Gemini in MoltBrowser, use keyboard shortcut.
       </message>
-<<<<<<< src/chrome/app/chromium_strings.grd (MoltBrowser)
-      <message name="IDS_SETTINGS_GLIC_HOTKEY_SCOPE_CHROME" desc="Label for the 'In Chromium' option in the shortcut invocation scope dropdown.">
-        In MoltBrowser
-      </message>
-||||||| upstream@pin
-      <message name="IDS_SETTINGS_GLIC_HOTKEY_SCOPE_CHROME" desc="Label for the 'In Chromium' option in the shortcut invocation scope dropdown.">
-        In Chromium
-      </message>
-=======
->>>>>>> upstream@new
 
       <!-- Profile Picker Glic version-->
       <message name="IDS_PROFILE_PICKER_MAIN_VIEW_TITLE_GLIC" desc="Profile picker main view title for Glic version. 'Glic' has a special styling." translateable="false">

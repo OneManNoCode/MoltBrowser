@@ -93,7 +93,7 @@
     Remove verified email?
   </message>
   <message name="IDS_AUTOFILL_REMOVE_VERIFIED_EMAIL_BODY" desc="Text in a dialog to confirm that the user wants to delete a verified email address." formatter_data="android_java">
-    Chrome will stop automatically confirming this email on supported sites.
+    MoltBrowser will stop automatically confirming this email on supported sites.
   </message>
 
   <message name="IDS_AUTOFILL_REMOVE_SUGGESTION_BUTTON" desc="Text in a remove button for Autofill suggestion." formatter_data="android_java">
@@ -557,7 +557,7 @@
 
   <!-- Wallet Reminder Notice strings -->
   <message name="IDS_AUTOFILL_WALLET_REMINDER_NOTICE_TITLE" desc="Title for the Wallet Reminder Notice prompt explaining that Google Wallet settings apply to info saved from Chrome." formatter_data="android_java">
-    Your Google Wallet settings apply to info saved from Chrome
+    Your Google Wallet settings apply to info saved from MoltBrowser
   </message>
   <message name="IDS_AUTOFILL_WALLET_REMINDER_NOTICE_CONFIRM_BUTTON_LABEL" desc="Button label to acknowledge and dismiss the Wallet Reminder Notice prompt." formatter_data="android_java">
     Got it
@@ -1677,12 +1677,12 @@
   </message>
 
   <message name="IDS_AUTOFILL_AI_ENTITY_SUPPRESSION_CONFIRMATION_TITLE" desc="Title of the dialog that asks the user to confirm that an Autofill AI suggestion should no longer be suggested by Chrome.">
-    Remove from Chrome?
+    Remove from MoltBrowser?
   </message>
   <message name="IDS_AUTOFILL_AI_ENTITY_SUPPRESSION_CONFIRMATION_BODY" desc="Body text of the dialog that asks the user to confirm that an Autofill AI suggestion should no longer be suggested by Chrome. It explains that only the suggestion disappears, while the data that the suggestion was extracted from (e.g. an email or a photo) is untouched. The plural selector is the number of such sources. [ICU Syntax]">
     {NUM_SOURCES, plural,
-     =1 {Chrome will stop suggesting this info. Your original source won't be deleted.}
-     other {Chrome will stop suggesting this info. Your original sources won't be deleted.}}
+     =1 {MoltBrowser will stop suggesting this info. Your original source won't be deleted.}
+     other {MoltBrowser will stop suggesting this info. Your original sources won't be deleted.}}
   </message>
   <message name="IDS_AUTOFILL_AI_ENTITY_SUPPRESSION_CONFIRMATION_ACCEPT_BUTTON" desc="Label of the button that confirms that Chrome should stop suggesting an Autofill AI suggestion.">
     Remove
@@ -1903,14 +1903,14 @@
     <!-- LINT.IfChange(SuppressionDialogTags) -->
     <message name="IDS_AUTOFILL_AI_SUPPRESSION_DIALOG_BODY" desc="Description for the modal confirmation dialog on Android." translateable="false">
       From Gemini and connected apps · <ph name="SRC_LINK">&lt;src_link&gt;</ph>View sources<ph name="END_SRC_LINK">&lt;/src_link&gt;</ph>
-You can remove this suggestion from Chrome. Your original source won't be deleted. <ph name="MANAGE_LINK">&lt;manage_link&gt;</ph>Manage enhanced autofill<ph name="END_MANAGE_LINK">&lt;/manage_link&gt;</ph>
+You can remove this suggestion from MoltBrowser. Your original source won't be deleted. <ph name="MANAGE_LINK">&lt;manage_link&gt;</ph>Manage enhanced autofill<ph name="END_MANAGE_LINK">&lt;/manage_link&gt;</ph>
     </message>
     <!-- LINT.ThenChange(/chrome/android/features/keyboard_accessory/internal/java/src/org/chromium/chrome/browser/keyboard_accessory/ManualFillingMediator.java:SuppressionDialogTags) -->
     <message name="IDS_AUTOFILL_AI_SUPPRESSION_DIALOG_PRIMARY_BUTTON" desc="Label for the primary acknowledgment button in the Autofill AI suppression dialog on Android.">
       Got it
     </message>
     <message name="IDS_AUTOFILL_AI_SUPPRESSION_DIALOG_SECONDARY_BUTTON" desc="Label for the secondary suppression action button in the Autofill AI suppression dialog on Android.">
-      Remove from Chrome
+      Remove from MoltBrowser
     </message>
     <message name="IDS_AUTOFILL_AI_ATTRIBUTION_BOTTOM_SHEET_TITLE" desc="Title for the Autofill AI source attribution bottom sheet on Android." formatter_data="android_java">
       Sources
@@ -1929,7 +1929,7 @@ You can remove this suggestion from Chrome. Your original source won't be delete
   <!-- Autofill AI Suppression Snackbar Strings (Android) -->
   <if expr="is_android">
     <message name="IDS_AUTOFILL_AI_SUPPRESSION_UNDO_SNACKBAR_MESSAGE" desc="Informational message shown in the snackbar after an Autofill AI suggestion has been removed from Chrome on Android.">
-      Suggestion removed from Chrome
+      Suggestion removed from MoltBrowser
     </message>
     <message name="IDS_AUTOFILL_AI_SUPPRESSION_UNDO_SNACKBAR_ACTION" meaning="Verb: action button to undo removal of an Autofill AI suggestion" desc="Action button label shown in the snackbar for ~10 seconds allowing the user to undo removal of an Autofill AI suggestion on Android. Keep label concise.">
       Undo
@@ -2028,54 +2028,22 @@ You can remove this suggestion from Chrome. Your original source won't be delete
     The content and URLs of the pages you visit can be processed in a private space in the cloud
   </message>
   <if expr="_google_chrome">
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the smarter form understanding button on chrome://settings/autofill." formatter_data="android_java">
-      MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the smarter form understanding button on chrome://settings/autofill." formatter_data="android_java">
-      Chrome understands forms better and can autofill them faster for you
-=======
     <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context." formatter_data="android_java">
-      Chrome understands forms better and can autofill them faster for you
->>>>>>> upstream@new
-    </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context.">
       MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chrome saves that info, we save the submitted values and consider the page context.">
-      Chrome understands forms better and can autofill them faster for you
-=======
+    </message>
     <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL_V2" desc="The description of the setting. This explains to users that Google can process page data in Google servers as a way to provide a better experience. Importantly, it mentions that this is done safely and cannot be viewed by anyone." formatter_data="android_java">
-      Help Chrome better understand and fill complex forms by securely processing data on Google's servers. Your info remains private and isn't reviewed by anyone.
->>>>>>> upstream@new
+      Help MoltBrowser better understand and fill complex forms by securely processing data on Google's servers. Your info remains private and isn't reviewed by anyone.
     </message>
     <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath appears beneath the 'When on' title when seeing the Smarter Form Understanding description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
       MoltBrowser can autofill difficult fields that standard autofill might miss
     </message>
   </if>
   <if expr="not _google_chrome">
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the smarter form understanding button on chrome://settings/autofill." formatter_data="android_java">
-      MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_DESCRIPTION" desc="The description of the smarter form understanding button on chrome://settings/autofill." formatter_data="android_java">
-      Chromium understands forms better and can autofill them faster for you
-=======
     <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context." formatter_data="android_java">
-      Chromium understands forms better and can autofill them faster for you
->>>>>>> upstream@new
-    </message>
-<<<<<<< src/components/autofill_strings.grdp (MoltBrowser)
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context.">
       MoltBrowser understands forms better and can autofill them faster for you
-||||||| upstream@pin
-    <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL" desc="The description of the setting. By 'understand forms better', we mean that when a user submits a form on a website, and if they're using smarter form understanding, this feature can offer to save the user's submitted info. When Chromium saves that info, we save the submitted values and consider the page context.">
-      Chromium understands forms better and can autofill them faster for you
-=======
+    </message>
     <message name="IDS_SETTINGS_AUTOFILL_AI_TOGGLE_SUB_LABEL_V2" desc="The description of the setting. This explains to users that Google can process page data in Google servers as a way to provide a better experience. Importantly, it mentions that this is done safely and cannot be viewed by anyone." formatter_data="android_java">
-      Help Chromium better understand and fill complex forms by securely processing data on Google's servers. Your info remains private and isn't reviewed by anyone.
->>>>>>> upstream@new
+      Help MoltBrowser better understand and fill complex forms by securely processing data on Google's servers. Your info remains private and isn't reviewed by anyone.
     </message>
     <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_CAN_FILL_DIFFICULT_FIELDS" desc="Bullet point that appears beneath the 'When on' title when seeing the Smarter Form Understanding description page. This string explains one of the advantages users will get from enabling the feature and serves as a way to incentivize the user to do so." formatter_data="android_java">
       MoltBrowser can autofill difficult fields that standard autofill might miss
