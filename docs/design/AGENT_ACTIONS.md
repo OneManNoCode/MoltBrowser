@@ -1930,7 +1930,9 @@ chat in a tab from the side panel.
 (`agent_tools.cc`), the plan (`agent_plan.cc`) and the form fill's summary
 (`molt_ai_chat_form_fill.cc`) each had their own copy of the characters
 they show as U+FFFD, and the plan's covered more. As consistency
-hardening, all three, and the chat's proposal summaries, now use one
+hardening, all three, the chat's proposal summaries and saved runs
+(`automation/agent_run_draft.cc`: the labels a draft shows, and the text
+its secret checks read with hidden characters removed, §2.9) now use one
 helper, `agents/hidden_chars.{h,cc}`, with the plan's set and one test
 table (`hidden_chars_unittest.cc`: every range at both ends and its
 neighbours). C1 controls stay spaces in the one-line forms, as before.

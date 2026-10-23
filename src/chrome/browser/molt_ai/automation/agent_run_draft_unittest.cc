@@ -146,7 +146,8 @@ void ExpectCleanLine(const std::string& s) {
   }
   for (const char* hidden :
        {"\xE2\x80\xAE", "\xE2\x80\x8B", "\xE2\x80\xA8", "\xEF\xBB\xBF",
-        "\xC2\x85", "\xD8\x9C", "\xE2\x81\xA6"}) {
+        "\xC2\x85", "\xD8\x9C", "\xE2\x81\xA6", "\xC2\xAD",
+        "\xEF\xB8\x8F", "\xF3\xA0\x80\xA1"}) {
     EXPECT_EQ(s.find(hidden), std::string::npos) << s;
   }
   // Descriptions are {{variable}}-resolved by the runner.
@@ -402,6 +403,7 @@ TEST(AgentRunDraftTest, WithholdsSecretLookingValues) {
       {"Notes", "AbCdEf0123456789-_ghijklmnop"},
       {"Notes", "my password is swordfish"},
       {"Notes", "my pass\xE2\x80\x8Bword is swordfish"},
+      {"Notes", "my pass\xC2\xADword is swordfish"},
       {"Notes", "the api key"},
       {"Password", "swordfish"},
       {"Your PIN", "1234"},
@@ -410,6 +412,11 @@ TEST(AgentRunDraftTest, WithholdsSecretLookingValues) {
       {"One-time passcode", "8812"},
       {"API key", "abc"},
       {"Pass\xE2\x80\x8Bword", "swordfish"},
+      // The agents' wider set (agents/hidden_chars.h): a soft hyphen, a
+      // variation selector, a tag character.
+      {"Pass\xC2\xADword", "swordfish"},
+      {"Pass\xEF\xB8\x8Fword", "swordfish"},
+      {"Pass\xF3\xA0\x80\xA1word", "swordfish"},
       {"Card\nnumber", "4000"},
       {"Card\tnumber", "4000"},
       {"Mot de passe", "abc"},
@@ -555,7 +562,8 @@ TEST(AgentRunDraftTest, RefusesAddressesThatHoldSecrets) {
 TEST(AgentRunDraftTest, HostileLabelsBecomeOneCleanLine) {
   const std::string hostile =
       "Pay\xE2\x80\xAE" "evil\xE2\x80\x8B\n\tnow\x7F\xC2\x85 "
-      "\xEF\xBB\xBF\xE2\x80\xA8\xE2\x81\xA6\xD8\x9C\xC3\x28" +
+      "\xEF\xBB\xBF\xE2\x80\xA8\xE2\x81\xA6\xD8\x9C\xC2\xAD\xEF\xB8\x8F"
+      "\xF3\xA0\x80\xA1\xC3\x28" +
       std::string(400, 'x');
   Draft d = Build(MakeRun({Click("#pay", hostile)}));
   ASSERT_EQ(d.refusal, Refusal::kNone);

@@ -326,6 +326,7 @@ FUZZERS = {
     "molt_agent_run_draft_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/automation/agent_run_draft.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/automation/automation_script.cc",
                  f"{MOLT_AI}/automation/automation_security.cc",
                  f"{MOLT_AI}/security/agent_safety.cc"],

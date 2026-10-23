@@ -667,8 +667,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stand-ins had missed, all fixed; among them, WebGL2 `readPixels` into a
   buffer now farbles the pixels by reading them back, as 152 has no buffer
   mapping.
-- Consistency hardening: the site tools' approvals, the agent's plan, and
-  the chat's proposals and form fills share one list of the characters
+- Consistency hardening: the site tools' approvals, the agent's plan, the
+  chat's proposals and form fills, and saved agent runs (their step labels
+  and the secret checks that read them) share one list of the characters
   they show as U+FFFD (bidi controls, zero-width and invisible characters,
   line separators, variation selectors, tag characters), the planner's
   wider one, with one test table (`agents/hidden_chars.h`).
