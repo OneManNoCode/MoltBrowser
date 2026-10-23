@@ -861,9 +861,10 @@ def parse_args_file(text):
     return out
 
 
-# Files gn would find but this tree lacks: gclient writes the first one, the
-# others live in DEPS repos without a usable GitHub mirror. Only the
-# declare_args() that matter for the Linux build.
+# Files gn would find but this tree may lack: gclient writes the first one;
+# the others live in DEPS repositories (ICU, webrtc, dawn) and stand in
+# only when those can't be had (the real file wins when it is there). Only
+# the declare_args() that matter for the Linux build.
 VIRTUAL_FILES = {
     "//build/config/gclient_args.gni": """
 build_with_chromium = true
@@ -926,11 +927,11 @@ def make_interp(tree, args_file_text, extra_args=None):
     """An Interp over the Chromium tree with BUILDCONFIG.gn already run."""
 
     def read(path):
-        if path in VIRTUAL_FILES:
-            return VIRTUAL_FILES[path]
         if not path.startswith("//"):
             return None
         data = tree.read(path[2:])
+        if data is None and path in VIRTUAL_FILES:
+            return VIRTUAL_FILES[path]
         return data.decode("utf-8", "replace") if data is not None else None
 
     args = {}
