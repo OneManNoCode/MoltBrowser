@@ -1,0 +1,25 @@
+MoltBrowser patch for components/translate/core/browser/translate_driver.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/components/translate/core/browser/translate_driver.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/translate/core/browser/translate_driver.cc b/components/translate/core/browser/translate_driver.cc
+index d5dc1060fd9da55f3beb00971195559f3672609c..5729875b0d7fbf8a980fb331aa9c9084529d3f47 100644
+--- a/components/translate/core/browser/translate_driver.cc
++++ b/components/translate/core/browser/translate_driver.cc
+@@ -24,4 +24,14 @@ void TranslateDriver::RemoveLanguageDetectionObserver(
+   language_detection_observers_.RemoveObserver(observer);
+ }
+ 
++// MoltBrowser: the defaults of the two hooks in translate_driver.h, out of
++// line (chromium-style: no inline virtual bodies).
++bool TranslateDriver::TranslatesOnDevice() const {
++  return false;
++}
++
++bool TranslateDriver::TranslationOff() const {
++  return false;
++}
++
+ }  // namespace translate
