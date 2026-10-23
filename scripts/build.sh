@@ -86,6 +86,12 @@ done
 if [ -z "$BUILD_DIR" ]; then
   if [ "$PLATFORM" = "linux" ]; then
     BUILD_DIR="out/MoltBrowser-linux"
+  elif [ -z "$PLATFORM" ] && [ "$(uname)" = "Linux" ] && \
+       [ ! -f "$CHROMIUM_SRC/out/MoltBrowser/args.gn" ] && \
+       [ -f "$CHROMIUM_SRC/out/MoltBrowser-linux/args.gn" ]; then
+    # A Linux host whose only build is the Linux one, as a plain
+    # `configure.sh` (auto-detect) leaves it.
+    BUILD_DIR="out/MoltBrowser-linux"
   else
     BUILD_DIR="out/MoltBrowser"
   fi
