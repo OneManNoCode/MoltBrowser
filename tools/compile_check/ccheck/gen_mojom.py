@@ -1,0 +1,333 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+"""Mojom C++ bindings, made by Chromium's own generator.
+
+1. Every mojom() target in every BUILD.gn that mentions a .mojom file is read
+   with the GN reader: its sources, enabled_features, and its cpp_typemaps /
+   blink_cpp_typemaps (which become one global typemap per variant, the
+   union of what GN would hand each target through its deps).
+2. The .mojom files the checked code needs, plus their imports, are copied
+   into one input root (overlay files win) and parsed with
+   mojo/public/tools/mojom/mojom_parser.py.
+3. mojo/public/tools/bindings/mojom_bindings_generator.py writes the shared
+   headers, the message ids and the chromium (and, when asked for, blink)
+   variant, exactly as the GN mojom() template invokes it (minus export
+   macros, which are empty in a static build, and message-id scrambling).
+"""
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from . import gn
+from .sources import log
+
+MOJOM_TEMPLATES = ("mojom", "mojom_component")
+SUFFIX_RE = re.compile(r"^(?P<base>.+\.mojom)(?P<suffix>(-[a-z-]+)?)\.h$")
+IMPORT_RE = re.compile(r'^\s*import\s+"([^"]+)"\s*;', re.M)
+TYPE_KEYS = ("mojom", "cpp", "copyable_pass_by_value", "force_serialize",
+             "hashable", "move_only", "non_const_ref",
+             "nullable_is_same_type", "forward_declaration",
+             "default_constructible")
+
+
+def _norm(path, base_dir):
+    if path.startswith("//"):
+        return path[2:]
+    parts = [p for p in base_dir[2:].split("/") if p]
+    for c in path.split("/"):
+        if c == "..":
+            if parts:
+                parts.pop()
+        elif c not in (".", ""):
+            parts.append(c)
+    return "/".join(parts)
+
+
+def _scope_to_dict(s):
+    if isinstance(s, gn.Scope):
+        return {k: _scope_to_dict(v) for k, v in s.vars.items()}
+    if isinstance(s, list):
+        return [_scope_to_dict(x) for x in s]
+    return s
+
+
+class Index:
+    """mojom path -> target info, and the typemaps."""
+
+    def __init__(self, data):
+        self.data = data
+
+    @property
+    def mojoms(self):
+        return self.data["mojoms"]
+
+    @property
+    def typemaps(self):
+        return self.data["typemaps"]
+
+
+def build_index(tree, interp, cache_path):
+    """Reads every BUILD.gn mentioning .mojom; cached by the content hash of
+    those files."""
+    files = sorted(set(tree.chromium_files(
+        lambda p: p.endswith("BUILD.gn")) + [
+            p for p in tree.overlay_set() if p.endswith("BUILD.gn")]))
+    h = hashlib.sha1()
+    relevant = []
+    for p in files:
+        data = tree.read(p)
+        if data is None or (b".mojom" not in data and
+                            b"cpp_typemaps" not in data):
+            continue
+        relevant.append(p)
+        h.update(p.encode() + b"\0" + hashlib.sha1(data).digest())
+    key = h.hexdigest()
+    if cache_path.exists():
+        cached = json.loads(cache_path.read_text())
+        if cached.get("key") == key:
+            return Index(cached)
+    log("mojom: reading %d BUILD.gn files" % len(relevant))
+    mojoms = {}
+    typemaps = {"chromium": {}, "blink": {}}
+    conflicts = []
+    for p in relevant:
+        try:
+            targets = interp.run_file("//" + p)
+        except Exception as e:  # noqa: BLE001 - keep going
+            log("mojom: %s: %s" % (p, e))
+            continue
+        for t in targets:
+            srcs = t.get("sources")
+            tm_c = t.get("cpp_typemaps")
+            tm_b = t.get("blink_cpp_typemaps")
+            if t.func not in MOJOM_TEMPLATES and not (
+                    isinstance(srcs, list) and any(
+                        isinstance(s, str) and s.endswith(".mojom")
+                        for s in srcs)):
+                continue
+            feats = t.get("enabled_features")
+            info = {
+                "target": "%s:%s" % (t.path, t.name),
+                "enabled_features": [f for f in feats if isinstance(f, str)]
+                if isinstance(feats, list) else [],
+                "import_dirs": [_norm(d, t.path) for d in
+                                (t.get("import_dirs") or [])
+                                if isinstance(d, str)]
+                if isinstance(t.get("import_dirs"), list) else [],
+            }
+            if isinstance(srcs, list):
+                for s in srcs:
+                    if isinstance(s, str) and s.endswith(".mojom"):
+                        n = _norm(s, t.path)
+                        if n.startswith(gn.OUT[2:] + "/gen/"):
+                            n = n[len(gn.OUT) - 2 + 5:]
+                        mojoms.setdefault(n, info)
+            for variant, tms in (("chromium", tm_c), ("blink", tm_b)):
+                if not isinstance(tms, list):
+                    continue
+                for cfg in tms:
+                    cfg = _scope_to_dict(cfg)
+                    if not isinstance(cfg, dict):
+                        continue
+                    pub = [_norm(x, t.path) for x in
+                           cfg.get("traits_headers", []) or []
+                           if isinstance(x, str)]
+                    priv = [_norm(x, t.path) for x in
+                            cfg.get("traits_private_headers", []) or []
+                            if isinstance(x, str)]
+                    for ty in cfg.get("types", []) or []:
+                        if not isinstance(ty, dict) or \
+                                not isinstance(ty.get("mojom"), str) or \
+                                not isinstance(ty.get("cpp"), str):
+                            continue
+                        entry = {
+                            "typename": ty["cpp"],
+                            "forward_declaration":
+                                ty.get("forward_declaration"),
+                            "public_headers": pub,
+                            "traits_headers": priv,
+                            "copyable_pass_by_value":
+                                ty.get("copyable_pass_by_value", False),
+                            "default_constructible":
+                                ty.get("default_constructible", True),
+                            "force_serialize":
+                                ty.get("force_serialize", False),
+                            "hashable": ty.get("hashable", False),
+                            "move_only": ty.get("move_only", False),
+                            "non_const_ref": ty.get("non_const_ref", False),
+                            "nullable_is_same_type":
+                                ty.get("nullable_is_same_type", False),
+                            "non_copyable_non_movable": False,
+                        }
+                        prev = typemaps[variant].get(ty["mojom"])
+                        if prev and prev["typename"] != entry["typename"]:
+                            conflicts.append("%s %s: %s vs %s" % (
+                                variant, ty["mojom"], prev["typename"],
+                                entry["typename"]))
+                            continue
+                        typemaps[variant][ty["mojom"]] = entry
+    data = {"key": key, "mojoms": mojoms, "typemaps": typemaps,
+            "conflicts": conflicts}
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(data, indent=1, sort_keys=True))
+    for c in conflicts[:20]:
+        log("mojom: typemap conflict (first wins): " + c)
+    return Index(data)
+
+
+def wanted_mojoms(names):
+    """Missing header names -> {mojom path: set(variants)}."""
+    out = {}
+    for n in names:
+        m = SUFFIX_RE.match(n)
+        if not m:
+            continue
+        suffix = m.group("suffix")
+        variant = "blink" if suffix.startswith("-blink") else "chromium"
+        out.setdefault(m.group("base"), set()).add(variant)
+    return out
+
+
+def import_closure(tree, gen_dir, roots, produce=None):
+    seen = {}
+    todo = list(roots)
+    while todo:
+        p = todo.pop()
+        if p in seen:
+            continue
+        data = tree.read(p)
+        if data is None and not (Path(gen_dir) / p).exists() and produce:
+            produce([p])
+        if data is None and (Path(gen_dir) / p).exists():
+            data = (Path(gen_dir) / p).read_bytes()
+        seen[p] = data
+        if data is None:
+            continue
+        for imp in IMPORT_RE.findall(data.decode("utf-8", "replace")):
+            todo.append(imp)
+    return seen
+
+
+def _py(script, args, cwd):
+    return subprocess.run([sys.executable, "-E", "-s", str(script)] + args,
+                          cwd=cwd, capture_output=True, text=True)
+
+
+def generate(tree, index, work, gen_dir, wanted, produce=None):
+    """wanted: {mojom path: variants}. Returns (generated mojoms,
+    {mojom: reason}). produce(gen_rel_paths) makes generated .mojom files."""
+    work = Path(work)
+    gen_dir = Path(gen_dir)
+    failed = {}
+    files = import_closure(tree, gen_dir, sorted(wanted), produce)
+    for p, data in files.items():
+        if data is None:
+            failed[p] = "mojom source not found"
+    files = {p: d for p, d in files.items() if d is not None}
+    root = work / "mojom_src"
+    for p, data in files.items():
+        dst = root / p
+        if not dst.exists() or dst.read_bytes() != data:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(data)
+    variants = set()
+    for v in wanted.values():
+        variants |= v
+    # What is already generated from the same input?
+    stamp_path = work / "mojom_stamps.json"
+    stamps = json.loads(stamp_path.read_text()) if stamp_path.exists() \
+        else {}
+    tm_hash = hashlib.sha1(json.dumps(index.typemaps, sort_keys=True)
+                           .encode()).hexdigest()
+    todo = []
+    for p, data in sorted(files.items()):
+        want_v = sorted(wanted.get(p, {"chromium"}) | {"chromium"})
+        key = hashlib.sha1(data).hexdigest() + ":" + tm_hash
+        have = stamps.get(p, {})
+        if have.get("key") == key and set(want_v) <= set(have.get("v", [])):
+            continue
+        todo.append((p, want_v, key))
+    if not todo:
+        return [], failed
+    feats = {"is_posix", "is_linux"}
+    for p in files:
+        feats |= set(index.mojoms.get(p, {}).get("enabled_features", []))
+    tools = tree.tree_dir / "mojo" / "public" / "tools"
+    parser = tools / "mojom" / "mojom_parser.py"
+    generator = tools / "bindings" / "mojom_bindings_generator.py"
+    # Parse everything (imports included) in one go.
+    rsp = work / "mojom_parse.rsp"
+    rsp.write_text("\n".join(str(root / p) for p in sorted(files)))
+    # One input root: generated .mojom files were copied into it too (the
+    # parser prefers the longest root, which would split a module in two).
+    args = ["--input-root", str(root),
+            "--output-root", str(gen_dir), "--mojom-file-list=" + str(rsp)]
+    for f in sorted(feats):
+        args += ["--enable-feature", f]
+    log("mojom: parsing %d file(s)" % len(files))
+    r = _py(parser, args, cwd=str(work))
+    if r.returncode != 0:
+        log(r.stderr[-3000:])
+        raise RuntimeError("mojom parser failed")
+    bytecode = gen_dir / "mojo" / "public" / "tools" / "bindings"
+    if not (bytecode / "cpp_templates.zip").exists():
+        bytecode.mkdir(parents=True, exist_ok=True)
+        r = _py(generator, ["--use_bundled_pylibs", "-o", str(bytecode),
+                            "precompile", "-g", "c++"], cwd=str(work))
+        if r.returncode != 0:
+            log(r.stderr[-3000:])
+            raise RuntimeError("mojom template precompile failed")
+    tmdir = work / "typemaps"
+    tmdir.mkdir(exist_ok=True)
+    for v in ("chromium", "blink"):
+        (tmdir / (v + ".json")).write_text(json.dumps({
+            "c++": index.typemaps.get(v, {}), "typescript": {},
+            "_metadata": {"module_typemaps": {"c++": [], "typescript": []}}},
+            indent=1))
+    gen_list = [p for p, _, _ in todo]
+    common = ["--use_bundled_pylibs", "-o", str(gen_dir), "generate", "-d",
+              str(root), "-I", str(root), "--bytecode_path", str(bytecode)]
+    runs = [
+        ("message ids", ["--generate_non_variant_code",
+                         "--generate_message_ids", "-g", "c++"], gen_list),
+        ("shared", ["--generate_non_variant_code", "-g", "c++"], gen_list),
+        ("chromium", ["-g", "c++", "--typemap",
+                      str(tmdir / "chromium.json")], gen_list),
+    ]
+    blink = [p for p, v, _ in todo if "blink" in v]
+    if blink:
+        runs.append(("blink", ["-g", "c++", "--variant", "blink",
+                               "--typemap", str(tmdir / "blink.json"),
+                               "--for_blink"], blink))
+    ok = set(gen_list)
+    for name, extra, lst in runs:
+        # One invocation per file keeps one bad module from failing them all.
+        log("mojom: generating %s for %d file(s)" % (name, len(lst)))
+        batch = work / "mojom_gen.rsp"
+        batch.write_text("\n".join(str(root / p) for p in lst))
+        r = _py(generator, common + ["--filelist", str(batch)] + extra,
+                cwd=str(work))
+        if r.returncode != 0 and "TemplateNotFound" in r.stderr:
+            log(r.stderr[-2000:])
+            raise RuntimeError("mojom generator: templates missing")
+        if r.returncode != 0:
+            # Retry one by one to find the bad ones.
+            for p in lst:
+                batch.write_text(str(root / p))
+                r1 = _py(generator, common + ["--filelist", str(batch)] +
+                         extra, cwd=str(work))
+                if r1.returncode != 0:
+                    failed[p] = "%s: %s" % (name, r1.stderr.strip()
+                                            .splitlines()[-1][:300]
+                                            if r1.stderr.strip() else "?")
+                    ok.discard(p)
+    for p, v, key in todo:
+        if p in ok:
+            stamps[p] = {"key": key, "v": v}
+    stamp_path.write_text(json.dumps(stamps, indent=1, sort_keys=True))
+    return sorted(ok), failed

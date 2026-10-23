@@ -17,6 +17,7 @@ and are substituted (see SUBPROJECTS): libc++/libc++abi come from
 llvm-project at the commit of Chromium's pinned clang, ICU from the upstream
 release Chromium's fork is based on.
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -114,14 +115,25 @@ class Repo:
                 yield oid, got[oid]
 
 
+OUT_REL = "out/cc"
+
+
 class SourceTree:
     """Path lookups across overlay + Chromium + subprojects, and lazy
-    materialization of upstream files under <work>/tree."""
+    materialization of upstream files.
+
+    <work>/chromium/src is laid out like a checkout: upstream files are
+    written there as they are needed, every src/ overlay file is a symlink to
+    the worktree (so edits show up without a re-sync), and the generated
+    files live in out/cc/gen, so generator scripts and include paths work as
+    in a real build."""
 
     def __init__(self, work, chromium_cache, clang_llvm_commit=None,
                  overlay=None):
         self.work = Path(work)
-        self.tree_dir = self.work / "tree"
+        self.tree_dir = self.work / "chromium" / "src"
+        self.out_dir = self.tree_dir / OUT_REL
+        self.gen_dir = self.out_dir / "gen"
         self.overlay = Path(overlay or (REPO_ROOT / "src"))
         pin = _up.read_pin(REPO_ROOT / "chromium_version.txt")
         self.chromium = Repo(chromium_cache, _up.DEFAULT_REMOTE,
@@ -164,14 +176,25 @@ class SourceTree:
                                        "`compile_check.py setup` first")
                 rev = self.clang_llvm_commit
             name = remote.rstrip("/").split("/")[-1]
-            repo = Repo(self.work / "repos" / name, remote, rev)
-            try:
-                repo.entries
-            except RuntimeError as e:
-                log("subproject %s unavailable (%s @ %s): %s" % (
-                    mount, remote, rev, str(e).splitlines()[-1][-200:]))
-                self.unavailable[mount] = "%s @ %s" % (remote, rev)
-                repo = None
+            key = "%s @ %s" % (remote, rev)
+            marker = self.work / "repos" / "unavailable.json"
+            known_bad = json.loads(marker.read_text()) if marker.exists() \
+                else {}
+            repo = None
+            if known_bad.get(mount) == key:
+                self.unavailable[mount] = key
+            else:
+                repo = Repo(self.work / "repos" / name, remote, rev)
+                try:
+                    repo.entries
+                except RuntimeError as e:
+                    log("subproject %s unavailable (%s): %s" % (
+                        mount, key, str(e).splitlines()[-1][-200:]))
+                    self.unavailable[mount] = key
+                    known_bad[mount] = key
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(json.dumps(known_bad, indent=1))
+                    repo = None
             self._subs[mount] = (repo, prefix)
         return self._subs[mount]
 
@@ -223,6 +246,28 @@ class SourceTree:
             return self.overlay / path
         return self.tree_dir / path
 
+    def sync_overlay(self):
+        """Symlinks every overlay file into the merged tree (replacing an
+        upstream copy) and drops links to overlay files that are gone."""
+        state = self.work / "overlay_links.json"
+        old = set(json.loads(state.read_text())) if state.exists() else set()
+        cur = self.overlay_set()
+        for p in sorted(old - cur):
+            d = self.tree_dir / p
+            if d.is_symlink():
+                d.unlink()
+        for p in sorted(cur):
+            d = self.tree_dir / p
+            target = self.overlay / p
+            if d.is_symlink() and os.readlink(d) == str(target):
+                continue
+            if d.exists() or d.is_symlink():
+                d.unlink()
+            d.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(target, d)
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(json.dumps(sorted(cur)))
+
     def read(self, path):
         p = self.local_path(path)
         if p.exists():
@@ -259,6 +304,11 @@ class SourceTree:
                     dest.write_bytes(data)
                     n += 1
         return n
+
+    def chromium_files(self, pred):
+        """Chromium (not subproject) blob paths matching pred(path)."""
+        return [k for k, e in self.chromium.entries.items()
+                if e.type == "blob" and pred(k)]
 
     def list_dir(self, path):
         """Names directly under an upstream directory (no blob fetch)."""

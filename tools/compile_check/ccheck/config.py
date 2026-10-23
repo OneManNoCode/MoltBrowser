@@ -132,7 +132,9 @@ CFLAGS = [
 ]
 
 # build/config/clang:find_bad_constructs + raw_ptr_check (the plugins are
-# built into Chromium's clang).
+# built into Chromium's clang). enable_check_raw_ptr_fields and
+# enable_check_raw_ref_fields are off in official builds; DEV_PLUGIN_FLAGS
+# adds them (what a developer build and the Chromium CQ run).
 PLUGIN_FLAGS = [
     "-Xclang", "-add-plugin", "-Xclang", "find-bad-constructs",
     "-Xclang", "-plugin-arg-find-bad-constructs", "-Xclang",
@@ -146,10 +148,13 @@ PLUGIN_FLAGS = [
     "-Xclang", "-plugin-arg-raw-ptr-plugin", "-Xclang",
     "disable-check-raw-ptr-to-stack-allocated-error",
     "-Xclang", "-plugin-arg-raw-ptr-plugin", "-Xclang",
+    "no-special-treatment-for-oilpanized-paths",
+]
+
+DEV_PLUGIN_FLAGS = [
+    "-Xclang", "-plugin-arg-raw-ptr-plugin", "-Xclang",
     "check-raw-ptr-fields",
     "-Xclang", "-plugin-arg-raw-ptr-plugin", "-Xclang", "check-span-fields",
     "-Xclang", "-plugin-arg-raw-ptr-plugin", "-Xclang",
     "check-raw-ref-fields",
-    "-Xclang", "-plugin-arg-raw-ptr-plugin", "-Xclang",
-    "no-special-treatment-for-oilpanized-paths",
 ]
