@@ -378,8 +378,10 @@ class WritingClient : public ClientInterface {
   mojo::PendingRemote<ClientInterface> Remote() {
     return receiver_.BindNewPipeAndPassRemote();
   }
-  void OnResult(mojo::PendingRemote<SessionInterface> remote) override {
+  void OnResult(mojo::PendingRemote<SessionInterface> remote,
+                uint64_t window) override {
     session.Bind(std::move(remote));
+    context_window = window;
   }
   void OnError(AIManagerCreateClientError create_error,
                blink::mojom::QuotaErrorInfoPtr quota_error_info) override {
@@ -388,6 +390,8 @@ class WritingClient : public ClientInterface {
   }
 
   mojo::Remote<SessionInterface> session;
+  // The page's inputQuota.
+  uint64_t context_window = 0;
   std::optional<AIManagerCreateClientError> error;
   blink::mojom::QuotaErrorInfoPtr quota;
 
@@ -2102,6 +2106,9 @@ TEST_F(MoltAIManagerTest, WriterAndRewriter) {
   RunUntilIdle();
   ASSERT_TRUE(writer.session.is_bound());
   ASSERT_TRUE(rewriter.session.is_bound());
+  // Every page gets the same inputQuota, whatever the model's window.
+  EXPECT_EQ(writer.context_window, kWritingAssistanceInputQuota);
+  EXPECT_EQ(rewriter.context_window, kWritingAssistanceInputQuota);
 
   TestResponder written;
   writer.session->Write("A thank-you note", std::nullopt, written.Remote());

@@ -178,9 +178,13 @@ workers their host (§10.3).
   `CreateMonitor` checks against a fixed total.
 - Streaming is a series of deltas (`OnStreaming`); aborting a request
   closes its `ModelStreamingResponder` pipe.
-- The writing APIs' `inputQuota` is the Blink constant
-  `kWritingAssistanceMaxInputTokenSize` (9216); usage is measured by the
-  browser.
+- The writing APIs' `inputQuota` is 9216 for every page and model. At 152
+  it was Blink's constant `kWritingAssistanceMaxInputTokenSize`; since 156
+  Blink takes it from the browser with the session (`OnResult`'s
+  `context_window`), and MoltBrowser sends the same fixed number
+  (`kWritingAssistanceInputQuota`), never the loaded model's window. Usage is
+  measured by the browser. Since 156 Blink also asks for availability before
+  `create()` and rejects an unsupported language there (`NotSupportedError`).
 - `responseConstraint` (`language_model.cc`, `ParseConstraint`):
   - An object is `JSON.stringify`'d and sent with `Prompt()` as
     `ResponseConstraint::NewJsonSchema`. A `RegExp` is sent as its source

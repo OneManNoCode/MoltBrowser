@@ -31,7 +31,6 @@ std::string_view RequestTypeForDestination(RequestDestination destination,
     case RequestDestination::kServiceWorker:
     case RequestDestination::kAudioWorklet:
     case RequestDestination::kPaintWorklet:
-    case RequestDestination::kSharedStorageWorklet:
     case RequestDestination::kSpeculationRules:
       return "script";
     case RequestDestination::kStyle:

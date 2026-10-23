@@ -56,6 +56,7 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_string.h"
 #include "components/password_manager/core/browser/password_store/password_form_converters.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
 #include "components/keyed_service/core/service_access_type.h"
@@ -938,11 +939,13 @@ class MoltAISettingsHandler : public content::WebUIMessageHandler {
       form.signon_realm = cred.signon_realm;
       form.url = url;
       form.username_value = cred.username;
-      form.password_value = cred.password;
+      // A PasswordString since 156; it takes its own copy.
+      form.password_value =
+          password_manager::PasswordString(std::u16string(cred.password));
       // AddLogin is asynchronous (writes on the store's own sequence); we
       // count it as accepted for import here. The store dedupes on its
       // primary key, so re-importing existing logins is a no-op there. At
-      // 152 the store takes a StoredCredential.
+      // 152 and 156 the store takes a StoredCredential.
       store->AddLogin(password_manager::FromPasswordForm(std::move(form)));
       ++(*imported);
     }

@@ -236,9 +236,10 @@ inline constexpr uint32_t kSmallMaxReplyTokens = 512;
 inline constexpr uint32_t kLargeMaxReplyTokens = 1024;
 inline constexpr uint32_t kTemplateOverheadTokens = 256;
 
-// Summarizer, Writer and Rewriter: Blink reports a fixed inputQuota of
-// blink::mojom::kWritingAssistanceMaxInputTokenSize to every page; the
-// browser enforces the same number with EstimateTokens().
+// Summarizer, Writer and Rewriter: every page gets this fixed inputQuota
+// (the context window the browser hands Blink with the session, since 156),
+// never the loaded model's; the browser enforces the same number with
+// EstimateTokens().
 inline constexpr uint32_t kWritingAssistanceInputQuota = 9216;
 
 struct LanguageModelLimits {
