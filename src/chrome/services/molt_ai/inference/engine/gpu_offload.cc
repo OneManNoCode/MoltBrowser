@@ -96,6 +96,10 @@ GpuDeviceVerdict CheckGpuDevice(const GpuDeviceInfo& device,
   if (device.memory_total < kMinGpuMemoryBytes) {
     return GpuDeviceVerdict::kTooLittleMemory;
   }
+  // Last, so only a device that would otherwise be used reports it.
+  if (device.turned_off) {
+    return GpuDeviceVerdict::kTurnedOff;
+  }
   return GpuDeviceVerdict::kUsable;
 }
 

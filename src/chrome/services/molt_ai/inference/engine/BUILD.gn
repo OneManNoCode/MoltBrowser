@@ -72,6 +72,17 @@ source_set("gpu_offload") {
   ]
 }
 
+# The Vulkan pipeline cache's header check (docs/design/SANDBOXED_INFERENCE.md
+# section 11.12). Also linked by the browser
+# (//chrome/browser/molt_ai:molt_ai_runtime), which stores the cache files
+# the service sends; both sides check the header against the device.
+source_set("gpu_pipeline_cache") {
+  sources = [
+    "gpu_pipeline_cache.cc",
+    "gpu_pipeline_cache.h",
+  ]
+}
+
 # Which of llama.cpp's x86-64 CPU kernel sets this CPU runs
 # (docs/design/SANDBOXED_INFERENCE.md section 12): CPUID and XCR0 in, a
 # level out. Built on every platform, so its tests always run.
@@ -91,6 +102,7 @@ source_set("unit_tests") {
     "cpu_kernels_unittest.cc",
     "embedding_utils_unittest.cc",
     "gpu_offload_unittest.cc",
+    "gpu_pipeline_cache_unittest.cc",
     "grammar_tokens_unittest.cc",
     "image_input_unittest.cc",
     "json_schema_grammar_unittest.cc",
@@ -102,6 +114,7 @@ source_set("unit_tests") {
     ":cpu_kernels",
     ":embedding_utils",
     ":gpu_offload",
+    ":gpu_pipeline_cache",
     ":image_input",
     ":inference_utils",
     "//testing/gtest",

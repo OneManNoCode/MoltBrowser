@@ -6,7 +6,9 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <array>
 #include <utility>
+#include <vector>
 
 #include "base/files/file.h"
 #include "base/functional/bind.h"
@@ -149,11 +151,54 @@ mojom::GpuStatus ToMojo(EngineGpuStatus status) {
       return mojom::GpuStatus::kLoadFailed;
     case EngineGpuStatus::kOn:
       return mojom::GpuStatus::kOn;
+    case EngineGpuStatus::kTurnedOff:
+      return mojom::GpuStatus::kTurnedOff;
+    case EngineGpuStatus::kDeviceLost:
+      return mojom::GpuStatus::kDeviceLost;
   }
   return mojom::GpuStatus::kNotRequested;
 }
 
+template <size_t N>
+std::vector<uint8_t> ToVector(const std::array<uint8_t, N>& bytes) {
+  return std::vector<uint8_t>(bytes.begin(), bytes.end());
+}
+
+mojom::GpuDriverKeyPtr ToMojo(const EngineGpuDriverKey& key) {
+  return mojom::GpuDriverKey::New(key.vendor_id, key.device_id, key.driver_id,
+                                  key.driver_version,
+                                  ToVector(key.driver_uuid));
+}
+
+mojom::GpuDeviceIdentityPtr ToMojo(const EngineGpuIdentity& device) {
+  return mojom::GpuDeviceIdentity::New(
+      ToMojo(device.key), device.api_version,
+      ToVector(device.pipeline_cache_uuid),
+      device.name.substr(0, mojom::kMaxGpuNameBytes));
+}
+
+EngineGpuDriverKey FromMojo(const mojom::GpuDriverKey& key) {
+  EngineGpuDriverKey out;
+  out.vendor_id = key.vendor_id;
+  out.device_id = key.device_id;
+  out.driver_id = key.driver_id;
+  out.driver_version = key.driver_version;
+  // Mojo checked the length (a fixed-size array).
+  std::copy_n(key.driver_uuid.begin(),
+              std::min(key.driver_uuid.size(), out.driver_uuid.size()),
+              out.driver_uuid.begin());
+  return out;
+}
+
 }  // namespace
+
+struct MoltInferenceService::PendingLoad {
+  ScopedStdioFile file;
+  ScopedStdioFile projector;
+  EngineLoadParams load;
+  mojo::PendingReceiver<mojom::Model> model;
+  LoadModelCallback callback;
+};
 
 MoltInferenceService::MoltInferenceService(
     mojo::PendingReceiver<mojom::MoltInferenceService> receiver)
@@ -173,6 +218,10 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (load_requested_) {
     receiver_.ReportBadMessage("LoadModel called twice");
+    return;
+  }
+  if (params->skip_gpu_drivers.size() > mojom::kMaxSkippedGpuDrivers) {
+    receiver_.ReportBadMessage("skip_gpu_drivers over the cap");
     return;
   }
   load_requested_ = true;
@@ -209,6 +258,9 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
   load.allow_cpu_repack = params->allow_cpu_repack;
   load.memory_limit_bytes = SandboxMemoryLimit();
   load.use_gpu = params->use_gpu;
+  for (const mojom::GpuDriverKeyPtr& key : params->skip_gpu_drivers) {
+    if (key) load.skip_gpu_drivers.push_back(FromMojo(*key));
+  }
 
   // Generation must not run on the thread that receives mojo messages (a
   // closed streamer would only be seen between requests).
@@ -217,11 +269,74 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
            base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}));
+  pending_ = std::make_unique<PendingLoad>();
+  pending_->file = std::move(file);
+  pending_->projector = std::move(projector);
+  pending_->load = std::move(load);
+  pending_->model = std::move(model);
+  pending_->callback = std::move(callback);
+  if (!params->use_gpu) {
+    StartLoad(nullptr);
+    return;
+  }
+  // The GPU (design section 11.10): choose the device, tell the browser,
+  // and load only after its answer, so a driver that takes the process down
+  // from then on is known to it.
+  if (params->gpu_client) {
+    gpu_client_.Bind(std::move(params->gpu_client));
+  }
+  engine_.AsyncCall(&LlamaEngine::ChooseGpu)
+      .WithArgs(pending_->load)
+      .Then(base::BindOnce(&MoltInferenceService::OnGpuChosen,
+                           weak_factory_.GetWeakPtr()));
+}
+
+void MoltInferenceService::OnGpuChosen(EngineGpuChoice choice) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!pending_) return;
+  if (choice.status != EngineGpuStatus::kOn || !choice.device) {
+    // No GPU to ask about; the load reports why.
+    gpu_client_.reset();
+    StartLoad(nullptr);
+    return;
+  }
+  if (!gpu_client_.is_bound()) {
+    pending_->load.gpu_allowed = false;  // nobody to ask: the CPU
+    StartLoad(nullptr);
+    return;
+  }
+  // No answer (the browser dropped the client): the CPU.
+  gpu_client_.set_disconnect_handler(
+      base::BindOnce(&MoltInferenceService::OnGpuAnswer,
+                     weak_factory_.GetWeakPtr(), false, base::File()));
+  gpu_client_->OnGpuChosen(ToMojo(*choice.device),
+                           base::BindOnce(&MoltInferenceService::OnGpuAnswer,
+                                          weak_factory_.GetWeakPtr()));
+}
+
+void MoltInferenceService::OnGpuAnswer(bool use_gpu,
+                                       base::File pipeline_cache) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!pending_) return;  // answered already
+  gpu_client_.reset();
+  pending_->load.gpu_allowed = use_gpu;
+  // The engine reads at most kMaxPipelineCacheBytes and checks the header
+  // against the device before the driver sees it.
+  StartLoad(use_gpu && pipeline_cache.IsValid()
+                ? ToStdioFile(std::move(pipeline_cache))
+                : nullptr);
+}
+
+void MoltInferenceService::StartLoad(ScopedStdioFile pipeline_cache) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  std::unique_ptr<PendingLoad> p = std::move(pending_);
+  if (!p) return;
   engine_.AsyncCall(&LlamaEngine::Load)
-      .WithArgs(std::move(file), load, std::move(projector))
+      .WithArgs(std::move(p->file), p->load, std::move(p->projector),
+                std::move(pipeline_cache))
       .Then(base::BindOnce(&MoltInferenceService::OnLoaded,
-                           weak_factory_.GetWeakPtr(), std::move(model),
-                           std::move(callback)));
+                           weak_factory_.GetWeakPtr(), std::move(p->model),
+                           std::move(p->callback)));
 }
 
 void MoltInferenceService::OnLoaded(mojo::PendingReceiver<mojom::Model> model,
