@@ -751,6 +751,57 @@ TEST(AgentActionsTest, AddSiteToolsAssignsIdsInOrder) {
   EXPECT_EQ(o.FindTool("t1")->listed_input_schema, std::string(kSearchSchema));
 }
 
+agent_tools::SiteTool FrameTool(const std::string& name, size_t frame) {
+  agent_tools::SiteTool t = Tool(name, kSearchSchema);
+  t.frame = frame;
+  t.frame_text = frame ? "https://shop.example/f" + base::NumberToString(frame)
+                       : std::string();
+  return t;
+}
+
+TEST(AgentActionsTest, AddSiteToolsTellsFramesApart) {
+  // The main document's tools, then each frame's, as ToolFrames() orders
+  // them: the same name in two frames is two tools, the browser's frame
+  // number telling them apart; a name twice in one frame is one.
+  Observation o = SampleObservation();
+  std::vector<agent_tools::SiteTool> tools;
+  tools.push_back(FrameTool("search", 0));
+  tools.push_back(FrameTool("search", 1));
+  tools.push_back(FrameTool("search", 1));
+  tools.push_back(FrameTool("search", 2));
+  tools.push_back(FrameTool("cart", 2));
+  AddSiteTools(std::move(tools), &o);
+  ASSERT_EQ(o.tools.size(), 4u);
+  EXPECT_EQ(o.tools[0].ref, "t1");
+  EXPECT_EQ(agent_tools::ToolLabel(o.tools[0]), "search");
+  EXPECT_EQ(o.tools[1].ref, "t2");
+  EXPECT_EQ(agent_tools::ToolLabel(o.tools[1]), "search in frame 1");
+  EXPECT_EQ(o.tools[2].ref, "t3");
+  EXPECT_EQ(agent_tools::ToolLabel(o.tools[2]), "search in frame 2");
+  EXPECT_EQ(agent_tools::ToolLabel(o.tools[3]), "cart in frame 2");
+  const std::string text = agent_tools::DescribeTools(o.tools);
+  EXPECT_NE(text.find("t2 search in frame 1 [reads only]"), std::string::npos);
+  EXPECT_NE(text.find("t3 search in frame 2 [reads only]"), std::string::npos);
+  ExpectServiceAccepts(BuildActionSchema(o));
+}
+
+TEST(AgentActionsTest, AddSiteToolsCapsAllFramesTogether) {
+  // Eight in all, in order: the main document's first, then the frames'.
+  Observation o = SampleObservation();
+  std::vector<agent_tools::SiteTool> tools;
+  for (size_t frame = 0; frame < 4; ++frame) {
+    for (int i = 0; i < 3; ++i)
+      tools.push_back(FrameTool("tool" + base::NumberToString(i), frame));
+  }
+  AddSiteTools(std::move(tools), &o);
+  ASSERT_EQ(o.tools.size(), agent_tools::kMaxSiteTools);
+  const std::vector<size_t> frames = {0, 0, 0, 1, 1, 1, 2, 2};
+  for (size_t i = 0; i < o.tools.size(); ++i) {
+    EXPECT_EQ(o.tools[i].frame, frames[i]) << i;
+    EXPECT_EQ(o.tools[i].ref, "t" + base::NumberToString(i + 1));
+  }
+}
+
 TEST(AgentActionsTest, AddSiteToolsKeepsAtMostEight) {
   Observation o = SampleObservation();
   std::vector<agent_tools::SiteTool> tools;

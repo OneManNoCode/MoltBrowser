@@ -9,6 +9,7 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "url/gurl.h"
 
@@ -141,14 +142,13 @@ bool IsControl(uint32_t cp) {
   return cp < 0x20 || cp == 0x7F;
 }
 
-// Characters that reorder, hide or break text: C1 controls, U+061C,
-// U+180E, U+200B-U+200F, U+2028-U+202E, U+2060-U+2064, U+2066-U+2069,
-// U+FEFF (agent_plan.cc's list).
+// Characters that reorder, hide or break text: the agents' one set
+// (agents/hidden_chars.h), which the plan, the site-tool approvals and the
+// chat's proposals use too.
 bool IsHidden(uint32_t cp) {
-  return (cp >= 0x80 && cp <= 0x9F) || cp == 0x061C || cp == 0x180E ||
-         (cp >= 0x200B && cp <= 0x200F) || (cp >= 0x2028 && cp <= 0x202E) ||
-         (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) ||
-         cp == 0xFEFF;
+  std::string utf8;
+  AppendUtf8(&utf8, cp);
+  return hidden_chars::HiddenCharAt(utf8, 0) == utf8.size();
 }
 
 // |s| without controls, hidden characters and invalid bytes: what a

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -15,6 +16,8 @@
 #include "chrome/browser/molt_ai/runtime/model_image.h"
 
 namespace molt_ai {
+
+struct GpuDeviceReport;
 
 // Hardware capability detection for model selection
 struct HardwareCapability {
@@ -191,6 +194,33 @@ struct GenerationResult {
   bool images_unsupported = false;
 };
 
+// GPU inference as molt://ai-settings shows it (design section 11.11).
+struct GpuInferenceState {
+  GpuInferenceState();
+  ~GpuInferenceState();
+  GpuInferenceState(const GpuInferenceState&);
+  GpuInferenceState& operator=(const GpuInferenceState&);
+
+  // This build runs models on the GPU (llama.cpp's Vulkan backend, GN
+  // switch molt_llama_vulkan). Without it there is nothing to show.
+  bool available = false;
+  // "Use the GPU for on-device AI": Automatic (true) or Off.
+  bool automatic = true;
+  // --disable-gpu: the GPU is off whatever the setting.
+  bool disabled_by_switch = false;
+  // GPU failures this session turned it off for every model until restart.
+  bool off_for_session = false;
+  // Drivers the lasting record turned off (gpu_driver_record.h).
+  struct Driver {
+    // Sanitized; "" when the driver failed before it could be identified.
+    std::string name;
+    std::string driver_version;
+    int64_t since_ms = 0;  // wall clock, ms since the Unix epoch
+    bool unidentified = false;
+  };
+  std::vector<Driver> turned_off;
+};
+
 // Result of the "can this model load right now?" RAM check.
 struct RamCheck {
   bool ok = false;
@@ -362,6 +392,19 @@ class BrowserAIRuntime {
   // Refresh model download status (re-check file existence on disk)
   void RefreshModelStatus();
 
+  // ---- GPU (design sections 11.10-11.12) ----
+  // UI thread, after Initialize(). The setting and the record live in Local
+  // State (gpu_inference_prefs.h).
+
+  GpuInferenceState GetGpuInferenceState();
+  // "Use the GPU for on-device AI": Automatic or Off. Applies to the next
+  // load; a model loaded now keeps running where it is.
+  void SetGpuInferenceAutomatic(bool automatic);
+  // The user asks to try the GPU again: every driver the record turned off
+  // goes on probation (one more failure turns it off again) and this
+  // session's GPU failures are forgotten. From the next load on.
+  void RetryGpuInference();
+
  private:
   struct Impl;
   class PressureListener;
@@ -379,7 +422,11 @@ class BrowserAIRuntime {
   void OnModelProcessLost(const std::string& model_id,
                           const std::string& crash_key,
                           int phase,
-                          bool gpu_failure);
+                          bool gpu_failure,
+                          const std::optional<GpuDeviceReport>& gpu_device);
+  // A GPU failure on |gpu_device| (nullopt: before one was reported) for
+  // the lasting record; saves it. Any thread.
+  void RecordGpuDriverFailure(const std::optional<GpuDeviceReport>& gpu_device);
   // The streaming facade shared by StreamPrompt and StreamChat.
   GenerationResult Generate(bool is_chat,
                             const ChatPrompt* chat,

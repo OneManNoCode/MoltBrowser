@@ -25,6 +25,8 @@ source_set("molt_ai") {
     "molt_ai_update_ui.h",
     "molt_ai_ui.cc",
     "molt_ai_ui.h",
+    "molt_gpu_inference_handler.cc",
+    "molt_gpu_inference_handler.h",
     "molt_home_ui.cc",
     "molt_home_ui.h",
     "molt_import_handler.cc",
@@ -53,6 +55,9 @@ source_set("molt_ai") {
 
     # The chat's page actions: one validated proposal per typed request.
     "//chrome/browser/molt_ai/agents:chat_actions",
+
+    # ... a site tool among them only with #molt-agent-site-tools on.
+    "//chrome/browser/molt_ai/agents:features",
 
     # /fill ai and /paste: form fills proposed the same way.
     ":chat_form_fill",
@@ -104,6 +109,9 @@ source_set("chat_form_fill") {
   ]
   deps = [
     "//base",
+
+    # Characters that reorder or hide text, shown in the summary.
+    "//chrome/browser/molt_ai/agents:hidden_chars",
     "//chrome/browser/molt_ai/security:agent_safety",
     "//url",
   ]

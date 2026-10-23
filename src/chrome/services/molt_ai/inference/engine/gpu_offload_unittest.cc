@@ -175,6 +175,21 @@ TEST(GpuOffloadTest, ChooseDevice) {
             ChooseGpuDevice({dozen, Integrated()}, kNoBlocks));
 }
 
+// A driver the browser's GPU record turned off (section 11.10): the next
+// usable GPU is chosen instead, or none.
+TEST(GpuOffloadTest, TurnedOffDriverSkipped) {
+  GpuDeviceInfo off = Discrete();
+  off.turned_off = true;
+  EXPECT_EQ(GpuDeviceVerdict::kTurnedOff, CheckGpuDevice(off, kNoBlocks));
+  EXPECT_EQ(std::optional<size_t>(1),
+            ChooseGpuDevice({off, Integrated()}, kNoBlocks));
+  EXPECT_EQ(std::nullopt, ChooseGpuDevice({off}, kNoBlocks));
+  // Refused for another reason first: that reason is reported.
+  GpuDeviceInfo software = Llvmpipe();
+  software.turned_off = true;
+  EXPECT_EQ(GpuDeviceVerdict::kSoftware, CheckGpuDevice(software, kNoBlocks));
+}
+
 GpuOffloadInput Input(uint64_t file, uint32_t layers, uint64_t total,
                       uint64_t free) {
   GpuOffloadInput in;

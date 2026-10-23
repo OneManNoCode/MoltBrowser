@@ -137,6 +137,13 @@ FUZZERS = {
         max_len=4096,
         smoke_runs=400000,
     ),
+    "molt_gpu_pipeline_cache_fuzzer": dict(
+        dir=INFERENCE,
+        sources=[f"{ENGINE}/gpu_pipeline_cache.cc"],
+        tier="std",
+        max_len=4096,
+        smoke_runs=500000,
+    ),
     # --- The document parser service (files from sites and users) ---------
     "molt_pdf_text_scraper_fuzzer": dict(
         dir=f"{DOCUMENT_PARSER}/fuzzers",
@@ -162,6 +169,14 @@ FUZZERS = {
         dict="//chrome/services/molt_ai/inference/fuzzers/dicts/model_output.dict",
         max_len=16384,
         smoke_runs=350000,
+    ),
+    "molt_gpu_driver_record_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/runtime/gpu_driver_record.cc",
+                 f"{MOLT_AI}/runtime/gpu_pipeline_cache_files.cc"],
+        tier="std",
+        max_len=4096,
+        smoke_runs=100000,
     ),
     "molt_embedding_validator_fuzzer": dict(
         dir=BROWSER,
@@ -240,6 +255,7 @@ FUZZERS = {
         dir=BROWSER,
         sources=[f"{MOLT_AI}/agents/agent_actions.cc",
                  f"{MOLT_AI}/agents/agent_tools.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/agents/chat_actions.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
@@ -265,7 +281,9 @@ FUZZERS = {
     "molt_agent_tools_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/agents/agent_tools.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/agents/agent_actions.cc",
+                 f"{MOLT_AI}/agents/chat_actions.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
                  f"{ENGINE}/bounded_json.cc"],
@@ -278,6 +296,7 @@ FUZZERS = {
         sources=[f"{MOLT_AI}/agents/agent_plan.cc",
                  f"{MOLT_AI}/agents/agent_actions.cc",
                  f"{MOLT_AI}/agents/agent_tools.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/agents/agent_prompt.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
@@ -291,6 +310,7 @@ FUZZERS = {
         sources=[f"{MOLT_AI}/agents/agent_vision.cc",
                  f"{MOLT_AI}/agents/agent_actions.cc",
                  f"{MOLT_AI}/agents/agent_tools.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{MOLT_AI}/runtime/model_image.cc",
                  f"{ENGINE}/image_input.cc",
@@ -321,6 +341,7 @@ FUZZERS = {
     "molt_agent_run_draft_fuzzer": dict(
         dir=BROWSER,
         sources=[f"{MOLT_AI}/automation/agent_run_draft.cc",
+                 f"{MOLT_AI}/agents/hidden_chars.cc",
                  f"{MOLT_AI}/automation/automation_script.cc",
                  f"{MOLT_AI}/automation/automation_security.cc",
                  f"{MOLT_AI}/security/agent_safety.cc"],

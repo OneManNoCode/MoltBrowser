@@ -998,6 +998,12 @@ struct vk_device_struct {
 
     std::vector<vk_pipeline_ref> all_pipelines;
 
+#if defined(GGML_VULKAN_MOLTBROWSER)
+    // MoltBrowser: every pipeline is created with this cache, seeded by the
+    // inference service (chromium/ggml-vulkan-moltbrowser.cpp); null without one.
+    vk::PipelineCache pipeline_cache;
+#endif
+
     vk::Fence fence;
     vk_buffer sync_staging;
 

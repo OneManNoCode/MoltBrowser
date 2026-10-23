@@ -79,7 +79,10 @@ source_set("agent_run_draft") {
     "agent_run_draft.h",
   ]
 
-  deps = [ "//url" ]
+  deps = [
+    "//chrome/browser/molt_ai/agents:hidden_chars",
+    "//url",
+  ]
 
   public_deps = [
     ":automation_policy",

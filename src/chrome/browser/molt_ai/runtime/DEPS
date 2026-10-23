@@ -4,6 +4,11 @@ include_rules = [
   # llama.cpp (GN visibility enforces the latter too).
   "+chrome/services/molt_ai/inference/public",
   "+chrome/services/molt_ai/inference/engine/stream_filters.h",
+  # GPU pipeline caches: the header check the service runs too (std-only).
+  "+chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h",
+  # The cache files' digest; the GPU setting and record in Local State.
+  "+components/prefs",
+  "+crypto/hash.h",
   # Image input: the bounds a model image must meet (std-only).
   "+chrome/services/molt_ai/inference/engine/image_input.h",
   # Making model images: the sandboxed image decoder, Skia scaling, and

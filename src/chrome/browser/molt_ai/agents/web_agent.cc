@@ -97,7 +97,8 @@ WebAgent::WebAgent(content::WebContents* web_contents,
       web_contents_(web_contents),
       runtime_(runtime),
       dom_bridge_(std::make_unique<DOMContentBridge>(web_contents)),
-      screenshotter_(std::make_unique<AgentScreenshotter>(web_contents)) {}
+      screenshotter_(std::make_unique<AgentScreenshotter>(web_contents)),
+      site_tools_(std::make_unique<SiteToolHost>()) {}
 
 WebAgent::~WebAgent() = default;
 
@@ -126,8 +127,9 @@ void WebAgent::Start(const std::string& goal,
   sent_screenshot_ = false;
   screenshots_failed_ = false;
   action_tool_ = agent_tools::SiteTool();
-  tool_call_id_.clear();
-  tool_document_ = content::WeakDocumentPtr();
+  site_tools_->Cancel();
+  tools_main_document_ = content::WeakDocumentPtr();
+  tool_documents_.clear();
   tool_result_.clear();
   tool_call_note_.clear();
   goal_       = goal;
@@ -173,6 +175,7 @@ void WebAgent::Cancel() {
   cancelled_ = true;
   pending_confirm_.Reset();
   screenshotter_->Cancel();
+  site_tools_->Cancel();
   weak_factory_.InvalidateWeakPtrs();
   DVLOG(1) << "[WebAgent] Cancelled";
 }
@@ -721,61 +724,43 @@ void WebAgent::DoCallTool() {
 
 void WebAgent::CallToolNow() {
   if (cancelled_) return;
-  content::RenderFrameHost* main =
-      web_contents_ ? web_contents_->GetPrimaryMainFrame() : nullptr;
-  if (!main) {
-    OnActionDone(false, "No active tab");
-    return;
-  }
-  tool_document_ = main->GetWeakDocumentPtr();
-  tool_call_id_ = "c" + base::NumberToString(++next_tool_request_);
-  // The script calls the tool only on action_origin_, only if the page
-  // still lists it exactly as observed, with the arguments the browser
-  // wrote (agent_tools::ReadArguments).
-  EvalJS(agent_tools::BuildToolCallScript(tool_call_id_,
-                                          action_origin_.Serialize(),
-                                          action_tool_,
-                                          pending_action_.tool_arguments),
-         base::BindOnce(&WebAgent::OnToolCallStarted,
-                        weak_factory_.GetWeakPtr()));
+  // In the very document that listed the tool (the main document observed,
+  // or one of its same-origin frames), if it is still there and still
+  // counts; the script then checks the document's mark, the origin
+  // (action_origin_, in scope) and that the page still lists the same
+  // tool, and passes the arguments the browser wrote
+  // (agent_tools::ReadArguments).
+  const content::WeakDocumentPtr tool_document =
+      action_tool_.frame < tool_documents_.size()
+          ? tool_documents_[action_tool_.frame]
+          : content::WeakDocumentPtr();
+  site_tools_->Call(tools_main_document_, tool_document, action_origin_,
+                    action_tool_, pending_action_.tool_arguments,
+                    base::BindOnce(&WebAgent::OnToolCallSettled,
+                                   weak_factory_.GetWeakPtr()));
 }
 
-void WebAgent::OnToolCallStarted(base::Value result) {
-  if (cancelled_) return;
-  const agent_tools::CallOutcome started =
-      agent_tools::ParseToolCallStart(result);
-  if (started.state != agent_tools::CallState::kStarted) {
-    OnActionDone(false,
-                 std::string(agent_tools::CallFailureNote(started.state)));
-    return;
-  }
-  PollIsolatedWorld(
-      agent_tools::BuildToolCallPollScript(tool_call_id_), tool_document_,
-      base::TimeTicks::Now() +
-          base::Milliseconds(agent_tools::kCallTimeoutMs),
-      base::BindOnce(&WebAgent::OnToolCallSettled,
-                     weak_factory_.GetWeakPtr()));
-}
-
-void WebAgent::OnToolCallSettled(PollEnd end, base::Value result) {
+void WebAgent::OnToolCallSettled(SiteToolHost::CallEnd end,
+                                 agent_tools::CallOutcome outcome) {
   if (cancelled_) return;
   switch (end) {
-    case PollEnd::kTimedOut:
+    case SiteToolHost::CallEnd::kTimedOut:
       OnActionDone(false, std::string(agent_tools::CallFailureNote(
                               agent_tools::CallState::kTimedOut)));
       return;
-    case PollEnd::kDocumentChanged:
-      // The tool loaded another page (a <form> tool submits its form): that
-      // page is its answer. Observe it once it has loaded; a page off the
-      // run's sites asks the user first (OnPageObserved).
-      tool_call_note_ = "The tool loaded another page";
+    case SiteToolHost::CallEnd::kDocumentChanged:
+      // The tool loaded another page (a <form> tool submits its form), in
+      // the tab or in its frame: that page is its answer. Observe once it
+      // has loaded; a page off the run's sites asks the user first
+      // (OnPageObserved).
+      tool_call_note_ = action_tool_.frame
+                            ? "The tool loaded another page in its frame"
+                            : "The tool loaded another page";
       WaitForLoadThenObserve();
       return;
-    case PollEnd::kSettled:
+    case SiteToolHost::CallEnd::kSettled:
       break;
   }
-  const agent_tools::CallOutcome outcome =
-      agent_tools::ParseToolCallPoll(result);
   if (outcome.state != agent_tools::CallState::kDone) {
     OnActionDone(false,
                  std::string(agent_tools::CallFailureNote(outcome.state)));
@@ -799,45 +784,6 @@ void WebAgent::WaitForLoadThenObserve() {
       FROM_HERE,
       base::BindOnce(&WebAgent::MaybeNavDone, weak_factory_.GetWeakPtr()),
       base::Seconds(kNavTimeoutSeconds));
-}
-
-void WebAgent::PollIsolatedWorld(std::string script,
-                                 content::WeakDocumentPtr document,
-                                 base::TimeTicks deadline,
-                                 PollCallback done) {
-  if (cancelled_) return;
-  if (!IsCurrentDocument(document)) {
-    std::move(done).Run(PollEnd::kDocumentChanged, base::Value());
-    return;
-  }
-  const std::string js = script;
-  EvalJS(js, base::BindOnce(&WebAgent::OnPolled, weak_factory_.GetWeakPtr(),
-                            std::move(script), std::move(document), deadline,
-                            std::move(done)));
-}
-
-void WebAgent::OnPolled(std::string script,
-                        content::WeakDocumentPtr document,
-                        base::TimeTicks deadline,
-                        PollCallback done,
-                        base::Value result) {
-  if (cancelled_) return;
-  const std::string* state =
-      result.is_dict() ? result.GetDict().FindString("state") : nullptr;
-  if (!state || *state != "pending") {
-    std::move(done).Run(PollEnd::kSettled, std::move(result));
-    return;
-  }
-  if (base::TimeTicks::Now() >= deadline) {
-    std::move(done).Run(PollEnd::kTimedOut, base::Value());
-    return;
-  }
-  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
-      FROM_HERE,
-      base::BindOnce(&WebAgent::PollIsolatedWorld, weak_factory_.GetWeakPtr(),
-                     std::move(script), std::move(document), deadline,
-                     std::move(done)),
-      base::Milliseconds(agent_tools::kPollIntervalMs));
 }
 
 bool WebAgent::IsCurrentDocument(
@@ -920,6 +866,9 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   if (!origin_allowed || !snapshot_is_current) {
     observation_ = agent_actions::Observation();
   }
+  // The last observation's tools are gone with it.
+  tools_main_document_ = content::WeakDocumentPtr();
+  tool_documents_.clear();
 
   // The page's own tools (WebMCP), from the same document and origin.
   agent_tools::ListFacts facts;
@@ -927,76 +876,35 @@ void WebAgent::OnElementsObserved(const StructuredPage& page,
   facts.origin_allowed = origin_allowed;
   facts.snapshot_is_current = snapshot_is_current && IsCurrentDocument(document);
   if (agent_tools::ShouldListTools(facts)) {
-    ListSiteTools(page, std::move(document), std::move(snapshot_origin),
-                  origin_allowed);
+    // The main document's tools and its same-origin frames' (SiteToolHost).
+    content::WeakDocumentPtr listed = document;
+    site_tools_->List(
+        std::move(listed), current,
+        base::BindOnce(&WebAgent::OnSiteToolsListed,
+                       weak_factory_.GetWeakPtr(), page, std::move(document),
+                       std::move(snapshot_origin), origin_allowed));
     return;
   }
   ContinueObservation(page, std::move(document), std::move(snapshot_origin),
                       origin_allowed);
 }
 
-void WebAgent::ListSiteTools(const StructuredPage& page,
-                             content::WeakDocumentPtr document,
-                             std::string observed_origin,
-                             bool origin_allowed) {
-  if (cancelled_) return;
-  std::string request_id = "l" + base::NumberToString(++next_tool_request_);
-  const std::string js = agent_tools::BuildToolListScript(request_id);
-  EvalJS(js, base::BindOnce(&WebAgent::OnSiteToolListStarted,
-                            weak_factory_.GetWeakPtr(), page,
-                            std::move(document), std::move(observed_origin),
-                            origin_allowed, std::move(request_id)));
-}
-
-void WebAgent::OnSiteToolListStarted(const StructuredPage& page,
-                                     content::WeakDocumentPtr document,
-                                     std::string observed_origin,
-                                     bool origin_allowed,
-                                     std::string request_id,
-                                     base::Value result) {
-  if (cancelled_) return;
-  // 'unavailable' (no WebMCP on this page, the common case) or a failure:
-  // no tools, and no polling.
-  if (agent_tools::ParseToolList(result).state !=
-      agent_tools::ListState::kPending) {
-    ContinueObservation(page, std::move(document), std::move(observed_origin),
-                        origin_allowed);
-    return;
-  }
-  content::WeakDocumentPtr polled = document;
-  PollIsolatedWorld(
-      agent_tools::BuildToolListPollScript(request_id), std::move(polled),
-      base::TimeTicks::Now() +
-          base::Milliseconds(agent_tools::kListTimeoutMs),
-      base::BindOnce(&WebAgent::OnSiteToolsListed, weak_factory_.GetWeakPtr(),
-                     page, std::move(document), std::move(observed_origin),
-                     origin_allowed));
-}
-
 void WebAgent::OnSiteToolsListed(const StructuredPage& page,
                                  content::WeakDocumentPtr document,
                                  std::string observed_origin,
                                  bool origin_allowed,
-                                 PollEnd end,
-                                 base::Value result) {
+                                 SiteToolHost::Listing listing) {
   if (cancelled_) return;
-  if (end == PollEnd::kSettled && IsCurrentDocument(document)) {
-    agent_tools::ToolList list = agent_tools::ParseToolList(result);
-    // Only the observed document's tools, at the origin its snapshot read.
-    if (list.state == agent_tools::ListState::kDone &&
-        list.origin == observed_origin) {
-      std::vector<agent_tools::SiteTool> tools;
-      for (const agent_tools::ListedTool& listed : list.tools) {
-        std::optional<agent_tools::SiteTool> tool =
-            agent_tools::MakeSiteTool(listed);
-        if (tool)
-          tools.push_back(std::move(*tool));
-      }
-      // With the planner on, a tool is kept only if the schema with a plan
-      // (the larger one) converts too.
-      agent_actions::AddSiteTools(std::move(tools), &observation_,
-                                  planner_on_);
-    }
+  // Only while the observed document is still the tab's (SiteToolHost
+  // listed it and its same-origin frames at the origin its snapshot read).
+  if (IsCurrentDocument(document)) {
+    // The main document's tools first, then each frame's: at most 8 in
+    // all. With the planner on, a tool is kept only if the schema with a
+    // plan (the larger one) converts too.
+    agent_actions::AddSiteTools(std::move(listing.tools), &observation_,
+                                planner_on_);
+    tools_main_document_ = document;
+    tool_documents_ = std::move(listing.documents);
   }
   DVLOG(1) << "[WebAgent] " << observation_.tools.size() << " site tool(s)";
   ContinueObservation(page, std::move(document), std::move(observed_origin),
@@ -1442,7 +1350,14 @@ WebAgent::Step WebAgent::DescribeAction(
       break;
     case ActionType::kCallTool: {
       const agent_tools::SiteTool* tool = observation_.FindTool(action.tool);
-      step.target = tool ? "tool \"" + tool->name + "\"" : action.tool;
+      // A frame's tool by the browser's number of its frame (the approval
+      // shows the frame's address).
+      step.target = tool ? "tool \"" + tool->name + "\"" +
+                               (tool->frame ? " in frame " +
+                                                  base::NumberToString(
+                                                      tool->frame)
+                                            : std::string())
+                         : action.tool;
       step.value = action.tool_arguments_text;
       break;
     }

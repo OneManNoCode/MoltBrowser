@@ -59,6 +59,9 @@ struct GpuDeviceInfo {
   // driver's budget minus its usage where it reports one.
   uint64_t memory_total = 0;
   uint64_t memory_free = 0;
+  // The browser's GPU record turned this driver off after it failed, or the
+  // user did (design section 11.10).
+  bool turned_off = false;
 };
 
 enum class GpuDeviceVerdict {
@@ -77,6 +80,9 @@ enum class GpuDeviceVerdict {
   kTooLittleMemory,
   // A driver on the blocklist.
   kBlocklisted,
+  // Otherwise usable, but the browser turned its driver off
+  // (GpuDeviceInfo::turned_off).
+  kTurnedOff,
 };
 
 // A driver found to misbehave: its vendor (PCI id), driver id and an

@@ -11,6 +11,11 @@
 // /fill ai and /paste (molt_ai_chat_form_fill.h, AGENT_ACTIONS.md §4.7)
 // take the same path with the user's data instead of a request: one
 // FILL_FORM of observed text fields, always confirmed.
+//
+// On a page that offers site tools (WebMCP, AGENT_ACTIONS.md §4.9) a typed
+// request may also lead to one CALL_TOOL, listed and called by
+// SiteToolHost (the main document's tools and its same-origin frames'),
+// always confirmed and run only on the user's click.
 
 #include "chrome/browser/ui/webui/molt_ai/molt_ai_chat_handler.h"
 
@@ -30,7 +35,10 @@
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
+#include "chrome/browser/molt_ai/agents/agent_features.h"
+#include "chrome/browser/molt_ai/agents/agent_tools.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/common/molt_blocking_scope.h"
 #include "chrome/browser/molt_ai/profile/molt_profile_store.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -75,6 +83,8 @@ struct MoltAIChatHandler::ChatActionDecision {
   std::string page_url;
   std::string page_title;
   agent_actions::Observation observation;
+  // The documents its site tools were listed in, by frame number.
+  std::vector<content::WeakDocumentPtr> tool_documents;
   // Unusable replies so far, and the note the next prompt carries.
   int bad_replies = 0;
   std::string retry_note;
@@ -352,7 +362,39 @@ void MoltAIChatHandler::OnChatActionSnapshot(
                         ChatStatus("failed", kNoTextField));
       return;
     }
+  } else if (molt_ai::agent_features::AgentSiteToolsEnabled()) {
+    // The page's site tools (WebMCP), as the web agent lists them: the
+    // document observed and its same-origin frames, never another site's.
+    content::WeakDocumentPtr document = decision->document;
+    const url::Origin origin = decision->origin;
+    ChatSiteTools()->List(
+        std::move(document), origin,
+        base::BindOnce(&MoltAIChatHandler::OnChatActionToolsListed,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(decision)));
+    return;
   }
+  RunChatActionDecision(std::move(decision));
+}
+
+void MoltAIChatHandler::OnChatActionToolsListed(
+    std::unique_ptr<ChatActionDecision> decision,
+    molt_ai::SiteToolHost::Listing listing) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  if (decision->epoch != chat_action_epoch_) {
+    ResolveChatAction(decision->callback_id, ChatStatus("cancelled"));
+    return;
+  }
+  if (!decision->document.AsRenderFrameHostIfValid()) {
+    ResolveChatAction(decision->callback_id,
+                      ChatStatus("failed", kPageChanged));
+    return;
+  }
+  // The web agent's offering rules, checked against the chat's schema.
+  chat_actions::AddChatSiteTools(std::move(listing.tools),
+                                 &decision->observation);
+  decision->tool_documents = std::move(listing.documents);
   RunChatActionDecision(std::move(decision));
 }
 
@@ -491,6 +533,7 @@ void MoltAIChatHandler::OnChatActionDecision(
       decision->form_fill ? std::string_view() : decision->request);
   proposal->document = decision->document;
   proposal->origin = decision->origin;
+  proposal->tool_documents = decision->tool_documents;
   proposal->form_fill = decision->form_fill;
   if (proposal->form_fill) {
     proposal->form_fill_reason = chat_form_fill::ConfirmationReason(
@@ -547,6 +590,15 @@ void MoltAIChatHandler::OnChatProposalProbed(
     ResolveChatAction(callback_id, ChatStatus("failed", check.message));
     return;
   }
+  if (proposal->action.type == agent_actions::ActionType::kCallTool &&
+      !ChatProposalToolFrame(*proposal)) {
+    ResolveChatAction(
+        callback_id,
+        ChatStatus("failed", molt_ai::agent_tools::CallFailureNote(
+                                 molt_ai::agent_tools::CallState::
+                                     kDocumentChanged)));
+    return;
+  }
   proposal->shown_reason =
       check.verdict == chat_actions::Verdict::kAsk ? check.message
                                                    : std::string();
@@ -578,6 +630,13 @@ void MoltAIChatHandler::HandleRunChatProposal(const base::ListValue& args) {
   // Only an explicit true is the user's Allow.
   const bool confirmed =
       args.size() > 2u && args[2].is_bool() && args[2].GetBool();
+  // ... and a site tool runs only on the click itself: the chat page's
+  // transient user activation, which its script can't make up (the click's
+  // activation reaches the browser before this message: the WebUI pipe is
+  // frame-associated).
+  content::RenderFrameHost* chat_frame = web_ui()->GetRenderFrameHost();
+  const bool user_activation =
+      chat_frame && chat_frame->HasTransientUserActivation();
   if (!chat_proposal_ || !id || *id != chat_proposal_->id) {
     ResolveChatAction(callback_id, RunError(kNoLongerAvailable));
     return;
@@ -597,13 +656,14 @@ void MoltAIChatHandler::HandleRunChatProposal(const base::ListValue& args) {
                                     chat_proposal_->observation),
       base::BindOnce(&MoltAIChatHandler::OnChatProposalRechecked,
                      weak_ptr_factory_.GetWeakPtr(), callback_id, *id,
-                     confirmed));
+                     confirmed, user_activation));
 }
 
 void MoltAIChatHandler::OnChatProposalRechecked(
     std::string callback_id,
     int id,
     bool confirmed,
+    bool user_activation,
     std::vector<agent_safety::ElementProbe> probes) {
   if (!IsJavascriptAllowed()) {
     return;
@@ -625,8 +685,21 @@ void MoltAIChatHandler::OnChatProposalRechecked(
     ResolveChatAction(callback_id, RunError(check.message));
     return;
   }
-  if (!chat_actions::MayRun(check, confirmed, chat_proposal_->shown_reason)) {
-    // Needs the user's OK for this reason first (Auto mode too).
+  const bool calls_tool =
+      chat_proposal_->action.type == agent_actions::ActionType::kCallTool;
+  if (calls_tool && !ChatProposalToolFrame(*chat_proposal_)) {
+    // The document that listed the tool navigated or went away.
+    chat_proposal_.reset();
+    ResolveChatAction(callback_id,
+                      RunError(molt_ai::agent_tools::CallFailureNote(
+                          molt_ai::agent_tools::CallState::kDocumentChanged)));
+    return;
+  }
+  if (!chat_actions::MayRunProposal(chat_proposal_->action, check, confirmed,
+                                    chat_proposal_->shown_reason,
+                                    user_activation)) {
+    // Needs the user's OK for this reason first (Auto mode too); a site
+    // tool, the user's own click on it.
     chat_proposal_->shown_reason = check.message;
     base::DictValue result;
     result.Set("success", false);
@@ -705,11 +778,28 @@ void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
     case agent_actions::ActionType::kScroll:
       script = agent_actions::BuildScrollScript(action.direction);
       break;
+    case agent_actions::ActionType::kCallTool: {
+      // In the document that listed the tool (checked again there), with
+      // the arguments the browser wrote (agent_tools::ReadArguments); the
+      // script checks the document's mark, the origin and that the page
+      // still lists the same tool.
+      const molt_ai::agent_tools::SiteTool* tool =
+          proposal.observation.FindTool(action.tool);
+      if (!tool || tool->frame >= proposal.tool_documents.size()) {
+        ResolveChatAction(callback_id, RunError(kNoLongerAvailable));
+        return;
+      }
+      ChatSiteTools()->Call(
+          proposal.document, proposal.tool_documents[tool->frame],
+          proposal.origin, *tool, action.tool_arguments,
+          base::BindOnce(&MoltAIChatHandler::OnChatToolCalled,
+                         weak_ptr_factory_.GetWeakPtr(), callback_id));
+      return;
+    }
     case agent_actions::ActionType::kObserve:
     case agent_actions::ActionType::kDone:
     case agent_actions::ActionType::kError:
-    case agent_actions::ActionType::kCallTool:  // never in the chat's set
-    case agent_actions::ActionType::kReplan:    // never in the chat's set
+    case agent_actions::ActionType::kReplan:  // never in the chat's set
       ResolveChatAction(callback_id, RunError("Not a page action."));
       return;
   }
@@ -760,6 +850,42 @@ void MoltAIChatHandler::RunChatProposalNow(const std::string& callback_id,
           proposal.document, std::move(filled_selectors),
           std::move(more_note)),
       content::ISOLATED_WORLD_ID_CONTENT_END);
+}
+
+void MoltAIChatHandler::OnChatToolCalled(
+    std::string callback_id,
+    molt_ai::SiteToolHost::CallEnd end,
+    molt_ai::agent_tools::CallOutcome outcome) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  // The site's answer, marked as the site's (chat_actions), or the
+  // browser's note.
+  const chat_actions::ScriptOutcome shown = chat_actions::InterpretToolCall(
+      outcome, end == molt_ai::SiteToolHost::CallEnd::kDocumentChanged);
+  base::DictValue result;
+  result.Set("success", shown.success);
+  result.Set(shown.success ? "message" : "error", shown.message);
+  ResolveChatAction(callback_id, std::move(result));
+}
+
+molt_ai::SiteToolHost* MoltAIChatHandler::ChatSiteTools() {
+  if (!chat_site_tools_) {
+    chat_site_tools_ = std::make_unique<molt_ai::SiteToolHost>();
+  }
+  return chat_site_tools_.get();
+}
+
+content::RenderFrameHost* MoltAIChatHandler::ChatProposalToolFrame(
+    const ChatProposal& proposal) {
+  const molt_ai::agent_tools::SiteTool* tool =
+      proposal.observation.FindTool(proposal.action.tool);
+  if (!tool || tool->frame >= proposal.tool_documents.size()) {
+    return nullptr;
+  }
+  return molt_ai::SiteToolHost::ToolFrameIfCurrent(
+      proposal.document, proposal.tool_documents[tool->frame],
+      proposal.origin);
 }
 
 content::RenderFrameHost* MoltAIChatHandler::ChatProposalFrame(

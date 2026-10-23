@@ -448,6 +448,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the model. Shaders are compiled at build time with Chromium's own glslang.
   It stays off until tested on real GPUs; on Windows it runs on the CPU for
   now (`docs/design/SANDBOXED_INFERENCE.md` §11).
+- **GPU inference remembers drivers that fail, and compiles less.** In the
+  builds with GPU inference, a graphics driver that fails three times in a
+  month is no longer used for on-device AI until it changes (retried after
+  30 days, after a MoltBrowser update, or from molt://ai-settings, which
+  also gains "Use the GPU for on-device AI": Automatic or Off). The GPU's
+  compiled pipelines are kept between loads, checked before reuse and
+  deleted with a model's data (`docs/design/SANDBOXED_INFERENCE.md`
+  §11.10–11.12).
 - **On-device AI on older x86 processors.** Models no longer need AVX2:
   the best kernels the processor supports are picked when a model loads,
   AVX on Intel Sandy Bridge/Ivy Bridge and AMD Bulldozer-family chips,
@@ -538,6 +546,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   first, showing every argument; tools that take a password or a file are
   never offered. What a tool answers is treated as page text. Turn it off
   at `chrome://flags/#molt-agent-site-tools`.
+- **Site tools in frames, and in the AI chat.** The agent also sees the
+  tools of frames that belong to the page's own site (exactly its origin;
+  never another site's frame, or a frame inside one), and a call runs only
+  in the very page or frame that listed the tool; when it asks you, it
+  shows the frame's address. In the AI chat, a typed request on such a
+  page can propose one of the site's tools: MoltBrowser shows the tool,
+  the frame and every argument, and runs it only after you click Allow,
+  in Auto mode too and for tools the site calls read-only. The same switch
+  turns both off.
 - **The web agent plans first.** Before it acts, the on-device model writes
   a short plan for the task (at most 6 steps, each with how to tell it's
   done), shown above the agent's steps with the current one marked. The
@@ -658,6 +675,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stand-ins had missed, all fixed; among them, WebGL2 `readPixels` into a
   buffer now farbles the pixels by reading them back, as 152 has no buffer
   mapping.
+- Consistency hardening: the site tools' approvals, the agent's plan, the
+  chat's proposals and form fills, and saved agent runs (their step labels
+  and the secret checks that read them) share one list of the characters
+  they show as U+FFFD (bidi controls, zero-width and invisible characters,
+  line separators, variation selectors, tag characters), the planner's
+  wider one, with one test table (`agents/hidden_chars.h`).
 
 ---
 

@@ -228,6 +228,30 @@ bool IsValidGpuDescription(bool gpu_requested,
   return !gpu_on && gpu_layers == 0;
 }
 
+bool IsConsistentGpuStatus(const GpuLoadFacts& facts,
+                           ReportedGpuStatus status) {
+  if (!facts.requested) {
+    return status == ReportedGpuStatus::kNotRequested;
+  }
+  const bool on_device = facts.device_reported && facts.device_allowed;
+  switch (status) {
+    case ReportedGpuStatus::kNotRequested:
+      return false;
+    case ReportedGpuStatus::kOn:
+    case ReportedGpuStatus::kDeviceLost:
+    case ReportedGpuStatus::kLoadFailed:
+    case ReportedGpuStatus::kTooLittleMemory:
+      return on_device;
+    case ReportedGpuStatus::kTurnedOff:
+      return !on_device;
+    case ReportedGpuStatus::kNotBuilt:
+    case ReportedGpuStatus::kNoDevice:
+    case ReportedGpuStatus::kNoUsableDevice:
+      return !facts.device_reported;
+  }
+  return false;
+}
+
 bool IsValidTokenization(const std::vector<int32_t>& tokens,
                          size_t text_bytes,
                          uint32_t vocab_size) {
@@ -329,6 +353,11 @@ GpuFallbackGuard::~GpuFallbackGuard() = default;
 bool GpuFallbackGuard::AllowGpu(const std::string& key) const {
   return !gpu_disabled() && std::find(failed_keys_.begin(), failed_keys_.end(),
                                       key) == failed_keys_.end();
+}
+
+void GpuFallbackGuard::Reset() {
+  failed_keys_.clear();
+  failures_ = 0;
 }
 
 void GpuFallbackGuard::RecordGpuFailure(const std::string& key) {

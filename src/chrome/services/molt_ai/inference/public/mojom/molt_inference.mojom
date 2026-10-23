@@ -36,6 +36,14 @@ const uint32 kMinDescribedContextTokens = 256;
 // Most layers a ModelDescription may report on the GPU (the service reads at
 // most 4096 repeating layers from a model, plus the output layer).
 const uint32 kMaxGpuLayers = 4097;
+// GpuDeviceIdentity.name (VkPhysicalDeviceProperties::deviceName is 256
+// bytes with its NUL).
+const uint32 kMaxGpuNameBytes = 255;
+// ModelLoadParams.skip_gpu_drivers.
+const uint32 kMaxSkippedGpuDrivers = 8;
+// A pipeline cache, either way (engine/gpu_pipeline_cache.h
+// kMaxPipelineCacheBytes).
+const uint32 kMaxPipelineCacheBytes = 33554432;  // 32 MiB
 
 // Image input (docs/design/SANDBOXED_INFERENCE.md section 10). The same
 // bounds as chrome/services/molt_ai/inference/engine/image_input.h; an image
@@ -58,6 +66,48 @@ struct ImageInput {
   uint32 height;
   // Exactly width * height * 3 bytes.
   mojo_base.mojom.BigBuffer rgb;
+};
+
+// What identifies a GPU's driver (docs/design/SANDBOXED_INFERENCE.md section
+// 11.10): the browser keeps its GPU failure record under it.
+struct GpuDriverKey {
+  // VkPhysicalDeviceProperties::vendorID and deviceID.
+  uint32 vendor_id;
+  uint32 device_id;
+  // VkDriverId; 0 when the driver doesn't report one.
+  uint32 driver_id;
+  // VkPhysicalDeviceProperties::driverVersion (the vendor's encoding).
+  uint32 driver_version;
+  // VkPhysicalDeviceIDProperties::driverUUID: the driver build.
+  array<uint8, 16> driver_uuid;
+};
+
+// The GPU the service chose for a load, before anything is loaded on it.
+// Untrusted, like everything the service sends: the browser sanitizes the
+// name and turns nothing here into a path.
+struct GpuDeviceIdentity {
+  GpuDriverKey key;
+  // VkPhysicalDeviceProperties::apiVersion.
+  uint32 api_version;
+  // VkPhysicalDeviceProperties::pipelineCacheUUID: what the device's
+  // pipeline caches are valid for (section 11.12).
+  array<uint8, 16> pipeline_cache_uuid;
+  // VkPhysicalDeviceProperties::deviceName; at most kMaxGpuNameBytes.
+  string name;
+};
+
+// Implemented by the browser for a load with use_gpu
+// (docs/design/SANDBOXED_INFERENCE.md section 11.10).
+interface GpuLoadClient {
+  // The service listed the Vulkan devices and chose |device|, and waits for
+  // the answer before it creates the device or loads anything on it, so a
+  // driver that crashes the process from here on is known to the browser.
+  // use_gpu false: load on the CPU (the browser's record turned this
+  // driver off; GpuStatus kTurnedOff). With use_gpu, the pipeline cache the
+  // browser kept for this device (section 11.12), read-only, not async;
+  // null for none. At most once per load.
+  OnGpuChosen(GpuDeviceIdentity device)
+      => (bool use_gpu, mojo_base.mojom.ReadOnlyFile? pipeline_cache);
 };
 
 struct ModelLoadParams {
@@ -87,6 +137,12 @@ struct ModelLoadParams {
   // section 11). The service falls back to the CPU on its own; the browser
   // sends false again after a GPU failure. Ignored on macOS (Metal).
   bool use_gpu = false;
+  // With use_gpu: asked about the chosen device before anything is loaded
+  // on it. Without one the service doesn't use the GPU (kTurnedOff).
+  pending_remote<GpuLoadClient>? gpu_client;
+  // Drivers the browser's GPU record turned off: a device with one of these
+  // keys is never chosen. At most kMaxSkippedGpuDrivers.
+  array<GpuDriverKey> skip_gpu_drivers;
 };
 
 // What became of the GPU (Vulkan) for a load. The model runs on the CPU in
@@ -108,6 +164,12 @@ enum GpuStatus {
   kLoadFailed,
   // On the GPU, wholly or partly (gpu_layers); backend is "vulkan".
   kOn,
+  // The browser's GPU record turned the chosen GPU's driver off (or every
+  // usable GPU's), or there was no GpuLoadClient to ask.
+  kTurnedOff,
+  // The GPU was lost while the model was loaded on it; it was loaded on the
+  // CPU instead. A GPU failure for the browser's record, unlike kLoadFailed.
+  kDeviceLost,
 };
 
 enum LoadModelStatus {
@@ -327,6 +389,16 @@ interface Model {
 
   // Drops a cached KV prefix (conversation deleted or cleared).
   ForgetConversation(string conversation_key);
+
+  // The GPU's Vulkan pipeline cache (docs/design/SANDBOXED_INFERENCE.md
+  // section 11.12), served after the requests before it. Pipelines compile on
+  // first use, so the browser asks after a generation on the GPU. Null when
+  // the model isn't on the GPU or nothing was compiled since the load or the
+  // last cache sent; empty when the cache grew over kMaxPipelineCacheBytes
+  // (the browser drops its copy); else at most kMaxPipelineCacheBytes,
+  // starting with a version-one header for the reported device. Untrusted:
+  // the browser checks the size and the header and parses nothing else.
+  GetPipelineCache() => (mojo_base.mojom.BigBuffer? cache);
 };
 
 // ---- Text embeddings ---------------------------------------------------------

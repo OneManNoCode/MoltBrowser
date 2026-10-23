@@ -25,6 +25,7 @@
 #ifndef CHROME_SERVICES_MOLT_AI_INFERENCE_LLAMA_ENGINE_H_
 #define CHROME_SERVICES_MOLT_AI_INFERENCE_LLAMA_ENGINE_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -46,6 +47,33 @@ using ScopedStdioFile = std::unique_ptr<FILE, StdioFileCloser>;
 
 // Plain mirrors of the molt_inference.mojom types the engine needs.
 
+// What identifies a GPU's driver (mojom GpuDriverKey; design section 11.10).
+struct EngineGpuDriverKey {
+  uint32_t vendor_id = 0;
+  uint32_t device_id = 0;
+  uint32_t driver_id = 0;
+  uint32_t driver_version = 0;
+  std::array<uint8_t, 16> driver_uuid{};
+
+  bool operator==(const EngineGpuDriverKey&) const = default;
+};
+
+// The GPU the engine chose, as reported to the browser before anything is
+// loaded on it (mojom GpuDeviceIdentity). Values are the driver's own.
+struct EngineGpuIdentity {
+  EngineGpuIdentity();
+  ~EngineGpuIdentity();
+  EngineGpuIdentity(const EngineGpuIdentity&);
+  EngineGpuIdentity& operator=(const EngineGpuIdentity&);
+
+  EngineGpuDriverKey key;
+  // VkPhysicalDeviceProperties::apiVersion and pipelineCacheUUID.
+  uint32_t api_version = 0;
+  std::array<uint8_t, 16> pipeline_cache_uuid{};
+  // VkPhysicalDeviceProperties::deviceName (at most 255 bytes).
+  std::string name;
+};
+
 struct EngineLoadParams {
   // Size the browser saw; a file of another size is refused.
   uint64_t file_size = 0;
@@ -64,6 +92,12 @@ struct EngineLoadParams {
   // with molt_llama_vulkan; design section 11). The CPU is the fallback.
   // macOS ignores it: Metal is always used there.
   bool use_gpu = false;
+  // Drivers the browser's GPU record turned off (design section 11.10): a
+  // device with one of these keys is never chosen.
+  std::vector<EngineGpuDriverKey> skip_gpu_drivers;
+  // The browser's answer to ChooseGpu()'s device: false loads on the CPU
+  // (EngineGpuStatus::kTurnedOff).
+  bool gpu_allowed = true;
 };
 
 // What became of the GPU (Vulkan) for this load. Mirrors mojom GpuStatus.
@@ -83,6 +117,43 @@ enum class EngineGpuStatus {
   kLoadFailed,
   // The model runs on the GPU, wholly or partly (gpu_layers).
   kOn,
+  // The browser turned the chosen GPU's driver off (or every usable one's):
+  // the CPU.
+  kTurnedOff,
+  // The GPU was lost while the model was loaded on it (a reset, a driver
+  // fault): loaded on the CPU instead. A GPU failure, unlike kLoadFailed.
+  kDeviceLost,
+};
+
+// ChooseGpu(): the device, before anything is loaded on it.
+struct EngineGpuChoice {
+  EngineGpuChoice();
+  ~EngineGpuChoice();
+  EngineGpuChoice(const EngineGpuChoice&);
+  EngineGpuChoice& operator=(const EngineGpuChoice&);
+
+  // kOn when a device was chosen (whether it is used depends on the
+  // browser's answer and the load); otherwise why not.
+  EngineGpuStatus status = EngineGpuStatus::kNotRequested;
+  std::optional<EngineGpuIdentity> device;
+};
+
+// PipelineCacheUpdate().
+struct EnginePipelineCache {
+  EnginePipelineCache();
+  ~EnginePipelineCache();
+  EnginePipelineCache(EnginePipelineCache&&);
+  EnginePipelineCache& operator=(EnginePipelineCache&&);
+
+  enum class State {
+    // Not on the GPU, no cache, or nothing compiled since the last time.
+    kNone,
+    // Over the cap: the browser should drop its copy and start again.
+    kTooLarge,
+    kData,
+  };
+  State state = State::kNone;
+  std::vector<uint8_t> data;
 };
 
 enum class EngineLoadStatus {
@@ -282,19 +353,36 @@ class LlamaEngine {
   LlamaEngine(const LlamaEngine&) = delete;
   LlamaEngine& operator=(const LlamaEngine&) = delete;
 
+  // GPU inference (design sections 11.5 and 11.10): lists the Vulkan
+  // devices and chooses one with the device policy, skipping
+  // params.skip_gpu_drivers, before anything is loaded on it. Load() uses
+  // that choice (and calls this itself if it wasn't called). Only with
+  // params.use_gpu; at most once, before Load().
+  EngineGpuChoice ChooseGpu(const EngineLoadParams& params);
+
   // Loads the GGUF read through |file| (read-only, synchronous) and creates
   // the context. |file| stays open until the model is freed (lazily read
   // tensors go through it); it is closed by the destructor, or here on
   // failure. With |vision_projector| (a second GGUF of
   // params.vision_projector_size bytes), also loads llama.cpp's multimodal
   // context for image input; that file is read completely here and closed.
-  // Call at most once.
+  // |pipeline_cache| (GPU only; design section 11.12) is a pipeline cache
+  // the browser kept for the chosen device: read here (at most
+  // kMaxPipelineCacheBytes) and closed; used only if its header matches the
+  // device. Call at most once.
   EngineLoadResult Load(ScopedStdioFile file,
                         const EngineLoadParams& params,
-                        ScopedStdioFile vision_projector = nullptr);
+                        ScopedStdioFile vision_projector = nullptr,
+                        ScopedStdioFile pipeline_cache = nullptr);
   bool loaded() const;
   // A vision projector is loaded.
   bool vision() const;
+
+  // The GPU's pipeline cache, when pipelines were compiled since the load
+  // (they compile on first use, so after a generation) or since the last
+  // call that returned data (design section 11.12). kNone on the CPU, after
+  // a GPU failure, or with nothing new; kTooLarge over |max_bytes|.
+  EnginePipelineCache PipelineCacheUpdate(size_t max_bytes);
 
   // Chat with the model's own template (StreamChat). |callbacks| run on this
   // thread before Chat() returns. A request with images needs vision()
@@ -320,6 +408,7 @@ class LlamaEngine {
   struct Model;
   struct DecodeParams;
   struct MediaPrompt;
+  struct Gpu;
 
   EngineStatus Generate(const std::vector<int32_t>& prompt,
                         const std::string& reuse_key,
@@ -333,6 +422,8 @@ class LlamaEngine {
       const EngineCallbacks& callbacks);
 
   std::unique_ptr<Model> model_;
+  // The GPU ChooseGpu() picked, and its pipeline cache's bookkeeping.
+  std::unique_ptr<Gpu> gpu_;
 };
 
 }  // namespace molt_ai

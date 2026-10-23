@@ -36,6 +36,11 @@ struct ggml_vk_moltbrowser_device_info {
   uint64_t memory_free;
   // NUL-terminated (VkPhysicalDeviceProperties::deviceName).
   char name[256];
+  // VkPhysicalDeviceIDProperties::driverUUID (the driver build) and
+  // VkPhysicalDeviceProperties::pipelineCacheUUID (what its pipeline caches
+  // are valid for).
+  uint8_t driver_uuid[16];
+  uint8_t pipeline_cache_uuid[16];
 };
 
 // Fills |info| for ggml-vulkan device |device|. Needs a successful
@@ -44,6 +49,29 @@ struct ggml_vk_moltbrowser_device_info {
 bool ggml_vk_moltbrowser_get_device_info(
     int device,
     struct ggml_vk_moltbrowser_device_info* info);
+
+// Pipeline cache (docs/design/SANDBOXED_INFERENCE.md section 11.12).
+// ggml-vulkan creates every pipeline of a device with that device's
+// VkPipelineCache, created with the device (its first model buffer or
+// context) from the data set here; data the driver finds incompatible gives
+// an empty cache. Returns false for an index out of range or once the
+// device exists (the data is then not used). |data| is copied; |size| 0
+// clears it.
+bool ggml_vk_moltbrowser_set_pipeline_cache_data(int device,
+                                                 const void* data,
+                                                 size_t size);
+
+// vkGetPipelineCacheData for device |device|: with |data| null, *size gets
+// the cache's size; else up to *size bytes are written and *size set to
+// what was written. Returns false if the device or its cache doesn't
+// exist, on a Vulkan error, or if *size was too small (VK_INCOMPLETE).
+bool ggml_vk_moltbrowser_get_pipeline_cache_data(int device,
+                                                 void* data,
+                                                 size_t* size);
+
+// Whether device |device| exists and was lost (vkGetFenceStatus on its
+// fence returns VK_ERROR_DEVICE_LOST), e.g. after a load on it failed.
+bool ggml_vk_moltbrowser_device_lost(int device);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -12,8 +12,10 @@
 #include "chrome/services/molt_ai/inference/llama_embedding_engine.h"
 #include "chrome/services/molt_ai/inference/llama_engine.h"
 #include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
+#include "base/files/file.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 
 namespace molt_ai {
 
@@ -49,6 +51,16 @@ class MoltInferenceService : public mojom::MoltInferenceService {
                           LoadEmbeddingModelCallback callback) override;
 
  private:
+  // A load waiting for the browser's answer about the GPU (design section
+  // 11.10).
+  struct PendingLoad;
+
+  // GPU loads: the engine chose a device; ask the browser about it.
+  void OnGpuChosen(EngineGpuChoice choice);
+  // The browser's answer (or none: the client went away).
+  void OnGpuAnswer(bool use_gpu, base::File pipeline_cache);
+  // Loads |pending_| on the engine sequence.
+  void StartLoad(ScopedStdioFile pipeline_cache);
   void OnLoaded(mojo::PendingReceiver<mojom::Model> model,
                 LoadModelCallback callback,
                 EngineLoadResult result);
@@ -63,6 +75,9 @@ class MoltInferenceService : public mojom::MoltInferenceService {
   bool load_requested_ = false;
   // The engine while it loads; moved into |model_| on success.
   base::SequenceBound<LlamaEngine> engine_;
+  std::unique_ptr<PendingLoad> pending_;
+  // Asked about the chosen GPU (ModelLoadParams.gpu_client).
+  mojo::Remote<mojom::GpuLoadClient> gpu_client_;
   std::unique_ptr<MoltModelImpl> model_;
   // The embedding engine while it loads; moved into |embedding_model_|.
   base::SequenceBound<LlamaEmbeddingEngine> embedding_engine_;
