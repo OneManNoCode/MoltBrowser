@@ -211,6 +211,10 @@ class Scope:
     def __init__(self, parent=None):
         self.parent = parent
         self.vars = {}
+        # What `name -= [...]` took out, by name (a target's
+        # `configs -= [ "//build/config/compiler:no_exceptions" ]` is
+        # visible even when the reader could not know the list's defaults).
+        self.removed = {}
 
     def get(self, name):
         s = self
@@ -262,7 +266,7 @@ NO_EXPAND = {"mojom", "mojom_component", "generate_jni",
              "android_apk", "rust_static_library", "fuzzer_test",
              "test", "component", "jumbo_component", "chrome_extension"}
 
-BUILTIN_SKIP = {"assert", "print", "set_defaults", "not_needed",
+BUILTIN_SKIP = {"assert", "print", "not_needed",
                 "set_sources_assignment_filter", "pool", "toolchain",
                 "tool", "set_default_toolchain", "propagates_configs",
                 "testonly", "print_stack_trace", "check_includes"}
@@ -279,6 +283,9 @@ class Interp:
         self.parse_cache = {}
         self.globals = globals_ or Scope()
         self.declared = {}
+        # set_defaults(): target type or template name -> {var: value},
+        # copied into the scope of every later invocation of that type.
+        self.target_defaults = {}
         self.warnings = []
         self._exec_cache = {}
         # write_file() calls: {"//out/cc/...": text}, written by whoever
@@ -367,6 +374,9 @@ class Interp:
             if op == "=":
                 scope.set(name, val)
                 return
+            if op == "-=":
+                scope.removed.setdefault(name, []).extend(
+                    val if isinstance(val, list) else [val])
             try:
                 cur = scope.get(name)
             except KeyError:
@@ -440,6 +450,13 @@ class Interp:
             if isinstance(tn, str) and block is not None:
                 scope.set("tmpl::" + tn, (block, scope))
             return
+        if name == "set_defaults":
+            tn = self.eval(args[0], scope, ctx) if args else None
+            if isinstance(tn, str) and block is not None:
+                s = Scope(scope)
+                self.exec_block(block, s, ctx)
+                self.target_defaults[tn] = dict(s.vars)
+            return
         if name in BUILTIN_SKIP or block is None:
             if name not in BUILTIN_SKIP and block is None:
                 self.eval(("call", name, args), scope, ctx)
@@ -447,6 +464,10 @@ class Interp:
         # A target, config or template invocation.
         tname = self.eval(args[0], scope, ctx) if args else ""
         s = Scope(scope)
+        # As gn: the type's set_defaults() values first (a source_set's
+        # `configs` start as default_compiler_configs).
+        for k, v in self.target_defaults.get(name, {}).items():
+            s.set(k, list(v) if isinstance(v, list) else v)
         s.set("target_name", tname)
         self.exec_block(block, s, ctx)
         if ctx.get("targets") is not None:

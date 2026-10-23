@@ -17,12 +17,25 @@ DIAG_RE = re.compile(r"^(?P<file>[^:\n]+):(?P<line>\d+):(?P<col>\d+): "
 PER_FILE = {}
 
 
+def language_cflags(lang=None):
+    """config.CFLAGS with the target's own exception and RTTI setting
+    (gnconfigs.target_flags: Chromium's default is off for both)."""
+    out = list(config.CFLAGS)
+    lang = lang or {}
+    for key, off, on in (("exceptions", "-fno-exceptions", "-fexceptions"),
+                         ("rtti", "-fno-rtti", "-frtti")):
+        if lang.get(key):
+            out = [on if f == off else f for f in out]
+    return out
+
+
 def compile_command(tree, work, target, plugins=True, dev=False,
-                    gn_flags=None):
-    """gn_flags: (global flags, {dir prefix: flags}) from gnconfigs."""
+                    gn_flags=None, lang=None):
+    """gn_flags: (global flags, {dir prefix: flags}) from gnconfigs.
+    lang: the target's gnconfigs.target_flags entry."""
     root = tree.tree_dir
     clang = toolchain.clang_dir(work) / "bin" / "clang++"
-    cmd = [str(clang)] + config.CFLAGS
+    cmd = [str(clang)] + language_cflags(lang)
     if plugins:
         cmd += config.PLUGIN_FLAGS
         if dev:
@@ -78,8 +91,8 @@ def _limit():
 
 
 def run_one(tree, work, target, out_dir, plugins=True, dev=False,
-            gn_flags=None):
-    cmd = compile_command(tree, work, target, plugins, dev, gn_flags)
+            gn_flags=None, lang=None):
+    cmd = compile_command(tree, work, target, plugins, dev, gn_flags, lang)
     r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
                        text=True, preexec_fn=_limit)
     text = r.stderr
@@ -94,18 +107,24 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False,
             f = f[6:]
         diags.append({"file": f, "line": int(m.group("line")),
                       "kind": m.group("kind"), "msg": m.group("msg")})
-    return {"target": target, "rc": r.returncode, "diags": diags,
-            "log": str(log)}
+    res = {"target": target, "rc": r.returncode, "diags": diags,
+           "log": str(log)}
+    if lang:
+        res["gn_target"] = lang.get("gn_target")
+        res["exceptions"] = bool(lang.get("exceptions"))
+        res["rtti"] = bool(lang.get("rtti"))
+    return res
 
 
-def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None):
+def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None,
+        target_flags=None):
     out_dir = Path(work) / "check"
     out_dir.mkdir(parents=True, exist_ok=True)
     tree.out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
         futs = {ex.submit(run_one, tree, work, t, out_dir, plugins, dev,
-                          gn_flags): t
+                          gn_flags, (target_flags or {}).get(t)): t
                 for t in targets}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()

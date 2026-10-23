@@ -247,10 +247,13 @@ def cmd_gen(args):
 
 def do_check(args, tree):
     tgts = targets.expand(args.targets, tree)
-    gn_flags = gnconfigs.resolve(tree, make_interp(tree))
+    interp = make_interp(tree)
+    gn_flags = gnconfigs.resolve(tree, interp)
+    # Each file's exception/RTTI setting, from its own GN target.
+    tflags = gnconfigs.target_flags(tree, interp, tgts)
     res = check.run(tree, args.work, tgts, jobs=args.jobs,
                     plugins=not args.no_plugins, dev=args.dev_plugins,
-                    gn_flags=gn_flags)
+                    gn_flags=gn_flags, target_flags=tflags)
     summary = args.work / "check.json"
     old = {}
     if summary.exists() and args.targets:
