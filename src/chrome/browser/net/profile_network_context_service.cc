@@ -266,7 +266,10 @@ void UpdateAntiAbuseSettings(Profile* profile) {
   ContentSetting content_setting =
       HostContentSettingsMapFactory::GetForProfile(profile)
           ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);
-  const bool block_trust_tokens = content_setting == CONTENT_SETTING_BLOCK;
+  // MoltBrowser: always blocked in MoltNet (molt_net_network_context_policy.h).
+  const bool block_trust_tokens = molt_ai::tor::BlockPrivateStateTokensFor(
+      molt_ai::tor::IsMoltNetProfile(profile),
+      content_setting == CONTENT_SETTING_BLOCK);
   profile->ForEachLoadedStoragePartition(
       [&](content::StoragePartition* storage_partition) {
         storage_partition->GetNetworkContext()->SetBlockTrustTokens(
@@ -1073,6 +1076,13 @@ ProfileNetworkContextService::GetCertificatePolicyForView() {
 
 bool ProfileNetworkContextService::ShouldSplitAuthCacheByNetworkIsolationKey()
     const {
+  // MoltBrowser: MoltNet keys server credentials by top-level site whatever
+  // the policy and the feature say (molt_net_network_context_policy.h).
+  if (molt_ai::tor::MoltNetNetworkContextSettingsFor(
+          molt_ai::tor::IsMoltNetProfile(profile_))
+          .split_http_auth_cache) {
+    return true;
+  }
   if (profile_->GetPrefs()->GetBoolean(
           prefs::kGloballyScopeHTTPAuthCacheEnabled)) {
     return false;
@@ -1390,9 +1400,9 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
 
   // MoltBrowser: MoltNet's per-context network settings
   // (molt_net_network_context_policy.h): a one-off network key for each
-  // certificate fetch, Basic and Digest authentication only, and a new
-  // random SOCKS password for Tor. Other profiles get Chromium's (the
-  // fields' defaults).
+  // certificate fetch, Basic and Digest authentication only, a new random
+  // SOCKS password for Tor, and per-site certificate verification, HTTP
+  // cache and HSTS. Other profiles get Chromium's (the fields' defaults).
   molt_ai::tor::ApplyMoltNetNetworkContextSettings(
       molt_ai::tor::IsMoltNetProfile(profile_), *network_context_params,
       *cert_verifier_creation_params);
@@ -1592,8 +1602,11 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
   ContentSetting anti_abuse_content_setting =
       HostContentSettingsMapFactory::GetForProfile(profile_)
           ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);
+  // MoltBrowser: always blocked in MoltNet (molt_net_network_context_policy.h).
   network_context_params->block_trust_tokens =
-      anti_abuse_content_setting == CONTENT_SETTING_BLOCK;
+      molt_ai::tor::BlockPrivateStateTokensFor(
+          molt_ai::tor::IsMoltNetProfile(profile_),
+          anti_abuse_content_setting == CONTENT_SETTING_BLOCK);
 
   network_context_params->first_party_sets_access_delegate_params =
       network::mojom::FirstPartySetsAccessDelegateParams::New();

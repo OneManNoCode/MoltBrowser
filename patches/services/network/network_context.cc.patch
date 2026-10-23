@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 789de76a8dc025b933ac18c24243e24742df1393..41b9c39cbaf5ab8d1c5612fb74f0b803951811a2 100644
+index 789de76a8dc025b933ac18c24243e24742df1393..6090d529207d8494a6a9263fe0ca9d5edb22fc0a 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -667,6 +667,34 @@ void RemoveInvalidationFilterCallback(
@@ -43,7 +43,18 @@ index 789de76a8dc025b933ac18c24243e24742df1393..41b9c39cbaf5ab8d1c5612fb74f0b803
  }  // namespace
  
  constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
-@@ -860,6 +888,11 @@ NetworkContext::NetworkContext(
+@@ -831,6 +859,10 @@ NetworkContext::NetworkContext(
+ 
+   shared_resource_checker_ = std::make_unique<SharedResourceChecker>(
+       cookie_manager_->cookie_settings());
++  // MoltBrowser: MoltNet keeps every cache entry keyed by top-level site.
++  if (params_->molt_no_shared_cache_entries) {
++    shared_resource_checker_->MoltDisableSharing();
++  }
+ 
+   network_service_->RegisterNetworkContext(this);
+ 
+@@ -860,6 +892,11 @@ NetworkContext::NetworkContext(
          params_->http_auth_static_network_context_params
              ->allow_default_credentials);
    }
@@ -55,7 +66,7 @@ index 789de76a8dc025b933ac18c24243e24742df1393..41b9c39cbaf5ab8d1c5612fb74f0b803
  
    InitializeCorsParams();
  
-@@ -2849,6 +2882,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
+@@ -2849,6 +2886,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
    http_auth_merged_preferences_.set_http_auth_scheme_filter(
        base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                            base::Unretained(this)));
@@ -66,7 +77,24 @@ index 789de76a8dc025b933ac18c24243e24742df1393..41b9c39cbaf5ab8d1c5612fb74f0b803
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
-@@ -3203,6 +3240,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2888,9 +2929,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+ 
+     // Whether the cert verifier is remote or in-process, we should wrap it in
+     // caching and coalescing layers to avoid extra verifications and IPCs.
+-    cert_verifier = std::make_unique<net::CachingCertVerifier>(
+-        std::make_unique<net::CoalescingCertVerifier>(
+-            std::move(cert_verifier)));
++    // MoltBrowser: not for MoltNet, which verifies every certificate on its
++    // own: both layers are shared by every site of the context.
++    if (!params_->molt_uncached_cert_verification) {
++      cert_verifier = std::make_unique<net::CachingCertVerifier>(
++          std::make_unique<net::CoalescingCertVerifier>(
++              std::move(cert_verifier)));
++    }
+   }
+ 
+   builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
+@@ -3203,6 +3248,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -78,3 +106,16 @@ index 789de76a8dc025b933ac18c24243e24742df1393..41b9c39cbaf5ab8d1c5612fb74f0b803
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
+@@ -3338,6 +3388,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+   // TransportSecurityState.  Since no requests have been made yet, safe to do
+   // this even after the call to Build().
+ 
++  // MoltBrowser: MoltNet's HSTS upgrades top-level navigations only.
++  if (params_->molt_hsts_top_level_navigations_only) {
++    result.url_request_context->transport_security_state()
++        ->MoltSetUpgradeTopLevelNavigationsOnly();
++  }
++
+   if (network_service_->pins_list_updated()) {
+     result.url_request_context->transport_security_state()->UpdatePinList(
+         network_service_->pinsets(), network_service_->host_pins(),

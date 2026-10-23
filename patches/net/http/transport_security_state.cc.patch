@@ -1,0 +1,22 @@
+MoltBrowser patch for net/http/transport_security_state.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/net/http/transport_security_state.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/http/transport_security_state.cc b/net/http/transport_security_state.cc
+index 6ac91fd12b3a314dafa25e55040bdbd9a3a21037..89b6d3da3b3ed9e24ba34c9a378dc7d5f2c60578 100644
+--- a/net/http/transport_security_state.cc
++++ b/net/http/transport_security_state.cc
+@@ -265,8 +265,10 @@ SSLUpgradeDecision TransportSecurityState::GetSSLUpgradeDecision(
+ 
+   // Only top level navigations should be upgraded when
+   // kHstsTopLevelNavigationsOnly is enabled.
++  // MoltBrowser: or when this instance asks for it (MoltNet).
+   if (!is_top_level_nav &&
+-      base::FeatureList::IsEnabled(features::kHstsTopLevelNavigationsOnly)) {
++      (molt_upgrade_top_level_navigations_only_ ||
++       base::FeatureList::IsEnabled(features::kHstsTopLevelNavigationsOnly))) {
+     return SSLUpgradeDecision::kNoUpgrade;
+   }
+ 

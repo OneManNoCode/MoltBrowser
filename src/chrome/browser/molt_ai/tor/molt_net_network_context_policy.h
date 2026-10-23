@@ -9,9 +9,19 @@
 // configures; the network service, the certificate verifier and the SOCKS
 // connect job act on the fields it sets (hooks marked "MoltBrowser:" in
 // services/network/network_context.cc, services/cert_verifier/,
-// net/http/http_network_session.* and net/socket/). The only input is
-// whether the profile is MoltNet's (IsMoltNetProfile()): every other
-// profile keeps Chromium's behaviour.
+// net/http/http_network_session.*, net/http/transport_security_state.*,
+// net/socket/ and services/network/pervasive_resources/). Two settings
+// the browser also updates later have their own hooks in
+// ProfileNetworkContextService (split_http_auth_cache and
+// BlockPrivateStateTokensFor()). The only input is whether the profile is
+// MoltNet's (IsMoltNetProfile()): every other profile keeps Chromium's
+// behaviour.
+//
+// Most of these keep per-site state per site: within one MoltNet identity,
+// what one site causes in the network context must not be observable by
+// another site (docs/MOLTNET_COMPLIANCE.md section 2, "Shared network
+// state"). What the process-wide switches decide is checked separately,
+// before a MoltNet window opens (molt_net_partitioning_policy.h).
 //
 // Header-only (the standard library and base::Token), so molt_ai_unittests
 // tests it and the upstream hook needs no new link dependency.
@@ -58,6 +68,52 @@ struct MoltNetNetworkContextSettings {
   // visit, and however long Tor would keep using the earlier circuits.
   bool fresh_socks_isolation_password = false;
 
+  // Certificate verification: Chromium wraps each network context's
+  // certificate verifier in net::CachingCertVerifier, which keeps results
+  // for up to 30 minutes keyed by certificate, hostname and flags, and
+  // net::CoalescingCertVerifier, which merges identical verifications in
+  // flight. Neither is keyed by top-level site, so how long a verification
+  // takes, and whether a missing intermediate is downloaded again, would
+  // depend on what other sites (or a third party embedded on several)
+  // loaded before in this identity. When true, the context has neither:
+  // every TLS connection, resumed ones included, is verified on its own (a
+  // few milliseconds, next to the hundreds a connection through Tor
+  // takes).
+  bool uncached_cert_verification = false;
+
+  // HTTP cache: Chromium 152 files requests for a built-in list of
+  // well-known scripts and styles under one shared entry instead of one per
+  // top-level site, where cookie settings allow full cookie access
+  // (network::features::kCacheSharingForPervasiveResources). When true,
+  // none of this context's requests uses those shared entries, whatever the
+  // feature and cookie exceptions say.
+  bool no_shared_cache_entries = false;
+
+  // HSTS: the context's store of hosts that asked for HTTPS only is keyed
+  // by host, whichever site's page loaded them. When true, it upgrades
+  // top-level navigations only (net::features::kHstsTopLevelNavigationsOnly
+  // for this context), so a site's subresource loads can't read what other
+  // sites stored there; MoltNet's HTTPS-Only mode upgrades every plain-HTTP
+  // navigation anyway, so for those the entries make no observable
+  // difference either.
+  bool hsts_top_level_navigations_only = false;
+
+  // HTTP authentication: server credentials are cached for the context's
+  // lifetime. Chromium keys them by top-level site only when
+  // network::features::kSplitAuthCacheByNetworkIsolationKey is on (off by
+  // default at 152) and the GloballyScopeHTTPAuthCacheEnabled policy isn't
+  // set. When true, always keyed by top-level site: the hook in
+  // ProfileNetworkContextService::ShouldSplitAuthCacheByNetworkIsolationKey()
+  // decides both the value a network context is created with and the
+  // updates sent when the policy changes.
+  bool split_http_auth_cache = false;
+
+  // Private State Tokens: tokens an issuer gives on one site can be
+  // detected and redeemed on any other (document.hasPrivateToken()), by
+  // design. When true, issuance and redemption are blocked for the context
+  // whatever the anti-abuse setting says (BlockPrivateStateTokensFor()).
+  bool block_private_state_tokens = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -69,7 +125,22 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.isolate_each_cert_fetch = is_moltnet_profile;
   settings.basic_and_digest_auth_only = is_moltnet_profile;
   settings.fresh_socks_isolation_password = is_moltnet_profile;
+  settings.uncached_cert_verification = is_moltnet_profile;
+  settings.no_shared_cache_entries = is_moltnet_profile;
+  settings.hsts_top_level_navigations_only = is_moltnet_profile;
+  settings.split_http_auth_cache = is_moltnet_profile;
+  settings.block_private_state_tokens = is_moltnet_profile;
   return settings;
+}
+
+// ProfileNetworkContextService's block_trust_tokens, when a network context
+// is created and when the anti-abuse content setting changes:
+// `chromium_value` is Chromium's (the setting blocks them).
+constexpr bool BlockPrivateStateTokensFor(bool is_moltnet_profile,
+                                          bool chromium_value) {
+  return MoltNetNetworkContextSettingsFor(is_moltnet_profile)
+             .block_private_state_tokens ||
+         chromium_value;
 }
 
 // A SOCKS5 password for one network context: 128 bits from a
@@ -86,8 +157,9 @@ inline std::string NewSocksIsolationPassword() {
 // `cert_verifier_creation_params` a
 // cert_verifier::mojom::CertVerifierCreationParams. Called once for each
 // network context created, so each MoltNet context gets a password of its
-// own; other contexts get none. A template, so this header needs neither
-// mojom.
+// own; other contexts get none. (split_http_auth_cache and
+// block_private_state_tokens are written by their own hooks, see above.)
+// A template, so this header needs neither mojom.
 template <typename NetworkContextParams, typename CertVerifierCreationParams>
 void ApplyMoltNetNetworkContextSettings(
     bool is_moltnet_profile,
@@ -103,6 +175,12 @@ void ApplyMoltNetNetworkContextSettings(
       settings.fresh_socks_isolation_password
           ? std::optional<std::string>(NewSocksIsolationPassword())
           : std::nullopt;
+  network_context_params.molt_uncached_cert_verification =
+      settings.uncached_cert_verification;
+  network_context_params.molt_no_shared_cache_entries =
+      settings.no_shared_cache_entries;
+  network_context_params.molt_hsts_top_level_navigations_only =
+      settings.hsts_top_level_navigations_only;
 }
 
 }  // namespace molt_ai::tor

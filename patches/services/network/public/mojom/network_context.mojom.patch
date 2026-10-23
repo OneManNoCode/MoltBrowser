@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index abddef1d201fccb59e4049eed5304bf073838f1b..5c60f2746bae3e8c9c1a6104087eada1d666e66b 100644
+index abddef1d201fccb59e4049eed5304bf073838f1b..e76f35f10dd1549e2b0adb7962302d9707c05146 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -227,6 +227,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,7 +24,7 @@ index abddef1d201fccb59e4049eed5304bf073838f1b..5c60f2746bae3e8c9c1a6104087eada1
  };
  
  struct NetworkContextFilePaths {
-@@ -666,6 +675,17 @@ struct NetworkContextParams {
+@@ -666,6 +675,36 @@ struct NetworkContextParams {
    // do not have an associated `URLLoaderFactory`.
    pending_remote<URLLoaderNetworkServiceObserver>?
        device_bound_sessions_network_observer;
@@ -39,6 +39,25 @@ index abddef1d201fccb59e4049eed5304bf073838f1b..5c60f2746bae3e8c9c1a6104087eada1
 +  // molt_net_network_context_policy.h); if null, the fixed password every
 +  // other context sends there.
 +  [MinVersion=1] string? molt_socks_isolation_password;
++
++  // MoltBrowser: per-site network state for MoltNet's network contexts
++  // (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h); every
++  // other context leaves them false and keeps Chromium's behaviour.
++  //
++  // If true, the context verifies each server certificate itself: its
++  // certificate verifier gets neither net::CachingCertVerifier (results
++  // kept by certificate, hostname and flags, whichever site caused them)
++  // nor net::CoalescingCertVerifier (identical verifications in flight at
++  // the same time merged into one).
++  [MinVersion=1] bool molt_uncached_cert_verification = false;
++  // If true, the context never files a request under the HTTP cache's
++  // shared, single-keyed entries for well-known scripts and styles
++  // (network::features::kCacheSharingForPervasiveResources): every entry
++  // stays keyed by top-level site.
++  [MinVersion=1] bool molt_no_shared_cache_entries = false;
++  // If true, dynamic HSTS upgrades top-level navigations only, as
++  // net::features::kHstsTopLevelNavigationsOnly does for every context.
++  [MinVersion=1] bool molt_hsts_top_level_navigations_only = false;
  };
  
  struct NetworkConditions {

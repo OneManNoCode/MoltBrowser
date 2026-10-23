@@ -446,6 +446,40 @@
    "target": "regular"
   },
   {
+   "data": {
+    "runs": [
+     {
+      "feature": "PartitionConnectionsByNetworkIsolationKey",
+      "flag": "--disable-features=PartitionConnectionsByNetworkIsolationKey",
+      "moltnet_pages": 0,
+      "result": {
+       "error": "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (PartitionConnectionsByNetworkIsolationKey), so MoltNet can't open."
+      }
+     },
+     {
+      "feature": "SplitCacheByNetworkIsolationKey",
+      "flag": "--disable-features=SplitCacheByNetworkIsolationKey",
+      "moltnet_pages": 0,
+      "result": {
+       "error": "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (SplitCacheByNetworkIsolationKey), so MoltNet can't open."
+      }
+     },
+     {
+      "feature": "ThirdPartyStoragePartitioning",
+      "flag": "--disable-features=ThirdPartyStoragePartitioning",
+      "moltnet_pages": 0,
+      "result": {
+       "error": "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (ThirdPartyStoragePartitioning), so MoltNet can't open."
+      }
+     }
+    ]
+   },
+   "end": 1760000140.0,
+   "name": "partitioning_override",
+   "start": 1760000130.0,
+   "target": "regular"
+  },
+  {
    "name": "extension",
    "skipped": "--no-extension"
   }

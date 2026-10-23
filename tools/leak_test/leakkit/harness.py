@@ -34,6 +34,12 @@ ENTRY = os.path.join(KIT_DIR, 'leaktest.py')
 LOCAL_HTTP, LOCAL_HTTPS, LOCAL_AIA = 18080, 18443, 18444
 LOOPBACK_CANARY = 47321
 PROXY_PORT = 18888
+# The process-wide switches MoltNet needs on
+# (chrome/browser/molt_ai/tor/molt_net_partitioning_policy.h): with any one
+# of them off, MoltNet must refuse to open and name it.
+PARTITION_FEATURES = ('PartitionConnectionsByNetworkIsolationKey',
+                      'SplitCacheByNetworkIsolationKey',
+                      'ThirdPartyStoragePartitioning')
 CONTROL_SOCKS = 19050
 CANARY_DOMAIN = 'moltleak.test'
 
@@ -1338,6 +1344,30 @@ class Run(object):
             self.phase_end(phase, str(e))
         self.close_browser()
 
+    def partitioning_override_session(self):
+        """One browser launch per switch, with --disable-features for it:
+        openWindow must fail, name the switch, and leave no MoltNet page."""
+        phase = self.phase_begin('partitioning_override', target='regular')
+        runs = phase['data']['runs'] = []
+        try:
+            for feature in PARTITION_FEATURES:
+                run = {'feature': feature,
+                       'flag': '--disable-features=' + feature}
+                runs.append(run)
+                self.launch_browser('partition-' + feature, [run['flag']])
+                try:
+                    run['result'] = self.molt_net_call(
+                        'moltnet.openWindow', timeout=self.opts.open_timeout)
+                except (cdplib.CdpError, RuntimeError) as e:
+                    run['result'] = {'error': 'harness: %s' % e}
+                time.sleep(3)
+                run['moltnet_pages'] = len(self.moltnet_pages())
+                self.close_browser()
+            self.phase_end(phase)
+        except (RuntimeError, cdplib.CdpError) as e:
+            self.phase_end(phase, str(e))
+        self.close_browser()
+
     def dsf_sessions(self):
         for dsf in self.opts.dsfs:
             if dsf == 1:
@@ -1384,6 +1414,8 @@ class Run(object):
                     self.restart_session()
                 if self.want_phase('override'):
                     self.override_session()
+                if self.want_phase('partitioning_override'):
+                    self.partitioning_override_session()
             if self.want_phase('dsf'):
                 self.dsf_sessions()
         except KeyboardInterrupt:

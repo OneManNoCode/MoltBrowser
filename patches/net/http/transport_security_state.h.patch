@@ -1,0 +1,34 @@
+MoltBrowser patch for net/http/transport_security_state.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/net/http/transport_security_state.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/net/http/transport_security_state.h b/net/http/transport_security_state.h
+index 336e35689b319eef42c6d6ecb40990991dbe8e0c..de8968c0e37ecbac296453a4f646eb15b50b7813 100644
+--- a/net/http/transport_security_state.h
++++ b/net/http/transport_security_state.h
+@@ -314,6 +314,13 @@ class NET_EXPORT TransportSecurityState {
+     return ct_emergency_disable_;
+   }
+ 
++  // MoltBrowser: upgrade top-level navigations only, as
++  // features::kHstsTopLevelNavigationsOnly does for every instance. Set for
++  // MoltNet's network contexts (services/network/network_context.cc).
++  void MoltSetUpgradeTopLevelNavigationsOnly() {
++    molt_upgrade_top_level_navigations_only_ = true;
++  }
++
+   // |pinsets| should include all known pinsets, |host_pins| the information
+   // related to each hostname's pin, and |update_time| the time at which this
+   // list was known to be up to date.
+@@ -496,6 +503,9 @@ class NET_EXPORT TransportSecurityState {
+ 
+   bool ct_emergency_disable_ = false;
+ 
++  // MoltBrowser: see MoltSetUpgradeTopLevelNavigationsOnly().
++  bool molt_upgrade_top_level_navigations_only_ = false;
++
+   // These 3 members are for the component-updated "static" PKP data:
+   // The values in host_pins_ maps are references to PinSet objects in the
+   // pinsets_ vector.

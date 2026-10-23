@@ -34,8 +34,10 @@ claims below as the design intent, not as measured results.
    your regular and incognito windows, and discarded when the last MoltNet
    window closes. Its connections use Tor circuits of its own: the next
    MoltNet windows never reuse them, also for a site both visit (§2
-   *Circuits*). Pages visited in MoltNet windows are not added to
-   MoltBrowser's on-device memory index.
+   *Circuits*). Within one identity, what a site leaves in MoltNet's
+   network state (cache, connections, certificate checks, sign-ins, HSTS)
+   stays with that site (§2 *Shared network state*). Pages visited in
+   MoltNet windows are not added to MoltBrowser's on-device memory index.
 3. **New Identity.** Closes the MoltNet windows (a page's "Leave site?"
    prompt can't keep one open), drops their connections and DNS cache, and
    waits until the MoltNet profile is discarded (fresh cookies, cache and
@@ -212,8 +214,10 @@ error instead of loading directly. A MoltNet window is only opened after (a) Tor
 reports an established circuit, (b) the proxy and leak settings are confirmed
 to be MoltNet's own (a policy or command-line flag that overrides them
 blocks MoltNet with an error; settings controlled by extensions don't reach
-MoltNet's profile at all, see below), and (c) the MoltNet profile's network
-context itself confirms it would send requests to exactly that SOCKS5 endpoint.
+MoltNet's profile at all, see below), (c) the MoltNet profile's network
+context itself confirms it would send requests to exactly that SOCKS5
+endpoint, and (d) the browser-wide switches that keep sites' connections,
+HTTP cache and third-party storage apart are on (*Shared network state*).
 MoltNet windows are never restored after a restart.
 
 **Leak controls on the MoltNet profile.**
@@ -559,6 +563,95 @@ switch is set per network context, for MoltNet's only
 fetcher in `services/cert_verifier/`); every other profile keeps
 Chromium's behaviour.
 
+**Shared network state.** Within one MoltNet identity (between two New
+Identity presses), what one site causes in MoltNet's network context must
+not show to another site. Tor Browser's rule is first-party isolation:
+everything keyed by the top-level site. Chromium 152 keys most of a
+network context's state by the request's network key (the top-level site,
+for some state also the frame's site), but not all of it, and three of the
+switches that turn the keying on apply to the whole browser. We went
+through each cache and pool a 152 network context keeps (read in the
+code, not yet measured in a built browser):
+
+| State | In MoltNet's network context | After New Identity |
+|---|---|---|
+| HTTP cache | keyed by top-level site and frame site; one-off keys (certificate fetches, opaque origins) are never cached. Chromium 152 files a built-in list of well-known scripts and styles under one entry shared by every site where cookie settings allow full cookie access; MoltNet's context never does | gone (in memory, with the context) |
+| Code cache | none: off-the-record profiles have no code cache | — |
+| Idle sockets, HTTP/2 sessions | keyed by top-level site; each site's connections also go to Tor with that site as SOCKS username, so on circuits of their own (§1.4) | closed, then gone |
+| TLS session resumption | keyed by top-level site | gone |
+| QUIC sessions and server configurations | not used: QUIC doesn't go through a SOCKS5 proxy | — |
+| Certificate verification results | none kept. Chromium keeps each network context's results for up to 30 minutes, keyed by certificate, hostname and flags only, and merges identical verifications in flight; MoltNet's context verifies every certificate on its own, also on resumed connections | — |
+| Intermediate certificates (AIA) | none kept: a missing one is downloaded for that verification only, with a one-off key (*Certificate fetches*), and the next verification downloads it again. The network stack puts no site's certificate into the system's certificate stores | — |
+| Revocation (CRLSet, CRL, OCSP) | the CRLSet is one list for everyone, from component updates; online CRL and OCSP checks are off unless a policy turns them on, and then each download is a one-off fetch; stapled OCSP responses belong to their connection | — |
+| Trust stores | Chromium's root store, the system's stores and policy certificates; nothing a site does adds to them | — |
+| Server properties (alternative services, HTTP/2 support, connection statistics) | keyed by top-level site; in memory (only regular profiles save them) | gone |
+| HTTP authentication | server credentials keyed by top-level site, always (Chromium 152 doesn't split them by default, and the `GloballyScopeHTTPAuthCacheEnabled` policy can stop it; neither reaches MoltNet); Basic and Digest only (§2 above) | gone |
+| HSTS | entries a response sets are stored by host. In MoltNet they upgrade top-level navigations only (Chromium's `HstsTopLevelNavigationsOnly`, for MoltNet's context), so a page's subresource requests can't read what other sites' responses stored; HTTPS-Only mode upgrades every plain-HTTP navigation anyway. Expect-CT no longer exists | gone (in memory) |
+| Host-name cache | not keyed by site in MoltBrowser builds (Chromium's field-trial testing config turns `SplitHostCacheByNetworkAnonymizationKey` off, for every profile), but MoltNet pages' host names are never looked up locally: SOCKS5 sends them to Tor | cleared, then gone |
+| CORS preflight results | keyed by the request's network key | gone |
+| Compression dictionaries | keyed by frame origin and top-level site | gone |
+| Cookies | third-party cookies blocked; partitioned cookies keyed by top-level site | gone |
+| Private State Tokens | blocked: an issuer's tokens can be detected and redeemed on any site, by design | — |
+| Reporting API, Network Error Logging | not built into MoltBrowser (`enable_reporting = false`) | — |
+| Topics, Shared Storage, Protected Audience, Attribution Reporting | off (Privacy Sandbox off in MoltNet) | — |
+| Related Website Sets | one list for the whole browser, from component updates or policy; sites can't change it | — |
+| Preconnect and prediction | off-the-record profiles have no preconnect or prediction service, and network prediction is off | — |
+
+New Identity flushes the old identity's connections and host-name cache,
+then waits until its profile, and with it the network context and
+everything in the table kept there, has been destroyed (§1.3); the next
+identity's network context starts empty and gets MoltNet's settings again.
+
+The certificate-verification choice in detail: a cache keyed by top-level
+site would meet the rule too, but Chromium 152's verifier interface doesn't
+carry the network key (a certificate, a hostname and flags), so keying it
+would change a core network interface and every caller. Clearing the cache
+at New Identity only, which is what happens anyway, wouldn't help within
+an identity. So MoltNet's context has no result cache and no merging. What
+that costs: a verification of a typical chain (a P-256 leaf, P-384
+intermediate and root) took about 2 ms of CPU on a test machine (OpenSSL;
+Chromium's verifier adds the CT checks and a hop to its verifier thread),
+once per new or resumed TLS connection; a connection through Tor waits
+hundreds of milliseconds for the circuit and the handshake. A server that
+leaves out its intermediate certificate costs more: its certificate is
+downloaded again, on a circuit of its own, for each new connection to it.
+
+**What can turn the partitioning off.** The keying above follows
+`base::Feature`s and settings that a command-line flag
+(`--disable-features`), `chrome://flags`, an enterprise policy or a field
+trial can change. In Chromium 152 `chrome://flags` has no entry for any of
+them. MoltBrowser has no field-trial server: builds without Chrome branding
+download no variations seed unless started with `--variations-server-url`,
+and they apply Chromium's field-trial testing config, which turns the
+connection and HTTP-cache partitioning on and the host-name cache split
+off. A seed or other trials can still come in through command-line
+switches or a changed `Local State` file. So MoltNet reads the effective
+state once the browser has started, whatever set it, and per switch:
+
+| Switch | What it keys by site | MoltNet |
+|---|---|---|
+| `PartitionConnectionsByNetworkIsolationKey` | idle sockets, HTTP/2 and QUIC sessions, TLS resumption, server properties, and with them each site's SOCKS username and so its circuit | Set for the whole browser only. While it is off, MoltNet doesn't open: "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (…)", naming the switch |
+| `SplitCacheByNetworkIsolationKey` | the HTTP cache; without it, one-off keys are cached too | Whole browser only; MoltNet doesn't open while it is off. (A MoltNet context without a cache would keep sites apart too, but would also make MoltNet users differ from each other) |
+| `ThirdPartyStoragePartitioning` | a third-party frame's storage, BroadcastChannel, Web Locks, shared and service workers | Whole browser only; MoltNet doesn't open while it is off |
+| `SplitAuthCacheByNetworkIsolationKey`, policy `GloballyScopeHTTPAuthCacheEnabled` | HTTP authentication | Per network context: always split for MoltNet |
+| `CacheSharingForPervasiveResources` | shared HTTP cache entries for well-known scripts | Per network context: never for MoltNet |
+| `HstsTopLevelNavigationsOnly` | which requests HSTS upgrades | MoltNet's context always behaves as with it on |
+| `CacheCertVerification` | adding results to the verification cache | MoltNet's context has no such cache |
+| `SplitHostCacheByNetworkAnonymizationKey` | the host-name cache | Off in MoltBrowser builds (testing config); MoltNet pages' names aren't looked up locally |
+| `PrivateStateTokens` | nothing: an issuer's tokens work on every site | Blocked per network context for MoltNet, whatever it and the anti-abuse setting say |
+
+`PartitionSSLSessionsByNetworkIsolationKey`,
+`EnableCrossSiteFlagNetworkIsolationKey` and the other per-state switches
+of earlier Chromium versions no longer exist in 152: that state follows
+`PartitionConnectionsByNetworkIsolationKey` or is always keyed. The check
+runs before Tor starts and again before the MoltNet profile is created
+(`molt_net_partitioning_policy.h`, read in `molt_net_routing.cc`); the
+per-context settings are in `molt_net_network_context_policy.h`, applied by
+hooks marked `MoltBrowser:` in `network_context.cc`,
+`transport_security_state.{h,cc}`, `shared_resource_checker.h` and
+`profile_network_context_service.cc`. Regular and Incognito windows follow
+the flags and Chromium's defaults as before.
+
 **Captive portals.** Chromium checks for a captive portal (a network that
 wants you to sign in first) after certificate errors and slow loads, if
 "Use a web service to help resolve navigation errors" is on, and opens the
@@ -674,6 +767,9 @@ gpg-verified steps documented in that script.
 | The image-description and location stand-ins over real mojo pipes | 5 unit tests (`molt_ai_unittests`) | Written; need a Chromium build |
 | Nothing outside Tor from the chat, downloads, location, Cast, passkeys or bookmarks in a running browser (§4 step 20) | Needs a Chromium build | **Not yet done** |
 | Certificate fetches on circuits of their own, no captive-portal check, no NTLM or Negotiate, in a running browser (§4 steps 8 and 20) | Needs a Chromium build | **Not yet done** |
+| Per-site network state (§2 *Shared network state*): MoltNet's context has no certificate-verification cache or merging, no shared HTTP cache entries, HSTS for top-level navigations only, its HTTP auth cache keyed by site and no Private State Tokens, also after the policy or the anti-abuse setting changes; every other profile keeps 152's behaviour; a new identity's context gets all of it again | Unit tests (`molt_ai_unittests`, with the real parameter structs); standalone harness: the hooks taken verbatim from `network_context.cc`, `transport_security_state.{h,cc}`, `shared_resource_checker.h` and `profile_network_context_service.cc` against stand-ins with the 152 shapes (g++ ASan/UBSan, clang `-fno-exceptions`); the changed files type-checked against Chromium 152's headers (`tools/compile_check`) | Pass (built standalone; not yet built in the Chromium tree) |
+| MoltNet doesn't open while `PartitionConnectionsByNetworkIsolationKey`, `SplitCacheByNetworkIsolationKey` or `ThirdPartyStoragePartitioning` is off, says which, and checks before Tor starts and before the profile is created; Chromium's default-on switches count as on | Unit tests (`molt_ai_unittests`, the feature names checked against Chromium's); the same harness with the glue from `molt_net_routing.cc` and `molt_net_window.cc`, verbatim; 15 tests in the harness, 30 mutants of the hooks and policies all caught | Pass (built standalone; not yet built in the Chromium tree) |
+| The same in a running browser: a verification for every new TLS connection, the switches refused (§4 steps 8 and 9) | Needs a Chromium build; the leak kit's `identity.partitioning_override_refused` | **Not yet done** |
 | Isolation, fail-closed behaviour, leak controls, settings isolation, New Identity, per-site circuits in a running browser | Needs a Chromium build | **Not yet done** |
 | An automated leak and uniformity test of a built browser (§4, FINGERPRINTING.md) | `tools/leak_test/` ([LEAK_TESTING.md](LEAK_TESTING.md)): its analysis checked against a recorded sample run; the harness run against stock Chromium, where it finds the WebRTC, DNS-prefetch, mDNS, onion and LAN leaks that MoltNet closes | Kit ready; **not yet run on a MoltBrowser build** |
 | Independent third-party audit | — | **Not done** |
@@ -701,7 +797,7 @@ help. The last column names the report's checks.
 | 6 | automated | `identity.separate`, `identity.session_circuits` |
 | 7 | automated (exit IP only online) | `identity.new_identity`, `identity.session_circuits` |
 | 8 | automated | `identity.per_site_circuits`, `identity.sandboxed_circuits`, `identity.cert_fetch_circuits` |
-| 9 | partial | `identity.override_refused` |
+| 9 | partial | `identity.override_refused`, `identity.partitioning_override_refused` |
 | 10 | automated (offline, against Tor's consensus) | `identity.relays_real` |
 | 11 | partial | `net.onion_http.*`, `net.onion_https.*` |
 | 12 | automated | `net.regular_onion_*`, `regular.onion_interstitial` |
@@ -753,11 +849,21 @@ help. The last column names the report's checks.
    certificate and whose certificates name the same AIA URL. The two
    fetches of that URL carry two different usernames, neither of them a
    site's, and the server that holds the intermediate gets two full
-   requests.
-9. **Overrides are refused.** (Kit: the `--proxy-server` half; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
+   requests. Certificate checks aren't shared either: with
+   `chrome://net-export` running, open a site that embeds an image from a
+   third-party HTTPS host, then a second site that embeds the same host;
+   the log shows a certificate verification for each site's connection to
+   it (a regular window verifies it once and answers the second from its
+   cache).
+9. **Overrides are refused.** (Kit: the `--proxy-server` half and the partitioning switches; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
-   allowed in Incognito, MoltNet must open and step 1 must pass.
+   allowed in Incognito, MoltNet must open and step 1 must pass. Start it
+   with `--disable-features=PartitionConnectionsByNetworkIsolationKey`,
+   then with `SplitCacheByNetworkIsolationKey` and with
+   `ThirdPartyStoragePartitioning` instead: each time, opening a MoltNet
+   window must fail with an error that names the switch, and regular
+   windows must work.
 10. **The relays are real.** (Kit: automated against the consensus Tor downloaded.) *Copy route evidence* in the panel, then look up
     each fingerprint on metrics.torproject.org or
     `onionoo.torproject.org/details?lookup=<fingerprint>`.

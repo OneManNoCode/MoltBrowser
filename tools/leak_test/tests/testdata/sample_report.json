@@ -252,6 +252,19 @@
   },
   {
    "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a74 step 9",
+   "evidence": [
+    "--disable-features=PartitionConnectionsByNetworkIsolationKey: openWindow -> {\"error\": \"MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (PartitionConnectionsByNetworkIsolationKey),; MoltNet pages: 0",
+    "--disable-features=SplitCacheByNetworkIsolationKey: openWindow -> {\"error\": \"MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (SplitCacheByNetworkIsolationKey), so MoltNe; MoltNet pages: 0",
+    "--disable-features=ThirdPartyStoragePartitioning: openWindow -> {\"error\": \"MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (ThirdPartyStoragePartitioning), so MoltNet ; MoltNet pages: 0"
+   ],
+   "group": "identity",
+   "id": "identity.partitioning_override_refused",
+   "status": "PASS",
+   "title": "Turning off per-site partitioning (connections, HTTP cache, third-party storage) blocks MoltNet"
+  },
+  {
+   "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
    "evidence": [
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(11aa)\\\\x20derived\\\\x20from\\\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(33cc)\\\\x20anonymous]', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(55ee)\\\\x20anonymous]']",
@@ -2374,7 +2387,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 109,
+  "PASS": 110,
   "SKIP": 84
  },
  "fingerprints": [
