@@ -421,6 +421,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - **llama.cpp updated to b11641**: Gemma 4 support (Gemma 4 E4B joins the
   catalog once its download is pinned) and upstream fixes for GGUF and
   tokenizer parsing (integer overflows, size checks, out-of-bounds reads).
+- **GPU inference on Linux and Windows, built but off by default.** With the
+  build switch `molt_llama_vulkan`, on-device models run on the GPU through
+  llama.cpp's Vulkan backend, as many layers as fit in its memory, still in
+  the model's sandbox. The CPU takes over when there is no usable GPU
+  (software renderers and virtual GPUs are skipped), when the GPU can't hold
+  the model, or after a GPU crash or reset, which no longer counts against
+  the model. Shaders are compiled at build time with Chromium's own glslang.
+  It stays off until tested on real GPUs; on Windows it runs on the CPU for
+  now (`docs/design/SANDBOXED_INFERENCE.md` §11).
 - Fixed a crash on the first on-device reply in official Linux builds: a
   Control Flow Integrity check tripped on llama.cpp's internal calls. Found
   and fixed in an emulated official build; to be confirmed on a real one.

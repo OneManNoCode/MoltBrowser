@@ -33,6 +33,9 @@ const uint32 kMaxChunkBytes = 4096;
 const uint32 kMaxArchitectureBytes = 64;
 // Smallest context the browser accepts in a ModelDescription.
 const uint32 kMinDescribedContextTokens = 256;
+// Most layers a ModelDescription may report on the GPU (the service reads at
+// most 4096 repeating layers from a model, plus the output layer).
+const uint32 kMaxGpuLayers = 4097;
 
 // Image input (docs/design/SANDBOXED_INFERENCE.md section 10). The same
 // bounds as chrome/services/molt_ai/inference/engine/image_input.h; an image
@@ -79,6 +82,32 @@ struct ModelLoadParams {
   // Its size as the browser saw it (0 without one); the service refuses a
   // file of another size.
   uint64 vision_projector_size = 0;
+  // Try the GPU with llama.cpp's Vulkan backend (Linux and Windows builds
+  // with the GN switch molt_llama_vulkan; docs/design/SANDBOXED_INFERENCE.md
+  // section 11). The service falls back to the CPU on its own; the browser
+  // sends false again after a GPU failure. Ignored on macOS (Metal).
+  bool use_gpu = false;
+};
+
+// What became of the GPU (Vulkan) for a load. The model runs on the CPU in
+// every case but kOn.
+enum GpuStatus {
+  // Not requested (and on macOS, where Metal is used: backend "metal").
+  kNotRequested,
+  // Requested, but this build has no Vulkan backend.
+  kNotBuilt,
+  // No Vulkan loader, no instance, or no GPU the backend accepts.
+  kNoDevice,
+  // The device policy refused every GPU (software, layered or virtual
+  // drivers, Vulkan below 1.2, under 2 GiB, a blocklisted driver).
+  kNoUsableDevice,
+  // Too little of the model fits in the GPU's free memory.
+  kTooLittleMemory,
+  // The model, its projector or its context failed on the GPU; it was loaded
+  // on the CPU instead.
+  kLoadFailed,
+  // On the GPU, wholly or partly (gpu_layers); backend is "vulkan".
+  kOn,
 };
 
 enum LoadModelStatus {
@@ -108,6 +137,11 @@ struct ModelDescription {
   bool cpu_repack_used;
   // A vision projector is loaded: chat requests may carry images.
   bool vision = false;
+  // kOn exactly when backend is "vulkan", which requires use_gpu.
+  GpuStatus gpu_status = kNotRequested;
+  // Layers on the GPU, the output layer counting as one: in
+  // [1, kMaxGpuLayers] with kOn, else 0.
+  uint32 gpu_layers = 0;
 };
 
 // The model service. One process per loaded model.
@@ -238,6 +272,10 @@ enum GenerationStatus {
   // The request has images and the model has no vision projector. Nothing
   // was generated.
   kImagesUnsupported,
+  // The GPU failed under the model (device lost, a driver error). The model
+  // can't be used in this process any more: the browser ends it and loads
+  // the model on the CPU next time.
+  kBackendFailed,
 };
 
 struct GenerationSummary {

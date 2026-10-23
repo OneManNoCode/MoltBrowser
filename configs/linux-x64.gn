@@ -60,8 +60,14 @@ use_sysroot = true
 is_clang = true
 use_lld = true
 
-# Vulkan GPU acceleration for LLM inference
-# (configured in llama.cpp BUILD.gn via is_linux checks)
+# GPU inference for on-device AI (llama.cpp's Vulkan backend, the CPU as
+# fallback) is the GN switch molt_llama_vulkan, off by default until it has
+# been tested on real GPUs. To try it, add:
+#   molt_llama_vulkan = true
+# It adds about 40 MB of SPIR-V to the binary and a host build of glslang
+# and SPIRV-Tools (shaders are compiled at build time). Mesa drivers (Intel,
+# AMD) reach the GPU from the model's sandbox only through the render-node
+# hook it enables. See docs/design/SANDBOXED_INFERENCE.md section 11.
 
 # PGO disabled for dev builds
 chrome_pgo_phase = 0

@@ -31,6 +31,11 @@ source_set("molt_ai_runtime") {
     "//chrome/browser/molt_ai/models:download_policy",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:stream_filters",
+
+    # BUILDFLAG(MOLT_LLAMA_VULKAN): ask the service for the GPU
+    # (docs/design/SANDBOXED_INFERENCE.md section 11).
+    "//chrome/services/molt_ai/inference/public:buildflags",
+    "//content/public/common",
     "//mojo/public/cpp/base",
     "//mojo/public/cpp/bindings",
   ]

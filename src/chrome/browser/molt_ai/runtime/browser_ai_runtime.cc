@@ -18,6 +18,7 @@
 #include <vector>
 
 // Chromium includes
+#include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
@@ -41,8 +42,10 @@
 #include "chrome/browser/molt_ai/runtime/stream_validator.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
+#include "chrome/services/molt_ai/inference/public/buildflags.h"
 #include "chrome/services/molt_ai/inference/public/mojom/molt_inference.mojom.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 
 // No llama.cpp here: the model runs in the sandboxed inference service
@@ -687,6 +690,10 @@ std::string GenerationError(const InferenceOutcome& outcome,
       return s.generated_tokens == 0
                  ? "The model couldn't process the prompt."
                  : "The model stopped unexpectedly while answering.";
+    case mojom::GenerationStatus::kBackendFailed:
+      return "The graphics processor stopped working while running the "
+             "on-device model. MoltBrowser will run the model on the "
+             "processor instead: try again.";
   }
   return "The model stopped unexpectedly while answering.";
 }
@@ -743,6 +750,8 @@ struct BrowserAIRuntime::Impl {
   // Crash-loop guard. Guarded by guard_mutex.
   mutable std::mutex guard_mutex;
   CrashLoopGuard crash_guard;
+  // GPU failures (design section 11.5). Guarded by guard_mutex.
+  GpuFallbackGuard gpu_guard;
 
   // Idle unload.
   std::atomic<uint64_t> activity_epoch{0};
@@ -1001,8 +1010,10 @@ class BrowserAIRuntime::HostDelegate : public InferenceProcessHost::Delegate {
 
   void OnModelProcessLost(const std::string& model_id,
                           const std::string& crash_key,
-                          CrashLoopGuard::Phase phase) override {
-    runtime_->OnModelProcessLost(model_id, crash_key, static_cast<int>(phase));
+                          CrashLoopGuard::Phase phase,
+                          bool gpu_failure) override {
+    runtime_->OnModelProcessLost(model_id, crash_key, static_cast<int>(phase),
+                                 gpu_failure);
   }
 
  private:
@@ -1181,12 +1192,19 @@ void BrowserAIRuntime::UnloadIfIdle(const char* reason) {
 
 void BrowserAIRuntime::OnModelProcessLost(const std::string& model_id,
                                           const std::string& crash_key,
-                                          int phase) {
+                                          int phase,
+                                          bool gpu_failure) {
   {
     std::lock_guard<std::mutex> lock(impl_->guard_mutex);
-    impl_->crash_guard.RecordCrash(
-        crash_key, static_cast<CrashLoopGuard::Phase>(phase),
-        (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds());
+    if (gpu_failure) {
+      // A driver crash or a lost GPU doesn't lock the model out: it runs on
+      // the CPU from now on (design section 11.5).
+      impl_->gpu_guard.RecordGpuFailure(crash_key);
+    } else {
+      impl_->crash_guard.RecordCrash(
+          crash_key, static_cast<CrashLoopGuard::Phase>(phase),
+          (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds());
+    }
   }
   bool was_loaded = false;
   {
@@ -1198,7 +1216,8 @@ void BrowserAIRuntime::OnModelProcessLost(const std::string& model_id,
   // loaded", as after an idle unload.
   if (was_loaded) impl_->SetLoaded(std::string(), std::string(), std::string());
   LOG(WARNING) << "[MoltAI] the on-device model process (" << model_id
-               << ") ended unexpectedly";
+               << ") ended unexpectedly"
+               << (gpu_failure ? " on the GPU; the CPU from now on" : "");
 }
 
 RamCheck BrowserAIRuntime::CheckRamForModel(const std::string& model_id) const {
@@ -1403,43 +1422,73 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
     }
   }
 
-  InferenceProcessHost::LoadRequest request;
-  request.model_id = model_id;
-  request.crash_key = crash_key;
-  request.file = std::move(file);
-  request.file_size = file_size;
-  request.vision_projector = std::move(projector);
-  request.vision_projector_size = projector_size;
-  request.total_ram_bytes = impl_->hardware.total_ram_bytes;
-  const int cores = impl_->hardware.cpu_cores;
-  request.cpu_threads =
-      static_cast<uint32_t>(cores > 4 ? cores / 2 : std::max(1, cores));
-  request.max_context_tokens = kMaxContextTokens;
-  request.allow_cpu_repack = true;
-  // Footprint watchdog: weights (repacked copies count on CPU) + the KV
-  // cache the RAM tiers allow + 2 GB, and 50% on top of that.
-  const uint64_t ram = impl_->hardware.total_ram_bytes;
-  const uint64_t kv_bound = std::max<uint64_t>(
-      1 * kGiB, ram > file_size + 4 * kGiB ? (ram - file_size - 4 * kGiB) / 2
-                                           : 0);
-  const uint64_t expected = file_size + kv_bound + 2 * kGiB +
-                            (projector_size ? projector_size +
-                                                  kVisionOverheadBytes
-                                            : 0);
-  request.footprint_limit_bytes = expected + expected / 2;
-
-  auto mailbox = base::MakeRefCounted<InferenceMailbox>();
-  if (!impl_->PostToHost(base::BindOnce(
-          [](InferenceProcessHost::LoadRequest r,
-             scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
-            h->Load(std::move(r), std::move(m));
-          },
-          std::move(request), mailbox))) {
-    set_error("MoltBrowser is closing.");
-    return false;
+  // GPU inference (llama.cpp's Vulkan backend, GN switch molt_llama_vulkan;
+  // design section 11): asked for unless this model file (or the GPU as a
+  // whole) already failed on the GPU this session, or --disable-gpu is set.
+  // The service falls back to the CPU on its own when the GPU can't take
+  // the model.
+  bool use_gpu = false;
+#if BUILDFLAG(MOLT_LLAMA_VULKAN)
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpu)) {
+    std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+    use_gpu = impl_->gpu_guard.AllowGpu(crash_key);
   }
-  const InferenceOutcome outcome =
-      impl_->Wait(mailbox.get(), 0, 0, kLoadWait, nullptr);
+#endif
+
+  // One load in a new process. The handles are duplicated so a GPU attempt
+  // that takes its process down can be retried on the CPU.
+  auto run_load = [&](bool gpu) -> InferenceOutcome {
+    InferenceProcessHost::LoadRequest request;
+    request.model_id = model_id;
+    request.crash_key = crash_key;
+    request.file = file.Duplicate();
+    request.file_size = file_size;
+    if (projector.IsValid()) request.vision_projector = projector.Duplicate();
+    request.vision_projector_size = projector_size;
+    request.total_ram_bytes = impl_->hardware.total_ram_bytes;
+    const int cores = impl_->hardware.cpu_cores;
+    request.cpu_threads =
+        static_cast<uint32_t>(cores > 4 ? cores / 2 : std::max(1, cores));
+    request.max_context_tokens = kMaxContextTokens;
+    request.allow_cpu_repack = true;
+    request.use_gpu = gpu;
+    // Footprint watchdog: weights (repacked copies count on CPU) + the KV
+    // cache the RAM tiers allow + 2 GB, and 50% on top of that.
+    const uint64_t ram = impl_->hardware.total_ram_bytes;
+    const uint64_t kv_bound = std::max<uint64_t>(
+        1 * kGiB,
+        ram > file_size + 4 * kGiB ? (ram - file_size - 4 * kGiB) / 2 : 0);
+    const uint64_t expected = file_size + kv_bound + 2 * kGiB +
+                              (projector_size ? projector_size +
+                                                    kVisionOverheadBytes
+                                              : 0);
+    request.footprint_limit_bytes = expected + expected / 2;
+
+    auto mailbox = base::MakeRefCounted<InferenceMailbox>();
+    if (!impl_->PostToHost(base::BindOnce(
+            [](InferenceProcessHost::LoadRequest r,
+               scoped_refptr<InferenceMailbox> m, InferenceProcessHost* h) {
+              h->Load(std::move(r), std::move(m));
+            },
+            std::move(request), mailbox))) {
+      return InferenceOutcome(InferenceOutcome::Kind::kShuttingDown);
+    }
+    return impl_->Wait(mailbox.get(), 0, 0, kLoadWait, nullptr);
+  };
+
+  InferenceOutcome outcome = run_load(use_gpu);
+  if (use_gpu && (outcome.kind == InferenceOutcome::Kind::kProcessGone ||
+                  outcome.kind == InferenceOutcome::Kind::kTimedOut ||
+                  outcome.kind == InferenceOutcome::Kind::kMemoryExceeded)) {
+    // The process died, hung or ran over its memory while loading for the
+    // GPU: counted as a GPU failure (not against the model file), and the
+    // model is loaded again at once, on the CPU.
+    LOG(WARNING) << "[MoltAI] loading " << model_id
+                 << " for the GPU failed (outcome "
+                 << static_cast<int>(outcome.kind) << "); retrying on the CPU";
+    outcome = run_load(false);
+  }
   if (outcome.kind != InferenceOutcome::Kind::kOk) {
     std::string message = LoadError(outcome, name);
     if (outcome.kind == InferenceOutcome::Kind::kProcessGone ||
@@ -1472,7 +1521,9 @@ bool BrowserAIRuntime::LoadModel(const std::string& model_id,
             << " backend=" << outcome.backend
             << " ctx=" << outcome.context_tokens
             << " repack=" << outcome.cpu_repack_used
-            << " vision=" << outcome.vision << ")";
+            << " vision=" << outcome.vision
+            << " gpu_status=" << static_cast<int>(outcome.gpu_status)
+            << " gpu_layers=" << outcome.gpu_layers << ")";
   TouchActivity();
   return true;
 }
@@ -1806,6 +1857,34 @@ GenerationResult BrowserAIRuntime::Generate(bool is_chat,
     }
     if (loaded == model_id) {
       impl_->SetLoaded(std::string(), std::string(), std::string());
+    }
+  }
+
+  if (outcome.has_summary &&
+      outcome.summary.status ==
+          static_cast<int32_t>(mojom::GenerationStatus::kBackendFailed)) {
+    // The GPU failed under the model (a lost device, a driver error; design
+    // section 11.5): the process can't use the model any more. No GPU for
+    // this model file for the rest of the session; end the process so the
+    // next request loads the model on the CPU.
+    std::string crash_key;
+    {
+      std::lock_guard<std::mutex> lock(impl_->state_mutex);
+      if (impl_->loaded_model_id == model_id) {
+        crash_key = impl_->loaded_crash_key;
+      }
+    }
+    if (!crash_key.empty()) {
+      {
+        std::lock_guard<std::mutex> lock(impl_->guard_mutex);
+        impl_->gpu_guard.RecordGpuFailure(crash_key);
+      }
+      LOG(WARNING) << "[MoltAI] the GPU failed under " << model_id
+                   << "; it runs on the CPU from now on";
+      impl_->SetLoaded(std::string(), std::string(), std::string());
+      impl_->PostToHost(base::BindOnce([](InferenceProcessHost* h) {
+        h->Unload(InferenceProcessHost::UnloadMode::kNow, nullptr);
+      }));
     }
   }
 

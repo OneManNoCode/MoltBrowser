@@ -61,6 +61,17 @@ source_set("embedding_utils") {
   ]
 }
 
+# GPU inference on Linux and Windows (llama.cpp's Vulkan backend; GN switch
+# molt_llama_vulkan, docs/design/SANDBOXED_INFERENCE.md section 11.5): which
+# GPU to use and how many layers fit on it. Built whatever the switch says,
+# so its tests always run.
+source_set("gpu_offload") {
+  sources = [
+    "gpu_offload.cc",
+    "gpu_offload.h",
+  ]
+}
+
 # Picked up by //chrome/browser/molt_ai/test:molt_ai_unittests.
 source_set("unit_tests") {
   testonly = true
@@ -68,6 +79,7 @@ source_set("unit_tests") {
     "bounded_json_unittest.cc",
     "context_budget_unittest.cc",
     "embedding_utils_unittest.cc",
+    "gpu_offload_unittest.cc",
     "grammar_tokens_unittest.cc",
     "image_input_unittest.cc",
     "json_schema_grammar_unittest.cc",
@@ -77,6 +89,7 @@ source_set("unit_tests") {
   deps = [
     ":constrained_decoding",
     ":embedding_utils",
+    ":gpu_offload",
     ":image_input",
     ":inference_utils",
     "//testing/gtest",

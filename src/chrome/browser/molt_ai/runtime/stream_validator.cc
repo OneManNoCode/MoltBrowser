@@ -209,6 +209,18 @@ bool IsValidModelDescription(std::string_view architecture,
   return vocab_size > 0 && vocab_size <= (1u << 22);
 }
 
+bool IsValidGpuDescription(bool gpu_requested,
+                           std::string_view backend,
+                           bool gpu_on,
+                           uint32_t gpu_layers,
+                           uint32_t max_gpu_layers) {
+  if (backend == "vulkan") {
+    return gpu_requested && gpu_on && gpu_layers >= 1 &&
+           gpu_layers <= max_gpu_layers;
+  }
+  return !gpu_on && gpu_layers == 0;
+}
+
 bool IsValidTokenization(const std::vector<int32_t>& tokens,
                          size_t text_bytes,
                          uint32_t vocab_size) {
@@ -302,6 +314,23 @@ void CrashLoopGuard::Forget(const std::string& key) {
   entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
                                 [&](const Entry& e) { return e.key == key; }),
                  entries_.end());
+}
+
+GpuFallbackGuard::GpuFallbackGuard() = default;
+GpuFallbackGuard::~GpuFallbackGuard() = default;
+
+bool GpuFallbackGuard::AllowGpu(const std::string& key) const {
+  return !gpu_disabled() && std::find(failed_keys_.begin(), failed_keys_.end(),
+                                      key) == failed_keys_.end();
+}
+
+void GpuFallbackGuard::RecordGpuFailure(const std::string& key) {
+  if (failures_ < kMaxGpuFailures) ++failures_;
+  if (failed_keys_.size() < kMaxGpuFailures &&
+      std::find(failed_keys_.begin(), failed_keys_.end(), key) ==
+          failed_keys_.end()) {
+    failed_keys_.push_back(key);
+  }
 }
 
 }  // namespace molt_ai

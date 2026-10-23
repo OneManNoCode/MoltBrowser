@@ -48,9 +48,13 @@ use_lld = true
 # Visual Studio toolchain (auto-detected)
 # Set DEPOT_TOOLS_WIN_TOOLCHAIN=0 to use locally installed VS
 
-# Vulkan GPU acceleration for LLM inference
-# DirectML available as alternative on Windows
-# (configured in llama.cpp BUILD.gn via is_win checks)
+# GPU inference for on-device AI (llama.cpp's Vulkan backend) is the GN
+# switch molt_llama_vulkan, off by default. It builds on Windows, but the
+# model's sandbox allows only Microsoft-signed DLLs once it locks down, and
+# the Vulkan loader and driver aren't loaded before that yet, so a Windows
+# build with it on runs models on the CPU. Leave it off here until that
+# pre-lockdown step exists. See docs/design/SANDBOXED_INFERENCE.md
+# section 11.4.
 
 # PGO disabled (also implicit with is_official_build=false)
 chrome_pgo_phase = 0

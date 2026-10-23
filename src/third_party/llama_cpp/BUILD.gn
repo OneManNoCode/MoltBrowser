@@ -11,6 +11,8 @@
 # ggml-cpu.c / ggml-cpu.cpp, multiple quants.c). These are split into
 # separate source_sets to avoid GN duplicate .o file errors.
 
+import("//third_party/llama_cpp/llama_cpp.gni")
+
 config("llama_cpp_config") {
   include_dirs = [
     ".",
@@ -428,6 +430,395 @@ if (is_mac) {
   }
 }
 
+# MoltBrowser: llama.cpp's Vulkan backend (ggml-vulkan), GN switch
+# molt_llama_vulkan (llama_cpp.gni, off by default). GPU inference on Linux
+# and Windows, with the CPU as the fallback. Design, sandbox, status:
+# docs/design/SANDBOXED_INFERENCE.md section 11.
+#
+# - Shaders are compiled from the GLSL sources at build time, with the
+#   glslang and SPIRV-Tools Chromium pins (no SPIR-V is checked in):
+#   llama.cpp's own generator (vulkan-shaders-gen) runs, per shader file,
+#   ggml_vk_glslc, a glslc-compatible host tool on those libraries
+#   (chromium/ggml_vk_glslc.cc; Chromium has no shaderc).
+# - ggml-vulkan is built with VK_NO_PROTOTYPES: the browser binary has no
+#   link-time dependency on the Vulkan loader, which the inference service
+#   opens at run time, and only when the browser asks for the GPU
+#   (chromium/ggml-vulkan-moltbrowser.cpp; local patch in ggml-vulkan.cpp).
+# - The backend is never added to ggml's registry (no GGML_USE_VULKAN): the
+#   CPU path doesn't touch Vulkan at all. The service passes the chosen
+#   device explicitly (chromium/llama_guard.h).
+if (molt_llama_vulkan) {
+  assert(is_linux || is_win,
+         "molt_llama_vulkan is for Linux and Windows (macOS uses Metal)")
+
+  _ggml_vk_dir = "ggml/src/ggml-vulkan"
+  _ggml_vk_shader_dir = "$_ggml_vk_dir/vulkan-shaders"
+  _ggml_vk_gen_dir = "$target_gen_dir/ggml-vulkan"
+
+  # Every .comp file in vulkan-shaders/ (GN has no globbing;
+  # :ggml_vulkan_checks fails the build if this list and the directory
+  # disagree). Update with llama.cpp.
+  _ggml_vk_shaders = [
+    "acc.comp",
+    "add.comp",
+    "add1.comp",
+    "add_id.comp",
+    "arange.comp",
+    "argmax.comp",
+    "argsort.comp",
+    "argsort_large.comp",
+    "col2im_1d.comp",
+    "concat.comp",
+    "contig_copy.comp",
+    "conv2d_dw.comp",
+    "conv2d_mm.comp",
+    "conv3d_mm.comp",
+    "conv_transpose_1d.comp",
+    "copy.comp",
+    "copy_from_quant.comp",
+    "copy_to_quant.comp",
+    "copy_transpose.comp",
+    "copy_transpose_02.comp",
+    "count_equal.comp",
+    "count_experts.comp",
+    "cross_entropy_loss.comp",
+    "cross_entropy_loss_back.comp",
+    "cumsum.comp",
+    "cumsum_multipass1.comp",
+    "cumsum_multipass2.comp",
+    "dequant_f32.comp",
+    "dequant_iq1_m.comp",
+    "dequant_iq1_s.comp",
+    "dequant_iq2_s.comp",
+    "dequant_iq2_xs.comp",
+    "dequant_iq2_xxs.comp",
+    "dequant_iq3_s.comp",
+    "dequant_iq3_xxs.comp",
+    "dequant_iq4_nl.comp",
+    "dequant_iq4_xs.comp",
+    "dequant_mxfp4.comp",
+    "dequant_nvfp4.comp",
+    "dequant_q1_0.comp",
+    "dequant_q2_0.comp",
+    "dequant_q2_k.comp",
+    "dequant_q3_k.comp",
+    "dequant_q4_0.comp",
+    "dequant_q4_1.comp",
+    "dequant_q4_k.comp",
+    "dequant_q5_0.comp",
+    "dequant_q5_1.comp",
+    "dequant_q5_k.comp",
+    "dequant_q6_k.comp",
+    "dequant_q8_0.comp",
+    "dequant_tq1_0.comp",
+    "dequant_tq2_0.comp",
+    "diag.comp",
+    "diag_mask_inf.comp",
+    "div.comp",
+    "dsv4_hc_comb.comp",
+    "dsv4_hc_post.comp",
+    "dsv4_hc_pre.comp",
+    "fill.comp",
+    "flash_attn.comp",
+    "flash_attn_cm1.comp",
+    "flash_attn_cm2.comp",
+    "flash_attn_decode_phase_1.comp",
+    "flash_attn_decode_phase_2.comp",
+    "flash_attn_mask_opt.comp",
+    "flash_attn_sparse_compact.comp",
+    "flash_attn_split_k_reduce.comp",
+    "fwht.comp",
+    "gated_delta_net.comp",
+    "geglu.comp",
+    "geglu_erf.comp",
+    "geglu_quick.comp",
+    "get_rows.comp",
+    "get_rows_back.comp",
+    "get_rows_quant.comp",
+    "gla.comp",
+    "group_norm.comp",
+    "im2col.comp",
+    "im2col_3d.comp",
+    "l2_norm.comp",
+    "lightning_indexer.comp",
+    "log.comp",
+    "mul.comp",
+    "mul_mat_split_k_reduce.comp",
+    "mul_mat_vec.comp",
+    "mul_mat_vec_iq1_m.comp",
+    "mul_mat_vec_iq1_s.comp",
+    "mul_mat_vec_iq2_s.comp",
+    "mul_mat_vec_iq2_xs.comp",
+    "mul_mat_vec_iq2_xxs.comp",
+    "mul_mat_vec_iq3_s.comp",
+    "mul_mat_vec_iq3_xxs.comp",
+    "mul_mat_vec_iq4_xs.comp",
+    "mul_mat_vec_nc.comp",
+    "mul_mat_vec_p021.comp",
+    "mul_mat_vec_q2_k.comp",
+    "mul_mat_vec_q3_k.comp",
+    "mul_mat_vec_q4_k.comp",
+    "mul_mat_vec_q5_k.comp",
+    "mul_mat_vec_q6_k.comp",
+    "mul_mat_vec_tq1_0.comp",
+    "mul_mat_vec_tq2_0.comp",
+    "mul_mat_vecq.comp",
+    "mul_mm.comp",
+    "mul_mm_cm2.comp",
+    "mul_mmq.comp",
+    "mul_mmq_cm1.comp",
+    "multi_add.comp",
+    "norm.comp",
+    "opt_step_adamw.comp",
+    "opt_step_sgd.comp",
+    "out_prod.comp",
+    "pad.comp",
+    "pad_reflect_1d.comp",
+    "pool1d.comp",
+    "pool2d.comp",
+    "quantize_q8_1.comp",
+    "reglu.comp",
+    "repeat.comp",
+    "repeat_back.comp",
+    "rms_norm.comp",
+    "rms_norm_back.comp",
+    "rms_norm_partials.comp",
+    "roll.comp",
+    "rope_multi.comp",
+    "rope_neox.comp",
+    "rope_norm.comp",
+    "rope_vision.comp",
+    "scale.comp",
+    "silu_back.comp",
+    "snake.comp",
+    "soft_max.comp",
+    "soft_max_back.comp",
+    "soft_max_large1.comp",
+    "soft_max_large2.comp",
+    "soft_max_large3.comp",
+    "solve_tri.comp",
+    "ssm_conv.comp",
+    "ssm_scan.comp",
+    "sub.comp",
+    "sum_rows.comp",
+    "swiglu.comp",
+    "swiglu_clamp.comp",
+    "swiglu_oai.comp",
+    "timestep_embedding.comp",
+    "topk_argsort.comp",
+    "topk_moe.comp",
+    "topk_nary_search.comp",
+    "topk_radix_select.comp",
+    "tri.comp",
+    "unary.comp",
+    "upscale.comp",
+    "wkv6.comp",
+    "wkv7.comp",
+  ]
+  _ggml_vk_shader_sources = []
+  foreach(s, _ggml_vk_shaders) {
+    _ggml_vk_shader_sources += [ "$_ggml_vk_shader_dir/$s" ]
+  }
+
+  # Shader families the pinned glslang can compile; what upstream's CMake
+  # would detect with the same compiler (test_shader_extension_support).
+  # Passed to the generator and to ggml-vulkan.cpp, which must agree.
+  # :ggml_vulkan_checks fails the build if one stops compiling.
+  _ggml_vk_features = [
+    "GGML_VULKAN_COOPMAT_GLSLC_SUPPORT",
+    "GGML_VULKAN_COOPMAT2_GLSLC_SUPPORT",
+    "GGML_VULKAN_COOPMAT2_DECODE_VECTOR_GLSLC_SUPPORT",
+    "GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT",
+    "GGML_VULKAN_BFLOAT16_GLSLC_SUPPORT",
+    "GGML_VULKAN_FLOAT_E2M1_GLSLC_SUPPORT",
+    "GGML_VULKAN_FLOAT_E4M3_GLSLC_SUPPORT",
+  ]
+
+  # Host tools, run by the actions below.
+  if (current_toolchain == host_toolchain) {
+    # glslc's command line (the subset vulkan-shaders-gen uses) on
+    # Chromium's glslang and SPIRV-Tools optimizer.
+    executable("ggml_vk_glslc") {
+      visibility = [ ":*" ]
+      sources = [ "chromium/ggml_vk_glslc.cc" ]
+      deps = [
+        "//third_party/glslang/src:glslang_default_resource_limits_sources",
+        "//third_party/glslang/src:glslang_sources",
+        "//third_party/spirv-tools/src:spvtools_opt",
+      ]
+    }
+
+    # llama.cpp's shader generator, unmodified.
+    executable("vulkan_shaders_gen") {
+      visibility = [ ":*" ]
+      sources = [ "$_ggml_vk_shader_dir/vulkan-shaders-gen.cpp" ]
+      defines = _ggml_vk_features
+
+      # It uses try/catch.
+      configs -= [ "//build/config/compiler:no_exceptions" ]
+      configs += [ ":llama_exceptions" ]
+      cflags_cc = [
+        "-std=c++17",
+        "-w",
+      ]
+    }
+  }
+
+  _ggml_vk_host_out = get_label_info(":ggml_vk_glslc($host_toolchain)",
+                                     "root_out_dir")
+  _ggml_vk_exe = ""
+  if (host_os == "win") {
+    _ggml_vk_exe = ".exe"
+  }
+  _ggml_vk_glslc = "$_ggml_vk_host_out/ggml_vk_glslc$_ggml_vk_exe"
+  _ggml_vk_shaders_gen = "$_ggml_vk_host_out/vulkan_shaders_gen$_ggml_vk_exe"
+
+  action("ggml_vulkan_checks") {
+    visibility = [ ":*" ]
+    script = "chromium/ggml_vulkan_checks.py"
+    inputs = [
+      _ggml_vk_glslc,
+      "$_ggml_vk_shader_dir/feature-tests/bfloat16.comp",
+      "$_ggml_vk_shader_dir/feature-tests/coopmat.comp",
+      "$_ggml_vk_shader_dir/feature-tests/coopmat2.comp",
+      "$_ggml_vk_shader_dir/feature-tests/coopmat2_decode_vector.comp",
+      "$_ggml_vk_shader_dir/feature-tests/float_e2m1.comp",
+      "$_ggml_vk_shader_dir/feature-tests/float_e4m3.comp",
+      "$_ggml_vk_shader_dir/feature-tests/integer_dot.comp",
+    ]
+    outputs = [ "$_ggml_vk_gen_dir/checks.stamp" ]
+    deps = [ ":ggml_vk_glslc($host_toolchain)" ]
+    args = [
+      "--glslc",
+      rebase_path(_ggml_vk_glslc, root_build_dir),
+      "--shader-dir",
+      rebase_path(_ggml_vk_shader_dir, root_build_dir),
+      "--stamp",
+      rebase_path(outputs[0], root_build_dir),
+    ]
+    foreach(f, _ggml_vk_features) {
+      args += [ "--feature=$f" ]
+    }
+    foreach(s, _ggml_vk_shaders) {
+      args += [ "--listed=$s" ]
+    }
+  }
+
+  # The declarations of every shader variant (ggml-vulkan-shaders.hpp).
+  action("ggml_vulkan_shaders_hpp") {
+    visibility = [ ":*" ]
+    script = "//build/gn_run_binary.py"
+    inputs = [ _ggml_vk_shaders_gen ]
+    outputs = [ "$_ggml_vk_gen_dir/ggml-vulkan-shaders.hpp" ]
+    deps = [ ":vulkan_shaders_gen($host_toolchain)" ]
+    args = [
+      rebase_path(_ggml_vk_shaders_gen, root_build_dir),
+      "--output-dir",
+      rebase_path("$_ggml_vk_gen_dir/spv", root_build_dir),
+      "--target-hpp",
+      rebase_path(outputs[0], root_build_dir),
+    ]
+  }
+
+  # One .cpp per shader file, embedding the SPIR-V of all its variants. The
+  # depfile (written by ggml_vk_glslc, through the generator) lists the
+  # .glsl files it includes. The .spv files are intermediates in spv/.
+  action_foreach("ggml_vulkan_shaders_cpp") {
+    visibility = [ ":*" ]
+    script = "//build/gn_run_binary.py"
+    sources = _ggml_vk_shader_sources
+    inputs = [
+      _ggml_vk_glslc,
+      _ggml_vk_shaders_gen,
+    ]
+    outputs = [ "$_ggml_vk_gen_dir/{{source_file_part}}.cpp" ]
+    depfile = "$_ggml_vk_gen_dir/{{source_file_part}}.cpp.d"
+    deps = [
+      ":ggml_vk_glslc($host_toolchain)",
+      ":ggml_vulkan_checks",
+      ":vulkan_shaders_gen($host_toolchain)",
+    ]
+    args = [
+      rebase_path(_ggml_vk_shaders_gen, root_build_dir),
+      # The generator execvp()s it: "./" so a bare name (a native build's
+      # host tools are in the root of the build directory) isn't looked up
+      # in PATH.
+      "--glslc",
+      "./" + rebase_path(_ggml_vk_glslc, root_build_dir),
+      "--source",
+      "{{source}}",
+      "--output-dir",
+      rebase_path("$_ggml_vk_gen_dir/spv", root_build_dir),
+      "--target-hpp",
+      rebase_path("$_ggml_vk_gen_dir/ggml-vulkan-shaders.hpp", root_build_dir),
+      "--target-cpp",
+      rebase_path("$_ggml_vk_gen_dir/{{source_file_part}}.cpp",
+                  root_build_dir),
+    ]
+  }
+
+  source_set("ggml_vulkan") {
+    visibility = _llama_cpp_visibility
+
+    sources = [
+      "$_ggml_vk_dir/ggml-vulkan-buffers.cpp",
+      "$_ggml_vk_dir/ggml-vulkan-common.h",
+      "$_ggml_vk_dir/ggml-vulkan-debug.cpp",
+      "$_ggml_vk_dir/ggml-vulkan-push-constants.h",
+      "$_ggml_vk_dir/ggml-vulkan-types.h",
+      "$_ggml_vk_dir/ggml-vulkan.cpp",
+      "chromium/ggml-vulkan-moltbrowser.cpp",
+      "chromium/ggml-vulkan-moltbrowser.h",
+    ]
+
+    # ggml/include/ggml-vulkan.h is deliberately not listed: listing it makes
+    # gn check flag ggml-backend-reg.cpp's #include of it, which is under
+    # #ifdef GGML_USE_VULKAN and never compiled here (the backend isn't
+    # registered with ggml).
+    sources += get_target_outputs(":ggml_vulkan_shaders_cpp")
+    sources += get_target_outputs(":ggml_vulkan_shaders_hpp")
+    include_dirs = [ _ggml_vk_gen_dir ]
+    defines = _ggml_vk_features + [
+                # chromium/ggml-vulkan-moltbrowser.cpp opens the loader.
+                "GGML_VULKAN_MOLTBROWSER",
+                "VK_NO_PROTOTYPES",
+              ]
+
+    public_deps = [ ":ggml" ]
+    deps = [
+      ":ggml_vulkan_shaders_cpp",
+      ":ggml_vulkan_shaders_hpp",
+      "//third_party/spirv-headers/src:spv_headers",
+      "//third_party/vulkan-headers/src:vulkan_headers",
+    ]
+    public_configs = [ ":llama_cpp_config" ]
+    configs += _llama_cpp_cfi_configs
+
+    # vulkan.hpp's throwing API; ggml-vulkan catches some of its own errors.
+    # What can escape to the service is caught by :llama_guard.
+    configs -= [ "//build/config/compiler:no_exceptions" ]
+    configs += [ ":llama_exceptions" ]
+
+    cflags_cc = [
+      "-std=c++17",
+      "-w",
+    ]
+
+    # :vulkan_headers' config turns on window-system platforms (X11, Wayland,
+    # Win32), whose headers ggml doesn't need and whose macros (None, Bool,
+    # min, max, ...) clash with C++ code.
+    if (is_win) {
+      cflags_cc += [ "/UVK_USE_PLATFORM_WIN32_KHR" ]
+    } else {
+      cflags_cc += [
+        "-UVK_USE_PLATFORM_XCB_KHR",
+        "-UVK_USE_PLATFORM_XLIB_KHR",
+        "-UVK_USE_PLATFORM_WAYLAND_KHR",
+      ]
+    }
+  }
+}
+
 # Combined GGML target
 group("ggml") {
   visibility = _llama_cpp_visibility
@@ -705,6 +1096,31 @@ source_set("llama_cpp") {
     "-std=c++17",
     "-w",
   ]
+}
+
+# MoltBrowser: the exception boundary between llama.cpp (built with
+# exceptions) and the inference service (built without): every llama.cpp
+# call that can reach a GPU after the model is loaded goes through
+# chromium/llama_guard.h, which catches everything. With molt_llama_vulkan it
+# also brings up the Vulkan backend for the service. See
+# docs/design/SANDBOXED_INFERENCE.md section 11.6.
+source_set("llama_guard") {
+  visibility = _llama_cpp_visibility
+
+  sources = [
+    "chromium/llama_guard.cc",
+    "chromium/llama_guard.h",
+  ]
+
+  public_deps = [ ":llama_cpp" ]
+  configs += _llama_cpp_cfi_configs
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ ":llama_exceptions" ]
+
+  if (molt_llama_vulkan) {
+    defines = [ "MOLT_LLAMA_VULKAN" ]
+    deps = [ ":ggml_vulkan" ]
+  }
 }
 
 # MoltBrowser: image input (docs/design/SANDBOXED_INFERENCE.md section 10).

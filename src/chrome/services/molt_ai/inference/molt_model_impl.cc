@@ -186,6 +186,8 @@ mojom::GenerationStatus ToMojo(EngineStatus status) {
       return mojom::GenerationStatus::kConstraintFailed;
     case EngineStatus::kImagesUnsupported:
       return mojom::GenerationStatus::kImagesUnsupported;
+    case EngineStatus::kBackendFailed:
+      return mojom::GenerationStatus::kBackendFailed;
   }
   return mojom::GenerationStatus::kDecodeFailed;
 }

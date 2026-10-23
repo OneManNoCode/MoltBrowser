@@ -1,0 +1,35 @@
+MoltBrowser patch for content/utility/on_device_model/on_device_model_sandbox_init.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/content/utility/on_device_model/on_device_model_sandbox_init.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/content/utility/on_device_model/on_device_model_sandbox_init.cc b/content/utility/on_device_model/on_device_model_sandbox_init.cc
+index 649e8ce42aab9b0e01dd42368db99bfa6b9cd0ba..bb883c87e4ada5d4dd72a4292e939446d09ae099 100644
+--- a/content/utility/on_device_model/on_device_model_sandbox_init.cc
++++ b/content/utility/on_device_model/on_device_model_sandbox_init.cc
+@@ -22,6 +22,8 @@
+ #include <errno.h>
+ 
+ #include "content/common/gpu_pre_sandbox_hook_linux.h"
++// MoltBrowser: GPU inference (docs/design/SANDBOXED_INFERENCE.md 11.4).
++#include "content/utility/on_device_model/molt_gpu_inference_sandbox_linux.h"
+ #include "gpu/config/gpu_info_collector.h"  // nogncheck
+ #include "sandbox/policy/linux/sandbox_linux.h"
+ #endif
+@@ -172,8 +174,14 @@ bool PreSandboxHook(sandbox::policy::SandboxLinux::Options options) {
+       sandbox::syscall_broker::BrokerFilePermission::ReadOnly(
+           "/sys/devices/system/cpu/online"));
+ 
++  // MoltBrowser: Mesa's DRM render nodes for MoltBrowser's inference service
++  // when launched for the GPU (--molt-inference-gpu); nothing otherwise.
++  sandbox::syscall_broker::BrokerCommandSet command_set =
++      content::CommandSetForGPU(options);
++  MaybeAddMoltGpuInferencePermissions(&file_permissions, &command_set);
++
+   sandbox::policy::SandboxLinux::GetInstance()->StartBrokerProcess(
+-      content::CommandSetForGPU(options), file_permissions, options);
++      command_set, file_permissions, options);
+ 
+   if (!content::LoadLibrariesForGpu(options)) {
+     return false;

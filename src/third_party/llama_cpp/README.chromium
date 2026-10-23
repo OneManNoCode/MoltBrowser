@@ -17,7 +17,11 @@ sandboxed utility process: the inference service in
 //chrome/services/molt_ai/inference (kOnDeviceModelExecution sandbox,
 docs/design/SANDBOXED_INFERENCE.md), the only code BUILD.gn lets link it.
 Built by BUILD.gn with the CPU backend everywhere and the Metal backend on
-macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev). Image input uses the
+macOS (GGML_VERSION 0.26.0, LLAMA_VERSION 0.6.0-dev). With the GN switch
+molt_llama_vulkan (llama_cpp.gni, off by default; Linux and Windows) the
+Vulkan backend is built too, its SPIR-V compiled at build time with the
+glslang and SPIRV-Tools Chromium pins
+(docs/design/SANDBOXED_INFERENCE.md section 11). Image input uses the
 multimodal library (tools/mtmd: the vision projector, image preprocessing
 and the projectors' graphs), built as :mtmd; the browser decodes images
 with Chromium's sandboxed decoders and the service receives raw RGB pixels
@@ -56,6 +60,14 @@ json_schema_grammar.cc). The mtmd_* entry points the service calls catch
 their own exceptions (mtmd_init_from_file_ptr, mtmd_tokenize_from_parts,
 mtmd_encode_chunk) or don't throw; their aborts are listed with each call
 at the top of llama_engine.cc. Re-check them when updating.
+ggml-vulkan (molt_llama_vulkan only) is built with exceptions: it uses
+vulkan.hpp's throwing API, and on a lost device or a Vulkan error it
+throws out of graph compute, synchronization and buffer clears, which
+llama_decode, llama_process, llama_get_logits_ith, llama_sampler_sample
+and llama_memory_clear don't catch. The service makes those calls through
+chromium/llama_guard.{h,cc} (built with exceptions; catches everything),
+on the CPU too. ggml_backend_vk_reg() catches its own errors. Re-check
+both when updating.
 
 Local Modifications:
 - BUILD.gn: GN build for Chromium (not upstream). Every target that
@@ -65,13 +77,34 @@ Local Modifications:
 - chromium/ggml-version.h, chromium/llama-version.h: stand-ins for the
   headers upstream CMake generates from ggml/src/ggml-version.h.in and
   src/llama-version.h.in. Update their values with every update.
+- llama_cpp.gni and the molt_llama_vulkan block of BUILD.gn (not
+  upstream): ggml-vulkan as a source_set, its shaders generated at build
+  time. MoltBrowser files in chromium/ for it:
+    ggml_vk_glslc.cc: a host tool implementing the subset of glslc's
+      command line that vulkan-shaders-gen runs (Chromium has no shaderc),
+      on Chromium's glslang and SPIRV-Tools: -O is spirv-opt's performance
+      passes, as in glslc.
+    ggml_vulkan_checks.py: build-time checks that every shader extension
+      BUILD.gn enables still compiles with Chromium's glslang (upstream's
+      CMake probes this at configure time), and that BUILD.gn's .comp list
+      matches vulkan-shaders/ (update the list with every update).
+    ggml-vulkan-moltbrowser.{h,cpp}: opens the Vulkan loader at run time
+      (dlopen libvulkan.so.1 / LoadLibrary vulkan-1.dll) and reads the
+      device properties the service's device policy needs.
+  vulkan-shaders-gen.cpp is unmodified. The backend is not registered with
+  ggml (no GGML_USE_VULKAN, so ggml-backend-reg.cpp doesn't bring it up);
+  the service passes the chosen device explicitly.
+- chromium/llama_guard.{h,cc} (not upstream): the exception boundary for the
+  service's llama.cpp calls that can reach a GPU (see Exceptions above), and
+  the bring-up of the Vulkan backend for it.
 - Removed backends no BUILD.gn file references: ggml/src/ggml-cuda,
   ggml-hip and ggml-musa (both build ggml-cuda's sources), ggml-sycl,
   ggml-opencl, ggml-hexagon, ggml-webgpu, ggml-virtgpu, ggml-cann,
-  ggml-zdnn, ggml-zendnn, ggml-et and ggml-openvino. ggml-vulkan,
-  ggml-blas and ggml-rpc are kept for possible future use; ggml-cpu and
-  ggml-metal are built. ggml/src/CMakeLists.txt still lists them and is
-  not used by the build.
+  ggml-zdnn, ggml-zendnn, ggml-et and ggml-openvino. ggml-blas and
+  ggml-rpc are kept for possible future use; ggml-cpu and ggml-metal are
+  built, and ggml-vulkan with molt_llama_vulkan. ggml/src/CMakeLists.txt
+  and ggml/src/ggml-vulkan/CMakeLists.txt still list them and are not used
+  by the build.
 - Patched against the tag (diff these against upstream b11641 when
   updating; every patch is marked "MoltBrowser" in the source except the
   added #includes):
@@ -80,6 +113,19 @@ Local Modifications:
     ggml/src/ggml-metal/ggml-metal-ops.cpp: #include <utility> (std::swap
       with Chromium's C++ modules).
     ggml/src/ggml-metal/ggml-metal.cpp: #include <memory>.
+    ggml/src/ggml-vulkan/ggml-vulkan.cpp,
+    ggml/src/ggml-vulkan/ggml-vulkan-buffers.cpp: ggml-vulkan is built with
+      VK_NO_PROTOTYPES, so it can't reference a Vulkan entry point at link
+      time (upstream links the loader, which would make the whole browser
+      binary need libvulkan.so.1 / import vulkan-1.dll into every process).
+      With GGML_VULKAN_MOLTBROWSER the dispatcher is initialized from
+      ggml_vk_moltbrowser_get_instance_proc_addr() (chromium/
+      ggml-vulkan-moltbrowser.cpp) instead of the global
+      vkGetInstanceProcAddr, and the direct calls of vkGetInstanceProcAddr,
+      vkGetDeviceProcAddr, vkGetPhysicalDeviceFeatures2 (three) and
+      vkCmdCopyBuffer (two, in -buffers.cpp) go through
+      VULKAN_HPP_DEFAULT_DISPATCHER (equivalent upstream too). A new direct
+      call fails to compile, which is the point.
     ggml/src/ggml.c, ggml/src/ggml.cpp: with GGML_MOLTBROWSER_NO_BACKTRACE
       (set by BUILD.gn's :ggml_no_backtrace), ggml_print_backtrace() does
       nothing and no std::set_terminate handler is installed. Upstream

@@ -201,6 +201,8 @@ content/public/browser/client_hints_controller_delegate.h.patch
 content/public/browser/content_browser_client.cc.patch
 content/public/browser/content_browser_client.h.patch
 content/renderer/worker/embedded_shared_worker_stub.cc.patch
+content/utility/on_device_model/BUILD.gn.patch
+content/utility/on_device_model/on_device_model_sandbox_init.cc.patch
 extensions/browser/api/web_request/web_request_api.cc.patch
 extensions/browser/events/event_dispatch_helper.cc.patch
 extensions/browser/extension_util.cc.patch

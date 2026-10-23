@@ -61,16 +61,26 @@ std::optional<uint64_t> SamplePrivateFootprint(base::Process process) {
 void LaunchUtilityProcess(
     mojo::PendingReceiver<mojom::MoltInferenceService> receiver,
     base::WeakPtr<content::ServiceProcessHost::Observer> observer,
-    base::OnceCallback<void(const base::Process&)> on_process) {
+    base::OnceCallback<void(const base::Process&)> on_process,
+    bool use_gpu) {
   // The sandbox (kOnDeviceModelExecution) comes from the interface's
   // [ServiceSandbox] attribute.
-  content::ServiceProcessHost::Launch(
-      std::move(receiver),
-      content::ServiceProcessHost::Options()
-          .WithDisplayName(std::string("On-Device AI Model"))
-          .WithObserver(std::move(observer))
-          .WithProcessCallback(std::move(on_process))
-          .Pass());
+  content::ServiceProcessHost::Options options;
+  options.WithDisplayName(std::string("On-Device AI Model"))
+      .WithObserver(std::move(observer))
+      .WithProcessCallback(std::move(on_process));
+  if (use_gpu) {
+    options.WithExtraCommandLineSwitches({kMoltInferenceGpuSwitch});
+  }
+  content::ServiceProcessHost::Launch(std::move(receiver), options.Pass());
+}
+
+// Kinds of process loss that count as a GPU failure when the GPU was in use
+// (GpuFallbackGuard); a protocol violation or a launch failure doesn't.
+bool IsGpuFailureKind(InferenceOutcome::Kind kind) {
+  return kind == InferenceOutcome::Kind::kProcessGone ||
+         kind == InferenceOutcome::Kind::kTimedOut ||
+         kind == InferenceOutcome::Kind::kMemoryExceeded;
 }
 
 InferenceOutcome::Kind KindForSummary(int32_t status) {
@@ -169,13 +179,15 @@ class InferenceProcessHost::ModelProcess
                std::string crash_key,
                uint32_t max_context_tokens,
                uint64_t footprint_limit_bytes,
-               bool vision_projector_sent)
+               bool vision_projector_sent,
+               bool gpu_requested)
       : host_(host),
         model_id_(std::move(model_id)),
         crash_key_(std::move(crash_key)),
         max_context_tokens_(max_context_tokens),
         footprint_limit_bytes_(footprint_limit_bytes),
-        vision_projector_sent_(vision_projector_sent) {}
+        vision_projector_sent_(vision_projector_sent),
+        gpu_requested_(gpu_requested) {}
   ~ModelProcess() override = default;
 
   // content::ServiceProcessHost::Observer (UI thread):
@@ -199,8 +211,17 @@ class InferenceProcessHost::ModelProcess
   uint64_t footprint_limit_bytes() const { return footprint_limit_bytes_; }
   // A process given no projector that claims vision is lying.
   bool vision_projector_sent() const { return vision_projector_sent_; }
+  // Launched for the GPU; one not asked to use it that claims it is lying.
+  bool gpu_requested() const { return gpu_requested_; }
+  // Its loss is a GPU failure: it was loading with the GPU requested, or
+  // runs on the GPU.
+  bool gpu_in_use() const {
+    return gpu_requested_ && (state == State::kLoading || on_gpu);
+  }
 
   State state = State::kLoading;
+  // The model runs on the GPU (backend "vulkan").
+  bool on_gpu = false;
   mojo::Remote<mojom::MoltInferenceService> service;
   mojo::Remote<mojom::Model> model;
   base::Process process;
@@ -225,6 +246,7 @@ class InferenceProcessHost::ModelProcess
   const uint32_t max_context_tokens_;
   const uint64_t footprint_limit_bytes_;
   const bool vision_projector_sent_;
+  const bool gpu_requested_;
   base::WeakPtrFactory<ModelProcess> weak_factory_{this};
 };
 
@@ -400,12 +422,14 @@ void InferenceProcessHost::Load(LoadRequest request,
 
   auto process = std::make_unique<ModelProcess>(
       this, request.model_id, request.crash_key, request.max_context_tokens,
-      request.footprint_limit_bytes, request.vision_projector.IsValid());
+      request.footprint_limit_bytes, request.vision_projector.IsValid(),
+      request.use_gpu);
   ModelProcess* p = process.get();
   p->load_mailbox = std::move(mailbox);
   launcher_.Run(p->service.BindNewPipeAndPassReceiver(), p->GetWeakPtr(),
                 base::BindOnce(&InferenceProcessHost::OnProcessLaunched,
-                               weak_factory_.GetWeakPtr(), p->GetWeakPtr()));
+                               weak_factory_.GetWeakPtr(), p->GetWeakPtr()),
+                request.use_gpu);
   p->service.set_disconnect_handler(
       base::BindOnce(&InferenceProcessHost::OnProcessDisconnected,
                      weak_factory_.GetWeakPtr(), p->GetWeakPtr()));
@@ -417,6 +441,7 @@ void InferenceProcessHost::Load(LoadRequest request,
   params->cpu_threads = request.cpu_threads;
   params->max_context_tokens = request.max_context_tokens;
   params->allow_cpu_repack = request.allow_cpu_repack;
+  params->use_gpu = request.use_gpu;
   if (request.vision_projector.IsValid()) {
     params->vision_projector = std::move(request.vision_projector);
     params->vision_projector_size = request.vision_projector_size;
@@ -478,7 +503,11 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
                                description->vocab_size,
                                mojom::kMinDescribedContextTokens,
                                p->max_context_tokens()) ||
-      (description->vision && !p->vision_projector_sent())) {
+      (description->vision && !p->vision_projector_sent()) ||
+      !IsValidGpuDescription(
+          p->gpu_requested(), description->backend,
+          description->gpu_status == mojom::GpuStatus::kOn,
+          description->gpu_layers, mojom::kMaxGpuLayers)) {
     mojo::ReportBadMessage("invalid ModelDescription");
     p->load_mailbox = std::move(mailbox);  // failed by KillProcess
     KillProcess(p, InferenceOutcome::Kind::kViolation,
@@ -487,6 +516,7 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   }
 
   p->state = ModelProcess::State::kReady;
+  p->on_gpu = description->gpu_status == mojom::GpuStatus::kOn;
   p->context_tokens = description->context_tokens;
   p->vocab_size = description->vocab_size;
   InferenceOutcome outcome(InferenceOutcome::Kind::kOk);
@@ -496,6 +526,8 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   outcome.vocab_size = description->vocab_size;
   outcome.cpu_repack_used = description->cpu_repack_used;
   outcome.vision = description->vision;
+  outcome.gpu_status = description->gpu_status;
+  outcome.gpu_layers = description->gpu_layers;
 
   // Swap: the previous model finishes what it is running, then ends.
   if (current_) {
@@ -711,6 +743,10 @@ void InferenceProcessHost::KillProcess(ModelProcess* process,
     return;
   }
   process->lost = true;
+  // Before it changes state below. A death while idle (the OS reclaiming
+  // memory, say) counts for neither guard.
+  const bool gpu_failure = process->gpu_in_use() && IsGpuFailureKind(kind) &&
+                           phase != CrashLoopGuard::Phase::kIdle;
   const InferenceOutcome outcome(kind);
   if (process->load_mailbox) {
     process->load_mailbox->Finish(outcome);
@@ -734,10 +770,10 @@ void InferenceProcessHost::KillProcess(ModelProcess* process,
                           kind != InferenceOutcome::Kind::kLaunchFailed;
   EndProcess(process, /*terminate_now=*/misbehaved);
   // Always reported (the runtime forgets the model); the guard only counts
-  // kLoading / kGenerating.
+  // kLoading / kGenerating, and a GPU failure counts for the GPU instead.
   if (delegate_) {
     delegate_->OnModelProcessLost(process->model_id(), process->crash_key(),
-                                  phase);
+                                  phase, gpu_failure);
   }
   UpdateTicking();
 }

@@ -35,10 +35,16 @@ source_set("inference") {
   deps = [
     "//chrome/services/molt_ai/inference/engine:constrained_decoding",
     "//chrome/services/molt_ai/inference/engine:embedding_utils",
+    "//chrome/services/molt_ai/inference/engine:gpu_offload",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:inference_utils",
     "//mojo/public/cpp/base",
     "//third_party/llama_cpp",
+
+    # The exception boundary for llama.cpp calls that can reach a GPU, and
+    # the Vulkan backend with molt_llama_vulkan
+    # (docs/design/SANDBOXED_INFERENCE.md section 11).
+    "//third_party/llama_cpp:llama_guard",
 
     # Image input (docs/design/SANDBOXED_INFERENCE.md section 10).
     "//third_party/llama_cpp:mtmd",

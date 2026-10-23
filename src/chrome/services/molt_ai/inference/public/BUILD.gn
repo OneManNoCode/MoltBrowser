@@ -1,0 +1,13 @@
+# Copyright 2026 GenEye AI Labs Inc.
+# Licensed under GPLv3. See LICENSE file.
+
+import("//build/buildflag_header.gni")
+import("//third_party/llama_cpp/llama_cpp.gni")
+
+# BUILDFLAG(MOLT_LLAMA_VULKAN): the inference service has llama.cpp's Vulkan
+# backend (docs/design/SANDBOXED_INFERENCE.md section 11), so the browser
+# asks for the GPU and launches the process for it.
+buildflag_header("buildflags") {
+  header = "buildflags.h"
+  flags = [ "MOLT_LLAMA_VULKAN=$molt_llama_vulkan" ]
+}
