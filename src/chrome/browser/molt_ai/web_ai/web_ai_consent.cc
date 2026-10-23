@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/web_ai/web_ai_consent.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -22,7 +23,9 @@
 #include "components/url_formatter/elide_url.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/referrer.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
@@ -39,12 +42,24 @@ void AnswerLater(base::OnceCallback<void(SiteConsent)> callback,
       FROM_HERE, base::BindOnce(std::move(callback), consent));
 }
 
-class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
+// Now, for PromptInputProtection.
+int64_t NowMs() {
+  return (base::TimeTicks::Now() - base::TimeTicks()).InMilliseconds();
+}
+
+// Observes |contents| (the prompt's tab) so the prompt's input protection
+// starts over each time the tab is shown again.
+class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate,
+                                    public content::WebContentsObserver {
  public:
-  WebAIConsentInfoBarDelegate(const url::Origin& origin, bool needs_model)
-      : origin_(origin),
-        needs_model_(needs_model),
-        shown_(base::TimeTicks::Now()) {}
+  WebAIConsentInfoBarDelegate(content::WebContents* contents,
+                              const url::Origin& origin,
+                              bool needs_model)
+      : content::WebContentsObserver(contents),
+        origin_(origin),
+        needs_model_(needs_model) {
+    protection_.Shown(NowMs());
+  }
   WebAIConsentInfoBarDelegate(const WebAIConsentInfoBarDelegate&) = delete;
   WebAIConsentInfoBarDelegate& operator=(const WebAIConsentInfoBarDelegate&) =
       delete;
@@ -83,8 +98,9 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
     return needs_model_ ? u"Choose a model" : u"Allow";
   }
   bool Accept() override {
-    if (!IsTimely()) {
-      return false;  // Too soon after the bar appeared: it stays.
+    if (!protection_.Press(NowMs())) {
+      // Too soon after the bar appeared or the previous press: it stays.
+      return false;
     }
     content::WebContents* contents =
         infobars::ContentInfoBarManager::WebContentsFromInfoBar(infobar());
@@ -108,7 +124,7 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
     return true;
   }
   bool Cancel() override {
-    if (!IsTimely()) {
+    if (!protection_.Press(NowMs())) {
       return false;
     }
     WebAISitePermissions* answers = Permissions(
@@ -136,14 +152,15 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
     return delegate->GetIdentifier() == GetIdentifier();
   }
 
- private:
-  // Allow and Block count only once the bar has been up for a moment
-  // (kPromptInputProtectionMs).
-  bool IsTimely() const {
-    return IsTimelyPromptAnswer(
-        (base::TimeTicks::Now() - shown_).InMilliseconds());
+  // content::WebContentsObserver: the tab, and so the bar, is shown again
+  // (another tab or window was in front of it).
+  void OnVisibilityChanged(content::Visibility visibility) override {
+    if (visibility == content::Visibility::VISIBLE) {
+      protection_.Shown(NowMs());
+    }
   }
 
+ private:
   static WebAISitePermissions* Permissions(content::WebContents* contents) {
     return contents ? WebAISitePermissions::Get(contents->GetBrowserContext())
                     : nullptr;
@@ -159,7 +176,9 @@ class WebAIConsentInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   const url::Origin origin_;
   const bool needs_model_;
-  const base::TimeTicks shown_;
+  // Allow and Block count only a moment after the bar was shown and after
+  // the previous press (kPromptInputProtectionMs).
+  PromptInputProtection protection_;
   std::vector<base::OnceCallback<void(SiteConsent)>> callbacks_;
 };
 
@@ -198,8 +217,8 @@ void ShowWebAIConsentPrompt(content::RenderFrameHost* rfh,
       return;
     }
   }
-  auto delegate =
-      std::make_unique<WebAIConsentInfoBarDelegate>(origin, needs_model);
+  auto delegate = std::make_unique<WebAIConsentInfoBarDelegate>(
+      contents, origin, needs_model);
   delegate->AddCallback(std::move(callback));
   // If the infobar can't be added, the delegate's destructor answers kAsk.
   manager->AddInfoBar(CreateConfirmInfoBar(std::move(delegate)),

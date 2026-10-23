@@ -91,27 +91,33 @@ NOT_BUILD_OUTPUTS = frozenset((MANIFEST_NAME, SIGNATURE_NAME, BUNDLE_NAME,
 
 PLATFORMS = ('macos', 'linux', 'windows')
 ARCHES = ('arm64', 'x64', 'universal')
+# Every pattern below is matched with fullmatch() and compiled with
+# re.ASCII: match() with "$" would take a value with a trailing newline,
+# and a Unicode \d or \S other scripts' digits and spaces.
 STATEMENT_NAME = re.compile(
-    r'^molt-provenance-(macos|linux|windows)-(arm64|x64|universal)\.json$')
+    r'molt-provenance-(macos|linux|windows)-(arm64|x64|universal)\.json',
+    re.ASCII)
 # The in-app updater picks its installer by these substrings
 # (UpdateManager::PlatformAssetMatcher); a provenance file must not match.
 UPDATER_ASSET_MATCHERS = ('.dmg', 'Setup.exe', '.deb', '.rpm', '.tar.gz')
 
-PLAIN_NAME = re.compile(r'^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$')
-LABEL = re.compile(r'^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$')
-SHA256 = re.compile(r'^[0-9a-f]{64}$')
-GIT_OID = re.compile(r'^(?:[0-9a-f]{40}|[0-9a-f]{64})$')
-TIME = re.compile(r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$')
-VERSION = re.compile(r'^\d+(?:\.\d+)*(?:-[0-9A-Za-z.]+)?$')
-CHROMIUM_VERSION = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
-GN_ARGS_FILE = re.compile(r'^configs/[a-z0-9][a-z0-9-]*\.gn$')
-OUT_DIR = re.compile(r'^out/[A-Za-z0-9._-]{1,64}$')
-INVOCATION = re.compile(r'^https://[A-Za-z0-9.-]{1,64}/[A-Za-z0-9._-]{1,100}/'
+PLAIN_NAME = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}', re.ASCII)
+LABEL = re.compile(r'[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?', re.ASCII)
+SHA256 = re.compile(r'[0-9a-f]{64}', re.ASCII)
+GIT_OID = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', re.ASCII)
+TIME = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', re.ASCII)
+VERSION = re.compile(r'\d+(?:\.\d+)*(?:-[0-9A-Za-z.]+)?', re.ASCII)
+CHROMIUM_VERSION = re.compile(r'\d+\.\d+\.\d+\.\d+', re.ASCII)
+GN_ARGS_FILE = re.compile(r'configs/[a-z0-9][a-z0-9-]*\.gn', re.ASCII)
+OUT_DIR = re.compile(r'out/[A-Za-z0-9._-]{1,64}', re.ASCII)
+INVOCATION = re.compile(r'https://[A-Za-z0-9.-]{1,64}/[A-Za-z0-9._-]{1,100}/'
                         r'[A-Za-z0-9._-]{1,100}/actions/runs/\d{1,20}'
-                        r'(?:/attempts/\d{1,6})?$')
-CONTAINER_IMAGE = re.compile(r'^([a-z0-9][a-z0-9._/-]{0,127})@sha256:([0-9a-f]{64})$')
-MODEL_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
-TOOL_VERSION = re.compile(r'^[\x20-\x7e]{1,256}$')
+                        r'(?:/attempts/\d{1,6})?', re.ASCII)
+CONTAINER_IMAGE = re.compile(
+    r'([a-z0-9][a-z0-9._/-]{0,127})@sha256:([0-9a-f]{64})', re.ASCII)
+MODEL_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}', re.ASCII)
+TOOL_VERSION = re.compile(r'[\x20-\x7e]{1,256}', re.ASCII)
+URI = re.compile(r'(?:git\+https|https)://[\x21-\x7e]+', re.ASCII)
 BUILDER_VERSION_KEYS = ('clang', 'rustc', 'xcode', 'macosSdk', 'msvc',
                         'windowsSdk')
 DIGEST_ALGORITHMS = {'sha256': SHA256, 'gitCommit': GIT_OID,
@@ -204,7 +210,7 @@ def utc_now():
 
 
 def parse_time(value, what):
-    if not isinstance(value, str) or not TIME.match(value):
+    if not isinstance(value, str) or not TIME.fullmatch(value):
         raise Error('%s must be a UTC time like 2026-10-01T12:00:00Z' % what)
     try:
         return datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
@@ -217,7 +223,7 @@ def split_tag(value):
     if not isinstance(value, str):
         raise Error('version is missing')
     version = value[1:] if value[:1] in ('v', 'V') else value
-    if not VERSION.match(version):
+    if not VERSION.fullmatch(version):
         raise Error('%r is not a release version like v0.3.0' % value)
     tag = value if value[:1] in ('v', 'V') else 'v' + value
     return tag, version
@@ -238,7 +244,7 @@ def check_label(label):
                     '(docs/SIGNED_UPDATES.md, "One-time: label your build '
                     'machines"). It is published in every release; do not '
                     'use your hostname or user name.')
-    if not LABEL.match(label):
+    if not LABEL.fullmatch(label):
         raise Error('builder label %r: use 1-64 lower-case letters, digits, '
                     '".", "_" or "-"' % label)
     return label
@@ -375,14 +381,14 @@ def git_toplevel_head(path):
             os.path.normcase(os.path.realpath(path)):
         return None
     rev = lines[1].strip()
-    return rev if GIT_OID.match(rev) else None
+    return rev if GIT_OID.fullmatch(rev) else None
 
 
 def git_local_tag_commit(repo, tag):
     out = run_git(repo, ['rev-parse', '-q', '--verify',
                          'refs/tags/%s^{commit}' % tag])
     rev = out.decode().strip() if out else ''
-    return rev if GIT_OID.match(rev) else None
+    return rev if GIT_OID.fullmatch(rev) else None
 
 
 def source_relevant(path):
@@ -449,7 +455,7 @@ def committed_digest(repo, commit, path):
     """
     oid = run_git(repo, ['rev-parse', '-q', '--verify', '%s:%s' % (commit, path)])
     oid = oid.decode().strip() if oid else ''
-    if not GIT_OID.match(oid):
+    if not GIT_OID.fullmatch(oid):
         raise Error('%s is not in commit %s' % (path, commit[:12]))
     kind = run_git(repo, ['cat-file', '-t', oid])
     kind = kind.decode().strip() if kind else ''
@@ -491,7 +497,7 @@ def read_chromium_pin(repo):
                 pin.setdefault(key.strip(), value.strip())
     version = pin.get('CHROMIUM_VERSION', '')
     revision = pin.get('CHROMIUM_REVISION', '')
-    if not CHROMIUM_VERSION.match(version) or not re.fullmatch(r'[0-9a-f]{40}',
+    if not CHROMIUM_VERSION.fullmatch(version) or not re.fullmatch(r'[0-9a-f]{40}',
                                                                revision):
         raise Error('chromium_version.txt has no valid CHROMIUM_VERSION / '
                     'CHROMIUM_REVISION')
@@ -566,10 +572,10 @@ def same_args(effective, config):
 def out_dir_label(out_dir, chromium_src):
     rel = os.path.relpath(os.path.abspath(out_dir), os.path.abspath(chromium_src))
     rel = rel.replace(os.sep, '/')
-    if OUT_DIR.match(rel):
+    if OUT_DIR.fullmatch(rel):
         return rel
     label = 'out/' + os.path.basename(os.path.normpath(out_dir))
-    return label if OUT_DIR.match(label) else 'out/MoltBrowser'
+    return label if OUT_DIR.fullmatch(label) else 'out/MoltBrowser'
 
 
 def find_depot_tools(explicit=None):
@@ -607,7 +613,7 @@ def windows_toolchain(gn_out_dirs):
                 if k.lower() == var:
                     value = v
         value = value.strip().rstrip('\\')
-        if re.fullmatch(r'\d+(?:\.\d+){1,3}', value):
+        if re.fullmatch(r'[0-9]+(?:\.[0-9]+){1,3}', value):
             out[key] = value
     return out
 
@@ -652,13 +658,13 @@ def probe_builder(platform, chromium_src, depot_tools=None, gn_out_dirs=(),
             version['xcode'] = m.group(1) + (' (%s)' % b.group(1) if b else '')
         sdk = (run_text(['/usr/bin/xcrun', '--sdk', 'macosx',
                          '--show-sdk-version']) or '').strip()
-        if re.fullmatch(r'\d+(?:\.\d+){0,3}', sdk):
+        if re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,3}', sdk):
             version['macosSdk'] = sdk
     if platform == 'windows':
         version.update(windows_toolchain(gn_out_dirs))
     for key in list(version):
         value = scrub.text(version[key])
-        if TOOL_VERSION.match(value) and not scrub.problems(value):
+        if TOOL_VERSION.fullmatch(value) and not scrub.problems(value):
             version[key] = value
         else:
             warn('ignoring the %s version: unexpected text' % key)
@@ -676,10 +682,10 @@ def check_builder_facts(facts):
         raise Error('builder facts: "version" must be an object')
     for k, v in version.items():
         if k not in BUILDER_VERSION_KEYS or not isinstance(v, str) or \
-                not TOOL_VERSION.match(v):
+                not TOOL_VERSION.fullmatch(v):
             raise Error('builder facts: bad version entry %r' % k)
     rev = facts.get('depotTools')
-    if rev is not None and (not isinstance(rev, str) or not GIT_OID.match(rev)):
+    if rev is not None and (not isinstance(rev, str) or not GIT_OID.fullmatch(rev)):
         raise Error('builder facts: depotTools must be a git commit')
     return {'version': dict(version), 'depotTools': rev}
 
@@ -705,7 +711,7 @@ def bundled_models(payload, repo, release):
     for path in found:
         name = os.path.basename(path)
         model_id = name[:-len('.gguf')] if name.endswith('.gguf') else name
-        if not os.path.isfile(path) or not MODEL_ID.match(model_id):
+        if not os.path.isfile(path) or not MODEL_ID.fullmatch(model_id):
             raise Error('unexpected file in molt_models: %r' % name)
         actual = sha256_file(path)
         entry = registry.get(model_id)
@@ -818,13 +824,13 @@ def _string(value, where, pattern=None, max_len=MAX_STRING):
     if not isinstance(value, str) or not value or len(value) > max_len or \
             any(ord(c) < 0x20 or ord(c) == 0x7f for c in value):
         raise Error('%s must be a short printable string' % where)
-    if pattern is not None and not pattern.match(value):
+    if pattern is not None and not pattern.fullmatch(value):
         raise Error('%s is malformed: %r' % (where, value[:80]))
     return value
 
 
 def _uri(value, where):
-    _string(value, where, re.compile(r'^(?:git\+https|https)://\S+$'), 512)
+    _string(value, where, URI, 512)
     return value
 
 
@@ -833,7 +839,7 @@ def _digest(value, where):
         raise Error('%s must be a digest set' % where)
     for alg, hexval in value.items():
         if alg not in DIGEST_ALGORITHMS or not isinstance(hexval, str) or \
-                not DIGEST_ALGORITHMS[alg].match(hexval):
+                not DIGEST_ALGORITHMS[alg].fullmatch(hexval):
             raise Error('%s: bad %r digest' % (where, alg))
     return value
 
@@ -885,7 +891,7 @@ def validate_statement(data, release=True):
         _string(s['digest']['sha256'], where + '.digest.sha256', SHA256)
         if s['name'] in names:
             raise Error('subject %s listed twice' % s['name'])
-        if s['name'] in NOT_BUILD_OUTPUTS or STATEMENT_NAME.match(s['name']):
+        if s['name'] in NOT_BUILD_OUTPUTS or STATEMENT_NAME.fullmatch(s['name']):
             raise Error('subject %s is not a build output' % s['name'])
         names.add(s['name'])
 
@@ -947,7 +953,7 @@ def validate_statement(data, release=True):
               ('builderDependencies',))
     _string(b['id'], 'runDetails.builder.id')
     if not b['id'].startswith(BUILDER_ID_PREFIX) or \
-            not LABEL.match(b['id'][len(BUILDER_ID_PREFIX):]):
+            not LABEL.fullmatch(b['id'][len(BUILDER_ID_PREFIX):]):
         raise Error('runDetails.builder.id is not a MoltBrowser builder')
     bv = b['version']
     if not isinstance(bv, dict):
@@ -982,8 +988,9 @@ def validate_statement(data, release=True):
                             'had uncommitted changes')
         chromium = by_name.get('chromium')
         if not chromium or 'gitCommit' not in chromium.get('digest', {}) or \
-                not re.match(r'^git\+%s@refs/tags/\d+\.\d+\.\d+\.\d+$'
-                             % re.escape(CHROMIUM_GIT), chromium.get('uri', '')):
+                not re.fullmatch(r'git\+%s@refs/tags/[0-9]+\.[0-9]+\.[0-9]+'
+                                 r'\.[0-9]+' % re.escape(CHROMIUM_GIT),
+                                 chromium.get('uri', '')):
             problems.append('Chromium is missing')
         for name, kinds in (('patches', ('gitTree', 'sha256')),
                             (ep['gnArgsFile'], ('gitBlob', 'sha256')),
@@ -1065,7 +1072,7 @@ def check_release(statements, assets, tag=None, expect_commit=None,
             if assets[name] != digest:
                 raise Error('%s does not match its signed provenance' % name)
     if require_all:
-        listed = {n for n in assets if STATEMENT_NAME.match(n)}
+        listed = {n for n in assets if STATEMENT_NAME.fullmatch(n)}
         if listed != set(seen):
             missing = sorted(listed - set(seen))
             extra = sorted(set(seen) - listed)
@@ -1073,7 +1080,7 @@ def check_release(statements, assets, tag=None, expect_commit=None,
                         + ('; unsigned: ' + ', '.join(missing) if missing else '')
                         + ('; not attached: ' + ', '.join(extra) if extra else ''))
         uncovered = sorted(n for n in assets if n not in covered and
-                           n not in NOT_BUILD_OUTPUTS and not STATEMENT_NAME.match(n))
+                           n not in NOT_BUILD_OUTPUTS and not STATEMENT_NAME.fullmatch(n))
         if uncovered:
             raise Error('no build provenance for: ' + ', '.join(uncovered))
     return facts
@@ -1295,7 +1302,7 @@ def cmd_generate(args):
     gn_file = gn_file.replace('\\', '/')
     if os.path.isabs(gn_file):
         gn_file = os.path.relpath(gn_file, repo).replace(os.sep, '/')
-    if not GN_ARGS_FILE.match(gn_file) or not os.path.isfile(
+    if not GN_ARGS_FILE.fullmatch(gn_file) or not os.path.isfile(
             os.path.join(repo, gn_file)):
         raise Error('GN args file %s is not a file under configs/' % gn_file)
     with open(os.path.join(repo, gn_file), encoding='utf-8', errors='replace') as f:
@@ -1340,7 +1347,7 @@ def cmd_generate(args):
         bdeps.append({'name': 'depot_tools', 'uri': DEPOT_TOOLS_GIT,
                       'digest': {'gitCommit': facts['depotTools']}})
     if args.container_image:
-        m = CONTAINER_IMAGE.match(args.container_image)
+        m = CONTAINER_IMAGE.fullmatch(args.container_image)
         if not m:
             raise Error('--container-image must be NAME@sha256:<image id>')
         bdeps.append({'name': 'container-image:' + m.group(1),
@@ -1350,9 +1357,9 @@ def cmd_generate(args):
     subjects = {}
     for path in args.assets:
         name = os.path.basename(path)
-        if not PLAIN_NAME.match(name):
+        if not PLAIN_NAME.fullmatch(name):
             raise Error('asset name %r must be a plain file name' % name)
-        if name in NOT_BUILD_OUTPUTS or STATEMENT_NAME.match(name):
+        if name in NOT_BUILD_OUTPUTS or STATEMENT_NAME.fullmatch(name):
             raise Error('%s is not a build output' % name)
         if name in subjects:
             raise Error('asset %s given twice' % name)
@@ -1408,7 +1415,7 @@ def verify_release_files(bundle_path, keys_b64, files, tag=None,
     # REQUIRE_ALL, check_release() reports one that isn't signed).
     for path in files:
         name = os.path.basename(path)
-        if not STATEMENT_NAME.match(name):
+        if not STATEMENT_NAME.fullmatch(name):
             continue
         if name not in by_name:
             if require_all:
@@ -1435,7 +1442,7 @@ def verify_release_files(bundle_path, keys_b64, files, tag=None,
             for name, digest in statement_facts(st)['subjects'].items():
                 subject_of[name] = digest
         for name, digest in assets.items():
-            if STATEMENT_NAME.match(name) or name in NOT_BUILD_OUTPUTS:
+            if STATEMENT_NAME.fullmatch(name) or name in NOT_BUILD_OUTPUTS:
                 continue
             if name not in subject_of:
                 raise Error('%s is not a subject of the signed provenance' % name)
@@ -1528,7 +1535,7 @@ def main(argv=None):
     s.set_defaults(fn=cmd_verify)
 
     args = p.parse_args(argv)
-    if getattr(args, 'expect_commit', None) and not GIT_OID.match(args.expect_commit):
+    if getattr(args, 'expect_commit', None) and not GIT_OID.fullmatch(args.expect_commit):
         p.error('--expect-commit must be a full commit id')
     try:
         args.fn(args)

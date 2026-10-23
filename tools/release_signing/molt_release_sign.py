@@ -72,8 +72,9 @@ KEYS_SOURCE = os.path.join(REPO_ROOT, 'src', 'chrome', 'browser', 'molt_ai',
 KEYS_BEGIN = '// MOLT_UPDATE_SIGNING_KEYS_BEGIN'
 KEYS_END = '// MOLT_UPDATE_SIGNING_KEYS_END'
 
-PLAIN_NAME = re.compile(r'^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$')
-VERSION = re.compile(r'^\d+(\.\d+)*$')
+# Matched with fullmatch(), in ASCII (as molt_provenance.py's patterns).
+PLAIN_NAME = re.compile(r'[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}', re.ASCII)
+VERSION = re.compile(r'[0-9]+(\.[0-9]+)*', re.ASCII)
 
 
 Error = prov.Error  # one error type for both tools
@@ -140,7 +141,7 @@ def validate_manifest(data):
     if m.get('product') != PRODUCT:
         raise Error('manifest is for a different product')
     version, tag = m.get('version'), m.get('tag')
-    if not isinstance(version, str) or not VERSION.match(version) \
+    if not isinstance(version, str) or not VERSION.fullmatch(version) \
             or not isinstance(tag, str) or not tag:
         raise Error('manifest version or tag is invalid')
     if (tag[1:] if tag[:1] in ('v', 'V') else tag) != version:
@@ -153,7 +154,7 @@ def validate_manifest(data):
         if not isinstance(a, dict):
             raise Error('manifest has a malformed asset entry')
         name, size, sha = a.get('name'), a.get('size'), a.get('sha256')
-        if not isinstance(name, str) or not PLAIN_NAME.match(name) \
+        if not isinstance(name, str) or not PLAIN_NAME.fullmatch(name) \
                 or not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha) \
                 or isinstance(size, bool) or not isinstance(size, int) \
                 or not 1 <= size <= 2 ** 53:
@@ -242,14 +243,14 @@ def cmd_add_key(args):
 def cmd_manifest(args):
     tag = args.tag
     version = tag[1:] if tag[:1] in ('v', 'V') else tag
-    if not VERSION.match(version):
+    if not VERSION.fullmatch(version):
         raise Error(f'tag {tag!r} is not a version like v0.3.0')
     assets = []
     for path in sorted(args.files, key=os.path.basename):
         name = os.path.basename(path)
         if name in NOT_MANIFEST_ASSETS:
             continue
-        if not PLAIN_NAME.match(name):
+        if not PLAIN_NAME.fullmatch(name):
             raise Error(f'asset name {name!r} must be a plain file name')
         size, sha = file_digest(path)
         assets.append({'name': name, 'size': size, 'sha256': sha})
@@ -272,7 +273,7 @@ def provenance_for_signing(m, assets_dir):
     the manifest lists, valid release statements for this version, and
     together covering every asset a build produced, with the same hashes."""
     names = sorted(a['name'] for a in m['assets']
-                   if prov.STATEMENT_NAME.match(a['name']))
+                   if prov.STATEMENT_NAME.fullmatch(a['name']))
     if not names:
         raise Error('the manifest lists no build provenance '
                     '(molt-provenance-<platform>-<arch>.json). Release builds '

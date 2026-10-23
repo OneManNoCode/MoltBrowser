@@ -17,7 +17,8 @@
 //     font's descent; 1x and 2x screens differed even with default
 //     settings. PinUniformTextRendering() makes MoltNet renderers lay out
 //     all text as upstream does for text-rendering: geometricPrecision
-//     (unhinted, subpixel positioning, linear metrics), so metrics depend on
+//     (unhinted, subpixel positioning, linear metrics), and anti-aliased
+//     even where the desktop turns anti-aliasing off, so metrics depend on
 //     the font file only (one hook in font_platform_data.cc). Windows and
 //     macOS measure unhinted already.
 //   * which emoji font Linux falls back to (fontconfig's first colour emoji

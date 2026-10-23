@@ -94,6 +94,20 @@ class WebAIBackend {
   // Answers asynchronously, never re-entrantly.
   virtual void GetDeviceFacts(DeviceCallback callback) = 0;
 
+  // The device facts for a call from a page of |site_key| (the top-level
+  // site within its profile, never empty). How long the answer takes may
+  // depend on that site's own earlier calls, never on another site's
+  // (RuntimeWebAIBackend keeps them per site, WEB_AI_APIS.md §8.1). By
+  // default GetDeviceFacts().
+  virtual void GetDeviceFactsForSite(const std::string& site_key,
+                                     DeviceCallback callback);
+
+  // The user's switch for these APIs ("web_ai_apis" in settings.json, which
+  // molt://ai-settings sets), as last read or set: what every call of an
+  // existing session is checked against (MaySessionServe()). Backends
+  // without the switch (test fakes) report it on.
+  virtual bool WebApisSwitchOn();
+
   // Loads the model pages use (PickWebModel(), preferring one that sees
   // images if |wants_images|) if none is loaded. Only called once the user
   // allowed the site.

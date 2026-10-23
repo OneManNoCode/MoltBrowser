@@ -43,6 +43,8 @@ CaptureFacts Allowed() {
   f.committed_origin = "https://shop.example";
   f.observed_origin = "https://shop.example";
   f.origin_allowed = true;
+  f.cross_origin_frames = 0;
+  f.frames_settled = true;
   return f;
 }
 
@@ -77,11 +79,39 @@ TEST(AgentVisionCaptureTest, EachConditionRefusesOnItsOwn) {
        CaptureDecision::kOriginChanged},
       {[](CaptureFacts& f) { f.origin_allowed = false; },
        CaptureDecision::kOriginNotAllowed},
+      {[](CaptureFacts& f) { f.cross_origin_frames = 1; },
+       CaptureDecision::kCrossOriginFrame},
+      {[](CaptureFacts& f) { f.frames_settled = false; },
+       CaptureDecision::kFramesChanging},
   };
   for (const Case& c : cases) {
     CaptureFacts f = Allowed();
     c.change(f);
     EXPECT_EQ(DecideCapture(f), c.expected) << CaptureDecisionName(c.expected);
+  }
+}
+
+// A mask covers only a frame's box, and the page decides how the frame is
+// painted: a frame of another origin anywhere in the page (the browser's
+// count) means no screenshot, wherever it is and whatever else holds; so
+// does a frame that navigated or went away just before or during the
+// capture.
+TEST(AgentVisionCaptureTest, FramesOfAnotherOriginMeanNoScreenshot) {
+  for (size_t frames : {size_t{1}, size_t{2}, size_t{1000}}) {
+    CaptureFacts f = Allowed();
+    f.cross_origin_frames = frames;
+    EXPECT_EQ(DecideCapture(f), CaptureDecision::kCrossOriginFrame) << frames;
+    f.in_moltnet = true;
+    EXPECT_EQ(DecideCapture(f), CaptureDecision::kCrossOriginFrame) << frames;
+  }
+  // The defaults refuse: facts nobody filled in never capture.
+  CaptureFacts unfilled = Allowed();
+  unfilled.frames_settled = CaptureFacts().frames_settled;
+  EXPECT_NE(DecideCapture(unfilled), CaptureDecision::kCapture);
+  // Every decision has a name for the logs.
+  for (CaptureDecision d :
+       {CaptureDecision::kCrossOriginFrame, CaptureDecision::kFramesChanging}) {
+    EXPECT_FALSE(CaptureDecisionName(d).empty());
   }
 }
 

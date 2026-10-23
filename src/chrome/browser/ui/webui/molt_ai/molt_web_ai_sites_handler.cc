@@ -52,6 +52,23 @@ std::string DisplayName(const std::string& site) {
       url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC));
 }
 
+// After settings.json was written (|ok|) with |enabled|, or not: pages see
+// the change on their next call instead of within 30 s, and their sessions
+// at once (switched off, they end). Done whether or not the settings page
+// is still open; then |reply| tells the page.
+void ApplySwitchWrite(bool enabled,
+                      base::OnceCallback<void(bool)> reply,
+                      bool ok) {
+  molt_ai::web_ai::RuntimeWebAIBackend* backend =
+      molt_ai::web_ai::RuntimeWebAIBackend::GetInstance();
+  if (ok) {
+    backend->SetWebApisSwitch(enabled);
+  } else {
+    backend->InvalidateDeviceFacts();
+  }
+  std::move(reply).Run(ok);
+}
+
 }  // namespace
 
 MoltWebAISitesHandler::MoltWebAISitesHandler() = default;
@@ -202,14 +219,13 @@ void MoltWebAISitesHandler::HandleSetEnabled(const base::ListValue& args) {
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, kFileTraits,
       base::BindOnce(&molt_ai::web_ai::WriteWebAIApisSwitch, *enabled),
-      base::BindOnce(&MoltWebAISitesHandler::OnSwitchWritten,
-                     weak_factory_.GetWeakPtr(), std::move(callback_id)));
+      base::BindOnce(
+          &ApplySwitchWrite, *enabled,
+          base::BindOnce(&MoltWebAISitesHandler::OnSwitchWritten,
+                         weak_factory_.GetWeakPtr(), std::move(callback_id))));
 }
 
-void MoltWebAISitesHandler::OnSwitchWritten(std::string callback_id,
-                                            bool ok) {
-  // Pages see the change on their next call instead of within 30 s.
-  molt_ai::web_ai::RuntimeWebAIBackend::GetInstance()->InvalidateDeviceFacts();
+void MoltWebAISitesHandler::OnSwitchWritten(std::string callback_id, bool ok) {
   if (!IsJavascriptAllowed()) {
     return;
   }

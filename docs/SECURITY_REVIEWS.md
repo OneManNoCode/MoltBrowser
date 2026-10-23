@@ -89,3 +89,20 @@ the libFuzzer targets of the code touched.
   action through the prototypes' accessors (site tools, the click probe).
 - `molt_provenance.py verify` no longer reports success for files it
   doesn't cover, and compares a given statement file with its signed copy.
+
+**Fixed since:** the remaining findings, in the follow-up to this review:
+
+- The web agent takes no screenshot of a page with a frame of another
+  origin anywhere in it (the browser counts them), nor while a frame of the
+  tab has just navigated or gone away.
+- The built-in AI APIs: how long `availability()` and `create()` take no
+  longer depends on other sites' calls (device facts kept per site);
+  sessions check the switches, the policies and the site's answer on every
+  call and end when one turns them off; the consent bar ignores repeated
+  rapid presses, as Chromium's dialogs do.
+- MoltNet's uniform text rendering on Linux applies whatever the desktop's
+  anti-aliasing setting.
+- The release tools check names, versions and digests as whole ASCII
+  values.
+- The address bar's `@ai` and `@memory` shortcuts also match their
+  full-width forms, as an East Asian input method types them (PR #47).

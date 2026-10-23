@@ -124,6 +124,41 @@ TEST(WebAIPolicyTest, AllowedWithoutAModelIsDownloadable) {
   EXPECT_EQ(DecideCreateAction(in), CreateAction::kNeedsModel);
 }
 
+// A session serves only while everything create() required that can be
+// turned off afterwards is still on.
+TEST(WebAIPolicyTest, ASessionServesOnlyWhileTheAPIsStayOn) {
+  const ContextFacts on = Ready().context;
+  EXPECT_TRUE(MaySessionServe(on, true, SiteConsent::kAllowed));
+  EXPECT_FALSE(
+      MaySessionServe(on, /*web_apis_enabled=*/false, SiteConsent::kAllowed));
+  EXPECT_FALSE(MaySessionServe(on, true, SiteConsent::kAsk));
+  EXPECT_FALSE(MaySessionServe(on, true, SiteConsent::kBlocked));
+  for (int field = 0; field < 6; ++field) {
+    ContextFacts off = on;
+    switch (field) {
+      case 0:
+        off.feature_enabled = false;
+        break;
+      case 1:
+        off.enterprise_allowed = false;
+        break;
+      case 2:
+        off.user_enabled = false;
+        break;
+      case 3:
+        off.moltnet = true;
+        break;
+      case 4:
+        off.is_document = false;
+        break;
+      case 5:
+        off.http_top_level = false;
+        break;
+    }
+    EXPECT_FALSE(MaySessionServe(off, true, SiteConsent::kAllowed)) << field;
+  }
+}
+
 TEST(WebAIPolicyTest, AnInstalledModelCountsEvenIfNoCatalogueModelFits) {
   AvailabilityInput in = Ready();
   in.device.some_model_fits = false;
@@ -178,6 +213,101 @@ TEST(WebAIPolicyTest, ExhaustiveInvariants) {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Device facts per site
+// ---------------------------------------------------------------------------
+
+constexpr int64_t kSecondUs = 1000000;
+constexpr int64_t kLifetimeUs = 30 * kSecondUs;
+using Kind = SiteDeviceFacts::Lookup::Kind;
+
+DeviceFacts SomeFacts(bool web_apis_enabled = true) {
+  DeviceFacts facts;
+  facts.inference_supported = true;
+  facts.model_installed = true;
+  facts.some_model_fits = true;
+  facts.web_apis_enabled = web_apis_enabled;
+  return facts;
+}
+
+// A site never waits for, or is answered from, a read another site
+// started: its first call reads for itself, even while another site's read
+// is in flight or just ended.
+TEST(SiteDeviceFactsTest, ASiteNeverUsesAnotherSitesRead) {
+  SiteDeviceFacts cache(kLifetimeUs);
+  const SiteDeviceFacts::Lookup a = cache.Find("a", 0);
+  EXPECT_EQ(a.kind, Kind::kRead);
+  const SiteDeviceFacts::Lookup b = cache.Find("b", 1);
+  EXPECT_EQ(b.kind, Kind::kRead);
+  EXPECT_NE(b.ticket, a.ticket);
+  // The site's own read in flight is joined.
+  const SiteDeviceFacts::Lookup a_again = cache.Find("a", 2);
+  EXPECT_EQ(a_again.kind, Kind::kJoin);
+  EXPECT_EQ(a_again.ticket, a.ticket);
+
+  EXPECT_TRUE(cache.Finish("a", a.ticket, SomeFacts(), 3));
+  EXPECT_EQ(cache.Find("a", 4).kind, Kind::kCached);
+  // a's read ended; b still waits for its own.
+  const SiteDeviceFacts::Lookup b_again = cache.Find("b", 4);
+  EXPECT_EQ(b_again.kind, Kind::kJoin);
+  EXPECT_EQ(b_again.ticket, b.ticket);
+  // A third site, right after a's read: a read of its own.
+  EXPECT_EQ(cache.Find("c", 5).kind, Kind::kRead);
+}
+
+// A site's facts age by its own reads only: another site reading later
+// doesn't keep them fresh, and they are reused for exactly the lifetime.
+TEST(SiteDeviceFactsTest, FactsAgeByTheSitesOwnReads) {
+  SiteDeviceFacts cache(kLifetimeUs);
+  const uint64_t a = cache.Find("a", 0).ticket;
+  ASSERT_TRUE(cache.Finish("a", a, SomeFacts(), 0));
+  const uint64_t b = cache.Find("b", 20 * kSecondUs).ticket;
+  ASSERT_TRUE(cache.Finish("b", b, SomeFacts(), 20 * kSecondUs));
+
+  const SiteDeviceFacts::Lookup cached = cache.Find("a", kLifetimeUs - 1);
+  EXPECT_EQ(cached.kind, Kind::kCached);
+  EXPECT_TRUE(cached.facts.web_apis_enabled);
+  EXPECT_EQ(cache.Find("a", kLifetimeUs).kind, Kind::kRead);
+  EXPECT_EQ(cache.Find("b", kLifetimeUs).kind, Kind::kCached);
+}
+
+// After Clear() every site reads again, and a read that started before it
+// answers its waiters but isn't kept.
+TEST(SiteDeviceFactsTest, ClearMakesEverySiteReadAgain) {
+  SiteDeviceFacts cache(kLifetimeUs);
+  const uint64_t a = cache.Find("a", 0).ticket;
+  ASSERT_TRUE(cache.Finish("a", a, SomeFacts(), 0));
+  const uint64_t b = cache.Find("b", 1).ticket;
+  cache.Clear();
+  EXPECT_FALSE(cache.Finish("b", b, SomeFacts(), 2));
+  EXPECT_EQ(cache.Find("a", 3).kind, Kind::kRead);
+  const SiteDeviceFacts::Lookup b_after = cache.Find("b", 3);
+  EXPECT_EQ(b_after.kind, Kind::kRead);
+  EXPECT_NE(b_after.ticket, b);
+  // Unknown and stale tickets change nothing.
+  EXPECT_FALSE(cache.Finish("b", b, SomeFacts(false), 4));
+  EXPECT_FALSE(cache.Finish("b", 0, SomeFacts(false), 4));
+  EXPECT_FALSE(cache.Finish("zz", b_after.ticket, SomeFacts(false), 4));
+  EXPECT_TRUE(cache.Finish("b", b_after.ticket, SomeFacts(), 4));
+  EXPECT_TRUE(cache.Find("b", 5).facts.web_apis_enabled);
+}
+
+// Only the sites active within the lifetime are kept.
+TEST(SiteDeviceFactsTest, OldSitesAreForgotten) {
+  SiteDeviceFacts cache(kLifetimeUs);
+  for (int i = 0; i < 100; ++i) {
+    const std::string site(static_cast<size_t>(i) + 1, 's');
+    const uint64_t ticket = cache.Find(site, 0).ticket;
+    ASSERT_TRUE(cache.Finish(site, ticket, SomeFacts(), 0));
+  }
+  // One read still in flight.
+  const uint64_t pending = cache.Find("slow", 0).ticket;
+  EXPECT_EQ(cache.site_count(), 101u);
+  EXPECT_EQ(cache.Find("new", kLifetimeUs).kind, Kind::kRead);
+  EXPECT_EQ(cache.site_count(), 2u);
+  EXPECT_TRUE(cache.Finish("slow", pending, SomeFacts(), kLifetimeUs));
 }
 
 // ---------------------------------------------------------------------------

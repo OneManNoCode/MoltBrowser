@@ -78,6 +78,13 @@ bool IsContextEligible(const ContextFacts& c) {
          !c.moltnet && c.is_document && c.http_top_level;
 }
 
+bool MaySessionServe(const ContextFacts& context,
+                     bool web_apis_enabled,
+                     SiteConsent consent) {
+  return IsContextEligible(context) && web_apis_enabled &&
+         consent == SiteConsent::kAllowed;
+}
+
 AvailabilityDecision DecideAvailability(const AvailabilityInput& input) {
   const ContextFacts& c = input.context;
   const DeviceFacts& d = input.device;
@@ -114,6 +121,64 @@ AvailabilityDecision DecideAvailability(const AvailabilityInput& input) {
     return {Availability::kDownloadable, UnavailableReason::kNone};
   }
   return {Availability::kAvailable, UnavailableReason::kNone};
+}
+
+SiteDeviceFacts::SiteDeviceFacts(int64_t lifetime_us)
+    : lifetime_us_(lifetime_us) {}
+
+SiteDeviceFacts::~SiteDeviceFacts() = default;
+
+SiteDeviceFacts::Lookup SiteDeviceFacts::Find(const std::string& site,
+                                              int64_t now_us) {
+  Prune(now_us);
+  Entry& entry = sites_[site];
+  Lookup lookup;
+  if (entry.pending != 0) {
+    lookup.kind = Lookup::Kind::kJoin;
+    lookup.ticket = entry.pending;
+    return lookup;
+  }
+  if (entry.facts && now_us - entry.read_at_us < lifetime_us_) {
+    lookup.kind = Lookup::Kind::kCached;
+    lookup.facts = *entry.facts;
+    return lookup;
+  }
+  entry.pending = next_ticket_++;
+  lookup.kind = Lookup::Kind::kRead;
+  lookup.ticket = entry.pending;
+  return lookup;
+}
+
+bool SiteDeviceFacts::Finish(const std::string& site,
+                             uint64_t ticket,
+                             const DeviceFacts& facts,
+                             int64_t now_us) {
+  auto it = sites_.find(site);
+  if (ticket == 0 || it == sites_.end() || it->second.pending != ticket) {
+    return false;
+  }
+  it->second.pending = 0;
+  it->second.facts = facts;
+  it->second.read_at_us = now_us;
+  return true;
+}
+
+void SiteDeviceFacts::Clear() {
+  sites_.clear();
+}
+
+void SiteDeviceFacts::Prune(int64_t now_us) {
+  for (auto it = sites_.begin(); it != sites_.end();) {
+    const Entry& entry = it->second;
+    const bool in_use =
+        entry.pending != 0 ||
+        (entry.facts && now_us - entry.read_at_us < lifetime_us_);
+    if (in_use) {
+      ++it;
+    } else {
+      it = sites_.erase(it);
+    }
+  }
 }
 
 CreateAction DecideCreateAction(const AvailabilityInput& input) {
