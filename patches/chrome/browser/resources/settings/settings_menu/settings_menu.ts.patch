@@ -1,0 +1,22 @@
+MoltBrowser patch for chrome/browser/resources/settings/settings_menu/settings_menu.ts
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/resources/settings/settings_menu/settings_menu.ts by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.ts b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+index 8af941e34fc7ff037a8335bb4104feef46c93759..b7b36c8ab8046505cc37f934e908556e0de6bdad 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.ts
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+@@ -136,7 +136,10 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+    * accessibility purposes, taps are handled separately.
+    */
+   private onLinkClick_(event: Event) {
+-    if ((event.target as HTMLElement).matches('a:not(#extensionsLink)')) {
++    // MoltBrowser: #importBookmarksLink opens molt://ai-settings in a new tab,
++    // like #extensionsLink (settings_menu.html).
++    if ((event.target as HTMLElement)
++            .matches('a:not(#extensionsLink):not(#importBookmarksLink)')) {
+       event.preventDefault();
+     }
+   }

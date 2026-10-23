@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index 0d30190f42bf2e259481422bd0445be5ebc1f6de..e5727ac3cf68e5e070e4d09ab02d4c7b8be7e986 100644
+index 0d30190f42bf2e259481422bd0445be5ebc1f6de..0312723041ac232df0949e2a928c0e7451782a13 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
 @@ -83,18 +83,17 @@
@@ -46,7 +46,7 @@ index 0d30190f42bf2e259481422bd0445be5ebc1f6de..e5727ac3cf68e5e070e4d09ab02d4c7b
 +            href="molt://ai-settings/?section=import" target="_blank"
 +            title="Import bookmarks &amp; passwords from another browser">
 +          <cr-icon icon="cr:file-download"></cr-icon>
-+          <span>Import bookmarks</span>
++          <span class="menu-label">Import bookmarks</span>
 +          <div class="cr-icon icon-external"></div>
 +          <cr-ripple></cr-ripple>
 +        </a>

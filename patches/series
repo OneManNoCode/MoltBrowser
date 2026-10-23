@@ -81,6 +81,7 @@ chrome/browser/resources/settings/route.ts.patch
 chrome/browser/resources/settings/settings_main/settings_main.html.patch
 chrome/browser/resources/settings/settings_main/settings_main.ts.patch
 chrome/browser/resources/settings/settings_menu/settings_menu.html.patch
+chrome/browser/resources/settings/settings_menu/settings_menu.ts.patch
 chrome/browser/resources/settings/settings_ui/settings_ui.html.patch
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list_header.html.ts.patch
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list_header.ts.patch
