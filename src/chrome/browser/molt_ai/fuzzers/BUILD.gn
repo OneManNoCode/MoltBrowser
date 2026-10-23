@@ -225,6 +225,22 @@ fuzzer_test("molt_automation_script_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# A web agent run saved as a draft workflow (the model's typed text, URLs
+# and queries; the page's labels and selectors; the user's goal).
+fuzzer_test("molt_agent_run_draft_fuzzer") {
+  sources = [ "molt_agent_run_draft_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/automation:agent_run_draft",
+    "//chrome/browser/molt_ai/automation:automation_policy",
+    "//chrome/browser/molt_ai/security:agent_safety",
+    "//url",
+  ]
+  dict = "dicts/agent_run_draft.dict"
+  seed_corpus = "corpus/molt_agent_run_draft_fuzzer"
+  libfuzzer_options = [ "max_len=16384" ]
+}
+
 fuzzer_test("molt_automation_ai_steps_fuzzer") {
   sources = [ "molt_automation_ai_steps_fuzzer.cc" ]
   deps = [
@@ -291,6 +307,7 @@ group("fuzzers") {
   deps = [
     ":molt_agent_actions_fuzzer",
     ":molt_agent_plan_fuzzer",
+    ":molt_agent_run_draft_fuzzer",
     ":molt_agent_safety_fuzzer",
     ":molt_agent_tools_fuzzer",
     ":molt_agent_vision_fuzzer",
