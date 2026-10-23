@@ -1,0 +1,36 @@
+MoltBrowser patch for components/translate/core/browser/translate_language_list.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/components/translate/core/browser/translate_language_list.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/translate/core/browser/translate_language_list.cc b/components/translate/core/browser/translate_language_list.cc
+index c6c08437feef23961b3ac942d4d0af62035b5abd..b5e260d249893d40b74ae8f841796be188248b2d 100644
+--- a/components/translate/core/browser/translate_language_list.cc
++++ b/components/translate/core/browser/translate_language_list.cc
+@@ -449,6 +449,25 @@ void TranslateLanguageList::SetResourceRequestsAllowed(bool allowed) {
+   }
+ }
+ 
++// MoltBrowser: the on-device translator's languages, and no fetcher, so the
++// list is never requested from Google (docs/design/PAGE_TRANSLATION.md).
++void TranslateLanguageList::SetLocalLanguages(
++    const std::vector<std::string>& languages) {
++  std::vector<LanguageTag> tags;
++  for (const std::string& language : languages) {
++    if (std::optional<LanguageTag> tag =
++            LanguageTagConverter::GetInstance().FromString(language);
++        tag) {
++      tags.emplace_back(*tag);
++    }
++  }
++  SortAndUnique(tags);
++  supported_languages_ =
++      base::flat_set<LanguageTag>(base::sorted_unique, std::move(tags));
++  language_list_fetcher_.reset();
++  request_pending_ = false;
++}
++
+ base::CallbackListSubscription TranslateLanguageList::RegisterEventCallback(
+     const EventCallback& callback) {
+   return callback_list_.Add(callback);

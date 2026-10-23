@@ -1,0 +1,113 @@
+MoltBrowser patch for components/translate/core/browser/translate_manager.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/components/translate/core/browser/translate_manager.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/components/translate/core/browser/translate_manager.cc b/components/translate/core/browser/translate_manager.cc
+index 0b6955177ae25341c42a182c0efd9af8896ab4c0..f8d89b81bab5752158db1fa82d3c88d82f8c43fd 100644
+--- a/components/translate/core/browser/translate_manager.cc
++++ b/components/translate/core/browser/translate_manager.cc
+@@ -162,8 +162,11 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {
+ 
+ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+   bool can_translate = true;
++  // MoltBrowser: on the device, translating needs neither a network nor a
++  // Google API key.
++  const bool on_device = translate_driver_->TranslatesOnDevice();
+ 
+-  if (net::NetworkChangeNotifier::IsOffline()) {
++  if (!on_device && net::NetworkChangeNotifier::IsOffline()) {
+     if (!menu_logging) {
+       return false;
+     }
+@@ -173,7 +176,7 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+     can_translate = false;
+   }
+ 
+-  if (!ignore_missing_key_for_testing_ &&
++  if (!on_device && !ignore_missing_key_for_testing_ &&
+       !::google_apis::HasAPIKeyConfigured()) {
+     if (!menu_logging) {
+       return false;
+@@ -258,6 +261,11 @@ bool TranslateManager::CanManuallyTranslate(bool menu_logging) {
+ }
+ 
+ bool TranslateManager::CanPartiallyTranslateTargetLanguage() {
++  // MoltBrowser: partial translate sends the selection to Google; on the
++  // device there is full-page translation only.
++  if (translate_driver_->TranslatesOnDevice()) {
++    return false;
++  }
+   std::unique_ptr<TranslatePrefs> translate_prefs(
+       translate_client_->GetTranslatePrefs());
+   const std::string& source_language = language_state_.source_language();
+@@ -399,6 +407,13 @@ void TranslateManager::TranslatePage(std::string_view original_source_lang,
+ 
+   GetActiveTranslateMetricsLogger()->LogTranslationStarted(translation_type);
+ 
++  // MoltBrowser: the driver translates on the device; Google's script is
++  // never fetched.
++  if (translate_driver_->TranslatesOnDevice()) {
++    DoTranslatePage(std::string_view(), source_lang, target_lang);
++    return;
++  }
++
+   TranslateScript* script = TranslateDownloadManager::GetInstance()->script();
+   DCHECK(script != nullptr);
+ 
+@@ -820,6 +835,14 @@ const TranslateTriggerDecision TranslateManager::ComputePossibleOutcomes(
+   FilterForHrefTranslate(&decision, translate_prefs, page_language_code);
+   FilterForPredefinedTarget(&decision, translate_prefs, page_language_code);
+ 
++  // MoltBrowser: on the device, a page translates by itself only for
++  // "always translate" (FilterAutoTranslate()). An hrefTranslate link or a
++  // predefined target offers the UI instead.
++  if (translate_driver_->TranslatesOnDevice()) {
++    decision.PreventAutoHrefTranslate();
++    decision.PreventPredefinedLanguageAutoTranslate();
++  }
++
+   return decision;
+ }
+ 
+@@ -857,15 +880,25 @@ void TranslateManager::FilterIsTranslatePossible(
+         TriggerDecision::kDisabledDoesntNeedTranslation);
+   }
+ 
++  // MoltBrowser: on the device, translating needs neither a network nor a
++  // Google API key.
++  const bool on_device = translate_driver_->TranslatesOnDevice();
++
++  // MoltBrowser: page translation is off in this tab (MoltNet windows):
++  // nothing is offered or translated by itself.
++  if (translate_driver_->TranslationOff()) {
++    decision->PreventAllTriggering();
++  }
++
+   // Also, skip if the connection is currently offline - initiation doesn't make
+   // sense there, either.
+-  if (net::NetworkChangeNotifier::IsOffline()) {
++  if (!on_device && net::NetworkChangeNotifier::IsOffline()) {
+     decision->PreventAllTriggering();
+     GetActiveTranslateMetricsLogger()->LogTriggerDecision(
+         TriggerDecision::kDisabledOffline);
+   }
+ 
+-  if (!ignore_missing_key_for_testing_ &&
++  if (!on_device && !ignore_missing_key_for_testing_ &&
+       !::google_apis::HasAPIKeyConfigured()) {
+     // Without an API key, translate won't work, so don't offer to translate in
+     // the first place. Leave kOfferTranslateEnabled on, though, because that
+@@ -954,7 +987,10 @@ void TranslateManager::FilterAutoTranslate(
+         metrics::TranslateEventProto::AUTO_TRANSLATION_BY_PREF);
+     GetActiveTranslateMetricsLogger()->LogTriggerDecision(
+         TriggerDecision::kAutomaticTranslationByPref);
+-  } else if (!link_auto_translate_target.empty()) {
++  } else if (!link_auto_translate_target.empty() &&
++             // MoltBrowser: not on the device, where only "always
++             // translate" translates by itself; the UI is offered instead.
++             !translate_driver_->TranslatesOnDevice()) {
+     // This page was navigated through a click from a translated page.
+     decision->auto_translate_target = link_auto_translate_target;
+     decision->ranker_events.push_back(
