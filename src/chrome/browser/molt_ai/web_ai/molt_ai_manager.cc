@@ -744,9 +744,13 @@ void MoltAIManager::CheckAvailability(WebAIApi api,
     std::move(callback).Run(DecideAvailability(input));
     return;
   }
-  backend_->GetDeviceFacts(base::BindOnce(
-      &MoltAIManager::OnAvailabilityDeviceFacts, weak_factory_.GetWeakPtr(),
-      api, options_supported, languages_supported, std::move(callback)));
+  // The site's own device facts: how long this takes doesn't depend on
+  // other sites' calls.
+  backend_->GetDeviceFactsForSite(
+      site_key(),
+      base::BindOnce(&MoltAIManager::OnAvailabilityDeviceFacts,
+                     weak_factory_.GetWeakPtr(), api, options_supported,
+                     languages_supported, std::move(callback)));
 }
 
 void MoltAIManager::OnAvailabilityDeviceFacts(WebAIApi api,
@@ -1081,8 +1085,9 @@ void MoltAIManager::StartCreate(std::unique_ptr<CreateRequest> request) {
   }
   const uint64_t id = next_create_id_++;
   creates_[id] = std::move(request);
-  backend_->GetDeviceFacts(base::BindOnce(&MoltAIManager::OnCreateDeviceFacts,
-                                          weak_factory_.GetWeakPtr(), id));
+  backend_->GetDeviceFactsForSite(
+      site_key(), base::BindOnce(&MoltAIManager::OnCreateDeviceFacts,
+                                 weak_factory_.GetWeakPtr(), id));
 }
 
 MoltAIManager::CreateRequest* MoltAIManager::FindCreate(uint64_t id) {

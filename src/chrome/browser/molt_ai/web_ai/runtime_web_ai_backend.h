@@ -49,7 +49,7 @@ class RuntimeWebAIBackend : public WebAIBackend {
   // after this long.
   static constexpr base::TimeDelta kGenerationDeadline = base::Minutes(5);
   // Device facts are re-read (a disk check of the model files and
-  // settings.json) at most this often.
+  // settings.json) at most this often for each site.
   static constexpr base::TimeDelta kDeviceFactsLifetime = base::Seconds(30);
 
   // Process-wide, like BrowserAIRuntime.
@@ -59,7 +59,11 @@ class RuntimeWebAIBackend : public WebAIBackend {
   RuntimeWebAIBackend& operator=(const RuntimeWebAIBackend&) = delete;
 
   // WebAIBackend:
+  // The browser's own callers (page translation) have an entry of their
+  // own, apart from every site's.
   void GetDeviceFacts(DeviceCallback callback) override;
+  void GetDeviceFactsForSite(const std::string& site_key,
+                             DeviceCallback callback) override;
   bool WebApisSwitchOn() override;
   void PrepareModel(bool wants_images, PrepareCallback callback) override;
   uint64_t Generate(GenerationJob job,
@@ -79,8 +83,8 @@ class RuntimeWebAIBackend : public WebAIBackend {
   void SetWebApisSwitch(bool enabled);
 
   // settings.json may have changed (molt://ai-settings couldn't write it):
-  // the next request reads the device facts again instead of using the
-  // cached ones.
+  // every site's next request reads the device facts again instead of
+  // using its cached ones.
   void InvalidateDeviceFacts();
 
   // Runs |on_change| when the "web_ai_apis" switch changes (set from
@@ -103,7 +107,9 @@ class RuntimeWebAIBackend : public WebAIBackend {
   // The runtime, initialized on first use (as the chat does).
   BrowserAIRuntime& runtime();
 
-  void OnDeviceFacts(DeviceFacts facts);
+  void OnDeviceFacts(const std::string& site_key,
+                     uint64_t ticket,
+                     DeviceFacts facts);
   // Sets the switch's value; tells the observers if it changed.
   void UpdateWebApisSwitch(bool enabled);
   void OnModelPrepared(PrepareResult result);
@@ -130,16 +136,17 @@ class RuntimeWebAIBackend : public WebAIBackend {
   std::map<uint64_t, std::unique_ptr<Job>> jobs_;
   uint64_t next_id_ = 1;
 
-  std::optional<DeviceFacts> device_facts_;
-  base::TimeTicks device_facts_time_;
-  bool device_facts_pending_ = false;
-  // The read in flight started before InvalidateDeviceFacts(): answer its
-  // waiters but don't cache it.
-  bool discard_pending_facts_ = false;
-  std::vector<DeviceCallback> device_waiters_;
+  // Each site's device facts (and the browser's own, under ""), so that
+  // one site's calls never make another's faster or slower.
+  SiteDeviceFacts site_facts_{kDeviceFactsLifetime.InMicroseconds()};
+  // The calls waiting for each read in flight, by ticket.
+  std::map<uint64_t, std::vector<DeviceCallback>> device_waiters_;
 
-  // The "web_ai_apis" switch, as last read or set (on until read).
+  // The "web_ai_apis" switch, as last read or set (on until read), and the
+  // read it was last taken from: an older read finishing later doesn't
+  // overwrite it.
   bool web_apis_switch_ = true;
+  uint64_t web_apis_switch_ticket_ = 0;
   base::RepeatingClosureList web_apis_switch_observers_;
 
   bool prepare_pending_ = false;

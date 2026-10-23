@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -157,6 +158,69 @@ enum class CreateAction {
 };
 
 CreateAction DecideCreateAction(const AvailabilityInput& input);
+
+// ---------------------------------------------------------------------------
+// Device facts per site
+// ---------------------------------------------------------------------------
+
+// The device facts each site was last answered with (WEB_AI_APIS.md §8.1).
+// A site's availability() and create() wait for a read of the device only
+// when that site's own facts are missing or at least |lifetime_us| old, and
+// then for a read of its own, never one another site started: how long they
+// take depends on the site's own calls, not on whether other sites used the
+// APIs. Times are microseconds on a monotonic clock. Not thread-safe.
+class SiteDeviceFacts {
+ public:
+  struct Lookup {
+    enum class Kind {
+      // |facts| are the site's: answer with them now.
+      kCached,
+      // The site's read |ticket| is in flight: wait for it.
+      kJoin,
+      // Start read |ticket| for the site and wait for it.
+      kRead,
+    };
+    Kind kind = Kind::kRead;
+    DeviceFacts facts;
+    uint64_t ticket = 0;
+  };
+
+  explicit SiteDeviceFacts(int64_t lifetime_us);
+  ~SiteDeviceFacts();
+  SiteDeviceFacts(const SiteDeviceFacts&) = delete;
+  SiteDeviceFacts& operator=(const SiteDeviceFacts&) = delete;
+
+  // A call from |site| at |now_us|. Tickets are unique across sites.
+  Lookup Find(const std::string& site, int64_t now_us);
+  // Read |ticket| of |site| ended at |now_us| with |facts|. True if they are
+  // now the site's; false if Clear() ran since the read started (its
+  // waiters still get them, and the site's next call reads again).
+  bool Finish(const std::string& site,
+              uint64_t ticket,
+              const DeviceFacts& facts,
+              int64_t now_us);
+  // Every site reads again (settings.json changed).
+  void Clear();
+
+  // Sites with facts still in use or a read in flight.
+  size_t site_count() const { return sites_.size(); }
+
+ private:
+  struct Entry {
+    std::optional<DeviceFacts> facts;
+    int64_t read_at_us = 0;
+    // The read in flight, 0 if none.
+    uint64_t pending = 0;
+  };
+
+  // Forgets the sites whose facts no call would use (too old, no read in
+  // flight), so the map holds only the sites active within the lifetime.
+  void Prune(int64_t now_us);
+
+  const int64_t lifetime_us_;
+  std::map<std::string, Entry> sites_;
+  uint64_t next_ticket_ = 1;
+};
 
 // ---------------------------------------------------------------------------
 // Sizes

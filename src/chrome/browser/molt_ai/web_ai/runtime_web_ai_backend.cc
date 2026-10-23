@@ -105,6 +105,11 @@ std::vector<ModelCandidate> Candidates(const BrowserAIRuntime& runtime) {
   return out;
 }
 
+// Now, for SiteDeviceFacts.
+int64_t NowMicroseconds() {
+  return (base::TimeTicks::Now() - base::TimeTicks()).InMicroseconds();
+}
+
 // Loads the model pages use if none is loaded (one that sees images, if
 // |wants_images| and one is downloaded). Worker thread (blocks while the
 // model loads).
@@ -171,23 +176,34 @@ BrowserAIRuntime& RuntimeWebAIBackend::runtime() {
 // ---- Device facts ----
 
 void RuntimeWebAIBackend::GetDeviceFacts(DeviceCallback callback) {
-  if (device_facts_ &&
-      base::TimeTicks::Now() - device_facts_time_ < kDeviceFactsLifetime) {
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(std::move(callback), *device_facts_));
-    return;
+  // Site keys are never empty.
+  GetDeviceFactsForSite(std::string(), std::move(callback));
+}
+
+void RuntimeWebAIBackend::GetDeviceFactsForSite(const std::string& site_key,
+                                                DeviceCallback callback) {
+  // Per site (WEB_AI_APIS.md §8.1): a site is answered from its own facts,
+  // or waits for a read of its own, never for or from another site's.
+  const SiteDeviceFacts::Lookup lookup =
+      site_facts_.Find(site_key, NowMicroseconds());
+  switch (lookup.kind) {
+    case SiteDeviceFacts::Lookup::Kind::kCached:
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, base::BindOnce(std::move(callback), lookup.facts));
+      return;
+    case SiteDeviceFacts::Lookup::Kind::kJoin:
+      device_waiters_[lookup.ticket].push_back(std::move(callback));
+      return;
+    case SiteDeviceFacts::Lookup::Kind::kRead:
+      break;
   }
-  device_waiters_.push_back(std::move(callback));
-  if (device_facts_pending_) {
-    return;
-  }
-  device_facts_pending_ = true;
+  device_waiters_[lookup.ticket].push_back(std::move(callback));
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, kWorkerTraits,
       base::BindOnce(&RuntimeWebAIBackend::ReadDeviceFacts,
                      base::Unretained(&runtime())),
       base::BindOnce(&RuntimeWebAIBackend::OnDeviceFacts,
-                     weak_factory_.GetWeakPtr()));
+                     weak_factory_.GetWeakPtr(), site_key, lookup.ticket));
 }
 
 // static
@@ -214,8 +230,8 @@ void RuntimeWebAIBackend::SetWebApisSwitch(bool enabled) {
 }
 
 void RuntimeWebAIBackend::InvalidateDeviceFacts() {
-  device_facts_.reset();
-  discard_pending_facts_ = device_facts_pending_;
+  // Reads in flight still answer their waiters, but aren't kept.
+  site_facts_.Clear();
 }
 
 base::CallbackListSubscription RuntimeWebAIBackend::ObserveWebApisSwitch(
@@ -231,19 +247,22 @@ void RuntimeWebAIBackend::UpdateWebApisSwitch(bool enabled) {
   web_apis_switch_observers_.Notify();
 }
 
-void RuntimeWebAIBackend::OnDeviceFacts(DeviceFacts facts) {
-  device_facts_pending_ = false;
-  if (discard_pending_facts_) {
-    // Read before the switch was set: neither cached nor taken as the
-    // switch's value.
-    discard_pending_facts_ = false;
-  } else {
-    device_facts_ = facts;
-    device_facts_time_ = base::TimeTicks::Now();
+void RuntimeWebAIBackend::OnDeviceFacts(const std::string& site_key,
+                                        uint64_t ticket,
+                                        DeviceFacts facts) {
+  // A read that started before the switch was set or the facts were
+  // invalidated is neither kept nor taken as the switch's value.
+  if (site_facts_.Finish(site_key, ticket, facts, NowMicroseconds()) &&
+      ticket > web_apis_switch_ticket_) {
+    web_apis_switch_ticket_ = ticket;
     UpdateWebApisSwitch(facts.web_apis_enabled);
   }
   std::vector<DeviceCallback> waiters;
-  waiters.swap(device_waiters_);
+  auto it = device_waiters_.find(ticket);
+  if (it != device_waiters_.end()) {
+    waiters.swap(it->second);
+    device_waiters_.erase(it);
+  }
   for (DeviceCallback& callback : waiters) {
     std::move(callback).Run(facts);
   }
@@ -281,8 +300,9 @@ RuntimeWebAIBackend::PrepareResult RuntimeWebAIBackend::PrepareBlocking(
 
 void RuntimeWebAIBackend::OnModelPrepared(PrepareResult result) {
   prepare_pending_ = false;
-  // A model was just loaded (or failed to): the cached facts may be stale.
-  device_facts_.reset();
+  // The device facts stay: loading a model changes none of them, and
+  // dropping them here would make every other site's next call wait for a
+  // read because this one loaded a model.
   std::vector<PrepareCallback> waiters;
   waiters.swap(prepare_waiters_);
   for (PrepareCallback& callback : waiters) {

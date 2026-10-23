@@ -140,6 +140,11 @@ class FakeBackend : public WebAIBackend {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), facts));
   }
+  void GetDeviceFactsForSite(const std::string& site_key,
+                             DeviceCallback callback) override {
+    device_sites.push_back(site_key);
+    GetDeviceFacts(std::move(callback));
+  }
   bool WebApisSwitchOn() override { return switch_on; }
   void ReleaseDeviceFacts() {
     hold_device_facts = false;
@@ -278,6 +283,8 @@ class FakeBackend : public WebAIBackend {
   std::vector<PrepareCallback> held_prepare;
   size_t session_cap = kMaxSessionsPerSite;
   int device_calls = 0;
+  // The site each GetDeviceFactsForSite() call was for.
+  std::vector<std::string> device_sites;
   int prepare_calls = 0;
   bool last_prepare_wants_images = false;
   std::map<uint64_t, Pending> jobs;
@@ -788,6 +795,25 @@ TEST_F(MoltAIManagerTest, PolicyDeviceSwitchAndBlockLookTheSame) {
   EXPECT_EQ(LanguageModelAvailability(),
             ModelAvailabilityCheckResult::kUnavailableFeatureNotEnabled);
   EXPECT_EQ(writing_answers(), unavailable);
+}
+
+// availability() and create() read the device facts of the page's own site
+// (the backend keeps them per site, so another site's calls never change
+// how long they take).
+TEST_F(MoltAIManagerTest, DeviceFactsAreTheSitesOwn) {
+  env_.site_key = "7|https://b.test";
+  NewManager();
+  LanguageModelAvailability();
+  base::test::TestFuture<ModelAvailabilityCheckResult> writer;
+  remote_->CanCreateWriter(MakeWriterOptions(), writer.GetCallback());
+  EXPECT_EQ(writer.Get(), ModelAvailabilityCheckResult::kDownloadable);
+  TranslatorAvailability("en", "de");
+  env_.consent = SiteConsent::kAllowed;
+  CreateLanguageModel();
+  CreateTranslator("en", "de");
+  EXPECT_EQ(backend_.device_calls, 5);
+  EXPECT_EQ(backend_.device_sites,
+            std::vector<std::string>(5, "7|https://b.test"));
 }
 
 TEST_F(MoltAIManagerTest, OnlyTextAndImageOptionsAreAvailable) {

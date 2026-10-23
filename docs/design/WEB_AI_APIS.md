@@ -249,7 +249,7 @@ All new code is under `src/chrome/browser/molt_ai/web_ai/`:
 | `web_ai_site_permissions_service.{h,cc}` | `WebAISitePermissions`: a profile's table, kept in the `molt_ai.web_ai.sites` pref (or in memory), with observers and the Clear browsing data operations. |
 | `web_ai_site_permissions_factory.{h,cc}` | Its keyed-service factory (pref registration, which profiles get one) and the hooks Clear browsing data and profile reset call. |
 | `web_ai_settings_switch.{h,cc}` | Reads and writes `"web_ai_apis"` in `settings.json`, keeping every other key. |
-| `runtime_web_ai_backend.{h,cc}` | `RuntimeWebAIBackend` over `BrowserAIRuntime`: device facts, model load, the scheduler, deadlines, images scaled on a worker. |
+| `runtime_web_ai_backend.{h,cc}` | `RuntimeWebAIBackend` over `BrowserAIRuntime`: device facts (kept per site, §8.1), the `"web_ai_apis"` switch, model load, the scheduler, deadlines, images scaled on a worker. |
 
 `BrowserAIRuntime` gained `GetLoadedContextTokens()` (the loaded model's
 context size, for the quota bucket) and, for image input (§5.1),
@@ -460,8 +460,9 @@ MoltBrowser owns. The pref won:
 `molt_web_ai_sites_handler.{h,cc}`):
 
 - **"Let sites ask to use on-device AI"** is `"web_ai_apis"` in
-  `settings.json` (all profiles). It applies to the next page request (the
-  runtime's cached device facts are dropped). It is written by
+  `settings.json` (all profiles). It applies to the next page request
+  (every site's cached device facts are dropped) and to the sessions pages
+  already have (§11). It is written by
   read-modify-write, keeping every other key; a `settings.json` that isn't
   a JSON object is left alone and the section says so. The page's *Save
   Settings* used to rewrite `settings.json` with only the form's keys,
@@ -762,6 +763,43 @@ What a page can learn, per call:
   site), and the first call's latency (whether a model was already loaded,
   that is, whether the user just used the chat). These are visible only to
   sites the user allowed.
+- **Not visible:** whether another site used the APIs recently, from how
+  long `availability()` or `create()` takes (§8.1).
+
+### 8.1 How long availability() and create() take
+
+Both need the device facts (inference support, downloaded models, whether
+a model fits the RAM, the `"web_ai_apis"` switch), which take a disk check
+to read, so they are reused for 30 s. They are kept **per top-level site**
+(`SiteDeviceFacts` in `web_ai_policy.h`, used by `RuntimeWebAIBackend`): a
+site's call is answered from that site's own facts, or waits for a read
+started for that site; never for a read another site started, and never
+from another site's facts. How long the calls take then depends on the
+site's own calls in the last 30 s, not on whether another site used the
+APIs. Frames of the page share its site's facts, as they share its answer
+(§4.3); the browser's own callers (page translation) have an entry of
+their own. Loading a model no longer drops the facts: it changes none of
+them, and dropping them would make every other site's next call slower.
+
+Three ways were weighed:
+
+- **A fixed minimum delay** would have to exceed the slowest read, which
+  has no bound (a busy or sleeping disk), so a slow read would still show.
+- **Every answer from memory, the facts refreshed in the background**
+  needs the first read done before any site asks, that is from upstream
+  browser-startup code. Started by the first call instead, the first answer
+  after a start is slow and every later one fast, which tells a site
+  whether another used the APIs since the browser started.
+- **Per-site facts** (chosen) need neither: no startup hook, no padding.
+  They cost one small read per active site per 30 s, and memory for the
+  sites active in the last 30 s (older ones are forgotten).
+
+What can still differ: the first read after the browser starts can take
+longer than later ones (a cold file cache, the runtime's one-time setup),
+whichever site makes it, so a site that happens to be first could tell
+that no site read the device facts before it since the start; closing
+that too needs the startup read above. After the user changes
+`"web_ai_apis"`, every site reads again.
 
 **MoltNet:** off. Every API reports `"unavailable"` in MoltNet windows, for
 every MoltNet user alike; no device facts are read, nothing is loaded and
@@ -1147,11 +1185,13 @@ new `create()`:
 
 In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
 
-- `web_ai_policy_unittest.cc` (23): the availability table, including an
+- `web_ai_policy_unittest.cc` (27): the availability table, including an
   exhaustive check of invariants over every input combination (an
   unallowed site never sees "available", MoltNet and workers always see
-  "unavailable", ...), create actions, what keeps a session serving,
-  buckets, the estimator and its size shortcut, saturation, sampling
+  "unavailable", ...), create actions, what keeps a session serving, the
+  device facts per site (a site never answered from or waiting for another
+  site's read, ageing by its own reads, cleared for all, forgotten when
+  old), buckets, the estimator and its size shortcut, saturation, sampling
   clamps, language tags, model pick (with the preference for a model that
   sees images), image sources (the 64-megapixel cap at its edges, hostile
   sizes), and the scheduler (one at a time, foreground first, sites in
@@ -1185,9 +1225,10 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   instruction (names the languages, never holds page text), the response
   schema accepted by the inference service's converter, and the cleanup
   (whitespace, quotation marks added or kept, empty replies).
-- `molt_ai_manager_unittest.cc` (89): the mojo surface over real pipes with
-  a fake runtime and a fake environment: availability per state, MoltNet
-  never calling the runtime, policies, permissions policy as a bad message,
+- `molt_ai_manager_unittest.cc` (90): the mojo surface over real pipes with
+  a fake runtime and a fake environment: availability per state, device
+  facts asked for the page's own site, MoltNet never calling the runtime,
+  policies, permissions policy as a bad message,
   consent (allow, block, dismiss, needs-model), an answer taken back
   (sessions end; a `create()` whose model is loading fails), the APIs
   turned off after `create()` in each of five ways (every call of all five
