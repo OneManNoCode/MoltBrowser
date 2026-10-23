@@ -12,8 +12,10 @@
 //  * the plan schema is one the inference service converts; a plan
 //    ParsePlan() accepts has 1 to kMaxPlanSteps steps, each goal and
 //    done_when non-empty, within its cap in characters, on one line, with
-//    no control, bidi, zero-width or BOM character and no space at either
-//    end; DescribePlan() writes exactly one line per step;
+//    no control, bidi, zero-width, BOM, soft hyphen, Hangul filler,
+//    variation selector or tag character (decoded independently of
+//    agent_plan.cc) and no space at either end; DescribePlan() writes
+//    exactly one line per step;
 //  * InterpretPlanReply() uses a plan only from a successful, constrained,
 //    complete reply that ParsePlan() accepts, asks again at most
 //    kMaxPlanAttempts times, then goes on without a plan, and otherwise
@@ -75,26 +77,45 @@ size_t Count(std::string_view haystack, std::string_view needle) {
   return n;
 }
 
-// No C0 control, DEL, C1 control, or character that reorders, hides or
-// breaks text (agent_plan.cc's list).
+// A control, or a character that reorders, hides or breaks text, or shows
+// nothing (agent_plan.cc's list), by code point.
+bool Hidden(uint32_t c) {
+  return c < 0x20 || c == 0x7F || (c >= 0x80 && c <= 0x9F) || c == 0xAD ||
+         c == 0x61C || c == 0x115F || c == 0x1160 || c == 0x180E ||
+         (c >= 0x200B && c <= 0x200F) || (c >= 0x2028 && c <= 0x202E) ||
+         (c >= 0x2060 && c <= 0x2064) || (c >= 0x2066 && c <= 0x2069) ||
+         c == 0x3164 || (c >= 0xFE00 && c <= 0xFE0F) || c == 0xFEFF ||
+         c == 0xFFA0 || (c >= 0xE0000 && c <= 0xE007F) ||
+         (c >= 0xE0100 && c <= 0xE01EF);
+}
+
+// Valid UTF-8 without a Hidden() character. Decoded here, independently of
+// agent_plan.cc's byte patterns.
 bool CleanLine(std::string_view s) {
-  for (size_t i = 0; i < s.size(); ++i) {
+  for (size_t i = 0; i < s.size();) {
     const auto b0 = static_cast<unsigned char>(s[i]);
-    const auto b1 = i + 1 < s.size() ? static_cast<unsigned char>(s[i + 1]) : 0;
-    const auto b2 = i + 2 < s.size() ? static_cast<unsigned char>(s[i + 2]) : 0;
-    if (b0 < 0x20 || b0 == 0x7F) return false;
-    if (b0 == 0xC2 && b1 >= 0x80 && b1 <= 0x9F) return false;
-    if (b0 == 0xD8 && b1 == 0x9C) return false;
-    if (b0 == 0xE1 && b1 == 0xA0 && b2 == 0x8E) return false;
-    if (b0 == 0xE2 && b1 == 0x80 &&
-        ((b2 >= 0x8B && b2 <= 0x8F) || (b2 >= 0xA8 && b2 <= 0xAE))) {
-      return false;
+    size_t len = 1;
+    uint32_t c = b0;
+    if (b0 >= 0xF0) {
+      len = 4;
+      c = b0 & 0x07;
+    } else if (b0 >= 0xE0) {
+      len = 3;
+      c = b0 & 0x0F;
+    } else if (b0 >= 0xC0) {
+      len = 2;
+      c = b0 & 0x1F;
+    } else if (b0 >= 0x80) {
+      return false;  // A stray continuation byte.
     }
-    if (b0 == 0xE2 && b1 == 0x81 &&
-        ((b2 >= 0xA0 && b2 <= 0xA4) || (b2 >= 0xA6 && b2 <= 0xA9))) {
-      return false;
+    if (i + len > s.size()) return false;
+    for (size_t k = 1; k < len; ++k) {
+      const auto b = static_cast<unsigned char>(s[i + k]);
+      if ((b & 0xC0) != 0x80) return false;
+      c = (c << 6) | (b & 0x3F);
     }
-    if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF) return false;
+    if (Hidden(c)) return false;
+    i += len;
   }
   return true;
 }
