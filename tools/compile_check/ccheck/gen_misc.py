@@ -99,7 +99,7 @@ def cxx_bridge_header(tree, interp, name):
 def _find_grit_target(tree, interp, name):
     stem = name.rsplit("/", 1)[-1][:-2]
     want = gn.OUT + "/gen/" + name
-    for bf in _build_files_mentioning(tree, stem, limit=80):
+    for bf in _build_files_mentioning(tree, "grit/%s.h" % stem, limit=80):
         for t in interp.run_file("//" + bf):
             if t.func not in ("grit", "grit_strings", "chrome_grit"):
                 continue

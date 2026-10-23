@@ -51,14 +51,18 @@ UPSTREAM_HOOKS = [
     "chrome/browser/about_flags.cc",
 ]
 
-SKIP_SUFFIXES = (".mm",)
+# The check is a Linux build: other platforms' files are not compiled there.
+OTHER_PLATFORM = ("_win.cc", "_mac.cc", "_android.cc", "_chromeos.cc",
+                  "_ios.cc", "_fuchsia.cc", "_win_unittest.cc",
+                  "_mac_unittest.cc", "_android_unittest.cc")
 
 
 def _cc_under(d):
     out = []
-    for dirpath, _, files in os.walk(SRC / d):
+    for dirpath, dirs, files in os.walk(SRC / d):
+        dirs[:] = [x for x in dirs if x not in ("win", "mac", "android")]
         for f in files:
-            if f.endswith((".cc", ".cpp")):
+            if f.endswith((".cc", ".cpp")) and not f.endswith(OTHER_PLATFORM):
                 out.append(os.path.relpath(os.path.join(dirpath, f), SRC))
     return sorted(out)
 
@@ -81,8 +85,27 @@ def default_targets():
     return first_party() + upstream_hooks()
 
 
-def expand(args):
-    """Paths relative to src/ (files or directories) -> .cc files."""
+def patched(tree):
+    """Every upstream .cc file the overlay carries a modified copy of."""
+    import hashlib
+    out = []
+    for p in sorted(tree.overlay_set()):
+        if not p.endswith(".cc") or p.endswith(OTHER_PLATFORM):
+            continue
+        e = tree.chromium.entries.get(p)
+        if e is None or e.type != "blob":
+            continue
+        data = (SRC / p).read_bytes()
+        oid = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+        if oid != e.oid:
+            out.append(p)
+    return out
+
+
+def expand(args, tree=None):
+    """Paths relative to src/ (files or directories) -> .cc files.
+    @first-party, @hooks (section 4 of the build checklist) and @patched
+    (every modified upstream .cc file) name groups."""
     if not args:
         return default_targets()
     out = []
@@ -92,6 +115,12 @@ def expand(args):
             out += first_party()
         elif a == "@hooks":
             out += upstream_hooks()
+        elif a == "@patched":
+            out += patched(tree)
+        elif a.startswith("@list:"):
+            with open(a[6:]) as f:
+                out += expand([x.strip() for x in f if x.strip() and
+                               x.strip().endswith((".cc", ".cpp"))], tree)
         elif (SRC / a).is_dir():
             out += _cc_under(a)
         else:

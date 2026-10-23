@@ -19,6 +19,7 @@ release Chromium's fork is based on.
 """
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -78,6 +79,12 @@ SUBPROJECTS = {
     "third_party/icu": ("https://github.com/unicode-org/icu", "icu4c/",
                         "release-78.3"),
 }
+
+
+# Subprojects whose pinned commit is missing from the mirror: their headers
+# come from the mirror's HEAD instead (a stand-in; reported as such). Public
+# C APIs that change slowly only.
+HEAD_FALLBACK = {"third_party/pdfium"}
 
 
 def log(msg):
@@ -141,6 +148,7 @@ class SourceTree:
         self.clang_llvm_commit = clang_llvm_commit
         self._subs = {}
         self.unavailable = {}
+        self.substituted = {}
         self._overlay_set = None
         self._mounts = sorted(SUBPROJECTS, key=len, reverse=True)
 
@@ -195,8 +203,36 @@ class SourceTree:
                     marker.parent.mkdir(parents=True, exist_ok=True)
                     marker.write_text(json.dumps(known_bad, indent=1))
                     repo = None
+            if repo is None and mount in HEAD_FALLBACK:
+                repo = self._head_fallback(mount, name, remote)
             self._subs[mount] = (repo, prefix)
         return self._subs[mount]
+
+    def _head_fallback(self, mount, name, remote):
+        """The mirror's current HEAD, for a subproject whose pinned commit
+        the mirror lacks. Recorded in self.substituted."""
+        state = self.work / "repos" / "head_fallback.json"
+        known = json.loads(state.read_text()) if state.exists() else {}
+        sha = known.get(mount)
+        if not sha:
+            r = subprocess.run(["git", "ls-remote", remote, "HEAD"],
+                               capture_output=True, text=True)
+            if r.returncode != 0 or not r.stdout.strip():
+                return None
+            sha = r.stdout.split()[0]
+            known[mount] = sha
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps(known, indent=1))
+        repo = Repo(self.work / "repos" / (name + "-head"), remote, sha)
+        try:
+            repo.entries
+        except RuntimeError as e:
+            log("subproject %s: HEAD fallback failed: %s" % (mount, e))
+            return None
+        log("subproject %s: using the mirror's HEAD %s (STAND-IN for the "
+            "pinned commit)" % (mount, sha[:12]))
+        self.substituted[mount] = "%s @ HEAD %s" % (remote, sha)
+        return repo
 
     def sub_lookup(self, path):
         """(repo, path inside repo) for a path under a mounted subproject."""

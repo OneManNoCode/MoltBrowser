@@ -25,6 +25,7 @@ PY_DEPS = [
     "third_party/ply/", "third_party/pyjson5/", "tools/grit/",
     "tools/gritsettings/", "tools/metrics/", "third_party/inspector_protocol/",
     "tools/protoc_wrapper/", "tools/flags/", "components/policy/tools/",
+    "components/policy/resources/",
     "third_party/blink/public/devtools_protocol/", "chrome/VERSION",
     "tools/json_comment_eater/", "tools/json_to_struct/",
     "tools/json_schema_compiler/", "third_party/blink/renderer/build/scripts/",
@@ -101,11 +102,43 @@ def find_action(tree, interp, gen_rel):
             outs = t.get("outputs")
             if not isinstance(outs, list):
                 continue
+            if t.func == "action_foreach":
+                for src in _src_paths(interp, t, "sources"):
+                    for o in outs:
+                        if isinstance(o, str) and interp.abspath(
+                                foreach_expand(o, src, False),
+                                {"dir": t.path}) == want:
+                            t.foreach_source = src
+                            return t
+                continue
             for o in outs:
                 if isinstance(o, str) and \
                         interp.abspath(o, {"dir": t.path}) == want:
                     return t
     return None
+
+
+def foreach_expand(text, src, for_args):
+    """GN's {{source...}} placeholders for one source (src-relative path).
+    Outputs use source-absolute paths, args paths relative to the build
+    directory."""
+    d, f = (src.rsplit("/", 1) if "/" in src else ("", src))
+    name = f.rsplit(".", 1)[0] if "." in f else f
+    out = gn.OUT[2:]
+    up = "/".join(".." for _ in out.split("/"))
+    if for_args:
+        vals = {"source": up + "/" + src, "source_dir": up + "/" + d,
+                "source_gen_dir": "gen/" + d, "source_out_dir": "obj/" + d}
+    else:
+        vals = {"source": "//" + src, "source_dir": "//" + d,
+                "source_gen_dir": gn.OUT + "/gen/" + d,
+                "source_out_dir": gn.OUT + "/obj/" + d}
+    vals.update({"source_file_part": f, "source_name_part": name,
+                 "source_root_relative_dir": d,
+                 "source_target_relative": f})
+    for k, v in vals.items():
+        text = text.replace("{{%s}}" % k, v)
+    return text
 
 
 def _src_paths(interp, t, key):
@@ -170,6 +203,19 @@ def run_action(tree, interp, t, depth=0):
     need = [script_path] + [p for p in tree.glob_upstream(sd)
                             if p.endswith(".py")]
     need += _src_paths(interp, t, "inputs") + _src_paths(interp, t, "sources")
+    if script_path.endswith("protoc_wrapper.py"):
+        # protoc reads the imports of the listed .proto files too.
+        for i, a in enumerate(args):
+            d = None
+            if a.startswith("--import-dir="):
+                d = a.split("=", 1)[1]
+            elif a == "--proto-in-dir" and i + 1 < len(args):
+                d = args[i + 1]
+            if d:
+                rel = os.path.normpath(os.path.join(gn.OUT[2:], d))
+                if not rel.startswith(("..", gn.OUT[2:])):
+                    need += tree.glob_upstream(rel.rstrip("/") + "/",
+                                               ".proto")
     tree.materialize(need)
     rsp = None
     rfc = t.get("response_file_contents")
@@ -179,10 +225,15 @@ def run_action(tree, interp, t, depth=0):
         rsp.close()
         args = [a.replace("{{response_file_name}}", rsp.name) for a in args]
     if t.func == "action_foreach":
-        return "%s: action_foreach is not supported" % t
+        src = getattr(t, "foreach_source", None)
+        if src is None:
+            return "%s: action_foreach without a chosen source" % t
+        args = [foreach_expand(a, src, True) for a in args]
     tree.out_dir.mkdir(parents=True, exist_ok=True)
     for o in t.get("outputs") or []:
         if isinstance(o, str):
+            if t.func == "action_foreach":
+                o = foreach_expand(o, t.foreach_source, False)
             a = interp.abspath(o, {"dir": t.path})
             (tree.tree_dir / a[2:]).parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-E", "-s", str(tree.tree_dir / script_path)] + \
@@ -208,7 +259,7 @@ def produce(tree, interp, gen_rels, depth=0):
         if t is None:
             failed[rel] = "no action found"
             continue
-        key = (t.path, t.name)
+        key = (t.path, t.name, getattr(t, "foreach_source", None))
         if key not in done_targets:
             done_targets.add(key)
             log("action: running %s:%s for %s" % (t.path, t.name, rel))

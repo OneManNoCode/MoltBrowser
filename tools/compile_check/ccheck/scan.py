@@ -339,6 +339,11 @@ class Scanner:
                         continue
                     r = self.resolve(name, key, angle)
                     if r is None:
+                        # A generated file's sibling ("foo.pb.h" from
+                        # gen/x/bar.pb.h) is generated next to it.
+                        if key[0] == "gen" and not angle and "/" not in name \
+                                and "/" in key[1]:
+                            name = key[1].rsplit("/", 1)[0] + "/" + name
                         self.missing.setdefault(name, set()).add(key[1])
                     elif r not in seen:
                         nxt.append(r)

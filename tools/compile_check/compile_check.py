@@ -89,7 +89,7 @@ def cmd_setup(args, tree=None):
 
 
 def do_fetch(args, tree):
-    tgts = targets.expand(args.targets)
+    tgts = targets.expand(args.targets, tree)
     sc = scan.Scanner(tree, config.INCLUDE_DIRS, tree.gen_dir)
     seen = sc.run(tgts)
     missing = {}
@@ -201,7 +201,7 @@ def cmd_gen(args):
 
 
 def do_check(args, tree):
-    tgts = targets.expand(args.targets)
+    tgts = targets.expand(args.targets, tree)
     res = check.run(tree, args.work, tgts, jobs=args.jobs,
                     plugins=not args.no_plugins, dev=args.dev_plugins)
     summary = args.work / "check.json"

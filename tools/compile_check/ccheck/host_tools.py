@@ -104,7 +104,11 @@ def ensure_cxxbridge(work, tree):
         return exe
     cargo = shutil.which("cargo") or os.path.expanduser("~/.cargo/bin/cargo")
     log("building cxxbridge %s with cargo" % ver)
-    r = subprocess.run([cargo, "install", "--path", str(tree.tree_dir / vend),
+    # Outside chromium_crates_io's Cargo workspace.
+    crate = root / "src"
+    shutil.rmtree(crate, ignore_errors=True)
+    shutil.copytree(tree.tree_dir / vend, crate)
+    r = subprocess.run([cargo, "install", "--path", str(crate),
                         "--root", str(root), "-j", "2", "--force"],
                        capture_output=True, text=True,
                        env=dict(os.environ,
@@ -113,6 +117,7 @@ def ensure_cxxbridge(work, tree):
         raise RuntimeError("cargo install cxxbridge failed: " +
                            r.stderr[-2000:])
     shutil.rmtree(root / "target", ignore_errors=True)
+    shutil.rmtree(crate, ignore_errors=True)
     stamp.write_text(ver)
     return exe
 
@@ -131,11 +136,11 @@ def ensure_flatc(work, tree, interp):
     for t in interp.run_file("//" + fb + "BUILD.gn"):
         if t.name in ("flatc", "compiler_files", "flatbuffers"):
             for s in t.get("sources") or []:
-                if isinstance(s, str) and s.endswith(".cpp"):
+                if isinstance(s, str) and s.endswith((".cpp", ".cc")):
                     srcs.append(fb + s)
     tree.materialize(tree.glob_upstream(fb + "src/include/") +
                      tree.glob_upstream(fb + "src/src/") +
-                     tree.glob_upstream(fb + "src/grpc/"))
+                     tree.glob_upstream(fb + "src/grpc/") + srcs)
     out.mkdir(parents=True, exist_ok=True)
     obj = out / "obj"
     obj.mkdir(exist_ok=True)
