@@ -442,6 +442,65 @@ TEST_F(PageTranslationJobTest, TheDeadlineEndsTheJob) {
   EXPECT_EQ(backend_.cancelled.size(), 1u);
 }
 
+// A page that never answers a write (a busy or hung renderer) doesn't
+// keep the job past its deadline.
+TEST_F(PageTranslationJobTest, TheDeadlineEndsAJobWaitingForAWrite) {
+  std::vector<std::string> texts;
+  for (int i = 0; i < 20; ++i) {
+    texts.push_back("Wort " + std::to_string(i));
+  }
+  Start(texts);
+  page_.hold_writes = true;
+  backend_.Translate(Upper);
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(page_.held.size(), 1u);
+  EXPECT_FALSE(result_);
+  task_environment_.FastForwardBy(base::Minutes(kMaxTranslateMinutes));
+  ASSERT_TRUE(result_);
+  EXPECT_EQ(result_->end, JobEnd::kTimedOut);
+  // The write may still land: it counts, so "Show original" is offered.
+  EXPECT_EQ(result_->written_slots, web_ai::kTranslatorMaxBatchTexts);
+  const Report report = ReportForJob(*result_);
+  EXPECT_EQ(report.problem, Problem::kTimedOut);
+  EXPECT_TRUE(report.partial);
+  // Nothing else was sent.
+  EXPECT_TRUE(backend_.jobs.empty());
+  EXPECT_EQ(backend_.generations, 1);
+
+  // The page answers at last: the job doesn't hear it, reports nothing
+  // more and sends nothing more.
+  result_.reset();
+  std::move(page_.held.front()).Run();
+  task_environment_.RunUntilIdle();
+  EXPECT_FALSE(result_);
+  EXPECT_TRUE(backend_.jobs.empty());
+  EXPECT_EQ(page_.applies, 1);
+
+  // And the job can go away afterwards.
+  job_.reset();
+  task_environment_.RunUntilIdle();
+}
+
+TEST_F(PageTranslationJobTest, AStopWaitingForAWriteEndsAtTheDeadline) {
+  std::vector<std::string> texts;
+  for (int i = 0; i < 20; ++i) {
+    texts.push_back("Wort " + std::to_string(i));
+  }
+  Start(texts);
+  page_.hold_writes = true;
+  backend_.Translate(Upper);
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(page_.held.size(), 1u);
+  job_->Stop();
+  task_environment_.FastForwardBy(base::Minutes(1));
+  EXPECT_FALSE(result_);
+  task_environment_.FastForwardBy(base::Minutes(kMaxTranslateMinutes));
+  ASSERT_TRUE(result_);
+  EXPECT_EQ(result_->end, JobEnd::kStopped);
+  EXPECT_EQ(result_->written_slots, web_ai::kTranslatorMaxBatchTexts);
+  EXPECT_TRUE(backend_.jobs.empty());
+}
+
 TEST_F(PageTranslationJobTest, APageThatLosesTheJobEndsIt) {
   Start({"eins", "zwei"});
   page_.lose_state = true;
