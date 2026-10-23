@@ -411,6 +411,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   report whole pixels, so `(width > 1400px)` no longer matches a
   1400-pixel page at 90% zoom. Regular and incognito windows are
   unchanged.
+- **One connection speed for every MoltNet user.** `navigator.connection`
+  in MoltNet pages and workers used to show the browser's estimate of your
+  network's speed, which follows your own connection and changes as pages
+  load. It now reads the same for everybody (4g, 200 ms, 1.6 Mbps, no data
+  saver) and never changes; lazy loading, web fonts and media preload in
+  MoltNet behave the same way for everyone, and MoltNet's request
+  scheduling and traffic no longer depend on or feed that estimate.
+  Regular and incognito windows are unchanged.
 
 ### MoltShield
 - **Rebuilt on Brave's adblock-rust** with EasyList, EasyPrivacy and uBlock
