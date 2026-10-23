@@ -20,13 +20,9 @@
 
 #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
 
-<<<<<<< src/third_party/blink/renderer/platform/fonts/font_platform_data.cc (MoltBrowser)
 #include <atomic>  // MoltBrowser
 
-||||||| upstream@pin
-=======
 #include "base/bit_cast.h"
->>>>>>> upstream@new
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "build/build_config.h"

@@ -429,17 +429,11 @@ void GPUQueue::copyExternalImageToTexture(
     return;
   }
 
-<<<<<<< src/third_party/blink/renderer/modules/webgpu/gpu_queue.cc (MoltBrowser)
   // MoltBrowser: canvas and image pixels enter WebGPU with the per-site
   // fingerprinting noise.
   source->image = molt_fingerprinting::FarbleForExport(
       device_->GetExecutionContext(), std::move(source->image));
-  if (!CopyStaticImagBitmapToWGPUTexture(
-||||||| upstream@pin
-  if (!CopyStaticImagBitmapToWGPUTexture(
-=======
   if (!CopyStaticImageBitmapToWGPUTexture(
->>>>>>> upstream@new
           GetDawnControlClient(), device_->GetHandle(), source->image.get(),
           origin_in_external_image, dawn_copy_size, dawn_destination,
           destination->premultipliedAlpha(), color_space, copyImage->flipY())) {

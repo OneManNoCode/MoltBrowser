@@ -613,12 +613,6 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
       origin_ ? origin_->IsolatedCopy() : nullptr,
       std::move(coep_reporting_observer), std::move(dip_reporting_observer));
   params->dedicated_worker_start_time = start_time_;
-<<<<<<< src/third_party/blink/renderer/core/workers/dedicated_worker.cc (MoltBrowser)
-  // MoltBrowser: the worker inherits its creator's Shields decision.
-  molt_fingerprinting::ProvideShieldsDecisionToDedicatedWorker(
-      *execution_context, params->worker_clients.Get());
-||||||| upstream@pin
-=======
 
   // Store the creator's document policy for inheritance by local-scheme
   // workers.
@@ -632,7 +626,9 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
   // global scopes support Document-Policy violation reporting.
 
   params->dedicated_worker_script_initiator_url = worker_script_initiator_url_;
->>>>>>> upstream@new
+  // MoltBrowser: the worker inherits its creator's Shields decision.
+  molt_fingerprinting::ProvideShieldsDecisionToDedicatedWorker(
+      *execution_context, params->worker_clients.Get());
   return params;
 }
 
