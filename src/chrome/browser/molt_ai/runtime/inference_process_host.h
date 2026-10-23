@@ -38,6 +38,14 @@
 
 namespace molt_ai {
 
+// Added to the command line of an inference process launched for the GPU
+// (design section 11.4). On Linux the process's pre-sandbox hook then also
+// lets it reach the DRM render nodes and what Mesa's Vulkan drivers read;
+// without it the sandbox is exactly upstream's. The same string is in
+// content/utility/on_device_model/molt_gpu_inference_sandbox_linux.h
+// (content can't include chrome/).
+inline constexpr char kMoltInferenceGpuSwitch[] = "molt-inference-gpu";
+
 // How a load or a generation ended, for the caller blocked on it. Never
 // carries prompt or response text.
 struct InferenceOutcome {
@@ -81,6 +89,10 @@ struct InferenceOutcome {
   // A vision projector is loaded (image input). Only ever true when one was
   // sent.
   bool vision = false;
+  // The GPU (Vulkan, design section 11): what became of it, and the layers
+  // on it (backend "vulkan" only).
+  mojom::GpuStatus gpu_status = mojom::GpuStatus::kNotRequested;
+  uint32_t gpu_layers = 0;
   // Generation: set when OnComplete arrived (counts clamped).
   bool has_summary = false;
   StreamSummary summary;
@@ -155,6 +167,10 @@ class InferenceProcessHost {
     bool allow_cpu_repack = true;
     // Private footprint above which the process is killed; 0 = no check.
     uint64_t footprint_limit_bytes = 0;
+    // Ask for the GPU (llama.cpp's Vulkan backend; design section 11). The
+    // process is then launched with kMoltInferenceGpuSwitch, which on Linux
+    // lets its sandbox reach the DRM render nodes Mesa's drivers use.
+    bool use_gpu = false;
   };
 
   struct Timeouts {
@@ -178,17 +194,21 @@ class InferenceProcessHost {
    public:
     virtual ~Delegate() = default;
     // The model process ended unexpectedly or was killed for misbehaving
-    // (not an unload the runtime asked for).
+    // (not an unload the runtime asked for). |gpu_failure|: it was loading
+    // with the GPU requested, or running on the GPU, and crashed, hung or
+    // ran over its memory (GpuFallbackGuard counts it, not CrashLoopGuard).
     virtual void OnModelProcessLost(const std::string& model_id,
                                     const std::string& crash_key,
-                                    CrashLoopGuard::Phase phase) = 0;
+                                    CrashLoopGuard::Phase phase,
+                                    bool gpu_failure) = 0;
   };
 
   // Tests replace the launch of a real utility process.
   using Launcher = base::RepeatingCallback<void(
       mojo::PendingReceiver<mojom::MoltInferenceService> receiver,
       base::WeakPtr<content::ServiceProcessHost::Observer> observer,
-      base::OnceCallback<void(const base::Process&)> on_process)>;
+      base::OnceCallback<void(const base::Process&)> on_process,
+      bool use_gpu)>;
 
   explicit InferenceProcessHost(Delegate* delegate);
   ~InferenceProcessHost();
