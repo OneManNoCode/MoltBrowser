@@ -212,17 +212,13 @@ class InfoBarDelegate {
     SIGNIN_QRCODE_INFOBAR_DELEGATE = 137,
     FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS = 138,
     PASSWORD_SAVED_INFOBAR_DELEGATE_IOS = 139,
-<<<<<<< src/components/infobars/core/infobar_delegate.h (MoltBrowser)
+    CONTEXTUAL_CUE_INFOBAR_DELEGATE_IOS = 140,
 
     // MoltBrowser identifiers start at 1000, well clear of upstream's, so
     // rebases never collide.
     MOLT_ONION_LOCATION_INFOBAR_DELEGATE = 1000,
     // Asks before a site may use the on-device model (web AI APIs).
     MOLT_WEB_AI_CONSENT_INFOBAR_DELEGATE = 1001,
-||||||| upstream@pin
-=======
-    CONTEXTUAL_CUE_INFOBAR_DELEGATE_IOS = 140,
->>>>>>> upstream@new
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/browser/enums.xml:InfoBarIdentifier)
 

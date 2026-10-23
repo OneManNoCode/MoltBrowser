@@ -125,15 +125,12 @@ void WebSocketConnectorImpl::Connect(
   }
 
   RenderFrameHost* frame = RenderFrameHost::FromID(frame_id_);
-<<<<<<< src/content/browser/websockets/websocket_connector_impl.cc (MoltBrowser)
   // MoltBrowser: shared and service workers have no frame for the hooks
   // below; let the embedder refuse by profile instead.
   if (!frame && GetContentClient()->browser()->ShouldBlockWorkerWebSocket(
                     process->GetBrowserContext(), url)) {
     return;
   }
-||||||| upstream@pin
-=======
   net::handles::NetworkHandle target_network =
       net::handles::kInvalidNetworkHandle;
   if (frame) {
@@ -142,7 +139,6 @@ void WebSocketConnectorImpl::Connect(
     }
   }
 
->>>>>>> upstream@new
   content::ContentBrowserClient::WebSocketOptions options =
       GetContentClient()->browser()->GetWebSocketOptions(frame);
 
