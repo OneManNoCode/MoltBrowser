@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
@@ -16,6 +17,7 @@
 #include "base/supports_user_data.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/molt_ai/tor/molt_net_partitioning_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -31,11 +33,13 @@
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+#include "net/base/features.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/proxy_server.h"
 #include "net/base/schemeful_site.h"
+#include "net/http/http_cache.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -230,6 +234,23 @@ void OnTorStateChanged() {
 }  // namespace
 
 // static
+std::string MoltNetRouting::ProcessWidePartitioningError() {
+  // The same calls Chromium's network code makes. Every process sets the
+  // first two up the same way, from the same features, in
+  // ChromeMainDelegate::CommonEarlyInitialization()
+  // (NetworkAnonymizationKey::PartitionByDefault(),
+  // HttpCache::SplitCacheFeatureEnableByDefault()), so the browser
+  // process's answer is the network service's.
+  MoltNetProcessWidePartitioning state;
+  state.connections_partitioned =
+      net::NetworkAnonymizationKey::IsPartitioningEnabled();
+  state.http_cache_split = net::HttpCache::IsSplitCacheEnabled();
+  state.third_party_storage_partitioned = base::FeatureList::IsEnabled(
+      net::features::kThirdPartyStoragePartitioning);
+  return MoltNetPartitioningError(state);
+}
+
+// static
 Profile* MoltNetRouting::GetMoltNetProfile(Profile* profile) {
   if (!profile) {
     return nullptr;
@@ -259,6 +280,11 @@ Profile* MoltNetRouting::GetOrCreateMoltNetProfile(Profile* profile,
   Profile* original = profile->GetOriginalProfile();
   if (original->IsGuestSession() || original->IsSystemProfile()) {
     *error = "MoltNet isn't available in Guest or system profiles";
+    return nullptr;
+  }
+  if (std::string partitioning = ProcessWidePartitioningError();
+      !partitioning.empty()) {
+    *error = std::move(partitioning);
     return nullptr;
   }
   Profile* moltnet = GetMoltNetProfile(original);

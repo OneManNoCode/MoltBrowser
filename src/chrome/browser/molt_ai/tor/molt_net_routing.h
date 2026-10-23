@@ -69,9 +69,16 @@ class MoltNetRouting {
   // The current MoltNet profile of |profile|'s original profile, or null.
   static Profile* GetMoltNetProfile(Profile* profile);
 
+  // Empty if the process-wide switches MoltNet's per-site isolation needs
+  // are on (molt_net_partitioning_policy.h); otherwise the error to show
+  // instead of opening a MoltNet window. They can't change while the
+  // browser runs.
+  static std::string ProcessWidePartitioningError();
+
   // Returns the MoltNet profile (creating a fresh one if needed) with routing
   // applied for |socks_port|. Returns null and sets |error| if routing can't
-  // be guaranteed (e.g. a policy/extension controls the proxy).
+  // be guaranteed (e.g. a policy/extension controls the proxy) or sites
+  // can't be kept apart (ProcessWidePartitioningError()).
   static Profile* GetOrCreateMoltNetProfile(Profile* profile,
                                             uint16_t socks_port,
                                             std::string* error);
