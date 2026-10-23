@@ -154,6 +154,8 @@ source_set("unit_tests") {
     "//components/omnibox/browser:test_support",
     "//components/prefs",
     "//components/prefs:test_support",
+    "//sql",
+    "//sql:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/metrics_proto",

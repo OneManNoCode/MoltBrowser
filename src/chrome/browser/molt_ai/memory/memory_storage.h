@@ -59,6 +59,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/strings/cstring_view.h"
 #include "chrome/browser/molt_ai/memory/memory_types.h"
 #include "sql/database.h"
 
@@ -199,7 +200,8 @@ class MemoryStorage {
   bool LoadSpaces(sql::MetaTable* meta, const MemoryEmbedder& embedder);
   // Records |space_key| as committed (in a caller's transaction).
   bool SetCommittedSpace(sql::MetaTable* meta, const std::string& space_key);
-  bool ReadChunkTexts(const char* sql,
+  // `sql` is a string literal (GetUniqueStatement() takes a cstring_view).
+  bool ReadChunkTexts(base::cstring_view sql,
                       int64_t after_chunk_id,
                       size_t limit,
                       std::vector<ChunkText>* out);

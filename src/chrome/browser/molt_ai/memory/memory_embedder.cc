@@ -320,6 +320,14 @@ std::string EmbedderSpace::Key() const {
   return model + "/" + std::to_string(dimensions);
 }
 
+bool MemoryEmbedder::is_synchronous() const {
+  return true;
+}
+
+size_t MemoryEmbedder::max_batch_size() const {
+  return 64;
+}
+
 void MemoryEmbedder::EmbedBatch(std::vector<std::string> texts,
                                 EmbedPurpose purpose,
                                 BatchCallback done) const {
