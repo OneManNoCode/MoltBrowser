@@ -125,7 +125,7 @@ Use `kOnDeviceModelExecution` everywhere:
 | `sched_setaffinity`, `pthread_setschedparam`, `getcpu`/NUMA | Not reached | ggml only calls these with a cpumask, a non-normal priority, or `ggml_numa_init`. Never set them. |
 | `std::thread::hardware_concurrency` | Yes (broker allows `/sys/devices/system/cpu/online`) | The browser passes `n_threads` anyway. |
 | `RLIMIT_DATA` | 8 GB (≤16 GB RAM) / 16 / 32 / 64 GB | Shared read-only file mappings don't count. CPU repack buffers, the KV cache and compute buffers do. See §2.5. |
-| Vulkan (later) | Hook dlopens `libvulkan.so.1` + ICDs; broker allows ICD JSON and `/dev/dri/renderD*`; NVIDIA policy chosen from GPU info | Mostly ready. ggml-vulkan's build-time shader generation is the bigger job. |
+| Vulkan | Hook dlopens `libvulkan.so.1` + the RADV, ANV and NVIDIA drivers. On desktop Linux the broker allows `/dev/dri/card*` and the NVIDIA nodes but not `/dev/dri/renderD*`, `/dev/dri` itself or sysfs (those are ChromeOS-only), and only five fixed ICD manifest names | NVIDIA's driver can probably start; Mesa can't. See §11.4. |
 
 **Windows.** This type uses LPAC with `lpacChromeInstallFiles`, `registryRead`, `lpacPnpNotifications` and a `chromeInstallFiles` impersonation capability (`sandbox_win.cc:439`). The token is `USER_RESTRICTED_SAME_ACCESS`/`USER_LIMITED` (`utility_sandbox_delegate_win.cc:157`), and the job memory limit scales with RAM.
 
@@ -135,7 +135,7 @@ Use `kOnDeviceModelExecution` everywhere:
 | Open the GGUF by path | No (LPAC has no user-profile access) | `ReadOnlyFile`, opened **without `FLAG_ASYNC`**. Upstream uses `FLAG_ASYNC`, but an overlapped handle breaks llama.cpp's synchronous CRT reads. Convert with `_open_osfhandle(h, _O_RDONLY\|_O_BINARY)` + `_fdopen(fd, "rb")`. A read-only handle has no `FILE_EXECUTE`, so it can't be mapped executable. |
 | `CreateFileMapping`/`MapViewOfFile` on that handle (`llama-mmap.cpp:594`); `PrefetchVirtualMemory` | Yes | — |
 | Job memory limit | 8/16/32/64 GB of committed memory | File-backed read-only views aren't charged; repack, KV and compute buffers are (§2.5). |
-| Vulkan (later) | Unknown: needs `vulkan-1.dll` and ICD discovery (registry, DriverStore DLLs) | Preload with `ServiceProcessHost::Options::WithPreloadedLibraries` (PassKey-gated, so a small content patch), plus a pre-lockdown warm-up. Alternative: ggml-webgpu over Chromium's Dawn (D3D12), which is what Chrome's own model service uses in this sandbox. Open question. |
+| Vulkan | Not after lockdown: `LowerToken()` applies `MITIGATION_FORCE_MS_SIGNED_BINS`, so `vulkan-1.dll` and vendor ICDs must be loaded before it; LPAC access to ICD registry keys and DriverStore unverified | Needs a pre-lockdown warm-up (§11.4). Alternative: ggml-webgpu over Chromium's Dawn (D3D12), which is what Chrome's own model service uses in this sandbox. |
 
 ### 2.4 Alternative for Linux/Windows CPU: `kService`/`kUtility`
 
@@ -971,3 +971,98 @@ The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its proj
 - **Syntax** of the service and browser code against stand-ins; **the mojom** with upstream's generator.
 
 **Needs the build machine:** a compile; Metal and the GPU path for the encoder; a real pinned model (quality, speed, memory) on 8 and 16 GB machines, downloaded with its projector (progress, cancel, resume, delete); the Prompt API with real images in a page.
+
+## 11. GPU inference on Windows and Linux (Vulkan)
+
+Status: research (October 2026). The roadmap item "GPU inference on Windows and Linux" wants llama.cpp's Vulkan backend (ggml-vulkan) in the inference service, with the CPU as the fallback, behind a GN switch `molt_llama_vulkan` that stays **off** until it has been tested on real GPUs. macOS keeps Metal. Upstream files below were read at 152.0.7977.169; llama.cpp is the vendored b11641.
+
+### 11.1 Findings in one page
+
+1. **Build.** ggml-vulkan needs the Vulkan headers (`vulkan.hpp`), SPIRV-Headers (`spirv.hpp`), a host tool (`vulkan-shaders-gen`) and a GLSL compiler with glslc's command line. Chromium 152 has every input except glslc: `third_party/vulkan-headers`, `vulkan-loader`, `glslang` (with a `glslang_validator` executable), `spirv-tools` and `spirv-headers` are in DEPS; shaderc is not.
+2. **Shaders are built from source, not vendored**, with Chromium's own glslang and SPIRV-Tools through a small glslc-compatible host tool (§11.2). The output is about 31 MB of SPIR-V or more, embedded in the binary, so the switch costs binary size, not only build time.
+3. **The loader is opened at run time.** ggml-vulkan uses `vkGetInstanceProcAddr` and `vkGetPhysicalDeviceFeatures2` as link-time symbols, which would make the whole browser binary depend on `libvulkan.so.1` / `vulkan-1.dll`. A local patch takes them from a loader opened at run time (§11.3).
+4. **Linux sandbox:** the seccomp policy already allows what Vulkan drivers need, but on desktop Linux the broker lets in only NVIDIA's driver. Mesa (every Intel and AMD GPU on a stock distro) needs a few broker additions, granted only to processes the browser launches for the GPU (§11.4).
+5. **Windows sandbox:** this sandbox type allows only Microsoft-signed DLLs once it locks down, so the Vulkan loader and the vendor driver must be loaded before that. Our service has no pre-lockdown step; adding one is an upstream content change that can only be designed with a Windows GPU at hand. Until then a Windows build with the switch on runs on the CPU (§11.4).
+6. **Runtime:** a device policy in MoltBrowser code (software rasterizers, layered and virtual GPUs refused, a minimum of video memory), layers offloaded to fit the device's free memory, and the CPU as fallback when anything fails (§11.5).
+7. **Exceptions:** ggml-vulkan throws on device loss and on Vulkan errors by design, and `llama_decode` doesn't catch, so a lost GPU would terminate the service. Every llama.cpp call that can reach the GPU after load goes through wrappers built with exceptions (§11.6).
+8. **Crashes:** a GPU process that crashes or hangs doesn't count against the model (the crash-loop guard of §4.3); the browser reloads the model on the CPU and stops asking for the GPU (§11.5).
+
+### 11.2 Build
+
+**What ggml-vulkan needs** (`ggml/src/ggml-vulkan/CMakeLists.txt` at b11641):
+
+- `ggml-vulkan.cpp` (16,649 lines), `ggml-vulkan-buffers.cpp` and `ggml-vulkan-debug.cpp`, with `vulkan.hpp` (`VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1`: every Vulkan call goes through a dispatcher filled from `vkGetInstanceProcAddr`) and `spirv/unified1/spirv.hpp`.
+- `vulkan-shaders-gen`, a host executable (std C++17 and threads). Run once without `--source`, it writes `ggml-vulkan-shaders.hpp` (the declarations); run once per `.comp` file (155 of them), it compiles every variant of that shader and writes a `.cpp` that embeds the SPIR-V as byte arrays. For each variant it runs `glslc -fshader-stage=compute --target-env=vulkan1.2|vulkan1.3 IN -o OUT [-O] [-MD -MF DEP] -DNAME=VALUE...` as a subprocess (`-O` is left out for cooperative-matrix, bf16, rope and dot2 shaders because of spirv-opt bugs) and fails on any output on stderr.
+- CMake first compiles seven feature-test shaders to learn which extensions glslc supports, and passes `GGML_VULKAN_<FEATURE>_GLSLC_SUPPORT` to both the generator and `ggml-vulkan.cpp`.
+
+**What Chromium 152 has** (DEPS at the pin):
+
+| Need | In 152 | Notes |
+|---|---|---|
+| Vulkan headers | `third_party/vulkan-headers` @ `d314eae7` (`VK_HEADER_VERSION` 357), target `:vulkan_headers` | Has `vulkan.hpp`; ggml handles both the old and the `vk::detail` (≥ 301) namespaces. |
+| SPIRV-Headers | `third_party/spirv-headers` @ `29981f65` | `spirv.hpp` |
+| glslang | `third_party/glslang` @ `8292684e` (16.4.0+): `glslang_sources` built with `ENABLE_OPT=1`, and an `executable("glslang_validator")` | Compiles all seven feature tests (cooperative matrix 1 and 2, decode vector, integer dot product, bf16, e2m1, e4m3). The distro glslc here (shaderc 2023.8) supports only the first. |
+| SPIRV-Tools | `third_party/spirv-tools` @ `a665e21f` | The optimizer that glslc's `-O` runs (`RegisterPerformancePasses`). |
+| Vulkan loader | `third_party/vulkan-loader` @ `59a70594` | Chrome ships it as `libvulkan.so.1` / `vulkan-1.dll`. MoltBrowser's `scripts/package-linux.sh` copies `*.so` only, so Linux packages use the system loader (`libvulkan1`). |
+| glslc / shaderc | no | |
+
+**Shader sizes, measured here** (the vendored b11641 shaders, generated with the distro's glslc, so with cooperative matrix 1 only): 1,267 variants, **31.0 MB of SPIR-V**, 134 MB of generated C++, about 300 CPU-seconds of glslc. With Chromium's glslang every shader family is on, so expect more (§11.8 has the number from the GN-equivalent build). It is all linked into the browser binary, because the inference service runs in a utility process of the same binary.
+
+**Build at build time, or generate once and vendor?**
+
+- *Vendored:* 30+ MB of opaque binary (or about 130 MB of C arrays) in the repository at every llama.cpp update; reviews can't see what changed; CI would still need a pinned glslc to check that the blobs match the sources; and SPIR-V is code that the GPU driver's compiler parses, so blobs nobody can review are a supply-chain risk.
+- *At build time with Chromium's glslang* (chosen): the GLSL sources are what gets reviewed, the compiler is the one Chromium pins, nothing generated is checked in, and the inputs move with the Chromium rebase. Cost: glslang and the SPIRV-Tools optimizer built for the host, and a few CPU-minutes of shader compiles, only when the switch is on.
+- The generator needs glslc's command line (it runs it once per variant), and Chromium has no glslc. `glslang_validator` behind a wrapper doesn't match: its flags differ, it optimizes by default with a different pass list, and on Windows a script can't be the subprocess `CreateProcessA` starts. So a small host tool, `ggml_vk_glslc`, implements exactly the glslc subset the generator uses on glslang's and SPIRV-Tools' libraries: the same front end, `-O` as spirv-opt's performance passes (what glslc does), and `-MD -MF` depfiles for ninja.
+- The feature defines are fixed in GN to what the pinned glslang supports, and a build step compiles the feature tests with `ggml_vk_glslc`, failing if one stops compiling, so a glslang roll can't silently drop a shader family.
+
+### 11.3 Linking the loader
+
+- `ggml_vk_instance_init()` calls `ggml_vk_default_dispatcher_instance.init(vkGetInstanceProcAddr)`, and two other places use the global `vkGetInstanceProcAddr` and `vkGetPhysicalDeviceFeatures2`. CMake links `Vulkan::Vulkan` for them.
+- In Chromium that would add `DT_NEEDED libvulkan.so.1` to the one browser binary, which then wouldn't start without a Vulkan loader installed; on Windows it would import `vulkan-1.dll` into every process, renderers included.
+- **Patch:** ggml-vulkan is built with `VK_NO_PROTOTYPES` (so no global Vulkan function can be referenced by accident) and takes `vkGetInstanceProcAddr` from a loader opened at run time (`dlopen("libvulkan.so.1")` / `LoadLibrary("vulkan-1.dll")`), only when the GPU is requested. On Linux the pre-sandbox hook has already loaded `libvulkan.so.1` with `RTLD_NODELETE`, so the `dlopen` inside the sandbox finds it by name without touching the file system. If the loader can't be opened, the backend isn't registered and the model loads on the CPU.
+
+### 11.4 Sandbox
+
+**Linux.** Our process gets upstream's `on_device_model::PreSandboxHook` (keyed on the sandbox type, `content/utility/utility_main.cc:335`), not the Dawn warm-up (`PreSandboxInit`, keyed on upstream's service name, `:292`).
+
+- *seccomp* (`GetGpuProcessSandbox` → `GpuProcessPolicy`, `sandbox/policy/linux/bpf_gpu_policy_linux.cc`): dlopen syscalls (`:46`), `ioctl` and `getdents64` (`:80-81`), `mmap` with any flags on x86-64 (`:86`; so the `MAP_POPULATE` patch of §0.4 matters only on arm64), `memfd_create` without exec mappings (`:109`). Enough for Mesa's and NVIDIA's Vulkan drivers.
+- *Libraries* (`LoadVulkanLibraries`, `content/common/gpu_pre_sandbox_hook_linux.cc:585`, before the sandbox): `libvulkan.so.1`, `libvulkan_radeon.so` (RADV), `libvulkan_intel.so` (ANV), `libGLX_nvidia.so.0` (NVIDIA's Vulkan ICD) and `libvulkan_freedreno.so`. Not lavapipe, NVK or hasvk, so those can't load in the sandbox at all.
+- *Files* (`FilePermissionsForGpu`, `:622`). On desktop Linux (not ChromeOS, not Chromecast) the broker allows `/etc/drirc`; the two ICD directories with five fixed manifest names (`intel_icd.x86_64.json`, `radeon_icd.x86_64.json`, `nvidia_icd.json`, `mali_icd.json`, `freedreno_icd.aarch64.json`; `AddVulkanICDPermissions`, `:437`); and `/dev/shm`, `/dev/dri/card0-9`, the NVIDIA nodes and `/proc/driver/nvidia/params` (`AddStandardGpuPermissions`, `:454`). Render nodes, `/dev/dri` itself, `/sys/dev/char/*` (`AddDrmGpuPermissions`, `:243`) and brokered `readlink` (`CommandSetForGPU`, `:606`) are ChromeOS-only.
+- *So:* NVIDIA's proprietary driver has its nodes, manifest and library, and can probably create a device (to verify). Mesa can't: libdrm's device enumeration lists `/dev/dri`, reads `/sys/dev/char/226:N/device/*` (with a `readlink` of its `subsystem` link) and opens `/dev/dri/renderD*`, all refused; and current Mesa names its manifests `intel_icd.json` and `radeon_icd.json`, without the architecture suffix (this machine's Mesa 25.2 does), which aren't on the list.
+- *Minimal change, for GPU launches only:* the browser adds a switch (`--molt-inference-gpu`) to the command line of an inference process it launches for the GPU, and the hook then adds read-only `/dev/dri`; read-write `/dev/dri/renderD128`-`137` with read-only `/sys/dev/char/226:N/` for each one present; the two unsuffixed Mesa manifests; and the broker's `readlink` (still limited to allowed paths). That is what ChromeOS's GPU sandbox grants for the same drivers. Without the switch the hook does exactly what upstream's does, so the CPU path's sandbox is unchanged. Render nodes are the unprivileged DRM interface (no mode setting); the process can already open the primary nodes `card0-9` read-write, and reaching the GPU driver's ioctls is the accepted cost of this sandbox type (§5.2, item 6). No library is added to the preload list.
+- Not reachable in the sandbox, and harmless: Mesa's and NVIDIA's on-disk shader caches (pipelines are compiled at every load), `drirc.d`, and implicit Vulkan layers (their manifests aren't readable, which keeps overlay layers out of the process).
+
+**Windows.** The type runs in the LPAC `cr.sb.odm` with `lpacChromeInstallFiles`, `registryRead`, `lpacPnpNotifications` and a `chromeInstallFiles` impersonation capability (`sandbox/policy/win/sandbox_win.cc:439`), with the token `USER_RESTRICTED_SAME_ACCESS`/`USER_LIMITED` (`content/browser/service_host/utility_sandbox_delegate_win.cc:157`: "USER_RESTRICTED breaks the Direct3D backend") and no win32k lockdown.
+
+- **Signed DLLs only after lockdown.** `GenerateConfigForSandboxedProcess` sets `MITIGATION_FORCE_MS_SIGNED_BINS` as a *delayed* mitigation for every type except ScreenAI, speech and the Media Foundation CDM (`sandbox_win.cc:505-510`); it takes effect at `LowerToken()` (`utility_main.cc:485`). MoltBrowser's own `vulkan-1.dll` isn't Microsoft-signed; vendor ICDs are signed by their vendors and WHQL-catalogued, and whether that passes the mitigation's check is unverified. Upstream avoids the question: its service creates Dawn devices in `PreSandboxInit`, before lockdown, keyed on its own service name, and `UtilityConfig.preload_libraries` (`PreLockdownSandboxHook`, `utility_main.cc:180`, filled by the PassKey-gated `ServiceProcessHost::Options::WithPreloadedLibraries`) loads named DLLs before lockdown.
+- **What a Windows GPU path needs:** a pre-lockdown step for our service (a `utility_sub_type` check in `utility_main.cc`, like webnn's at `:474`) that loads the loader, creates an instance and a device so the ICD and its dependencies are mapped, and keeps that instance alive so they stay mapped (`vkDestroyInstance` unloads the ICD; a later `LoadLibrary` of a module already mapped doesn't map a new image). Whether the ICD's registry reads and DriverStore files are reachable from this LPAC, and whether the D3DKMT adapter queries the loader uses for discovery work there, needs a Windows machine with a GPU. Windows builds are paused (CLAUDE.md), so it isn't built here.
+- **Until then:** without that step the loader or the ICD can't be loaded after lockdown (or the loader finds no usable device), so the backend isn't registered and the model loads on the CPU. A driver that crashes half-way is a GPU failure (§11.5), which moves the model to the CPU.
+
+**macOS** is unchanged (Metal; the switch is refused there).
+
+### 11.5 Runtime
+
+**Which device.** ggml-vulkan's default (no `GGML_VK_VISIBLE_DEVICES`) takes every discrete and integrated GPU with 16-bit storage, drops duplicates (one GPU through two drivers: RADV preferred over AMDVLK, and so on), and only if none is left the first non-CPU device; it never picks a CPU-type device (lavapipe, llvmpipe, SwiftShader). It already works around specific driver bugs itself (old AMD Windows drivers, Intel Windows driver ranges, cooperative matrices only where they are fast). MoltBrowser adds a policy, a pure function over the properties ggml reads (vendor, device type, driver id, driver and API version, device-local memory):
+
+- refused: CPU-type devices, and software drivers by driver id (llvmpipe, SwiftShader) whatever type they report; Dozen (Vulkan over D3D12); virtual GPUs; API versions below 1.2 (ggml's own minimum); less than 2 GiB of device-local memory;
+- a table of (vendor, driver id, driver version range) entries for drivers found broken in testing, empty until there is evidence;
+- preferred: discrete over integrated, then the most free memory. One device only: a model is never split across GPUs.
+
+**How many layers.** llama.cpp at b11641 has no fitting API in `llama.h` (`common/fit.cpp` isn't built). The service reads the layer count from the GGUF header and puts as many layers on the GPU as fit in 90% of the device's free memory (`VK_EXT_memory_budget` where the driver has it), after a reserve for compute buffers and a minimal KV cache; the rest stay on the CPU. Under a quarter of the layers isn't worth the transfers: then the CPU alone. After the load, `n_ctx` is also capped by the memory left on the device. If the model or its context still can't be allocated, it is loaded again on the CPU in the same process.
+
+**Device lost, driver crash, hang.**
+
+- A lost device (a GPU reset, a driver fault, a TDR on Windows) makes ggml-vulkan throw `vk::DeviceLostError`. With the wrappers of §11.6 the request ends with a new status, `kBackendFailed`; the service stops using the context and never frees it (freeing on a lost device can throw inside a destructor), and the browser ends that process and reloads the model on the CPU.
+- A driver that crashes the process (or a `GGML_ABORT` in ggml-vulkan), and a GPU hang that stops progress (the liveness timeout of §5.3), look like any crash or hang to the browser. Today each counts in the model's crash-loop guard (§4.3: two load crashes in an hour, or three generation crashes in ten minutes, lock the model out), which would lock out a model that runs fine on the CPU.
+- So the browser keeps a GPU record for the session: a crash, a hang or a `kBackendFailed` of a process that was loading with the GPU requested, or running on the GPU, is a **GPU failure**, not a model crash. It turns the GPU off for that model for the rest of the session (a load in progress is retried on the CPU at once), and two GPU failures across models turn it off for every model. Crashes on the CPU path count as before. A model file that crashes the tokenizer can therefore crash once more than before (on the GPU, then on the CPU), at most once per session.
+
+### 11.6 Exceptions
+
+ggml-vulkan must be built with exceptions: it uses `vulkan.hpp`'s throwing API and catches its own errors in places. What can reach a `-fno-exceptions` caller, at b11641:
+
+- `ggml_backend_vk_reg()` (instance creation, device enumeration) catches everything and returns `nullptr`.
+- Model loading and context creation (weight upload, device creation, pipelines) run inside `llama_model_load_from_file_ptr` and `llama_init_from_model`, which catch `std::exception`; every `vulkan.hpp` error derives from it (`vk::SystemError` from `std::system_error`).
+- **Not caught:** `llama_decode` / `llama_process` / `llama_encode` (graph compute: queue submits and fence waits rethrow `vk::DeviceLostError` and throw `vk::SystemError` on other errors; `VK_CHECK`, `ggml-vulkan-types.h:195`), `llama_synchronize` and everything that synchronizes first (`llama_get_logits_ith`, `llama_get_embeddings*`), and `llama_memory_clear(mem, true)` (it clears device buffers). On the CPU these don't throw (the audit at the top of `llama_engine.cc`); on the GPU they can.
+- `mtmd_encode_chunk` and `mtmd_init_from_file_ptr` catch `std::exception` (§10.3), so image encoding on the GPU is covered.
+- Destructors: `llama_free` and `llama_model_free` on a lost device can throw out of a destructor, which terminates even with exceptions on. Hence nothing is freed after a GPU failure.
+- `GGML_ABORT`s in ggml-vulkan (29, e.g. an op that `supports_op` accepted but the backend can't run) abort as they would on the CPU; the browser counts them as GPU failures (§11.5).
