@@ -81,6 +81,7 @@
 #include "chrome/services/molt_ai/inference/llama_engine.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <climits>
 #include <cstring>
@@ -554,6 +555,15 @@ void LlamaEngine::InitBackendOnce() {
   std::call_once(once, []() { llama_backend_init(); });
 }
 
+namespace {
+std::atomic<bool> g_allow_software_gpu_for_testing{false};
+}  // namespace
+
+// static
+void LlamaEngine::SetAllowSoftwareGpuForTesting(bool allow) {
+  g_allow_software_gpu_for_testing.store(allow);
+}
+
 LlamaEngine::LlamaEngine() = default;
 LlamaEngine::~LlamaEngine() = default;
 
@@ -645,6 +655,13 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
         info.api_version = d.api_version;
         info.memory_total = d.memory_total;
         info.memory_free = d.memory_free;
+        if (g_allow_software_gpu_for_testing.load() &&
+            CheckGpuDevice(info, {}) == GpuDeviceVerdict::kSoftware) {
+          // Tests only (SetAllowSoftwareGpuForTesting): judge it as an
+          // integrated GPU.
+          info.device_type = static_cast<uint32_t>(GpuDeviceType::kIntegrated);
+          info.driver_id = 0;
+        }
         infos.push_back(info);
       }
       const std::optional<size_t> chosen =

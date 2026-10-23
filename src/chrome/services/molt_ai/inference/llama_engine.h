@@ -248,6 +248,11 @@ class LlamaEngine {
   // llama_backend_init(), once per process. Load() calls it.
   static void InitBackendOnce();
 
+  // Tests only: lets the GPU device policy take software Vulkan drivers
+  // (lavapipe, SwiftShader), which it always refuses otherwise, so the GPU
+  // path can run on a machine without a GPU.
+  static void SetAllowSoftwareGpuForTesting(bool allow);
+
   LlamaEngine();
   ~LlamaEngine();
   LlamaEngine(const LlamaEngine&) = delete;
