@@ -114,6 +114,18 @@ fuzzer_test("molt_context_budget_fuzzer") {
   libfuzzer_options = [ "max_len=4096" ]
 }
 
+# The GPU's pipeline cache header (docs/design/SANDBOXED_INFERENCE.md
+# section 11.12): checked on the browser's file before the driver sees it.
+fuzzer_test("molt_gpu_pipeline_cache_fuzzer") {
+  sources = [ "molt_gpu_pipeline_cache_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/services/molt_ai/inference/engine:gpu_pipeline_cache",
+  ]
+  seed_corpus = "corpus/molt_gpu_pipeline_cache_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
 # Reached from //chrome/browser/molt_ai/fuzzers:molt_fuzzers.
 group("fuzzers") {
   testonly = true
@@ -121,6 +133,7 @@ group("fuzzers") {
     ":molt_bounded_json_fuzzer",
     ":molt_context_budget_fuzzer",
     ":molt_embedding_utils_fuzzer",
+    ":molt_gpu_pipeline_cache_fuzzer",
     ":molt_grammar_tokens_fuzzer",
     ":molt_image_input_fuzzer",
     ":molt_json_schema_grammar_fuzzer",
