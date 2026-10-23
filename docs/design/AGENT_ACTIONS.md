@@ -2612,8 +2612,9 @@ For site tools (§2.7):
   17 hostile calls (unknown ids, a tool's name or an element id as the
   tool, another tool's arguments, nulls for required arguments, caps,
   control characters, lower-case names, nesting), the retry notes never
-  repeating the reply. `chat_actions_unittest.cc`: the chat never offers,
-  parses or runs CALL_TOOL. `agent_prompt_unittest.cc` (3): without tools
+  repeating the reply. `chat_actions_unittest.cc`: then, the chat never
+  offered, parsed or ran CALL_TOOL (since §4.9, see below).
+  `agent_prompt_unittest.cc` (3): without tools
   nothing mentions them; with them exactly the action, two rules and a
   security rule, also with a screenshot; page text that forges TOOLS stays
   in the fence.
@@ -2663,3 +2664,70 @@ For site tools (§2.7):
   polling and its timing; a `<form toolname>` tool with and without
   `toolautosubmit`; a run with a real model choosing between tools,
   clicks and typing.
+
+For frames, `toolchange` and the chat's tool proposals (§2.7.12, §2.7.13,
+§4.9), and the shared hidden characters:
+
+- **In `molt_ai_unittests`:** `agent_tools_unittest.cc` (11 more): which
+  frames count, from a page with nested same-origin frames, a cross-origin
+  frame with a same-origin one inside it and a fenced frame with one
+  inside it (main document first, then depth first); same site but not
+  same origin (subdomain, port, scheme, `null`); frames out of the page
+  hiding their subtree; opaque and non-web main documents; the 8-frame
+  cap, flat and nested; lists that aren't trees; the chain re-checked at
+  call time (each link's origin, page and parent, the depth); the frame's
+  text (origin and path, the cut at a character boundary, hidden
+  characters, quotes, a frame without its own address); the browser's
+  frame number in TOOLS and TOOL RESULT; the document mark required,
+  checked and carried by every tool; the approval naming the frame; the
+  call script's mark and untrusted-hint checks. `agent_actions_unittest.cc`
+  (2 more): the same name in two frames is two tools, once per frame, the
+  8 cap over all frames in order. `chat_actions_unittest.cc` (10 more, one
+  replaced): without tools the set, schema, parser and prompt are
+  unchanged; with tools the agent's CALL_TOOL branch, valid and 7 hostile
+  calls; the agent's offering rules and the chat's own schema budget; the
+  prompt's rules and TOOLS inside the one fence (a description that tries
+  to end it or forge a line); the card (the frame, every argument whole,
+  escaped); every tool proposal asks, read-only, form and card tools
+  included, and unknown tools, probes or another site are refused;
+  `MayRunProposal` needs confirmation, the reason shown and the click's
+  activation; the answer shown (quoted, one line, escaped, cut at 300) and
+  every failure note; hidden characters in typed text, labels and URLs on
+  every card. `hidden_chars_unittest.cc` (3): one table of every range at
+  both ends and its neighbours, at the start, middle and end of a text;
+  sequences cut short; tag-character sentences. The form fill's and the
+  tools' tests check the wider set too.
+- **In `tools/webui_checks` (`npm test`, CI):** `agent_tools_test.js`: the
+  mark set by the first listing and kept by the next, reported with the
+  tools; a call refused in a document without the mark or with another;
+  the untrusted-content hint compared. The chat page in the smoke test: a
+  CALL_TOOL proposal in Auto mode shows the chip with the browser's reason
+  first, sends only the id and `true` on Allow, and shows the summary and
+  the site's answer as text.
+- **Run outside the repo** (standalone, against the `//base` stand-ins):
+  - all the agents tests and the form fill's (217), with clang, under ASan
+    and UBSan, and with g++ (which reports a known false positive of its
+    own, `-Wmaybe-uninitialized` on a `std::optional<std::vector>` move in
+    `agent_plan.cc`, not new);
+  - the chat's prompt and schema without tools against the base commit's
+    `chat_actions.cc`: byte-identical on 3,000 random pages and requests;
+  - `molt_agent_tools_fuzzer` (now also frame trees, frame text and the
+    chat's offering and tool proposals, a new seed): about 30,000 runs; the
+    plan and actions fuzzers 40 s each with the shared set;
+  - mutation checks: 49 single-point mutations of the new checks (which
+    frames count and the chain, the cap, tree order, frame text and labels,
+    the mark, the untrusted hint, identity in `AddSiteTools`, the chat's
+    set, schema budget, refusals, always asking, the click, the card, the
+    fence, the answer, and each range of the hidden set), all caught; 6 of
+    the list and call scripts in jsdom, all caught;
+  - the real-header compile check (`tools/compile_check/`) of every
+    changed C++ file, `SiteToolHost` and the chat handler included: no
+    errors, no warnings (it also reported three range-for warnings in
+    `agent_tools.cc` and the tools fuzzer, from before, now fixed).
+- **Needs the build machine:** a compile and link; `SiteToolHost` against
+  real pages: `ForEachRenderFrameHost` over iframes, a fenced frame and an
+  out-of-process cross-origin frame, the isolated world of a same-origin
+  child frame (`document.modelContext` there, the mark surviving and not
+  surviving navigations, a frame host reused for a new document), the
+  shared 3 s budget; the chat's transient activation on Allow from the side
+  panel and from a tab; a real model choosing a tool in the chat.
