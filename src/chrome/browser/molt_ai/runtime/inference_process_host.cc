@@ -321,6 +321,8 @@ class InferenceProcessHost::Generation : public mojom::GenerationStreamer {
     s.history_dropped = summary->history_dropped;
     s.context_trimmed = summary->context_trimmed;
     s.user_message_trimmed = summary->user_message_trimmed;
+    s.backend_failed =
+        summary->status == mojom::GenerationStatus::kBackendFailed;
     StreamValidator::CompleteResult r =
         validator_.OnComplete(s, host_->NowMs());
     if (r.violation != StreamViolation::kNone) {
@@ -586,6 +588,8 @@ void InferenceProcessHost::StartGeneration(
   }
   ModelProcess* p = current_.get();
   limits.context_tokens = p->context_tokens;
+  // A GPU failure is believed only from a model on the GPU.
+  limits.model_on_gpu = p->on_gpu;
   limits.stall_timeout_ms = timeouts_.stall.InMilliseconds();
   limits.deadline_ms = timeouts_.generation.InMilliseconds();
   auto generation = std::make_unique<Generation>(

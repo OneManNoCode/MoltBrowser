@@ -55,6 +55,8 @@ const char* StreamViolationName(StreamViolation violation) {
       return "no message within the liveness timeout";
     case StreamViolation::kDeadlineExceeded:
       return "generation deadline exceeded";
+    case StreamViolation::kGpuFailureOffGpu:
+      return "GPU failure reported for a model not on the GPU";
   }
   return "unknown";
 }
@@ -150,6 +152,11 @@ StreamValidator::CompleteResult StreamValidator::OnComplete(
   CompleteResult result;
   result.violation = CountMessage(now_ms, /*is_progress=*/false);
   if (result.violation != StreamViolation::kNone) return result;
+  if (summary.backend_failed && !limits_.model_on_gpu) {
+    // Counted against the model (CrashLoopGuard), not as a GPU failure.
+    result.violation = StreamViolation::kGpuFailureOffGpu;
+    return result;
+  }
   completed_ = true;
   result.visible_tail = stop_.Flush();
   // Callers add these up (AutomationRunner keeps an int total): never more
