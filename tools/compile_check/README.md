@@ -29,7 +29,7 @@ targets) and gen (the headers a build generates) until nothing new turns up,
 then checks every target with 2 parallel compiles (each capped at 6 GB).
 A cold run takes a few hours, most of it fetching; re-runs are incremental.
 Everything is cached in the work dir (default `.molt-compile-check-cache/`,
-gitignored; `--work DIR` or `MOLT_COMPILE_CHECK_DIR`), about 3 GB. The
+gitignored; `--work DIR` or `MOLT_COMPILE_CHECK_DIR`), about 2 GB. The
 Chromium tree comes from the blob-less cache `tools/chromium/upstream.py`
 keeps in `.molt-chromium-cache/` (`--chromium-cache` to point elsewhere).
 
@@ -123,6 +123,11 @@ The first two kinds and the mirror-HEAD repositories are named per file by
 * Files whose headers can't be had here are reported as "not checked",
   with the header; `gen_report.json` lists every header that stayed
   missing and why.
+* An API that a mirror-HEAD repository (above) changed since the pinned
+  commit shows up as errors that a real build would not have: `report`
+  adds "reaches <repository> (mirror HEAD)" to such a file's errors, for a
+  human to judge. At the time of writing that is
+  `rtc_peer_connection.cc` (webrtc's `CryptoOptions::Srtp` at HEAD).
 * Code built only under other GN args, or only by a target whose own
   configs are not in `gnconfigs.py`: the file is compiled with the configs
   listed there, not with its target's exact set.

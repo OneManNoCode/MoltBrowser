@@ -295,8 +295,8 @@ def _reach(graph, start):
 def classify(r, graph, gen_dir):
     """(status, detail, stand-ins) for one check result. The stand-ins are
     the ones the file's include closure (over-approximated, like the scan)
-    reaches: marked grit headers and pdfium's mirror-HEAD headers. The
-    toolchain-wide substitutes (README) apply to every file."""
+    reaches: marked grit headers and the mirror-HEAD repositories' headers.
+    The toolchain-wide substitutes (README) apply to every file."""
     errs = [d for d in r["diags"] if "error" in d["kind"]]
     missing = [d for d in errs if d["kind"] == "fatal error" and
                "file not found" in d["msg"]]
@@ -322,7 +322,11 @@ def classify(r, graph, gen_dir):
         return "not checked", "header not available here: " + name, \
             stand_ins
     if errs:
-        return "ERRORS", "%d error(s)" % len(errs), stand_ins
+        # With a mirror-HEAD repository in reach, an error can be the
+        # stand-in's (an API it changed): say so, for a human to judge.
+        return "ERRORS", "%d error(s)%s" % (
+            len(errs), "; reaches " + ", ".join(stand_ins)
+            if stand_ins else ""), stand_ins
     if stand_ins:
         return "partly on stand-ins", ", ".join(stand_ins), stand_ins
     return "checked", "", stand_ins
