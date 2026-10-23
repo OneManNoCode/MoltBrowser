@@ -66,10 +66,12 @@ items are marked *deferred*.
 - [ ] Disk: at least 120 GB free for the checkout and one out dir; each
   extra out dir (§5 tests, §6 fuzzers) needs tens of GB more (from
   `build/docker/build-linux-fresh.sh`, `scripts/setup.sh`).
-- [ ] `main` is current and clean:
+- [ ] `main` is current and clean, and there is a log folder (from CLAUDE.md
+  "Git Workflow"):
   ```bash
   git switch main && git pull --ff-only && git status --short   # prints nothing
   git log -1 --oneline                                          # note the commit
+  mkdir -p ~/molt-v0.3.0
   ```
 - [ ] Toolchain on the Mac (from CLAUDE.md, BUILD_PROGRESS.md):
   - use depot_tools' `python3`, not Homebrew's:
@@ -79,7 +81,6 @@ items are marked *deferred*.
     `gh` logged in with `repo` and `workflow` scopes.
 - [ ] The builder label is set in the build account's shell profile (§2.5):
   `echo "$MOLT_BUILDER_ID"` prints e.g. `geneye-mac-1` (from #43).
-- [ ] `mkdir -p ~/molt-v0.3.0` for logs.
 
 ## 1. Sync
 
@@ -99,7 +100,7 @@ items are marked *deferred*.
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
   first run from the old 148 pin means a full rebuild.
-- [ ] The checkout is at the pin:
+- [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
   ```
@@ -161,11 +162,13 @@ Without a key in the build, v0.3.0 never installs an update
 (`update_signing_keys.cc` holds `""` today). From docs/SIGNED_UPDATES.md,
 "One-time: create the release key":
 
-- [ ] On the offline machine: `python3 tools/release_signing/molt_release_sign.py keygen --out /Volumes/MOLTKEY/molt-update-signing.key`.
+- [ ] On the offline machine (from SIGNED_UPDATES.md):
+  `python3 tools/release_signing/molt_release_sign.py keygen --out /Volumes/MOLTKEY/molt-update-signing.key`.
   Strong passphrase in the password manager; back the key file up to a
   second encrypted drive. The key never touches CI, a cloud machine or
   this repository.
-- [ ] On a dev machine, with the **public** key it printed:
+- [ ] On a dev machine, with the **public** key it printed (from
+  SIGNED_UPDATES.md):
   `python3 tools/release_signing/molt_release_sign.py add-key <PUBLIC KEY>`.
   *Recorded in* `src/chrome/browser/molt_ai/update/update_signing_keys.cc`.
 - [ ] Optional now, needed before the apt/rpm repository goes live: the
@@ -176,10 +179,11 @@ Without a key in the build, v0.3.0 never installs an update
 ### 2.2 Tor 15.0.15 hashes
 
 Release builds fail at `scripts/bundle-tor.sh` until these are filled in
-(from MOLTNET_COMPLIANCE.md §5.7, the Tor bump). On a trusted machine with
-gpg, from the script's own instructions:
+(MOLTNET_COMPLIANCE.md §5.7). The bump to 15.0.15 came with the MoltNet
+P1-P15 work, when the Tor archive was unreachable. On a trusted machine
+with gpg, from the script's own instructions:
 
-- [ ] Verify Tor's signed checksum file:
+- [ ] Verify Tor's signed checksum file (from the MoltNet P1-P15 work):
   ```bash
   V=15.0.15
   B=https://archive.torproject.org/tor-package-archive/torbrowser/$V
@@ -189,9 +193,11 @@ gpg, from the script's own instructions:
   gpg --verify sha256sums-signed-build.txt.asc sha256sums-signed-build.txt   # Good signature
   grep -E "tor-expert-bundle-(macos-aarch64|macos-x86_64|windows-x86_64)-$V.tar.gz" sha256sums-signed-build.txt
   ```
-- [ ] Cross-check one digest against an independent download:
+- [ ] Cross-check one digest against an independent download (from
+  `scripts/bundle-tor.sh`):
   `curl -fLO $B/tor-expert-bundle-macos-aarch64-$V.tar.gz && shasum -a 256 tor-expert-bundle-macos-aarch64-$V.tar.gz`.
-- [ ] *Recorded in* `scripts/bundle-tor.sh`: `EXPECTED_SHA256_TOR_AARCH64`
+- [ ] Write them down (from the MoltNet P1-P15 work).
+  *Recorded in* `scripts/bundle-tor.sh`: `EXPECTED_SHA256_TOR_AARCH64`
   and `EXPECTED_SHA256_TOR_X86_64`. Also the Windows digest in
   `.github/workflows/release-windows-selfhosted.yml`,
   `$pins["tor-15.0.15"]` (deferred while Windows is paused, but cheap now).
@@ -199,7 +205,8 @@ gpg, from the script's own instructions:
 
 ### 2.3 whisper's model
 
-- [ ] `ggml-tiny.en.bin` (from `scripts/bundle-whisper.sh`):
+- [ ] `ggml-tiny.en.bin` (from the release-integrity work of 2026-10-14,
+  `scripts/bundle-whisper.sh`):
   ```bash
   curl -fL -o /tmp/ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
   shasum -a 1 /tmp/ggml-tiny.en.bin     # must be c78c86eb1a8faa21b369bcd33207cc90d64ae9df
@@ -234,9 +241,10 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   the pair as one unit since #40.
 - [ ] Optional: the chat models, `python3 tools/models/pin_models.py` (dry
   run, then `--write`); hidden entries (`qwen3.5-4b`, `gemma4-e4b`) stay
-  hidden. Set `HF_TOKEN` for gated repositories.
+  hidden. Set `HF_TOKEN` for gated repositories (from
+  `tools/models/pin_models.py`).
 - [ ] `python3 tools/models/pin_models_test.py` passes (fails on a
-  half-filled pin) and the `TODO(pin)` comments are gone.
+  half-filled pin) and the `TODO(pin)` comments are gone (from #28, #38).
   *Recorded in* `src/chrome/browser/molt_ai/runtime/browser_ai_runtime.cc`
   (`kModelRegistry`, `kVisionProjectors`) and
   `src/chrome/browser/molt_ai/memory/embedding_model_registry.cc`.
@@ -263,7 +271,7 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   This file fans out a ~2 h recompile (from CLAUDE.md), so do it in this PR,
   before the first full build, not after the tests.
 - [ ] Merge the pins-and-version PR; `git pull --ff-only`; `./scripts/setup.sh`
-  copies the overlay again.
+  copies the overlay again (from CLAUDE.md "Git Workflow").
 
 ## 3. Configure and build
 
@@ -283,10 +291,11 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
 - [ ] Build and read the whole log, because `autoninja` can exit 0 on a
   failed compile (from CLAUDE.md):
   ```bash
-  autoninja -C chromium/src/out/MoltBrowser chrome 2>&1 | tee ~/molt-v0.3.0/build-mac.log
+  autoninja -C chromium/src/out/MoltBrowser -k 0 chrome 2>&1 | tee ~/molt-v0.3.0/build-mac.log
   grep -nE 'error:|FAILED|finished with an error' ~/molt-v0.3.0/build-mac.log
   ```
-  *Expected:* no match. On errors, §4 maps the file to its PR.
+  *Expected:* no match. `-k 0` keeps going past failures, so one run lists
+  every broken file. On errors, §4 maps each file to its PR.
 - [ ] Day-to-day install loop: `./scripts/dev-install-mac.sh` (stages the
   app, adds `default.metallib`, signs inside-out, runs a headless renderer
   gate, installs to `/Applications`). *Expected:* `signature valid,
@@ -302,13 +311,15 @@ machine. Docker on an Apple Silicon Mac runs under Rosetta and took 24-40 h
 per attempt; a native x86_64 Linux box takes about 4 h (from
 `.github/workflows/release-linux.yml`).
 
-- [ ] Docker on the Mac, same checkout:
+- [ ] Docker on the Mac, same checkout (from CLAUDE.md "Linux (via Docker
+  from Mac)"):
   `./build/docker/build-linux.sh 2>&1 | tee ~/molt-v0.3.0/build-linux.log`
   (syncs the Linux toolchains if `buildtools/linux64/gn` is missing, then
   `configure.sh --platform linux --arch x64` and `build.sh --jobs 4`).
   Or, on a fresh Linux machine: `./build/docker/build-linux-fresh.sh --version 0.3.0`.
 - [ ] `grep -nE 'error:|FAILED|finished with an error' ~/molt-v0.3.0/build-linux.log`
-  → no match. The binary is `chromium/src/out/MoltBrowser/chrome`.
+  → no match. The binary is `chromium/src/out/MoltBrowser/chrome` (from
+  CLAUDE.md "Build gotchas").
 - [ ] `molt_llama_vulkan` stays off: `configs/linux-x64.gn` only mentions it
   in a comment. Turning it on is §9 (from #52).
 
@@ -429,9 +440,11 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 
 ### 4.9 GN targets and DEPS edges
 
-- [ ] List what the new code defines: `(cd chromium/src && gn ls out/MoltBrowser '//chrome/browser/molt_ai/*')`.
+- [ ] List what the new code defines (from the PRs below):
+  `(cd chromium/src && gn ls out/MoltBrowser '//chrome/browser/molt_ai/*')`.
 - [ ] `gn check` the MoltBrowser directories first (fast), then the whole
-  tree (authoritative):
+  tree (authoritative) (from #13, #15, #19, #20, #24, #27, #28, #30, #37,
+  #41, #45, #52):
   ```bash
   cd chromium/src
   for p in '//chrome/browser/molt_ai/*' '//chrome/services/molt_ai/*' \
@@ -469,7 +482,7 @@ build them in a second, non-official out dir with DCHECKs on, which also
 serves as the "debug build" #21 and #23 asked for (DCHECKs around Incognito
 extension enablement and `MediaRouterEnabled()`).
 
-- [ ] The test out dir (verify the command):
+- [ ] The test out dir (from #21, #23) (verify the command):
   ```bash
   mkdir -p build/cache
   sed 's/^is_official_build = true/is_official_build = false/' configs/macos-arm64.gn > build/cache/macos-arm64-tests.gn
@@ -483,7 +496,7 @@ extension enablement and `MediaRouterEnabled()`).
 
 ### 5.1 MoltBrowser's own tests
 
-- [ ] `molt_ai_unittests` (from every PR):
+- [ ] `molt_ai_unittests` (from every PR; the table says which):
   ```bash
   autoninja -C chromium/src/out/MoltBrowser molt_ai_unittests
   chromium/src/out/MoltBrowser/molt_ai_unittests 2>&1 | tee ~/molt-v0.3.0/molt_ai_unittests-mac.log
@@ -552,12 +565,14 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*` | #37, #50 |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
 
-```bash
-cd chromium/src
-autoninja -C out/MoltTests services_unittests net_unittests components_unittests unit_tests \
-  blink_unittests blink_platform_unittests content_unittests
-out/MoltTests/services_unittests --gtest_filter='NetworkContextTest.*:...'   # one line per row above
-```
+- [ ] Build and run each row above (from the PRs in the table):
+  ```bash
+  cd chromium/src
+  autoninja -C out/MoltTests services_unittests net_unittests components_unittests unit_tests \
+    blink_unittests blink_platform_unittests content_unittests
+  out/MoltTests/services_unittests --gtest_filter='NetworkContextTest.*:...'   # one run per row
+  ```
+  *Expected:* as in §5.3.
 
 ### 5.3 Known-expected failures, and what to do
 
@@ -593,21 +608,22 @@ tier CI doesn't run. Prefer Linux; Apple's clang has no libFuzzer
   GURL and Origin, `base::span` in the farbling fuzzer, llama.cpp's internal
   grammar API, `seed_corpus` and `dict` paths, DEPS rules and visibility
   (from #41).
-- [ ] Run each for 5-10 minutes on its seed corpus:
+- [ ] Run each for 5-10 minutes on its seed corpus (from #41; docs/FUZZING.md):
   ```bash
   cd "$REPO"
   python3 tools/fuzz/molt_fuzz.py list | while read -r name tier dir; do
     mkdir -p ~/molt-v0.3.0/fuzz/$name
     chromium/src/out/libfuzzer/$name -max_total_time=300 -timeout=25 -rss_limit_mb=2560 \
       -artifact_prefix=$HOME/molt-v0.3.0/fuzz/$name/ \
-      ~/molt-v0.3.0/fuzz/$name "$dir/corpus/$name" || echo "FINDING: $name"
+      ~/molt-v0.3.0/fuzz/$name "$dir/corpus/$name" < /dev/null || echo "FINDING: $name"
   done
   ```
   *Expected:* no `FINDING`. A finding: replay it, fix, add a unit test and
   the input as `corpus/<name>/regress_<what>` (docs/FUZZING.md).
-- [ ] The standalone `stand_ins` tier, which CI skips (on Linux, with clang
-  and `libssl-dev`): `python3 tools/fuzz/molt_fuzz.py smoke --tier stand_ins --jobs 2`
-  → every fuzzer passes (docs/FUZZING.md "Not covered yet").
+- [ ] The standalone `stand_ins` tier, which CI skips (from #41; docs/FUZZING.md
+  "Not covered yet"), on Linux with clang and `libssl-dev`:
+  `python3 tools/fuzz/molt_fuzz.py smoke --tier stand_ins` → every fuzzer
+  passes.
 
 ## 7. Device and manual checks
 
@@ -687,8 +703,8 @@ item says otherwise.
   prints only `root/root`; the `.deb` (xz) installs on Debian 11 and
   Ubuntu; the `.rpm` installs on Fedora.
 - [ ] A CPU without AVX2: on-device AI reports an unsupported CPU rather
-  than crashing (SANDBOXED_INFERENCE.md §11.9; re-check after the runtime
-  CPU-dispatch work lands).
+  than crashing (from #52, SANDBOXED_INFERENCE.md §11.9; re-check after the
+  runtime CPU-dispatch work lands, which changes this).
 
 ### 7.3 Features
 
@@ -696,18 +712,20 @@ item says otherwise.
 a regular and an Incognito window, 5 in MoltNet, 6 once:
 
 - [ ] Without a model: no bubble on a German page; the icon's bubble says a
-  model is needed; *Choose a model* opens `molt://ai`; nothing downloads.
+  model is needed; *Choose a model* opens `molt://ai`; nothing downloads
+  (from #48).
 - [ ] With a model, `de.wikipedia.org`: the visible part changes first, the
   footnote counts up, *Stop* stops, *Show original* restores the page
-  exactly (`document.body.innerHTML` before and after).
+  exactly (`document.body.innerHTML` before and after) (from #48).
 - [ ] `translate="no"`, forms, `contenteditable`, code blocks and a shadow
-  DOM component: only visible prose changes; a textarea's placeholder is
-  translated and restored.
+  DOM component: only visible prose changes (from #48); a textarea's
+  placeholder is translated and restored, and text directly inside a
+  `display: contents` element is translated (from #55).
 - [ ] A capture: no request to `translate.googleapis.com` or
-  `translate-pa.googleapis.com`, at startup or while translating.
+  `translate-pa.googleapis.com`, at startup or while translating (from #48).
 - [ ] MoltNet: no bubble or address-bar icon; *Translate…* from the menu
-  explains it's off; nothing is read.
-- [ ] `chrome://translate-internals` lists the 20 languages.
+  explains it's off; nothing is read (from #48, #55).
+- [ ] `chrome://translate-internals` lists the 20 languages (from #48).
 
 **Built-in AI APIs and consent** (from #26, #30, #32, #34, #38, #46, #50;
 WEB_AI_APIS.md §12):
@@ -715,7 +733,8 @@ WEB_AI_APIS.md §12):
 - [ ] `LanguageModel`, `Summarizer`, `Writer`, `Rewriter`, `Translator` from
   a page: "downloadable" until the site is allowed; the infobar names the
   top-level site; Allow, Block, *Choose a model*, navigating away. MoltNet:
-  all unavailable. Writer and Rewriter exist without an origin-trial token.
+  all unavailable. Writer and Rewriter exist without an origin-trial token
+  (from #26).
 - [ ] A click on Allow or Block within 0.5 s of the bar appearing, or right
   after another press, does nothing (from #46, #50).
 - [ ] Three closes pause the prompt for 7 days; answers and pauses survive a
@@ -767,19 +786,20 @@ WEB_AI_APIS.md §12):
 
 - [ ] A typed page-action request in a regular and a MoltNet window: Allow,
   Deny, and navigating away before Allow. Summarising a page that contains
-  `[[ACTION ...]]` text does nothing.
+  `[[ACTION ...]]` text does nothing (from #36).
 - [ ] `/fill ai` and `/paste` with a real model always ask first and show
-  every value; side-panel commands act on the page in the chat's window.
+  every value; side-panel commands act on the page in the chat's window;
+  typing into a `<textarea>` works (from #40).
 - [ ] Once the vision model is pinned: its download shows one progress for
-  both files; cancel, resume and delete work as one unit.
+  both files; cancel, resume and delete work as one unit (from #38, #40).
 
 **`@memory` and `@ai` in the address bar** (from #28, #44, #47):
 
 - [ ] `@memory <words>` shows keyword matches (and matches by meaning once
   the embedding model is loaded); `molt://memory/?q=<words>` opens the
-  results page. Incognito, Guest and MoltNet: empty dropdown.
+  results page. Incognito, Guest and MoltNet: empty dropdown (from #44).
 - [ ] `@ai <prompt>` shows no search suggestions; full-width `＠ａｉ` behaves
-  the same; a NetLog while typing either shows no request.
+  the same; a NetLog while typing either shows no request (from #44, #47).
 - [ ] After pinning: download the embedding model from `molt://memory`;
   *Search by meaning* works; note RAM, speed, and the re-index time of a
   large index on low-end hardware (from #28).
@@ -833,18 +853,20 @@ The first run on a MoltBrowser build is also the kit's own first real test
 (from #29; docs/LEAK_TESTING.md). It needs a Linux machine with sudo,
 kernel 5.13 or later with cgroup v2, nftables 1.0 or later, `tor`,
 `tcpdump`, `iproute2`, `util-linux`, `openssl`, optionally `xvfb`, and a
-reachable Tor network. Docker Desktop's VM on the Mac is not a tested host
-(verify).
+reachable Tor network. Nobody has tried it in Docker Desktop's VM on the
+Mac; use a real Linux host.
 
-- [ ] The kit's own tests: `python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test`.
-- [ ] The full run against the build (or the installed `.deb`):
+- [ ] The kit's own tests (from #29):
+  `python3 -I -m unittest discover -s tools/leak_test/tests -t tools/leak_test`.
+- [ ] The full run against the build, then the installed `.deb` under
+  another locale and time zone (from #29, #49, #51, #55):
   ```bash
   sudo tools/leak_test/leaktest.sh run --browser chromium/src/out/MoltBrowser/chrome --out ~/molt-v0.3.0/leak-a
   sudo tools/leak_test/leaktest.sh run --browser /opt/moltbrowser/moltbrowser --out ~/molt-v0.3.0/leak-b \
        --locale de_DE.UTF-8 --timezone Asia/Tokyo
   tools/leak_test/leaktest.sh diff ~/molt-v0.3.0/leak-a/*/report.json ~/molt-v0.3.0/leak-b/*/report.json
   ```
-- [ ] What passing looks like:
+- [ ] What passing looks like (from #29 and the PRs named below):
   - `verdict: PASS (0 FAIL, 0 ERROR, ...)`, not INCOMPLETE;
   - the harness checks pass: the firewall held, only Tor reached the
     network, a MoltNet window opened through `chrome://molt-net/`, the
@@ -861,11 +883,12 @@ reachable Tor network. Docker Desktop's VM on the Mac is not a tested host
   `chrome://molt-net/`; the browser accepts the kit's wrapper as
   `--moltnet-tor-binary`; whether `--display headless` works with MoltNet
   windows.
-- [ ] Triage every "unexplained" host (expect one round): background traffic
-  of the regular profile goes into `tools/leak_test/leakkit/background.py`
-  and docs/NETWORK_TRAFFIC.md with the reason, then
-  `tools/leak_test/leaktest.sh report <run dir>`; anything else is a leak.
-- [ ] Send back both `report.json` files with the build's version.
+- [ ] Triage every "unexplained" host (expect one round, from #29):
+  background traffic of the regular profile goes into
+  `tools/leak_test/leakkit/background.py` and docs/NETWORK_TRAFFIC.md with
+  the reason, then `tools/leak_test/leaktest.sh report <run dir>`; anything
+  else is a leak.
+- [ ] Send back both `report.json` files with the build's version (from #29).
 
 ### 8.2 The full traffic capture (docs/NETWORK_TRAFFIC.md "How we'll verify")
 
@@ -880,7 +903,8 @@ reachable Tor network. Docker Desktop's VM on the Mac is not a tested host
 Not needed for v0.3.0: `molt_llama_vulkan` stays off. This is the list from
 docs/design/SANDBOXED_INFERENCE.md §11.9 (from #52, #55).
 
-- [ ] Build with the switch in its own out dir on Linux (verify the command):
+- [ ] Build with the switch in its own out dir on Linux (from #52) (verify
+  the command):
   ```bash
   mkdir -p build/cache
   cp configs/linux-x64.gn build/cache/linux-x64-vulkan.gn
@@ -894,8 +918,8 @@ docs/design/SANDBOXED_INFERENCE.md §11.9 (from #52, #55).
   SPIRV-Tools. Then `gn check` on the real tree, and `molt_ai_unittests`
   (`GpuOffloadTest`, `GpuFallbackGuardTest`, `InferenceProcessHostTest`,
   `MoltGpuInferenceSandboxPolicyTest`).
-- [ ] On each GPU, in the real sandbox. The load log line shows
-  `gpu_status` and `gpu_layers`.
+- [ ] On each GPU, in the real sandbox (from #52, #55). The load log line
+  shows `gpu_status` and `gpu_layers`.
 
   | | NVIDIA (proprietary) | AMD (Mesa RADV) | Intel (Mesa ANV) |
   |---|---|---|---|
@@ -906,11 +930,12 @@ docs/design/SANDBOXED_INFERENCE.md §11.9 (from #52, #55).
   | integrated GPU: does the footprint watchdog see device memory? | n/a | [ ] | [ ] |
 
 - [ ] A GPU behind a PCI bridge, and a machine with two GPUs, each find
-  theirs.
-- [ ] Grant more broker files only by name, never a directory recursively.
-- [ ] Deferred: Windows needs the pre-lockdown step of §11.4 first.
+  theirs (from #55).
+- [ ] Grant more broker files only by name, never a directory recursively
+  (from #55).
+- [ ] Deferred: Windows needs the pre-lockdown step of §11.4 first (from #52).
 - [ ] Before turning it on: a lasting per-driver GPU record and a user
-  setting, a pipeline cache, and the binary-size options (§11.9).
+  setting, a pipeline cache, and the binary-size options (from #52, §11.9).
 
 ## 10. Packaging, signing and the draft release
 
@@ -920,18 +945,22 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
 ### 10.1 Before the tag
 
 - [ ] Every fix from §3-§8 is merged, and the build at that commit passed
-  §5 and §7. The pins, the key and the version (§2) are in.
+  §5 and §7. The pins, the key and the version (§2) are in (from #43:
+  releases build from the tag's commit with a clean tree).
 - [ ] `CHANGELOG.md`: `## [Unreleased]` becomes the dated v0.3.0 heading;
-  README's download table and version text.
-- [ ] The installer names the updater looks for:
+  README's download table and version text (from CHANGELOG.md).
+- [ ] The installer names the updater looks for (from
+  `src/chrome/browser/molt_ai/update/update_manager.cc`, `release.yml`,
+  `release-linux.yml`):
   `MoltBrowser-macOS-arm64.dmg`, `MoltBrowser-Linux-x64.deb`,
   `MoltBrowser-Linux-x64.rpm`, `MoltBrowser-Linux-x64.tar.gz`
   (`UpdateManager::PlatformAssetName()`; the README's `/latest/download/`
   links use them too). The workflows produce these names; the local
   scripts produce versioned names, so §10.2 and §10.3 rename before the
   SBOMs.
-- [ ] Decide which machine builds what. **Pushing a `v*` tag starts two
-  workflows on self-hosted runners**, if they are online: `release.yml`
+- [ ] Decide which machine builds what (found while writing this runbook,
+  in `release.yml` and `scripts/sign-app.sh`). **Pushing a `v*` tag starts
+  two workflows on self-hosted runners**, if they are online: `release.yml`
   (macOS job on `[self-hosted, macOS, ARM64]`) and `release-linux.yml`
   (`[self-hosted, linux-chromium-builder]`).
   - Don't use `release.yml`'s macOS job for v0.3.0 as it stands: it never
@@ -943,7 +972,8 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
     (`gh run list --workflow release.yml --repo OneManNoCode/MoltBrowser`,
     then `gh run cancel <id>`), and use §10.2.
   - `release-linux.yml` is how v0.2.5's Linux packages were made (§10.3).
-- [ ] Tag the merged commit:
+- [ ] Tag the merged commit; `scripts/release-draft.sh` refuses a tag that
+  isn't pushed (from #43):
   ```bash
   git switch main && git pull --ff-only
   git tag -a v0.3.0 -m "MoltBrowser v0.3.0" && git push origin v0.3.0
@@ -964,12 +994,13 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
   ```
   *Expected:* no match. `build.sh` bundles Tor, whisper and tesseract into
   the app after the compile, but only **warns** when bundling fails.
-- [ ] Notarization credentials, once per machine:
+- [ ] Notarization credentials, once per machine (from `release.yml`):
   `xcrun notarytool store-credentials AC_PASSWORD --apple-id <Apple ID> --team-id 83DA5U8N7Z --password <app-specific password>`.
-- [ ] Sign, notarize and make the DMG (Info.plist version, `default.metallib`,
-  inside-out signing with per-helper entitlements, the `Resources/` helpers
-  and `Libraries/` dylibs, DMG, notarization, stapling). Without
-  `--upload`: the versioned DMG name is wrong for the updater.
+- [ ] Sign, notarize and make the DMG (from CLAUDE.md "Packaging gotchas",
+  `scripts/release.sh`): Info.plist version, `default.metallib`, inside-out
+  signing with per-helper entitlements, the `Resources/` helpers and
+  `Libraries/` dylibs, DMG, notarization, stapling. Without `--upload`: the
+  versioned DMG name is wrong for the updater.
   ```bash
   ./scripts/release.sh --version 0.3.0 --build <N> \
     --identity "Developer ID Application: GenEye AI Labs Inc. (83DA5U8N7Z)" \
@@ -978,8 +1009,10 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
   ```
   `<N>`: the next build number after v0.2.5's
   (`defaults read /Applications/MoltBrowser.app/Contents/Info.plist CFBundleVersion`).
-- [ ] The §7.1 codesign and notarization checks pass on this app and DMG.
-- [ ] SBOM, checksums, provenance and upload, as `release.yml` does them:
+- [ ] The §7.1 codesign and notarization checks pass on this app and DMG
+  (from CLAUDE.md).
+- [ ] SBOM, checksums, provenance and upload, as `release.yml` does them
+  (from #25, #43):
   ```bash
   APP=chromium/src/out/MoltBrowser/MoltBrowser.app
   ./scripts/release-sbom.sh --platform macos --arch arm64 --version 0.3.0 \
@@ -999,16 +1032,17 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
 
 ### 10.3 Linux
 
-- [ ] Route A, as for v0.2.5: the tag push runs `release-linux.yml` on the
-  `linux-chromium-builder` runner (its `.env` needs `MOLT_BUILDER_ID`). Or
-  start it by hand:
+- [ ] Route A, as for v0.2.5 (from #25, #43, `release-linux.yml`): the tag
+  push runs `release-linux.yml` on the `linux-chromium-builder` runner (its
+  `.env` needs `MOLT_BUILDER_ID`). Or start it by hand:
   `gh workflow run release-linux.yml --ref v0.3.0 -f tag=v0.3.0 -f jobs=4 --repo OneManNoCode/MoltBrowser`.
   *Expected:* the draft gains `MoltBrowser-Linux-x64.{deb,rpm,tar.gz}`,
   their three `*.spdx.json`, `SHA256SUMS-linux-x64`,
   `molt-provenance-linux-x64.json` and the unsigned
   `MoltBrowser-Linux-repository.tar`.
 - [ ] Route B, Docker on the Mac after §10.2 (slow; it replaces the macOS out
-  dir). The same steps as the workflow (verify the command):
+  dir). The same steps as the workflow, with the Docker provenance details
+  `scripts/release-linux.sh` adds (from #25, #43) (verify the command):
   ```bash
   git switch --detach v0.3.0 && git status --short
   export MOLT_RELEASE_BUILD=1
@@ -1037,19 +1071,23 @@ offline machine; the full runbook is docs/SIGNED_UPDATES.md "Every release".
     dist/molt-provenance-linux-x64.json dist/MoltBrowser-Linux-repository.tar --clobber
   ```
 - [ ] The §7.2 package check on the uploaded `.deb`; the leak kit (§8) on
-  the installed package.
+  the installed package (from #25, #29).
 
 ### 10.4 Sign offline and publish
 
 Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
 
-- [ ] Download the draft's assets on the online machine:
-  `gh release download v0.3.0 --repo OneManNoCode/MoltBrowser --dir release-v0.3.0`.
-- [ ] On the offline machine: `python3 tools/sbom/molt_sbom.py validate --artifacts-dir release-v0.3.0 release-v0.3.0/*.spdx.json`.
-- [ ] Sign the Linux repository with the archive key
-  (`tools/linux_repo/molt_linux_repo.py sign`), or skip it while there is no
-  archive key (§11).
-- [ ] Write and sign the manifest and the provenance, one passphrase prompt:
+- [ ] Step 2, on the online machine: download the draft's assets
+  (from SIGNED_UPDATES.md):
+  `gh release download v0.3.0 --repo OneManNoCode/MoltBrowser --dir release-v0.3.0`,
+  and copy the folder to the offline machine (step 3).
+- [ ] Step 4, offline: every SBOM describes its installer (from #25):
+  `python3 tools/sbom/molt_sbom.py validate --artifacts-dir release-v0.3.0 release-v0.3.0/*.spdx.json`.
+- [ ] Step 5, offline: sign the Linux repository with the archive key
+  (`tools/linux_repo/molt_linux_repo.py sign --bundle ... --key ...`, as in
+  SIGNED_UPDATES.md), or skip it while there is no archive key (from #25; §11).
+- [ ] Step 6, offline: write and sign the manifest and the provenance, one
+  passphrase prompt (from #43):
   ```bash
   python3 tools/release_signing/molt_release_sign.py manifest --tag v0.3.0 release-v0.3.0/*
   python3 tools/release_signing/molt_release_sign.py sign \
@@ -1059,9 +1097,10 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   152.0.7977.169, builder label and build times, and refuses unless the
   macOS and Linux statements cover every installer, SBOM and checksum file
   with the manifest's hashes and agree on the commit and Chromium.
-- [ ] Copy back `molt-release-manifest.json`, `.sig`,
-  `molt-build-provenance.intoto.jsonl` (and the signed repository bundle).
-- [ ] Publish (online):
+- [ ] Step 7: copy back `molt-release-manifest.json`, `.sig`,
+  `molt-build-provenance.intoto.jsonl` (and the signed repository bundle)
+  (from SIGNED_UPDATES.md).
+- [ ] Step 8, online: publish (from #25, #43):
   ```bash
   scripts/linux-repo-publish.sh --bundle MoltBrowser-Linux-repository.tar --tag v0.3.0   # only with an archive key
   scripts/publish-release-signature.sh v0.3.0 molt-release-manifest.json \
@@ -1071,11 +1110,11 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   `publish-release-signature.sh` refuses unless the signature verifies
   against the keys in the checkout, the assets are exactly the signed ones,
   and the provenance covers every build output at the tag's commit.
-- [ ] "Verify release signature" and "Deploy website to GitHub Pages" runs
-  are green.
+- [ ] Step 9: the "Verify release signature" and "Deploy website to GitHub
+  Pages" runs are green (from SIGNED_UPDATES.md).
 - [ ] After publishing: a v0.2.5 install updates to v0.3.0 (the old updater
   checks no signature but needs the stable asset names); a clean install of
-  each package starts.
+  each package starts (from SIGNED_UPDATES.md "Transition note").
 
 ## 11. The owner's open decisions
 
@@ -1083,7 +1122,7 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   off and say so in Settings and the privacy policy; not implemented yet
   (it's a pref default in `molt_privacy_prefs.cc` plus copy, so it needs a
   build). If D: on the build machine, confirm Safety Tips and lookalike
-  warnings still show. (docs/SAFE_BROWSING_DECISION.md, ROADMAP.md)
+  warnings still show (from docs/SAFE_BROWSING_DECISION.md, ROADMAP.md).
 - [ ] **`.onion` as a secure context**, in MoltNet windows only: needs a
   browser-wide trust change plus mixed-content patches; until then
   `http://` onion sites show "Not secure" and some features stay off. Ship
@@ -1092,15 +1131,16 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
   Incognito-only URL blocklist, extensions required for Incognito, and
   closing a supervised user's Incognito windows don't cover MoltNet
   windows (forcing Incognito does stop MoltNet). Apply them to MoltNet, or
-  document? (MOLTNET_COMPLIANCE.md §5.7)
+  document? (from #23; MOLTNET_COMPLIANCE.md §5.7)
 - [ ] **Third-party audit and bug bounty**: "before 1.0" on the roadmap;
   MOLTNET_COMPLIANCE.md §3 lists the audit as not done. Choose an auditor
-  and scope (MoltNet first?) and a bounty platform. (ROADMAP.md)
+  and scope (MoltNet first?) and a bounty platform (from ROADMAP.md).
 - [ ] **Windows signing**: "Windows signing is next" (ROADMAP.md "Signed
-  builds everywhere"), and the Windows runner itself is paused (CLAUDE.md).
-  Pick a code-signing route and a non-work runner before a Windows v0.3.
+  builds everywhere"), and the Windows runner itself is paused. Pick a
+  code-signing route and a non-work runner before a Windows v0.3 (from
+  ROADMAP.md, CLAUDE.md).
 - [ ] **Dependabot PR #42** (`actions/setup-java` 6.0.1 → 6.1.0, used only
-  by `build-matrix.yml`): mergeable and clean; merge or close.
+  by `build-matrix.yml`): mergeable and clean; merge or close (from #42).
 - [ ] **The Linux archive key**: create it now, or ship v0.3.0 without the
   apt/rpm repository (from #25). Without it, should the unsigned
   `MoltBrowser-Linux-repository.tar` stay in the release (the signed
@@ -1114,12 +1154,14 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
 - [ ] **A bundled model in the DMG.** v0.2.x shipped TinyLlama inside the
   DMG, but `BrowserAIRuntime` never reads `Contents/Resources/molt_models/`
   (`scripts/package-dmg.sh`), and `release.sh` doesn't add it. Drop it (and
-  the README's "bundles an on-device model"), or wire it up and pin it.
+  the README's "bundles an on-device model"), or wire it up and pin it
+  (from `scripts/package-dmg.sh`; a bundled model must match its pin, #43).
 - [ ] **The Vulkan switch** stays off for v0.3.0 (§9) (from #52).
 - [ ] **Still open in docs/design/SANDBOXED_INFERENCE.md §7**: repack versus
   memory limits (item 4), pre-warming after idle unload (5), keeping prompts
   out of crash dumps (9), whether the agent and automation reload a model
-  after an idle unload (12), the macOS `sysctl` denial noise (14).
+  after an idle unload (12), the macOS `sysctl` denial noise (14) (from #15).
 - [ ] **`release.yml`'s macOS job** (§10.1): fix it (metallib, helper
   bundling, `Libraries/` dylibs, the stable DMG name are what §10.2 does by
-  hand) or retire it in favour of the local scripts.
+  hand) or retire it in favour of the local scripts (found while writing
+  this runbook).
