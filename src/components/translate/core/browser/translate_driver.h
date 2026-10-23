@@ -94,12 +94,12 @@ class TranslateDriver {
   // translate script. TranslateManager then fetches no script, needs no
   // API key or network, offers no partial translate, and translates by
   // itself only for "always translate" (docs/design/PAGE_TRANSLATION.md).
-  virtual bool TranslatesOnDevice() const { return false; }
+  virtual bool TranslatesOnDevice() const;
 
   // MoltBrowser: true when page translation is off for this tab (MoltNet
   // windows). TranslateManager then triggers nothing by itself: no bubble,
   // no address bar icon, no automatic translation.
-  virtual bool TranslationOff() const { return false; }
+  virtual bool TranslationOff() const;
 
  protected:
   const base::ObserverList<LanguageDetectionObserver, true>&

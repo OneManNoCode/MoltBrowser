@@ -184,6 +184,7 @@ components/ssl_errors_strings.grdp.patch
 components/supervised_user_strings.grdp.patch
 components/sync/service/sync_prefs.cc.patch
 components/sync_ui_strings.grdp.patch
+components/translate/core/browser/translate_driver.cc.patch
 components/translate/core/browser/translate_driver.h.patch
 components/translate/core/browser/translate_language_list.cc.patch
 components/translate/core/browser/translate_language_list.h.patch
