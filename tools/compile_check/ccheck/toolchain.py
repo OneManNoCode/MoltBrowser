@@ -83,3 +83,42 @@ def llvm_commit(work):
                          text=True).stdout
     m = re.search(r"llvm-project ([0-9a-f]{40})", out)
     return m.group(1) if m else None
+
+
+def sysroot_dir(work):
+    return Path(work) / "toolchain" / "sysroot"
+
+
+def ensure_sysroot(work, tree):
+    """The Debian sysroot Chromium's Linux build compiles against
+    (build/linux/sysroot_scripts/sysroots.json), checked by its sha256."""
+    import hashlib
+    import json
+    meta = json.loads(tree.read(
+        "build/linux/sysroot_scripts/sysroots.json"))["bullseye_amd64"]
+    d = sysroot_dir(work)
+    stamp = d / ".stamp"
+    if stamp.exists() and stamp.read_text() == meta["Sha256Sum"]:
+        return d
+    if d.exists():
+        shutil.rmtree(d)
+    d.mkdir(parents=True)
+    url = "%s/%s" % (meta["URL"], meta["Sha256Sum"])
+    log("downloading the sysroot %s" % url)
+    tmp = d.parent / meta["Tarball"]
+    h = hashlib.sha256()
+    with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            h.update(chunk)
+            f.write(chunk)
+    if h.hexdigest() != meta["Sha256Sum"]:
+        tmp.unlink()
+        raise RuntimeError("sysroot checksum mismatch")
+    with tarfile.open(tmp) as t:
+        t.extractall(d, filter="data")
+    tmp.unlink()
+    stamp.write_text(meta["Sha256Sum"])
+    return d

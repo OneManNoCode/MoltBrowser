@@ -317,6 +317,7 @@ class Scanner:
         frontier = [("src", t) for t in targets]
         level = 0
         self.missing = {}
+        self.resolved = {}
         while frontier and level < max_levels:
             level += 1
             # Fetch everything this level needs in one batch.
@@ -329,6 +330,7 @@ class Scanner:
                 data = self.read(key)
                 if data is None:
                     continue
+                edges = self.resolved.setdefault(key, [])
                 for kind, name, angle in extract_includes(data):
                     if angle and "/" not in name and "." not in name:
                         continue  # <vector> and friends
@@ -345,8 +347,10 @@ class Scanner:
                                 and "/" in key[1]:
                             name = key[1].rsplit("/", 1)[0] + "/" + name
                         self.missing.setdefault(name, set()).add(key[1])
-                    elif r not in seen:
-                        nxt.append(r)
+                    else:
+                        edges.append(r)
+                        if r not in seen:
+                            nxt.append(r)
             frontier = list(dict.fromkeys(nxt))
             if frontier:
                 log("scan level %d: %d new file(s), %d seen" % (

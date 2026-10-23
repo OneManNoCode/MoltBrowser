@@ -71,7 +71,13 @@ SUBPROJECTS = {
                                       "", None),
     "third_party/tflite/src": ("https://github.com/tensorflow/tensorflow",
                                "", None),
+    "third_party/webrtc": ("https://github.com/webrtc-mirror/webrtc", "",
+                           None),
     # Substitutes (no GitHub mirror of Chromium's copy):
+    # dom_distiller_js/dist is a CIPD package built from dom-distiller;
+    # its proto/ comes from the repository's HEAD.
+    "third_party/dom_distiller_js/dist": (
+        "https://github.com/chromium/dom-distiller", "", "@head"),
     "third_party/libc++/src": (LLVM, "libcxx/", "@clang"),
     "third_party/libc++abi/src": (LLVM, "libcxxabi/", "@clang"),
     # Chromium's ICU fork is upstream ICU plus a few patches; the headers
@@ -178,6 +184,11 @@ class SourceTree:
                 if e is None or e.type != "commit":
                     raise RuntimeError("%s is not a gitlink at the pin" % mount)
                 rev = e.oid
+            elif rev == "@head":
+                name = remote.rstrip("/").split("/")[-1]
+                repo = self._head_fallback(mount, name, remote)
+                self._subs[mount] = (repo, prefix)
+                return self._subs[mount]
             elif rev == "@clang":
                 if not self.clang_llvm_commit:
                     raise RuntimeError("clang's llvm commit is unknown; run "

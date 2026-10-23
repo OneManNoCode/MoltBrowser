@@ -21,6 +21,8 @@ INCLUDE_DIRS = [
     "third_party/protobuf/src",
     "gen:protoc_out",
     "gen:third_party/omnibox_proto",
+    "gen:third_party/private_membership/src",
+    "gen:third_party/shell-encryption/src",
     "third_party/protobuf/third_party/utf8_range",
     "third_party/boringssl/src/include",
     "third_party/icu/source/common",
@@ -49,6 +51,7 @@ INCLUDE_DIRS = [
     "third_party/freetype/src/include",
     "third_party/crashpad/crashpad",
     "net/third_party/quiche/overrides",
+    "net/third_party/quiche/src/quiche/common/platform/default",
     "net/third_party/quiche/src",
     "gen:net/third_party/quiche/src",
     "third_party/leveldatabase/src/include",
@@ -64,6 +67,17 @@ INCLUDE_DIRS = [
     "third_party/llama_cpp",
     "third_party/llama_cpp/include",
     "third_party/llama_cpp/ggml/include",
+]
+
+# Under the sysroot, as -isystem: what pkg-config adds for glib, nss, dbus
+# (build/config/linux/BUILD.gn and friends).
+SYSROOT_DIRS = [
+    "usr/include/glib-2.0",
+    "usr/lib/x86_64-linux-gnu/glib-2.0/include",
+    "usr/include/nss",
+    "usr/include/nspr",
+    "usr/include/dbus-1.0",
+    "usr/lib/x86_64-linux-gnu/dbus-1.0/include",
 ]
 
 # The same, as -isystem (libc++ is searched after the -I dirs).

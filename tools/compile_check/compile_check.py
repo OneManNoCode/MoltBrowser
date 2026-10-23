@@ -88,6 +88,7 @@ def cmd_setup(args, tree=None):
     tree = tree or make_tree(args)
     print(toolchain.ensure_clang(args.work, tree))
     print(toolchain.ensure_protoc(args.work, tree))
+    print(toolchain.ensure_sysroot(args.work, tree))
     ensure_inputs(tree)
 
 
@@ -101,6 +102,12 @@ def do_fetch(args, tree):
             sorted(inc)[:5]
     out = {"targets": len(tgts), "reached": len(seen), "missing": missing}
     (args.work / "scan.json").write_text(json.dumps(out, indent=1))
+    # The include graph (over-approximated like the scan), for `report`.
+    graph_path = args.work / "graph.json"
+    graph = json.loads(graph_path.read_text()) if graph_path.exists() else {}
+    for (kind, path), deps in sc.resolved.items():
+        graph[kind + ":" + path] = sorted({k + ":" + p for k, p in deps})
+    graph_path.write_text(json.dumps(graph))
     for k, v in sorted(missing.items()):
         print("missing %-12s %d" % (k, len(v)))
     print("reached %d files from %d targets" % (len(seen), len(tgts)))
@@ -174,15 +181,25 @@ def do_gen(args, tree, missing):
             other[name] = kind
     done = set()
     for name, kind in sorted(other.items()):
-        if gen_misc.handles(name):
+        if gen_misc.handles_exclusively(name):
             continue
         for rel in _gen_candidates(name):
             if produce([rel]):
                 done.add(name)
                 written += 1
                 break
-    w, f = gen_misc.generate(tree, interp, gen_dir,
-                             [n for n in other if n not in done])
+    w, f = [], {}
+    for name in [n for n in other if n not in done]:
+        if not gen_misc.handles(name):
+            continue
+        # The include may be relative to a generated include dir.
+        for rel in _gen_candidates(name):
+            w1, f1 = gen_misc.generate(tree, interp, gen_dir, [rel])
+            if w1:
+                w.append(name)
+                f.pop(name, None)
+                break
+            f.setdefault(name, f1.get(rel, "?"))
     written += len(w)
     report["misc"] = {"written": w, "failed": f}
     left = sorted(n for n in other if n not in done and n not in w)
@@ -237,15 +254,76 @@ def cmd_all(args):
     cmd_report(args)
 
 
+def _reach(graph, start):
+    seen = {start}
+    todo = [start]
+    while todo:
+        for n in graph.get(todo.pop(), ()):
+            if n not in seen:
+                seen.add(n)
+                todo.append(n)
+    return seen
+
+
+def classify(r, graph, gen_dir):
+    """(status, detail, stand-ins) for one check result. The stand-ins are
+    the ones the file's include closure (over-approximated, like the scan)
+    reaches: marked grit headers and pdfium's mirror-HEAD headers. The
+    toolchain-wide substitutes (README) apply to every file."""
+    errs = [d for d in r["diags"] if "error" in d["kind"]]
+    missing = [d for d in errs if d["kind"] == "fatal error" and
+               "file not found" in d["msg"]]
+    stand_ins = []
+    reach = _reach(graph, "src:" + r["target"])
+    for n in reach:
+        if n.startswith("gen:") and "/grit/" in n:
+            try:
+                head = (gen_dir / n[4:]).read_text()[:40]
+            except OSError:
+                head = ""
+            if "STAND-IN" in head:
+                stand_ins.append("grit stand-in")
+        elif n.startswith("src:third_party/pdfium/"):
+            stand_ins.append("pdfium (mirror HEAD)")
+    stand_ins = sorted(set(stand_ins))
+    if missing:
+        name = missing[0]["msg"].split("'")[1] if "'" in missing[0]["msg"] \
+            else missing[0]["msg"]
+        return "not checked", "header not available here: " + name, \
+            stand_ins
+    if errs:
+        return "ERRORS", "%d error(s)" % len(errs), stand_ins
+    if stand_ins:
+        return "partly on stand-ins", ", ".join(stand_ins), stand_ins
+    return "checked", "", stand_ins
+
+
 def cmd_report(args):
     res = json.loads((args.work / "check.json").read_text())
+    graph_path = args.work / "graph.json"
+    graph = json.loads(graph_path.read_text()) if graph_path.exists() else {}
+    gen_dir = args.work / "chromium" / "src" / sources.OUT_REL / "gen"
+    counts = {}
+    rows = []
     for r in res:
-        errs = [d for d in r["diags"] if "error" in d["kind"]]
-        warns = [d for d in r["diags"] if d["kind"] == "warning"]
-        print("%-90s %3d error(s) %3d warning(s)" % (r["target"], len(errs),
-                                                     len(warns)))
-        for d in errs[:args.max_lines]:
-            print("    %s:%d: %s" % (d["file"], d["line"], d["msg"][:160]))
+        status, detail, _ = classify(r, graph, gen_dir)
+        counts[status] = counts.get(status, 0) + 1
+        warns = sum(1 for d in r["diags"] if d["kind"] == "warning")
+        rows.append((r["target"], status, detail, warns))
+        if args.markdown:
+            continue
+        print("%-80s %-20s %s" % (r["target"], status, detail))
+        if status == "ERRORS":
+            for d in [d for d in r["diags"] if "error" in d["kind"]][
+                    :args.max_lines]:
+                print("    %s:%d: %s" % (d["file"], d["line"],
+                                         d["msg"][:160]))
+    if args.markdown:
+        print("| File | Result | Detail |")
+        print("|---|---|---|")
+        for t, st, det, _ in rows:
+            print("| `%s` | %s | %s |" % (t, st, det))
+    print("\n" + ", ".join("%s: %d" % kv for kv in sorted(counts.items())))
 
 
 def cmd_get(args):
@@ -289,8 +367,11 @@ def main():
         if name == "all":
             c.add_argument("--rounds", type=int, default=6)
             c.add_argument("--max-lines", type=int, default=5)
+            c.add_argument("--markdown", action="store_true")
     r = sub.add_parser("report")
     r.add_argument("--max-lines", type=int, default=5)
+    r.add_argument("--markdown", action="store_true",
+                   help="one table row per file")
     args = ap.parse_args()
     args.work = args.work.resolve()
     args.work.mkdir(parents=True, exist_ok=True)

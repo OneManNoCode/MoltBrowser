@@ -34,6 +34,12 @@ PART_RE = re.compile(rb'<part\s+file="([^"]+)"')
 TOOLS = {}
 
 
+def handles_exclusively(name):
+    """Names no GN action here could make (skip looking for one)."""
+    return bool(GRIT_RE.search(name)) or name in WRITERS or \
+        name.endswith(".rs.h")
+
+
 def handles(name):
     return bool(GRIT_RE.search(name)) or name in WRITERS or \
         name.endswith((".rs.h", "_generated.h"))

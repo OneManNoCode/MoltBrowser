@@ -38,6 +38,11 @@ def compile_command(tree, work, target, plugins=True, dev=False):
         cmd.append("-I" + str(p))
     for inc in config.SYSTEM_DIRS:
         cmd.append("-isystem" + str(root / inc))
+    sysroot = toolchain.sysroot_dir(work)
+    if (sysroot / ".stamp").exists():
+        cmd.append("--sysroot=" + str(sysroot))
+        for inc in config.SYSROOT_DIRS:
+            cmd.append("-isystem" + str(sysroot / inc))
     cmd.append(str(root / target))
     return cmd
 
