@@ -740,8 +740,11 @@ if (molt_llama_vulkan) {
     ]
     args = [
       rebase_path(_ggml_vk_shaders_gen, root_build_dir),
+      # The generator execvp()s it: "./" so a bare name (a native build's
+      # host tools are in the root of the build directory) isn't looked up
+      # in PATH.
       "--glslc",
-      rebase_path(_ggml_vk_glslc, root_build_dir),
+      "./" + rebase_path(_ggml_vk_glslc, root_build_dir),
       "--source",
       "{{source}}",
       "--output-dir",

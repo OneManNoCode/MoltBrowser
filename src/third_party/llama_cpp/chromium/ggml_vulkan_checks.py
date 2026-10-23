@@ -44,6 +44,9 @@ def main():
     ap.add_argument("--listed", action="append", default=[],
                     help="a .comp file BUILD.gn lists (basename)")
     args = ap.parse_args()
+    # Relative to the build directory, and maybe a bare name (a native
+    # build's host tools are in the root of it): never looked up in PATH.
+    glslc = os.path.abspath(args.glslc)
 
     errors = []
     for feature in args.feature:
@@ -54,7 +57,7 @@ def main():
         source = os.path.join(args.shader_dir, "feature-tests", test)
         with tempfile.TemporaryDirectory() as tmp:
             proc = subprocess.run(
-                [args.glslc, "-fshader-stage=compute",
+                [glslc, "-fshader-stage=compute",
                  "--target-env=vulkan1.3", source, "-o",
                  os.path.join(tmp, "test.spv")],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
