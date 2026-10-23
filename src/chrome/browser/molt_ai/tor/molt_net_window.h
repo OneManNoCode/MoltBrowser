@@ -41,7 +41,8 @@ class MoltNetWindow {
   // Opens a new MoltNet window for |from|'s original profile, loading |url|
   // if it is http(s), else the new-tab page. |done| reports failure reasons
   // (Tor couldn't start, a policy controls the proxy, routing couldn't be
-  // verified, ...). Nothing is ever opened on a direct connection.
+  // verified, New Identity is under way, ...). Nothing is ever opened on a
+  // direct connection.
   static void Open(Profile* from, const GURL& url, DoneCallback done);
 
   // Open() on behalf of a user's click in browser-controlled UI shown for
@@ -56,10 +57,20 @@ class MoltNetWindow {
   // Closes every MoltNet window belonging to |from|'s original profile.
   static void CloseAll(Profile* from);
 
-  // Tor-Browser-style New Identity: closes the MoltNet windows, drops all
-  // connections + the host cache, discards the MoltNet profile (fresh
-  // cookies/cache/storage), sends SIGNAL NEWNYM (checked), then opens a fresh
-  // MoltNet window.
+  // Tor-Browser-style New Identity, strictly in this order:
+  //   1. drops all connections + the host cache of every MoltNet profile of
+  //      |from|'s original profile and closes their windows (beforeunload
+  //      handlers can't keep one open, as when Incognito closes);
+  //   2. waits until those profiles are destroyed, so nothing of the old
+  //      identity (cookies, cache, storage, a late beacon or keepalive
+  //      request) is left;
+  //   3. sends SIGNAL NEWNYM and waits until Tor has applied it (up to ten
+  //      seconds after a previous NEWNYM);
+  //   4. opens a fresh MoltNet window.
+  // No other MoltNet window opens for that profile meanwhile. If a window
+  // of the old identity stays open (a "Leave site?" dialog the user doesn't
+  // answer, possible while DevTools is open), it fails after a timeout
+  // without changing circuits, and the old identity stays current.
   static void NewIdentity(Profile* from, DoneCallback done);
 
   // Turns MoltNet off: closes all MoltNet windows (every profile) and stops

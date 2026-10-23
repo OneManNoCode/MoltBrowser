@@ -391,6 +391,20 @@ void MoltNetRouting::ForgetMoltNetProfile(Profile* moltnet_profile) {
 }
 
 // static
+void MoltNetRouting::AdoptMoltNetProfile(Profile* moltnet_profile) {
+  if (!IsMoltNetProfile(moltnet_profile)) {
+    return;
+  }
+  Profile* original = moltnet_profile->GetOriginalProfile();
+  if (GetMoltNetProfile(original)) {
+    return;
+  }
+  original->SetUserData(
+      kMoltNetProfileDataKey,
+      std::make_unique<MoltNetProfileData>(moltnet_profile->GetOTRProfileID()));
+}
+
+// static
 MoltNetRouting::Status MoltNetRouting::GetStatus(Profile* profile) {
   Status status;
   if (!profile) {
