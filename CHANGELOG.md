@@ -334,8 +334,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   sound, `navigator.storage.persist()` no longer reveals bookmarked or
   favourite sites, lookalike-domain warnings ignore the sites you use, and
   certificate warnings you clicked through in a regular window come back.
-  Third-party cookies and Shared Storage are always off in MoltNet, and it
-  never sends your Windows or Kerberos sign-in.
+  Third-party cookies are always off in MoltNet (Shared Storage no longer
+  exists in Chromium 156), and it never sends your Windows or Kerberos
+  sign-in.
 - **No WebRTC in MoltNet windows**, as in Tor Browser. A page could give
   WebRTC a relay server or a peer by name and make your own DNS resolver
   (often your ISP's) look that name up outside Tor, which could tie a
