@@ -70,4 +70,10 @@ test("molt_ai_unittests") {
     # MoltNet letterboxing geometry, checked against Blink's rounding.
     "//chrome/browser/molt_ai/fingerprinting:unit_tests",
   ]
+
+  # GPU inference on Linux: what the inference service's GPU broker may
+  # open.
+  if (is_linux || is_chromeos) {
+    deps += [ "//content/utility/on_device_model:molt_unit_tests" ]
+  }
 }
