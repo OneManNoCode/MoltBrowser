@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "base/no_destructor.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/web_ai/runtime_web_ai_backend.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,10 +16,12 @@ namespace molt_ai::page_translate {
 
 namespace {
 
-// The last answer about this device (process-wide, UI thread).
+// The last answer about this device (process-wide, UI thread). DeviceFacts
+// is trivially destructible, so a plain function-local static (base::
+// NoDestructor refuses such types).
 std::optional<web_ai::DeviceFacts>& LastDeviceFacts() {
-  static base::NoDestructor<std::optional<web_ai::DeviceFacts>> facts;
-  return *facts;
+  static std::optional<web_ai::DeviceFacts> facts;
+  return facts;
 }
 
 void RememberDeviceFacts(web_ai::DeviceFacts facts) {

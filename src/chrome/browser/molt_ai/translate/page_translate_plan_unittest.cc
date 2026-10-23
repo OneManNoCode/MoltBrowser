@@ -3,6 +3,7 @@
 
 #include "chrome/browser/molt_ai/translate/page_translate_plan.h"
 
+#include <algorithm>
 #include <iterator>
 #include <set>
 #include <string>
