@@ -247,64 +247,125 @@ source_set("ggml_cpu_arch_arm_c") {
   ]
 }
 
-# Architecture-specific CPU sources — x86_64 (Linux/Windows desktop).
-# Without these, the linker fails at the final stage with:
+# Architecture-specific CPU sources — x86_64 (Linux/Windows desktop, and the
+# x64 half of a universal macOS build). Without these, the linker fails with
 #   undefined symbol: quantize_row_q8_0
 #   undefined symbol: ggml_vec_dot_q4_0_q8_0
-# etc., because the quantized matrix-multiply implementations live in
-# the architecture-specific TU.
+# etc., because the quantized matrix-multiply implementations live in the
+# architecture-specific files.
 #
-# These TUs are compiled with -mavx2 -mfma -mf16c, so they raise SIGILL on
-# x64 CPUs without AVX2/FMA (pre-2013 Intel, some VMs). They contain no
-# static initializers (checked: no .init_array in the objects), so nothing
-# runs at startup; BrowserAIRuntime checks base::CPU and refuses local
-# models (pointing users to cloud models) before launching the inference
-# service, which checks again before any llama/ggml call. TODO: real
-# runtime dispatch — build one CPU-backend
-# variant per ISA level (like ggml's GGML_CPU_ALL_VARIANTS/backend-dl) and
-# pick at runtime — so older CPUs can run models too.
-source_set("ggml_cpu_arch_x86") {
-  visibility = _llama_cpp_visibility
-
-  sources = [
-    "ggml/src/ggml-cpu/arch/x86/cpu-feats.cpp",
-    "ggml/src/ggml-cpu/arch/x86/repack.cpp",
+# MoltBrowser: they are the only ggml-cpu files built with instruction-set
+# flags (everything else gets Chromium's x64 baseline, -msse3), so they are
+# built once per level, and the inference service picks the best level this
+# CPU supports at run time (docs/design/SANDBOXED_INFERENCE.md section 12):
+#   v2    x86-64-v2: SSE4.2 + POPCNT, no AVX (the minimum for on-device AI)
+#   avx   + AVX (Sandy Bridge, Bulldozer)
+#   avx2  + AVX2, FMA, F16C: the flags every x64 CPU used before
+# chromium/ggml-cpu-x86-variants.h, force-included, renames the 40
+# functions the two files define with a per-level prefix;
+# chromium/ggml-cpu-x86-dispatch.cpp defines the original names as thunks
+# into the chosen level, so ggml's callers are unchanged. The files contain
+# no static initializers and no weak (COMDAT) symbols, so no code built for
+# a higher level runs before the choice or is shared with a lower level.
+# arch/x86/cpu-feats.cpp (upstream's score for GGML_BACKEND_DL) isn't built:
+# it compiles to nothing without GGML_BACKEND_DL, and the service's choice
+# (//chrome/services/molt_ai/inference/engine/cpu_kernels.h) scores the same
+# way.
+if (current_cpu == "x64") {
+  _ggml_x86_levels = [
+    {
+      name = "v2"
+      flags = [
+        "-msse4.2",
+        "-mpopcnt",
+      ]
+    },
+    {
+      name = "avx"
+      flags = [
+        "-mavx",
+        "-msse4.2",
+        "-mpopcnt",
+      ]
+    },
+    {
+      # Unchanged from the single x64 build: AVX2 machines run the same code.
+      name = "avx2"
+      flags = [
+        "-mavx2",
+        "-mfma",
+        "-mf16c",
+        "-msse4.2",
+      ]
+    },
   ]
+  _ggml_x86_names =
+      rebase_path("chromium/ggml-cpu-x86-variants.h", root_build_dir)
+  if (is_win) {
+    _ggml_x86_force_include = [ "/FI$_ggml_x86_names" ]
+  } else {
+    _ggml_x86_force_include = [
+      "-include",
+      _ggml_x86_names,
+    ]
+  }
 
-  public_configs = [ ":llama_cpp_config" ]
-  configs += _llama_cpp_cfi_configs
+  _ggml_x86_level_targets = []
+  foreach(level, _ggml_x86_levels) {
+    _ggml_x86_level_targets += [ ":ggml_cpu_x86_${level.name}" ]
 
-  cflags_cc = [
-    "-std=c++17",
-    "-w",
-    # x86 SIMD intrinsics — match what ggml's CMakeLists enables by
-    # default for x86_64 desktop CPUs.
-    "-mavx2",
-    "-mfma",
-    "-mf16c",
-    "-msse4.2",
-  ]
-}
+    source_set("ggml_cpu_x86_${level.name}") {
+      visibility = [ ":ggml_cpu_x86_dispatch" ]
 
-# x86 C sources (quants.c would conflict with cpu quants.c)
-source_set("ggml_cpu_arch_x86_c") {
-  visibility = _llama_cpp_visibility
+      sources = [
+        "ggml/src/ggml-cpu/arch/x86/quants.c",
+        "ggml/src/ggml-cpu/arch/x86/repack.cpp",
+      ]
+      inputs = [ "chromium/ggml-cpu-x86-variants.h" ]
 
-  sources = [
-    "ggml/src/ggml-cpu/arch/x86/quants.c",
-  ]
+      # Renames what the two files define to molt_x86_<level>_<name>.
+      defines = [ "GGML_CPU_X86_VARIANT_PREFIX=molt_x86_${level.name}_" ]
 
-  public_configs = [ ":llama_cpp_config" ]
-  configs += _llama_cpp_cfi_configs
+      public_configs = [ ":llama_cpp_config" ]
+      configs += _llama_cpp_cfi_configs
 
-  cflags_c = [
-    "-std=c11",
-    "-w",
-    "-mavx2",
-    "-mfma",
-    "-mf16c",
-    "-msse4.2",
-  ]
+      cflags = level.flags + _ggml_x86_force_include
+      cflags_c = [
+        "-std=c11",
+        "-w",
+      ]
+      cflags_cc = [
+        "-std=c++17",
+        "-w",
+      ]
+    }
+  }
+
+  config("ggml_cpu_x86_dispatch_config") {
+    defines = [ "GGML_MOLTBROWSER_X86_CPU_KERNELS" ]
+  }
+
+  # The thunks and the choice (molt_llama::UseX86CpuKernels), built with the
+  # baseline flags.
+  source_set("ggml_cpu_x86_dispatch") {
+    visibility = _llama_cpp_visibility
+
+    sources = [
+      "chromium/ggml-cpu-x86-dispatch.cpp",
+      "chromium/ggml-cpu-x86-dispatch.h",
+      "chromium/ggml-cpu-x86-variants.h",
+    ]
+
+    public_configs = [
+      ":llama_cpp_config",
+      ":ggml_cpu_x86_dispatch_config",
+    ]
+
+    # Its indirect calls land in the level files, which carry no CFI type
+    # information (like every llama.cpp file).
+    configs += _llama_cpp_cfi_configs
+    deps = _ggml_x86_level_targets
+  }
 }
 
 # Metal targets — only exist on Apple platforms. The `enable_arc` config
@@ -838,10 +899,7 @@ group("ggml") {
   }
 
   if (current_cpu == "x64") {
-    public_deps += [
-      ":ggml_cpu_arch_x86",
-      ":ggml_cpu_arch_x86_c",
-    ]
+    public_deps += [ ":ggml_cpu_x86_dispatch" ]
   }
 
   if (is_mac) {
