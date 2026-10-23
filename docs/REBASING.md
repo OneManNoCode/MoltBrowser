@@ -375,3 +375,54 @@ empty (the change is upstream), the search-engine definitions to check by
 hand, 3 vendored Rust paths that now exist upstream, and 12 removed
 symbols that first-party code used. The conflict state is its own commit;
 the resolution follows it.
+
+What the resolution did (each in its own commit, all in #64):
+
+- **Strings.** Each conflicted `.grd`/`.grdp` was rebuilt from 156 one
+  message at a time: our text where upstream left a message alone, 156's
+  where we never touched it, our branding re-applied where both changed it
+  or it is new (59 new messages in `chromium_strings.grd` name MoltBrowser
+  now). Messages 156 deleted go with it.
+- **Browser.** 156 replaced `IsIncognitoProfile()` with
+  `IsPrimaryOTRProfileWithRegularParent()` (Incognito and Enterprise
+  Isolated Mode) at many private-mode checks; MoltNet hooks there keep
+  upstream's check and add `IsMoltNetProfile()`. `Browser::GetNewTabURL()`
+  moved to `chrome::GetNewTabURL()` (`browser_tabstrip.cc`), which now
+  carries the `chrome://molt-home/` hook; `Browser::Create` and its
+  `CreateParams` gave way to `CreateBrowserWindow()` and
+  `BrowserWindowCreateParams` (MoltNet windows, the automation run window);
+  `side_panel_ui()` to `SidePanelUI::From()`. MoltShield's proxy and the
+  onion blocker stay last in `WillCreateURLLoaderFactory`'s chain, now
+  before 156's `MaybeSetTargetNetwork()`.
+- **Platform.** The omnibox's `AutocompleteProvider::Type` and
+  `omnibox::AutocompleteMatchType` are enum classes; WTF lost
+  `String::Format` (`StrCat`); Blink worker tests wait with
+  `WaitUntilDidEvaluateTopLevelScript()`. Every network, MoltNet and
+  fingerprinting hook that merged cleanly was read again in 156's code.
+- **Incognito parity** (MOLTNET_COMPLIANCE.md §2) was re-audited at 156 over
+  every private-mode check in `chrome/`, `components/`, `content/` and
+  `extensions/`: two converted checks gained MoltNet hooks (WebRTC text
+  logs, Reduce Accept-Language), and three new page-visible prefs are
+  pinned for MoltNet.
+- **Removed upstream:** Shared Storage (with
+  `privacy_sandbox_settings_delegate.cc`, so our hook there went too:
+  nothing is left to gate), `components/privacy_sandbox_chrome_strings.grdp`.
+  `extension_side_panel_manager.cc` moved to `chrome/browser/ui/extensions/`.
+- **Rust.** `Cargo.lock` and `gnrt_config.toml` merged by hand (156's crate
+  set plus anydoc's); our `unicode-bidi` stays (156 has only an empty
+  placeholder). `tools/shield_bench` follows 156's regex crates.
+- **API changes in first-party code** found by `tools/compile_check` against
+  156's real headers: a removed request destination, the writing APIs'
+  `OnResult(…, context_window)` (MoltBrowser sends its fixed 9216 as every
+  page's `inputQuota`), no `kUnsupportedLanguage` create error, a new
+  `ModelExecutionContextInfo` field, `PasswordString` passwords, and two
+  new Prompt API sampling modes. Result: 0 errors; 518 of 558 files checked
+  against real headers, 38 partly on grit stand-ins.
+
+Still to do on the build machine (docs/BUILD_MACHINE_CHECKLIST.md, tagged
+#64): the compile and unit tests; regenerate `prepopulated_engines.json`
+from 156's `search_engines_data` (`5dc9f1a`), which the cloud tools could
+not reach; `scripts/vendor-rust-crates.sh --check` against the hand-merged
+lock; `gn check` (new includes of `molt_net_profile_id.h` in
+`//chrome/browser/media/webrtc` and `//chrome/browser/reduce_accept_language`
+follow the existing pattern without a direct dep).

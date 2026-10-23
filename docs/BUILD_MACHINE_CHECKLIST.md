@@ -7,7 +7,9 @@ manual checks, the MoltNet leak kit, packaging and the offline signing.
 **Why it exists.** The last release is v0.2.5 (macOS arm64 and Linux x64;
 Windows is still at v0.2.1). Since then the October v0.3 work landed: the
 workstream merges and pull requests #2 to #55, including the rebase onto
-Chromium 152 (#11). **None of it has been compiled against Chromium 152.**
+Chromium 152 (#11), and then the rebase onto Chromium 156.0.8078.48 (#64),
+when Chrome's Extended Stable channel moved to M156. **None of it has been
+compiled against Chromium 156.**
 Each PR body and design doc lists what it still needs; this page collects
 those lists in the order you do them. (#31 changed only CI, and #42 is an
 open Dependabot PR, §11.)
@@ -24,7 +26,7 @@ the build machine adds its items under the right phase, with its tag.
   to the change that caused it. Other sources are named the same way, e.g.
   "(from CLAUDE.md)".
 - "(verify the command)" marks a command that could not be checked against
-  a real Chromium 152 tree. The intent is right; the exact flags may not be.
+  a real Chromium 156 tree. The intent is right; the exact flags may not be.
 - Commands run from the repository root (`$REPO`, e.g.
   `/Users/raj/Desktop/MoltBrowser/repo`) unless a step says `cd chromium/src`.
 - Keep the logs in one place, e.g. `~/molt-v0.3.0/`, and send back the build
@@ -113,10 +115,10 @@ items are marked *deferred*.
   ```bash
   ./scripts/setup.sh --resync --target-os mac,linux 2>&1 | tee ~/molt-v0.3.0/setup.log
   ```
-  *Expected:* `chromium/src @ 152.0.7977.169 (92a6f15143569cf59b340472d0b5030465d95722)`,
+  *Expected:* `chromium/src @ 156.0.8078.48 (d0c02bfad08ec92a6ffcf989e53cd995e6381a4c)`,
   then `gclient sync`, hooks and `Overlay applied.` It resets `chromium/src`
   (`reset --hard`, `clean -fd`; the gitignored `out/` survives), so the
-  first run from the old 148 pin means a full rebuild.
+  first run from an older pin means a full rebuild.
 - [ ] The checkout is at the pin (from #11, `chromium_version.txt`):
   ```bash
   [ "$(git -C chromium/src rev-parse HEAD)" = "$(tools/chromium/pin.sh revision)" ] && echo pin-ok
@@ -142,7 +144,12 @@ items are marked *deferred*.
   ```
   *Expected:* `engines-ok`. If not, regenerate with `-o <that src/ path>`
   instead of `--check`, commit it in a PR, and copy it into `chromium/src`.
-- [ ] MoltNet's fixed en-US tables match the 152 `.grd` files (from #24,
+  At 156 expect to regenerate (from #64): our copy was last refreshed from
+  the 148-era subproject, and 156 pins `search_engines_data` at
+  `5dc9f1afd38a8ac2b26b1972eb4fc1bbd5754e8c` (check `git -C
+  chromium/src/third_party/search_engines_data/resources rev-parse HEAD`),
+  which this repository's cloud tools couldn't reach.
+- [ ] MoltNet's fixed en-US tables match the 156 `.grd` files (from #24,
   REBASING.md step 5):
   ```bash
   python3 tools/moltnet_locale/generate_tables.py --grd-root chromium/src
@@ -304,7 +311,13 @@ Never type a hash by hand (docs/design/SEMANTIC_SEARCH.md §6).
   *Expected:* `molt_llama_vulkan` is **not** among the overrides (it stays
   `false`; macOS uses Metal and refuses it) (from #52).
 - [ ] `./scripts/vendor-rust-crates.sh --check` (from #11): *Expected:* gn
-  check and the adblock and anydoc targets build.
+  check and the adblock and anydoc targets build. At 156 (from #64) gnrt is
+  the authority over the hand-merged `Cargo.lock` (156's crate set plus
+  anydoc's 77 packages): it should add only the adblock tree. Check that
+  winapi-util's windows-sys moves to 0.61, that the regex and version_check
+  BUILD.gn files stay non-testonly, and that the overlay notice lists
+  `unicode-bidi-v0_3` (ours wins over 156's empty placeholder: lopdf needs
+  the real crate).
 - [ ] Build and read the whole log, because `autoninja` can exit 0 on a
   failed compile (from CLAUDE.md):
   ```bash
@@ -363,11 +376,10 @@ read. Upstream files are whole copies under `src/`, each hook marked
 
 - [ ] Optional, on any Linux machine before the slow build:
   `tools/compile_check/compile_check.py all` type-checks MoltBrowser's own
-  C++ and the hook files below against the real 152 headers with
+  C++ and the hook files below against the real 156 headers with
   Chromium's clang (no checkout needed; see its README for what it can't
-  cover). *Expected:* `report` shows no errors, except in a file it says
-  reaches a mirror-HEAD stand-in (an upstream API that differs at the
-  mirror's HEAD; today only `rtc_peer_connection.cc`, via webrtc).
+  cover). *Expected:* `report` shows no errors (at 156, from #64: 518 of
+  558 files checked, 38 partly on grit stand-ins, 0 errors).
 
 ### 4.1 Mojo: new fields, unions and interfaces
 
@@ -1195,7 +1207,7 @@ docs/SIGNED_UPDATES.md "Every release".
     dist/SHA256SUMS-macos-arm64 dist/molt-provenance-macos-arm64.json --clobber
   ```
   *Expected:* the SBOM step accepts the build in release mode (it runs
-  `licenses.py` on the 152 checkout for the first time, from #25); the
+  `licenses.py` on the 156 checkout for the first time, from #25); the
   provenance statement has the toolchain versions (clang, rustc, Xcode and
   the macOS SDK) and the depot_tools commit, which no real host has
   produced yet (from #43); and the draft holds those four files.
@@ -1256,7 +1268,7 @@ Follow docs/SIGNED_UPDATES.md "Every release", steps 2-9 (from #25, #43):
     --key /Volumes/MOLTKEY/molt-update-signing.key --assets-dir release-v0.3.0
   ```
   *Expected:* `sign` lists every asset and, per build, its commit, Chromium
-  152.0.7977.169, builder label and build times, and refuses unless the
+  156.0.8078.48, builder label and build times, and refuses unless the
   macOS and Linux statements cover every installer, SBOM and checksum file
   with the manifest's hashes and agree on the commit and Chromium.
 - [ ] Step 7: copy back `molt-release-manifest.json`, `.sig`,
