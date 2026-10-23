@@ -148,6 +148,7 @@
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/loader/interactive_detector.h"
 #include "third_party/blink/renderer/core/loader/no_state_prefetch_client.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_display.h"  // MoltBrowser
 #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
 #include "third_party/blink/renderer/core/page/chrome_client_impl.h"
 #include "third_party/blink/renderer/core/page/context_menu_controller.h"
@@ -3875,6 +3876,10 @@ void WebViewImpl::UpdateRendererPreferences(
 
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_WIN)
+  // MoltBrowser: one scrollbar style for every MoltNet page of a platform.
+  renderer_preferences_.use_overlay_scrollbar =
+      molt_fingerprinting::UniformOverlayScrollbars(
+          renderer_preferences_.use_overlay_scrollbar);
   if (!ScrollbarTheme::MockScrollbarsEnabled()) {
     // DevTools emulation can update Blink's overlay scrollbar setting,
     // while OS theme updates can update NativeTheme before renderer preferences
