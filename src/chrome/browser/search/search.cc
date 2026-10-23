@@ -172,16 +172,12 @@ struct NewTabURLDetails {
       return NewTabURLDetails(GURL(), NEW_TAB_URL_INCOGNITO);
     }
 
-<<<<<<< src/chrome/browser/search/search.cc (MoltBrowser)
     // MoltBrowser: Always use our custom homepage for the NTP
     const GURL molt_ntp("chrome://molt-home/");
     return NewTabURLDetails(molt_ntp, NEW_TAB_URL_VALID);
 
-||||||| upstream@pin
-=======
     const bool default_is_google = DefaultSearchProviderIsGoogle(profile);
 
->>>>>>> upstream@new
 #if BUILDFLAG(IS_ANDROID)
     const bool is_desktop_android = IsWebUiNtpEnabledForDesktopAndroid();
     const GURL local_url(

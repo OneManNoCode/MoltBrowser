@@ -5116,20 +5116,16 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
   web_prefs->is_indigo_onboarding =
       indigo::IndigoOnboardingDialog::IsOnboardingWebContents(web_contents);
 #endif
-<<<<<<< src/chrome/browser/chrome_content_browser_client.cc (MoltBrowser)
-
-  // MoltBrowser: MoltNet looks like a mouse-only desktop (molt_net_device.h).
-  molt_ai::fingerprinting::OverrideMoltNetWebPreferences(web_contents,
-                                                         web_prefs);
-||||||| upstream@pin
-=======
 
   web_prefs->clipboard_focus_exempt = IsClipboardFocusExemptOrigin(
       web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin());
 
   web_prefs->is_xslt_deprecation_banner_suppressed =
       prefs->GetBoolean(prefs::kXSLTDeprecationBannerSuppressed);
->>>>>>> upstream@new
+
+  // MoltBrowser: MoltNet looks like a mouse-only desktop (molt_net_device.h).
+  molt_ai::fingerprinting::OverrideMoltNetWebPreferences(web_contents,
+                                                         web_prefs);
 }
 
 bool ChromeContentBrowserClientParts::OverrideWebPreferencesAfterNavigation(
@@ -6399,7 +6395,12 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
     result.push_back(std::move(google_throttle));
   }
 
-<<<<<<< src/chrome/browser/chrome_content_browser_client.cc (MoltBrowser)
+  if (auto contextual_tasks_throttle =
+          contextual_tasks::ContextualTasksURLLoaderThrottle::MaybeCreate(
+              profile, /*wc_getter=*/{})) {
+    result.push_back(std::move(contextual_tasks_throttle));
+  }
+
   // MoltShield: beacons / keepalive fetches that outlive their document.
   if (auto molt_shield_throttle =
           molt_ai::shield::MoltShieldURLLoaderThrottle::MaybeCreateForKeepAlive(
@@ -6407,15 +6408,6 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
     result.push_back(std::move(molt_shield_throttle));
   }
 
-||||||| upstream@pin
-=======
-  if (auto contextual_tasks_throttle =
-          contextual_tasks::ContextualTasksURLLoaderThrottle::MaybeCreate(
-              profile, /*wc_getter=*/{})) {
-    result.push_back(std::move(contextual_tasks_throttle));
-  }
-
->>>>>>> upstream@new
   return result;
 }
 
@@ -7021,10 +7013,14 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
 #endif  // BUILDFLAG (ENABLE_EXTENSIONS_CORE)
 #endif  // BUILDFLAG(ENABLE_GUEST_VIEW)
 
-<<<<<<< src/chrome/browser/chrome_content_browser_client.cc (MoltBrowser)
+  if (type == URLLoaderFactoryType::kDocumentSubResource) {
+    glic::GlicSubresourceProxyingURLLoaderFactory::MaybeProxyRequest(
+        frame, factory_builder);
+  }
+
   // MoltShield: every subresource request (scripts, images, XHR/fetch, CSS,
   // media, beacons, worker/service-worker loads) through the ad/tracker
-  // blocker. After the webRequest/signin proxies so their redirects are
+  // blocker. After the webRequest/signin/glic proxies so their redirects are
   // vetted too.
   molt_ai::shield::MoltShieldProxyingURLLoaderFactory::MaybeProxy(
       browser_context, frame, type, request_initiator, isolation_info,
@@ -7035,28 +7031,8 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
   molt_ai::tor::OnionBlockingURLLoaderFactory::MaybeProxy(browser_context, type,
                                                           factory_builder);
 
-  // WARNING: This must be the last interceptor in the chain as the proxying
-  // URLLoaderFactory installed by this needs to be the one actually sending
-  // packets over the network (to effectively target `bound_network`).
-  MaybeProxyNetworkBoundRequest(
-      browser_context, GetBoundNetworkFromRenderFrameHost(frame),
-      factory_builder, factory_override, isolation_info);
-||||||| upstream@pin
-  // WARNING: This must be the last interceptor in the chain as the proxying
-  // URLLoaderFactory installed by this needs to be the one actually sending
-  // packets over the network (to effectively target `bound_network`).
-  MaybeProxyNetworkBoundRequest(
-      browser_context, GetBoundNetworkFromRenderFrameHost(frame),
-      factory_builder, factory_override, isolation_info);
-=======
-  if (type == URLLoaderFactoryType::kDocumentSubResource) {
-    glic::GlicSubresourceProxyingURLLoaderFactory::MaybeProxyRequest(
-        frame, factory_builder);
-  }
-
   MaybeSetTargetNetwork(GetBoundNetworkFromRenderFrameHost(frame),
                         factory_builder, is_for_network_service);
->>>>>>> upstream@new
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS)

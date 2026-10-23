@@ -1261,7 +1261,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
                                         SidePanelOpenTrigger::kAppMenu);
       break;
     case IDC_SHOW_MOLT_AI_SIDE_PANEL:
-      browser_->GetFeatures().side_panel_ui()->Toggle(
+      SidePanelUI::From(browser_)->Toggle(
           SidePanelEntryKey(SidePanelEntryId::kMoltAiChat),
           SidePanelOpenTrigger::kAppMenu);
       break;

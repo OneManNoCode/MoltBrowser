@@ -44,13 +44,10 @@
   V(kTabsFromOtherDevices, kActionSidePanelShowTabsFromOtherDevices,          \
     "TabsFromOtherDevices")                                                   \
   V(kSidePanelDev, std::nullopt, "SidePanelDev")                              \
-<<<<<<< src/chrome/browser/ui/side_panel/side_panel_entry_id.h (MoltBrowser)
-  V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")               \
-  V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                  \
-||||||| upstream@pin
-=======
   V(kTestTabScopedEntry, std::nullopt, "TestTabScopedEntry")                  \
->>>>>>> upstream@new
+  /* MoltBrowser */                                                           \
+  V(kMoltAiChat, kActionSidePanelShowMoltAiChat, "MoltAiChat")                \
+  V(kMoltAgent, kActionSidePanelShowMoltAgent, "MoltAgent")                   \
   /* Extensions (nothing more should be added below here) */                  \
   V(kExtension, std::nullopt, "Extension")
 

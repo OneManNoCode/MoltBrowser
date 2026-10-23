@@ -29,29 +29,17 @@ bool IsBookmarkBarLocation(BookmarkLaunchLocation location) {
 
 auto GetMetricProfile(const Profile* profile) {
   DCHECK(profile);
-<<<<<<< src/chrome/browser/ui/bookmarks/bookmark_stats.cc (MoltBrowser)
   // MoltBrowser: bookmarks also open from MoltNet windows, counted as
   // Incognito (molt_net_incognito_parity.h).
   DCHECK(profile->IsRegularProfile() ||
-         molt_ai::tor::GetsIncognitoProtections(profile));
-  return profile->IsRegularProfile()
-             ? profile_metrics::BrowserProfileType::kRegular
-             : profile_metrics::BrowserProfileType::kIncognito;
-||||||| upstream@pin
-  DCHECK(profile->IsRegularProfile() || profile->IsIncognitoProfile());
-  return profile->IsRegularProfile()
-             ? profile_metrics::BrowserProfileType::kRegular
-             : profile_metrics::BrowserProfileType::kIncognito;
-=======
-  DCHECK(profile->IsRegularProfile() ||
-         profile->IsPrimaryOTRProfileWithRegularParent());
+         profile->IsPrimaryOTRProfileWithRegularParent() ||
+         molt_ai::tor::IsMoltNetProfile(profile));
   if (profile->IsRegularProfile()) {
     return profile_metrics::BrowserProfileType::kRegular;
-  } else if (profile->IsIncognitoProfile()) {
+  } else if (molt_ai::tor::GetsIncognitoProtections(profile)) {  // MoltBrowser
     return profile_metrics::BrowserProfileType::kIncognito;
   }
   return profile_metrics::BrowserProfileType::kEnterpriseIsolated;
->>>>>>> upstream@new
 }
 
 }  // namespace

@@ -4670,7 +4670,7 @@ void MoltAIChatHandler::HandleCloseSidePanel(const base::ListValue& args) {
   if (!browser) {
     return;
   }
-  if (SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui()) {
+  if (SidePanelUI* side_panel_ui = SidePanelUI::From(browser)) {
     // There is a single (content) side panel at 152; the per-type
     // Close(PanelType) overload is gone.
     side_panel_ui->Close();

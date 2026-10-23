@@ -418,21 +418,13 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
     pinned_translate_action_listener_ =
         std::make_unique<PinnedTranslateActionListener>(&tab);
 
-<<<<<<< src/chrome/browser/ui/tabs/tab_features.cc (MoltBrowser)
     // MoltBrowser: not for MoltNet tabs either. Their ShoppingService is the
     // regular profile's, which would look up the page's URL outside Tor
-    // (chrome/browser/molt_ai/tor/molt_net_requests_policy.h). The roll-back
-    // infobar below doesn't apply to MoltNet (third-party cookies are always
-    // blocked there).
-    if (!profile->IsIncognitoProfile() &&
+    // (chrome/browser/molt_ai/tor/molt_net_requests_policy.h).
+    if (!profile->IsPrimaryOTRProfileWithRegularParent() &&
         molt_ai::tor::MoltNetRequestAccessForProfile(
             molt_ai::tor::IsMoltNetProfile(profile))
             .commerce) {
-||||||| upstream@pin
-    if (!profile->IsIncognitoProfile()) {
-=======
-    if (!profile->IsPrimaryOTRProfileWithRegularParent()) {
->>>>>>> upstream@new
       // TODO(crbug.com/40863325): Consider using the in-memory cache instead.
       commerce_ui_tab_helper_ =
           GetUserDataFactory().CreateInstance<commerce::CommerceUiTabHelper>(
@@ -473,16 +465,10 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
     }
 
     if (base::FeatureList::IsEnabled(commerce::kInStockNotification) &&
-<<<<<<< src/chrome/browser/ui/tabs/tab_features.cc (MoltBrowser)
-        !profile->IsIncognitoProfile() &&
+        !profile->IsPrimaryOTRProfileWithRegularParent() &&
         molt_ai::tor::MoltNetRequestAccessForProfile(  // MoltBrowser
             molt_ai::tor::IsMoltNetProfile(profile))
             .commerce) {
-||||||| upstream@pin
-        !profile->IsIncognitoProfile()) {
-=======
-        !profile->IsPrimaryOTRProfileWithRegularParent()) {
->>>>>>> upstream@new
       in_stock_notification_manager_ =
           GetUserDataFactory()
               .CreateInstance<commerce::InStockNotificationManager>(tab, &tab);

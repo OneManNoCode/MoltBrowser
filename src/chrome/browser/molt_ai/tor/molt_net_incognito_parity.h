@@ -5,11 +5,15 @@
 //
 // MoltNet runs in a non-primary off-the-record profile ("MoltNet::Tor-<uuid>",
 // molt_net_profile_id.h). Many of Chromium's private-mode protections test
-// Profile::IsIncognitoProfile(), Profile::IsPrimaryOTRProfile() or compare
-// with OTRProfileID::PrimaryID(), so they skip MoltNet, which then behaves
-// less privately than an Incognito window. Each of the hooks below (marked
-// "MoltBrowser:") gives MoltNet the Incognito behaviour at one such check;
-// every other profile keeps Chromium's (molt_net_incognito_parity_policy.h).
+// Profile::IsIncognitoProfile(), Profile::IsPrimaryOTRProfile(),
+// Profile::IsPrimaryOTRProfileWithRegularParent() (Incognito and Enterprise
+// Isolated Mode) or compare with OTRProfileID::PrimaryID(), so they skip
+// MoltNet, which then behaves less privately than an Incognito window. Each
+// of the hooks below (marked "MoltBrowser:") gives MoltNet the Incognito
+// behaviour at one such check; every other profile keeps Chromium's
+// (molt_net_incognito_parity_policy.h). Where Chromium's check is
+// IsPrimaryOTRProfileWithRegularParent(), the hook keeps it and adds
+// IsMoltNetProfile().
 // docs/MOLTNET_COMPLIANCE.md §2 ("Nothing from the regular profile") lists
 // every call site that was checked, including the ones left alone.
 //

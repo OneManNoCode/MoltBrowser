@@ -6,7 +6,6 @@
 
 #include "chrome/browser/history_clusters/history_clusters_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -72,23 +71,20 @@ void SidePanelHelper::PopulateGlobalEntries(
         window_registry);
   }
 
-  // MoltBrowser: the AI Chat and Agent side panel views still take a Browser*.
-  Browser* const molt_browser = browser->GetBrowserForMigrationOnly();
-
   // MoltBrowser: Add AI Chat side panel.
   // Register directly using a lambda that captures the browser pointer.
   // This avoids needing a long-lived coordinator instance.
   auto molt_ai_entry = std::make_unique<SidePanelEntry>(
       SidePanelEntry::Key(SidePanelEntry::Id::kMoltAiChat),
       base::BindRepeating(
-          [](Browser* browser, SidePanelEntryScope& scope)
+          [](BrowserWindowInterface* browser, SidePanelEntryScope& scope)
               -> std::unique_ptr<views::View> {
-            // Pass the Browser* so the chat view can observe the
+            // Pass the window so the chat view can observe the
             // TabStripModel and inject the active tab's URL + title
             // into the chat WebUI for grounding.
             return std::make_unique<AiChatSidePanelWebView>(browser);
           },
-          base::Unretained(molt_browser)),
+          base::Unretained(browser)),
       // MoltBrowser: the redesigned chat UI is laid out for a 480px
       // default (upstream default is 360). Still user-resizable; a
       // user-dragged width persists per entry id and wins over this.
@@ -117,11 +113,11 @@ void SidePanelHelper::PopulateGlobalEntries(
   auto molt_agent_entry = std::make_unique<SidePanelEntry>(
       SidePanelEntry::Key(SidePanelEntry::Id::kMoltAgent),
       base::BindRepeating(
-          [](Browser* browser, SidePanelEntryScope& scope)
+          [](BrowserWindowInterface* browser, SidePanelEntryScope& scope)
               -> std::unique_ptr<views::View> {
             return std::make_unique<AgentSidePanelWebView>(browser);
           },
-          base::Unretained(molt_browser)),
+          base::Unretained(browser)),
       /*default_content_width_callback=*/base::BindRepeating(
           []() { return 480; }));
   molt_agent_entry->set_should_show_header(false);

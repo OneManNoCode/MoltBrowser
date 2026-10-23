@@ -26,12 +26,12 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_features.h"
@@ -280,21 +280,26 @@ void OpenVerifiedWindow(base::FilePath path,
     return;
   }
   Profile* moltnet = MoltNetRouting::GetMoltNetProfile(ProfileByPath(path));
-  if (!moltnet || Browser::GetCreationStatusForProfile(moltnet) !=
-                      Browser::CreationStatus::kOk) {
+  if (!moltnet || GetBrowserWindowCreationStatusForProfile(*moltnet) !=
+                      BrowserWindowInterface::CreationStatus::kOk) {
     std::move(done).Run(false, "Could not open a MoltNet window.");
     return;
   }
   EnsureReaper();
-  Browser::CreateParams params(Browser::TYPE_NORMAL, moltnet,
-                               /*user_gesture=*/true);
+  BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
+                                   *moltnet, /*from_user_gesture=*/true);
   const bool letterbox_size = OpensAtLetterboxSize();
   if (letterbox_size) {
     // Not maximized like the last window, which would give a wide screen
     // margins: restored, at the size FitPageToLetterbox() picks.
     params.initial_show_state = ui::mojom::WindowShowState::kNormal;
   }
-  Browser* browser = Browser::Create(params);
+  BrowserWindowInterface* browser = CreateBrowserWindow(std::move(params));
+  if (!browser) {
+    PostDestroyIfUnused(moltnet);
+    std::move(done).Run(false, "Could not open a MoltNet window.");
+    return;
+  }
   const GURL target = url.is_valid() && url.SchemeIsHTTPOrHTTPS() ? url
                                                                    : GURL();
   // GURL() opens the new-tab page.

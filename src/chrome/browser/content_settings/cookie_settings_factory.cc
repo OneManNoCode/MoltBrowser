@@ -103,17 +103,12 @@ CookieSettingsFactory::BuildServiceInstanceFor(
           profile, scoped_refptr(host_content_settings_map));
 
   // MoltBrowser: MoltNet (Tor) profiles block third-party cookies like
-  // Incognito, whatever the regular profile's setting; IsIncognitoProfile()
-  // is true for the primary off-the-record profile only.
+  // Incognito, whatever the regular profile's setting;
+  // IsPrimaryOTRProfileWithRegularParent() is true for the primary
+  // off-the-record profile (Incognito, Enterprise Isolated Mode) only.
   return new content_settings::CookieSettings(
-<<<<<<< src/chrome/browser/content_settings/cookie_settings_factory.cc (MoltBrowser)
       host_content_settings_map, prefs,
-      profile->IsIncognitoProfile() || molt_ai::tor::IsMoltNetProfile(profile),
-||||||| upstream@pin
-      host_content_settings_map, prefs, profile->IsIncognitoProfile(),
-=======
-      host_content_settings_map, prefs,
-      profile->IsPrimaryOTRProfileWithRegularParent(),
->>>>>>> upstream@new
+      profile->IsPrimaryOTRProfileWithRegularParent() ||
+          molt_ai::tor::IsMoltNetProfile(profile),
       compute_fedcm_sharing_permissions, extension_scheme);
 }

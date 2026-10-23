@@ -21,7 +21,7 @@
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
 
-class Browser;
+class BrowserWindowInterface;
 class Profile;
 
 // AiChatSidePanelWebView is a views::WebView that hosts the AI chat
@@ -55,7 +55,7 @@ class AiChatSidePanelWebView : public views::WebView,
  public:
   // Preferred constructor — observes |browser|'s TabStripModel so the
   // chat learns about active-tab changes.
-  explicit AiChatSidePanelWebView(Browser* browser);
+  explicit AiChatSidePanelWebView(BrowserWindowInterface* browser);
   // Backwards-compat overload for call sites that don't have a Browser
   // pointer handy. The view still loads the chat URL but gets no
   // tab-context updates.
@@ -153,7 +153,7 @@ class AiChatSidePanelWebView : public views::WebView,
   void ObserveActiveTab();
 
   const raw_ptr<Profile> profile_;
-  raw_ptr<Browser> browser_ = nullptr;  // null when constructed without one
+  raw_ptr<BrowserWindowInterface> browser_ = nullptr;  // null when constructed without one
   // Re-pushes context when the active tab navigates (A7: previously the
   // chat kept answering about the previous page until a tab switch).
   std::unique_ptr<ActiveTabObserver> active_tab_observer_;

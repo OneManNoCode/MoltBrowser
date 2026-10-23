@@ -8,13 +8,9 @@
 #include <utility>
 
 #include "build/build_config.h"
-<<<<<<< src/chrome/utility/services.cc (MoltBrowser)
-#include "chrome/services/molt_ai/document_parser/document_parser_impl.h"
-||||||| upstream@pin
-=======
 #include "chrome/common/request_header_integrity/buildflags.h"
 #include "chrome/services/file_util/buildflags.h"
->>>>>>> upstream@new
+#include "chrome/services/molt_ai/document_parser/document_parser_impl.h"
 #include "chrome/services/speech/buildflags/buildflags.h"
 #include "components/on_device_translation/buildflags/buildflags.h"
 #include "components/paint_preview/buildflags/buildflags.h"

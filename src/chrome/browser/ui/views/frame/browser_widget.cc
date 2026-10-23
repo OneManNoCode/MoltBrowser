@@ -23,12 +23,8 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window_state.h"
 #include "chrome/browser/ui/immersive/immersive_mode_controller.h"
-<<<<<<< src/chrome/browser/ui/views/frame/browser_widget.cc (MoltBrowser)
-#include "chrome/browser/ui/ui_features.h"
-||||||| upstream@pin
-=======
 #include "chrome/browser/ui/sessions/session_service_browser_helper.h"
->>>>>>> upstream@new
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/views/frame/browser_frame_view.h"
 #include "chrome/browser/ui/views/frame/browser_native_widget.h"

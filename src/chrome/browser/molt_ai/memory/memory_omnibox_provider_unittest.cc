@@ -212,7 +212,7 @@ TEST_F(MoltMemoryProviderTest, SearchRowThenHitsThenHitsByMeaning) {
   const ACMatches& keyword = provider_->matches();
   ASSERT_EQ(keyword.size(), 3u);  // the javascript: page is never a row
   EXPECT_EQ(keyword[1].destination_url, GURL("https://a.example/miso"));
-  EXPECT_EQ(keyword[1].type, AutocompleteMatchType::HISTORY_BODY);
+  EXPECT_EQ(keyword[1].type, omnibox::AutocompleteMatchType::kHistoryBody);
   EXPECT_FALSE(keyword[1].allowed_to_be_default_match);
   EXPECT_LT(keyword[1].relevance, keyword[0].relevance);
   EXPECT_EQ(keyword[1].description, u"Miso soup");
@@ -324,7 +324,7 @@ TEST(MoltMemoryControllerGateTest, ShortcutInputReachesNoOtherProvider) {
     controller.input_ = FakeAutocompleteController::CreateInput(text);
     bool search_runs = false;
     for (const auto& provider : controller.providers()) {
-      if (provider->type() == AutocompleteProvider::TYPE_SEARCH) {
+      if (provider->type() == AutocompleteProvider::Type::kSearch) {
         search_runs = controller.ShouldRunProvider(provider.get());
       }
     }
@@ -350,14 +350,15 @@ TEST(MoltMemoryControllerGateTest, ShortcutInputStopsTheOthers) {
   }
 }
 
-// The omnibox's controllers (TYPE_BUILTIN) have both local providers, and
+// The omnibox's controllers (Type::kBuiltin) have both local providers, and
 // each local input reaches exactly one provider: "@ai ..." the AI prompt
 // provider (its row opens molt://ai with the prompt), "@memory ..." the
 // memory one. "?" is not local input, and gets no AI row.
 TEST(MoltMemoryControllerGateTest, BuiltinControllersRouteLocalInput) {
   base::test::TaskEnvironment task_environment;
   AutocompleteControllerConfig config;
-  config.provider_types = AutocompleteProvider::TYPE_BUILTIN;
+  config.provider_types =
+      static_cast<int>(AutocompleteProvider::Type::kBuiltin);
   auto client = std::make_unique<FakeAutocompleteProviderClient>();
   omnibox::RegisterProfilePrefs(static_cast<PrefRegistrySimple*>(
       client->GetPrefs()->DeprecatedGetPrefRegistry()));

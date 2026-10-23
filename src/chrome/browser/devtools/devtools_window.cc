@@ -36,12 +36,8 @@
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/infobars/browser_infobar_manager.h"
 #include "chrome/browser/infobars/confirm_infobar_creator.h"
-<<<<<<< src/chrome/browser/devtools/devtools_window.cc (MoltBrowser)
-#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
-||||||| upstream@pin
-=======
 #include "chrome/browser/infobars/infobar_features.h"
->>>>>>> upstream@new
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
 #include "chrome/browser/policy/developer_tools_policy_checker.h"
 #include "chrome/browser/policy/developer_tools_policy_checker_factory.h"
