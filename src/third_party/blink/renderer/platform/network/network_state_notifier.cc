@@ -133,6 +133,9 @@ void NetworkStateNotifier::SetOnLine(bool on_line) {
 void NetworkStateNotifier::SetWebConnection(WebConnectionType type,
                                             double max_bandwidth_mbps) {
   DCHECK(IsMainThread());
+  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
+    return;
+  }
   ScopedNotifier notifier(*this);
   {
     base::AutoLock locker(lock_);
@@ -147,6 +150,9 @@ void NetworkStateNotifier::SetNetworkQuality(WebEffectiveConnectionType type,
                                              base::TimeDelta transport_rtt,
                                              int downlink_throughput_kbps) {
   DCHECK(IsMainThread());
+  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
+    return;
+  }
   ScopedNotifier notifier(*this);
   {
     base::AutoLock locker(lock_);
@@ -174,6 +180,9 @@ void NetworkStateNotifier::SetNetworkQualityWebHoldback(
   DCHECK(IsMainThread());
   if (type == WebEffectiveConnectionType::kTypeUnknown)
     return;
+  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
+    return;
+  }
   ScopedNotifier notifier(*this);
   {
     base::AutoLock locker(lock_);
@@ -193,6 +202,9 @@ NetworkStateNotifier::AddConnectionObserver(
 
 void NetworkStateNotifier::SetSaveDataEnabled(bool enabled) {
   DCHECK(IsMainThread());
+  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
+    return;
+  }
   ScopedNotifier notifier(*this);
   {
     base::AutoLock locker(lock_);
@@ -275,6 +287,21 @@ void NetworkStateNotifier::ClearOverride() {
   {
     base::AutoLock locker(lock_);
     has_override_ = false;
+  }
+}
+
+// MoltBrowser
+void NetworkStateNotifier::SetUniformNetworkState(const NetworkState& state) {
+  DCHECK(IsMainThread());
+  ScopedNotifier notifier(*this);
+  {
+    base::AutoLock locker(lock_);
+    const bool on_line_initialized = state_.on_line_initialized;
+    const bool on_line = state_.on_line;
+    state_ = state;
+    state_.on_line_initialized = on_line_initialized;
+    state_.on_line = on_line;
+    uniform_ = true;
   }
 }
 
@@ -374,6 +401,9 @@ double NetworkStateNotifier::GetRandomMultiplier(const String& host) const {
   // origin from removing noise from the estimates.
   if (!host)
     return 1.0;
+  if (uniform_) {  // MoltBrowser: the same values for every site and user.
+    return 1.0;
+  }
 
   unsigned hash = GetHash(host) + RandomizationSalt();
   double random_multiplier = 0.9 + static_cast<double>((hash % 21)) * 0.01;

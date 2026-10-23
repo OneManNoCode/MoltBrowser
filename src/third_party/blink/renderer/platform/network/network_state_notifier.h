@@ -26,6 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_NETWORK_NETWORK_STATE_NOTIFIER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_NETWORK_NETWORK_STATE_NOTIFIER_H_
 
+#include <atomic>  // MoltBrowser
 #include <memory>
 #include <optional>
 
@@ -253,6 +254,16 @@ class PLATFORM_EXPORT NetworkStateNotifier {
   void SetSaveDataEnabledOverride(bool enabled);
   void ClearOverride();
 
+  // MoltBrowser: from now on this process reports `state` (all of it but
+  // the on-line state) as its connection and network quality, whatever the
+  // browser sends: SetWebConnection(), SetNetworkQuality(),
+  // SetNetworkQualityWebHoldback() and SetSaveDataEnabled() change nothing,
+  // so no change event comes from them, and RoundRtt() and RoundMbps() add
+  // no per-host noise. DevTools' and tests' overrides still apply on top.
+  // Main thread, before any document exists; MoltNet renderers only
+  // (molt_fingerprinting/moltnet_network.h).
+  void SetUniformNetworkState(const NetworkState& state);
+
   // Must be called on the given task runner. An added observer must be removed
   // before the observer or its execution context goes away. It's possible for
   // an observer to be called twice for the same event if it is first removed
@@ -359,6 +370,9 @@ class PLATFORM_EXPORT NetworkStateNotifier {
 
   ObserverListMap connection_observers_;
   ObserverListMap on_line_state_observers_;
+
+  // MoltBrowser: SetUniformNetworkState() ran. Read on any thread.
+  std::atomic<bool> uniform_{false};
 
   const uint8_t randomization_salt_ = base::RandIntInclusive(1, 20);
 };
