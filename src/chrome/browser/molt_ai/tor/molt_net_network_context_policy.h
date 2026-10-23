@@ -72,13 +72,13 @@ struct MoltNetNetworkContextSettings {
   // certificate verifier in net::CachingCertVerifier, which keeps results
   // for up to 30 minutes keyed by certificate, hostname and flags, and
   // net::CoalescingCertVerifier, which merges identical verifications in
-  // flight. Neither is keyed by top-level site, so a site could tell by
-  // timing whether another site (or a third party embedded on both)
-  // already had the same certificate verified in this identity, and a
-  // missing intermediate fetched for one site would not be fetched again
-  // for the other. When true, the context has neither: every TLS
-  // connection, resumed ones included, is verified on its own (a few
-  // milliseconds, next to the hundreds a connection through Tor takes).
+  // flight. Neither is keyed by top-level site, so how long a verification
+  // takes, and whether a missing intermediate is downloaded again, would
+  // depend on what other sites (or a third party embedded on several)
+  // loaded before in this identity. When true, the context has neither:
+  // every TLS connection, resumed ones included, is verified on its own (a
+  // few milliseconds, next to the hundreds a connection through Tor
+  // takes).
   bool uncached_cert_verification = false;
 
   // HTTP cache: Chromium 152 files requests for a built-in list of
