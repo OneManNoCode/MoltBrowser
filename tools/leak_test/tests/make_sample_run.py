@@ -213,6 +213,18 @@ def manifest():
                  'flag': '--proxy-server=http://127.0.0.1:18888',
                  'result': {'error': 'A command-line flag controls the '
                                      'proxy.'}, 'moltnet_pages': 0}},
+            {'name': 'partitioning_override', 'target': 'regular',
+             'start': t(130), 'end': t(140), 'data': {'runs': [
+                 {'feature': f, 'flag': '--disable-features=' + f,
+                  'result': {'error': 'MoltNet keeps each site\'s '
+                             'connections, cache and storage apart, and a '
+                             'command-line flag or field trial has turned '
+                             'that off for the whole browser (%s), so '
+                             'MoltNet can\'t open.' % f},
+                  'moltnet_pages': 0}
+                 for f in ('PartitionConnectionsByNetworkIsolationKey',
+                           'SplitCacheByNetworkIsolationKey',
+                           'ThirdPartyStoragePartitioning')]}},
             {'name': 'extension', 'skipped': '--no-extension'},
         ],
         'fingerprints': [

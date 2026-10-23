@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 109 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 110 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -152,6 +152,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | New Identity: new profile, cookies gone, new farbling seed | MOLTNET_COMPLIANCE.md §4 step 7 |
 | PASS | No MoltNet window comes back after a restart | MOLTNET_COMPLIANCE.md §4 step 5 |
 | PASS | A --proxy-server override blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
+| PASS | Turning off per-site partitioning (connections, HTTP cache, third-party storage) blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
 | PASS | Different sites use different SOCKS usernames (per-site circuits) | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | The panel's relays are in the consensus Tor downloaded | MOLTNET_COMPLIANCE.md §4 step 10 |
 | PASS | Sandboxed pages (opaque origins) on two sites use different SOCKS usernames | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
@@ -177,6 +178,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - launched with --proxy-server=http://127.0.0.1:18888
   - openWindow -> {"error": "A command-line flag controls the proxy."}
   - MoltNet pages: 0
+- **PASS** Turning off per-site partitioning (connections, HTTP cache, third-party storage) blocks MoltNet
+  - --disable-features=PartitionConnectionsByNetworkIsolationKey: openWindow -> {"error": "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (PartitionConnectionsByNetworkIsolationKey),; MoltNet pages: 0
+  - --disable-features=SplitCacheByNetworkIsolationKey: openWindow -> {"error": "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (SplitCacheByNetworkIsolationKey), so MoltNe; MoltNet pages: 0
+  - --disable-features=ThirdPartyStoragePartitioning: openWindow -> {"error": "MoltNet keeps each site's connections, cache and storage apart, and a command-line flag or field trial has turned that off for the whole browser (ThirdPartyStoragePartitioning), so MoltNet ; MoltNet pages: 0
 - **PASS** Different sites use different SOCKS usernames (per-site circuits)
   - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]', 'opaque\\x20null\\x20[internally:\\x20(33cc)\\x20anonymous]', 'opaque\\x20null\\x20[internally:\\x20(55ee)\\x20anonymous]']
   - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion', 'opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']

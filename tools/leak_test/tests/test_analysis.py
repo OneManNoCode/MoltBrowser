@@ -138,6 +138,8 @@ class SampleRun(unittest.TestCase):
         self.assertEqual(status['identity.session_circuits'], 'PASS')
         self.assertEqual(status['identity.new_identity'], 'PASS')
         self.assertEqual(status['identity.fail_closed'], 'PASS')
+        self.assertEqual(status['identity.partitioning_override_refused'],
+                         'PASS')
         self.assertEqual(status['uniform.nav.hardwareConcurrency'], 'FAIL')
         self.assertEqual(status['uniform.win.innerWidth'], 'FAIL')
         self.assertEqual(status['uniform.fonts.visible'], 'FAIL')
@@ -191,6 +193,39 @@ class IdentityChecks(unittest.TestCase):
                     'second_after_first_s', 'second_context'):
             del data[key]
         self.assertEqual(report._judge_new_identity(data)[0], report.PASS)
+
+    def partition_runs(self, **changes):
+        runs = []
+        for f in ('PartitionConnectionsByNetworkIsolationKey',
+                  'SplitCacheByNetworkIsolationKey',
+                  'ThirdPartyStoragePartitioning'):
+            run = {'feature': f, 'flag': '--disable-features=' + f,
+                   'result': {'error': 'turned that off (%s)' % f},
+                   'moltnet_pages': 0}
+            run.update(changes.get(f, {}))
+            runs.append(run)
+        return report._judge_partitioning_override({'runs': runs})
+
+    def test_partitioning_override(self):
+        cache = 'SplitCacheByNetworkIsolationKey'
+        self.assertEqual(self.partition_runs()[0], report.PASS)
+        # MoltNet opened with the HTTP cache unsplit.
+        self.assertEqual(self.partition_runs(**{cache: {
+            'result': {'running': True}, 'moltnet_pages': 1}})[0],
+            report.FAIL)
+        # Refused, but for another reason (Tor didn't start, say): the
+        # switch isn't what stopped it.
+        self.assertEqual(self.partition_runs(**{cache: {
+            'result': {'error': 'Tor could not start.'}}})[0], report.FAIL)
+        # The harness itself failed.
+        self.assertEqual(self.partition_runs(**{cache: {
+            'result': {'error': 'harness: SplitCacheByNetworkIsolationKey '
+                                'timeout'}}})[0], report.FAIL)
+        # An error, yet a MoltNet page is there.
+        self.assertEqual(self.partition_runs(**{cache: {
+            'moltnet_pages': 1}})[0], report.FAIL)
+        self.assertEqual(report._judge_partitioning_override({})[0],
+                         report.SKIP)
 
     def socks(self, *entries):
         return {'socks': [{'test': t, 'host': h, 'username': u}
