@@ -64,6 +64,7 @@ chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc.patch
 chrome/browser/media/chrome_media_session_client.cc.patch
 chrome/browser/media/media_engagement_service.cc.patch
 chrome/browser/media/router/media_router_feature.cc.patch
+chrome/browser/media/webrtc/webrtc_logging_controller.cc.patch
 chrome/browser/metrics/chrome_feature_list_creator.cc.patch
 chrome/browser/net/net_error_diagnostics_dialog_win.cc.patch
 chrome/browser/net/profile_network_context_service.cc.patch
@@ -75,6 +76,7 @@ chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc.patch
 chrome/browser/profiles/off_the_record_profile_impl.cc.patch
 chrome/browser/profiles/profile.cc.patch
 chrome/browser/profiles/profile_impl.cc.patch
+chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc.patch
 chrome/browser/resources/new_tab_page/new_tab_page.html.patch
 chrome/browser/resources/settings/page_visibility.ts.patch
 chrome/browser/resources/settings/route.ts.patch

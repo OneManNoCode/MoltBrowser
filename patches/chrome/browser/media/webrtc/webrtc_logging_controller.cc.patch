@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/media/webrtc/webrtc_logging_controller.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/media/webrtc/webrtc_logging_controller.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/media/webrtc/webrtc_logging_controller.cc b/chrome/browser/media/webrtc/webrtc_logging_controller.cc
+index b6362e45099795587bdd898e01722e62e9d700dc..0e67816287e9ba56fe5907426b46246aceff979c 100644
+--- a/chrome/browser/media/webrtc/webrtc_logging_controller.cc
++++ b/chrome/browser/media/webrtc/webrtc_logging_controller.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
+ #include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
+ #include "chrome/browser/media/webrtc/webrtc_rtp_dump_handler.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/pref_names.h"
+ #include "components/content_settings/core/common/content_settings_pattern.h"
+@@ -863,7 +864,11 @@ bool WebRtcLoggingController::IsWebRtcTextLogAllowed(
+ 
+   const Profile* profile = Profile::FromBrowserContext(browser_context);
+   DCHECK(profile);
+-  if (profile->IsPrimaryOTRProfileWithRegularParent()) {
++  // MoltBrowser: no text logs in MoltNet either, as in Incognito. The log
++  // would be written to the regular profile's folder and uploaded outside
++  // Tor (molt_net_incognito_parity.h).
++  if (profile->IsPrimaryOTRProfileWithRegularParent() ||
++      molt_ai::tor::IsMoltNetProfile(profile)) {
+     return false;
+   }
+   const PrefService* prefs = profile->GetPrefs();

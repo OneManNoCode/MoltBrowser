@@ -1,0 +1,31 @@
+MoltBrowser patch for chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
+Generated from src/chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc b/chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc
+index 75fa9570bca1587637c89c881d84621eb4d3e361..019a2865c2d325605483b4ca66f4ac67ee14e55c 100644
+--- a/chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc
++++ b/chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/reduce_accept_language/reduce_accept_language_factory.h"
+ 
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
+ #include "chrome/browser/profiles/profile.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/reduce_accept_language/browser/reduce_accept_language_service.h"
+@@ -45,7 +46,11 @@ ReduceAcceptLanguageFactory::BuildServiceInstanceForBrowserContext(
+     content::BrowserContext* context) const {
+   Profile* profile = Profile::FromBrowserContext(context);
+   PrefService* prefs = profile->GetPrefs();
++  // MoltBrowser: MoltNet negotiates from the same generic language list as
++  // Incognito, the one its Accept-Language header already carries
++  // (molt_net_incognito_parity.h).
+   return std::make_unique<reduce_accept_language::ReduceAcceptLanguageService>(
+       HostContentSettingsMapFactory::GetForProfile(context), prefs,
+-      profile->IsPrimaryOTRProfileWithRegularParent());
++      profile->IsPrimaryOTRProfileWithRegularParent() ||
++          molt_ai::tor::IsMoltNetProfile(profile));
+ }
