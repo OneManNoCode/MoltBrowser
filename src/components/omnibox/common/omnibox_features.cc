@@ -199,16 +199,6 @@ BASE_FEATURE(kOmniboxMultimodalInput, ENABLED);
 // Enables popup variations (e.g. accordion menu) for mobile Fusebox.
 BASE_FEATURE(kOmniboxFuseboxPopupVariations, DISABLED);
 
-<<<<<<< src/components/omnibox/common/omnibox_features.cc (MoltBrowser)
-// Enables the AIM entrypoint for third party search engines.
-// MoltBrowser: off by default. Since kAiModeOmniboxEntryPoint was removed, this
-// is the flag that gates the omnibox AI Mode button when the default search
-// engine is not Google (see OmniboxFieldTrial::IsAimOmniboxEntrypointEnabled).
-BASE_FEATURE(kAim3pEntrypoint, DISABLED);
-||||||| upstream@pin
-// Enables the AIM entrypoint for third party search engines.
-BASE_FEATURE(kAim3pEntrypoint, ENABLED);
-=======
 
 // Disables tab attachments for Canvas requests and disables Canvas if tabs are
 // attached.
@@ -216,8 +206,11 @@ BASE_FEATURE(kOmniboxDisableTabsForCanvas, ENABLED);
 
 // Enables the AIM entrypoint for third party search engines. Held dark on
 // Android until the Android entrypoint UI is implemented.
-BASE_FEATURE(kAim3pEntrypoint, enable_if(!IS_ANDROID));
->>>>>>> upstream@new
+// MoltBrowser: off by default on every platform. Since kAiModeOmniboxEntryPoint
+// was removed, this is the flag that gates the omnibox AI Mode button when the
+// default search engine is not Google (see
+// OmniboxFieldTrial::IsAimOmniboxEntrypointEnabled).
+BASE_FEATURE(kAim3pEntrypoint, DISABLED);
 const base::FeatureParam<bool> kAim3pEntrypointDebug{
     &kAim3pEntrypoint, "Aim3pEntrypointDebug", false};
 

@@ -128,15 +128,8 @@ group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
-# MoltBrowser: shipped (via regex, used by anydoc's pdf-inspector and
-# env_filter and by adblock), so not `group = 'test'` as upstream has it.
 [crate.aho-corasick]
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-||||||| upstream@pin
-group = 'test'
-=======
 group = 'safe'
->>>>>>> upstream@new
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = false }
 
@@ -390,19 +383,15 @@ extra_kv = { allow_unsafe = true }
 [crate.derivre.extra_kv]
 allow_unsafe = false
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
 [crate.digest]
 extra_kv = { allow_unsafe = false }
 
-||||||| upstream@pin
-=======
 # TODO: Remove multiple versions of the `diplomat` crate:
 # diplomat@0.15.0, diplomat@0.16.0
 [crate.diplomat]
 group = 'safe'
 allow_first_party_usage = true
 
->>>>>>> upstream@new
 [crate.diplomat.extra_kv]
 allow_unsafe = false
 multiversion_cleanup_bug = "https://crbug.com/482994758"
@@ -460,16 +449,12 @@ group = 'test'
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }
 
-<<<<<<< src/third_party/rust/chromium_crates_io/gnrt_config.toml (MoltBrowser)
-[crate.fast-float2]
-extra_kv = { allow_unsafe = true }
-
-||||||| upstream@pin
-=======
 [crate.extended]
 extra_kv = { allow_unsafe = false }
 
->>>>>>> upstream@new
+[crate.fast-float2]
+extra_kv = { allow_unsafe = true }
+
 [crate.fastbloom]
 extra_input_roots = ["../README.md"]
 extra_kv = { allow_unsafe = false }
@@ -997,8 +982,8 @@ extra_kv = { allow_unsafe = false }
 
 # MoltBrowser: shipped (anydoc's pdf-inspector and env_filter, and
 # adblock's `full-regex-handling`), so not `group = 'test'` as upstream
-# has it. regex-automata and version_check (test-only upstream too) have no
-# explicit group, so they become shipped through their dependents.
+# has it. version_check (test-only upstream too) has no explicit group, so
+# it becomes shipped through its dependents.
 [crate.regex]
 allow_first_party_usage = false
 extra_kv = { allow_unsafe = true }

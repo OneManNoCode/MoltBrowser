@@ -2083,17 +2083,11 @@ source_set("browser") {
     "//chrome/browser/affiliations",
     "//chrome/browser/ai",
     "//chrome/browser/ai:impl",
-<<<<<<< src/chrome/browser/BUILD.gn (MoltBrowser)
     "//chrome/browser/molt_ai",
     # MoltBrowser: privacy-by-default prefs (hooked from profile_impl.cc).
     "//chrome/browser/molt_ai/privacy",
     # MoltBrowser: MoltShield profile prefs (registered in profile_impl.cc).
     "//chrome/browser/molt_ai/shield:prefs",
-    "//chrome/browser/app_mode",
-||||||| upstream@pin
-    "//chrome/browser/app_mode",
-=======
->>>>>>> upstream@new
     "//chrome/browser/autocomplete",
     "//chrome/browser/autocomplete:impl",
     "//chrome/browser/autofill",

@@ -13953,20 +13953,6 @@ const FeatureEntry kFeatureEntries[] = {
      flag_descriptions::kGlicContextMenuBelowSearchDescription, kOsDesktop,
      FEATURE_VALUE_TYPE(features::kGlicContextMenuBelowSearch)},
 
-<<<<<<< src/chrome/browser/about_flags.cc (MoltBrowser)
-    // MoltBrowser: MoltShield kill switches (#molt-shield-*).
-    MOLT_SHIELD_FEATURE_ENTRIES,
-
-    // MoltBrowser: fingerprinting protection kill switch
-    // (#molt-fingerprinting-protection).
-    MOLT_FINGERPRINTING_FEATURE_ENTRIES,
-
-    // MoltBrowser: the web agent's screenshots, site tools and planner
-    // (#molt-agent-screenshots, #molt-agent-site-tools, #molt-agent-planner).
-    MOLT_AGENT_FEATURE_ENTRIES,
-
-||||||| upstream@pin
-=======
     {"omnibox-dui-prerendering", flag_descriptions::kOmniboxDuiPrerenderingName,
      flag_descriptions::kOmniboxDuiPrerenderingDescription, kOsAll,
      FEATURE_VALUE_TYPE(features::kOmniboxDuiPrerendering)},
@@ -14281,7 +14267,17 @@ const FeatureEntry kFeatureEntries[] = {
          webapps::features::kAndroidInstallAnyPageAsDiyAppStopgap)},
 #endif  // BUILDFLAG(IS_ANDROID)
 
->>>>>>> upstream@new
+    // MoltBrowser: MoltShield kill switches (#molt-shield-*).
+    MOLT_SHIELD_FEATURE_ENTRIES,
+
+    // MoltBrowser: fingerprinting protection kill switch
+    // (#molt-fingerprinting-protection).
+    MOLT_FINGERPRINTING_FEATURE_ENTRIES,
+
+    // MoltBrowser: the web agent's screenshots, site tools and planner
+    // (#molt-agent-screenshots, #molt-agent-site-tools, #molt-agent-planner).
+    MOLT_AGENT_FEATURE_ENTRIES,
+
     // Add new entries above this line.
     // NOTE: Adding a new flag requires adding a corresponding entry to enum
     // "LoginCustomFlags" in tools/metrics/histograms/enums.xml. See "Flag

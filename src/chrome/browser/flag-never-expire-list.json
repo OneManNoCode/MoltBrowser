@@ -100,10 +100,6 @@
   "isolate-origins",
   "iwa-key-distribution-component-exp-cohort",
   "media-router-cast-allow-all-ips",
-<<<<<<< src/chrome/browser/flag-never-expire-list.json (MoltBrowser)
-  "memlog",
-  "memlog-sampling-rate",
-  "memlog-stack-mode",
   "molt-agent-planner",
   "molt-agent-screenshots",
   "molt-agent-site-tools",
@@ -115,12 +111,6 @@
   "molt-shield-removeparam",
   "molt-shield-request-proxy",
   "molt-shield-websocket",
-||||||| upstream@pin
-  "memlog",
-  "memlog-sampling-rate",
-  "memlog-stack-mode",
-=======
->>>>>>> upstream@new
   "omaha-min-sdk-version-android",
   "omnibox-debug-logs",
   "on-device-app-controls",
