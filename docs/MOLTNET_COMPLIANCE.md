@@ -538,8 +538,8 @@ new identity never shares a circuit, and so an exit, with an earlier one,
 also for a site both visit, even within the ten minutes or so for which
 Tor would otherwise keep using a circuit for that site, and whether or not
 Tor has applied New Identity's request yet. New Identity still asks Tor
-for new circuits (`SIGNAL NEWNYM`): Tor then stops putting new
-connections on any circuit built before, which covers a connection of the
+for new circuits (`SIGNAL NEWNYM`): Tor then puts no new connection on a
+circuit that has already carried one, which covers a connection of the
 old identity that is still being set up inside Tor, and clears its own
 caches (resolved names, onion-service descriptors). Regular and Incognito
 windows don't use Tor; a SOCKS5 proxy you set up for them on your own
