@@ -17,7 +17,9 @@ DIAG_RE = re.compile(r"^(?P<file>[^:\n]+):(?P<line>\d+):(?P<col>\d+): "
 PER_FILE = {}
 
 
-def compile_command(tree, work, target, plugins=True, dev=False):
+def compile_command(tree, work, target, plugins=True, dev=False,
+                    gn_flags=None):
+    """gn_flags: (global flags, {dir prefix: flags}) from gnconfigs."""
     root = tree.tree_dir
     clang = toolchain.clang_dir(work) / "bin" / "clang++"
     cmd = [str(clang)] + config.CFLAGS
@@ -36,6 +38,15 @@ def compile_command(tree, work, target, plugins=True, dev=False):
         else:
             p = root / inc if inc else root
         cmd.append("-I" + str(p))
+    if gn_flags:
+        glob, per_dir = gn_flags
+        extra = list(glob)
+        for prefix, flags in per_dir.items():
+            if target.startswith(prefix):
+                extra += flags
+        if not plugins:
+            extra = _strip_plugins(extra)
+        cmd += extra
     for inc in config.SYSTEM_DIRS:
         cmd.append("-isystem" + str(root / inc))
     sysroot = toolchain.sysroot_dir(work)
@@ -47,13 +58,28 @@ def compile_command(tree, work, target, plugins=True, dev=False):
     return cmd
 
 
+def _strip_plugins(flags):
+    out = []
+    i = 0
+    while i < len(flags):
+        if flags[i] == "-Xclang" and i + 1 < len(flags) and (
+                "plugin" in flags[i + 1] or i + 3 < len(flags) and
+                flags[i + 2] == "-Xclang" and "plugin" in flags[i + 1]):
+            i += 2
+            continue
+        out.append(flags[i])
+        i += 1
+    return out
+
+
 def _limit():
     # Keep one compile from taking the machine down (no swap here).
     resource.setrlimit(resource.RLIMIT_AS, (6 << 30, 6 << 30))
 
 
-def run_one(tree, work, target, out_dir, plugins=True, dev=False):
-    cmd = compile_command(tree, work, target, plugins, dev)
+def run_one(tree, work, target, out_dir, plugins=True, dev=False,
+            gn_flags=None):
+    cmd = compile_command(tree, work, target, plugins, dev, gn_flags)
     r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
                        text=True, preexec_fn=_limit)
     text = r.stderr
@@ -72,13 +98,14 @@ def run_one(tree, work, target, out_dir, plugins=True, dev=False):
             "log": str(log)}
 
 
-def run(tree, work, targets, jobs=2, plugins=True, dev=False):
+def run(tree, work, targets, jobs=2, plugins=True, dev=False, gn_flags=None):
     out_dir = Path(work) / "check"
     out_dir.mkdir(parents=True, exist_ok=True)
     tree.out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
-        futs = {ex.submit(run_one, tree, work, t, out_dir, plugins, dev): t
+        futs = {ex.submit(run_one, tree, work, t, out_dir, plugins, dev,
+                          gn_flags): t
                 for t in targets}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()

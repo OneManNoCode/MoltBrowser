@@ -94,7 +94,8 @@ SUBPROJECTS = {
 # come from the mirror's HEAD instead (a stand-in; reported as such). Public
 # C APIs that change slowly only.
 HEAD_FALLBACK = {"third_party/pdfium", "third_party/webrtc",
-                 "third_party/libyuv", "third_party/openscreen/src"}
+                 "third_party/libyuv", "third_party/openscreen/src",
+                 "third_party/dawn"}
 
 
 def log(msg):

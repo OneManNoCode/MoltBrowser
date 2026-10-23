@@ -76,6 +76,8 @@ def _build_files_mentioning(tree, word, limit=40):
 EXTRA_BUILD_FILES = {
     "third_party/perfetto/build_config/": "third_party/perfetto/gn/BUILD.gn",
     "v8/include/inspector/": "v8/src/inspector/BUILD.gn",
+    "third_party/dawn/include/dawn/": "third_party/dawn/include/dawn/BUILD.gn",
+    "third_party/dawn/src/dawn/": "third_party/dawn/src/dawn/BUILD.gn",
 }
 
 

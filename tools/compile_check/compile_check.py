@@ -29,7 +29,7 @@ sys.path.insert(0, str(HERE))
 
 from ccheck import check, config, scan, sources, targets, toolchain  # noqa
 from ccheck import gen_actions, gen_buildflags, gen_mojom, gen_misc, gn  # noqa
-from ccheck import host_tools  # noqa
+from ccheck import gnconfigs, host_tools  # noqa
 
 REPO_ROOT = HERE.parents[1]
 
@@ -235,8 +235,10 @@ def cmd_gen(args):
 
 def do_check(args, tree):
     tgts = targets.expand(args.targets, tree)
+    gn_flags = gnconfigs.resolve(tree, make_interp(tree))
     res = check.run(tree, args.work, tgts, jobs=args.jobs,
-                    plugins=not args.no_plugins, dev=args.dev_plugins)
+                    plugins=not args.no_plugins, dev=args.dev_plugins,
+                    gn_flags=gn_flags)
     summary = args.work / "check.json"
     old = {}
     if summary.exists() and args.targets:
@@ -297,9 +299,8 @@ def classify(r, graph, gen_dir):
             if "STAND-IN" in head:
                 stand_ins.append("grit stand-in")
         else:
-            for mount in ("third_party/pdfium", "third_party/webrtc",
-                          "third_party/libyuv", "third_party/openscreen/src",
-                          "third_party/dom_distiller_js/dist"):
+            for mount in sorted(sources.HEAD_FALLBACK) + [
+                    "third_party/dom_distiller_js/dist"]:
                 if n.startswith("src:" + mount + "/"):
                     stand_ins.append(mount + " (mirror HEAD)")
     stand_ins = sorted(set(stand_ins))
