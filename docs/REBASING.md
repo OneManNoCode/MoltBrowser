@@ -73,38 +73,45 @@ A release branch is the `MAJOR.0.BRANCH.*` series with many patch numbers;
 rebase (`148.0.7729.0`, a trunk commit from 2026-03-10) was a canary-era
 build, not a release branch: it had none of M148's branch security merges.
 
-State on 2026-10-14, from the tags and their commit dates on the mirror
-(chromiumdash was not reachable from the machine that ran this; confirm there
-before acting):
+Which line is Extended Stable right now: Google's Version History API
+answers without chromiumdash, and is the quickest check (no `extended` rows
+on Linux, which has no such channel):
+
+```bash
+for p in win mac; do
+  curl -sS "https://versionhistory.googleapis.com/v1/chrome/platforms/$p/channels/extended/versions/all/releases?order_by=starttime%20desc&pageSize=6" \
+    | python3 -c 'import json,sys; [print(r["version"], r["serving"]["startTime"][:10], r.get("fraction")) for r in json.load(sys.stdin)["releases"]]'
+done
+```
+
+State on 2026-10-23, from the Version History API and the tags on the
+mirror (chromiumdash was not reachable from the machine that ran this):
 
 | Milestone | Branch | Latest tag | Its date | Reading |
 |---|---|---|---|---|
-| 158 | trunk | 158.0.8105.1 | 2026-10-14 | canary |
-| 157 | 8103 | 157.0.8103.6 | 2026-10-14 | dev (just branched) |
-| 156 | 8078 | 156.0.8078.40 | 2026-10-13 | beta |
-| **155** | 8059 | **155.0.8059.87** | 2026-10-14 | **stable** |
-| 154 | 8037 | 154.0.8037.154 | 2026-10-13 | previous stable, still patched |
-| 153 | 8010 | 153.0.8010.57 | 2026-10-01 | dead (odd milestone) |
-| **152** | 7977 | **152.0.7977.168** | 2026-10-12 | **extended stable** |
-| 151 | 7922 | 151.0.7922.226 | 2026-09-03 | dead |
-| 150 | 7871 | 150.0.7871.256 | 2026-10-02 | previous extended stable, winding down |
+| 158 | trunk | 158.0.8120.1 | 2026-10-22 | canary |
+| 157 | 8103 | 157.0.8103.20 | 2026-10-22 | beta (157.0.8103.15 on 0.5% of Windows stable) |
+| **156** | 8078 | 156.0.8078.69 | 2026-10-22 | **stable and extended stable**: Extended Stable serves **156.0.8078.48** on Windows and macOS since 2026-10-20 (25% of the extended population on 2026-10-22, rising); Stable rolls out 156.0.8078.47-.49 |
+| 155 | 8059 | 155.0.8059.91 | 2026-10-19 | previous stable |
+| 154 | 8037 | 154.0.8037.154 | 2026-10-13 | dead |
+| 152 | 7977 | 152.0.7977.169 | 2026-10-14 | previous extended stable, being replaced by 156 |
+| 150 | 7871 | 150.0.7871.287 | 2026-10-21 | `[M150-LTS]` merges (ChromeOS LTS), not a desktop channel |
 
-Chromium is on a 2-week milestone cadence (branch points ~20-30 builds apart
-since M154, against ~50 before). Odd milestones stop receiving
-merges within weeks of their successor shipping; even ones keep getting them
-much longer. M150's latest merge is from 2026-10-02 and M152 is still being
-patched, so **M152 is the current extended stable line**, three milestones
-behind stable M155. That fits "the even milestone ~4 releases behind stable"
-(155 - 4 = 151 is odd; the live even line is 152). **Next target:
-`152.0.7977.168`.** When M152 stops receiving merges, move to the next even
-line that does (expect M154 or M156).
+So **Extended Stable moved from M152 to M156** on 2026-10-20, and
+152.0.7977.169 (our pin since 2026-10-16) was its last M152 release. The
+milestone move happened earlier than "~4 releases behind stable" suggested:
+with 2-week milestones, Google moved the extended channel to the current
+stable milestone. **Target: `156.0.8078.48`**, the Extended Stable release on
+Windows and macOS (the [156 rebase](#the-156-rebase-2026-10-23)). Same-branch
+respins of it follow (`156.0.8078.*` tags that Extended Stable ships); when the
+extended channel moves to a new milestone again, do the big rebase to it.
 
 ## The process
 
 ### On every Chrome security release (target: shipped within 7 days)
 
 1. Watch [Chrome Releases](https://chromereleases.googleblog.com/) (or the tag
-   listing above) for a new tag on our branch, e.g. `152.0.7977.170`.
+   listing above) for a new tag on our branch, e.g. `156.0.8078.49`.
 2. On a branch `rebase/<tag>`:
    `tools/chromium/rebase.py <tag>` and read `report.md`. Same-branch respins
    are normally all clean.
@@ -358,3 +365,13 @@ compiled yet.
    keys.enc / vault.enc / profile.enc / chat history still open after the
    os_crypt_async move on each platform.
 
+
+## The 156 rebase (2026-10-23)
+
+`tools/chromium/rebase.py 156.0.8078.48 --apply --allow-conflicts` from
+152.0.7977.169: 154 clean 3-way merges, 55 conflicted files, 3 files
+deleted or moved upstream, 8 identical copies refreshed, 2 patches now
+empty (the change is upstream), the search-engine definitions to check by
+hand, 3 vendored Rust paths that now exist upstream, and 12 removed
+symbols that first-party code used. The conflict state is its own commit;
+the resolution follows it.
