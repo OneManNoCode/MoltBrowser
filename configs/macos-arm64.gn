@@ -1,8 +1,8 @@
 # MoltBrowser Build Configuration — macOS arm64 (Apple Silicon)
 # Copyright 2025 GenEye AI Labs Inc.
 #
-# Usage: gn gen out/MoltBrowser --args="import(\"//configs/macos-arm64.gn\")"
-# Or:    ./scripts/configure.sh --platform macos --arch arm64
+# Usage (repository root): ./scripts/configure.sh --platform macos --arch arm64
+# Or, in chromium/src:    gn gen out/MoltBrowser --args="$(cat ../../configs/macos-arm64.gn)"
 
 # Target platform
 target_os = "mac"

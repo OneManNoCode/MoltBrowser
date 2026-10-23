@@ -208,15 +208,16 @@ jobs:
           fi
           echo "Building with --jobs $JOBS (nproc=$(nproc))"
           ./scripts/configure.sh --platform linux --arch x64
-          ./scripts/build.sh --jobs "$JOBS"
+          ./scripts/build.sh --platform linux --jobs "$JOBS"
 
       - name: Reuse existing build (skip_build=true — packaging-only fast path)
         if: ${{ inputs.skip_build == 'true' }}
         run: |
           # Package the binary already sitting in the warm out/ dir instead of
           # re-compiling. The overlay is already compiled INTO chrome, so we skip
-          # sync/overlay/build entirely; package-linux.sh only reads out/MoltBrowser.
-          BIN="chromium/src/out/MoltBrowser/chrome"
+          # sync/overlay/build entirely; package-linux.sh only reads
+          # out/MoltBrowser-linux (Linux's own out dir, scripts/configure.sh).
+          BIN="chromium/src/out/MoltBrowser-linux/chrome"
           if [ ! -f "$BIN" ]; then
             echo "::error::skip_build=true but $BIN is missing — no prior build to package."
             echo "Run the workflow once with skip_build=false (a full build) first."
@@ -236,24 +237,19 @@ jobs:
             dist/molt-provenance-linux-x64.json
           ./scripts/package-linux.sh --version "$TAG"
 
-      - name: Rename to stable asset names
+      # package-linux.sh writes the fixed names the updater downloads
+      # (scripts/lib-release-names.sh). All three, or fail: a silent miss
+      # used to upload whatever an earlier run left behind.
+      - name: Check the three packages
         run: |
-          cd dist
-          # Exactly one match each, or fail (a silent miss used to upload
-          # whatever an earlier run left behind).
-          rename_one() {
-            local matches
-            mapfile -t matches < <(compgen -G "$1")
-            if [ "${#matches[@]}" -ne 1 ]; then
-              echo "::error::expected one '$1' in dist/, found ${#matches[@]}: ${matches[*]}"
+          for f in dist/MoltBrowser-Linux-x64.deb dist/MoltBrowser-Linux-x64.rpm \
+                   dist/MoltBrowser-Linux-x64.tar.gz; do
+            if [ ! -f "$f" ]; then
+              echo "::error::package-linux.sh did not write $f"
               exit 1
             fi
-            mv "${matches[0]}" "$2"
-          }
-          rename_one 'moltbrowser*amd64.deb'          MoltBrowser-Linux-x64.deb
-          rename_one 'moltbrowser*x86_64.rpm'         MoltBrowser-Linux-x64.rpm
-          rename_one 'MoltBrowser-*-linux-x64.tar.gz' MoltBrowser-Linux-x64.tar.gz
-          ls -lh MoltBrowser-Linux-x64.*
+          done
+          ls -lh dist/MoltBrowser-Linux-x64.*
 
       # One SBOM per package (Linux packages bundle no helpers), and the
       # UNSIGNED apt/rpm repository built from these exact packages. Nothing

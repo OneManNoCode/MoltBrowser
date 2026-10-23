@@ -18,7 +18,12 @@
 #
 #   # Universal binary (arm64 + x64)
 #   ./scripts/release.sh --version 0.1.0 --build 1 --universal \
-#     --identity "..." --notarize --upload
+#     --identity "..." --team-id TEAM_ID --notarize --upload
+#
+# The app must have its helpers bundled (Tor, whisper, tesseract): the build
+# step runs scripts/build.sh, which bundles them; with --skip-build, build
+# with scripts/build.sh first. The DMG is dist/MoltBrowser-macOS-arm64.dmg
+# (scripts/lib-release-names.sh), the name the in-app updater downloads.
 #
 # Copyright 2025 GenEye AI Labs Inc. Licensed under GPLv3.
 
@@ -74,12 +79,20 @@ if [ -z "$VERSION" ] || [ -z "$BUILD_NUM" ]; then
   echo "Run: $0 --help"
   exit 1
 fi
+# Notarization needs both; say so now rather than ship an un-notarized DMG.
+if [ "$DO_NOTARIZE" = true ] && { [ -z "$SIGN_IDENTITY" ] || [ -z "$TEAM_ID" ]; }; then
+  echo "ERROR: --notarize needs --identity and --team-id"
+  exit 1
+fi
 
+# The DMG gets the fixed, versionless name the in-app updater downloads.
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 if [ "$UNIVERSAL" = true ]; then
-  DMG_NAME="MoltBrowser-${VERSION}-macOS-universal"
+  DMG_NAME="${MOLT_ASSET_MACOS_UNIVERSAL_DMG%.dmg}"
   BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser-universal"
 else
-  DMG_NAME="MoltBrowser-${VERSION}-macOS-arm64"
+  DMG_NAME="${MOLT_ASSET_MACOS_ARM64_DMG%.dmg}"
   BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser"
 fi
 DMG_PATH="$REPO_DIR/dist/${DMG_NAME}.dmg"
@@ -143,7 +156,9 @@ if [ "$SKIP_BUILD" = false ]; then
          "$REPO_DIR/chromium/src/chrome/app/theme/chromium/mac/app.icns"
     fi
 
-    autoninja -C "$BUILD_DIR" chrome
+    # Compiles chrome and bundles Tor, whisper and tesseract into the app
+    # (a bundling failure fails a release build).
+    bash "$SCRIPT_DIR/build.sh" --platform macos
   fi
   echo "  Build complete"
 else
@@ -202,6 +217,32 @@ else
   fi
 fi
 
+# The bundled helpers (scripts/build.sh bundles them after the compile).
+# Without them MoltNet, voice input and OCR don't work: macOS has no system
+# fallback for tor. Never ship an app that lacks one.
+for h in tor/tor whisper/whisper-cli ocr/tesseract; do
+  if [ ! -x "$APP_PATH/Contents/Resources/$h" ]; then
+    echo ""
+    echo "  ❌ FATAL: $APP_PATH/Contents/Resources/$h is missing."
+    echo "     Build with ./scripts/build.sh, which bundles the helpers, or run"
+    echo "     scripts/bundle-tor.sh, bundle-whisper.sh and bundle-tesseract.sh"
+    echo "     with --app \"$APP_PATH\". DO NOT SHIP THIS BUILD."
+    exit 1
+  fi
+done
+
+# The Mach-O files of the helpers bundled in Resources/ (tor, tesseract,
+# whisper), NUL-separated.
+resource_helpers() {
+  local d f
+  for d in tor ocr whisper; do
+    [ -d "$APP_PATH/Contents/Resources/$d" ] || continue
+    while IFS= read -r -d '' f; do
+      if file -b "$f" | grep -q "Mach-O"; then printf '%s\0' "$f"; fi
+    done < <(find "$APP_PATH/Contents/Resources/$d" -type f -print0)
+  done
+}
+
 # ---- Step 4: Code Sign ----
 STEP=$((STEP + 1))
 echo ""
@@ -234,16 +275,12 @@ if [ -n "$SIGN_IDENTITY" ]; then
 
   # 2. Bundled third-party binaries in Resources/ (tor, tesseract/OCR, whisper).
   # codesign --deep treats Resources/ as DATA and skips them; sign each Mach-O
-  # explicitly (before the app seal), same Developer ID/team.
-  for d in tor ocr whisper; do
-    if [ -d "$APP_PATH/Contents/Resources/$d" ]; then
-      find "$APP_PATH/Contents/Resources/$d" -type f | while read -r f; do
-        if file "$f" | grep -q "Mach-O"; then
-          codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f" 2>/dev/null || true
-        fi
-      done
-    fi
-  done
+  # explicitly (before the app seal), same Developer ID/team, hardened
+  # runtime. Any failure stops the release: an unsigned helper fails
+  # notarization, or ships and can't run (CLAUDE.md "Packaging gotchas").
+  while IFS= read -r -d '' f; do
+    codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp "$f"
+  done < <(resource_helpers)
 
   # 2b. GPU/GL dylibs inside the framework's Libraries/ (libEGL.dylib,
   # libGLESv2.dylib, libvk_swiftshader.dylib). The linker emits these ad-hoc
@@ -287,6 +324,14 @@ if [ -n "$SIGN_IDENTITY" ]; then
   codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp \
     --entitlements "$ENT_DIR/app-entitlements.plist" "$APP_PATH"
   codesign --verify --deep --strict "$APP_PATH"
+  # --deep doesn't look into Resources/: check each helper there itself.
+  while IFS= read -r -d '' f; do
+    codesign --verify --strict "$f"
+    if ! codesign -dv "$f" 2>&1 | grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime'; then
+      echo "  ❌ FATAL: $f is not signed with the hardened runtime"
+      exit 1
+    fi
+  done < <(resource_helpers)
   echo "  Code signing complete and verified"
 else
   echo "[$STEP/$STEPS_TOTAL] Skipping code signing (no --identity)"

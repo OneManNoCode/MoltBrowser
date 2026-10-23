@@ -232,7 +232,7 @@ procedure.
 ### 1. Setup
 
 ```bash
-APP="/Applications/MoltBrowser.app/Contents/MacOS/MoltBrowser"   # Linux: out/MoltBrowser/chrome
+APP="/Applications/MoltBrowser.app/Contents/MacOS/MoltBrowser"   # Linux: chromium/src/out/MoltBrowser-linux/chrome
 RUN=$(date +%Y%m%d-%H%M); OUT=~/molt-traffic/$RUN; mkdir -p "$OUT"
 PROFILE=$(mktemp -d)                                              # fresh, never signed in
 ```

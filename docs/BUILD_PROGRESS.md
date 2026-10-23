@@ -15,6 +15,17 @@ fuzzers, device checks, the MoltNet leak kit, packaging and offline signing)
 is one runbook: **[BUILD_MACHINE_CHECKLIST.md](BUILD_MACHINE_CHECKLIST.md)**.
 Record progress here as you work through it.
 
+Changed paths and commands since v0.2.5's build (the runbook has them):
+- Linux builds in **`chromium/src/out/MoltBrowser-linux`**
+  (`./scripts/build.sh --platform linux`; `build/docker/build-linux.sh` and
+  `scripts/package-linux.sh` use it), so a Docker Linux build no longer
+  replaces the macOS build in `out/MoltBrowser`.
+- The release scripts write the installers under the names the updater
+  downloads (`scripts/lib-release-names.sh`): no more renaming
+  `MoltBrowser-<version>-…` or `moltbrowser_<version>_amd64.deb` by hand.
+- `./scripts/dev-install-mac.sh` keeps the helpers `./scripts/build.sh` just
+  bundled, and takes only missing ones from the installed app.
+
 ---
 
 ## Session State

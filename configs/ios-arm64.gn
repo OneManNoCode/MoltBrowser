@@ -1,8 +1,8 @@
 # MoltBrowser Build Configuration — iOS arm64 (Device)
 # Copyright 2025 GenEye AI Labs Inc.
 #
-# Usage: gn gen out/MoltBrowser --args="import(\"//configs/ios-arm64.gn\")"
-# Or:    ./scripts/configure.sh --platform ios --arch arm64
+# Usage (repository root): ./scripts/configure.sh --platform ios --arch arm64
+# Or, in chromium/src:    gn gen out/MoltBrowser --args="$(cat ../../configs/ios-arm64.gn)"
 #
 # Prerequisites:
 #   - macOS with Xcode 15+ and iOS SDK

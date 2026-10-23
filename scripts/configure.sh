@@ -12,6 +12,10 @@
 #   ./scripts/configure.sh --platform android --arch arm64
 #   ./scripts/configure.sh --platform ios --arch arm64
 #   ./scripts/configure.sh --config configs/linux-x64.gn
+#
+# Output: chromium/src/out/MoltBrowser, or out/MoltBrowser-linux for Linux,
+# so a Mac can keep its macOS build next to a Docker Linux build of the
+# same checkout. --build-dir overrides it.
 
 set -e
 
@@ -68,7 +72,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --platform, -p   Target platform: macos, linux, windows, android, ios"
       echo "  --arch, -a       Target CPU: arm64, x64, arm"
       echo "  --config, -c     Use a specific .gn config file"
-      echo "  --build-dir      Custom output directory (default: out/MoltBrowser)"
+      echo "  --build-dir      Custom output directory (default: out/MoltBrowser,"
+      echo "                   out/MoltBrowser-linux for Linux)"
       echo "  --debug          Enable debug build"
       echo "  --help, -h       Show this help"
       echo ""
@@ -137,9 +142,22 @@ fi
 echo "Platform: ${TARGET_PLATFORM:-from-config}"
 echo "Architecture: ${TARGET_ARCH:-from-config}"
 
-# Determine build output directory
+# Determine build output directory. Linux has its own, so building it in
+# the Mac's checkout (build/docker/build-linux.sh) doesn't replace the
+# macOS build; scripts/build.sh --platform linux and package-linux.sh use
+# the same one.
+IS_LINUX=false
+if [ "$TARGET_PLATFORM" = "linux" ]; then
+  IS_LINUX=true
+elif [ -z "$TARGET_PLATFORM" ] && [[ "$(basename "$CONFIG_FILE")" == linux-* ]]; then
+  IS_LINUX=true
+fi
 if [ -z "$BUILD_DIR" ]; then
-  BUILD_DIR="out/MoltBrowser"
+  if [ "$IS_LINUX" = true ]; then
+    BUILD_DIR="out/MoltBrowser-linux"
+  else
+    BUILD_DIR="out/MoltBrowser"
+  fi
 fi
 
 cd "$CHROMIUM_SRC"
@@ -196,5 +214,11 @@ echo ""
 echo "Build directory: $CHROMIUM_SRC/$BUILD_DIR"
 echo ""
 echo "To build MoltBrowser:"
-echo "  ./scripts/build.sh"
+if [ "$IS_LINUX" = true ] && [ "$BUILD_DIR" = "out/MoltBrowser-linux" ]; then
+  echo "  ./scripts/build.sh --platform linux"
+elif [ "$BUILD_DIR" = "out/MoltBrowser" ]; then
+  echo "  ./scripts/build.sh"
+else
+  echo "  ./scripts/build.sh --build-dir $BUILD_DIR"
+fi
 echo ""

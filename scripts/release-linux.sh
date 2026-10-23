@@ -19,6 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 # Release builds: bundle downloads must match their pins (no dev override).
 export MOLT_RELEASE_BUILD=1
 
@@ -82,10 +84,16 @@ if [ "$USE_DOCKER" = true ]; then
   # --- Docker-based build ---
   echo "[1/4] Building via Docker..."
   DOCKER_IMG="moltbrowser-linux"
+  # Always build and run the image as linux/amd64, like
+  # build/docker/build-linux.sh: depot_tools' prebuilt binaries are x86_64
+  # (Rosetta on Apple Silicon), and the container must be the one that
+  # script builds in.
+  PLATFORM_FLAG="--platform=linux/amd64"
 
   # Build Docker image if needed
-  if [ "$(docker images -q $DOCKER_IMG 2>/dev/null)" = "" ]; then
+  if [ "$(docker images -q "$DOCKER_IMG" 2>/dev/null)" = "" ]; then
     docker build \
+      "$PLATFORM_FLAG" \
       --build-arg BUILD_UID="$(id -u)" \
       --build-arg BUILD_GID="$(id -g)" \
       -t "$DOCKER_IMG" \
@@ -93,11 +101,12 @@ if [ "$USE_DOCKER" = true ]; then
       "$ROOT_DIR"
   fi
 
-  DOCKER_ARGS=(--rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser)
+  DOCKER_ARGS=("$PLATFORM_FLAG" --rm -v "$ROOT_DIR:/moltbrowser" -w /moltbrowser
+               -e HOME=/tmp/builder)
 
   if [ "$SKIP_BUILD" = false ]; then
     docker run "${DOCKER_ARGS[@]}" "$DOCKER_IMG" bash -c \
-      "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh"
+      "./scripts/configure.sh --platform linux --arch x64 && ./scripts/build.sh --platform linux"
   fi
 
   echo ""
@@ -115,7 +124,7 @@ else
   if [ "$SKIP_BUILD" = false ]; then
     echo "[1/4] Building..."
     "$SCRIPT_DIR/configure.sh" --platform linux --arch x64
-    "$SCRIPT_DIR/build.sh"
+    "$SCRIPT_DIR/build.sh" --platform linux
   else
     echo "[1/4] Skipping build"
   fi
@@ -141,12 +150,12 @@ if [ "$DO_UPLOAD" = true ]; then
   echo "[4/4] Uploading to GitHub Releases..."
   cd "$ROOT_DIR"
 
-  # This version's Linux packages only (dist/ keeps older builds around).
+  # The packages under the fixed names the in-app updater downloads
+  # (package-linux.sh writes them, after removing any older ones).
   ARTIFACTS=()
-  for f in "$DIST_DIR/MoltBrowser-$VERSION-linux-x64".* \
-           "$DIST_DIR/moltbrowser_${VERSION}_amd64.deb" \
-           "$DIST_DIR/moltbrowser-$VERSION"-*.rpm; do
-    [ -f "$f" ] && ARTIFACTS+=("$f")
+  for f in "$DIST_DIR/$MOLT_ASSET_LINUX_DEB" "$DIST_DIR/$MOLT_ASSET_LINUX_RPM" \
+           "$DIST_DIR/$MOLT_ASSET_LINUX_TAR" "$DIST_DIR/$MOLT_ASSET_LINUX_APPIMAGE"; do
+    if [ -f "$f" ]; then ARTIFACTS+=("$f"); fi
   done
 
   if [ ${#ARTIFACTS[@]} -eq 0 ]; then
@@ -203,4 +212,4 @@ fi
 echo ""
 echo "=== Linux Release Complete ==="
 echo "Artifacts:"
-ls -lh "$DIST_DIR/"*linux* "$DIST_DIR/"moltbrowser_* 2>/dev/null || echo "  (none)"
+ls -lh "$DIST_DIR/"MoltBrowser-Linux-x64.* 2>/dev/null || echo "  (none)"

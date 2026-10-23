@@ -3,7 +3,7 @@
 # Licensed under GPLv3. See LICENSE file.
 """MoltNet leak and uniformity test kit (docs/LEAK_TESTING.md).
 
-  sudo tools/leak_test/leaktest.sh run --browser out/MoltBrowser/chrome
+  sudo tools/leak_test/leaktest.sh run --browser chromium/src/out/MoltBrowser-linux/chrome
       runs everything and writes <out>/<run>/report.md + report.json
   tools/leak_test/leaktest.sh report <run dir>
       (re)builds the report from a recorded run, no root needed
@@ -116,7 +116,7 @@ def main(argv=None):
     r = sub.add_parser('run', help='run the suite against a built browser '
                        '(root)')
     r.add_argument('--browser', required=True,
-                   help='the browser executable (e.g. out/MoltBrowser/chrome '
+                   help='the browser executable (e.g. out/MoltBrowser-linux/chrome '
                    'or /opt/moltbrowser/moltbrowser)')
     r.add_argument('--out', default=None,
                    help='where run directories go (default ./moltleak-runs)')

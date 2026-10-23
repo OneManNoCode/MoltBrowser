@@ -24,7 +24,7 @@ git clone https://github.com/YOUR_USERNAME/MoltBrowser.git
 cd MoltBrowser
 ./scripts/setup.sh                 # --target-os mac,linux for a shared checkout
 ./scripts/configure.sh             # auto-detects the host; or e.g. --platform linux --arch x64
-./scripts/build.sh
+./scripts/build.sh                 # chromium/src/out/MoltBrowser (Linux: out/MoltBrowser-linux)
 ```
 
 On Linux you can also build in Docker: `./build/docker/build-linux-fresh.sh`.

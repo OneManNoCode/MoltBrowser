@@ -8,13 +8,17 @@
 #   ./scripts/build.sh                        # Build default target
 #   ./scripts/build.sh --target chrome_public_apk  # Android APK
 #   ./scripts/build.sh --platform android     # Auto-detect Android target
+#   ./scripts/build.sh --platform linux       # Linux, in out/MoltBrowser-linux
+#
+# Build dir: out/MoltBrowser, or out/MoltBrowser-linux with --platform linux
+# (Linux has its own, see scripts/configure.sh); --build-dir overrides it.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CHROMIUM_SRC="$ROOT_DIR/chromium/src"
-BUILD_DIR="out/MoltBrowser"
+BUILD_DIR=""
 
 # Prefer /opt/depot_tools when present (Docker container case): the
 # host's depot_tools/ directory is mounted into the container but its
@@ -61,7 +65,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --jobs, -j N       Parallel jobs"
       echo "  --target TARGET    Build target (default: auto-detect)"
       echo "  --platform, -p P   Platform hint: macos, linux, windows, android, ios"
-      echo "  --build-dir DIR    Build output directory"
+      echo "  --build-dir DIR    Build output directory (default: out/MoltBrowser,"
+      echo "                     out/MoltBrowser-linux with --platform linux)"
       echo "  --verbose, -v      Verbose build output"
       echo ""
       echo "Default targets by platform:"
@@ -76,6 +81,21 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Linux builds have their own out dir (scripts/configure.sh).
+if [ -z "$BUILD_DIR" ]; then
+  if [ "$PLATFORM" = "linux" ]; then
+    BUILD_DIR="out/MoltBrowser-linux"
+  elif [ -z "$PLATFORM" ] && [ "$(uname)" = "Linux" ] && \
+       [ ! -f "$CHROMIUM_SRC/out/MoltBrowser/args.gn" ] && \
+       [ -f "$CHROMIUM_SRC/out/MoltBrowser-linux/args.gn" ]; then
+    # A Linux host whose only build is the Linux one, as a plain
+    # `configure.sh` (auto-detect) leaves it.
+    BUILD_DIR="out/MoltBrowser-linux"
+  else
+    BUILD_DIR="out/MoltBrowser"
+  fi
+fi
 
 # Auto-detect platform from args.gn if not specified
 if [ -z "$PLATFORM" ] && [ -f "$CHROMIUM_SRC/$BUILD_DIR/args.gn" ]; then
@@ -113,6 +133,9 @@ cd "$CHROMIUM_SRC"
 # Check if configured
 if [ ! -d "$BUILD_DIR" ]; then
   echo "ERROR: Build not configured. Run ./scripts/configure.sh first."
+  if [ -z "$PLATFORM" ] && [ -f "out/MoltBrowser-linux/args.gn" ]; then
+    echo "  (out/MoltBrowser-linux is configured: for Linux, pass --platform linux.)"
+  fi
   exit 1
 fi
 
@@ -143,12 +166,23 @@ echo ""
 # bundle Linux tor through the .deb in package-linux.sh and Windows
 # tor through the NSIS script in package-win.sh (those are wired in
 # separately to keep this build script platform-clean).
+#
+# A development build only warns when a helper can't be bundled. A release
+# build (MOLT_RELEASE_BUILD=1, set by the release scripts and workflows)
+# fails instead: the app would ship without that helper.
+bundling_failed() {
+  if [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+    echo "[build] ERROR: $1 bundling failed; a release can't ship without it."
+    exit 1
+  fi
+}
 if [ "${PLATFORM:-auto}" = "macos" ] || \
    { [ "${PLATFORM:-auto}" = "auto" ] && [ "$(uname)" = "Darwin" ]; }; then
   APP="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
   if [ -d "$APP" ]; then
     echo "=== Bundling Tor ==="
     "$SCRIPT_DIR/bundle-tor.sh" --app "$APP" || {
+      bundling_failed tor
       echo "[build] WARNING: tor bundling failed. The app builds fine"
       echo "[build] but MoltNet won't work (no system-tor fallback)."
     }
@@ -156,6 +190,7 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
     # Phase Tier-5: bundle whisper.cpp for the voice-mode mic button.
     echo "=== Bundling Whisper ==="
     "$SCRIPT_DIR/bundle-whisper.sh" --app "$APP" || {
+      bundling_failed whisper
       echo "[build] WARNING: whisper bundling failed. /transcribeAudio"
       echo "[build] will fall back to a system-installed whisper-cli."
     }
@@ -163,10 +198,14 @@ if [ "${PLATFORM:-auto}" = "macos" ] || \
     # Tier-3 polish: bundle tesseract for image-only-PDF OCR fallback.
     echo "=== Bundling Tesseract ==="
     "$SCRIPT_DIR/bundle-tesseract.sh" --app "$APP" || {
+      bundling_failed tesseract
       echo "[build] WARNING: tesseract bundling failed. /pdf OCR"
       echo "[build] fallback will use system tesseract or be unavailable."
     }
     echo ""
+  elif [ "${MOLT_RELEASE_BUILD:-0}" = "1" ]; then
+    echo "[build] ERROR: no $APP to bundle the helpers into."
+    exit 1
   fi
 fi
 
@@ -174,7 +213,7 @@ fi
 # Report binary location based on platform
 case "${PLATFORM:-auto}" in
   macos)
-    BINARY="$CHROMIUM_SRC/$BUILD_DIR/Chromium.app"
+    BINARY="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
     if [ -d "$BINARY" ]; then
       echo "Binary: $BINARY"
       echo "Size: $(du -sh "$BINARY" | cut -f1)"
@@ -219,11 +258,11 @@ case "${PLATFORM:-auto}" in
   *)
     # Fallback: detect from host OS
     if [ "$(uname)" = "Darwin" ]; then
-      BINARY="$CHROMIUM_SRC/$BUILD_DIR/Chromium.app"
-      [ -d "$BINARY" ] && echo "Binary: $BINARY" && echo "To run: open $BINARY"
+      BINARY="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
+      if [ -d "$BINARY" ]; then echo "Binary: $BINARY"; echo "To run: open $BINARY"; fi
     else
       BINARY="$CHROMIUM_SRC/$BUILD_DIR/chrome"
-      [ -f "$BINARY" ] && echo "Binary: $BINARY" && echo "To run: $BINARY"
+      if [ -f "$BINARY" ]; then echo "Binary: $BINARY"; echo "To run: $BINARY"; fi
     fi
     ;;
 esac

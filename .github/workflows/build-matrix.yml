@@ -140,7 +140,7 @@ jobs:
         run: ./scripts/configure.sh --platform linux --arch x64
 
       - name: Build
-        run: ./scripts/build.sh
+        run: ./scripts/build.sh --platform linux
 
       - name: Package
         run: ./scripts/package-linux.sh --version "$PKG_VERSION" --format tar
@@ -149,7 +149,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: MoltBrowser-Linux-x64
-          path: dist/MoltBrowser-*linux*.tar.gz
+          path: dist/MoltBrowser-Linux-x64.tar.gz
           retention-days: 7
 
   # --- Windows ---
