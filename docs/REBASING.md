@@ -344,8 +344,11 @@ compiled yet.
 
 1. `./scripts/setup.sh --resync` to move `chromium/src` to 152.0.7977.169.
 2. Refresh the search engines overlay from the synced subproject (this
-   environment can't reach it):
-   `tools/chromium/search_engines_overlay.py chromium/src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json -o src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json`
+   environment can't reach it). Step 1 has already copied our version over
+   the synced file, so read upstream's from the subproject's own git:
+   `git -C chromium/src/third_party/search_engines_data/resources show HEAD:definitions/prepopulated_engines.json > /tmp/prepopulated_engines.upstream.json`,
+   then
+   `tools/chromium/search_engines_overlay.py /tmp/prepopulated_engines.upstream.json -o src/third_party/search_engines_data/resources/definitions/prepopulated_engines.json`
    and commit the result.
 3. `scripts/vendor-rust-crates.sh` (adblock and its crates, windows-sys 0.61
    for Windows; gnrt is the authority on Cargo.lock / BUILD.gn details).
