@@ -50,6 +50,8 @@ constexpr uint32_t kEllipsis = 0x2026;
 // The goal is scanned for secrets up to this size; a longer goal makes
 // every typed value withheld (and the draft's name generic).
 constexpr size_t kMaxGoalScanBytes = 4096;
+// ... and at most this many secret tokens are matched against typed text.
+constexpr size_t kMaxGoalSecrets = 64;
 
 // FILL_FORM's cap (agent_actions::kMaxFormFields).
 constexpr size_t kMaxFormFields = 8;
@@ -209,6 +211,21 @@ bool Contains(std::string_view s, std::string_view needle) {
 
 bool HasTemplateBraces(std::string_view s) {
   return Contains(s, "{{") || Contains(s, "}}");
+}
+
+// A host as GURL canonicalizes one (lower-case ASCII, IDN as punycode,
+// IPv6 in brackets). It is shown in descriptions and the site list, and
+// feeds the whitelist: anything else is refused.
+bool IsPlainHost(std::string_view host) {
+  if (host.empty() || host.size() > 255)
+    return false;
+  for (char c : host) {
+    if (!IsLower(c) && !IsDigit(c) && c != '.' && c != '-' && c != '_' &&
+        c != ':' && c != '[' && c != ']') {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Splits on ASCII whitespace (and on |more|, if given).
@@ -615,8 +632,8 @@ struct Builder {
     }
     const GURL g(url);
     if (!g.is_valid() || !agent_safety::IsAllowedNavigationURL(g) ||
-        g.host().empty() || g.spec().size() > kMaxUrlBytes ||
-        HasTemplateBraces(g.spec())) {
+        !IsPlainHost(LowerAscii(g.host())) || g.spec().size() > kMaxUrlBytes ||
+        !IsValidUtf8(g.spec()) || HasTemplateBraces(g.spec())) {
       Refuse(Refusal::kUnusableStep);
       return std::string();
     }
@@ -665,16 +682,16 @@ struct Builder {
     return false;
   }
 
-  bool AddNavigation(std::string_view url, std::string description_suffix) {
+  // |description| empty: "Open <host>".
+  bool AddNavigation(std::string_view url, std::string description) {
     const std::string spec = CheckAddress(url);
     if (spec.empty())
       return false;
     Step s;
     s.type = StepType::NAVIGATE;
     s.target = spec;
-    s.description = description_suffix.empty()
-                        ? "Open " + HostOf(spec)
-                        : std::move(description_suffix);
+    s.description = description.empty() ? "Open " + HostOf(spec)
+                                        : std::move(description);
     script.steps.push_back(std::move(s));
     return true;
   }
@@ -686,6 +703,7 @@ struct Builder {
       return Refuse(Refusal::kTemplateText);
     // A query that holds a secret would sit in the workflow's address.
     if (goal_unscanned || TextLooksSecret(rs.query) ||
+        TextLooksSecret(StripHidden(rs.query)) ||
         ContainsGoalSecret(rs.query)) {
       return Refuse(Refusal::kSecretInAddress);
     }
@@ -760,9 +778,13 @@ struct Builder {
       script.steps.push_back(std::move(s));
       return true;
     }
+    // The label read both ways: hidden characters dropped ("pass" U+200B
+    // "word") and line breaks as spaces ("card\nnumber").
+    // The text too: as typed, and without hidden characters.
     const std::string check_label = StripHidden(e.label);
     if (goal_unscanned || LabelSuggestsSecret(check_label) ||
-        TextLooksSecret(e.text) || ContainsGoalSecret(e.text)) {
+        LabelSuggestsSecret(label) || TextLooksSecret(e.text) ||
+        TextLooksSecret(StripHidden(e.text)) || ContainsGoalSecret(e.text)) {
       const std::string name = VariableNameFor(check_label, variables);
       variables.insert(name);
       script.default_variables[name] = std::string();
@@ -798,7 +820,7 @@ struct Builder {
       return Refuse(Refusal::kUnusableStep);
     }
     const std::string host = LowerAscii(origin.host());
-    if (HasTemplateBraces(host) || !IsValidUtf8(host))
+    if (!IsPlainHost(host))
       return Refuse(Refusal::kUnusableStep);
     for (const RunElement& e : rs.elements) {
       if (!AddElementStep(e, typing, host))
@@ -835,7 +857,8 @@ struct Builder {
     const std::string goal = CleanDisplayText(run.goal, kMaxNameChars);
     const std::string check = StripHidden(run.goal);
     if (goal.empty() || goal_unscanned || !goal_secrets.empty() ||
-        TextLooksSecret(check) || LabelSuggestsSecret(check)) {
+        HasTemplateBraces(goal) || TextLooksSecret(check) ||
+        LabelSuggestsSecret(check)) {
       return first_host.empty() ? std::string("Agent run")
                                 : "Agent run on " + first_host;
     }
@@ -1135,8 +1158,10 @@ Draft BuildDraft(const Run& run,
   }
 
   Builder b(run);
-  b.goal_unscanned = run.goal.size() > kMaxGoalScanBytes;
   b.goal_secrets = GoalSecretTokens(run.goal);
+  // A goal too long to scan, or full of secrets: every value is asked.
+  b.goal_unscanned = run.goal.size() > kMaxGoalScanBytes ||
+                     b.goal_secrets.size() > kMaxGoalSecrets;
   for (const RunStep& rs : run.steps) {
     if (!rs.success)
       continue;  // only what ran and worked

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/molt_ai/automation/automation_security.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -327,6 +328,11 @@ TEST(AgentRunDraftTest, RefusesStepsItCantReplay) {
   EXPECT_EQ(refusal(Click("#a", "A", "chrome://settings")),
             Refusal::kUnusableStep);
   EXPECT_EQ(refusal(Click("#a", "A", "")), Refusal::kUnusableStep);
+  // A host that isn't canonical ASCII (GURL writes IDN as punycode).
+  EXPECT_EQ(refusal(Click("#a", "A", "https://exa\xE2\x80\xAEmple.com")),
+            Refusal::kUnusableStep);
+  EXPECT_EQ(refusal(Nav("https://exa\xE2\x80\xAEmple.com/")),
+            Refusal::kUnusableStep);
   EXPECT_EQ(refusal(Type("#q", "Q", std::string(501, 'x'))),
             Refusal::kUnusableStep);
   EXPECT_EQ(refusal(Type("#q", "Q", "a\x01" "b")), Refusal::kUnusableStep);
@@ -395,6 +401,7 @@ TEST(AgentRunDraftTest, WithholdsSecretLookingValues) {
       {"Notes", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"},
       {"Notes", "AbCdEf0123456789-_ghijklmnop"},
       {"Notes", "my password is swordfish"},
+      {"Notes", "my pass\xE2\x80\x8Bword is swordfish"},
       {"Notes", "the api key"},
       {"Password", "swordfish"},
       {"Your PIN", "1234"},
@@ -403,6 +410,8 @@ TEST(AgentRunDraftTest, WithholdsSecretLookingValues) {
       {"One-time passcode", "8812"},
       {"API key", "abc"},
       {"Pass\xE2\x80\x8Bword", "swordfish"},
+      {"Card\nnumber", "4000"},
+      {"Card\tnumber", "4000"},
       {"Mot de passe", "abc"},
   };
   for (const auto& [label, value] : secrets) {
@@ -573,9 +582,17 @@ TEST(AgentRunDraftTest, NamesTheDraftAfterACleanGoal) {
   EXPECT_EQ(d.script->name, "Agent run on shop.example");
   d = Build(MakeRun({Click("#a", "A")}, "Pay with card 4111 1111 1111 1111"));
   EXPECT_EQ(d.script->name, "Agent run on shop.example");
+  d = Build(MakeRun({Click("#a", "A")}, "Fill in {{name}}"));
+  EXPECT_EQ(d.script->name, "Agent run on shop.example");
   // A goal too long to scan: generic name, and every value asked.
   d = Build(MakeRun({Type("#q", "Search", "socks")}, std::string(5000, 'a')));
   EXPECT_EQ(d.script->name, "Agent run on shop.example");
+  EXPECT_EQ(d.withheld, 1);
+  // ... and so is one full of secrets.
+  std::string many;
+  for (int i = 0; i < 70; ++i)
+    many += "pin " + base::NumberToString(1000 + i) + " ";
+  d = Build(MakeRun({Type("#q", "Search", "socks")}, many));
   EXPECT_EQ(d.withheld, 1);
 }
 
