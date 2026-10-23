@@ -7,8 +7,7 @@
 # revision; any other revision will not compile. Move it only with
 # tools/chromium/rebase.py --apply (see docs/REBASING.md).
 #
-# CHROMIUM_VERSION is chrome/VERSION at CHROMIUM_REVISION. The current pin is
-# a trunk commit from 2026-03-10 (canary-era 148.0.7729.0), not a release
-# branch build, so it has none of the M148 branch's security merges.
+# CHROMIUM_VERSION is chrome/VERSION at CHROMIUM_REVISION: a Chrome Extended
+# Stable release tag, per the tracking policy in docs/REBASING.md.
 CHROMIUM_VERSION=152.0.7977.169
 CHROMIUM_REVISION=92a6f15143569cf59b340472d0b5030465d95722

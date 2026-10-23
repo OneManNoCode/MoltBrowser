@@ -22,7 +22,7 @@
 #       pt_config.json     (built-in bridge lines)
 #   TorManager exec's the transports relative to Resources/tor/.
 #
-# Cache: ~/.molt-tor-cache/ to avoid re-downloading on every build.
+# Cache: <repo>/.molt-tor-cache/ (gitignored) to avoid re-downloading on every build.
 #
 # Usage:
 #   ./scripts/bundle-tor.sh                       # bundle into built app

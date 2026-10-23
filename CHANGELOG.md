@@ -612,7 +612,7 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the never-wired `browser.ai.*` stub (whose permission check allowed every
   caller), the prompt router, personas, the old agent engine and the model
   manager.
-- **Fuzzing** (`docs/FUZZING.md`): 28 libFuzzer targets cover MoltBrowser's
+- **Fuzzing** (`docs/FUZZING.md`): 34 libFuzzer targets cover MoltBrowser's
   own parsers and validators of untrusted input: page HTML and text, the
   built-in AI APIs' arguments, everything the sandboxed inference service
   sends back, model-file metadata, JSON Schemas (each grammar also checked

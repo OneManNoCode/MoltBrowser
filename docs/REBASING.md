@@ -69,9 +69,9 @@ git ls-remote --tags https://github.com/chromium/chromium 'refs/tags/15*' \
 ```
 
 A release branch is the `MAJOR.0.BRANCH.*` series with many patch numbers;
-`MAJOR.0.NNNN.0`–`.4` tags are trunk/canary builds. Our current pin
-(`148.0.7729.0`, a trunk commit from 2026-03-10) is a canary-era build, not a
-release branch: it has none of M148's branch security merges.
+`MAJOR.0.NNNN.0`–`.4` tags are trunk/canary builds. The pin before the 152
+rebase (`148.0.7729.0`, a trunk commit from 2026-03-10) was a canary-era
+build, not a release branch: it had none of M148's branch security merges.
 
 State on 2026-10-14, from the tags and their commit dates on the mirror
 (chromiumdash was not reachable from the machine that ran this; confirm there
