@@ -155,6 +155,10 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   and has its own Tor circuit; MoltNet windows don't check for captive
   portals or open a network sign-in page; and they offer sites Basic and
   Digest authentication only, never NTLM or Negotiate (Kerberos).
+- Hardening of on-device AI after a review of October's changes
+  (`docs/SECURITY_REVIEWS.md`): the browser accepts a GPU failure report
+  only from a model that runs on the GPU; from a model on the CPU it counts
+  like a crash of that model.
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

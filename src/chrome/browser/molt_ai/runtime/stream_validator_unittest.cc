@@ -165,6 +165,34 @@ TEST(StreamValidatorTest, ClampsSummaryCounts) {
             static_cast<int64_t>(INT32_MAX));
 }
 
+TEST(StreamValidatorTest, GpuFailureOnlyFromAModelOnTheGpu) {
+  StreamSummary failed;
+  failed.backend_failed = true;
+  failed.prompt_tokens = 10;
+
+  // On the CPU, llama.cpp doesn't throw: the report is a model crash (a
+  // model file that made it throw) or a lie, never a GPU failure.
+  StreamValidator cpu(Limits(), 0);
+  EXPECT_EQ(cpu.OnComplete(failed, 5).violation,
+            StreamViolation::kGpuFailureOffGpu);
+  EXPECT_FALSE(cpu.completed());
+
+  // On the GPU it ends the request like any other status.
+  StreamLimits on_gpu = Limits();
+  on_gpu.model_on_gpu = true;
+  StreamValidator gpu(std::move(on_gpu), 0);
+  StreamValidator::CompleteResult r = gpu.OnComplete(failed, 5);
+  EXPECT_EQ(r.violation, StreamViolation::kNone);
+  EXPECT_TRUE(r.summary.backend_failed);
+  EXPECT_TRUE(gpu.completed());
+
+  // Other statuses are fine wherever the model runs.
+  StreamSummary ok;
+  ok.prompt_tokens = 10;
+  StreamValidator cpu_ok(Limits(), 0);
+  EXPECT_EQ(cpu_ok.OnComplete(ok, 5).violation, StreamViolation::kNone);
+}
+
 TEST(StreamValidatorTest, StopSequencesAreReappliedAndEndTheStream) {
   StreamLimits l = Limits();
   l.stop_sequences = {"\nUser:"};

@@ -576,6 +576,42 @@ TEST_F(InferenceProcessHostTest, CrashAfterTheCpuFallbackIsAModelCrash) {
   EXPECT_FALSE(delegate_.gpu_failures[0]);
 }
 
+TEST_F(InferenceProcessHostTest, GpuFailureOnTheGpuEndsTheRequest) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  scoped_refptr<InferenceMailbox> gen = Chat(1);
+  mojom::GenerationSummaryPtr s = Summary();
+  s->status = mojom::GenerationStatus::kBackendFailed;
+  service().streamer(0)->OnComplete(std::move(s));
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(gen.get()));
+  // The runtime records the GPU failure and ends the process.
+  EXPECT_EQ(gen->outcome().kind, Kind::kOk);
+  ASSERT_TRUE(gen->outcome().has_summary);
+  EXPECT_TRUE(gen->outcome().summary.backend_failed);
+  EXPECT_TRUE(bad_messages_.empty());
+  EXPECT_TRUE(delegate_.lost.empty());
+}
+
+TEST_F(InferenceProcessHostTest, GpuFailureOffTheGpuIsAModelCrash) {
+  // Asked for the GPU, but the service loaded the model on the CPU, where
+  // llama.cpp doesn't throw: a reported GPU failure is the model's crash
+  // (or a lie), counted by CrashLoopGuard, not GpuFallbackGuard.
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  scoped_refptr<InferenceMailbox> gen = Chat(1);
+  mojom::GenerationSummaryPtr s = Summary();
+  s->status = mojom::GenerationStatus::kBackendFailed;
+  service().streamer(0)->OnComplete(std::move(s));
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(Finished(gen.get()));
+  EXPECT_EQ(gen->outcome().kind, Kind::kViolation);
+  EXPECT_EQ(bad_messages_.size(), 1u);
+  ASSERT_EQ(delegate_.lost.size(), 1u);
+  EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kGenerating);
+  EXPECT_FALSE(delegate_.gpu_failures[0]);
+  EXPECT_FALSE(host_->HasCurrentModelForTesting());
+}
+
 TEST_F(InferenceProcessHostTest, HangLoadingForTheGpuIsAGpuFailure) {
   next_load_behavior_ = FakeService::LoadBehavior::kHang;
   scoped_refptr<InferenceMailbox> hung =

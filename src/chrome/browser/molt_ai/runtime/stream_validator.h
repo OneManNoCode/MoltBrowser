@@ -37,6 +37,9 @@ enum class StreamViolation {
   kMessageAfterComplete,
   kStalled,
   kDeadlineExceeded,
+  // A request ended with a GPU failure (kBackendFailed) although the model
+  // isn't on the GPU.
+  kGpuFailureOffGpu,
 };
 
 const char* StreamViolationName(StreamViolation violation);
@@ -50,6 +53,12 @@ struct StreamLimits {
   uint32_t max_reasoning_tokens = 0;
   // Re-applied here; this copy decides what callers see.
   std::vector<std::string> stop_sequences;
+  // The model runs on the GPU (its validated ModelDescription). Only then
+  // may a request end with a GPU failure (design section 11.5): llama.cpp
+  // doesn't throw on the CPU, so a model on the CPU that reports one is
+  // either a model file that made it throw or a service that lies, and
+  // either is a model crash, not a GPU failure.
+  bool model_on_gpu = false;
 
   size_t max_chunk_bytes = 4096;
   size_t max_total_bytes_cap = 2 * 1024 * 1024;
@@ -69,6 +78,9 @@ struct StreamSummary {
   uint32_t history_dropped = 0;
   bool context_trimmed = false;
   bool user_message_trimmed = false;
+  // |status| is mojom::GenerationStatus::kBackendFailed (the GPU failed
+  // under the model). Set by the caller, which knows the mojom's values.
+  bool backend_failed = false;
 };
 
 // One generation's stream. Every message from the service goes through it,
@@ -76,7 +88,8 @@ struct StreamSummary {
 //  - OnChunk: valid UTF-8, non-empty, at most max_chunk_bytes; NUL becomes
 //    U+FFFD; the total and the count are capped; then the stop filter.
 //  - OnProgress: rate-limited; numbers clamped.
-//  - OnComplete: exactly once, last; counts clamped to [0, context_tokens].
+//  - OnComplete: exactly once, last; counts clamped to [0, context_tokens];
+//    a GPU failure only from a model on the GPU (model_on_gpu).
 //  - Any message: at most max_messages_per_second; nothing after OnComplete.
 //  - CheckTime (from a timer): no message for stall_timeout_ms, or longer
 //    than deadline_ms in total, counted from when the request starts

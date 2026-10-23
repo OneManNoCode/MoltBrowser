@@ -4,6 +4,48 @@ Adversarial reviews of MoltBrowser code, newest first. Each entry gives the
 scope, the method, the findings by severity and the issues fixed. Issues
 that aren't fixed are tracked privately until they are.
 
+## 2026-10-23: PRs #47-#52 (October 2026)
+
+**Scope.** The code merged in pull requests #47 to #52, in this order of
+priority:
+
+1. Page translation on the device (PR #48): reading a page's text in
+   Translate's isolated world and writing the model's translations back
+   (markup and attribute injection, nodes the page moves or swaps,
+   named-property shadowing, `translate="no"`, the work a hostile page can
+   cause, "Show original"), Google's translate script and language list,
+   and translation being off in MoltNet windows.
+2. The web agent's planner (PR #47): the plan parser, the step numbers in
+   actions, REPLAN, what a plan written from page text can change, and
+   the plan's display.
+3. MoltNet (PRs #49 and #51): the New Identity sequence, certificate
+   fetches, HTTP authentication schemes, captive portals, the pinned
+   preferences and the SOCKS username of sandboxed pages.
+4. GPU inference (PR #52): the Linux sandbox additions and the switch that
+   enables them, the exception boundary around llama.cpp, how GPU failures
+   are told apart from model crashes, and the shader build tools.
+5. The address bar's full-width `@ai` and `@memory` (PR #47) and the
+   follow-ups of PR #50.
+
+**Method.** Each candidate traced from its attacker (web page, model
+output, model file, network, local user) through MoltBrowser's code, the
+vendored llama.cpp and the upstream Chromium 152 code at the pinned
+revision; fixes tested with the standalone stand-in harnesses (system
+gtest, GCC `-Werror`, clang ASan/UBSan, `-fno-exceptions`) with a mutant
+that each new test catches, a syntax pass of the browser code against
+declaration stand-ins with the 152 signatures, and the libFuzzer target of
+the code touched.
+
+**Findings.** 8: 2 medium, 2 low, 4 informational. Fixed: 1 of the low.
+
+**Fixed.**
+
+- On-device AI: the browser accepts a GPU failure report (the inference
+  service's `kBackendFailed`) only from a model that runs on the GPU. From
+  a model on the CPU, where llama.cpp doesn't throw, it is a protocol
+  violation that counts against the model like a crash, so the crash-loop
+  guard applies and the GPU stays available to other models.
+
 ## 2026-10-23: MoltNet's network isolation and linkability
 
 **Scope.** MoltNet, MoltBrowser's Tor mode, against the claims in

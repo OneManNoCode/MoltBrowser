@@ -108,6 +108,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   }
   const std::vector<std::string> stops = limits.stop_sequences;
   const uint32_t ctx = limits.context_tokens;
+  // Where the model runs (its validated ModelDescription).
+  limits.model_on_gpu = p.ConsumeBool();
+  const bool model_on_gpu = limits.model_on_gpu;
 
   if (p.ConsumeBool()) {
     CheckGuard(&p);
@@ -138,11 +141,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         summary.reused_tokens = p.ConsumeIntegral<uint32_t>();
         summary.generated_tokens = p.ConsumeIntegral<uint32_t>();
         summary.history_dropped = p.ConsumeIntegral<uint32_t>();
+        summary.backend_failed = p.ConsumeBool();
         const StreamValidator::CompleteResult r =
             validator.OnComplete(summary, now);
         violation = r.violation;
         if (violation == StreamViolation::kNone) {
           CHECK(!completed);
+          // A GPU failure ends a request only for a model on the GPU.
+          CHECK(!summary.backend_failed || model_on_gpu);
           completed = true;
           shown += r.visible_tail;
           CHECK(r.summary.prompt_tokens <= ctx &&
