@@ -25,7 +25,7 @@ PY_DEPS = [
     "third_party/ply/", "third_party/pyjson5/", "tools/grit/",
     "tools/gritsettings/", "tools/metrics/", "third_party/inspector_protocol/",
     "tools/protoc_wrapper/", "tools/flags/", "components/policy/tools/",
-    "components/policy/resources/",
+    "components/policy/resources/", "third_party/mako/",
     "third_party/blink/public/devtools_protocol/", "chrome/VERSION",
     "tools/json_comment_eater/", "tools/json_to_struct/",
     "tools/json_schema_compiler/", "third_party/blink/renderer/build/scripts/",

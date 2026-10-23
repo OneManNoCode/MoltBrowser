@@ -661,6 +661,23 @@ class Interp:
             if all(isinstance(x, str) for x in (v, a, b)):
                 return v.replace(a, b)
             return UNKNOWN
+        if name == "get_target_outputs":
+            label = ev(0)
+            if not isinstance(label, str) or ctx.get("targets") is None:
+                return UNKNOWN
+            if label.startswith(":"):
+                tname = label[1:]
+            elif label.split(":")[0] in (ctx["dir"], ctx["dir"][2:]):
+                tname = label.split(":", 1)[1] if ":" in label else ""
+            else:
+                return UNKNOWN
+            for t in reversed(ctx["targets"]):
+                outs = t.get("outputs")
+                if t.name == tname and isinstance(outs, list) and \
+                        "{{" not in "".join(str(o) for o in outs):
+                    return [self.abspath(o, {"dir": t.path})
+                            for o in outs if isinstance(o, str)]
+            return UNKNOWN
         if name == "exec_script":
             return self._exec_script([ev(i) for i in range(len(args))], ctx)
         if name == "label_matches":
@@ -752,12 +769,13 @@ class Interp:
             return v.rsplit("/", 1)[0] if "/" in v else "."
         if what == "abspath":
             return self.abspath(v, ctx)
-        if what == "gen_dir":
-            d = self.abspath(v, ctx).rsplit("/", 1)[0]
-            return OUT + "/gen/" + d[2:]
-        if what == "out_dir":
-            d = self.abspath(v, ctx).rsplit("/", 1)[0]
-            return OUT + "/obj/" + d[2:]
+        if what in ("gen_dir", "out_dir"):
+            # A directory ("." , "..", "foo/") is its own dir.
+            is_dir = v in (".", "..") or v.endswith(("/", "/.", "/.."))
+            a = self.abspath(v, ctx)
+            d = a if is_dir else a.rsplit("/", 1)[0]
+            return OUT + ("/gen/" if what == "gen_dir" else "/obj/") + \
+                d[2:].strip("/")
         return UNKNOWN
 
 
