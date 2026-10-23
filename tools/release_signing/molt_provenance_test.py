@@ -292,6 +292,65 @@ def capture(fn, *args):
     return code, out.getvalue(), err.getvalue()
 
 
+class PatternTest(unittest.TestCase):
+    """The checks take a value only as a whole, in ASCII."""
+
+    def test_checks_refuse_a_trailing_newline_and_other_digits(self):
+        arabic_two = '٢'  # ARABIC-INDIC DIGIT TWO: \d without re.ASCII
+        cases = [
+            (lambda v: prov.parse_time(v, 'startedOn'), STARTED,
+             [STARTED + '\n', arabic_two + STARTED[1:]]),
+            (prov.split_tag, 'v0.3.0', ['v0.3.0\n', 'v0.3.' + arabic_two]),
+            (prov.check_label, LABEL, [LABEL + '\n']),
+            (lambda v: prov._digest({'sha256': v}, 'subject'), 'a' * 64,
+             ['a' * 64 + '\n']),
+            (lambda v: prov._digest({'gitCommit': v}, 'subject'), 'b' * 40,
+             ['b' * 40 + '\n']),
+            (lambda v: prov._uri(v, 'uri'), 'https://example.com/x',
+             ['https://example.com/é']),
+            (lambda v: prov.check_builder_facts(
+                {'version': {'clang': v}, 'depotTools': None}),
+             'clang version 21.0.0', ['clang version 21.0.0\n']),
+            (lambda v: prov.check_builder_facts(
+                {'version': {}, 'depotTools': v}), 'c' * 40, ['c' * 40 + '\n']),
+        ]
+        for check, good, bads in cases:
+            check(good)
+            for bad in bads:
+                with self.subTest(bad=bad), self.assertRaises(prov.Error):
+                    check(bad)
+
+    def test_patterns_are_ascii(self):
+        for name in ('STATEMENT_NAME', 'PLAIN_NAME', 'LABEL', 'SHA256',
+                     'GIT_OID', 'TIME', 'VERSION', 'CHROMIUM_VERSION',
+                     'GN_ARGS_FILE', 'OUT_DIR', 'INVOCATION', 'CONTAINER_IMAGE',
+                     'MODEL_ID', 'TOOL_VERSION', 'URI'):
+            pattern = getattr(prov, name)
+            self.assertTrue(pattern.flags & re.ASCII, name)
+        self.assertIsNone(prov.CHROMIUM_VERSION.fullmatch(
+            '152.0.7977.1' + arabic_digits('69')))
+        self.assertIsNone(prov.STATEMENT_NAME.fullmatch(
+            'molt-provenance-linux-x64.json\n'))
+        self.assertIsNone(prov.PLAIN_NAME.fullmatch('MoltBrowser.dmg\n'))
+
+    def test_manifest_version_and_names_are_whole_and_ascii(self):
+        def manifest(version, name='MoltBrowser.dmg'):
+            return json.dumps({
+                'schema': rs.SCHEMA, 'product': rs.PRODUCT,
+                'version': version, 'tag': 'v' + version,
+                'assets': [{'name': name, 'size': 1, 'sha256': 'a' * 64}],
+            }).encode()
+        rs.validate_manifest(manifest('0.3.0'))
+        for data in (manifest('0.3.0\n'), manifest('0.3.' + arabic_digits('1')),
+                     manifest('0.3.0', name='MoltBrowser.dmg\n')):
+            with self.subTest(data=data), self.assertRaises(prov.Error):
+                rs.validate_manifest(data)
+
+
+def arabic_digits(digits):
+    return ''.join(chr(0x0660 + int(d)) for d in digits)
+
+
 class ProvenanceTest(unittest.TestCase):
 
     @classmethod
@@ -373,7 +432,7 @@ class ProvenanceTest(unittest.TestCase):
         for n in names:
             for m in prov.UPDATER_ASSET_MATCHERS:
                 self.assertNotIn(m, n)
-            self.assertTrue(prov.PLAIN_NAME.match(n))
+            self.assertTrue(prov.PLAIN_NAME.fullmatch(n))
 
     def test_generate_matches_golden_and_is_deterministic(self):
         out = self.w.generate().stdout.decode().strip()
@@ -533,7 +592,7 @@ class ProvenanceTest(unittest.TestCase):
 
     def test_start(self):
         r = self.w.run([sys.executable, self.w.tool, 'start', '--version', '0.3.0'])
-        self.assertTrue(prov.TIME.match(r.stdout.decode().strip()))
+        self.assertTrue(prov.TIME.fullmatch(r.stdout.decode().strip()))
         r = self.w.run([sys.executable, self.w.tool, 'start'],
                        env=self.w.env(MOLT_BUILD_STARTED_ON=STARTED))
         self.assertEqual(r.stdout.decode().strip(), STARTED)
@@ -816,7 +875,7 @@ class ProvenanceTest(unittest.TestCase):
 
         linux = [os.path.join(self.w.dist, n) for n in sorted(os.listdir(self.w.dist))]
         installers = [p for p in linux
-                      if not prov.STATEMENT_NAME.match(os.path.basename(p))]
+                      if not prov.STATEMENT_NAME.fullmatch(os.path.basename(p))]
         code, _, err = sign(installers, '--assets-dir', self.w.dist)
         self.assertEqual(code, 1)
         self.assertIn('lists no build provenance', err)
@@ -859,7 +918,7 @@ class ProvenanceTest(unittest.TestCase):
         env.pop('MOLT_BUILD_STARTED_ON', None)
         r = self.w.run(['bash', script, '--start', '--version', '0.3.0'], env=env)
         started = r.stdout.decode().strip()
-        self.assertTrue(prov.TIME.match(started))
+        self.assertTrue(prov.TIME.fullmatch(started))
         files = dict(LINUX_ASSETS)
         assets = self.w.assets(files)
         r = self.w.run(['bash', script, '--platform', 'linux', '--arch', 'x64',
