@@ -51,6 +51,7 @@
 
 #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
 #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -353,6 +354,15 @@ ChromeSecurityBlockingPageFactory::CreateHttpsOnlyModeBlockingPage(
 // Open a login tab or popup for the captive portal login page.
 void OpenLoginTab(BrowserWindowInterface* browser,
                   captive_portal::CaptivePortalWindowType portal_type) {
+  // MoltBrowser: never a network sign-in page in a MoltNet window, whatever
+  // asked for one (a captive-portal result, or the "Connect" button of the
+  // captive-portal interstitial Windows' own detection leads to). MoltNet's
+  // traffic goes through Tor, which can't reach the local network's
+  // sign-in page, and MoltNet doesn't check for captive portals
+  // (molt_net_pref_isolation_policy.h).
+  if (molt_ai::tor::IsMoltNetProfile(browser->GetProfile())) {
+    return;
+  }
   // We only end up here when a captive portal result was received, so it's safe
   // to assume profile has a captive_portal::CaptivePortalService.
   NavigateParams params(
