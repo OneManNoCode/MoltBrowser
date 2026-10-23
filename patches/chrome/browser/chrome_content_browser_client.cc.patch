@@ -5,16 +5,17 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7480669db 100644
+index bddbd4bf5230a0988b73ecda2d270437852bc9a7..2ca189d42f7203987c1a51c3eac9873b06e1213f 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -116,6 +116,20 @@
+@@ -116,6 +116,21 @@
  #include "chrome/browser/media/webrtc/media_device_salt_service_factory.h"
  #include "chrome/browser/media/webrtc/rtc_diagnostic_logging_utils.h"
  #include "chrome/browser/media/webrtc/webrtc_logging_controller.h"
 +#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"
 +#include "chrome/browser/molt_ai/fingerprinting/molt_net_device.h"
 +#include "chrome/browser/molt_ai/fingerprinting/molt_shields_delivery.h"
++#include "chrome/browser/molt_ai/runtime/gpu_inference_prefs.h"
 +#include "chrome/browser/molt_ai/security/webui_navigation_throttle.h"
 +#include "chrome/browser/molt_ai/shield/molt_shield_navigation_interceptor.h"
 +#include "chrome/browser/molt_ai/shield/molt_shield_navigation_throttle.h"
@@ -29,7 +30,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  #include "chrome/browser/metrics/chrome_feature_list_creator.h"
  #include "chrome/browser/navigation_predictor/anchor_element_preloader.h"
  #include "chrome/browser/net/chrome_network_delegate.h"
-@@ -865,11 +879,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
+@@ -865,11 +880,20 @@ GURL ReplaceURLHostAndPath(const GURL& url,
  }
  
  // Handles the rewriting of the new tab page URL based on group policy.
@@ -52,7 +53,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
      return false;
    }
  
-@@ -880,18 +903,98 @@ bool HandleNewTabPageLocationOverride(
+@@ -880,18 +904,98 @@ bool HandleNewTabPageLocationOverride(
      return false;
    }
  
@@ -159,7 +160,17 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    return true;
  }
  
-@@ -1913,6 +2016,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+@@ -1579,6 +1683,9 @@ void ChromeContentBrowserClient::RegisterLocalStatePrefs(
+ #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID)
+ #if !BUILDFLAG(IS_ANDROID)
+   registry->RegisterBooleanPref(prefs::kOriginKeyedProcessesEnabled, false);
++  // MoltBrowser: the GPU setting and failure record of on-device AI
++  // (browser-wide; docs/design/SANDBOXED_INFERENCE.md section 11.10).
++  molt_ai::RegisterGpuInferenceLocalStatePrefs(registry);
+ #endif  // !BUILDFLAG(IS_ANDROID)
+ }
+ 
+@@ -1913,6 +2020,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
      service->InitializeRenderer(host);
    }
  
@@ -170,7 +181,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    for (auto& part : extra_parts_) {
      part->RenderProcessWillLaunch(host);
    }
-@@ -3212,6 +3319,22 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -3212,6 +3323,22 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
      };
  
      command_line->CopySwitchesFrom(browser_command_line, kSwitchNames);
@@ -193,7 +204,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    } else if (process_type == switches::kUtilityProcess) {
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
      static const char* const kSwitchNames[] = {
-@@ -4982,6 +5105,10 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
+@@ -4982,6 +5109,10 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
    web_prefs->is_indigo_onboarding =
        indigo::IndigoOnboardingDialog::IsOnboardingWebContents(web_contents);
  #endif
@@ -204,7 +215,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  }
  
  bool ChromeContentBrowserClientParts::OverrideWebPreferencesAfterNavigation(
-@@ -5100,6 +5227,12 @@ bool ChromeContentBrowserClient::
+@@ -5100,6 +5231,12 @@ bool ChromeContentBrowserClient::
  
  void ChromeContentBrowserClient::BrowserURLHandlerCreated(
      BrowserURLHandler* handler) {
@@ -217,7 +228,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    // The group policy NTP URL handler must be registered before the other NTP
    // URL handlers below. Also register it before the "parts" handlers, so the
    // NTP policy takes precedence over extensions that override the NTP.
-@@ -5610,7 +5743,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
+@@ -5610,7 +5747,16 @@ void ChromeContentBrowserClient::RemovePresentationObserver(
  
  void ChromeContentBrowserClient::CreateThrottlesForNavigation(
      content::NavigationThrottleRegistry& registry) {
@@ -234,7 +245,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  }
  
  std::vector<std::unique_ptr<content::CommitDeferringCondition>>
-@@ -6129,6 +6271,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
+@@ -6129,6 +6275,13 @@ ChromeContentBrowserClient::CreateURLLoaderThrottlesForKeepAlive(
      result.push_back(std::move(google_throttle));
    }
  
@@ -248,7 +259,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    return result;
  }
  
-@@ -6722,6 +6871,19 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6722,6 +6875,19 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
  #endif  // BUILDFLAG (ENABLE_EXTENSIONS_CORE)
  #endif  // BUILDFLAG(ENABLE_GUEST_VIEW)
  
@@ -268,7 +279,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    // WARNING: This must be the last interceptor in the chain as the proxying
    // URLLoaderFactory installed by this needs to be the one actually sending
    // packets over the network (to effectively target `bound_network`).
-@@ -6780,6 +6942,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
+@@ -6780,6 +6946,14 @@ ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
      }
    }
  
@@ -283,7 +294,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    return interceptors;
  }
  
-@@ -6798,8 +6968,33 @@ ChromeContentBrowserClient::
+@@ -6798,8 +6972,33 @@ ChromeContentBrowserClient::
    return prefetch_handler;
  }
  
@@ -317,7 +328,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    if (!frame) {
      return false;
-@@ -6845,6 +7040,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
+@@ -6845,6 +7044,35 @@ void ChromeContentBrowserClient::CreateWebSocket(
      mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
          handshake_client,
      content::ContentBrowserClient::WebSocketOptions options) {
@@ -353,7 +364,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    // TODO(crbug.com/40195467): Request w/o a frame also should be proxied.
    if (!frame) {
-@@ -9170,15 +9394,12 @@ void ChromeContentBrowserClient::BindAIManager(
+@@ -9170,15 +9398,12 @@ void ChromeContentBrowserClient::BindAIManager(
      base::SupportsUserData* context_user_data,
      content::RenderFrameHost* rfh,
      mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
@@ -375,7 +386,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  }
  
  #if BUILDFLAG(ENABLE_ON_DEVICE_TRANSLATION)
-@@ -9188,9 +9409,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
+@@ -9188,9 +9413,15 @@ void ChromeContentBrowserClient::BindTranslationManager(
      base::SupportsUserData* context_user_data,
      const url::Origin& origin,
      mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {
@@ -394,7 +405,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
  }
  #endif
  
-@@ -9488,6 +9715,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
+@@ -9488,6 +9719,11 @@ bool ChromeContentBrowserClient::ShouldSkipBeforeUnloadDialog(
  
  std::optional<int> ChromeContentBrowserClient::GetCpuPerformanceTierOverride(
      content::BrowserContext* browser_context) {
@@ -406,7 +417,7 @@ index bddbd4bf5230a0988b73ecda2d270437852bc9a7..9c389021b8069e1c3d4a86d4a84107d7
    if (browser_context) {
      const PrefService* prefs =
          Profile::FromBrowserContext(browser_context)->GetPrefs();
-@@ -9547,9 +9779,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
+@@ -9547,9 +9783,10 @@ ChromeContentBrowserClient::GetOverrideValueForStaticStorageQuota(
  }
  
  std::string ChromeContentBrowserClient::GetDnsTxtResolverUrlPrefix() {
