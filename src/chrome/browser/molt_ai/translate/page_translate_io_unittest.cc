@@ -19,7 +19,8 @@ namespace {
 constexpr char kId[] = "0123abcd";
 
 base::Value Json(std::string_view json) {
-  std::optional<base::Value> value = base::JSONReader::Read(json);
+  std::optional<base::Value> value =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
   EXPECT_TRUE(value.has_value()) << json;
   return value ? std::move(*value) : base::Value();
 }
@@ -31,7 +32,8 @@ base::DictValue ArgumentsOf(const std::string& script) {
   EXPECT_EQ(script.back(), ')');
   std::optional<base::Value> value = base::JSONReader::Read(
       std::string_view(script).substr(prefix.size(),
-                                       script.size() - prefix.size() - 1));
+                                      script.size() - prefix.size() - 1),
+      base::JSON_PARSE_RFC);
   EXPECT_TRUE(value && value->is_dict());
   return value && value->is_dict() ? std::move(value->GetDict())
                                    : base::DictValue();

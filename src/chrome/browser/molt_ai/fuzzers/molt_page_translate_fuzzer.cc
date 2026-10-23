@@ -91,7 +91,8 @@ base::Value ArgumentsOf(const std::string& script) {
   CHECK(script.back() == ')');
   std::optional<base::Value> value = base::JSONReader::Read(
       std::string_view(script).substr(prefix.size(),
-                                      script.size() - prefix.size() - 1));
+                                      script.size() - prefix.size() - 1),
+      base::JSON_PARSE_RFC);
   CHECK(value && value->is_dict()) << "the arguments are not JSON";
   return std::move(*value);
 }
@@ -181,7 +182,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     const web_ai::TaskPrompt prompt =
         web_ai::BuildTranslatorBatchPrompt(pair, batch->texts);
     CHECK(prompt.system_prompt == instruction);
-    std::optional<base::Value> sent = base::JSONReader::Read(prompt.user_message);
+    std::optional<base::Value> sent =
+        base::JSONReader::Read(prompt.user_message, base::JSON_PARSE_RFC);
     CHECK(sent && sent->is_list() && sent->GetList().size() == n);
     for (size_t i = 0; i < n; ++i) {
       CHECK(sent->GetList()[i].GetString() == batch->texts[i]);

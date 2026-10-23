@@ -15,6 +15,8 @@
 //    beyond double range is refused;
 //  * duplicate keys: the last one wins;
 //  * at most |max_depth| nested containers.
+// As in the real header, |options| has no default: callers must say which
+// grammar they accept.
 
 #ifndef MOLT_FUZZ_STAND_INS_BASE_JSON_JSON_READER_H_
 #define MOLT_FUZZ_STAND_INS_BASE_JSON_JSON_READER_H_
@@ -47,7 +49,7 @@ class JSONReader {
   static constexpr size_t kStackMaxDepth = 200;
 
   static std::optional<Value> Read(std::string_view json,
-                                   int options = JSON_PARSE_RFC,
+                                   int options,
                                    size_t max_depth = kStackMaxDepth) {
     Parser p(json, options, max_depth);
     std::optional<Value> v = p.ParseValue(0);
@@ -58,7 +60,7 @@ class JSONReader {
   }
 
   static std::optional<DictValue> ReadDict(std::string_view json,
-                                           int options = JSON_PARSE_RFC,
+                                           int options,
                                            size_t max_depth = kStackMaxDepth) {
     std::optional<Value> v = Read(json, options, max_depth);
     if (!v || !v->is_dict()) return std::nullopt;
@@ -66,7 +68,7 @@ class JSONReader {
   }
 
   static std::optional<ListValue> ReadList(std::string_view json,
-                                           int options = JSON_PARSE_RFC,
+                                           int options,
                                            size_t max_depth = kStackMaxDepth) {
     std::optional<Value> v = Read(json, options, max_depth);
     if (!v || !v->is_list()) return std::nullopt;

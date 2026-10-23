@@ -246,11 +246,11 @@ CORE_EXPORT void FarbleReadPixelsWith(
     const WebGLImageConversion::PixelStoreParams& pack,
     base::span<uint8_t> destination);
 // WebGL2 readPixels into the bound PIXEL_PACK_BUFFER at `offset`, called
-// right after the read: maps the rows just written (read + write, at most a
-// few MiB at a time), farbles them as above and writes them back, so
+// right after the read: reads back the rows just written (at most a few MiB
+// at a time), farbles them as above and writes them back, so
 // getBufferSubData, copyBufferSubData and texture uploads from the buffer
 // all see farbled pixels. Costs a synchronous round trip to the GPU process
-// per farbled read.
+// per few MiB of a farbled read.
 CORE_EXPORT void FarblePixelPackBuffer(
     ExecutionContext* context,
     gpu::gles2::GLES2Interface* gl,

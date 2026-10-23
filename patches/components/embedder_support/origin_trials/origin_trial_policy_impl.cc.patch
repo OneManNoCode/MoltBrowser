@@ -5,18 +5,10 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/embedder_support/origin_trials/origin_trial_policy_impl.cc b/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
-index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..4503cf74bab224879cdcbe081f8d915f15cdbc62 100644
+index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..96ea5883f5b08f2e7e948198585a4295dccff67f 100644
 --- a/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
 +++ b/components/embedder_support/origin_trials/origin_trial_policy_impl.cc
-@@ -12,6 +12,7 @@
- 
- #include "base/base64.h"
- #include "base/command_line.h"
-+#include "base/containers/contains.h"
- #include "base/feature_list.h"
- #include "base/memory/raw_ref.h"
- #include "base/strings/string_split.h"
-@@ -24,6 +25,17 @@
+@@ -24,6 +24,17 @@
  
  namespace embedder_support {
  
@@ -34,11 +26,11 @@ index eea864ee77f922677129cc0c7cbdc80ca6cbcf66..4503cf74bab224879cdcbe081f8d915f
  // This is the default public key used for validating signatures.
  static const blink::OriginTrialPublicKey kDefaultPublicKey = {
      0x7c, 0xc4, 0xb8, 0x9a, 0x93, 0xba, 0x6e, 0xe2, 0xd0, 0xfd, 0x03,
-@@ -70,6 +82,9 @@ OriginTrialPolicyImpl::GetPublicKeys() const {
+@@ -70,6 +81,9 @@ OriginTrialPolicyImpl::GetPublicKeys() const {
  }
  
  bool OriginTrialPolicyImpl::IsFeatureDisabled(std::string_view feature) const {
-+  if (base::Contains(kMoltDisabledTrials, feature)) {  // MoltBrowser
++  if (std::ranges::contains(kMoltDisabledTrials, feature)) {  // MoltBrowser
 +    return true;
 +  }
    if (allow_only_deprecation_trials_) {

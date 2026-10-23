@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/scroll/scrollable_area.cc b/third_party/blink/renderer/core/scroll/scrollable_area.cc
-index 76479808d8ba9a1cc9ae7ba8fdabd11196e1487a..c9fc8ad8545dd8d780d00c5dd84a0e6b9f6cb940 100644
+index 76479808d8ba9a1cc9ae7ba8fdabd11196e1487a..500cbf6db3bc08832922dc4a7ba8de25bd8cc578 100644
 --- a/third_party/blink/renderer/core/scroll/scrollable_area.cc
 +++ b/third_party/blink/renderer/core/scroll/scrollable_area.cc
 @@ -62,6 +62,7 @@
@@ -16,7 +16,7 @@ index 76479808d8ba9a1cc9ae7ba8fdabd11196e1487a..c9fc8ad8545dd8d780d00c5dd84a0e6b
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-@@ -1421,8 +1422,11 @@ ScrollableArea* ScrollableArea::GetForScrolling(const LayoutBox* layout_box) {
+@@ -1421,8 +1422,12 @@ ScrollableArea* ScrollableArea::GetForScrolling(const LayoutBox* layout_box) {
  float ScrollableArea::ScaleFromDIP() const {
    auto* client = GetChromeClient();
    auto* document = GetDocument();
@@ -25,7 +25,8 @@ index 76479808d8ba9a1cc9ae7ba8fdabd11196e1487a..c9fc8ad8545dd8d780d00c5dd84a0e6b
    if (client && document)
 -    return client->WindowToViewportScalar(document->GetFrame(), 1.0f);
 +    return molt_fingerprinting::ScrollbarScaleFromDIP(
-+        *this, client->WindowToViewportScalar(document->GetFrame(), 1.0f));
++        *this, *document,
++        client->WindowToViewportScalar(document->GetFrame(), 1.0f));
    return 1.0f;
  }
  

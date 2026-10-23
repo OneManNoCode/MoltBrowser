@@ -96,7 +96,7 @@ class MemoryEmbedder {
 
   // In-process embedders answer Embed() synchronously; the on-device model
   // only answers EmbedBatch(), asynchronously.
-  virtual bool is_synchronous() const { return true; }
+  virtual bool is_synchronous() const;
 
   // Returns a length-kEmbeddingDim L2-normalized float vector. Always
   // succeeds (worst case returns a zero-norm vector for empty input).
@@ -116,7 +116,7 @@ class MemoryEmbedder {
   virtual void EmbedQueryIfReady(std::string text, BatchCallback done) const;
 
   // Most texts one EmbedBatch() call should carry.
-  virtual size_t max_batch_size() const { return 64; }
+  virtual size_t max_batch_size() const;
 };
 
 // The fast deterministic fallback. Safe to instantiate freely; holds no

@@ -149,12 +149,13 @@ int ScrollbarThicknessForViewportUnits(const ScrollbarTheme& theme,
   return css_thickness ? *css_thickness : theme.ScrollbarThickness(1.f, width);
 }
 
-float ScrollbarScaleFromDIP(const ScrollableArea& area, float scale_from_dip) {
+float ScrollbarScaleFromDIP(const ScrollableArea& area,
+                            const Document& document,
+                            float scale_from_dip) {
   if (!UniformPage()) {
     return scale_from_dip;
   }
-  const Document* document = area.GetDocument();
-  const LocalFrame* frame = document ? document->GetFrame() : nullptr;
+  const LocalFrame* frame = document.GetFrame();
   if (!UniformGeometry(frame) ||
       area.GetPageScrollbarTheme().UsesOverlayScrollbars()) {
     return scale_from_dip;

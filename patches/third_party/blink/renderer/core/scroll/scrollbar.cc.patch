@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/scroll/scrollbar.cc b/third_party/blink/renderer/core/scroll/scrollbar.cc
-index 2b1b63fe142166d284d315bc112d7ca2946e8bdd..cbd98f207ffe4fd9641c260c42fa812e4aac133b 100644
+index 2b1b63fe142166d284d315bc112d7ca2946e8bdd..583a29db403434b07e151ed8fb1a5e569e73d29a 100644
 --- a/third_party/blink/renderer/core/scroll/scrollbar.cc
 +++ b/third_party/blink/renderer/core/scroll/scrollbar.cc
 @@ -40,6 +40,7 @@
@@ -16,16 +16,18 @@ index 2b1b63fe142166d284d315bc112d7ca2946e8bdd..cbd98f207ffe4fd9641c260c42fa812e
  #include "third_party/blink/renderer/core/scroll/scroll_animator_base.h"
  #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
  #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
-@@ -758,7 +759,11 @@ int Scrollbar::ScrollbarThickness() const {
+@@ -758,7 +759,13 @@ int Scrollbar::ScrollbarThickness() const {
    int thickness = Orientation() == kHorizontalScrollbar ? Height() : Width();
    if (!thickness || IsCustomScrollbar())
      return thickness;
 -  return theme_.ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
 +  // MoltBrowser: MoltNet's classic scrollbars are as thick in CSS pixels at
-+  // every zoom and on every OS (molt_fingerprinting/letterbox.h).
++  // every zoom and on every OS (molt_fingerprinting/letterbox.h). The
++  // document is the box's (ScrollableArea::GetDocument() is protected).
++  const LayoutBox* box = GetLayoutBox();
 +  return molt_fingerprinting::ScrollbarThicknessFor(
 +      theme_, ScaleFromDIP(), CSSScrollbarWidth(),
-+      scrollable_area_ ? scrollable_area_->GetDocument() : nullptr);
++      box ? &box->GetDocument() : nullptr);
  }
  
  bool Scrollbar::IsSolidColor() const {

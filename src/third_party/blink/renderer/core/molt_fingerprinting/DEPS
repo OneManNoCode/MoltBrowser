@@ -9,10 +9,8 @@ include_rules = [
     "+build/build_config.h",
     "+crypto/hmac.h",
     "+crypto/random.h",
-    # WebGL2 readPixels into a PIXEL_PACK buffer: map, farble, unmap. The
-    # interface reaches core through platform's public deps.
+    # WebGL2 readPixels into a PIXEL_PACK buffer: read back, farble, write
+    # back. The interface reaches core through platform's public deps.
     "+gpu/command_buffer/client/gles2_interface.h",
-    # First-party shared / service workers' top-level site.
-    "+net/cookies/site_for_cookies.h",
     "+ui/gfx/skia_span_util.h",
 ]

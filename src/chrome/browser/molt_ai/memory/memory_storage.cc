@@ -721,7 +721,7 @@ bool MemoryStorage::AbortMigration() {
   return true;
 }
 
-bool MemoryStorage::ReadChunkTexts(const char* sql,
+bool MemoryStorage::ReadChunkTexts(base::cstring_view sql,
                                    int64_t after_chunk_id,
                                    size_t limit,
                                    std::vector<ChunkText>* out) {

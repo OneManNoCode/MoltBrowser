@@ -12,7 +12,6 @@
 
 #include "base/base64.h"
 #include "base/command_line.h"
-#include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ref.h"
 #include "base/strings/string_split.h"
@@ -82,7 +81,7 @@ OriginTrialPolicyImpl::GetPublicKeys() const {
 }
 
 bool OriginTrialPolicyImpl::IsFeatureDisabled(std::string_view feature) const {
-  if (base::Contains(kMoltDisabledTrials, feature)) {  // MoltBrowser
+  if (std::ranges::contains(kMoltDisabledTrials, feature)) {  // MoltBrowser
     return true;
   }
   if (allow_only_deprecation_trials_) {

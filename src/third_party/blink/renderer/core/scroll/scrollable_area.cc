@@ -1426,7 +1426,8 @@ float ScrollableArea::ScaleFromDIP() const {
   // (molt_fingerprinting/letterbox.h).
   if (client && document)
     return molt_fingerprinting::ScrollbarScaleFromDIP(
-        *this, client->WindowToViewportScalar(document->GetFrame(), 1.0f));
+        *this, *document,
+        client->WindowToViewportScalar(document->GetFrame(), 1.0f));
   return 1.0f;
 }
 

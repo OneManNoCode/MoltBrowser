@@ -26,6 +26,7 @@
 #include "chrome/browser/molt_ai/memory/memory_types.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
+#include "sql/test/test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace molt_ai {
@@ -192,8 +193,7 @@ class MemoryBackendTest : public testing::Test {
   void EditMeta(const std::function<void(sql::MetaTable*)>& edit) {
     backend_.reset();
     {
-      sql::Database db(sql::DatabaseOptions(),
-                       sql::Database::Tag("MoltMemoryTest"));
+      sql::Database db(sql::DatabaseOptions(), sql::test::kTestTag);
       ASSERT_TRUE(db.Open(temp_dir_.GetPath()
                               .AppendASCII("MoltMemory")
                               .AppendASCII("memory.db")));

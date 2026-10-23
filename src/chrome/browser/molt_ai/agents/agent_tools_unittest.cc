@@ -65,7 +65,8 @@ void ExpectServiceAccepts(const SiteTool& tool) {
 }
 
 base::Value Json(const std::string& json) {
-  std::optional<base::Value> v = base::JSONReader::Read(json);
+  std::optional<base::Value> v =
+      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
   EXPECT_TRUE(v.has_value()) << json;
   return v ? std::move(*v) : base::Value();
 }

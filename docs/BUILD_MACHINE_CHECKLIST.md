@@ -361,6 +361,14 @@ When the build fails, find the file here; the PR tag says which change to
 read. Upstream files are whole copies under `src/`, each hook marked
 `// MoltBrowser:`; `patches/<path>.patch` shows exactly what changed.
 
+- [ ] Optional, on any Linux machine before the slow build:
+  `tools/compile_check/compile_check.py all` type-checks MoltBrowser's own
+  C++ and the hook files below against the real 152 headers with
+  Chromium's clang (no checkout needed; see its README for what it can't
+  cover). *Expected:* `report` shows no errors, except in a file it says
+  reaches a mirror-HEAD stand-in (an upstream API that differs at the
+  mirror's HEAD; today only `rtc_peer_connection.cc`, via webrtc).
+
 ### 4.1 Mojo: new fields, unions and interfaces
 
 | File | What to watch | From |

@@ -7,6 +7,7 @@
 
 #include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/task/single_thread_task_runner.h"
 #include "chrome/common/molt_ai/fingerprinting/molt_fingerprinting_switches.h"
 #include "content/public/renderer/render_frame.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
