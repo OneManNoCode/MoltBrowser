@@ -974,7 +974,7 @@ The registry gets **Qwen3-VL 2B Instruct** (Apache 2.0) in Q4_K_M, with its proj
 
 ## 11. GPU inference on Windows and Linux (Vulkan)
 
-Status: research (October 2026). The roadmap item "GPU inference on Windows and Linux" wants llama.cpp's Vulkan backend (ggml-vulkan) in the inference service, with the CPU as the fallback, behind a GN switch `molt_llama_vulkan` that stays **off** until it has been tested on real GPUs. macOS keeps Metal. Upstream files below were read at 152.0.7977.169; llama.cpp is the vendored b11641.
+Status: implemented behind the GN switch `molt_llama_vulkan` (October 2026), which stays **off** until it has been tested on real GPUs; on Windows it runs models on the CPU until the pre-lockdown step of §11.4 exists. The roadmap item "GPU inference on Windows and Linux" wants llama.cpp's Vulkan backend (ggml-vulkan) in the inference service, with the CPU as the fallback. macOS keeps Metal. §11.1–11.6 are the research; §11.7 is what was built, §11.8 how it was tested, §11.9 what is left. Upstream files below were read at 152.0.7977.169; llama.cpp is the vendored b11641.
 
 ### 11.1 Findings in one page
 
@@ -1066,3 +1066,51 @@ ggml-vulkan must be built with exceptions: it uses `vulkan.hpp`'s throwing API a
 - `mtmd_encode_chunk` and `mtmd_init_from_file_ptr` catch `std::exception` (§10.3), so image encoding on the GPU is covered.
 - Destructors: `llama_free` and `llama_model_free` on a lost device can throw out of a destructor, which terminates even with exceptions on. Hence nothing is freed after a GPU failure.
 - `GGML_ABORT`s in ggml-vulkan (29, e.g. an op that `supports_op` accepted but the backend can't run) abort as they would on the CPU; the browser counts them as GPU failures (§11.5).
+
+### 11.7 What was built
+
+```
+browser (BrowserAIRuntime, InferenceProcessHost)           inference service (kOnDeviceModelExecution)
+-----------------------------------------------           -------------------------------------------
+use_gpu = BUILDFLAG(MOLT_LLAMA_VULKAN) && !--disable-gpu
+          && GpuFallbackGuard.AllowGpu(model file)
+launch [--molt-inference-gpu] --LoadModel(use_gpu)-->      Linux pre-sandbox hook: + render nodes (switch only)
+                                                           LlamaEngine::Load:
+                                                             ListVulkanDevices (llama_guard: loader, instance)
+                                                             ChooseGpuDevice -> PlanGpuOffload(block_count)
+                                                             model+projector+context on the device
+                                                             ... failed? all again on the CPU (kLoadFailed)
+     <---- ModelDescription{backend, gpu_status, gpu_layers}  (checked: IsValidGpuDescription)
+generation --------------------------------------------->  decode/logits/sample/clear through llama_guard
+     <---- kBackendFailed (lost device) ----------------     context poisoned, never freed
+crash / hang / memory kill while on the GPU:
+  GpuFallbackGuard (not CrashLoopGuard); load retried on the CPU at once; GPU off for that model this session
+```
+
+**GN** (`src/third_party/llama_cpp/BUILD.gn`, `llama_cpp.gni`):
+
+- `molt_llama_vulkan` (default false; asserts Linux or Windows).
+- Host executables `ggml_vk_glslc` (`chromium/ggml_vk_glslc.cc` on `//third_party/glslang/src:glslang_sources` and `//third_party/spirv-tools/src:spvtools_opt`) and `vulkan_shaders_gen` (upstream's generator, unmodified, with the seven feature defines).
+- `action("ggml_vulkan_checks")` (`chromium/ggml_vulkan_checks.py`): every enabled feature test compiles with `ggml_vk_glslc`, and the 155-file shader list in BUILD.gn equals the directory.
+- `action("ggml_vulkan_shaders_hpp")` and `action_foreach("ggml_vulkan_shaders_cpp")` (one per `.comp`, with a depfile for its `#include`s), run through `//build/gn_run_binary.py`; tool paths are passed with `./` so a native build's bare tool name is never looked up in `PATH`.
+- `source_set("ggml_vulkan")`: the three ggml-vulkan sources, the 155 generated files and `chromium/ggml-vulkan-moltbrowser.cpp`; defines the features, `GGML_VULKAN_MOLTBROWSER` and `VK_NO_PROTOTYPES`; exceptions on; the Vulkan headers' window-system platform defines undone (`-U`), since ggml needs no surfaces and X11's macros clash with C++.
+- `source_set("llama_guard")` (always built; with exceptions): `chromium/llama_guard.{h,cc}`, plus `:ggml_vulkan` and `MOLT_LLAMA_VULKAN` with the switch.
+- `//chrome/services/molt_ai/inference/public:buildflags` (`MOLT_LLAMA_VULKAN`) for the browser.
+
+**llama.cpp patches** (README.chromium): `ggml-vulkan.cpp` initializes its dispatcher from `ggml_vk_moltbrowser_get_instance_proc_addr()` under `GGML_VULKAN_MOLTBROWSER`, and seven direct Vulkan calls (here and in `ggml-vulkan-buffers.cpp`) go through the dispatcher. Nothing else in llama.cpp changed; the generator is upstream's.
+
+**Service:**
+
+- `engine/gpu_offload.{h,cc}` (std-only): `CheckGpuDevice`, `ChooseGpuDevice`, `PlanGpuOffload`, `GpuContextLimit` (§11.5).
+- `LlamaEngine::Load`: one attempt function for "on this device" and "on the CPU". With `use_gpu` in a Vulkan build: list devices, choose, read the GGUF block count, plan, then load the model, the projector (`mtmd_context_params::device`, so the encoder runs on the same GPU) and the context, with `n_ctx` also capped by `GpuContextLimit`. Any failure on the GPU frees what was loaded (the device is healthy: the failure was reported, not thrown at us) and loads everything on the CPU. Vulkan builds always pass an explicit device list to llama.cpp, empty for the CPU; macOS keeps `n_gpu_layers = -1` (Metal) and ignores `use_gpu`.
+- After a guarded call caught an exception: `kBackendFailed` for the request and every later one, `ForgetConversation` does nothing, and `~Model` leaks the context, the model and the projector.
+- The embedding model's process never asks for the GPU, so it never brings Vulkan up.
+
+**Browser:**
+
+- `InferenceProcessHost`: `LoadRequest::use_gpu` → `ModelLoadParams.use_gpu` and `--molt-inference-gpu` on the process's command line; `IsValidGpuDescription` (backend `"vulkan"` exactly with `kOn`, only when asked, 1..`kMaxGpuLayers` layers); `OnModelProcessLost(…, gpu_failure)`, true for a crash, hang or memory kill of a process that was loading for the GPU or running on it (not for a protocol violation or a launch failure).
+- `BrowserAIRuntime`: `GpuFallbackGuard` next to `CrashLoopGuard` (same lock); a GPU failure during a load retries the load at once on the CPU; `kBackendFailed` records a GPU failure, forgets the model and ends its process, with the message "The graphics processor stopped working while running the on-device model. MoltBrowser will run the model on the processor instead: try again." The load log line shows `gpu_status` and `gpu_layers`. `--disable-gpu` keeps on-device AI off the GPU too.
+
+**Sandbox (Linux):** `content/utility/on_device_model/on_device_model_sandbox_init.cc` (imported from 152, then hooked): `PreSandboxHook` passes its broker command set and file list through `MaybeAddMoltGpuInferencePermissions()` (`molt_gpu_inference_sandbox_linux.{h,cc}`, listed in that directory's imported BUILD.gn), which returns at once without `--molt-inference-gpu`. With it: read-only `/dev/dri`; read-write `/dev/dri/renderD128`–`137` and read-only `/sys/dev/char/<major>:<minor>/` for each present one; `intel_icd.json` and `radeon_icd.json` in both ICD directories; brokered `readlink`.
+
+**Windows:** nothing beyond the build. Without a pre-lockdown step the loader or the ICD can't load after lockdown, so the service reports `kNoDevice` and loads on the CPU.
