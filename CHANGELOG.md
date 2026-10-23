@@ -149,6 +149,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   for pages with frames of another origin), MoltNet text metrics on Linux
   desktops without anti-aliasing, and the release tools' checks
   (`docs/SECURITY_REVIEWS.md`).
+- More MoltNet hardening from the same review: each certificate fetch
+  (missing intermediate certificates, revocation checks) gets its own
+  one-off network key, so it is never cached or shared with another site's
+  and has its own Tor circuit; MoltNet windows don't check for captive
+  portals or open a network sign-in page; and they offer sites Basic and
+  Digest authentication only, never NTLM or Negotiate (Kerberos).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,

@@ -87,6 +87,7 @@ chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list_header.html.t
 chrome/browser/resources/side_panel/bookmarks/power_bookmarks_list_header.ts.patch
 chrome/browser/search/search.cc.patch
 chrome/browser/site_protection/site_familiarity_utils.cc.patch
+chrome/browser/ssl/chrome_security_blocking_page_factory.cc.patch
 chrome/browser/ssl/https_upgrades_interceptor.cc.patch
 chrome/browser/ssl/stateful_ssl_host_state_delegate_factory.cc.patch
 chrome/browser/storage/persistent_storage_permission_context.cc.patch
@@ -211,6 +212,12 @@ net/dns/host_resolver_manager.cc.patch
 net/socket/socks5_client_socket.cc.patch
 net/socket/socks5_client_socket.h.patch
 net/socket/socks_connect_job.cc.patch
+services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.cc.patch
+services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h.patch
+services/cert_verifier/cert_verifier_service_factory.cc.patch
+services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.patch
+services/network/network_context.cc.patch
+services/network/public/mojom/network_context.mojom.patch
 third_party/blink/public/BUILD.gn.patch
 third_party/blink/public/mojom/service_worker/service_worker.mojom.patch
 third_party/blink/public/mojom/worker/shared_worker_info.mojom.patch

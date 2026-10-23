@@ -1,0 +1,34 @@
+MoltBrowser patch for services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h b/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
+index a6de71fb5d6f2fd18e853b6c0ff26199dca5c19d..adf19f0398c43975ca5842ddfc1b1f49d193dcf9 100644
+--- a/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
++++ b/services/cert_verifier/cert_net_url_loader/cert_net_fetcher_url_loader.h
+@@ -45,6 +45,13 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
+           void(mojo::PendingReceiver<network::mojom::URLLoaderFactory>)>
+           bind_new_url_loader_factory_cb);
+ 
++  // MoltBrowser: if `isolate_each_fetch`, every fetch gets a one-off
++  // network key of its own (net::IsolationInfo::CreateTransient()): it
++  // shares no HTTP cache entry, connection or proxy identity with another
++  // fetch, and identical fetches in flight at the same time are not merged.
++  // Must be called before SetURLLoaderFactoryAndReconnector().
++  void SetIsolateEachFetch(bool isolate_each_fetch);
++
+   // Returns the default timeout value. Intended for test use only.
+   static base::TimeDelta GetDefaultTimeoutForTesting();
+ 
+@@ -77,6 +84,9 @@ class COMPONENT_EXPORT(CERT_VERIFIER_CPP) CertNetFetcherURLLoader
+   scoped_refptr<base::SequencedTaskRunner> task_runner_;
+ 
+   std::unique_ptr<AsyncCertNetFetcherURLLoader> impl_;
++
++  // MoltBrowser: see SetIsolateEachFetch().
++  bool isolate_each_fetch_ = false;
+ };
+ 
+ }  // namespace cert_verifier

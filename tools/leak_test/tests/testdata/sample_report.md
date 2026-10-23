@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 105 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 108 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -27,10 +27,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 - **FAIL** Nothing left the namespace except Tor's own connections
   - escaped: tcp 10.231.7.2 -> 203.0.113.99:80 (1 packets)
 - **PASS** The packet capture recorded traffic
-  - all: 26 frames, 26 IP, 0 malformed
+  - all: 50 frames, 50 IP, 0 malformed
   - firewall log: 12 frames
   - Tor connections: 2 frames
-  - loopback packets: 10
+  - loopback packets: 22
 - **PASS** The seeded regular-profile settings took effect (control for the settings checks)
   - regular window: {"doNotTrack": "1", "fontSize": "24px", "js_ran_on_blocked": false, "languages": ["de-DE", "de"]}
 - **PASS** Tor (and only Tor) reached the network
@@ -57,6 +57,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | Built-in AI APIs and Translator (no component download): Writer is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | Built-in AI APIs and Translator (no component download): Rewriter is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
 | PASS | Built-in AI APIs and Translator (no component download): Translator is unavailable | MOLTNET_COMPLIANCE.md §1.14; FINGERPRINTING.md "Built-in AI APIs" |
+| PASS | Certificate fetches (AIA; OCSP/CRL URLs in the certificate): nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (certificate fetches through Tor) |
+| PASS | Certificate fetches for a second site (the same AIA URL): nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8 |
 | PASS | DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor | MOLTNET_COMPLIANCE.md §2 (other ways to look up a name) |
 | PASS | localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it) | MOLTNET_COMPLIANCE.md §2 (<-loopback>), §5.7 |
 | PASS | A MoltNet window loads an http:// onion site: the page loaded (no HTTPS-Only interstitial for http:// onion) | MOLTNET_COMPLIANCE.md §4 steps 1, 11 |
@@ -97,6 +99,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - availability.Rewriter = "unavailable"
 - **PASS** Built-in AI APIs and Translator (no component download): Translator is unavailable
   - availability.Translator = "unavailable"
+- **PASS** Certificate fetches (AIA; OCSP/CRL URLs in the certificate): nothing outside Tor
+  - sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\x20null\\x20[internally:\\x20(44dd)\\x20anonymous]')
+  - sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\x20null\\x20[internally:\\x20(66ff)\\x20anonymous]')
+  - reached the kit's page server (through Tor): /canary/aia-kkkkkk1212.crt
 - **PASS** DNS prefetch, preconnect, speculation rules, hover: nothing outside Tor
   - sent to Tor inside SOCKS5: anchor-cccccc3333.moltleak.test:443 (username 'http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion')
 - **PASS** localhost, loopback, the machine's own and LAN addresses: every local/LAN fetch fails (Tor refuses it)
@@ -141,6 +147,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 
 | Status | Check | Reference |
 |---|---|---|
+| PASS | Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch) | MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8 |
 | PASS | Fail-closed: with Tor killed, pages fail with a proxy error | MOLTNET_COMPLIANCE.md §4 step 5 |
 | PASS | New Identity: new profile, cookies gone, new farbling seed | MOLTNET_COMPLIANCE.md §4 step 7 |
 | PASS | No MoltNet window comes back after a restart | MOLTNET_COMPLIANCE.md §4 step 5 |
@@ -151,6 +158,9 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | Separate identity: cookies don't cross, and go with the last window | MOLTNET_COMPLIANCE.md §4 step 6 |
 | SKIP | check.torproject.org says the MoltNet window uses Tor | MOLTNET_COMPLIANCE.md §4 step 1 |
 
+- **PASS** Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch)
+  - cert_fetch -> certificate fetches with SOCKS usernames ['opaque\\x20null\\x20[internally:\\x20(33cc)\\x20anonymous]', 'opaque\\x20null\\x20[internally:\\x20(44dd)\\x20anonymous]']
+  - cert_fetch_b -> certificate fetches with SOCKS usernames ['opaque\\x20null\\x20[internally:\\x20(55ee)\\x20anonymous]', 'opaque\\x20null\\x20[internally:\\x20(66ff)\\x20anonymous]']
 - **PASS** Fail-closed: with Tor killed, pages fail with a proxy error
   - tor killed: [4242]
   - navigation after the kill: net::ERR_SOCKS_CONNECTION_FAILED
@@ -167,7 +177,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - openWindow -> {"error": "A command-line flag controls the proxy."}
   - MoltNet pages: 0
 - **PASS** Different sites use different SOCKS usernames (per-site circuits)
-  - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]']
+  - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]', 'opaque\\x20null\\x20[internally:\\x20(33cc)\\x20anonymous]', 'opaque\\x20null\\x20[internally:\\x20(55ee)\\x20anonymous]']
   - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion', 'opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']
 - **PASS** The panel's relays are in the consensus Tor downloaded
   - guard g1 192.0.2.50 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA in consensus: True
@@ -385,7 +395,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | 5 | Fail-closed | automated | tor is killed: pages must fail with a proxy error; after a restart no MoltNet window returns |
 | 6 | Separate identity | automated | a regular-profile cookie doesn't show in MoltNet; a MoltNet cookie is gone after the last window closes |
 | 7 | New Identity | automated | new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet |
-| 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), read from the loopback capture and Tor's circuit list |
+| 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, read from the loopback capture and Tor's circuit list |
 | 9 | Overrides are refused | partial | --proxy-server blocks MoltNet; the extension-set proxy case is manual |
 | 10 | The relays are real | automated | the circuit's fingerprints are in the consensus Tor downloaded; the onionoo lookup is optional |
 | 11 | Onion sites | partial | http:// and https:// onions load; the Onion-Location bar is browser UI and stays manual |

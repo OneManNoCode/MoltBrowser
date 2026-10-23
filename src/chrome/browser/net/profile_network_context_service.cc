@@ -38,6 +38,7 @@
 #include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
 #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
+#include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
@@ -1386,6 +1387,14 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
         ->allow_default_credentials =
         net::HttpAuthPreferences::DISALLOW_DEFAULT_CREDENTIALS;
   }
+
+  // MoltBrowser: MoltNet's per-context network settings
+  // (molt_net_network_context_policy.h): a one-off network key for each
+  // certificate fetch, and Basic and Digest authentication only. Other
+  // profiles get Chromium's (the fields' defaults).
+  molt_ai::tor::ApplyMoltNetNetworkContextSettings(
+      molt_ai::tor::IsMoltNetProfile(profile_), *network_context_params,
+      *cert_verifier_creation_params);
 
   network_context_params->cookie_manager_params =
       CreateCookieManagerParams(profile_, *cookie_settings_);

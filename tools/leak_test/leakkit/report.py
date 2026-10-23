@@ -472,6 +472,84 @@ def _sandboxed_circuit_check(tr):
         'usernames', status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8')
 
 
+CERT_FETCH_TESTS = ('cert_fetch', 'cert_fetch_b')
+# The certificate tests' pages are on this port (BASE_AIA, BASE_B_AIA); the
+# certificate's AIA URLs are plain http, port 80.
+CERT_FETCH_PAGE_PORT = 8443
+
+
+def _cert_fetch_owner(windows, ts):
+    """The certificate test whose window holds `ts`: a window proper first,
+    then the margins (half a second before, a second after)."""
+    for margin_before, margin_after in ((0.0, 0.0), (0.5, 1.0)):
+        for test_id, (start, end) in sorted(windows.items()):
+            if start - margin_before <= ts <= end + margin_after:
+                return test_id
+    return None
+
+
+def _cert_fetch_circuit_check(manifest, tr):
+    """The two certificate tests load the same certificate, which lacks its
+    intermediate, on two sites, so the browser fetches the same AIA URLs for
+    each. Each of those fetches must have a SOCKS username of its own: none
+    shared between the two sites' fetches, none that a page used."""
+    windows = {}
+    for test in manifest.get('tests') or []:
+        end = test.get('settle_end') or test.get('end')
+        if test.get('id') in CERT_FETCH_TESTS and \
+                test.get('start') is not None and end is not None:
+            windows[test['id']] = (test['start'], end)
+    fetches, reached, others = {}, set(), set()
+    for s in tr['socks']:
+        if not s.get('host'):
+            continue
+        owner = _cert_fetch_owner(windows, s.get('ts') or 0)
+        if owner and s.get('port') == 80:
+            fetches.setdefault(owner, set()).add(s.get('username'))
+            continue
+        others.add(s.get('username'))
+        if owner and s.get('port') == CERT_FETCH_PAGE_PORT:
+            reached.add(owner)
+    ev = ['%s -> certificate fetches with SOCKS usernames %s' % (
+        t, sorted(u or '(none)' for u in us))
+          for t, us in sorted(fetches.items())]
+    status = PASS
+    if len(reached) < 2:
+        status = SKIP
+        ev.append('the two certificate tests didn\'t both reach their site '
+                  'through Tor')
+    elif not fetches:
+        status = SKIP
+        ev.append('no certificate fetch was seen (the browser didn\'t look '
+                  'for the missing intermediate)')
+    else:
+        if len(fetches) < 2:
+            status = FAIL
+            ev.append('one site\'s certificate check made no fetch of its '
+                      'own (answered from a cache, or merged with the other '
+                      'site\'s)')
+        names = set.union(*fetches.values())
+        if None in names:
+            status = FAIL
+            ev.append('a certificate fetch carried no SOCKS username')
+        if len(fetches) == 2:
+            shared = set.intersection(*fetches.values()) - {None}
+            if shared:
+                status = FAIL
+                ev.append('the two sites\' certificate fetches shared a '
+                          'username: %s' % sorted(shared))
+        on_pages = (names & others) - {None}
+        if on_pages:
+            status = FAIL
+            ev.append('a certificate fetch used a username pages use: %s' %
+                      sorted(on_pages))
+    return check(
+        'identity.cert_fetch_circuits', 'identity',
+        'Certificate fetches made for two sites use SOCKS usernames of their '
+        'own (a circuit per fetch)', status, ev,
+        'MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8')
+
+
 def _circuit_checks(manifest, tr):
     checks = []
     socks = [s for s in tr['socks'] if s.get('host')]
@@ -501,6 +579,7 @@ def _circuit_checks(manifest, tr):
         'Different sites use different SOCKS usernames (per-site circuits)',
         status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8'))
     checks.append(_sandboxed_circuit_check(tr))
+    checks.append(_cert_fetch_circuit_check(manifest, tr))
     phase = _phase(manifest, 'circuit')
     if phase and (phase.get('data') or {}).get('hops'):
         data = phase['data']

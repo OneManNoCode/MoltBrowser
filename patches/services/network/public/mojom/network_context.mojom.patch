@@ -1,0 +1,26 @@
+MoltBrowser patch for services/network/public/mojom/network_context.mojom
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/services/network/public/mojom/network_context.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+index abddef1d201fccb59e4049eed5304bf073838f1b..34f0e87c1f867e3b4e0c8dd159b5ecbd257a7ea6 100644
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -227,6 +227,15 @@ struct HttpAuthStaticNetworkContextParams {
+   // on the system can be used without specifying an account.
+   DefaultCredentials allow_default_credentials =
+       DefaultCredentials.ALLOW_DEFAULT_CREDENTIALS;
++
++  // MoltBrowser: if true, this context offers servers and proxies the Basic
++  // and Digest schemes only, never NTLM or Negotiate, whatever the network
++  // service's (browser-wide) HttpAuthDynamicParams allow, and Negotiate's
++  // canonical-name lookup is off. Set for MoltNet's network contexts only
++  // (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h).
++  // [MinVersion] keeps the generated one-argument constructor, so callers
++  // that pass allow_default_credentials positionally still compile.
++  [MinVersion=1] bool molt_basic_and_digest_auth_only = false;
+ };
+ 
+ struct NetworkContextFilePaths {

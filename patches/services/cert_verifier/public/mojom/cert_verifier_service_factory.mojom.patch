@@ -1,0 +1,25 @@
+MoltBrowser patch for services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom b/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
+index aa828dfd79e7f3b741e07cdd6818e5c69140217f..0a5f5db6f394f6cfe8dba8fcb0454752d5c3d852 100644
+--- a/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
++++ b/services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom
+@@ -34,6 +34,14 @@ struct CertVerifierCreationParams {
+   // Initial certificate transparency policies.
+   [EnableIf=is_ct_supported]
+   network.mojom.CTPolicy? ct_policy;
++
++  // MoltBrowser: if true, every certificate fetch (AIA, OCSP, CRL) gets a
++  // one-off network key of its own (net::IsolationInfo::CreateTransient()),
++  // and no two fetches share a request. Set for MoltNet's network contexts
++  // only (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h).
++  // [MinVersion] keeps the generated constructor of the other fields, so
++  // callers that pass them positionally still compile.
++  [MinVersion=1] bool molt_isolate_each_cert_fetch = false;
+ };
+ 
+ // Information about a certificate in the Chrome Root Store

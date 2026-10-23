@@ -142,10 +142,10 @@
    "details": null,
    "doc": "",
    "evidence": [
-    "all: 26 frames, 26 IP, 0 malformed",
+    "all: 50 frames, 50 IP, 0 malformed",
     "firewall log: 12 frames",
     "Tor connections: 2 frames",
-    "loopback packets: 10"
+    "loopback packets: 22"
    ],
    "group": "harness",
    "id": "harness.capture",
@@ -186,6 +186,18 @@
    "id": "moltnet.open",
    "status": "PASS",
    "title": "A MoltNet window opened (Tor bootstrapped, routing verified)"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Certificate fetches), \u00a74 step 8",
+   "evidence": [
+    "cert_fetch -> certificate fetches with SOCKS usernames ['opaque\\\\x20null\\\\x20[internally:\\\\x20(33cc)\\\\x20anonymous]', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(44dd)\\\\x20anonymous]']",
+    "cert_fetch_b -> certificate fetches with SOCKS usernames ['opaque\\\\x20null\\\\x20[internally:\\\\x20(55ee)\\\\x20anonymous]', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(66ff)\\\\x20anonymous]']"
+   ],
+   "group": "identity",
+   "id": "identity.cert_fetch_circuits",
+   "status": "PASS",
+   "title": "Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch)"
   },
   {
    "details": null,
@@ -242,7 +254,7 @@
    "details": null,
    "doc": "MOLTNET_COMPLIANCE.md \u00a71.4, \u00a74 step 8",
    "evidence": [
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(11aa)\\\\x20derived\\\\x20from\\\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]']",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(11aa)\\\\x20derived\\\\x20from\\\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(33cc)\\\\x20anonymous]', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(55ee)\\\\x20anonymous]']",
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion', 'opaque\\\\x20null\\\\x20[internally:\\\\x20(22bb)\\\\x20derived\\\\x20from\\\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']"
    ],
    "group": "identity",
@@ -342,6 +354,28 @@
    "id": "net.builtin_ai.a5",
    "status": "PASS",
    "title": "Built-in AI APIs and Translator (no component download): Translator is unavailable"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (certificate fetches through Tor)",
+   "evidence": [
+    "sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\\\x20null\\\\x20[internally:\\\\x20(44dd)\\\\x20anonymous]')",
+    "sent to Tor inside SOCKS5: aia-kkkkkk1212.moltleak.test:80 (username 'opaque\\\\x20null\\\\x20[internally:\\\\x20(66ff)\\\\x20anonymous]')",
+    "reached the kit's page server (through Tor): /canary/aia-kkkkkk1212.crt"
+   ],
+   "group": "network",
+   "id": "net.cert_fetch.traffic",
+   "status": "PASS",
+   "title": "Certificate fetches (AIA; OCSP/CRL URLs in the certificate): nothing outside Tor"
+  },
+  {
+   "details": null,
+   "doc": "MOLTNET_COMPLIANCE.md \u00a72 (Certificate fetches), \u00a74 step 8",
+   "evidence": [],
+   "group": "network",
+   "id": "net.cert_fetch_b.traffic",
+   "status": "PASS",
+   "title": "Certificate fetches for a second site (the same AIA URL): nothing outside Tor"
   },
   {
    "details": null,
@@ -2327,7 +2361,7 @@
   "ERROR": 0,
   "FAIL": 12,
   "INFO": 2,
-  "PASS": 105,
+  "PASS": 108,
   "SKIP": 84
  },
  "fingerprints": [
@@ -2639,7 +2673,7 @@
   },
   {
    "automation": "automated",
-   "note": "different SOCKS usernames per site (sandboxed pages included), read from the loopback capture and Tor's circuit list",
+   "note": "different SOCKS usernames per site (sandboxed pages included), a SOCKS username of its own for each certificate fetch, read from the loopback capture and Tor's circuit list",
    "step": 8,
    "title": "Per-site circuits"
   },
@@ -2756,6 +2790,24 @@
    },
    "target": "moltnet",
    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/aaaaaa1111/x.html"
+  },
+  {
+   "error": null,
+   "id": "cert_fetch",
+   "load_error": null,
+   "nonce": "kkkkkk1212",
+   "results": null,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/kkkkkk1212/x.html"
+  },
+  {
+   "error": null,
+   "id": "cert_fetch_b",
+   "load_error": null,
+   "nonce": "llllll3434",
+   "results": null,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/llllll3434/x.html"
   },
   {
    "error": null,
@@ -2879,8 +2931,8 @@
  "traffic": {
   "capture_stats": {
    "all": {
-    "decoded": 26,
-    "frames": 26,
+    "decoded": 50,
+    "frames": 50,
     "linktypes": [
      276
     ],
@@ -2898,7 +2950,7 @@
     "non_ip": 0,
     "truncated_file": false
    },
-   "loopback_packets": 10,
+   "loopback_packets": 22,
    "tor": {
     "decoded": 2,
     "frames": 2,
@@ -3185,6 +3237,66 @@
     "test": "onion_http",
     "ts": 1760000012.0,
     "username": "https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion"
+   },
+   {
+    "client_port": 52005,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "port": 8443,
+    "server_port": 9150,
+    "test": "cert_fetch",
+    "ts": 1760000015.2,
+    "username": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion"
+   },
+   {
+    "client_port": 52006,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "port": 80,
+    "server_port": 9150,
+    "test": "cert_fetch",
+    "ts": 1760000015.8,
+    "username": "opaque\\x20null\\x20[internally:\\x20(33cc)\\x20anonymous]"
+   },
+   {
+    "client_port": 52007,
+    "command": 1,
+    "host": "aia-kkkkkk1212.moltleak.test",
+    "port": 80,
+    "server_port": 9150,
+    "test": "cert_fetch",
+    "ts": 1760000015.9,
+    "username": "opaque\\x20null\\x20[internally:\\x20(44dd)\\x20anonymous]"
+   },
+   {
+    "client_port": 52008,
+    "command": 1,
+    "host": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion",
+    "port": 8443,
+    "server_port": 9150,
+    "test": "cert_fetch_b",
+    "ts": 1760000017.7,
+    "username": "https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion"
+   },
+   {
+    "client_port": 52009,
+    "command": 1,
+    "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion",
+    "port": 80,
+    "server_port": 9150,
+    "test": "cert_fetch_b",
+    "ts": 1760000018.3,
+    "username": "opaque\\x20null\\x20[internally:\\x20(55ee)\\x20anonymous]"
+   },
+   {
+    "client_port": 52010,
+    "command": 1,
+    "host": "aia-kkkkkk1212.moltleak.test",
+    "port": 80,
+    "server_port": 9150,
+    "test": "cert_fetch",
+    "ts": 1760000018.4,
+    "username": "opaque\\x20null\\x20[internally:\\x20(66ff)\\x20anonymous]"
    },
    {
     "client_port": 52002,
