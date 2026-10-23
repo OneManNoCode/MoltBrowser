@@ -4,18 +4,22 @@
 """Syntax-and-type check of MoltBrowser's C++ against Chromium's real headers,
 without a Chromium checkout. See tools/compile_check/README.md.
 
-  compile_check.py setup                 # Chromium's clang
-  compile_check.py get PATH...           # materialize upstream files
+  compile_check.py all [TARGETS...]      # setup, then fetch + gen until
+                                         # nothing new, then check
+  compile_check.py setup                 # Chromium's clang, protoc
   compile_check.py fetch [TARGETS...]    # include closure of the targets
-  compile_check.py gen [TARGETS...]      # buildflags, mojom, grit, ...
+  compile_check.py gen                   # what the last fetch found missing
   compile_check.py check [TARGETS...]    # clang -fsyntax-only
-  compile_check.py all [TARGETS...]      # fetch + gen + check, repeated
+  compile_check.py report                # summary of the last check
+  compile_check.py get PATH...           # materialize upstream files
 
-TARGETS are paths relative to src/ (files or directories); the default is
-the set in targets.py. The work dir (default .molt-compile-check-cache/,
-gitignored) holds everything downloaded or generated; re-runs reuse it.
+TARGETS are paths relative to src/ (files or directories), @first-party or
+@hooks; the default is both (targets.py). The work dir (default
+.molt-compile-check-cache/, gitignored) holds everything downloaded or
+generated; re-runs reuse it.
 """
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -23,12 +27,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import json  # noqa: E402
-
-from ccheck import config, scan, sources, targets, toolchain  # noqa: E402
-from ccheck import check, gen_actions, gen_buildflags, gen_mojom, gn  # noqa: E402,E501
+from ccheck import check, config, scan, sources, targets, toolchain  # noqa
+from ccheck import gen_actions, gen_buildflags, gen_mojom, gen_misc, gn  # noqa
+from ccheck import host_tools  # noqa
 
 REPO_ROOT = HERE.parents[1]
+
+# Generator scripts and the Python packages they import.
+GEN_TOOLS = ["mojo/public/tools/", "third_party/jinja2/",
+             "third_party/markupsafe/", "third_party/ply/",
+             "build/gn_helpers.py", "build/write_buildflag_header.py",
+             "tools/protoc_wrapper/"]
 
 
 def make_tree(args):
@@ -39,33 +48,47 @@ def make_tree(args):
     return tree
 
 
-def cmd_setup(args):
-    tree = make_tree(args)
-    d = toolchain.ensure_clang(args.work, tree)
-    print(d)
+def make_interp(tree):
+    args_text = (REPO_ROOT / "configs" / "linux-x64.gn").read_text()
+    return gn.make_interp(tree, args_text)
 
 
-def ensure_libcxx(tree):
-    """libc++ and libc++abi headers are taken whole (the scanner does not
-    follow <vector>-style includes)."""
+def ensure_inputs(tree):
+    """libc++/libc++abi headers (the scanner does not follow <vector>), and
+    every BUILD.gn, .gni, .mojom and .proto file at the pin (small; the GN
+    reader and the generators need them), and the generator scripts."""
     paths = []
     for d in config.SYSTEM_DIRS:
         paths += tree.glob_upstream(d + "/")
+    paths += tree.chromium_files(
+        lambda p: p.endswith(("/BUILD.gn", ".gni", ".mojom", ".proto",
+                              "/.gn")) or p in ("BUILD.gn", ".gn"))
+    for p in GEN_TOOLS:
+        paths += tree.glob_upstream(p) if p.endswith("/") else [p]
     tree.materialize(paths)
+    write_hook_outputs(tree)
 
 
-def ensure_build_files(tree):
-    """Every BUILD.gn, .gni and .mojom file at the pin (small; the GN reader
-    and the mojom generator need them)."""
-    tree.materialize(tree.chromium_files(
-        lambda p: p.endswith(("/BUILD.gn", ".gni", ".mojom", "/.gn")) or
-        p in ("BUILD.gn", ".gn")))
+def write_hook_outputs(tree):
+    """Files gclient's hooks write into a checkout."""
+    pin = tree.chromium.rev
+    util = tree.tree_dir / "build" / "util"
+    util.mkdir(parents=True, exist_ok=True)
+    lc = "LASTCHANGE=%s-refs/heads/main@{#0}\n" % pin
+    if not (util / "LASTCHANGE").exists() or \
+            (util / "LASTCHANGE").read_text() != lc:
+        (util / "LASTCHANGE").write_text(lc)
+        (util / "LASTCHANGE.committime").write_text("1767225600")
 
 
-def cmd_fetch(args):
-    tree = make_tree(args)
-    ensure_libcxx(tree)
-    ensure_build_files(tree)
+def cmd_setup(args, tree=None):
+    tree = tree or make_tree(args)
+    print(toolchain.ensure_clang(args.work, tree))
+    print(toolchain.ensure_protoc(args.work, tree))
+    ensure_inputs(tree)
+
+
+def do_fetch(args, tree):
     tgts = targets.expand(args.targets)
     sc = scan.Scanner(tree, config.INCLUDE_DIRS, tree.gen_dir)
     seen = sc.run(tgts)
@@ -76,74 +99,111 @@ def cmd_fetch(args):
     out = {"targets": len(tgts), "reached": len(seen), "missing": missing}
     (args.work / "scan.json").write_text(json.dumps(out, indent=1))
     for k, v in sorted(missing.items()):
-        print("%-12s %d" % (k, len(v)))
+        print("missing %-12s %d" % (k, len(v)))
     print("reached %d files from %d targets" % (len(seen), len(tgts)))
+    return out
 
 
-def make_interp(tree):
-    args_text = (REPO_ROOT / "configs" / "linux-x64.gn").read_text()
-    return gn.make_interp(tree, args_text)
+def cmd_fetch(args):
+    tree = make_tree(args)
+    ensure_inputs(tree)
+    do_fetch(args, tree)
 
 
-# Generator scripts and the Python packages they import.
-GEN_TOOLS = ["mojo/public/tools/", "third_party/jinja2/",
-             "third_party/markupsafe/", "third_party/ply/",
-             "build/gn_helpers.py", "build/write_buildflag_header.py"]
+def _gen_candidates(name):
+    """gen-relative paths an include name could be generated at."""
+    out = [name]
+    for inc in config.INCLUDE_DIRS:
+        if inc.startswith("gen:") and inc[4:]:
+            out.append(inc[4:] + "/" + name)
+    return out
 
 
-def _produce(tree, interp, report):
-    def f(rels):
+def do_gen(args, tree, missing):
+    """One generation round. Returns how many files it wrote."""
+    gen_dir = tree.gen_dir
+    interp = make_interp(tree)
+    gen_actions.HOST_TOOLS["--protoc"] = toolchain.ensure_protoc(args.work,
+                                                                 tree)
+    try:
+        plugins = host_tools.ensure_perfetto_plugins(args.work, tree, interp)
+        gen_actions.HOST_TOOLS["--plugin"] = lambda t: plugins[
+            "cppgen_plugin" if "cpp" in t.name else "protozero_plugin"]
+    except RuntimeError as e:
+        print("perfetto protoc plugins unavailable: %s" % e)
+    gen_misc.TOOLS["cxxbridge"] = lambda: host_tools.ensure_cxxbridge(
+        args.work, tree)
+    gen_misc.TOOLS["flatc"] = lambda: host_tools.ensure_flatc(
+        args.work, tree, interp)
+    report_path = args.work / "gen_report.json"
+    report = {}
+    written = 0
+
+    def produce(rels):
         w, failed = gen_actions.produce(tree, interp, rels)
         report.setdefault("actions", {"written": [], "failed": {}})
         report["actions"]["written"] += w
         report["actions"]["failed"].update(failed)
-        for k, v in failed.items():
-            print("action failed: %s: %s" % (k, v))
         return w
-    return f
 
-
-def cmd_gen(args):
-    tree = make_tree(args)
-    paths = []
-    for p in GEN_TOOLS:
-        paths += tree.glob_upstream(p) if p.endswith("/") else [p]
-    tree.materialize(paths)
-    scanned = json.loads((args.work / "scan.json").read_text())
-    missing = scanned["missing"]
-    gen_dir = tree.gen_dir
-    interp = make_interp(tree)
-    report = {}
     names = sorted(missing.get("buildflags", {}))
     if names:
         w, f = gen_buildflags.generate(tree, interp, gen_dir, names,
                                        config.INCLUDE_DIRS)
         report["buildflags"] = {"written": w, "failed": f}
+        written += len(w)
         print("buildflags: %d written, %d failed" % (len(w), len(f)))
-        for k, v in sorted(f.items()):
-            print("  %s: %s" % (k, v))
     names = sorted(missing.get("mojom", {}))
     if names:
         index = gen_mojom.build_index(tree, interp,
                                       args.work / "mojom_index.json")
         wanted = gen_mojom.wanted_mojoms(names)
-        ok, f = gen_mojom.generate(
-            tree, index, args.work, gen_dir, wanted,
-            produce=_produce(tree, interp, report))
+        ok, f = gen_mojom.generate(tree, index, args.work, gen_dir, wanted,
+                                   produce=produce)
         report["mojom"] = {"generated": ok, "failed": f}
+        written += len(ok)
         print("mojom: %d generated, %d failed" % (len(ok), len(f)))
-        for k, v in sorted(f.items()):
-            print("  %s: %s" % (k, v))
-    for w in interp.warnings[:20]:
-        print("gn warning: " + w)
-    (args.work / "gen_report.json").write_text(json.dumps(report, indent=1))
+    # Everything else: the GN action that writes it, else a known
+    # generator (gen_misc), else it stays missing.
+    other = {}
+    for kind in ("proto", "pbzero", "grit", "vector_icons", "other"):
+        for name in missing.get(kind, {}):
+            other[name] = kind
+    done = set()
+    for name, kind in sorted(other.items()):
+        if gen_misc.handles(name):
+            continue
+        for rel in _gen_candidates(name):
+            if produce([rel]):
+                done.add(name)
+                written += 1
+                break
+    w, f = gen_misc.generate(tree, interp, gen_dir,
+                             [n for n in other if n not in done])
+    written += len(w)
+    report["misc"] = {"written": w, "failed": f}
+    left = sorted(n for n in other if n not in done and n not in w)
+    report["still_missing"] = {n: other[n] for n in left}
+    report["gn_warnings"] = interp.warnings[:50]
+    old = json.loads(report_path.read_text()) if report_path.exists() else {}
+    old.update(report)
+    report_path.write_text(json.dumps(old, indent=1))
+    print("gen: wrote %d file(s); %d name(s) still missing (see %s)" % (
+        written, len(left), report_path))
+    return written
 
 
-def cmd_check(args):
+def cmd_gen(args):
     tree = make_tree(args)
+    ensure_inputs(tree)
+    scanned = json.loads((args.work / "scan.json").read_text())
+    do_gen(args, tree, scanned["missing"])
+
+
+def do_check(args, tree):
     tgts = targets.expand(args.targets)
     res = check.run(tree, args.work, tgts, jobs=args.jobs,
-                    plugins=not args.no_plugins)
+                    plugins=not args.no_plugins, dev=args.dev_plugins)
     summary = args.work / "check.json"
     old = {}
     if summary.exists() and args.targets:
@@ -156,6 +216,33 @@ def cmd_check(args):
     n = sum(1 for r in res if any("error" in d["kind"] for d in r["diags"]))
     print("%d of %d file(s) with errors; details in %s" % (n, len(res),
                                                           summary))
+
+
+def cmd_check(args):
+    do_check(args, make_tree(args))
+
+
+def cmd_all(args):
+    tree = make_tree(args)
+    cmd_setup(args, tree)
+    for i in range(args.rounds):
+        print("== round %d" % (i + 1))
+        out = do_fetch(args, tree)
+        if do_gen(args, tree, out["missing"]) == 0:
+            break
+    do_check(args, tree)
+    cmd_report(args)
+
+
+def cmd_report(args):
+    res = json.loads((args.work / "check.json").read_text())
+    for r in res:
+        errs = [d for d in r["diags"] if "error" in d["kind"]]
+        warns = [d for d in r["diags"] if d["kind"] == "warning"]
+        print("%-90s %3d error(s) %3d warning(s)" % (r["target"], len(errs),
+                                                     len(warns)))
+        for d in errs[:args.max_lines]:
+            print("    %s:%d: %s" % (d["file"], d["line"], d["msg"][:160]))
 
 
 def cmd_get(args):
@@ -187,15 +274,25 @@ def main():
     f = sub.add_parser("fetch")
     f.add_argument("targets", nargs="*")
     sub.add_parser("gen")
-    c = sub.add_parser("check")
-    c.add_argument("targets", nargs="*")
-    c.add_argument("--jobs", type=int, default=2)
-    c.add_argument("--no-plugins", action="store_true")
+    for name in ("check", "all"):
+        c = sub.add_parser(name)
+        c.add_argument("targets", nargs="*")
+        c.add_argument("--jobs", type=int, default=2)
+        c.add_argument("--no-plugins", action="store_true",
+                       help="skip Chromium's clang plugins")
+        c.add_argument("--dev-plugins", action="store_true",
+                       help="also the raw_ptr/raw_ref field checks a "
+                       "non-official build runs")
+        if name == "all":
+            c.add_argument("--rounds", type=int, default=6)
+            c.add_argument("--max-lines", type=int, default=5)
+    r = sub.add_parser("report")
+    r.add_argument("--max-lines", type=int, default=5)
     args = ap.parse_args()
     args.work = args.work.resolve()
     args.work.mkdir(parents=True, exist_ok=True)
-    {"setup": cmd_setup, "get": cmd_get, "fetch": cmd_fetch,
-     "gen": cmd_gen, "check": cmd_check}[args.cmd](args)
+    {"setup": cmd_setup, "get": cmd_get, "fetch": cmd_fetch, "gen": cmd_gen,
+     "check": cmd_check, "all": cmd_all, "report": cmd_report}[args.cmd](args)
 
 
 if __name__ == "__main__":

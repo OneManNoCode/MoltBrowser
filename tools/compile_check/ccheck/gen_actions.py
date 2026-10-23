@@ -10,6 +10,7 @@ directory, with its response file written out. Its inputs and the Python
 packages generator scripts commonly import are fetched first.
 """
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,9 @@ from .sources import log
 PY_DEPS = [
     "build/", "third_party/jinja2/", "third_party/markupsafe/",
     "third_party/ply/", "third_party/pyjson5/", "tools/grit/",
+    "tools/gritsettings/", "tools/metrics/", "third_party/inspector_protocol/",
+    "tools/protoc_wrapper/", "tools/flags/", "components/policy/tools/",
+    "third_party/blink/public/devtools_protocol/", "chrome/VERSION",
     "tools/json_comment_eater/", "tools/json_to_struct/",
     "tools/json_schema_compiler/", "third_party/blink/renderer/build/scripts/",
     "third_party/blink/tools/blinkpy/common/", "tools/metrics/common/",
@@ -38,19 +42,54 @@ def _ensure_py_deps(tree):
     for p in PY_DEPS:
         paths += [x for x in tree.glob_upstream(p)
                   if x.endswith((".py", ".tmpl", ".jinja", ".json", ".gni",
-                                 ".pyl", ".h", ".cc", ".txt", ".json5"))
+                                 ".pyl", ".h", ".cc", ".txt", ".json5",
+                                 "VERSION", ".pdl", ".spec", ".yaml"))
                   or "/templates/" in x]
     tree.materialize(paths)
     _py_deps_done = True
+
+
+_build_texts = None
+
+
+def _build_files_mentioning(tree, word, limit=40):
+    """BUILD.gn files whose text contains `word` (for outputs written by a
+    target outside the output's own directory)."""
+    global _build_texts
+    if _build_texts is None:
+        files = set(tree.chromium_files(lambda p: p.endswith("BUILD.gn")))
+        files |= {p for p in tree.overlay_set() if p.endswith("BUILD.gn")}
+        _build_texts = {}
+        for p in sorted(files):
+            d = tree.read(p)
+            if d is not None:
+                _build_texts[p] = d
+    w = word.encode()
+    out = [p for p, d in _build_texts.items() if w in d]
+    return out if len(out) <= limit else []
+
+
+# Generated paths whose target lives in a BUILD.gn the searches below do not
+# reach (subproject BUILD.gn files are not indexed).
+EXTRA_BUILD_FILES = {
+    "third_party/perfetto/build_config/": "third_party/perfetto/gn/BUILD.gn",
+}
 
 
 def find_action(tree, interp, gen_rel):
     """The target writing gen/<gen_rel>, or None."""
     want = gn.OUT + "/gen/" + gen_rel
     parts = gen_rel.split("/")
+    cands = [bf for pre, bf in EXTRA_BUILD_FILES.items()
+             if gen_rel.startswith(pre)]
     for i in range(len(parts) - 1, -1, -1):
         d = "/".join(parts[:i])
-        bf = (d + "/BUILD.gn") if d else "BUILD.gn"
+        cands.append((d + "/BUILD.gn") if d else "BUILD.gn")
+    stem = parts[-1].split(".")[0]
+    if len(stem) >= 6:
+        cands += [p for p in _build_files_mentioning(tree, stem)
+                  if p not in cands]
+    for bf in cands:
         if not tree.exists(bf):
             continue
         targets = interp.run_file("//" + bf, expand=True)
@@ -82,12 +121,46 @@ def _src_paths(interp, t, key):
     return out
 
 
-def run_action(tree, interp, t):
+# Host tools a generator action runs, by the flag naming them: our
+# substitutes (Chromium builds them from source for the host). A value is a
+# path, or a function of the target returning one.
+HOST_TOOLS = {}
+
+
+def _gen_inputs(interp, t):
+    """gen-relative paths of the target's inputs that a build generates."""
+    out = []
+    for key in ("inputs", "sources"):
+        v = t.get(key)
+        if not isinstance(v, list):
+            continue
+        for x in v:
+            if isinstance(x, str):
+                a = interp.abspath(x, {"dir": t.path})
+                if a.startswith(gn.OUT + "/gen/"):
+                    out.append(a[len(gn.OUT) + 5:])
+    return out
+
+
+def run_action(tree, interp, t, depth=0):
     """Returns None on success, else a reason."""
+    if depth < 4:
+        for rel in _gen_inputs(interp, t):
+            if not (tree.gen_dir / rel).exists():
+                _, failed = produce(tree, interp, [rel], depth + 1)
+                if failed:
+                    return "%s: input %s: %s" % (t, rel, failed[rel][:300])
     script = t.get("script")
     args = t.get("args")
     if not isinstance(script, str) or not isinstance(args, list):
         return "%s has no script/args the reader could compute" % t
+    args = list(args)
+    for i, a in enumerate(args[:-1]):
+        tool = HOST_TOOLS.get(a)
+        if callable(tool):
+            tool = tool(t)
+        if tool:
+            args[i + 1] = str(tool)
     if any(not isinstance(a, str) or "<UNKNOWN>" in a for a in args):
         return "%s: args not computable: %r" % (t, [
             a for a in args if not isinstance(a, str) or "<UNKNOWN>" in a][:3])
@@ -102,7 +175,7 @@ def run_action(tree, interp, t):
     rfc = t.get("response_file_contents")
     if isinstance(rfc, list):
         rsp = tempfile.NamedTemporaryFile("w", suffix=".rsp", delete=False)
-        rsp.write(" ".join(str(x) for x in rfc))
+        rsp.write(" ".join(shlex.quote(str(x)) for x in rfc))
         rsp.close()
         args = [a.replace("{{response_file_name}}", rsp.name) for a in args]
     if t.func == "action_foreach":
@@ -123,12 +196,13 @@ def run_action(tree, interp, t):
     return None
 
 
-def produce(tree, interp, gen_rels):
+def produce(tree, interp, gen_rels, depth=0):
     """Generates each gen/<rel> it can. Returns (written, {rel: reason})."""
     written, failed = [], {}
     done_targets = set()
     for rel in gen_rels:
         if (tree.gen_dir / rel).exists():
+            written.append(rel)
             continue
         t = find_action(tree, interp, rel)
         if t is None:
@@ -138,7 +212,7 @@ def produce(tree, interp, gen_rels):
         if key not in done_targets:
             done_targets.add(key)
             log("action: running %s:%s for %s" % (t.path, t.name, rel))
-            err = run_action(tree, interp, t)
+            err = run_action(tree, interp, t, depth)
             if err:
                 failed[rel] = err
                 continue

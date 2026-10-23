@@ -17,12 +17,14 @@ DIAG_RE = re.compile(r"^(?P<file>[^:\n]+):(?P<line>\d+):(?P<col>\d+): "
 PER_FILE = {}
 
 
-def compile_command(tree, work, target, plugins=True):
+def compile_command(tree, work, target, plugins=True, dev=False):
     root = tree.tree_dir
     clang = toolchain.clang_dir(work) / "bin" / "clang++"
     cmd = [str(clang)] + config.CFLAGS
     if plugins:
         cmd += config.PLUGIN_FLAGS
+        if dev:
+            cmd += config.DEV_PLUGIN_FLAGS
     for d in config.DEFINES:
         cmd.append("-D" + d)
     for prefix, extra in PER_FILE.items():
@@ -45,8 +47,8 @@ def _limit():
     resource.setrlimit(resource.RLIMIT_AS, (6 << 30, 6 << 30))
 
 
-def run_one(tree, work, target, out_dir, plugins=True):
-    cmd = compile_command(tree, work, target, plugins)
+def run_one(tree, work, target, out_dir, plugins=True, dev=False):
+    cmd = compile_command(tree, work, target, plugins, dev)
     r = subprocess.run(cmd, cwd=str(tree.out_dir), capture_output=True,
                        text=True, preexec_fn=_limit)
     text = r.stderr
@@ -65,13 +67,13 @@ def run_one(tree, work, target, out_dir, plugins=True):
             "log": str(log)}
 
 
-def run(tree, work, targets, jobs=2, plugins=True):
+def run(tree, work, targets, jobs=2, plugins=True, dev=False):
     out_dir = Path(work) / "check"
     out_dir.mkdir(parents=True, exist_ok=True)
     tree.out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
-        futs = {ex.submit(run_one, tree, work, t, out_dir, plugins): t
+        futs = {ex.submit(run_one, tree, work, t, out_dir, plugins, dev): t
                 for t in targets}
         for i, f in enumerate(concurrent.futures.as_completed(futs)):
             res = f.result()

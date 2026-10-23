@@ -248,7 +248,7 @@ class Target:
 
 
 # Templates not worth expanding (huge, and handled by dedicated generators).
-NO_EXPAND = {"mojom", "mojom_component", "proto_library", "generate_jni",
+NO_EXPAND = {"mojom", "mojom_component", "generate_jni",
              "android_library", "java_library", "android_resources",
              "android_apk", "rust_static_library", "fuzzer_test",
              "test", "component", "jumbo_component", "chrome_extension"}
@@ -449,11 +449,12 @@ class Interp:
 
     # -- expressions -----------------------------------------------------
     def abspath(self, p, ctx):
+        if p.startswith("/") and not p.startswith("//"):
+            return p
         if p.startswith("//"):
-            return p
-        if p.startswith("/"):
-            return p
-        d = ctx["dir"]
+            d, p = "//", p[2:]
+        else:
+            d = ctx["dir"]
         parts = d[2:].split("/") if d != "//" else []
         parts = [x for x in parts if x]
         for c in p.split("/"):

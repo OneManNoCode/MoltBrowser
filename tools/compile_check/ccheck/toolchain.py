@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tarfile
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from .sources import log
@@ -44,6 +45,33 @@ def ensure_clang(work, tree):
         t.extractall(d, filter="data")
     tmp.unlink()
     return d
+
+
+def ensure_protoc(work, tree):
+    """The protoc release matching third_party/protobuf (the generated code
+    checks PROTOBUF_VERSION against the runtime headers)."""
+    readme = tree.read("third_party/protobuf/README.chromium").decode()
+    ver = re.search(r"^Version: (\S+)", readme, re.M).group(1)
+    d = Path(work) / "toolchain" / "protoc"
+    exe = d / "bin" / "protoc"
+    stamp = d / "version"
+    if exe.exists() and stamp.exists() and stamp.read_text() == ver:
+        return exe
+    if d.exists():
+        shutil.rmtree(d)
+    d.mkdir(parents=True)
+    url = ("https://github.com/protocolbuffers/protobuf/releases/download/"
+           "v%s/protoc-%s-linux-x86_64.zip" % (ver, ver))
+    log("downloading %s" % url)
+    tmp = d / "protoc.zip"
+    with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
+        shutil.copyfileobj(r, f)
+    with zipfile.ZipFile(tmp) as z:
+        z.extractall(d)
+    tmp.unlink()
+    exe.chmod(0o755)
+    stamp.write_text(ver)
+    return exe
 
 
 def llvm_commit(work):
