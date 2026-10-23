@@ -29,6 +29,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$ROOT_DIR/scripts/lib-release-names.sh"
 
 # ---------------------------------------------------------------------------
 # The EXACT Chromium base revision the MoltBrowser overlay is written against,
@@ -165,11 +167,11 @@ BIN="$ROOT_DIR/chromium/src/out/MoltBrowser/chrome"
 [ -f "$BIN" ] && echo "  Binary:   $BIN"
 if [ "$DO_PACKAGE" = true ]; then
   echo "  Packages: $ROOT_DIR/dist/"
-  ls -la "$ROOT_DIR/dist/"*linux* "$ROOT_DIR/dist/"*.deb "$ROOT_DIR/dist/"*.rpm 2>/dev/null || true
+  ls -la "$ROOT_DIR/dist/"MoltBrowser-Linux-x64.* 2>/dev/null || true
   echo ""
-  echo "  Install (Debian/Ubuntu): sudo dpkg -i dist/moltbrowser_${VERSION}_amd64.deb || sudo apt-get -f install -y"
-  echo "  Install (Fedora/RHEL):   sudo rpm -i dist/moltbrowser-${VERSION}*.rpm"
-  echo "  Portable:                tar xzf dist/MoltBrowser-${VERSION}-linux-x64.tar.gz && ./MoltBrowser*/chrome"
+  echo "  Install (Debian/Ubuntu): sudo apt install ./dist/$MOLT_ASSET_LINUX_DEB"
+  echo "  Install (Fedora/RHEL):   sudo dnf install ./dist/$MOLT_ASSET_LINUX_RPM"
+  echo "  Portable:                mkdir -p /tmp/molt && tar xzf dist/$MOLT_ASSET_LINUX_TAR -C /tmp/molt && /tmp/molt/opt/moltbrowser/moltbrowser"
 else
   echo "  Run: $BIN"
 fi

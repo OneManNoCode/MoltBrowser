@@ -19,6 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 # Release builds: bundle downloads must match their pins (no dev override).
 export MOLT_RELEASE_BUILD=1
 
@@ -185,17 +187,27 @@ else
   echo "  Install NSIS: choco install nsis (Windows) or brew install makensis (macOS)"
 fi
 
+# The fixed names the release ships (scripts/lib-release-names.sh), as the
+# Windows workflows upload them: the in-app updater picks the installer by
+# "Setup.exe" in its name, case-sensitively.
+rm -f "$DIST_DIR/$MOLT_ASSET_WINDOWS_SETUP" "$DIST_DIR/$MOLT_ASSET_WINDOWS_ZIP"
+if [ -f "$DIST_DIR/MoltBrowser-$VERSION-win-x64-setup.exe" ]; then
+  mv "$DIST_DIR/MoltBrowser-$VERSION-win-x64-setup.exe" "$DIST_DIR/$MOLT_ASSET_WINDOWS_SETUP"
+fi
+if [ -f "$DIST_DIR/MoltBrowser-$VERSION-win-x64-portable.zip" ]; then
+  mv "$DIST_DIR/MoltBrowser-$VERSION-win-x64-portable.zip" "$DIST_DIR/$MOLT_ASSET_WINDOWS_ZIP"
+fi
+
 # --- Upload ---
 echo ""
 if [ "$DO_UPLOAD" = true ]; then
   echo "[5/5] Uploading to GitHub Releases..."
   cd "$ROOT_DIR"
 
-  # This version's Windows packages only (dist/ keeps older builds around).
+  # This run's Windows packages, under their fixed names (renamed above).
   ARTIFACTS=()
-  for f in "$DIST_DIR/MoltBrowser-$VERSION-win-x64-setup.exe" \
-           "$DIST_DIR/MoltBrowser-$VERSION-win-x64-portable.zip"; do
-    [ -f "$f" ] && ARTIFACTS+=("$f")
+  for f in "$DIST_DIR/$MOLT_ASSET_WINDOWS_SETUP" "$DIST_DIR/$MOLT_ASSET_WINDOWS_ZIP"; do
+    if [ -f "$f" ]; then ARTIFACTS+=("$f"); fi
   done
 
   if [ ${#ARTIFACTS[@]} -eq 0 ]; then
@@ -240,4 +252,4 @@ fi
 echo ""
 echo "=== Windows Release Complete ==="
 echo "Artifacts:"
-ls -lh "$DIST_DIR/"*win* 2>/dev/null || echo "  (none)"
+ls -lh "$DIST_DIR/"MoltBrowser-Windows-x64* 2>/dev/null || echo "  (none)"

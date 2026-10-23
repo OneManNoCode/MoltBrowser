@@ -75,11 +75,14 @@ if [ -z "$VERSION" ] || [ -z "$BUILD_NUM" ]; then
   exit 1
 fi
 
+# The DMG gets the fixed, versionless name the in-app updater downloads.
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 if [ "$UNIVERSAL" = true ]; then
-  DMG_NAME="MoltBrowser-${VERSION}-macOS-universal"
+  DMG_NAME="${MOLT_ASSET_MACOS_UNIVERSAL_DMG%.dmg}"
   BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser-universal"
 else
-  DMG_NAME="MoltBrowser-${VERSION}-macOS-arm64"
+  DMG_NAME="${MOLT_ASSET_MACOS_ARM64_DMG%.dmg}"
   BUILD_DIR="$REPO_DIR/chromium/src/out/MoltBrowser"
 fi
 DMG_PATH="$REPO_DIR/dist/${DMG_NAME}.dmg"

@@ -19,6 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=scripts/lib-release-names.sh disable=SC1091
+source "$SCRIPT_DIR/lib-release-names.sh"
 # Release builds: bundle downloads must match their pins (no dev override).
 export MOLT_RELEASE_BUILD=1
 
@@ -141,12 +143,12 @@ if [ "$DO_UPLOAD" = true ]; then
   echo "[4/4] Uploading to GitHub Releases..."
   cd "$ROOT_DIR"
 
-  # This version's Linux packages only (dist/ keeps older builds around).
+  # The packages under the fixed names the in-app updater downloads
+  # (package-linux.sh writes them, after removing any older ones).
   ARTIFACTS=()
-  for f in "$DIST_DIR/MoltBrowser-$VERSION-linux-x64".* \
-           "$DIST_DIR/moltbrowser_${VERSION}_amd64.deb" \
-           "$DIST_DIR/moltbrowser-$VERSION"-*.rpm; do
-    [ -f "$f" ] && ARTIFACTS+=("$f")
+  for f in "$DIST_DIR/$MOLT_ASSET_LINUX_DEB" "$DIST_DIR/$MOLT_ASSET_LINUX_RPM" \
+           "$DIST_DIR/$MOLT_ASSET_LINUX_TAR" "$DIST_DIR/$MOLT_ASSET_LINUX_APPIMAGE"; do
+    if [ -f "$f" ]; then ARTIFACTS+=("$f"); fi
   done
 
   if [ ${#ARTIFACTS[@]} -eq 0 ]; then
@@ -203,4 +205,4 @@ fi
 echo ""
 echo "=== Linux Release Complete ==="
 echo "Artifacts:"
-ls -lh "$DIST_DIR/"*linux* "$DIST_DIR/"moltbrowser_* 2>/dev/null || echo "  (none)"
+ls -lh "$DIST_DIR/"MoltBrowser-Linux-x64.* 2>/dev/null || echo "  (none)"
