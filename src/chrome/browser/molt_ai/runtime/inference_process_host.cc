@@ -7,6 +7,7 @@
 #include <deque>
 #include <utility>
 
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -89,7 +90,67 @@ InferenceOutcome::Kind KindForSummary(int32_t status) {
              : InferenceOutcome::Kind::kOk;
 }
 
+ReportedGpuStatus ToReported(mojom::GpuStatus status) {
+  switch (status) {
+    case mojom::GpuStatus::kNotRequested:
+      return ReportedGpuStatus::kNotRequested;
+    case mojom::GpuStatus::kNotBuilt:
+      return ReportedGpuStatus::kNotBuilt;
+    case mojom::GpuStatus::kNoDevice:
+      return ReportedGpuStatus::kNoDevice;
+    case mojom::GpuStatus::kNoUsableDevice:
+      return ReportedGpuStatus::kNoUsableDevice;
+    case mojom::GpuStatus::kTooLittleMemory:
+      return ReportedGpuStatus::kTooLittleMemory;
+    case mojom::GpuStatus::kLoadFailed:
+      return ReportedGpuStatus::kLoadFailed;
+    case mojom::GpuStatus::kOn:
+      return ReportedGpuStatus::kOn;
+    case mojom::GpuStatus::kTurnedOff:
+      return ReportedGpuStatus::kTurnedOff;
+    case mojom::GpuStatus::kDeviceLost:
+      return ReportedGpuStatus::kDeviceLost;
+  }
+  return ReportedGpuStatus::kNotRequested;
+}
+
+// The service's device report, checked (lengths) and sanitized; nullopt for
+// one that breaks the mojom's caps.
+std::optional<GpuDeviceReport> ToReport(const mojom::GpuDeviceIdentity& device) {
+  if (!device.key || device.key->driver_uuid.size() != 16 ||
+      device.pipeline_cache_uuid.size() != kPipelineCacheUuidBytes ||
+      device.name.size() > mojom::kMaxGpuNameBytes) {
+    return std::nullopt;
+  }
+  GpuDeviceReport report;
+  report.key.identified = true;
+  report.key.vendor_id = device.key->vendor_id;
+  report.key.device_id = device.key->device_id;
+  report.key.driver_id = device.key->driver_id;
+  report.key.driver_version = device.key->driver_version;
+  std::copy(device.key->driver_uuid.begin(), device.key->driver_uuid.end(),
+            report.key.driver_uuid.begin());
+  report.cache_device.vendor_id = device.key->vendor_id;
+  report.cache_device.device_id = device.key->device_id;
+  std::copy(device.pipeline_cache_uuid.begin(),
+            device.pipeline_cache_uuid.end(), report.cache_device.uuid.begin());
+  report.api_version = device.api_version;
+  report.name = SanitizeGpuName(device.name);
+  return report;
+}
+
+mojom::GpuDriverKeyPtr ToMojo(const GpuDriverKey& key) {
+  return mojom::GpuDriverKey::New(
+      key.vendor_id, key.device_id, key.driver_id, key.driver_version,
+      std::vector<uint8_t>(key.driver_uuid.begin(), key.driver_uuid.end()));
+}
+
 }  // namespace
+
+GpuDeviceReport::GpuDeviceReport() = default;
+GpuDeviceReport::~GpuDeviceReport() = default;
+GpuDeviceReport::GpuDeviceReport(const GpuDeviceReport&) = default;
+GpuDeviceReport& GpuDeviceReport::operator=(const GpuDeviceReport&) = default;
 
 // ---- InferenceOutcome / InferenceMailbox -----------------------------------
 
@@ -170,7 +231,8 @@ InferenceProcessHost::LoadRequest::operator=(LoadRequest&&) = default;
 // ---- ModelProcess -----------------------------------------------------------
 
 class InferenceProcessHost::ModelProcess
-    : public content::ServiceProcessHost::Observer {
+    : public content::ServiceProcessHost::Observer,
+      public mojom::GpuLoadClient {
  public:
   enum class State { kLoading, kReady, kRetired, kEnding };
 
@@ -200,6 +262,12 @@ class InferenceProcessHost::ModelProcess
     host_->OnProcessExited(this, info.crashed_pre_ipc().value_or(false));
   }
 
+  // mojom::GpuLoadClient (UI thread):
+  void OnGpuChosen(mojom::GpuDeviceIdentityPtr device,
+                   OnGpuChosenCallback callback) override {
+    host_->OnGpuChosen(this, std::move(device), std::move(callback));
+  }
+
   base::WeakPtr<ModelProcess> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
@@ -213,15 +281,26 @@ class InferenceProcessHost::ModelProcess
   bool vision_projector_sent() const { return vision_projector_sent_; }
   // Launched for the GPU; one not asked to use it that claims it is lying.
   bool gpu_requested() const { return gpu_requested_; }
-  // Its loss is a GPU failure: it was loading with the GPU requested, or
-  // runs on the GPU.
+  // Its loss is a GPU failure: it was loading with the GPU requested (and
+  // the browser hadn't said no to the device it reported), or runs on the
+  // GPU.
   bool gpu_in_use() const {
-    return gpu_requested_ && (state == State::kLoading || on_gpu);
+    return gpu_requested_ &&
+           ((state == State::kLoading && !(gpu_answered && !gpu_allowed)) ||
+            on_gpu);
   }
 
   State state = State::kLoading;
   // The model runs on the GPU (backend "vulkan").
   bool on_gpu = false;
+  // GPU loads (design section 11.10): the device the service reported, and
+  // the browser's answer.
+  mojo::Receiver<mojom::GpuLoadClient> gpu_client{this};
+  std::optional<GpuDeviceReport> gpu_device;
+  bool gpu_answered = false;
+  bool gpu_allowed = false;
+  // Pipeline caches still to ask for (section 11.12).
+  int pipeline_cache_requests_left = kMaxPipelineCacheRequests;
   mojo::Remote<mojom::MoltInferenceService> service;
   mojo::Remote<mojom::Model> model;
   base::Process process;
@@ -444,6 +523,17 @@ void InferenceProcessHost::Load(LoadRequest request,
   params->max_context_tokens = request.max_context_tokens;
   params->allow_cpu_repack = request.allow_cpu_repack;
   params->use_gpu = request.use_gpu;
+  if (request.use_gpu) {
+    // Asked about the device it chooses before it loads anything on it
+    // (design section 11.10).
+    params->gpu_client = p->gpu_client.BindNewPipeAndPassRemote();
+    for (const GpuDriverKey& key : request.skip_gpu_drivers) {
+      if (params->skip_gpu_drivers.size() >= mojom::kMaxSkippedGpuDrivers) {
+        break;
+      }
+      if (key.identified) params->skip_gpu_drivers.push_back(ToMojo(key));
+    }
+  }
   if (request.vision_projector.IsValid()) {
     params->vision_projector = std::move(request.vision_projector);
     params->vision_projector_size = request.vision_projector_size;
@@ -509,7 +599,11 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
       !IsValidGpuDescription(
           p->gpu_requested(), description->backend,
           description->gpu_status == mojom::GpuStatus::kOn,
-          description->gpu_layers, mojom::kMaxGpuLayers)) {
+          description->gpu_layers, mojom::kMaxGpuLayers) ||
+      !IsConsistentGpuStatus(
+          {p->gpu_requested(), p->gpu_device.has_value(),
+           p->gpu_answered && p->gpu_allowed},
+          ToReported(description->gpu_status))) {
     mojo::ReportBadMessage("invalid ModelDescription");
     p->load_mailbox = std::move(mailbox);  // failed by KillProcess
     KillProcess(p, InferenceOutcome::Kind::kViolation,
@@ -530,6 +624,9 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   outcome.vision = description->vision;
   outcome.gpu_status = description->gpu_status;
   outcome.gpu_layers = description->gpu_layers;
+  outcome.gpu_device = p->gpu_device;
+  // The question is answered; the pipe isn't used again.
+  p->gpu_client.reset();
 
   // Swap: the previous model finishes what it is running, then ends.
   if (current_) {
@@ -539,6 +636,97 @@ void InferenceProcessHost::OnLoadReply(base::WeakPtr<ModelProcess> process,
   }
   current_ = std::move(loading_);
   mailbox->Finish(std::move(outcome));
+}
+
+void InferenceProcessHost::OnGpuChosen(
+    ModelProcess* process,
+    mojom::GpuDeviceIdentityPtr device,
+    mojom::GpuLoadClient::OnGpuChosenCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (process->state != ModelProcess::State::kLoading || process->lost) {
+    return;  // the pipe closes with the process
+  }
+  // Once per load, only when the GPU was asked for, within the caps.
+  std::optional<GpuDeviceReport> report =
+      device && process->gpu_requested() && !process->gpu_device
+          ? ToReport(*device)
+          : std::nullopt;
+  if (!report) {
+    process->gpu_client.ReportBadMessage("invalid OnGpuChosen");
+    KillProcess(process, InferenceOutcome::Kind::kViolation,
+                CrashLoopGuard::Phase::kLoading);
+    return;
+  }
+  process->gpu_device = *report;
+  if (!delegate_) {
+    std::move(callback).Run(false, base::File());
+    process->gpu_answered = true;
+    return;
+  }
+  delegate_->OnGpuDeviceChosen(
+      *report,
+      base::BindOnce(&InferenceProcessHost::OnGpuAnswer,
+                     weak_factory_.GetWeakPtr(), process->GetWeakPtr(),
+                     std::move(callback)));
+}
+
+void InferenceProcessHost::OnGpuAnswer(
+    base::WeakPtr<ModelProcess> process,
+    mojom::GpuLoadClient::OnGpuChosenCallback callback,
+    bool use_gpu,
+    base::File pipeline_cache) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // Gone, or no longer loading: the callback's pipe closes with it.
+  if (!process || process->state != ModelProcess::State::kLoading ||
+      process->lost || !process->gpu_client.is_bound()) {
+    return;
+  }
+  process->gpu_answered = true;
+  process->gpu_allowed = use_gpu;
+  std::move(callback).Run(use_gpu,
+                          use_gpu ? std::move(pipeline_cache) : base::File());
+}
+
+void InferenceProcessHost::MaybeRequestPipelineCache(ModelProcess* process) {
+  if (!process->on_gpu || !process->gpu_device ||
+      process->pipeline_cache_requests_left <= 0 ||
+      process->state != ModelProcess::State::kReady || !process->model) {
+    return;
+  }
+  --process->pipeline_cache_requests_left;
+  process->model->GetPipelineCache(
+      base::BindOnce(&InferenceProcessHost::OnPipelineCache,
+                     weak_factory_.GetWeakPtr(), process->GetWeakPtr()));
+}
+
+void InferenceProcessHost::OnPipelineCache(
+    base::WeakPtr<ModelProcess> process,
+    std::optional<mojo_base::BigBuffer> cache) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!process || process->lost || !process->gpu_device || !cache) {
+    return;  // nothing new
+  }
+  const GpuDeviceReport& device = *process->gpu_device;
+  if (cache->size() == 0) {
+    // The service's cache grew over the cap: start a new one next time.
+    if (delegate_) delegate_->OnPipelineCacheDropped(device);
+    return;
+  }
+  // Checked here, before anything is stored: the size, then the header
+  // against the device this process reported. Nothing past the header is
+  // read. A failure isn't a protocol violation (a driver may write an odd
+  // cache), but nothing more is asked of this process.
+  const PipelineCacheCheck check = CheckPipelineCacheHeader(
+      base::as_string_view(base::span(*cache)), device.cache_device);
+  if (check != PipelineCacheCheck::kOk) {
+    LOG(WARNING) << "[MoltAI] inference process: pipeline cache refused ("
+                 << PipelineCacheCheckName(check) << ", " << cache->size()
+                 << " bytes)";
+    process->pipeline_cache_requests_left = 0;
+    if (delegate_) delegate_->OnPipelineCacheDropped(device);
+    return;
+  }
+  if (delegate_) delegate_->OnPipelineCacheData(device, std::move(*cache));
 }
 
 void InferenceProcessHost::OnLoadTimeout(base::WeakPtr<ModelProcess> process) {
@@ -627,8 +815,13 @@ void InferenceProcessHost::FinishGeneration(ModelProcess* process,
   std::unique_ptr<Generation> generation = std::move(it->second);
   process->generations.erase(it);
   RemoveFromQueue(process, token);
+  // A generation that ran on the GPU compiled pipelines (section 11.12).
+  const bool completed_on_gpu = outcome.kind == InferenceOutcome::Kind::kOk &&
+                                outcome.has_summary &&
+                                !outcome.summary.backend_failed;
   generation->Finish(std::move(outcome));
   generation.reset();
+  if (completed_on_gpu) MaybeRequestPipelineCache(process);
   if (process->state == ModelProcess::State::kRetired &&
       process->generations.empty()) {
     EndProcess(process, /*terminate_now=*/false);
@@ -777,7 +970,7 @@ void InferenceProcessHost::KillProcess(ModelProcess* process,
   // kLoading / kGenerating, and a GPU failure counts for the GPU instead.
   if (delegate_) {
     delegate_->OnModelProcessLost(process->model_id(), process->crash_key(),
-                                  phase, gpu_failure);
+                                  phase, gpu_failure, process->gpu_device);
   }
   UpdateTicking();
 }

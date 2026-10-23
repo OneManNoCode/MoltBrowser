@@ -16,7 +16,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
+#include "mojo/public/cpp/base/big_buffer.h"
 
 namespace molt_ai {
 
@@ -31,6 +33,8 @@ static_assert(mojom::kMaxImageSide == kMaxImageSide);
 static_assert(mojom::kMinImageSide == kMinImageSide);
 static_assert(mojom::kMaxImageAspectRatio == kMaxImageAspectRatio);
 static_assert(mojom::kMaxImagesPerRequest == kMaxImagesPerRequest);
+// And the pipeline cache's (engine/gpu_pipeline_cache.h).
+static_assert(mojom::kMaxPipelineCacheBytes == kMaxPipelineCacheBytes);
 
 bool TextFits(const std::string& text) {
   return text.size() <= mojom::kMaxRequestTextBytes;
@@ -478,6 +482,33 @@ void MoltModelImpl::ForgetConversation(const std::string& conversation_key) {
   }
   engine_.AsyncCall(&LlamaEngine::ForgetConversation)
       .WithArgs(conversation_key);
+}
+
+void MoltModelImpl::GetPipelineCache(GetPipelineCacheCallback callback) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // On the engine's sequence, so between generations.
+  engine_.AsyncCall(&LlamaEngine::PipelineCacheUpdate)
+      .WithArgs(static_cast<size_t>(mojom::kMaxPipelineCacheBytes))
+      .Then(base::BindOnce(&MoltModelImpl::OnPipelineCache,
+                           weak_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+void MoltModelImpl::OnPipelineCache(GetPipelineCacheCallback callback,
+                                    EnginePipelineCache update) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  switch (update.state) {
+    case EnginePipelineCache::State::kNone:
+      std::move(callback).Run(std::nullopt);
+      return;
+    case EnginePipelineCache::State::kTooLarge:
+      // Empty: the browser drops the copy it has, so the next load starts
+      // a cache with only what is used.
+      std::move(callback).Run(mojo_base::BigBuffer());
+      return;
+    case EnginePipelineCache::State::kData:
+      std::move(callback).Run(mojo_base::BigBuffer(update.data));
+      return;
+  }
 }
 
 }  // namespace molt_ai

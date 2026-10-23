@@ -93,13 +93,22 @@ Local Modifications:
       matches vulkan-shaders/ (update the list with every update).
     ggml-vulkan-moltbrowser.{h,cpp}: opens the Vulkan loader at run time
       (dlopen libvulkan.so.1 / LoadLibrary vulkan-1.dll) and reads the
-      device properties the service's device policy needs.
+      device properties the service's device policy and the browser's GPU
+      record need (with the driver and pipeline-cache UUIDs); creates each
+      device's VkPipelineCache from data the service sets before the device
+      exists, returns that cache's data (vkGetPipelineCacheData), and tells
+      a lost device (vkGetFenceStatus) from one that ran out of memory
+      (docs/design/SANDBOXED_INFERENCE.md sections 11.10 and 11.12). Only
+      vulkan.hpp's result-returning overloads and C entry points, inside
+      try/catch.
   vulkan-shaders-gen.cpp is unmodified. The backend is not registered with
   ggml (no GGML_USE_VULKAN, so ggml-backend-reg.cpp doesn't bring it up);
   the service passes the chosen device explicitly.
 - chromium/llama_guard.{h,cc} (not upstream): the exception boundary for the
   service's llama.cpp calls that can reach a GPU (see Exceptions above), and
-  the bring-up of the Vulkan backend for it.
+  the bring-up of the Vulkan backend for it, including the pipeline cache's
+  seed, size and data and the lost-device check (SetPipelineCacheData,
+  PipelineCacheSize, GetPipelineCacheData, DeviceLost).
 - x64 CPU kernels per instruction-set level (BUILD.gn's _ggml_x86_levels,
   not upstream; upstream gets the same from GGML_CPU_ALL_VARIANTS with
   GGML_BACKEND_DL, one shared library per level, which the sandbox can't
@@ -148,6 +157,19 @@ Local Modifications:
       vkCmdCopyBuffer (two, in -buffers.cpp) go through
       VULKAN_HPP_DEFAULT_DISPATCHER (equivalent upstream too). A new direct
       call fails to compile, which is the point.
+    ggml/src/ggml-vulkan/ggml-vulkan.cpp,
+    ggml/src/ggml-vulkan/ggml-vulkan-types.h: a pipeline cache, under
+      GGML_VULKAN_MOLTBROWSER (docs/design/SANDBOXED_INFERENCE.md section
+      11.12). vk_device_struct gets a vk::PipelineCache, created right after
+      the device in ggml_vk_get_device() by
+      ggml_vk_moltbrowser_create_pipeline_cache() (chromium/
+      ggml-vulkan-moltbrowser.cpp; never throws, null if it can't be made)
+      and destroyed in ~vk_device_struct(); ggml_vk_create_pipeline_func()
+      passes it to createComputePipeline() instead of VK_NULL_HANDLE.
+      Upstream builds are unchanged (null cache). Four small blocks, all
+      marked "MoltBrowser". When updating: pipelines must still be created
+      only there, and the cache must still be created before the first
+      pipeline (pipelines compile on first use, during graph compute).
     ggml/src/ggml.c, ggml/src/ggml.cpp: with GGML_MOLTBROWSER_NO_BACKTRACE
       (set by BUILD.gn's :ggml_no_backtrace), ggml_print_backtrace() does
       nothing and no std::set_terminate handler is installed. Upstream

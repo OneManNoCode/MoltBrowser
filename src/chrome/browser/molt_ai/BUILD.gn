@@ -12,16 +12,21 @@ source_set("molt_ai_runtime") {
   sources = [
     "runtime/browser_ai_runtime.cc",
     "runtime/browser_ai_runtime.h",
+    "runtime/gpu_inference_prefs.cc",
+    "runtime/gpu_inference_prefs.h",
     "runtime/inference_process_host.cc",
     "runtime/inference_process_host.h",
   ]
 
   public_deps = [
     "//base",
+    "//chrome/browser/molt_ai/runtime:gpu_driver_record",
     "//chrome/browser/molt_ai/runtime:model_image",
     "//chrome/browser/molt_ai/runtime:stream_validator",
+    "//chrome/services/molt_ai/inference/engine:gpu_pipeline_cache",
     "//chrome/services/molt_ai/inference/public/mojom",
     "//content/public/browser",
+    "//mojo/public/cpp/base",
   ]
 
   deps = [
@@ -35,8 +40,16 @@ source_set("molt_ai_runtime") {
     # BUILDFLAG(MOLT_LLAMA_VULKAN): ask the service for the GPU
     # (docs/design/SANDBOXED_INFERENCE.md section 11).
     "//chrome/services/molt_ai/inference/public:buildflags",
+
+    # The GPU record and setting in Local State, the pipeline caches under
+    # the user data directory (section 11.10-11.12): chrome_paths.h,
+    # kMoltBrowserVersion, the cache files' digest. g_browser_process
+    # (browser_process.h) resolves when chrome links (see web_ai:manager).
+    "//chrome/common",
+    "//chrome/common:constants",
+    "//components/prefs",
     "//content/public/common",
-    "//mojo/public/cpp/base",
+    "//crypto",
     "//mojo/public/cpp/bindings",
   ]
 }

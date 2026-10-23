@@ -76,6 +76,18 @@
 //    (EngineStatus::kBackendFailed; ~Model leaks it). mtmd_encode_chunk
 //    catches on its own. The Vulkan backend is brought up and its devices
 //    listed only through the guard (ListVulkanDevices).
+//  - The GPU record and the pipeline cache (design sections 11.10-11.12)
+//    add no llama_* or ggml_* call here: ChooseGpu() lists devices through
+//    ListVulkanDevices as before, and the cache is seeded, sized and read
+//    and a lost device detected only through llama_guard's
+//    SetPipelineCacheData, PipelineCacheSize, GetPipelineCacheData and
+//    DeviceLost, which catch everything. Under them,
+//    chromium/ggml-vulkan-moltbrowser.cpp uses vulkan.hpp's
+//    result-returning overloads (createPipelineCache, getPipelineCacheData)
+//    and the C entry point vkGetFenceStatus, none of which throws, inside
+//    try/catch anyway; the cache is created inside ggml_vk_get_device(),
+//    which runs within llama_model_load_from_file_ptr (catches everything)
+//    and never throws itself.
 // Re-check these when updating the vendored llama.cpp.
 
 #include "chrome/services/molt_ai/inference/llama_engine.h"
@@ -91,6 +103,7 @@
 #include "chrome/services/molt_ai/inference/engine/context_budget.h"
 #include "chrome/services/molt_ai/inference/engine/cpu_kernels.h"
 #include "chrome/services/molt_ai/inference/engine/gpu_offload.h"
+#include "chrome/services/molt_ai/inference/engine/gpu_pipeline_cache.h"
 #include "chrome/services/molt_ai/inference/engine/image_input.h"
 #include "chrome/services/molt_ai/inference/engine/prompt_utils.h"
 #include "chrome/services/molt_ai/inference/engine/stream_filters.h"
@@ -157,6 +170,36 @@ int64_t TellFile(FILE* f) {
 #else
   return static_cast<int64_t>(ftello(f));
 #endif
+}
+
+// The pipeline cache the browser kept for |device| (design section 11.12):
+// at most kMaxPipelineCacheBytes read from |file|, kept only if its header
+// is this device's (CheckPipelineCacheHeader); empty otherwise.
+std::vector<uint8_t> ReadPipelineCache(FILE* file,
+                                       const molt_llama::GpuDevice& device) {
+  std::vector<uint8_t> data;
+  if (!file || !SeekFile(file, 0, SEEK_END)) return data;
+  const int64_t size = TellFile(file);
+  if (size <= 0 || static_cast<uint64_t>(size) > kMaxPipelineCacheBytes ||
+      !SeekFile(file, 0, SEEK_SET)) {
+    return data;
+  }
+  data.resize(static_cast<size_t>(size));
+  if (fread(data.data(), 1, data.size(), file) != data.size()) {
+    data.clear();
+    return data;
+  }
+  PipelineCacheDevice expected;
+  expected.vendor_id = device.vendor_id;
+  expected.device_id = device.device_id;
+  expected.uuid = device.pipeline_cache_uuid;
+  if (CheckPipelineCacheHeader(
+          std::string_view(reinterpret_cast<const char*>(data.data()),
+                           data.size()),
+          expected) != PipelineCacheCheck::kOk) {
+    data.clear();
+  }
+  return data;
 }
 
 // Convert a single token to its text piece.
@@ -455,6 +498,23 @@ void StdioFileCloser::operator()(FILE* file) const {
   if (file) fclose(file);
 }
 
+EngineGpuIdentity::EngineGpuIdentity() = default;
+EngineGpuIdentity::~EngineGpuIdentity() = default;
+EngineGpuIdentity::EngineGpuIdentity(const EngineGpuIdentity&) = default;
+EngineGpuIdentity& EngineGpuIdentity::operator=(const EngineGpuIdentity&) =
+    default;
+
+EngineGpuChoice::EngineGpuChoice() = default;
+EngineGpuChoice::~EngineGpuChoice() = default;
+EngineGpuChoice::EngineGpuChoice(const EngineGpuChoice&) = default;
+EngineGpuChoice& EngineGpuChoice::operator=(const EngineGpuChoice&) = default;
+
+EnginePipelineCache::EnginePipelineCache() = default;
+EnginePipelineCache::~EnginePipelineCache() = default;
+EnginePipelineCache::EnginePipelineCache(EnginePipelineCache&&) = default;
+EnginePipelineCache& EnginePipelineCache::operator=(EnginePipelineCache&&) =
+    default;
+
 EngineImage::EngineImage() = default;
 EngineImage::EngineImage(uint32_t w, uint32_t h, std::vector<uint8_t> pixels)
     : width(w), height(h), rgb(std::move(pixels)) {}
@@ -528,6 +588,18 @@ struct LlamaEngine::Model {
   // A guarded llama.cpp call threw (the GPU failed): the context's state is
   // unknown. Every later request fails with kBackendFailed.
   bool backend_failed = false;
+};
+
+// The GPU ChooseGpu() picked (design sections 11.5, 11.10, 11.12).
+struct LlamaEngine::Gpu {
+  // ChooseGpu()'s verdict: kOn when |device| was chosen.
+  EngineGpuStatus status = EngineGpuStatus::kNotRequested;
+  molt_llama::GpuDevice device;
+  // The model was loaded on |device|.
+  bool in_use = false;
+  // The pipeline cache's size when last sent (or after the load): a larger
+  // one has pipelines compiled since.
+  size_t sent_cache_bytes = 0;
 };
 
 // A prompt with images: llama.cpp's chunks (text and images, in order), then
@@ -643,13 +715,120 @@ bool LlamaEngine::loaded() const {
   return model_ && model_->ctx;
 }
 
+EngineGpuChoice LlamaEngine::ChooseGpu(const EngineLoadParams& params) {
+  EngineGpuChoice choice;
+  if (gpu_ || model_) {
+    // At most once, before Load().
+    if (gpu_) choice.status = gpu_->status;
+    return choice;
+  }
+  gpu_ = std::make_unique<Gpu>();
+  if (!params.use_gpu) {
+    return choice;  // kNotRequested
+  }
+  if (!molt_llama::VulkanBuilt()) {
+    gpu_->status = choice.status = EngineGpuStatus::kNotBuilt;
+    return choice;
+  }
+  gpu_->status = choice.status = EngineGpuStatus::kNoDevice;
+  std::vector<molt_llama::GpuDevice> devices;
+  if (!InitBackendOnce() || !molt_llama::ListVulkanDevices(&devices)) {
+    return choice;
+  }
+  std::vector<GpuDeviceInfo> infos;
+  infos.reserve(devices.size());
+  for (const molt_llama::GpuDevice& d : devices) {
+    GpuDeviceInfo info;
+    info.vendor_id = d.vendor_id;
+    info.device_id = d.device_id;
+    info.device_type = d.device_type;
+    info.driver_id = d.driver_id;
+    info.driver_version = d.driver_version;
+    info.api_version = d.api_version;
+    info.memory_total = d.memory_total;
+    info.memory_free = d.memory_free;
+    EngineGpuDriverKey key;
+    key.vendor_id = d.vendor_id;
+    key.device_id = d.device_id;
+    key.driver_id = d.driver_id;
+    key.driver_version = d.driver_version;
+    key.driver_uuid = d.driver_uuid;
+    info.turned_off =
+        std::find(params.skip_gpu_drivers.begin(),
+                  params.skip_gpu_drivers.end(),
+                  key) != params.skip_gpu_drivers.end();
+    if (g_allow_software_gpu_for_testing.load() &&
+        CheckGpuDevice(info, {}) == GpuDeviceVerdict::kSoftware) {
+      // Tests only (SetAllowSoftwareGpuForTesting): judge it as an
+      // integrated GPU. The browser is told what the driver says.
+      info.device_type = static_cast<uint32_t>(GpuDeviceType::kIntegrated);
+      info.driver_id = 0;
+    }
+    infos.push_back(info);
+  }
+  const std::vector<GpuDriverBlock> blocklist = DefaultGpuDriverBlocklist();
+  const std::optional<size_t> chosen = ChooseGpuDevice(infos, blocklist);
+  if (!chosen) {
+    // kTurnedOff when the browser's record is why no GPU is left.
+    const bool any_turned_off = std::any_of(
+        infos.begin(), infos.end(), [&](const GpuDeviceInfo& info) {
+          return CheckGpuDevice(info, blocklist) ==
+                 GpuDeviceVerdict::kTurnedOff;
+        });
+    gpu_->status = choice.status = any_turned_off
+                                       ? EngineGpuStatus::kTurnedOff
+                                       : EngineGpuStatus::kNoUsableDevice;
+    return choice;
+  }
+  gpu_->device = devices[*chosen];
+  gpu_->status = choice.status = EngineGpuStatus::kOn;
+  EngineGpuIdentity identity;
+  identity.key.vendor_id = gpu_->device.vendor_id;
+  identity.key.device_id = gpu_->device.device_id;
+  identity.key.driver_id = gpu_->device.driver_id;
+  identity.key.driver_version = gpu_->device.driver_version;
+  identity.key.driver_uuid = gpu_->device.driver_uuid;
+  identity.api_version = gpu_->device.api_version;
+  identity.pipeline_cache_uuid = gpu_->device.pipeline_cache_uuid;
+  identity.name = gpu_->device.name.substr(0, 255);
+  choice.device = std::move(identity);
+  return choice;
+}
+
+EnginePipelineCache LlamaEngine::PipelineCacheUpdate(size_t max_bytes) {
+  EnginePipelineCache update;
+  if (!gpu_ || !gpu_->in_use || !loaded() || model_->backend_failed ||
+      molt_llama::BackendFailed()) {
+    return update;
+  }
+  const std::optional<size_t> size =
+      molt_llama::PipelineCacheSize(gpu_->device.index);
+  if (!size || *size <= gpu_->sent_cache_bytes) {
+    return update;  // nothing compiled since
+  }
+  if (*size > max_bytes) {
+    gpu_->sent_cache_bytes = *size;
+    update.state = EnginePipelineCache::State::kTooLarge;
+    return update;
+  }
+  if (!molt_llama::GetPipelineCacheData(gpu_->device.index, max_bytes,
+                                        &update.data)) {
+    update.data.clear();
+    return update;
+  }
+  gpu_->sent_cache_bytes = update.data.size();
+  update.state = EnginePipelineCache::State::kData;
+  return update;
+}
+
 bool LlamaEngine::vision() const {
   return loaded() && model_->mtmd;
 }
 
 EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
                                    const EngineLoadParams& params,
-                                   ScopedStdioFile vision_projector) {
+                                   ScopedStdioFile vision_projector,
+                                   ScopedStdioFile pipeline_cache) {
   EngineLoadResult result;
   if (!scoped_file || model_) return result;  // closes |scoped_file|
   auto m = std::make_unique<Model>();
@@ -714,53 +893,38 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
   if (params.use_gpu && !vulkan) {
     gpu_status = EngineGpuStatus::kNotBuilt;
   } else if (params.use_gpu) {
-    std::vector<molt_llama::GpuDevice> devices;
-    if (!molt_llama::ListVulkanDevices(&devices)) {
-      gpu_status = EngineGpuStatus::kNoDevice;
-    } else {
-      std::vector<GpuDeviceInfo> infos;
-      infos.reserve(devices.size());
-      for (const molt_llama::GpuDevice& d : devices) {
-        GpuDeviceInfo info;
-        info.vendor_id = d.vendor_id;
-        info.device_id = d.device_id;
-        info.device_type = d.device_type;
-        info.driver_id = d.driver_id;
-        info.driver_version = d.driver_version;
-        info.api_version = d.api_version;
-        info.memory_total = d.memory_total;
-        info.memory_free = d.memory_free;
-        if (g_allow_software_gpu_for_testing.load() &&
-            CheckGpuDevice(info, {}) == GpuDeviceVerdict::kSoftware) {
-          // Tests only (SetAllowSoftwareGpuForTesting): judge it as an
-          // integrated GPU.
-          info.device_type = static_cast<uint32_t>(GpuDeviceType::kIntegrated);
-          info.driver_id = 0;
-        }
-        infos.push_back(info);
-      }
-      const std::optional<size_t> chosen =
-          ChooseGpuDevice(infos, DefaultGpuDriverBlocklist());
-      if (!chosen) {
-        gpu_status = EngineGpuStatus::kNoUsableDevice;
+    // The device: chosen by ChooseGpu() (the service reported it to the
+    // browser before this load), or here.
+    if (!gpu_) ChooseGpu(params);
+    gpu_status = gpu_->status;
+    if (gpu_status == EngineGpuStatus::kOn && !params.gpu_allowed) {
+      gpu_status = EngineGpuStatus::kTurnedOff;  // the browser said no
+    }
+    if (gpu_status == EngineGpuStatus::kOn) {
+      gpu_input.model_file_bytes = params.file_size;
+      // From the GGUF header (llama.cpp parses it again right after); it
+      // leaves |file| at its start.
+      gpu_input.layer_count = molt_llama::ReadLayerCount(file);
+      gpu_input.memory_total = gpu_->device.memory_total;
+      gpu_input.memory_free = gpu_->device.memory_free;
+      gpu_plan = PlanGpuOffload(gpu_input);
+      if (gpu_plan.gpu_layers == 0) {
+        gpu_status = EngineGpuStatus::kTooLittleMemory;
       } else {
-        gpu_input.model_file_bytes = params.file_size;
-        // From the GGUF header (llama.cpp parses it again right after); it
-        // leaves |file| at its start.
-        gpu_input.layer_count = molt_llama::ReadLayerCount(file);
-        gpu_input.memory_total = infos[*chosen].memory_total;
-        gpu_input.memory_free = infos[*chosen].memory_free;
-        gpu_plan = PlanGpuOffload(gpu_input);
-        if (gpu_plan.gpu_layers == 0) {
-          gpu_status = EngineGpuStatus::kTooLittleMemory;
-        } else {
-          gpu_device = devices[*chosen].device;
-          gpu_status = EngineGpuStatus::kOn;
+        gpu_device = gpu_->device.device;
+        // Seed the device's pipeline cache before anything creates the
+        // device (design section 11.12): a cache whose header isn't this
+        // device's is never given to the driver.
+        std::vector<uint8_t> cache =
+            ReadPipelineCache(pipeline_cache.get(), gpu_->device);
+        if (!cache.empty()) {
+          molt_llama::SetPipelineCacheData(gpu_->device.index, cache);
         }
       }
     }
     if (!SeekFile(file, 0, SEEK_SET)) return result;
   }
+  pipeline_cache.reset();
 
   ContextSizingInput sizing_in;
   bool on_gpu = false;
@@ -881,10 +1045,13 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
     // The GPU couldn't take the model, its projector or its context (out of
     // device memory, a driver error llama.cpp caught): the CPU alone. Those
     // failures were reported, not thrown at us, so the device is fine to
-    // free on.
+    // free on. A lost device is a GPU failure the browser records (design
+    // section 11.10); running out of its memory isn't.
+    const bool lost = molt_llama::DeviceLost(gpu_->device.index);
     m->FreeLlama();
     gpu_device = nullptr;
-    gpu_status = EngineGpuStatus::kLoadFailed;
+    gpu_status =
+        lost ? EngineGpuStatus::kDeviceLost : EngineGpuStatus::kLoadFailed;
     if (!SeekFile(file, 0, SEEK_SET)) return result;
     status = attempt(nullptr);
   }
@@ -923,6 +1090,11 @@ EngineLoadResult LlamaEngine::Load(ScopedStdioFile scoped_file,
         gpu_plan.gpu_layers < 0
             ? ToU32(n_layer + 1)
             : ToU32(std::min(gpu_plan.gpu_layers, n_layer + 1));
+    // What the cache holds now (the seed, the projector's warm-up): only
+    // pipelines compiled from here on make it worth sending again.
+    gpu_->in_use = true;
+    gpu_->sent_cache_bytes =
+        molt_llama::PipelineCacheSize(gpu_->device.index).value_or(0);
   }
   model_ = std::move(m);
   return result;

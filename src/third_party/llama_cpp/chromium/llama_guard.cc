@@ -7,6 +7,7 @@
 #include "third_party/llama_cpp/chromium/llama_guard.h"
 
 #include <atomic>
+#include <cstring>
 #include <mutex>
 
 #include "third_party/llama_cpp/ggml/include/gguf.h"
@@ -165,6 +166,7 @@ bool ListVulkanDevices(std::vector<GpuDevice>* devices) noexcept {
       }
       GpuDevice d;
       d.device = dev;
+      d.index = static_cast<int>(i);
       d.vendor_id = info.vendor_id;
       d.device_id = info.device_id;
       d.device_type = info.device_type;
@@ -174,6 +176,10 @@ bool ListVulkanDevices(std::vector<GpuDevice>* devices) noexcept {
       d.memory_total = info.memory_total;
       d.memory_free = info.memory_free;
       d.name = info.name;
+      std::memcpy(d.driver_uuid.data(), info.driver_uuid,
+                  d.driver_uuid.size());
+      std::memcpy(d.pipeline_cache_uuid.data(), info.pipeline_cache_uuid,
+                  d.pipeline_cache_uuid.size());
       devices->push_back(std::move(d));
     }
   } catch (...) {
@@ -181,6 +187,77 @@ bool ListVulkanDevices(std::vector<GpuDevice>* devices) noexcept {
     return false;
   }
   return !devices->empty();
+#else
+  return false;
+#endif
+}
+
+bool SetPipelineCacheData(int device,
+                          const std::vector<uint8_t>& data) noexcept {
+#if defined(MOLT_LLAMA_VULKAN)
+  try {
+    return ggml_vk_moltbrowser_set_pipeline_cache_data(device, data.data(),
+                                                       data.size());
+  } catch (...) {
+    return false;
+  }
+#else
+  return false;
+#endif
+}
+
+std::optional<size_t> PipelineCacheSize(int device) noexcept {
+#if defined(MOLT_LLAMA_VULKAN)
+  try {
+    size_t size = 0;
+    if (ggml_vk_moltbrowser_get_pipeline_cache_data(device, nullptr, &size)) {
+      return size;
+    }
+  } catch (...) {
+  }
+#endif
+  return std::nullopt;
+}
+
+bool GetPipelineCacheData(int device,
+                          size_t max_bytes,
+                          std::vector<uint8_t>* data) noexcept {
+  if (!data) return false;
+  data->clear();
+#if defined(MOLT_LLAMA_VULKAN)
+  try {
+    size_t size = 0;
+    if (!ggml_vk_moltbrowser_get_pipeline_cache_data(device, nullptr, &size) ||
+        size > max_bytes) {
+      return false;
+    }
+    data->resize(size);
+    // The cache may have grown since the size query (it doesn't between
+    // requests, which is when the service asks); VK_INCOMPLETE fails then.
+    if (!ggml_vk_moltbrowser_get_pipeline_cache_data(device, data->data(),
+                                                     &size) ||
+        size > data->size()) {
+      data->clear();
+      return false;
+    }
+    data->resize(size);
+    return true;
+  } catch (...) {
+    data->clear();
+    return false;
+  }
+#else
+  return false;
+#endif
+}
+
+bool DeviceLost(int device) noexcept {
+#if defined(MOLT_LLAMA_VULKAN)
+  try {
+    return ggml_vk_moltbrowser_device_lost(device);
+  } catch (...) {
+    return true;
+  }
 #else
   return false;
 #endif

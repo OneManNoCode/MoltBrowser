@@ -37,6 +37,7 @@ source_set("inference") {
     "//chrome/services/molt_ai/inference/engine:cpu_kernels",
     "//chrome/services/molt_ai/inference/engine:embedding_utils",
     "//chrome/services/molt_ai/inference/engine:gpu_offload",
+    "//chrome/services/molt_ai/inference/engine:gpu_pipeline_cache",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/engine:inference_utils",
     "//mojo/public/cpp/base",

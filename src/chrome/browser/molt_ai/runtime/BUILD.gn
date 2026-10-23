@@ -17,6 +17,18 @@ source_set("stream_validator") {
   ]
 }
 
+# GPU inference's lasting failure record and its pipeline cache files
+# (docs/design/SANDBOXED_INFERENCE.md sections 11.10 and 11.12). Std-only,
+# so the standalone test build links it too.
+source_set("gpu_driver_record") {
+  sources = [
+    "gpu_driver_record.cc",
+    "gpu_driver_record.h",
+    "gpu_pipeline_cache_files.cc",
+    "gpu_pipeline_cache_files.h",
+  ]
+}
+
 # Images for the on-device model (docs/design/SANDBOXED_INFERENCE.md
 # section 10): ModelImage and how a request's images are chosen. Std-only,
 # so the web AI session context (and its standalone tests) can hold images.
@@ -83,6 +95,8 @@ source_set("unit_tests") {
   sources = [
     "embedding_process_host_unittest.cc",
     "embedding_validator_unittest.cc",
+    "gpu_driver_record_unittest.cc",
+    "gpu_inference_prefs_unittest.cc",
     "inference_process_host_unittest.cc",
     "model_image_prep_unittest.cc",
     "model_image_unittest.cc",
@@ -91,14 +105,18 @@ source_set("unit_tests") {
   deps = [
     ":embedding_host",
     ":embedding_validator",
+    ":gpu_driver_record",
     ":model_image",
     ":model_image_prep",
     ":stream_validator",
     "//base",
     "//base/test:test_support",
     "//chrome/browser/molt_ai:molt_ai_runtime",
+    "//chrome/services/molt_ai/inference/engine:gpu_pipeline_cache",
     "//chrome/services/molt_ai/inference/engine:image_input",
     "//chrome/services/molt_ai/inference/public/mojom",
+    "//components/prefs",
+    "//components/prefs:test_support",
     "//mojo/core/embedder",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",

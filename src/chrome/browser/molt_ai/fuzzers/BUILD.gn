@@ -30,6 +30,19 @@ fuzzer_test("molt_stream_validator_fuzzer") {
   libfuzzer_options = [ "max_len=16384" ]
 }
 
+# The GPU failure record and the pipeline cache files' names
+# (docs/design/SANDBOXED_INFERENCE.md sections 11.10 and 11.12): device
+# names and keys the service reports, key text from Local State.
+fuzzer_test("molt_gpu_driver_record_fuzzer") {
+  sources = [ "molt_gpu_driver_record_fuzzer.cc" ]
+  deps = [
+    "//base",
+    "//chrome/browser/molt_ai/runtime:gpu_driver_record",
+  ]
+  seed_corpus = "corpus/molt_gpu_driver_record_fuzzer"
+  libfuzzer_options = [ "max_len=4096" ]
+}
+
 fuzzer_test("molt_embedding_validator_fuzzer") {
   sources = [ "molt_embedding_validator_fuzzer.cc" ]
   deps = [
@@ -322,6 +335,7 @@ group("fuzzers") {
     ":molt_onion_location_fuzzer",
     ":molt_page_translate_fuzzer",
     ":molt_release_manifest_fuzzer",
+    ":molt_gpu_driver_record_fuzzer",
     ":molt_stream_validator_fuzzer",
     ":molt_tor_control_protocol_fuzzer",
     ":molt_torrc_fuzzer",

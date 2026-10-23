@@ -448,6 +448,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the model. Shaders are compiled at build time with Chromium's own glslang.
   It stays off until tested on real GPUs; on Windows it runs on the CPU for
   now (`docs/design/SANDBOXED_INFERENCE.md` §11).
+- **GPU inference remembers drivers that fail, and compiles less.** In the
+  builds with GPU inference, a graphics driver that fails three times in a
+  month is no longer used for on-device AI until it changes (retried after
+  30 days, after a MoltBrowser update, or from molt://ai-settings, which
+  also gains "Use the GPU for on-device AI": Automatic or Off). The GPU's
+  compiled pipelines are kept between loads, checked before reuse and
+  deleted with a model's data (`docs/design/SANDBOXED_INFERENCE.md`
+  §11.10–11.12).
 - **On-device AI on older x86 processors.** Models no longer need AVX2:
   the best kernels the processor supports are picked when a model loads,
   AVX on Intel Sandy Bridge/Ivy Bridge and AMD Bulldozer-family chips,

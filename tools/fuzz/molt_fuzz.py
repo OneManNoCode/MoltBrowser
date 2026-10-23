@@ -137,6 +137,13 @@ FUZZERS = {
         max_len=4096,
         smoke_runs=400000,
     ),
+    "molt_gpu_pipeline_cache_fuzzer": dict(
+        dir=INFERENCE,
+        sources=[f"{ENGINE}/gpu_pipeline_cache.cc"],
+        tier="std",
+        max_len=4096,
+        smoke_runs=500000,
+    ),
     # --- The document parser service (files from sites and users) ---------
     "molt_pdf_text_scraper_fuzzer": dict(
         dir=f"{DOCUMENT_PARSER}/fuzzers",
@@ -162,6 +169,14 @@ FUZZERS = {
         dict="//chrome/services/molt_ai/inference/fuzzers/dicts/model_output.dict",
         max_len=16384,
         smoke_runs=350000,
+    ),
+    "molt_gpu_driver_record_fuzzer": dict(
+        dir=BROWSER,
+        sources=[f"{MOLT_AI}/runtime/gpu_driver_record.cc",
+                 f"{MOLT_AI}/runtime/gpu_pipeline_cache_files.cc"],
+        tier="std",
+        max_len=4096,
+        smoke_runs=100000,
     ),
     "molt_embedding_validator_fuzzer": dict(
         dir=BROWSER,

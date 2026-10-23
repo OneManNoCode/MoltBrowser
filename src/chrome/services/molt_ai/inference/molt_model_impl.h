@@ -70,6 +70,8 @@ class MoltModelImpl : public mojom::Model {
   void CountTokens(const std::string& text,
                    CountTokensCallback callback) override;
   void ForgetConversation(const std::string& conversation_key) override;
+  // The GPU's pipeline cache (design section 11.12).
+  void GetPipelineCache(GetPipelineCacheCallback callback) override;
 
  private:
   class CancelFlag;
@@ -83,6 +85,8 @@ class MoltModelImpl : public mojom::Model {
   void OnStreamerDisconnected(uint64_t id);
   void OnTokenized(TokenizeCallback callback,
                    std::optional<std::vector<int32_t>> tokens);
+  void OnPipelineCache(GetPipelineCacheCallback callback,
+                       EnginePipelineCache update);
 
   SEQUENCE_CHECKER(sequence_checker_);
 
