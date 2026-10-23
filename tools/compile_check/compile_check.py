@@ -100,6 +100,8 @@ def cmd_setup(args, tree=None):
 
 
 def do_fetch(args, tree):
+    # A subproject whose source changed drops its old files first.
+    tree.validate_mounts()
     tgts = targets.expand(args.targets, tree)
     sc = scan.Scanner(tree, config.INCLUDE_DIRS, tree.gen_dir)
     seen = sc.run(tgts)
@@ -134,6 +136,25 @@ def _gen_candidates(name):
         if inc.startswith("gen:") and inc[4:]:
             out.append(inc[4:] + "/" + name)
     return out
+
+
+def refresh_mojom(args, tree, interp, produce=None):
+    """Regenerates the mojom bindings whose inputs changed since they were
+    made (gen_mojom.refresh). Returns (regenerated, removed, failed)."""
+    if not (args.work / "mojom_stamps.json").exists():
+        return [], [], {}
+    index = gen_mojom.build_index(tree, interp, args.work / "mojom_index.json")
+    try:
+        ok, gone, failed = gen_mojom.refresh(tree, index, args.work,
+                                             tree.gen_dir, produce=produce)
+    except RuntimeError as e:
+        print("mojom: refresh failed (%s); the stale outputs were removed" %
+              e)
+        return [], [], {"*": str(e)}
+    if ok or gone or failed:
+        print("mojom: %d regenerated, %d removed, %d failed (stale inputs)" %
+              (len(ok), len(gone), len(failed)))
+    return ok, gone, failed
 
 
 def do_gen(args, tree, missing):
@@ -175,6 +196,16 @@ def do_gen(args, tree, missing):
             missing.setdefault("other", {})[n] = \
                 missing["buildflags"][n]
         print("buildflags: %d written, %d failed" % (len(w), len(f)))
+    ok, gone, f = refresh_mojom(args, tree, interp, produce)
+    if ok or gone or f:
+        report["mojom_refresh"] = {"regenerated": ok, "removed": gone,
+                                   "failed": f}
+        written += len(ok)
+    ok, gone = gen_misc.refresh_grit(tree, interp)
+    if ok or gone:
+        report["grit_refresh"] = {"remade": ok, "removed": gone}
+        written += len(ok)
+        print("grit: %d header(s) remade, %d removed" % (len(ok), len(gone)))
     names = sorted(missing.get("mojom", {}))
     if names:
         index = gen_mojom.build_index(tree, interp,
@@ -247,10 +278,28 @@ def cmd_gen(args):
 
 def do_check(args, tree):
     tgts = targets.expand(args.targets, tree)
-    gn_flags = gnconfigs.resolve(tree, make_interp(tree))
+    # A subproject whose source changed (sources.json) drops its old files:
+    # fetch and generate again before compiling.
+    if tree.validate_mounts():
+        for _ in range(getattr(args, "rounds", 6)):
+            if do_gen(args, tree, do_fetch(args, tree)["missing"]) == 0:
+                break
+    interp = make_interp(tree)
+    # Never compile against bindings of a .mojom edited since (or of one
+    # whose imports or typemaps changed).
+    refresh_mojom(args, tree, interp,
+                  produce=lambda rels: gen_actions.produce(tree, interp,
+                                                           rels)[0])
+    # The same for grit headers (an edited .grd or .grdp).
+    ok, gone = gen_misc.refresh_grit(tree, interp)
+    if ok or gone:
+        print("grit: %d header(s) remade, %d removed" % (len(ok), len(gone)))
+    gn_flags = gnconfigs.resolve(tree, interp)
+    # Each file's exception/RTTI setting, from its own GN target.
+    tflags = gnconfigs.target_flags(tree, interp, tgts)
     res = check.run(tree, args.work, tgts, jobs=args.jobs,
                     plugins=not args.no_plugins, dev=args.dev_plugins,
-                    gn_flags=gn_flags)
+                    gn_flags=gn_flags, target_flags=tflags)
     summary = args.work / "check.json"
     old = {}
     if summary.exists() and args.targets:
@@ -292,15 +341,19 @@ def _reach(graph, start):
     return seen
 
 
-def classify(r, graph, gen_dir):
+def classify(r, graph, gen_dir, stand_in_mounts=None):
     """(status, detail, stand-ins) for one check result. The stand-ins are
     the ones the file's include closure (over-approximated, like the scan)
-    reaches: marked grit headers and the mirror-HEAD repositories' headers.
-    The toolchain-wide substitutes (README) apply to every file."""
+    reaches: grit headers marked STAND-IN, and the subprojects whose tree is
+    not the pinned one (`stand_in_mounts`, {mount: label}, from
+    sources.stand_in_mounts). The toolchain-wide substitutes (README) apply
+    to every file."""
     errs = [d for d in r["diags"] if "error" in d["kind"]]
     missing = [d for d in errs if d["kind"] == "fatal error" and
                "file not found" in d["msg"]]
     stand_ins = []
+    grit = []
+    mounts = sorted((stand_in_mounts or {}).items())
     reach = _reach(graph, "src:" + r["target"])
     for n in reach:
         if n.startswith("gen:") and "/grit/" in n:
@@ -309,12 +362,13 @@ def classify(r, graph, gen_dir):
             except OSError:
                 head = ""
             if "STAND-IN" in head:
-                stand_ins.append("grit stand-in")
+                grit.append(n.rsplit("/", 1)[-1])
         else:
-            for mount in sorted(sources.HEAD_FALLBACK) + [
-                    "third_party/dom_distiller_js/dist"]:
+            for mount, label in mounts:
                 if n.startswith("src:" + mount + "/"):
-                    stand_ins.append(mount + " (mirror HEAD)")
+                    stand_ins.append(label)
+    if grit:
+        stand_ins.append("grit stand-in (%s)" % ", ".join(sorted(set(grit))))
     stand_ins = sorted(set(stand_ins))
     if missing:
         name = missing[0]["msg"].split("'")[1] if "'" in missing[0]["msg"] \
@@ -322,7 +376,7 @@ def classify(r, graph, gen_dir):
         return "not checked", "header not available here: " + name, \
             stand_ins
     if errs:
-        # With a mirror-HEAD repository in reach, an error can be the
+        # With a stand-in repository in reach, an error can be the
         # stand-in's (an API it changed): say so, for a human to judge.
         return "ERRORS", "%d error(s)%s" % (
             len(errs), "; reaches " + ", ".join(stand_ins)
@@ -337,10 +391,11 @@ def cmd_report(args):
     graph_path = args.work / "graph.json"
     graph = json.loads(graph_path.read_text()) if graph_path.exists() else {}
     gen_dir = args.work / "chromium" / "src" / sources.OUT_REL / "gen"
+    mounts = sources.stand_in_mounts(args.work)
     counts = {}
     rows = []
     for r in res:
-        status, detail, _ = classify(r, graph, gen_dir)
+        status, detail, _ = classify(r, graph, gen_dir, mounts)
         counts[status] = counts.get(status, 0) + 1
         warns = sum(1 for d in r["diags"] if d["kind"] == "warning")
         rows.append((r["target"], status, detail, warns))

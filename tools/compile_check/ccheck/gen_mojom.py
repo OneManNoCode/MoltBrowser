@@ -13,6 +13,12 @@
    headers, the message ids and the chromium (and, when asked for, blink)
    variant, exactly as the GN mojom() template invokes it (minus export
    macros, which are empty in a static build, and message-id scrambling).
+
+Outputs are keyed by content (mojom_stamps.json): the .mojom and every file
+it imports, transitively, the typemaps and the target's enabled_features.
+refresh() regenerates every output whose key changed (an edited .mojom, an
+edited import, a typemap change) and deletes the outputs of a .mojom that
+is gone, so stale bindings are never compiled against.
 """
 import hashlib
 import json
@@ -213,6 +219,97 @@ def import_closure(tree, gen_dir, roots, produce=None):
     return seen
 
 
+def _read_mojom(tree, gen_dir, p):
+    data = tree.read(p)
+    if data is None and (Path(gen_dir) / p).exists():
+        data = (Path(gen_dir) / p).read_bytes()
+    return data
+
+
+def closure_hash(tree, gen_dir, p, memo):
+    """sha1 over the content of `p` and, transitively, of every .mojom it
+    imports (None if `p` itself can't be read). An import that can't be
+    read counts as such, so its appearing later changes the hash."""
+    if p in memo:
+        return memo[p]
+    memo[p] = "cycle"  # a (malformed) import cycle ends here
+    data = _read_mojom(tree, gen_dir, p)
+    if data is None:
+        memo[p] = None
+        return None
+    h = hashlib.sha1(hashlib.sha1(data).digest())
+    for imp in sorted(set(IMPORT_RE.findall(data.decode("utf-8",
+                                                        "replace")))):
+        h.update(b"\0" + imp.encode() + b"=" + str(
+            closure_hash(tree, gen_dir, imp, memo)).encode())
+    memo[p] = h.hexdigest()
+    return memo[p]
+
+
+def typemap_hash(index):
+    return hashlib.sha1(json.dumps(index.typemaps, sort_keys=True)
+                        .encode()).hexdigest()
+
+
+def stamp_key(index, p, closure, tm_hash):
+    """What a .mojom's outputs depend on: its import closure's content, the
+    typemaps, its target's enabled_features."""
+    feats = sorted(index.mojoms.get(p, {}).get("enabled_features", []))
+    return "%s:%s:%s" % (closure, tm_hash, hashlib.sha1(
+        "\0".join(feats).encode()).hexdigest()[:12])
+
+
+def outputs_of(gen_dir, p):
+    """The generated files of one .mojom (foo.mojom.h, foo.mojom-*.h, ...,
+    foo.mojom-module)."""
+    d = Path(gen_dir) / p
+    base = d.name
+    if not d.parent.is_dir():
+        return []
+    return sorted(f for f in d.parent.iterdir()
+                  if f.name.startswith((base + ".", base + "-")))
+
+
+def stale(tree, index, work, gen_dir):
+    """({mojom: variants} whose outputs are out of date, [mojoms whose
+    source is gone])."""
+    stamp_path = Path(work) / "mojom_stamps.json"
+    stamps = json.loads(stamp_path.read_text()) if stamp_path.exists() \
+        else {}
+    tm_hash = typemap_hash(index)
+    memo = {}
+    out, gone = {}, []
+    for p, have in sorted(stamps.items()):
+        c = closure_hash(tree, gen_dir, p, memo)
+        if c is None:
+            gone.append(p)
+            continue
+        if have.get("key") != stamp_key(index, p, c, tm_hash):
+            out[p] = set(have.get("v", ["chromium"]))
+    return out, gone
+
+
+def refresh(tree, index, work, gen_dir, produce=None):
+    """Regenerates every stamped .mojom whose key changed and removes the
+    outputs of one whose source is gone. Returns (regenerated, removed,
+    {mojom: reason})."""
+    want, gone = stale(tree, index, work, gen_dir)
+    stamp_path = Path(work) / "mojom_stamps.json"
+    if gone:
+        stamps = json.loads(stamp_path.read_text())
+        for p in gone:
+            for f in outputs_of(gen_dir, p):
+                f.unlink()
+            stamps.pop(p, None)
+            log("mojom: %s is gone; removed its outputs" % p)
+        stamp_path.write_text(json.dumps(stamps, indent=1, sort_keys=True))
+    if not want:
+        return [], gone, {}
+    log("mojom: %d stale output set(s), regenerating" % len(want))
+    ok, failed = generate(tree, index, work, gen_dir, want, produce=produce)
+    return ok, gone, failed
+
+
 def _py(script, args, cwd):
     return subprocess.run([sys.executable, "-E", "-s", str(script)] + args,
                           cwd=cwd, capture_output=True, text=True)
@@ -242,15 +339,20 @@ def generate(tree, index, work, gen_dir, wanted, produce=None):
     stamp_path = work / "mojom_stamps.json"
     stamps = json.loads(stamp_path.read_text()) if stamp_path.exists() \
         else {}
-    tm_hash = hashlib.sha1(json.dumps(index.typemaps, sort_keys=True)
-                           .encode()).hexdigest()
+    tm_hash = typemap_hash(index)
+    memo = {}
     todo = []
     for p, data in sorted(files.items()):
         want_v = sorted(wanted.get(p, {"chromium"}) | {"chromium"})
-        key = hashlib.sha1(data).hexdigest() + ":" + tm_hash
+        key = stamp_key(index, p, closure_hash(tree, gen_dir, p, memo),
+                        tm_hash)
         have = stamps.get(p, {})
-        if have.get("key") == key and set(want_v) <= set(have.get("v", [])):
+        if have.get("key") == key and set(want_v) <= set(have.get("v", [])) \
+                and outputs_of(gen_dir, p):
             continue
+        # Keep variants generated before (a blink header someone
+        # includes stays fresh too).
+        want_v = sorted(set(want_v) | set(have.get("v", [])))
         todo.append((p, want_v, key))
     if not todo:
         return [], failed
@@ -273,7 +375,11 @@ def generate(tree, index, work, gen_dir, wanted, produce=None):
     r = _py(parser, args, cwd=str(work))
     if r.returncode != 0:
         log(r.stderr[-3000:])
-        raise RuntimeError("mojom parser failed")
+        for p, _, _ in todo:
+            _drop(gen_dir, stamps, p)
+        stamp_path.write_text(json.dumps(stamps, indent=1, sort_keys=True))
+        raise RuntimeError("mojom parser failed: " + (
+            r.stderr.strip().splitlines() or ["?"])[-1][:300])
     bytecode = gen_dir / "mojo" / "public" / "tools" / "bindings"
     if not (bytecode / "cpp_templates.zip").exists():
         bytecode.mkdir(parents=True, exist_ok=True)
@@ -329,5 +435,15 @@ def generate(tree, index, work, gen_dir, wanted, produce=None):
     for p, v, key in todo:
         if p in ok:
             stamps[p] = {"key": key, "v": v}
+        else:
+            _drop(gen_dir, stamps, p)
     stamp_path.write_text(json.dumps(stamps, indent=1, sort_keys=True))
     return sorted(ok), failed
+
+
+def _drop(gen_dir, stamps, p):
+    """Outputs that could not be regenerated go: a check then reports the
+    header as missing instead of compiling against old bindings."""
+    for f in outputs_of(gen_dir, p):
+        f.unlink()
+    stamps.pop(p, None)

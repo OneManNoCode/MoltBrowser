@@ -9,6 +9,7 @@ blink_python_runner, ...) is run the way ninja would: from the build
 directory, with its response file written out. Its inputs and the Python
 packages generator scripts commonly import are fetched first.
 """
+import json
 import os
 import shlex
 import subprocess
@@ -291,7 +292,36 @@ def run_action(tree, interp, t, depth=0):
         Path(rsp.name).unlink()
     if r.returncode != 0:
         return "%s failed: %s" % (t, (r.stderr or r.stdout)[-600:])
+    _record_inputs(tree, interp, t, need)
     return None
+
+
+GEN_INPUTS = "gen_inputs.json"
+
+
+def _record_inputs(tree, interp, t, need):
+    """Remembers which subprojects an action's outputs were made from
+    (<work>/gen_inputs.json, {gen path: [mounts]}), so a subproject whose
+    source changes can drop them (sources.SourceTree._record)."""
+    mounts = sorted({m for m in (tree.mount_of(p) for p in need) if m})
+    if not mounts:
+        return
+    outs = []
+    for o in t.get("outputs") or []:
+        if isinstance(o, str):
+            if t.func == "action_foreach":
+                o = foreach_expand(o, t.foreach_source, False)
+            a = interp.abspath(o, {"dir": t.path})
+            if a.startswith(gn.OUT + "/gen/"):
+                outs.append(a[len(gn.OUT) + 5:])
+    f = Path(tree.work) / GEN_INPUTS
+    try:
+        data = json.loads(f.read_text())
+    except (OSError, ValueError):
+        data = {}
+    for o in outs:
+        data[o] = mounts
+    f.write_text(json.dumps(data, indent=0, sort_keys=True))
 
 
 def produce(tree, interp, gen_rels, depth=0, hint=None):

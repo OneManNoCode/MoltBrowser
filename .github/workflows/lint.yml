@@ -176,6 +176,18 @@ jobs:
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
 
+  compile-check-harness:
+    # The harness's own logic, offline. The compile check itself needs hours
+    # and about 2 GB, so it runs on a developer machine, not here.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tools/compile_check/compile_check_test.py
+        run: python3 tools/compile_check/compile_check_test.py -v
+
   leak-test-kit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
