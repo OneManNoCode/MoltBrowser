@@ -979,7 +979,7 @@ Status: implemented behind the GN switch `molt_llama_vulkan` (October 2026), whi
 ### 11.1 Findings in one page
 
 1. **Build.** ggml-vulkan needs the Vulkan headers (`vulkan.hpp`), SPIRV-Headers (`spirv.hpp`), a host tool (`vulkan-shaders-gen`) and a GLSL compiler with glslc's command line. Chromium 152 has every input except glslc: `third_party/vulkan-headers`, `vulkan-loader`, `glslang` (with a `glslang_validator` executable), `spirv-tools` and `spirv-headers` are in DEPS; shaderc is not.
-2. **Shaders are built from source, not vendored**, with Chromium's own glslang and SPIRV-Tools through a small glslc-compatible host tool (§11.2). The output is about 31 MB of SPIR-V or more, embedded in the binary, so the switch costs binary size, not only build time.
+2. **Shaders are built from source, not vendored**, with Chromium's own glslang and SPIRV-Tools through a small glslc-compatible host tool (§11.2). The output is about 40 MB of SPIR-V (§11.8), embedded in the binary, so the switch costs binary size, not only build time.
 3. **The loader is opened at run time.** ggml-vulkan uses `vkGetInstanceProcAddr` and `vkGetPhysicalDeviceFeatures2` as link-time symbols, which would make the whole browser binary depend on `libvulkan.so.1` / `vulkan-1.dll`. A local patch takes them from a loader opened at run time (§11.3).
 4. **Linux sandbox:** the seccomp policy already allows what Vulkan drivers need, but on desktop Linux the broker lets in only NVIDIA's driver. Mesa (every Intel and AMD GPU on a stock distro) needs a few broker additions, granted only to processes the browser launches for the GPU (§11.4).
 5. **Windows sandbox:** this sandbox type allows only Microsoft-signed DLLs once it locks down, so the Vulkan loader and the vendor driver must be loaded before that. Our service has no pre-lockdown step; adding one is an upstream content change that can only be designed with a Windows GPU at hand. Until then a Windows build with the switch on runs on the CPU (§11.4).
@@ -1044,7 +1044,7 @@ Status: implemented behind the GN switch `molt_llama_vulkan` (October 2026), whi
 
 **Which device.** ggml-vulkan's default (no `GGML_VK_VISIBLE_DEVICES`) takes every discrete and integrated GPU with 16-bit storage, drops duplicates (one GPU through two drivers: RADV preferred over AMDVLK, and so on), and only if none is left the first non-CPU device; it never picks a CPU-type device (lavapipe, llvmpipe, SwiftShader). It already works around specific driver bugs itself (old AMD Windows drivers, Intel Windows driver ranges, cooperative matrices only where they are fast). MoltBrowser adds a policy, a pure function over the properties ggml reads (vendor, device type, driver id, driver and API version, device-local memory):
 
-- refused: CPU-type devices, and software drivers by driver id (llvmpipe, SwiftShader) whatever type they report; Dozen (Vulkan over D3D12); virtual GPUs; API versions below 1.2 (ggml's own minimum); less than 2 GiB of device-local memory;
+- refused: CPU-type devices, and software drivers by driver id (llvmpipe, SwiftShader) whatever type they report; drivers layered on another API or forwarding from a VM by driver id (Dozen over D3D12, MoltenVK and KosmicKrisp over Metal, Venus and gfxstream, Vulkan SC emulation); virtual and "other" device types; API versions below 1.2 (ggml's own minimum); less than 2 GiB of device-local memory;
 - a table of (vendor, driver id, driver version range) entries for drivers found broken in testing, empty until there is evidence;
 - preferred: discrete over integrated, then the most free memory. One device only: a model is never split across GPUs.
 
@@ -1097,7 +1097,7 @@ crash / hang / memory kill while on the GPU:
 - `source_set("llama_guard")` (always built; with exceptions): `chromium/llama_guard.{h,cc}`, plus `:ggml_vulkan` and `MOLT_LLAMA_VULKAN` with the switch.
 - `//chrome/services/molt_ai/inference/public:buildflags` (`MOLT_LLAMA_VULKAN`) for the browser.
 
-**llama.cpp patches** (README.chromium): `ggml-vulkan.cpp` initializes its dispatcher from `ggml_vk_moltbrowser_get_instance_proc_addr()` under `GGML_VULKAN_MOLTBROWSER`, and seven direct Vulkan calls (here and in `ggml-vulkan-buffers.cpp`) go through the dispatcher. Nothing else in llama.cpp changed; the generator is upstream's.
+**llama.cpp patches** (README.chromium): `ggml-vulkan.cpp` initializes its dispatcher from `ggml_vk_moltbrowser_get_instance_proc_addr()` under `GGML_VULKAN_MOLTBROWSER`, and the eight places that call Vulkan directly (`vkGetInstanceProcAddr` twice, `vkGetDeviceProcAddr`, `vkGetPhysicalDeviceFeatures2` three times, and `vkCmdCopyBuffer` twice in `ggml-vulkan-buffers.cpp`) go through the dispatcher. Nothing else in llama.cpp changed; the generator is upstream's.
 
 **Service:**
 
@@ -1114,3 +1114,52 @@ crash / hang / memory kill while on the GPU:
 **Sandbox (Linux):** `content/utility/on_device_model/on_device_model_sandbox_init.cc` (imported from 152, then hooked): `PreSandboxHook` passes its broker command set and file list through `MaybeAddMoltGpuInferencePermissions()` (`molt_gpu_inference_sandbox_linux.{h,cc}`, listed in that directory's imported BUILD.gn), which returns at once without `--molt-inference-gpu`. With it: read-only `/dev/dri`; read-write `/dev/dri/renderD128`–`137` and read-only `/sys/dev/char/<major>:<minor>/` for each present one; `intel_icd.json` and `radeon_icd.json` in both ICD directories; brokered `readlink`.
 
 **Windows:** nothing beyond the build. Without a pre-lockdown step the loader or the ICD can't load after lockdown, so the service reports `kNoDevice` and loads on the CPU.
+
+### 11.8 How it was tested
+
+The machine this was built on has no Chromium checkout and no GPU: 4 cores, and Mesa 25.2's lavapipe (llvmpipe), a CPU rasterizer that the device policy refuses, as the only Vulkan device. So the GN targets were generated and built with the real GN binary in a stub source root, the Vulkan path ran end to end on lavapipe with a test-only override, failures were injected with a Vulkan layer, and the rest was syntax-checked against stand-ins.
+
+**In the repository:**
+
+- `engine/gpu_offload_unittest.cc` (12 tests, std-only). Verdicts: usable at exactly the minimums and without a driver id; software drivers by type and by driver id, whatever type they claim; the layered drivers; virtual, "other" and unknown types; API 1.1 with any patch or variant bits; one byte under the memory minimum; blocklist ranges, inclusive, per vendor and driver. The choice: no device, lavapipe never, discrete before integrated, then free memory (capped at the heap), ties keep the first, refused devices skipped wherever they are. The plan: the whole model, a partial offload within the reserves, never more than the repeating layers, under a quarter of the layers, an unknown layer count, too little memory, an empty file, sizes that would overflow; and the context cap.
+- `runtime/stream_validator_unittest.cc`: `IsValidGpuDescription`; `GpuFallbackGuard` (one failure turns the GPU off for that model, two for every model).
+- `runtime/inference_process_host_unittest.cc` (6 new): a GPU load is launched with `--molt-inference-gpu` and described as on the GPU; a GPU description nobody asked for is a violation; a crash on the GPU and a hang while loading for it are GPU failures; a crash after the service fell back to the CPU, and a death while idle, are not.
+
+**Run here:**
+
+- *GN.* `gn gen --check` passes with the switch off and on. The stub root holds the worktree's `//third_party/llama_cpp` and the engine's std-only targets; glslang, SPIRV-Tools, SPIRV-Headers and Vulkan-Headers at the revisions 152 pins (checked against DEPS) with their own BUILD.gn files; Chromium-like flags (clang, libc++ with extensive hardening, C++23 after the targets' own `-std`, no exceptions or RTTI by default). Building it found one bug, fixed: a native build's host tool was passed by bare name and looked up in `PATH`.
+- *Build.* With the switch on, the host glslang and SPIRV-Tools, `ggml_vk_glslc`, the generator, the feature checks, the 155 shader files, ggml-vulkan, llama.cpp and the engine build from scratch in 16 minutes with two jobs on 4 cores. The generated `mul_mm.comp.cpp` (79 MB) needs about 2.4 GB of compiler memory. Shaders: 1,569 variants, **40.2 MB of SPIR-V**, 174 MB of generated C++, 80 s of generation. Every variant passes the pinned SPIRV-Tools validator. A test program that links the engine and llama.cpp grows from 6.4 MB to 48.3 MB with the switch on (41.6 MB more text: the SPIR-V and ggml-vulkan's code).
+- *Linking.* With the switch on, binaries have no `DT_NEEDED` on the Vulkan loader and no undefined `vk*` symbol. In the default environment ggml lists no device (it skips CPU-type devices); with `GGML_VK_VISIBLE_DEVICES=0` it lists lavapipe (type CPU, driver id 13, API 1.4); with a missing ICD, none.
+- *Unit tests.* The engine directory's std-only suite (153 tests, the new ones included) passes in both configurations; with the switch off, a GPU request reports `kNotBuilt` and gives the same text as the CPU; the `stream_validator` tests pass with GCC `-Werror` and with clang ASan and UBSan.
+- *End to end.* `LlamaEngine` built as the service builds it, on three tiny models (a ChatML llama, and llama.cpp's random llama and Qwen3 test models), three greedy chat turns each with KV reuse:
+
+  | Case | How | Result, all three models |
+  |---|---|---|
+  | CPU | `use_gpu = false` | the baseline text |
+  | No device | `use_gpu`, default environment | `kNoDevice`, CPU, same text |
+  | Refused | lavapipe visible | `kNoUsableDevice`, CPU, same text |
+  | On the GPU | lavapipe let through by `SetAllowSoftwareGpuForTesting` | backend `vulkan`, `kOn`, every layer, same text, same KV reuse |
+  | Allocation failure | device allocations after the first fail | `kLoadFailed`, loaded again on the CPU in the same process, same text |
+  | Lost while loading | device lost at the first submit | `kLoadFailed`, CPU, same text |
+  | Lost mid-answer | device lost after 3/4 of a clean run's submits | that turn ends `kBackendFailed`, its text up to then identical; no crash, nothing freed |
+  | Lost early | device lost after 400 submits | the second turn ends `kBackendFailed` after 8 tokens, the third at once with none |
+
+  The failures come from a test-only Vulkan layer (kept outside the repository) that returns `VK_ERROR_DEVICE_LOST` from every queue submit and fence wait after N submits, or `VK_ERROR_OUT_OF_DEVICE_MEMORY` from device allocations after N. Clean runs make 828 to 897 submits and 7 or 8 allocations.
+- *Numerics.* One prompt's last-token logits on the CPU and on lavapipe (shaders from `ggml_vk_glslc`): largest absolute difference 0.000886, 0.000010 and 0.000021 on the three models, cosine at least 0.9999996, the same top token.
+- *Official builds.* Chromium's official desktop builds drop unwind tables (`exclude_unwind_tables`: `-fno-unwind-tables -fno-asynchronous-unwind-tables`), and an exception needs them in every frame between the throw and the catch. Built that way, the cases above (lost while loading, lost after 400 and after 700 submits, allocation failure) give the same results: code built with exceptions keeps the unwind entries of functions that can throw, and every frame from ggml-vulkan up to `llama_guard` is such code.
+- *Static checks.* The mojom with upstream's parser and generator; the syntax of the service, `inference_process_host` and its test, `stream_validator`, and `browser_ai_runtime` (with `MOLT_LLAMA_VULKAN` 0 and 1) with clang and Chromium's flags against stand-ins; the sandbox hook and its helper against stand-ins of the broker types. `python3 tools/fuzz/molt_fuzz.py check` passes; no new parser of untrusted input (the layer count comes from ggml's GGUF parser, the one the model load already runs).
+
+**Needs a Chromium build:** all of the above with the real toolchains (ggml-vulkan and the generator under Chromium's clang and libc++, and clang-cl on Windows), `gn check` on the real tree (new edges: the content utility directory on `//sandbox/linux:sandbox_services`, the browser on `public:buildflags` and `//content/public/common`), the browser unit tests, and the hardware of §11.9.
+
+### 11.9 What is left
+
+- **Real GPUs, before the switch goes on.** Nothing has run on a hardware GPU. To verify: NVIDIA's driver and Mesa's RADV and ANV on desktop Linux, in the real sandbox (the broker additions of §11.4 come from reading upstream, libdrm and Mesa, not from a run); speed against the CPU; load time (no pipeline cache, below); a real device loss (a GPU reset) and a driver crash. The load log line shows `gpu_status` and `gpu_layers`.
+- **Windows:** the pre-lockdown step of §11.4. Until it exists, Windows runs models on the CPU with the switch on.
+- **A lasting GPU record and a setting.** GPU failures are remembered for the session, in memory: a driver that crashes at every load costs a crash per model per session (at most two per session). A record keyed on the driver version, and a user setting, belong with turning the switch on. The blocklist is empty until testing finds a broken driver.
+- **Pipeline cache.** No on-disk cache is reachable in the sandbox, so every load compiles the pipelines it uses. The browser could hand the service a pipeline-cache file per driver version.
+- **Binary size.** About 40 MB of SPIR-V in the one browser binary. Options: compress it and inflate it in the service on first use; leave out shader families for quantization types no catalog model uses; or ship it as a data file the service verifies.
+- **Memory on integrated GPUs.** There device memory is system memory; whether the footprint watchdog (§8) sees it depends on the driver. Not measured. A memory kill on the GPU counts as a GPU failure, so the worst case is a reload on the CPU.
+- **Image encoding.** A device lost while the projector encodes an image is caught by mtmd (§11.6), so that request ends with `kDecodeFailed`; the next decode reports `kBackendFailed`.
+- **Not planned:** embeddings on the GPU (the embedding model's process never asks); one model split across GPUs.
+- **Sanitizers over the Vulkan path.** ASan and UBSan ran over the std-only code, not over ggml-vulkan with a driver.
+- **CPUs without AVX2.** The CPU path, the fallback for every GPU failure, still requires AVX2 (`kUnsupportedCpu`). Choosing a CPU backend at run time (llama.cpp builds one per instruction set) is a separate follow-up.
