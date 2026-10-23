@@ -53,8 +53,8 @@ const listPoll = (id) =>
     fill(template('BuildToolListPollScript'), [JSON.stringify(id)]);
 // |tool| as SiteTool keeps it: the mark of the document that listed it
 // (|tool.doc|, MARK unless given), listed description, schema (or null),
-// the read-only hint, the form's fields (or null); |args| the JSON the
-// browser wrote.
+// the read-only and untrusted-content hints, the form's fields (or null);
+// |args| the JSON the browser wrote.
 const callScript = (id, origin, tool, args) =>
     fill(template('BuildToolCallScript'), [
       JSON.stringify(id),
@@ -62,7 +62,7 @@ const callScript = (id, origin, tool, args) =>
       JSON.stringify(origin), JSON.stringify(tool.name),
       JSON.stringify(tool.description),
       tool.schema === null ? 'null' : JSON.stringify(tool.schema),
-      tool.readOnly ? 'true' : 'false',
+      tool.readOnly ? 'true' : 'false', tool.untrusted ? 'true' : 'false',
       tool.form === null ? 'null' : JSON.stringify(tool.form),
       JSON.stringify(args), FORM_HELPERS]);
 const callPoll = (id) =>
@@ -263,6 +263,19 @@ const SEARCH = {
   await changed(Object.assign({}, SEARCH, {annotations: {readOnlyHint: false}}),
                 'changed');
   await changed(Object.assign({}, SEARCH, {annotations: undefined}), 'changed');
+  // ... or now says its answers may hold other people's content.
+  await changed(Object.assign({}, SEARCH, {annotations:
+      {readOnlyHint: true, untrustedContentHint: true}}), 'changed');
+  {
+    // A tool listed with that hint, called as listed.
+    const flagged = Object.assign({}, SEARCH, {annotations:
+        {readOnlyHint: true, untrustedContentHint: true}});
+    const q = page(ORIGIN, [flagged]);
+    q.run(callScript('c3b', ORIGIN,
+                     Object.assign({}, listed, {untrusted: true}), '{}'));
+    await settle();
+    assert.strictEqual(q.run(callPoll('c3b')).state, 'done');
+  }
   // A same-named form: listed without one, called with one.
   {
     const q = page(ORIGIN, [SEARCH], {html:

@@ -681,8 +681,8 @@ prompt is byte for byte what it was.
   its frames that count, and the script checks the document's mark.
 - **The same tool.** The script calls the tool only if `getTools()` still
   lists it exactly as observed: the same description, input schema,
-  read-only hint and, for a `<form toolname>`, the same controls (type and
-  autocomplete). A page that re-registers a name between the observation
+  read-only and untrusted-content hints and, for a `<form toolname>`, the
+  same controls (type and autocomplete) (§2.7.13). A page that re-registers a name between the observation
   and the call (a read-only tool swapped for one that changes things, a
   password field added to a form) gets "Not run: the page changed that tool
   since it was listed."
@@ -866,6 +866,54 @@ frame has the same origin, so it is the same site's own script, and
 §2.7.9's judgement holds.
 
 **MoltNet:** §2.7.10.
+
+#### 2.7.13 `toolchange`: not listened for
+
+Decision: the agent and the chat don't listen for `toolchange`. The
+question was whether a page could replace a tool between the user's
+approval and the call (a read-only tool swapped for one that changes
+things, another schema or description) without the agent noticing. What
+the call script compares, at the call, after any approval:
+
+| Compared | How |
+|---|---|
+| the document | its mark (§2.7.12), and the browser's `WeakDocumentPtr` |
+| the origin | `location.origin`, before and after `getTools()` |
+| the tool | `getTools()` again: the same name, owned by this window and origin, the same description, input schema, `readOnlyHint`, `untrustedContentHint` and, for a `<form toolname>`, the same controls (type and autocomplete) |
+
+Not compared: `title` (never read), `exposedTo` (it can't change what a
+same-origin caller sees), and the `execute` callback itself.
+
+The cases:
+
+1. **Replaced before the call** (between the listing, or the approval,
+   and the call): caught. The comparison runs at the call, so it sees the
+   replacement whenever it happened; a listener could only say, later,
+   that something changed.
+2. **Replaced during the call**: `executeTool()` runs in the same task as
+   the comparison, but the execution request goes to the browser and
+   back, and Blink looks the tool up by name only when it arrives
+   (§2.7.12); the page's tasks can run in between. A listener can't close
+   this: `toolchange` is queued after the registration, asynchronously,
+   while the call is already on its way. Nothing in 152 lets a caller pin
+   the tool it compared. It gives the page nothing new either: the tool is
+   the site's own script, which can do anything with the arguments
+   whatever it registers, and the user approved the name, the site and
+   the arguments, which don't change.
+3. **The same tool registered again** (identical metadata, another
+   callback): only a listener would see it, and it doesn't matter: a site
+   changes what its callback does without registering again (the callback
+   reads the page's state), so the callback was never something the agent
+   checks.
+4. **A new tool** appears at the next observation, which follows every
+   action. Listing again mid-step, while the model is answering, would
+   only make the list differ from what the model was shown.
+
+One gap was real, if small: `untrustedContentHint` wasn't compared, so a
+tool listed without it could be called after the page set it, and its
+answer would reach the model without the site's warning that it may hold
+other people's content (§2.7.9). The comparison now covers every field the
+agent read when it listed the tool.
 
 ### 2.8 Planner
 
@@ -2144,8 +2192,8 @@ the draft is built to be harmless until a person has looked at it:
     clicked).
   - *A form tool's answer on the next page* (`application/ld+json`): the
     page is observed instead.
-  - *`toolchange`*: the list is read at each observation, so a tool
-    registered in between appears at the next one.
+  - *`toolchange`*: not listened for, on purpose (§2.7.13); the list is
+    read at each observation, and every call compares the tool again.
   - *Wider schemas*: type lists, nested objects, `$ref`, `pattern`,
     `const`, `oneOf` and bounds the grammar can't express skip the tool.
   - *A trial enabled late*: Blink installs an origin-trial feature enabled

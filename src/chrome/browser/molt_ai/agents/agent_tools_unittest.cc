@@ -1093,10 +1093,14 @@ TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
   EXPECT_NE(call.find("args = \"{\\\"q\\\":\\\"');alert(1);//\\\"}\""),
             std::string::npos);
   EXPECT_NE(call.find("readOnly = true"), std::string::npos);
+  EXPECT_NE(call.find("untrusted = false"), std::string::npos);
+  EXPECT_NE(call.find("(a.untrustedContentHint === true) !== untrusted"),
+            std::string::npos);
   EXPECT_NE(call.find("form = null"), std::string::npos);
   EXPECT_NE(call.find("schema = \"{\\\"properties\\\""), std::string::npos);
 
   tool.read_only = false;
+  tool.untrusted_output = true;
   tool.form_backed = true;
   tool.listed_form_fields = {{"email", "a\"b"}};
   tool.listed_input_schema.reset();
@@ -1105,6 +1109,7 @@ TEST(AgentToolsTest, ScriptsQuotePageAndModelTextAsJson) {
   EXPECT_NE(form_call.find("form = [[\"email\",\"a\\\"b\"]]"),
             std::string::npos);
   EXPECT_NE(form_call.find("readOnly = false"), std::string::npos);
+  EXPECT_NE(form_call.find("untrusted = true"), std::string::npos);
   EXPECT_NE(form_call.find("schema = null"), std::string::npos);
 }
 

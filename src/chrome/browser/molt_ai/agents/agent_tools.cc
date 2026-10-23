@@ -1303,9 +1303,10 @@ std::string BuildToolCallScript(std::string_view request_id,
   // The tool as it was listed: the call runs only in the document that
   // listed it (its mark: a document the frame navigated to, or another
   // document reusing the frame's host, has none or another), and only if
-  // getTools() still shows exactly that tool (a page can't swap a
-  // read-only tool for another under the same name between the listing
-  // and the call).
+  // getTools() still shows exactly that tool: every field the agent read
+  // when it listed it (a page can't swap a read-only tool for another
+  // under the same name between the listing and the call, nor drop the
+  // untrusted-content hint its answer is shown with).
   std::string form = "null";
   if (tool.form_backed) {
     base::ListValue fields;
@@ -1324,7 +1325,8 @@ std::string BuildToolCallScript(std::string_view request_id,
       R"JS((() => {
   try {
     const id = %s, doc = %s, origin = %s, name = %s, desc = %s,
-          schema = %s, readOnly = %s, form = %s, args = %s;
+          schema = %s, readOnly = %s, untrusted = %s, form = %s,
+          args = %s;
     if (globalThis.__moltToolDocument !== doc) return 'document_changed';
     if (location.origin !== origin) return 'origin_changed';
     const mc = window.isSecureContext ? document.modelContext : undefined;
@@ -1346,6 +1348,7 @@ std::string BuildToolCallScript(std::string_view request_id,
           (typeof t.inputSchema === 'string' ? t.inputSchema : null) !==
               schema ||
           (a.readOnlyHint === true) !== readOnly ||
+          (a.untrustedContentHint === true) !== untrusted ||
           !sameFields(form, f ? fieldsOf(f) : null)) {
         st.state = 'changed';
         return;
@@ -1365,7 +1368,8 @@ std::string BuildToolCallScript(std::string_view request_id,
       JsString(request_id).c_str(), JsString(tool.document).c_str(),
       JsString(origin).c_str(), JsString(tool.name).c_str(),
       JsString(tool.listed_description).c_str(),
-      schema.c_str(), tool.read_only ? "true" : "false", form.c_str(),
+      schema.c_str(), tool.read_only ? "true" : "false",
+      tool.untrusted_output ? "true" : "false", form.c_str(),
       JsString(arguments_json).c_str(), kFormHelpers);
 }
 
