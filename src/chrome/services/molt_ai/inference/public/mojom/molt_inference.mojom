@@ -112,7 +112,8 @@ enum GpuStatus {
 
 enum LoadModelStatus {
   kOk,
-  // The CPU lacks the instruction set the build needs (AVX2/FMA on x64).
+  // The CPU lacks the instruction set the build needs (on x64, x86-64-v2:
+  // SSE4.2 and POPCNT; better CPUs run AVX or AVX2 kernels).
   kUnsupportedCpu,
   // Not a GGUF llama.cpp can load, wrong size, or unreadable.
   kInvalidModelFile,

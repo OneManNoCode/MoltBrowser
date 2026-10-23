@@ -250,8 +250,8 @@ class BrowserAIRuntime {
   void Shutdown();
 
   // Empty when on-device inference can run on this machine. Otherwise a
-  // user-facing explanation, e.g. the x64 build uses AVX2/FMA and the CPU
-  // lacks them (calling into ggml would crash the browser with SIGILL).
+  // user-facing explanation, e.g. an x64 CPU below x86-64-v2 (SSE4.2,
+  // POPCNT), the lowest level the inference service's kernels are built for.
   std::string GetLocalInferenceUnsupportedReason() const;
 
   // Registers a critical-memory-pressure listener that unloads the model
