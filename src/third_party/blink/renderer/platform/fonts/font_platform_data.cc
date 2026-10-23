@@ -285,9 +285,13 @@ WebFontRenderStyle FontPlatformData::QuerySystemRenderStyle(
   // TODO(crbug.com/1327530): For now, do this only for Linux/Cros to minimize
   // the impact, and because they're the only platform that adjust these
   // settings by different device scale factors. See the doc link in the crbug.
-  // MoltBrowser: MoltNet renders all text so (molt_fingerprinting).
-  if ((text_rendering == TextRenderingMode::kGeometricPrecision ||
-       GetUniformTextRendering().geometric_precision) &&
+  // MoltBrowser: MoltNet renders all text so, anti-aliased whatever the
+  // desktop's settings (molt_fingerprinting).
+  const bool uniform = GetUniformTextRendering().geometric_precision;
+  if (uniform) {
+    result.use_anti_alias = 1;
+  }
+  if ((text_rendering == TextRenderingMode::kGeometricPrecision || uniform) &&
       result.use_anti_alias) {
     result.use_subpixel_positioning = true;
     result.use_hinting = false;

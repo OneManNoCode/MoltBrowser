@@ -31,10 +31,16 @@
 #include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
 #include "third_party/blink/renderer/platform/testing/font_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
+#include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/skia/include/core/SkFont.h"
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#include "third_party/blink/public/platform/linux/web_sandbox_support.h"
+#include "third_party/blink/public/platform/web_font_render_style.h"
+#endif
 
 namespace blink::molt_fingerprinting {
 namespace {
@@ -355,20 +361,80 @@ TEST_F(MoltNetTextTest, MoltNetRenderersMeasureUnhinted) {
   const SimpleFontData* pinned = Roboto(16)->PrimaryFont();
   ASSERT_TRUE(pinned);
   const WebFontRenderStyle& style = pinned->PlatformData().GetFontRenderStyle();
-  if (upstream.use_anti_alias) {
-    EXPECT_EQ(style.use_subpixel_positioning, 1);
-    EXPECT_EQ(style.use_hinting, 0);
-    EXPECT_EQ(style.hint_style, 0);
-    const SkFont sk_font = pinned->PlatformData().CreateSkFont();
-    EXPECT_TRUE(sk_font.isLinearMetrics());
-    EXPECT_TRUE(sk_font.isSubpixel());
-    EXPECT_EQ(sk_font.getHinting(), SkFontHinting::kNone);
-  }
+  EXPECT_EQ(style.use_anti_alias, 1);
+  EXPECT_EQ(style.use_subpixel_positioning, 1);
+  EXPECT_EQ(style.use_hinting, 0);
+  EXPECT_EQ(style.hint_style, 0);
+  const SkFont sk_font = pinned->PlatformData().CreateSkFont();
+  EXPECT_TRUE(sk_font.isLinearMetrics());
+  EXPECT_TRUE(sk_font.isSubpixel());
+  EXPECT_EQ(sk_font.getHinting(), SkFontHinting::kNone);
 
   FontPlatformData::SetUniformTextRendering({});
   const SimpleFontData* after = Roboto(16)->PrimaryFont();
   ASSERT_TRUE(after);
   EXPECT_EQ(after->PlatformData().GetFontRenderStyle(), upstream);
+}
+
+// A desktop whose fontconfig turns anti-aliasing off and hints fully.
+class AliasedDesktop : public WebSandboxSupport {
+ public:
+  bool GetFallbackFontForCharacter(WebUChar32,
+                                   const char*,
+                                   gfx::FallbackFontData*) override {
+    return false;
+  }
+  bool MatchFontByPostscriptNameOrFullFontName(const char*,
+                                               gfx::FallbackFontData*) override {
+    return false;
+  }
+  void GetWebFontRenderStyleForStrike(const char*,
+                                      int,
+                                      bool,
+                                      bool,
+                                      float,
+                                      WebFontRenderStyle* style) override {
+    style->use_anti_alias = 0;
+    style->use_hinting = 1;
+    style->hint_style = 3;  // full
+    style->use_subpixel_positioning = 0;
+  }
+};
+
+class AliasedDesktopPlatform : public TestingPlatformSupport {
+ public:
+  WebSandboxSupport* GetSandboxSupport() override { return &desktop_; }
+
+ private:
+  AliasedDesktop desktop_;
+};
+
+// The uniform style doesn't depend on the desktop's anti-aliasing: with it
+// off, MoltNet renderers still measure (and draw) unhinted, anti-aliased.
+TEST_F(MoltNetTextTest, MoltNetRenderersIgnoreTheDesktopsAntiAliasing) {
+  const SimpleFontData* roboto = Roboto(16)->PrimaryFont();
+  ASSERT_TRUE(roboto);
+  const sk_sp<SkTypeface> typeface = roboto->PlatformData().TypefaceSp();
+  ScopedTestingPlatformSupport<AliasedDesktopPlatform> platform;
+  // A system font (one with a family name) asks the desktop.
+  auto style_now = [&typeface] {
+    return MakeGarbageCollected<FontPlatformData>(
+               typeface, "Roboto", 16, /*synthetic_bold=*/false,
+               /*synthetic_italic=*/false,
+               TextRenderingMode::kAutoTextRendering, ResolvedFontFeatures())
+        ->GetFontRenderStyle();
+  };
+
+  const WebFontRenderStyle desktop = style_now();
+  EXPECT_EQ(desktop.use_anti_alias, 0);
+  EXPECT_EQ(desktop.use_hinting, 1);
+
+  PinUniformTextRendering();
+  const WebFontRenderStyle style = style_now();
+  EXPECT_EQ(style.use_anti_alias, 1);
+  EXPECT_EQ(style.use_hinting, 0);
+  EXPECT_EQ(style.hint_style, 0);
+  EXPECT_EQ(style.use_subpixel_positioning, 1);
 }
 
 TEST_F(MoltNetTextTest, EmojiFamilyOnlyWhenInstalled) {

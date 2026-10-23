@@ -2042,9 +2042,15 @@ covers canvas text and element geometry alike, in documents and workers.
 It is process-wide in MoltNet renderers (fonts are shared by every frame
 and worker of a renderer), like the time zone and locale, so it also
 applies to the few internal pages a MoltNet window shows. Upstream applies
-geometricPrecision only to anti-aliased text, and so does MoltNet: with
-anti-aliasing turned off, unhinted text would be unreadable, so such
-users keep their own metrics. Windows and macOS are left as they are:
+geometricPrecision only to anti-aliased text; MoltNet applies it whatever
+fontconfig says, and draws text anti-aliased even where the desktop turns
+anti-aliasing off (for every font, or for some fonts or sizes), since
+unhinted text without it would be unreadable (turning it on is only about
+looks: unhinted, Skia measures the same with or without it). One
+fontconfig setting can still change metrics: embedded bitmaps, for fonts
+that carry bitmap strikes (some CJK fallback fonts; none known on the Linux
+allow-list), whose ink boxes then come from the bitmaps at those sizes.
+Windows and macOS are left as they are:
 DirectWrite and Core Text take no hinting style from the desktop. On
 Windows, turning font smoothing off (on by default) puts glyphs on whole
 pixels; that is left alone for the same reason.
@@ -2104,9 +2110,10 @@ Windows and macOS have one emoji font per release already.
   which emoji exist. Tor Browser avoids that on Linux by shipping its own
   fonts; MoltBrowser doesn't (see the follow-ups).
 * **Per machine** of one OS release: fonts missing from the allow-list
-  (removed by an administrator, minimal installs); Linux with
-  anti-aliasing off and Windows with font smoothing off (and possibly
-  ClearType tuning, unverified); on Linux, no Noto Color Emoji; installed
+  (removed by an administrator, minimal installs); Windows with font
+  smoothing off (and possibly ClearType tuning, unverified); on Linux, no
+  Noto Color Emoji, and fontconfig's embedded-bitmap setting for fonts
+  with bitmap strikes; installed
   fallback fonts for CJK, rare scripts and symbols (restricting fallback
   to the allow-list would turn CJK into boxes on Linux, whose list has no
   CJK font).
@@ -2129,7 +2136,8 @@ Windows and macOS have one emoji font per release already.
 
 * On Linux, text is unhinted at every scale factor, as Chrome draws it on
   high-density screens and as macOS does: on 1x screens a little softer
-  than with the desktop's hinting.
+  than with the desktop's hinting. A desktop that turns anti-aliasing off
+  gets anti-aliased text in MoltNet windows.
 * Canvas apps that lay text out from `measureText()` get widths within
   half a pixel: a canvas editor that places each word at the sum of
   rounded widths can drift by a pixel or two across a line, centred text
