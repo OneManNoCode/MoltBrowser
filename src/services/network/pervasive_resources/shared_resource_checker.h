@@ -52,6 +52,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) SharedResourceChecker {
       const std::optional<url::Origin>& top_frame_origin,
       base::optional_ref<const net::CookiePartitionKey> cookie_partition_key);
 
+  // MoltBrowser: no request of this network context is a shared resource,
+  // whatever the feature says (MoltNet: every HTTP cache entry stays keyed
+  // by top-level site). See services/network/network_context.cc.
+  void MoltDisableSharing() { enabled_ = false; }
+
  private:
   friend class SharedResourceCheckerTest;
 

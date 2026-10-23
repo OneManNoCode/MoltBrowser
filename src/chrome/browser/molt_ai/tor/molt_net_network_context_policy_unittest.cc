@@ -21,6 +21,11 @@ TEST(MoltNetNetworkContextPolicyTest, OtherProfilesKeepChromiumsBehaviour) {
   EXPECT_FALSE(settings.isolate_each_cert_fetch);
   EXPECT_FALSE(settings.basic_and_digest_auth_only);
   EXPECT_FALSE(settings.fresh_socks_isolation_password);
+  EXPECT_FALSE(settings.uncached_cert_verification);
+  EXPECT_FALSE(settings.no_shared_cache_entries);
+  EXPECT_FALSE(settings.hsts_top_level_navigations_only);
+  EXPECT_FALSE(settings.split_http_auth_cache);
+  EXPECT_FALSE(settings.block_private_state_tokens);
 }
 
 TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
@@ -29,6 +34,26 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
   EXPECT_TRUE(settings.isolate_each_cert_fetch);
   EXPECT_TRUE(settings.basic_and_digest_auth_only);
   EXPECT_TRUE(settings.fresh_socks_isolation_password);
+  EXPECT_TRUE(settings.uncached_cert_verification);
+  EXPECT_TRUE(settings.no_shared_cache_entries);
+  EXPECT_TRUE(settings.hsts_top_level_navigations_only);
+  EXPECT_TRUE(settings.split_http_auth_cache);
+  EXPECT_TRUE(settings.block_private_state_tokens);
+}
+
+// Private State Tokens: ProfileNetworkContextService asks this when it
+// creates a network context and when the anti-abuse content setting
+// changes. MoltNet always blocks them; every other profile gets exactly
+// Chromium's answer.
+TEST(MoltNetNetworkContextPolicyTest, PrivateStateTokensBlockedInMoltNet) {
+  EXPECT_TRUE(BlockPrivateStateTokensFor(/*is_moltnet_profile=*/true,
+                                         /*chromium_value=*/false));
+  EXPECT_TRUE(BlockPrivateStateTokensFor(/*is_moltnet_profile=*/true,
+                                         /*chromium_value=*/true));
+  EXPECT_FALSE(BlockPrivateStateTokensFor(/*is_moltnet_profile=*/false,
+                                          /*chromium_value=*/false));
+  EXPECT_TRUE(BlockPrivateStateTokensFor(/*is_moltnet_profile=*/false,
+                                         /*chromium_value=*/true));
 }
 
 bool IsUpperHex(const std::string& s) {
@@ -58,6 +83,8 @@ TEST(MoltNetNetworkContextPolicyTest, IsAConstantExpression) {
   static_assert(MoltNetNetworkContextSettingsFor(true).isolate_each_cert_fetch);
   static_assert(
       !MoltNetNetworkContextSettingsFor(false).basic_and_digest_auth_only);
+  static_assert(MoltNetNetworkContextSettingsFor(true).split_http_auth_cache);
+  static_assert(!BlockPrivateStateTokensFor(false, false));
 }
 
 // What ProfileNetworkContextService hands the network service and the
@@ -85,6 +112,9 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetParamsSetTheFlags) {
   ASSERT_TRUE(params.network_context->molt_socks_isolation_password);
   EXPECT_EQ(params.network_context->molt_socks_isolation_password->size(),
             32u);
+  EXPECT_TRUE(params.network_context->molt_uncached_cert_verification);
+  EXPECT_TRUE(params.network_context->molt_no_shared_cache_entries);
+  EXPECT_TRUE(params.network_context->molt_hsts_top_level_navigations_only);
 }
 
 // One password per network context: the hook runs once for each context
@@ -110,6 +140,16 @@ TEST(MoltNetNetworkContextPolicyTest, EachMoltNetContextGetsItsOwnPassword) {
   // Configuring the second context left the first one's alone.
   EXPECT_EQ(first_identity.network_context->molt_socks_isolation_password,
             first);
+  // And the new identity's context gets every per-site setting itself:
+  // nothing of it is carried over from the earlier context, whose state
+  // goes away with it (New Identity destroys the old profile, and its
+  // network context, before the new one is made).
+  EXPECT_TRUE(
+      second_identity.network_context->molt_uncached_cert_verification);
+  EXPECT_TRUE(second_identity.network_context->molt_no_shared_cache_entries);
+  EXPECT_TRUE(
+      second_identity.network_context->molt_hsts_top_level_navigations_only);
+  EXPECT_TRUE(second_identity.cert_verifier->molt_isolate_each_cert_fetch);
 }
 
 TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
@@ -119,6 +159,9 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->http_auth_static_network_context_params
                    ->molt_basic_and_digest_auth_only);
   EXPECT_FALSE(params.network_context->molt_socks_isolation_password);
+  EXPECT_FALSE(params.network_context->molt_uncached_cert_verification);
+  EXPECT_FALSE(params.network_context->molt_no_shared_cache_entries);
+  EXPECT_FALSE(params.network_context->molt_hsts_top_level_navigations_only);
 
   // And the hook writes them off for any other profile, even over a stale
   // value.
@@ -126,6 +169,9 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   params.network_context->http_auth_static_network_context_params
       ->molt_basic_and_digest_auth_only = true;
   params.network_context->molt_socks_isolation_password = "stale";
+  params.network_context->molt_uncached_cert_verification = true;
+  params.network_context->molt_no_shared_cache_entries = true;
+  params.network_context->molt_hsts_top_level_navigations_only = true;
   ApplyMoltNetNetworkContextSettings(/*is_moltnet_profile=*/false,
                                      *params.network_context,
                                      *params.cert_verifier);
@@ -134,6 +180,9 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
                    ->molt_basic_and_digest_auth_only);
   // The regular profile has no password of its own.
   EXPECT_FALSE(params.network_context->molt_socks_isolation_password);
+  EXPECT_FALSE(params.network_context->molt_uncached_cert_verification);
+  EXPECT_FALSE(params.network_context->molt_no_shared_cache_entries);
+  EXPECT_FALSE(params.network_context->molt_hsts_top_level_navigations_only);
 }
 
 }  // namespace

@@ -859,6 +859,10 @@ NetworkContext::NetworkContext(
 
   shared_resource_checker_ = std::make_unique<SharedResourceChecker>(
       cookie_manager_->cookie_settings());
+  // MoltBrowser: MoltNet keeps every cache entry keyed by top-level site.
+  if (params_->molt_no_shared_cache_entries) {
+    shared_resource_checker_->MoltDisableSharing();
+  }
 
   network_service_->RegisterNetworkContext(this);
 
@@ -2925,9 +2929,13 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
 
     // Whether the cert verifier is remote or in-process, we should wrap it in
     // caching and coalescing layers to avoid extra verifications and IPCs.
-    cert_verifier = std::make_unique<net::CachingCertVerifier>(
-        std::make_unique<net::CoalescingCertVerifier>(
-            std::move(cert_verifier)));
+    // MoltBrowser: not for MoltNet, which verifies every certificate on its
+    // own: both layers are shared by every site of the context.
+    if (!params_->molt_uncached_cert_verification) {
+      cert_verifier = std::make_unique<net::CachingCertVerifier>(
+          std::make_unique<net::CoalescingCertVerifier>(
+              std::move(cert_verifier)));
+    }
   }
 
   builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
@@ -3379,6 +3387,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
   // Attach some things to the URLRequestContextBuilder's
   // TransportSecurityState.  Since no requests have been made yet, safe to do
   // this even after the call to Build().
+
+  // MoltBrowser: MoltNet's HSTS upgrades top-level navigations only.
+  if (params_->molt_hsts_top_level_navigations_only) {
+    result.url_request_context->transport_security_state()
+        ->MoltSetUpgradeTopLevelNavigationsOnly();
+  }
 
   if (network_service_->pins_list_updated()) {
     result.url_request_context->transport_security_state()->UpdatePinList(

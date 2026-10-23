@@ -265,8 +265,10 @@ SSLUpgradeDecision TransportSecurityState::GetSSLUpgradeDecision(
 
   // Only top level navigations should be upgraded when
   // kHstsTopLevelNavigationsOnly is enabled.
+  // MoltBrowser: or when this instance asks for it (MoltNet).
   if (!is_top_level_nav &&
-      base::FeatureList::IsEnabled(features::kHstsTopLevelNavigationsOnly)) {
+      (molt_upgrade_top_level_navigations_only_ ||
+       base::FeatureList::IsEnabled(features::kHstsTopLevelNavigationsOnly))) {
     return SSLUpgradeDecision::kNoUpgrade;
   }
 

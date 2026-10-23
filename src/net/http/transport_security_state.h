@@ -314,6 +314,13 @@ class NET_EXPORT TransportSecurityState {
     return ct_emergency_disable_;
   }
 
+  // MoltBrowser: upgrade top-level navigations only, as
+  // features::kHstsTopLevelNavigationsOnly does for every instance. Set for
+  // MoltNet's network contexts (services/network/network_context.cc).
+  void MoltSetUpgradeTopLevelNavigationsOnly() {
+    molt_upgrade_top_level_navigations_only_ = true;
+  }
+
   // |pinsets| should include all known pinsets, |host_pins| the information
   // related to each hostname's pin, and |update_time| the time at which this
   // list was known to be up to date.
@@ -495,6 +502,9 @@ class NET_EXPORT TransportSecurityState {
   std::set<std::string, std::less<>> hsts_host_bypass_list_;
 
   bool ct_emergency_disable_ = false;
+
+  // MoltBrowser: see MoltSetUpgradeTopLevelNavigationsOnly().
+  bool molt_upgrade_top_level_navigations_only_ = false;
 
   // These 3 members are for the component-updated "static" PKP data:
   // The values in host_pins_ maps are references to PinSet objects in the
