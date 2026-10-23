@@ -150,6 +150,81 @@ TEST(WebAISitePermissionsTest, AnswersTooSoonAfterThePromptDontCount) {
   EXPECT_GE(kPromptInputProtectionMs, 500);
 }
 
+// Pressing Allow or Block again and again never answers the prompt, however
+// long it goes on: every press within the interval of the previous one is
+// ignored and restarts it. A press after a pause counts.
+TEST(WebAISitePermissionsTest, RapidPressesNeverAnswerThePrompt) {
+  constexpr int64_t kShownAt = 1000000;
+  constexpr int64_t kInterval = kPromptInputProtectionMs;
+  for (int64_t gap : {int64_t{1}, int64_t{50}, int64_t{200}, kInterval - 1}) {
+    SCOPED_TRACE(gap);
+    PromptInputProtection protection;
+    protection.Shown(kShownAt);
+    // Presses from the moment the prompt appears, for a minute.
+    int64_t last = kShownAt;
+    for (int64_t t = kShownAt; t < kShownAt + 60 * 1000; t += gap) {
+      EXPECT_FALSE(protection.Press(t)) << t - kShownAt;
+      last = t;
+    }
+    // A pause shorter than the interval isn't enough...
+    last += kInterval - 1;
+    EXPECT_FALSE(protection.Press(last));
+    // ... one of the whole interval is.
+    EXPECT_TRUE(protection.Press(last + kInterval));
+  }
+}
+
+// The first press counts once the prompt has been up for the interval, and
+// shown again (its tab shown again), the interval starts over.
+TEST(WebAISitePermissionsTest, APressCountsOnlyAWhileAfterThePromptShows) {
+  constexpr int64_t kShownAt = 5000;
+  constexpr int64_t kInterval = kPromptInputProtectionMs;
+  {
+    PromptInputProtection protection;
+    protection.Shown(kShownAt);
+    EXPECT_TRUE(protection.Press(kShownAt + kInterval));
+  }
+  {
+    PromptInputProtection protection;
+    protection.Shown(kShownAt);
+    EXPECT_FALSE(protection.Press(kShownAt + kInterval - 1));
+    EXPECT_TRUE(protection.Press(kShownAt + 2 * kInterval - 1));
+  }
+  {
+    PromptInputProtection protection;
+    protection.Shown(kShownAt);
+    const int64_t again = kShownAt + 60 * 1000;
+    protection.Shown(again);
+    EXPECT_FALSE(protection.Press(again + 1));
+    EXPECT_FALSE(protection.Press(again + kInterval));  // after the last press
+    EXPECT_TRUE(protection.Press(again + 2 * kInterval));
+  }
+  {
+    // Never shown: nothing counts.
+    PromptInputProtection protection;
+    EXPECT_FALSE(protection.Press(kShownAt));
+    EXPECT_FALSE(protection.Press(kShownAt + 60 * 1000));
+  }
+}
+
+// A clock that goes back, or extreme values, never make a press count.
+TEST(WebAISitePermissionsTest, PromptGuardSurvivesOddClocks) {
+  constexpr int64_t kMin = std::numeric_limits<int64_t>::min();
+  constexpr int64_t kMax = std::numeric_limits<int64_t>::max();
+  PromptInputProtection protection;
+  protection.Shown(kMax);
+  EXPECT_FALSE(protection.Press(kMin));
+  EXPECT_FALSE(protection.Press(kMax));
+  PromptInputProtection back;
+  back.Shown(10000);
+  EXPECT_TRUE(back.Press(20000));
+  EXPECT_FALSE(back.Press(19000));  // earlier than the last press
+  PromptInputProtection wide;
+  wide.Shown(kMin);
+  EXPECT_TRUE(wide.Press(kMax));
+  EXPECT_FALSE(wide.Press(kMax));
+}
+
 TEST(WebAISitePermissionsTest, ClockChangesNeverStretchAPause) {
   SiteRecord record;
   record.dismissals = kDismissalsBeforeEmbargo;

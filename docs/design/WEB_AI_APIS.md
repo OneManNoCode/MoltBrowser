@@ -296,10 +296,14 @@ answer is needed and no model is loaded.
 iframe asks on behalf of the page the user sees. Only the tab's current
 page can raise it (not a prerendered page or one in the back/forward
 cache). Requests from the same tab and origin share one infobar. *Allow*
-and *Block* are remembered (§4.1). A click on either within half a second
-of the bar appearing does nothing and leaves the bar up
-(`kPromptInputProtectionMs`), as Chromium's permission prompts ignore
-early clicks, so a click meant for the page can't answer the bar. Closing the infobar with its close
+and *Block* are remembered (§4.1). A press of either counts only half a
+second or more after the bar appeared (or its tab was shown again) and
+after the previous press; a sooner one does nothing, leaves the bar up and
+starts the half second again, so pressing again and again never answers
+the bar, and the user has to pause first (`PromptInputProtection`,
+`kPromptInputProtectionMs`). That is how Chromium guards its dialogs'
+buttons (`views::DefaultInputProtectionPolicy` at 152), so clicks meant
+for the page can't answer the bar. Closing the infobar with its close
 button answers nothing and counts towards a pause (§4.2); an infobar that
 goes away by itself (the page navigates, the tab closes, a newer infobar
 replaces it) answers nothing and doesn't count. With no model downloaded,
@@ -1196,7 +1200,9 @@ In `molt_ai_unittests` (`//chrome/browser/molt_ai/web_ai:unit_tests`):
   sees images), image sources (the 64-megapixel cap at its edges, hostile
   sizes), and the scheduler (one at a time, foreground first, sites in
   turn, caps, cancel, image holds per site and in total).
-- `web_ai_site_permissions_unittest.cc` (19): key shapes, answers, the
+- `web_ai_site_permissions_unittest.cc` (23): key shapes, answers, the
+  prompt's input protection (presses every 1 to 499 ms for a minute never
+  counting, a pause then counting, the tab shown again, odd clocks), the
   pause (third close, its end to the millisecond, the count kept, an
   answer clearing it, clock changes either way), the settings list, exact
   removal, the Clear browsing data range (half-open) and filters, the
