@@ -14,12 +14,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
-#include <sys/select.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
 #endif  // BUILDFLAG(IS_WIN)
 
+#include <algorithm>
 #include <mutex>
 #include <vector>
 
@@ -101,6 +102,20 @@ bool ConnectWithTimeout(SocketHandle fd, const sockaddr_in& addr) {
 int SendBytes(SocketHandle fd, const char* data, size_t len) {
   return send(fd, data, static_cast<int>(len), 0);
 }
+
+// 1 if |fd| has data (or EOF / an error recv() will report), 0 after
+// |timeout_ms|, -1 on failure. (Winsock's fd_set lists sockets; it isn't a
+// bitmap indexed by their value.)
+int WaitReadable(SocketHandle fd, int timeout_ms) {
+  fd_set rset;
+  FD_ZERO(&rset);
+  FD_SET(fd, &rset);
+  timeval tv;
+  tv.tv_sec = timeout_ms / 1000;
+  tv.tv_usec = (timeout_ms % 1000) * 1000;
+  const int r = select(0, &rset, nullptr, nullptr, &tv);
+  return r < 0 ? -1 : r;
+}
 #else
 using SocketHandle = int;
 constexpr SocketHandle kInvalidSocket = -1;
@@ -131,13 +146,12 @@ bool ConnectWithTimeout(SocketHandle fd, const sockaddr_in& addr) {
     if (errno != EINPROGRESS) {
       return false;
     }
-    fd_set wset;
-    FD_ZERO(&wset);
-    FD_SET(fd, &wset);
-    timeval tv;
-    tv.tv_sec = kConnectTimeoutMs / 1000;
-    tv.tv_usec = (kConnectTimeoutMs % 1000) * 1000;
-    if (select(fd + 1, nullptr, &wset, nullptr, &tv) <= 0) {
+    // poll(), not select(): the browser process can have more than
+    // FD_SETSIZE descriptors open, and FD_SET on a larger one overflows.
+    pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    if (poll(&pfd, 1, kConnectTimeoutMs) <= 0) {
       return false;
     }
     int err = 0;
@@ -156,6 +170,19 @@ int SendBytes(SocketHandle fd, const char* data, size_t len) {
 #else
   return static_cast<int>(send(fd, data, len, 0));
 #endif
+}
+
+// 1 if |fd| has data (or EOF / an error recv() will report), 0 after
+// |timeout_ms| or on EINTR, -1 on failure.
+int WaitReadable(SocketHandle fd, int timeout_ms) {
+  pollfd pfd{};
+  pfd.fd = fd;
+  pfd.events = POLLIN;
+  const int r = poll(&pfd, 1, timeout_ms);
+  if (r < 0) {
+    return errno == EINTR ? 0 : -1;
+  }
+  return r;
 }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -184,6 +211,7 @@ void TorControlConnection::Close() {
     CloseSocketHandle(ToHandle(socket_));
     socket_ = -1;
   }
+  pending_.clear();
 }
 
 bool TorControlConnection::Connect(uint16_t port) {
@@ -221,28 +249,63 @@ bool TorControlConnection::SendAll(std::string_view data) {
   return true;
 }
 
+std::optional<std::string> TorControlConnection::ReadMessage(
+    base::TimeTicks deadline) {
+  char buf[4096];
+  while (socket_ != -1) {
+    const size_t length = control::CompleteReplyLength(pending_);
+    if (length > 0) {
+      std::string message = pending_.substr(0, length);
+      pending_.erase(0, length);
+      return message;
+    }
+    const base::TimeDelta left = deadline - base::TimeTicks::Now();
+    if (pending_.size() > kMaxReplyBytes || !left.is_positive()) {
+      break;
+    }
+    // At most one I/O slice at a time, so the wait ends at |deadline|.
+    const int slice_ms = static_cast<int>(std::clamp<int64_t>(
+        left.InMilliseconds() + 1, 1, kIoTimeoutMs));
+    const int ready = WaitReadable(ToHandle(socket_), slice_ms);
+    if (ready == 0) {
+      continue;
+    }
+    if (ready < 0) {
+      break;
+    }
+    // recv() returns ssize_t on POSIX and int on winsock; <= 0 means closed
+    // or error.
+    const int n =
+        static_cast<int>(recv(ToHandle(socket_), buf, sizeof(buf), 0));
+    if (n <= 0) {
+      break;
+    }
+    pending_.append(buf, static_cast<size_t>(n));
+  }
+  Close();
+  return std::nullopt;
+}
+
 std::optional<std::string> TorControlConnection::ReadReply() {
-  if (socket_ == -1) {
+  const base::TimeTicks deadline = base::TimeTicks::Now() + kReplyDeadline;
+  while (std::optional<std::string> message = ReadMessage(deadline)) {
+    // Events (sent only after SETEVENTS) can come before the reply.
+    if (!control::IsAsyncEvent(*message)) {
+      return message;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> TorControlConnection::ReadEvent(
+    base::TimeTicks deadline) {
+  std::optional<std::string> message = ReadMessage(deadline);
+  if (message && !control::IsAsyncEvent(*message)) {
+    // No command is outstanding, so this isn't Tor speaking the protocol.
+    Close();
     return std::nullopt;
   }
-  const base::TimeTicks deadline = base::TimeTicks::Now() + kReplyDeadline;
-  std::string reply;
-  char buf[4096];
-  while (!control::IsCompleteReply(reply)) {
-    if (reply.size() > kMaxReplyBytes || base::TimeTicks::Now() > deadline) {
-      Close();
-      return std::nullopt;
-    }
-    // recv() returns ssize_t on POSIX and int on winsock; <= 0 means closed,
-    // error or SO_RCVTIMEO timeout.
-    int n = static_cast<int>(recv(ToHandle(socket_), buf, sizeof(buf), 0));
-    if (n <= 0) {
-      Close();
-      return std::nullopt;
-    }
-    reply.append(buf, static_cast<size_t>(n));
-  }
-  return reply;
+  return message;
 }
 
 std::optional<std::string> TorControlConnection::SendCommand(

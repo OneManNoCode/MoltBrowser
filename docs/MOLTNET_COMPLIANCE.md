@@ -34,14 +34,21 @@ claims below as the design intent, not as measured results.
    your regular and incognito windows, and discarded when the last MoltNet
    window closes. Pages visited in MoltNet windows are not added to MoltBrowser's
    on-device memory index.
-3. **New Identity.** Closes the MoltNet windows, drops their connections and
-   DNS cache, discards the MoltNet profile (fresh cookies, cache and storage),
-   asks Tor for new circuits (`SIGNAL NEWNYM`, and the reply is checked) and
-   opens a fresh MoltNet window. If Tor rejects the request, you see an error.
+3. **New Identity.** Closes the MoltNet windows (a page's "Leave site?"
+   prompt can't keep one open), drops their connections and DNS cache, and
+   waits until the MoltNet profile is discarded (fresh cookies, cache and
+   storage), so nothing of the old identity can still send a request. Only
+   then it asks Tor for new circuits (`SIGNAL NEWNYM`) and waits until Tor
+   confirms that it has switched, before it opens a fresh MoltNet window.
+   Tor switches at most once every ten seconds, so a New Identity soon after
+   another one (or after changing the exit country) takes up to ten seconds.
+   If Tor rejects the request or doesn't confirm it, or a window of the old
+   identity doesn't close, you see an error and no new window opens.
 4. **One circuit per site.** Each MoltNet connection tells Tor which top-level
    site it belongs to (as the SOCKS username), so Tor puts different sites on
    different circuits and exits (`IsolateSOCKSAuth`). A site's embedded
-   third-party content shares that site's circuit, as in Tor Browser.
+   third-party content shares that site's circuit, as in Tor Browser. A page
+   its server sandboxes (an opaque origin) gets a circuit of its own.
 5. **A visible route.** The MoltNet panel shows the guard, middle and exit relay
    of the current circuit (nickname, country, IP, fingerprint), read from Tor's
    own control port. It never looks up or shows your real IP. In a MoltNet
@@ -85,7 +92,9 @@ claims below as the design intent, not as measured results.
     your third-party cookie choice, your ad privacy (Privacy Sandbox)
     choices, "Strip tracking parameters", and the accessibility settings a
     page can detect. A site that regular windows stopped from asking for a
-    permission (after you dismissed it several times) can ask again.
+    permission (after you dismissed it several times) can ask again, and a
+    site you let open an application without asking ("Always allow") in a
+    regular window asks again in a MoltNet window.
     Permissions you grant and changes you make in a MoltNet window last
     until New Identity or until the last MoltNet window closes, and nothing
     done in a MoltNet window changes your regular settings. Nor does the
@@ -171,7 +180,8 @@ profile is created, every setting a page can observe
 exceptions and defaults of every type, including permission embargo and
 MoltShield's per-site switch; fonts and font sizes; default encoding; Do
 Not Track; third-party cookie mode; languages; Privacy Sandbox switches;
-the accessibility settings pages can detect) is set to MoltBrowser's
+the accessibility settings pages can detect; the sites allowed to open an
+application without asking) is set to MoltBrowser's
 default in the profile's own in-memory store, so the regular profile's
 value is never read, and changing it later has no effect on MoltNet.
 MoltNet's own settings (the proxy and leak controls below, en-US) are
@@ -560,6 +570,9 @@ gpg-verified steps documented in that script.
 | The generated torrc (incl. bridges + exit pin) is valid | `tor --verify-config`, Tor 0.4.9.11 | Pass |
 | SAFECOOKIE against a real Tor; wrong cookie rejected via SERVERHASH; `TAKEOWNERSHIP` makes Tor exit when MoltBrowser's connection closes; `SETCONF`/`RESETCONF`/`NEWNYM` accepted | Standalone harness around the shipped control-connection code, Tor 0.4.9.11 | Pass |
 | Tor accepts MoltBrowser's SOCKS5 username/password greeting and records a per-site username | Byte-for-byte replay against Tor 0.4.9.11 | Pass |
+| New Identity reports success only once Tor has applied `NEWNYM` (Tor answers `250 OK` at once and, within ten seconds of the previous one, applies it later); replies and events read correctly from one connection | Unit tests of the control-protocol framing (`molt_ai_unittests`); standalone harness around the shipped control-connection code and the New Identity signal, Tor 0.4.9.11: an immediate and a rate-limited `NEWNYM`, an event arriving with a reply; 2 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
+| New Identity's order: the old windows close although a page asks "Leave site?", `NEWNYM` only once the old profile is destroyed, the new window only once Tor has switched, no other MoltNet window meanwhile, nothing changed if an old window stays open | Standalone simulation: the New Identity code of `molt_net_window.cc`, verbatim, against stand-ins (profiles, windows, the profile destroyer, Tor) on a simulated clock, g++ ASan/UBSan; 8 tests, 5 mutants caught | Pass (built standalone; not yet built in the Chromium tree) |
+| Sandboxed pages (opaque top-level origins) get per-site SOCKS usernames | The username code of `socks_connect_job.cc`, verbatim, against stand-ins with the 152 shapes; 3 tests, a mutant caught | Pass (built standalone; not yet built in the Chromium tree) |
 | `.onion` detection, v3 address and `Onion-Location` validation | 6 unit tests (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
 | Helper-binary checks (bundled copy; root-owned system Tor on Linux; rejects user-owned, group/world-writable, setuid, symlink escapes) | 13 unit tests incl. real-filesystem cases (`molt_ai_unittests`) | Pass (built standalone; not yet built in the Chromium tree) |
 | Bridges with system transports: which `/usr/bin` paths are tried, the `ClientTransportPlugin` lines (absolute path for a system transport), exec-path validation (no blanks, `..`, bare names or torrc injection), which transports a set of bridges needs, the install messages | 7 unit tests (`molt_ai_unittests`), with ASan/UBSan | Pass (built standalone; not yet built in the Chromium tree) |
@@ -643,10 +656,15 @@ help. The last column names the report's checks.
    close all MoltNet windows, open a new one: the cookie must be gone.
 7. **New Identity.** (Kit: automated.) Note the exit IP, press *New Identity*: the MoltNet windows
    close, a new one opens, cookies are gone, and the exit IP normally changes.
+   Click into a page that asks "Leave site?" (e.g. one with an unsent form)
+   and press *New Identity*: its window closes without asking. Press *New
+   Identity* twice in a row: the second new window opens only about ten
+   seconds after the first (Tor switches circuits at most that often).
 8. **Per-site circuits.** (Kit: automated, from the SOCKS usernames in the capture.) Open two different sites in MoltNet tabs and compare
    the exit IP each one sees (e.g. two different IP-echo sites): they should
    normally differ. In Tor's log with `SafeLogging 0` + `Log info`, streams for
-   different sites carry different SOCKS usernames.
+   different sites carry different SOCKS usernames, also for pages served
+   with `Content-Security-Policy: sandbox` (opaque origins).
 9. **Overrides are refused.** (Kit: the `--proxy-server` half; the extension half is manual.) Start MoltBrowser with `--proxy-server=...` (or a
    policy proxy): opening a MoltNet window must fail with an error. A proxy
    set by an extension doesn't reach MoltNet: with one installed and
@@ -687,7 +705,7 @@ help. The last column names the report's checks.
     Remove the package: settings must name the package to install, and
     turning MoltNet on must fail with that message rather than connect
     without bridges.
-15. **Your settings don't follow you.** (Kit: automated with settings seeded into the regular profile: Do Not Track, font size and family, language, third-party cookies, a site with JavaScript and location blocked. Notifications, Shields and changing a setting while the window is open are manual.) In a regular window, on a test
+15. **Your settings don't follow you.** (Kit: automated with settings seeded into the regular profile: Do Not Track, font size and family, language, third-party cookies, a site with JavaScript and location blocked. Notifications, Shields, application links and changing a setting while the window is open are manual.) In a regular window, on a test
     site: block its location permission and its JavaScript, turn Shields off
     for it, dismiss its notification prompt three times; then in Settings
     turn on Do Not Track, set a large font size and a different standard
@@ -700,6 +718,11 @@ help. The last column names the report's checks.
     a regular setting back while the MoltNet window is open: nothing changes
     in it. Allow a permission and turn Shields off in the MoltNet window:
     neither shows in a regular window, and both are gone after New Identity.
+    On a test page with a link to an application's URL scheme (e.g.
+    `zoommtg:`; not `mailto:`, which Chromium always opens), tick "Always
+    allow ... to open links of this type" in a regular window and open it;
+    the same link on the same site in a MoltNet window must ask again
+    before opening the application.
 16. **Extensions stay out.** (Kit: partial: content script, web-accessible resource, `chrome.runtime`, `tabs` and `webRequest` events; the rest is manual.) In a regular window install a test extension
     with a content script on `<all_urls>` that marks the page, a
     web-accessible resource, `externally_connectable` for `<all_urls>`,

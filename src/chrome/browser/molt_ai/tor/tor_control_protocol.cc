@@ -244,6 +244,50 @@ bool IsOkReply(std::string_view reply) {
   return lines.back() == "250 OK";
 }
 
+size_t CompleteReplyLength(std::string_view buffer) {
+  // The same framing as StatusLines(), keeping track of where lines end.
+  bool in_data = false;
+  size_t start = 0;
+  while (start < buffer.size()) {
+    const size_t nl = buffer.find('\n', start);
+    if (nl == std::string_view::npos) {
+      return 0;
+    }
+    std::string_view line = buffer.substr(start, nl - start);
+    if (!line.empty() && line.back() == '\r') {
+      line.remove_suffix(1);
+    }
+    start = nl + 1;
+    if (in_data) {
+      if (line == ".") {
+        in_data = false;
+      }
+      continue;
+    }
+    if (!IsStatusLine(line) || line[3] == ' ') {
+      return start;
+    }
+    if (line[3] == '+') {
+      in_data = true;
+    }
+  }
+  return 0;
+}
+
+bool IsAsyncEvent(std::string_view reply) {
+  bool complete = false;
+  std::vector<std::string_view> lines = StatusLines(reply, &complete);
+  return complete && !lines.empty() && IsStatusLine(lines.front()) &&
+         StatusOf(lines.front()) == 650;
+}
+
+bool IsNewnymAppliedEvent(std::string_view reply) {
+  bool complete = false;
+  std::vector<std::string_view> lines = StatusLines(reply, &complete);
+  return complete && lines.size() == 1 && lines.front() == "650 SIGNAL NEWNYM" &&
+         CompleteReplyLength(reply) == reply.size();
+}
+
 std::optional<ProtocolInfo> ParseProtocolInfo(std::string_view reply) {
   if (!IsOkReply(reply)) {
     return std::nullopt;

@@ -98,6 +98,11 @@ class MoltNetRouting {
   // and storage). Does not destroy it.
   static void ForgetMoltNetProfile(Profile* moltnet_profile);
 
+  // Makes |moltnet_profile| the current MoltNet profile of its original
+  // profile again, unless that has a current one already (used when New
+  // Identity gives up because a window of the old identity stayed open).
+  static void AdoptMoltNetProfile(Profile* moltnet_profile);
+
   // Routing of the profile a UI surface is shown in.
   static Status GetStatus(Profile* profile);
 

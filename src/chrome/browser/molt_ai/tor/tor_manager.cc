@@ -588,6 +588,41 @@ CommandResult RunCommandsBlocking(TorControlEndpoint endpoint,
   return result;
 }
 
+// Tor rate-limits NEWNYM: within ten seconds of the previous one it answers
+// "250 OK" at once but applies the signal only when the ten seconds are up,
+// and until then new streams still get the circuits (and exits) the old
+// identity used. So New Identity listens for Tor's SIGNAL event and only
+// reports success once Tor says it has switched.
+constexpr base::TimeDelta kNewnymAppliedTimeout = base::Seconds(15);
+
+CommandResult SignalNewnymAndWaitBlocking(TorControlEndpoint endpoint) {
+  CommandResult result;
+  TorControlConnection connection;
+  if (connection.ConnectAndAuthenticate(endpoint, &result.error) !=
+      TorControlConnection::AuthResult::kOk) {
+    return result;
+  }
+  for (const char* command : {"SETEVENTS SIGNAL", "SIGNAL NEWNYM"}) {
+    // A NEWNYM applied before ours (its event can still arrive first) is
+    // skipped here: SendCommand() returns the command's own reply.
+    std::optional<std::string> reply = connection.SendCommand(command);
+    if (!reply || !control::IsOkReply(*reply)) {
+      result.error = std::string("Tor rejected ") + command;
+      return result;
+    }
+  }
+  const base::TimeTicks deadline =
+      base::TimeTicks::Now() + kNewnymAppliedTimeout;
+  while (std::optional<std::string> event = connection.ReadEvent(deadline)) {
+    if (control::IsNewnymAppliedEvent(*event)) {
+      result.ok = true;
+      return result;
+    }
+  }
+  result.error = "Tor didn't confirm that it switched to new circuits";
+  return result;
+}
+
 void RunDone(TorManager::DoneCallback done, CommandResult result) {
   if (done) {
     std::move(done).Run(result.ok, result.error);
@@ -926,8 +961,7 @@ void TorManager::SendNewIdentitySignal(DoneCallback done) {
   }
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&RunCommandsBlocking, GetControlEndpoint(),
-                     std::vector<std::string>{"SIGNAL NEWNYM"}),
+      base::BindOnce(&SignalNewnymAndWaitBlocking, GetControlEndpoint()),
       base::BindOnce(&RunDone, std::move(done)));
 }
 

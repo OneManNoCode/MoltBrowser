@@ -35,7 +35,6 @@
 #include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
 #include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
-#include "chrome/browser/molt_ai/fingerprinting/molt_fingerprinting_browser.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_isolation.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_pref_isolation.h"  // MoltBrowser
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
@@ -212,10 +211,10 @@ void OffTheRecordProfileImpl::Init() {
         IncognitoModePrefs::GetAvailability(profile_->GetPrefs()) !=
             policy::IncognitoModeAvailability::kDisabled);
 
-  // MoltBrowser: MoltNet pages start at 100% zoom; the parent's zoom levels
-  // would show in their letterboxed size and link the two profiles.
-  if (molt_ai::fingerprinting::ModeForBrowserContext(this) !=
-      molt_ai::fingerprinting::RendererMode::kUniform) {
+  // MoltBrowser: MoltNet pages start at 100% zoom, whether or not
+  // fingerprinting protection is on; the parent's zoom levels would show in
+  // their size (devicePixelRatio, the letterbox) and link the two profiles.
+  if (!molt_ai::tor::IsMoltNetProfile(this)) {
     TrackZoomLevelsFromParent();
   }
 

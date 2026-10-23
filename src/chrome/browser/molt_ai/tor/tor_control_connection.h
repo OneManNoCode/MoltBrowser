@@ -20,6 +20,7 @@
 #include <string_view>
 
 #include "base/files/file_path.h"
+#include "base/time/time.h"
 
 namespace molt_ai {
 namespace tor {
@@ -60,7 +61,13 @@ class TorControlConnection {
   // Sends |command| (CRLF appended) and returns one complete reply, or
   // nullopt on I/O failure / timeout / oversized reply. |command| must not
   // contain CR or LF (rejected, so callers can't smuggle a second command).
+  // Asynchronous events that arrive before the reply are skipped.
   std::optional<std::string> SendCommand(std::string_view command);
+
+  // After SETEVENTS: waits until |deadline| for the next asynchronous event
+  // and returns it. nullopt on timeout, I/O failure or anything other than
+  // an event; the connection is closed then.
+  std::optional<std::string> ReadEvent(base::TimeTicks deadline);
 
   bool is_connected() const;
   void Close();
@@ -69,10 +76,17 @@ class TorControlConnection {
   bool Connect(uint16_t port);
   bool SendAll(std::string_view data);
   std::optional<std::string> ReadReply();
+  // The next complete reply or event, from |pending_| and the socket.
+  // nullopt (and the connection closed) on I/O failure, an oversized
+  // message or |deadline|.
+  std::optional<std::string> ReadMessage(base::TimeTicks deadline);
 
   // Platform socket (SOCKET on Windows, an fd elsewhere) stored type-erased
   // so this header doesn't pull in winsock2.h. -1 == INVALID_SOCKET / no fd.
   intptr_t socket_ = -1;
+  // Received bytes not yet returned: Tor can send a reply and an event in
+  // one segment.
+  std::string pending_;
 };
 
 }  // namespace tor

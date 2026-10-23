@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 100 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 105 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -27,10 +27,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 - **FAIL** Nothing left the namespace except Tor's own connections
   - escaped: tcp 10.231.7.2 -> 203.0.113.99:80 (1 packets)
 - **PASS** The packet capture recorded traffic
-  - all: 18 frames, 18 IP, 0 malformed
+  - all: 26 frames, 26 IP, 0 malformed
   - firewall log: 12 frames
   - Tor connections: 2 frames
-  - loopback packets: 6
+  - loopback packets: 10
 - **PASS** The seeded regular-profile settings took effect (control for the settings checks)
   - regular window: {"doNotTrack": "1", "fontSize": "24px", "js_ran_on_blocked": false, "languages": ["de-DE", "de"]}
 - **PASS** Tor (and only Tor) reached the network
@@ -62,6 +62,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | A MoltNet window loads an http:// onion site: the page loaded (no HTTPS-Only interstitial for http:// onion) | MOLTNET_COMPLIANCE.md §4 steps 1, 11 |
 | PASS | A MoltNet window loads an http:// onion site: http:// onion is not a secure context (known gap §5.7) | MOLTNET_COMPLIANCE.md §4 steps 1, 11 |
 | PASS | A MoltNet window loads an http:// onion site: nothing outside Tor | MOLTNET_COMPLIANCE.md §4 steps 1, 11 |
+| PASS | A page its server sandboxes, on one site: the page has an opaque origin (CSP sandbox) | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
+| PASS | A page its server sandboxes, on one site: nothing outside Tor | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
+| PASS | A page its server sandboxes, on another site: the page has an opaque origin (CSP sandbox) | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
+| PASS | A page its server sandboxes, on another site: nothing outside Tor | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | WebRTC: STUN/TURN servers, peer and .local candidates: new RTCPeerConnection() throws NotSupportedError | MOLTNET_COMPLIANCE.md §1.12, §4 step 18 |
 | PASS | WebRTC: STUN/TURN servers, peer and .local candidates: with Chromium's message | MOLTNET_COMPLIANCE.md §1.12, §4 step 18 |
 | SKIP | mDNS (.local names) | MOLTNET_COMPLIANCE.md §1.12, §2 |
@@ -103,6 +107,14 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - secure_context = false
 - **PASS** A MoltNet window loads an http:// onion site: nothing outside Tor
   - reached the kit's page server (through Tor): /t/aaaaaa1111/basic.html
+- **PASS** A page its server sandboxes, on one site: the page has an opaque origin (CSP sandbox)
+  - opaque_origin = true
+- **PASS** A page its server sandboxes, on one site: nothing outside Tor
+  - not requested (info): /canary/sbx-iiiiii9999.png
+- **PASS** A page its server sandboxes, on another site: the page has an opaque origin (CSP sandbox)
+  - opaque_origin = true
+- **PASS** A page its server sandboxes, on another site: nothing outside Tor
+  - not requested (info): /canary/sbx-jjjjjj0000.png
 - **PASS** WebRTC: STUN/TURN servers, peer and .local candidates: new RTCPeerConnection() throws NotSupportedError
   - pc.error = "NotSupportedError"
 - **PASS** WebRTC: STUN/TURN servers, peer and .local candidates: with Chromium's message
@@ -135,6 +147,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | A --proxy-server override blocks MoltNet | MOLTNET_COMPLIANCE.md §4 step 9 |
 | PASS | Different sites use different SOCKS usernames (per-site circuits) | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | The panel's relays are in the consensus Tor downloaded | MOLTNET_COMPLIANCE.md §4 step 10 |
+| PASS | Sandboxed pages (opaque origins) on two sites use different SOCKS usernames | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | Separate identity: cookies don't cross, and go with the last window | MOLTNET_COMPLIANCE.md §4 step 6 |
 | SKIP | check.torproject.org says the MoltNet window uses Tor | MOLTNET_COMPLIANCE.md §4 step 1 |
 
@@ -145,6 +158,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - newIdentity -> {"running": true}
   - cookie gone after New Identity
   - canvas readback changed (new farbling seed)
+  - no page of the old identity left (one asked "Leave site?": True)
+  - a second New Identity right after the first finished 10.4 s later, once Tor had switched circuits
 - **PASS** No MoltNet window comes back after a restart
   - 0 MoltNet page(s) after relaunching with the same profile
 - **PASS** A --proxy-server override blocks MoltNet
@@ -152,12 +167,15 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - openWindow -> {"error": "A command-line flag controls the proxy."}
   - MoltNet pages: 0
 - **PASS** Different sites use different SOCKS usernames (per-site circuits)
-  - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion']
-  - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion']
+  - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion -> SOCKS usernames ['http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion', 'opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]']
+  - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion -> SOCKS usernames ['https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion', 'opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']
 - **PASS** The panel's relays are in the consensus Tor downloaded
   - guard g1 192.0.2.50 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA in consensus: True
   - middle m1 192.0.2.60 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB in consensus: True
   - exit e1 192.0.2.70 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC in consensus: True
+- **PASS** Sandboxed pages (opaque origins) on two sites use different SOCKS usernames
+  - sandboxed_a -> SOCKS usernames ['opaque\\x20null\\x20[internally:\\x20(11aa)\\x20derived\\x20from\\x20http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion]']
+  - sandboxed_b -> SOCKS usernames ['opaque\\x20null\\x20[internally:\\x20(22bb)\\x20derived\\x20from\\x20https://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbd.onion]']
 - **PASS** Separate identity: cookies don't cross, and go with the last window
   - a cookie set for the onion in the regular profile is not visible in MoltNet
   - after the last MoltNet window closed, its cookie is gone
@@ -366,8 +384,8 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | 4 | Watch the wire | automated | every packet is captured in a namespace where only Tor may leave |
 | 5 | Fail-closed | automated | tor is killed: pages must fail with a proxy error; after a restart no MoltNet window returns |
 | 6 | Separate identity | automated | a regular-profile cookie doesn't show in MoltNet; a MoltNet cookie is gone after the last window closes |
-| 7 | New Identity | automated | new profile, cookies gone, new canvas key; the exit IP check needs the public internet |
-| 8 | Per-site circuits | automated | different SOCKS usernames per site, read from the loopback capture and Tor's circuit list |
+| 7 | New Identity | automated | new profile, cookies gone, new canvas key, no old page left open, a second New Identity waits for Tor to switch circuits; the exit IP check needs the public internet |
+| 8 | Per-site circuits | automated | different SOCKS usernames per site (sandboxed pages included), read from the loopback capture and Tor's circuit list |
 | 9 | Overrides are refused | partial | --proxy-server blocks MoltNet; the extension-set proxy case is manual |
 | 10 | The relays are real | automated | the circuit's fingerprints are in the consensus Tor downloaded; the onionoo lookup is optional |
 | 11 | Onion sites | partial | http:// and https:// onions load; the Onion-Location bar is browser UI and stays manual |
