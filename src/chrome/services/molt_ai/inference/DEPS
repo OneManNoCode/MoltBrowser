@@ -2,6 +2,9 @@ include_rules = [
   "+chrome/services/molt_ai/inference",
   # Only this directory may use llama.cpp (GN visibility enforces it too).
   "+third_party/llama_cpp/include",
+  # The exception guard around llama.cpp calls that can reach a GPU
+  # (docs/design/SANDBOXED_INFERENCE.md section 11.6).
+  "+third_party/llama_cpp/chromium/llama_guard.h",
   # Image input: llama.cpp's multimodal library (its public header only).
   "+third_party/llama_cpp/tools/mtmd/mtmd.h",
 ]

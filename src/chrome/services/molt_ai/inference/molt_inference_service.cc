@@ -136,6 +136,26 @@ mojom::LoadModelStatus ToMojo(EngineLoadStatus status) {
   return mojom::LoadModelStatus::kInvalidModelFile;
 }
 
+mojom::GpuStatus ToMojo(EngineGpuStatus status) {
+  switch (status) {
+    case EngineGpuStatus::kNotRequested:
+      return mojom::GpuStatus::kNotRequested;
+    case EngineGpuStatus::kNotBuilt:
+      return mojom::GpuStatus::kNotBuilt;
+    case EngineGpuStatus::kNoDevice:
+      return mojom::GpuStatus::kNoDevice;
+    case EngineGpuStatus::kNoUsableDevice:
+      return mojom::GpuStatus::kNoUsableDevice;
+    case EngineGpuStatus::kTooLittleMemory:
+      return mojom::GpuStatus::kTooLittleMemory;
+    case EngineGpuStatus::kLoadFailed:
+      return mojom::GpuStatus::kLoadFailed;
+    case EngineGpuStatus::kOn:
+      return mojom::GpuStatus::kOn;
+  }
+  return mojom::GpuStatus::kNotRequested;
+}
+
 }  // namespace
 
 MoltInferenceService::MoltInferenceService(
@@ -191,6 +211,7 @@ void MoltInferenceService::LoadModel(mojom::ModelLoadParamsPtr params,
   load.max_context_tokens = params->max_context_tokens;
   load.allow_cpu_repack = params->allow_cpu_repack;
   load.memory_limit_bytes = SandboxMemoryLimit();
+  load.use_gpu = params->use_gpu;
 
   // Generation must not run on the thread that receives mojo messages (a
   // closed streamer would only be seen between requests).
@@ -223,6 +244,8 @@ void MoltInferenceService::OnLoaded(mojo::PendingReceiver<mojom::Model> model,
   description->vocab_size = result.description.vocab_size;
   description->cpu_repack_used = result.description.cpu_repack_used;
   description->vision = result.description.vision;
+  description->gpu_status = ToMojo(result.description.gpu_status);
+  description->gpu_layers = result.description.gpu_layers;
   model_ = std::make_unique<MoltModelImpl>(
       std::move(engine_), result.description.vision, std::move(model),
       base::BindOnce(&MoltInferenceService::OnModelDisconnected,

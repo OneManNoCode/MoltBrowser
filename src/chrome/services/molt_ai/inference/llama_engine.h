@@ -8,7 +8,8 @@
 // Moved here from the browser's BrowserAIRuntime (S5 phase 2), so a GGUF,
 // tokenizer or filter bug stays inside the sandbox.
 //
-// Only std and llama.h: no //base and no mojo, so it is also built and run
+// Only std, llama.h and its exception guard (third_party/llama_cpp/chromium/
+// llama_guard.h): no //base and no mojo, so it is also built and run
 // standalone against the vendored llama.cpp. Not thread-safe; the service
 // owns it on one sequence (MoltModelImpl, through base::SequenceBound) and
 // only the cancel flag behind EngineCallbacks::is_cancelled is read across
@@ -57,6 +58,29 @@ struct EngineLoadParams {
   // This process's limit on anonymous memory (RLIMIT_DATA on Linux, the job
   // memory limit on Windows); 0 = none known (macOS).
   uint64_t memory_limit_bytes = 0;
+  // Try the GPU through llama.cpp's Vulkan backend (Linux and Windows builds
+  // with molt_llama_vulkan; design section 11). The CPU is the fallback.
+  // macOS ignores it: Metal is always used there.
+  bool use_gpu = false;
+};
+
+// What became of the GPU (Vulkan) for this load. Mirrors mojom GpuStatus.
+enum class EngineGpuStatus {
+  // The browser didn't ask for it (and on macOS, where Metal is used).
+  kNotRequested,
+  // This build has no Vulkan backend.
+  kNotBuilt,
+  // No Vulkan loader, no instance, or no GPU llama.cpp's backend accepts.
+  kNoDevice,
+  // The device policy refused every GPU (engine/gpu_offload.h).
+  kNoUsableDevice,
+  // Too little of the model fits in the GPU's free memory.
+  kTooLittleMemory,
+  // The model, its projector or its context couldn't be loaded on the GPU;
+  // it was loaded on the CPU instead.
+  kLoadFailed,
+  // The model runs on the GPU, wholly or partly (gpu_layers).
+  kOn,
 };
 
 enum class EngineLoadStatus {
@@ -78,6 +102,9 @@ struct EngineModelDescription {
   bool cpu_repack_used = false;
   // A vision projector is loaded: user turns may carry images.
   bool vision = false;
+  EngineGpuStatus gpu_status = EngineGpuStatus::kNotRequested;
+  // Layers on the Vulkan GPU, the output layer counting as one (0 = none).
+  uint32_t gpu_layers = 0;
 };
 
 struct EngineLoadResult {
@@ -176,6 +203,11 @@ enum class EngineStatus {
   // The request has images and no vision projector is loaded. Nothing was
   // generated.
   kImagesUnsupported,
+  // The GPU failed under the model (device lost, a driver error): llama.cpp
+  // threw (third_party/llama_cpp/chromium/llama_guard.h). The context can't
+  // be used again; every later request fails the same way, and the browser
+  // reloads the model on the CPU.
+  kBackendFailed,
 };
 
 struct EngineSummary {
