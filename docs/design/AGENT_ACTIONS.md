@@ -9,9 +9,10 @@ strictly. The page-facing checks are unchanged: `agent_safety` and
 `automation_security` (CLAUDE.md "Agent mode") still decide what may happen.
 With a model that sees images, the web agent's observations also carry a
 masked, tagged screenshot of the viewport (§2.6; threat model §5.1); the
-decision format doesn't change. On a page that offers WebMCP tools, the web
-agent can also call them, as one more action on an id (§2.7; threat model
-§5.2). Before its first action the web agent has the model write a short
+decision format doesn't change. On a page that offers WebMCP tools (in its
+main document or a frame of the same origin), the web agent can also call
+them, as one more action on an id, and the chat can propose one call that
+waits for the user's click (§2.7, §4.9; threat model §5.2). Before its first action the web agent has the model write a short
 plan, which every action then names a step of (§2.8; threat model §2.8.6).
 A run that ended with DONE can be saved as a draft Agent-mode workflow,
 which can't run until the user has reviewed it and confirmed its sites
@@ -634,7 +635,8 @@ grammar ties each tool to its own arguments:
 
 (nested because the service allows 16 alternatives per `anyOf`: the 9
 other actions and the group). Left out when the page has no tools, and
-never in the chat's set (§4.3) or the form fill's (§4.7).
+never in the form fill's set (§4.7). The chat's set has it only when the
+page offers tools (§4.9).
 
 `ParseAction()` checks CALL_TOOL like any action (§2.3): exactly its four
 keys, `tool` an id of the observation's tools, then `ReadArguments()`:
@@ -751,8 +753,9 @@ with the on-device model only, in its own window.
 the agent on the site, the site offers the tools, the model's arguments go
 where TYPE text already goes and the answers where page text goes, and
 every call that may change something asks. Off, the agent never reads or
-calls a page's tools. A page without tools sees no change either way: the
-list script answers 'unavailable' at once.
+calls a page's tools, and neither does the chat (§4.9). A page without
+tools sees no change either way: the list script answers 'unavailable' at
+once.
 
 #### 2.7.12 Frames
 
@@ -1750,6 +1753,7 @@ only what the user typed.
 | TYPE | type into an observed text field | a password field is refused; payment-card and one-time-code fields ask |
 | FILL_FORM | type into 1-8 observed text fields | the same, for every field |
 | SCROLL | scroll 600 px up or down | none |
+| CALL_TOOL | call a tool the page offers (§4.9), only when it offers some | always asks; runs only on the user's click, in the document that listed it |
 | DONE | nothing: a question, nothing fits, not possible | (never run) |
 
 The scope is the page's origin, the search engine's and those of http(s)
@@ -1772,10 +1776,13 @@ commands keep all ten for the user. Multi-step tasks are the Agent's (§2).
 | TYPE / FILL_FORM: a target gone, or no fields | refuse |
 | ... a password field (by type or autocomplete) | refuse, confirmed or not |
 | ... a payment-card or one-time-code field | ask |
+| CALL_TOOL: a tool the observation doesn't offer, probes given, or the page outside the scope | refuse |
+| ... anything else, read-only or not | ask: "Runs the site's tool "search" on https://shop.example (the site says it only reads)" |
 | SCROLL, anything else in scope | act |
 
 `MayRun`: act runs; ask runs only when confirmed and the reason is the one
-last shown for this proposal; refuse never runs.
+last shown for this proposal; refuse never runs. `MayRunProposal` adds,
+for CALL_TOOL only, the user's click (§4.9).
 
 ### 4.5 MoltNet
 
@@ -1912,6 +1919,73 @@ All of them now use the helpers the page actions use:
 
 `HandleOpenMoltSettings` keeps `FindBrowserWithTab` on purpose: it tells a
 chat in a tab from the side panel.
+
+### 4.9 Site tools in the chat's proposals
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run against a page in the WebMCP trial. A typed request on a page
+that offers WebMCP tools (§2.7) can now lead to one tool call, proposed
+and confirmed like any other chat action.
+
+1. **Listing.** After the element snapshot of a typed request (never a
+   form fill), with `#molt-agent-site-tools` on, `SiteToolHost` lists the
+   tools of the observed document and of its frames of exactly the same
+   origin (§2.7.12), in the chat's own tab, with the web agent's scripts.
+   `chat_actions::AddChatSiteTools()` offers them by the web agent's
+   rules (§2.7.6: which tools, the 8 cap, a name once per frame, schema
+   conversion §2.7.7), each kept only if the chat's schema with it
+   converts. The documents are kept with the decision, by frame number.
+2. **The decision.** With tools, the chat's set is `kChatToolActions`
+   (`ChatActionsFor()`): the web agent's CALL_TOOL branch of the schema
+   (§2.7.8), the same `ParseAction()` and `ReadArguments()`. The system
+   prompt gains the CALL_TOOL line, two rules ("tool" is a TOOLS id,
+   null for a left-out argument; the user sees the tool and every
+   argument before it runs) and a security rule (the TOOLS list is the
+   page's: DATA); TOOLS (the agent's `DescribeTools()` text) follows
+   ELEMENTS inside the page fence. Without tools the prompt and the
+   schema are byte for byte what they were.
+3. **The proposal.** `DescribeProposal` is `Run the site's tool
+   "add_to_cart" in the frame https://shop.example/widgets/cart with id =
+   "A1"; qty = 2`: the tool, the frame when it isn't the main document,
+   and every argument whole in `ReadArguments()`' escaped form (hidden and
+   reordering characters as U+FFFD, quotes escaped; never cut, unlike
+   typed text in other summaries). `CheckProposal` always answers *ask*,
+   read-only or not, with the browser's reason: `Runs the site's tool
+   "add_to_cart" on https://shop.example: it may change something there`
+   (or "(the site says it only reads)", a form tool's or a card's reason;
+   a frame's tool `in the frame ... on ...`). A reason means a chip in
+   Ask first and Auto mode alike. A tool whose document is already gone
+   is refused before it is shown.
+4. **Running.** Only through the existing confirm flow: Allow sends
+   `runChatProposal(id, true)` from the click. The handler reads
+   `HasTransientUserActivation()` on the chat page's frame when the
+   message arrives (the click's activation reaches the browser first; the
+   WebUI pipe is frame-associated) and `MayRunProposal()` runs a CALL_TOOL
+   only when confirmed, for the reason shown, with that activation;
+   otherwise it answers `needs_confirmation` and the page asks again.
+   Then, as the web agent does at call time: the same main document,
+   still the active tab of the chat's window and on its side of MoltNet's
+   boundary (`ChatProposalFrame`), the page's origin among the chat's
+   sites (`CheckProposal`), the tool's document the same and still a frame
+   that counts (`SiteToolHost::ToolFrameIfCurrent`), and in the page the
+   document's mark and the same tool with the same schema, description,
+   hints and form fields (§2.7.9, §2.7.13). It runs once.
+5. **The answer.** `InterpretToolCall`: "The site's tool answered:
+   "..."", the site's text on one line, escaped as above, cut at 300
+   characters; "The tool loaded another page." when its document went
+   away after it started; else the web agent's fixed note. The page shows
+   it as text in the result row. The model never sees it: a chat proposal
+   is one step.
+
+**Why the click, even for a read-only tool.** In the web agent the user
+started a run on the site and watches it; a read-only call runs unasked
+there (§2.7.9). A chat proposal is the model's choice, written from the
+page's text, in answer to one message; the user hasn't seen what the tool
+will be given. So every tool proposal waits for Allow, and Allow must be a
+real click: the page's script (or a compromised chat renderer) sending
+`runChatProposal(id, true)` on its own gets `needs_confirmation`.
+
+**MoltNet:** §2.7.10 (on-device model only, the chat's own window).
 
 ## 5. What this changes for prompt injection
 
@@ -2110,6 +2184,30 @@ that gets a new document, between the listing and the call; a frame whose
   script in a same-origin frame adds nothing: the tools are registered by
   script, and script on the origin can already do anything there.
 
+**The chat (§4.9).** More attackers: the chat page itself if its renderer
+is compromised (it can send `runChatProposal(id, true)` whenever it
+likes), and a page that changes its tools or frames between the proposal
+and the click, which can be minutes.
+
+- *Nothing runs without the user's click.* Every tool proposal asks, in
+  Ask first and Auto mode, read-only or not; the browser runs it only with
+  the chat page's transient user activation, for the reason it showed.
+  A script that confirms on its own gets the question again.
+- *The user approves what runs.* The card names the tool, the frame when
+  it isn't the main document, and every argument whole, escaped; the
+  browser writes the arguments, and they can't change after the click.
+- *Only the chat's site, only that document.* The tool must still be
+  listed by the same document, unchanged, at the page's origin, in the
+  active tab of the chat's own window (MoltNet's boundary included).
+- *Offering is the web agent's.* The same rules decide what is offered,
+  so the chat sees no tool the agent wouldn't, and never a cross-origin
+  frame's.
+- *What remains:* page text can steer the model to the wrong tool or
+  arguments, which the user sees before allowing; and the answer is the
+  site's text shown in the chat (marked as the site's, on one line,
+  escaped, capped), as misleading as the site chooses, like its own page.
+  The model never reads the answer.
+
 **MoltNet:** §2.7.10.
 
 ### 5.3 The planner (§2.8)
@@ -2203,8 +2301,9 @@ the draft is built to be harmless until a person has looked at it:
     the agent sees no tools there until the next document.
   - *Stopping a call that timed out*: in 152 `executeTool`'s signal only
     rejects the caller's promise; nothing reaches the tool.
-  - *The chat and Agent mode*: CALL_TOOL is the web agent's only (§4.3 has
-    no such action; recorded workflows don't replay tools).
+  - *Agent mode*: recorded workflows don't replay tools (§2.9.4). The
+    chat proposes one tool call per request (§4.9); it never sees the
+    answer, so it can't chain calls.
   - *Turning WebMCP on for every page*, and a per-tool "always allow".
   - *A run against a real page in the trial*, and whether small models pick
     tools well, need the build machine.

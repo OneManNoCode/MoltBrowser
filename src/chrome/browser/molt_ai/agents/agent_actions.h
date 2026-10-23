@@ -65,7 +65,8 @@ enum class ActionType {
   kObserve,
   kDone,
   kError,
-  kCallTool,  // a site tool (WebMCP): the web agent only
+  kCallTool,  // a site tool (WebMCP): the web agent, and the chat on a
+              // page that offers tools (chat_actions.h)
   kReplan,    // ask for a new plan (agent_plan.h): the web agent only
 };
 

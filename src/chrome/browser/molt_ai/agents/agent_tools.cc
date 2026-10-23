@@ -237,7 +237,7 @@ bool IsAnnotation(std::string_view key) {
 bool OnlyKeys(const base::DictValue& d,
               std::initializer_list<std::string_view> keys,
               bool root = false) {
-  for (const auto& [key, value] : d) {
+  for (const auto [key, value] : d) {
     if (IsAnnotation(key))
       continue;
     if (root && (key == "$defs" || key == "definitions"))
@@ -881,6 +881,10 @@ std::string FrameText(std::string_view origin, std::string_view path) {
   return Visible(origin) + shown;
 }
 
+std::string VisibleText(std::string_view s) {
+  return Visible(s);
+}
+
 std::string ToolLabel(const SiteTool& tool) {
   if (tool.frame == 0)
     return tool.name;
@@ -1113,7 +1117,7 @@ std::optional<std::vector<ToolArgument>> ConvertInputSchema(
         properties->GetDict().size() > kMaxToolArguments) {
       return std::nullopt;
     }
-    for (const auto& [name, schema] : properties->GetDict()) {
+    for (const auto [name, schema] : properties->GetDict()) {
       if (!IsArgumentName(name))
         return std::nullopt;
       std::optional<ToolArgument> arg =

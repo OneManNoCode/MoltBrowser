@@ -54,6 +54,9 @@ source_set("molt_ai") {
     # The chat's page actions: one validated proposal per typed request.
     "//chrome/browser/molt_ai/agents:chat_actions",
 
+    # ... a site tool among them only with #molt-agent-site-tools on.
+    "//chrome/browser/molt_ai/agents:features",
+
     # /fill ai and /paste: form fills proposed the same way.
     ":chat_form_fill",
     "//chrome/browser/molt_ai/automation",

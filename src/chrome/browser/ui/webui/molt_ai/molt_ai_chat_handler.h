@@ -37,6 +37,7 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/chat_actions.h"
+#include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/agents/web_agent.h"
 #include "chrome/browser/molt_ai/automation/agent_run_draft.h"
 #include "chrome/browser/molt_ai/cloud/cloud_provider.h"
@@ -133,7 +134,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   //    | {status: 'none' | 'cancelled'}
   //    | {status: 'unavailable' | 'failed', message}
   // |summary| is the browser's description; |reason| (may be "") what the
-  // user must approve first, even in Auto mode.
+  // user must approve first, even in Auto mode. On a page that offers site
+  // tools (WebMCP: its main document's and its same-origin frames') the
+  // model may propose calling one (verb CALL_TOOL), which always has a
+  // reason.
   void HandleProposeChatAction(const base::ListValue& args);
   // Runs proposal |id| on the document it was proposed for, after probing
   // the page again. A proposal runs once; a newer message or proposal
@@ -142,7 +146,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   //   -> {success, message} | {success: false, error}
   //    | {success: false, needs_confirmation: true, reason}
   // |confirmed| is true only after the user's Allow; it approves the
-  // reason last shown for this proposal, nothing else.
+  // reason last shown for this proposal, nothing else. A site tool runs
+  // only if the chat page also has transient user activation (the Allow
+  // click itself), in the document that listed it.
   void HandleRunChatProposal(const base::ListValue& args);
   // /fill ai and /paste (molt_ai_chat_form_fill.h, AGENT_ACTIONS.md §4.7):
   // the same machinery for a form fill. The browser observes the page,
@@ -387,6 +393,9 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
     // reason it always asks with (chat_form_fill::RequireConfirmation).
     std::optional<molt_ai::chat_form_fill::Source> form_fill;
     std::string form_fill_reason;
+    // The documents the observation's site tools were listed in, by frame
+    // number (agent_tools::SiteTool::frame; [0] is |document|).
+    std::vector<content::WeakDocumentPtr> tool_documents;
   };
   // CheckProposal() for |proposal| on |probes|; a form fill always asks.
   molt_ai::chat_actions::Check CheckChatProposal(
@@ -402,6 +411,10 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // Snapshot of the page's interactive elements arrived.
   void OnChatActionSnapshot(std::unique_ptr<ChatActionDecision> decision,
                             base::Value snapshot);
+  // The page's site tools (#molt-agent-site-tools on, not for a form fill)
+  // were listed: offered as the web agent offers them.
+  void OnChatActionToolsListed(std::unique_ptr<ChatActionDecision> decision,
+                               molt_ai::SiteToolHost::Listing listing);
   // Asks the on-device model (again, after an unusable reply).
   void RunChatActionDecision(std::unique_ptr<ChatActionDecision> decision);
   void OnChatActionDecision(std::unique_ptr<ChatActionDecision> decision,
@@ -422,6 +435,7 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
       std::string callback_id,
       int id,
       bool confirmed,
+      bool user_activation,
       std::vector<molt_ai::agent_safety::ElementProbe> probes);
   void RunChatProposalNow(const std::string& callback_id,
                           const ChatProposal& proposal,
@@ -432,6 +446,16 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // says why.
   content::RenderFrameHost* ChatProposalFrame(const ChatProposal& proposal,
                                               std::string* error);
+  // For a CALL_TOOL proposal: the frame of the document that listed the
+  // tool, if it is still that document, still a frame that counts of the
+  // proposal's document (SiteToolHost::ToolFrameIfCurrent()); else null.
+  content::RenderFrameHost* ChatProposalToolFrame(const ChatProposal& proposal);
+  // A site tool's call ended.
+  void OnChatToolCalled(std::string callback_id,
+                        molt_ai::SiteToolHost::CallEnd end,
+                        molt_ai::agent_tools::CallOutcome outcome);
+  // Lists and calls site tools for the proposals (created on first use).
+  molt_ai::SiteToolHost* ChatSiteTools();
   void ResolveChatAction(const std::string& callback_id,
                          base::DictValue result);
 
@@ -640,6 +664,7 @@ class MoltAIChatHandler : public content::WebUIMessageHandler {
   // ends as cancelled.
   int chat_action_epoch_ = 0;
   std::unique_ptr<ChatProposal> chat_proposal_;
+  std::unique_ptr<molt_ai::SiteToolHost> chat_site_tools_;
   int next_chat_proposal_id_ = 0;
   // The fields form fills wrote on one document (their selectors): the next
   // /fill ai or /paste there leaves them out and continues with the others.

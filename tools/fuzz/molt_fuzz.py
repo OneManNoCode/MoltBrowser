@@ -266,6 +266,7 @@ FUZZERS = {
         dir=BROWSER,
         sources=[f"{MOLT_AI}/agents/agent_tools.cc",
                  f"{MOLT_AI}/agents/agent_actions.cc",
+                 f"{MOLT_AI}/agents/chat_actions.cc",
                  f"{MOLT_AI}/security/agent_safety.cc",
                  f"{ENGINE}/json_schema_grammar.cc",
                  f"{ENGINE}/bounded_json.cc"],

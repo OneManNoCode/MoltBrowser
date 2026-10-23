@@ -1,8 +1,9 @@
 // Copyright 2026 GenEye AI Labs Inc.
 // Licensed under GPLv3. See LICENSE file.
 //
-// Site tools for the web agent: the tools a page registers with WebMCP
-// (document.modelContext, Chromium 152; docs/design/AGENT_ACTIONS.md §2.7).
+// Site tools for the web agent and the AI chat's proposals: the tools a
+// page registers with WebMCP (document.modelContext, Chromium 152;
+// docs/design/AGENT_ACTIONS.md §2.7, §4.9).
 //
 // The agent reaches them through the web API itself, from its isolated
 // world: BuildToolListScript() lists a document's own tools
@@ -248,6 +249,12 @@ bool IsToolFrameChain(const std::vector<PageFrame>& chain);
 // |path| is a frame without an http(s) URL of its own (about:blank,
 // about:srcdoc, blob:), shown as such.
 std::string FrameText(std::string_view origin, std::string_view path);
+
+// |s| as the user reads it in an approval or a result: on one line (C0 and
+// C1 controls and DEL become spaces), characters that hide or reorder text
+// shown as U+FFFD, '"' and '\' escaped, so the quotes around it can't be
+// closed early. ReadArguments()' shown values are in this form.
+std::string VisibleText(std::string_view s);
 
 // How the model, the step trace and the user name a tool: its name, and for
 // a frame's tool the browser's number of the frame ("search in frame 2").

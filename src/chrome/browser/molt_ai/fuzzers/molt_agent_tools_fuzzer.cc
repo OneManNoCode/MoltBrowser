@@ -28,6 +28,10 @@
 //    control characters but line breaks and tabs;
 //  * the same list from a frame adds tools told apart by the browser's
 //    frame number, never repeated within a frame, eight in all;
+//  * the chat, on the same page, offers tools only by the same rules, with
+//    a schema the service converts; a CALL_TOOL it accepts always asks,
+//    never runs without the user's click, and its card shows every
+//    argument;
 //  * of any frame tree, the documents listed are the main document first,
 //    then frames of exactly its origin whose every ancestor counts too, at
 //    most kMaxToolFrames, each a callable chain (IsToolFrameChain()); a
@@ -52,8 +56,11 @@
 #include "base/values.h"
 #include "chrome/browser/molt_ai/agents/agent_actions.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
+#include "chrome/browser/molt_ai/agents/chat_actions.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "chrome/services/molt_ai/inference/engine/json_schema_grammar.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 namespace molt_ai {
 namespace {
@@ -257,7 +264,7 @@ void CheckCall(const agent_actions::AgentAction& action,
       base::JSONReader::Read(action.tool_arguments, base::JSON_PARSE_RFC);
   CHECK(args && args->is_dict());
   std::set<std::string> given;
-  for (const auto& [key, value] : args->GetDict()) {
+  for (const auto [key, value] : args->GetDict()) {
     CHECK(!value.is_none()) << "a null sent to the tool";
     given.insert(key);
   }
@@ -429,10 +436,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // What the model is offered.
   agent_actions::Observation observation =
       p.ConsumeBool() ? SampleObservation() : agent_actions::Observation();
+  agent_actions::Observation chat_observation = observation;
   std::vector<SiteTool> all = tools;
   all.insert(all.end(), from_frame.begin(), from_frame.end());
+  std::vector<SiteTool> chat_tools = all;
   agent_actions::AddSiteTools(std::move(all), &observation);
   CheckOfferedTools(observation);
+  // The chat offers them by the same rules, against its own schema.
+  chat_actions::AddChatSiteTools(std::move(chat_tools), &chat_observation);
+  CHECK(chat_observation.tools.size() <= agent_tools::kMaxSiteTools);
+  CHECK(ServiceAccepts(chat_actions::BuildDecisionSchema(chat_observation)))
+      << "the service would refuse the chat's schema with these tools";
 
   // The model's reply.
   const std::string reply = p.ConsumeRandomLengthString(4096);
@@ -440,7 +454,32 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       agent_actions::ParseAction(reply, observation);
   if (parsed.action && parsed.action->type == agent_actions::ActionType::kCallTool)
     CheckCall(*parsed.action, observation);
-  // The chat never takes one.
+  // The chat: a call it takes always asks and runs only on a click.
+  const agent_actions::ParsedAction proposed = agent_actions::ParseAction(
+      reply, chat_observation,
+      chat_actions::ChatActionsFor(chat_observation));
+  if (proposed.action &&
+      proposed.action->type == agent_actions::ActionType::kCallTool) {
+    CheckCall(*proposed.action, chat_observation);
+    const url::Origin shop = url::Origin::Create(GURL("https://shop.example"));
+    const chat_actions::Check check = chat_actions::CheckProposal(
+        *proposed.action, chat_observation,
+        chat_actions::Scope::ForRequest(shop, ""), shop, {});
+    CHECK(check.verdict == chat_actions::Verdict::kAsk)
+        << "a tool proposal that doesn't ask";
+    CHECK(!chat_actions::MayRunProposal(*proposed.action, check, true,
+                                        check.message, false))
+        << "a tool proposal that runs without the user's click";
+    CHECK(chat_actions::MayRunProposal(*proposed.action, check, true,
+                                       check.message, true));
+    const std::string summary =
+        chat_actions::DescribeProposal(*proposed.action, chat_observation);
+    CHECK(summary.find(proposed.action->tool_arguments_text) !=
+          std::string::npos)
+        << "the card must show every argument";
+    CHECK(!HasControl(summary, false) && !HasControl(check.message, false));
+  }
+  // A set without CALL_TOOL never takes one.
   const agent_actions::ParsedAction chat = agent_actions::ParseAction(
       reply, observation,
       agent_actions::kAgentActions &
