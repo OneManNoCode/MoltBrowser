@@ -137,6 +137,12 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   limits, the web agent's screenshot masks and page scripts, and the build
   provenance verifier, after an adversarial review
   (`docs/SECURITY_REVIEWS.md`).
+- Further hardening of the built-in AI APIs (sessions stop when a switch,
+  a policy or the site's answer turns them off; timing kept per site; the
+  consent prompt ignores rapid presses), the web agent's screenshots (none
+  for pages with frames of another origin), MoltNet text metrics on Linux
+  desktops without anti-aliasing, and the release tools' checks
+  (`docs/SECURITY_REVIEWS.md`).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
