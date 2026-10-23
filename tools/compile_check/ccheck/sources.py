@@ -7,20 +7,28 @@ Three layers, highest priority first:
   2. Chromium at CHROMIUM_REVISION, read from the blob-less cache that
      tools/chromium/upstream.py keeps (only the files a check needs are
      fetched, in batches, and written under <work>/tree/);
-  3. DEPS subprojects (perfetto, boringssl, skia, ...), each its own blob-less
-     clone of the GitHub mirror at the gitlink commit in Chromium's tree,
-     mounted at its Chromium path (third_party/perfetto/...).
+  3. DEPS subprojects (perfetto, boringssl, skia, ...) at the gitlink commit
+     in Chromium's tree, mounted at their Chromium path
+     (third_party/perfetto/...), each from the first of:
+       a. a blob-less clone of its GitHub mirror (same commit ids);
+       b. Chromium's official source tarball (tarball.py), for the commits
+          and repositories no GitHub mirror has: the pinned release's, or
+          the newest published release of the same branch (exact when that
+          release pins the same commit; else the nearest public tree, a
+          stand-in);
+       c. a substitute (SUBSTITUTES, or the mirror's HEAD), a stand-in.
 
-googlesource.com is not reachable from every machine, so every subproject
-comes from a GitHub mirror with the same commit ids. Two have no such mirror
-and are substituted (see SUBPROJECTS): libc++/libc++abi come from
-llvm-project at the commit of Chromium's pinned clang, ICU from the upstream
-release Chromium's fork is based on.
+googlesource.com is not reachable from every machine, so nothing comes from
+it. `<work>/repos/sources.json` records where each mount came from; when
+that changes, the mount's materialized and generated files are dropped.
 """
 import json
+import lzma
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -28,12 +36,13 @@ REPO_ROOT = HERE.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools" / "chromium"))
 import upstream as _up  # noqa: E402
 
+from . import tarball  # noqa: E402
+
 LLVM = "https://github.com/llvm/llvm-project"
 
-# mount (Chromium path) -> (GitHub remote, prefix inside that repo,
-# commit override or None to use the gitlink commit in Chromium's tree).
-# "@clang" means: the llvm-project commit Chromium's pinned clang was built
-# from (read from the downloaded toolchain).
+# mount (Chromium path) -> (GitHub mirror or None if there is none, prefix
+# inside that repo, commit override or None to use the gitlink commit in
+# Chromium's tree).
 SUBPROJECTS = {
     "third_party/perfetto": ("https://github.com/google/perfetto", "", None),
     "third_party/boringssl/src": ("https://github.com/google/boringssl", "",
@@ -76,26 +85,53 @@ SUBPROJECTS = {
     "third_party/libyuv": ("https://github.com/lemenkov/libyuv", "", None),
     "third_party/openscreen/src": ("https://github.com/chromium/openscreen",
                                    "", None),
-    # Substitutes (no GitHub mirror of Chromium's copy):
-    # dom_distiller_js/dist is a CIPD package built from dom-distiller;
-    # its proto/ comes from the repository's HEAD.
+    # No GitHub mirror (Chromium's own forks and a CIPD-built package):
+    # from the tarball.
+    "third_party/dom_distiller_js/dist": (None, "", None),
+    "third_party/libc++/src": (None, "", None),
+    "third_party/libc++abi/src": (None, "", None),
+    "third_party/icu": (None, "", None),
+}
+
+# Stand-ins for when neither a mirror nor a tarball has the pinned tree
+# (same layout, nearest public source). "@clang": the llvm-project commit
+# Chromium's pinned clang was built from (read from the downloaded
+# toolchain); "@head": the repository's HEAD.
+SUBSTITUTES = {
+    # dom_distiller_js/dist is built from dom-distiller; its proto/ is the
+    # repository's.
     "third_party/dom_distiller_js/dist": (
         "https://github.com/chromium/dom-distiller", "", "@head"),
     "third_party/libc++/src": (LLVM, "libcxx/", "@clang"),
     "third_party/libc++abi/src": (LLVM, "libcxxabi/", "@clang"),
-    # Chromium's ICU fork is upstream ICU plus a few patches; the headers
-    # come from the upstream release it tracks.
+    # Chromium's ICU fork is upstream ICU plus a few patches.
     "third_party/icu": ("https://github.com/unicode-org/icu", "icu4c/",
                         "release-78.3"),
 }
 
-
-# Subprojects whose pinned commit is missing from the mirror: their headers
-# come from the mirror's HEAD instead (a stand-in; reported as such). Public
-# C APIs that change slowly only.
+# Subprojects whose mirror's HEAD is the last resort (public C APIs that
+# change slowly only).
 HEAD_FALLBACK = {"third_party/pdfium", "third_party/webrtc",
                  "third_party/libyuv", "third_party/openscreen/src",
                  "third_party/dawn"}
+
+SOURCES_STATE = "sources.json"
+
+
+def load_sources_state(work):
+    """{mount: {"key", "exact", "desc"}}: where each mount's files came
+    from (written by SourceTree.sub)."""
+    f = Path(work) / "repos" / SOURCES_STATE
+    try:
+        return json.loads(f.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def stand_in_mounts(work):
+    """{mount: label} of the mounts whose tree is not the pinned one."""
+    return {m: v.get("desc") or m for m, v in
+            load_sources_state(work).items() if not v.get("exact")}
 
 
 def log(msg):
@@ -158,6 +194,7 @@ class SourceTree:
                              pin.revision)
         self.clang_llvm_commit = clang_llvm_commit
         self._subs = {}
+        self._tarball_info = None
         self.unavailable = {}
         self.substituted = {}
         self._overlay_set = None
@@ -182,47 +219,213 @@ class SourceTree:
         return None
 
     def sub(self, mount):
+        """(repo, prefix) for a mounted subproject (repo None if no source
+        has it)."""
         if mount not in self._subs:
-            remote, prefix, rev = SUBPROJECTS[mount]
-            if rev is None:
-                e = self.chromium.entries.get(mount)
-                if e is None or e.type != "commit":
-                    raise RuntimeError("%s is not a gitlink at the pin" % mount)
-                rev = e.oid
-            elif rev == "@head":
-                name = remote.rstrip("/").split("/")[-1]
-                repo = self._head_fallback(mount, name, remote)
-                self._subs[mount] = (repo, prefix)
-                return self._subs[mount]
-            elif rev == "@clang":
-                if not self.clang_llvm_commit:
-                    raise RuntimeError("clang's llvm commit is unknown; run "
-                                       "`compile_check.py setup` first")
-                rev = self.clang_llvm_commit
-            name = remote.rstrip("/").split("/")[-1]
-            key = "%s @ %s" % (remote, rev)
-            marker = self.work / "repos" / "unavailable.json"
-            known_bad = json.loads(marker.read_text()) if marker.exists() \
-                else {}
-            repo = None
-            if known_bad.get(mount) == key:
-                self.unavailable[mount] = key
-            else:
-                repo = Repo(self.work / "repos" / name, remote, rev)
-                try:
-                    repo.entries
-                except RuntimeError as e:
-                    log("subproject %s unavailable (%s): %s" % (
-                        mount, key, str(e).splitlines()[-1][-200:]))
-                    self.unavailable[mount] = key
-                    known_bad[mount] = key
-                    marker.parent.mkdir(parents=True, exist_ok=True)
-                    marker.write_text(json.dumps(known_bad, indent=1))
-                    repo = None
-            if repo is None and mount in HEAD_FALLBACK:
-                repo = self._head_fallback(mount, name, remote)
-            self._subs[mount] = (repo, prefix)
+            self._subs[mount] = self._resolve_sub(mount)
         return self._subs[mount]
+
+    def _resolve_sub(self, mount):
+        remote, prefix, rev = SUBPROJECTS[mount]
+        e = self.chromium.entries.get(mount)
+        gitlink = e.oid if e is not None and e.type == "commit" else None
+        if rev is None and gitlink is None:
+            raise RuntimeError("%s is not a gitlink at the pin" % mount)
+        if remote:
+            repo = self._mirror(mount, remote, rev or gitlink)
+            if repo is not None:
+                self._record(mount, "git %s %s" % (remote, repo.commit),
+                             True, None)
+                return repo, prefix
+        if gitlink:
+            got = self._from_tarball(mount, gitlink)
+            if got is not None:
+                repo, exact, key, desc = got
+                self._record(mount, key, exact, desc)
+                return repo, ""
+        if mount in SUBSTITUTES:
+            sremote, sprefix, srev = SUBSTITUTES[mount]
+            name = sremote.rstrip("/").split("/")[-1]
+            if srev == "@head":
+                repo = self._head_fallback(mount, name, sremote)
+            else:
+                if srev == "@clang":
+                    if not self.clang_llvm_commit:
+                        raise RuntimeError("clang's llvm commit is unknown; "
+                                           "run `compile_check.py setup` "
+                                           "first")
+                    srev = self.clang_llvm_commit
+                repo = self._mirror(mount, sremote, srev)
+                if repo is not None:
+                    self.substituted[mount] = "%s @ %s" % (sremote, srev)
+            if repo is not None:
+                self._record(
+                    mount, "substitute %s %s" % (sremote, repo.commit), False,
+                    "%s (%s at %s)" % (mount, sremote.split("github.com/")[-1],
+                                       "HEAD" if srev == "@head" else
+                                       srev[:12]))
+                return repo, sprefix
+        if remote and mount in HEAD_FALLBACK:
+            name = remote.rstrip("/").split("/")[-1]
+            repo = self._head_fallback(mount, name, remote)
+            if repo is not None:
+                self._record(mount, "head %s %s" % (remote, repo.commit),
+                             False, "%s (mirror HEAD)" % mount)
+                return repo, prefix
+        return None, prefix
+
+    def _mirror(self, mount, remote, rev):
+        """A blob-less clone of `remote` at `rev`, or None if the mirror
+        doesn't have it (remembered in repos/unavailable.json)."""
+        name = remote.rstrip("/").split("/")[-1]
+        key = "%s @ %s" % (remote, rev)
+        marker = self.work / "repos" / "unavailable.json"
+        known_bad = json.loads(marker.read_text()) if marker.exists() \
+            else {}
+        if known_bad.get(mount) == key:
+            self.unavailable[mount] = key
+            return None
+        repo = Repo(self.work / "repos" / name, remote, rev)
+        try:
+            repo.entries
+        except RuntimeError as e:
+            log("subproject %s unavailable (%s): %s" % (
+                mount, key, str(e).splitlines()[-1][-200:]))
+            self.unavailable[mount] = key
+            known_bad[mount] = key
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(json.dumps(known_bad, indent=1))
+            return None
+        return repo
+
+    # -- the official tarball --------------------------------------------
+    def tarball_info(self):
+        """{"version", "url", "gitlinks": {mount: commit}} of the tarball
+        to use for this pin (cached in repos/tarball.json), or None."""
+        if self._tarball_info is not None:
+            return self._tarball_info or None
+        state_f = self.work / "repos" / "tarball.json"
+        pin = _up.read_pin(REPO_ROOT / "chromium_version.txt")
+        try:
+            state = json.loads(state_f.read_text())
+        except (OSError, ValueError):
+            state = {}
+        if state.get("pin") != pin.version:
+            branch = ".".join(pin.version.split(".")[:3]) + "."
+            try:
+                versions = tarball.list_versions(branch)
+            except OSError as e:
+                log("tarball: cannot list releases: %s" % e)
+                self._tarball_info = {}
+                return None
+            v = tarball.pick_version(pin.version, versions)
+            state = {"pin": pin.version, "version": v}
+            if v is not None:
+                if v == pin.version:
+                    entries = self.chromium.entries
+                else:
+                    up = _up.Upstream(cache_dir=self.chromium.up.cache_dir,
+                                      remote=self.chromium.up.remote)
+                    try:
+                        entries = up.tree(up.resolve(v))
+                    except RuntimeError as e:
+                        log("tarball: cannot read %s's tree: %s" % (v, e))
+                        self._tarball_info = {}
+                        return None
+                state["url"] = tarball.tarball_url(v, versions[v])
+                state["gitlinks"] = {
+                    m: entries[m].oid for m in SUBPROJECTS
+                    if m in entries and entries[m].type == "commit"}
+            state_f.parent.mkdir(parents=True, exist_ok=True)
+            state_f.write_text(json.dumps(state, indent=1, sort_keys=True))
+        self._tarball_info = state if state.get("version") else {}
+        return self._tarball_info or None
+
+    def _tarball_mounts(self, mount):
+        """The mounts to keep from one pass over the tarball: this one, every
+        mount without a mirror, and every mount whose mirror lacks the
+        pinned commit (so one pass serves them all)."""
+        marker = self.work / "repos" / "unavailable.json"
+        bad = json.loads(marker.read_text()) if marker.exists() else {}
+        return {mount} | {m for m, (r, _, _) in SUBPROJECTS.items()
+                          if r is None} | (set(bad) & set(SUBPROJECTS))
+
+    def _from_tarball(self, mount, gitlink):
+        """(DirRepo, exact, source key, stand-in label) from the official
+        tarball, or None."""
+        info = self.tarball_info()
+        if info is None:
+            return None
+        root = self.work / "repos" / ("tarball-" + info["version"])
+        man = None
+        try:
+            man = json.loads((root / tarball.MANIFEST).read_text())
+        except (OSError, ValueError):
+            pass
+        if man is None or mount not in man["mounts"]:
+            mounts = set(man["mounts"]) if man else set()
+            mounts |= self._tarball_mounts(mount)
+            for attempt in (1, 2):
+                try:
+                    tarball.extract(info["url"], info["version"],
+                                    sorted(mounts), root, log)
+                    break
+                except (OSError, EOFError, tarfile.TarError,
+                        lzma.LZMAError) as e:
+                    log("tarball: extraction failed (%s)%s" % (
+                        e, "; retrying" if attempt == 1 else ""))
+            else:
+                return None
+            man = json.loads((root / tarball.MANIFEST).read_text())
+        files = man["mounts"].get(mount) or {}
+        if not files:
+            return None
+        commit = info["gitlinks"].get(mount)
+        exact = commit == gitlink
+        repo = tarball.DirRepo(root / mount, files, commit or gitlink,
+                               "tarball " + info["version"])
+        key = "tarball %s %s" % (info["version"], commit)
+        desc = None
+        if not exact:
+            desc = "%s (%s's %s; the pinned %s is not mirrored)" % (
+                mount, info["version"], (commit or "?")[:12], gitlink[:12])
+            self.substituted[mount] = desc
+        return repo, exact, key, desc
+
+    def _record(self, mount, key, exact, desc):
+        """Remembers where a mount came from; a different source than last
+        time drops the mount's materialized and generated files (they came
+        from the old one)."""
+        f = self.work / "repos" / SOURCES_STATE
+        state = load_sources_state(self.work)
+        old = state.get(mount, {}).get("key")
+        d = self.tree_dir / mount
+        # A work dir from before sources.json: what's there came from a
+        # mirror at the pin, or from a stand-in.
+        legacy = old is None and d.exists() and not key.startswith("git ")
+        if (old is not None and old != key) or legacy:
+            log("subproject %s: source changed (%s -> %s); dropping its "
+                "files" % (mount, old or "earlier stand-in", key))
+            for x in (d, self.gen_dir / mount):
+                shutil.rmtree(x, ignore_errors=True)
+            for p in self.overlay_set():
+                if p.startswith(mount + "/"):
+                    (self.tree_dir / p).parent.mkdir(parents=True,
+                                                     exist_ok=True)
+                    os.symlink(self.overlay / p, self.tree_dir / p)
+        if state.get(mount) != {"key": key, "exact": exact, "desc": desc}:
+            state[mount] = {"key": key, "exact": exact, "desc": desc}
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(state, indent=1, sort_keys=True))
+
+    def validate_mounts(self):
+        """Resolves every mount used before (recorded, or with files here),
+        so a changed source is noticed (and its old files dropped) even by
+        a run that fetches nothing."""
+        state = load_sources_state(self.work)
+        for m in SUBPROJECTS:
+            if m in state or (self.tree_dir / m).exists():
+                self.sub(m)
 
     def _head_fallback(self, mount, name, remote):
         """The mirror's current HEAD, for a subproject whose pinned commit
