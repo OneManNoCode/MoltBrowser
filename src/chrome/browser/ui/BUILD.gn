@@ -1651,7 +1651,6 @@ static_library("ui") {
     "//chrome/browser/media/router:media_router_feature",
     "//chrome/browser/metrics",
     "//chrome/browser/metrics:impl",
-<<<<<<< src/chrome/browser/ui/BUILD.gn (MoltBrowser)
     "//chrome/browser/molt_ai/anti_rage",
     "//chrome/browser/molt_ai/consent",
     "//chrome/browser/molt_ai/keys:os_crypt",
@@ -1660,11 +1659,6 @@ static_library("ui") {
     "//chrome/browser/molt_ai/tor",
     "//chrome/browser/molt_ai/vault",
     "//chrome/browser/molt_ai/voice",
-    "//chrome/browser/new_tab_page/chrome_colors:generate_chrome_colors_info",
-||||||| upstream@pin
-    "//chrome/browser/new_tab_page/chrome_colors:generate_chrome_colors_info",
-=======
->>>>>>> upstream@new
     "//chrome/browser/new_tab_page/chrome_colors:selected_colors_info",
     "//chrome/browser/omnibox",
     "//chrome/browser/optimization_guide",

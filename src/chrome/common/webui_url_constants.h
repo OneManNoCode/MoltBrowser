@@ -217,8 +217,6 @@ inline constexpr char16_t kChromeUIManagementURL16[] = u"chrome://management";
 inline constexpr char kChromeUIMediaEngagementHost[] = "media-engagement";
 inline constexpr char kChromeUIMediaRouterInternalsHost[] =
     "media-router-internals";
-<<<<<<< src/chrome/common/webui_url_constants.h (MoltBrowser)
-inline constexpr char kChromeUIMemoryInternalsHost[] = "memory-internals";
 
 // MoltBrowser AI WebUI pages
 // Internal Chromium WebUI URLs (chrome:// scheme is required by the WebUI
@@ -282,10 +280,6 @@ inline constexpr char kMoltSettingsURL[] = "molt://settings/";
 // Chromium version, not ours, so the updater compares THIS against the GitHub
 // release tag. Bump on each release (keep in sync with release.sh --version).
 inline constexpr char kMoltBrowserVersion[] = "0.2.5";
-||||||| upstream@pin
-inline constexpr char kChromeUIMemoryInternalsHost[] = "memory-internals";
-=======
->>>>>>> upstream@new
 inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
 inline constexpr char kChromeUINetExportHost[] = "net-export";
 inline constexpr char kChromeUINetInternalsHost[] = "net-internals";

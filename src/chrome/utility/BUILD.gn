@@ -39,13 +39,9 @@ static_library("utility") {
     "//chrome:strings",
     "//chrome/common",
     "//chrome/common:mojo_bindings",
-<<<<<<< src/chrome/utility/BUILD.gn (MoltBrowser)
-    "//chrome/services/molt_ai/document_parser:lib",  # MoltBrowser
-||||||| upstream@pin
-=======
     "//chrome/common/request_header_integrity:buildflags",
     "//chrome/services/file_util:buildflags",
->>>>>>> upstream@new
+    "//chrome/services/molt_ai/document_parser:lib",  # MoltBrowser
     "//chrome/services/speech/buildflags",
     "//components/heap_profiling/in_process",
     "//components/metrics:child_call_stack_profile_builder",
