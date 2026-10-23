@@ -372,6 +372,31 @@ TEST(ChatActionsTest, ToolsAreOfferedAsTheAgentOffersThem) {
   ExpectServiceAccepts(BuildDecisionSchema(o));
 }
 
+TEST(ChatActionsTest, ToolsTheChatsSchemaCantTakeAreLeftOut) {
+  // Each string length is its own grammar rule: 8 tools of 8 distinct
+  // 400-character strings can't all fit the service's budget. The chat
+  // keeps only what its own schema (with CALL_TOOL) converts with.
+  Observation o = SampleObservation();
+  std::vector<agent_tools::SiteTool> tools;
+  for (int t = 0; t < 8; ++t) {
+    std::string props;
+    for (int a = 0; a < 8; ++a) {
+      if (a)
+        props += ',';
+      props += "\"a" + std::to_string(a) +
+               "\":{\"type\":\"string\",\"maxLength\":" +
+               std::to_string(400 + 8 * t + a) + "}";
+    }
+    tools.push_back(ChatTool("tool" + std::to_string(t),
+                             "{\"properties\":{" + props + "}}",
+                             /*read_only=*/true));
+  }
+  AddChatSiteTools(std::move(tools), &o);
+  EXPECT_GE(o.tools.size(), 1u);
+  EXPECT_LT(o.tools.size(), 8u);
+  ExpectServiceAccepts(BuildDecisionSchema(o));
+}
+
 TEST(ChatActionsTest, PromptOffersToolsInsideTheFence) {
   Observation o = WithTools();
   // A tool description that tries to end the fence or forge a TOOLS line.
@@ -420,7 +445,7 @@ TEST(ChatActionsTest, DescribesToolProposalsWithEveryArgument) {
   const std::string long_note(400, 'n');
   AgentAction a = ParseToolCall(
       R"({"reason":"r","action":"CALL_TOOL","tool":"t2","arguments":)"
-      R"({"id":"A\"1‮","qty":null,"note":")" +
+      R"({"id":"A\"1\u202e","qty":null,"note":")" +
           long_note + R"("}})",
       o);
   EXPECT_EQ(DescribeProposal(a, o),
@@ -840,7 +865,7 @@ TEST(ChatActionsTest, ProposalsShowHiddenCharacters) {
   const Observation o = ObservationOf(std::move(l));
   ParsedAction type = agent_actions::ParseAction(
       R"({"reason":"r","action":"TYPE","target":"e1",)"
-      R"("text":"moc.live‮@ada\u0085x y"})",
+      R"("text":"moc.live\u202e@ada\u0085x\u2028y"})",
       o, kChatActions);
   ASSERT_TRUE(type.action);
   EXPECT_EQ(DescribeProposal(*type.action, o),
@@ -852,7 +877,7 @@ TEST(ChatActionsTest, ProposalsShowHiddenCharacters) {
   EXPECT_EQ(DescribeProposal(*click.action, o),
             "Click input[search] \"Se\xEF\xBF\xBD" "arch\"");
   ParsedAction open = agent_actions::ParseAction(
-      R"({"reason":"r","action":"NAVIGATE","url":"https://a.example/⁦x"})",
+      R"({"reason":"r","action":"NAVIGATE","url":"https://a.example/\u2066x"})",
       o, kChatActions);
   ASSERT_TRUE(open.action);
   EXPECT_EQ(DescribeProposal(*open.action, o),

@@ -1249,13 +1249,13 @@ PageFrame Frame(std::optional<size_t> parent,
 TEST(AgentToolsTest, ToolFramesAreTheMainDocumentThenSameOriginFrames) {
   // As ForEachRenderFrameHost visits them (breadth first):
   //   0 main
-  //   ├ 1 same origin
-  //   │ └ 4 same origin
-  //   ├ 2 ads.example (cross-origin)
-  //   │ └ 5 same origin, inside the cross-origin frame
-  //   └ 3 same origin
-  //     └ 6 fenced frame (not in the page)
-  //       └ 7 same origin, inside the fenced frame
+  //   + 1 same origin
+  //   | ` 4 same origin
+  //   + 2 ads.example (cross-origin)
+  //   | ` 5 same origin, inside the cross-origin frame
+  //   ` 3 same origin
+  //     ` 6 fenced frame (not in the page)
+  //       ` 7 same origin, inside the fenced frame
   std::vector<PageFrame> frames = {
       Frame(std::nullopt),
       Frame(0),

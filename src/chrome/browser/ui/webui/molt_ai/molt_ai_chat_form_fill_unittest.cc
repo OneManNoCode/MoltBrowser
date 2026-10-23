@@ -483,7 +483,7 @@ TEST(ChatFormFillTest, TheSummaryCantHideOrReorderText) {
   // reads is what is typed.
   const AgentAction a = FillOk(
       R"({"reason":"r","action":"FILL_FORM","fields":[)"
-      R"({"target":"e2","text":"ada‮@evil.com​﻿⁦x\u0085y"}]})");
+      R"({"target":"e2","text":"ada\u202e@evil.com\u200b\ufeff\u2066x\u0085y"}]})");
   const std::string s = DescribeFormFill(a, FormObservation());
   EXPECT_EQ(s,
             "Fill 1 field: input[email] \"Email\" = \"ada\xEF\xBF\xBD"
@@ -503,7 +503,7 @@ TEST(ChatFormFillTest, TheSummaryCantHideOrReorderText) {
   // character are shown too.
   const AgentAction wide = FillOk(
       R"({"reason":"r","action":"FILL_FORM","fields":[)"
-      R"({"target":"e2","text":"a­b c️d󠁁e"}]})");
+      R"({"target":"e2","text":"a\u00adb\u2028c\ufe0fd\udb40\udc41e"}]})");
   EXPECT_EQ(DescribeFormFill(wide, FormObservation()),
             "Fill 1 field: input[email] \"Email\" = \"a\xEF\xBF\xBD"
             "b\xEF\xBF\xBD"
