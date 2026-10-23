@@ -32,6 +32,16 @@ the build machine adds its items under the right phase, with its tag.
 - A fix found here goes in through a pull request (`main` is protected),
   with `tools/chromium/overlay_to_patches.py` and `verify_patches.py` run if
   it touches an upstream file (from CLAUDE.md).
+- The detail behind the items: [REBASING.md](REBASING.md),
+  [SIGNED_UPDATES.md](SIGNED_UPDATES.md), [LEAK_TESTING.md](LEAK_TESTING.md),
+  [MOLTNET_COMPLIANCE.md](MOLTNET_COMPLIANCE.md) §4,
+  [NETWORK_TRAFFIC.md](NETWORK_TRAFFIC.md), [FUZZING.md](FUZZING.md),
+  [FINGERPRINTING.md](FINGERPRINTING.md), and the design docs
+  ([SANDBOXED_INFERENCE](design/SANDBOXED_INFERENCE.md),
+  [WEB_AI_APIS](design/WEB_AI_APIS.md),
+  [PAGE_TRANSLATION](design/PAGE_TRANSLATION.md),
+  [AGENT_ACTIONS](design/AGENT_ACTIONS.md),
+  [SEMANTIC_SEARCH](design/SEMANTIC_SEARCH.md)).
 
 **Platforms.** macOS arm64 (native) and Linux x64 (Docker on the Mac, or a
 native Linux box). Windows builds are paused (CLAUDE.md, 2026-07-03); its
