@@ -3,8 +3,8 @@
 #
 # For older Android devices (ARMv7). Minimum API level 24 (Android 7.0).
 #
-# Usage: gn gen out/MoltBrowser --args="import(\"//configs/android-arm.gn\")"
-# Or:    ./scripts/configure.sh --platform android --arch arm
+# Usage (repository root): ./scripts/configure.sh --platform android --arch arm
+# Or, in chromium/src:    gn gen out/MoltBrowser --args="$(cat ../../configs/android-arm.gn)"
 
 # Target platform
 target_os = "android"

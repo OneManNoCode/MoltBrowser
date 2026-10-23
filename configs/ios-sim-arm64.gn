@@ -3,8 +3,8 @@
 #
 # For development and testing on the iOS Simulator running on Apple Silicon.
 #
-# Usage: gn gen out/MoltBrowser --args="import(\"//configs/ios-sim-arm64.gn\")"
-# Or:    ./scripts/configure.sh --platform ios --arch sim-arm64
+# Usage (repository root): ./scripts/configure.sh --platform ios --arch sim-arm64
+# Or, in chromium/src:    gn gen out/MoltBrowser --args="$(cat ../../configs/ios-sim-arm64.gn)"
 
 # Target platform
 target_os = "ios"

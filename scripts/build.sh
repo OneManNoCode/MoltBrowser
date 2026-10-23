@@ -207,7 +207,7 @@ fi
 # Report binary location based on platform
 case "${PLATFORM:-auto}" in
   macos)
-    BINARY="$CHROMIUM_SRC/$BUILD_DIR/Chromium.app"
+    BINARY="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
     if [ -d "$BINARY" ]; then
       echo "Binary: $BINARY"
       echo "Size: $(du -sh "$BINARY" | cut -f1)"
@@ -252,11 +252,11 @@ case "${PLATFORM:-auto}" in
   *)
     # Fallback: detect from host OS
     if [ "$(uname)" = "Darwin" ]; then
-      BINARY="$CHROMIUM_SRC/$BUILD_DIR/Chromium.app"
-      [ -d "$BINARY" ] && echo "Binary: $BINARY" && echo "To run: open $BINARY"
+      BINARY="$CHROMIUM_SRC/$BUILD_DIR/MoltBrowser.app"
+      if [ -d "$BINARY" ]; then echo "Binary: $BINARY"; echo "To run: open $BINARY"; fi
     else
       BINARY="$CHROMIUM_SRC/$BUILD_DIR/chrome"
-      [ -f "$BINARY" ] && echo "Binary: $BINARY" && echo "To run: $BINARY"
+      if [ -f "$BINARY" ]; then echo "Binary: $BINARY"; echo "To run: $BINARY"; fi
     fi
     ;;
 esac

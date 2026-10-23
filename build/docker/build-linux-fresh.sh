@@ -19,6 +19,10 @@
 #   ./build/docker/build-linux-fresh.sh --package  # build + .deb/.rpm/.tar.gz
 #   ./build/docker/build-linux-fresh.sh --package --jobs 8   # more parallelism
 #
+# The packages get the browser's own version, kMoltBrowserVersion in
+# src/chrome/common/webui_url_constants.h (what About and the updater
+# report); --version X.Y.Z overrides it.
+#
 # Requirements:
 #   - x86_64 Linux with Docker (Docker Engine or Docker Desktop)
 #   - ~120 GB free disk  (Chromium checkout ~30 GB + build output)
@@ -41,7 +45,7 @@ CHROMIUM_PIN="$("$ROOT_DIR/tools/chromium/pin.sh" revision)"
 CHROMIUM_VERSION="$("$ROOT_DIR/tools/chromium/pin.sh" version)"
 IMAGE_NAME="moltbrowser-linux"
 DO_PACKAGE=false
-VERSION="0.2.5"
+VERSION=""
 JOBS=4
 REBUILD=false
 
@@ -57,6 +61,17 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+if [ "$DO_PACKAGE" = true ] && [ -z "$VERSION" ]; then
+  VERSION="$(sed -n 's/^inline constexpr char kMoltBrowserVersion\[\] = "\([^"]*\)";.*/\1/p' \
+    "$ROOT_DIR/src/chrome/common/webui_url_constants.h")"
+fi
+if [ "$DO_PACKAGE" = true ] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "ERROR: no package version (got '$VERSION'): pass --version X.Y.Z, or check"
+  echo "       kMoltBrowserVersion in src/chrome/common/webui_url_constants.h."
+  exit 1
+fi
+[ "$DO_PACKAGE" = true ] && echo "Package version: $VERSION"
 
 command -v docker >/dev/null 2>&1 || {
   echo "ERROR: Docker is required. Install Docker Engine, then re-run."
