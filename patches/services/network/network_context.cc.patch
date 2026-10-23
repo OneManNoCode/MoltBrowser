@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 789de76a8dc025b933ac18c24243e24742df1393..6090d529207d8494a6a9263fe0ca9d5edb22fc0a 100644
+index 789de76a8dc025b933ac18c24243e24742df1393..ea9a23e5fa7637610a5d15eae676acf0dccc7397 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -667,6 +667,34 @@ void RemoveInvalidationFilterCallback(
@@ -94,7 +94,22 @@ index 789de76a8dc025b933ac18c24243e24742df1393..6090d529207d8494a6a9263fe0ca9d5e
    }
  
    builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
-@@ -3203,6 +3248,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -2932,8 +2977,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+     }
+     builder.SetHttpAuthHandlerFactory(
+         network_service_->CreateHttpAuthHandlerFactory(this));
+-    builder.set_network_quality_estimator(
+-        network_service_->network_quality_estimator());
++    // MoltBrowser: not for MoltNet, whose pages must not depend on the
++    // browser-wide estimate, nor move it.
++    if (!params_->molt_no_network_quality_estimator) {
++      builder.set_network_quality_estimator(
++          network_service_->network_quality_estimator());
++    }
+   }
+   trust_token_store_ = std::make_unique<PendingTrustTokenStore>();
+ 
+@@ -3203,6 +3252,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    session_params.key_auth_cache_server_entries_by_network_anonymization_key =
        params_->split_auth_cache_by_network_anonymization_key;
  
@@ -106,7 +121,7 @@ index 789de76a8dc025b933ac18c24243e24742df1393..6090d529207d8494a6a9263fe0ca9d5e
    builder.set_http_network_session_params(session_params);
    builder.set_quic_context(std::move(quic_context));
  
-@@ -3338,6 +3388,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3338,6 +3392,12 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
    // TransportSecurityState.  Since no requests have been made yet, safe to do
    // this even after the call to Build().
  

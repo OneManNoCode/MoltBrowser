@@ -131,6 +131,11 @@ S_SETTINGS = FP + ' "MoltNet: settings from the regular profile"'
 S_AI = FP + ' "Built-in AI APIs"'
 S_FONTS = FP + ' "Fonts"'
 S_TEXT = FP + ' "Text metrics (MoltNet)"'
+S_NETQ = FP + ' "MoltNet: connection and network quality"'
+
+# navigator.connection in MoltNet (moltnet_network_values.h).
+CONNECTION = {'effectiveType': '4g', 'rtt': 200, 'downlink': 1.6,
+              'saveData': False}
 
 # Rules that hold for every fingerprint record (any window size, zoom or
 # scale factor).
@@ -178,6 +183,9 @@ FULL_RULES = (
     ('nav.hardwareConcurrency', 'eq', 4, S_SURFACE),
     ('nav.deviceMemory', 'eq', 8, S_DEVICE),
     ('nav.cpuPerformance', 'in', [0, None], S_DEVICE),
+    ('nav.connection', 'eq', CONNECTION, S_NETQ),
+    ('worker.connection', 'eq', CONNECTION, S_NETQ),
+    ('nav.connection_changes', 'eq', 0, S_NETQ),
     ('nav.maxTouchPoints', 'eq', 0, S_DEVICE),
     ('mq.pointer_fine', 'eq', True, S_DEVICE),
     ('mq.pointer_coarse', 'eq', False, S_DEVICE),
@@ -265,7 +273,6 @@ INFO_KEYS = {
     'speech.voices': 'speechSynthesis.getVoices() count',
     'battery': 'navigator.getBattery() level and charging',
     'keyboard.layout': 'navigator.keyboard.getLayoutMap() sample keys',
-    'nav.connection': 'navigator.connection (documented gap)',
     'webrtc.codecs': 'RTCRtpSender.getCapabilities() (documented gap)',
     'fonts.system_ui_width': 'system-ui text width (documented gap on Linux)',
     'scrollbar.width': 'the page\'s own scrollbar width (0 when the page '

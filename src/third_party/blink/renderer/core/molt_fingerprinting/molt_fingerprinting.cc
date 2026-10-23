@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/core/inspector/locale_controller.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/letterbox.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_locale.h"
+#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_network.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_text.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_uniformity.h"
 #include "third_party/blink/renderer/core/molt_fingerprinting/shared_worker_key.h"
@@ -567,6 +568,9 @@ void Configure(Mode mode) {
     // Text is measured the same way on every machine of an OS
     // (moltnet_text.h).
     PinUniformTextRendering();
+    // The connection and network quality are the same for every MoltNet
+    // user and never change (moltnet_network.h).
+    PinUniformNetworkState();
   }
 }
 

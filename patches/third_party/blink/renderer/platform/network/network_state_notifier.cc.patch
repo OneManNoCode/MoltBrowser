@@ -1,0 +1,82 @@
+MoltBrowser patch for third_party/blink/renderer/platform/network/network_state_notifier.cc
+Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Generated from src/third_party/blink/renderer/platform/network/network_state_notifier.cc by tools/chromium/overlay_to_patches.py.
+src/ is still the source of truth: edit the file there and
+re-run the generator (see docs/REBASING.md).
+
+diff --git a/third_party/blink/renderer/platform/network/network_state_notifier.cc b/third_party/blink/renderer/platform/network/network_state_notifier.cc
+index ed69c14c031be961f64253efe3dabe639f3d96cd..629e599159b9ba6e14af49808d3bb2b294e37b82 100644
+--- a/third_party/blink/renderer/platform/network/network_state_notifier.cc
++++ b/third_party/blink/renderer/platform/network/network_state_notifier.cc
+@@ -133,6 +133,9 @@ void NetworkStateNotifier::SetOnLine(bool on_line) {
+ void NetworkStateNotifier::SetWebConnection(WebConnectionType type,
+                                             double max_bandwidth_mbps) {
+   DCHECK(IsMainThread());
++  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
++    return;
++  }
+   ScopedNotifier notifier(*this);
+   {
+     base::AutoLock locker(lock_);
+@@ -147,6 +150,9 @@ void NetworkStateNotifier::SetNetworkQuality(WebEffectiveConnectionType type,
+                                              base::TimeDelta transport_rtt,
+                                              int downlink_throughput_kbps) {
+   DCHECK(IsMainThread());
++  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
++    return;
++  }
+   ScopedNotifier notifier(*this);
+   {
+     base::AutoLock locker(lock_);
+@@ -174,6 +180,9 @@ void NetworkStateNotifier::SetNetworkQualityWebHoldback(
+   DCHECK(IsMainThread());
+   if (type == WebEffectiveConnectionType::kTypeUnknown)
+     return;
++  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
++    return;
++  }
+   ScopedNotifier notifier(*this);
+   {
+     base::AutoLock locker(lock_);
+@@ -193,6 +202,9 @@ NetworkStateNotifier::AddConnectionObserver(
+ 
+ void NetworkStateNotifier::SetSaveDataEnabled(bool enabled) {
+   DCHECK(IsMainThread());
++  if (uniform_) {  // MoltBrowser: SetUniformNetworkState().
++    return;
++  }
+   ScopedNotifier notifier(*this);
+   {
+     base::AutoLock locker(lock_);
+@@ -278,6 +290,21 @@ void NetworkStateNotifier::ClearOverride() {
+   }
+ }
+ 
++// MoltBrowser
++void NetworkStateNotifier::SetUniformNetworkState(const NetworkState& state) {
++  DCHECK(IsMainThread());
++  ScopedNotifier notifier(*this);
++  {
++    base::AutoLock locker(lock_);
++    const bool on_line_initialized = state_.on_line_initialized;
++    const bool on_line = state_.on_line;
++    state_ = state;
++    state_.on_line_initialized = on_line_initialized;
++    state_.on_line = on_line;
++    uniform_ = true;
++  }
++}
++
+ void NetworkStateNotifier::NotifyObservers(ObserverListMap& map,
+                                            ObserverType type,
+                                            const NetworkState& state) {
+@@ -374,6 +401,9 @@ double NetworkStateNotifier::GetRandomMultiplier(const String& host) const {
+   // origin from removing noise from the estimates.
+   if (!host)
+     return 1.0;
++  if (uniform_) {  // MoltBrowser: the same values for every site and user.
++    return 1.0;
++  }
+ 
+   unsigned hash = GetHash(host) + RandomizationSalt();
+   double random_multiplier = 0.9 + static_cast<double>((hash % 21)) * 0.01;

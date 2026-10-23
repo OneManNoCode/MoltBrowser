@@ -116,6 +116,9 @@ jobs:
           persist-credentials: false
       - name: Install clang, lld and LLVM's otool / install_name_tool
         run: |
+          # A stalled mirror times out and is retried instead of hanging the job.
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' |
+            sudo tee /etc/apt/apt.conf.d/80-molt-ci-retries > /dev/null
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang lld llvm
       - name: scripts/macho_bundle_deps_test.py
@@ -158,6 +161,9 @@ jobs:
           persist-credentials: false
       - name: Install dpkg-dev, rpm, createrepo_c, apt-utils, gnupg
         run: |
+          # A stalled mirror times out and is retried instead of hanging the job.
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' |
+            sudo tee /etc/apt/apt.conf.d/80-molt-ci-retries > /dev/null
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
             dpkg-dev rpm createrepo-c apt-utils gnupg gpgv
@@ -175,6 +181,18 @@ jobs:
           persist-credentials: false
       - name: tools/models/pin_models_test.py (offline, both registries)
         run: python3 tools/models/pin_models_test.py -v
+
+  compile-check-harness:
+    # The harness's own logic, offline. The compile check itself needs hours
+    # and about 2 GB, so it runs on a developer machine, not here.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tools/compile_check/compile_check_test.py
+        run: python3 tools/compile_check/compile_check_test.py -v
 
   leak-test-kit:
     runs-on: ubuntu-latest
@@ -201,6 +219,9 @@ jobs:
           persist-credentials: false
       - name: Install clang with libFuzzer and the sanitizer runtimes, zlib
         run: |
+          # A stalled mirror times out and is retried instead of hanging the job.
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "30"; Acquire::https::Timeout "30";' |
+            sudo tee /etc/apt/apt.conf.d/80-molt-ci-retries > /dev/null
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang libclang-rt-dev zlib1g-dev
           clang++ --version | head -1

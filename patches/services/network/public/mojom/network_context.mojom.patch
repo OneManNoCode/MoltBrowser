@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index abddef1d201fccb59e4049eed5304bf073838f1b..e76f35f10dd1549e2b0adb7962302d9707c05146 100644
+index abddef1d201fccb59e4049eed5304bf073838f1b..24203d4d53fce83dea88cc20ab388bc8fe925973 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -227,6 +227,15 @@ struct HttpAuthStaticNetworkContextParams {
@@ -24,7 +24,7 @@ index abddef1d201fccb59e4049eed5304bf073838f1b..e76f35f10dd1549e2b0adb7962302d97
  };
  
  struct NetworkContextFilePaths {
-@@ -666,6 +675,36 @@ struct NetworkContextParams {
+@@ -666,6 +675,40 @@ struct NetworkContextParams {
    // do not have an associated `URLLoaderFactory`.
    pending_remote<URLLoaderNetworkServiceObserver>?
        device_bound_sessions_network_observer;
@@ -58,6 +58,10 @@ index abddef1d201fccb59e4049eed5304bf073838f1b..e76f35f10dd1549e2b0adb7962302d97
 +  // If true, dynamic HSTS upgrades top-level navigations only, as
 +  // net::features::kHstsTopLevelNavigationsOnly does for every context.
 +  [MinVersion=1] bool molt_hsts_top_level_navigations_only = false;
++  // If true, the context has no network-quality estimator: its requests
++  // don't feed the network service's estimate, and its request scheduling
++  // (ResourceScheduler) doesn't depend on it.
++  [MinVersion=1] bool molt_no_network_quality_estimator = false;
  };
  
  struct NetworkConditions {

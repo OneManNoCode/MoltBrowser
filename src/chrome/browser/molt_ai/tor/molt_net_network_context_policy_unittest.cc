@@ -25,6 +25,7 @@ TEST(MoltNetNetworkContextPolicyTest, OtherProfilesKeepChromiumsBehaviour) {
   EXPECT_FALSE(settings.no_shared_cache_entries);
   EXPECT_FALSE(settings.hsts_top_level_navigations_only);
   EXPECT_FALSE(settings.split_http_auth_cache);
+  EXPECT_FALSE(settings.no_network_quality_estimator);
   EXPECT_FALSE(settings.block_private_state_tokens);
 }
 
@@ -38,6 +39,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetGetsAll) {
   EXPECT_TRUE(settings.no_shared_cache_entries);
   EXPECT_TRUE(settings.hsts_top_level_navigations_only);
   EXPECT_TRUE(settings.split_http_auth_cache);
+  EXPECT_TRUE(settings.no_network_quality_estimator);
   EXPECT_TRUE(settings.block_private_state_tokens);
 }
 
@@ -84,6 +86,10 @@ TEST(MoltNetNetworkContextPolicyTest, IsAConstantExpression) {
   static_assert(
       !MoltNetNetworkContextSettingsFor(false).basic_and_digest_auth_only);
   static_assert(MoltNetNetworkContextSettingsFor(true).split_http_auth_cache);
+  static_assert(
+      MoltNetNetworkContextSettingsFor(true).no_network_quality_estimator);
+  static_assert(
+      !MoltNetNetworkContextSettingsFor(false).no_network_quality_estimator);
   static_assert(!BlockPrivateStateTokensFor(false, false));
 }
 
@@ -115,6 +121,7 @@ TEST(MoltNetNetworkContextPolicyTest, MoltNetParamsSetTheFlags) {
   EXPECT_TRUE(params.network_context->molt_uncached_cert_verification);
   EXPECT_TRUE(params.network_context->molt_no_shared_cache_entries);
   EXPECT_TRUE(params.network_context->molt_hsts_top_level_navigations_only);
+  EXPECT_TRUE(params.network_context->molt_no_network_quality_estimator);
 }
 
 // One password per network context: the hook runs once for each context
@@ -149,6 +156,8 @@ TEST(MoltNetNetworkContextPolicyTest, EachMoltNetContextGetsItsOwnPassword) {
   EXPECT_TRUE(second_identity.network_context->molt_no_shared_cache_entries);
   EXPECT_TRUE(
       second_identity.network_context->molt_hsts_top_level_navigations_only);
+  EXPECT_TRUE(
+      second_identity.network_context->molt_no_network_quality_estimator);
   EXPECT_TRUE(second_identity.cert_verifier->molt_isolate_each_cert_fetch);
 }
 
@@ -162,6 +171,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_uncached_cert_verification);
   EXPECT_FALSE(params.network_context->molt_no_shared_cache_entries);
   EXPECT_FALSE(params.network_context->molt_hsts_top_level_navigations_only);
+  EXPECT_FALSE(params.network_context->molt_no_network_quality_estimator);
 
   // And the hook writes them off for any other profile, even over a stale
   // value.
@@ -172,6 +182,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   params.network_context->molt_uncached_cert_verification = true;
   params.network_context->molt_no_shared_cache_entries = true;
   params.network_context->molt_hsts_top_level_navigations_only = true;
+  params.network_context->molt_no_network_quality_estimator = true;
   ApplyMoltNetNetworkContextSettings(/*is_moltnet_profile=*/false,
                                      *params.network_context,
                                      *params.cert_verifier);
@@ -183,6 +194,7 @@ TEST(MoltNetNetworkContextPolicyTest, RegularParamsLeaveThemOff) {
   EXPECT_FALSE(params.network_context->molt_uncached_cert_verification);
   EXPECT_FALSE(params.network_context->molt_no_shared_cache_entries);
   EXPECT_FALSE(params.network_context->molt_hsts_top_level_navigations_only);
+  EXPECT_FALSE(params.network_context->molt_no_network_quality_estimator);
 }
 
 }  // namespace

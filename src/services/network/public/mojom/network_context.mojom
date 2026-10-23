@@ -705,6 +705,10 @@ struct NetworkContextParams {
   // If true, dynamic HSTS upgrades top-level navigations only, as
   // net::features::kHstsTopLevelNavigationsOnly does for every context.
   [MinVersion=1] bool molt_hsts_top_level_navigations_only = false;
+  // If true, the context has no network-quality estimator: its requests
+  // don't feed the network service's estimate, and its request scheduling
+  // (ResourceScheduler) doesn't depend on it.
+  [MinVersion=1] bool molt_no_network_quality_estimator = false;
 };
 
 struct NetworkConditions {

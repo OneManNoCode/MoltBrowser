@@ -596,6 +596,7 @@ code, not yet measured in a built browser):
 | Topics, Shared Storage, Protected Audience, Attribution Reporting | off (Privacy Sandbox off in MoltNet) | — |
 | Related Website Sets | one list for the whole browser, from component updates or policy; sites can't change it | — |
 | Preconnect and prediction | off-the-record profiles have no preconnect or prediction service, and network prediction is off | — |
+| Network-quality estimate | **fixed**: none kept. The network service keeps one estimate for the whole browser; MoltNet's context has no estimator, so its requests don't feed it and its request scheduling doesn't follow it, and MoltNet's pages read one fixed connection and network quality instead ([FINGERPRINTING.md](FINGERPRINTING.md#moltnet-connection-and-network-quality)) | — |
 
 New Identity flushes the old identity's connections and host-name cache,
 then waits until its profile, and with it the network context and
