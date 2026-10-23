@@ -159,6 +159,10 @@ def manifest():
             test('regular_onion_navigation', 'gggggg7777', 70, 75, 18,
                  target='regular', results={'title': 'Tor onion site',
                                             'url': 'http://%s/' % ONION_A}),
+            test('sandboxed_a', 'iiiiii9999', 76.5, 78.5, 19,
+                 results={'opaque_origin': True, 'img': 'load'}),
+            test('sandboxed_b', 'jjjjjj0000', 79, 80, 20,
+                 results={'opaque_origin': True, 'img': 'load'}),
             {'id': 'mdns', 'nonce': 'hhhhhh8888', 'target': 'moltnet',
              'skipped': 'not selected'},
         ],
@@ -190,7 +194,10 @@ def manifest():
             {'name': 'new_identity', 'start': t(90), 'end': t(100), 'data': {
                 'result': {'running': True}, 'old_context': 'CTX2',
                 'new_context': 'CTX3', 'cookie_after': False,
-                'canvas_before': '33', 'canvas_after': '44'}},
+                'canvas_before': '33', 'canvas_after': '44',
+                'hold_page': True, 'old_pages_left': 0,
+                'second_result': {'running': True},
+                'second_after_first_s': 10.4, 'second_context': 'CTX4'}},
             {'name': 'fail_closed', 'start': t(100), 'end': t(105), 'data': {
                 'killed': [4242], 'nav_error':
                 'net::ERR_SOCKS_CONNECTION_FAILED', 'loaded': False}},
@@ -282,7 +289,12 @@ def captures():
     sessions = ((11, 52000, 'http://' + ONION_A, ONION_A, 80),
                 (12, 52001, 'https://' + ONION_B, ONION_B, 443),
                 (31, 52002, 'http://' + ONION_A,
-                 'anchor-cccccc3333.' + CANARY, 443))
+                 'anchor-cccccc3333.' + CANARY, 443),
+                # Sandboxed pages: opaque top-level sites, one per site.
+                (77, 52003, 'opaque null [internally: (11AA) derived from '
+                 'http://' + ONION_A + ']', ONION_A, 80),
+                (79.3, 52004, 'opaque null [internally: (22BB) derived from '
+                 'https://' + ONION_B + ']', ONION_B, 443))
     for sec, sport, user, host, port in sessions:
         syn = g.ip('127.0.0.1', '127.0.0.1', 6, g.tcp(sport, 9150, seq=5000,
                                                       flags=0x02))

@@ -1161,6 +1161,21 @@ class Run(object):
         except (IOError, OSError, ValueError, IndexError):
             return None
 
+    # A page that asks "Leave site?" when it is closed. With a user
+    # activation (userGesture) Chromium would show the dialog; New Identity
+    # must close the window anyway.
+    HOLD_PAGE_JS = ("window.addEventListener('beforeunload', (e) => {"
+                    "e.preventDefault(); e.returnValue = ''; }); true")
+
+    def wait_new_moltnet_page(self, before, seconds=60):
+        deadline = _now() + seconds
+        while _now() < deadline:
+            for t in self.moltnet_pages():
+                if t['targetId'] not in before:
+                    return t
+            time.sleep(0.5)
+        return None
+
     def new_identity_phase(self):
         phase = self.phase_begin('new_identity')
         data = phase['data']
@@ -1170,24 +1185,27 @@ class Run(object):
             res = self.read_identity(sid, bases['BASE_HTTP'], 'set=1')
             data['canvas_before'] = res.get('canvas')
             data['exit_before'] = (self.exit_ip(sid) or {}).get('IP')
+            try:
+                data['hold_page'] = bool(self.cdp.evaluate(
+                    sid, self.HOLD_PAGE_JS, user_gesture=True))
+            except cdplib.CdpError as e:
+                data['hold_page'] = 'error: %s' % e
             old = self.moltnet
             data['old_context'] = old[2]
             before = set(t['targetId'] for t in self.moltnet_pages())
             data['result'] = self.molt_net_call('moltnet.newIdentity',
                                                 timeout=self.opts.open_timeout)
-            found = None
-            deadline = _now() + 60
-            while _now() < deadline and not found:
-                for t in self.moltnet_pages():
-                    if t['targetId'] not in before:
-                        found = t
-                if not found:
-                    time.sleep(0.5)
+            first_done = _now()
+            found = self.wait_new_moltnet_page(before)
             if found:
                 self.moltnet = (found['targetId'],
                                 self.cdp.attach(found['targetId']),
                                 found.get('browserContextId'))
                 data['new_context'] = found.get('browserContextId')
+                # Nothing of the old identity may still be open.
+                data['old_pages_left'] = len([
+                    t for t in self.moltnet_pages()
+                    if t.get('browserContextId') == old[2]])
                 res = self.read_identity(self.moltnet[1], bases['BASE_HTTP'],
                                          'read=1')
                 data['cookie_after'] = 'mlk_moltnet' in (res.get('cookie') or
@@ -1195,6 +1213,19 @@ class Run(object):
                 data['canvas_after'] = res.get('canvas')
                 data['exit_after'] = (self.exit_ip(self.moltnet[1]) or
                                       {}).get('IP')
+                # A second New Identity right away: Tor applies NEWNYM at
+                # most every 10 s, so its window may only open once Tor has
+                # switched, about 10 s after the first one.
+                before = set(t['targetId'] for t in self.moltnet_pages())
+                data['second_result'] = self.molt_net_call(
+                    'moltnet.newIdentity', timeout=self.opts.open_timeout)
+                data['second_after_first_s'] = round(_now() - first_done, 1)
+                found = self.wait_new_moltnet_page(before)
+                if found:
+                    self.moltnet = (found['targetId'],
+                                    self.cdp.attach(found['targetId']),
+                                    found.get('browserContextId'))
+                    data['second_context'] = found.get('browserContextId')
             self.phase_end(phase)
         except cdplib.CdpError as e:
             self.phase_end(phase, str(e))

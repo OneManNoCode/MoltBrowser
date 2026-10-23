@@ -388,9 +388,16 @@
     "canvas_after": "44",
     "canvas_before": "33",
     "cookie_after": false,
+    "hold_page": true,
     "new_context": "CTX3",
     "old_context": "CTX2",
+    "old_pages_left": 0,
     "result": {
+     "running": true
+    },
+    "second_after_first_s": 10.4,
+    "second_context": "CTX4",
+    "second_result": {
      "running": true
     }
    },
@@ -562,6 +569,36 @@
    "start": 1760000070.0,
    "target": "regular",
    "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/gggggg7777/x.html"
+  },
+  {
+   "end": 1760000076.5,
+   "id": "sandboxed_a",
+   "ipv4": "198.51.100.29",
+   "ipv6": "2001:db8::23",
+   "nonce": "iiiiii9999",
+   "results": {
+    "img": "load",
+    "opaque_origin": true
+   },
+   "settle_end": 1760000078.5,
+   "start": 1760000076.5,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/iiiiii9999/x.html"
+  },
+  {
+   "end": 1760000078.0,
+   "id": "sandboxed_b",
+   "ipv4": "198.51.100.30",
+   "ipv6": "2001:db8::24",
+   "nonce": "jjjjjj0000",
+   "results": {
+    "img": "load",
+    "opaque_origin": true
+   },
+   "settle_end": 1760000080.0,
+   "start": 1760000079.0,
+   "target": "moltnet",
+   "url": "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion/t/jjjjjj0000/x.html"
   },
   {
    "id": "mdns",
