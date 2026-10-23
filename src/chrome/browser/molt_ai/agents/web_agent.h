@@ -53,12 +53,15 @@
 //     and changes nothing above: the reply is still one action on an id.
 //   - A page that offers tools (WebMCP, document.modelContext) gets a TOOLS
 //     list in its observation and the model may CALL_TOOL one by id
-//     (agent_tools.h): the document's own tools only, listed and called
-//     from the agent's isolated world on the page the run is in scope for;
-//     names, descriptions and answers are fenced page text; arguments are
-//     checked against the tool's (converted) schema; a call runs only if
-//     the page still lists the same tool, and one the page doesn't
-//     annotate read-only asks the user first.
+//     (agent_tools.h): the main document's own tools and those of its
+//     frames of exactly the same origin (never a cross-origin frame or a
+//     frame inside one), listed and called from the agent's isolated world
+//     on the page the run is in scope for (SiteToolHost); names,
+//     descriptions and answers are fenced page text; arguments are checked
+//     against the tool's (converted) schema; a call runs only in the very
+//     document that listed the tool, if it still lists the same tool, and
+//     one the page doesn't annotate read-only asks the user first (naming
+//     the frame when it isn't the main document's).
 //   - A plan (agent_plan.h) is model output written from the goal and
 //     page text: it reaches the model fenced, never as the GOAL, and the
 //     user as text. It grants nothing: the browser never reads it for
@@ -84,6 +87,7 @@
 #include "chrome/browser/molt_ai/agents/agent_prompt.h"
 #include "chrome/browser/molt_ai/agents/agent_screenshot.h"
 #include "chrome/browser/molt_ai/agents/agent_tools.h"
+#include "chrome/browser/molt_ai/agents/site_tool_host.h"
 #include "chrome/browser/molt_ai/dom/dom_content_bridge.h"
 #include "chrome/browser/molt_ai/dom/dom_interpreter.h"
 #include "chrome/browser/molt_ai/runtime/browser_ai_runtime.h"
@@ -246,28 +250,14 @@ class WebAgent : public content::WebContentsObserver {
                         std::vector<agent_safety::ElementProbe> probes);
   void FillNow(FieldList fields, std::string note);
   void CallToolNow();
-  void OnToolCallStarted(base::Value result);
 
   // -- Site tools (WebMCP) ------------------------------------------
-  // Isolated-world scripts don't wait for promises: the agent's tool
-  // scripts start the work and a poll script reports it. PollIsolatedWorld
-  // runs |script| until it no longer answers {state: 'pending'} (kSettled,
-  // with that answer), |deadline| passes (kTimedOut), or |document| is no
-  // longer the tab's (kDocumentChanged; it never polls another document).
-  enum class PollEnd { kSettled, kTimedOut, kDocumentChanged };
-  using PollCallback = base::OnceCallback<void(PollEnd, base::Value)>;
-  void PollIsolatedWorld(std::string script,
-                         content::WeakDocumentPtr document,
-                         base::TimeTicks deadline,
-                         PollCallback done);
-  void OnPolled(std::string script,
-                content::WeakDocumentPtr document,
-                base::TimeTicks deadline,
-                PollCallback done,
-                base::Value result);
+  // SiteToolHost lists them (the main document's and its same-origin
+  // frames') and calls one, polling the isolated world for the answers.
   // |document| is still the tab's primary main document.
   bool IsCurrentDocument(const content::WeakDocumentPtr& document) const;
-  void OnToolCallSettled(PollEnd end, base::Value result);
+  void OnToolCallSettled(SiteToolHost::CallEnd end,
+                         agent_tools::CallOutcome outcome);
   // Observes once the page that a tool loaded has loaded.
   void WaitForLoadThenObserve();
 
@@ -287,24 +277,14 @@ class WebAgent : public content::WebContentsObserver {
   void OnElementsObserved(const StructuredPage& page,
                           content::WeakDocumentPtr document,
                           base::Value snapshot);
-  // The page's own tools, if the switch is on and it offers any
+  // The page's own tools (its main document's and its same-origin
+  // frames'), if the switch is on and it offers any
   // (agent_tools::ShouldListTools), added to observation_.
-  void ListSiteTools(const StructuredPage& page,
-                     content::WeakDocumentPtr document,
-                     std::string observed_origin,
-                     bool origin_allowed);
-  void OnSiteToolListStarted(const StructuredPage& page,
-                             content::WeakDocumentPtr document,
-                             std::string observed_origin,
-                             bool origin_allowed,
-                             std::string request_id,
-                             base::Value result);
   void OnSiteToolsListed(const StructuredPage& page,
                          content::WeakDocumentPtr document,
                          std::string observed_origin,
                          bool origin_allowed,
-                         PollEnd end,
-                         base::Value result);
+                         SiteToolHost::Listing listing);
   // The page state for the prompt, and the screenshot.
   void ContinueObservation(const StructuredPage& page,
                            content::WeakDocumentPtr document,
@@ -412,13 +392,16 @@ class WebAgent : public content::WebContentsObserver {
   // A request with a screenshot failed: the rest of the run is text-only.
   bool screenshots_failed_ = false;
 
+  // Lists and calls site tools (null after Cancel()).
+  std::unique_ptr<SiteToolHost> site_tools_;
+  // The documents the observation's tools were listed in: the main
+  // document observed, and each frame by number (agent_tools::SiteTool::
+  // frame; [0] is the main document).
+  content::WeakDocumentPtr tools_main_document_;
+  std::vector<content::WeakDocumentPtr> tool_documents_;
   // The site tool being called (a copy: the observation is replaced when
-  // the page is observed again), the call's id in the isolated world and
-  // the document it was started in.
+  // the page is observed again).
   agent_tools::SiteTool action_tool_;
-  int next_tool_request_ = 0;
-  std::string tool_call_id_;
-  content::WeakDocumentPtr tool_document_;
   // The finished call's answer (agent_tools::DescribeToolResult), put
   // into the next observation; and the step's note.
   std::string tool_result_;

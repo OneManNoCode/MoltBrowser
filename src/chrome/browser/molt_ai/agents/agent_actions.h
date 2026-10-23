@@ -65,7 +65,8 @@ enum class ActionType {
   kObserve,
   kDone,
   kError,
-  kCallTool,  // a site tool (WebMCP): the web agent only
+  kCallTool,  // a site tool (WebMCP): the web agent, and the chat on a
+              // page that offers tools (chat_actions.h)
   kReplan,    // ask for a new plan (agent_plan.h): the web agent only
 };
 
@@ -184,18 +185,31 @@ std::string DescribeElement(const ObservedElement& element);
 // fences it with the rest of the page text.
 std::string DescribeElements(const Observation& observation);
 
-// Adds the page's tools (agent_tools::MakeSiteTool()) to |observation|, in
-// order, as t1, t2, ...: at most agent_tools::kMaxSiteTools, names not
-// repeated, the TOOLS text within agent_tools::kMaxToolsTextChars, and
-// each kept only if the web agent's action schema with it is still one the
-// inference service converts (JsonSchemaToGrammar(), the service's own
-// converter). A tool that doesn't fit is left out, never cut down. With
-// |with_plan| (the run has the planner on) the schema checked is the one
-// with a plan (kPlannedAgentActions, kWidestPlanSteps), which is the
-// largest the run sends.
+struct PlanSteps;
+
+// Adds the page's tools (agent_tools::MakeSiteTools()) to |observation|,
+// in order (the main document's first, then each frame's, as
+// agent_tools::ToolFrames() orders them), as t1, t2, ...: at most
+// agent_tools::kMaxSiteTools in all, a name not repeated within a frame
+// (the same name in two frames is two tools, told apart by
+// agent_tools::ToolLabel()), the TOOLS text within
+// agent_tools::kMaxToolsTextChars, and each kept only if the web agent's
+// action schema with it is still one the inference service converts
+// (JsonSchemaToGrammar(), the service's own converter). A tool that
+// doesn't fit is left out, never cut down. With |with_plan| (the run has
+// the planner on) the schema checked is the one with a plan
+// (kPlannedAgentActions, kWidestPlanSteps), which is the largest the run
+// sends.
 void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
                   Observation* observation,
                   bool with_plan = false);
+// The same for another set of actions (the chat's, chat_actions.h): each
+// tool is kept only if BuildActionSchema(*observation, actions, plan) with
+// it converts.
+void AddSiteToolsFor(std::vector<agent_tools::SiteTool> tools,
+                     Observation* observation,
+                     ActionSet actions,
+                     const PlanSteps* plan = nullptr);
 
 // ---------------------------------------------------------------------------
 // The action and its schema

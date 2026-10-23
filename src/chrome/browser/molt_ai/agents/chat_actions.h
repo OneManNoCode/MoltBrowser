@@ -21,6 +21,13 @@
 // gone; such text, from a page, a model or an old saved conversation, is
 // shown as text.
 //
+// When the page offers site tools (WebMCP; agent_tools.h, the main
+// document's and its same-origin frames'), the set gains CALL_TOOL
+// (kChatToolActions): the tools offered, their schemas and the arguments'
+// checks are the web agent's (AddChatSiteTools(), agent_actions' schema and
+// parser). A tool proposal always asks, read-only or not, and runs only on
+// the user's click (MayRunProposal()).
+//
 // Pure logic (no content/), unit-tested in molt_ai_unittests.
 
 #ifndef CHROME_BROWSER_MOLT_AI_AGENTS_CHAT_ACTIONS_H_
@@ -53,6 +60,20 @@ inline constexpr agent_actions::ActionSet kChatActions =
     agent_actions::ActionBit(agent_actions::ActionType::kFillForm) |
     agent_actions::ActionBit(agent_actions::ActionType::kScroll) |
     agent_actions::ActionBit(agent_actions::ActionType::kDone);
+// ... and on a page that offers site tools: CALL_TOOL too.
+inline constexpr agent_actions::ActionSet kChatToolActions =
+    kChatActions | agent_actions::ActionBit(agent_actions::ActionType::kCallTool);
+
+// The chat's set for |observation|: kChatToolActions when it has tools,
+// else kChatActions (so without tools nothing differs).
+agent_actions::ActionSet ChatActionsFor(
+    const agent_actions::Observation& observation);
+
+// Adds the page's tools to |observation| as the web agent does
+// (agent_actions::AddSiteToolsFor()), each kept only if the chat's schema
+// with it converts.
+void AddChatSiteTools(std::vector<agent_tools::SiteTool> tools,
+                  agent_actions::Observation* observation);
 
 // A message of more words than this is not taken as a page-action request.
 inline constexpr size_t kMaxRequestWords = 40;
@@ -88,9 +109,11 @@ struct DecisionPrompt {
 
 // |request| is the user's message (cut to kMaxRequestChars characters,
 // sanitized like page text so it can't forge the fence). |page_url|,
-// |page_title| and the element labels are page-controlled and go inside
-// the untrusted-content fence. |retry_note| is InterpretDecision()'s
-// message after an unusable reply, else "".
+// |page_title|, the element labels and the TOOLS list (when the
+// observation has tools: then the rules gain CALL_TOOL) are
+// page-controlled and go inside the untrusted-content fence.
+// |retry_note| is InterpretDecision()'s message after an unusable reply,
+// else "".
 DecisionPrompt BuildDecisionPrompt(
     std::string_view request,
     std::string_view page_url,
@@ -98,10 +121,10 @@ DecisionPrompt BuildDecisionPrompt(
     const agent_actions::Observation& observation,
     std::string_view retry_note);
 
-// agent_actions::BuildActionSchema(observation, kChatActions).
+// agent_actions::BuildActionSchema(observation, ChatActionsFor(observation)).
 std::string BuildDecisionSchema(const agent_actions::Observation& observation);
 
-// agent_actions::InterpretReply() for kChatActions, with the chat's own
+// agent_actions::InterpretReply() for ChatActionsFor(), with the chat's own
 // messages when it stops. |bad_replies| counts the unusable replies so far
 // for this request; the third one stops (kMaxAttemptsPerStep). kAct with
 // a DONE action means: no page action.
@@ -118,7 +141,11 @@ agent_actions::ReplyOutcome InterpretDecision(
 // `Click button "Log in"`, `Type "cats" into input[search] "Search"`,
 // `Open https://example.com/`. Labels are page text (cleaned by the
 // snapshot parser) and typed text is the model's; the page shows it as
-// text. Long values are shortened with "…".
+// text. Long values are shortened with "…", except a site tool's
+// arguments: `Run the site's tool "add_to_cart" in the frame
+// https://shop.example/w on https://shop.example with id = "A1"; qty = 2`
+// shows the tool, the frame when it isn't the main document, and every
+// argument whole, in agent_tools' escaped form.
 std::string DescribeProposal(const agent_actions::AgentAction& action,
                              const agent_actions::Observation& observation);
 
@@ -182,6 +209,11 @@ struct Check {
 //  - CLICK: a link to a site outside |scope| or a form submission asks.
 //  - TYPE / FILL_FORM: a password field is refused, confirmed or not;
 //    payment-card and one-time-code fields ask.
+//  - CALL_TOOL: a tool the observation doesn't offer, or a page outside
+//    |scope|, is refused; anything else asks, read-only or not: the choice
+//    is model output written from page text. The reason names the tool,
+//    the site, the frame when it isn't the main document, and what the
+//    page says the tool does.
 //  - A target that is gone, or probes that don't match the targets, is
 //    refused. SCROLL and DONE act.
 Check CheckProposal(const agent_actions::AgentAction& action,
@@ -196,6 +228,16 @@ Check CheckProposal(const agent_actions::AgentAction& action,
 // that changes what the action would do is asked about again.
 bool MayRun(const Check& check, bool confirmed, std::string_view approved_reason);
 
+// MayRun(), and a site tool only on the user's own click as well:
+// |user_activation| is whether the chat page had transient user
+// activation when it asked to run |action| (the Allow click), which the
+// page's script can't fake.
+bool MayRunProposal(const agent_actions::AgentAction& action,
+                    const Check& check,
+                    bool confirmed,
+                    std::string_view approved_reason,
+                    bool user_activation);
+
 // What a CLICK / TYPE / FILL_FORM / SCROLL script (agent_actions::Build*
 // Script) evaluated to, for the chat. Fixed text: an 'error:...' result
 // carries page exception text and is not repeated.
@@ -205,6 +247,15 @@ struct ScriptOutcome {
 };
 ScriptOutcome InterpretScriptResult(const agent_actions::AgentAction& action,
                                     const base::Value& result);
+
+// The answer of a site tool's call for the chat: its text, marked as the
+// site's, on one line with hidden characters shown and quotes escaped, cut
+// at kMaxShownToolAnswerChars characters; "The tool loaded another page."
+// when |loaded_another_page| (its document went away after it started);
+// else agent_tools::CallFailureNote().
+inline constexpr size_t kMaxShownToolAnswerChars = 300;
+ScriptOutcome InterpretToolCall(const agent_tools::CallOutcome& outcome,
+                                bool loaded_another_page);
 
 }  // namespace chat_actions
 }  // namespace molt_ai

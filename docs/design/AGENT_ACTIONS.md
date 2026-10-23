@@ -9,9 +9,10 @@ strictly. The page-facing checks are unchanged: `agent_safety` and
 `automation_security` (CLAUDE.md "Agent mode") still decide what may happen.
 With a model that sees images, the web agent's observations also carry a
 masked, tagged screenshot of the viewport (§2.6; threat model §5.1); the
-decision format doesn't change. On a page that offers WebMCP tools, the web
-agent can also call them, as one more action on an id (§2.7; threat model
-§5.2). Before its first action the web agent has the model write a short
+decision format doesn't change. On a page that offers WebMCP tools (in its
+main document or a frame of the same origin), the web agent can also call
+them, as one more action on an id, and the chat can propose one call that
+waits for the user's click (§2.7, §4.9; threat model §5.2). Before its first action the web agent has the model write a short
 plan, which every action then names a step of (§2.8; threat model §2.8.6).
 A run that ended with DONE can be saved as a draft Agent-mode workflow,
 which can't run until the user has reviewed it and confirmed its sites
@@ -502,7 +503,8 @@ observation (`t1`, `t2`, ...) and arguments under a grammar.
 | `agents/agent_tools.{h,cc}` | pure: when to list, the list and call scripts and their parsers, which tools are offered, input schema conversion, the arguments' schema and their check, when a call asks, the TOOLS and TOOL RESULT text |
 | `agents/agent_actions.{h,cc}` | CALL_TOOL: `Observation::tools`, `AddSiteTools()`, the schema branch, `ParseAction()` |
 | `agents/agent_prompt.{h,cc}` | CALL_TOOL's rules, only when the page has tools |
-| `agents/web_agent.{h,cc}` | listing at each observation, the call, the polling |
+| `agents/site_tool_host.{h,cc}` | finding the frames whose tools count (§2.7.12), listing each document, calling a tool in the document that listed it, the polling; shared by the web agent and the chat (§4.9) |
+| `agents/web_agent.{h,cc}` | listing at each observation, the call |
 | `agents/agent_features.{h,cc}`, `agent_about_flags.h` | `chrome://flags/#molt-agent-site-tools` |
 
 **Through the web API, from the agent's isolated world.** The agent calls
@@ -534,20 +536,28 @@ the agent ever runs.
 each observation, after the element snapshot (OnElementsObserved):
   ShouldListTools: #molt-agent-site-tools on, the page in the run's
     scope, the snapshot from the tab's current document
-  BuildToolListScript(id)       'unavailable' (no WebMCP): done, no poll
-    getTools() in the isolated world; the document's own tools only
-  BuildToolListPollScript(id)   every 150 ms, at most 3 s, same document
-  ParseToolList -> MakeSiteTool (each) -> AddSiteTools -> observation_.tools
+  SiteToolHost::List: the main document, then its same-origin frames
+    (ToolFrames, §2.7.12), one after the other, 3 s for all of them; each:
+    BuildToolListScript(id, mark)  'unavailable' (no WebMCP): next, no poll
+      getTools() in its isolated world; its own tools only; marks the
+      document (once)
+    BuildToolListPollScript(id)    every 150 ms, same document
+    ParseToolList -> MakeSiteTools(list, frame number, frame text)
+  AddSiteTools (main document's first, 8 in all) -> observation_.tools
   page state: ... ELEMENTS ... TOOLS (fenced with the page)
 the model: {"reason":"...","action":"CALL_TOOL","tool":"t2",
             "arguments":{"id":"A1","qty":2,"gift":null}}
 ParseAction -> ReadArguments: the arguments' JSON (browser-written)
 DispatchAction: the page's origin in the run's set (else CONTINUE asks)
 DoCallTool: CheckToolCall -> ask ("CALL_TOOL" chip) unless read-only
+SiteToolHost::Call: the document that listed it, still current and
+  still counting (else "Not run: ... changed or gone")
 BuildToolCallScript(id, origin, tool as listed, arguments)   'started'
+  (in another document: 'document_changed', not run)
 BuildToolCallPollScript(id)     every 150 ms, at most 20 s, same document
   done          -> TOOL RESULT in the next observation; observe again
-  other document-> "The tool loaded another page"; observe when loaded
+  other document-> "The tool loaded another page" (in its frame);
+                   observe when loaded
   anything else -> a failed step with a fixed note
 ```
 
@@ -558,12 +568,12 @@ at all:
 
 | Rule | Why |
 |---|---|
-| only tools whose `window` is the main document's and `origin` its own; no `fromOrigins` | the agent acts on the main document (§6); a frame's or another origin's tool is another site |
+| only a document's own tools (`window` its own, `origin` its own; no `fromOrigins`), from the main document and from frames of exactly its origin (§2.7.12) | the agent acts on the page it is on; a cross-origin frame's tool, or another origin's, is another site |
 | the name follows Blink's rule (`[A-Za-z0-9_.-]{1,128}`) | a renderer that sends anything else is not Blink |
 | a description of 1-4096 characters, not blank; an input schema of at most 8 KiB in the subset (§2.7.7) | |
 | a tool named like a password, with an argument named like one (`agent_safety::ClassifySelector`: `password`, `pwd`, `passwd`, ...), or a `<form toolname>` with a password field (by type or `autocomplete`), a file field or more than 64 controls: **never offered** | the agent never types a password (§2.1), and a declarative tool fills password fields (§2.7.1) |
 | a payment-card or one-time-code name or form field: offered, every call asks | as TYPE into such a field asks |
-| at most 8 per observation, names distinct, TOOLS at most 4000 characters | the prompt of a small model |
+| at most 8 per observation, all frames together (the main document's first), a name once per frame, TOOLS at most 4000 characters | the prompt of a small model |
 | the action schema with the tool is one the inference service converts | below |
 
 `AddSiteTools()` adds the tools one by one, each kept only if the web
@@ -625,7 +635,8 @@ grammar ties each tool to its own arguments:
 
 (nested because the service allows 16 alternatives per `anyOf`: the 9
 other actions and the group). Left out when the page has no tools, and
-never in the chat's set (§4.3) or the form fill's (§4.7).
+never in the form fill's set (§4.7). The chat's set has it only when the
+page offers tools (§4.9).
 
 `ParseAction()` checks CALL_TOOL like any action (§2.3): exactly its four
 keys, `tool` an id of the observation's tools, then `ReadArguments()`:
@@ -665,11 +676,15 @@ prompt is byte for byte what it was.
 - **Scope.** `DispatchAction` checks the page's origin as for CLICK: in the
   run's set, or the run asks (CONTINUE). The call script runs only if
   `location.origin` is that origin, before and after `getTools()`, and the
-  tool's `origin` and `window` are the page's own.
+  tool's `origin` and `window` are its document's own.
+- **The same document.** A call runs only in the document that listed the
+  tool (§2.7.12): the browser checks it is the same document
+  (`WeakDocumentPtr`), still the main document of the tab or still one of
+  its frames that count, and the script checks the document's mark.
 - **The same tool.** The script calls the tool only if `getTools()` still
   lists it exactly as observed: the same description, input schema,
-  read-only hint and, for a `<form toolname>`, the same controls (type and
-  autocomplete). A page that re-registers a name between the observation
+  read-only and untrusted-content hints and, for a `<form toolname>`, the
+  same controls (type and autocomplete) (§2.7.13). A page that re-registers a name between the observation
   and the call (a read-only tool swapped for one that changes things, a
   password field added to a form) gets "Not run: the page changed that tool
   since it was listed."
@@ -677,10 +692,13 @@ prompt is byte for byte what it was.
   annotated the tool `readOnlyHint: true`, it isn't a `<form>` tool, and it
   takes no payment card or one-time code. The chip is the agent's own
   (`agent-confirm`), with the browser's text and every argument whole
-  (characters that hide or reorder text shown as U+FFFD, quotes escaped):
+  (characters that hide or reorder text shown as U+FFFD, the set of
+  §2.8.2 in `agents/hidden_chars.h`; quotes escaped):
   `Run the site's tool "add_to_cart" on https://shop.example — it may
-  change something there, with id = "A1"; qty = 2`. Deny stops the run, as
-  for any confirmation.
+  change something there, with id = "A1"; qty = 2`; a frame's tool names
+  its frame: `Run the site's tool "add_to_cart" in the frame
+  https://shop.example/widgets/cart on https://shop.example — ...`
+  (§2.7.12). Deny stops the run, as for any confirmation.
 - **The answer.** At most 8192 UTF-16 units read, cleaned (`\r` dropped,
   other control characters but `\n` and `\t` made spaces, ends trimmed), at
   most 1500 characters, put first in the next observation (`TOOL RESULT
@@ -723,7 +741,11 @@ in the agent's isolated world and make no request of their own; tool
 names, descriptions, arguments and answers go only to the on-device model,
 like page text. No new request path, nothing new leaves the device, and
 WebMCP is in MoltNet windows exactly where Chromium puts it (§2.7.4),
-whatever the agent does.
+whatever the agent does. The same holds for a same-origin frame's tools
+(§2.7.12) and for the chat's tool proposals (§4.9): the frame is the
+page's own document, loaded through the same context, listed and called
+in its own isolated world with the same scripts, and the chat decides
+with the on-device model only, in its own window.
 
 #### 2.7.11 The switch
 
@@ -732,8 +754,170 @@ whatever the agent does.
 the agent on the site, the site offers the tools, the model's arguments go
 where TYPE text already goes and the answers where page text goes, and
 every call that may change something asks. Off, the agent never reads or
-calls a page's tools. A page without tools sees no change either way: the
-list script answers 'unavailable' at once.
+calls a page's tools, and neither does the chat (§4.9). A page without
+tools sees no change either way: the list script answers 'unavailable' at
+once.
+
+#### 2.7.12 Frames
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run against pages in the WebMCP trial. Before, the agent listed the
+main document's tools only. Now it lists the main document's and those of
+its frames of exactly the same origin, so a site whose tool UI sits in a
+same-origin iframe works.
+
+**What 152 does with frames** (`content/browser/renderer_host/model_context_user_data.cc`,
+`third_party/blink/renderer/core/script_tools/model_context.cc`):
+
+- `getTools()` walks every frame of the caller's page (the same main
+  frame; fenced frames and other inner pages skipped). It lists a frame's
+  tool if that frame has the `tools` policy and its origin is the
+  caller's, or the caller named the owner's origin in `fromOrigins` and
+  the owner listed the caller's origin in `exposedTo`. The result is
+  sorted by name; each tool carries a token for its owner's window. The
+  frames between the owner and the caller don't matter: a top document
+  sees a same-origin frame's tools even inside a cross-origin frame (which
+  must have delegated `allow="tools"` to it).
+- `executeTool()` resolves that token to a frame of the same page, checks
+  the origin the caller expects, and looks the tool up **by name** in the
+  frame's *current* document. A `LocalFrameToken` names a frame host, not
+  a document, so a call can land in a later document of the same host;
+  the renderer, too, looks the name up only when the call arrives.
+- `toolchange` fires, asynchronously, in every document that can see a
+  tool that was registered or unregistered (not when its document goes
+  away, crbug.com/508285989).
+
+**Which frames.** `agent_tools::ToolFrames()` (pure) decides from the
+browser's own view of the page, which `SiteToolHost` collects with
+`ForEachRenderFrameHost` on the main document:
+
+| Rule | Why |
+|---|---|
+| origin exactly the main document's (scheme, host and port: same origin, not same site); never opaque | a frame of another origin is another site, whatever it exposes (below) |
+| every frame between it and the main document counts too | below |
+| in the page: active (not unloading, cached or prerendering), its renderer live, and its main frame the observed main document | a fenced frame, a guest view and anything inside one is a page of its own; a prerendered page is another page, never under the tab's primary main frame; portals are gone from 152 |
+| the main document first, then the frames in tree order (depth first, siblings in the browser's order); at most 8 frames, 64 looked at | deterministic, bounded |
+| listed one after the other, 3 s for all of them | one budget, whatever the page does |
+
+A frame that doesn't count hides its subtree. At most 8 tools are offered,
+all documents together (§2.7.6): the main document's first.
+
+**Same-origin frames inside a cross-origin frame: not listed.** 152 lists
+them to the top; the agent doesn't. Such a frame is there because the
+other site put it there: it chose the frame's URL (which page of the site,
+with which parameters, so which tools and in what state), its size and
+place, when it navigates, and whether it gets the `tools` policy at all.
+The user sees that region as the other site's (an ad, a widget), but an
+approval would present the tool as the main site's. The main document's
+own frames are the site's choice; these are a third party's.
+
+**Cross-origin frames: never**, even when they expose tools to the top
+origin. `exposedTo` is the frame's consent to the top page, not the
+user's to the frame: the user started the agent on the main site, and the
+run's scope is origins (§2). A third-party widget (an ad, a chat, a
+payment or social embed) would get to offer actions to the agent, and its
+descriptions and answers would reach the model as the page's. Turning it
+on would take: listing with `getTools({fromOrigins: [the frame's
+origin]})` (only what the frame exposed to the top) or in the frame's own
+world; the frame's origin joining the run's sites only when the user
+allows it (CONTINUE, as for a navigation there), and shown as its own site
+in TOOLS, the trace and every approval, never as the main site's; every
+call asking, read-only or not (the hint is a third party's word to a run
+the user didn't start there); in the chat, only an origin the user wrote;
+and a run on the build machine with out-of-process frames (a cross-origin
+frame has its own renderer and isolated world).
+
+**Identity.** A tool is its frame and its name: names are unique per
+document only, so two frames may each have `search`. The browser numbers
+the frames it lists (1, 2, ... in `ToolFrames()` order) and calls a
+frame's tool `search in frame 2` in TOOLS, the step trace and TOOL RESULT
+(`ToolLabel()`), never by the frame's `name` or `title` or other page text;
+a tool name can't contain a space, so it can't fake the suffix.
+`AddSiteTools()` keeps a name once per frame.
+
+**The same document.** The list script marks its document: when the
+isolated world's global has no mark, it gets a fresh unguessable one from
+the browser (`base::UnguessableToken`), and the poll reports it with the
+tools. An isolated world's global belongs to one document: the document a
+frame navigates to has a new one, without the mark, and the page can't
+read or set it. A call then runs only:
+
+1. if the browser finds the main document still the tab's primary main
+   document at the observed origin, the tool's document still the same
+   (`WeakDocumentPtr`), active, at that origin, and every frame from the
+   main document down to it still counting (`IsToolFrameChain()`);
+2. if, in that frame, the script finds the tool's mark (else
+   `document_changed`), then the origin and the tool as listed (§2.7.9).
+
+Either refusal is "Not run: the page or frame that offered the tool has
+changed or gone." The mark closes what the browser's check alone can't:
+between that check and the script, the renderer may have committed another
+document in the same frame host. This applies to the main document too:
+a call never runs in a later document of the tab, even one listing the
+same tool. Polling stops when the document is no longer current; a frame's
+tool that navigates its frame ends the step with "The tool loaded another
+page in its frame", and the page is observed again.
+
+**Approvals.** Every approval of a frame's tool shows the frame's URL
+(`FrameText()`): its origin and path (no query or fragment), the path cut
+at 120 characters, characters that hide or reorder text shown as U+FFFD,
+quotes escaped. A frame without an http(s) URL of its own (`about:srcdoc`,
+`about:blank`, `blob:`) reads "https://shop.example (a frame without an
+address of its own)". The model sees only the frame's number.
+
+**A read-only frame tool runs unasked**, as the main document's does: the
+frame has the same origin, so it is the same site's own script, and
+§2.7.9's judgement holds.
+
+**MoltNet:** §2.7.10.
+
+#### 2.7.13 `toolchange`: not listened for
+
+Decision: the agent and the chat don't listen for `toolchange`. The
+question was whether a page could replace a tool between the user's
+approval and the call (a read-only tool swapped for one that changes
+things, another schema or description) without the agent noticing. What
+the call script compares, at the call, after any approval:
+
+| Compared | How |
+|---|---|
+| the document | its mark (§2.7.12), and the browser's `WeakDocumentPtr` |
+| the origin | `location.origin`, before and after `getTools()` |
+| the tool | `getTools()` again: the same name, owned by this window and origin, the same description, input schema, `readOnlyHint`, `untrustedContentHint` and, for a `<form toolname>`, the same controls (type and autocomplete) |
+
+Not compared: `title` (never read), `exposedTo` (it can't change what a
+same-origin caller sees), and the `execute` callback itself.
+
+The cases:
+
+1. **Replaced before the call** (between the listing, or the approval,
+   and the call): caught. The comparison runs at the call, so it sees the
+   replacement whenever it happened; a listener could only say, later,
+   that something changed.
+2. **Replaced during the call**: `executeTool()` runs in the same task as
+   the comparison, but the execution request goes to the browser and
+   back, and Blink looks the tool up by name only when it arrives
+   (§2.7.12); the page's tasks can run in between. A listener can't close
+   this: `toolchange` is queued after the registration, asynchronously,
+   while the call is already on its way. Nothing in 152 lets a caller pin
+   the tool it compared. It gives the page nothing new either: the tool is
+   the site's own script, which can do anything with the arguments
+   whatever it registers, and the user approved the name, the site and
+   the arguments, which don't change.
+3. **The same tool registered again** (identical metadata, another
+   callback): only a listener would see it, and it doesn't matter: a site
+   changes what its callback does without registering again (the callback
+   reads the page's state), so the callback was never something the agent
+   checks.
+4. **A new tool** appears at the next observation, which follows every
+   action. Listing again mid-step, while the model is answering, would
+   only make the list differ from what the model was shown.
+
+One gap was real, if small: `untrustedContentHint` wasn't compared, so a
+tool listed without it could be called after the page set it, and its
+answer would reach the model without the site's warning that it may hold
+other people's content (§2.7.9). The comparison now covers every field the
+agent read when it listed the tool.
 
 ### 2.8 Planner
 
@@ -804,7 +988,9 @@ U+2029, U+FEFF, the soft hyphen U+00AD, the Hangul fillers U+115F, U+1160,
 U+3164 and U+FFA0, the variation selectors U+FE00-U+FE0F and
 U+E0100-U+E01EF, and the tag characters U+E0000-U+E007F, which can spell a
 sentence nobody sees) become U+FFFD, one each, and spaces are trimmed from
-the ends, so the user and the model read the same visible text. The grammar refuses an empty
+the ends, so the user and the model read the same visible text. The set is
+`agents/hidden_chars.h`, which the site tools' approvals (§2.7.9) and the
+chat's cards (§4.2, §4.7, §4.9) share. The grammar refuses an empty
 string but not one of spaces, nor control characters written as `\u`
 escapes; the parser refuses both.
 
@@ -1538,8 +1724,10 @@ short extra request, and that request reuses §2 rather than a new format.
    (`CheckProposal`, §4.4). A refused one ends with its reason. Otherwise
    the page gets `{id, verb, summary, reason}`: `summary` is the
    browser's own description (`Click button "Log in"`,
-   `Type "cats" into input[search] "Search"`, `Open https://...`), and
-   `reason` what must be approved first, if anything.
+   `Type "cats" into input[search] "Search"`, `Open https://...`; typed
+   text, labels and URLs with characters that reorder or hide text shown
+   as U+FFFD, `agents/hidden_chars.h`), and `reason` what must be
+   approved first, if anything.
 5. **Asking.** Ask first (the default, and every new chat): a chip with
    the summary and Allow / Deny for every proposal except SCROLL. Auto: it
    runs at once, unless there is a reason, which shows a chip in both
@@ -1570,6 +1758,7 @@ only what the user typed.
 | TYPE | type into an observed text field | a password field is refused; payment-card and one-time-code fields ask |
 | FILL_FORM | type into 1-8 observed text fields | the same, for every field |
 | SCROLL | scroll 600 px up or down | none |
+| CALL_TOOL | call a tool the page offers (§4.9), only when it offers some | always asks; runs only on the user's click, in the document that listed it |
 | DONE | nothing: a question, nothing fits, not possible | (never run) |
 
 The scope is the page's origin, the search engine's and those of http(s)
@@ -1592,10 +1781,13 @@ commands keep all ten for the user. Multi-step tasks are the Agent's (§2).
 | TYPE / FILL_FORM: a target gone, or no fields | refuse |
 | ... a password field (by type or autocomplete) | refuse, confirmed or not |
 | ... a payment-card or one-time-code field | ask |
+| CALL_TOOL: a tool the observation doesn't offer, probes given, or the page outside the scope | refuse |
+| ... anything else, read-only or not | ask: "Runs the site's tool "search" on https://shop.example (the site says it only reads)" |
 | SCROLL, anything else in scope | act |
 
 `MayRun`: act runs; ask runs only when confirmed and the reason is the one
-last shown for this proposal; refuse never runs.
+last shown for this proposal; refuse never runs. `MayRunProposal` adds,
+for CALL_TOOL only, the user's click (§4.9).
 
 ### 4.5 MoltNet
 
@@ -1678,8 +1870,9 @@ and `HandleProposeFormFill`:
    (`MayRun` needs the user's Allow for that reason). The summary is
    `DescribeFormFill`: every field and its whole value on one line, with
    characters that reorder or hide text (bidi controls, zero-width
-   characters, U+FEFF) shown as U+FFFD, so what the user approves is what
-   is typed (`DescribeProposal` shortens values to 80 characters).
+   characters, U+FEFF and the rest of `agents/hidden_chars.h`, §2.8.2)
+   shown as U+FFFD, so what the user approves is what is typed
+   (`DescribeProposal` shortens values to 80 characters).
 6. **Running.** Allow sends `runChatProposal(id, true)`, as for any
    proposal (§4.2, 6): the same document in the same window, probed and
    checked again, then agent_actions' fill script in an isolated world,
@@ -1732,6 +1925,82 @@ All of them now use the helpers the page actions use:
 
 `HandleOpenMoltSettings` keeps `FindBrowserWithTab` on purpose: it tells a
 chat in a tab from the side panel.
+
+**One set of hidden characters.** The site tools' approvals
+(`agent_tools.cc`), the plan (`agent_plan.cc`) and the form fill's summary
+(`molt_ai_chat_form_fill.cc`) each had their own copy of the characters
+they show as U+FFFD, and the plan's covered more. As consistency
+hardening, all three, and the chat's proposal summaries, now use one
+helper, `agents/hidden_chars.{h,cc}`, with the plan's set and one test
+table (`hidden_chars_unittest.cc`: every range at both ends and its
+neighbours). C1 controls stay spaces in the one-line forms, as before.
+
+### 4.9 Site tools in the chat's proposals
+
+Status: implemented (October 2026), pending a compile on the build machine
+and a run against a page in the WebMCP trial. A typed request on a page
+that offers WebMCP tools (§2.7) can now lead to one tool call, proposed
+and confirmed like any other chat action.
+
+1. **Listing.** After the element snapshot of a typed request (never a
+   form fill), with `#molt-agent-site-tools` on, `SiteToolHost` lists the
+   tools of the observed document and of its frames of exactly the same
+   origin (§2.7.12), in the chat's own tab, with the web agent's scripts.
+   `chat_actions::AddChatSiteTools()` offers them by the web agent's
+   rules (§2.7.6: which tools, the 8 cap, a name once per frame, schema
+   conversion §2.7.7), each kept only if the chat's schema with it
+   converts. The documents are kept with the decision, by frame number.
+2. **The decision.** With tools, the chat's set is `kChatToolActions`
+   (`ChatActionsFor()`): the web agent's CALL_TOOL branch of the schema
+   (§2.7.8), the same `ParseAction()` and `ReadArguments()`. The system
+   prompt gains the CALL_TOOL line, two rules ("tool" is a TOOLS id,
+   null for a left-out argument; the user sees the tool and every
+   argument before it runs) and a security rule (the TOOLS list is the
+   page's: DATA); TOOLS (the agent's `DescribeTools()` text) follows
+   ELEMENTS inside the page fence. Without tools the prompt and the
+   schema are byte for byte what they were.
+3. **The proposal.** `DescribeProposal` is `Run the site's tool
+   "add_to_cart" in the frame https://shop.example/widgets/cart with id =
+   "A1"; qty = 2`: the tool, the frame when it isn't the main document,
+   and every argument whole in `ReadArguments()`' escaped form (hidden and
+   reordering characters as U+FFFD, quotes escaped; never cut, unlike
+   typed text in other summaries). `CheckProposal` always answers *ask*,
+   read-only or not, with the browser's reason: `Runs the site's tool
+   "add_to_cart" on https://shop.example: it may change something there`
+   (or "(the site says it only reads)", a form tool's or a card's reason;
+   a frame's tool `in the frame ... on ...`). A reason means a chip in
+   Ask first and Auto mode alike. A tool whose document is already gone
+   is refused before it is shown.
+4. **Running.** Only through the existing confirm flow: Allow sends
+   `runChatProposal(id, true)` from the click. The handler reads
+   `HasTransientUserActivation()` on the chat page's frame when the
+   message arrives (the click's activation reaches the browser first; the
+   WebUI pipe is frame-associated) and `MayRunProposal()` runs a CALL_TOOL
+   only when confirmed, for the reason shown, with that activation;
+   otherwise it answers `needs_confirmation` and the page asks again.
+   Then, as the web agent does at call time: the same main document,
+   still the active tab of the chat's window and on its side of MoltNet's
+   boundary (`ChatProposalFrame`), the page's origin among the chat's
+   sites (`CheckProposal`), the tool's document the same and still a frame
+   that counts (`SiteToolHost::ToolFrameIfCurrent`), and in the page the
+   document's mark and the same tool with the same schema, description,
+   hints and form fields (§2.7.9, §2.7.13). It runs once.
+5. **The answer.** `InterpretToolCall`: "The site's tool answered:
+   "..."", the site's text on one line, escaped as above, cut at 300
+   characters; "The tool loaded another page." when its document went
+   away after it started; else the web agent's fixed note. The page shows
+   it as text in the result row. The model never sees it: a chat proposal
+   is one step.
+
+**Why the click, even for a read-only tool.** In the web agent the user
+started a run on the site and watches it; a read-only call runs unasked
+there (§2.7.9). A chat proposal is the model's choice, written from the
+page's text, in answer to one message; the user hasn't seen what the tool
+will be given. So every tool proposal waits for Allow, and Allow must be a
+real click: the page's script (or a compromised chat renderer) sending
+`runChatProposal(id, true)` on its own gets `needs_confirmation`.
+
+**MoltNet:** §2.7.10 (on-device model only, the chat's own window).
 
 ## 5. What this changes for prompt injection
 
@@ -1872,14 +2141,16 @@ anything); a compromised inference service (any valid-looking reply).
 
 **What the format and the checks still guarantee:** one action from the
 agent's set; a CALL_TOOL names a tool the browser listed from the page's
-own document and offered, never a frame's or another origin's; the
-arguments are exactly that tool's, checked against its converted schema,
-and written by the browser; a tool whose name, arguments or form look like
-a password, or that takes a file, is never offered; the call runs only on
-the run's sites, and only if the page still lists the same tool; every
-call the site doesn't declare read-only, every form tool and every tool
-that takes a payment card or one-time code waits for the user, who sees
-every argument. Names, descriptions and answers reach the model inside the
+main document or one of its frames of exactly the same origin, and
+offered, never a cross-origin frame's or another origin's; the arguments
+are exactly that tool's, checked against its converted schema, and
+written by the browser; a tool whose name, arguments or form look like a
+password, or that takes a file, is never offered; the call runs only on
+the run's sites, only in the very document that listed the tool, and only
+if it still lists the same tool; every call the site doesn't declare
+read-only, every form tool and every tool that takes a payment card or
+one-time code waits for the user, who sees every argument and, for a
+frame's tool, the frame's address. Names, descriptions and answers reach the model inside the
 page fence, on single lines where they are labels, capped, and a failure's
 text never does. A compromised renderer gets what any page script gets:
 the listing is parsed with caps, and nothing in it is code.
@@ -1902,6 +2173,55 @@ the listing is parsed with caps, and nothing in it is code.
 - *Answers can carry injected text.* They are fenced and the rules say
   they are data; a small model may still follow them, within the actions
   above.
+
+**Frames (§2.7.12).** More attackers: a cross-origin frame on the page (an
+ad, a widget) that registers tools and exposes them to the top origin; a
+same-origin page that a cross-origin frame embeds, at a URL of its
+choosing; a frame (or the main document) that navigates, or a frame host
+that gets a new document, between the listing and the call; a frame whose
+`name`, `title` or tool names try to pass for another's.
+
+- *Another site's tools never reach the model.* Only frames of exactly
+  the main document's origin count, and only if every frame above them
+  does; inner pages (fenced frames, guest views) and other pages
+  (prerendering) never do. `exposedTo` changes nothing.
+- *A tool runs where it was listed.* The browser pins the document and
+  re-checks the frame chain at call time; the script checks the
+  document's unguessable mark, which a new document can't have and the
+  page can't read. A tool of the same name and description in a document
+  the frame navigated to doesn't run.
+- *Frames can't impersonate each other.* The browser numbers them and
+  shows the frame's address, escaped, in every approval; nothing a page
+  writes names a frame.
+- *What remains:* a same-origin frame is the site itself, so its tools
+  are trusted as the main document's are (§2.7.9), including its
+  `readOnlyHint`. A page of the site that embeds user content without
+  script in a same-origin frame adds nothing: the tools are registered by
+  script, and script on the origin can already do anything there.
+
+**The chat (§4.9).** More attackers: the chat page itself if its renderer
+is compromised (it can send `runChatProposal(id, true)` whenever it
+likes), and a page that changes its tools or frames between the proposal
+and the click, which can be minutes.
+
+- *Nothing runs without the user's click.* Every tool proposal asks, in
+  Ask first and Auto mode, read-only or not; the browser runs it only with
+  the chat page's transient user activation, for the reason it showed.
+  A script that confirms on its own gets the question again.
+- *The user approves what runs.* The card names the tool, the frame when
+  it isn't the main document, and every argument whole, escaped; the
+  browser writes the arguments, and they can't change after the click.
+- *Only the chat's site, only that document.* The tool must still be
+  listed by the same document, unchanged, at the page's origin, in the
+  active tab of the chat's own window (MoltNet's boundary included).
+- *Offering is the web agent's.* The same rules decide what is offered,
+  so the chat sees no tool the agent wouldn't, and never a cross-origin
+  frame's.
+- *What remains:* page text can steer the model to the wrong tool or
+  arguments, which the user sees before allowing; and the answer is the
+  site's text shown in the chat (marked as the site's, on one line,
+  escaped, capped), as misleading as the site chooses, like its own page.
+  The model never reads the answer.
 
 **MoltNet:** §2.7.10.
 
@@ -1977,12 +2297,16 @@ the draft is built to be harmless until a person has looked at it:
     page belongs to the chat's workstream this round.
   - *Other sites' images, videos and canvases* aren't masked (§5.1).
 - **Site tools (§2.7):**
-  - *Tools of frames and other origins* (`exposedTo` / `fromOrigins`): the
-    agent acts on the main document only.
+  - *Tools of cross-origin frames* (`exposedTo` / `fromOrigins`), and of
+    same-origin frames inside them: never listed. What turning it on would
+    take is in §2.7.12. Frames of exactly the main document's origin are
+    listed (§2.7.12); their elements are not (the snapshot is still the
+    main document's, so a frame's tools can be called, its buttons not
+    clicked).
   - *A form tool's answer on the next page* (`application/ld+json`): the
     page is observed instead.
-  - *`toolchange`*: the list is read at each observation, so a tool
-    registered in between appears at the next one.
+  - *`toolchange`*: not listened for, on purpose (§2.7.13); the list is
+    read at each observation, and every call compares the tool again.
   - *Wider schemas*: type lists, nested objects, `$ref`, `pattern`,
     `const`, `oneOf` and bounds the grammar can't express skip the tool.
   - *A trial enabled late*: Blink installs an origin-trial feature enabled
@@ -1992,8 +2316,9 @@ the draft is built to be harmless until a person has looked at it:
     the agent sees no tools there until the next document.
   - *Stopping a call that timed out*: in 152 `executeTool`'s signal only
     rejects the caller's promise; nothing reaches the tool.
-  - *The chat and Agent mode*: CALL_TOOL is the web agent's only (§4.3 has
-    no such action; recorded workflows don't replay tools).
+  - *Agent mode*: recorded workflows don't replay tools (§2.9.4). The
+    chat proposes one tool call per request (§4.9); it never sees the
+    answer, so it can't chain calls.
   - *Turning WebMCP on for every page*, and a per-tool "always allow".
   - *A run against a real page in the trial*, and whether small models pick
     tools well, need the build machine.
@@ -2287,8 +2612,9 @@ For site tools (§2.7):
   17 hostile calls (unknown ids, a tool's name or an element id as the
   tool, another tool's arguments, nulls for required arguments, caps,
   control characters, lower-case names, nesting), the retry notes never
-  repeating the reply. `chat_actions_unittest.cc`: the chat never offers,
-  parses or runs CALL_TOOL. `agent_prompt_unittest.cc` (3): without tools
+  repeating the reply. `chat_actions_unittest.cc`: then, the chat never
+  offered, parsed or ran CALL_TOOL (since §4.9, see below).
+  `agent_prompt_unittest.cc` (3): without tools
   nothing mentions them; with them exactly the action, two rules and a
   security rule, also with a screenshot; page text that forges TOOLS stays
   in the fence.
@@ -2338,3 +2664,70 @@ For site tools (§2.7):
   polling and its timing; a `<form toolname>` tool with and without
   `toolautosubmit`; a run with a real model choosing between tools,
   clicks and typing.
+
+For frames, `toolchange` and the chat's tool proposals (§2.7.12, §2.7.13,
+§4.9), and the shared hidden characters:
+
+- **In `molt_ai_unittests`:** `agent_tools_unittest.cc` (11 more): which
+  frames count, from a page with nested same-origin frames, a cross-origin
+  frame with a same-origin one inside it and a fenced frame with one
+  inside it (main document first, then depth first); same site but not
+  same origin (subdomain, port, scheme, `null`); frames out of the page
+  hiding their subtree; opaque and non-web main documents; the 8-frame
+  cap, flat and nested; lists that aren't trees; the chain re-checked at
+  call time (each link's origin, page and parent, the depth); the frame's
+  text (origin and path, the cut at a character boundary, hidden
+  characters, quotes, a frame without its own address); the browser's
+  frame number in TOOLS and TOOL RESULT; the document mark required,
+  checked and carried by every tool; the approval naming the frame; the
+  call script's mark and untrusted-hint checks. `agent_actions_unittest.cc`
+  (2 more): the same name in two frames is two tools, once per frame, the
+  8 cap over all frames in order. `chat_actions_unittest.cc` (10 more, one
+  replaced): without tools the set, schema, parser and prompt are
+  unchanged; with tools the agent's CALL_TOOL branch, valid and 7 hostile
+  calls; the agent's offering rules and the chat's own schema budget; the
+  prompt's rules and TOOLS inside the one fence (a description that tries
+  to end it or forge a line); the card (the frame, every argument whole,
+  escaped); every tool proposal asks, read-only, form and card tools
+  included, and unknown tools, probes or another site are refused;
+  `MayRunProposal` needs confirmation, the reason shown and the click's
+  activation; the answer shown (quoted, one line, escaped, cut at 300) and
+  every failure note; hidden characters in typed text, labels and URLs on
+  every card. `hidden_chars_unittest.cc` (3): one table of every range at
+  both ends and its neighbours, at the start, middle and end of a text;
+  sequences cut short; tag-character sentences. The form fill's and the
+  tools' tests check the wider set too.
+- **In `tools/webui_checks` (`npm test`, CI):** `agent_tools_test.js`: the
+  mark set by the first listing and kept by the next, reported with the
+  tools; a call refused in a document without the mark or with another;
+  the untrusted-content hint compared. The chat page in the smoke test: a
+  CALL_TOOL proposal in Auto mode shows the chip with the browser's reason
+  first, sends only the id and `true` on Allow, and shows the summary and
+  the site's answer as text.
+- **Run outside the repo** (standalone, against the `//base` stand-ins):
+  - all the agents tests and the form fill's (217), with clang, under ASan
+    and UBSan, and with g++ (which reports a known false positive of its
+    own, `-Wmaybe-uninitialized` on a `std::optional<std::vector>` move in
+    `agent_plan.cc`, not new);
+  - the chat's prompt and schema without tools against the base commit's
+    `chat_actions.cc`: byte-identical on 3,000 random pages and requests;
+  - `molt_agent_tools_fuzzer` (now also frame trees, frame text and the
+    chat's offering and tool proposals, a new seed): about 30,000 runs; the
+    plan and actions fuzzers 40 s each with the shared set;
+  - mutation checks: 49 single-point mutations of the new checks (which
+    frames count and the chain, the cap, tree order, frame text and labels,
+    the mark, the untrusted hint, identity in `AddSiteTools`, the chat's
+    set, schema budget, refusals, always asking, the click, the card, the
+    fence, the answer, and each range of the hidden set), all caught; 6 of
+    the list and call scripts in jsdom, all caught;
+  - the real-header compile check (`tools/compile_check/`) of every
+    changed C++ file, `SiteToolHost` and the chat handler included: no
+    errors, no warnings (it also reported three range-for warnings in
+    `agent_tools.cc` and the tools fuzzer, from before, now fixed).
+- **Needs the build machine:** a compile and link; `SiteToolHost` against
+  real pages: `ForEachRenderFrameHost` over iframes, a fenced frame and an
+  out-of-process cross-origin frame, the isolated world of a same-origin
+  child frame (`document.modelContext` there, the mark surviving and not
+  surviving navigations, a frame host reused for a new document), the
+  shared 3 s budget; the chat's transient activation on Allow from the side
+  panel and from a tab; a real model choosing a tool in the chat.

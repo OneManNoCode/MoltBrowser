@@ -538,6 +538,15 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   first, showing every argument; tools that take a password or a file are
   never offered. What a tool answers is treated as page text. Turn it off
   at `chrome://flags/#molt-agent-site-tools`.
+- **Site tools in frames, and in the AI chat.** The agent also sees the
+  tools of frames that belong to the page's own site (exactly its origin;
+  never another site's frame, or a frame inside one), and a call runs only
+  in the very page or frame that listed the tool; when it asks you, it
+  shows the frame's address. In the AI chat, a typed request on such a
+  page can propose one of the site's tools: MoltBrowser shows the tool,
+  the frame and every argument, and runs it only after you click Allow,
+  in Auto mode too and for tools the site calls read-only. The same switch
+  turns both off.
 - **The web agent plans first.** Before it acts, the on-device model writes
   a short plan for the task (at most 6 steps, each with how to tell it's
   done), shown above the agent's steps with the current one marked. The
@@ -658,6 +667,11 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   stand-ins had missed, all fixed; among them, WebGL2 `readPixels` into a
   buffer now farbles the pixels by reading them back, as 152 has no buffer
   mapping.
+- Consistency hardening: the site tools' approvals, the agent's plan, and
+  the chat's proposals and form fills share one list of the characters
+  they show as U+FFFD (bidi controls, zero-width and invisible characters,
+  line separators, variation selectors, tag characters), the planner's
+  wider one, with one test table (`agents/hidden_chars.h`).
 
 ---
 

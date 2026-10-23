@@ -622,14 +622,25 @@ std::string DescribeElements(const Observation& observation) {
 void AddSiteTools(std::vector<agent_tools::SiteTool> tools,
                   Observation* observation,
                   bool with_plan) {
-  const ActionSet actions = with_plan ? kPlannedAgentActions : kAgentActions;
-  const PlanSteps* plan = with_plan ? &kWidestPlanSteps : nullptr;
+  AddSiteToolsFor(std::move(tools), observation,
+                  with_plan ? kPlannedAgentActions : kAgentActions,
+                  with_plan ? &kWidestPlanSteps : nullptr);
+}
+
+void AddSiteToolsFor(std::vector<agent_tools::SiteTool> tools,
+                     Observation* observation,
+                     ActionSet actions,
+                     const PlanSteps* plan) {
   for (agent_tools::SiteTool& tool : tools) {
     if (observation->tools.size() >= agent_tools::kMaxSiteTools)
       break;
+    // A tool is its frame and its name: Blink keeps names unique per
+    // document, so a repeat within a frame is a renderer's doing.
     const bool repeated = std::any_of(
         observation->tools.begin(), observation->tools.end(),
-        [&](const agent_tools::SiteTool& t) { return t.name == tool.name; });
+        [&](const agent_tools::SiteTool& t) {
+          return t.frame == tool.frame && t.name == tool.name;
+        });
     if (repeated)
       continue;
     tool.ref = "t" + base::NumberToString(observation->tools.size() + 1);

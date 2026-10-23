@@ -9,6 +9,7 @@
 #include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 
 namespace molt_ai {
 namespace agent_plan {
@@ -19,8 +20,6 @@ namespace {
 // base::JSONReader counts every level, scalars included, so a deeper reply
 // is refused by the reader itself.
 constexpr size_t kMaxPlanJsonDepth = 4;
-
-constexpr char kReplacement[] = "\xEF\xBF\xBD";  // U+FFFD
 
 // Characters in valid UTF-8 (what base::JSONReader returns): every byte
 // that isn't a continuation byte starts one.
@@ -46,72 +45,13 @@ bool HasControlChars(std::string_view s) {
   });
 }
 
-// Length in bytes of a character at |s|[i] that reorders, hides or breaks
-// text, or 0: C1 controls (U+0080-U+009F), U+00AD (soft hyphen), U+061C,
-// the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0), U+180E,
-// U+200B-U+200F, U+2028-U+202E, U+2060-U+2064, U+2066-U+2069, the
-// variation selectors (U+FE00-U+FE0F, U+E0100-U+E01EF), U+FEFF and the tag
-// characters (U+E0000-U+E007F), which spell text nobody sees. (The site
-// tools' approval text, agent_tools.cc, shows the format and bidi
-// characters among these the same way.)
-size_t HiddenCharAt(std::string_view s, size_t i) {
-  auto byte = [&](size_t k) {
-    return i + k < s.size() ? static_cast<unsigned char>(s[i + k]) : 0;
-  };
-  const unsigned char b0 = byte(0);
-  const unsigned char b1 = byte(1);
-  const unsigned char b2 = byte(2);
-  const unsigned char b3 = byte(3);
-  if (b0 == 0xC2 && ((b1 >= 0x80 && b1 <= 0x9F) || b1 == 0xAD))
-    return 2;
-  if (b0 == 0xD8 && b1 == 0x9C)
-    return 2;
-  if (b0 == 0xE1 && b1 == 0x85 && (b2 == 0x9F || b2 == 0xA0))
-    return 3;
-  if (b0 == 0xE3 && b1 == 0x85 && b2 == 0xA4)
-    return 3;
-  if (b0 == 0xEF && b1 == 0xBE && b2 == 0xA0)
-    return 3;
-  if (b0 == 0xEF && b1 == 0xB8 && b2 >= 0x80 && b2 <= 0x8F)
-    return 3;
-  // U+E0000-U+E007F (F3 A0 80 80 - F3 A0 81 BF) and U+E0100-U+E01EF
-  // (F3 A0 84 80 - F3 A0 87 AF); the input is valid UTF-8, so b3 is a
-  // continuation byte.
-  if (b0 == 0xF3 && b1 == 0xA0 &&
-      (b2 == 0x80 || b2 == 0x81 || (b2 >= 0x84 && b2 <= 0x86) ||
-       (b2 == 0x87 && b3 <= 0xAF))) {
-    return 4;
-  }
-  if (b0 == 0xE1 && b1 == 0xA0 && b2 == 0x8E)
-    return 3;
-  if (b0 == 0xE2 && b1 == 0x80 &&
-      ((b2 >= 0x8B && b2 <= 0x8F) || (b2 >= 0xA8 && b2 <= 0xAE))) {
-    return 3;
-  }
-  if (b0 == 0xE2 && b1 == 0x81 &&
-      ((b2 >= 0xA0 && b2 <= 0xA4) || (b2 >= 0xA6 && b2 <= 0xA9))) {
-    return 3;
-  }
-  if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF)
-    return 3;
-  return 0;
-}
-
-// |s| as the user and the model read it: hidden characters shown as U+FFFD
-// (one character each, so the length in characters stays the same), ASCII
-// spaces trimmed from the ends.
+// |s| as the user and the model read it: characters that reorder, hide or
+// break text (hidden_chars.h: C1 controls, bidi and zero-width characters,
+// line separators, variation selectors, tag characters, ...) shown as
+// U+FFFD (one character each, so the length in characters stays the same),
+// ASCII spaces trimmed from the ends.
 std::string Shown(std::string_view s) {
-  std::string out;
-  out.reserve(s.size());
-  for (size_t i = 0; i < s.size();) {
-    if (const size_t n = HiddenCharAt(s, i)) {
-      out += kReplacement;
-      i += n;
-    } else {
-      out += s[i];
-      ++i;
-    }
-  }
+  const std::string out = hidden_chars::ShowHidden(s);
   const size_t begin = out.find_first_not_of(' ');
   if (begin == std::string::npos)
     return std::string();

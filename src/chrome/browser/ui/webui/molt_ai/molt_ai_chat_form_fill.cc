@@ -8,6 +8,7 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 #include "chrome/browser/molt_ai/security/agent_safety.h"
 #include "url/origin.h"
 
@@ -54,39 +55,10 @@ bool IsBlank(std::string_view s) {
   });
 }
 
-// Length in bytes of a character that reorders or hides text, starting at
-// |s|[i], or 0: U+061C, U+180E, U+200B-U+200F, U+202A-U+202E,
-// U+2060-U+2064, U+2066-U+2069, U+FEFF.
-size_t HiddenCharAt(std::string_view s, size_t i) {
-  auto byte = [&](size_t k) {
-    return i + k < s.size() ? static_cast<unsigned char>(s[i + k]) : 0;
-  };
-  const unsigned char b0 = byte(0);
-  const unsigned char b1 = byte(1);
-  const unsigned char b2 = byte(2);
-  if (b0 == 0xD8 && b1 == 0x9C) {
-    return 2;
-  }
-  if (b0 == 0xE1 && b1 == 0xA0 && b2 == 0x8E) {
-    return 3;
-  }
-  if (b0 == 0xE2 && b1 == 0x80 &&
-      ((b2 >= 0x8B && b2 <= 0x8F) || (b2 >= 0xAA && b2 <= 0xAE))) {
-    return 3;
-  }
-  if (b0 == 0xE2 && b1 == 0x81 &&
-      ((b2 >= 0xA0 && b2 <= 0xA4) || (b2 >= 0xA6 && b2 <= 0xA9))) {
-    return 3;
-  }
-  if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF) {
-    return 3;
-  }
-  return 0;
-}
-
 // |s| on one line as the user should read it: C0 and C1 control
 // characters (line breaks and tabs included) and DEL become spaces, and
-// characters that reorder or hide text become U+FFFD.
+// the other characters that reorder or hide text (hidden_chars.h) become
+// U+FFFD.
 std::string Visible(std::string_view s) {
   std::string out;
   out.reserve(s.size());
@@ -100,7 +72,7 @@ std::string Visible(std::string_view s) {
                static_cast<unsigned char>(s[i + 1]) <= 0x9F) {
       out += ' ';  // U+0080-U+009F
       i += 2;
-    } else if (const size_t n = HiddenCharAt(s, i)) {
+    } else if (const size_t n = hidden_chars::HiddenCharAt(s, i)) {
       out += kReplacement;
       i += n;
     } else {

@@ -216,6 +216,34 @@ async function checkChatPageActions(window) {
   await waitFor(() => calls('runChatProposal').length === 1, 'runChatProposal');
   assert.deepStrictEqual(calls('runChatProposal')[0], ['runChatProposal', 5, true]);
 
+  // 6b. A site tool, still in Auto mode: the browser always gives a reason,
+  //     so the chip comes first; Allow sends only the id and true; the
+  //     summary and the site's answer are text.
+  chatActionCalls.length = 0;
+  const TOOL_SUMMARY = 'Run the site\'s tool "search" in the frame ' +
+      'https://shop.example/w with q = "<b>shoes</b>"';
+  const TOOL_REASON = 'Runs the site\'s tool "search" on https://shop.example ' +
+      '(the site says it only reads)';
+  runProposalReplies.push({success: true, message:
+      'The site\'s tool answered: "<img src=x onerror=alert(2)>"'});
+  nextProposal = {status: 'proposal', id: 6, verb: 'CALL_TOOL',
+                  summary: TOOL_SUMMARY, reason: TOOL_REASON};
+  await send(PAGE_ACTION_REQUEST);
+  await waitFor(() => chips().length === 1, 'the tool chip');
+  assert.strictEqual(calls('runChatProposal').length, 0,
+                     'no tool runs before Allow, in Auto mode too');
+  assert.strictEqual(chips()[0].querySelector('.ac-label').textContent, TOOL_SUMMARY);
+  assert.strictEqual(chips()[0].querySelector('.ac-title').textContent,
+                     'Confirm: ' + TOOL_REASON);
+  assert.strictEqual(doc.querySelectorAll('#messages b').length, 0, 'summary is text');
+  chips()[0].querySelector('.ac-allow').click();
+  await waitFor(() => calls('runChatProposal').length === 1, 'runChatProposal');
+  assert.deepStrictEqual(calls('runChatProposal')[0], ['runChatProposal', 6, true]);
+  await waitFor(() => /The site's tool answered/.test(
+      doc.getElementById('messages').textContent), 'the tool\'s answer');
+  assert.strictEqual(doc.querySelectorAll('#messages img').length, 0,
+                     'the answer is text');
+
   // 7. No proposal possible: the browser's message, as text.
   nextProposal = {status: 'unavailable', message: 'Page actions are chosen by the <i>on-device</i> model'};
   await send(PAGE_ACTION_REQUEST);

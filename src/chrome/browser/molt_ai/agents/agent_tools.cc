@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/molt_ai/agents/hidden_chars.h"
 
 namespace molt_ai {
 namespace agent_tools {
@@ -121,37 +122,11 @@ std::string OneLine(std::string_view raw, size_t max_chars) {
   return cut + kEllipsis;
 }
 
-// Length in bytes of a character that reorders or hides text at |s|[i],
-// or 0: U+061C, U+180E, U+200B-U+200F, U+202A-U+202E, U+2060-U+2064,
-// U+2066-U+2069, U+FEFF (as the chat's form fill shows them).
-size_t HiddenCharAt(std::string_view s, size_t i) {
-  auto byte = [&](size_t k) {
-    return i + k < s.size() ? static_cast<unsigned char>(s[i + k]) : 0;
-  };
-  const unsigned char b0 = byte(0);
-  const unsigned char b1 = byte(1);
-  const unsigned char b2 = byte(2);
-  if (b0 == 0xD8 && b1 == 0x9C)
-    return 2;
-  if (b0 == 0xE1 && b1 == 0xA0 && b2 == 0x8E)
-    return 3;
-  if (b0 == 0xE2 && b1 == 0x80 &&
-      ((b2 >= 0x8B && b2 <= 0x8F) || (b2 >= 0xAA && b2 <= 0xAE))) {
-    return 3;
-  }
-  if (b0 == 0xE2 && b1 == 0x81 &&
-      ((b2 >= 0xA0 && b2 <= 0xA4) || (b2 >= 0xA6 && b2 <= 0xA9))) {
-    return 3;
-  }
-  if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF)
-    return 3;
-  return 0;
-}
-
 // A model-written string as the user reads it in the step trace and the
 // approval prompt: on one line (C0 and C1 controls and DEL become spaces),
-// characters that reorder or hide text shown as U+FFFD, and '"' and '\'
-// escaped, so the quotes around it can't be closed early.
+// the other characters that reorder or hide text (hidden_chars.h) shown as
+// U+FFFD, and '"' and '\' escaped, so the quotes around it can't be closed
+// early.
 std::string Visible(std::string_view s) {
   std::string out;
   out.reserve(s.size() + 2);
@@ -165,7 +140,7 @@ std::string Visible(std::string_view s) {
                static_cast<unsigned char>(s[i + 1]) <= 0x9F) {
       out += ' ';  // U+0080-U+009F
       i += 2;
-    } else if (const size_t n = HiddenCharAt(s, i)) {
+    } else if (const size_t n = hidden_chars::HiddenCharAt(s, i)) {
       out += kReplacement;
       i += n;
     } else {
@@ -203,6 +178,13 @@ bool IsToolName(std::string_view s) {
   });
 }
 
+// A document's mark, as BuildToolListScript() is given it: 1-64 of
+// [A-Za-z0-9].
+bool IsDocumentMark(std::string_view s) {
+  return !s.empty() && s.size() <= kMaxDocumentMarkChars &&
+         std::all_of(s.begin(), s.end(), IsAsciiAlnum);
+}
+
 // An argument name the agent takes: [A-Za-z0-9_-]{1,64}, not starting
 // with '-' or "__".
 bool IsArgumentName(std::string_view s) {
@@ -230,7 +212,7 @@ bool IsAnnotation(std::string_view key) {
 bool OnlyKeys(const base::DictValue& d,
               std::initializer_list<std::string_view> keys,
               bool root = false) {
-  for (const auto& [key, value] : d) {
+  for (const auto [key, value] : d) {
     if (IsAnnotation(key))
       continue;
     if (root && (key == "$defs" || key == "definitions"))
@@ -779,6 +761,13 @@ SiteTool& SiteTool::operator=(const SiteTool&) = default;
 SiteTool::SiteTool(SiteTool&&) = default;
 SiteTool& SiteTool::operator=(SiteTool&&) = default;
 
+PageFrame::PageFrame() = default;
+PageFrame::~PageFrame() = default;
+PageFrame::PageFrame(const PageFrame&) = default;
+PageFrame& PageFrame::operator=(const PageFrame&) = default;
+PageFrame::PageFrame(PageFrame&&) = default;
+PageFrame& PageFrame::operator=(PageFrame&&) = default;
+
 ListedTool::ListedTool() = default;
 ListedTool::~ListedTool() = default;
 ListedTool::ListedTool(const ListedTool&) = default;
@@ -799,6 +788,85 @@ CallOutcome::CallOutcome(CallOutcome&&) = default;
 CallOutcome& CallOutcome::operator=(CallOutcome&&) = default;
 
 // ---------------------------------------------------------------------------
+// Frames
+// ---------------------------------------------------------------------------
+
+bool IsSameOriginFrame(const PageFrame& frame, std::string_view main_origin) {
+  // Only an http(s) page's own origin: an opaque one ("null") is never the
+  // same as another, however it serializes.
+  return frame.in_page &&
+         (main_origin.starts_with("https://") ||
+          main_origin.starts_with("http://")) &&
+         frame.origin == main_origin;
+}
+
+std::vector<size_t> ToolFrames(const std::vector<PageFrame>& frames) {
+  std::vector<size_t> out;
+  if (frames.empty() || frames[0].parent ||
+      !IsSameOriginFrame(frames[0], frames[0].origin)) {
+    return out;
+  }
+  const std::string& main_origin = frames[0].origin;
+  // The children of each frame, in their order in |frames|. A parent
+  // always comes before its children; anything else is not a frame tree.
+  std::vector<std::vector<size_t>> children(frames.size());
+  for (size_t i = 1; i < frames.size(); ++i) {
+    if (frames[i].parent && *frames[i].parent < i)
+      children[*frames[i].parent].push_back(i);
+  }
+  // Depth first from the main document, into frames that count only: a
+  // frame that doesn't (another origin, a fenced frame) hides its subtree.
+  std::vector<size_t> pending = {0};
+  while (!pending.empty() && out.size() < kMaxToolFrames + 1) {
+    const size_t i = pending.back();
+    pending.pop_back();
+    out.push_back(i);
+    for (auto it = children[i].rbegin(); it != children[i].rend(); ++it) {
+      if (IsSameOriginFrame(frames[*it], main_origin))
+        pending.push_back(*it);
+    }
+  }
+  return out;
+}
+
+bool IsToolFrameChain(const std::vector<PageFrame>& chain) {
+  if (chain.empty() || chain.size() > kMaxToolFrames + 1)
+    return false;
+  for (size_t i = 0; i < chain.size(); ++i) {
+    const bool linked = i == 0 ? !chain[i].parent
+                               : chain[i].parent && *chain[i].parent == i - 1;
+    if (!linked || !IsSameOriginFrame(chain[i], chain[0].origin))
+      return false;
+  }
+  return true;
+}
+
+std::string FrameText(std::string_view origin, std::string_view path) {
+  // An http(s) URL's path is never empty: no path is a document that took
+  // its origin from its parent (about:blank, about:srcdoc, blob:).
+  if (path.empty())
+    return Visible(origin) + " (a frame without an address of its own)";
+  std::string shown;
+  if (CountChars(path) > kMaxShownFramePathChars) {
+    shown = Visible(TruncateChars(path, kMaxShownFramePathChars - 1)) +
+            kEllipsis;
+  } else {
+    shown = Visible(path);
+  }
+  return Visible(origin) + shown;
+}
+
+std::string VisibleText(std::string_view s) {
+  return Visible(s);
+}
+
+std::string ToolLabel(const SiteTool& tool) {
+  if (tool.frame == 0)
+    return tool.name;
+  return tool.name + " in frame " + base::NumberToString(tool.frame);
+}
+
+// ---------------------------------------------------------------------------
 // Listing
 // ---------------------------------------------------------------------------
 
@@ -806,12 +874,15 @@ bool ShouldListTools(const ListFacts& facts) {
   return facts.switched_on && facts.origin_allowed && facts.snapshot_is_current;
 }
 
-std::string BuildToolListScript(std::string_view request_id) {
+std::string BuildToolListScript(std::string_view request_id,
+                                std::string_view document_mark) {
   // Runs in the agent's isolated world: the page shapes what getTools()
   // returns, not this code or the objects it calls. Only the document's
   // own tools (same window and origin) are listed, at most 32, each field
   // cut one character over its C++ cap so an oversize one is refused
-  // there, not shortened.
+  // there, not shortened. The isolated world's global object belongs to
+  // this document: the mark set on it stays with the document (a new
+  // document gets a new global), and the page can't read or set it.
   static_assert(kMaxListedTools == 32, "update the script");
   static_assert(kMaxToolNameChars == 128, "update the script");
   static_assert(kMaxToolDescriptionChars == 4096, "update the script");
@@ -820,11 +891,15 @@ std::string BuildToolListScript(std::string_view request_id) {
   return base::StringPrintf(
       R"JS((() => {
   try {
-    const id = %s;
+    const id = %s, mark = %s;
     const mc = window.isSecureContext ? document.modelContext : undefined;
     if (!mc || typeof mc.getTools !== 'function') return {state: 'unavailable'};
     %s
-    const st = {id: id, state: 'pending'};
+    if (typeof globalThis.__moltToolDocument !== 'string') {
+      globalThis.__moltToolDocument = mark;
+    }
+    const st = {id: id, state: 'pending',
+                document: globalThis.__moltToolDocument};
     globalThis.__moltAgentToolList = st;
     mc.getTools().then((tools) => {
       const out = [];
@@ -852,7 +927,8 @@ std::string BuildToolListScript(std::string_view request_id) {
     return {state: 'failed'};
   }
 })())JS",
-      JsString(request_id).c_str(), kFormHelpers);
+      JsString(request_id).c_str(), JsString(document_mark).c_str(),
+      kFormHelpers);
 }
 
 std::string BuildToolListPollScript(std::string_view request_id) {
@@ -862,7 +938,8 @@ std::string BuildToolListPollScript(std::string_view request_id) {
     const st = globalThis.__moltAgentToolList;
     if (!st || st.id !== %s) return {state: 'gone'};
     if (st.state !== 'done') return {state: st.state};
-    return {state: 'done', origin: st.origin, tools: st.tools};
+    return {state: 'done', origin: st.origin, document: st.document,
+            tools: st.tools};
   } catch (e) {
     return {state: 'failed'};
   }
@@ -894,12 +971,15 @@ ToolList ParseToolList(const base::Value& result) {
   if (*state != "done")
     return list;
   const std::string* origin = d.FindString("origin");
+  const std::string* document = d.FindString("document");
   const base::ListValue* tools = d.FindList("tools");
   if (!origin || origin->empty() || origin->size() > 512 ||
-      HasControlChars(*origin, /*allow_newlines=*/false) || !tools) {
+      HasControlChars(*origin, /*allow_newlines=*/false) || !document ||
+      !IsDocumentMark(*document) || !tools) {
     return list;
   }
   list.origin = *origin;
+  list.document = *document;
   const size_t n = std::min(tools->size(), kMaxListedTools);
   for (size_t i = 0; i < n; ++i) {
     std::optional<ListedTool> tool = ParseListedTool((*tools)[i]);
@@ -967,6 +1047,24 @@ std::optional<SiteTool> MakeSiteTool(const ListedTool& listed) {
   return tool;
 }
 
+std::vector<SiteTool> MakeSiteTools(const ToolList& list,
+                                    size_t frame,
+                                    std::string_view frame_text) {
+  std::vector<SiteTool> tools;
+  if (list.state != ListState::kDone)
+    return tools;
+  for (const ListedTool& listed : list.tools) {
+    std::optional<SiteTool> tool = MakeSiteTool(listed);
+    if (!tool)
+      continue;
+    tool->frame = frame;
+    tool->frame_text = frame ? std::string(frame_text) : std::string();
+    tool->document = list.document;
+    tools.push_back(std::move(*tool));
+  }
+  return tools;
+}
+
 std::optional<std::vector<ToolArgument>> ConvertInputSchema(
     std::string_view json) {
   std::optional<base::DictValue> root = base::JSONReader::ReadDict(
@@ -994,7 +1092,7 @@ std::optional<std::vector<ToolArgument>> ConvertInputSchema(
         properties->GetDict().size() > kMaxToolArguments) {
       return std::nullopt;
     }
-    for (const auto& [name, schema] : properties->GetDict()) {
+    for (const auto [name, schema] : properties->GetDict()) {
       if (!IsArgumentName(name))
         return std::nullopt;
       std::optional<ToolArgument> arg =
@@ -1040,7 +1138,7 @@ std::string BuildArgumentsSchema(const SiteTool& tool) {
 }
 
 std::string DescribeTool(const SiteTool& tool) {
-  std::string s = tool.ref + " " + tool.name;
+  std::string s = tool.ref + " " + ToolLabel(tool);
   if (tool.read_only && !tool.form_backed &&
       tool.sensitive == FieldKind::kOrdinary) {
     s += " [reads only]";
@@ -1140,9 +1238,7 @@ ArgumentsError ReadArguments(const base::Value& arguments,
   return ArgumentsError::kNone;
 }
 
-CallCheck CheckToolCall(const SiteTool& tool,
-                        std::string_view arguments_text,
-                        std::string_view origin_text) {
+std::vector<std::string> ToolCallEffects(const SiteTool& tool) {
   std::vector<std::string> why;
   if (tool.form_backed)
     why.push_back("it fills a form there and may submit it");
@@ -1152,10 +1248,25 @@ CallCheck CheckToolCall(const SiteTool& tool,
     why.push_back("it takes a " +
                   std::string(agent_safety::FieldKindLabel(tool.sensitive)));
   }
+  return why;
+}
+
+std::string ToolPlaceText(const SiteTool& tool, std::string_view origin_text) {
+  // A frame's tool names its frame (the browser's FrameText()), so the
+  // user can tell it from the main document's.
+  if (tool.frame == 0)
+    return "on " + std::string(origin_text);
+  return "in the frame " + tool.frame_text + " on " + std::string(origin_text);
+}
+
+CallCheck CheckToolCall(const SiteTool& tool,
+                        std::string_view arguments_text,
+                        std::string_view origin_text) {
+  const std::vector<std::string> why = ToolCallEffects(tool);
   CallCheck check;
   check.ask = !why.empty();
-  std::string message = "Run the site's tool \"" + tool.name + "\" on " +
-                        std::string(origin_text);
+  std::string message = "Run the site's tool \"" + tool.name + "\" " +
+                        ToolPlaceText(tool, origin_text);
   for (size_t i = 0; i < why.size(); ++i)
     message += (i ? " and " : " \xE2\x80\x94 ") + why[i];
   message += arguments_text.empty() ? std::string(", with no arguments")
@@ -1168,9 +1279,13 @@ std::string BuildToolCallScript(std::string_view request_id,
                                 std::string_view origin,
                                 const SiteTool& tool,
                                 std::string_view arguments_json) {
-  // The tool as it was listed: the call runs only if getTools() still
-  // shows exactly that (a page can't swap a read-only tool for another
-  // under the same name between the listing and the call).
+  // The tool as it was listed: the call runs only in the document that
+  // listed it (its mark: a document the frame navigated to, or another
+  // document reusing the frame's host, has none or another), and only if
+  // getTools() still shows exactly that tool: every field the agent read
+  // when it listed it (a page can't swap a read-only tool for another
+  // under the same name between the listing and the call, nor drop the
+  // untrusted-content hint its answer is shown with).
   std::string form = "null";
   if (tool.form_backed) {
     base::ListValue fields;
@@ -1188,8 +1303,10 @@ std::string BuildToolCallScript(std::string_view request_id,
   return base::StringPrintf(
       R"JS((() => {
   try {
-    const id = %s, origin = %s, name = %s, desc = %s, schema = %s,
-          readOnly = %s, form = %s, args = %s;
+    const id = %s, doc = %s, origin = %s, name = %s, desc = %s,
+          schema = %s, readOnly = %s, untrusted = %s, form = %s,
+          args = %s;
+    if (globalThis.__moltToolDocument !== doc) return 'document_changed';
     if (location.origin !== origin) return 'origin_changed';
     const mc = window.isSecureContext ? document.modelContext : undefined;
     if (!mc || typeof mc.getTools !== 'function' ||
@@ -1210,6 +1327,7 @@ std::string BuildToolCallScript(std::string_view request_id,
           (typeof t.inputSchema === 'string' ? t.inputSchema : null) !==
               schema ||
           (a.readOnlyHint === true) !== readOnly ||
+          (a.untrustedContentHint === true) !== untrusted ||
           !sameFields(form, f ? fieldsOf(f) : null)) {
         st.state = 'changed';
         return;
@@ -1226,9 +1344,11 @@ std::string BuildToolCallScript(std::string_view request_id,
     return 'error';
   }
 })())JS",
-      JsString(request_id).c_str(), JsString(origin).c_str(),
-      JsString(tool.name).c_str(), JsString(tool.listed_description).c_str(),
-      schema.c_str(), tool.read_only ? "true" : "false", form.c_str(),
+      JsString(request_id).c_str(), JsString(tool.document).c_str(),
+      JsString(origin).c_str(), JsString(tool.name).c_str(),
+      JsString(tool.listed_description).c_str(),
+      schema.c_str(), tool.read_only ? "true" : "false",
+      tool.untrusted_output ? "true" : "false", form.c_str(),
       JsString(arguments_json).c_str(), kFormHelpers);
 }
 
@@ -1254,6 +1374,8 @@ CallOutcome ParseToolCallStart(const base::Value& result) {
   const std::string& s = result.GetString();
   if (s == "started")
     outcome.state = CallState::kStarted;
+  else if (s == "document_changed")
+    outcome.state = CallState::kDocumentChanged;
   else if (s == "origin_changed")
     outcome.state = CallState::kOriginChanged;
   else if (s == "unavailable")
@@ -1302,6 +1424,9 @@ std::string_view CallFailureNote(CallState state) {
       return "The tool's page went away before it answered.";
     case CallState::kTimedOut:
       return "The site's tool didn't answer within 20 seconds.";
+    case CallState::kDocumentChanged:
+      return "Not run: the page or frame that offered the tool has changed "
+             "or gone.";
     case CallState::kStarted:
     case CallState::kPending:
     case CallState::kDone:
@@ -1312,7 +1437,7 @@ std::string_view CallFailureNote(CallState state) {
 
 std::string DescribeToolResult(const SiteTool& tool,
                                const CallOutcome& outcome) {
-  std::string s = "TOOL RESULT (the page's tool " + tool.name;
+  std::string s = "TOOL RESULT (the page's tool " + ToolLabel(tool);
   if (tool.untrusted_output)
     s += "; the site says it may contain other people's content";
   s += "):\n";
