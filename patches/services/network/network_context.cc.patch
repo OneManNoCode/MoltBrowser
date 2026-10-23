@@ -5,7 +5,7 @@ src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 789de76a8dc025b933ac18c24243e24742df1393..fa547c72d518f24b0c334c2f8bfaf1dafa2e4f13 100644
+index 789de76a8dc025b933ac18c24243e24742df1393..41b9c39cbaf5ab8d1c5612fb74f0b803951811a2 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -667,6 +667,34 @@ void RemoveInvalidationFilterCallback(
@@ -66,3 +66,15 @@ index 789de76a8dc025b933ac18c24243e24742df1393..fa547c72d518f24b0c334c2f8bfaf1da
  }
  
  URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+@@ -3203,6 +3240,11 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+   session_params.key_auth_cache_server_entries_by_network_anonymization_key =
+       params_->split_auth_cache_by_network_anonymization_key;
+ 
++  // MoltBrowser: this context's SOCKS5 password for MoltNet's Tor (set for
++  // MoltNet's contexts only), read by SOCKSConnectJob.
++  session_params.molt_socks_isolation_password =
++      params_->molt_socks_isolation_password.value_or(std::string());
++
+   builder.set_http_network_session_params(session_params);
+   builder.set_quic_context(std::move(quic_context));
+ 
