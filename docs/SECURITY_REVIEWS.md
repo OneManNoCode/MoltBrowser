@@ -46,6 +46,30 @@ the code touched.
   violation that counts against the model like a crash, so the crash-loop
   guard applies and the GPU stays available to other models.
 
+**Fixed since.** The other seven (both medium, the other low and the four
+informational), in a follow-up the same day:
+
+- MoltNet: the connections of each MoltNet identity carry a SOCKS password
+  of their own, random for each MoltNet network context, so Tor never puts
+  a new identity on an earlier one's circuits, after New Identity or once
+  the last MoltNet window has closed, whether or not Tor has applied New
+  Identity's request for new circuits (which it still gets).
+- GPU inference on Linux (off by default): the inference service's GPU
+  broker grants the sysfs files libdrm reads about the GPU, each by name,
+  instead of the GPU's sysfs directory recursively.
+- Page translation: the script reaches every DOM member through its
+  prototype, so a page's named form controls or named elements can't stand
+  in for them, and a slot whose check fails no longer ends the write; the
+  15-minute deadline also ends a job waiting for a write the page doesn't
+  answer; and a translation asked for in a MoltNet window no longer adds
+  its language to that window's language list.
+- The agent planner shows the soft hyphen, the Hangul fillers, the
+  variation selectors and the tag characters as U+FFFD too.
+
+Two functional issues found on the way are fixed as well: a textarea's
+placeholder is now written back, and text directly inside a
+`display: contents` element is translated.
+
 ## 2026-10-23: MoltNet's network isolation and linkability
 
 **Scope.** MoltNet, MoltBrowser's Tor mode, against the claims in

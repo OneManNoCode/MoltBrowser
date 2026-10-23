@@ -159,6 +159,17 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   (`docs/SECURITY_REVIEWS.md`): the browser accepts a GPU failure report
   only from a model that runs on the GPU; from a model on the CPU it counts
   like a crash of that model.
+- More hardening from the same review: each MoltNet identity uses Tor
+  circuits of its own (a random SOCKS password per identity), also for a
+  site visited again after New Identity or after the last MoltNet window
+  closed; GPU inference on Linux (off by default) can read only the few
+  files about the GPU that its driver library needs; page translation
+  can't be thrown off by a page's named form controls, its time limit also
+  ends a translation stuck on an unresponsive page, it now translates
+  textarea placeholders and text directly in `display: contents`
+  elements, and asking for one in a MoltNet window leaves that window's
+  languages alone; the agent's plan shows more invisible characters
+  (soft hyphen, Hangul fillers, variation selectors, tag characters).
 
 ### Privacy
 - **MoltNet in its own window.** Tor browsing opens in a separate,
