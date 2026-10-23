@@ -286,7 +286,8 @@ class PackageLinuxTest(unittest.TestCase):
             expected.add(n['MOLT_ASSET_LINUX_RPM'])
         if shutil.which('appimagetool'):
             expected.add(n['MOLT_ASSET_LINUX_APPIMAGE'])
-        made = {f for f in os.listdir(self.dist) if not f.startswith('.')}
+        made = {f for f in os.listdir(self.dist) if not f.startswith('.')
+                and os.path.isfile(os.path.join(self.dist, f))}
         self.assertEqual(made, expected)
         if DPKG_DEB:
             version = subprocess.run(
@@ -294,11 +295,14 @@ class PackageLinuxTest(unittest.TestCase):
                  'Version'], check=True, stdout=subprocess.PIPE,
                 universal_newlines=True).stdout.strip()
             self.assertEqual(version, '0.3.0')
-        # The Flatpak manifest points at the tarball the release uploads.
+        # The Flatpak manifest points at the tarball the release uploads, and
+        # is written to dist/: the source tree stays clean, as the release
+        # provenance requires.
         tar = os.path.join(self.dist, n['MOLT_ASSET_LINUX_TAR'])
         with open(tar, 'rb') as f:
             digest = hashlib.sha256(f.read()).hexdigest()
-        manifest = read(os.path.join(self.tmp, 'installer', 'linux', 'flatpak',
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, 'installer')))
+        manifest = read(os.path.join(self.dist, 'flatpak',
                                      'com.geneye.MoltBrowser.yml'))
         self.assertIn('/releases/download/v0.3.0/%s\n' % n['MOLT_ASSET_LINUX_TAR'],
                       manifest)

@@ -299,7 +299,11 @@ build_flatpak() {
   echo ""
   echo "--- Creating Flatpak manifest ---"
 
-  FLATPAK_DIR="$ROOT_DIR/installer/linux/flatpak"
+  # In dist/, not in the source tree: a release build must leave the tree
+  # clean (its build provenance refuses uncommitted changes), and this file
+  # changes with every tarball. installer/linux/flatpak/ keeps the last one
+  # committed.
+  FLATPAK_DIR="$DIST_DIR/flatpak"
   mkdir -p "$FLATPAK_DIR"
 
   # The manifest pins the release tarball by SHA-256 (flatpak-builder
