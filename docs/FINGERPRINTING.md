@@ -415,7 +415,7 @@ back/forward, and a MoltNet window with Shields off.
 | Installed extensions: web-accessible resources, page-to-extension messaging (`chrome.runtime`), content-script changes, blocked or rewritten requests | the user's (in Incognito: those allowed there) | **none**; only the built-in PDF viewer ([details](MOLTNET_COMPLIANCE.md#2-how-it-is-built)) | `extension_util.cc`: `IsIncognitoEnabled`, `IsExtensionVisibleToContext`; `web_request_api.cc` |
 | Autoplay with sound and no user gesture (`navigator.getAutoplayPolicy()`, unmuted `play()`) | allowed on sites with high media engagement | **never** | `media_engagement_service.cc`: `HasHighEngagement` |
 | `navigator.storage.persist()` | granted for bookmarked, installed or often-used sites | **false** | `persistent_storage_permission_context.cc`: `DecidePermission` |
-| Third-party cookies, Shared Storage | the user's settings | **blocked**, **off** (as in Incognito) | `cookie_settings_factory.cc`, `privacy_sandbox_settings_delegate.cc` |
+| Third-party cookies, Shared Storage | the user's settings | third-party cookies **blocked** (as in Incognito); Shared Storage: removed upstream at 156 | `cookie_settings_factory.cc` |
 | `Touch.screenX/Y`, touch contact (`radiusX/Y`, `rotationAngle`, `force`; touch `PointerEvent` `width/height/pressure/tilt/twist`) | real | like `MouseEvent`; contact **hidden** ([details](#touches)) | `touch_event_manager.cc`, `pointer_event_factory.cc` |
 | `navigator.maxTouchPoints`, `pointer`/`any-pointer`/`hover`/`any-hover` media queries, touch-event feature detection (`ontouchstart`, `createEvent('TouchEvent')`) | real | a mouse-only desktop: **0**, **fine**, **hover**, **off** ([details](#touchscreens)) | browser: `chrome_content_browser_client.cc`: `OverrideWebPreferences` |
 | `getScreenDetails()`, `window-management` permission state | real | **denied** (no prompt) | `window_screen_details.cc`, `permission_status_listener.cc` |
@@ -2690,12 +2690,19 @@ At 152 this included, with how a page sees it:
   Attribution Reporting, Topics) came straight from the user's settings;
   so did `canMakePayment()`'s switch and MoltShield's "Strip tracking
   parameters".
+* **New at 156**: whether pages that use XSLT show Blink's deprecation
+  banner (WebPreferences; "Never show again" sets
+  `profile.xslt_deprecation_banner_suppressed`, and the banner is part of
+  the page's DOM), the Global Privacy Control setting behind 156's flags
+  (RendererPreferences; MoltBrowser's forced GPC is unaffected), and the
+  AtMemory keyboard shortcut (RendererPreferences; the renderer cancels
+  that key's keydown in text fields).
 
 **What MoltNet does now.** MoltNet's profile gets its own pref service
-(`molt_net_isolation.{h,cc}`, one hook in `OffTheRecordProfileImpl`'s
+(`molt_net_pref_isolation.{h,cc}`, one hook in `OffTheRecordProfileImpl`'s
 constructor):
 
-* every pref `molt_net_isolation_policy.h` lists (the groups above, by
+* every pref `molt_net_pref_isolation_policy.h` lists (the groups above, by
   prefix for fonts and content settings, so new scripts and new content
   types are covered) is set to MoltBrowser's registered default in
   MoltNet's own store before anything reads it, so the overlay never reads
@@ -2826,6 +2833,14 @@ no other thread reads strings yet.)
   everybody, one without (most) got the UI language's;
 * the JSON viewer's "Pretty-print" label, in the document of a
   same-origin frame;
+* the XSLT deprecation banner (new at 156), all six
+  `IDS_XSLT_DEPRECATION_BANNER_*` strings (its text, the removal and
+  extension links, the alert variants and "Never show again"): Blink
+  inserts the banner into the transformed page's own DOM, in an open
+  shadow root, so the page can read every text node of it. Whether it
+  shows at all follows MoltNet's own setting, not "Never show again" in a
+  regular window (`profile.xslt_deprecation_banner_suppressed`,
+  [MOLTNET_COMPLIANCE.md §2](MOLTNET_COMPLIANCE.md#2-how-it-is-built));
 * the byte units (`IDS_UNITS_*`): no page-readable use was found at 152,
   pinned anyway since English units cost nothing.
 

@@ -509,6 +509,31 @@ Expect a large `//net` rebuild: `http_network_session.h` and
   done
   ```
 
+### 4.10 MoltNet's Incognito protections (`molt_net_incognito_parity.h`)
+
+Each hook keeps Chromium's check and adds `molt_ai::tor::IsMoltNetProfile()`
+(header-only `molt_net_profile_id.h`) or calls `GetsIncognitoProtections()`
+(header-only `molt_net_incognito_parity.h`). Several sit in split-out GN
+targets that don't depend on `//chrome/browser/molt_ai/tor`
+(`//chrome/browser/picture_in_picture`, `//chrome/browser/gcm`,
+`//chrome/browser/media/webrtc:webrtc`,
+`//chrome/browser/reduce_accept_language:impl`): if `gn check` (4.9)
+flags the include, add the dep there.
+
+| File | Hook | From |
+|---|---|---|
+| `chrome/browser/devtools/devtools_window.cc` | `GetProfileForDevToolsWindow` keeps the MoltNet profile | #23 |
+| `chrome/browser/extensions/chrome_extension_cookies.cc` | in-memory extension cookie store | #23 |
+| `chrome/browser/webshare/mac/sharing_service_operation.mm` | file shares refused after the random delay | #23, rebase 156 (now on `IsPrimaryOTRProfileWithRegularParent()`) |
+| `chrome/browser/gcm/gcm_profile_service_factory.cc`, `.../instance_id/instance_id_profile_service_factory.cc` | no GCM for MoltNet | #23 |
+| `chrome/browser/media/chrome_media_session_client.cc` | `ShouldHideMetadata` | #23, rebase 156 (as above) |
+| `chrome/browser/net/net_error_diagnostics_dialog_win.cc` | no Network Diagnostics | #23, rebase 156 (as above) |
+| `chrome/browser/app_controller_mac.mm` | `OpenStartupTabsInBrowserWithProfile` skips MoltNet | #23 |
+| `chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc` | "ask" counts as "block" | #23, rebase 156 (as above) |
+| `chrome/browser/media/webrtc/webrtc_logging_controller.cc` | `IsWebRtcTextLogAllowed` false for MoltNet | rebase 156 |
+| `chrome/browser/reduce_accept_language/reduce_accept_language_factory.cc` | `ReduceAcceptLanguageService` gets `is_incognito` for MoltNet | rebase 156 |
+| `chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h` (MoltBrowser's own) | three more pinned prefs; `molt_net_pref_isolation_unittest.cc` now needs `//components/autofill/core/common` and `//components/universal_optout` | rebase 156 |
+
 ## 5. Unit tests
 
 `molt_ai_unittests` builds in the release out dir (REBASING.md). The
@@ -605,6 +630,7 @@ pass except where the table below says otherwise (verify the filters).
 | `blink_unittests` | `*Scrollbar*:*ScrollableArea*:*VisualViewport*:*TextMetrics*:*MediaValues*:NetInfo*:*NetworkInformation*:LazyLoad*:FrameFetchContext*` | #20, #27, #33, #37, network quality |
 | `blink_platform_unittests` | `FontPlatformDataTest.*:FontCache*:NetworkStateNotifierTest.*` | #37, #50, network quality |
 | `content_unittests` | `ServiceWorker*:SharedWorker*` (the service and shared worker fakes) | #24 |
+| `unit_tests` | `WebRtcLoggingControllerTest.*:ReduceAcceptLanguageServiceTest.*` | rebase 156 |
 
 - [ ] Build and run each row above (from the PRs in the table):
   ```bash
