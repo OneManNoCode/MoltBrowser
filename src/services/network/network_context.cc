@@ -667,6 +667,34 @@ void RemoveInvalidationFilterCallback(
   context->OnLogicalFilterRemoved(filter);
 }
 
+// MoltBrowser: HttpAuthStaticNetworkContextParams.
+// molt_basic_and_digest_auth_only, set for MoltNet's network contexts.
+bool MoltBasicAndDigestAuthOnly(const mojom::NetworkContextParams* params) {
+  return params && params->http_auth_static_network_context_params &&
+         params->http_auth_static_network_context_params
+             ->molt_basic_and_digest_auth_only;
+}
+
+// MoltBrowser: offer Basic and Digest only (fewer if a policy already took
+// one away), never NTLM or Negotiate. Applied on top of the network
+// service's browser-wide values each time they are (re)applied.
+void MoltRestrictToBasicAndDigestAuth(net::HttpAuthPreferences& prefs) {
+  base::flat_set<std::string> schemes;
+  for (const char* scheme : {net::kBasicAuthScheme, net::kDigestAuthScheme}) {
+    if (!prefs.allowed_schemes() || prefs.allowed_schemes()->contains(scheme)) {
+      schemes.insert(scheme);
+    }
+  }
+  prefs.SetAllowedSchemes(std::move(schemes));
+  // No origin may use every scheme (the AllHttpAuthSchemesAllowedForOrigins
+  // policy). A null filter would let every origin.
+  prefs.set_http_auth_scheme_filter(
+      base::BindRepeating([](const url::SchemeHostPort&) { return false; }));
+  // Negotiate is never offered; it wouldn't resolve the server's canonical
+  // name either.
+  prefs.set_negotiate_disable_cname_lookup(true);
+}
+
 }  // namespace
 
 constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
@@ -859,6 +887,11 @@ NetworkContext::NetworkContext(
     http_auth_merged_preferences_.SetAllowDefaultCredentials(
         params_->http_auth_static_network_context_params
             ->allow_default_credentials);
+  }
+  // MoltBrowser: MoltNet offers Basic and Digest only, also if the network
+  // service has no browser-wide values yet.
+  if (MoltBasicAndDigestAuthOnly(params_.get())) {
+    MoltRestrictToBasicAndDigestAuth(http_auth_merged_preferences_);
   }
 
   InitializeCorsParams();
@@ -2849,6 +2882,10 @@ void NetworkContext::OnHttpAuthDynamicParamsChanged(
   http_auth_merged_preferences_.set_http_auth_scheme_filter(
       base::BindRepeating(&NetworkContext::IsAllowedToUseAllHttpAuthSchemes,
                           base::Unretained(this)));
+  // MoltBrowser: MoltNet's restriction outranks the browser-wide values.
+  if (MoltBasicAndDigestAuthOnly(params_.get())) {
+    MoltRestrictToBasicAndDigestAuth(http_auth_merged_preferences_);
+  }
 }
 
 URLRequestContextOwner NetworkContext::MakeURLRequestContext(

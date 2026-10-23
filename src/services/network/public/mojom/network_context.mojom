@@ -227,6 +227,13 @@ struct HttpAuthStaticNetworkContextParams {
   // on the system can be used without specifying an account.
   DefaultCredentials allow_default_credentials =
       DefaultCredentials.ALLOW_DEFAULT_CREDENTIALS;
+
+  // MoltBrowser: if true, this context offers servers and proxies the Basic
+  // and Digest schemes only, never NTLM or Negotiate, whatever the network
+  // service's (browser-wide) HttpAuthDynamicParams allow, and Negotiate's
+  // canonical-name lookup is off. Set for MoltNet's network contexts only
+  // (chrome/browser/molt_ai/tor/molt_net_network_context_policy.h).
+  bool molt_basic_and_digest_auth_only = false;
 };
 
 struct NetworkContextFilePaths {
