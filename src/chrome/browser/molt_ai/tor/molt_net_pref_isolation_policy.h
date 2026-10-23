@@ -94,6 +94,14 @@ inline constexpr auto kMoltNetPinnedPrefNames =
         // can open it without a prompt shows a choice made in the regular
         // profile.
         "protocol_handler.allowed_origin_protocol_pairs",
+        // "Use a web service to help resolve navigation errors", which
+        // switches on captive-portal detection. Its checks would go through
+        // Tor, where no network sign-in page can be reached, and whether
+        // they happen shows the regular profile's choice. Pinned to
+        // MoltBrowser's default (off, molt_privacy_prefs.cc), so MoltNet
+        // never checks for a captive portal; and MoltNet never opens a
+        // sign-in page (chrome_security_blocking_page_factory.cc).
+        "alternate_error_pages.enabled",
         // Protected Audience, Attribution Reporting and Topics. Like
         // CookieSettings, PrivacySandboxSettings only switches them off for
         // the primary Incognito profile, so in MoltNet these prefs decide.

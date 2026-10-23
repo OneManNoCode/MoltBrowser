@@ -76,6 +76,9 @@ TEST(MoltNetPrefIsolationPolicyTest, OtherWebVisiblePrefsArePinned) {
            "payments.can_make_payment_enabled",  // payments::kCanMake...
            // prefs::kProtocolHandlerPerOriginAllowedProtocols
            "protocol_handler.allowed_origin_protocol_pairs",
+           // embedder_support::kAlternateErrorPagesEnabled (captive-portal
+           // detection).
+           "alternate_error_pages.enabled",
            "privacy_sandbox.m1.topics_enabled",
            "privacy_sandbox.m1.fledge_enabled",
            "privacy_sandbox.m1.ad_measurement_enabled",

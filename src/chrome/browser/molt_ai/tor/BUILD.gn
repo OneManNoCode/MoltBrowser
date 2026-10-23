@@ -399,6 +399,7 @@ source_set("unit_tests") {
     "//chrome/common:constants",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
+    "//components/embedder_support",
     "//components/language/core/browser",
     "//components/pref_registry",
     "//components/prefs",
