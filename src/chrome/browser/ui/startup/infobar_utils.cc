@@ -25,15 +25,7 @@
 #include "chrome/browser/ui/session_crashed_bubble.h"
 #include "chrome/browser/ui/startup/automation_infobar_delegate.h"
 #include "chrome/browser/ui/startup/bad_flags_prompt.h"
-<<<<<<< src/chrome/browser/ui/startup/infobar_utils.cc (MoltBrowser)
-#include "chrome/browser/ui/startup/bidding_and_auction_consented_debugging_infobar_delegate.h"
 // MoltBrowser: removed google_api_keys_infobar_delegate (not shown to users)
-||||||| upstream@pin
-#include "chrome/browser/ui/startup/bidding_and_auction_consented_debugging_infobar_delegate.h"
-#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
-=======
-#include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
->>>>>>> upstream@new
 #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
 #include "chrome/browser/ui/startup/oscryptasync_availability_infobar_delegate.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
@@ -261,27 +253,7 @@ void AddInfoBarsIfNecessary(BrowserWindowInterface* browser,
   infobars::ContentInfoBarManager* infobar_manager =
       infobars::ContentInfoBarManager::FromWebContents(web_contents);
 
-<<<<<<< src/chrome/browser/ui/startup/infobar_utils.cc (MoltBrowser)
   // MoltBrowser: Google API keys InfoBar suppressed — not applicable.
-||||||| upstream@pin
-  if (!google_apis::HasAPIKeyConfigured()) {
-    GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
-  }
-=======
-  if (!google_apis::HasAPIKeyConfigured()) {
-    if (infobars::IsInfoBarMigrated(
-            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE)) {
-      if (auto* manager =
-              infobars::BrowserInfoBarManager::From(g_browser_process)) {
-        manager->Show(
-            tabs::TabInterface::GetFromContents(web_contents),
-            infobars::InfoBarDelegate::GOOGLE_API_KEYS_INFOBAR_DELEGATE);
-      }
-    } else {
-      GoogleApiKeysInfoBarDelegate::Create(infobar_manager);
-    }
-  }
->>>>>>> upstream@new
 
   if (ObsoleteSystem::IsObsoleteNowOrSoon()) {
     PrefService* local_state = g_browser_process->local_state();

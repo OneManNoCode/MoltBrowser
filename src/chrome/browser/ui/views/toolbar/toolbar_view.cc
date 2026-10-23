@@ -29,7 +29,6 @@
 #include "cc/paint/paint_shader.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/actor/ui/actor_ui_metrics.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
 #include "chrome/browser/molt_ai/automation/automation_recorder_tab_helper.h"
 #include "chrome/browser/molt_ai/tor/exit_country_names.h"
 #include "chrome/browser/molt_ai/tor/tor_manager.h"
@@ -40,11 +39,6 @@
 #include "chrome/browser/molt_ai/update/update_manager.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
-||||||| upstream@pin
-#include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
-=======
->>>>>>> upstream@new
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/glic/browser_ui/activity_list_bubble/glic_activity_list_bubble.h"
 #include "chrome/browser/glic/browser_ui/activity_list_bubble/glic_activity_list_bubble_controller.h"
@@ -131,13 +125,9 @@
 #include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
 #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
 #include "chrome/browser/ui/views/toolbar/home_button.h"
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
 #include "chrome/browser/ui/views/toolbar/molt_import_bubble.h"
 #include "chrome/browser/ui/views/toolbar/molt_net_bubble.h"
-||||||| upstream@pin
-=======
 #include "chrome/browser/ui/views/toolbar/overflow_menu.h"
->>>>>>> upstream@new
 #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
@@ -357,7 +347,7 @@ class TorExitCountryButton : public ToolbarButton,
   METADATA_HEADER(TorExitCountryButton, ToolbarButton)
 
  public:
-  explicit TorExitCountryButton(Browser* browser)
+  explicit TorExitCountryButton(BrowserWindowInterface* browser)
       : browser_(browser),
         menu_model_(this),
         country_codes_(
@@ -541,7 +531,7 @@ class TorExitCountryButton : public ToolbarButton,
     SetHighlight(label, std::nullopt);
   }
 
-  const raw_ptr<Browser> browser_;
+  const raw_ptr<BrowserWindowInterface> browser_;
   ui::SimpleMenuModel menu_model_;
   const std::vector<std::string> country_codes_;
   base::CallbackListSubscription tor_state_subscription_;
@@ -652,13 +642,23 @@ ToolbarView::~ToolbarView() {
   }
 }
 
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
+// Forwards the early teardown request to both the embedded and detached WebUI
+// toolbar web views to stop renderer script execution before IPC disconnection.
+void ToolbarView::DestroyWebUIToolbarWebContents() {
+  if (toolbar_webview_) {
+    toolbar_webview_->DestroyWebContents();
+  }
+  if (detached_toolbar_webview_) {
+    detached_toolbar_webview_->DestroyWebContents();
+  }
+}
+
 // MoltBrowser: light the violet "active" ring on whichever mode button matches
 // the currently-open side-panel entry, and clear it on the other (and on both
 // when the panel is closed). Driven by the SidePanelEntryObserver callbacks
 // below, which fire on open, AI↔Agent swap, and close.
 void ToolbarView::UpdateAiAgentModeHighlights() {
-  SidePanelUI* ui = browser_ ? browser_->GetFeatures().side_panel_ui() : nullptr;
+  SidePanelUI* ui = browser_ ? SidePanelUI::From(browser_) : nullptr;
   std::optional<SidePanelEntryId> id =
       ui ? ui->GetCurrentEntryId() : std::nullopt;
   const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
@@ -699,20 +699,6 @@ void ToolbarView::SetUpSidePanelHighlightObservation() {
   UpdateAiAgentModeHighlights();  // reflect whatever is open right now
 }
 
-||||||| upstream@pin
-=======
-// Forwards the early teardown request to both the embedded and detached WebUI
-// toolbar web views to stop renderer script execution before IPC disconnection.
-void ToolbarView::DestroyWebUIToolbarWebContents() {
-  if (toolbar_webview_) {
-    toolbar_webview_->DestroyWebContents();
-  }
-  if (detached_toolbar_webview_) {
-    detached_toolbar_webview_->DestroyWebContents();
-  }
-}
-
->>>>>>> upstream@new
 void ToolbarView::Init() {
 #if defined(USE_AURA)
   // Avoid generating too many occlusion tracking calculation events before this
@@ -892,7 +878,7 @@ void ToolbarView::Init() {
         u"Bookmarks — view yours, or import from another browser");
     ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
     import_button_ptr->SetCallback(base::BindRepeating(
-        [](ToolbarButton* anchor, Browser* browser) {
+        [](ToolbarButton* anchor, BrowserWindowInterface* browser) {
           MoltImportBubbleView::Show(anchor, browser->GetProfile());
         },
         base::Unretained(import_button_ptr), browser_));
@@ -993,8 +979,8 @@ void ToolbarView::Init() {
   // feature is one click away.
   {
     auto molt_ai_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
-        [](Browser* browser) {
-          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
+        [](BrowserWindowInterface* browser) {
+          SidePanelUI* side_panel_ui = SidePanelUI::From(browser);
           if (!side_panel_ui) {
             return;
           }
@@ -1031,8 +1017,8 @@ void ToolbarView::Init() {
     // ring stays legible — it forces white label text + blends the highlight,
     // avoiding the invisible violet-on-violet a plain ToolbarButton would draw.
     auto agent_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
-        [](Browser* browser) {
-          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
+        [](BrowserWindowInterface* browser) {
+          SidePanelUI* side_panel_ui = SidePanelUI::From(browser);
           if (!side_panel_ui) {
             return;
           }
@@ -1086,7 +1072,7 @@ void ToolbarView::Init() {
             ->GetDefaultStoragePartition()
             ->GetURLLoaderFactoryForBrowserProcess());
     auto update_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-        [](Browser* browser) {
+        [](BrowserWindowInterface* browser) {
           chrome::AddSelectedTabWithURL(browser, GURL("molt://update/"),
                                         ui::PAGE_TRANSITION_AUTO_BOOKMARK);
         },
@@ -1137,22 +1123,10 @@ void ToolbarView::Init() {
   }
 
   if (!features::IsWebUIAvatarButtonEnabled()) {
-<<<<<<< src/chrome/browser/ui/views/toolbar/toolbar_view.cc (MoltBrowser)
-    avatar_ =
-        AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
+    avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_));
     // MoltBrowser: Hide the Google sign-in / avatar button.
     // MoltBrowser does not use Google account integration.
     bool show_avatar_toolbar_button = false;
-||||||| upstream@pin
-    avatar_ =
-        AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
-    bool show_avatar_toolbar_button =
-        AvatarToolbarButtonInterface::CanShowForProfile(browser_->GetProfile());
-=======
-    avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_));
-    bool show_avatar_toolbar_button =
-        AvatarToolbarButtonInterface::CanShowForProfile(browser_->GetProfile());
->>>>>>> upstream@new
     avatar_->SetVisible(show_avatar_toolbar_button);
   }
 

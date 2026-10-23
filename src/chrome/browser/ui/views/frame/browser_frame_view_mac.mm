@@ -502,30 +502,14 @@ void BrowserFrameViewMac::OnPaint(gfx::Canvas* canvas) {
   }
 
   if (is_glass_frame_eligible_) {
-<<<<<<< src/chrome/browser/ui/views/frame/browser_frame_view_mac.mm (MoltBrowser)
-    const SkAlpha frame_alpha = color_utils::IsDark(frame_color)
-                                    ? kBrowserFrameAlphaDark
-                                    : kBrowserFrameAlphaLight;
-    canvas->DrawColor(SkColorSetA(frame_color, frame_alpha));
-  } else {
-    // MoltBrowser: paint the frame / tab-strip band with the (now near-black)
-    // frame color, fully opaque, so the top chrome reads as one sheet of black
-    // glass with the toolbar. A custom user theme still paints its own frame.
-    canvas->DrawColor(frame_color);
-||||||| upstream@pin
-    const SkAlpha frame_alpha = color_utils::IsDark(frame_color)
-                                    ? kBrowserFrameAlphaDark
-                                    : kBrowserFrameAlphaLight;
-    canvas->DrawColor(SkColorSetA(frame_color, frame_alpha));
-  } else {
-    canvas->DrawColor(frame_color);
-=======
     // In glass mode, painting to frame color happens in the opaque background
     // view instead.
     return;
   }
->>>>>>> upstream@new
 
+  // MoltBrowser: paint the frame / tab-strip band with the (now near-black)
+  // frame color, fully opaque, so the top chrome reads as one sheet of black
+  // glass with the toolbar. A custom user theme still paints its own frame.
   const SkColor frame_color =
       GetFrameColor(BrowserFrameActiveState::kUseCurrent);
   canvas->DrawColor(frame_color);

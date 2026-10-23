@@ -305,27 +305,6 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
       base::FeatureList::IsEnabled(ntp_features::kNtpGoogleLogo26);
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
   source->AddBoolean("useGoogleLogo26", use_google_logo_26);
-<<<<<<< src/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc (MoltBrowser)
-  source->AddBoolean("middleSlotPromoEnabled", false);
-  source->AddBoolean(
-      "middleSlotPromoDismissalEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromoDismissal));
-  source->AddBoolean(
-      "modulesDragAndDropEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpModulesDragAndDrop));
-||||||| upstream@pin
-  source->AddBoolean(
-      "middleSlotPromoEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromo) &&
-          profile->GetPrefs()->GetBoolean(prefs::kNtpPromoVisible));
-  source->AddBoolean(
-      "middleSlotPromoDismissalEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpMiddleSlotPromoDismissal));
-  source->AddBoolean(
-      "modulesDragAndDropEnabled",
-      base::FeatureList::IsEnabled(ntp_features::kNtpModulesDragAndDrop));
-=======
->>>>>>> upstream@new
   source->AddBoolean("modulesLoadEnabled", base::FeatureList::IsEnabled(
                                                ntp_features::kNtpModulesLoad));
   source->AddInteger("modulesLoadTimeout",

@@ -55,13 +55,7 @@ void URLListToPref(const base::ListValue& url_list, SessionStartupPref* pref) {
 void SessionStartupPref::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   uint32_t flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
-<<<<<<< src/chrome/browser/prefs/session_startup_pref.cc (MoltBrowser)
-#endif
   // MoltBrowser: Default startup type is URLS with MoltSearch as the URL.
-||||||| upstream@pin
-#endif
-=======
->>>>>>> upstream@new
   registry->RegisterIntegerPref(prefs::kRestoreOnStartup,
                                 TypeToPrefValue(SessionStartupPref::URLS),
                                 flags);
