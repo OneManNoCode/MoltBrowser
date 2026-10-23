@@ -20,6 +20,9 @@ below is code complete and in release testing; it ships once it passes a
 full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 
 ### Security
+- The automations page (`molt://ai-automation`) checks every message from
+  its page before using it, and changes a workflow's trust only on a real
+  click, never for an agent-run draft whose sites aren't confirmed yet.
 - **Current Chromium.** Rebased from a March 2026 trunk build (148.0.7729.0,
   which had none of the M148 security fixes) onto Extended Stable
   **152.0.7977.169**; from now on each Chrome security release ships within
