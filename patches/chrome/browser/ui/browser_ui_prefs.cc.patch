@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/ui/browser_ui_prefs.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/browser_ui_prefs.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/browser_ui_prefs.cc b/chrome/browser/ui/browser_ui_prefs.cc
-index 7b0257c24d609de454137f6e256241c2ef85f33e..281b41949e2d1815eeb8c8920156788c37aac656 100644
+index d2264ce903105d12d76e111befbc55e8ce4428c9..d266381b11f4b969fdcb8c7d65bf9afca359856c 100644
 --- a/chrome/browser/ui/browser_ui_prefs.cc
 +++ b/chrome/browser/ui/browser_ui_prefs.cc
-@@ -116,9 +116,11 @@ void RegisterBrowserUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+@@ -122,9 +122,11 @@ void RegisterBrowserUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
    registry->RegisterIntegerPref(prefs::kSessionRestoreInfoBarTimesShown, 0);
  #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  

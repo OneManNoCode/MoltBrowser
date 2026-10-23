@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/webui/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/webui/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 9623fff2d1efc0f34b07930b2ce608de29c3f375..b12d4f2d9472f17cf930aedd1a85af04bf32a96b 100644
+index 7341632b43d34d3862b87965d1ac315c274b5743..d63d4e376af39dc0fb3c7e00e47d10187ef31abe 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
 @@ -83,6 +83,7 @@ source_set("configs") {
@@ -14,5 +14,5 @@ index 9623fff2d1efc0f34b07930b2ce608de29c3f375..b12d4f2d9472f17cf930aedd1a85af04
      "//chrome/browser/ui/webui/metrics_internals",
 +    "//chrome/browser/ui/webui/molt_ai",
      "//chrome/browser/ui/webui/net_internals",
+     "//chrome/browser/ui/webui/notebooks_internals:notebooks_internals_ui_config",
      "//chrome/browser/ui/webui/omnibox",
-     "//chrome/browser/ui/webui/personal_context_internals",

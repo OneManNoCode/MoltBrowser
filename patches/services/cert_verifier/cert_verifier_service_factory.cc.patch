@@ -1,11 +1,11 @@
 MoltBrowser patch for services/cert_verifier/cert_verifier_service_factory.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/services/cert_verifier/cert_verifier_service_factory.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/services/cert_verifier/cert_verifier_service_factory.cc b/services/cert_verifier/cert_verifier_service_factory.cc
-index c1a8fb354b2f08367c4ad360337b49c0c675f40f..bdaa2c9efb3db6d0be099c23d3533331c450cc2a 100644
+index 26e6bf32bbb0de2be72a10d473e36026b992acfa..41253b8a3a6dc74e9f1d45784a429abd3d76d99e 100644
 --- a/services/cert_verifier/cert_verifier_service_factory.cc
 +++ b/services/cert_verifier/cert_verifier_service_factory.cc
 @@ -89,6 +89,10 @@ internal::CertVerifierServiceImpl* GetNewCertVerifierImpl(

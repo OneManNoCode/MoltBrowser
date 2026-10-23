@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/public/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/public/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/public/BUILD.gn b/third_party/blink/public/BUILD.gn
-index 8dfebb40910e4e3bde478d0e1a33e8010b21c6c3..8c80a486112f5b190814c4a7f731a7a80906020f 100644
+index 6dc75e2d3f36677ecb086544d04e33435877dc08..674ede1121f6e9b001bc4b256bf6c76dbccb1c26 100644
 --- a/third_party/blink/public/BUILD.gn
 +++ b/third_party/blink/public/BUILD.gn
-@@ -339,6 +339,12 @@ source_set("blink_headers") {
+@@ -336,6 +336,12 @@ source_set("blink_headers") {
      "web/web_media_inspector.h",
      "web/web_message_port_converter.h",
      "web/web_meta_element.h",

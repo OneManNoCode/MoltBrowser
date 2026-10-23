@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webaudio/analyser_node.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/webaudio/analyser_node.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webaudio/analyser_node.cc b/third_party/blink/renderer/modules/webaudio/analyser_node.cc
-index 688a2fec77ee202445ec87aee1503d3161b94878..c346f21acaa3be9a0f280edbd181a5f99a6d8e61 100644
+index 4bc4b15f4b7ed282c9a42b312d26cda59c886360..5a7adbe56db320beb68175735590131b56425629 100644
 --- a/third_party/blink/renderer/modules/webaudio/analyser_node.cc
 +++ b/third_party/blink/renderer/modules/webaudio/analyser_node.cc
 @@ -25,7 +25,10 @@
@@ -19,7 +19,7 @@ index 688a2fec77ee202445ec87aee1503d3161b94878..c346f21acaa3be9a0f280edbd181a5f9
  #include "third_party/blink/renderer/modules/webaudio/analyser_handler.h"
  #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
  #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
-@@ -116,22 +119,39 @@ double AnalyserNode::smoothingTimeConstant() const {
+@@ -123,22 +126,39 @@ double AnalyserNode::smoothingTimeConstant() const {
    return GetAnalyserHandler().SmoothingTimeConstant();
  }
  

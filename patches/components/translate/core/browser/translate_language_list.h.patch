@@ -1,14 +1,14 @@
 MoltBrowser patch for components/translate/core/browser/translate_language_list.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/translate/core/browser/translate_language_list.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/translate/core/browser/translate_language_list.h b/components/translate/core/browser/translate_language_list.h
-index ebd8c4b500b5b3dfe92c6739b7f7da09a9aab563..aafbf84cf2c286bb63f18a64e60ef0c05a9a6fbb 100644
+index 7dcbe460515b8caba409b488129493f6a945f007..b4797db51cdca78f974bd1d34020ac88103162ce 100644
 --- a/components/translate/core/browser/translate_language_list.h
 +++ b/components/translate/core/browser/translate_language_list.h
-@@ -70,6 +70,12 @@ class TranslateLanguageList {
+@@ -71,6 +71,12 @@ class TranslateLanguageList {
    // pending request.
    void SetResourceRequestsAllowed(bool allowed);
  

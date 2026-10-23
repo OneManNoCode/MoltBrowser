@@ -1,11 +1,11 @@
 MoltBrowser patch for components/search_engine_choice_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/search_engine_choice_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/search_engine_choice_strings.grdp b/components/search_engine_choice_strings.grdp
-index c1875bbc1a27424e3e85ad8c161ff39102e29def..038d9ed1823f90455c142ab54be286f33b7e8aac 100644
+index cc85a72337f126301cb36d578413313dff2b082e..449c8bc28574d3efb7941b177fc5c89131c7d4ec 100644
 --- a/components/search_engine_choice_strings.grdp
 +++ b/components/search_engine_choice_strings.grdp
 @@ -36,7 +36,7 @@
@@ -32,7 +32,7 @@ index c1875bbc1a27424e3e85ad8c161ff39102e29def..038d9ed1823f90455c142ab54be286f3
        </message>
      </if>
  
-@@ -92,43 +92,43 @@
+@@ -92,22 +92,22 @@
      <if expr="_google_chrome">
        <if expr="use_titlecase">
          <message name="IDS_SEARCH_ENGINE_CHOICE_INFO_DIALOG_TITLE" desc="This string is the heading of a card that explains why users are being prompted to choose a search engine, and what a search engine does in Chrome. (A search engine provides answers to search queries; this is different from a browser, which displays web pages. A search engine powers many experiences within a browser.) This screen appears when the user taps or clicks “Learn more” on the search engine choice screen. This string is before the “Based on a law in your region...” string. We want users to read this screen and understand that they can use any search engine with Chrome and what the impact of their choice might be.">
@@ -58,7 +58,9 @@ index c1875bbc1a27424e3e85ad8c161ff39102e29def..038d9ed1823f90455c142ab54be286f3
 -        You can change your search engine anytime in Chrome’s settings.
 +        You can change your search engine anytime in MoltBrowser’s settings.
        </message>
-     </if>
+       <message name="IDS_SEARCH_ENGINE_CHOICE_INFO_DIALOG_BODY_THIRD_PARAGRAPH_INSTRUCTIVE" desc="This is the third paragraph of the body text of a card that explains why users are being prompted to choose a search engine, and what a search engine does in Chrome. This screen provides the following details: 1. the list includes search engines that are popular in the user’s region and the order includes randomization (not in order of recommendation); 2. features may be unavailable if the chosen default search engine doesn’t support them; 3. the user can change their mind at any time. For JSA, we add more information on how to add non-regional search engines. This card appears when the user taps or clicks “Learn more” on the search engine choice screen. The headline for this card is “Your search engine in Chrome”.">
+         You can change your search engine anytime in Chrome’s settings. If you don’t see your preferred search engine, you can perform a search from their site. You’ll see it listed as a recently visited search engine in Chrome settings, and you can make it your default.
+@@ -116,22 +116,22 @@
      <if expr="not _google_chrome">
        <if expr="use_titlecase">
          <message name="IDS_SEARCH_ENGINE_CHOICE_INFO_DIALOG_TITLE" desc="This string is the heading of a card that explains why users are being prompted to choose a search engine, and what a search engine does in Chromium. (A search engine provides answers to search queries; this is different from a browser, which displays web pages. A search engine powers many experiences within a browser.) This screen appears when the user taps or clicks “Learn more” on the search engine choice screen. This string is before the “Based on a law in your region...” string. We want users to read this screen and understand that they can use any search engine with Chromium and what the impact of their choice might be.">
@@ -84,5 +86,5 @@ index c1875bbc1a27424e3e85ad8c161ff39102e29def..038d9ed1823f90455c142ab54be286f3
 -        You can change your search engine anytime in Chromium’s settings.
 +        You can change your search engine anytime in MoltBrowser’s settings.
        </message>
-     </if>
- 
+       <message name="IDS_SEARCH_ENGINE_CHOICE_INFO_DIALOG_BODY_THIRD_PARAGRAPH_INSTRUCTIVE" desc="This is the third paragraph of the body text of a card that explains why users are being prompted to choose a search engine, and what a search engine does in Chromium. This screen provides the following details: 1. the list includes search engines that are popular in the user’s region and the order includes randomization (not in order of recommendation); 2. features may be unavailable if the chosen default search engine doesn’t support them; 3. the user can change their mind at any time. For JSA, we add more information on how to add non-regional search engines. This card appears when the user taps or clicks “Learn more” on the search engine choice screen. The headline for this card is “Your search engine in Chromium”.">
+         You can change your search engine anytime in Chromium’s settings. If you don’t see your preferred search engine, you can perform a search from their site. You’ll see it listed as a recently visited search engine in Chromium settings, and you can make it your default.

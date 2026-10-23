@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/rust/chromium_crates_io/Cargo.toml
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/rust/chromium_crates_io/Cargo.toml by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/rust/chromium_crates_io/Cargo.toml b/third_party/rust/chromium_crates_io/Cargo.toml
-index 6f32758e223da42cc79109b21d4df10bcd7a3324..2e9c384043a45fd5d1fddf4bbdf8525be89e59f5 100644
+index 1f2142d095b58147be30bf41d34b55632dc19230..8de01fd12a759cd157b1ae513c51ff4e831c9fe2 100644
 --- a/third_party/rust/chromium_crates_io/Cargo.toml
 +++ b/third_party/rust/chromium_crates_io/Cargo.toml
 @@ -17,6 +17,7 @@ version = "0.1.0"
@@ -16,9 +16,9 @@ index 6f32758e223da42cc79109b21d4df10bcd7a3324..2e9c384043a45fd5d1fddf4bbdf8525b
  anyhow = "1.0.98"
  base64 = "0.22"
  bitflags = "2"
-@@ -53,6 +54,21 @@ static_assertions = "1"
- xml = "1.3.0"
- zune-jpeg = "0.5.15"
+@@ -52,6 +53,21 @@ smallvec = "1"
+ static_assertions = "1"
+ xml = "1.4.0"
  
 +# MoltBrowser: MoltShield's ad/tracker blocking engine (Brave's adblock-rust,
 +# MPL-2.0), used by //chrome/browser/molt_ai/shield/adblock. Pinned exactly:

@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/core/scroll/scrollbar.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/scroll/scrollbar.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/scroll/scrollbar.cc b/third_party/blink/renderer/core/scroll/scrollbar.cc
-index 2b1b63fe142166d284d315bc112d7ca2946e8bdd..583a29db403434b07e151ed8fb1a5e569e73d29a 100644
+index 22687834e1a111e36d0faa086dc1a75f6bf4c6bb..6d3a19c8eca07cc1983a086fc9a04a2bb1a4a83f 100644
 --- a/third_party/blink/renderer/core/scroll/scrollbar.cc
 +++ b/third_party/blink/renderer/core/scroll/scrollbar.cc
 @@ -40,6 +40,7 @@
@@ -16,17 +16,17 @@ index 2b1b63fe142166d284d315bc112d7ca2946e8bdd..583a29db403434b07e151ed8fb1a5e56
  #include "third_party/blink/renderer/core/scroll/scroll_animator_base.h"
  #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
  #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
-@@ -758,7 +759,13 @@ int Scrollbar::ScrollbarThickness() const {
+@@ -760,7 +761,13 @@ int Scrollbar::ScrollbarThickness() const {
    int thickness = Orientation() == kHorizontalScrollbar ? Height() : Width();
    if (!thickness || IsCustomScrollbar())
      return thickness;
--  return theme_.ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
+-  return theme_->ScrollbarThickness(ScaleFromDIP(), CSSScrollbarWidth());
 +  // MoltBrowser: MoltNet's classic scrollbars are as thick in CSS pixels at
 +  // every zoom and on every OS (molt_fingerprinting/letterbox.h). The
 +  // document is the box's (ScrollableArea::GetDocument() is protected).
 +  const LayoutBox* box = GetLayoutBox();
 +  return molt_fingerprinting::ScrollbarThicknessFor(
-+      theme_, ScaleFromDIP(), CSSScrollbarWidth(),
++      *theme_, ScaleFromDIP(), CSSScrollbarWidth(),
 +      box ? &box->GetDocument() : nullptr);
  }
  

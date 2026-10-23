@@ -1,22 +1,22 @@
 MoltBrowser patch for chrome/utility/services.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/utility/services.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
-index fe34a39eb840ceab0d7553f404ba248375ae2d4e..51c5d2f5cca0b8bfbd1f38a2273cd947ff0b6dcb 100644
+index fd641144f16cb14971c0413031976aa14f7e5c43..3d9a9b592e51f84285b33f1e282a7cd8086f723b 100644
 --- a/chrome/utility/services.cc
 +++ b/chrome/utility/services.cc
-@@ -8,6 +8,7 @@
- #include <utility>
- 
+@@ -10,6 +10,7 @@
  #include "build/build_config.h"
+ #include "chrome/common/request_header_integrity/buildflags.h"
+ #include "chrome/services/file_util/buildflags.h"
 +#include "chrome/services/molt_ai/document_parser/document_parser_impl.h"
  #include "chrome/services/speech/buildflags/buildflags.h"
  #include "components/on_device_translation/buildflags/buildflags.h"
  #include "components/paint_preview/buildflags/buildflags.h"
-@@ -63,6 +64,7 @@
+@@ -65,6 +66,7 @@
  
  #if !BUILDFLAG(IS_ANDROID)
  #include "chrome/common/importer/profile_import.mojom.h"
@@ -24,7 +24,7 @@ index fe34a39eb840ceab0d7553f404ba248375ae2d4e..51c5d2f5cca0b8bfbd1f38a2273cd947
  #include "chrome/services/reading_mode_metrics/reading_mode_metrics_service.h"
  #include "chrome/utility/importer/profile_import_impl.h"
  #include "components/mirroring/service/mirroring_service.h"
-@@ -166,6 +168,13 @@ auto RunCSVPasswordParser(
+@@ -173,6 +175,13 @@ auto RunCSVPasswordParser(
        std::move(receiver));
  }
  
@@ -38,7 +38,7 @@ index fe34a39eb840ceab0d7553f404ba248375ae2d4e..51c5d2f5cca0b8bfbd1f38a2273cd947
  auto ContentBookmarkParser(
      mojo::PendingReceiver<user_data_importer::mojom::BookmarkHtmlParser>
          receiver) {
-@@ -480,6 +489,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+@@ -500,6 +509,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
    services.Add(RunFilePatcher);
    services.Add(RunUnzipper);
    services.Add(RunCSVPasswordParser);
@@ -46,7 +46,7 @@ index fe34a39eb840ceab0d7553f404ba248375ae2d4e..51c5d2f5cca0b8bfbd1f38a2273cd947
    services.Add(ContentBookmarkParser);
    services.Add(RunPassageEmbeddingsService);
    services.Add(RunOakSessionService);
-@@ -489,6 +499,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+@@ -509,6 +519,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
  #endif  // BUILDFLAG(IS_ANDROID)
  
  #if !BUILDFLAG(IS_ANDROID)

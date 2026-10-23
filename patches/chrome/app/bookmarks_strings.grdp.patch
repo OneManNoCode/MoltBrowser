@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/app/bookmarks_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/bookmarks_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/bookmarks_strings.grdp b/chrome/app/bookmarks_strings.grdp
-index 4373525709305a112e78801a40001f9bcf8f21d3..40ba0ac3328f01545f21edef77a1f7728b59b541 100644
+index fb36bc26da007c0a036f9a8662efb5903afc78c3..03e4e6cf6ca6670eb498c68678c87b7e0310f1f8 100644
 --- a/chrome/app/bookmarks_strings.grdp
 +++ b/chrome/app/bookmarks_strings.grdp
-@@ -615,4 +615,10 @@
+@@ -622,4 +622,10 @@
      Your bookmarks bar was hidden because you haven't used it recently
    </message>
  

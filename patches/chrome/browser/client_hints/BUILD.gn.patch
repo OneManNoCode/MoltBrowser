@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/client_hints/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/client_hints/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/client_hints/BUILD.gn b/chrome/browser/client_hints/BUILD.gn
-index 1e6e1ccd1276c4846073a5505ba9008f6437797c..ead400a8f286c7fb5f1c694e9eb65c8f36234b5a 100644
+index 51eb360ed049073131c968bcfe2b6cca3e22fa6f..f9a385b2a31ab9b3f696a174600b01044c2fe496 100644
 --- a/chrome/browser/client_hints/BUILD.gn
 +++ b/chrome/browser/client_hints/BUILD.gn
 @@ -16,6 +16,9 @@ source_set("client_hints") {

@@ -1,16 +1,16 @@
 MoltBrowser patch for chrome/browser/resources/settings/settings_menu/settings_menu.html
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/resources/settings/settings_menu/settings_menu.html by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index dd30b5046d72725249b90621d1346a2d23ba71f0..fffa15fa0c39a9515cc8a165dec42a3e4546b0cf 100644
+index 0d30190f42bf2e259481422bd0445be5ebc1f6de..e5727ac3cf68e5e070e4d09ab02d4c7b8be7e986 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -42,18 +42,17 @@
+@@ -83,18 +83,17 @@
+       }
      </style>
- 
      <div role="navigation">
 -      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
 +      <cr-menu-selector id="menu"
@@ -29,11 +29,11 @@ index dd30b5046d72725249b90621d1346a2d23ba71f0..fffa15fa0c39a9515cc8a165dec42a3e
 -<if expr="_google_chrome">
 -          <cr-icon icon="settings-internal:google-g"></cr-icon>
 -</if>
-           $i18n{peoplePageTitle}
+           <span class="menu-label">$i18n{peoplePageTitle}</span>
            <cr-ripple></cr-ripple>
          </a>
-@@ -67,6 +66,20 @@
-           $i18n{autofillPageTitle}
+@@ -106,6 +105,20 @@
+           <span class="menu-label">$i18n{autofillPageTitle}</span>
            <cr-ripple></cr-ripple>
          </a>
 +        <!-- MoltBrowser: prominent, always-visible entry point for the
@@ -50,10 +50,10 @@ index dd30b5046d72725249b90621d1346a2d23ba71f0..fffa15fa0c39a9515cc8a165dec42a3e
 +          <div class="cr-icon icon-external"></div>
 +          <cr-ripple></cr-ripple>
 +        </a>
-         <a role="menuitem" href="/privacy"
+         <a role="menuitem" id="privacy" href="/privacy"
              hidden="[[!pageVisibility_.privacy]]"
              class="cr-nav-menu-item">
-@@ -167,7 +180,9 @@
+@@ -205,7 +218,9 @@
          </a>
          <a role="menuitem" id="about-menu" href="/help"
              class="cr-nav-menu-item">
@@ -61,6 +61,6 @@ index dd30b5046d72725249b90621d1346a2d23ba71f0..fffa15fa0c39a9515cc8a165dec42a3e
 +          <!-- MoltBrowser: neutral info glyph instead of cr:chrome-product
 +               (the blue Chrome/Google swirl) on the About row. -->
 +          <cr-icon icon="cr:info"></cr-icon>
-           $i18n{aboutPageTitle}
+           <span class="menu-label">$i18n{aboutPageTitle}</span>
            <cr-ripple></cr-ripple>
          </a>

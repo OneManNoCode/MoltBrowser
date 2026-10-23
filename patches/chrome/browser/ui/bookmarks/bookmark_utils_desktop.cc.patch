@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc b/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc
-index 44cca32acbe485a3c1752a4605bf15e30bbd0ec0..5215e0de8e75ed6e2305817b07f863524555ecf5 100644
+index ba74c2ef1a948b70924353a578c4b8cfa64ffed3..41fcd2a7a33ebb82123df1ca175c82709bcf37f7 100644
 --- a/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc
 +++ b/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc
 @@ -16,6 +16,7 @@
@@ -16,10 +16,10 @@ index 44cca32acbe485a3c1752a4605bf15e30bbd0ec0..5215e0de8e75ed6e2305817b07f86352
  #include "chrome/browser/page_load_metrics/chrome_initiator_location.h"
  #include "chrome/browser/prefs/incognito_mode_prefs.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -135,6 +136,11 @@ OpenedWebContentsSet OpenAllHelper(
+@@ -115,6 +116,11 @@ OpenedWebContentsSet OpenAllHelper(
    if (profile) {
      opening_urls_in_incognito =
-         profile->IsIncognitoProfile() ||
+         profile->IsPrimaryOTRProfileWithRegularParent() ||
 +        // MoltBrowser: bookmarks opened from a MoltNet window stay in
 +        // MoltNet, as Incognito's stay in Incognito. Otherwise, once a
 +        // chrome:// bookmark (Settings, History, ...) opened in a regular
@@ -28,13 +28,13 @@ index 44cca32acbe485a3c1752a4605bf15e30bbd0ec0..5215e0de8e75ed6e2305817b07f86352
          initial_disposition == WindowOpenDisposition::OFF_THE_RECORD;
    } else {
      opening_urls_in_incognito =
-@@ -221,7 +227,8 @@ OpenedWebContentsSet OpenAllHelper(
+@@ -201,7 +207,8 @@ OpenedWebContentsSet OpenAllHelper(
      // the disposition and the URL type.
      Profile* new_tab_profile =
          Profile::FromBrowserContext(opened_tab->GetBrowserContext());
--    if (new_tab_profile->IsIncognitoProfile()) {
-+    if (new_tab_profile->IsIncognitoProfile() ||
+-    if (new_tab_profile->IsPrimaryOTRProfileWithRegularParent()) {
++    if (new_tab_profile->IsPrimaryOTRProfileWithRegularParent() ||
 +        molt_ai::tor::IsMoltNetProfile(new_tab_profile)) {  // MoltBrowser
        if (!incognito_browser) {
-         auto* tab_browser =
+         incognito_browser =
              ProfileBrowserCollection::GetForProfile(new_tab_profile)

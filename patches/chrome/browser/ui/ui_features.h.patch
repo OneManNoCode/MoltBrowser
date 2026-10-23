@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/ui/ui_features.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/ui_features.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/ui_features.h b/chrome/browser/ui/ui_features.h
-index a0fc21e2e8e34a196e347700a49c6bbd31029def..ed6e5a32f5d6eb5b7b13cd454c9aa9f957862760 100644
+index 6fd5a4ff30629b84168de3734dfbc22ced62939e..54358a981de275b790574c16d1399710e6fa91e9 100644
 --- a/chrome/browser/ui/ui_features.h
 +++ b/chrome/browser/ui/ui_features.h
-@@ -43,6 +43,8 @@ BASE_DECLARE_FEATURE(kInfoBarInlineLinks);
+@@ -42,6 +42,8 @@ BASE_DECLARE_FEATURE(kKeyboardLockHeldEscExitsTabFullscreen);
  // All feature flags associated with Glow Up, apart from those in
  // ui_base_features.h
  BASE_DECLARE_FEATURE(kTabStripDeclutter);

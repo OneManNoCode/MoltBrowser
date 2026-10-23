@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/settings_chromium_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/settings_chromium_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/settings_chromium_strings.grdp b/chrome/app/settings_chromium_strings.grdp
-index 0c1f37b3d0de9e561c9d2c280f94949996568758..49c6b50553c4c5317988edc00eba47ced23a50b6 100644
+index 237b2a8517c3c1e20595dacbb543a33d758b6c01..e2ba174ab12d7140197c9f681cf4d6334ba450e4 100644
 --- a/chrome/app/settings_chromium_strings.grdp
 +++ b/chrome/app/settings_chromium_strings.grdp
 @@ -1,43 +1,43 @@
@@ -119,7 +119,7 @@ index 0c1f37b3d0de9e561c9d2c280f94949996568758..49c6b50553c4c5317988edc00eba47ce
          </message>
        </else>
      </if>
-@@ -97,356 +97,356 @@
+@@ -97,352 +97,352 @@
  
    <!-- Preloading Page-->
    <message name="IDS_SETTINGS_PRELOAD_PAGES_STANDARD_PRELOADING_WHEN_ON_BULLET_TWO" desc="Bullet point in the standard preloading and when on column. Informs the user about what the standard preloading setting does.">
@@ -231,11 +231,6 @@ index 0c1f37b3d0de9e561c9d2c280f94949996568758..49c6b50553c4c5317988edc00eba47ce
 +    If you also share MoltBrowser usage reports, those reports include the URLs you visit
    </message>
  
-   <!-- Privacy Sandbox -->
-   <message name="IDS_SETTINGS_PRIVACY_SANDBOX_AD_MEASUREMENT_DIALOG_DESCRIPTION" desc="A description of the Ad measurement API. * “Ad measurement” is the name of an API in this context. We don’t use “API” with the user, but they need to know that there is something called “A measurement” and what it does. * “sites you visit”: call the API to get information. The actor is the site, not Chrome. * “restricts cross-site tracking”: Today, with 3rd-party cookies, ad measurement technologies can inadvertently (and intentionally) share considerable information from one site to another). This feature restricts that sharing in order to improve the user’s privacy.">
--    Ad measurement allows sites you visit to request information from Chromium that helps the site measure the performance of their ads. Ad measurement restricts cross-site tracking by transferring as little information as possible between sites.
-+    Ad measurement allows sites you visit to request information from MoltBrowser that helps the site measure the performance of their ads. Ad measurement restricts cross-site tracking by transferring as little information as possible between sites.
-   </message>
  
    <!-- Safety check -->
    <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_SETTING_SUBLABEL" desc="By default Chrome auto-revokes (disables) permissions (e.g. Camera, Location, etc.) for websites that were not visited for a while. This sublabel is for the toggle that allows users to switch off/on this functionality.">
@@ -579,7 +574,7 @@ index 0c1f37b3d0de9e561c9d2c280f94949996568758..49c6b50553c4c5317988edc00eba47ce
    </message>
    <!-- Dictation Settings Page -->
    <!-- TODO(b/510738735): Make these translatable when finalized. -->
-@@ -454,7 +454,7 @@
+@@ -450,7 +450,7 @@
      Dictation
    </message>
    <message name="IDS_SETTINGS_DICTATION_SETTING_SUBLABEL" translateable="false" desc="Sublabel for the Dictation setting entry point in Settings > AI page.">

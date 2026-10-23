@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webgpu/gpu_queue.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/webgpu/gpu_queue.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgpu/gpu_queue.cc b/third_party/blink/renderer/modules/webgpu/gpu_queue.cc
-index b51671d400a701b7b155b5bd86cc855240792d5e..d41b6f2974d675f00bcf36904e314f18b0f0cec3 100644
+index e52f1f62021f1c331f11aeee96db7601c1ab72a4..3f985ed119449fcc313b3a8664472574e672c28f 100644
 --- a/third_party/blink/renderer/modules/webgpu/gpu_queue.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu_queue.cc
-@@ -25,6 +25,7 @@
+@@ -30,6 +30,7 @@
  #include "third_party/blink/renderer/core/html/canvas/element_image.h"
  #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
  #include "third_party/blink/renderer/core/html/canvas/predefined_color_space.h"
@@ -16,7 +16,7 @@ index b51671d400a701b7b155b5bd86cc855240792d5e..d41b6f2974d675f00bcf36904e314f18
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
  #include "third_party/blink/renderer/modules/webgpu/dawn_conversions.h"
-@@ -410,6 +411,10 @@ void GPUQueue::copyExternalImageToTexture(
+@@ -428,6 +429,10 @@ void GPUQueue::copyExternalImageToTexture(
      return;
    }
  
@@ -24,6 +24,6 @@ index b51671d400a701b7b155b5bd86cc855240792d5e..d41b6f2974d675f00bcf36904e314f18
 +  // fingerprinting noise.
 +  source->image = molt_fingerprinting::FarbleForExport(
 +      device_->GetExecutionContext(), std::move(source->image));
-   if (!CopyStaticImagBitmapToWGPUTexture(
+   if (!CopyStaticImageBitmapToWGPUTexture(
            GetDawnControlClient(), device_->GetHandle(), source->image.get(),
            origin_in_external_image, dawn_copy_size, dawn_destination,

@@ -1,15 +1,15 @@
 MoltBrowser patch for chrome/browser/ui/views/toolbar/toolbar_view.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/toolbar/toolbar_view.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
-index 432d78f72316017535ece3f1e4b032a4c15fcf3d..06f7a9e10c594ec858f77617079e90232ebf3f3c 100644
+index 50e546251e9f8021683a6929593205daefbb0596..fdd4af46d580ad45a1b801a47f2f100651aa4cac 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.h
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
-@@ -11,8 +11,10 @@
- 
+@@ -12,8 +12,10 @@
+ #include "base/gtest_prod_util.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory/weak_ptr.h"
 +#include "base/scoped_multi_source_observation.h"
@@ -19,7 +19,7 @@ index 432d78f72316017535ece3f1e4b032a4c15fcf3d..06f7a9e10c594ec858f77617079e9023
  #include "chrome/browser/glic/browser_ui/glic_split_button_delegate.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
  #include "chrome/browser/ui/page_action/page_action_icon_type.h"
-@@ -96,6 +98,7 @@ class ToolbarView : public views::AccessiblePaneView,
+@@ -98,6 +100,7 @@ class ToolbarView : public views::AccessiblePaneView,
                      public AppMenuIconController::Delegate,
                      public ToolbarButtonProvider,
                      public BrowserRootView::DropTarget,
@@ -27,7 +27,7 @@ index 432d78f72316017535ece3f1e4b032a4c15fcf3d..06f7a9e10c594ec858f77617079e9023
                      public glic::GlicSplitButtonDelegate {
    METADATA_HEADER(ToolbarView, views::AccessiblePaneView)
  
-@@ -461,6 +464,20 @@ class ToolbarView : public views::AccessiblePaneView,
+@@ -511,6 +514,20 @@ class ToolbarView : public views::AccessiblePaneView,
    bool should_show_glic_actor_ = false;
  
    bool was_mouse_down_ = false;

@@ -1,11 +1,11 @@
 MoltBrowser patch for components/send_tab_to_self_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/send_tab_to_self_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/send_tab_to_self_strings.grdp b/components/send_tab_to_self_strings.grdp
-index fdc15c30d1c70595b8f2f7c28e3c4bbf584a131b..e1dd241f11f0947dfb5ea7fdea796db79ff2e7f7 100644
+index 795b197bc351d721bfeb2598d4ab7e0a3a7ffba6..3f330353239c5219b7abc4fcc6e0eabeece84684 100644
 --- a/components/send_tab_to_self_strings.grdp
 +++ b/components/send_tab_to_self_strings.grdp
 @@ -26,7 +26,7 @@

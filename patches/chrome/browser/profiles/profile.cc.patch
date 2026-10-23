@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/browser/profiles/profile.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/profiles/profile.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/profiles/profile.cc b/chrome/browser/profiles/profile.cc
-index 3704d410b78db1eaa8e5aea339960f2fa1f24270..b1427a9f7ca6f4b1efe3716e07ef323c2c8f2e69 100644
+index f5c9ae68aaf4a9f6f2288d9c4a7e0b249d67dcea..b07856189330c369015b517e1b905bedc985fae0 100644
 --- a/chrome/browser/profiles/profile.cc
 +++ b/chrome/browser/profiles/profile.cc
-@@ -127,6 +127,14 @@ bool Profile::OTRProfileID::AllowsBrowserWindows() const {
+@@ -129,6 +129,14 @@ bool Profile::OTRProfileID::AllowsBrowserWindows() const {
                         base::CompareCase::SENSITIVE)) {
      return true;
    }

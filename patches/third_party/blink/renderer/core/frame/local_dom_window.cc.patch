@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/frame/local_dom_window.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/frame/local_dom_window.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596d96c27e0 100644
+index 8285e3768996571cdae7409078a502a8f18bda89..43e86bde4f62b643c246e7301abda04448d1e54a 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
-@@ -123,6 +123,8 @@
+@@ -121,6 +121,8 @@
  #include "third_party/blink/renderer/core/layout/layout_view.h"
  #include "third_party/blink/renderer/core/loader/document_loader.h"
  #include "third_party/blink/renderer/core/loader/frame_load_request.h"
@@ -17,7 +17,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596
  #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
  #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
  #include "third_party/blink/renderer/core/page/chrome_client.h"
-@@ -1678,6 +1680,10 @@ int LocalDOMWindow::outerHeight() const {
+@@ -1684,6 +1686,10 @@ int LocalDOMWindow::outerHeight() const {
    if (frame->IsInFencedFrameTree()) {
      return innerHeight();
    }
@@ -28,7 +28,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1710,6 +1716,10 @@ int LocalDOMWindow::outerWidth() const {
+@@ -1716,6 +1722,10 @@ int LocalDOMWindow::outerWidth() const {
    if (frame->IsInFencedFrameTree()) {
      return innerWidth();
    }
@@ -39,7 +39,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1786,6 +1796,10 @@ int LocalDOMWindow::screenX() const {
+@@ -1792,6 +1802,10 @@ int LocalDOMWindow::screenX() const {
    if (!frame) {
      return 0;
    }
@@ -50,7 +50,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1811,6 +1825,10 @@ int LocalDOMWindow::screenY() const {
+@@ -1817,6 +1831,10 @@ int LocalDOMWindow::screenY() const {
    if (!frame) {
      return 0;
    }
@@ -61,7 +61,7 @@ index 511fce6b8fada409373d828cf1cb1a95421dd97b..49da9485277cbecc500d0a62206fa596
  
    Page* page = frame->GetPage();
    if (!page) {
-@@ -1938,7 +1956,9 @@ double LocalDOMWindow::devicePixelRatio() const {
+@@ -1944,7 +1962,9 @@ double LocalDOMWindow::devicePixelRatio() const {
      return 0.0;
    }
  

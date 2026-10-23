@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/toolbar/toolbar_view.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/toolbar/toolbar_view.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd096c3799 100644
+index f9bb38f92374559f70077dfcb24c2010d1b7efba..eb8c65a5daeb9bd1f4e83b07c3a16d1ae2a6292a 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
 @@ -5,8 +5,11 @@
@@ -42,10 +42,10 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +#include "chrome/browser/molt_ai/update/update_manager.h"
 +#include "content/public/browser/storage_partition.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
- #include "chrome/browser/actor/ui/task_list_bubble/actor_task_list_bubble_controller.h"
  #include "chrome/browser/command_updater.h"
- #include "chrome/browser/glic/browser_ui/glic_actor_nudge_controller.h"
-@@ -57,6 +73,10 @@
+ #include "chrome/browser/glic/browser_ui/activity_list_bubble/glic_activity_list_bubble.h"
+ #include "chrome/browser/glic/browser_ui/activity_list_bubble/glic_activity_list_bubble_controller.h"
+@@ -59,6 +75,10 @@
  #include "chrome/browser/ui/intent_picker_tab_helper.h"
  #include "chrome/browser/ui/layout_constants.h"
  #include "chrome/browser/ui/omnibox/omnibox_view.h"
@@ -54,18 +54,18 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +#include "chrome/browser/ui/side_panel/side_panel_registry.h"
 +#include "chrome/browser/ui/side_panel/side_panel_ui.h"
  #include "chrome/browser/ui/page_action/page_action_properties_provider.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
  #include "chrome/browser/ui/tabs/public/tab_features.h"
- #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
-@@ -99,6 +119,8 @@
+@@ -105,6 +125,8 @@
  #include "chrome/browser/ui/views/toolbar/browser_app_menu_button.h"
  #include "chrome/browser/ui/views/toolbar/chrome_labs/chrome_labs_coordinator.h"
  #include "chrome/browser/ui/views/toolbar/home_button.h"
 +#include "chrome/browser/ui/views/toolbar/molt_import_bubble.h"
 +#include "chrome/browser/ui/views/toolbar/molt_net_bubble.h"
+ #include "chrome/browser/ui/views/toolbar/overflow_menu.h"
  #include "chrome/browser/ui/views/toolbar/pinned_toolbar_actions_container.h"
  #include "chrome/browser/ui/views/toolbar/reload_button.h"
- #include "chrome/browser/ui/views/toolbar/split_tabs_button.h"
-@@ -128,6 +150,8 @@
+@@ -137,6 +159,8 @@
  #include "components/send_tab_to_self/features.h"
  #include "components/signin/public/base/signin_buildflags.h"
  #include "components/strings/grit/components_strings.h"
@@ -74,8 +74,8 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
  #include "content/public/browser/render_view_host.h"
  #include "content/public/browser/web_contents.h"
  #include "third_party/skia/include/core/SkPath.h"
-@@ -135,7 +159,9 @@
- #include "ui/accessibility/ax_node_data.h"
+@@ -145,7 +169,9 @@
+ #include "ui/actions/actions.h"
  #include "ui/base/interaction/element_identifier.h"
  #include "ui/base/l10n/l10n_util.h"
 +#include "ui/base/metadata/metadata_header_macros.h"
@@ -84,7 +84,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
  #include "ui/base/theme_provider.h"
  #include "ui/base/ui_base_features.h"
  #include "ui/base/window_open_disposition.h"
-@@ -148,6 +174,7 @@
+@@ -158,6 +184,7 @@
  #include "ui/gfx/image/canvas_image_source.h"
  #include "ui/gfx/paint_vector_icon.h"
  #include "ui/gfx/scoped_canvas.h"
@@ -92,8 +92,8 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
  #include "ui/views/accessibility/view_accessibility.h"
  #include "ui/views/actions/action_view_controller.h"
  #include "ui/views/background.h"
-@@ -251,6 +278,305 @@ void SetRefreshMargins(views::View* button, bool expanded) {
-                                   : kBrowserAppMenuRefreshCollapsedMargin));
+@@ -261,6 +288,305 @@ void SetRefreshMargins(views::View* button, bool expanded) {
+                       : kBrowserAppMenuRefreshCollapsedMargin));
  }
  
 +// MoltBrowser: turn a 2-letter ISO country code into its flag emoji
@@ -155,7 +155,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +  METADATA_HEADER(TorExitCountryButton, ToolbarButton)
 +
 + public:
-+  explicit TorExitCountryButton(Browser* browser)
++  explicit TorExitCountryButton(BrowserWindowInterface* browser)
 +      : browser_(browser),
 +        menu_model_(this),
 +        country_codes_(
@@ -339,7 +339,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +    SetHighlight(label, std::nullopt);
 +  }
 +
-+  const raw_ptr<Browser> browser_;
++  const raw_ptr<BrowserWindowInterface> browser_;
 +  ui::SimpleMenuModel menu_model_;
 +  const std::vector<std::string> country_codes_;
 +  base::CallbackListSubscription tor_state_subscription_;
@@ -398,7 +398,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
  }  // namespace
  
  ////////////////////////////////////////////////////////////////////////////////
-@@ -303,6 +629,52 @@ ToolbarView::~ToolbarView() {
+@@ -327,6 +653,52 @@ void ToolbarView::DestroyWebUIToolbarWebContents() {
    }
  }
  
@@ -407,7 +407,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +// when the panel is closed). Driven by the SidePanelEntryObserver callbacks
 +// below, which fire on open, AI↔Agent swap, and close.
 +void ToolbarView::UpdateAiAgentModeHighlights() {
-+  SidePanelUI* ui = browser_ ? browser_->GetFeatures().side_panel_ui() : nullptr;
++  SidePanelUI* ui = browser_ ? SidePanelUI::From(browser_) : nullptr;
 +  std::optional<SidePanelEntryId> id =
 +      ui ? ui->GetCurrentEntryId() : std::nullopt;
 +  const std::optional<SkColor> kViolet = SkColorSetRGB(0xA7, 0x8B, 0xFA);
@@ -451,7 +451,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
  void ToolbarView::Init() {
  #if defined(USE_AURA)
    // Avoid generating too many occlusion tracking calculation events before this
-@@ -338,10 +710,18 @@ void ToolbarView::Init() {
+@@ -363,10 +735,18 @@ void ToolbarView::Init() {
    }
  
    if (display_mode_ == DisplayMode::kNormal) {
@@ -474,8 +474,8 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
    } else if (display_mode_ == DisplayMode::kCustomTab) {
      custom_tab_bar_ =
          AddChildView(std::make_unique<CustomTabBarView>(browser_view_, this));
-@@ -453,6 +833,27 @@ void ToolbarView::Init() {
-     AddChildViewAt(std::move(button), 0);
+@@ -483,6 +863,27 @@ void ToolbarView::Init() {
+     contextual_tasks_button_ = AddChildViewAt(std::move(button), 0);
    }
  
 +  // MoltBrowser: MoltNet (Tor exit-country) + Import buttons live in the LEFT
@@ -493,7 +493,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +        u"Bookmarks — view yours, or import from another browser");
 +    ToolbarButton* import_button_ptr = AddChildView(std::move(import_button));
 +    import_button_ptr->SetCallback(base::BindRepeating(
-+        [](ToolbarButton* anchor, Browser* browser) {
++        [](ToolbarButton* anchor, BrowserWindowInterface* browser) {
 +          MoltImportBubbleView::Show(anchor, browser->GetProfile());
 +        },
 +        base::Unretained(import_button_ptr), browser_));
@@ -502,7 +502,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
    if (location_bar_view) {
      location_bar_view_ = AddChildView(std::move(location_bar_view));
      location_bar_ = location_bar_view_;
-@@ -538,6 +939,118 @@ void ToolbarView::Init() {
+@@ -572,6 +973,118 @@ void ToolbarView::Init() {
      media_button_ = AddChildView(std::move(media_button));
    }
  
@@ -512,8 +512,8 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +  // feature is one click away.
 +  {
 +    auto molt_ai_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
-+        [](Browser* browser) {
-+          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
++        [](BrowserWindowInterface* browser) {
++          SidePanelUI* side_panel_ui = SidePanelUI::From(browser);
 +          if (!side_panel_ui) {
 +            return;
 +          }
@@ -550,8 +550,8 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +    // ring stays legible — it forces white label text + blends the highlight,
 +    // avoiding the invisible violet-on-violet a plain ToolbarButton would draw.
 +    auto agent_button = std::make_unique<LocalAiToolbarButton>(base::BindRepeating(
-+        [](Browser* browser) {
-+          SidePanelUI* side_panel_ui = browser->GetFeatures().side_panel_ui();
++        [](BrowserWindowInterface* browser) {
++          SidePanelUI* side_panel_ui = SidePanelUI::From(browser);
 +          if (!side_panel_ui) {
 +            return;
 +          }
@@ -605,7 +605,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
 +            ->GetDefaultStoragePartition()
 +            ->GetURLLoaderFactoryForBrowserProcess());
 +    auto update_button = std::make_unique<ToolbarButton>(base::BindRepeating(
-+        [](Browser* browser) {
++        [](BrowserWindowInterface* browser) {
 +          chrome::AddSelectedTabWithURL(browser, GURL("molt://update/"),
 +                                        ui::PAGE_TRANSITION_AUTO_BOOKMARK);
 +        },
@@ -621,10 +621,10 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
    if (glic::GlicEnabling::IsProfileEligible(browser_view_->GetProfile())) {
      if (base::FeatureList::IsEnabled(features::kAiOverlayDialog) &&
          ttc::AiOverlayDialogController::From(browser_)) {
-@@ -574,8 +1087,9 @@ void ToolbarView::Init() {
+@@ -611,8 +1124,9 @@ void ToolbarView::Init() {
+ 
    if (!features::IsWebUIAvatarButtonEnabled()) {
-     avatar_ =
-         AddChildView(std::make_unique<AvatarToolbarButton>(browser_view_));
+     avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_));
 -    bool show_avatar_toolbar_button =
 -        AvatarToolbarButtonInterface::CanShowForProfile(browser_->GetProfile());
 +    // MoltBrowser: Hide the Google sign-in / avatar button.
@@ -633,7 +633,7 @@ index 03aedd9edd72435185dca70e8b89574cd387cd3e..279c7a154f95869c0bca9b68c75c79bd
      avatar_->SetVisible(show_avatar_toolbar_button);
    }
  
-@@ -1466,6 +1980,29 @@ void ToolbarView::Layout(PassKey) {
+@@ -1505,6 +2019,29 @@ void ToolbarView::Layout(PassKey) {
    // Call super implementation to ensure layout manager and child layouts
    // happen.
    LayoutSuperclass<AccessiblePaneView>(this);

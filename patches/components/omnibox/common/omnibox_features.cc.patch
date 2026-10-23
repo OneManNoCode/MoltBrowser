@@ -1,21 +1,22 @@
 MoltBrowser patch for components/omnibox/common/omnibox_features.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/omnibox/common/omnibox_features.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox/common/omnibox_features.cc b/components/omnibox/common/omnibox_features.cc
-index cd448cb2cf8b0b8b0221b6004c0d41ebd7905794..372b59f46a2498361b906d4ab9a4c22826213c74 100644
+index cdb9eb9a1850d91297c960026232af3e68dd450a..1714732c31b887b2ba0ce00707846f496747d3c9 100644
 --- a/components/omnibox/common/omnibox_features.cc
 +++ b/components/omnibox/common/omnibox_features.cc
-@@ -198,7 +198,10 @@ BASE_FEATURE(kOmniboxMultimodalInput, DISABLED);
- BASE_FEATURE(kAndroidDesktopAimGate, ENABLED);
+@@ -206,7 +206,11 @@ BASE_FEATURE(kOmniboxDisableTabsForCanvas, ENABLED);
  
- // Enables the AIM entrypoint for third party search engines.
--BASE_FEATURE(kAim3pEntrypoint, ENABLED);
-+// MoltBrowser: off by default. Since kAiModeOmniboxEntryPoint was removed, this
-+// is the flag that gates the omnibox AI Mode button when the default search
-+// engine is not Google (see OmniboxFieldTrial::IsAimOmniboxEntrypointEnabled).
+ // Enables the AIM entrypoint for third party search engines. Held dark on
+ // Android until the Android entrypoint UI is implemented.
+-BASE_FEATURE(kAim3pEntrypoint, enable_if(!IS_ANDROID));
++// MoltBrowser: off by default on every platform. Since kAiModeOmniboxEntryPoint
++// was removed, this is the flag that gates the omnibox AI Mode button when the
++// default search engine is not Google (see
++// OmniboxFieldTrial::IsAimOmniboxEntrypointEnabled).
 +BASE_FEATURE(kAim3pEntrypoint, DISABLED);
  const base::FeatureParam<bool> kAim3pEntrypointDebug{
      &kAim3pEntrypoint, "Aim3pEntrypointDebug", false};

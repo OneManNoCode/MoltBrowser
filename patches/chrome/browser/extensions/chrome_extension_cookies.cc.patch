@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/extensions/chrome_extension_cookies.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/extensions/chrome_extension_cookies.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/extensions/chrome_extension_cookies.cc b/chrome/browser/extensions/chrome_extension_cookies.cc
-index a79030fa550a454e1ed9d7c74bfeb32b4832e994..9709b0b16338ef28c24f62d2c7d42eb6b267ae21 100644
+index 2fdff0ac1ba9817c7e6dc4fc62467cbc7d4746c6..7a78d9bba034638f4b23307011be9fd2fa2b2f1f 100644
 --- a/chrome/browser/extensions/chrome_extension_cookies.cc
 +++ b/chrome/browser/extensions/chrome_extension_cookies.cc
 @@ -10,6 +10,7 @@
@@ -16,7 +16,7 @@ index a79030fa550a454e1ed9d7c74bfeb32b4832e994..9709b0b16338ef28c24f62d2c7d42eb6
  #include "chrome/browser/net/profile_network_context_service.h"
  #include "chrome/browser/net/system_network_context_manager.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -42,7 +43,10 @@ ChromeExtensionCookies::ChromeExtensionCookies(Profile* profile)
+@@ -41,7 +42,10 @@ ChromeExtensionCookies::ChromeExtensionCookies(Profile* profile)
  
    std::optional<content::CookieStoreConfig> creation_config;
  

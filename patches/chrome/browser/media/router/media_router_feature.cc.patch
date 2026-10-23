@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/media/router/media_router_feature.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/media/router/media_router_feature.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/media/router/media_router_feature.cc b/chrome/browser/media/router/media_router_feature.cc
-index 049a25bbec0093053747261a7d39302523583435..2fb65c4c29d514136061df8a227d805f082da042 100644
+index d39e225f77668b71b5aa935abf9b97b90e116bcf..3349b1ea4c2b1dc916e26ba67bde4e430e74962b 100644
 --- a/chrome/browser/media/router/media_router_feature.cc
 +++ b/chrome/browser/media/router/media_router_feature.cc
 @@ -17,6 +17,8 @@
@@ -17,7 +17,7 @@ index 049a25bbec0093053747261a7d39302523583435..2fb65c4c29d514136061df8a227d805f
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/common/chrome_switches.h"
  #include "chrome/common/pref_names.h"
-@@ -115,6 +117,17 @@ bool MediaRouterEnabled(content::BrowserContext* context) {
+@@ -114,6 +116,17 @@ bool MediaRouterEnabled(content::BrowserContext* context) {
    }
  #endif  // BUILDFLAG(IS_CHROMEOS)
  

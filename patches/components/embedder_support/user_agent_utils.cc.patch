@@ -1,14 +1,14 @@
 MoltBrowser patch for components/embedder_support/user_agent_utils.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/embedder_support/user_agent_utils.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 3f87ec84fb32acff28c7efa855409a89395af80d..7a080b16d7ef85f16790e7ea164a1efdd23fdc28 100644
+index e699a6a394fd7a41b441ff6edeb1a17bfe51bc85..55bd38811524ac9c1d655a22eb5fe18accdaa7c3 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -498,6 +498,9 @@ blink::UserAgentBrandList GenerateBrandVersionList(
+@@ -513,6 +513,9 @@ blink::UserAgentBrandList GenerateBrandVersionList(
  
    blink::UserAgentBrandVersion greasey_bv =
        GetGreasedUserAgentBrandVersion(seed, output_version_type);

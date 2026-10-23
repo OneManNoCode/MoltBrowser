@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/support_tool_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/support_tool_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/support_tool_strings.grdp b/chrome/app/support_tool_strings.grdp
-index 0d1e5cac021537d2cebc2b3ccaa4539672272560..198a65acc36cc32e5c011bff61ad02fd885ac465 100644
+index 00aa5c6cebc5a98a1a7671da2b69db41404dac27..3d254841946c832b59d123ac6514fd8012ae5176 100644
 --- a/chrome/app/support_tool_strings.grdp
 +++ b/chrome/app/support_tool_strings.grdp
 @@ -103,7 +103,7 @@
@@ -26,7 +26,7 @@ index 0d1e5cac021537d2cebc2b3ccaa4539672272560..198a65acc36cc32e5c011bff61ad02fd
          </message>
          <message name="IDS_SUPPORT_TOOL_CHROMEOS_BLUETOOTH_FLOSS" desc="Bluetooth logs if Floss is enabled on the device. Floss is the project that works on converging on a single Bluetooth stack between Android and ChromeOS.">
              ChromeOS Bluetooth
-@@ -194,7 +194,7 @@
+@@ -191,7 +191,7 @@
              Email Address
          </message>
          <message name="IDS_SUPPORT_TOOL_GAIA_ID" desc="GAIA (Google Accounts and ID Administration). A system for providing a single universal login for all Google services.A Gaia ID is a 64-bit integer assigned by the Gaia team.">

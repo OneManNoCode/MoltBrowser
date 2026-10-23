@@ -1,22 +1,22 @@
 MoltBrowser patch for chrome/browser/ssl/chrome_security_blocking_page_factory.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ssl/chrome_security_blocking_page_factory.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ssl/chrome_security_blocking_page_factory.cc b/chrome/browser/ssl/chrome_security_blocking_page_factory.cc
-index de9737c05a1e7187ef89a50c64ff6e18b4275dd2..dd6baf8012f24cebf7d70aaa55ab0ef7bfc0b2d9 100644
+index a03c29515bd2c054d6779929fe3eaf38fbc7d065..1c376c0cb7dfb45891c5e72b1ee1fd8a6cb26ca2 100644
 --- a/chrome/browser/ssl/chrome_security_blocking_page_factory.cc
 +++ b/chrome/browser/ssl/chrome_security_blocking_page_factory.cc
-@@ -51,6 +51,7 @@
+@@ -53,6 +53,7 @@
  
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
  #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
 +#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/net/system_network_context_manager.h"
- #include "chrome/browser/ui/browser.h"
  #include "chrome/browser/ui/browser_tabstrip.h"
-@@ -353,6 +354,15 @@ ChromeSecurityBlockingPageFactory::CreateHttpsOnlyModeBlockingPage(
+ #include "chrome/browser/ui/browser_window.h"
+@@ -357,6 +358,15 @@ ChromeSecurityBlockingPageFactory::CreateHttpsOnlyModeBlockingPage(
  // Open a login tab or popup for the captive portal login page.
  void OpenLoginTab(BrowserWindowInterface* browser,
                    captive_portal::CaptivePortalWindowType portal_type) {

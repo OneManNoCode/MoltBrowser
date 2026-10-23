@@ -1,14 +1,14 @@
 MoltBrowser patch for content/browser/service_worker/service_worker_version.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/content/browser/service_worker/service_worker_version.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/content/browser/service_worker/service_worker_version.cc b/content/browser/service_worker/service_worker_version.cc
-index e8d3e3f7a6105924208e94c24217ef129b3b4b70..de25aee5fb61f51e69778ff147b2310bbee873e0 100644
+index f1305b444c578b9d3f67470ddac1258c8a3cd903..679729fb955cc81c438cc25c16119286760f038c 100644
 --- a/content/browser/service_worker/service_worker_version.cc
 +++ b/content/browser/service_worker/service_worker_version.cc
-@@ -1321,7 +1321,10 @@ void ServiceWorkerVersion::InitializeGlobalScope() {
+@@ -1329,7 +1329,10 @@ void ServiceWorkerVersion::InitializeGlobalScope() {
            std::move(registration)),
        worker_host_->container_host()->version_object_manager().CreateInfoToSend(
            this),

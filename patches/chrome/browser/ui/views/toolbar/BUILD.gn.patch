@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/views/toolbar/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/views/toolbar/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index 1514298328f544b4517850940564fce3d3a569eb..d166828e2f474cb814522df3e2ece8209a06145f 100644
+index 21df5f091c8e7202651fa792f04d644ad8306660..0a89681f947b6a86f4cb4e508e62fbea1a090fc7 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
 @@ -42,6 +42,8 @@ source_set("toolbar") {
@@ -17,7 +17,7 @@ index 1514298328f544b4517850940564fce3d3a569eb..d166828e2f474cb814522df3e2ece820
      "toolbar_view.h",
      "webui_app_menu_control.h",
      "webui_avatar_toolbar_button.h",
-@@ -139,6 +141,8 @@ source_set("impl") {
+@@ -197,6 +199,8 @@ source_set("impl") {
      "toolbar_glic_button.cc",
      "toolbar_glic_constants.h",
      "toolbar_icon_container_view.cc",
@@ -26,8 +26,8 @@ index 1514298328f544b4517850940564fce3d3a569eb..d166828e2f474cb814522df3e2ece820
      "toolbar_ink_drop_util.cc",
      "toolbar_view.cc",
      "webui_app_menu_control.cc",
-@@ -181,6 +185,9 @@ source_set("impl") {
-     "//chrome/browser/glic/browser_ui",
+@@ -246,6 +250,9 @@ source_set("impl") {
+     "//chrome/browser/glic/browser_ui/activity_list_bubble:ui",
      "//chrome/browser/lifetime",
      "//chrome/browser/media/router:media_router_feature",
 +    "//chrome/browser/molt_ai/automation",

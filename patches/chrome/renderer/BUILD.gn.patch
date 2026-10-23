@@ -1,14 +1,14 @@
 MoltBrowser patch for chrome/renderer/BUILD.gn
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/renderer/BUILD.gn by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
-index 918ed2c840dbcc494ef859391085033daa9afe56..48b32603c63743184069ec2671fcbaa0c1143710 100644
+index df80dfe84aed61bfffe3e6571efe914650fe3926..bdf65bcfd7b88afee39c04f9da27207a3febeeb5 100644
 --- a/chrome/renderer/BUILD.gn
 +++ b/chrome/renderer/BUILD.gn
-@@ -123,6 +123,15 @@ static_library("renderer") {
+@@ -137,6 +137,15 @@ static_library("renderer") {
      "//chrome/common/request_header_integrity:buildflags",
      "//chrome/common/search:mojo_bindings",
      "//chrome/renderer/actor",
@@ -22,5 +22,5 @@ index 918ed2c840dbcc494ef859391085033daa9afe56..48b32603c63743184069ec2671fcbaa0
 +    # MoltBrowser: no RTCPeerConnection in MoltNet renderers.
 +    "//chrome/renderer/molt_ai/tor",
      "//chrome/services/speech/buildflags",
+     "//components/actor/core:features",
      "//components/actor/core:task_id",
-     "//components/autofill/content/renderer",

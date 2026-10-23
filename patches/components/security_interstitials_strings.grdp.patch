@@ -1,11 +1,11 @@
 MoltBrowser patch for components/security_interstitials_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/security_interstitials_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/security_interstitials_strings.grdp b/components/security_interstitials_strings.grdp
-index 2ca5a6fa46fcc82b9742d29483463c30669a6bd6..be6f0ee5f1b25567dbf9fdab66c1f1f483270e69 100644
+index 690bb1b9a5e2db36e7b96e6eb8991bff980d7d0b..44f0ec7ba46d962297ea9d5163456abc630d1134 100644
 --- a/components/security_interstitials_strings.grdp
 +++ b/components/security_interstitials_strings.grdp
 @@ -42,7 +42,7 @@
@@ -161,7 +161,7 @@ index 2ca5a6fa46fcc82b9742d29483463c30669a6bd6..be6f0ee5f1b25567dbf9fdab66c1f1f4
    </message>
    <message name="IDS_HTTPS_ONLY_MODE_FOR_INCOGNITO_PRIMARY_PARAGRAPH" desc="Main paragrpah of the HTTPS-Only Mode warning. This warning is shown when the browser tries to upgrade a navigation to a site to HTTPS but the site does not support HTTPS. The user is seeing this warning because they are browsing in Incognito mode.">
      You are seeing this warning because this site does not support HTTPS and you are in Incognito mode. <ph name="BEGIN_LEARN_MORE_LINK">&lt;a href="#" id="learn-more-link"&gt;</ph>Learn more about this warning<ph name="END_LEARN_MORE_LINK">&lt;/a&gt;</ph>
-@@ -553,10 +553,10 @@
+@@ -556,10 +556,10 @@
      Learn more about this warning
    </message>
    <message name="IDS_ABH_PROMPT_SITE_ENGAGEMENT_PRIMARY_PARAGRAPH" desc="Main paragraph shown in the Ask-before-HTTP warning dialog. This warning is shown when the browser tries to upgrade a navigation to a site to HTTPS but the site does not support HTTPS. The user is seeing this warning because they typically visit HTTPS URLs.">

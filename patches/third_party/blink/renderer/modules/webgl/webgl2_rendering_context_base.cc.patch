@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
-index 1e2b512f07644b42e80b4fb677c40ce103185df8..074341e7198d34305e2a46b518d4ec119b172af7 100644
+index 9eb36fe26cc59e1d248b41b1f02adff133585474..a594bb36412f9b56fd53b119818778330153f055 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
 @@ -22,6 +22,8 @@
@@ -41,7 +41,7 @@ index 1e2b512f07644b42e80b4fb677c40ce103185df8..074341e7198d34305e2a46b518d4ec11
  }
  
  void WebGL2RenderingContextBase::RenderbufferStorageHelper(
-@@ -5060,6 +5070,9 @@ ScriptValue WebGL2RenderingContextBase::GetInt64Parameter(
+@@ -5058,6 +5068,9 @@ ScriptValue WebGL2RenderingContextBase::GetInt64Parameter(
    GLint64 value = 0;
    if (!isContextLost())
      ContextGL()->GetInteger64v(pname, &value);

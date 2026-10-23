@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4ce510f525 100644
+index b17f336f90c46575d6fc0668a9e85183cdd8c0e6..e69a73ca4796ef10a8fb33f6b13ae3546f77d079 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -89,6 +89,8 @@
+@@ -90,6 +90,8 @@
  #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/core/layout/layout_box.h"
@@ -17,7 +17,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
  #include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
  #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
-@@ -3839,7 +3841,9 @@ bool WebGLRenderingContextBase::ExtensionSupportedAndAllowed(
+@@ -3854,7 +3856,9 @@ bool WebGLRenderingContextBase::ExtensionSupportedAndAllowed(
      return false;
    if (disabled_extensions_.Contains(String(tracker->ExtensionName())))
      return false;
@@ -28,7 +28,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
  }
  
  WebGLExtension* WebGLRenderingContextBase::EnableExtensionIfSupported(
-@@ -4281,14 +4285,20 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4296,14 +4300,20 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case GL_MAX_COLOR_ATTACHMENTS_EXT:  // EXT_draw_buffers BEGIN
        if (ExtensionEnabled(kWebGLDrawBuffersName) || IsWebGL2())
@@ -51,7 +51,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
        SynthesizeGLError(
            GL_INVALID_ENUM, "getParameter",
            "invalid parameter name, WEBGL_draw_buffers not enabled");
-@@ -4511,8 +4521,13 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
+@@ -4526,8 +4536,13 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
    GLint precision = 0;
    ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
                                          &precision);
@@ -67,7 +67,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
  }
  
  String WebGLRenderingContextBase::getShaderSource(WebGLShader* shader) {
-@@ -5357,6 +5372,11 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5372,6 +5387,11 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -79,7 +79,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
  }
  
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
-@@ -7907,6 +7927,9 @@ ScriptValue WebGLRenderingContextBase::GetFloatParameter(
+@@ -8011,6 +8031,9 @@ ScriptValue WebGLRenderingContextBase::GetFloatParameter(
    GLfloat value = 0;
    if (!isContextLost()) {
      ContextGL()->GetFloatv(pname, &value);
@@ -89,7 +89,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
    }
    return WebGLAny(script_state, value);
  }
-@@ -7917,6 +7940,9 @@ ScriptValue WebGLRenderingContextBase::GetIntParameter(
+@@ -8021,6 +8044,9 @@ ScriptValue WebGLRenderingContextBase::GetIntParameter(
    GLint value = 0;
    if (!isContextLost()) {
      ContextGL()->GetIntegerv(pname, &value);
@@ -99,7 +99,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
      switch (pname) {
        case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
        case GL_IMPLEMENTATION_COLOR_READ_TYPE:
-@@ -7957,6 +7983,9 @@ ScriptValue WebGLRenderingContextBase::GetWebGLFloatArrayParameter(
+@@ -8061,6 +8087,9 @@ ScriptValue WebGLRenderingContextBase::GetWebGLFloatArrayParameter(
    std::array<GLfloat, 4> value = {0};
    if (!isContextLost())
      ContextGL()->GetFloatv(pname, value.data());
@@ -109,7 +109,7 @@ index fb1bc7c968496654dc7f35280a022826edbcd5ed..b3c2cd1f55ae42dd3143723e0b40dc4c
    unsigned length = 0;
    switch (pname) {
      case GL_ALIASED_POINT_SIZE_RANGE:
-@@ -7981,6 +8010,9 @@ ScriptValue WebGLRenderingContextBase::GetWebGLIntArrayParameter(
+@@ -8085,6 +8114,9 @@ ScriptValue WebGLRenderingContextBase::GetWebGLIntArrayParameter(
    std::array<GLint, 4> value = {0};
    if (!isContextLost())
      ContextGL()->GetIntegerv(pname, value.data());

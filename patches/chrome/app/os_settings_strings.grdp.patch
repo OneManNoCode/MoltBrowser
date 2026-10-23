@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/os_settings_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/os_settings_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/os_settings_strings.grdp b/chrome/app/os_settings_strings.grdp
-index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd79335486 100644
+index c36fd7fc0007751bd3fc33bb53bb5f83c0be1898..1a99b5e1e5944eff416053c218760a16d40c6527 100644
 --- a/chrome/app/os_settings_strings.grdp
 +++ b/chrome/app/os_settings_strings.grdp
 @@ -307,7 +307,7 @@
@@ -52,7 +52,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_LANGUAGES_OFFER_TRANSLATION_LABEL" desc="Title for setting that allows the system to offer to translate websites that appear in other languages.">
     Translation suggestion
-@@ -494,7 +494,7 @@
+@@ -497,7 +497,7 @@
      Grammar check currently available for English only
    </message>
    <message name="IDS_OS_SETTINGS_LANGUAGES_SPELL_CHECK_ENHANCED_LABEL" desc="Label for enhanced spell check toggle, the type of spell check that sends the text the user types to Google spelling service. It is important that it is communicated that the text the user types will be sent to Google.">
@@ -61,7 +61,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_LANGUAGES_SPELL_CHECK_LANGUAGES_LIST_TITLE" desc="Title for the list of languages that support spell check, from which users can enable or disable spell check for.">
      Spell check languages
-@@ -974,10 +974,10 @@
+@@ -977,10 +977,10 @@
      Search and suggestions
    </message>
    <message name="IDS_OS_SETTINGS_SEARCH_ENGINE_LABEL" desc="Label in OS settings describing search engine behavior.">
@@ -74,7 +74,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_ENABLE_MAGIC_BOOST" desc="The label of the toggle to enable/disable Magic Boost in ChromeOS settings.">
      Use Google AI to get help reading, writing, and creating
-@@ -1041,7 +1041,7 @@
+@@ -1044,7 +1044,7 @@
      Files
    </message>
    <message name="IDS_SETTINGS_DISCONNECT_GOOGLE_DRIVE" desc="Label for the checkbox which enables disconnecting from Google Drive account.">
@@ -83,7 +83,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_GOOGLE_DRIVE_CLEAN_UP_STORAGE_ACTION" desc="Button for the Offline Storage row where users can clean their offline storage in Settings: Files: Google Drive.">
      Clean up storage
-@@ -1098,10 +1098,10 @@
+@@ -1101,10 +1101,10 @@
      Remove Drive access
    </message>
    <message name="IDS_SETTINGS_GOOGLE_DRIVE_REMOVE_ACCESS_DIALOG_TITLE" desc="Title of the dialog that appears when the Remove Drive access button is pressed in Settings: Files: Google Drive">
@@ -96,7 +96,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_GOOGLE_DRIVE_REMOVE_BUTTON_TEXT" desc="Action button text of the dialog that appears when the Remove Drive access button is pressed in Settings: Files: Google Drive">
      Remove
-@@ -1152,7 +1152,7 @@
+@@ -1155,7 +1155,7 @@
      Unknown
    </message>
    <message name="IDS_SETTINGS_GOOGLE_DRIVE" translateable="false" desc="Label for the settings link that takes the user to the page where they can manage their Google Drive settings.">
@@ -105,7 +105,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_DOWNLOADS_SMB_SHARES" desc="In Downloads Settings, the title of the SMB shares setting section.">
      Network file shares
-@@ -1173,7 +1173,7 @@
+@@ -1176,7 +1176,7 @@
      Error mounting share. Please check your credentials and try again.
    </message>
    <message name="IDS_SETTINGS_IN_SESSION_AUTH_ORIGIN_NAME_PROMPT" desc="Text shown in the auth dialog to indicate we are currently authenticating for ChromeOS settings">
@@ -114,7 +114,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_IN_SESSION_AUTH_ORIGIN_NAME_PROMPT_LOCATION" desc="Location in text shown in the auth dialog to indicate we are currently authenticating for ChromeOS settings">
      ChromeOS Settings
-@@ -1234,7 +1234,7 @@
+@@ -1237,7 +1237,7 @@
      Microsoft 365 files
    </message>
    <message name="IDS_SETTINGS_ALWAYS_MOVE_OFFICE_TO_DRIVE_PREFERENCE_LABEL" desc="Label for the preference that allows users to always copy/move files to Drive without asking for confirmation.">
@@ -123,16 +123,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_ALWAYS_MOVE_OFFICE_TO_ONEDRIVE_PREFERENCE_LABEL" desc="Label for the preference that allows users to always copy/move files to OneDrive without asking for confirmation.">
      Ask before copying or moving Microsoft files to Microsoft OneDrive
-@@ -1247,7 +1247,7 @@
-     Backup your local files to Drive
-   </message>
-   <message name="IDS_SETTINGS_GOOGLE_DRIVE_MIRROR_SYNC_TOGGLE_DESCRIPTION" desc="Description for backup mode which allow user to toggle of Mirror Sync." translateable="false">
--    Backup all your files under My files to Google Drive.
-+    Backup all your files under My files to Drive.
-   </message>
- 
-   <!-- Accessibility -->
-@@ -2639,7 +2639,7 @@ Press an assigned switch or key to remove assignment.
+@@ -2632,7 +2632,7 @@ Press an assigned switch or key to remove assignment.
      Audio and captions
    </message>
    <message name="IDS_SETTINGS_ACCESSIBILITY_ADDITIONAL_FEATURES_TITLE" desc="In the settings tab, the title of a link that adds additional accessibility features not found in the built-in settings.">
@@ -141,7 +132,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_ACCESSIBILITY_DISABILITY_SUPPORT_TITLE" desc="In the settings tab, the title of a link that opens the disability support help center page.">
      Contact Google Disability Support
-@@ -2785,7 +2785,7 @@ Press an assigned switch or key to remove assignment.
+@@ -2778,7 +2778,7 @@ Press an assigned switch or key to remove assignment.
      Remove this account
    </message>
    <message name="IDS_SETTINGS_ACCOUNT_MANAGER_ADD_ACCOUNT_LABEL_V2" desc="Label of the Add account button in Account Manager.">
@@ -150,7 +141,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_ACCOUNT_MANAGER_ADD_SCHOOL_ACCOUNT_LABEL" desc="Label of the button to add a school/EDU account in Account Manager.">
      Add school account
-@@ -4641,7 +4641,7 @@ Press an assigned switch or key to remove assignment.
+@@ -4634,7 +4634,7 @@ Press an assigned switch or key to remove assignment.
      Block traffic without VPN
    </message>
    <message name="IDS_SETTINGS_INTERNET_NETWORK_ALWAYS_ON_VPN_LOCKDOWN_SUBLABEL" desc="Settings > Internet > VPN: Sublabel for the toggle that enables always-on VPN lockdown.">
@@ -159,7 +150,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_INTERNET_NETWORK_ALWAYS_ON_VPN_SERVICE" desc="Settings > Internet > VPN: Label for the dropdown menu determining which VPN client will be automatically started on login.">
      VPN service
-@@ -5176,7 +5176,7 @@ Press an assigned switch or key to remove assignment.
+@@ -5169,7 +5169,7 @@ Press an assigned switch or key to remove assignment.
      Notifications
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_SECTION_TITLE" desc="The title of the Phone Hub Task Continuation section on the settings page.">
@@ -168,7 +159,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_APPS_SECTION_TITLE" desc="The title of the Phone Hub Apps section on the settings page.">
      Apps
-@@ -5203,7 +5203,7 @@ Press an assigned switch or key to remove assignment.
+@@ -5196,7 +5196,7 @@ Press an assigned switch or key to remove assignment.
      View, dismiss, and reply to your phone’s notifications
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_SUMMARY" desc="Description of for the 'Phone Hub Task Continuation' setting. This feature lets users resume in-app actions and chrome tabs that are open on a connected Android phone from ChromeOS devices.">
@@ -177,7 +168,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_APPS_SUMMARY" desc="Description of for the 'Phone Hub Apps' setting. This feature lets users streaming apps from a Android phone to Chrome OS device.">
      Stream your phone's apps
-@@ -5221,10 +5221,10 @@ Press an assigned switch or key to remove assignment.
+@@ -5214,10 +5214,10 @@ Press an assigned switch or key to remove assignment.
      View your phone's photos, media, notifications, and apps
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_PHONE_HUB_TASK_CONTINUATION_DISABLED_SUMMARY" desc="Description of for the 'Phone Hub Task Continuation' setting when Chrome sync is not enabled. This feature lets users resume in-app actions and chrome tabs that are open on a connected Android phone from ChromeOS devices.">
@@ -190,7 +181,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_NOTIFICATION_ACCESS_SETUP_DIALOG_ACK_TITLE" desc="The title of the dialog containing the Phone Hub notification opt-in flow shown when the Phone Hub 'Notifications' toggle is switched on.">
      View notifications from your phone on your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>
-@@ -5296,10 +5296,10 @@ Press an assigned switch or key to remove assignment.
+@@ -5289,10 +5289,10 @@ Press an assigned switch or key to remove assignment.
      Sync Wi-Fi networks with your phone. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_ENABLE_WIFI_SYNC_V1_SUMMARY" desc="Description for the 'Wifi Sync' section on the settings page when the prerequisite 'Chrome Sync' setting is not activated. This feature lets the user sync wifi network configurations between ChromeOS devices and a connected Android phone. The description contains a link that leads to the toggle where the prerequisite 'Chrome Sync' feature can be turned on and a 'Learn More' link to learn more about the 'Wifi Sync' feature.">
@@ -203,7 +194,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_WIFI_SYNC_LEARN_MORE_LABEL" desc="Accessibility label (used by screen readers, not shown in UI) for a link that leads to a page with more information about the 'Wifi Sync' feature. This feature lets the user sync wifi network configurations between ChromeOS devices and a connected Android phone.">
      Wi-Fi Sync, Learn More
-@@ -5471,7 +5471,7 @@ Press an assigned switch or key to remove assignment.
+@@ -5464,7 +5464,7 @@ Press an assigned switch or key to remove assignment.
      Connect your <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> with your phone. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$2<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
    </message>
    <message name="IDS_OS_SETTINGS_MULTIDEVICE_NO_ELIGIBLE_HOSTS" desc="Tells the user that there is no phone with their account on it that can connect to their Chromebook.">
@@ -212,7 +203,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_MULTIDEVICE_VERIFICATION_TEXT" desc="Text to tell user that their Chromebook needs to verify that it can connect with their phone.">
      Waiting for verification. <ph name="LINK_BEGIN">&lt;a target="_blank" href="$1<ex>https://google.com/</ex>"&gt;</ph>Learn more<ph name="LINK_END">&lt;/a&gt;</ph>
-@@ -5495,7 +5495,7 @@ Press an assigned switch or key to remove assignment.
+@@ -5488,7 +5488,7 @@ Press an assigned switch or key to remove assignment.
      Set up a <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph> password
    </message>
    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_SWITCH_LOCAL_PASSWORD_DESCRIPTION" desc="Description of the password authentication factor on the lock screen page.">
@@ -221,7 +212,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_PEOPLE_LOCK_SCREEN_PIN_LABEL" desc="Label for PIN authentication factor on the lock screen page.">
      PIN
-@@ -5787,7 +5787,7 @@ Press an assigned switch or key to remove assignment.
+@@ -5780,7 +5780,7 @@ Press an assigned switch or key to remove assignment.
      Battery saver
    </message>
    <message name="IDS_SETTINGS_POWER_BATTERY_SAVER_SUBTEXT" desc="In Device Settings > Power, description of the behavior of battery saver mode">
@@ -230,7 +221,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
  
    <!-- Reset Page (OS settings)-->
-@@ -6448,7 +6448,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -6441,7 +6441,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      More web app settings and permissions
    </message>
    <message name="IDS_OS_SETTINGS_APP_PERMISSIONS_TITLE_CHROME_APP" desc="Label for a link to more settings and permissions for an app with type Chrome app.">
@@ -239,7 +230,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_OPEN_IN_APP_TITLE" desc="Label for the intent sharing option to open in a specified app.">
      Open in <ph name="APP_NAME">$1<ex>Calculator</ex></ph> app
-@@ -6533,7 +6533,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -6526,7 +6526,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      Notifications won't pop up on the screen. You can still see notifications by clicking the Do Not Disturb icon on the bottom right of your screen.
    </message>
    <message name="IDS_SETTINGS_APP_NOTIFICATIONS_LINK_TO_BROWSER_SETTINGS_DESCRIPTION" desc="In notifications OS Settings subpage, explanatory text for website notifications link.">
@@ -248,7 +239,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_SETTINGS_APP_BADGING_TOGGLE_LABEL" desc="The label for the app badging toggle in the App Notifications page of OS Settings.">
      App badging
-@@ -6686,7 +6686,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -6679,7 +6679,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      Send diagnostic and usage data
    </message>
    <message name="IDS_OS_SETTINGS_ENABLE_LOGGING_TOGGLE_DESCRIPTION" desc="The description of the checkbox to enable/disable crash and user metrics logging in ChromeOS for user of the device.">
@@ -257,7 +248,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_PRIVACY_TITLE" desc="Name of the privacy settings page.">
      Privacy and security
-@@ -6869,13 +6869,13 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -6862,13 +6862,13 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      Websites
    </message>
    <message name="IDS_OS_SETTINGS_PRIVACY_HUB_MANAGE_CAMERA_PERMISSIONS_IN_CHROME_TEXT" desc="The label of the Chrome row in the Websites section of the camera subpage. This row is displayed when camera is allowed.">
@@ -274,7 +265,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_PRIVACY_HUB_NO_WEBSITE_CAN_USE_CAMERA_TEXT" desc="The text displayed in the Websites section of the camera subpage when camera is not allowed.">
      Websites are not allowed to use your camera
-@@ -7067,13 +7067,13 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -7060,13 +7060,13 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      From <ph name="APP_URL">$1<ex>https://google.com</ex></ph>
    </message>
    <message name="IDS_APP_MANAGEMENT_APP_DETAILS_INSTALL_SOURCE_WEB_STORE" desc="Text for Chrome Web Store installation source">
@@ -290,7 +281,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_APP_MANAGEMENT_APP_DETAILS_SUBAPP_DATA_SHARING_EXPLANATION" desc="Explanation of data sharing between parent app and sub apps in App Management settings.">
      This app data is shared between "<ph name="PARENT_APP_NAME">$1<ex>Office Suite</ex></ph>" and its installed apps
-@@ -7176,7 +7176,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -7169,7 +7169,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      Android App
    </message>
    <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_CHROME" desc="Text to explain that the type of an app is Chrome app">
@@ -299,7 +290,7 @@ index 755979c6f68ee1a9c0f667448b3d9662cd76a753..3b1cd9bb918e4ef5f43c0e9b32695ddd
    </message>
    <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_WEB" desc="Text to explain that the type of an app is Web app">
      Web App
-@@ -7188,7 +7188,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
+@@ -7181,7 +7181,7 @@ Press &amp; hold keyboard keys to see accent marks and special characters. This
      Android app installed by your device administrator.
    </message>
    <message name="IDS_OS_SETTINGS_APP_DETAILS_TYPE_CHROME_INSTALL_REASON_POLICY" desc="Explanation text for the chrome app installation reason, describing the type of the app, and that it is installed by the administrator.">

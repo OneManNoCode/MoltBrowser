@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/core/execution_context/navigator_base.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/execution_context/navigator_base.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-index cccfafe8f93a0228d08352c6d4f27391935848ba..dd4f024180bbf9c4b260e1610c6aad934d9910f6 100644
+index 83f427c5ec9b75cbf41935af9935f9fa293ea11c..312f94ef12e9bf5e6269760d8a7b88f7e2319ed0 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
 +++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
 @@ -9,6 +9,7 @@
@@ -16,7 +16,7 @@ index cccfafe8f93a0228d08352c6d4f27391935848ba..dd4f024180bbf9c4b260e1610c6aad93
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
-@@ -72,6 +73,9 @@ void NavigatorBase::Trace(Visitor* visitor) const {
+@@ -87,6 +88,9 @@ void NavigatorBase::Trace(Visitor* visitor) const {
  unsigned int NavigatorBase::hardwareConcurrency() const {
    unsigned int hardware_concurrency =
        NavigatorConcurrentHardware::hardwareConcurrency();

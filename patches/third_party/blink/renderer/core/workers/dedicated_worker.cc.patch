@@ -1,25 +1,25 @@
 MoltBrowser patch for third_party/blink/renderer/core/workers/dedicated_worker.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/workers/dedicated_worker.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/workers/dedicated_worker.cc b/third_party/blink/renderer/core/workers/dedicated_worker.cc
-index bc8726d68af801c093bc4baf266c7d3271638df8..ecfb12c822e1f649bab7a62451ed88a150196924 100644
+index d3f34ef2e8b21bef0a83d314003cd9d38b2d18ae..fcce4d7241a54933caad15e2775796bb798846ea 100644
 --- a/third_party/blink/renderer/core/workers/dedicated_worker.cc
 +++ b/third_party/blink/renderer/core/workers/dedicated_worker.cc
-@@ -42,6 +42,7 @@
- #include "third_party/blink/renderer/core/loader/document_loader.h"
+@@ -43,6 +43,7 @@
  #include "third_party/blink/renderer/core/loader/frame_loader.h"
+ #include "third_party/blink/renderer/core/loader/resource_initiator_helper.h"
  #include "third_party/blink/renderer/core/loader/worker_fetch_context.h"
 +#include "third_party/blink/renderer/core/molt_fingerprinting/shields_decision.h"  // MoltBrowser
  #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
-@@ -590,6 +591,9 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
-       origin_ ? origin_->IsolatedCopy() : nullptr,
-       std::move(coep_reporting_observer), std::move(dip_reporting_observer));
-   params->dedicated_worker_start_time = start_time_;
+@@ -625,6 +626,9 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
+   // global scopes support Document-Policy violation reporting.
+ 
+   params->dedicated_worker_script_initiator_url = worker_script_initiator_url_;
 +  // MoltBrowser: the worker inherits its creator's Shields decision.
 +  molt_fingerprinting::ProvideShieldsDecisionToDedicatedWorker(
 +      *execution_context, params->worker_clients.Get());

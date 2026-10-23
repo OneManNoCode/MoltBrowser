@@ -1,16 +1,16 @@
 MoltBrowser patch for chrome/browser/ui/webui/chrome_web_ui_configs.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/webui/chrome_web_ui_configs.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index a5745248169918e39fa9b33b24e5c227d1d72f65..aae30885d17557f2cb06bafe510c804fb3a7a2f3 100644
+index 139fecebd5645797d1c3f3989d664c38ac5fe241..10390d3492f44824048a4fbd619ccdf042c5e9fa 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-@@ -18,6 +18,17 @@
- #include "chrome/browser/ui/webui/bluetooth_internals/bluetooth_internals_ui.h"  // nogncheck
- #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals_ui.h"
+@@ -19,6 +19,17 @@
+ #include "chrome/browser/ui/webui/autofill_and_password_manager_internals/password_manager_internals_ui.h"
+ #include "chrome/browser/ui/webui/bluetooth_internals/bluetooth_internals_ui.h"
  #include "chrome/browser/ui/webui/chrome_urls/chrome_urls_ui.h"
 +// MoltBrowser AI WebUI
 +#include "chrome/browser/ui/webui/molt_ai/molt_ai_ui.h"
@@ -26,9 +26,9 @@ index a5745248169918e39fa9b33b24e5c227d1d72f65..aae30885d17557f2cb06bafe510c804f
  #include "chrome/browser/ui/webui/commerce/commerce_internals_ui_config.h"
  #include "chrome/browser/ui/webui/components/components_ui.h"
  #include "chrome/browser/ui/webui/connectors_internals/connectors_internals_ui.h"
-@@ -287,6 +298,17 @@ void RegisterChromeWebUIConfigs() {
+@@ -301,6 +312,17 @@ void RegisterChromeWebUIConfigs() {
+   map.AddWebUIConfig(std::make_unique<ManagementUIConfig>());
    map.AddWebUIConfig(std::make_unique<MediaEngagementUIConfig>());
-   map.AddWebUIConfig(std::make_unique<MemoryInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<MetricsInternalsUIConfig>());
 +  // MoltBrowser AI WebUI pages
 +  map.AddWebUIConfig(std::make_unique<MoltAIUIConfig>());

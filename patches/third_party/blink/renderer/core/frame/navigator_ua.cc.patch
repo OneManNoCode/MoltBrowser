@@ -1,22 +1,22 @@
 MoltBrowser patch for third_party/blink/renderer/core/frame/navigator_ua.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/frame/navigator_ua.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/frame/navigator_ua.cc b/third_party/blink/renderer/core/frame/navigator_ua.cc
-index 22483bb57adf790867e081e5d32c1c726e94c3ef..569e846c8b3e2fd06e5dffb822f42f85d8fb1e8d 100644
+index d334ce3951aff6746fefdaa3857e9e99d6e7cb0b..e08fce8671c946ee1aeb7e19b391778554f91b2e 100644
 --- a/third_party/blink/renderer/core/frame/navigator_ua.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_ua.cc
-@@ -7,6 +7,7 @@
- #include "base/compiler_specific.h"
+@@ -6,6 +6,7 @@
+ 
  #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
  #include "third_party/blink/renderer/core/frame/navigator_ua_data.h"
 +#include "third_party/blink/renderer/core/molt_fingerprinting/moltnet_device.h"  // MoltBrowser
  #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
  
  namespace blink {
-@@ -16,6 +17,8 @@ NavigatorUAData* NavigatorUA::userAgentData() {
+@@ -15,6 +16,8 @@ NavigatorUAData* NavigatorUA::userAgentData() {
        MakeGarbageCollected<NavigatorUAData>(GetUAExecutionContext());
  
    UserAgentMetadata metadata = GetUserAgentMetadata();

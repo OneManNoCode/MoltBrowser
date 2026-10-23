@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/app/settings_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/app/settings_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710dae0f28af 100644
+index 8c079eb0a703e2d96d92cd61dcd40febc28301b3..0b10e48ded28f745ce80291aafcda61a947f3fe7 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
 @@ -68,7 +68,7 @@
@@ -44,7 +44,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_COLOR_SCHEME_MODE" desc="Text of the label for selecting a color scheme mode for the browser.">
        Mode
-@@ -381,13 +381,13 @@
+@@ -384,13 +384,13 @@
        Search settings
      </message>
      <message name="IDS_SETTINGS_SEARCH_NO_RESULTS_HELP" desc="Help text for a search that has no results.">
@@ -60,7 +60,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SUBPAGE_BUTTON" desc="Accessibility description for a button navigating the user from a settings page to one of the settings subpages.">
        Subpage button
-@@ -465,7 +465,7 @@
+@@ -468,7 +468,7 @@
        export passwords
      </message>
      <message name="IDS_PASSWORDS_PAGE_DELETE_ALL_DATA_AUTHENTICATION_PROMPT_BIOMETRIC_SUFFIX" desc="Shown on MacOS after 'Google Chrome is trying to ' (or in some languages, 'Google Chrome wants to ') in a dialog message. Text for the dialog box that prompts the user for the biometric authentication before deleting all Google Password Manager data.">
@@ -69,7 +69,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_AUTOFILL_AND_PASSWORDS" desc="Name of the settings page which allows managing passwords, payment methods and addresses settings.">
        Autofill and passwords
-@@ -732,7 +732,7 @@
+@@ -766,7 +766,7 @@
        Warn you if a password was compromised in a data breach
      </message>
      <message name="IDS_SETTINGS_PASSWORDS_LEAK_DETECTION_SIGNED_OUT_ENABLED_DESC" desc="Text that describes the 'Password Leak Detection' functionality to signed-out users who have not disabled the feature. This text always follows a sentence describing the feature.">
@@ -78,7 +78,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_SAVED_INFO" desc="Bullet 1 of 2 that appears beneath the 'When on' title. 'Autofill': the user is on the 'Autofill AI' feature page, but we want to frame this new type of autofill as just 'Autofill'. 'Can offer to save info when you submit forms': we want to convey that the user has the choice, each time a form is submitted, whether they want their info saved to Chrome for the purposes of Autofill. 'Like your driver's license or passport number': Today, supported data types for 'Autofill AI' include 1) driver's licenses, 2) passports, and 3) vehicles. Eventually we'll support more, but this example needs to mention these types of data and not others.">
        Autofill can offer to save info when you submit forms, like your driver's license or passport number
-@@ -807,12 +807,12 @@
+@@ -838,12 +838,12 @@
        </message>
      <if expr="is_win">
        <message name="IDS_AUTOFILL_MANAGE_PASSKEYS_SUB_TITLE_WIN" desc="A warning on a page where the user can see and delete passkeys saved on their computer. It communicates that the passkeys shown are stored in Windows Hello, which is a Microsoft product name, and not in the user's Google account. For consistency, the word 'passkey' is in the glossary with translations already suggested.">
@@ -93,7 +93,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
      </if>
        <message name="IDS_AUTOFILL_MANAGE_PASSKEYS_SEARCH" desc="The label on a field that a user can use to search within a list of passkeys. For consistency, the word 'passkey' is in the glossary with translations already suggested.">
-@@ -836,28 +836,28 @@
+@@ -867,28 +867,28 @@
      </if>
  
      <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_EDIT" desc="Label for a context menu item that provides the edit option for the selected home and work address.">
@@ -117,12 +117,12 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
 +      Remove this info from MoltBrowser autofill?
      </message>
      <message name="IDS_SETTINGS_HOME_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected home address from Chrome.">
--      Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
-+      Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
+-      Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>.
++      Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>.
      </message>
      <message name="IDS_SETTINGS_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected work address from Chrome.">
--      Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
-+      Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
+-      Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>.
++      Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>MoltBrowser Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>.
      </message>
      <message name="IDS_SETTINGS_NAME_EMAIL_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected name and email address from Chrome.">
 -      You can edit your name in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account<ph name="END_LINK">&lt;/a&gt;</ph> <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph>
@@ -130,7 +130,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_ACTION_OK" desc="Okay action for the dialog that asks for confirmation to remove the selected home and work address from Chrome.">
        Remove
-@@ -884,16 +884,16 @@
+@@ -915,16 +915,16 @@
        Time range
      </message>
      <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_WITH_SYNC" desc="Description in the footer of the Delete Browsing Data dialog when the user is syncing.">
@@ -151,24 +151,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_CLEAR_BROWSING_HISTORY" desc="Checkbox for deleting Browsing History">
        Browsing history
-@@ -902,13 +902,13 @@
-       Signs you out of most sites
-     </message>
-     <message name="IDS_SETTINGS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC_WITH_EXCEPTION" desc="A summary for the 'Cookies and site data' option in the 'Delete Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites but your Google sign in will stay.">
--      Signs you out of most sites. You'll stay signed in to your Google Account so your synced data can be deleted.
-+      Signs you out of most sites. You'll stay signed in to your MoltBrowser Account so your synced data can be deleted.
-     </message>
-     <message name="IDS_SETTINGS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC_SUPERVISED_PROFILE" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the the child user out of most websites but your Google account and Family Link settings will stay .">
--      Signs you out of most sites. You'll stay signed in to your Google Account so your Family Link settings for Chrome apply.
-+      Signs you out of most sites. You'll stay signed in to your MoltBrowser Account so your Family Link settings for MoltBrowser apply.
-     </message>
-     <message name="IDS_SETTINGS_CLEAR_COOKIES_AND_SITE_DATA_SUMMARY_BASIC_SIGNED_IN_PROFILE" desc="A summary for the 'Cookies and site data' option in the 'Clear Browsing Data' screen, explaining that deleting cookies and site data will sign the user out of most websites but your Google sign in will stay.">
--      Signs you out of most sites. You'll stay signed in to your Google Account.
-+      Signs you out of most sites. You'll stay signed in to your MoltBrowser Account.
-     </message>
-     <message name="IDS_SETTINGS_CLEAR_BROWSING_HISTORY_SUMMARY" desc="A subtext for the basic tab explaining browsing history.">
-       Deletes history, including in the search box
-@@ -917,10 +917,10 @@
+@@ -936,10 +936,10 @@
        Deletes history from all synced devices
      </message>
      <message name="IDS_SETTINGS_CLEAR_GOOGLE_SEARCH_HISTORY_GOOGLE_DSE" desc="A description explaining that search history and other forms of activity can be cleared through the Google account.">
@@ -181,7 +164,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_CLEAR_DOWNLOAD_HISTORY" desc="Checkbox for deleting Download History">
        Download history
-@@ -1425,10 +1425,10 @@
+@@ -1447,10 +1447,10 @@
        Sites you visit can verify that you're a real person and not a bot
      </message>
      <message name="IDS_SETTINGS_ANTI_ABUSE_WHEN_ON_SECTION_ONE" desc="A description that informs users that Chrome saves a small amount of data when the anti-abuse features are enabled.">
@@ -194,50 +177,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_ANTI_ABUSE_WHEN_ON_SECTION_THREE" desc="A description that informs users how their browsing could be helped by the anti-abuse features.">
        Browsing is faster because a site is less likely to ask you to verify you're a real person
-@@ -1483,7 +1483,7 @@
-     <!-- Privacy Sandbox v4 - Topics Page -->
-     <!-- Where possible, these strings have been unified on Desktop & Android in privacy_sandox_strings.grdp. The strings here either only appear on one platform, or have platform specific requirements, e.g. the format of placeholders, and so cannot be unified. For the latter case, they have corresponding _CANONICAL representations used when consent is recorded on either platform, and so they must stay in sync -->
-     <message name="IDS_SETTINGS_TOPICS_PAGE_CURRENT_TOPICS_REGION_A11Y_DESCRIPTION" desc="An explanation read by screen readers that describes the list of topics.">
--      List of topics estimated by Chrome based on your recent browsing history
-+      List of topics estimated by MoltBrowser based on your recent browsing history
-     </message>
-     <message name="IDS_SETTINGS_TOPICS_PAGE_BLOCKED_TOPICS_REGION_A11Y_DESCRIPTION" desc="Read by screen readers to describe the list of blocked topics.">
-       List of topics you blocked that you don't want shared with sites
-@@ -1505,7 +1505,7 @@
-       Sites
-     </message>
-     <message name="IDS_SETTINGS_FLEDGE_PAGE_CURRENT_SITES_DESCRIPTION" desc="A paragraph beneath the 'Sites' label. It explains how users can control the sites that appear in the list. * 'block sites': When a user blocks a site, that site may no longer save info with Chrome about the user's visit. As the user continues to browse, they will not see ads suggested by the blocked site. * 'auto-deletes': We included the 'auto' to reinforce that this is part of a system and the deletion is done regularly.">
--      You can block sites you don't want. Chrome also auto-deletes sites from the list that are older than 30 days.
-+      You can block sites you don't want. MoltBrowser also auto-deletes sites from the list that are older than 30 days.
-     </message>
-     <message name="IDS_SETTINGS_FLEDGE_PAGE_CURRENT_SITES_DESCRIPTION_LEARN_MORE" desc="A button label that opens a dialog box allowing the user to learn more about the Site-suggested ads setting.">
-       Learn more
-@@ -1550,13 +1550,13 @@
-       More about site-suggested ads
-     </message>
-     <message name="IDS_SETTINGS_FLEDGE_PAGE_LEARN_MORE_BULLET_1" desc="1 of 3 paragraphs on the Learn more page for Site-suggested ads. * 'It's common...' this sentence is intended to be reassuring. Many sites the user visits are retaining some information about the user, such as their preferred language if the site has a language picker. If cookies are allowed, this info might be stored with a first-party cookie on the user's device. Sites can also store limited information with Chrome.">
--      It's common for sites you visit to remember things you're interested in, to personalize your experience. Sites can also store information with Chrome about your interests.
-+      It's common for sites you visit to remember things you're interested in, to personalize your experience. Sites can also store information with MoltBrowser about your interests.
-     </message>
-     <message name="IDS_SETTINGS_FLEDGE_PAGE_LEARN_MORE_BULLET_2" desc="2 of 3 paragraphs on the Learn more page for Site-suggested ads.">
-       For example, if you visit a site that sells long-distance running shoes, the site might decide that you're interested in running marathons. Later, if you visit a different site, that site can show you an ad for running shoes suggested by the first site.
-     </message>
-     <message name="IDS_SETTINGS_FLEDGE_PAGE_LEARN_MORE_BULLET_3" desc="3 of 3 paragraphs on the Learn more page for Site-suggested ads. * 'Auto-deletes': This could just read 'Chrome deletes...' but we include the 'auto' to suggest that the deletion happens regularly and as part of the system. * 'A site you visit again...': We want to reassure the user. We just told them sites are automatically deleted. And yet, a user might see the same site in the list month after month if they visit that site regularly.">
--      Chrome auto-deletes sites that are older than 30 days. A site you visit again might reappear on the list. Or you can block a site from suggesting ads for you. Learn more about <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>managing your ad privacy in Chrome.<ph name="END_LINK">&lt;/a&gt;</ph>
-+      MoltBrowser auto-deletes sites that are older than 30 days. A site you visit again might reappear on the list. Or you can block a site from suggesting ads for you. Learn more about <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>managing your ad privacy in MoltBrowser.<ph name="END_LINK">&lt;/a&gt;</ph>
-     </message>
-     <message name="IDS_SETTINGS_FLEDGE_PAGE_CURRENT_SITES_DESCRIPTION_LEARN_MORE_A11Y_LABEL" desc="Text read by screen readers to help users distinguish this 'Learn more' link from others that might get added to this page.">
-       Learn more about site-suggested ads
-@@ -1585,7 +1585,7 @@
-       You can always delete ad-measurement data by deleting your browsing data
-     </message>
-     <message name="IDS_SETTINGS_AD_MEASUREMENT_PAGE_CONSIDER_BULLET_2" desc="2 of 3 bullets in the 'Things to consider' section that describes the Ad measurement setting.">
--      Chrome limits the total amount of data that sites can share through the browser to measure ad performance
-+      MoltBrowser limits the total amount of data that sites can share through the browser to measure ad performance
-     </message>
- 
-     <!-- Privacy Guide -->
-@@ -1644,7 +1644,7 @@
+@@ -1510,7 +1510,7 @@
        Web &#38; App Activity
      </message>
      <message name="IDS_SETTINGS_PRIVACY_GUIDE_COMPLETION_CARD_AI_SETTINGS_LABEL" desc="Text of the AI Innovations sublabel in the completion card of the 'Privacy Guide'.">
@@ -246,7 +186,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_PRIVACY_GUIDE_MSBB_CARD_HEADER" desc="Header of the 'make searches and browsing better' card in the 'Privacy Guide'.">
        Choose your search and browsing quality
-@@ -1680,7 +1680,7 @@
+@@ -1546,7 +1546,7 @@
        If Google is also your default search engine, you'll see better, contextually relevant suggestions
      </message>
      <message name="IDS_SETTINGS_PRIVACY_GUIDE_HISTORY_SYNC_PRIVACY_DESCRIPTION1" desc="A part of the privacy description of history sync in the 'Privacy guide'.">
@@ -255,7 +195,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_PRIVACY_GUIDE_COOKIES_CARD_HEADER" desc="Header of the cookies card in the 'Privacy guide'.">
        Choose your third-party cookie preferences
-@@ -1695,7 +1695,7 @@
+@@ -1561,7 +1561,7 @@
        Also sends a small sample of pages, downloads, extension activity, and system information to help discover new threats
      </message>
      <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_ENHANCED_PROTECTION_PRIVACY_DESCRIPTION3" desc="A part of the privacy description of the enhanced protection section of the safe browsing card in the 'Privacy guide'.">
@@ -264,7 +204,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_STANDARD_PROTECTION_FEATURE_DESCRIPTION1" desc="A part of the feature description of the standard protection section of the safe browsing card in the 'Privacy guide'.">
        Detects and warns you about dangerous events when they happen
-@@ -1705,7 +1705,7 @@
+@@ -1571,7 +1571,7 @@
          Sends an obfuscated portion of the URL to Google through a privacy server that hides your IP address
        </message>
        <message name="IDS_SETTINGS_PRIVACY_GUIDE_SAFE_BROWSING_CARD_STANDARD_PROTECTION_PRIVACY_DESCRIPTION1_PROXY" desc="A part of the privacy description of the standard protection section of the safe browsing card in the 'Privacy Guide'.">
@@ -273,7 +213,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
      </if>
  
-@@ -1806,10 +1806,10 @@
+@@ -1672,10 +1672,10 @@
        Safe Browsing (protects you and your device from dangerous sites)
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_ENABLEPROTECTION_DESC" desc="Checkbox label: should Chrome protect user and user's device from dangerous sites">
@@ -286,7 +226,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_SECTION_LABEL" desc="The section label of the safe browsing section grouping safe browsing settings">
        Safe Browsing
-@@ -1818,7 +1818,7 @@
+@@ -1684,7 +1684,7 @@
        Enhanced protection
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_DESC_UPDATED" desc="Description of safe browsing enhanced protection mode">
@@ -295,7 +235,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_EXPAND_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the detailed description of safe browsing enhanced protection. Only visible by screen reader software.">
        Show enhanced protection details
-@@ -1833,22 +1833,22 @@
+@@ -1699,22 +1699,22 @@
        Warns you if passwords are exposed in a data breach
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_BULLET_FIVE" desc="Bullet point under the safe browsing enhanced protection mode">
@@ -322,7 +262,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_THREE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
        Doesn't noticeably slow down your browser or device.
-@@ -1857,14 +1857,14 @@
+@@ -1723,14 +1723,14 @@
        Standard protection
      </message>
      <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_DESC" desc="Description for safe browsing standard protection mode">
@@ -340,7 +280,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
      </if>
      <message name="IDS_SETTINGS_SAFEBROWSING_STANDARD_EXPAND_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the detailed description of safe browsing standard protection. Only visible by screen reader software.">
-@@ -1939,7 +1939,7 @@
+@@ -1811,7 +1811,7 @@
        Enhanced
      </message>
      <message name="IDS_SETTINGS_SECURITY_SAFE_BROWSING_TITLE" desc="Name of Safe Browsing security setting">
@@ -349,7 +289,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SECURITY_SAFE_BROWSING_DESCRIPTION" desc="Description of the Safe Browsing security setting">
        Protects you from dangerous sites, downloads, and extensions
-@@ -1972,7 +1972,7 @@
+@@ -1844,7 +1844,7 @@
        Enhanced Protection
      </message>
      <message name="IDS_SETTINGS_SECURITY_SAFE_BROWSING_ENHANCED_SUBTITLE" desc="Description of Safe Browsing enhanced protection">
@@ -358,7 +298,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SECURITY_BUNDLE_ENHANCED_BULLET_TWO" desc="Second bullet point under the security settings enhanced bundle section">
        Google uses more data (for example, URLs, samples of page content, system information) to detect threats faster and more accurately
-@@ -2112,7 +2112,7 @@
+@@ -1984,7 +1984,7 @@
        Manage HTTPS/SSL certificates and settings
      </message>
  
@@ -367,7 +307,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      <message name="IDS_SETTINGS_MANAGE_DEVICE_CERTIFICATES" desc="Text for manage device certificates button in Privacy options">
        Manage device certificates
      </message>
-@@ -2229,10 +2229,10 @@
+@@ -2101,10 +2101,10 @@
      </message>
  
      <!-- Reset Settings Page -->
@@ -380,7 +320,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        Reset settings
      </message>
      <message name="IDS_SETTINGS_RESET_SETTINGS_TRIGGER" desc="The label describing the 'reset profile setting' feature">
-@@ -2242,10 +2242,10 @@
+@@ -2114,10 +2114,10 @@
        Learn more about resetting settings
      </message>
      <message name="IDS_SETTINGS_RESET_AUTOMATED_DIALOG_V2_TITLE" desc="The title of the dialog informing the user that automated resetting of some settings occurred.">
@@ -393,7 +333,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_RESET_PINNED_TABS" desc="A string that is used to describe the pinned tabs setting.">
        Pinned tabs
-@@ -2375,7 +2375,7 @@
+@@ -2253,7 +2253,7 @@
        Site search
      </message>
      <message name="IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION" desc="Explanation for 'Site Search' section. Used interchangeably with IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION_STARTER_PACK">
@@ -402,7 +342,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SEARCH_ENGINES_NO_SITES_ADDED" desc="Text shown when the 'Site Search' section is empty">
        No sites added
-@@ -2390,7 +2390,7 @@
+@@ -2268,7 +2268,7 @@
        Extensions
      </message>
      <message name="IDS_SETTINGS_SEARCH_ENGINES_EXTENSION_ENGINES_EXPLANATION" desc="Explanation for a section that displays search engines added by extensions">
@@ -411,7 +351,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SEARCH_ENGINES_NAME" desc="Label for a table column that holds the name of a search engine or site search provider">
        Name
-@@ -3063,7 +3063,7 @@
+@@ -2944,7 +2944,7 @@
      </if>
      <if expr="is_win and _google_chrome">
        <message name="IDS_SETTINGS_SITE_SETTINGS_PROTECTED_CONTENT_IDENTIFIERS_ALLOWED_SUB_LABEL" desc="A subtitle for the ‘Protected Content IDs’ setting, shown if user chooses to allow Protected Content IDs. This text explains that enabling protected content IDs may result in live captioning not working.">
@@ -420,7 +360,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
      </if>
      <message name="IDS_SETTINGS_SITE_SETTINGS_PROTOCOL_HANDLERS_DESCRIPTION" desc="Description of the protocol handlers content setting.">
-@@ -3262,7 +3262,7 @@
+@@ -3155,7 +3155,7 @@
        Insecure content is blocked by default on secure sites
      </message>
      <message name="IDS_SETTINGS_SITE_SETTINGS_PDF_DOWNLOAD_PDFS" desc="Label for downloading PDF documents instead of automatically opening them in Chrome.">
@@ -429,7 +369,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SITE_SETTINGS_RECENT_ACTIVITY" desc="Label for the section which contains the user's recent permissions changes">
        Recent activity
-@@ -3556,7 +3556,7 @@
+@@ -3440,7 +3440,7 @@
        No sites added
      </message>
      <message name="IDS_SETTINGS_SITE_SETTINGS_BLOCK_AUTOPLAY" desc="A label for a toggle in site settings to block autoplay. If the toggle is on then Chrome will block autoplay by default and use an algorithm to determine which sites should still be able to autoplay. If the toggle is off then autoplay will be enabled for all sites.">
@@ -438,7 +378,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SITE_SETTINGS_EMPTY_ALL_SITES_PAGE" desc="Explanation shown when there are no sites that have appeared yet on the All Sites page.">
        Sites you visit will appear here
-@@ -3739,8 +3739,8 @@
+@@ -3623,8 +3623,8 @@
      </message>
  
      <!-- Sync / People Page -->
@@ -449,7 +389,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_CHANGE_PICTURE_PROFILE_PHOTO" desc="The text on the Google profile photo of the user.">
        Google Profile photo
-@@ -3750,7 +3750,7 @@
+@@ -3634,7 +3634,7 @@
        Verify it's you
      </message>
      <message name="IDS_SETTINGS_TURN_OFF_SYNC_MANAGED_PROFILE_EXPLANATION" desc="The text to display in the 'Turn Sync off' dialog to stop syncing for managed profiles.">
@@ -458,7 +398,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_TURN_OFF_SYNC_AND_SIGN_OUT_DIALOG_TITLE" desc="The text to display on the title of the dialog to turn off sync and sign out.">
        Turn off sync and personalization?
-@@ -3799,11 +3799,11 @@
+@@ -3683,11 +3683,11 @@
        Your account
      </message>
      <message name="IDS_SETTINGS_ACCOUNT_DATATYPES_HEADING" desc="Heading of the section in the account settings page for managing data types.">
@@ -472,7 +412,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
      </if>
      <if expr="is_chromeos">
-@@ -3820,12 +3820,12 @@
+@@ -3704,12 +3704,12 @@
      <message name="IDS_SETTINGS_ACCOUNT_HISTORY_TOGGLE_SUB_LABEL_OFF" desc="Subtitle describing the effects of turning on the merged toggle in the account settings page, combining the data types history, tabs, and saved tab groups. Shown on next to the toggle that controls whether these data types should be saved in the Google Account and synced across devices. Shown only if the toggle is off.">
        Turn on to get your browsing history and tabs from other devices
      </message>
@@ -488,7 +428,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SYNC_DISCONNECT_AND_SIGN_OUT_EXPLANATION" desc="The text to display in the Sign out of Chrome dialog to stop syncing and sign-out for non-managed profiles.">
        This will sign you out of your Google Accounts. Your bookmarks, history, passwords, and more will no longer be synced.
-@@ -3837,7 +3837,7 @@
+@@ -3721,7 +3721,7 @@
        Show profile stats
      </message>
      <message name="IDS_SETTINGS_ENCRYPT_WITH_SYNC_PASSPHRASE_LABEL" desc="Label for the radio button which, when selected, causes synced settings to be encrypted with a user-provided password.">
@@ -497,7 +437,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_PASSPHRASE_EXPLANATION_TEXT" desc="Message shown when explicit passphrase is selected.">
        Only someone with your passphrase can read your encrypted data. The passphrase is not sent to or stored by Google. If you forget your passphrase or want to change this setting, you'll need to <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;<ex>&lt;a href="$1" target=&quot;_blank&quot;&gt;</ex></ph>reset sync<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>.
-@@ -3873,16 +3873,16 @@
+@@ -3757,16 +3757,16 @@
        Ask every time
      </message>
      <message name="IDS_SETTINGS_GOOGLE_ACCOUNT" desc="Label for the section that takes the user to the Google Account website from Related Google services.">
@@ -517,7 +457,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
      </if>
  
-@@ -3978,7 +3978,7 @@
+@@ -3862,7 +3862,7 @@
        When you ask questions about your history, you can get answers about specific information from a page you visited
      </message>
      <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_CONSIDER_DATA_ENCRYPTED" desc="This is a bullet point in the ‘Things to consider’ column, which describes things users should consider about a feature. This string explains that AI features will save data to the user’s device in order to provide the feature’s respective benefit. The data will be appropriately encrypted for security. The tone should be informative.">
@@ -526,7 +466,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_CONSIDER_OUTDATED" desc="This is a bullet point in the ‘Things to consider’ column, which describes things users should consider about a feature. This string explains that history search results and answers powered by AI may become outdated since they are dependent on the user's last visit to the page contents.">
        AI-powered history search results and answers may become outdated if site content has changed since your last visit
-@@ -4073,16 +4073,16 @@
+@@ -3957,16 +3957,16 @@
          </message>
        </if>
        <message name="IDS_SETTINGS_SYSTEM_FEATURE_NOTIFICATIONS_LABEL" desc="Label for the toggle that enables Chrome system notifications about features.">
@@ -546,7 +486,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
        <message name="IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_YOUR_ORGANIZATION_LABEL" desc="Non-interactive label that describes when Chrome's proxy settings are overwritten by the user's organization. This is used in place of IDS_SETTINGS_SYSTEM_PROXY_SETTINGS_LABEL above.">
          Your organization
-@@ -4099,7 +4099,7 @@
+@@ -3983,7 +3983,7 @@
          On-device AI
        </message>
        <message name="IDS_SETTINGS_SYSTEM_FEATURE_ON_DEVICE_AI_ENABLED_SUB_LABEL" desc="This string describes what turning off the toggle implies.">
@@ -555,7 +495,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
        <message name="IDS_SETTINGS_SYSTEM_ON_DEVICE_AI_LINK_SUBTITLE" desc="Subtitle for the link row that points to the on-device AI settings.">
          Choose whether Chrome uses AI models that run directly on your device
-@@ -4374,10 +4374,10 @@
+@@ -4258,10 +4258,10 @@
        No weak or reused passwords
      </message>
      <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_CHECK_SUBHEADER_SIGN_IN" desc="This text conveys to the user that they currently do not have the full protection for their passwords and informs the user that additional protection (in form of Chrome checking whether saved passwords are compromised) is available by signing into Chrome. Compromised passwords are concepts in Chrome Password Manager, this should be translated the same way. It is shown only to signed-out users. This text appears in the subtitle of the passwords card on the Safety Hub page, below a title that lists already known password issues. The title above this may read e.g. '2 weak passwords', or 'No weak or reused passwords').">
@@ -568,7 +508,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_CHECK_HEADER_NO_PASSWORDS" desc="This text is the header of the passwords card of SafetyHub when the user has no passwords saved in Chrome. Below this text there is a subheader that give the user more details: 'Chrome can check your passwords when you save them' or 'Your organization turned off saving passwords'. The card this text is part of is in a neutral state.">
        No saved passwords
-@@ -4386,13 +4386,13 @@
+@@ -4270,13 +4270,13 @@
        Your organization turned off saving passwords
      </message>
      <message name="IDS_SETTINGS_SAFETY_HUB_PASSWORD_NAVIGATION_ARIA_LABEL" desc="Safety Check settings page (chrome://settings/safetyCheck) gives users an overview over their safety status. Password card in this page shows if there is any insecure password stored. This string is for the accesibility label for the card to call out where to navigation will happen (chrome://password-manager/passwords) if the card is clicked.">
@@ -584,7 +524,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
      </message>
      <message name="IDS_SETTINGS_SAFETY_HUB_SB_ON_STANDARD_HEADER" desc="Safety Hub settings page (chrome://settings/safetyHub) gives users an overview over their safety status. Safe browsing card in this page shows the current state of Safe browsing setting (chrome://settings/security). This string is the headline of the Safe Browsing card when the current state is Standard protection.">
        Safe Browsing is on
-@@ -4505,7 +4505,7 @@
+@@ -4389,7 +4389,7 @@
          AI in Chrome
        </message>
        <message name="IDS_SETTINGS_AI_PAGE_MAIN_SUBLABEL_3" desc="This is a bullet point on a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write and more. This bullet point is after the ‘Reimagine Chrome, supercharged with AI’ title and ‘Things to consider’ subheading. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. This bullet point specifically notes that AI features are actively developing and results may include errors. The tone should be informative.">
@@ -593,7 +533,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
        <message name="IDS_SETTINGS_AI_PAGE_MAIN_MANAGED_LEARN_MORE_ACCESSIBILITY_LABEL" desc="This string is found in a link that takes the user to the AI features and policies help center article when the user taps it. The tone should be informative">
          Learn more about using generative AI at work
-@@ -4528,13 +4528,13 @@
+@@ -4412,13 +4412,13 @@
          Automated Password Change
        </message>
        <message name="IDS_SETTINGS_PASSWORD_CHANGE_SUBLABEL" desc="Sublabel for password change entry in settings. The description of the feature beneath the “Automated password change” feature title. This and the bullets beneath this paragraph represent the full description of the feature. * “public” does two things: 1) it provides distance between “Chrome” and “data breach”, because we don’t want users to associate the breach with Chrome (Chrome didn’t have a data leak, 2) and related, it might reassure the user to know that Chrome is using public information to establish these lists of compromised passwords. * “Google Password Manager can offer…”: The user has to agree to have this feature update their password for them each time. So Google Password Manager is ‘offering’ to do something for the user.">
@@ -610,7 +550,7 @@ index f1e1c55ad17ba63fa927e5999f0b64885438e726..8ba189dce79827fea6e0a98be40f710d
        </message>
        <message name="IDS_SETTINGS_PASSWORD_CHANGE_EXPERIMENTAL" desc="One of the things to consider when using the feature.">
          This feature uses AI and is experimental
-@@ -4564,7 +4564,7 @@
+@@ -4448,7 +4448,7 @@
  
    <!-- Experimental settings strings -->
    <message name="IDS_SETTINGS_AI_PAGE_MAIN_TITLE" desc="This string is the title of a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write and more. This title is before the ‘Things to consider’ subheading and bullet points. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. The tone should be motivating." formatter_data="android_java">

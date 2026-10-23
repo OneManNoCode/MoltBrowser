@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc b/chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc
-index bd4ffef021131d6e8e2034b1541f715e32a25e63..e7d477508ea091c3b49135ade1f46138daf9eb1e 100644
+index 23d27ff6aaacab5e16833d482e878d119173b4c9..146bf3807234b4a3c576c5bc676b02266a8115ed 100644
 --- a/chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc
 +++ b/chrome/browser/lookalikes/lookalike_url_navigation_throttle.cc
 @@ -25,6 +25,7 @@
@@ -16,7 +16,7 @@ index bd4ffef021131d6e8e2034b1541f715e32a25e63..e7d477508ea091c3b49135ade1f46138
  #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/profiles/profile_selections.h"
-@@ -84,9 +85,16 @@ bool IsLookalikeUrl(Profile* profile,
+@@ -86,9 +87,16 @@ bool IsLookalikeUrl(Profile* profile,
                      GURL* suggested_url,
                      base::TimeDelta* get_domain_info_duration) {
    DCHECK(get_domain_info_duration->is_zero());

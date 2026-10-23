@@ -1,14 +1,14 @@
 MoltBrowser patch for extensions/browser/permissions/active_tab_permission_granter.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/extensions/browser/permissions/active_tab_permission_granter.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/extensions/browser/permissions/active_tab_permission_granter.cc b/extensions/browser/permissions/active_tab_permission_granter.cc
-index 1b298e1007b0c3b561456d9415bd8ff89a5b78cb..0ac1a55d32c87ce86ce7ca50bab944f01a154077 100644
+index 37bd0fc5f3e7dd7be541fd60c889176b9a0dc452..833ca60fdcac910c6ccc0805a69b7422fb7f434b 100644
 --- a/extensions/browser/permissions/active_tab_permission_granter.cc
 +++ b/extensions/browser/permissions/active_tab_permission_granter.cc
-@@ -132,6 +132,12 @@ ActiveTabPermissionGranter::ActiveTabPermissionGranter(
+@@ -133,6 +133,12 @@ ActiveTabPermissionGranter::ActiveTabPermissionGranter(
  ActiveTabPermissionGranter::~ActiveTabPermissionGranter() = default;
  
  void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {

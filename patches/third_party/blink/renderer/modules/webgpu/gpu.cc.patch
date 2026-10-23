@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/modules/webgpu/gpu.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/modules/webgpu/gpu.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/modules/webgpu/gpu.cc b/third_party/blink/renderer/modules/webgpu/gpu.cc
-index 2052ca551498afd1cdabeaafaddffb79e7f5c7b3..c0c92325e121eec399c59d8f6eb2a93de952c7f4 100644
+index 74daeb175a01ce3a010cfd70b409445df5a92fb7..3cc34df552c95d48184cbac1c66aea81cc929d1b 100644
 --- a/third_party/blink/renderer/modules/webgpu/gpu.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu.cc
 @@ -29,6 +29,7 @@
@@ -16,7 +16,7 @@ index 2052ca551498afd1cdabeaafaddffb79e7f5c7b3..c0c92325e121eec399c59d8f6eb2a93d
  #include "third_party/blink/renderer/modules/webgpu/dawn_enum_conversions.h"
  #include "third_party/blink/renderer/modules/webgpu/gpu_adapter.h"
  #include "third_party/blink/renderer/modules/webgpu/gpu_buffer.h"
-@@ -268,6 +269,15 @@ void GPU::RequestAdapterImpl(
+@@ -264,6 +265,15 @@ void GPU::RequestAdapterImpl(
      return;
    }
  

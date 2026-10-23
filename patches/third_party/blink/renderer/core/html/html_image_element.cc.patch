@@ -1,14 +1,14 @@
 MoltBrowser patch for third_party/blink/renderer/core/html/html_image_element.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/html/html_image_element.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/html/html_image_element.cc b/third_party/blink/renderer/core/html/html_image_element.cc
-index 2c0aef4955706b176587027856e907bae301f567..e83c3896b93358704301aeb9ef6b90b20770561e 100644
+index fe433f7507481d8f7e9eb2f57ec17a37a5b0902d..fea8c73f47fcb8b835061afbd08cdc29ce2f9ff3 100644
 --- a/third_party/blink/renderer/core/html/html_image_element.cc
 +++ b/third_party/blink/renderer/core/html/html_image_element.cc
-@@ -69,6 +69,7 @@
+@@ -71,6 +71,7 @@
  #include "third_party/blink/renderer/core/loader/resource/image_resource.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
  #include "third_party/blink/renderer/core/media_type_names.h"
@@ -16,7 +16,7 @@ index 2c0aef4955706b176587027856e907bae301f567..e83c3896b93358704301aeb9ef6b90b2
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/paint/timing/paint_timing.h"
-@@ -550,9 +551,11 @@ ImageCandidate HTMLImageElement::FindBestFitImageFromPictureParent() {
+@@ -536,9 +537,11 @@ ImageCandidate HTMLImageElement::FindBestFitImageFromPictureParent() {
      if (!source->MediaQueryMatches())
        continue;
  
@@ -30,7 +30,7 @@ index 2c0aef4955706b176587027856e907bae301f567..e83c3896b93358704301aeb9ef6b90b2
      if (candidate.IsEmpty())
        continue;
      source_ = source;
-@@ -1075,9 +1078,11 @@ void HTMLImageElement::SelectSourceURL(
+@@ -1061,9 +1064,11 @@ void HTMLImageElement::SelectSourceURL(
    if (candidate.IsEmpty()) {
      const float source_size{SourceSize(*this)};
  

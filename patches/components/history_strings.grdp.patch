@@ -1,11 +1,11 @@
 MoltBrowser patch for components/history_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/history_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/history_strings.grdp b/components/history_strings.grdp
-index a4f3f18ed2d22ac2679f4494ec8a0f920b45d359..4715fdd25c57e2e25f64f877ac50312f775a1570 100644
+index c80fa408ffa77eab18eb5ea8172479b2f095f984..92c582d1750e58ce1f321f93f21fb356f369e1cf 100644
 --- a/components/history_strings.grdp
 +++ b/components/history_strings.grdp
 @@ -45,13 +45,13 @@
@@ -25,7 +25,7 @@ index a4f3f18ed2d22ac2679f4494ec8a0f920b45d359..4715fdd25c57e2e25f64f877ac50312f
    </message>
    <message name="IDS_HISTORY_LOADING" desc="Text shown when we're loading the user's history">
      Loading...
-@@ -198,7 +198,7 @@
+@@ -194,7 +194,7 @@
      Get answers from your history, powered by AI
    </message>
    <message name="IDS_HISTORY_EMBEDDINGS_ANSWERS_PROMO_BODY" desc="On the history page, the body text of the promo for history search powered by AI with answerer." translateable="false">
@@ -34,7 +34,7 @@ index a4f3f18ed2d22ac2679f4494ec8a0f920b45d359..4715fdd25c57e2e25f64f877ac50312f
    </message>
    <message name="IDS_HISTORY_EMBEDDIGNS_PROMO_SETTINGS_LINK_TEXT" desc="On the history page, the text of the link to edit the user's history search setting." translateable="false">
      Manage your history search setting
-@@ -293,7 +293,7 @@
+@@ -289,7 +289,7 @@
      Comparison tables
    </message>
    <message name="IDS_COMPARE_HISTORY_INFO" desc="Info disclaimer text for comparison tables tab in history.">

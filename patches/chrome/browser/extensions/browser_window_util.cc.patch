@@ -1,22 +1,22 @@
 MoltBrowser patch for chrome/browser/extensions/browser_window_util.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/extensions/browser_window_util.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/extensions/browser_window_util.cc b/chrome/browser/extensions/browser_window_util.cc
-index 68a28857c6db85b9dc756affd8030b889dd90c23..b213a08f9820382beceaec0825f0c779342358a4 100644
+index c6f2c6e6fe6ce065a17227808170fbec0e1dce66..b428d93288d4ed5c57cab7277d1103a9db06123a 100644
 --- a/chrome/browser/extensions/browser_window_util.cc
 +++ b/chrome/browser/extensions/browser_window_util.cc
-@@ -7,6 +7,7 @@
- #include <algorithm>
- #include <vector>
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/extensions/browser_window_util.h"
  
 +#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/profiles/profile.h"
- #include "chrome/browser/tab_list/tab_list_interface.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-@@ -39,6 +40,11 @@ bool BrowserMatchesHelper(BrowserWindowInterface& browser,
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+@@ -30,6 +31,11 @@ bool BrowserMatchesHelper(BrowserWindowInterface& browser,
          !profile.IsSameOrParent(browser.GetProfile())) {
        return false;
      }

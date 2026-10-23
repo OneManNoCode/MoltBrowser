@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/resources/settings/settings_main/settings_main.html
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/resources/settings/settings_main/settings_main.html by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
-index 703394559fbf325542e67245d87fd0585442b706..f9005093018e02c5364145491d784c5fad9c2f66 100644
+index 2ef4dcad53f0e98803ec4cba596a0e01e64e49fc..262948076be4db3dfd37c55319c42848f7e3c038 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.html
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.html
 @@ -32,6 +32,61 @@
@@ -70,7 +70,7 @@ index 703394559fbf325542e67245d87fd0585442b706..f9005093018e02c5364145491d784c5f
  </style>
  <div id="noSearchResults" hidden$="[[!showNoResultsFound_]]">
    <div>$i18n{searchNoResults}</div>
-@@ -54,6 +109,35 @@
+@@ -48,6 +103,35 @@
    </settings-reset-profile-banner>
  </template>
  

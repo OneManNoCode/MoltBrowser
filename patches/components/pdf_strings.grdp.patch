@@ -1,14 +1,14 @@
 MoltBrowser patch for components/pdf_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/pdf_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/pdf_strings.grdp b/components/pdf_strings.grdp
-index 5f1701eaa2465d8c0e67f9dfe804f95a9e0eb318..6876d1c2a35c7b02bbac24659fea9ecb2bf27213 100644
+index ede6d347d46ee9725128a750ff902bdb7b778b1e..52937d838ec47362aa08f2a632451175eb0d8b60 100644
 --- a/components/pdf_strings.grdp
 +++ b/components/pdf_strings.grdp
-@@ -438,7 +438,7 @@
+@@ -450,7 +450,7 @@
          Your Google Drive storage is full
        </message>
        <message name="IDS_SAVE_TO_DRIVE_DIALOG_SUCCESS_MESSAGE" desc="A message telling the user can find their newly uploaded file in the bolded folder name in Google Drive. 'Save from Chrome' is a folder name example.">

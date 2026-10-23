@@ -1,23 +1,23 @@
 MoltBrowser patch for chrome/browser/net/profile_network_context_service.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/net/profile_network_context_service.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
-index c9ae7f58abdc9e650501363db9da48231ffecc15..709fc9444a82754bdf00df3f86a675313fd17e8e 100644
+index 028fe9924cdbfe586c8a0029ac27d53746f995ff..b82d202b93758ec443552109c4b6c4a82e57154d 100644
 --- a/chrome/browser/net/profile_network_context_service.cc
 +++ b/chrome/browser/net/profile_network_context_service.cc
-@@ -38,6 +38,8 @@
+@@ -37,6 +37,8 @@
+ #include "chrome/browser/content_settings/cookie_settings_factory.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
  #include "chrome/browser/domain_reliability/service_factory.h"
- #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
- #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
 +#include "chrome/browser/molt_ai/tor/molt_net_network_context_policy.h"  // MoltBrowser
 +#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/net/system_network_context_manager.h"
- #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -224,6 +226,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
+ #include "chrome/browser/signin/signin_util.h"
+@@ -220,6 +222,14 @@ bool IsAmbientAuthAllowedForProfile(Profile* profile) {
      return true;
    }
  
@@ -32,7 +32,7 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..709fc9444a82754bdf00df3f86a67531
    // Non-primary OTR profiles are not used to create browser windows and are
    // only technical means for a task that does not need to leave state after
    // it's completed.
-@@ -256,7 +266,10 @@ void UpdateAntiAbuseSettings(Profile* profile) {
+@@ -255,7 +265,10 @@ void UpdateAntiAbuseSettings(Profile* profile) {
    ContentSetting content_setting =
        HostContentSettingsMapFactory::GetForProfile(profile)
            ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);
@@ -44,7 +44,7 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..709fc9444a82754bdf00df3f86a67531
    profile->ForEachLoadedStoragePartition(
        [&](content::StoragePartition* storage_partition) {
          storage_partition->GetNetworkContext()->SetBlockTrustTokens(
-@@ -1063,6 +1076,13 @@ ProfileNetworkContextService::GetCertificatePolicyForView() {
+@@ -1054,6 +1067,13 @@ ProfileNetworkContextService::GetCertificatePolicyForView() {
  
  bool ProfileNetworkContextService::ShouldSplitAuthCacheByNetworkIsolationKey()
      const {
@@ -58,7 +58,7 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..709fc9444a82754bdf00df3f86a67531
    if (profile_->GetPrefs()->GetBoolean(
            prefs::kGloballyScopeHTTPAuthCacheEnabled)) {
      return false;
-@@ -1378,6 +1398,15 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+@@ -1369,6 +1389,15 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
          net::HttpAuthPreferences::DISALLOW_DEFAULT_CREDENTIALS;
    }
  
@@ -74,7 +74,7 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..709fc9444a82754bdf00df3f86a67531
    network_context_params->cookie_manager_params =
        CreateCookieManagerParams(profile_, *cookie_settings_);
  
-@@ -1573,8 +1602,11 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+@@ -1567,8 +1596,11 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
    ContentSetting anti_abuse_content_setting =
        HostContentSettingsMapFactory::GetForProfile(profile_)
            ->GetDefaultContentSetting(ContentSettingsType::ANTI_ABUSE, nullptr);
@@ -85,5 +85,5 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..709fc9444a82754bdf00df3f86a67531
 +          molt_ai::tor::IsMoltNetProfile(profile_),
 +          anti_abuse_content_setting == CONTENT_SETTING_BLOCK);
  
-   network_context_params->first_party_sets_access_delegate_params =
-       network::mojom::FirstPartySetsAccessDelegateParams::New();
+   network_context_params->acam_preflight_spec_conformant =
+       profile_->GetPrefs()->GetBoolean(

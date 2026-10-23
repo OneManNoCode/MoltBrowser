@@ -1,17 +1,17 @@
 MoltBrowser patch for chrome/browser/prefs/session_startup_pref.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/prefs/session_startup_pref.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/prefs/session_startup_pref.cc b/chrome/browser/prefs/session_startup_pref.cc
-index dd071315efd8981c922123437115b2e7ee51ffcc..aa926758d73c0ff667a0156e154f414da52eb20f 100644
+index 0159cee9db245937c4c38ac58baa1d08e97713c0..8dcd8e017ac0b58a6055c99571e23f9cddc21415 100644
 --- a/chrome/browser/prefs/session_startup_pref.cc
 +++ b/chrome/browser/prefs/session_startup_pref.cc
-@@ -59,10 +59,15 @@ void SessionStartupPref::RegisterProfilePrefs(
- #else
+@@ -55,10 +55,15 @@ void URLListToPref(const base::ListValue& url_list, SessionStartupPref* pref) {
+ void SessionStartupPref::RegisterProfilePrefs(
+     user_prefs::PrefRegistrySyncable* registry) {
    uint32_t flags = user_prefs::PrefRegistrySyncable::SYNCABLE_PREF;
- #endif
 +  // MoltBrowser: Default startup type is URLS with MoltSearch as the URL.
    registry->RegisterIntegerPref(prefs::kRestoreOnStartup,
 -                                TypeToPrefValue(GetDefaultStartupType()),

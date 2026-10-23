@@ -1,11 +1,11 @@
 MoltBrowser patch for third_party/blink/renderer/core/css/resolver/style_resolver_state.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc b/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc
-index 391fbfe23cd08e6334653c6926c0ade7a05171d1..196311006bbad091785ffaf44c89c1f2b2e6d0d1 100644
+index e235367e6ec83d6017371769f9c7274b5c628889..e0164fb95a2f69b04f5cef05a256a65658bda24f 100644
 --- a/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc
 +++ b/third_party/blink/renderer/core/css/resolver/style_resolver_state.cc
 @@ -36,6 +36,7 @@

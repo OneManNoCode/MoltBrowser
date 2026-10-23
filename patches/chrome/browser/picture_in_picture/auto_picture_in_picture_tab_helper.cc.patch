@@ -1,31 +1,33 @@
 MoltBrowser patch for chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc b/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc
-index 0cb9dbe069df5998a83e3ef5ed2e5c20fd813acc..9e90831683e53640fda8eb05fc8053df970622a1 100644
+index 359dba00ed10188be14ebf9464c8c3e1b8fc626b..bf88b93beabbc8b2ef0dfe66606eed25d44542e0 100644
 --- a/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc
 +++ b/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc
-@@ -13,6 +13,7 @@
+@@ -14,6 +14,7 @@
  #include "chrome/browser/media/media_engagement_service.h"  // nogncheck crbug.com/422038808
  #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
  #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
-+#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
++#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
  #include "chrome/browser/permissions/permission_decision_auto_blocker_factory.h"
+ #include "chrome/browser/picture_in_picture/auto_picture_in_picture_safe_browsing_checker_client.h"
  #include "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_observer_helper_base.h"
- #include "chrome/browser/picture_in_picture/auto_picture_in_picture_window_occlusion_helper_base.h"
-@@ -700,8 +701,10 @@ bool AutoPictureInPictureTabHelper::IsEligibleForAutoPictureInPicture(
+@@ -716,8 +717,12 @@ bool AutoPictureInPictureTabHelper::IsEligibleForAutoPictureInPicture(
      }
      return false;
    } else if (setting == CONTENT_SETTING_ASK &&
 -             Profile::FromBrowserContext(web_contents()->GetBrowserContext())
--                 ->IsIncognitoProfile()) {
-+             // MoltBrowser: and in a MoltNet window
-+             // (molt_net_incognito_parity.h).
-+             molt_ai::tor::GetsIncognitoProtections(Profile::FromBrowserContext(
-+                 web_contents()->GetBrowserContext()))) {
+-                 ->IsPrimaryOTRProfileWithRegularParent()) {
++             (Profile::FromBrowserContext(web_contents()->GetBrowserContext())
++                  ->IsPrimaryOTRProfileWithRegularParent() ||
++              // MoltBrowser: and in a MoltNet window
++              // (molt_net_incognito_parity.h).
++              molt_ai::tor::IsMoltNetProfile(Profile::FromBrowserContext(
++                  web_contents()->GetBrowserContext())))) {
      blocked_due_to_content_setting_ = true;
  
      if (should_record_blocking_metrics) {

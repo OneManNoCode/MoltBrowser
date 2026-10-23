@@ -1,11 +1,11 @@
 MoltBrowser patch for components/omnibox_pedal_ui_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/omnibox_pedal_ui_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/omnibox_pedal_ui_strings.grdp b/components/omnibox_pedal_ui_strings.grdp
-index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3acab463f 100644
+index 480e8831d92379f3c9f0ade2812d186634fe6fcf..867829be631c9a6a8d1346270de0658babc5c7cc 100644
 --- a/components/omnibox_pedal_ui_strings.grdp
 +++ b/components/omnibox_pedal_ui_strings.grdp
 @@ -8,39 +8,39 @@
@@ -66,7 +66,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO" desc="Announcement when pedal action button is focused, LAUNCH_INCOGNITO">
      Open Incognito Window button, activate to open a new Incognito window to browse privately
-@@ -63,124 +63,124 @@
+@@ -76,124 +76,124 @@
      Translate this page with Google Translate
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_TRANSLATE_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to TRANSLATE.">
@@ -221,7 +221,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <message name="IDS_OMNIBOX_PEDAL_CREATE_GOOGLE_DOC_HINT" desc="The button text contents to suggest pedal action, CREATE_GOOGLE_DOC">
-@@ -190,7 +190,7 @@
+@@ -203,7 +203,7 @@
      Create a new Google Doc quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_DOC_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_DOC.">
@@ -230,7 +230,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_DOC" desc="Announcement when pedal action button is focused, CREATE_GOOGLE_DOC">
      Create doc button, activate to create a new Google Doc quickly
-@@ -203,7 +203,7 @@
+@@ -216,7 +216,7 @@
      Create a new Google Sheet quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_SHEET_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_SHEET.">
@@ -239,7 +239,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_SHEET" desc="Announcement when pedal action button is focused, CREATE_GOOGLE_SHEET">
      Create sheet button, activate to create a new Google Sheet quickly
-@@ -216,7 +216,7 @@
+@@ -229,7 +229,7 @@
      Create a new Google presentation in Slides quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_SLIDE_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_SLIDE.">
@@ -248,7 +248,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_SLIDE" desc="Announcement when pedal action button is focused, CREATE_GOOGLE_SLIDE">
      Create presentation button, activate to create a new Google presentation in Slides quickly
-@@ -229,7 +229,7 @@
+@@ -242,7 +242,7 @@
      Create a new event in Google Calendar quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_CALENDAR_EVENT_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_CALENDAR_EVENT.">
@@ -257,7 +257,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_CALENDAR_EVENT" desc="Announcement when pedal action button is focused, CREATE_GOOGLE_CALENDAR_EVENT">
      Create event button, activate to create a new event in Google Calendar quickly
-@@ -242,7 +242,7 @@
+@@ -255,7 +255,7 @@
      Create a new site in Google Sites quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_SITE_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_SITE.">
@@ -266,7 +266,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_SITE" desc="Announcement when pedal action button is focused, CREATE_GOOGLE_SITE">
      Create site button, activate to create a new site in Google Sites quickly
-@@ -255,7 +255,7 @@
+@@ -268,7 +268,7 @@
      Create a new note in Google Keep quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_KEEP_NOTE_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_KEEP_NOTE.">
@@ -275,7 +275,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_KEEP_NOTE" desc="Announcement when pedal action button is focused, CREATE_GOOGLE_KEEP_NOTE">
      Create note button, activate to create a new note in Google Keep quickly
-@@ -268,49 +268,49 @@
+@@ -281,49 +281,49 @@
      Create a new form in Google Forms quickly
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CREATE_GOOGLE_FORM_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CREATE_GOOGLE_FORM.">
@@ -337,7 +337,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <message name="IDS_OMNIBOX_PEDAL_CLOSE_INCOGNITO_WINDOWS_HINT" desc="The button text contents to suggest pedal action, CLOSE_INCOGNITO_WINDOWS">
-@@ -320,23 +320,23 @@
+@@ -333,7 +333,7 @@
      Close all Incognito windows that are currently open
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CLOSE_INCOGNITO_WINDOWS_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CLOSE_INCOGNITO_WINDOWS.">
@@ -346,6 +346,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CLOSE_INCOGNITO_WINDOWS" desc="Announcement when pedal action button is focused, CLOSE_INCOGNITO_WINDOWS">
      Close Incognito windows button, activate to close all Incognito windows that are currently open
+@@ -353,16 +353,16 @@
    </message>
  
    <message name="IDS_OMNIBOX_PEDAL_PLAY_CHROME_DINO_GAME_HINT" desc="The button text contents to suggest pedal action, PLAY_CHROME_DINO_GAME">
@@ -366,7 +367,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <message name="IDS_OMNIBOX_PEDAL_FIND_MY_PHONE_HINT" desc="The button text contents to suggest pedal action, FIND_MY_PHONE">
-@@ -346,62 +346,62 @@
+@@ -372,62 +372,62 @@
      Find, secure, or erase your device
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_FIND_MY_PHONE_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to FIND_MY_PHONE.">
@@ -445,7 +446,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <message name="IDS_OMNIBOX_PEDAL_SHARE_THIS_PAGE_HINT" desc="The button text contents to suggest pedal action, SHARE_THIS_PAGE">
-@@ -411,7 +411,7 @@
+@@ -437,7 +437,7 @@
      Share this tab by sharing the link, creating a QR code, casting, and more
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_SHARE_THIS_PAGE_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to SHARE_THIS_PAGE.">
@@ -454,7 +455,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_SHARE_THIS_PAGE" desc="Announcement when pedal action button is focused, SHARE_THIS_PAGE">
      Share this tab button, activate to share this tab by sharing the link, creating a QR code, casting, and more
-@@ -421,39 +421,39 @@
+@@ -447,39 +447,39 @@
      Manage accessibility settings
    </message>
    <message name="IDS_OMNIBOX_PEDAL_MANAGE_CHROME_ACCESSIBILITY_SUGGESTION_CONTENTS" desc="The button hover tooltip text to describe pedal action, MANAGE_CHROME_ACCESSIBILITY">
@@ -503,7 +504,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <message name="IDS_OMNIBOX_PEDAL_CUSTOMIZE_SEARCH_ENGINES_HINT" desc="The button text contents to suggest pedal action, CUSTOMIZE_SEARCH_ENGINES">
-@@ -463,7 +463,7 @@
+@@ -489,7 +489,7 @@
      Manage your default search engine and site search
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CUSTOMIZE_SEARCH_ENGINES_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to CUSTOMIZE_SEARCH_ENGINES.">
@@ -512,7 +513,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_CUSTOMIZE_SEARCH_ENGINES" desc="Announcement when pedal action button is focused, CUSTOMIZE_SEARCH_ENGINES">
      Manage search engines button, activate to manage your default search engine and site search
-@@ -476,23 +476,23 @@
+@@ -502,23 +502,23 @@
      Personalize your accessibility tools in ChromeOS settings
    </message>
    <message name="IDS_ACC_OMNIBOX_PEDAL_MANAGE_CHROMEOS_ACCESSIBILITY_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to MANAGE_CHROMEOS_ACCESSIBILITY.">
@@ -541,7 +542,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <!-- The IDS_ANDROID_OMNIBOX_PEDAL_* strings below are platform-specific
-@@ -510,7 +510,7 @@
+@@ -536,7 +536,7 @@
    <!-- Same as IDS_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_SUFFIX but
         with "window" changed to "tab". -->
    <message name="IDS_ANDROID_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO_SUFFIX" desc="Suffix for spoken suggestion description with pedal action button, to explain keystroke used to LAUNCH_INCOGNITO.">
@@ -550,7 +551,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <!-- Same as IDS_ACC_OMNIBOX_PEDAL_LAUNCH_INCOGNITO but
         with "window" changed to "tab". -->
-@@ -527,19 +527,19 @@
+@@ -553,19 +553,19 @@
    </message>
    <!-- Same as IDS_OMNIBOX_PEDAL_SET_CHROME_AS_DEFAULT_BROWSER_HINT, but title case instead of sentence case -->
    <message name="IDS_IOS_OMNIBOX_PEDAL_SET_CHROME_AS_DEFAULT_BROWSER_HINT" desc="In Title Case: The button text contents to suggest pedal action, SET_CHROME_AS_DEFAULT_BROWSER">
@@ -574,7 +575,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
  
    <!-- Same as IDS_OMNIBOX_PEDAL_UPDATE_CREDIT_CARD_HINT, but title case instead of sentence case -->
-@@ -552,7 +552,7 @@
+@@ -578,7 +578,7 @@
    </message>
    <!-- Same as IDS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT but title case instead of sentence case -->
    <message name="IDS_IOS_OMNIBOX_PEDAL_RUN_CHROME_SAFETY_CHECK_HINT" desc="In Title Case: The button text contents to suggest pedal action, RUN_CHROME_SAFETY_CHECK">
@@ -583,7 +584,7 @@ index 9e9fc98a734dfb5a77dfcee7c559529425703ee7..a27c606ae8077f32530a14d24a32e7c3
    </message>
    <!-- Same as IDS_OMNIBOX_PEDAL_MANAGE_CHROME_SETTINGS_HINT but title case instead of sentence case -->
    <message name="IDS_IOS_OMNIBOX_PEDAL_MANAGE_CHROME_SETTINGS_HINT" desc="In Title Case: The button text contents to suggest pedal action, MANAGE_CHROME_SETTINGS">
-@@ -560,11 +560,11 @@
+@@ -586,11 +586,11 @@
    </message>
    <!-- Same as IDS_OMNIBOX_PEDAL_VIEW_CHROME_HISTORY_HINT but title case instead of sentence case -->
    <message name="IDS_IOS_OMNIBOX_PEDAL_VIEW_CHROME_HISTORY_HINT" desc="In Title Case: The button text contents to suggest pedal action, VIEW_CHROME_HISTORY">

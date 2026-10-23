@@ -1,11 +1,11 @@
 MoltBrowser patch for components/autofill_payments_strings.grdp
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/autofill_payments_strings.grdp by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/autofill_payments_strings.grdp b/components/autofill_payments_strings.grdp
-index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd74c5d2ba 100644
+index 9d9f4795f23e61a95ef56172139a1f030564eb95..0f8ecec876ad15331ec0e64d9aea8763be85de11 100644
 --- a/components/autofill_payments_strings.grdp
 +++ b/components/autofill_payments_strings.grdp
 @@ -62,7 +62,7 @@
@@ -41,7 +41,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
        </message>
      </else>
    </if>
-@@ -190,20 +190,20 @@
+@@ -187,20 +187,20 @@
    </message>
    <if expr="is_android">
      <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_EXPLANATION_V3" desc="Explanation of the effect of the Autofill save card prompt when the card is to be saved by uploading it to Google Payments, according to April 2018 UI guidelines, and minorly updated again in September 2023. The prompt will be shown either in a bubble below the omnibox, or in a bottom sheet, or in an infobar.">
@@ -65,7 +65,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
    </message>
    <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_TO_WALLET_EXPLANATION_SECURITY" desc="Explanation of the benefit of credit card upload save on Desktop, using security-focused messaging. Became the new default for Desktop in Dec. 2024 and new default for Android and IOS (bottomsheet only) in H1 2025. The final line specifically references Google Wallet instead of Google Account.">
      Pay faster when your card is saved. Card details are encrypted in Google Wallet.
-@@ -240,7 +240,7 @@
+@@ -237,7 +237,7 @@
      </else>
    </if>
    <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_CARDHOLDER_NAME_TOOLTIP" desc="The tooltip text for the cardholder name textfield. Note that the translation should not have period" formatter_data="android_java">
@@ -74,7 +74,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
    </message>
    <message name="IDS_AUTOFILL_SAVE_CARD_CARDHOLDER_NAME_FIX_FLOW_HEADER" desc="Header for the cardholder name fix flow.">
      Confirm name
-@@ -257,10 +257,10 @@
+@@ -254,10 +254,10 @@
      </message>
    </if>
    <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_UPLOAD_EXPLANATION_TOOLTIP" desc="The tooltip hover text that explains why credit card upload to Google Payments is being offered.">
@@ -87,7 +87,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
    </message>
    <message name="IDS_AUTOFILL_SAVE_CARD_PROMPT_LOADING_THROBBER_ACCESSIBLE_NAME" desc="Accessible name announced by the screenreader for save card bubble in loading state showing a throbber.">
      Saving card info
-@@ -276,24 +276,24 @@
+@@ -273,24 +273,24 @@
      </message>
      <if expr="_google_chrome">
        <message name="IDS_AUTOFILL_SAVE_AND_FILL_DIALOG_EXPLANATION_LOCAL" desc="Explanation text for the Autofill Save and Fill dialog for cards that will be saved locally.">
@@ -118,7 +118,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
        </message>
      </if>
      <message name="IDS_AUTOFILL_SAVE_AND_FILL_DIALOG_CARD_NUMBER_LABEL" desc="The label text for the card number textfield.">
-@@ -580,7 +580,7 @@
+@@ -574,7 +574,7 @@
    </if>
    <if expr="is_win">
      <message name="IDS_PAYMENTS_AUTOFILL_FILLING_MANDATORY_REAUTH" desc="Text that appears in the payments autofill mandatory re-authentication popup, asking the user to authenticate using biometric or device unlock before filling.">
@@ -127,7 +127,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
      </message>
    </if>
    <if expr="is_ios">
-@@ -598,24 +598,24 @@
+@@ -592,24 +592,24 @@
      </message>
      <if expr="_google_chrome">
        <message name="IDS_PAYMENTS_AUTOFILL_FILLING_MANDATORY_REAUTH" desc="Text that appears in the payments autofill mandatory re-authentication popup as the sublabel, asking the user to authenticate using biometric or device unlock before filling.">
@@ -158,7 +158,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
        </message>
      </if>
    </if>
-@@ -729,7 +729,7 @@
+@@ -723,7 +723,7 @@
      Save IBAN in Google Wallet
    </message>
    <message name="IDS_AUTOFILL_UPLOAD_IBAN_PROMPT_EXPLANATION" desc="Explanation text for the Autofill save IBAN (International Bank Account Number) to the GPay server prompt when a user submits a form with a valid IBAN.">
@@ -167,7 +167,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
    </message>
    <message name="IDS_AUTOFILL_UPLOAD_IBAN_TO_WALLET_PROMPT_EXPLANATION" desc="Explanation text for the Autofill save IBAN (International Bank Account Number) to the Google Wallet server prompt when a user submits a form with a valid IBAN.">
      To autofill this IBAN next time, save it in Google Wallet
-@@ -774,7 +774,7 @@
+@@ -765,7 +765,7 @@
      You're all set
    </message>
    <message name="IDS_AUTOFILL_MANDATORY_REAUTH_CONFIRMATION_EXPLANATION" desc="Explanation text for the mandatory reauth confirmation prompt that is displayed to the user after opting into mandatory reauth. Mandatory reauth requires the user to unlock their device or pass a biometric auth when autofilling payment method information.">
@@ -176,7 +176,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
    </message>
    <message name="IDS_AUTOFILL_MANDATORY_REAUTH_CONFIRMATION_SETTINGS_LINK" desc="A link to the settings page for the mandatory reauth confirmation prompt that is displayed to the user after opting into mandatory reauth. Mandatory reauth requires the user to unlock their device or pass a biometric auth when autofilling payment method information.">
      settings
-@@ -1436,7 +1436,7 @@
+@@ -1444,7 +1444,7 @@
        Check out faster with autofill
      </message>
      <message name="IDS_AUTOFILL_CREATE_FIRST_CREDIT_CARD_SUMMARY" desc="Summary for a call to action settings preference to add a new autofill credit card when the user does not have any cards added." formatter_data="android_java">
@@ -185,7 +185,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
      </message>
      <message name="IDS_AUTOFILL_CREATE_FIRST_CREDIT_CARD_BUTTON_TEXT" desc="Button text for a call to action settings preference to add a new autofill credit card when the user does not have any cards added." formatter_data="android_java">
        Add payment method
-@@ -1624,7 +1624,7 @@
+@@ -1654,7 +1654,7 @@
        Delete saved security codes?
      </message>
      <message name="IDS_AUTOFILL_SETTINGS_PAGE_BULK_REMOVE_CVC_DESCRIPTION" desc="Description for the modal dialog when the user is trying to bulk remove/delete all the CVCs stored locally and on Google servers.">
@@ -194,7 +194,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
      </message>
      <message name="IDS_AUTOFILL_SETTINGS_PAGE_BULK_REMOVE_CVC_FROM_WALLET_DESCRIPTION" desc="Description for the modal dialog when the user is trying to bulk remove/delete all the CVCs stored locally and on Google servers.">
        All security codes saved on your device and in Google Wallet will be deleted
-@@ -1668,7 +1668,7 @@
+@@ -1698,7 +1698,7 @@
    <!-- IBAN snackbar confirmation -->
    <if expr="is_android">
      <message name="IDS_AUTOFILL_SAVE_SERVER_IBAN_SUCCESS_SNACKBAR_MESSAGE_TEXT" desc="Text to be displayed in the snackbar shown after a server IBAN is saved.">
@@ -203,7 +203,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
      </message>
      <message name="IDS_AUTOFILL_SAVE_SERVER_IBAN_TO_WALLET_SUCCESS_SNACKBAR_MESSAGE_TEXT" desc="Text to be displayed in the snackbar shown after a server IBAN is saved in Google Wallet.">
        IBAN saved in Google Wallet
-@@ -1699,7 +1699,7 @@
+@@ -1729,7 +1729,7 @@
    </message>
  
    <message name="IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT" desc="Description text for confirmation shown after save card is successfully uploaded and saved to the server.">
@@ -212,8 +212,8 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
    </message>
    <message name="IDS_AUTOFILL_SAVE_CARD_TO_WALLET_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT" desc="Description text for confirmation shown after Google Wallet save card is successfully uploaded and saved to the server.">
      Your card is saved in Google Wallet so you can autofill it for future purchases
-@@ -1708,28 +1708,28 @@
-     This card is saved in Google Wallet so you can use it across Google services
+@@ -1738,28 +1738,28 @@
+     This card is saved in Google Wallet so you can use it across Google products
    </message>
    <message name="IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_FAILURE_DESCRIPTION_TEXT" desc="Description text for confirmation shown after save card upload to the server was unsuccessful.">
 -    This card couldn't be saved in your Google Account. It's saved to Chrome on this device instead.
@@ -228,7 +228,7 @@ index 75ee0fdd8fd7977b2c8e96dfc6590a3fea2fe09e..0b03a62204c484fabfedc3c8d2fd0cdd
 +    This IBAN is saved in your MoltBrowser Account so you can use it across Google services.
    </message>
    <message name="IDS_AUTOFILL_SAVE_IBAN_TO_WALLET_CONFIRMATION_SUCCESS_DESCRIPTION_TEXT" desc="Description text for confirmation shown after upload save IBAN attempt was successful and it was uploaded to the server. The wording specifically references Google Wallet.">
-     This IBAN is saved in Google Wallet so you can use it across Google services.
+     This IBAN is saved in Google Wallet so you can use it across Google products.
    </message>
    <message name="IDS_AUTOFILL_SAVE_IBAN_CONFIRMATION_FAILURE_DESCRIPTION_TEXT" desc="Description text for confirmation shown after upload save IBAN attempt was failed and and it was not uploaded to the server.">
 -    This IBAN couldn't be saved in your Google Account. It's saved to Chrome on this device instead. Chrome will ask you again the next time you use this IBAN.

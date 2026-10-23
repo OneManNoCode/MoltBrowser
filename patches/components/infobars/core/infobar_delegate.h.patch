@@ -1,17 +1,17 @@
 MoltBrowser patch for components/infobars/core/infobar_delegate.h
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/components/infobars/core/infobar_delegate.h by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/components/infobars/core/infobar_delegate.h b/components/infobars/core/infobar_delegate.h
-index cd5071fba3f6621236f2c0414e5178029a644bd4..e4da4034c69856ed6f09eb7aeaed10397a95064a 100644
+index 5c0c180b10215c9f809b40d6e78e90ff2949021a..25fc398a938fb37db5f239f4c48ac80690781e2d 100644
 --- a/components/infobars/core/infobar_delegate.h
 +++ b/components/infobars/core/infobar_delegate.h
-@@ -212,6 +212,12 @@ class InfoBarDelegate {
-     SIGNIN_QRCODE_INFOBAR_DELEGATE = 137,
+@@ -213,6 +213,12 @@ class InfoBarDelegate {
      FORMS_AI_PRIVATE_INFERENCE_INFOBAR_DELEGATE_IOS = 138,
      PASSWORD_SAVED_INFOBAR_DELEGATE_IOS = 139,
+     CONTEXTUAL_CUE_INFOBAR_DELEGATE_IOS = 140,
 +
 +    // MoltBrowser identifiers start at 1000, well clear of upstream's, so
 +    // rebases never collide.

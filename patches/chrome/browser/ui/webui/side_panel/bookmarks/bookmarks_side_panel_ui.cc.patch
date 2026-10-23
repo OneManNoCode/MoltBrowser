@@ -1,11 +1,11 @@
 MoltBrowser patch for chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc
-Upstream base: chromium/src@92a6f15143569cf59b340472d0b5030465d95722 (152.0.7977.169)
+Upstream base: chromium/src@d0c02bfad08ec92a6ffcf989e53cd995e6381a4c (156.0.8078.48)
 Generated from src/chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc by tools/chromium/overlay_to_patches.py.
 src/ is still the source of truth: edit the file there and
 re-run the generator (see docs/REBASING.md).
 
 diff --git a/chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc b/chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc
-index 32372b263367d143da0850d0008b4d8e6f9b1bc4..916b1e0da944cf4d8cc117946871f5caa8cbff5d 100644
+index 29a20d0badb3d4585b56e43472557e0603e8e5da..95ae55c9c46210179eca1b4fb15406991fac1e42 100644
 --- a/chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc
 +++ b/chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_side_panel_ui.cc
 @@ -97,6 +97,7 @@ BookmarksSidePanelUI::BookmarksSidePanelUI(content::WebUI* web_ui)
