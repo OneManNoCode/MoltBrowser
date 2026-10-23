@@ -25,8 +25,9 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   click, never for an agent-run draft whose sites aren't confirmed yet.
 - **Current Chromium.** Rebased from a March 2026 trunk build (148.0.7729.0,
   which had none of the M148 security fixes) onto Extended Stable
-  **152.0.7977.169**; from now on each Chrome security release ships within
-  7 days (`docs/REBASING.md`).
+  152.0.7977.169, then onto **156.0.8078.48** when Chrome's Extended Stable
+  channel moved from M152 to M156 (October 2026); from now on each Chrome
+  security release ships within 7 days (`docs/REBASING.md`).
 - MoltBrowser's encrypted stores (API keys, password vault, form-filler
   profile, chat history, AI memory) moved from the synchronous OSCrypt,
   which Chromium 152 removed, to `os_crypt_async`. Existing files open
