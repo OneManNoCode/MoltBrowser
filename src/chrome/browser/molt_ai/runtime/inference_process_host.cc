@@ -743,8 +743,10 @@ void InferenceProcessHost::KillProcess(ModelProcess* process,
     return;
   }
   process->lost = true;
-  // Before it changes state below.
-  const bool gpu_failure = process->gpu_in_use() && IsGpuFailureKind(kind);
+  // Before it changes state below. A death while idle (the OS reclaiming
+  // memory, say) counts for neither guard.
+  const bool gpu_failure = process->gpu_in_use() && IsGpuFailureKind(kind) &&
+                           phase != CrashLoopGuard::Phase::kIdle;
   const InferenceOutcome outcome(kind);
   if (process->load_mailbox) {
     process->load_mailbox->Finish(outcome);

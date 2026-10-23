@@ -555,6 +555,16 @@ TEST_F(InferenceProcessHostTest, CrashOnTheGpuIsAGpuFailure) {
   EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kGenerating);
 }
 
+TEST_F(InferenceProcessHostTest, IdleDeathOnTheGpuIsNotAGpuFailure) {
+  next_load_behavior_ = FakeService::LoadBehavior::kGpu;
+  Load(/*with_projector=*/false, /*use_gpu=*/true);
+  service().Crash();  // nothing running
+  task_environment_.RunUntilIdle();
+  ASSERT_EQ(delegate_.gpu_failures.size(), 1u);
+  EXPECT_FALSE(delegate_.gpu_failures[0]);
+  EXPECT_EQ(delegate_.lost[0], CrashLoopGuard::Phase::kIdle);
+}
+
 TEST_F(InferenceProcessHostTest, CrashAfterTheCpuFallbackIsAModelCrash) {
   // Asked for the GPU, but the service loaded the model on the CPU.
   Load(/*with_projector=*/false, /*use_gpu=*/true);
