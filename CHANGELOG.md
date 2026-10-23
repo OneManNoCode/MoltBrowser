@@ -428,8 +428,8 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
 - Context windows sized to the model and your RAM (was a fixed 2k); the
   system prompt is never cut; multi-turn chat reuses the prompt cache.
 - Reasoning models show only the answer; Stop cancels only its own chat;
-  models unload when idle or under memory pressure; CPUs without AVX2 get a
-  clear message instead of a crash.
+  models unload when idle or under memory pressure; CPUs too old for
+  on-device AI get a clear message instead of a crash.
 - Model downloads are hash-verified and resume correctly (resuming used to
   corrupt files); every model shows its licence with a link, and Llama/Gemma
   terms must be accepted before download.
@@ -448,6 +448,14 @@ full build and on-device tests. Detail: [ROADMAP.md](ROADMAP.md).
   the model. Shaders are compiled at build time with Chromium's own glslang.
   It stays off until tested on real GPUs; on Windows it runs on the CPU for
   now (`docs/design/SANDBOXED_INFERENCE.md` §11).
+- **On-device AI on older x86 processors.** Models no longer need AVX2:
+  the best kernels the processor supports are picked when a model loads,
+  AVX on Intel Sandy Bridge/Ivy Bridge and AMD Bulldozer-family chips,
+  SSE4.2 on 2008-2010 Core chips and on Atom, Celeron and Pentium chips
+  without AVX. AVX2 processors run exactly the code they ran before. Only
+  processors without SSE4.2 (Core 2, Phenom and Athlon II, Atoms before
+  2013) still get the "use a cloud model" message
+  (`docs/design/SANDBOXED_INFERENCE.md` §12).
 - Fixed a crash on the first on-device reply in official Linux builds: a
   Control Flow Integrity check tripped on llama.cpp's internal calls. Found
   and fixed in an emulated official build; to be confirmed on a real one.
