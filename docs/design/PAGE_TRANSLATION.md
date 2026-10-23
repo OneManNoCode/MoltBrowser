@@ -492,6 +492,10 @@ How it is enforced, in two layers:
   isn't asked anything. Translate gets `INITIALIZATION_ERROR` (the
   bubble's error step, page left as it was), never a crash. The footnote
   doesn't look up the device's model state in a MoltNet tab either.
+  Before it asks the driver, `TranslateManager::TranslatePage()` would add
+  the target language to the profile's language list (upstream does, so
+  the user sends it in Accept-Language); where translation is off it
+  doesn't, so MoltNet's list stays its own (a hook marked `MoltBrowser:`).
 
 Google's script stays unreachable there as well
 (`TranslatesOnDevice()` is true in every window).
