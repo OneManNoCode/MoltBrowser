@@ -16,7 +16,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
-#include "chrome/browser/molt_ai/tor/molt_net_incognito_parity.h"  // MoltBrowser
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webshare/prepare_directory_task.h"
 #include "chrome/browser/webshare/prepare_subdirectory_task.h"
@@ -71,29 +71,15 @@ void SharingServiceOperation::Share(
       Profile::FromBrowserContext(web_contents_->GetBrowserContext());
   DCHECK(profile);
 
-<<<<<<< src/chrome/browser/webshare/mac/sharing_service_operation.mm (MoltBrowser)
-  // File sharing is denied in incognito, as files are written to disk.
-  // To prevent sites from using that to detect whether incognito mode is
-  // active, we deny after a random time delay, to simulate a user cancelling
-  // the share.
-  // MoltBrowser: the same in MoltNet, whose files would land in the regular
-  // profile's folder (molt_net_incognito_parity.h).
-  if (molt_ai::tor::GetsIncognitoProtections(profile) &&
-      !shared_files_.empty()) {
-||||||| upstream@pin
-  // File sharing is denied in incognito, as files are written to disk.
-  // To prevent sites from using that to detect whether incognito mode is
-  // active, we deny after a random time delay, to simulate a user cancelling
-  // the share.
-  if (profile->IsIncognitoProfile() && !shared_files_.empty()) {
-=======
   // File sharing is denied in incognito and enterprise isolated mode, as files
   // are written to disk. To prevent sites from using that to detect whether
   // incognito or isolated mode is active, we deny after a random time delay,
   // to simulate a user cancelling the share.
-  if (profile->IsPrimaryOTRProfileWithRegularParent() &&
+  // MoltBrowser: the same in MoltNet, whose files would land in the regular
+  // profile's folder (molt_net_incognito_parity.h).
+  if ((profile->IsPrimaryOTRProfileWithRegularParent() ||
+       molt_ai::tor::IsMoltNetProfile(profile)) &&
       !shared_files_.empty()) {
->>>>>>> upstream@new
     // Random number of seconds in the range [1.0, 2.0).
     double delay_seconds = 1.0 + 1.0 * base::RandDouble();
     visibility_timer::VisibilityTimerTabHelper::CreateForWebContents(

@@ -4,17 +4,7 @@
 
 #include "chrome/browser/extensions/browser_window_util.h"
 
-<<<<<<< src/chrome/browser/extensions/browser_window_util.cc (MoltBrowser)
-#include <algorithm>
-#include <vector>
-
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"  // MoltBrowser
-||||||| upstream@pin
-#include <algorithm>
-#include <vector>
-
-=======
->>>>>>> upstream@new
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"

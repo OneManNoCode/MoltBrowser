@@ -115,18 +115,12 @@ OpenedWebContentsSet OpenAllHelper(
   bool opening_urls_in_incognito = false;
   if (profile) {
     opening_urls_in_incognito =
-<<<<<<< src/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc (MoltBrowser)
-        profile->IsIncognitoProfile() ||
+        profile->IsPrimaryOTRProfileWithRegularParent() ||
         // MoltBrowser: bookmarks opened from a MoltNet window stay in
         // MoltNet, as Incognito's stay in Incognito. Otherwise, once a
         // chrome:// bookmark (Settings, History, ...) opened in a regular
         // window, the rest followed it there and loaded outside Tor.
         molt_ai::tor::IsMoltNetProfile(profile) ||
-||||||| upstream@pin
-        profile->IsIncognitoProfile() ||
-=======
-        profile->IsPrimaryOTRProfileWithRegularParent() ||
->>>>>>> upstream@new
         initial_disposition == WindowOpenDisposition::OFF_THE_RECORD;
   } else {
     opening_urls_in_incognito =
@@ -213,14 +207,8 @@ OpenedWebContentsSet OpenAllHelper(
     // the disposition and the URL type.
     Profile* new_tab_profile =
         Profile::FromBrowserContext(opened_tab->GetBrowserContext());
-<<<<<<< src/chrome/browser/ui/bookmarks/bookmark_utils_desktop.cc (MoltBrowser)
-    if (new_tab_profile->IsIncognitoProfile() ||
+    if (new_tab_profile->IsPrimaryOTRProfileWithRegularParent() ||
         molt_ai::tor::IsMoltNetProfile(new_tab_profile)) {  // MoltBrowser
-||||||| upstream@pin
-    if (new_tab_profile->IsIncognitoProfile()) {
-=======
-    if (new_tab_profile->IsPrimaryOTRProfileWithRegularParent()) {
->>>>>>> upstream@new
       if (!incognito_browser) {
         incognito_browser =
             ProfileBrowserCollection::GetForProfile(new_tab_profile)

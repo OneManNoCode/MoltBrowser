@@ -37,20 +37,12 @@
 #include "chrome/browser/login_detection/login_detection_tab_helper.h"
 #include "chrome/browser/lookalikes/safety_tip_web_contents_observer.h"
 #include "chrome/browser/media/media_engagement_service.h"
-<<<<<<< src/chrome/browser/ui/tab_helpers.cc (MoltBrowser)
-#include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_observer.h"
 #include "chrome/browser/molt_ai/anti_rage/anti_rage_tab_helper.h"
 #include "chrome/browser/molt_ai/consent/consent_killer_tab_helper.h"
 #include "chrome/browser/molt_ai/memory/memory_recorder.h"
 #include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
 #include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/onion_location_tab_helper.h"
-#include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
-||||||| upstream@pin
-#include "chrome/browser/metrics/desktop_session_duration/desktop_session_duration_observer.h"
-#include "chrome/browser/navigation_predictor/navigation_predictor_preconnect_client.h"
-=======
->>>>>>> upstream@new
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"

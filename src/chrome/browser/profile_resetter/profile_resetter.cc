@@ -331,19 +331,15 @@ void ProfileResetter::ResetContentSettings() {
     permission_context->RevokeAllActiveGrants();
   }
 
-<<<<<<< src/chrome/browser/profile_resetter/profile_resetter.cc (MoltBrowser)
-  // MoltBrowser: the built-in AI APIs' per-site answers and prompt pauses
-  // are kept in a MoltBrowser pref, not in HostContentSettingsMap.
-  molt_ai::web_ai::ResetWebAISitePermissions(profile_);
-
-||||||| upstream@pin
-=======
   profile_->ForEachLoadedStoragePartition(
       [](content::StoragePartition* partition) {
         partition->ClearBluetoothAllowedDevicesMap();
       });
 
->>>>>>> upstream@new
+  // MoltBrowser: the built-in AI APIs' per-site answers and prompt pauses
+  // are kept in a MoltBrowser pref, not in HostContentSettingsMap.
+  molt_ai::web_ai::ResetWebAISitePermissions(profile_);
+
   MarkAsDone(CONTENT_SETTINGS);
 }
 
