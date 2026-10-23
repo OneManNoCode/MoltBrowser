@@ -84,6 +84,21 @@ std::optional<std::string> TorIsolationUsername(SOCKSSocketParams& params) {
   return username;
 }
 
+// MoltBrowser: the password that goes with TorIsolationUsername(). Tor
+// isolates by username *and* password, so the session's own random
+// password (`session_password`: one per MoltNet network context, see
+// HttpNetworkSessionParams::molt_socks_isolation_password) keeps every
+// MoltNet identity off the circuits of earlier ones, also for a site both
+// visit and whatever the timing of New Identity's NEWNYM. Sessions without
+// one (every other network context) send a fixed password.
+std::string TorIsolationPassword(const std::string* session_password) {
+  if (!session_password || session_password->empty()) {
+    return "moltnet";
+  }
+  // RFC 1929 limit; a longer password would turn authentication off.
+  return session_password->substr(0, 255);
+}
+
 }  // namespace
 
 SOCKSSocketParams::SOCKSSocketParams(
@@ -242,12 +257,15 @@ int SOCKSConnectJob::DoSOCKSConnect() {
     auto socks5_socket = std::make_unique<SOCKS5ClientSocket>(
         transport_connect_job_->PassSocket(), socks_params_->destination(),
         socks_params_->traffic_annotation());
-    // MoltBrowser: per-site circuit isolation for MoltNet's local Tor. The
-    // password is a constant; New Identity relies on NEWNYM + a fresh
-    // profile instead.
+    // MoltBrowser: per-site circuit isolation for MoltNet's local Tor: the
+    // top-level site as the username, the network context's own password.
     if (std::optional<std::string> username =
             TorIsolationUsername(*socks_params_)) {
-      socks5_socket->SetUsernamePasswordAuth(std::move(*username), "moltnet");
+      socks5_socket->SetUsernamePasswordAuth(
+          std::move(*username),
+          TorIsolationPassword(
+              common_connect_job_params()
+                  ->molt_socks_isolation_password.get()));
     }
     socket_ = std::move(socks5_socket);
   } else {

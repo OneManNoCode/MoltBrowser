@@ -416,7 +416,7 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
     bool for_websockets) {
   // Use null websocket_endpoint_lock_manager, which is only set for WebSockets,
   // and only when not using a proxy.
-  return CommonConnectJobParams(
+  CommonConnectJobParams common_connect_job_params(
       context_.client_socket_factory, context_.host_resolver, &http_auth_cache_,
       context_.http_auth_handler_factory, &spdy_session_pool_,
       &context_.quic_context->params()->supported_versions, &quic_session_pool_,
@@ -426,6 +426,10 @@ CommonConnectJobParams HttpNetworkSession::CreateCommonConnectJobParams(
       for_websockets ? &websocket_endpoint_lock_manager_ : nullptr,
       context_.http_server_properties, &next_protos_, &application_settings_,
       &params_.ignore_certificate_errors, &params_.enable_early_data);
+  // MoltBrowser: this session's SOCKS5 password for MoltNet's Tor.
+  common_connect_job_params.molt_socks_isolation_password =
+      &params_.molt_socks_isolation_password;
+  return common_connect_job_params;
 }
 
 void HttpNetworkSession::ApplyTestingFixedPort(

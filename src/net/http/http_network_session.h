@@ -163,6 +163,13 @@ struct NET_EXPORT HttpNetworkSessionParams {
 
   // Whether to use the ALPN information in the DNS HTTPS record.
   bool use_dns_https_svcb_alpn = true;
+
+  // MoltBrowser: if non-empty, the RFC 1929 password SOCKSConnectJob sends
+  // to a SOCKS5 proxy on a loopback address (MoltNet's Tor), with the
+  // top-level site as the username. Random for each MoltNet network
+  // context (network::mojom::NetworkContextParams), so Tor never puts two
+  // MoltNet identities on one circuit.
+  std::string molt_socks_isolation_password;
 };
 
 // Structure with pointers to the dependencies of the HttpNetworkSession.

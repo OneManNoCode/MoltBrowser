@@ -113,6 +113,11 @@ struct NET_EXPORT_PRIVATE CommonConnectJobParams {
   raw_ptr<const SSLConfig::ApplicationSettings> application_settings;
   raw_ptr<const bool> ignore_certificate_errors;
   raw_ptr<const bool> enable_early_data;
+
+  // MoltBrowser: the session's SOCKS5 password for MoltNet's Tor
+  // (HttpNetworkSessionParams::molt_socks_isolation_password), read by
+  // SOCKSConnectJob. Null or empty: none for this session.
+  raw_ptr<const std::string> molt_socks_isolation_password = nullptr;
 };
 
 // When a host resolution completes, OnHostResolutionCallback() is invoked. If
