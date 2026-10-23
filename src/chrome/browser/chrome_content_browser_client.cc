@@ -135,6 +135,8 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_proxying_url_loader_factory.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_url_loader_throttle.h"
 #include "chrome/browser/molt_ai/shield/molt_shield_websocket.h"
+#include "chrome/browser/molt_ai/tor/molt_net_profile_id.h"
+#include "chrome/browser/molt_ai/tor/molt_net_requests_policy.h"
 #include "chrome/browser/molt_ai/tor/molt_net_webrtc.h"
 #include "chrome/browser/molt_ai/tor/onion_navigation_throttle.h"
 #include "chrome/browser/molt_ai/tor/onion_request_blocker.h"
@@ -4343,6 +4345,15 @@ base::OnceClosure ChromeContentBrowserClient::SelectClientCertificate(
   }
 
   Profile* profile = Profile::FromBrowserContext(browser_context);
+  // MoltBrowser: a MoltNet page gets no certificate, at once: no picker and
+  // no AutoSelectCertificateForUrls (molt_ai/tor/molt_net_requests_policy.h).
+  // MoltNet's network context doesn't ask in the first place.
+  if (!molt_ai::tor::MoltNetRequestAccessForProfile(
+           molt_ai::tor::IsMoltNetProfile(profile))
+           .client_certificates) {
+    delegate->ContinueWithCertificate(nullptr, nullptr);
+    return base::OnceClosure();
+  }
 #if BUILDFLAG(IS_CHROMEOS)
   // On the sign-in or lock screen profile, only allow client certs in the
   // context of the sign-in frame.

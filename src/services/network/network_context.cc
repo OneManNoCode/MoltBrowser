@@ -3403,6 +3403,15 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
     result.url_request_context->transport_security_state()
         ->MoltSetUpgradeTopLevelNavigationsOnly();
   }
+  // MoltBrowser: MoltNet sends no TLS client certificate and remembers no
+  // choice per server.
+  if (params_->molt_send_no_client_certificates) {
+    if (net::HttpNetworkSession* session =
+            result.url_request_context->http_transaction_factory()
+                ->GetSession()) {
+      session->ssl_client_context()->MoltSendNoClientCertificates();
+    }
+  }
 
   if (network_service_->pins_list_updated()) {
     result.url_request_context->transport_security_state()->UpdatePinList(

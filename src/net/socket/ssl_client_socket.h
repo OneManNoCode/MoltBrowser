@@ -248,6 +248,16 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
     return ssl_client_auth_cache_.GetCachedServers();
   }
 
+  // MoltBrowser: from now on GetClientCertificate() answers "no
+  // certificate" for every server, whatever SetClientCertificate() stored,
+  // so a certificate request never fails the handshake with
+  // ERR_SSL_CLIENT_AUTH_CERT_NEEDED and no choice made for a server applies
+  // later. Set for MoltNet's network contexts only, right after they are
+  // built (services/network/network_context.cc).
+  void MoltSendNoClientCertificates() {
+    molt_send_no_client_certificates_ = true;
+  }
+
   // Add an observer to be notified when configuration has changed.
   // RemoveObserver() must be called before |observer| is destroyed.
   void AddObserver(Observer* observer);
@@ -279,6 +289,9 @@ class NET_EXPORT SSLClientContext : public SSLConfigService::Observer,
   raw_ptr<SCTAuditingDelegate> sct_auditing_delegate_;
 
   SSLClientAuthCache ssl_client_auth_cache_;
+
+  // MoltBrowser: see MoltSendNoClientCertificates().
+  bool molt_send_no_client_certificates_ = false;
 
   base::ObserverList<Observer, true /* check_empty */> observers_;
 };

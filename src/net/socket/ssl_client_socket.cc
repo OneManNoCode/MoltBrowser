@@ -268,6 +268,12 @@ bool SSLClientContext::GetClientCertificate(
     const HostPortPair& server,
     scoped_refptr<X509Certificate>* client_cert,
     scoped_refptr<SSLPrivateKey>* private_key) {
+  // MoltBrowser: "no certificate" for every server (MoltNet).
+  if (molt_send_no_client_certificates_) {
+    *client_cert = nullptr;
+    *private_key = nullptr;
+    return true;
+  }
   return ssl_client_auth_cache_.Lookup(server, client_cert, private_key);
 }
 

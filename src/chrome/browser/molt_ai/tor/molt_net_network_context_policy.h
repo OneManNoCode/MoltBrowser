@@ -10,7 +10,8 @@
 // connect job act on the fields it sets (hooks marked "MoltBrowser:" in
 // services/network/network_context.cc, services/cert_verifier/,
 // net/http/http_network_session.*, net/http/transport_security_state.*,
-// net/socket/ and services/network/pervasive_resources/). Two settings
+// net/socket/ (the SOCKS connect job, ssl_client_socket.*) and
+// services/network/pervasive_resources/). Two settings
 // the browser also updates later have their own hooks in
 // ProfileNetworkContextService (split_http_auth_cache and
 // BlockPrivateStateTokensFor()). The only input is whether the profile is
@@ -126,6 +127,22 @@ struct MoltNetNetworkContextSettings {
   // whatever the anti-abuse setting says (BlockPrivateStateTokensFor()).
   bool block_private_state_tokens = false;
 
+  // TLS client certificates: Chromium keeps the certificate a user picks
+  // for a server (net::SSLClientAuthCache, inside the context's
+  // SSLClientContext) by host and port, for the context's lifetime, not by
+  // top-level site. That includes "no certificate", which the browser
+  // answers without asking when the user has none. A choice made while
+  // site A was open would then apply to that server under site B too, and
+  // skip the aborted handshake, the browser round trip and the second
+  // connection the first request costs, which the server can time. When
+  // true, the context answers every server's certificate request with no
+  // certificate, at once, the same way each time: nothing is remembered,
+  // nothing is asked, no certificate (and so no name in it) is ever sent,
+  // and an administrator's AutoSelectCertificateForUrls doesn't apply. Tor
+  // Browser keeps its certificate store in memory (security.nocertdb), so
+  // it has no personal certificates to offer either.
+  bool send_no_client_certificates = false;
+
   friend constexpr bool operator==(const MoltNetNetworkContextSettings&,
                                    const MoltNetNetworkContextSettings&) =
       default;
@@ -143,6 +160,7 @@ constexpr MoltNetNetworkContextSettings MoltNetNetworkContextSettingsFor(
   settings.split_http_auth_cache = is_moltnet_profile;
   settings.no_network_quality_estimator = is_moltnet_profile;
   settings.block_private_state_tokens = is_moltnet_profile;
+  settings.send_no_client_certificates = is_moltnet_profile;
   return settings;
 }
 
@@ -196,6 +214,8 @@ void ApplyMoltNetNetworkContextSettings(
       settings.hsts_top_level_navigations_only;
   network_context_params.molt_no_network_quality_estimator =
       settings.no_network_quality_estimator;
+  network_context_params.molt_send_no_client_certificates =
+      settings.send_no_client_certificates;
 }
 
 }  // namespace molt_ai::tor
