@@ -136,7 +136,10 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
    * accessibility purposes, taps are handled separately.
    */
   private onLinkClick_(event: Event) {
-    if ((event.target as HTMLElement).matches('a:not(#extensionsLink)')) {
+    // MoltBrowser: #importBookmarksLink opens molt://ai-settings in a new tab,
+    // like #extensionsLink (settings_menu.html).
+    if ((event.target as HTMLElement)
+            .matches('a:not(#extensionsLink):not(#importBookmarksLink)')) {
       event.preventDefault();
     }
   }
