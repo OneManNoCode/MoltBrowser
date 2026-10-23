@@ -7,11 +7,15 @@
 // source and calls it with JSON arguments the way page_translate_io.cc does
 // (BuildExtractScript, BuildApplyScript, BuildRevertScript), so the test
 // can't drift from the code. jsdom has no layout: checkVisibility(),
-// getBoundingClientRect() and the computed white-space are stand-ins driven
-// by attributes (data-offscreen, data-pre, inline display/visibility), as
-// Chromium 152 would report them. In the browser the script runs in
-// Translate's isolated world, where the page can't patch what it calls;
-// here it shares the page's world, so the test covers its logic.
+// getBoundingClientRect() and the computed style (white-space, display,
+// visibility) are stand-ins driven by attributes (data-offscreen, data-pre,
+// inline display/visibility), as Chromium 152 would report them; so are
+// designMode and isContentEditable, which jsdom lacks. jsdom doesn't let a
+// form's named controls (or a document's named elements) stand in for
+// their members as Chromium does; p.override() does. In the browser the
+// script runs in Translate's isolated world, where the page can't patch
+// what it calls; here it shares the page's world, so the test covers its
+// logic.
 //
 // Run: npm ci && node page_translate_test.js   (from tools/webui_checks)
 'use strict';
@@ -52,30 +56,110 @@ const TEXT = 0, TITLE = 1, ALT = 2, PLACEHOLDER = 3;
 function page(html, options = {}) {
   const dom = new JSDOM(html, {runScripts: 'outside-only'});
   const w = dom.window;
+  // Chromium's DOM methods and its layout and style are native: a form's
+  // named controls never reach them. jsdom's selector engine reads an
+  // element's members from script, so p.override() steps aside while it
+  // runs, and the stand-ins below use the prototypes.
+  let native = 0;
+  for (const [proto, name] of [
+           [w.Element.prototype, 'closest'], [w.Element.prototype, 'matches'],
+           [w.Element.prototype, 'querySelector'],
+           [w.Element.prototype, 'querySelectorAll'],
+           [w.Document.prototype, 'querySelector'],
+           [w.Document.prototype, 'querySelectorAll'],
+           [w.Document.prototype, 'getElementById']]) {
+    const fn = proto[name];
+    proto[name] = function(...rest) {
+      native++;
+      try {
+        return Reflect.apply(fn, this, rest);
+      } finally {
+        native--;
+      }
+    };
+  }
+  // What Chromium's [LegacyOverrideBuiltIns] does for a form's named
+  // controls (and a document's named images, forms and embeds), in every
+  // world: each of |names| on |obj| is now an element the page put there
+  // (or |value|).
+  const override = (obj, names, value) => {
+    const decoy = (obj.ownerDocument || obj).createElement('em');
+    for (const name of names) {
+      let d;
+      for (let o = Object.getPrototypeOf(obj); o && !d;
+           o = Object.getPrototypeOf(o)) {
+        d = Object.getOwnPropertyDescriptor(o, name);
+      }
+      Object.defineProperty(obj, name, {
+        configurable: true,
+        get() {
+          if (native) return d ? (d.get ? d.get.call(obj) : d.value) : undefined;
+          return value !== undefined ? value : decoy;
+        },
+      });
+    }
+  };
+  const own = (proto, name) => Object.getOwnPropertyDescriptor(proto, name);
+  const parentOf = (e) => own(w.Node.prototype, 'parentElement').get.call(e);
+  const styleOf = (e) => own(w.HTMLElement.prototype, 'style').get.call(e);
+  const hiddenOf = (e) => own(w.HTMLElement.prototype, 'hidden').get.call(e);
+  const within = (e, sel) => w.Element.prototype.closest.call(e, sel) !== null;
   // Chromium's checkVisibility(): false under display:none (or [hidden]) and,
   // with visibilityProperty, for a computed visibility of hidden; false for
   // display:contents (no box of its own).
   w.Element.prototype.checkVisibility = function(opts) {
-    if (this.style.display === 'contents') return false;
-    for (let e = this; e; e = e.parentElement) {
-      if (e.hidden || e.style.display === 'none') return false;
+    if (styleOf(this).display === 'contents') return false;
+    for (let e = this; e; e = parentOf(e)) {
+      if (hiddenOf(e) || styleOf(e).display === 'none') return false;
     }
     if (opts && opts.visibilityProperty) {
-      for (let e = this; e; e = e.parentElement) {
-        if (e.style.visibility === 'visible') break;
-        if (e.style.visibility === 'hidden') return false;
+      for (let e = this; e; e = parentOf(e)) {
+        if (styleOf(e).visibility === 'visible') break;
+        if (styleOf(e).visibility === 'hidden') return false;
       }
     }
     return true;
   };
   w.Element.prototype.getBoundingClientRect = function() {
-    return this.closest('[data-offscreen]') ?
+    // No box, no rectangle.
+    if (styleOf(this).display === 'contents') {
+      return {top: 0, bottom: 0, left: 0, right: 0};
+    }
+    return within(this, '[data-offscreen]') ?
         {top: 5000, bottom: 5020, left: 0, right: 100} :
         {top: 10, bottom: 30, left: 0, right: 100};
   };
-  w.getComputedStyle = (el) => ({
-    whiteSpace: el.closest('[data-pre]') ? 'pre-wrap' : 'normal',
-    display: el.style.display || 'block',
+  w.getComputedStyle = (el) => {
+    let visibility = 'visible';  // Inherited.
+    for (let e = el; e; e = parentOf(e)) {
+      if (styleOf(e).visibility) {
+        visibility = styleOf(e).visibility;
+        break;
+      }
+    }
+    return {
+      whiteSpace: within(el, '[data-pre]') ? 'pre-wrap' : 'normal',
+      display: styleOf(el).display || 'block',
+      visibility,
+    };
+  };
+  // Chromium's Document.prototype.designMode and
+  // HTMLElement.prototype.isContentEditable, which jsdom lacks.
+  const modes = new WeakMap();
+  Object.defineProperty(w.Document.prototype, 'designMode', {
+    configurable: true,
+    get() { return modes.get(this) || 'off'; },
+    set(v) { modes.set(this, String(v).toLowerCase() === 'on' ? 'on' : 'off'); },
+  });
+  Object.defineProperty(w.HTMLElement.prototype, 'isContentEditable', {
+    configurable: true,
+    get() {
+      for (let e = this; e; e = parentOf(e)) {
+        const v = w.Element.prototype.getAttribute.call(e, 'contenteditable');
+        if (v !== null) return v.toLowerCase() !== 'false';
+      }
+      return false;
+    },
   });
   const caps = Object.assign({}, CAPS, options.caps || {});
   const call = (args) =>
@@ -86,10 +170,20 @@ function page(html, options = {}) {
     apply: (writes, id = 'a1') => call({op: 'apply', id, writes}),
     revert: () => call({op: 'revert'}),
     raw: call,
+    override,
   };
 }
 
 const texts = (r) => r.slots.map((s) => s[2]);
+
+// Every member the script reaches on a node, an element or a document.
+const MEMBERS = [
+  'closest', 'getAttribute', 'setAttribute', 'querySelector',
+  'getBoundingClientRect', 'checkVisibility', 'firstChild', 'nextSibling',
+  'parentNode', 'parentElement', 'nodeType', 'nodeValue', 'isConnected',
+  'localName', 'namespaceURI', 'shadowRoot', 'classList',
+  'isContentEditable', 'type', 'textContent', 'childNodes', 'tagName',
+];
 
 // ---- What is read -------------------------------------------------------
 
@@ -256,6 +350,117 @@ p.extract('c1');
 p.apply([[0, 'one']], 'c1');
 assert.deepStrictEqual(texts(p.extract('c2')), ['eins']);
 assert.strictEqual(p.doc.body.textContent, 'eins');
+
+// ---- Text in display: contents --------------------------------------
+
+// An element with display: contents has no box (checkVisibility() is false,
+// its rectangle empty); its own text is shown in its box owner's box, with
+// the element's own visibility.
+p = page(`<body><div style="display:contents">Direkt <b>fett</b></div>
+<div style="display:none"><span style="display:contents">Versteckt</span></div>
+<div style="visibility:hidden"><span style="display:contents">Unsichtbar</span></div>
+<div style="visibility:hidden"><span style="display:contents;visibility:visible">Sichtbar</span></div>
+<div><span style="display:contents"><span style="display:contents">Tief</span></span></div>
+<div data-offscreen><span style="display:contents">Unten</span></div></body>`);
+r = p.extract();
+assert.deepStrictEqual(r.slots, [
+  [TEXT, true, 'Direkt '],
+  [TEXT, true, 'fett'],
+  [TEXT, true, 'Sichtbar'],
+  [TEXT, true, 'Tief'],
+  [TEXT, false, 'Unten'],
+]);
+// In a shadow root: the host holds the box.
+p = page('<body><div id="host"></div></body>');
+p.doc.getElementById('host').attachShadow({mode: 'open'}).innerHTML =
+    '<span style="display:contents">Schatten</span>';
+assert.deepStrictEqual(texts(p.extract()), ['Schatten']);
+p = page('<body><div id="host" style="display:none"></div></body>');
+p.doc.getElementById('host').attachShadow({mode: 'open'}).innerHTML =
+    '<span style="display:contents">Schatten</span>';
+assert.deepStrictEqual(texts(p.extract()), []);
+
+// ---- A textarea's placeholder -------------------------------------------
+
+// Its placeholder is written back (its text is never read or written).
+p = page('<body><textarea id="t" placeholder="Notiz">Entwurf</textarea></body>');
+assert.deepStrictEqual(texts(p.extract()), ['Notiz']);
+assert.strictEqual(p.apply([[0, 'Note']]).applied, 1);
+let area = p.doc.getElementById('t');
+assert.strictEqual(area.getAttribute('placeholder'), 'Note');
+assert.strictEqual(area.value, 'Entwurf');
+assert.strictEqual(p.revert().reverted, 1);
+assert.strictEqual(area.getAttribute('placeholder'), 'Notiz');
+// But not once the page moved it into a script or editable content.
+for (const into of ['script', 'div contenteditable', 'template']) {
+  p = page('<body><textarea id="t" placeholder="Notiz"></textarea>' +
+           '<' + into + ' id="x"></' + into.split(' ')[0] + '></body>');
+  p.extract();
+  area = p.doc.getElementById('t');
+  const x = p.doc.getElementById('x');
+  (x.content || x).appendChild(area);
+  assert.strictEqual(p.apply([[0, 'Note']]).applied, 0, into);
+  assert.strictEqual(area.getAttribute('placeholder'), 'Notiz', into);
+}
+
+// ---- Named controls and named elements ----------------------------------
+
+// A form's controls named after the members the script calls (or a
+// document's named elements) don't change what it reads or writes: it
+// reaches every member through the prototypes.
+const FORM_PAGE = `<head><title>Titel</title></head><body>
+<form id="f" class="c">Formular <b>fett</b><input id="i" placeholder="Feld">
+<img id="m" alt="Bild"></form><p>Danach</p></body>`;
+const FORM_TEXTS = ['Titel', 'Formular ', 'fett', 'Feld', 'Bild', 'Danach'];
+p = page(FORM_PAGE);
+const plain = p.extract();
+assert.deepStrictEqual(texts(plain), FORM_TEXTS);
+for (const value of [undefined, null, 7, 'x', () => { throw new Error('no'); }]) {
+  p = page(FORM_PAGE);
+  const form = p.doc.getElementById('f');
+  p.override(form, MEMBERS, value);
+  p.override(p.doc, ['body', 'head', 'documentElement', 'designMode'], value);
+  r = p.extract();
+  assert.deepStrictEqual(r, plain, String(value));
+  assert.deepStrictEqual(
+      p.apply([[0, 'Title'], [1, 'Form '], [2, 'bold'], [3, 'Field'],
+               [4, 'Picture'], [5, 'After']]),
+      {v: 1, id: 'a1', applied: 6}, String(value));
+  assert.strictEqual(p.doc.querySelector('b').textContent, 'bold');
+  assert.strictEqual(p.doc.getElementById('i').getAttribute('placeholder'),
+                     'Field');
+  assert.deepStrictEqual(p.revert(), {v: 1, reverted: 6}, String(value));
+  assert.strictEqual(p.doc.querySelector('b').textContent, 'fett');
+}
+// The job's state is the script's own, never an element the page named
+// (the window's named properties, which jsdom lacks, emulated as Chromium
+// has them: writable data properties on the window's prototype chain).
+p = page('<body><p id="__moltPageTranslation">eins</p></body>');
+Object.defineProperty(Object.getPrototypeOf(p.w), '__moltPageTranslation', {
+  configurable: true,
+  writable: true,
+  value: p.doc.getElementById('__moltPageTranslation'),
+});
+assert.strictEqual(p.apply([[0, 'one']]).applied, -1);
+assert.deepStrictEqual(p.revert(), {v: 1, reverted: 0});
+assert.deepStrictEqual(texts(p.extract()), ['eins']);
+assert.strictEqual(p.apply([[0, 'one']]).applied, 1);
+
+// Whatever a slot's checks run into (here a patched prototype, which a page
+// can't do to the isolated world), the other slots still go, and the count
+// stays exact, so "Show original" knows what there is to undo.
+p = page('<body><p id="a">eins</p><p id="b">zwei</p></body>');
+p.extract();
+const restoreClosest = p.w.Element.prototype.closest;
+const bad = p.doc.getElementById('a');
+p.w.Element.prototype.closest = function(sel) {
+  if (this === bad) throw new Error('page code');
+  return restoreClosest.call(this, sel);
+};
+assert.strictEqual(p.apply([[0, 'one'], [1, 'two']]).applied, 1);
+p.w.Element.prototype.closest = restoreClosest;
+assert.strictEqual(p.doc.getElementById('b').textContent, 'two');
+assert.strictEqual(p.revert().reverted, 1);
 
 // Unknown calls are refused.
 p = page('<body><p>eins</p></body>');
