@@ -1,6 +1,6 @@
 # MoltNet leak test report
 
-**Verdict: FAIL**  (12 FAIL, 0 ERROR, 108 PASS, 84 SKIP, 2 INFO)
+**Verdict: FAIL**  (12 FAIL, 0 ERROR, 109 PASS, 84 SKIP, 2 INFO)
 
 | | |
 |---|---|
@@ -27,10 +27,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 - **FAIL** Nothing left the namespace except Tor's own connections
   - escaped: tcp 10.231.7.2 -> 203.0.113.99:80 (1 packets)
 - **PASS** The packet capture recorded traffic
-  - all: 50 frames, 50 IP, 0 malformed
+  - all: 74 frames, 74 IP, 0 malformed
   - firewall log: 12 frames
   - Tor connections: 2 frames
-  - loopback packets: 22
+  - loopback packets: 34
 - **PASS** The seeded regular-profile settings took effect (control for the settings checks)
   - regular window: {"doNotTrack": "1", "fontSize": "24px", "js_ran_on_blocked": false, "languages": ["de-DE", "de"]}
 - **PASS** Tor (and only Tor) reached the network
@@ -156,6 +156,7 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
 | PASS | The panel's relays are in the consensus Tor downloaded | MOLTNET_COMPLIANCE.md §4 step 10 |
 | PASS | Sandboxed pages (opaque origins) on two sites use different SOCKS usernames | MOLTNET_COMPLIANCE.md §1.4, §4 step 8 |
 | PASS | Separate identity: cookies don't cross, and go with the last window | MOLTNET_COMPLIANCE.md §4 step 6 |
+| PASS | A site visited again in a new MoltNet session (after the last window closed, after New Identity) uses new SOCKS credentials, so new circuits | MOLTNET_COMPLIANCE.md §1.2-§1.4, §4 steps 6 and 7 |
 | SKIP | check.torproject.org says the MoltNet window uses Tor | MOLTNET_COMPLIANCE.md §4 step 1 |
 
 - **PASS** Certificate fetches made for two sites use SOCKS usernames of their own (a circuit per fetch)
@@ -190,6 +191,10 @@ Statuses: FAIL = a promise is broken (or traffic needs triage); ERROR = the kit 
   - a cookie set for the onion in the regular profile is not visible in MoltNet
   - after the last MoltNet window closed, its cookie is gone
   - canvas readback on two sites: different
+- **PASS** A site visited again in a new MoltNet session (after the last window closed, after New Identity) uses new SOCKS credentials, so new circuits
+  - identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
+  - new_identity, session 0 -> 1: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
+  - new_identity, session 1 -> 2: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad.onion, 1 and 1 set(s) of credentials, none shared
 - **SKIP** check.torproject.org says the MoltNet window uses Tor
   - --offline
 

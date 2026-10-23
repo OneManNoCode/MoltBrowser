@@ -193,14 +193,16 @@ def manifest():
                 'regular_cookie_in_moltnet': False,
                 'cookie_after_close': False,
                 'same_context_after_close': False,
-                'canvas_a': '11', 'canvas_b': '22'}},
+                'canvas_a': '11', 'canvas_b': '22',
+                'session_marks': [t(84)]}},
             {'name': 'new_identity', 'start': t(90), 'end': t(100), 'data': {
                 'result': {'running': True}, 'old_context': 'CTX2',
                 'new_context': 'CTX3', 'cookie_after': False,
                 'canvas_before': '33', 'canvas_after': '44',
                 'hold_page': True, 'old_pages_left': 0,
                 'second_result': {'running': True},
-                'second_after_first_s': 10.4, 'second_context': 'CTX4'}},
+                'second_after_first_s': 10.4, 'second_context': 'CTX4',
+                'session_marks': [t(92), t(96)]}},
             {'name': 'fail_closed', 'start': t(100), 'end': t(105), 'data': {
                 'killed': [4242], 'nav_error':
                 'net::ERR_SOCKS_CONNECTION_FAILED', 'loaded': False}},
@@ -310,11 +312,22 @@ def captures():
                 (18.3, 52009, 'opaque null [internally: (55EE) anonymous]',
                  ONION_A, 80),
                 (18.4, 52010, 'opaque null [internally: (66FF) anonymous]',
-                 'aia-kkkkkk1212.' + CANARY, 80))
-    for sec, sport, user, host, port in sessions:
+                 'aia-kkkkkk1212.' + CANARY, 80),
+                # The identity phases: the same site before and after the
+                # last window closed (mark at 84 s), and around each New
+                # Identity (marks at 92 s and 96 s). Same username, a new
+                # password for each MoltNet session.
+                (82, 52011, 'http://' + ONION_A, ONION_A, 80),
+                (83, 52012, 'https://' + ONION_B, ONION_B, 443),
+                (86, 52013, 'http://' + ONION_A, ONION_A, 80, b'S2'),
+                (91, 52014, 'http://' + ONION_A, ONION_A, 80, b'S2'),
+                (93, 52015, 'http://' + ONION_A, ONION_A, 80, b'S3'),
+                (97, 52016, 'http://' + ONION_A, ONION_A, 80, b'S4'))
+    for sec, sport, user, host, port, *password in sessions:
         syn = g.ip('127.0.0.1', '127.0.0.1', 6, g.tcp(sport, 9150, seq=5000,
                                                       flags=0x02))
-        data = g.socks5_client(host, port, username=user)
+        data = g.socks5_client(host, port, username=user,
+                               password=password[0] if password else b'x')
         allf.append((t(sec), g.sll2(syn, ifindex=1)))
         allf.append((t(sec), g.sll2(syn, ifindex=1, pkttype=0)))
         pkt = g.ip('127.0.0.1', '127.0.0.1', 6, g.tcp(sport, 9150, data,

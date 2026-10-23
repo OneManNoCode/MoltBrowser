@@ -10,6 +10,7 @@ Names are returned lower-case, without the trailing dot, with anything
 outside printable ASCII escaped as \\xHH so a report can't be garbled.
 """
 
+import hashlib
 import ipaddress
 import struct
 
@@ -243,13 +244,16 @@ def multicast_groups(proto, icmp_type, payload):
 
 class SocksRequest(object):
     """The client side of a SOCKS5 exchange."""
-    __slots__ = ('methods', 'username', 'password_len', 'command', 'host',
-                 'port', 'complete')
+    __slots__ = ('methods', 'username', 'password_len', 'password_tag',
+                 'command', 'host', 'port', 'complete')
 
     def __init__(self):
         self.methods = []
         self.username = None
         self.password_len = None
+        # A digest of the password (never the password itself): tells two
+        # passwords apart without putting one in a report.
+        self.password_tag = None
         self.command = None
         self.host = None
         self.port = None
@@ -273,6 +277,8 @@ def parse_socks5_client(data):
             req.username = _escape_label(data[pos + 2:pos + 2 + ulen])
             plen = data[pos + 2 + ulen]
             req.password_len = plen
+            password = data[pos + 3 + ulen:pos + 3 + ulen + plen]
+            req.password_tag = hashlib.sha256(password).hexdigest()[:16]
             pos += 3 + ulen + plen
         if pos + 4 > len(data) or data[pos] != 5:
             return req

@@ -25,6 +25,7 @@ source_set("on_device_model_sandbox_init") {
       "molt_gpu_inference_sandbox_linux.h",
     ]
     deps += [
+      ":molt_gpu_inference_sandbox_policy",
       "//content/common",
       "//gpu/config",
       "//sandbox/policy",
@@ -38,6 +39,27 @@ source_set("on_device_model_sandbox_init") {
       "//third_party/dawn/include/dawn:cpp_headers",
       "//third_party/dawn/src/dawn:proc",
       "//third_party/dawn/src/dawn/native",
+    ]
+  }
+}
+
+if (is_linux || is_chromeos) {
+  # MoltBrowser: what the GPU broker of the inference service may open
+  # (docs/design/SANDBOXED_INFERENCE.md 11.4). Standard library only.
+  source_set("molt_gpu_inference_sandbox_policy") {
+    sources = [
+      "molt_gpu_inference_sandbox_policy_linux.cc",
+      "molt_gpu_inference_sandbox_policy_linux.h",
+    ]
+  }
+
+  # MoltBrowser: part of //chrome/browser/molt_ai/test:molt_ai_unittests.
+  source_set("molt_unit_tests") {
+    testonly = true
+    sources = [ "molt_gpu_inference_sandbox_policy_linux_unittest.cc" ]
+    deps = [
+      ":molt_gpu_inference_sandbox_policy",
+      "//testing/gtest",
     ]
   }
 }

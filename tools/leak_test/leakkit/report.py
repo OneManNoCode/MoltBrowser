@@ -550,6 +550,68 @@ def _cert_fetch_circuit_check(manifest, tr):
         'MOLTNET_COMPLIANCE.md §2 (Certificate fetches), §4 step 8')
 
 
+SESSION_PHASES = ('identity', 'new_identity')
+
+
+def _session_circuit_check(manifest, tr):
+    """A site visited again in a new MoltNet session (after the last
+    MoltNet window closed, and after each New Identity) must not go out on
+    the earlier session's circuits: the SOCKS credentials (the username is
+    the site, so the password) differ. The phases record when each new
+    session begins (`session_marks`); the SOCKS connections of the phase
+    before the first mark belong to the old session."""
+    ev = []
+    compared = 0
+    status = PASS
+    for phase in manifest.get('phases') or []:
+        if phase.get('name') not in SESSION_PHASES:
+            continue
+        marks = (phase.get('data') or {}).get('session_marks') or []
+        start, end = phase.get('start'), phase.get('end')
+        if not marks or start is None or end is None:
+            continue
+        bounds = [start] + sorted(marks) + [end]
+        sessions = []  # One {host: {(username, password_tag)}} per session.
+        for lo, hi in zip(bounds, bounds[1:]):
+            creds = {}
+            for s in tr['socks']:
+                ts = s.get('ts') or 0
+                if s.get('host') and lo <= ts < hi:
+                    creds.setdefault(s['host'], set()).add(
+                        (s.get('username'), s.get('password_tag')))
+            sessions.append(creds)
+        for i, (old, new) in enumerate(zip(sessions, sessions[1:]), 1):
+            for host in sorted(set(old) & set(new)):
+                compared += 1
+                if any(tag is None for _, tag in old[host] | new[host]):
+                    status = FAIL
+                    ev.append('%s, session %d: %s connected without a SOCKS '
+                              'password' % (phase['name'], i, host))
+                    continue
+                shared = old[host] & new[host]
+                ev.append('%s, session %d -> %d: %s, %d and %d set(s) of '
+                          'credentials, %s' % (
+                              phase['name'], i - 1, i, host, len(old[host]),
+                              len(new[host]),
+                              'SHARED' if shared else 'none shared'))
+                if shared:
+                    status = FAIL
+                    ev.append('a new MoltNet session reused the previous '
+                              'session\'s SOCKS credentials for %s (so its '
+                              'circuits): %s' % (host, sorted(
+                                  u or '(none)' for u, _ in shared)))
+    if not compared:
+        status = SKIP
+        ev.append('no site was reached through Tor both before and after a '
+                  'new MoltNet session began')
+    return check(
+        'identity.session_circuits', 'identity',
+        'A site visited again in a new MoltNet session (after the last '
+        'window closed, after New Identity) uses new SOCKS credentials, so '
+        'new circuits', status, ev,
+        'MOLTNET_COMPLIANCE.md §1.2-§1.4, §4 steps 6 and 7')
+
+
 def _circuit_checks(manifest, tr):
     checks = []
     socks = [s for s in tr['socks'] if s.get('host')]
@@ -580,6 +642,7 @@ def _circuit_checks(manifest, tr):
         status, ev, 'MOLTNET_COMPLIANCE.md §1.4, §4 step 8'))
     checks.append(_sandboxed_circuit_check(tr))
     checks.append(_cert_fetch_circuit_check(manifest, tr))
+    checks.append(_session_circuit_check(manifest, tr))
     phase = _phase(manifest, 'circuit')
     if phase and (phase.get('data') or {}).get('hops'):
         data = phase['data']

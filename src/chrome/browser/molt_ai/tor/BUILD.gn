@@ -27,7 +27,8 @@
 #                              MoltNet frames
 #   molt_net_network_context_policy — MoltNet's per-context network
 #                              settings: one-off keys for certificate
-#                              fetches, no NTLM or Negotiate
+#                              fetches, no NTLM or Negotiate, a random
+#                              SOCKS password for Tor
 
 import("//extensions/buildflags/buildflags.gni")
 import("//services/network/public/cpp/features.gni")
@@ -109,11 +110,13 @@ source_set("requests_policy") {
 
 # How MoltNet's network context differs in the settings Chromium keeps per
 # network context (molt_net_network_context_policy.h): one-off keys for
-# certificate fetches, no NTLM or Negotiate. Header-only and std-only, so
-# the hook in ProfileNetworkContextService needs no link dependency and
+# certificate fetches, no NTLM or Negotiate, a random SOCKS password for
+# Tor. Header-only (std and base::Token), so the hook in
+# ProfileNetworkContextService needs no new link dependency and
 # molt_ai_unittests tests it.
 source_set("network_context_policy") {
   sources = [ "molt_net_network_context_policy.h" ]
+  deps = [ "//base" ]
 }
 
 source_set("tor") {

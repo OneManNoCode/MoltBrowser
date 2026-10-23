@@ -675,6 +675,17 @@ struct NetworkContextParams {
   // do not have an associated `URLLoaderFactory`.
   pending_remote<URLLoaderNetworkServiceObserver>?
       device_bound_sessions_network_observer;
+
+  // MoltBrowser: if set, the RFC 1929 password this context sends to a
+  // SOCKS5 proxy on a loopback address (MoltNet's Tor), with the top-level
+  // site as the username (net/socket/socks_connect_job.cc). Tor keeps
+  // streams with different credentials on different circuits, so a new
+  // random value for each MoltNet network context means a new identity
+  // never shares a circuit with an earlier one. Set for MoltNet's network
+  // contexts only (chrome/browser/molt_ai/tor/
+  // molt_net_network_context_policy.h); if null, the fixed password every
+  // other context sends there.
+  [MinVersion=1] string? molt_socks_isolation_password;
 };
 
 struct NetworkConditions {

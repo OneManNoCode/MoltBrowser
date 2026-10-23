@@ -47,10 +47,13 @@ bool HasControlChars(std::string_view s) {
 }
 
 // Length in bytes of a character at |s|[i] that reorders, hides or breaks
-// text, or 0: C1 controls (U+0080-U+009F), U+061C, U+180E, U+200B-U+200F,
-// U+2028-U+202E, U+2060-U+2064, U+2066-U+2069, U+FEFF. (The site tools'
-// approval text shows the same ones, agent_tools.cc, plus the line and
-// paragraph separators, which would start a line of their own.)
+// text, or 0: C1 controls (U+0080-U+009F), U+00AD (soft hyphen), U+061C,
+// the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0), U+180E,
+// U+200B-U+200F, U+2028-U+202E, U+2060-U+2064, U+2066-U+2069, the
+// variation selectors (U+FE00-U+FE0F, U+E0100-U+E01EF), U+FEFF and the tag
+// characters (U+E0000-U+E007F), which spell text nobody sees. (The site
+// tools' approval text, agent_tools.cc, shows the format and bidi
+// characters among these the same way.)
 size_t HiddenCharAt(std::string_view s, size_t i) {
   auto byte = [&](size_t k) {
     return i + k < s.size() ? static_cast<unsigned char>(s[i + k]) : 0;
@@ -58,10 +61,27 @@ size_t HiddenCharAt(std::string_view s, size_t i) {
   const unsigned char b0 = byte(0);
   const unsigned char b1 = byte(1);
   const unsigned char b2 = byte(2);
-  if (b0 == 0xC2 && b1 >= 0x80 && b1 <= 0x9F)
+  const unsigned char b3 = byte(3);
+  if (b0 == 0xC2 && ((b1 >= 0x80 && b1 <= 0x9F) || b1 == 0xAD))
     return 2;
   if (b0 == 0xD8 && b1 == 0x9C)
     return 2;
+  if (b0 == 0xE1 && b1 == 0x85 && (b2 == 0x9F || b2 == 0xA0))
+    return 3;
+  if (b0 == 0xE3 && b1 == 0x85 && b2 == 0xA4)
+    return 3;
+  if (b0 == 0xEF && b1 == 0xBE && b2 == 0xA0)
+    return 3;
+  if (b0 == 0xEF && b1 == 0xB8 && b2 >= 0x80 && b2 <= 0x8F)
+    return 3;
+  // U+E0000-U+E007F (F3 A0 80 80 - F3 A0 81 BF) and U+E0100-U+E01EF
+  // (F3 A0 84 80 - F3 A0 87 AF); the input is valid UTF-8, so b3 is a
+  // continuation byte.
+  if (b0 == 0xF3 && b1 == 0xA0 &&
+      (b2 == 0x80 || b2 == 0x81 || (b2 >= 0x84 && b2 <= 0x86) ||
+       (b2 == 0x87 && b3 <= 0xAF))) {
+    return 4;
+  }
   if (b0 == 0xE1 && b1 == 0xA0 && b2 == 0x8E)
     return 3;
   if (b0 == 0xE2 && b1 == 0x80 &&
