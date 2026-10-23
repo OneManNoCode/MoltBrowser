@@ -52,7 +52,7 @@ items are marked *deferred*.
 | 3 | Configure and build | Mac, then Linux | a full build each (hours) |
 | 4 | Compile-risk hot spots (read when the build fails) | | |
 | 5 | Unit tests | Mac, Linux | hours |
-| 6 | Fuzzers | Linux preferred | 3-6 h |
+| 6 | Fuzzers | Mac or Linux (GN); Linux (standalone) | 3-6 h |
 | 7 | Device and manual checks | Mac, Linux | a day |
 | 8 | Leak kit and traffic capture | Linux (kit), Mac (capture) | half a day |
 | 9 | Vulkan hardware matrix (not needed for v0.3.0) | Linux GPU machines | |
@@ -385,7 +385,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | the binder's `FindDocument` | `content::internal::GetDocumentUserData` and `RenderProcessHost::ForEachRenderFrameHost` (the PR could not re-read the header) | #34 |
 | `third_party/blink/renderer/modules/ai/ai_interface_proxy.cc` | LanguageDetector bodies answer "unavailable" | #32 |
 | `chrome/browser/browsing_data/chrome_browsing_data_remover_delegate.cc`, `chrome/browser/profile_resetter/profile_resetter.cc`, `chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc` | clear answers and pauses; the keyed-service factory | #32 |
-| `components/infobars/core/infobar_delegate.h` | the consent infobar's identifier | #26 |
+| `components/infobars/core/infobar_delegate.h` | `MOLT_ONION_LOCATION_INFOBAR_DELEGATE` (1000) and `MOLT_WEB_AI_CONSENT_INFOBAR_DELEGATE` (1001) | #6, #26 |
 | `molt_privacy_prefs.cc`, the feature-override tests | not compiled in #26 | #26 |
 | `web_ai_consent.cc` (now a `WebContentsObserver`), `runtime_web_ai_backend.cc`, the binder's pref observers, `molt_ai_manager.cc` | | #46, #50 |
 
@@ -436,7 +436,7 @@ Expect a large `//net` rebuild: `http_network_session.h` and
 | `models/model_download_job.cc` (`CancelAndDiscard`), `models:download_plan` | | #40 |
 | `tor/molt_net_window.cc`, `tor/tor_control_connection.cc` (`poll()` on POSIX) | | #49 |
 | `update/update_manager.cc`, `vault/vault_store.cc` (`base::saturated_cast`) | | #41 |
-| the 34 fuzzer targets' `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
+| every fuzzer target's `BUILD.gn`, `seed_corpus` and `dict` paths, DEPS and visibility | build with the real `//base`, `//url`, `//crypto`, BoringSSL, llama.cpp's grammar API | #41 and later |
 
 ### 4.9 GN targets and DEPS edges
 
@@ -594,11 +594,14 @@ pass except where the table below says otherwise (verify the filters).
 ## 6. Fuzzers
 
 Two passes: the GN targets against the real libraries, and the standalone
-tier CI doesn't run. Prefer Linux; Apple's clang has no libFuzzer
+tier CI doesn't run. The GN build uses Chromium's own clang, so it runs on
+the Mac or on Linux (a third out dir); the standalone tier needs an LLVM
+clang with libFuzzer (Apple's has none), so it is easiest on Linux
 (docs/FUZZING.md).
 
-- [ ] libFuzzer build of all 34 targets (from #41 and the PRs that added
-  fuzzers since: #44, #45, #47, #48, #49, #53, #54) (verify the command):
+- [ ] libFuzzer build of every target `tools/fuzz/molt_fuzz.py list` names
+  (34 at #55; from #41 and the PRs that added fuzzers since: #44, #45, #47,
+  #48, #49, #53, #54) (verify the command):
   ```bash
   cd chromium/src
   gn gen out/libfuzzer --args='use_libfuzzer=true is_asan=true is_ubsan_security=true is_debug=false dcheck_always_on=true'
