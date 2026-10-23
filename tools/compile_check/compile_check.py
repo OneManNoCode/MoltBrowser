@@ -79,6 +79,9 @@ def write_hook_outputs(tree):
             (util / "LASTCHANGE").read_text() != lc:
         (util / "LASTCHANGE").write_text(lc)
         (util / "LASTCHANGE.committime").write_text("1767225600")
+    if not (util / "LASTCHANGE.dummy").exists():
+        (util / "LASTCHANGE.dummy").write_text(
+            "LASTCHANGE=0000000000000000000000000000000000000000-0000000000000000000000000000000000000000\n")
 
 
 def cmd_setup(args, tree=None):

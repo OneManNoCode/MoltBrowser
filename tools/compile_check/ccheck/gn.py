@@ -12,6 +12,8 @@ that is UNKNOWN takes its "then" branch.
 import fnmatch
 import os
 import re
+import subprocess
+import sys
 
 from .sources import log
 
@@ -28,6 +30,13 @@ UNKNOWN = _Unknown()
 
 # The build directory, as in a checkout (sources.OUT_REL).
 OUT = "//out/cc"
+
+# Scripts exec_script() really runs (deterministic, local inputs only), with
+# the files they import. Everything else gn would run is UNKNOWN.
+EXEC_SCRIPTS = {
+    "//build/util/version.py": ["//build/util/android_chrome_version.py",
+                                "//chrome/VERSION"],
+}
 
 # ---------------------------------------------------------------------------
 # Lexer
@@ -271,6 +280,7 @@ class Interp:
         self.globals = globals_ or Scope()
         self.declared = {}
         self.warnings = []
+        self._exec_cache = {}
 
     # -- files -----------------------------------------------------------
     def parse(self, path):
@@ -651,11 +661,66 @@ class Interp:
             if all(isinstance(x, str) for x in (v, a, b)):
                 return v.replace(a, b)
             return UNKNOWN
+        if name == "exec_script":
+            return self._exec_script([ev(i) for i in range(len(args))], ctx)
         if name == "label_matches":
             return UNKNOWN
         if name == "split_list":
             return UNKNOWN
         return UNKNOWN
+
+    def _exec_script(self, a, ctx):
+        """exec_script() for the scripts in EXEC_SCRIPTS, run as gn would
+        (from the build directory); every other script is UNKNOWN."""
+        if not a or not isinstance(a[0], str) or self.root is None:
+            return UNKNOWN
+        script = self.abspath(a[0], ctx)
+        if script not in EXEC_SCRIPTS:
+            return UNKNOWN
+        sargs = a[1] if len(a) > 1 and isinstance(a[1], list) else []
+        if any(not isinstance(x, str) for x in sargs):
+            return UNKNOWN
+        conv = a[2] if len(a) > 2 and isinstance(a[2], str) else ""
+        key = (script, tuple(sargs), conv)
+        if key in self._exec_cache:
+            return self._exec_cache[key]
+        deps = [script] + EXEC_SCRIPTS[script]
+        deps += [x for x in (a[3] if len(a) > 3 and isinstance(a[3], list)
+                             else []) if isinstance(x, str)]
+        for d in deps:
+            self.read(self.abspath(d, ctx))  # materializes it
+        out_dir = os.path.join(self.root, OUT[2:])
+        os.makedirs(out_dir, exist_ok=True)
+        r = subprocess.run([sys.executable, "-E", "-s",
+                            os.path.join(self.root, script[2:])] + sargs,
+                           cwd=out_dir, capture_output=True, text=True)
+        if r.returncode != 0:
+            self.warnings.append("exec_script %s failed: %s" % (
+                script, r.stderr[-300:]))
+            val = UNKNOWN
+        elif conv == "scope":
+            sc = Scope()
+            try:
+                self.exec_block(Parser(r.stdout).parse_file(), sc,
+                                {"dir": "//", "targets": None})
+                val = sc
+            except SyntaxError:
+                val = UNKNOWN
+        elif conv in ("value", "json"):
+            try:
+                val = self.eval(Parser(r.stdout).expr(), Scope(),
+                                {"dir": "//"}) if conv == "value" else \
+                    __import__("json").loads(r.stdout)
+            except Exception:  # noqa: BLE001
+                val = UNKNOWN
+        elif conv == "list lines":
+            val = r.stdout.splitlines()
+        elif conv in ("trim string", "string"):
+            val = r.stdout.strip() if conv == "trim string" else r.stdout
+        else:
+            val = UNKNOWN
+        self._exec_cache[key] = val
+        return val
 
     def _rebase(self, v, new_base, cur, ctx):
         if not isinstance(v, str) or not isinstance(new_base, str) or \

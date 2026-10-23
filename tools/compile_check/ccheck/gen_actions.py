@@ -188,6 +188,21 @@ def run_action(tree, interp, t, depth=0):
     if not isinstance(script, str) or not isinstance(args, list):
         return "%s has no script/args the reader could compute" % t
     args = list(args)
+    if str(script).endswith("protoc_wrapper.py"):
+        # Only the C++ output is needed; drop JS/TS generation (their
+        # protoc plugins are built from source by Chromium).
+        out = []
+        skip = 0
+        for a in args:
+            if skip:
+                skip -= 1
+                continue
+            if a in ("--js-out-dir", "--protoc-gen-js", "--ts-out-dir",
+                     "--protoc-gen-ts"):
+                skip = 1
+                continue
+            out.append(a)
+        args = out
     for i, a in enumerate(args[:-1]):
         tool = HOST_TOOLS.get(a)
         if callable(tool):

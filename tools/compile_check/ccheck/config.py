@@ -20,6 +20,7 @@ INCLUDE_DIRS = [
     "third_party/abseil-cpp",
     "third_party/protobuf/src",
     "gen:protoc_out",
+    "gen:third_party/omnibox_proto",
     "third_party/protobuf/third_party/utf8_range",
     "third_party/boringssl/src/include",
     "third_party/icu/source/common",
