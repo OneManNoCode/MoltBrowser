@@ -319,7 +319,9 @@ inline constexpr Sampling kMaxSampling{128, 2.0f};
 enum class SamplingMode {
   kMostPredictable,
   kPredictable,
+  kSlightlyPredictable,
   kBalanced,
+  kSlightlyCreative,
   kCreative,
   kMostCreative,
 };

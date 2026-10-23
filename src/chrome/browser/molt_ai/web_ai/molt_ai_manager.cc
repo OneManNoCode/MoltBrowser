@@ -262,8 +262,12 @@ Sampling SamplingFor(
         return SamplingForMode(SamplingMode::kMostPredictable);
       case blink::mojom::AILanguageModelSamplingMode::kPredictable:
         return SamplingForMode(SamplingMode::kPredictable);
+      case blink::mojom::AILanguageModelSamplingMode::kSlightlyPredictable:
+        return SamplingForMode(SamplingMode::kSlightlyPredictable);
       case blink::mojom::AILanguageModelSamplingMode::kBalanced:
         return SamplingForMode(SamplingMode::kBalanced);
+      case blink::mojom::AILanguageModelSamplingMode::kSlightlyCreative:
+        return SamplingForMode(SamplingMode::kSlightlyCreative);
       case blink::mojom::AILanguageModelSamplingMode::kCreative:
         return SamplingForMode(SamplingMode::kCreative);
       case blink::mojom::AILanguageModelSamplingMode::kMostCreative:

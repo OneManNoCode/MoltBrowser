@@ -516,7 +516,8 @@ MoltBrowser owns. The pref won:
 - Options: `initialPrompts` (an optional leading system message, then user
   and assistant turns), `temperature`/`topK` (clamped to the uniform
   maximum: top-K 128, temperature 2.0; defaults 40 and 0.7), the sampling
-  modes, `expectedInputs`/`expectedOutputs` with type `"text"` and
+  modes (all seven of 156, at upstream's top-K and temperature for each),
+  `expectedInputs`/`expectedOutputs` with type `"text"` and
   languages (one output language is passed to the model as an
   instruction), `expectedInputs` with type `"image"` (§5.1). Not
   supported, reported `"unavailable"` or failed: audio input, outputs

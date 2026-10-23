@@ -247,16 +247,21 @@ uint32_t TokensForSize(size_t bytes) {
 // ---------------------------------------------------------------------------
 
 Sampling SamplingForMode(SamplingMode mode) {
-  // The same points upstream uses for these modes.
+  // The same points upstream uses for these modes (chrome/browser/ai/
+  // ai_manager.cc at 156).
   switch (mode) {
     case SamplingMode::kMostPredictable:
       return {1, 0.0f};
     case SamplingMode::kPredictable:
-      return {30, 0.3f};
-    case SamplingMode::kBalanced:
+      return {32, 0.3f};
+    case SamplingMode::kSlightlyPredictable:
       return {64, 0.7f};
+    case SamplingMode::kBalanced:
+      return {64, 1.0f};
+    case SamplingMode::kSlightlyCreative:
+      return {72, 1.1f};
     case SamplingMode::kCreative:
-      return {80, 1.1f};
+      return {80, 1.15f};
     case SamplingMode::kMostCreative:
       return {100, 1.2f};
   }
