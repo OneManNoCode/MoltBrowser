@@ -102,12 +102,34 @@ inline constexpr auto kMoltNetPinnedPrefNames =
         // never checks for a captive portal; and MoltNet never opens a
         // sign-in page (chrome_security_blocking_page_factory.cc).
         "alternate_error_pages.enabled",
-        // Protected Audience, Attribution Reporting and Topics. Like
-        // CookieSettings, PrivacySandboxSettings only switches them off for
-        // the primary Incognito profile, so in MoltNet these prefs decide.
+        // Protected Audience, Attribution Reporting and Topics. Removed
+        // upstream at 156: no web API reads these prefs any more (only the
+        // settings page and policy do). Still pinned, which costs nothing.
         "privacy_sandbox.m1.topics_enabled",
         "privacy_sandbox.m1.fledge_enabled",
         "privacy_sandbox.m1.ad_measurement_enabled",
+        // Whether pages that use XSLT show Blink's deprecation banner (new
+        // at 156, WebPreferences::is_xslt_deprecation_banner_suppressed).
+        // Blink inserts the banner into the page's DOM, so a page can tell
+        // whether the user chose "Never show again" in a regular window.
+        // Pinned to the default, banner shown, as in every new profile; its
+        // text is one of the renderer strings MoltNet pins to en-US
+        // (chrome/renderer/molt_ai/fingerprinting/
+        // moltnet_locale_strings_table.cc). "Never show again" in a MoltNet
+        // window lasts for that session.
+        "profile.xslt_deprecation_banner_suppressed",
+        // The Global Privacy Control setting (new at 156, behind flags):
+        // RendererPreferences::is_global_privacy_control_setting_enabled,
+        // the Sec-GPC header and navigator.globalPrivacyControl. MoltBrowser
+        // sends GPC from every window anyway (kGlobalPrivacyControlForce,
+        // molt_feature_overrides.cc), which this setting can't undo; if that
+        // flag is turned off, MoltNet follows the default, not the regular
+        // profile's choice.
+        "universal_optout.enabled",
+        // The keyboard shortcut the user set for Autofill's AtMemory (new at
+        // 156, RendererPreferences::autofill_shortcut_key_code). The renderer
+        // cancels that key's keydown in text fields, which a page can see.
+        "autofill.at_memory.shortcut",
     });
 
 // True iff MoltNet must use MoltBrowser's registered default of

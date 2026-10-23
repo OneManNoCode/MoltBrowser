@@ -14,6 +14,7 @@
 #include "chrome/browser/molt_ai/shield/molt_shield_prefs.h"
 #include "chrome/browser/molt_ai/tor/molt_net_pref_isolation_policy.h"
 #include "chrome/common/pref_names.h"
+#include "components/autofill/core/common/autofill_prefs.h"
 #include "components/content_settings/core/browser/content_settings_registry.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/browser/website_settings_info.h"
@@ -29,6 +30,7 @@
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
+#include "components/universal_optout/prefs.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -64,9 +66,16 @@ TEST(MoltNetIsolationTest, PinnedNamesMatchChromiumsConstants) {
            prefs::kProtocolHandlerPerOriginAllowedProtocols,
            embedder_support::kAlternateErrorPagesEnabled,
            shield::prefs::kRemoveTrackingParams,
+           // New at Chromium 156.
+           prefs::kXSLTDeprecationBannerSuppressed,
+           universal_optout::prefs::kUniversalOptOutEnabled,
+           autofill::prefs::kAutofillAtMemoryShortcut,
        }) {
     EXPECT_TRUE(IsMoltNetPinnedPref(name)) << name;
   }
+  // AtMemory's double-Ctrl trigger changes no key event a page sees.
+  EXPECT_FALSE(IsMoltNetPinnedPref(
+      autofill::prefs::kAutofillAtMemoryDoubleCtrlTriggerEnabled));
   // Related Website Sets are permanently off in off-the-record profiles
   // (FirstPartySetsPolicyService), so their switch isn't pinned.
   EXPECT_FALSE(
@@ -225,6 +234,29 @@ TEST(MoltNetIsolationTest, CaptivePortalDetectionStaysOffInMoltNet) {
   regular.SetBoolean(kAlternateErrorPages, false);
   moltnet->SetBoolean(kAlternateErrorPages, true);
   EXPECT_FALSE(regular.GetBoolean(kAlternateErrorPages));
+}
+
+// "Never show again" on Blink's XSLT deprecation banner
+// (ChromeContentBrowserClient::SuppressXSLTDeprecationBanner sets the pref
+// on the frame's profile). One clicked in a regular window doesn't hide the
+// banner from MoltNet pages, whose DOM would show it; one clicked in a
+// MoltNet window stays in that MoltNet session.
+TEST(MoltNetIsolationTest, XsltBannerChoiceStaysInItsProfile) {
+  static constexpr const char* kSuppressed =
+      prefs::kXSLTDeprecationBannerSuppressed;
+  sync_preferences::TestingPrefServiceSyncable regular;
+  // As ChromeContentBrowserClient::RegisterProfilePrefs does.
+  regular.registry()->RegisterBooleanPref(kSuppressed, false);
+  regular.SetBoolean(kSuppressed, true);
+
+  std::unique_ptr<sync_preferences::PrefServiceSyncable> moltnet =
+      CreateMoltNetPrefService(&regular, nullptr);
+  EXPECT_FALSE(moltnet->GetBoolean(kSuppressed));
+
+  regular.SetBoolean(kSuppressed, false);
+  moltnet->SetBoolean(kSuppressed, true);
+  EXPECT_TRUE(moltnet->GetBoolean(kSuppressed));
+  EXPECT_FALSE(regular.GetBoolean(kSuppressed));
 }
 
 TEST_F(MoltNetPrefServiceTest, PolicyStillWins) {

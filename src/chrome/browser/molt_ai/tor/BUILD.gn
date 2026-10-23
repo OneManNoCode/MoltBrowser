@@ -430,6 +430,7 @@ source_set("unit_tests") {
     # Pref-name constants checked against the pinned list.
     "//chrome/browser/molt_ai/shield:prefs",
     "//chrome/common:constants",
+    "//components/autofill/core/common",
     "//components/content_settings/core/browser",
     "//components/content_settings/core/common",
     "//components/embedder_support",
@@ -439,6 +440,7 @@ source_set("unit_tests") {
     "//components/privacy_sandbox:privacy_sandbox_prefs",
     "//components/sync_preferences",
     "//components/sync_preferences:test_support",
+    "//components/universal_optout",
     "//mojo/public/cpp/bindings",
     "//mojo/public/cpp/system",
     "//net",
